@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2295.50" height="548.00" viewBox="0 0 2295.50 548.00">
+<defs>
+    <marker id="arr-a0a0a0" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#a0a0a0"/></marker>
+  </defs>
+<rect width="2295.50" height="548.00" fill="#1e1e1e"/>
+<rect x="40.00" y="175.00" width="140.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="256.00" y="175.00" width="148.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="488.00" y="175.00" width="140.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="704.00" y="175.00" width="148.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="1152.50" y="175.00" width="157.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="1369.50" y="175.00" width="265.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="1743.00" y="310.50" width="140.00" height="62.00" rx="8" fill="#626672" stroke="#364fc7" stroke-width="2" opacity="1.00"/>
+<rect x="1798.40" y="316.50" width="29.20" height="21.00" rx="8" fill="#3d3d3d" stroke="#364fc7" stroke-width="1" opacity="1.00"/>
+<rect x="591.50" y="453.00" width="373.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="1810.50" y="175.00" width="445.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="699.50" y="40.00" width="157.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="708.00" y="318.00" width="140.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<path d="M 778.00,95.00 L 778.00,175.00" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 778.00,230.00 L 668.00,263.60 L 668.00,425.00 L 718.50,453.00" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 778.00,373.00 L 837.50,453.00" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<text x="110.00" y="192.50" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="110.00" dy="16.00">Dashboard</tspan></text>
+<text x="330.00" y="192.50" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="330.00" dy="16.00">Leads Kanban</tspan></text>
+<text x="558.00" y="192.50" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="558.00" dy="16.00">Lead Detail</tspan></text>
+<text x="778.00" y="192.50" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="778.00" dy="16.00">Forecast API</tspan></text>
+<text x="1231.00" y="192.50" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="1231.00" dy="16.00">Batch Ops API</tspan></text>
+<text x="1502.00" y="192.50" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="1502.00" dy="16.00">Forecast Snapshot - daily</tspan></text>
+<text x="1813.00" y="339.50" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="1813.00" dy="16.00">PostgreSQL</tspan></text>
+<text x="1813.00" y="319.50" font-size="12" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="1813.00" dy="12.00">DB</tspan></text>
+<text x="778.00" y="470.50" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="778.00" dy="16.00">Views: lead_alerts, sales_perf, dwell</tspan></text>
+<text x="2033.00" y="192.50" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="2033.00" dy="16.00">Tables: leads, activities, forecast_snapshots</tspan></text>
+<text x="778.00" y="57.50" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="778.00" dy="16.00">Reports - NEW</tspan></text>
+<text x="778.00" y="335.50" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="778.00" dy="16.00">Alerts API</tspan></text>
+</svg>

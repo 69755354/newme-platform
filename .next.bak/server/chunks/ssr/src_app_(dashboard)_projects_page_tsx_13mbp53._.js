@@ -1,0 +1,3 @@
+module.exports=[66401,a=>{"use strict";var b=a.i(87924),c=a.i(58078);a.s(["default",0,function(){let{t:a}=(0,c.useLanguage)();return(0,b.jsxs)("div",{className:"space-y-6",children:[(0,b.jsx)("h1",{className:"text-2xl font-bold text-white",children:a("projects.title")}),(0,b.jsx)("p",{className:"text-gray-500",children:a("projects.comingSoon")})]})}])}];
+
+//# sourceMappingURL=src_app_%28dashboard%29_projects_page_tsx_13mbp53._.js.map

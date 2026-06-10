@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3241.00" height="1435.62" viewBox="0 0 3241.00 1435.62">
+<defs>
+    <marker id="arr-495057" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#495057"/></marker>
+  </defs>
+<rect width="3241.00" height="1435.62" fill="#ffffff"/>
+<ellipse cx="163.50" cy="865.00" rx="123.50" ry="137.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="783.50" cy="1097.50" rx="150.50" ry="137.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="1599.50" cy="908.12" rx="159.50" ry="137.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="2453.50" cy="182.50" rx="231.50" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="588.00" y="40.00" width="391.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1363.50" y="1340.62" width="472.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="2846.00" y="277.00" width="355.00" height="275.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="2877.50" y="155.00" width="292.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="628.50" y="215.00" width="310.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1278.00" y="1165.62" width="643.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="655.50" y="559.00" width="256.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="2573.00" cy="182.50" rx="150.50" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<path d="M 287.00,759.05 L 407.40,322.22 L 588.00,87.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 287.00,970.95 L 501.20,920.00 L 1363.50,920.00 L 1363.50,1361.62" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 287.00,806.14 L 2846.00,414.50" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 287.00,782.59 L 423.60,444.21 L 628.50,262.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 934.00,1162.25 L 1363.50,1374.63" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1759.00,951.29 L 2846.00,479.25" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 2685.00,189.00 L 2685.00,250.00 L 2788.25,250.00 L 2846.00,349.75" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 2685.00,176.00 L 2685.00,95.00 L 2797.70,95.00 L 2877.50,176.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 2723.50,182.50 L 2877.50,189.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 287.00,947.41 L 501.20,900.00 L 1065.20,900.00 L 1278.00,1186.63" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 934.00,1097.50 L 1278.00,1199.62" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 287.00,829.68 L 434.40,684.29 L 655.50,606.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 287.00,923.86 L 425.40,1064.78 L 633.00,1140.66" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" stroke-dasharray="12,6" marker-end="url(#arr-495057)"/>
+<path d="M 287.00,876.77 L 1440.00,908.12" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" stroke-dasharray="12,6" marker-end="url(#arr-495057)"/>
+<path d="M 287.00,923.86 L 425.40,1064.78 L 633.00,1140.66" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" stroke-dasharray="12,6" marker-end="url(#arr-495057)"/>
+<path d="M 287.00,876.77 L 1440.00,908.12" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" stroke-dasharray="12,6" marker-end="url(#arr-495057)"/>
+<path d="M 934.00,1032.75 L 1440.00,972.87" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" stroke-dasharray="12,6" marker-end="url(#arr-495057)"/>
+<path d="M 1759.00,864.96 L 1944.20,434.04 L 2222.00,202.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" stroke-dasharray="12,6" marker-end="url(#arr-495057)"/>
+<text x="163.50" y="855.00" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="163.50" dy="16.00">&quot;Lead&lt;br/&gt;table: leads&quot;</tspan></text>
+<text x="783.50" y="1087.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="783.50" dy="16.00">&quot;Quote&lt;br/&gt;table: quotations&quot;</tspan></text>
+<text x="1599.50" y="898.12" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1599.50" dy="16.00">&quot;Contract&lt;br/&gt;table: contracts&quot;</tspan></text>
+<text x="2453.50" y="172.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="2453.50" dy="16.00">&quot;Installment Plan&lt;br/&gt;table: installment_plans&quot;</tspan></text>
+<text x="783.50" y="57.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="783.50" dy="16.00">&quot;Leads Module&lt;br/&gt;(list + detail page)&quot;</tspan></text>
+<text x="1599.50" y="1358.12" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1599.50" dy="16.00">&quot;Quotes Module&lt;br/&gt;(page + wizard + calculator)&quot;</tspan></text>
+<text x="3023.50" y="404.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="3023.50" dy="16.00">&quot;Contracts Module&lt;br/&gt;(page + new)&quot;</tspan></text>
+<text x="3023.50" y="172.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="3023.50" dy="16.00">&quot;Payments Module&lt;br/&gt;(page)&quot;</tspan></text>
+<text x="783.50" y="232.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="783.50" dy="16.00">&quot;Pipeline Module&lt;br/&gt;(Kanban)&quot;</tspan></text>
+<text x="1599.50" y="1183.12" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1599.50" dy="16.00">&quot;POST /api/quotations/generate&lt;br/&gt;POST /api/hermes/generate-quote&quot;</tspan></text>
+<text x="783.50" y="576.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="783.50" dy="16.00">&quot;POST/PUT /api/workflow&quot;</tspan></text>
+<text x="2573.00" y="172.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="2573.00" dy="16.00">&quot;Payment&lt;br/&gt;table: payments&quot;</tspan></text>
+<text x="386.60" y="388.94" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="386.60" dy="14.00">&quot;reads/writes&quot;</tspan></text>
+<text x="1043.07" y="911.25" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1043.07" dy="14.00">&quot;reads&quot;</tspan></text>
+<text x="1566.50" y="601.57" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1566.50" dy="14.00">&quot;reads&quot;</tspan></text>
+<text x="406.62" y="477.52" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="406.62" dy="14.00">&quot;reads/writes&quot;</tspan></text>
+<text x="1148.75" y="1259.69" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1148.75" dy="14.00">&quot;reads/writes&quot;</tspan></text>
+<text x="2302.50" y="706.52" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="2302.50" dy="14.00">&quot;reads/writes&quot;</tspan></text>
+<text x="2763.76" y="241.25" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="2763.76" dy="14.00">&quot;reads/writes&quot;</tspan></text>
+<text x="2757.70" y="86.25" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="2757.70" dy="14.00">&quot;reads/writes&quot;</tspan></text>
+<text x="2800.50" y="177.00" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="2800.50" dy="14.00">&quot;writes&quot;</tspan></text>
+<text x="852.00" y="891.25" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="852.00" dy="14.00">&quot;reads, writes stage=&#x27;quoted&#x27;&quot;</tspan></text>
+<text x="1106.00" y="1139.81" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1106.00" dy="14.00">&quot;writes&quot;</tspan></text>
+<text x="447.37" y="670.95" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="447.37" dy="14.00">&quot;reads/writes lead_workflow_stages&quot;</tspan></text>
+<text x="436.44" y="1060.07" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="436.44" dy="14.00">&quot;❌ MISSING: quote.accepted→lead.auto-advance&quot;</tspan></text>
+<text x="863.50" y="883.69" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="863.50" dy="14.00">&quot;❌ MISSING: lead.won→contract.auto-create&quot;</tspan></text>
+<text x="436.44" y="1060.07" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="436.44" dy="14.00">&quot;❌ MISSING: lead.stage change→no cascade&quot;</tspan></text>
+<text x="863.50" y="883.69" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="863.50" dy="14.00">&quot;❌ MISSING: lead.stage change→no cascade&quot;</tspan></text>
+<text x="1187.00" y="994.06" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1187.00" dy="14.00">&quot;❌ MISSING: quote.accepted→no contract created&quot;</tspan></text>
+<text x="1923.06" y="474.48" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1923.06" dy="14.00">&quot;⚠️ PARTIAL: installments created at contract creation, not at signing&quot;</tspan></text>
+</svg>

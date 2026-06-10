@@ -1,0 +1,18 @@
+{
+  "/(dashboard)/ads/page": "app/(dashboard)/ads/page.js",
+  "/(dashboard)/dashboard/page": "app/(dashboard)/dashboard/page.js",
+  "/(dashboard)/leads/[id]/page": "app/(dashboard)/leads/[id]/page.js",
+  "/(dashboard)/leads/new/page": "app/(dashboard)/leads/new/page.js",
+  "/(dashboard)/leads/page": "app/(dashboard)/leads/page.js",
+  "/(dashboard)/messages/page": "app/(dashboard)/messages/page.js",
+  "/(dashboard)/pipeline/page": "app/(dashboard)/pipeline/page.js",
+  "/(dashboard)/projects/page": "app/(dashboard)/projects/page.js",
+  "/(dashboard)/quotes/page": "app/(dashboard)/quotes/page.js",
+  "/_global-error/page": "app/_global-error/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/hermes/generate-quote/route": "app/api/hermes/generate-quote/route.js",
+  "/api/leads/meta-capi/route": "app/api/leads/meta-capi/route.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/login/page": "app/login/page.js",
+  "/page": "app/page.js"
+}

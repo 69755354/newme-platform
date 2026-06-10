@@ -1,0 +1,18 @@
+{
+  "/(dashboard)/ads/page": "/ads",
+  "/(dashboard)/dashboard/page": "/dashboard",
+  "/(dashboard)/leads/[id]/page": "/leads/[id]",
+  "/(dashboard)/leads/new/page": "/leads/new",
+  "/(dashboard)/leads/page": "/leads",
+  "/(dashboard)/messages/page": "/messages",
+  "/(dashboard)/pipeline/page": "/pipeline",
+  "/(dashboard)/projects/page": "/projects",
+  "/(dashboard)/quotes/page": "/quotes",
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/hermes/generate-quote/route": "/api/hermes/generate-quote",
+  "/api/leads/meta-capi/route": "/api/leads/meta-capi",
+  "/favicon.ico/route": "/favicon.ico",
+  "/login/page": "/login",
+  "/page": "/"
+}

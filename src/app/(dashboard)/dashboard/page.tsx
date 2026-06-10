@@ -1,0 +1,986 @@
+"use client";
+
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { createClient } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import { ErrorState } from "@/components/ui/error-state";
+import { cn } from "@/lib/utils";
+import {
+  AlertTriangle,
+  ArrowUpRight, CheckCircle2,
+} from "lucide-react";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+
+/* ─── Types ─── */
+interface Lead {
+  id: string; customer_name: string | null; phone: string | null;
+  source: string; stage: string; quotation_value: number | null;
+  location: string | null; property_type: string | null;
+  ai_quality: string | null; lead_status: string | null;
+  assigned_to: string | null; win_probability: number | null;
+  last_contact_date: string | null; created_at: string; updated_at: string;
+  next_followup_date: string | null; next_action: string | null;
+  followup_count: number | null;
+  recovery_candidate: boolean; transfer_candidate: boolean;
+  sales_manager_review: boolean; hold_since: string | null;
+  campaign_name: string | null; source_platform: string | null;
+  owner: string | null; sales_manager: string | null;
+}
+
+interface Contract {
+  id: string; contract_amount: number; status: string; created_at: string;
+}
+
+interface Payment {
+  id: string; amount: number; confirmed: boolean; payment_date: string;
+}
+
+interface InstallmentPlan {
+  id: string; amount: number; due_date: string; status: string; paid_amount: number | null;
+}
+
+/* ─── 9-stage funnel ─── */
+const STAGE_KEYS = ["new","contacted","requirement_confirmed","solution_submitted","quotation_submitted","negotiation","pending_decision","won","lost"] as const;
+const STAGE_COLORS: Record<string,string> = {
+  new: "#6B7280", contacted: "#C48A52", requirement_confirmed: "#E0B95A",
+  solution_submitted: "#E5007E", quotation_submitted: "#8B5CF6",
+  negotiation: "#3B82F6", pending_decision: "#F59E0B", won: "#4ADE80", lost: "#6B7280",
+};
+
+function fmtAED(v: number): string {
+  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
+  return `AED ${v}`;
+}
+
+function daysSince(d: string | null): number | null {
+  if (!d) return null;
+  return Math.floor((Date.now() - new Date(d).getTime()) / 86_400_000);
+}
+
+/* ─── Real financial data types ─── */
+interface FinanceStats {
+  totalContractValue: number;
+  received: number;
+  outstanding: number;
+  overdue: number;
+  dueNextWeek: number;
+}
+
+/* ════════════════════════════════════════ */
+export default function DashboardPage() {
+  const router = useRouter();
+  const supabase = createClient();
+  const { t, lang: language } = useLanguage();
+
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [salesUsers, setSalesUsers] = useState<any[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
+  const [showActivityFeed, setShowActivityFeed] = useState(false);
+  
+  // Period & KPI targets
+  const now = new Date();
+  const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const [period, setPeriod] = useState(currentPeriod);
+  const [kpiTargets, setKpiTargets] = useState<any[]>([]);
+  const lastPeriod = useMemo(() => {
+    const [y, m] = period.split("-").map(Number);
+    return m === 1 ? `${y-1}-12` : `${y}-${String(m-1).padStart(2, "0")}`;
+  }, [period]);
+
+  // User name lookup
+  const userNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    salesUsers.forEach((u: any) => { if (u.id && u.full_name) map[u.id] = u.full_name; });
+    return map;
+  }, [salesUsers]);
+
+  // Real financial data
+  const [financeStats, setFinanceStats] = useState<FinanceStats>({
+    totalContractValue: 0,
+    received: 0,
+    outstanding: 0,
+    overdue: 0,
+    dueNextWeek: 0,
+  });
+  const [financeLoading, setFinanceLoading] = useState(true);
+  const [contractCount, setContractCount] = useState(0);
+
+  // Risk pool
+  const [riskPoolCount, setRiskPoolCount] = useState<number | null>(null);
+  // Today's follow-up
+  const [todayFollowups, setTodayFollowups] = useState<Lead[]>([]);
+  const [followupLoading, setFollowupLoading] = useState(true);
+
+  // Top 5 Actions
+  interface TopAction { type: string; title: string; subtitle: string; link: string; priority: "high" | "medium" | "low"; customerName: string; value: number; reason: string; }
+  const [topActions, setTopActions] = useState<TopAction[]>([]);
+
+  const fetchLeads = useCallback(async () => {
+    // Circuit-breaker: do NOT query until role is resolved.
+    // A sales user running unfiltered query would see all leads.
+    if (userRole === null) return;
+    setLoading(true);
+    setError(null);
+    let query = supabase.from("leads").select("*");
+    if (userRole === "sales" && userId) {
+      query = query.eq("assigned_to", userId);
+    }
+    const { data: l, error: err } = await query.order("updated_at", { ascending: false }).limit(500);
+    if (err) { console.error("Failed to fetch leads:", err); setError(t("common.loadFailedRetry")); setLoading(false); return; }
+    if (l) setLeads(l as Lead[]);
+    setLoading(false);
+  }, [supabase, userId, userRole, language]);
+
+  const fetchFinancialData = useCallback(async () => {
+    // Circuit-breaker: same as fetchLeads — wait for role resolution.
+    if (userRole === null) return;
+    setFinanceLoading(true);
+    try {
+      // 1. Contract Value: sum of contract_amount where status != 'terminated'
+      //    Must complete first to get contractIds for downstream filters
+      let contractQuery = supabase
+        .from("contracts")
+        .select("id,contract_amount,status,created_at");
+      if (userRole === "sales" && userId) {
+        contractQuery = contractQuery.eq("sales_id", userId);
+      }
+      const { data: contracts, error: cErr } = await contractQuery;
+      if (cErr) throw cErr;
+
+      const activeContracts = (contracts as Contract[] || []).filter(c => c.status !== "terminated");
+      const totalContractValue = activeContracts.reduce((sum, c) => sum + (c.contract_amount || 0), 0);
+      setContractCount(activeContracts.length);
+
+      // Collect contract IDs for downstream filters
+      const contractIds = (contracts as Contract[] || []).map(c => c.id);
+
+      // Compute date boundaries shared by overdue / dueNextWeek queries
+      const now = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+      const nextWeek = new Date();
+      nextWeek.setDate(nextWeek.getDate() + 7);
+      const nextWeekStr = nextWeek.toISOString().split("T")[0];
+
+      // 2-4. Run independent queries in parallel: payments, overdue, dueNextWeek
+      let paymentsQuery = supabase
+        .from("payments")
+        .select("amount,confirmed,payment_date");
+      if (userRole === "sales" && userId && contractIds.length > 0) {
+        paymentsQuery = paymentsQuery.in("contract_id", contractIds);
+      }
+
+      let overdueQuery = supabase
+        .from("installment_plans")
+        .select("amount,due_date,status,paid_amount")
+        .lt("due_date", now)
+        .neq("status", "paid");
+      if (userRole === "sales" && userId && contractIds.length > 0) {
+        overdueQuery = overdueQuery.in("contract_id", contractIds);
+      }
+
+      let dueQuery = supabase
+        .from("installment_plans")
+        .select("amount,due_date,status,paid_amount")
+        .gte("due_date", now)
+        .lte("due_date", nextWeekStr)
+        .eq("status", "pending");
+      if (userRole === "sales" && userId && contractIds.length > 0) {
+        dueQuery = dueQuery.in("contract_id", contractIds);
+      }
+
+      const [
+        { data: payments, error: pErr },
+        { data: overduePlans, error: oErr },
+        { data: duePlans, error: dErr },
+      ] = await Promise.all([
+        paymentsQuery,
+        overdueQuery,
+        dueQuery,
+      ]);
+
+      if (pErr) throw pErr;
+      if (oErr) throw oErr;
+      if (dErr) throw dErr;
+
+      // Compute derived values
+      const confirmedPayments = (payments as Payment[] || []).filter(p => p.confirmed === true);
+      const received = confirmedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      const outstanding = totalContractValue - received;
+      const overdue = (overduePlans as InstallmentPlan[] || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+      const dueNextWeek = (duePlans as InstallmentPlan[] || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+
+      setFinanceStats({
+        totalContractValue: Math.round(totalContractValue),
+        received: Math.round(received),
+        outstanding: Math.round(outstanding),
+        overdue: Math.round(overdue),
+        dueNextWeek: Math.round(dueNextWeek),
+      });
+    } catch (err) {
+      console.error("Failed to fetch financial data:", err);
+    }
+    setFinanceLoading(false);
+  }, [supabase, userId, userRole, language]);
+
+  // Fetch sales users for name mapping
+  useEffect(() => {
+    supabase.from("profiles").select("id,email,role,full_name").in("role", ["admin", "sales", "operator", "boss"]).then(({ data }) => {
+      if (data) setSalesUsers(data);
+    });
+  }, []);
+
+  // Fetch KPI targets for selected period
+  useEffect(() => {
+    supabase.from("kpi_targets").select("*").eq("period", period).then(({ data }) => {
+      if (data) setKpiTargets(data);
+    });
+  }, [supabase, period]);
+  useEffect(() => {
+    (async () => {
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) return;
+      setUserId(user.id);
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+      if (profile) setUserRole(profile.role);
+    })();
+  }, [supabase]);
+
+  useEffect(() => { fetchLeads(); }, [fetchLeads]);
+  useEffect(() => { fetchFinancialData(); }, [fetchFinancialData]);
+
+  // Fetch risk pool & today's follow-ups
+  useEffect(() => {
+    if (!userId) return; // wait for user info before fetching
+    (async () => {
+      // Try v_risk_pool view first, fallback to direct query
+      try {
+        const { data: riskData } = await supabase.from("v_risk_pool").select("count", { count: "exact", head: true });
+        if (riskData !== null) {
+          // count is approximate from head:true
+          const { count } = await supabase.from("v_risk_pool").select("*", { count: "exact", head: true });
+          setRiskPoolCount(count || 0);
+        } else {
+          throw new Error("view not found");
+        }
+      } catch {
+        // Fallback: query leads directly for overdue/missing followups
+        const today = new Date().toISOString().split("T")[0];
+        let riskQuery = supabase
+          .from("leads")
+          .select("id", { count: "exact", head: true })
+          .lt("next_followup_date", today)
+          .not("stage", "in", '("won","lost")');
+        if (userRole === "sales" && userId) {
+          riskQuery = riskQuery.eq("assigned_to", userId);
+        }
+        const { data: overdue } = await riskQuery;
+        setRiskPoolCount(overdue?.length || 0);
+      }
+
+      // Today's follow-ups
+      const today = new Date().toISOString().split("T")[0];
+      let followupQuery = supabase
+        .from("leads")
+        .select("*")
+        .eq("next_followup_date", today)
+        .not("stage", "in", '("won","lost")');
+      if (userRole === "sales" && userId) {
+        followupQuery = followupQuery.eq("assigned_to", userId);
+      }
+      const { data: followups } = await followupQuery.order("customer_name");
+      if (followups) setTodayFollowups(followups as Lead[]);
+      setFollowupLoading(false);
+
+      // Top 5 Actions: overdue followups, hot leads, high-value stale, draft quotes, expiring quotes
+      const actions: TopAction[] = [];
+
+      // 1. Overdue followups — leads with next_followup_date in the past
+      try {
+        const today = new Date().toISOString().split("T")[0];
+        let followupQ = supabase
+          .from("leads")
+          .select("id, customer_name, quotation_value, next_followup_date, stage, last_contact_date")
+          .lt("next_followup_date", today)
+          .not("stage", "in", '("won","lost")')
+          .order("next_followup_date", { ascending: true })
+          .limit(5);
+        if (userRole === "sales" && userId) followupQ = followupQ.eq("assigned_to", userId);
+        const { data: overdueFollowups } = await followupQ;
+        if (overdueFollowups) {
+          overdueFollowups.forEach((l: any) => {
+            const daysLate = l.next_followup_date
+              ? Math.ceil((Date.now() - new Date(l.next_followup_date).getTime()) / 86400000)
+              : 0;
+            actions.push({
+              type: "overdue_followup",
+              title: l.customer_name || t("common.unnamed"),
+              subtitle: `${l.customer_name || t("common.unnamed")} · ${t("dashboard.overdueFollowup").replace("{n}", String(daysLate))}`,
+              link: `/leads/${l.id}`,
+              priority: daysLate >= 3 ? "high" : "medium",
+              customerName: l.customer_name || t("common.unnamed"),
+              value: l.quotation_value || 0,
+              reason: t("dashboard.overdueFollowup").replace("{n}", String(daysLate)),
+            });
+          });
+        }
+      } catch {}
+
+      // 2. Hot leads — leads with lead_status='hot' and high win_probability, not yet won/lost
+      try {
+        let hotQ = supabase
+          .from("leads")
+          .select("id, customer_name, quotation_value, win_probability, stage")
+          .eq("lead_status", "hot")
+          .not("stage", "in", '("won","lost")')
+          .order("quotation_value", { ascending: false })
+          .limit(3);
+        if (userRole === "sales" && userId) hotQ = hotQ.eq("assigned_to", userId);
+        const { data: hotLeads } = await hotQ;
+        if (hotLeads) {
+          hotLeads.forEach((l: any) => {
+            actions.push({
+              type: "hot_lead",
+              title: l.customer_name || t("common.unnamed"),
+              subtitle: `${l.customer_name || t("common.unnamed")} · ${t("dashboard.winProb").replace("{n}", String(l.win_probability || 0))}`,
+              link: `/leads/${l.id}`,
+              priority: (l.win_probability || 0) >= 70 ? "high" : "medium",
+              customerName: l.customer_name || t("common.unnamed"),
+              value: l.quotation_value || 0,
+              reason: t("dashboard.hotLeadPriority"),
+            });
+          });
+        }
+      } catch {}
+
+      // 3. Draft quotes pending — from quotations table
+      try {
+        let qQ = supabase.from("quotations").select("*, leads!inner(customer_name, quotation_value)")
+          .eq("status", "draft")
+          .order("total_amount", { ascending: false })
+          .limit(3);
+        if (userRole === "sales" && userId) qQ = qQ.eq("created_by", userId);
+        const { data: drafts } = await qQ;
+        if (drafts) {
+          drafts.forEach((q: any) => {
+            actions.push({
+              type: "quote_draft",
+              title: q.leads?.customer_name || t("common.unnamed"),
+              subtitle: `${q.leads?.customer_name || t("common.unnamed")} · ${q.quote_no || t("dashboard.draftQuote")}`,
+              link: `/quotes`,
+              priority: "medium",
+              customerName: q.leads?.customer_name || t("common.unnamed"),
+              value: q.total_amount || 0,
+              reason: t("dashboard.draftQuotePending"),
+            });
+          });
+        }
+      } catch {}
+
+      // 4. High-value stale leads — no contact in 48h+, sorted by quotation_value
+      try {
+        const cutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+        let sQ = supabase.from("leads").select("id, customer_name, quotation_value, last_contact_date, stage")
+          .not("stage", "in", '("won","lost")')
+          .or(`last_contact_date.lt.${cutoff},last_contact_date.is.null`)
+          .order("quotation_value", { ascending: false })
+          .limit(3);
+        if (userRole === "sales" && userId) sQ = sQ.eq("assigned_to", userId);
+        const { data: stale } = await sQ;
+        if (stale) {
+          stale.forEach((l: any) => {
+            const daysInactive = l.last_contact_date
+              ? Math.ceil((Date.now() - new Date(l.last_contact_date).getTime()) / 86400000)
+              : 99;
+            actions.push({
+              type: "stale_lead",
+              title: l.customer_name || t("common.unnamed"),
+              subtitle: `${l.customer_name || t("common.unnamed")} · ${t("dashboard.dInactive").replace("{n}", String(daysInactive))}`,
+              link: `/leads/${l.id}`,
+              priority: daysInactive > 7 ? "high" : "medium",
+              customerName: l.customer_name || t("common.unnamed"),
+              value: l.quotation_value || 0,
+              reason: t("dashboard.dNoReply").replace("{n}", String(daysInactive)),
+            });
+          });
+        }
+      } catch {}
+
+      // 5. Overdue workflow stages (complementary signal)
+      try {
+        let wfQ = supabase.from("lead_workflow_stages").select("*, leads!inner(customer_name, quotation_value)")
+          .eq("status", "in_progress")
+          .lt("deadline_at", new Date().toISOString())
+          .order("deadline_at", { ascending: true })
+          .limit(3);
+        if (userRole === "sales" && userId) {
+          wfQ = wfQ.eq("assigned_to", userId);
+        }
+        const { data: overdueWf } = await wfQ;
+        if (overdueWf) {
+          overdueWf.forEach((w: any) => {
+            const leadName = w.leads?.customer_name || t("common.unnamed");
+            actions.push({
+              type: "workflow_overdue",
+              title: leadName,
+              subtitle: `${leadName} · ${t("dashboard.stageOverdue").replace("{stage}", t("stageLabels." + w.stage_key))}`,
+              link: `/leads/${w.lead_id}`,
+              priority: "high",
+              customerName: leadName,
+              value: w.leads?.quotation_value || 0,
+              reason: t("dashboard.workflowOverdue"),
+            });
+          });
+        }
+      } catch {}
+
+      // Sort by priority score (value × urgency multiplier) and deduplicate by lead link
+      const seenLinks = new Set<string>();
+      const priorityScore = (a: TopAction): number => {
+        const urgencyMult = a.priority === "high" ? 3 : a.priority === "medium" ? 2 : 1;
+        return a.value * urgencyMult;
+      };
+      const sorted = actions
+        .sort((a, b) => priorityScore(b) - priorityScore(a))
+        .filter((a) => {
+          // Deduplicate: keep first occurrence per link
+          if (seenLinks.has(a.link)) return false;
+          seenLinks.add(a.link);
+          return true;
+        });
+
+      setTopActions(sorted.slice(0, 5));
+    })();
+  }, [userId, userRole, language]);
+
+  // Fetch recent activities for admin/boss transparency
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      let url = "/api/activities?limit=30";
+      if (userRole === "sales") {
+        const { data } = await supabase.from("leads").select("id").eq("assigned_to", userId);
+        if (data?.length) {
+          url += "&lead_id=" + data.map(l => l.id).join(",");
+        } else { setActivities([]); return; }
+      }
+      const res = await fetch(url);
+      if (res.ok) { const data = await res.json(); setActivities(data || []); }
+    })();
+  }, [userId, userRole]);
+
+  /* ─── Computed ─── */
+  const stats = useMemo(() => {
+    const active = leads;
+    const now = new Date();
+
+    const stageCounts: Record<string, number> = {};
+    const stageValues: Record<string, number> = {};
+    for (const key of STAGE_KEYS) {
+      const items = active.filter(l => l.stage === key);
+      stageCounts[key] = items.length;
+      stageValues[key] = items.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
+    }
+
+    const pipeline = active.filter(l => !["won", "lost"].includes(l.stage));
+    const totalPipeline = pipeline.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
+    const weightedPipeline = pipeline.reduce((sum, l) => sum + (l.quotation_value || 0) * (l.win_probability || 0) / 100, 0);
+
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const wonThisMonth = active.filter(l => l.stage === "won" && l.updated_at && new Date(l.updated_at) >= monthStart);
+    const monthlyRevenue = wonThisMonth.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
+
+    const yellowLeads = pipeline.filter(l => { const d = daysSince(l.last_contact_date || l.updated_at); return d !== null && d >= 7 && d < 14; });
+    const redLeads = pipeline.filter(l => { const d = daysSince(l.last_contact_date || l.updated_at); return d !== null && d >= 14; });
+
+    const weekStart = new Date(now); weekStart.setDate(now.getDate() - 7);
+    const newThisWeek = active.filter(l => l.created_at && new Date(l.created_at) >= weekStart).length;
+
+    const contactedTotal = stageCounts.contacted + stageCounts.requirement_confirmed + stageCounts.solution_submitted + stageCounts.quotation_submitted + stageCounts.negotiation + stageCounts.pending_decision + stageCounts.won;
+    const conversionRate = contactedTotal > 0 ? Math.round((stageCounts.won / contactedTotal) * 100) : 0;
+
+    const recoveryCount = pipeline.filter(l => l.recovery_candidate).length;
+    const transferCount = pipeline.filter(l => l.transfer_candidate).length;
+    const reviewCount = pipeline.filter(l => l.sales_manager_review).length;
+    const highProbStale = pipeline.filter(l => { const d = daysSince(l.last_contact_date || l.updated_at); return (l.win_probability || 0) >= 70 && d !== null && d >= 14; }).length;
+    const pendingStale = active.filter(l => { if (l.stage !== "pending_decision") return false; const d = daysSince(l.hold_since || l.updated_at); return d !== null && d >= 30; }).length;
+
+    const statusCounts: Record<string, number> = {};
+    for (const l of active) { const s = l.lead_status || "unknown"; statusCounts[s] = (statusCounts[s] || 0) + 1; }
+
+    const sourceCounts: Record<string, number> = {};
+    const sourceWon: Record<string, number> = {};
+    for (const l of active) {
+      const src = l.source_platform || l.source || "other";
+      sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+      if (l.stage === "won") sourceWon[src] = (sourceWon[src] || 0) + 1;
+    }
+
+    const wonCount = stageCounts.won || 0;
+    const contactRate = active.length > 0 ? Math.round(((stageCounts.contacted || 0) + (stageCounts.requirement_confirmed || 0)) / active.length * 100) : 0;
+
+    return {
+      totalActive: active.length,
+      stageCounts, stageValues,
+      pipelineSize: pipeline.length,
+      totalPipeline, weightedPipeline,
+      monthlyRevenue, wonCount,
+      newThisWeek, conversionRate,
+      yellowCount: yellowLeads.length,
+      redCount: redLeads.length,
+      recoveryCount, transferCount, reviewCount, highProbStale, pendingStale,
+      statusCounts, sourceCounts, sourceWon,
+      contactRate,
+    };
+  }, [leads]);
+
+  // ─── KPI-driven finance cards — completion % FIRST ───
+  // Company-level targets (for boss/admin view)
+  const companySigningTarget = kpiTargets.find((t: any) => t.target_type === "signing" && !t.assigned_to)?.target_amount || 0;
+  const companyCollectionTarget = kpiTargets.find((t: any) => t.target_type === "collection" && !t.assigned_to)?.target_amount || 0;
+  // Personal targets (for sales view)
+  const mySigningTarget = kpiTargets.find((t: any) => t.target_type === "signing" && t.assigned_to === userId)?.target_amount || 0;
+  const myCollectionTarget = kpiTargets.find((t: any) => t.target_type === "collection" && t.assigned_to === userId)?.target_amount || 0;
+  // Sales sees personal targets, management sees company targets
+  const signingTarget = userRole === "sales" ? mySigningTarget : companySigningTarget;
+  const collectionTarget = userRole === "sales" ? myCollectionTarget : companyCollectionTarget;
+
+  // Actuals: sales only counts their own, management counts all
+  const myWonLeads = leads.filter(l => l.assigned_to === userId && l.stage === "won");
+  const mySigningActual = myWonLeads.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
+  const signingActual = userRole === "sales" ? mySigningActual : (financeStats.received + financeStats.outstanding);
+  const myCollectionActual = financeStats.received; // TODO: filter by sales_id when finance supports it
+  const collectionActual = userRole === "sales" ? myCollectionActual : financeStats.received;
+  const signingPct = signingTarget > 0 ? Math.round((signingActual / signingTarget) * 100) : null;
+  const collectionPct = collectionTarget > 0 ? Math.round((collectionActual / collectionTarget) * 100) : null;
+
+  // Time-proportional expected progress (monthly)
+  const expectedPct = useMemo(() => {
+    const now = new Date();
+    const totalDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    return Math.round((now.getDate() / totalDays) * 100);
+  }, []);
+
+  const pctColor = (v: number | null) => {
+    if (v === null || v === 0) return "text-muted-foreground";
+    if (v >= expectedPct) return "text-emerald-400";
+    return "text-amber-400";
+  };
+  const barColor = (v: number | null) => {
+    if (v === null || v === 0) return "bg-muted";
+    if (v >= expectedPct) return "bg-emerald-500";
+    return "bg-amber-500";
+  };
+
+  // Market: source breakdown
+  const sourceBreakdown = useMemo(() => {
+    const sources: Record<string, { total: number; won: number; value: number }> = {};
+    leads.forEach(l => {
+      const s = l.source || "unknown";
+      if (!sources[s]) sources[s] = { total: 0, won: 0, value: 0 };
+      sources[s].total++;
+      if (l.stage === "won") sources[s].won++;
+      if (l.quotation_value) sources[s].value += l.quotation_value;
+    });
+    const sourceLabels: Record<string, string> = { meta_ads: t("sourceLabels.meta_ads"), whatsapp: t("sourceLabels.whatsapp"), other: t("sourceLabels.other"), unknown: t("sourceLabels.unknown") };
+    return Object.entries(sources)
+      .map(([k, v]) => ({ source: k, label: sourceLabels[k] || k, ...v }))
+      .sort((a, b) => b.total - a.total);
+  }, [leads]);
+  const maxSourceTotal = Math.max(...sourceBreakdown.map(s => s.total), 1);
+  
+  // Per-salesperson breakdown
+  const salesLeaderboard = useMemo(() => {
+    const sales = salesUsers.filter((u: any) => u.role === "sales");
+    return sales.map((s: any) => {
+      const target = kpiTargets.find((t: any) => t.target_type === "signing" && t.assigned_to === s.id);
+      const salesLeads = leads.filter(l => l.assigned_to === s.id);
+      const activeLeads = salesLeads.filter(l => !["won", "lost"].includes(l.stage));
+      const wonLeads = salesLeads.filter(l => l.stage === "won");
+      const wonValue = wonLeads.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
+      const pipelineValue = activeLeads.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
+      const contacted = salesLeads.filter(l => 
+        ["contacted", "requirement_confirmed", "solution_submitted", "quotation_submitted", "negotiation", "pending_decision", "won"].includes(l.stage)
+      ).length;
+      const conversionRate = salesLeads.length > 0 ? Math.round((wonLeads.length / salesLeads.length) * 100) : 0;
+      const targetAmount = target?.target_amount || 0;
+      const completionRate = targetAmount > 0 ? Math.round((wonValue / targetAmount) * 100) : 0;
+      return {
+        id: s.id,
+        name: s.full_name || s.email || t("common.unnamed"),
+        wonValue,
+        wonCount: wonLeads.length,
+        pipelineValue,
+        activeCount: activeLeads.length,
+        totalLeads: salesLeads.length,
+        contacted,
+        conversionRate,
+        targetAmount,
+        completionRate,
+      };
+    }).sort((a, b) => b.wonValue - a.wonValue);
+  }, [salesUsers, leads, kpiTargets]);
+
+  // KPI-driven finance cards — replaces old kpiCards + financeCards
+  const getKpiSub = (actual: number, target: number) => {
+    if (target <= 0) return t("kpi.noTargetSet");
+    const pct = Math.round((actual / target) * 100);
+    return `${t("dashboard.completionRate")} ${pct}% · ${t("dashboard.target2")} ${fmtAED(target)}`;
+  };
+
+  // No more financeCards array — render L1 cards inline
+
+  if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">{t("common.loading")}</div>;
+  if (error) return <ErrorState message={error} onRetry={fetchLeads} />;
+
+  const overdueCount = (stats.redCount || 0) + (stats.yellowCount || 0);
+  const isManagement = userRole !== "sales";
+
+  /* ─── shared: alert banner ─── */
+  const AlertBanner = overdueCount > 0 && (
+    <div className="px-5 py-3 rounded-xl flex items-center justify-between bg-red-500/10 border border-red-500/20">
+      <div className="flex items-center gap-3">
+        <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+        <span className="text-sm text-red-300 font-medium">
+          {t("dashboard.overdueAlert").replace("{n}", String(overdueCount))}
+        </span>
+      </div>
+      <button onClick={() => router.push("/leads?alert=red")}
+        className="text-sm font-medium text-copper-400 hover:text-copper-300 transition-colors">
+        {t("dashboard.viewAlerts")} →
+      </button>
+    </div>
+  );
+
+  /* ─── shared: header ─── */
+  const headerTitle = isManagement ? t("dashboard.title") : t("nav.salesDashboard");
+  const headerSub = isManagement
+    ? `${signingTarget > 0 ? `${t("dashboard.signingTarget")} ${fmtAED(signingTarget)}` : t("dashboard.noTargetSet")} · ${collectionTarget > 0 ? `${t("dashboard.collectionTarget")} ${fmtAED(collectionTarget)}` : t("dashboard.noTargetSet")}`
+    : `${signingTarget > 0 ? `${t("dashboard.myTarget")} ${fmtAED(signingTarget)}` : t("dashboard.noTargetSet")} · ${signingPct !== null ? `${t("dashboard.pctComplete").replace("{n}", String(signingPct))}` : ""}`;
+
+  const Header = (
+    <div className="flex items-center justify-between flex-wrap gap-3">
+      <div>
+        <h1 className="text-xl font-bold text-foreground tracking-tight">
+          {headerTitle}
+        </h1>
+        <p className="text-muted-foreground text-sm mt-0.5">
+          {headerSub}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <select
+          value={period}
+          onChange={(e) => setPeriod(e.target.value)}
+          className="h-9 px-3 text-sm rounded-lg border border-border/50 bg-background text-foreground"
+        >
+          {(() => {
+            const opts: string[] = [];
+            const now = new Date();
+            for (let i = 0; i < 12; i++) {
+              const y = now.getFullYear();
+              const m = now.getMonth() - i; // 0-indexed, can be negative
+              const d = new Date(y, m, 1);
+              // Format as YYYY-MM in local timezone (avoid toISOString UTC shift)
+              const mm = String(d.getMonth() + 1).padStart(2, "0");
+              opts.push(`${d.getFullYear()}-${mm}`);
+            }
+            return opts.map(m => <option key={m} value={m}>{m}</option>);
+          })()}
+        </select>
+        <button
+          onClick={() => router.push("/leads/new")}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/85 transition-colors"
+        >
+          + {t("dashboard.newLeads")}
+        </button>
+      </div>
+    </div>
+  );
+
+  /* ─── shared: KPI mini stat cards ─── */
+  const KpiStatCards = (
+    <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+      {[
+        { label: t("dashboard.kpiLeads"), value: String(stats.totalActive), sub: t("dashboard.plusNwk").replace("{n}", String(stats.newThisWeek)), href: "/leads" },
+        { label: t("dashboard.kpiActive"), value: String(contractCount), sub: t("dashboard.nPipeline").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=negotiation" },
+        { label: t("dashboard.kpiQuotes"), value: String(stats.stageCounts.quotation_submitted + stats.stageCounts.negotiation + stats.stageCounts.pending_decision), sub: t("dashboard.nPending").replace("{n}", String(stats.stageCounts.quotation_submitted)), href: "/quotes" },
+        { label: t("dashboard.pipelineValue"), value: fmtAED(stats.totalPipeline), sub: t("dashboard.nDeals").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=quotation_submitted" },
+        { label: t("dashboard.won"), value: fmtAED(stats.monthlyRevenue), sub: t("dashboard.nClosed").replace("{n}", String(stats.wonCount)), href: "/leads?stage=won" },
+        { label: t("dashboard.kpiConv"), value: `${stats.conversionRate}%`, sub: t("dashboard.nPctContacted").replace("{n}", String(stats.contactRate)), href: "/leads" },
+      ].map(card => (
+        <button key={card.label}
+          onClick={() => router.push(card.href)}
+          className="p-3 rounded-lg border border-border/50 bg-card/50 hover:bg-accent/30 transition-all text-left group"
+        >
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">{card.label}</p>
+          <p className="text-lg font-bold text-foreground group-hover:text-copper-400 transition-colors">{card.value}</p>
+          <p className="text-[10px] text-emerald-400/70">{card.sub}</p>
+        </button>
+      ))}
+    </div>
+  );
+
+  /* ─── shared: today's actions list ─── */
+  const TodayActions = (
+    <div className="rounded-xl border border-border/50 bg-card/50 overflow-hidden">
+      {topActions.length > 0 ? (
+        <div className="divide-y divide-border/30">
+          {topActions.map((action, i) => (
+            <button key={i}
+              onClick={() => router.push(action.link)}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/30 transition-colors text-left group"
+            >
+              <div className={cn(
+                "w-1 h-10 rounded-full shrink-0",
+                action.priority === "high" ? "bg-red-400" : "bg-amber-400"
+              )} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-foreground group-hover:text-copper-400 transition-colors">
+                  {action.customerName}
+                </p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  {action.value > 0 && (
+                    <span className="text-xs font-medium text-copper-400">{fmtAED(action.value)}</span>
+                  )}
+                  <span className="text-xs text-muted-foreground">{action.reason}</span>
+                </div>
+              </div>
+              <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-copper-400 shrink-0" />
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="px-5 py-6 text-center">
+          <CheckCircle2 className="w-8 h-8 text-emerald-400/30 mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">{t("dashboard.allClear")}</p>
+        </div>
+      )}
+    </div>
+  );
+
+  /* ─── shared: section header ─── */
+  const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
+    <div className="flex items-center gap-2 mb-3">
+      <div className="w-1 h-4 rounded-full bg-copper-400" />
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      {subtitle && <span className="text-[11px] text-muted-foreground">{subtitle}</span>}
+    </div>
+  );
+
+  /* ════════════════════════════════════════
+     MANAGEMENT VIEW
+     KPI completion → pipeline stat cards → leaderboard → sources → today (compact)
+     ════════════════════════════════════════ */
+  if (isManagement) {
+    return (
+      <div className="space-y-5">
+        {AlertBanner}
+        {Header}
+
+        {/* L1: KPI completion — BIG numbers with progress bars */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: t("kpi.signing"), pct: signingPct, actual: signingActual, target: signingTarget, sub: t("kpi.contracts").replace("{n}", String(contractCount)) },
+            { label: t("kpi.collection"), pct: collectionPct, actual: collectionActual, target: collectionTarget, sub: t("dashboard.ratePct").replace("{n}", String(financeStats.totalContractValue > 0 ? Math.round((financeStats.received / financeStats.totalContractValue) * 100) : 0)) },
+            { label: t("payment.overdue"), pct: null, actual: financeStats.overdue, target: 0, sub: financeStats.overdue > 0 ? `⚠ ${t("dashboard.needsFollowup")}` : t("dashboard.noTargetSet"), alert: financeStats.overdue > 0 },
+            { label: t("dashboard.dueNextWeek"), pct: null, actual: financeStats.dueNextWeek, target: 0, sub: financeStats.dueNextWeek > 0 ? t("dashboard.nPending").replace("{n}", String(financeStats.dueNextWeek)) : t("dashboard.noTargetSet") },
+          ].map(card => (
+            <div key={card.label}
+              className={cn("p-4 rounded-xl border bg-card/50", card.alert ? "border-red-500/30" : "border-border/50")}
+            >
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 font-medium">{card.label}</p>
+              {card.pct !== null ? (
+                <>
+                  <p className={cn("text-[36px] font-bold leading-none", pctColor(card.pct))}>
+                    {card.pct !== null ? `${card.pct}%` : "—"}
+                  </p>
+                  <div className="h-2 bg-muted rounded-full mt-2 mb-1 overflow-hidden">
+                    <div className={cn("h-full rounded-full transition-all", barColor(card.pct))}
+                      style={{ width: `${Math.min(card.pct ?? 0, 100)}%` }} />
+                  </div>
+                </>
+              ) : (
+                <p className={cn("text-[36px] font-bold leading-none", card.alert ? "text-red-400" : "text-foreground")}>
+                  {fmtAED(card.actual)}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">
+                {card.pct !== null ? `${fmtAED(card.actual)} / ${fmtAED(card.target)} · ${card.sub}` : card.sub}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {/* L2: Pipeline stat cards — compact */}
+        {KpiStatCards}
+
+        {/* L3: Sales Leaderboard */}
+        {salesLeaderboard.length > 0 && (
+          <div>
+            <SectionHeader title={t("dashboard.salesLeaderboard")} subtitle={`(${period})`} />
+            <div className="space-y-2">
+              {salesLeaderboard.slice(0, 5).map((s) => (
+                <div key={s.id}
+                  className="p-3 rounded-xl border border-border/50 bg-card/50 hover:bg-accent/30 transition-all cursor-pointer"
+                  onClick={() => router.push(`/leads?assigned_to=${s.id}`)}
+                >
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm font-medium w-24 shrink-0 truncate">{s.name}</span>
+                    <div className="flex-1 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">
+                          {t("dashboard.won")} {fmtAED(s.wonValue)} · {s.wonCount} {t("dashboard.deals")} · {s.totalLeads} {t("leads.title").toLowerCase()} · {s.conversionRate}% {t("dashboard.kpiConv")}
+                        </span>
+                        {s.targetAmount > 0 ? (
+                          <span className={cn("font-medium", s.completionRate <= 0 ? "text-muted-foreground" : s.completionRate >= expectedPct ? "text-emerald-400" : "text-amber-400")}>
+                            {s.completionRate}%
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </div>
+                      {s.targetAmount > 0 && (
+                        <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div className={cn("h-full rounded-full transition-all",
+                            s.completionRate <= 0 ? "bg-muted" : s.completionRate >= expectedPct ? "bg-emerald-500" : "bg-amber-500"
+                          )} style={{ width: `${Math.min(s.completionRate, 100)}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* L4: Lead Sources */}
+        {sourceBreakdown.length > 0 && (
+          <div>
+            <SectionHeader title={t("dashboard.leadSources")} subtitle={`(${sourceBreakdown.reduce((a, b) => a + b.total, 0)} ${t("dashboard.leads")})`} />
+            <div className="space-y-2">
+              {sourceBreakdown.map((s) => {
+                const pct = Math.round((s.total / maxSourceTotal) * 100);
+                const convRate = s.total > 0 ? Math.round((s.won / s.total) * 100) : 0;
+                return (
+                  <div key={s.source} className="p-3 rounded-xl border border-border/50 bg-card/50 group hover:border-copper-400/30 transition-all">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-medium">{s.label}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {s.total} {t("leads.title").toLowerCase()} · {s.won} {t("dashboard.won")} · {convRate}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div className={cn("h-full rounded-full transition-all", convRate >= 30 ? "bg-emerald-500" : convRate >= 10 ? "bg-amber-500" : "bg-muted-foreground/40")}
+                        style={{ width: `${Math.max(pct, 6)}%` }} />
+                    </div>
+                    {s.value > 0 && (
+                      <p className="text-[10px] text-muted-foreground mt-1">{fmtAED(s.value)} {t("dashboard.pipelineValue").toLowerCase()}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* L5: Today's Actions — compressed, small, at very bottom */}
+        {topActions.length > 0 && (
+          <div>
+            <SectionHeader title={t("dashboard.todaysActions")} subtitle={t("dashboard.nItems").replace("{n}", String(topActions.length))} />
+            {TodayActions}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ════════════════════════════════════════
+     SALES VIEW
+     Today's actions → my KPI → my pipeline → sources
+     ════════════════════════════════════════ */
+  return (
+    <div className="space-y-5">
+      {AlertBanner}
+      {Header}
+
+      {/* L1: Today's Actions — THE hero section for sales */}
+      <div>
+        <SectionHeader title={t("dashboard.todaysActions")} subtitle={t("dashboard.whatToDoToday")} />
+        {followupLoading ? (
+          <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">{t("dashboard.loadingActions")}</div>
+        ) : (
+          TodayActions
+        )}
+      </div>
+
+      {/* L2: My KPI progress */}
+      <div>
+        <SectionHeader title={t("dashboard.myProgress")} subtitle={period} />
+        {signingTarget === 0 && collectionTarget === 0 && (
+          <div className="mb-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm">
+            {t("dashboard.noKpiTarget")}
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="p-4 rounded-xl border border-border/50 bg-card/50">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 font-medium">{t("kpi.signing")}</p>
+            <p className={cn("text-[36px] font-bold leading-none", pctColor(signingPct))}>
+              {signingPct !== null ? `${signingPct}%` : "—"}
+            </p>
+            <div className="h-2 bg-muted rounded-full mt-2 mb-1 overflow-hidden">
+              <div className={cn("h-full rounded-full transition-all", barColor(signingPct))}
+                style={{ width: `${Math.min(signingPct ?? 0, 100)}%` }} />
+            </div>
+            <p className="text-xs text-muted-foreground">{fmtAED(signingActual)} / {fmtAED(signingTarget)} · {t("kpi.contracts").replace("{n}", String(contractCount))}</p>
+          </div>
+          <div className="p-4 rounded-xl border border-border/50 bg-card/50">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 font-medium">{t("kpi.collection")}</p>
+            <p className={cn("text-[36px] font-bold leading-none", pctColor(collectionPct))}>
+              {collectionPct !== null ? `${collectionPct}%` : "—"}
+            </p>
+            <div className="h-2 bg-muted rounded-full mt-2 mb-1 overflow-hidden">
+              <div className={cn("h-full rounded-full transition-all", barColor(collectionPct))}
+                style={{ width: `${Math.min(collectionPct ?? 0, 100)}%` }} />
+            </div>
+            <p className="text-xs text-muted-foreground">{fmtAED(collectionActual)} / {fmtAED(collectionTarget)}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* L3: My pipeline stat cards */}
+      {KpiStatCards}
+
+      {/* L4: Lead Sources */}
+      {sourceBreakdown.length > 0 && (
+        <div>
+            <SectionHeader title={t("dashboard.leadSources")} subtitle={`(${sourceBreakdown.reduce((a, b) => a + b.total, 0)} ${t("dashboard.leads")})`} />
+          <div className="space-y-2">
+            {sourceBreakdown.map((s) => {
+              const pct = Math.round((s.total / maxSourceTotal) * 100);
+              const convRate = s.total > 0 ? Math.round((s.won / s.total) * 100) : 0;
+              return (
+                <div key={s.source} className="p-3 rounded-xl border border-border/50 bg-card/50">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-medium">{s.label}</span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {s.total} leads · {s.won} won · {convRate}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div className={cn("h-full rounded-full transition-all", convRate >= 30 ? "bg-emerald-500" : convRate >= 10 ? "bg-amber-500" : "bg-muted-foreground/40")}
+                      style={{ width: `${Math.max(pct, 6)}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -34,49 +34,56 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  let userId: string | null = null;
   try {
-    const session = JSON.parse(decodeURIComponent(authCookie.value));
-    const accessToken = session?.access_token;
-
-    if (!accessToken) {
-      const loginUrl = new URL("/login", request.url);
-      return NextResponse.redirect(loginUrl);
-    }
-
-    // Decode JWT payload
-    const payload = JSON.parse(
-      Buffer.from(accessToken.split(".")[1], "base64").toString()
-    );
-    const userId = payload.sub;
-
-    if (!userId) {
-      const loginUrl = new URL("/login", request.url);
-      return NextResponse.redirect(loginUrl);
-    }
-
-    // Fetch role from profiles
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      return NextResponse.next();
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseKey);
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", userId)
-      .single();
-
-    const userRole = profile?.role;
-
-    if (!userRole || !requiredRoles.includes(userRole)) {
-      const dashboardUrl = new URL("/dashboard", request.url);
-      return NextResponse.redirect(dashboardUrl);
+    const rawValue = decodeURIComponent(authCookie.value);
+    // Supabase stores cookie as either JSON session or raw JWT base64
+    if (rawValue.startsWith("{")) {
+      const session = JSON.parse(rawValue);
+      const accessToken = session?.access_token;
+      if (accessToken) {
+        const payload = JSON.parse(
+          Buffer.from(accessToken.split(".")[1], "base64").toString()
+        );
+        userId = payload?.sub || null;
+      }
+    } else {
+      // Direct JWT token (base64-encoded, starts with "ey")
+      const payload = JSON.parse(
+        Buffer.from(rawValue.split(".")[1], "base64").toString()
+      );
+      userId = payload?.sub || null;
     }
   } catch (e) {
     console.error("Proxy auth check error:", e);
+  }
+
+  if (!userId) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("redirect", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  // Fetch role from profiles
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return NextResponse.next();
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .single();
+
+  const userRole = profile?.role;
+
+  if (!userRole || !requiredRoles.includes(userRole)) {
+    const dashboardUrl = new URL("/dashboard", request.url);
+    return NextResponse.redirect(dashboardUrl);
   }
 
   return NextResponse.next();

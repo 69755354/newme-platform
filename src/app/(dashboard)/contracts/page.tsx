@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
-import { FileText, DollarSign, Calendar, User, Clock, Briefcase, Plus, Bell, CheckCircle, AlertTriangle } from "lucide-react";
+import { FileText, DollarSign, Calendar, User, Clock, Briefcase, Plus, Bell, CheckCircle, AlertTriangle, Upload, Ban, CheckCircle2, XCircle } from "lucide-react";
 import SubNavTabs from "@/components/SubNavTabs";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -27,25 +27,32 @@ export default function ContractsPage() {
   const { t, lang } = useLanguage();
 
   const STATUS_LABELS: Record<string, string> = {
-    draft: t("contracts.statusDraft"), signed: t("contracts.statusSigned"), active: t("contracts.statusActive"),
-    completed: t("contracts.statusCompleted"), terminated: t("contracts.statusTerminated"), expired: t("contracts.statusExpired"),
+    draft: t("contracts.statusDraft"),
+    pending_admin: t("contracts.statusPendingAdmin"),
+    pending_ceo: t("contracts.statusPendingCeo"),
+    signed: t("contracts.statusSigned"),
+    active: t("contracts.statusActive"),
+    approved: t("contracts.statusApproved"),
+    completed: t("contracts.statusCompleted"),
+    terminated: t("contracts.statusTerminated"),
+    expired: t("contracts.statusExpired"),
+    rejected: t("contracts.statusRejected"),
+    revoking: t("contracts.statusRevoking"),
+    superseded: t("contracts.statusSuperseded"),
+    suspended: t("contracts.statusSuspended"),
   };
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
 
   const statusLabel = (s: string) => {
-    const map: Record<string, string> = {
-      draft: t("contracts.statusDraft"),
-      signed: t("contracts.statusSigned"),
-      active: t("contracts.statusActive"),
-      completed: t("contracts.statusCompleted"),
-      terminated: t("contracts.statusTerminated"),
-      expired: t("contracts.statusExpired"),
-    };
-    return map[s] || s;
+    return STATUS_LABELS[s] || s;
   };
 
   // First payment status helper
@@ -86,6 +93,134 @@ export default function ContractsPage() {
     }
   }
 
+  // Approval / Reject action
+  async function handleApproval(contractId: string, action: "approve" | "reject") {
+    let notes: string | undefined;
+    if (action === "reject") {
+      const input = prompt(t("contracts.rejectPrompt"));
+      if (input === null) return; // cancelled
+      notes = input || undefined;
+    }
+    try {
+      const res = await fetch(`/api/contracts/${contractId}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...(notes ? { notes } : {}) }),
+      });
+      if (res.ok) {
+        toast.success(t("contracts.approvalSuccess"));
+        window.location.reload();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || t("contracts.approvalFailed"));
+      }
+    } catch {
+      toast.error(t("contracts.approvalFailed"));
+    }
+  }
+
+  // Revoke action
+  async function handleRevoke(contractId: string) {
+    const reason = prompt(t("contracts.revokePrompt"));
+    if (!reason) return;
+    try {
+      const res = await fetch(`/api/contracts/${contractId}/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (res.ok) {
+        toast.success(t("contracts.revokeSuccess"));
+        window.location.reload();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || t("contracts.revokeFailed"));
+      }
+    } catch {
+      toast.error(t("contracts.revokeFailed"));
+    }
+  }
+
+  // Upload contract file
+  function startUpload(contractId: string) {
+    setUploadTargetId(contractId);
+    // Use the ref to trigger file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+      fileInputRef.current.click();
+    }
+  }
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !uploadTargetId) return;
+    const id = uploadTargetId;
+    setUploadingId(id);
+    setUploadProgress(0);
+    try {
+      // 1. Get presigned URL
+      const urlRes = await fetch(`/api/contracts/${id}/upload-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name }),
+      });
+      if (!urlRes.ok) {
+        const err = await urlRes.json().catch(() => ({}));
+        toast.error(err.error || t("contracts.uploadFailed"));
+        setUploadingId(null);
+        return;
+      }
+      const { url, key } = await urlRes.json();
+
+      // 2. Upload to COS with progress
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", url);
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) setUploadProgress(Math.round((ev.loaded / ev.total) * 100));
+        };
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("Upload failed")));
+        xhr.onerror = () => reject(new Error("Upload failed"));
+        xhr.send(file);
+      });
+
+      // 3. Confirm upload
+      const confirmRes = await fetch(`/api/contracts/${id}/confirm-upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, filename: file.name, size: file.size }),
+      });
+      if (confirmRes.ok) {
+        toast.success(t("contracts.uploadSuccess"));
+        window.location.reload();
+      } else {
+        const err = await confirmRes.json().catch(() => ({}));
+        toast.error(err.error || t("contracts.uploadFailed"));
+      }
+    } catch {
+      toast.error(t("contracts.uploadFailed"));
+    } finally {
+      setUploadingId(null);
+      setUploadProgress(0);
+      setUploadTargetId(null);
+    }
+  }
+
+  // Check which approval buttons to show
+  const canApproveReject = (c: Contract) => {
+    if (c.status === "pending_admin" && (role === "admin" || role === "operator")) return true;
+    if (c.status === "pending_ceo" && role === "boss") return true;
+    return false;
+  };
+
+  const canUpload = (c: Contract) => {
+    return ["draft", "pending_admin", "pending_ceo"].includes(c.status);
+  };
+
+  const canRevoke = (c: Contract) => {
+    return (role === "admin" || role === "boss") && ["active", "approved"].includes(c.status);
+  };
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
@@ -115,7 +250,7 @@ export default function ContractsPage() {
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
 
   const fmtAED = (v: number) => v >= 1_000_000 ? `AED ${(v/1_000_000).toFixed(1)}M` : `AED ${v.toLocaleString()}`;
-  const totalActive = contracts.reduce((s, c) => ["signed","active"].includes(c.status) ? s + c.contract_amount : s, 0);
+  const totalActive = contracts.reduce((s, c) => ["signed","active","approved"].includes(c.status) ? s + c.contract_amount : s, 0);
 
   return (
     <div className="space-y-0">
@@ -133,6 +268,15 @@ export default function ContractsPage() {
         </Link>
       </div>
 
+      {/* Hidden file input for uploads */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+        onChange={handleFileSelected}
+      />
+
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.total")}</p><p className="text-xl font-bold">{contracts.length}</p></CardContent></Card>
@@ -148,6 +292,10 @@ export default function ContractsPage() {
         ) : contracts.map(c => {
           const fpBadge = getFirstPaymentBadge(c);
           const needsReminder = (c.first_payment_status || "unpaid") !== "paid";
+          const showApproveReject = canApproveReject(c);
+          const showUpload = canUpload(c);
+          const showRevoke = canRevoke(c);
+          const isUploading = uploadingId === c.id;
           return (
           <Card key={c.id} className="bg-card border-border hover:border-border transition-colors">
             <CardContent className="p-4">
@@ -186,16 +334,63 @@ export default function ContractsPage() {
                     </div>
                   )}
                 </div>
-                {/* Send Reminder button for unpaid/overdue first payments */}
-                {needsReminder && (
-                  <Button
-                    size="sm" variant="outline"
-                    onClick={() => sendReminder(c.id)}
-                    className="shrink-0 ml-2 border-copper-500/30 text-copper-400 hover:bg-copper-500/10 text-xs h-8"
-                  >
-                    <Bell className="w-3 h-3 mr-1" />Remind
-                  </Button>
-                )}
+                {/* Action buttons */}
+                <div className="flex items-center gap-1.5 shrink-0 ml-2 flex-wrap justify-end">
+                  {/* Send Reminder button for unpaid/overdue first payments */}
+                  {needsReminder && (
+                    <Button
+                      size="sm" variant="outline"
+                      onClick={() => sendReminder(c.id)}
+                      className="border-copper-500/30 text-copper-400 hover:bg-copper-500/10 text-xs h-8"
+                    >
+                      <Bell className="w-3 h-3 mr-1" />Remind
+                    </Button>
+                  )}
+                  {/* Approve / Reject buttons */}
+                  {showApproveReject && (
+                    <>
+                      <Button
+                        size="sm" variant="outline"
+                        onClick={() => handleApproval(c.id, "approve")}
+                        className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 text-xs h-8"
+                      >
+                        <CheckCircle2 className="w-3 h-3 mr-1" />{t("contracts.approve")}
+                      </Button>
+                      <Button
+                        size="sm" variant="outline"
+                        onClick={() => handleApproval(c.id, "reject")}
+                        className="border-rose-500/30 text-rose-400 hover:bg-rose-500/10 text-xs h-8"
+                      >
+                        <XCircle className="w-3 h-3 mr-1" />{t("contracts.reject")}
+                      </Button>
+                    </>
+                  )}
+                  {/* Upload Contract button */}
+                  {showUpload && (
+                    <Button
+                      size="sm" variant="outline"
+                      onClick={() => startUpload(c.id)}
+                      disabled={isUploading}
+                      className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs h-8"
+                    >
+                      {isUploading ? (
+                        <>{t("contracts.uploading")} {uploadProgress}%</>
+                      ) : (
+                        <><Upload className="w-3 h-3 mr-1" />{t("contracts.uploadContract")}</>
+                      )}
+                    </Button>
+                  )}
+                  {/* Revoke button */}
+                  {showRevoke && (
+                    <Button
+                      size="sm" variant="outline"
+                      onClick={() => handleRevoke(c.id)}
+                      className="border-orange-500/30 text-orange-400 hover:bg-orange-500/10 text-xs h-8"
+                    >
+                      <Ban className="w-3 h-3 mr-1" />{t("contracts.revoke")}
+                    </Button>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>

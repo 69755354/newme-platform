@@ -40,6 +40,8 @@ interface Quotation {
   ppt_url: string | null;
   devices_json: Record<string, { name: string; qty: number; unit_price: number; line_total: number; unit?: string }> | null;
   notes: string | null;
+  contract_id?: string | null;
+  contract_no?: string | null;
   created_at: string;
   leads: { customer_name: string | null; phone: string | null } | null;
 }
@@ -58,8 +60,10 @@ const STATUS_STYLES: Record<string, { color: string; bg: string; border: string 
   accepted: { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
   rejected: { color: "text-rose-400", bg: "bg-rose-500/10", border: "border-rose-500/20" },
   expired: { color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20" },
+  contract_created: { color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/20" },
+  won: { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
 };
-const QUOTE_STATUSES = ["draft", "sent", "accepted", "rejected", "expired"];
+const QUOTE_STATUSES = ["draft", "sent", "accepted", "rejected", "expired", "contract_created", "won"];
 
 /* ─── Helpers ─── */
 function fmtAED(v: number | null | undefined): string {
@@ -87,6 +91,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
   const { t } = useLanguage();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [loadingDownload, setLoadingDownload] = useState<string | null>(null);
+  const [loadingConvert, setLoadingConvert] = useState(false);
   const [activeStatus, setActiveStatus] = useState("");
 
   useEffect(() => {
@@ -172,6 +177,22 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
     setActiveStatus(newStatus);
     onStatusChange(quote.id, newStatus);
     toast.success(`${t("quotes.statusChangedTo")} ${t("quotes." + newStatus)}`);
+  };
+
+  const handleConvert = async () => {
+    setLoadingConvert(true);
+    try {
+      const res = await fetch(`/api/quotations/${quote.id}/convert`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Conversion failed");
+      toast.success(`Contract ${data.contract_no} created successfully`);
+      onStatusChange(quote.id, "contract_created");
+      setActiveStatus("contract_created");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to convert to contract");
+    } finally {
+      setLoadingConvert(false);
+    }
   };
 
   // Calculate service amounts (approximate from engine defaults)
@@ -361,6 +382,31 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
           >
             <XCircle className="w-3 h-3" /> Reject
           </Button>
+
+          {/* Convert to Contract */}
+          {quote.status === "accepted" && !quote.contract_id && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs gap-1.5 text-purple-400 border-purple-500/20 hover:bg-purple-500/10"
+              onClick={handleConvert}
+              disabled={loadingConvert}
+            >
+              <FileText className="w-3 h-3" />
+              {loadingConvert ? "Converting..." : "Convert to Contract"}
+            </Button>
+          )}
+
+          {/* Contract link */}
+          {quote.contract_id && (
+            <a
+              href="/contracts"
+              className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              <ExternalLink className="w-3 h-3" />
+              {quote.contract_no || "View Contract"}
+            </a>
+          )}
 
           <div className="flex-1" />
 

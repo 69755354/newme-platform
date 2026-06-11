@@ -275,6 +275,72 @@ export async function POST(request: NextRequest) {
       break;
     }
 
+    case "contract_pending_approval": {
+      const { contract_id, contract_no, amount } = body as {
+        contract_id?: string;
+        contract_no?: string;
+        amount?: number;
+      };
+      if (!contract_id) {
+        return NextResponse.json({ error: "contract_id required" }, { status: 400 });
+      }
+      const adminIds = await getAdminUserIds();
+      if (adminIds.length > 0) {
+        await createNotificationsBulk(
+          adminIds.map((id) => ({
+            userId: id,
+            type: "contract_pending_approval",
+            title: `Contract pending approval: ${contract_no || "Untitled"}`,
+            body: notifBody || `Contract ${contract_no || contract_id}${amount ? ` (AED ${amount.toLocaleString()})` : ""} is awaiting admin review.`,
+            relatedId: contract_id,
+            relatedType: "contract",
+          }))
+        );
+      }
+      break;
+    }
+
+    case "contract_approved":
+    case "contract_rejected": {
+      const { contract_id, contract_no, action: approvalAction, step, approver_name, target_user_id } = body as {
+        contract_id?: string;
+        contract_no?: string;
+        action?: string;
+        step?: string;
+        approver_name?: string;
+        target_user_id?: string;
+      };
+      if (!contract_id) {
+        return NextResponse.json({ error: "contract_id required" }, { status: 400 });
+      }
+      const wasApproved = type === "contract_approved";
+      const recipients: string[] = [];
+      // Notify the contract salesperson
+      if (target_user_id) {
+        recipients.push(target_user_id);
+      }
+      // Also notify other admins
+      const adminIds = await getAdminUserIds();
+      for (const id of adminIds) {
+        if (!recipients.includes(id)) {
+          recipients.push(id);
+        }
+      }
+      if (recipients.length > 0) {
+        await createNotificationsBulk(
+          recipients.map((id) => ({
+            userId: id,
+            type,
+            title: `Contract ${wasApproved ? "approved" : "rejected"}: ${contract_no || "Untitled"}`,
+            body: notifBody || `${approver_name || "Approver"} ${wasApproved ? "approved" : "rejected"} contract ${contract_no || contract_id} at step ${step || "unknown"}.`,
+            relatedId: contract_id,
+            relatedType: "contract",
+          }))
+        );
+      }
+      break;
+    }
+
     case "payment_received": {
       const { payment_id, contract_id: payContractId, amount: payAmount } = body as {
         payment_id?: string;

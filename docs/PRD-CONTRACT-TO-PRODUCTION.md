@@ -169,6 +169,75 @@ CEO 驾驶舱内 → 待确认回款列表 → 看到回款详情（金额、方
 
 在 `/api/projects/[id]/phase` API 中实现，不用 DB trigger。
 
+### 3.7 报价→合同衔接
+
+**现状：** 报价系统已有完整功能（quotations 表 + quote-wizard 5 步流程 + quotation-engine 计算引擎 + generate/calculate/export API），但报价与合同之间无数据桥梁。销售需在合同创建表单中手动重新填写报价里已有的全部字段。
+
+**衔接目标：** 报价 `accepted` 后一键生成合同，自动携带报价数据，零手工重复录入。
+
+**报价状态机扩展：**
+
+```
+draft → sent → accepted → won → contract_created
+                ↓
+            rejected
+sent → expired（超 valid_until）
+```
+
+在现有 5 状态基础上新增 `won`（客户确认签约）和 `contract_created`（合同已生成）两个终端状态。`accepted` 保留语义（客户接受报价方案），`won` 表示商业上成交。
+
+**转换 API 设计：**
+
+新增 `POST /api/quotations/[id]/convert-to-contract`：
+
+| 输入字段 | 来源 | 说明 |
+|----------|------|------|
+| quotation_id | URL path | 必须是 `accepted` 或 `won` 状态 |
+| installments | Sales 填写 | 分期方案（沿用现有 installment_plans 结构） |
+| party_a_name | quotations.leads.customer_name | 可修改 |
+| party_a_contact | quotations.leads.phone | 可修改 |
+| party_b_name | 固定 "NewMe Smart Home FZCO" | 可修改 |
+| first_payment_due_date | Sales 填写 | 首期到期日 |
+
+**自动填充字段（从 quotation 复制，Sales 可在创建后修改）：**
+
+| 合同字段 | 报价来源字段 |
+|----------|------------|
+| contract_amount | quotations.total_amount |
+| currency | quotations.currency |
+| lead_id | quotations.lead_id |
+| sales_id | quotations.created_by |
+| discount_rate（校验用） | quotations.discount_rate |
+| devices_json（参考用） | quotations.devices_json |
+
+**转换事务（原子操作）：**
+
+```
+1. 验证 quotation.status IN ('accepted', 'won')
+2. 验证该 quotation 未关联已有合同（避免重复创建）
+3. INSERT contracts（status='draft', 自动填充上述字段）
+4. INSERT installment_plans（关联新合同）
+5. UPDATE quotations SET status = 'contract_created'
+6. INSERT activities（type='contract_created', content='报价 XX 已转为合同 YY'）
+7. UPDATE leads SET stage = 'contract_pending'（新阶段，待审批）
+```
+
+步骤 2-7 任一失败全部回滚。
+
+**quotations 表变更：**
+
+- 新增列 `contract_id UUID REFERENCES contracts(id)` — 标记已转换的报价关联的合同
+- 新增列 `quotation_type TEXT DEFAULT 'standard'` — 预留报价类型（standard/change_order/supplementary）
+
+**反向查询：** 合同详情页（`/contracts/[id]`）显示原始报价信息：报价编号、报价金额、设备清单、折扣率。从 `contracts.lead_id` 反查 `quotations` WHERE `contract_id = contracts.id`。
+
+**前端交互：**
+
+1. `/quotes` 列表页：状态为 `accepted` 的报价卡片新增「生成合同」按钮
+2. 点击后弹出合同创建弹窗：显示报价摘要（只读）+ 分期方案表单 + 甲乙方信息（预填可改）
+3. 提交后跳转 `/contracts/[new_id]`（合同详情页，状态为 `draft`）
+4. 合同详情页的「来源报价」区域：点击报价编号可在弹窗中查看原始报价明细
+
 ### 3.6 KPI 自动关联
 
 **改造 `/api/kpi/targets` GET：**
@@ -187,7 +256,9 @@ CEO 驾驶舱内 → 待确认回款列表 → 看到回款详情（金额、方
 |------|------|---------|
 | `/contracts` | 改造 | 新增审批状态 Tab（全部/待审批/生效中/已暂停）；Admin/Boss 看审批按钮；Sales 看录入回款按钮 |
 | `/contracts/new` | 改造 | 提交后 status=draft；增加合同文件上传区域（直传 COS）；校验反馈（折扣率、首付比例红色警告） |
-| `/contracts/[id]` | 新建 | 合同详情：基本信息 + 审批时间线 + 分期列表 + 回款记录 + 核销明细 + 文件预览区 |
+| `/quotes` | 改造 | `accepted` 状态报价卡片新增「生成合同」按钮；报价状态扩展 won/contract_created |
+| 报价→合同弹窗 | 新建 | 从报价一键生成合同：显示报价摘要（只读）+ 分期方案表单 + 甲乙方（预填可改）+ 提交跳转合同详情 |
+| `/contracts/[id]` | 新建 | 合同详情：基本信息 + 来源报价区域（报价编号→弹窗查看明细）+ 审批时间线 + 分期列表 + 回款记录 + 核销明细 + 文件预览区 |
 | 回款弹窗组件 | 新建 | 选分期 → 填金额 → 自动校验不超期应付 → 提交；支持一笔回款拆分多期 |
 | 回款确认队列 | 新建 | CEO 驾驶舱内：待确认回款列表 → 逐条或批量确认 |
 | `/projects` | 改造 | 项目阶段推进按钮；推进时自动触发对应分期到期 |
@@ -251,5 +322,6 @@ CEO 驾驶舱内 → 待确认回款列表 → 看到回款详情（金额、方
 | 文件管理 | 每个生效合同都有至少 1 份文件（draft 或 sealed） |
 | 回款核销 | 一笔回款可拆分核销到多期，数据不锁死 |
 | 自动催收 | 逾期分期在 24h 内产生通知 |
+| 报价→合同衔接 | accepted 报价一键生成合同，数据自动填充；合同详情可查看来源报价明细 |
 | 事务完整性 | confirm_payment RPC 执行中任何一步失败，全部回滚 |
 | KPI 可见 | Boss 能看到每个销售的签约额/回款额 vs 目标 |

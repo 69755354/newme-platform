@@ -7,6 +7,7 @@ import { supabaseAdmin } from "./supabase-admin";
 export const VALID_NOTIFICATION_TYPES = [
   "lead_created", "lead_assigned", "lead_stage_change", "lead_stage_changed",
   "quote_created", "contract_created", "contract_signed",
+  "contract_pending_approval", "contract_approved", "contract_rejected",
   "payment_due", "payment_overdue", "payment_received",
   "kpi_target_set", "followup_reminder", "team_member_added",
   "follow_up_overdue", "first_payment_reminder",

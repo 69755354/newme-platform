@@ -4,7 +4,7 @@
 
 ## 总原则
 
-**每个 Phase 独立验收，不通过不进下一个。** 验收以 curl 命令 + 页面截图 + 数据库查询三维验证。
+**Phase 1 是所有轨道的前置依赖，必须先通过验收。之后 Track A/B/C/D 并行验收，互不阻塞。Phase 4 依赖 Track A + Track B 完成后串行验收。** 验收以 curl 命令 + 页面截图 + 数据库查询三维验证。
 
 ---
 
@@ -406,29 +406,144 @@ curl -X POST https://app.newme.ae/api/contracts/<contract_id>/upload-url \
 
 ---
 
-## 全局验收（Phase 1-5 全部完成后）
+## Phase 6 验收：报价→合同衔接
 
-### E2E 场景测试：完整合同生命周期
+### V6.1 — quotations 表变更
 
+```sql
+-- 验证 quotations 新字段
+SELECT column_name, column_default FROM information_schema.columns
+WHERE table_name = 'quotations' AND column_name IN ('contract_id', 'quotation_type');
+-- 预期: contract_id (NULL), quotation_type (DEFAULT 'standard')
+
+-- 验证 status CHECK 包含 won 和 contract_created
+SELECT con.conname, pg_get_constraintdef(con.oid)
+FROM pg_constraint con JOIN pg_class rel ON rel.oid = con.conrelid
+WHERE rel.relname = 'quotations' AND con.conname LIKE '%status%';
+-- 预期: 包含 'won', 'contract_created'
 ```
-1. Sales 创建合同 → status=draft ✓
-2. 上传合同草稿 PDF → file_url 更新 ✓
-3. Admin 审批通过 → status=pending_ceo ✓
-4. CEO 审批通过 → status=approved → active ✓
-5. Admin 上传盖章版 → sealed_file_url 更新 ✓
-6. Sales 录入回款 25,000 AED → payment 创建 ✓
-7. Sales 分配核销: 第1期 20,000 + 第2期 5,000 ✓
-8. CEO 确认回款 → 全链路联动（分期状态、项目金额、KPI、通知）✓
-9. 项目推进到 procurement → 第2期 due_date 自动更新 ✓
-10. Cron 逾期扫描 → 逾期分期标记 overdue + 通知 ✓
-11. Sales 录入尾款 → 核销 → 确认 → 全部 paid ✓
-12. 合同 status 自动变为 completed ✓
+
+**通过标准:** 新字段存在，status 约束包含新状态。
+
+### V6.2 — 报价→合同转换（正常流程）
+
+```bash
+# 前置: 创建一个 accepted 状态的报价
+curl -X PATCH https://app.newme.ae/api/quotations/<quotation_id>/status \
+  -H "Cookie: <sales_session_cookie>" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "accepted"}'
+
+# 从报价生成合同
+curl -X POST https://app.newme.ae/api/quotations/<quotation_id>/convert-to-contract \
+  -H "Cookie: <sales_session_cookie>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "installments": [
+      {"seq": 1, "amount": 20000, "due_date": "2026-07-01"},
+      {"seq": 2, "amount": 30000, "due_date": "2026-09-01"}
+    ],
+    "party_a_name": "Test Customer",
+    "first_payment_due_date": "2026-07-01"
+  }'
+
+# 预期:
+# 1. 返回新合同 ID 和 contract_no
+# 2. contract.status = "draft"
+# 3. contract.contract_amount = quotation.total_amount
+# 4. contract.lead_id = quotation.lead_id
+# 5. quotation.status = "contract_created"
+# 6. quotation.contract_id = 新合同 ID
+# 7. installment_plans 有 2 条记录
+# 8. contract_approvals 有 1 条 pending 记录
+# 9. activities 有 contract_created 记录
+# 10. leads.stage = "contract_pending"
 ```
 
 **通过标准:**
-- [ ] 12 步全部通过
+- [ ] 以上 10 项全部正确
+- [ ] 合同金额 = 报价金额（数据一致性）
+- [ ] 合同自动进入审批流（draft → admin_review pending）
+
+### V6.3 — 重复转换防护
+
+```bash
+# 尝试再次转换同一个报价（应被拒绝）
+curl -X POST https://app.newme.ae/api/quotations/<quotation_id>/convert-to-contract \
+  -H "Cookie: <sales_session_cookie>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "installments": [
+      {"seq": 1, "amount": 10000, "due_date": "2026-07-01"}
+    ]
+  }'
+
+# 预期: 400 error "Quotation already converted to contract"
+```
+
+**通过标准:**
+- [ ] 已转换的报价不可再次转换
+- [ ] 错误信息清晰
+
+### V6.4 — 状态校验
+
+```bash
+# 尝试转换 draft 状态的报价（应被拒绝）
+curl -X POST https://app.newme.ae/api/quotations/<draft_quotation_id>/convert-to-contract \
+  -H "Cookie: <sales_session_cookie>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "installments": [
+      {"seq": 1, "amount": 10000, "due_date": "2026-07-01"}
+    ]
+  }'
+
+# 预期: 400 error "Quotation must be in accepted or won status"
+```
+
+**通过标准:**
+- [ ] 非 accepted/won 状态的报价被拒绝
+
+### V6.5 — 前端验证
+
+- [ ] `/quotes` 列表页：`accepted` 状态报价显示「生成合同」按钮
+- [ ] `/quotes` 列表页：`contract_created` 状态报价显示关联合同编号（可点击跳转）
+- [ ] 转换弹窗：显示报价摘要（报价编号、金额、设备清单）为只读
+- [ ] 转换弹窗：分期方案可动态添加行
+- [ ] 转换弹窗：甲乙方信息预填且可修改
+- [ ] 提交后跳转到 `/contracts/[new_id]`
+- [ ] 合同详情页「来源报价」区域：显示报价编号、金额、折扣率
+- [ ] 点击报价编号可弹窗查看报价明细
+
+---
+
+## 全局验收（Phase 1-6 全部完成后）
+
+### E2E 场景测试：完整合同生命周期（含报价衔接）
+
+```
+0. Sales 创建报价 → status=draft ✓
+1. Sales 发送报价 → status=sent ✓
+2. 客户接受 → status=accepted ✓
+3. Sales 从报价生成合同 → 报价 status=contract_created, 合同 status=draft ✓
+4. 上传合同草稿 PDF → file_url 更新 ✓
+5. Admin 审批通过 → status=pending_ceo ✓
+6. CEO 审批通过 → status=approved → active ✓
+7. Admin 上传盖章版 → sealed_file_url 更新 ✓
+8. Sales 录入回款 25,000 AED → payment 创建 ✓
+9. Sales 分配核销: 第1期 20,000 + 第2期 5,000 ✓
+10. CEO 确认回款 → 全链路联动（分期状态、项目金额、KPI、通知）✓
+11. 项目推进到 procurement → 第2期 due_date 自动更新 ✓
+12. Cron 逾期扫描 → 逾期分期标记 overdue + 通知 ✓
+13. Sales 录入尾款 → 核销 → 确认 → 全部 paid ✓
+14. 合同 status 自动变为 completed ✓
+```
+
+**通过标准:**
+- [ ] 15 步全部通过
 - [ ] 全程数据一致（可查 SQL 验证）
 - [ ] 通知在每个关键节点正确触发
+- [ ] 报价→合同时数据正确传递（金额、lead、设备）
 
 ### 数据一致性终检
 
@@ -468,13 +583,36 @@ GROUP BY p.id, p.name, p.paid_amount;
 
 ---
 
+## Sprint 结构（并行执行）
+
+```
+Sprint 0 (前置):  Phase 1 — 数据基础 (2h)
+    │
+Sprint 1 (并行): ┬ Track A: Phase 2 — 审批流 (4h)
+                 ├ Track B: Phase 3 — 回款 (3h)
+                 ├ Track C: Phase 5 — 文件上传 (2h)
+                 └ Track D: Phase 6 — 报价→合同衔接 (3h)
+    │
+Sprint 2 (串行):  Phase 4 — 自动化联动 (2h)
+    │
+Sprint 3 (终验):  E2E 全链路 + 数据一致性终检
+```
+
+**Sprint 1 并行验收规则：**
+- Track A/B/C/D 各自独立验收，互不阻塞
+- Track 内部：Task 完成后立即验收该 Task，不等到 Sprint 结束
+- 跨 Track 共享的合同详情页由 Track A 创建骨架，Track B/C/D 验收时检查各自区域
+
+---
+
 ## 验收签署
 
-| Phase | 验收人 | 日期 | 结果 |
-|-------|--------|------|------|
-| Phase 1 — 数据基础 | | | ☐ PASS / ☐ FAIL |
-| Phase 2 — 审批流 | | | ☐ PASS / ☐ FAIL |
-| Phase 3 — 回款 | | | ☐ PASS / ☐ FAIL |
-| Phase 4 — 自动化 | | | ☐ PASS / ☐ FAIL |
-| Phase 5 — 文件 | | | ☐ PASS / ☐ FAIL |
-| E2E 全链路 | | | ☐ PASS / ☐ FAIL |
+| Phase | Track | 验收人 | 日期 | 结果 |
+|-------|-------|--------|------|------|
+| Sprint 0 — Phase 1 数据基础 | — | | | ☐ PASS / ☐ FAIL |
+| Sprint 1 Track A — Phase 2 审批流 | A | | | ☐ PASS / ☐ FAIL |
+| Sprint 1 Track B — Phase 3 回款 | B | | | ☐ PASS / ☐ FAIL |
+| Sprint 1 Track C — Phase 5 文件上传 | C | | | ☐ PASS / ☐ FAIL |
+| Sprint 1 Track D — Phase 6 报价衔接 | D | | | ☐ PASS / ☐ FAIL |
+| Sprint 2 — Phase 4 自动化联动 | — | | | ☐ PASS / ☐ FAIL |
+| Sprint 3 — E2E 全链路 | — | | | ☐ PASS / ☐ FAIL |

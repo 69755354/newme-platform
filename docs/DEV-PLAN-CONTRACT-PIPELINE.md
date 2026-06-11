@@ -34,6 +34,13 @@
 | 合同创建页 | `src/app/(dashboard)/contracts/new/page.tsx` | ✅ 有，需改造 |
 | 回款页 | `src/app/(dashboard)/payments/page.tsx` | ✅ 有，需改造 |
 | 项目页 | `src/app/(dashboard)/projects/page.tsx` | ✅ 有，需改造 |
+| 报价计算引擎 | `src/lib/quotation-engine.ts` | ✅ 完整，含 calculateQuotation() |
+| 报价生成 API | `src/app/api/quotations/generate/route.ts` | ✅ 完整，生成报价+更新 lead stage |
+| 报价计算 API | `src/app/api/quotations/calculate/route.ts` | ✅ 完整，实时计算不保存 |
+| 报价导出 API | `src/app/api/quotations/export/route.ts` | ✅ 有 |
+| 报价列表页 | `src/app/(dashboard)/quotes/quotes-client.tsx` | ✅ 完整，需改造（加生成合同按钮） |
+| 报价向导 | `src/app/(dashboard)/quotes/quote-wizard.tsx` | ✅ 完整，5 步流程 |
+| 报价详情弹窗 | `src/app/(dashboard)/quotes/quote-detail-dialog.tsx` | ✅ 完整，可复用 |
 
 ### 现有数据库表
 
@@ -43,7 +50,7 @@
 | installment_plans | ✅ 有，含 paid_amount | 加 allocated_amount、改 status CHECK |
 | payments | ✅ 有，含 installment_plan_id | 删 installment_plan_id 绑定、核销走 allocations |
 | projects | ✅ 有，含 paid_amount | 无需改表，联动写 API 层 |
-| quotations | ✅ 有，含 total_amount | 无需改，校验时读 |
+| quotations | ✅ 有，含 total_amount/discount_rate/devices_json | 加 contract_id、quotation_type 列；扩展 status CHECK 加 won/contract_created |
 | notifications | ✅ 有 | 加 contract_rejected 类型 |
 | kpi_targets | ✅ 有 | 加 actual_amount 冗余字段 |
 
@@ -400,6 +407,107 @@ POST:
 - [ ] 文件不过境 Next.js 服务器（直传 COS）
 - [ ] 合同详情页可预览/下载已上传文件
 
+### Phase 6 — 报价→合同衔接
+
+**目标：** 报价 `accepted` 后一键生成合同，消除手动重复录入，数据自动流转。
+
+**Task 6.1: quotations 表变更**
+```
+文件: supabase/migrations/20260612000002_quotation_contract_bridge.sql
+
+1. quotations 表新增列:
+   - contract_id UUID REFERENCES contracts(id) — 标记已转换的报价
+   - quotation_type TEXT DEFAULT 'standard' CHECK (quotation_type IN ('standard', 'change_order', 'supplementary'))
+
+2. quotations 表扩展 status CHECK:
+   - 新增 'won', 'contract_created' 两个状态
+
+3. leads.stage 新增值:
+   - 'contract_pending'（报价转合同后 lead 阶段推进）
+```
+
+**Task 6.2: 新建 POST /api/quotations/[id]/convert-to-contract**
+```
+文件: src/app/api/quotations/[id]/convert-to-contract/route.ts
+
+Zod Schema:
+  installments: z.array(z.object({
+    seq: z.number().int().min(1),
+    amount: z.number().positive(),
+    due_date: z.string(),
+    description: z.string().optional(),
+  })).min(1),
+  party_a_name: z.string().optional(),
+  party_a_contact: z.string().optional(),
+  party_b_name: z.string().optional(),
+  first_payment_due_date: z.string().optional(),
+
+权限: sales/admin/boss
+
+事务流程（原子）:
+  1. FETCH quotation WHERE id = [id] AND status IN ('accepted', 'won')
+  2. 验证 quotation.contract_id IS NULL（未转换过）
+  3. FETCH lead (customer_name, phone) via quotation.lead_id
+  4. INSERT contracts:
+     - lead_id = quotation.lead_id
+     - sales_id = quotation.created_by
+     - contract_amount = quotation.total_amount
+     - currency = quotation.currency
+     - status = 'draft'
+     - party_a_name = body.party_a_name || lead.customer_name
+     - party_a_contact = body.party_a_contact || lead.phone
+     - party_b_name = body.party_b_name || 'NewMe Smart Home FZCO'
+  5. INSERT installment_plans（关联新合同）
+  6. INSERT contract_approvals (step=admin_review, status=pending)
+  7. UPDATE quotations SET status='contract_created', contract_id=新合同id
+  8. INSERT activities (type='contract_created')
+  9. UPDATE leads SET stage='contract_pending'
+
+步骤 2-9 任一失败全部回滚（Supabase RPC 或 API 层事务）。
+```
+
+**Task 6.3: 改造 /quotes 列表页**
+```
+文件: src/app/(dashboard)/quotes/quotes-client.tsx
+
+改造点:
+1. STATUS_STYLES 新增 won 和 contract_created 的样式
+2. accepted 状态的报价卡片新增「生成合同」按钮
+3. contract_created 状态的报价卡片显示关联合同编号（可点击跳转）
+4. 按钮点击打开 ConvertToContractDialog
+```
+
+**Task 6.4: 新建 ConvertToContractDialog 组件**
+```
+文件: src/components/ConvertToContractDialog.tsx
+
+内容:
+1. 报价摘要区（只读）: 报价编号、金额、设备清单、折扣率
+2. 分期方案表单: 动态添加分期行（seq/amount/due_date/description）
+3. 甲乙方信息: 预填可改（甲方从 lead 读，乙方默认 NewMe）
+4. 首期到期日选择器
+5. 提交 → POST /api/quotations/[id]/convert-to-contract
+6. 成功后跳转 /contracts/[new_id]
+```
+
+**Task 6.5: 改造 /contracts/[id] 详情页**
+```
+文件: src/app/(dashboard)/contracts/[id]/page.tsx（Phase 2 Task 2.5 的新建文件）
+
+新增「来源报价」区域:
+1. 查询 quotations WHERE contract_id = contract.id
+2. 显示: 报价编号、报价金额、设备清单摘要、折扣率、报价日期
+3. 点击报价编号弹出 QuotationSummaryDialog（复用 quote-detail-dialog）
+```
+
+**验收标准 Phase 6：**
+- [ ] accepted 报价点击「生成合同」→ 弹窗显示报价摘要 + 分期表单
+- [ ] 提交后合同创建成功，status=draft，自动进入审批流
+- [ ] 报价状态变为 contract_created，contract_id 正确关联
+- [ ] 合同详情页显示来源报价信息
+- [ ] lead stage 推进到 contract_pending
+- [ ] 已转换的报价不可再次转换（contract_id 非空时按钮禁用）
+
 ---
 
 ## 2. 执行约束（工业化规程）
@@ -426,22 +534,50 @@ POST:
 - 1 次成功用例
 - 3 次边界失败用例（权限不足、金额负数、状态冲突）
 
-### 2.4 单点推进
+### 2.4 并行执行策略
 
-每个 Task 完成后验证 → 再进下一个。不并行开发多个 Phase。
+Phase 1（数据基础）是所有轨道的前置依赖，必须先完成。之后拆为 4 条并行轨道：
+
+```
+Phase 1 ─┬─ Track A: Phase 2 (审批流)
+          ├─ Track B: Phase 3 (回款)
+          ├─ Track C: Phase 5 (文件上传)
+          └─ Track D: Phase 6 (报价→合同衔接)
+
+Track A/B/C/D 之间无数据依赖，可并行开发。
+Phase 4 (自动化+联动) 依赖 Track A + Track B 完成后串行执行。
+```
+
+**并行约束：**
+- 每条 Track 内部仍是单点推进（Task 完成验证后再进下一个）
+- 跨 Track 不共享前端组件文件（避免合并冲突）
+- 合同详情页（`/contracts/[id]`）由 Track A 创建骨架，Track B/C/D 各自添加区域
+
+### 2.5 依赖关系 DAG
+
+```
+Phase 1 (SQL+RPC+COS)
+    ├── Phase 2 (审批流) ─────────┐
+    ├── Phase 3 (回款) ───────────┤── Phase 4 (自动化联动)
+    ├── Phase 5 (文件上传) ────────┘
+    └── Phase 6 (报价→合同衔接) ─── Phase 4 (KPI 累加部分)
+```
 
 ---
 
 ## 3. 时间估算
 
-| Phase | Tasks | 预估 |
-|-------|-------|------|
-| Phase 1 — 数据基础 | 1.1 + 1.2 + 1.3 | 2h |
-| Phase 2 — 审批流 | 2.1 - 2.5 | 4h |
-| Phase 3 — 回款 | 3.1 - 3.5 | 3h |
-| Phase 4 — 自动化 | 4.1 - 4.3 | 2h |
-| Phase 5 — 文件 | 5.1 - 5.3 | 2h |
-| **总计** | | **~13h** |
+| Phase | Tasks | 串行预估 | 并行后实际等待 |
+|-------|-------|---------|-------------|
+| Phase 1 — 数据基础 | 1.1 + 1.2 + 1.3 | 2h | 2h（前置，不可并行） |
+| Phase 2 — 审批流 | 2.1 - 2.5 | 4h | 4h（Track A） |
+| Phase 3 — 回款 | 3.1 - 3.5 | 3h | 0h（Track B，与 A 并行） |
+| Phase 5 — 文件 | 5.1 - 5.3 | 2h | 0h（Track C，与 A 并行） |
+| Phase 6 — 报价衔接 | 6.1 - 6.5 | 3h | 0h（Track D，与 A 并行） |
+| Phase 4 — 自动化 | 4.1 - 4.3 | 2h | 2h（A+B 完成后） |
+| **总计** | | **~16h** | **~8h 等待时间** |
+
+> 并行执行时实际耗时取决于最长的 Track（Phase 2 审批流 4h）+ Phase 1（2h）+ Phase 4（2h）= **~8h**。
 
 ---
 

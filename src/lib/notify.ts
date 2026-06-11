@@ -5,7 +5,7 @@
  */
 
 interface NotifyParams {
-  type: "lead_created" | "lead_assigned" | "lead_stage_change" | "lead_stage_changed" | "quote_created" | "contract_created" | "contract_signed" | "payment_due" | "payment_received" | "payment_overdue" | "first_payment_reminder" | "kpi_target_set" | "followup_reminder" | "follow_up_overdue" | "team_member_added";
+  type: "lead_created" | "lead_assigned" | "lead_stage_change" | "lead_stage_changed" | "quote_created" | "contract_created" | "contract_signed" | "contract_pending_approval" | "contract_approved" | "contract_rejected" | "payment_due" | "payment_received" | "payment_overdue" | "first_payment_reminder" | "kpi_target_set" | "followup_reminder" | "follow_up_overdue" | "team_member_added";
   [key: string]: any;
 }
 

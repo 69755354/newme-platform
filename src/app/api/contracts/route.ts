@@ -57,8 +57,7 @@ export async function POST(request: NextRequest) {
         party_a_name: party_a_name || "Unknown",
         party_a_contact: party_a_contact || null,
         party_b_name: party_b_name || "NewMe Smart Home FZCO",
-        status: "active",
-        approval_status: "none",
+        status: "draft",
         first_payment_due_date: first_payment_due_date || null,
       })
       .select("id")
@@ -93,14 +92,32 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Notify admins about new contract
+    // Create first approval record (admin_review step)
+    const { error: approvalErr } = await supabaseAdmin
+      .from("contract_approvals")
+      .insert({
+        contract_id: contract.id,
+        step: "admin_review",
+        status: "pending",
+        notes: { source: "auto_created" },
+      });
+
+    if (approvalErr) {
+      console.error(
+        "[API Contracts] Approval record insert failed:",
+        approvalErr
+      );
+    }
+
+    // Notify admins that contract is pending approval
     try {
       await fetch(`${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/notify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: "contract_signed",
+          type: "contract_pending_approval",
           contract_id: contract.id,
+          contract_no: contractNo,
           lead_id,
           amount,
         }),

@@ -91,14 +91,15 @@
    - 加 quotation_id UUID REFERENCES quotations(id)（已存在确认）
 
 2. 新建 contract_approvals 表:
-   - id, contract_id FK, step(admin_review/ceo_review), approver_id FK, status(pending/approved/rejected), notes, reviewed_at, created_at
-   - RLS: admin 看 admin_review 步骤, boss 看全部, sales 看自己合同的
+   - id, tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000', contract_id FK, step(admin_review/ceo_review), approver_id FK, status(pending/approved/rejected), notes, reviewed_at, created_at
+   - INDEX: contract_id, tenant_id
+   - 不写 RLS Policy（应用层权限控制，Axon 蒸馏时统一加）
 
 3. 新建 payment_allocations 表:
-   - id, payment_id FK, plan_id FK(installment_plans), amount_allocated, allocated_by FK, created_at
+   - id, tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000', payment_id FK, plan_id FK(installment_plans), amount_allocated, allocated_by FK, created_at
    - CHECK: amount_allocated > 0
-   - INDEX: payment_id, plan_id
-   - RLS: sales 看自己合同的, admin/boss 看全部
+   - INDEX: payment_id, plan_id, tenant_id
+   - 不写 RLS Policy（应用层权限控制，Axon 蒸馏时统一加）
 
 4. installment_plans 改造:
    - 加 allocated_amount DECIMAL(12,2) DEFAULT 0
@@ -161,7 +162,7 @@
 
 **验收标准 Phase 1：**
 - [ ] Migration 在 Supabase 上执行成功（通过 Mgmt API 或 dashboard）
-- [ ] 所有新表有 RLS 策略
+- [ ] 新表包含 `tenant_id` 字段，DEFAULT 为零 UUID
 - [ ] RPC 函数可被 service_role 调用
 - [ ] cos-presign.py --method PUT 能生成有效上传 URL
 
@@ -453,3 +454,4 @@ POST:
 | RPC 函数权限问题 | 中 | 用 SECURITY DEFINER + service_role 调用 |
 | 前端直传 COS CORS | 中 | 需确认 COS bucket CORS 配置允许 PUT |
 | 现有合同数据迁移 | 低 | 当前只有 2 条测试合同，无需数据迁移脚本 |
+| Axon 蒸馏时 RLS 改造 | 低 | 所有新表已预留 tenant_id 字段，Axon 蒸馏时统一加 RLS Policy + 连接级 tenant context，预估 1 天 |

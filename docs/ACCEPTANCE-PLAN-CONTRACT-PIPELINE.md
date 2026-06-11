@@ -17,6 +17,11 @@
 SELECT table_name FROM information_schema.tables 
 WHERE table_name IN ('contract_approvals', 'payment_allocations');
 
+-- 验证新表含 tenant_id 字段
+SELECT table_name, column_name, column_default FROM information_schema.columns 
+WHERE table_name IN ('contract_approvals', 'payment_allocations') AND column_name = 'tenant_id';
+-- 预期: 2 rows, column_default = '00000000-0000-0000-0000-000000000000'
+
 -- 验证 contracts status 约束已更新
 SELECT con.conname, pg_get_constraintdef(con.oid) 
 FROM pg_constraint con JOIN pg_class rel ON rel.oid = con.conrelid
@@ -34,13 +39,16 @@ SELECT column_name FROM information_schema.columns
 WHERE table_name = 'installment_plans' AND column_name = 'allocated_amount';
 -- 预期: 1 row
 
--- 验证 RLS 启用
-SELECT tablename, rowsecurity FROM pg_tables 
-WHERE tablename IN ('contract_approvals', 'payment_allocations');
--- 预期: 两行 rowsecurity = true
+-- 验证 tenant_id 索引存在
+SELECT indexname, indexdef FROM pg_indexes 
+WHERE tablename IN ('contract_approvals', 'payment_allocations') AND indexdef LIKE '%tenant_id%';
+-- 预期: 2 rows（各表一个 tenant_id 索引）
+
+-- 注意: 现阶段不启用 RLS Policy，只预留 tenant_id 字段
+-- RLS Policy 在 Axon 蒸馏时统一添加
 ```
 
-**通过标准:** 全部 SQL 查询结果符合预期，无报错。
+**通过标准:** 全部 SQL 查询结果符合预期，无报错。新表含 tenant_id 字段且默认值为零 UUID。
 
 ### V1.2 — RPC 函数
 

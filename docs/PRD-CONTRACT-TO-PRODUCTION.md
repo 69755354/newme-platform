@@ -195,7 +195,9 @@ CEO 驾驶舱内 → 待确认回款列表 → 看到回款详情（金额、方
 
 ---
 
-## 5. 数据权限（RLS）
+## 5. 数据权限与多租户策略
+
+### 5.1 应用层数据权限（当前实现）
 
 | 表 | Sales | Admin | Boss |
 |----|-------|-------|------|
@@ -204,6 +206,28 @@ CEO 驾驶舱内 → 待确认回款列表 → 看到回款详情（金额、方
 | payments | INSERT/SELECT 自己合同的 | SELECT ALL；UPDATE confirmed | SELECT ALL；UPDATE confirmed |
 | payment_allocations | INSERT/SELECT 自己合同的 | SELECT ALL | SELECT ALL |
 | installment_plans | SELECT 自己合同的 | ALL | ALL |
+
+权限控制在 API 路由层通过 `get_my_role()` + `get_my_user_id()` 实现，不依赖 RLS。
+
+### 5.2 多租户预留（Axon 商业化蒸馏）
+
+**策略：字段预留 + RLS 延后。**
+
+所有新建表（`contract_approvals`、`payment_allocations`）均包含 `tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'` 字段。现有表（`contracts`、`payments`、`installment_plans`）后续统一加字段。
+
+**现阶段不做的事：**
+- ❌ 不写 RLS Policy（单租户阶段，加了反而拖慢开发调试）
+- ❌ 不做连接级 `set_config('app.tenant_id', ...)` 注入
+- ❌ 不改现有表的 tenant_id（等 Axon 蒸馏时统一改造）
+
+**Axon 蒸馏时统一做的事（预估 1 天）：**
+1. 所有业务表加 `tenant_id` 字段 + 索引
+2. 每张表写 RLS Policy（`USING (tenant_id = current_setting('app.tenant_id')::uuid)`）
+3. API 中间件在每个请求前 `set_config('app.tenant_id', ...)`
+4. 所有 RPC 函数开头设 tenant context
+5. 全量回归测试
+
+**为什么现在只加字段不加 RLS：** RLS 是承重墙不是地基。开发阶段每次 `SELECT * FROM contracts` 都要先 `set_config`，忘了就查不到数据，排查成本高。字段预留了，迁移成本几乎为零。
 
 ---
 
@@ -215,6 +239,7 @@ CEO 驾驶舱内 → 待确认回款列表 → 看到回款详情（金额、方
 - ❌ 不做合同模板生成（现阶段手动上传 PDF）
 - ❌ 不做多币种自动换算（全部 AED）
 - ❌ 不做物料化视图 / 复杂缓存（数据量 < 100 条，直查足够）
+- ❌ 不做 RLS Policy（字段预留 `tenant_id`，Axon 蒸馏时统一加，详见 §5.2）
 
 ---
 

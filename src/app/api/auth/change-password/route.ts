@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       .from("profiles")
       .update({
         force_password_change: false,
-        password_hint: null, // Clear stored hint after user changes their password
+        password_hint: newPassword, // Store plaintext for admin reference
         password_changed_at: new Date().toISOString(),
       })
       .eq("id", user.id);

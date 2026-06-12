@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { useRequireRole } from "@/hooks/useRequireRole";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,6 +89,7 @@ interface InstallmentPlan {
 // ─── Page Component ──────────────────────────────────────────────────
 
 export default function PaymentsPage() {
+  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss", "finance", "operator"]);
   const supabase = createClient();
   const { t } = useLanguage();
 
@@ -121,6 +123,8 @@ export default function PaymentsPage() {
   const [installmentPlans, setInstallmentPlans] = useState<InstallmentPlan[]>([]);
   const [allocAmounts, setAllocAmounts] = useState<Record<string, number>>({});
   const [allocSaving, setAllocSaving] = useState(false);
+
+  if (roleLoading || blocked) return null;
 
   // ─── Auth & Data Loading ─────────────────────────────────────────
 

@@ -54,6 +54,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Role check — only admin/boss/sales can check design status
+    const { createClient: createAdmin } = await import("@supabase/supabase-js");
+    const adminClient = createAdmin(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+    const { data: profile } = await adminClient
+      .from("profiles").select("role").eq("id", user.id).single();
+    if (!profile || !["admin", "boss", "sales"].includes(profile.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const taskId = request.nextUrl.searchParams.get("task_id");
     if (!taskId) {
       return NextResponse.json({ error: "task_id required" }, { status: 400 });

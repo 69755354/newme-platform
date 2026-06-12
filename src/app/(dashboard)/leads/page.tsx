@@ -185,7 +185,7 @@ function LeadsContent() {
     }
     if (data) setLeads(data as Lead[]);
     setLoading(false);
-  }, [supabase, salesRole, currentUserId, t]);
+  }, [salesRole, currentUserId]); // supabase is module-singleton, t is context-stable — exclude to prevent #310 render loops
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 

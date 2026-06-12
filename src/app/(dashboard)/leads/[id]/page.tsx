@@ -22,6 +22,7 @@ import {
   Calendar, Clock, User, Target, AlertTriangle, ShieldAlert,
   RotateCcw, BarChart3, TrendingUp, MessageCircle,
   FileText, ClipboardList, CheckCircle, DollarSign, ExternalLink, Calculator, WandSparkles,
+  Wrench, GitBranch,
 } from "lucide-react";
 import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
@@ -74,6 +75,13 @@ interface Lead {
   first_touch_at: string | null; last_touch_at: string | null;
   assigned_to: string | null; rep_name: string | null;
   quotation_value: number | null;
+  project_name: string | null; project_status: string | null;
+  ac_brand: string | null; system_preference: string | null;
+  visit_status: string | null; rejection_detail: string | null;
+  circuit_diagrams: boolean | null;
+  sales_phase: string | null; phase_pct: number | null; sub_phase: string | null;
+  quotation_sent_date: string | null;
+  reminder_24h_sent: boolean | null; reminder_48h_sent: boolean | null;
 }
 
 interface Activity { id: string; type: string; content: string; ai_generated: boolean; created_at: string; }
@@ -472,6 +480,118 @@ export default function LeadDetailPage() {
               <div><Label className="text-muted-foreground text-xs">{t("leadDetail.decisionMaker")}</Label>{renderInlineEdit("decision_maker", t("leadDetail.decisionMaker"))}</div>
               <div><Label className="text-muted-foreground text-xs">{t("leadDetail.decisionDate")}</Label>{renderDateEdit("decision_date", t("leadDetail.decisionDate"))}</div>
               <div><Label className="text-muted-foreground text-xs">{t("leadDetail.competitor")}</Label>{renderInlineEdit("competitor", t("leadDetail.competitor"))}</div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 技术信息 */}
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground flex items-center gap-2"><Wrench className="w-4 h-4" /> {t("leadDetail.techInfo")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div><Label className="text-muted-foreground text-xs">{t("leadDetail.projectName")}</Label>{renderInlineEdit("project_name", t("leadDetail.projectName"))}</div>
+              <div>
+                <Label className="text-muted-foreground text-xs">{t("leadDetail.projectStatus")}</Label>
+                <div className="mt-1">
+                  <Select value={lead.project_status || ""} onValueChange={v => updateField("project_status", v || null, "note_added", `${t("leadDetail.projectStatus")}: ${v}`)}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="—" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="在建">{t("leadDetail.underConstruction")}</SelectItem>
+                      <SelectItem value="翻新">{t("leadDetail.renovation")}</SelectItem>
+                      <SelectItem value="毛坯">{t("leadDetail.bareShell")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div><Label className="text-muted-foreground text-xs">{t("leadDetail.acBrand")}</Label>{renderInlineEdit("ac_brand", t("leadDetail.acBrand"))}</div>
+              <div>
+                <Label className="text-muted-foreground text-xs">{t("leadDetail.systemPreference")}</Label>
+                <div className="mt-1">
+                  <Select value={lead.system_preference || ""} onValueChange={v => updateField("system_preference", v || null, "note_added", `${t("leadDetail.systemPreference")}: ${v}`)}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="—" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="KNX">{t("leadDetail.knx")}</SelectItem>
+                      <SelectItem value="无线">{t("leadDetail.wireless")}</SelectItem>
+                      <SelectItem value="混合">{t("leadDetail.hybrid")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <Label className="text-muted-foreground text-xs">{t("leadDetail.visitStatus")}</Label>
+                <div className="mt-1">
+                  <Select value={lead.visit_status || ""} onValueChange={v => updateField("visit_status", v || null, "note_added", `${t("leadDetail.visitStatus")}: ${v}`)}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="—" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="已上门">✅ {t("leadDetail.visited")}</SelectItem>
+                      <SelectItem value="待上门">📅 {t("leadDetail.pendingVisit")}</SelectItem>
+                      <SelectItem value="无需上门">{t("leadDetail.noVisitNeeded")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex items-end gap-2">
+                <button onClick={() => updateField("circuit_diagrams", !lead.circuit_diagrams, "note_added", lead.circuit_diagrams ? "电路图: 无" : "电路图: 有")}
+                  className={cn("px-3 py-1 text-xs rounded border transition-colors", lead.circuit_diagrams ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/50" : "bg-muted/50 text-muted-foreground border-border")}>
+                  📐 {t("leadDetail.hasCircuitDiagrams")}
+                </button>
+              </div>
+            </div>
+            {lead.rejection_detail && (
+              <div className="mt-3 p-2 bg-rose-500/10 border border-rose-500/20 rounded text-xs text-rose-400">
+                🚫 {t("leadDetail.rejectionDetail")}: {lead.rejection_detail}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 销售阶段追踪 */}
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground flex items-center gap-2"><GitBranch className="w-4 h-4" /> {t("leadDetail.salesProgress")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center gap-2">
+                <Label className="text-muted-foreground text-xs w-20 shrink-0">{t("leadDetail.phase")}</Label>
+                <div className="flex-1">
+                  <Select value={lead.sales_phase || "lead"} onValueChange={v => updateField("sales_phase", v, "phase_changed", `${t("leadDetail.phase")}: ${v}`)}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="lead">📥 {t("leadDetail.phaseLead")} (0%)</SelectItem>
+                      <SelectItem value="contact">📞 {t("leadDetail.phaseContact")} (20%)</SelectItem>
+                      <SelectItem value="requirement">📋 {t("leadDetail.phaseRequirement")} (40%)</SelectItem>
+                      <SelectItem value="quotation">💰 {t("leadDetail.phaseQuotation")} (60%)</SelectItem>
+                      <SelectItem value="design">🏗️ {t("leadDetail.phaseDesign")} (80%)</SelectItem>
+                      <SelectItem value="closing">🤝 {t("leadDetail.phaseClosing")} (90%)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-muted-foreground text-xs w-20 shrink-0">{t("leadDetail.progress")}</Label>
+                <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
+                  <div className="h-full bg-copper-500 rounded-full transition-all" style={{ width: `${lead.phase_pct || 0}%` }} />
+                </div>
+                <span className="text-xs text-muted-foreground w-8 text-right">{lead.phase_pct || 0}%</span>
+              </div>
+              {lead.sales_phase === "design" && (
+                <div>
+                  <Label className="text-muted-foreground text-xs">{t("leadDetail.subPhase")}</Label>
+                  <div className="mt-1">
+                    <Select value={lead.sub_phase || ""} onValueChange={v => updateField("sub_phase", v || null, "note_added", `${t("leadDetail.subPhase")}: ${v}`)}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={t("leadDetail.selectSubPhase")} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="深化方案中">🔧 {t("leadDetail.deepeningDesign")}</SelectItem>
+                        <SelectItem value="准备签单中">✍️ {t("leadDetail.preparingSign")}</SelectItem>
+                        <SelectItem value="被拒">🚫 {t("leadDetail.rejected")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

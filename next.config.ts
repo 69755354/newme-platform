@@ -1,3 +1,4 @@
+import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -20,6 +21,26 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+
+  // Source maps handled by Sentry wrapper below
 };
 
-export default nextConfig;
+const sentryConfig = withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG || "newme-o4",
+  project: process.env.SENTRY_PROJECT || "javascript-nextjs",
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  silent: false,
+  telemetry: false,
+
+  // Source map upload
+  sourcemaps: {
+    assets: "./.next/**/*.map",
+    ignore: ["node_modules"],
+    deleteSourcemapsAfterUpload: true,
+  },
+
+  // Don't widen the client bundle unnecessarily
+  widenClientFileUpload: false,
+});
+
+export default sentryConfig;

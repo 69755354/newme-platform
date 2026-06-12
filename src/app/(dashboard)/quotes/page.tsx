@@ -1,10 +1,21 @@
+import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase-server";
 import QuotesClient from "./quotes-client";
 import SubNavTabs from "@/components/SubNavTabs";
 
 export const dynamic = "force-dynamic";
 
+async function authorize() {
+  const supabase = await createServerSupabase();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) redirect("/login");
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+  if (!profile || !["admin", "boss", "sales"].includes(profile.role)) redirect("/dashboard");
+  return { user, role: profile.role };
+}
+
 export default async function QuotesPage() {
+  await authorize();
   let initialData: any[] = [];
   let fetchError: string | null = null;
 

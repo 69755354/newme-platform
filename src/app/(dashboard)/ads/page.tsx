@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ErrorState } from "@/components/ui/error-state";
+import { useRequireRole } from "@/hooks/useRequireRole";
 import { createClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import {
@@ -39,6 +40,7 @@ function fmtAED(v: number | null | undefined): string {
 }
 
 export default function AdsPage() {
+  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss"]);
   const supabase = createClient();
   const { t } = useLanguage();
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -47,6 +49,8 @@ export default function AdsPage() {
   const [role, setRole] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"source" | "campaign" | "adset" | "ad">("source");
+
+  if (roleLoading || blocked) return null;
 
   useEffect(() => {
     (async () => {

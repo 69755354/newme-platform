@@ -19,6 +19,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { useRequireRole } from "@/hooks/useRequireRole";
 
 const DEFAULT_PCTS = [50, 30, 20];
 const DEFAULT_DAYS = [0, 30, 60];
@@ -31,6 +32,7 @@ interface LeadOption {
 }
 
 export default function NewContractPage() {
+  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss"]);
   const router = useRouter();
   const supabase = createClient();
   const { t } = useLanguage();
@@ -45,6 +47,8 @@ export default function NewContractPage() {
   const [partyAPhone, setPartyAPhone] = useState("");
   const [pcts, setPcts] = useState(DEFAULT_PCTS.join(", "));
   const [dueDays, setDueDays] = useState(DEFAULT_DAYS.join(", "));
+
+  if (roleLoading || blocked) return null;
 
   useEffect(() => {
     // Fetch eligible leads (not won/lost, or those with quotation_value)

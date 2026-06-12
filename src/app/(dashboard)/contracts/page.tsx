@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { useRequireRole } from "@/hooks/useRequireRole";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ interface Contract {
 }
 
 export default function ContractsPage() {
+  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss"]);
   const supabase = createClient();
   const { t, lang } = useLanguage();
 
@@ -50,6 +52,8 @@ export default function ContractsPage() {
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
+
+  if (roleLoading || blocked) return null;
 
   const statusLabel = (s: string) => {
     return STATUS_LABELS[s] || s;

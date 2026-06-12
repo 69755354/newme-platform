@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { ErrorState } from "@/components/ui/error-state";
+import { useRequireRole } from "@/hooks/useRequireRole";
 import { useLanguage } from "@/lib/i18n/context";
 import LeadHealth from "./_components/LeadHealth";
 import SalesLoad from "./_components/SalesLoad";
@@ -12,10 +13,13 @@ import AdsROI from "./_components/AdsROI";
 import WeeklyTrends from "./_components/WeeklyTrends";
 
 export default function AnalyticsPage() {
+  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss", "sales"]);
   const { t } = useLanguage();
   const supabase = createClient();
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  if (roleLoading || blocked) return null;
 
   useEffect(() => {
     (async () => {

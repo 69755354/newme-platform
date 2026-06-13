@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +18,7 @@ function LoginPageInner() {
   const [error, setError] = useState("");
   const { t } = useLanguage();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -54,22 +55,23 @@ function LoginPageInner() {
         user: data.user,
       }));
 
-      // @supabase/ssr middleware uses default cookieEncoding="raw" — plain JSON, no base64
-      // Base64-encode the session payload to obscure tokens
-      const encodedPayload = btoa(JSON.stringify({
+      // @supabase/ssr middleware uses default cookieEncoding="raw"
+      // Must be plain JSON string — base64 encoded values cause SSR auth to fail
+      const cookiePayload = JSON.stringify({
         access_token: data.access_token,
         refresh_token: data.refresh_token,
         expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
-      }));
+      });
 
       // Primary format for @supabase/ssr (createServerClient / middleware)
-      document.cookie = `sb-vfopmpxlhwzpxqegayew-auth-token=${encodedPayload}; path=/; max-age=${data.expires_in}; SameSite=Strict; Secure`;
+      document.cookie = `sb-vfopmpxlhwzpxqegayew-auth-token=${cookiePayload}; path=/; max-age=${data.expires_in}; SameSite=Strict; Secure`;
       document.cookie = `sb-vfopmpxlhwzpxqegayew-refresh-token=${data.refresh_token}; path=/; max-age=2592000; SameSite=Strict; Secure`;
       // Legacy format for backward compat (middleware fallback)
       document.cookie = `sb-access-token=${data.access_token}; path=/; max-age=${data.expires_in}; SameSite=Strict; Secure`;
       document.cookie = `sb-refresh-token=${data.refresh_token}; path=/; max-age=2592000; SameSite=Strict; Secure`;
 
-      router.push("/dashboard");
+      const redirectTo = searchParams.get("redirect") || "/dashboard";
+      router.push(redirectTo);
       router.refresh();
     } catch (err: any) {
       setError(err.message || t("login.networkError"));
@@ -131,7 +133,9 @@ function LoginPageInner() {
 export default function LoginPage() {
   return (
     <LanguageProvider>
-      <LoginPageInner />
+      <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><p className="text-white">Loading...</p></div>}>
+        <LoginPageInner />
+      </Suspense>
     </LanguageProvider>
   );
 }

@@ -16,7 +16,9 @@ import { LanguageProvider } from "@/lib/i18n/LanguageContext";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { createClient } from "@/lib/supabase";
+import { trackLogin, trackPageView, trackActivity, resetTracker } from "@/lib/activity-tracker";
 import NotificationBell from "@/components/NotificationBell";
+import { revalidateEverything } from "@/actions/revalidate";
 
 // ─── Nav item type ───
 interface NavItem {
@@ -120,6 +122,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         setUserEmail(DEV_EMAIL);
         setRole("admin");
         setAuthLoading(false);
+        trackLogin();
       }
 
       devLogin();
@@ -151,6 +154,13 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; clearTimeout(t); };
   }, []);
 
+  // Track page views
+  useEffect(() => {
+    if (!authLoading && role && pathname) {
+      trackPageView(pathname);
+    }
+  }, [pathname, authLoading, role]);
+
   const isManagement = role === "admin" || role === "boss" || role === "operator";
   const nav = isManagement ? MGMT_NAV : SALES_NAV;
 
@@ -162,7 +172,9 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   };
 
   const handleLogout = async () => {
+    await trackActivity("logout");
     await supabase.auth.signOut();
+    resetTracker();
     // Clear all auth storage from login page
     localStorage.removeItem("sb-vfopmpxlhwzpxqegayew-auth-token");
     const clearCookie = (name: string) => {
@@ -172,6 +184,8 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     clearCookie("sb-vfopmpxlhwzpxqegayew-refresh-token");
     clearCookie("sb-access-token");
     clearCookie("sb-refresh-token");
+    // Revalidate all cached Server Components so next login gets fresh state
+    await revalidateEverything();
     router.push("/login");
   };
 

@@ -209,7 +209,18 @@ export default function TeamPage() {
         const data = await res.json();
         throw new Error(data.error || t("team.activityFetchFailed"));
       }
-      const data: DailyReport = await res.json();
+      const apiData = await res.json();
+      // API returns { date, report } → map to frontend shape { date, users }
+      const data: DailyReport = {
+        date: apiData.date || date,
+        users: (apiData.report || []).map((r: any) => ({
+          user_id: r.user_id,
+          user_name: r.user_name,
+          first_active: r.first_active_at,
+          last_active: r.last_active_at,
+          actions: r.events || [],
+        })),
+      };
       setActivityData(data);
       // expand all users by default
       setExpandedUsers(new Set(data.users.map((u) => u.user_id)));

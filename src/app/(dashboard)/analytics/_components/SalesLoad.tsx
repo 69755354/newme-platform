@@ -57,15 +57,15 @@ const STAGE_KEYS: string[] = [
 ];
 
 const STAGE_I18N_KEYS: Record<string, string> = {
-  new: "stages.new",
-  contacted: "stages.contacted",
-  requirement_confirmed: "stages.requirement_confirmed",
-  solution_submitted: "stages.solution_submitted",
-  quotation_submitted: "stages.quotation_submitted",
-  negotiation: "stages.negotiation",
-  pending_decision: "stages.pending_decision",
-  won: "stages.won",
-  lost: "stages.lost",
+  new: "pipeline.stageNew",
+  contacted: "pipeline.stageContacted",
+  requirement_confirmed: "pipeline.stageReqConfirmed",
+  solution_submitted: "pipeline.stageSolutionSub",
+  quotation_submitted: "pipeline.stageQuotationSub",
+  negotiation: "pipeline.stageNegotiation",
+  pending_decision: "pipeline.stagePendingDecision",
+  won: "pipeline.stageWon",
+  lost: "pipeline.stageLost",
 };
 
 const STAGE_COLORS: Record<string, string> = {

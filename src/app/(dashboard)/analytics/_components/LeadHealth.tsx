@@ -292,10 +292,10 @@ export default function LeadHealth() {
   const { t } = useLanguage();
 
   const STAGE_I18N_KEYS: Record<string, string> = {
-    new: "stages.new", contacted: "stages.contacted", requirement_confirmed: "stages.requirement_confirmed",
-    solution_submitted: "stages.solution_submitted", quotation_submitted: "stages.quotation_submitted",
-    negotiation: "stages.negotiation", pending_decision: "stages.pending_decision",
-    won: "stages.won", lost: "stages.lost",
+    new: t("pipeline.stageNew"), contacted: t("pipeline.stageContacted"), requirement_confirmed: t("pipeline.stageReqConfirmed"),
+    solution_submitted: t("pipeline.stageSolutionSub"), quotation_submitted: t("pipeline.stageQuotationSub"),
+    negotiation: t("pipeline.stageNegotiation"), pending_decision: t("pipeline.stagePendingDecision"),
+    won: t("pipeline.stageWon"), lost: t("pipeline.stageLost"),
   };
   const [data, setData] = useState<LeadHealthData | null>(null);
   const [loading, setLoading] = useState(true);

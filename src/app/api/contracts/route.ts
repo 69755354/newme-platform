@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
 
@@ -126,6 +127,9 @@ export async function POST(request: NextRequest) {
       console.warn("[API Contracts] Notification failed:", notifyErr);
     }
 
+    revalidatePath("/contracts");
+    revalidatePath("/leads");
+
     return NextResponse.json({ id: contract.id, contract_no: contractNo });
   } catch (err: any) {
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
@@ -249,6 +253,8 @@ export async function PUT(request: NextRequest) {
       console.error("[API Contracts] Update failed:", error);
       return NextResponse.json({ error: "Failed to update contract" }, { status: 500 });
     }
+
+    revalidatePath("/contracts");
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

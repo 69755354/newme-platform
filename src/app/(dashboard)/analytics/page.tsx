@@ -15,13 +15,11 @@ import WeeklyTrends from "./_components/WeeklyTrends";
 export default function AnalyticsPage() {
   const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss", "sales"]);
   const { t } = useLanguage();
-  const supabase = createClient();
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  if (roleLoading || blocked) return null;
-
   useEffect(() => {
+    const supabase = createClient();
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -36,7 +34,10 @@ export default function AnalyticsPage() {
       if (profile) setRole(profile.role);
       setLoading(false);
     })();
-  }, [supabase]);
+  }, []);
+
+  // Block render until role is resolved to prevent flash
+  if (roleLoading || blocked) return null;
 
   const isManagement = role === "boss" || role === "admin";
   const isSales = role === "sales";

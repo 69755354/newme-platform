@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
 
@@ -71,6 +72,9 @@ export async function POST(
       );
     }
 
+    revalidatePath("/contracts");
+    revalidatePath("/payments");
+    revalidatePath("/dashboard");
     return NextResponse.json({ data: result });
   } catch (err: any) {
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;

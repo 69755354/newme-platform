@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
 
@@ -180,6 +181,11 @@ export async function POST(
     } catch {
       // non-blocking
     }
+
+    // Revalidate cached pages to reflect new contract
+    revalidatePath("/quotes");
+    revalidatePath("/contracts");
+    revalidatePath("/leads");
 
     return NextResponse.json({
       success: true,

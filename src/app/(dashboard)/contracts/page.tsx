@@ -53,7 +53,8 @@ export default function ContractsPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
 
-  if (roleLoading || blocked) return null;
+  // ❌ Remove this from here — hook order violation
+  // if (roleLoading || blocked) return null;
 
   const statusLabel = (s: string) => {
     return STATUS_LABELS[s] || s;
@@ -249,6 +250,8 @@ export default function ContractsPage() {
       setLoading(false);
     });
   }, [userId, role]);
+
+  if (roleLoading || blocked) return null;
 
   if (loading) return <div className="text-muted-foreground p-8">{t("common.loading")}</div>;
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;

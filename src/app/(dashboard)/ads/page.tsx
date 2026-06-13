@@ -50,8 +50,6 @@ export default function AdsPage() {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"source" | "campaign" | "adset" | "ad">("source");
 
-  if (roleLoading || blocked) return null;
-
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -113,6 +111,8 @@ export default function AdsPage() {
     }
     return { total, valid, quoted, won, value };
   }, [grouped]);
+
+  if (roleLoading || blocked) return null;
 
   const viewLabels: Record<string, string> = {
     source: t("ads.bySource"), campaign: t("ads.byCampaign"), adset: t("ads.byAdSet"), ad: t("ads.byAd"),

@@ -48,8 +48,6 @@ export default function NewContractPage() {
   const [pcts, setPcts] = useState(DEFAULT_PCTS.join(", "));
   const [dueDays, setDueDays] = useState(DEFAULT_DAYS.join(", "));
 
-  if (roleLoading || blocked) return null;
-
   useEffect(() => {
     // Fetch eligible leads (not won/lost, or those with quotation_value)
     const fetchLeads = async () => {
@@ -69,6 +67,8 @@ export default function NewContractPage() {
     };
     fetchLeads();
   }, []);
+
+  if (roleLoading || blocked) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

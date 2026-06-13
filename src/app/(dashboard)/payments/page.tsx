@@ -124,8 +124,6 @@ export default function PaymentsPage() {
   const [allocAmounts, setAllocAmounts] = useState<Record<string, number>>({});
   const [allocSaving, setAllocSaving] = useState(false);
 
-  if (roleLoading || blocked) return null;
-
   // ─── Auth & Data Loading ─────────────────────────────────────────
 
   useEffect(() => {
@@ -171,6 +169,8 @@ export default function PaymentsPage() {
     if (!userId || !role) return;
     Promise.all([fetchPayments(), fetchContracts()]).finally(() => setLoading(false));
   }, [userId, role, fetchPayments, fetchContracts]);
+
+  if (roleLoading || blocked) return null;
 
   // ─── Helpers ─────────────────────────────────────────────────────
 

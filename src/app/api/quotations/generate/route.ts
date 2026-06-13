@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { calculateQuotation, CalculateResult } from "../../../../lib/quotation-engine";
@@ -172,6 +173,10 @@ export async function POST(request: NextRequest) {
     if (updateErr) {
       console.error("[Quotation Generate] Failed to update lead stage:", updateErr);
     }
+
+    // Revalidate cached pages to reflect new quotation
+    revalidatePath("/quotes");
+    revalidatePath("/leads");
 
     return NextResponse.json({
       status: "ok",

@@ -2,6 +2,14 @@
 -- Lead Round-Robin Assignment + Churn Detection
 -- For: NewMe CRM (Supabase)
 -- Date: 2026-06-12
+-- FIXED 2026-06-14: column names aligned to live schema
+--   - notifications.message → notifications.body
+--   - activities.activity_type → activities.type
+--   - activities.scheduled_at → activities.due_at
+--   - business_events(entity_type,entity_id,performed_by,metadata)
+--       → business_events(lead_id,user_id,event_type,event_data)
+--   - assign_new_lead: added next_action + next_followup_date params
+--     (BEFORE INSERT trigger on leads requires them)
 -- ============================================================
 
 -- 1. Round-robin assignment state table
@@ -65,10 +73,12 @@ CREATE OR REPLACE FUNCTION assign_new_lead(
     p_customer_name TEXT,
     p_phone TEXT DEFAULT NULL,
     p_email TEXT DEFAULT NULL,
-    p_source TEXT DEFAULT 'manual',
-    p_quality TEXT DEFAULT 'warm',
-    p_project_type TEXT DEFAULT NULL,
-    p_notes TEXT DEFAULT NULL
+    p_source TEXT DEFAULT 'other',
+    p_quality TEXT DEFAULT 'pending',
+    p_property_type TEXT DEFAULT NULL,
+    p_notes TEXT DEFAULT NULL,
+    p_next_action TEXT DEFAULT 'Initial contact required',
+    p_next_followup_date DATE DEFAULT NULL
 )
 RETURNS UUID
 LANGUAGE plpgsql
@@ -77,25 +87,30 @@ AS $$
 DECLARE
     new_lead_id UUID;
     assigned_sales UUID;
+    v_followup DATE;
 BEGIN
     -- Get next sales rep via round-robin
     assigned_sales := auto_assign_lead();
 
-    -- Insert lead
+    -- Default follow-up date = 3 days from now if not provided
+    v_followup := COALESCE(p_next_followup_date, (CURRENT_DATE + INTERVAL '3 days')::DATE);
+
+    -- Insert lead (stage + lead_status + next_action + next_followup_date
+    -- required by BEFORE INSERT trigger)
     INSERT INTO leads (
         customer_name, phone, email, source, quality,
-        project_type, notes, assigned_to,
-        lead_status, stage, created_at
+        property_type, notes, assigned_to,
+        lead_status, stage, next_action, next_followup_date, created_at
     ) VALUES (
         p_customer_name, p_phone, p_email, p_source, p_quality,
-        p_project_type, p_notes, assigned_sales,
-        'new', 'lead_in', now()
+        p_property_type, p_notes, assigned_sales,
+        'hot', 'new', p_next_action, v_followup, now()
     ) RETURNING id INTO new_lead_id;
 
     -- Log assignment event
-    INSERT INTO business_events (event_type, entity_type, entity_id, performed_by, metadata)
+    INSERT INTO business_events (lead_id, user_id, event_type, event_data)
     VALUES (
-        'lead_auto_assigned', 'lead', new_lead_id, auth.uid(),
+        new_lead_id, auth.uid(), 'lead_assigned',
         jsonb_build_object(
             'assigned_to', assigned_sales,
             'method', 'round_robin'
@@ -103,7 +118,7 @@ BEGIN
     );
 
     -- Create notification for the assigned sales rep
-    INSERT INTO notifications (user_id, type, title, message, related_id)
+    INSERT INTO notifications (user_id, type, title, body, related_id)
     VALUES (
         assigned_sales,
         'lead_assigned',
@@ -147,8 +162,8 @@ BEGIN
               -- No follow-up scheduled in the future
               SELECT 1 FROM activities a
               WHERE a.lead_id = l.id
-                AND a.activity_type = 'follow_up'
-                AND a.scheduled_at > now()
+                AND a.type = 'follow_up'
+                AND a.due_at > now()
           )
     LOOP
         -- Mark as recovery candidate
@@ -158,9 +173,9 @@ BEGIN
         WHERE id = stale_lead.id;
 
         -- Log event
-        INSERT INTO business_events (event_type, entity_type, entity_id, performed_by, metadata)
+        INSERT INTO business_events (lead_id, user_id, event_type, event_data)
         VALUES (
-            'lead_stale_detected', 'lead', stale_lead.id, NULL,
+            stale_lead.id, NULL, 'lead_stale_detected',
             jsonb_build_object(
                 'stale_days', stale_days,
                 'assigned_to', stale_lead.assigned_to,
@@ -169,9 +184,9 @@ BEGIN
         );
 
         -- Notify admin (boss)
-        INSERT INTO notifications (user_id, type, title, message, related_id)
+        INSERT INTO notifications (user_id, type, title, body, related_id)
         SELECT p.id, 'followup_reminder', 'Stale Lead Alert',
-               'Lead "' || stale_lead.customer_name || '" has no activity for ' || stale_days || ' days. Consider reassignment.',
+               'Lead "' || COALESCE(stale_lead.customer_name,'Unknown') || '" has no activity for ' || stale_days || ' days. Consider reassignment.',
                stale_lead.id
         FROM profiles p
         WHERE p.role = 'admin' AND p.is_active = true;
@@ -213,9 +228,9 @@ BEGIN
     WHERE id = p_lead_id;
 
     -- Log transfer
-    INSERT INTO business_events (event_type, entity_type, entity_id, performed_by, metadata)
+    INSERT INTO business_events (lead_id, user_id, event_type, event_data)
     VALUES (
-        'lead_reassigned', 'lead', p_lead_id, auth.uid(),
+        p_lead_id, auth.uid(), 'lead_reassigned',
         jsonb_build_object(
             'from_sales', old_sales,
             'to_sales', p_new_sales,
@@ -224,7 +239,7 @@ BEGIN
     );
 
     -- Notify new sales
-    INSERT INTO notifications (user_id, type, title, message, related_id)
+    INSERT INTO notifications (user_id, type, title, body, related_id)
     VALUES (
         p_new_sales, 'lead_assigned', 'Lead Transferred to You',
         'Lead "' || COALESCE(v_customer_name, 'Unknown') || '" has been transferred to you.',
@@ -237,12 +252,24 @@ $$;
 
 -- 6. Grant execute to authenticated users
 GRANT EXECUTE ON FUNCTION auto_assign_lead() TO authenticated;
-GRANT EXECUTE ON FUNCTION assign_new_lead(TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION assign_new_lead(TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,DATE) TO authenticated;
 GRANT EXECUTE ON FUNCTION detect_stale_leads(INT) TO authenticated;
 GRANT EXECUTE ON FUNCTION reassign_lead(UUID,UUID,TEXT) TO authenticated;
 
 -- 7. Enable RLS on new table
 ALTER TABLE lead_assignment_state ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Admin can view assignment state" ON lead_assignment_state;
 CREATE POLICY "Admin can view assignment state" ON lead_assignment_state
     FOR ALL TO authenticated
     USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+
+-- 8. Extend business_events event_type CHECK to allow lead-assignment events
+ALTER TABLE business_events DROP CONSTRAINT IF EXISTS chk_event_type;
+ALTER TABLE business_events ADD CONSTRAINT chk_event_type CHECK (
+    event_type = ANY (ARRAY[
+        'stage_change','owner_change','transfer',
+        'quotation_sent','quotation_accepted','quotation_rejected',
+        'won','lost','contract_activated','contract_completed','payment_recorded',
+        'lead_assigned','lead_stale_detected','lead_reassigned'
+    ]::text[])
+) NOT VALID;

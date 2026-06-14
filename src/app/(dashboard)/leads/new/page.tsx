@@ -25,18 +25,15 @@ export default function NewLeadPage() {
     e.preventDefault();
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
-    const { data, error } = await supabase.from("leads").insert({
-      source: form.source,
-      customer_name: form.customer_name || null,
-      phone: form.phone || null,
-      email: form.email || null,
-      location: form.location || null,
-      stage: "new",
-      quality: "pending",
-      assigned_to: user?.id || null,
-      next_action: "call",
-      next_followup_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-    }).select("id").single();
+    const { data: newLeadId, error } = await supabase.rpc("assign_new_lead", {
+      p_customer_name: form.customer_name.trim() || "Unknown",
+      p_phone: form.phone.trim() || null,
+      p_email: form.email.trim() || null,
+      p_source: form.source,
+      p_notes: form.notes.trim() || null,
+      p_next_action: "call",
+      p_next_followup_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+    });
 
     if (error) {
       import("sonner").then(({ toast }) => toast.error(t("leads.createFailed") || "Failed to create lead"));
@@ -44,19 +41,23 @@ export default function NewLeadPage() {
       return;
     }
 
-    if (data) {
+    if (newLeadId) {
+      // Update fields not covered by the RPC (location)
+      if (form.location.trim()) {
+        await supabase.from("leads").update({ location: form.location.trim() }).eq("id", newLeadId);
+      }
       if (form.notes) {
         const { error: newLeadNoteErr } = await supabase.from("activities").insert({
-          lead_id: data.id, type: "note", content: form.notes,
-          user_id: (await supabase.auth.getUser()).data.user?.id,
+          lead_id: newLeadId, type: "note", content: form.notes,
+          user_id: user?.id,
         });
         if (newLeadNoteErr) {
           import("sonner").then(({ toast }) => toast.error("Note save failed"));
         }
       }
-      // Notify admins about new lead
+      // Notify admins about new lead (RPC already notifies the assigned rep)
       import("@/lib/notify").then(({ notify }) => {
-        notify({ type: "lead_created", lead_id: data.id, customer_name: form.customer_name || "Unknown" });
+        notify({ type: "lead_created", lead_id: newLeadId, customer_name: form.customer_name || "Unknown" });
       });
       // Meta Pixel: track Lead conversion
       if (typeof window !== "undefined" && (window as any).fbq) {

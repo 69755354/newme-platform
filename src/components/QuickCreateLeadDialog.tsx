@@ -59,21 +59,14 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
 
     const { data: { user } } = await supabase.auth.getUser();
 
-    const { data, error: insertErr } = await supabase
-      .from("leads")
-      .insert({
-        source: form.source,
-        customer_name: form.customer_name.trim() || null,
-        phone: form.phone.trim() || null,
-        location: form.location.trim() || null,
-        stage: "new",
-        quality: "pending",
-        assigned_to: user?.id || null,
-        next_action: "call",
-        next_followup_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      })
-      .select("id")
-      .single();
+    const { data: newLeadId, error: insertErr } = await supabase.rpc("assign_new_lead", {
+      p_customer_name: form.customer_name.trim() || "Unknown",
+      p_phone: form.phone.trim() || null,
+      p_source: form.source,
+      p_notes: form.notes.trim() || null,
+      p_next_action: "call",
+      p_next_followup_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+    });
 
     if (insertErr) {
       console.error("QuickCreate failed:", insertErr);
@@ -82,10 +75,15 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
       return;
     }
 
+    // Update fields not covered by the RPC (location)
+    if (newLeadId && form.location.trim()) {
+      await supabase.from("leads").update({ location: form.location.trim() }).eq("id", newLeadId);
+    }
+
     // Save note as activity
-    if (data && form.notes.trim()) {
+    if (newLeadId && form.notes.trim()) {
       const { error: noteErr } = await supabase.from("activities").insert({
-        lead_id: data.id,
+        lead_id: newLeadId,
         type: "note",
         content: form.notes.trim(),
         user_id: user?.id,
@@ -93,9 +91,9 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
       if (noteErr) console.error("Note save failed:", noteErr);
     }
 
-    // Notify admins about new lead
+    // Notify admins about new lead (RPC already notifies the assigned rep)
     import("@/lib/notify").then(({ notify }) => {
-      notify({ type: "lead_created", lead_id: data!.id, customer_name: form.customer_name || "Unknown" });
+      notify({ type: "lead_created", lead_id: newLeadId!, customer_name: form.customer_name || "Unknown" });
     });
 
     // Meta Pixel tracking

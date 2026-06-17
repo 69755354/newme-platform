@@ -24,6 +24,7 @@ const PROTECTED_ROUTES: Record<string, string[]> = {
   "/ads": ["admin", "boss", "operator"],
   "/products": ["admin", "boss", "operator"],
   "/projects": ["admin", "boss", "operator"],
+  "/games": ["admin", "boss", "operator"],
 };
 
 // Every dashboard page prefix — all require an authenticated session.
@@ -41,6 +42,7 @@ const AUTH_REQUIRED_PREFIXES = [
   "/pipeline",
   "/team",
   "/settings",
+  "/games",
 ];
 
 // Track user activity — update last_active_at, but throttle to once per 5 min per user
@@ -154,6 +156,7 @@ export const config = {
     "/payments/:path*",
     "/projects/:path*",
     "/products/:path*",
+    "/games/:path*",
     "/api/:path*",
   ],
 };

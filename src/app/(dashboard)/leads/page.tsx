@@ -835,7 +835,7 @@ function LeadsContent() {
 
                             {/* Next action / follow-up row */}
                             <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
-                              {lead.next_action && <span className="flex items-center gap-0.5"><span className="text-[10px]">📋</span>{t(`leads.nextActionLabels.${lead.next_action}`) || lead.next_action}</span>}
+                                                            {lead.next_action && (() => { const key = `leads.nextActionLabels.${lead.next_action}`; const trans = t(key); return <span className="flex items-center gap-0.5"><span className="text-[10px]">📋</span>{trans !== key ? trans : lead.next_action}</span>; })()}
                               {lead.next_followup_date && (
                                 <span className={cn("flex items-center gap-0.5",
                                   new Date(lead.next_followup_date) < new Date() ? "text-rose-400" : "text-muted-foreground"

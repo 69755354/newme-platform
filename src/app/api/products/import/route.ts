@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createServerSupabase } from "@/lib/supabase-server";
 
 // ─── CSV parser ───
 function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
@@ -149,25 +150,10 @@ export async function POST(request: NextRequest) {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Verify auth — read user from cookie
-    const cookieHeader = request.headers.get("cookie") || "";
-    const cookieMatch = cookieHeader.match(
-      /sb-vfopmpxlhwzpxqegayew-auth-token(?:\.\d+)?=([^;]+)/
-    );
-    if (!cookieMatch) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    let session: any = null;
-    try { session = JSON.parse(cookieMatch[1]); } catch {}
-    if (!session) {
-      try { session = JSON.parse(atob(cookieMatch[1])); } catch {}
-    }
-    if (!session) {
-      try { session = JSON.parse(decodeURIComponent(cookieMatch[1])); } catch {}
-    }
-
-    if (!session?.user?.id) {
+    // Verify auth — resolve user from @supabase/ssr session cookie
+    const authSupabase = await createServerSupabase();
+    const { data: { user: authUser } } = await authSupabase.auth.getUser();
+    if (!authUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -175,7 +161,7 @@ export async function POST(request: NextRequest) {
     const { data: profile } = await adminClient
       .from("profiles")
       .select("role")
-      .eq("id", session.user.id)
+      .eq("id", authUser.id)
       .single();
 
     if (!profile || !["boss", "admin"].includes(profile.role)) {

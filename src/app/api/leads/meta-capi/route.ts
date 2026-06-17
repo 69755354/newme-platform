@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 /**
  * Meta CAPI (Conversions API) — 接收 Meta 转化的 lead 事件
@@ -9,27 +9,18 @@ import { createClient } from "@supabase/supabase-js";
  * Body: { event_name, event_time, user_data, custom_data }
  */
 
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY not configured — set it in production environment variables.",
-    );
-  }
-  return createClient(url, key);
-}
-
 export async function POST(request: NextRequest) {
   try {
-    // Webhook secret verification
+    // Webhook secret verification — secret is REQUIRED (no fail-open)
     const webhookSecret = process.env.META_CAPI_WEBHOOK_SECRET;
-    if (webhookSecret) {
-      const authHeader = request.headers.get("authorization");
-      const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-      if (token !== webhookSecret) {
-        return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-      }
+    if (!webhookSecret) {
+      console.error("META_CAPI_WEBHOOK_SECRET not configured");
+      return NextResponse.json({ error: "Server misconfigured" }, { status: 503 });
+    }
+    const authHeader = request.headers.get("authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (token !== webhookSecret) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
@@ -47,6 +38,10 @@ export async function POST(request: NextRequest) {
 
     const phone = user_data?.phone || user_data?.phone_number || null;
     const email = user_data?.em || user_data?.email || null;
+
+    // Fallback: never insert null customer_name — regression test requires non-null
+    const safeCustomerName = customerName || `Lead (${phone || email || "no-contact"})`;
+
     const location = user_data?.ct || user_data?.city || null;
 
     // 判断来源: meta (Facebook) 或 instagram
@@ -81,8 +76,6 @@ export async function POST(request: NextRequest) {
       first_touch_at: eventTimestamp,
       created_at: now,
     };
-
-    const supabaseAdmin = getSupabaseAdmin();
 
     // 处理重复: 根据 email 或 phone 查找已有线索
     let existingLeadId: string | null = null;

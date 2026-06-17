@@ -23,53 +23,68 @@ export default function NewLeadPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Validate: customer name is required
+    if (!form.customer_name.trim()) {
+      import("sonner").then(({ toast }) => toast.error(t("leads.nameRequired") || "Customer name is required"));
+      return;
+    }
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: newLeadId, error } = await supabase.rpc("assign_new_lead", {
-      p_customer_name: form.customer_name.trim() || "Unknown",
-      p_phone: form.phone.trim() || null,
-      p_email: form.email.trim() || null,
-      p_source: form.source,
-      p_notes: form.notes.trim() || null,
-      p_next_action: "call",
-      p_next_followup_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-    });
 
-    if (error) {
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+    // Direct INSERT — no auto-assignment, admin will assign manually
+    const { data: newLead, error } = await supabase
+      .from("leads")
+      .insert({
+        customer_name: form.customer_name.trim(),
+        phone: form.phone.trim() || null,
+        email: form.email.trim() || null,
+        source: form.source,
+        location: form.location.trim() || null,
+        notes: form.notes.trim() || null,
+        quality: "pending",
+        stage: "new",
+        lead_status: "hot",
+        next_action: "call",
+        next_followup_date: tomorrow,
+        assigned_to: null, // admin assigns manually
+      })
+      .select("id")
+      .single();
+
+    if (error || !newLead) {
       import("sonner").then(({ toast }) => toast.error(t("leads.createFailed") || "Failed to create lead"));
       setSaving(false);
       return;
     }
 
-    if (newLeadId) {
-      // Update fields not covered by the RPC (location)
-      if (form.location.trim()) {
-        await supabase.from("leads").update({ location: form.location.trim() }).eq("id", newLeadId);
-      }
-      if (form.notes) {
-        const { error: newLeadNoteErr } = await supabase.from("activities").insert({
-          lead_id: newLeadId, type: "note", content: form.notes,
-          user_id: user?.id,
-        });
-        if (newLeadNoteErr) {
-          import("sonner").then(({ toast }) => toast.error("Note save failed"));
-        }
-      }
-      // Notify admins about new lead (RPC already notifies the assigned rep)
-      import("@/lib/notify").then(({ notify }) => {
-        notify({ type: "lead_created", lead_id: newLeadId, customer_name: form.customer_name || "Unknown" });
+    const newLeadId = newLead.id;
+
+    // Save note as activity if provided
+    if (form.notes.trim()) {
+      const { error: noteErr } = await supabase.from("activities").insert({
+        lead_id: newLeadId, type: "note", content: form.notes.trim(),
+        user_id: user?.id,
       });
-      // Meta Pixel: track Lead conversion
-      if (typeof window !== "undefined" && (window as any).fbq) {
-        (window as any).fbq("track", "Lead", {
-          content_name: form.customer_name || "unknown",
-          content_category: "smart_home_lead",
-          source: form.source,
-          location: form.location || undefined,
-        });
+      if (noteErr) {
+        import("sonner").then(({ toast }) => toast.error(t("leads.noteSaveFailed") || "Note failed to save"));
       }
-      router.push("/leads");
     }
+    // Notify admins about new lead
+    import("@/lib/notify").then(({ notify }) => {
+      notify({ type: "lead_created", lead_id: newLeadId, customer_name: form.customer_name || "Unknown" });
+    });
+    // Meta Pixel: track Lead conversion
+    if (typeof window !== "undefined" && (window as any).fbq) {
+      (window as any).fbq("track", "Lead", {
+        content_name: form.customer_name || "unknown",
+        content_category: "smart_home_lead",
+        source: form.source,
+        location: form.location || undefined,
+      });
+    }
+    router.push("/leads");
     setSaving(false);
   }
 

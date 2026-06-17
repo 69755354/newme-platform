@@ -149,6 +149,7 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
 
   useEffect(() => {
     if (!leadId) return;
+    // P-03: select("*") — lead_workflow_stages 表列少（14 列），暂保留
     supabase
       .from("lead_workflow_stages")
       .select("*")

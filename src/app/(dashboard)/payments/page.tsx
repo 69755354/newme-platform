@@ -299,6 +299,7 @@ export default function PaymentsPage() {
     setAllocSaving(false);
 
     // Fetch installment plans for this contract
+    // P-03 TODO: select("*") — 需显式列名 (installment_plans 小表，字段: id, contract_id, seq, amount, due_date, status, paid_amount, description)
     const { data, error: err } = await supabase
       .from("installment_plans")
       .select("*")

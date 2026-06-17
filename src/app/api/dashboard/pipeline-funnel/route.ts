@@ -158,13 +158,22 @@ export async function GET(request: NextRequest) {
     const lostStage = stages.find(s => s.key === "lost");
     const lostCount = lostStage?.count || 0;
     const lostFromStage: Record<string, number> = {};
-    // Look at business_events for stage_change events that ended in lost
+
+    // For sales view: restrict events to this user's leads (reuse already-fetched lead IDs).
+    // BUG FIX: was passing a Promise (supabase.rpc return) into .eq() as a scalar value,
+    // AND the RPC "get_user_leads_ids" does not exist in the DB — query silently returned nothing.
+    const userLeadIds = (leads || []).map(l => l.id);
+    if (!isManagement && userLeadIds.length === 0) {
+      // No leads assigned → skip events query
+      return NextResponse.json({ stages, stuckLeads, totalLeads, lostFromStage });
+    }
+
     let eventsQuery = supabase
       .from("business_events")
       .select("event_data")
       .eq("event_type", "stage_change");
     if (!isManagement) {
-      eventsQuery = eventsQuery.eq("lead_id", supabase.rpc("get_user_leads_ids", { p_user_id: targetUserId }));
+      eventsQuery = eventsQuery.in("lead_id", userLeadIds);
     }
     const { data: events } = await eventsQuery.limit(500);
     if (events) {

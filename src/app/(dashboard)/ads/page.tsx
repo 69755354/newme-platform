@@ -63,7 +63,8 @@ export default function AdsPage() {
           return;
         }
       }
-      const { data, error: err } = await supabase.from("leads").select("*").order("created_at", { ascending: false }).limit(500);
+      // P-03: explicit columns instead of select("*") (leads has 85 columns)
+      const { data, error: err } = await supabase.from("leads").select("id,customer_name,source,stage,quotation_value,lead_status,win_probability,meta_campaign,source_platform,source_channel,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,creative_id,creative_name,form_id,form_name,utm_source,utm_medium,utm_campaign,utm_content,utm_term,landing_page,referrer,first_touch_at,last_touch_at,created_at,quality").order("created_at", { ascending: false }).limit(200);
       if (err) {
         console.error("Failed to fetch leads:", err);
         setError(t("common.loadFailedRetry"));

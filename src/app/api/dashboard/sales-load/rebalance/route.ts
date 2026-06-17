@@ -107,11 +107,22 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Execute batch update ──
-    for (const update of updates) {
-      await supabase
-        .from("leads")
-        .update({ assigned_to: update.assigned_to })
-        .eq("id", update.id);
+    // Group updates by target rep_id, then one UPDATE per group.
+    // Was: N serial requests (N = transferable leads). Now: ≤ underloaded.length requests.
+    const updatesByRep = new Map<string, string[]>();
+    for (const u of updates) {
+      const arr = updatesByRep.get(u.assigned_to) ?? [];
+      arr.push(u.id);
+      updatesByRep.set(u.assigned_to, arr);
+    }
+    const batchResults = await Promise.all(
+      Array.from(updatesByRep.entries()).map(([repId, leadIds]) =>
+        supabase.from("leads").update({ assigned_to: repId }).in("id", leadIds)
+      )
+    );
+    const failed = batchResults.filter(r => r.error);
+    if (failed.length > 0) {
+      console.error("Rebalance partial failure:", failed.map(r => r.error?.message));
     }
 
     return NextResponse.json({

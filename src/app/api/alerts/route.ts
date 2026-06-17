@@ -26,6 +26,7 @@ export async function GET(request: Request) {
   const alertType = searchParams.get("type");
 
   // Build query on lead_alerts view — only return rows with active alerts
+  // P-03: select("*") — lead_alerts 视图列少，暂保留
   let query = supabase
     .from("lead_alerts")
     .select("*")

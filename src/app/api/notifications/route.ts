@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
+    // P-03: select("*") — notifications 表列少（~7 列），暂保留
     let query = adminClient
       .from("notifications")
       .select("*");

@@ -1,25 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { createNotification, getAdminUserIds } from "@/lib/notifications";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getAdminUserIds } from "@/lib/notifications";
 
 /**
  * GET /api/cron/check-overdue-followups
  * Cron endpoint: checks all leads for overdue follow-ups and creates notifications.
  *
- * Authorization: cron secret token (required in production).
- * Set CRON_SECRET env var and pass it as ?token=xxx.
+ * Called by external cron (Hermes) — validates via CRON_SECRET header.
  */
 export async function GET(request: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const { searchParams } = new URL(request.url);
-    const token = searchParams.get("token");
-    if (token !== cronSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const cronSecret = request.headers.get("x-cron-secret");
+  if (cronSecret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const supabase = await createServerSupabase();
+  const supabase = supabaseAdmin;
   const today = new Date().toISOString().split("T")[0];
 
   // Fetch all leads with overdue follow-ups (not won/lost, with assigned sales rep)
@@ -50,6 +45,18 @@ export async function GET(request: NextRequest) {
     relatedType: string;
   }[] = [];
 
+  // Dedup: check existing notifications of same type for each lead (permanent)
+  const userIds = [...new Set(overdueLeads.map((l) => l.assigned_to).filter(Boolean))];
+  const { data: existingNotifs } = await supabase
+    .from("notifications")
+    .select("related_id, user_id, type")
+    .eq("type", "follow_up_overdue")
+    .in("user_id", userIds);
+
+  const existingKeys = new Set(
+    (existingNotifs || []).map((n) => `${n.related_id}:${n.user_id}:${n.type}`)
+  );
+
   for (const lead of overdueLeads) {
     const customerName = lead.customer_name || "Unnamed";
     const overdueDays = Math.floor(
@@ -58,27 +65,35 @@ export async function GET(request: NextRequest) {
 
     // Notify assigned salesperson
     if (lead.assigned_to) {
-      notifications.push({
-        userId: lead.assigned_to,
-        type: "follow_up_overdue",
-        title: `Overdue follow-up: ${customerName}`,
-        body: `Follow-up for "${customerName}" is ${overdueDays} day(s) overdue.`,
-        relatedId: lead.id,
-        relatedType: "lead",
-      });
+      const dedupKey = `${lead.id}:${lead.assigned_to}:follow_up_overdue`;
+      if (!existingKeys.has(dedupKey)) {
+        notifications.push({
+          userId: lead.assigned_to,
+          type: "follow_up_overdue",
+          title: `Overdue follow-up: ${customerName}`,
+          body: `Follow-up for "${customerName}" is ${overdueDays} day(s) overdue.`,
+          relatedId: lead.id,
+          relatedType: "lead",
+        });
+        existingKeys.add(dedupKey);
+      }
     }
 
     // Also notify admins
     for (const adminId of adminIds) {
-      if (adminId === lead.assigned_to) continue; // don't double-notify
-      notifications.push({
-        userId: adminId,
-        type: "follow_up_overdue",
-        title: `Overdue follow-up: ${customerName}`,
-        body: `Follow-up for "${customerName}" (assigned to sales) is ${overdueDays} day(s) overdue.`,
-        relatedId: lead.id,
-        relatedType: "lead",
-      });
+      if (adminId === lead.assigned_to) continue;
+      const dedupKey = `${lead.id}:${adminId}:follow_up_overdue`;
+      if (!existingKeys.has(dedupKey)) {
+        notifications.push({
+          userId: adminId,
+          type: "follow_up_overdue",
+          title: `Overdue follow-up: ${customerName}`,
+          body: `Follow-up for "${customerName}" (assigned to sales) is ${overdueDays} day(s) overdue.`,
+          relatedId: lead.id,
+          relatedType: "lead",
+        });
+        existingKeys.add(dedupKey);
+      }
     }
   }
 

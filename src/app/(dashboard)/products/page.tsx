@@ -65,7 +65,8 @@ export default function ProductsPage() {
     setLoading(true);
     supabase
       .from("products")
-      .select("*")
+      // P-03: explicit columns instead of select("*")
+      .select("id,category,name,sku,description,unit_price,unit,brand,created_at")
       .order("category")
       .order("name")
       .then(({ data }) => {
@@ -250,7 +251,8 @@ export default function ProductsPage() {
           setLoading(true);
           supabase
             .from("products")
-            .select("*")
+            // P-03: explicit columns instead of select("*")
+            .select("id,category,name,sku,description,unit_price,unit,brand,created_at")
             .order("category")
             .order("name")
             .then(({ data }) => {

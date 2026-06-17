@@ -1,59 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createServerSupabase } from "@/lib/supabase-server";
 
-// ─── Cookie helpers ───
-// The auth cookie can be in two formats:
-//  1. Base64-encoded JSON (set by login page via btoa)
-//  2. Raw JSON (set by @supabase/ssr after token refresh)
-function parseCookieValue(cookieHeader: string): Record<string, any> | null {
-  const m = cookieHeader.match(
-    /sb-vfopmpxlhwzpxqegayew-auth-token(?:\.\d+)?=([^;]+)/
-  );
-  if (!m) return null;
-  const raw = m[1];
-  // Try raw JSON first (format set by @supabase/ssr middleware)
-  try {
-    return JSON.parse(raw);
-  } catch {}
-  // Try base64-encoded JSON (format set by login page)
-  try {
-    const decoded = atob(raw);
-    return JSON.parse(decoded);
-  } catch {}
-  // Fallback: URI-decoded (legacy)
-  try {
-    return JSON.parse(decodeURIComponent(raw));
-  } catch {}
-  return null;
-}
-
-function parseAccessTokenFromCookie(request: Request): string | null {
-  const cookie = request.headers.get("cookie") || "";
-  const session = parseCookieValue(cookie);
-  return session?.access_token ?? null;
-}
-
-// Verify current user via access token, returns user id or null
-async function verifyUser(request: Request): Promise<string | null> {
-  const accessToken = parseAccessTokenFromCookie(request);
-  if (!accessToken) return null;
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-  try {
-    const resp = await fetch(`${supabaseUrl}/auth/v1/user`, {
-      headers: {
-        "apikey": serviceKey,
-        "Authorization": `Bearer ${accessToken}`,
-      },
-    });
-    if (!resp.ok) return null;
-    const user = await resp.json();
-    return user?.id ?? null;
-  } catch {
-    return null;
-  }
+// Resolve the authenticated user id from the @supabase/ssr session cookie
+// (chunked + base64url, handled natively by createServerClient). Replaces the
+// old hand-rolled multi-format (raw/base64/URI) cookie parsing.
+async function getAuthUserId(): Promise<string | null> {
+  const supabase = await createServerSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  return user?.id ?? null;
 }
 
 // GET /api/users/[id]/password — Admin/boss view password hint
@@ -69,8 +24,8 @@ export async function GET(
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    // Verify current user role from access token
-    const userId = await verifyUser(request);
+    // Verify current user role from session
+    const userId = await getAuthUserId();
     if (!userId) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
@@ -121,9 +76,11 @@ export async function PATCH(
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    // Self-change: get current user from request cookie
+    // Self-change: get current user's access token from ssr session
     if (targetId === "change-password") {
-      const accessToken = parseAccessTokenFromCookie(request);
+      const authSupa = await createServerSupabase();
+      const { data: { session: curSession } } = await authSupa.auth.getSession();
+      const accessToken = curSession?.access_token;
       if (!accessToken) {
         return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
       }
@@ -154,7 +111,7 @@ export async function PATCH(
     }
 
     // Admin/boss reset: verify current user role
-    const userId = await verifyUser(request);
+    const userId = await getAuthUserId();
     if (!userId) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }

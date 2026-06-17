@@ -1,22 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
 
 /**
  * GET /api/quotations/export?id=<quote_id>
  * Export quotation as CSV file
  */
-
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY not configured — set it in production environment variables.",
-    );
-  }
-  return createClient(url, key);
-}
 
 /** Escape a CSV field value */
 function csvEscape(val: unknown): string {
@@ -51,8 +40,6 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
-
-    const supabaseAdmin = getSupabaseAdmin();
 
     // Fetch user role for ownership check
     const { data: profile } = await supabase

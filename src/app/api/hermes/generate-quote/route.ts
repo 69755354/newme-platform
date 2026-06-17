@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createServerSupabase } from "@/lib/supabase-server";
 import { calculateQuotation } from "../../../../lib/quotation-engine";
 
 /**
@@ -12,36 +13,6 @@ import { calculateQuotation } from "../../../../lib/quotation-engine";
  * 从 lead 的 devices_json 字段 (或 service_needs) 自动推导设备清单，
  * 调用 quotation-engine 计算，保存到数据库。
  */
-
-function getSupabaseAuth(req: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  if (!url || !key) throw new Error("Missing Supabase env vars");
-  const client = createClient(url, key, {
-    auth: {
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
-  // Hydrate session from cookie
-  const accessToken = req.cookies.get("sb-access-token")?.value;
-  const refreshToken = req.cookies.get("sb-refresh-token")?.value;
-  if (accessToken && refreshToken) {
-    client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-  }
-  return client;
-}
-
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY not configured — set it in production environment variables.",
-    );
-  }
-  return createClient(url, key);
-}
 
 /** Generate quote number: NM-YYYY-XXXX (sequential) */
 async function generateQuoteNo(supabase: any): Promise<string> {
@@ -135,7 +106,7 @@ function deriveDevices(lead: Record<string, any>): Record<string, number> {
 export async function POST(request: NextRequest) {
   try {
     // ── Auth check ──
-    const supabaseAuth = getSupabaseAuth(request);
+    const supabaseAuth = await createServerSupabase();
     const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -153,12 +124,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "lead_id required" }, { status: 400 });
     }
 
-    const supabaseAdmin = getSupabaseAdmin();
-
     // 1. Fetch lead data
     const { data: lead, error: leadErr } = await (supabaseAdmin as any)
       .from("leads")
-      .select("*")
+      .select("id,assigned_to,devices_json,service_needs,property_type,property_size_sqm")
       .eq("id", lead_id)
       .single();
 
@@ -262,7 +231,7 @@ export async function POST(request: NextRequest) {
       // 8. Update lead stage
       const { error: updateErr } = await (supabaseAdmin as any)
         .from("leads")
-        .update({ stage: "quotation_submitted", updated_at: new Date().toISOString() })
+        .update({ stage: "quotation_submitted", quotation_value: calculation.total, updated_at: new Date().toISOString() })
         .eq("id", lead_id);
       if (updateErr) {
         console.error("[Hermes API] Failed to update lead stage:", updateErr);
@@ -310,7 +279,7 @@ export async function POST(request: NextRequest) {
     // 8. Update lead stage to 'quotation_submitted'
     const { error: updateErr } = await (supabaseAdmin as any)
       .from("leads")
-      .update({ stage: "quotation_submitted", updated_at: new Date().toISOString() })
+      .update({ stage: "quotation_submitted", quotation_value: calculation.total, updated_at: new Date().toISOString() })
       .eq("id", lead_id);
     if (updateErr) {
       console.error("[Hermes API] Failed to update lead stage:", updateErr);

@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // 1. Fetch all active alerts from the view
+    // P-03: select("*") — lead_alerts 视图列少，暂保留
     const { data: alerts, error: alertErr } = await supabaseAdmin
       .from("lead_alerts")
       .select("*")
@@ -32,16 +33,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: "No alerts", count: 0 });
     }
 
-    // 2. Check recently sent notifications to deduplicate (last 24h)
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    // 2. Check ALL existing dedup-type notifications (no time limit — permanent dedup)
     const { data: recentNotifs } = await supabaseAdmin
       .from("notifications")
       .select("related_id, type")
       .in("type", [
         "followup_reminder",
         "follow_up_overdue",
-      ])
-      .gte("created_at", since);
+      ]);
 
     const recentKeys = new Set(
       (recentNotifs || []).map((n) => `${n.related_id}:${n.type}`)

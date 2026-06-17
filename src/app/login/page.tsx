@@ -7,9 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LanguageProvider, useLanguage } from "@/lib/i18n/LanguageContext";
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { createClient } from "@/lib/supabase";
 
 function LoginPageInner() {
   const [email, setEmail] = useState("");
@@ -26,50 +24,20 @@ function LoginPageInner() {
     setError("");
 
     try {
-      const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-        method: "POST",
-        headers: {
-          "apikey": SUPABASE_ANON_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-          gotrue_meta_security: {},
-        }),
+      const supabase = createClient();
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        setError(data.error_description || data.msg || t("login.failed"));
+      if (signInError || !data.session) {
+        setError(signInError?.message || t("login.failed"));
         setLoading(false);
         return;
       }
 
-      // Store session in localStorage for client-side createClient()
-      localStorage.setItem("sb-vfopmpxlhwzpxqegayew-auth-token", JSON.stringify({
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-        expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
-        user: data.user,
-      }));
-
-      // @supabase/ssr middleware uses default cookieEncoding="raw"
-      // Must be plain JSON string — base64 encoded values cause SSR auth to fail
-      const cookiePayload = JSON.stringify({
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-        expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
-      });
-
-      // Primary format for @supabase/ssr (createServerClient / middleware)
-      document.cookie = `sb-vfopmpxlhwzpxqegayew-auth-token=${cookiePayload}; path=/; max-age=${data.expires_in}; SameSite=Strict; Secure`;
-      document.cookie = `sb-vfopmpxlhwzpxqegayew-refresh-token=${data.refresh_token}; path=/; max-age=2592000; SameSite=Strict; Secure`;
-      // Legacy format for backward compat (middleware fallback)
-      document.cookie = `sb-access-token=${data.access_token}; path=/; max-age=${data.expires_in}; SameSite=Strict; Secure`;
-      document.cookie = `sb-refresh-token=${data.refresh_token}; path=/; max-age=2592000; SameSite=Strict; Secure`;
-
+      // createBrowserClient (@supabase/ssr) writes the auth cookie itself
+      // (chunked + base64url). No manual localStorage / document.cookie writes.
       const redirectTo = searchParams.get("redirect") || "/dashboard";
       router.push(redirectTo);
       router.refresh();

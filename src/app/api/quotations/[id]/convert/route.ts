@@ -146,11 +146,15 @@ export async function POST(
       })
       .eq("id", quotationId);
 
-    // Update lead stage to contract_won
+    // Update lead stage to contract_won + ensure quotation_value backfilled (P0 fix)
     if (quote.lead_id) {
       await supabaseAdmin
         .from("leads")
-        .update({ stage: "contract_won", updated_at: new Date().toISOString() })
+        .update({
+          stage: "contract_won",
+          quotation_value: quote.total_amount,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", quote.lead_id);
     }
 

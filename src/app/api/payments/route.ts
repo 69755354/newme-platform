@@ -124,6 +124,7 @@ export async function GET(request: NextRequest) {
     const contractId = searchParams.get("contract_id");
     const confirmed = searchParams.get("confirmed");
 
+    // P-03: select("*") — payments 表列少（11 列），暂保留
     let query = supabaseAdmin
       .from("payments")
       .select("*")

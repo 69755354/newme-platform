@@ -50,8 +50,9 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.customer_name.trim() && !form.phone.trim()) {
-      setError(t("leads.nameOrPhoneRequired"));
+    // Validate: customer name is required
+    if (!form.customer_name.trim()) {
+      setError(t("leads.nameRequired") || "Customer name is required");
       return;
     }
     setSaving(true);
@@ -59,41 +60,52 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
 
     const { data: { user } } = await supabase.auth.getUser();
 
-    const { data: newLeadId, error: insertErr } = await supabase.rpc("assign_new_lead", {
-      p_customer_name: form.customer_name.trim() || "Unknown",
-      p_phone: form.phone.trim() || null,
-      p_source: form.source,
-      p_notes: form.notes.trim() || null,
-      p_next_action: "call",
-      p_next_followup_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-    });
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
-    if (insertErr) {
+    // Direct INSERT — no auto-assignment, admin will assign manually
+    const { data: newLead, error: insertErr } = await supabase
+      .from("leads")
+      .insert({
+        customer_name: form.customer_name.trim(),
+        phone: form.phone.trim() || null,
+        source: form.source,
+        location: form.location.trim() || null,
+        quality: "pending",
+        stage: "new",
+        lead_status: "hot",
+        next_action: "call",
+        next_followup_date: tomorrow,
+        assigned_to: null, // admin assigns manually
+      })
+      .select("id")
+      .single();
+
+    if (insertErr || !newLead) {
       console.error("QuickCreate failed:", insertErr);
       setError(t("leads.createFailed"));
       setSaving(false);
       return;
     }
 
-    // Update fields not covered by the RPC (location)
-    if (newLeadId && form.location.trim()) {
-      await supabase.from("leads").update({ location: form.location.trim() }).eq("id", newLeadId);
-    }
+    const newLeadId = newLead.id;
 
     // Save note as activity
-    if (newLeadId && form.notes.trim()) {
+    if (form.notes.trim()) {
       const { error: noteErr } = await supabase.from("activities").insert({
         lead_id: newLeadId,
         type: "note",
         content: form.notes.trim(),
         user_id: user?.id,
       });
-      if (noteErr) console.error("Note save failed:", noteErr);
+      if (noteErr) {
+        console.error("Note save failed:", noteErr);
+        import("sonner").then(({ toast }) => toast.error(t("leads.noteSaveFailed") || "Note failed to save"));
+      }
     }
 
-    // Notify admins about new lead (RPC already notifies the assigned rep)
+    // Notify admins about new lead
     import("@/lib/notify").then(({ notify }) => {
-      notify({ type: "lead_created", lead_id: newLeadId!, customer_name: form.customer_name || "Unknown" });
+      notify({ type: "lead_created", lead_id: newLeadId, customer_name: form.customer_name || "Unknown" });
     });
 
     // Meta Pixel tracking

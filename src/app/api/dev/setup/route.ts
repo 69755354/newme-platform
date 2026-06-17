@@ -13,8 +13,11 @@ export async function POST() {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const DEV_EMAIL = "dev@newme.ae";
-  const DEV_PASSWORD = "dev123456";
+  const DEV_EMAIL = process.env.DEV_EMAIL;
+  const DEV_PASSWORD = process.env.DEV_PASSWORD;
+  if (!DEV_EMAIL || !DEV_PASSWORD) {
+    return NextResponse.json({ error: "DEV_EMAIL/DEV_PASSWORD env not configured" }, { status: 503 });
+  }
 
   try {
     // Check if user already exists

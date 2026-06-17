@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { calculateQuotation, CalculateResult } from "../../../../lib/quotation-engine";
 
@@ -11,17 +11,6 @@ import { calculateQuotation, CalculateResult } from "../../../../lib/quotation-e
  * Input:  { lead_id, devices, discount_rate?, notes? }
  * Output: { status, quote_id, quote_no, total, valid_until }
  */
-
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY not configured — set it in production environment variables.",
-    );
-  }
-  return createClient(url, key);
-}
 
 /** Generate quote number: NM-YYYY-XXXX (sequential) */
 async function generateQuoteNo(supabase: any): Promise<string> {
@@ -87,8 +76,6 @@ export async function POST(request: NextRequest) {
       discount_rate: typeof discount_rate === "number" ? discount_rate : 0,
       notes,
     });
-
-    const supabaseAdmin = getSupabaseAdmin();
 
     // 2. Verify lead exists
     const { data: lead, error: leadErr } = await supabaseAdmin
@@ -162,11 +149,12 @@ export async function POST(request: NextRequest) {
       console.error("[Quotation Generate] Failed to insert business event:", eventErr);
     }
 
-    // 7. Update lead stage
+    // 7. Update lead stage + backfill quotation_value (P0 fix: pipeline value)
     const { error: updateErr } = await supabaseAdmin
       .from("leads")
       .update({
         stage: "quotation_submitted",
+        quotation_value: calculation.total,
         updated_at: new Date().toISOString(),
       })
       .eq("id", lead_id);

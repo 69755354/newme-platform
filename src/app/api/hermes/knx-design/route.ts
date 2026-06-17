@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createServerSupabase } from "@/lib/supabase-server";
 import { getStore } from "@/lib/knx-task-store";
 
 const store = getStore();
@@ -20,29 +21,8 @@ const store = getStore();
  * The caller polls GET /api/hermes/knx-design/status?task_id=xxx for progress.
  */
 
-function getSupabaseAuth(req: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  if (!url || !key) throw new Error("Missing Supabase env vars");
-  const client = createClient(url, key, {
-    auth: { autoRefreshToken: false, detectSessionInUrl: false },
-  });
-  const accessToken = req.cookies.get("sb-access-token")?.value;
-  const refreshToken = req.cookies.get("sb-refresh-token")?.value;
-  if (accessToken && refreshToken) {
-    client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-  }
-  return client;
-}
-
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error("SUPABASE_SERVICE_ROLE_KEY not configured");
-  }
-  return createClient(url, key);
-}
+// Auth client resolved from @supabase/ssr session cookie via createServerSupabase.
+// (Replaces the old getSupabaseAuth helper that read sb-access-token cookies.)
 
 /**
  * In-memory task store shared with status route via global.
@@ -128,7 +108,6 @@ async function deriveDevices(supabaseAdmin: any, lead: Record<string, any>): Pro
 
 async function runKnxDesignPipeline(taskId: string, leadId: string, devices: Record<string, number>, userId?: string) {
   try {
-    const supabaseAdmin = getSupabaseAdmin();
     const store = getTaskStore();
 
     // Step 1: Analyze / compute
@@ -263,13 +242,12 @@ function sleep(ms: number) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabaseAuth = getSupabaseAuth(request);
+    const supabaseAuth = await createServerSupabase();
     const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const supabaseAdmin = getSupabaseAdmin();
     const { lead_id } = await request.json();
 
     if (!lead_id) {

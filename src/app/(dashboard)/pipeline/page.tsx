@@ -201,6 +201,7 @@ export default function PipelinePage() {
 
     Promise.all([
       // 1. Fetch KPI targets for this sales person
+      // P-03 TODO: select("*") — 需显式列名 (kpi_targets 小表，字段: id, period, target_type, target_amount, assigned_to)
       supabase.from("kpi_targets").select("*").eq("period", period).eq("assigned_to", userId),
       // 2. Fetch contracts for this sales person
       supabase.from("contracts").select("id,contract_amount,status").eq("sales_id", userId),
@@ -247,7 +248,8 @@ export default function PipelinePage() {
   useEffect(() => {
     if (!userId || !role) return;
     (async () => {
-      let q = supabase.from("leads").select("*").limit(500);
+      // P-03: explicit columns instead of select("*") (leads has 85 columns)
+      let q = supabase.from("leads").select("id,customer_name,stage,quotation_value,win_probability,last_contact_date,next_followup_date,next_action,followup_count,recovery_candidate,transfer_candidate,sales_manager_review,lead_status,assigned_to,hold_since,rep_name,created_at,updated_at").limit(200);
       if (role === "sales") q = q.eq("assigned_to", userId);
       const { data, error: err } = await q;
       if (err) {

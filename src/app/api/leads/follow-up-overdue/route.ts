@@ -27,7 +27,7 @@ export async function GET() {
 
   let query = supabase
     .from("leads")
-    .select("*")
+    .select("id,customer_name,phone,email,stage,quality,assigned_to,next_followup_date,source,property_type,location,service_needs,budget_range,quotation_value,created_at,updated_at")
     .not("stage", "in", '("won","lost")')
     .lte("next_followup_date", today)
     .order("next_followup_date", { ascending: true });

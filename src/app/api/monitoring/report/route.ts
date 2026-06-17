@@ -21,6 +21,19 @@ function fingerprint(message: string, stack?: string): string {
 
 export async function POST(req: NextRequest) {
   try {
+    // Same-origin check — reject cross-site error reports (injection vector)
+    const origin = req.headers.get("origin");
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://app.newme.ae";
+    const allowedOrigins = [siteUrl, "http://localhost:3000", "https://localhost:3000"];
+    if (origin && !allowedOrigins.includes(origin)) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+    // Body size cap — prevent disk-fill via oversized payloads
+    const contentLength = parseInt(req.headers.get("content-length") || "0", 10);
+    if (contentLength > 50_000) {
+      return NextResponse.json({ error: "payload too large" }, { status: 413 });
+    }
+
     const body = await req.json();
     const {
       message = "Unknown error",

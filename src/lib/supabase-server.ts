@@ -1,49 +1,39 @@
-import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
+/**
+ * Supabase client for Server Components and Route Handlers.
+ *
+ * Uses @supabase/ssr createServerClient for correct chunked-cookie parsing
+ * and session handling. Token refresh is performed by the proxy (src/proxy.ts)
+ * via createMiddlewareClient on every matched request.
+ *
+ * Previously this hand-rolled `atob` decoding of a single cookie, which failed
+ * when @supabase/ssr chunked the session across multiple cookies (sb-*-auth-token.0/.1/…),
+ * causing intermittent "session lost" / 401 errors.
+ */
 export async function createServerSupabase() {
   const cookieStore = await cookies();
-  const allCookies = cookieStore.getAll();
 
-  // Try to find auth token from cookies (supports multiple formats)
-  let accessToken: string | undefined;
-
-  // 1. @supabase/ssr format: sb-{ref}-auth-token = base64(session_json)
-  const ssrCookie = allCookies.find(c => c.name === "sb-vfopmpxlhwzpxqegayew-auth-token");
-  if (ssrCookie) {
-    try {
-      const decoded = atob(ssrCookie.value);
-      const session = JSON.parse(decoded);
-      accessToken = session.access_token;
-    } catch {}
-  }
-
-  // 2. Legacy format: sb-access-token = raw access_token
-  if (!accessToken) {
-    const legacyCookie = allCookies.find(c => c.name === "sb-access-token");
-    if (legacyCookie) {
-      accessToken = legacyCookie.value;
-    }
-  }
-
-  // Create client with or without auth
-  const headers: Record<string, string> = {
-    apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  };
-  if (accessToken) {
-    headers.Authorization = `Bearer ${accessToken}`;
-  }
-
-  return createClient(
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-        detectSessionInUrl: false,
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options),
+            );
+          } catch {
+            // setAll called from a non-mutable context (Server Component).
+            // Safe to ignore — the proxy refreshes sessions on the next request.
+          }
+        },
       },
-      global: { headers },
     },
   );
 }

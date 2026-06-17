@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createServerSupabase } from "@/lib/supabase-server";
 import { getStore } from "@/lib/knx-task-store";
 
 /**
@@ -30,25 +31,13 @@ function getTaskStore(): Map<string, any> {
   return (global as any).__hermesKnxTasks;
 }
 
-function getSupabaseAuth(req: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  if (!url || !key) throw new Error("Missing Supabase env vars");
-  const client = createClient(url, key, {
-    auth: { autoRefreshToken: false, detectSessionInUrl: false },
-  });
-  const accessToken = req.cookies.get("sb-access-token")?.value;
-  const refreshToken = req.cookies.get("sb-refresh-token")?.value;
-  if (accessToken && refreshToken) {
-    client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-  }
-  return client;
-}
+// Auth client resolved from @supabase/ssr session cookie via createServerSupabase.
+// (Replaces the old getSupabaseAuth helper that read sb-access-token cookies.)
 
 export async function GET(request: NextRequest) {
   try {
     // Auth check
-    const supabaseAuth = getSupabaseAuth(request);
+    const supabaseAuth = await createServerSupabase();
     const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

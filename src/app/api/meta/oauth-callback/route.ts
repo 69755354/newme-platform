@@ -1,25 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const APP_ID = process.env.META_APP_ID || "1612447067166445";
 const APP_SECRET = process.env.META_APP_SECRET!;
 const REDIRECT_URI = process.env.META_REDIRECT_URI || "https://app.newme.ae/api/meta/oauth-callback";
 
-async function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Missing Supabase admin credentials");
-  return createClient(url, key, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-}
-
 async function saveTokenToSupabase(accessToken: string, expiresIn: number) {
-  const supabase = await getSupabaseAdmin();
   const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
   // Upsert — id=1 ensures a single row (singleton pattern)
-  const { error } = await supabase.from("meta_tokens").upsert(
+  const { error } = await supabaseAdmin.from("meta_tokens").upsert(
     {
       id: 1,
       access_token: accessToken,
@@ -46,6 +36,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const error = searchParams.get("error");
+  const state = searchParams.get("state");
 
   if (error) {
     const desc = searchParams.get("error_description") || "";
@@ -58,6 +49,16 @@ export async function GET(request: NextRequest) {
 
   if (!code) {
     return new NextResponse("No code parameter", { status: 400 });
+  }
+
+  // ── CSRF: verify state matches cookie from /oauth-start ──
+  const cookieState = request.cookies.get("oauth_state")?.value;
+  if (!state || !cookieState || state !== cookieState) {
+    console.error(`[OAuth] State mismatch — possible CSRF. query_state=${state} cookie_state=${cookieState ? "present" : "absent"}`);
+    return new NextResponse(
+      `<html><body><h2>Security Error</h2><p>OAuth state validation failed (CSRF protection). Please restart the authorization from the settings page.</p></body></html>`,
+      { status: 403, headers: { "content-type": "text/html; charset=utf-8" } }
+    );
   }
 
   try {

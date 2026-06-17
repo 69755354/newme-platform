@@ -4,7 +4,6 @@ import {
   createNotification,
   createNotificationsBulk,
   getAdminUserIds,
-  getAllActiveUserIds,
   VALID_NOTIFICATION_TYPES,
 } from "@/lib/notifications";
 import type { NotificationType } from "@/lib/notifications";
@@ -59,11 +58,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "lead_id required" }, { status: 400 });
       }
       const displayName = leadCustomerName || "New Lead";
-      // Admin/boss sees all notifications; others don't notify themselves
-      const activeIds = await getAllActiveUserIds(isAdmin ? undefined : user.id);
-      if (activeIds.length > 0) {
+      // Notify admins/bosses about new lead — sales people don't see other's leads
+      const adminIds = await getAdminUserIds();
+      const recipients = adminIds.filter((id) => id !== user.id);
+      if (recipients.length > 0) {
         await createNotificationsBulk(
-          activeIds.map((id) => ({
+          recipients.map((id) => ({
             userId: id,
             type: "lead_created",
             title: `New lead: ${displayName}`,
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
         );
       }
       // If lead was assigned to someone else (not the creator), notify them too
-      if (leadAssignee && leadAssignee !== user.id && !activeIds.includes(leadAssignee)) {
+      if (leadAssignee && leadAssignee !== user.id) {
         await createNotification({
           userId: leadAssignee,
           type: "lead_assigned",
@@ -135,11 +135,22 @@ export async function POST(request: NextRequest) {
       if (!quote_id) {
         return NextResponse.json({ error: "quote_id required" }, { status: 400 });
       }
-      // Notify all active users about new quotation
-      const activeIds = await getAllActiveUserIds(user.id);
-      if (activeIds.length > 0) {
+      // Notify admins + the lead's owner (not all active users)
+      const allAdminIds = await getAdminUserIds();
+      const qRecipients = [...allAdminIds.filter((id) => id !== user.id)];
+      if (quoteLeadId) {
+        const { data: qLead } = await supabase
+          .from("leads")
+          .select("assigned_to")
+          .eq("id", quoteLeadId)
+          .single();
+        if (qLead?.assigned_to && !qRecipients.includes(qLead.assigned_to)) {
+          qRecipients.push(qLead.assigned_to);
+        }
+      }
+      if (qRecipients.length > 0) {
         await createNotificationsBulk(
-          activeIds.map((id) => ({
+          qRecipients.map((id) => ({
             userId: id,
             type: "quote_created",
             title: `New quote: ${quote_no || "Untitled"}`,
@@ -162,11 +173,23 @@ export async function POST(request: NextRequest) {
       if (!contract_id) {
         return NextResponse.json({ error: "contract_id required" }, { status: 400 });
       }
-      // Notify all active users about new contract
-      const activeIds = await getAllActiveUserIds(user.id);
-      if (activeIds.length > 0) {
+      // Notify admins about new contract (not all active users)
+      const allAdminIds = await getAdminUserIds();
+      const cRecipients = allAdminIds.filter((id) => id !== user.id);
+      // If contract has a lead_id, look up the lead owner
+      if (createdContractLeadId) {
+        const { data: cLead } = await supabase
+          .from("leads")
+          .select("assigned_to")
+          .eq("id", createdContractLeadId)
+          .single();
+        if (cLead?.assigned_to && !cRecipients.includes(cLead.assigned_to)) {
+          cRecipients.push(cLead.assigned_to);
+        }
+      }
+      if (cRecipients.length > 0) {
         await createNotificationsBulk(
-          activeIds.map((id) => ({
+          cRecipients.map((id) => ({
             userId: id,
             type: "contract_created",
             title: `New contract: ${contract_no || "Untitled"}${createdAmount ? ` · AED ${createdAmount.toLocaleString()}` : ""}`,
@@ -258,11 +281,20 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
       }
-      // Notify all active users
-      const activeIds = await getAllActiveUserIds(isAdmin ? undefined : user.id);
-      if (activeIds.length > 0) {
+      // Notify admins + contract's sales person (not all active users)
+      const signAdminIds = await getAdminUserIds();
+      const signRecipients = [...signAdminIds.filter((id) => id !== user.id)];
+      const { data: signContract } = await supabase
+        .from("contracts")
+        .select("sales_id")
+        .eq("id", contract_id)
+        .single();
+      if (signContract?.sales_id && !signRecipients.includes(signContract.sales_id)) {
+        signRecipients.push(signContract.sales_id);
+      }
+      if (signRecipients.length > 0) {
         await createNotificationsBulk(
-          activeIds.map((id) => ({
+          signRecipients.map((id) => ({
             userId: id,
             type: "contract_signed",
             title: `New contract: AED ${amount?.toLocaleString() || "N/A"}`,
@@ -361,11 +393,22 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
       }
-      // Notify all active users about payment
-      const activeIds = await getAllActiveUserIds(isAdmin ? undefined : user.id);
-      if (activeIds.length > 0) {
+      // Notify admins + contract's sales person (not all active users)
+      const payAdminIds = await getAdminUserIds();
+      const payRecipients = [...payAdminIds.filter((id) => id !== user.id)];
+      if (payContractId) {
+        const { data: payContract } = await supabase
+          .from("contracts")
+          .select("sales_id")
+          .eq("id", payContractId)
+          .single();
+        if (payContract?.sales_id && !payRecipients.includes(payContract.sales_id)) {
+          payRecipients.push(payContract.sales_id);
+        }
+      }
+      if (payRecipients.length > 0) {
         await createNotificationsBulk(
-          activeIds.map((id) => ({
+          payRecipients.map((id) => ({
             userId: id,
             type: "payment_received",
             title: `Payment received: AED ${payAmount?.toLocaleString() || "N/A"}`,

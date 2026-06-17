@@ -19,10 +19,11 @@ import {
   BarChart3, Megaphone,
 } from "lucide-react";
 
-/* ─── 9-stage pipeline ─── */
+/* ─── 11-stage pipeline ─── */
 const PIPELINE_STAGES = [
   { key: "new", label: "New Lead", color: "#6B7280", bg: "bg-muted/30", border: "border-border/40" },
   { key: "contacted", label: "Contacted", color: "#C48A52", bg: "bg-amber-950/30", border: "border-amber-800/40" },
+  { key: "no_answered", label: "No Answered", color: "#F97316", bg: "bg-orange-950/20", border: "border-orange-800/40" },
   { key: "requirement_confirmed", label: "Req Confirmed", color: "#E0B95A", bg: "bg-yellow-950/20", border: "border-yellow-800/40" },
   { key: "solution_submitted", label: "Solution Sub.", color: "#E5007E", bg: "bg-wine-950/20", border: "border-wine-800/40" },
   { key: "quotation_submitted", label: "Quotation Sub.", color: "#8B5CF6", bg: "bg-purple-950/20", border: "border-purple-800/40" },
@@ -30,6 +31,7 @@ const PIPELINE_STAGES = [
   { key: "pending_decision", label: "Pending Decision", color: "#F59E0B", bg: "bg-amber-950/20", border: "border-amber-800/40" },
   { key: "won", label: "Won", color: "#4ADE80", bg: "bg-emerald-950/20", border: "border-emerald-800/40" },
   { key: "lost", label: "Lost", color: "#6B7280", bg: "bg-muted/30", border: "border-border/40" },
+  { key: "fake", label: "Fake", color: "#DC2626", bg: "bg-red-950/20", border: "border-red-800/40" },
 ] as const;
 
 const STATUS_EMOJIS: Record<string, string> = {
@@ -38,10 +40,12 @@ const STATUS_EMOJIS: Record<string, string> = {
 
 const STAGE_COLORS: Record<string, string> = {
   new: "bg-gray-500/10 text-muted-foreground", contacted: "bg-amber-500/10 text-amber-400",
+  no_answered: "bg-orange-500/10 text-orange-400",
   requirement_confirmed: "bg-yellow-500/10 text-yellow-400", solution_submitted: "bg-rose-500/10 text-rose-400",
   quotation_submitted: "bg-purple-500/10 text-purple-400", negotiation: "bg-blue-500/10 text-blue-400",
   pending_decision: "bg-amber-500/10 text-amber-400", won: "bg-emerald-500/10 text-emerald-400",
   lost: "bg-gray-500/10 text-muted-foreground",
+  fake: "bg-red-900/20 text-red-400",
 };
 
 // Filter out DB placeholder values that should show as "no data"
@@ -152,14 +156,50 @@ function LeadsContent() {
     const ids = Array.from(selectedLeadIds);
     const toUser = salesUsers.find((u: any) => u.id === bulkTransferTargetId);
     const toName = toUser?.full_name || toUser?.email || bulkTransferTargetId;
-    for (const leadId of ids) {
+
+    // Cache user.id ONCE outside loop (was 3× getUser per lead → N×3 round-trips)
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
+
+    // Batch UPDATE all leads in a single request
+    await supabase.from("leads").update({ assigned_to: bulkTransferTargetId }).in("id", ids);
+
+    // Build bulk-insert arrays (per-lead metadata preserved, single insert per table)
+    const transferRows = ids.map(leadId => {
+      const oldLead = leads.find(l => l.id === leadId);
+      return {
+        lead_id: leadId,
+        from_user_id: oldLead?.assigned_to,
+        to_user_id: bulkTransferTargetId,
+        reason: "batch_reassign",
+        transferred_by: userId,
+      };
+    });
+    const activityRows = ids.map(leadId => {
       const oldLead = leads.find(l => l.id === leadId);
       const oldName = salesUsers.find((u: any) => u.id === oldLead?.assigned_to)?.full_name || "unassigned";
-      await supabase.from("leads").update({ assigned_to: bulkTransferTargetId }).eq("id", leadId);
-      await supabase.from("transfer_history").insert({ lead_id: leadId, from_user_id: oldLead?.assigned_to, to_user_id: bulkTransferTargetId, reason: "batch_reassign", transferred_by: (await supabase.auth.getUser()).data.user?.id });
-      await supabase.from("activities").insert({ lead_id: leadId, type: "transfer", content: `Batch reassigned from ${oldName} to ${toName}`, user_id: (await supabase.auth.getUser()).data.user?.id });
-      await supabase.from("business_events").insert({ lead_id: leadId, event_type: "transfer", description: `Batch reassigned from ${oldName} to ${toName}`, user_id: (await supabase.auth.getUser()).data.user?.id });
-    }
+      return {
+        lead_id: leadId,
+        type: "transfer",
+        content: `Batch reassigned from ${oldName} to ${toName}`,
+        user_id: userId,
+      };
+    });
+    const eventRows = ids.map(leadId => {
+      const oldLead = leads.find(l => l.id === leadId);
+      const oldName = salesUsers.find((u: any) => u.id === oldLead?.assigned_to)?.full_name || "unassigned";
+      return {
+        lead_id: leadId,
+        event_type: "transfer",
+        description: `Batch reassigned from ${oldName} to ${toName}`,
+        user_id: userId,
+      };
+    });
+
+    await supabase.from("transfer_history").insert(transferRows);
+    await supabase.from("activities").insert(activityRows);
+    await supabase.from("business_events").insert(eventRows);
+
     setReassigning(false);
     setShowBulkTransfer(false);
     clearSelection();
@@ -174,9 +214,11 @@ function LeadsContent() {
     if (salesRole === null || currentUserId === null) return;
     setLoading(true);
     setError(null);
-    let q = supabase.from("leads").select("*");
+    // P-03: 显式列名（避免 85 列 select("*") 传输冗余归因/UTM 数据）
+    // P-05: limit 500→200（当前数据量足够；真正分页待后续迭代加游标分页）
+    let q = supabase.from("leads").select("id, customer_name, phone, stage, lead_status, assigned_to, source, location, property_type, quotation_value, win_probability, last_contact_date, next_followup_date, next_action, followup_count, lost_reason, recovery_candidate, transfer_candidate, sales_manager_review, updated_at, created_at");
     if (salesRole === "sales") q = q.eq("assigned_to", currentUserId);
-    const { data, error: err } = await q.order("updated_at", { ascending: false }).limit(500);
+    const { data, error: err } = await q.order("updated_at", { ascending: false }).limit(200);
     if (err) {
       console.error("Failed to fetch leads:", err);
       setError(t("common.loadFailedRetry"));

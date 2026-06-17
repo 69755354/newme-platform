@@ -29,13 +29,15 @@ import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadWorkflow from "@/components/lead-workflow";
 import { Toaster } from "sonner";
 
-const STAGES = ["new", "contacted", "requirement_confirmed", "solution_submitted", "quotation_submitted", "negotiation", "pending_decision", "won", "lost"];
+const STAGES = ["new", "contacted", "no_answered", "requirement_confirmed", "solution_submitted", "quotation_submitted", "negotiation", "pending_decision", "won", "lost", "fake"];
 const STAGE_COLORS: Record<string, string> = {
   new: "bg-gray-500/10 text-muted-foreground", contacted: "bg-amber-500/10 text-amber-400",
+  no_answered: "bg-orange-500/10 text-orange-400",
   requirement_confirmed: "bg-yellow-500/10 text-yellow-400", solution_submitted: "bg-rose-500/10 text-rose-400",
   quotation_submitted: "bg-purple-500/10 text-purple-400", negotiation: "bg-blue-500/10 text-blue-400",
   pending_decision: "bg-amber-500/10 text-amber-400", won: "bg-emerald-500/10 text-emerald-400",
   lost: "bg-gray-500/10 text-muted-foreground",
+  fake: "bg-red-900/20 text-red-400",
 };
 const getStatusLabels = (t: (key: string) => string): Record<string, { label: string; color: string; bg: string }> => ({
   hot: { label: "🔥 " + t("leads.hot"), color: "text-rose-400", bg: "bg-rose-500/10" },

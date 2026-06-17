@@ -41,11 +41,12 @@ interface InstallmentPlan {
 }
 
 /* ─── 9-stage funnel ─── */
-const STAGE_KEYS = ["new","contacted","requirement_confirmed","solution_submitted","quotation_submitted","negotiation","pending_decision","won","lost"] as const;
+const STAGE_KEYS = ["new","contacted","no_answered","requirement_confirmed","solution_submitted","quotation_submitted","negotiation","pending_decision","won","lost","fake"] as const;
 const STAGE_COLORS: Record<string,string> = {
-  new: "#6B7280", contacted: "#C48A52", requirement_confirmed: "#E0B95A",
+  new: "#6B7280", contacted: "#C48A52", no_answered: "#F97316",
+  requirement_confirmed: "#E0B95A",
   solution_submitted: "#E5007E", quotation_submitted: "#8B5CF6",
-  negotiation: "#3B82F6", pending_decision: "#F59E0B", won: "#4ADE80", lost: "#6B7280",
+  negotiation: "#3B82F6", pending_decision: "#F59E0B", won: "#4ADE80", lost: "#6B7280", fake: "#DC2626",
 };
 
 function fmtAED(v: number): string {
@@ -127,7 +128,10 @@ export default function DashboardPage() {
     if (userRole === null) return;
     setLoading(true);
     setError(null);
-    let query = supabase.from("leads").select("*");
+    // Explicit columns — dashboard only needs aggregation/pipeline fields, not all 85 columns
+    let query = supabase.from("leads").select(
+      "id,assigned_to,stage,lead_status,quotation_value,win_probability,last_contact_date,created_at,updated_at,hold_since,recovery_candidate,transfer_candidate,sales_manager_review,source,source_platform"
+    );
     if (userRole === "sales" && userId) {
       query = query.eq("assigned_to", userId);
     }
@@ -236,7 +240,8 @@ export default function DashboardPage() {
 
   // Fetch KPI targets for selected period
   useEffect(() => {
-    supabase.from("kpi_targets").select("*").eq("period", period).then(({ data }) => {
+    // Only target_type, assigned_to, target_amount are consumed in KPI computations
+    supabase.from("kpi_targets").select("id,target_type,assigned_to,target_amount").eq("period", period).then(({ data }) => {
       if (data) setKpiTargets(data);
     });
   }, [supabase, period]);
@@ -283,10 +288,14 @@ export default function DashboardPage() {
       }
 
       // Today's follow-ups
+      // TODO: todayFollowups state is set but never rendered — candidate for removal.
+      //       Columns mirror main leads query + customer_name/next_followup_date used in filter/order.
       const today = new Date().toISOString().split("T")[0];
       let followupQuery = supabase
         .from("leads")
-        .select("*")
+        .select(
+          "id,assigned_to,stage,lead_status,quotation_value,win_probability,last_contact_date,created_at,updated_at,hold_since,recovery_candidate,transfer_candidate,sales_manager_review,source,source_platform,customer_name,next_followup_date"
+        )
         .eq("next_followup_date", today)
         .not("stage", "in", '("won","lost")');
       if (userRole === "sales" && userId) {
@@ -717,8 +726,8 @@ export default function DashboardPage() {
     <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
       {[
         { label: t("dashboard.kpiLeads"), value: String(stats.totalActive), sub: t("dashboard.plusNwk").replace("{n}", String(stats.newThisWeek)), href: "/leads" },
-        { label: t("dashboard.kpiActive"), value: String(contractCount), sub: t("dashboard.nPipeline").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=negotiation" },
-        { label: t("dashboard.kpiQuotes"), value: String(stats.stageCounts.quotation_submitted + stats.stageCounts.negotiation + stats.stageCounts.pending_decision), sub: t("dashboard.nPending").replace("{n}", String(stats.stageCounts.quotation_submitted)), href: "/quotes" },
+        { label: t("dashboard.kpiActive"), value: String(stats.pipelineSize), sub: t("dashboard.nContracts").replace("{n}", String(contractCount)), href: "/leads" },
+        { label: t("dashboard.kpiQuotes"), value: String(stats.stageCounts.quotation_submitted), sub: t("dashboard.nNegotiating").replace("{n}", String(stats.stageCounts.negotiation + stats.stageCounts.pending_decision)), href: "/quotes" },
         { label: t("dashboard.pipelineValue"), value: fmtAED(stats.totalPipeline), sub: t("dashboard.nDeals").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=quotation_submitted" },
         { label: t("dashboard.won"), value: fmtAED(stats.monthlyRevenue), sub: t("dashboard.nClosed").replace("{n}", String(stats.wonCount)), href: "/leads?stage=won" },
         { label: t("dashboard.kpiConv"), value: `${stats.conversionRate}%`, sub: t("dashboard.nPctContacted").replace("{n}", String(stats.contactRate)), href: "/leads" },

@@ -271,20 +271,27 @@ export default function QuotesClient({ initialData, fetchError }: QuotesClientPr
       .update({ status: newStatus, updated_at: new Date().toISOString() })
       .eq("id", id);
     if (!err) {
-      // Cascade to lead: if quote accepted, advance lead stage to quotation_submitted
+      // Cascade to lead: if quote accepted, advance lead stage + backfill quotation_value
       if (newStatus === "accepted") {
-        const { data: quote } = await supabase.from("quotations").select("lead_id").eq("id", id).single();
+        const { data: quote } = await supabase.from("quotations").select("lead_id,total_amount").eq("id", id).single();
         if (quote?.lead_id) {
           const { data: lead } = await supabase.from("leads").select("stage").eq("id", quote.lead_id).single();
-          const STAGE_ORDER = ["new","contacted","requirement_confirmed","solution_submitted","quotation_submitted","negotiation","pending_decision","won","lost"];
+          const STAGE_ORDER = ["new","contacted","no_answered","requirement_confirmed","solution_submitted","quotation_submitted","negotiation","pending_decision","won","lost","fake"];
           const currentIdx = STAGE_ORDER.indexOf(lead?.stage || "");
           const targetIdx = STAGE_ORDER.indexOf("quotation_submitted");
           if (currentIdx >= 0 && currentIdx < targetIdx) {
             await supabase.from("leads").update({
               stage: "quotation_submitted",
+              quotation_value: quote.total_amount,
               win_probability: 50,
               updated_at: new Date().toISOString(),
               last_contact_date: new Date().toISOString(),
+            }).eq("id", quote.lead_id);
+          } else {
+            // 已在 quotation_submitted 或更后阶段，只回写金额
+            await supabase.from("leads").update({
+              quotation_value: quote.total_amount,
+              updated_at: new Date().toISOString(),
             }).eq("id", quote.lead_id);
           }
         }

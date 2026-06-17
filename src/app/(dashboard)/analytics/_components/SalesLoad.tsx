@@ -52,13 +52,14 @@ function fmtAED(v: number): string {
 }
 
 const STAGE_KEYS: string[] = [
-  "new", "contacted", "requirement_confirmed", "solution_submitted",
-  "quotation_submitted", "negotiation", "pending_decision", "won", "lost",
+  "new", "contacted", "no_answered", "requirement_confirmed", "solution_submitted",
+  "quotation_submitted", "negotiation", "pending_decision", "won", "lost", "fake",
 ];
 
 const STAGE_I18N_KEYS: Record<string, string> = {
   new: "pipeline.stageNew",
   contacted: "pipeline.stageContacted",
+  no_answered: "pipeline.stageNoAnswered",
   requirement_confirmed: "pipeline.stageReqConfirmed",
   solution_submitted: "pipeline.stageSolutionSub",
   quotation_submitted: "pipeline.stageQuotationSub",
@@ -66,11 +67,13 @@ const STAGE_I18N_KEYS: Record<string, string> = {
   pending_decision: "pipeline.stagePendingDecision",
   won: "pipeline.stageWon",
   lost: "pipeline.stageLost",
+  fake: "pipeline.stageFake",
 };
 
 const STAGE_COLORS: Record<string, string> = {
   new: "bg-gray-500/20 text-gray-300",
   contacted: "bg-amber-500/20 text-amber-300",
+  no_answered: "bg-orange-500/20 text-orange-300",
   requirement_confirmed: "bg-yellow-500/20 text-yellow-300",
   solution_submitted: "bg-pink-500/20 text-pink-300",
   quotation_submitted: "bg-purple-500/20 text-purple-300",
@@ -78,6 +81,7 @@ const STAGE_COLORS: Record<string, string> = {
   pending_decision: "bg-orange-500/20 text-orange-300",
   won: "bg-green-500/20 text-green-300",
   lost: "bg-gray-500/20 text-gray-400",
+  fake: "bg-red-500/20 text-red-300",
 };
 
 /* ─── Stat Card ─── */

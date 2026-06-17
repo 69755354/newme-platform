@@ -54,6 +54,7 @@ function getStageLabels(t: any): Record<string, string> {
   return {
     new: t("stageLabels.new"),
     contacted: t("stageLabels.contacted"),
+    no_answered: t("stageLabels.no_answered"),
     requirement_confirmed: t("stageLabels.requirement_confirmed"),
     solution_submitted: t("stageLabels.solution_submitted"),
     quotation_submitted: t("stageLabels.quotation_submitted"),
@@ -61,6 +62,7 @@ function getStageLabels(t: any): Record<string, string> {
     pending_decision: t("stageLabels.pending_decision"),
     won: t("stageLabels.won"),
     lost: t("stageLabels.lost"),
+    fake: t("stageLabels.fake"),
   };
 }
 

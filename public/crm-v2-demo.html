@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NewMe CRM · 升级预览</title>
+<style>
+:root { --brand: #E5007E; --brand-dark: #C4006A; --bs: #FCE4F1; --bg: #F5F6F8; --card: #FFFFFF; --text: #1A1D23; --text-2: #5F6672; --text-3: #969BA8; --border: #E5E7EB; --bs: #F1F3F5; --shadow: 0 1px 3px rgba(0,0,0,.06); --shadow-md: 0 4px 16px rgba(0,0,0,.08); --R: 10px; --r: 6px; --sw: 240px; --hh: 52px; --green: #10B981; --red: #EF4444; --blue: #3B82F6; --yellow: #F59E0B; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+
+/* SIDEBAR */
+.sidebar { position:fixed; inset:0 auto 0 0; width:var(--sw); background:#fff; border-right:1px solid var(--border); z-index:300; display:flex; flex-direction:column; transform:translateX(-100%); transition:transform .2s; }
+@media(min-width:769px){ .sidebar { transform:none; } }
+.sidebar.open { transform:translateX(0); }
+.sidebar-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.3); z-index:299; }
+.sidebar-backdrop.show { display:block; }
+.sb-logo { padding:12px 18px; border-bottom:1px solid var(--bs); display:flex; align-items:center; gap:8px; font-weight:700; font-size:14px; }
+.sb-logo .mk { width:28px;height:28px; background:linear-gradient(135deg,var(--brand),#FF4DA6); border-radius:7px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:800; }
+.sb-nav { flex:1; overflow-y:auto; padding:6px; }
+.sb-sec { font-size:9px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:1px; padding:10px 10px 4px; }
+.sb-it { display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:7px; cursor:pointer; font-size:12px; color:var(--text-2); transition:.1s; margin-bottom:1px; border:none; background:none; width:100%; text-align:left; }
+.sb-it:hover { background:var(--bs); }
+.sb-it.act { background:var(--bs); color:var(--brand); font-weight:600; }
+.sb-it.upgrade { color:var(--text); }
+.sb-role { padding:10px; border-top:1px solid var(--bs); display:flex; gap:2px; background:var(--bg); margin:4px; border-radius:7px; }
+.sb-role button { flex:1; padding:5px; border-radius:5px; border:none; background:none; cursor:pointer; font-size:10px; color:var(--text-3); }
+.sb-role button.act { background:#fff; color:var(--text); font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,.06); }
+
+/* HEADER */
+.header { position:fixed; top:0; left:0; right:0; height:var(--hh); background:rgba(255,255,255,.94); backdrop-filter:blur(10px); border-bottom:1px solid var(--border); z-index:200; display:flex; align-items:center; padding:0 14px; gap:12px; }
+@media(min-width:769px){ .header { left:var(--sw); } }
+.hamburger { display:flex; width:34px;height:34px; border-radius:7px; border:none; background:var(--bg); cursor:pointer; align-items:center; justify-content:center; font-size:18px; }
+@media(min-width:769px){ .hamburger { display:none; } }
+.header-title { font-weight:600; font-size:14px; }
+.header-right { margin-left:auto; display:flex; align-items:center; gap:8px; }
+.notif { width:32px;height:32px; border-radius:50%; border:none; background:var(--bg); cursor:pointer; font-size:14px; position:relative; }
+.notif .dot { position:absolute; top:6px;right:6px; width:7px;height:7px; background:var(--red); border-radius:50%; border:2px solid #fff; }
+.user { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:500; }
+.ua { width:26px;height:26px; border-radius:50%; background:linear-gradient(135deg,var(--brand),#FF4DA6); display:flex; align-items:center; justify-content:center; color:#fff; font-size:10px; font-weight:700; }
+
+/* MAIN */
+.main { padding-top:var(--hh); min-height:100vh; padding-bottom:40px; }
+@media(min-width:769px){ .main { margin-left:var(--sw); } }
+.page { display:none; padding:18px; max-width:1200px; }
+.page.act { display:block; animation:fade .15s; }
+@keyframes fade { from{opacity:0} to{opacity:1} }
+.ph { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; gap:8px; flex-wrap:wrap; }
+.pt { font-size:18px; font-weight:700; }
+.ps { color:var(--text-2); font-size:11px; margin-top:2px; }
+.upgrade-tag { font-size:9px; font-weight:600; background:var(--bs); color:var(--brand); padding:2px 7px; border-radius:6px; vertical-align:middle; margin-left:6px; }
+
+/* BANNER */
+.banner { position:fixed; bottom:0; left:0; right:0; height:28px; background:var(--brand); color:#fff; font-size:9px; font-weight:600; display:flex; align-items:center; justify-content:center; z-index:250; letter-spacing:.3px; }
+@media(min-width:769px){ .banner { left:var(--sw); } }
+
+/* BUTTONS */
+.btn { padding:6px 12px; border-radius:var(--r); border:none; cursor:pointer; font-size:11px; font-weight:500; display:inline-flex; align-items:center; gap:5px; }
+.btn1 { background:var(--brand); color:#fff; }
+.btn1:hover { background:var(--brand-dark); }
+.btn2 { background:#fff; color:var(--text); border:1px solid var(--border); }
+.btn2:hover { background:var(--bs); }
+.btn3 { background:none; color:var(--text-2); border:none; padding:4px 8px; }
+.btn3:hover { background:var(--bs); }
+.btns { padding:3px 8px; font-size:10px; }
+.btnd { background:var(--red); color:#fff; }
+
+/* METRICS */
+.metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px; }
+.mc { background:var(--card); border-radius:var(--R); padding:14px; box-shadow:var(--shadow); border:1px solid var(--bs); }
+.mc .mi { width:34px;height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center; margin-bottom:8px; font-size:14px; }
+.mc .ml { font-size:10px; color:var(--text-3); font-weight:500; margin-bottom:2px; }
+.mc .mv { font-size:24px; font-weight:700; letter-spacing:-1px; }
+.mc .md { font-size:10px; margin-top:3px; }
+.grn { color:var(--green); }
+
+/* CARD */
+.card { background:var(--card); border-radius:var(--R); padding:16px; box-shadow:var(--shadow); border:1px solid var(--bs); margin-bottom:12px; }
+.ch { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.ct { font-size:13px; font-weight:600; }
+
+/* TABLE */
+.tw { overflow-x:auto; border-radius:var(--R); border:1px solid var(--bs); }
+table { width:100%; border-collapse:collapse; font-size:11px; }
+th { padding:7px 10px; text-align:left; font-weight:600; font-size:10px; color:var(--text-2); background:var(--bg); border-bottom:1px solid var(--border); white-space:nowrap; }
+td { padding:7px 10px; border-bottom:1px solid var(--bs); }
+tr:hover td { background:#FAFBFC; }
+.cc { display:flex; align-items:center; gap:7px; cursor:pointer; }
+.ca { width:26px;height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:10px; font-weight:700; flex-shrink:0; }
+.cn { font-weight:600; }
+
+/* BADGES */
+.b { padding:2px 7px; border-radius:8px; font-size:9px; font-weight:600; white-space:nowrap; display:inline-block; }
+.b-potential { background:#F3F4F6; color:#6B7280; }
+.b-contact { background:#EFF6FF; color:#2563EB; }
+.b-analysis { background:#FAF5FF; color:#7C3AED; }
+.b-quote { background:#FFF7ED; color:#EA580C; }
+.b-nego { background:#ECFEFF; color:#0891B2; }
+.b-won { background:#ECFDF5; color:#059669; }
+.b-lost { background:#FEF2F2; color:#DC2626; }
+.b-hot { background:#FEF2F2; color:#DC2626; }
+.b-warm { background:#FFFBEB; color:#D97706; }
+.b-cold { background:#F3F4F6; color:#6B7280; }
+.stg { font-size:9px; color:var(--text-2); background:var(--bg); padding:1px 5px; border-radius:3px; }
+
+/* TOOLBAR */
+.tb { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; align-items:center; }
+.tb select, .tb input { height:30px; border:1px solid var(--border); border-radius:5px; padding:0 7px; font-size:10px; background:#fff; outline:none; }
+.tb select:focus, .tb input:focus { border-color:var(--brand); }
+
+/* KANBAN */
+.kb { display:flex; gap:8px; overflow-x:auto; padding-bottom:6px; }
+.kc { min-width:165px; flex:1; background:var(--bg); border-radius:var(--R); padding:8px; }
+.kch { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; padding:0 3px; }
+.kct { font-size:10px; font-weight:600; }
+.kcc { font-size:9px; color:var(--text-3); background:#fff; padding:1px 6px; border-radius:6px; }
+.kcd { background:#fff; border-radius:6px; padding:8px; margin-bottom:6px; cursor:pointer; box-shadow:var(--shadow); border-left:3px solid transparent; font-size:10px; }
+.kcd:hover { box-shadow:var(--shadow-md); }
+.kcd.urg { border-left-color:var(--red); }
+.kcd.2dy { border-left-color:var(--yellow); }
+.kcd .kn { font-weight:600; font-size:11px; margin-bottom:2px; }
+.kcd .ko { color:var(--text-3); margin-bottom:2px; }
+.kcd .km { display:flex; justify-content:space-between; align-items:center; margin-top:4px; }
+.kcd .kd { font-size:9px; color:var(--text-2); }
+.kcd .ks { width:18px;height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:8px; font-weight:700; }
+
+/* DRAWER */
+.ovl { position:fixed; inset:0; background:rgba(0,0,0,.25); z-index:400; display:none; }
+.ovl.show { display:block; }
+.dr { position:fixed; top:0;right:0;bottom:0; width:440px; max-width:100vw; background:#fff; z-index:401; box-shadow:0 8px 32px rgba(0,0,0,.15); transform:translateX(100%); transition:.2s; display:flex; flex-direction:column; }
+.dr.open { transform:translateX(0); }
+.drh { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+.drc { width:28px;height:28px; border-radius:50%; border:none; background:var(--bg); cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; }
+.drb { flex:1; overflow-y:auto; padding:14px; }
+.ds { margin-bottom:14px; }
+.ds h4 { font-size:9px; color:var(--text-3); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; }
+.df { display:flex; margin-bottom:4px; }
+.df .dl { width:60px; flex-shrink:0; font-size:10px; color:var(--text-3); }
+.df .dv { font-size:11px; font-weight:500; }
+
+/* TIMELINE */
+.tl { position:relative; padding-left:16px; }
+.tl::before { content:''; position:absolute; left:4px; top:0; bottom:0; width:1px; background:var(--border); }
+.tli { position:relative; margin-bottom:10px; }
+.tli::before { content:''; position:absolute; left:-13px; top:3px; width:7px;height:7px; border-radius:50%; background:var(--brand); border:2px solid #fff; box-shadow:0 0 0 2px var(--bs); }
+.tld { font-size:9px; color:var(--text-3); margin-bottom:1px; }
+.tlc { font-size:11px; }
+.tla { font-size:9px; color:var(--brand); font-weight:500; }
+
+/* MODAL */
+.md { position:fixed; inset:0; z-index:500; display:none; align-items:center; justify-content:center; padding:16px; }
+.md.show { display:flex; }
+.mdb { position:absolute; inset:0; background:rgba(0,0,0,.4); }
+.mdx { position:relative; background:#fff; border-radius:12px; padding:20px; width:400px; max-width:100%; box-shadow:0 8px 32px rgba(0,0,0,.2); }
+.mdt { font-size:15px; font-weight:700; margin-bottom:12px; }
+.fg { margin-bottom:10px; }
+.fg label { display:block; font-size:10px; font-weight:600; color:var(--text-2); margin-bottom:2px; }
+.fg input, .fg select, .fg textarea { width:100%; height:32px; border:1px solid var(--border); border-radius:5px; padding:0 7px; font-size:11px; outline:none; }
+.fg textarea { height:60px; padding:7px; resize:vertical; }
+.fg :focus { border-color:var(--brand); }
+.fr { display:flex; gap:6px; }
+.fr .fg { flex:1; }
+.ma { display:flex; justify-content:flex-end; gap:5px; margin-top:14px; }
+
+/* CONFIRM */
+.co { position:fixed; inset:0; z-index:550; display:none; align-items:center; justify-content:center; }
+.co.show { display:flex; }
+.cx { background:#fff; border-radius:12px; padding:20px; width:300px; max-width:90vw; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,.2); }
+.cx h4 { font-size:14px; margin-bottom:4px; }
+.cx p { font-size:11px; color:var(--text-2); margin-bottom:14px; }
+.ca { display:flex; gap:4px; justify-content:center; }
+
+/* TOAST */
+.tc { position:fixed; top:12px; right:12px; z-index:600; display:flex; flex-direction:column; gap:5px; }
+.to { padding:8px 14px; border-radius:7px; font-size:11px; font-weight:500; box-shadow:var(--shadow-md); animation:si .2s; display:flex; align-items:center; gap:6px; max-width:300px; }
+.ts { background:#ECFDF5; color:#065F46; border:1px solid #A7F3D0; }
+.te { background:#FEF2F2; color:#991B1B; border:1px solid #FECACA; }
+.ti { background:#EFF6FF; color:#1E40AF; border:1px solid #BFDBFE; }
+@keyframes si { from{opacity:0;transform:translateX(30px)} to{opacity:1;transform:translateX(0)} }
+
+/* FOOT */
+.fb { display:flex; justify-content:space-between; align-items:center; padding:6px 10px; font-size:10px; color:var(--text-3); border-top:1px solid var(--bs); }
+.fb .ba { display:flex; gap:3px; }
+.fb select { height:26px; border:1px solid var(--border); border-radius:3px; font-size:9px; padding:0 3px; }
+
+/* MOCK TABLE FOR NON-LEADS PAGES */
+.mock-row { display:flex; align-items:center; gap:8px; padding:6px 10px; border-bottom:1px solid var(--bs); font-size:11px; }
+.mock-row:last-child { border-bottom:none; }
+.mock-row .mr-main { flex:1; min-width:0; }
+.mock-row .mr-label { font-weight:600; margin-bottom:1px; }
+.mock-row .mr-sub { font-size:9px; color:var(--text-3); }
+
+/* RESPONSIVE */
+@media(max-width:768px){
+  .page { padding:12px; }
+  .pt { font-size:16px; }
+}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR BACKDROP -->
+<div class="sidebar-backdrop" id="sbBackdrop" onclick="toggleSidebar()"></div>
+
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="sb-logo"><div class="mk">N</div> NewMe <span style="color:var(--text-3);font-weight:400;font-size:10px;margin-left:2px;">CRM</span></div>
+  <nav class="sb-nav" id="sbNav"></nav>
+  <div class="sb-role">
+    <button class="act" onclick="setRole('admin')">👑 Admin</button>
+    <button onclick="setRole('sales')">💼 Sales</button>
+  </div>
+</aside>
+
+<!-- HEADER -->
+<header class="header">
+  <button class="hamburger" onclick="toggleSidebar()">☰</button>
+  <span class="header-title" id="headerTitle">驾驶舱</span>
+  <div class="header-right">
+    <button class="notif" onclick="showToast('info','通知','3条新通知 · 生产环境实时推送')">🔔<span class="dot"></span></button>
+    <div class="user"><div class="ua">LH</div>Lina</div>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main class="main" id="mainContent">
+
+<!-- ===== DASHBOARD ===== -->
+<div class="page act" id="pg-dashboard">
+  <div class="ph"><div><h1 class="pt">早安，Lina 👋</h1><p class="ps">今天有 <b style="color:var(--brand)" id="todayCount">5</b> 条跟进</p></div><div style="display:flex;gap:5px;"><button class="btn btn2 btns" onclick="navTo('leads')">全部线索</button><button class="btn btn1 btns" onclick="openLeadModal()">+ 新建</button></div></div>
+  <div class="metrics" id="metricsRow"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+    <div class="card"><div class="ch"><span class="ct">📈 本周新增趋势</span></div><div style="display:flex;align-items:flex-end;gap:6px;height:80px;" id="trendChart"></div></div>
+    <div class="card"><div class="ch"><span class="ct">🔽 转化漏斗</span></div><div id="funnelChart"></div></div>
+  </div>
+  <div class="card" style="margin-top:10px;"><div class="ch"><span class="ct">⏰ 待跟进</span></div><div class="tw"><table><thead><tr><th>客户</th><th>公司</th><th>状态</th><th>销售</th><th>下次跟进</th></tr></thead><tbody id="upcomingTable"></tbody></table></div></div>
+</div>
+
+<!-- ===== LEADS ⭐ ===== -->
+<div class="page" id="pg-leads">
+  <div class="ph"><div><h1 class="pt">线索管理 <span class="upgrade-tag">V2 UPGRADED</span></h1><p class="ps">共 <b id="leadsTotal">0</b> 条 · 批量操作 · 抽屉详情 · localStorage</p></div><button class="btn btn1 btns" onclick="openLeadModal()">+ 新建</button></div>
+  <div class="tb"><input type="text" id="leadSearch" placeholder="搜索客户、电话、公司..." oninput="renderLeads()" style="width:180px;"><select id="filterStatus" onchange="renderLeads()"><option value="">状态</option></select><select id="filterSource" onchange="renderLeads()"><option value="">来源</option></select><select id="filterQuality" onchange="renderLeads()"><option value="">质量</option></select><select id="filterSales" onchange="renderLeads()"><option value="">销售</option></select><span style="margin-left:auto;font-size:10px;color:var(--text-3)" id="filterInfo"></span></div>
+  <div class="card" style="padding:0;overflow:hidden;"><div class="tw"><table><thead><tr><th style="width:24px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th><th>客户</th><th>公司</th><th>电话</th><th>来源</th><th>状态</th><th>质量</th><th>销售</th><th>跟进</th><th style="width:90px;"></th></tr></thead><tbody id="leadsTableBody"></tbody></table></div><div class="fb"><span id="selectedInfo">已选 0 条</span><div class="ba" id="bulkActions" style="display:none;"><select id="bulkStatus" onchange="bulkChangeStatus()"><option value="">状态→</option></select><select id="bulkSales" onchange="bulkAssignSales()"><option value="">分配→</option></select><button class="btn btnd btns" onclick="bulkDelete()">删除</button></div></div></div>
+</div>
+
+<!-- ===== QUOTES ===== -->
+<div class="page" id="pg-quotes"><div class="ph"><div><h1 class="pt">报价管理</h1><p class="ps">KNX智能家居报价生成器 · 模板化配置 · 自动计算</p></div><button class="btn btn1 btns">+ 新建报价</button></div><div class="card" style="padding:0;overflow:hidden;"><div class="tw"><table><thead><tr><th>报价编号</th><th>客户</th><th>项目类型</th><th>金额 (AED)</th><th>状态</th><th>销售</th><th>日期</th></tr></thead><tbody><tr><td>Q-2026-0042</td><td><div class="cc"><div class="ca" style="background:#E5007E">AA</div><span class="cn">Ahmed Al Rashid</span></div></td><td>超级别墅全屋</td><td style="font-weight:600">2,847,000</td><td><span class="b b-quote">已发送</span></td><td>👑 Lina</td><td>6月18日</td></tr><tr><td>Q-2026-0041</td><td><div class="cc"><div class="ca" style="background:#7C3AED">FA</div><span class="cn">Fatima Al Mazrouei</span></div></td><td>别墅翻新</td><td style="font-weight:600">1,380,000</td><td><span class="b b-quote">已发送</span></td><td>🌸 Fatima</td><td>6月17日</td></tr><tr><td>Q-2026-0040</td><td><div class="cc"><div class="ca" style="background:#059669">SA</div><span class="cn">Salem Al Dhaheri</span></div></td><td>皇宫级全宅</td><td style="font-weight:600">9,200,000</td><td><span class="b b-analysis">草稿</span></td><td>💼 Omar</td><td>6月18日</td></tr><tr><td>Q-2026-0039</td><td><div class="cc"><div class="ca" style="background:#D97706">AM</div><span class="cn">Aisha Al Maktoum</span></div></td><td>奢华别墅</td><td style="font-weight:600">4,500,000</td><td><span class="b b-won">已确认</span></td><td>🌸 Fatima</td><td>6月15日</td></tr><tr><td>Q-2026-0038</td><td><div class="cc"><div class="ca" style="background:#2563EB">RH</div><span class="cn">Reem Al Hashimi</span></div></td><td>商业办公楼</td><td style="font-weight:600">7,650,000</td><td><span class="b b-quote">已发送</span></td><td>💼 Omar</td><td>6月17日</td></tr></tbody></table></div></div></div>
+
+<!-- ===== CONTRACTS ===== -->
+<div class="page" id="pg-contracts"><div class="ph"><div><h1 class="pt">合同 & 回款</h1><p class="ps">合同生命周期 · 分期回款 · 逾期提醒</p></div><button class="btn btn1 btns">+ 新建合同</button></div><div class="card" style="padding:0;overflow:hidden;"><div class="tw"><table><thead><tr><th>合同号</th><th>客户</th><th>总金额 (AED)</th><th>已回款</th><th>状态</th><th>下期到期</th></tr></thead><tbody><tr><td>C-2026-0018</td><td><div class="cc"><div class="ca" style="background:#E5007E">NG</div><span class="cn">Noura Al Ghurair</span></div></td><td>2,200,000</td><td>660,000 (30%)</td><td><span class="b b-won">执行中</span></td><td>7月15日 · 660,000</td></tr><tr><td>C-2026-0017</td><td><div class="cc"><div class="ca" style="background:#7C3AED">MZ</div><span class="cn">Mariam Al Zarooni</span></div></td><td>1,800,000</td><td>900,000 (50%)</td><td><span class="b b-won">执行中</span></td><td>7月30日 · 540,000</td></tr><tr><td>C-2026-0016</td><td><div class="cc"><div class="ca" style="background:#059669">YA</div><span class="cn">Yousef Al Shamsi</span></div></td><td>750,000</td><td>750,000 (100%)</td><td><span class="b b-won">已完成</span></td><td>—</td></tr><tr><td>C-2026-0015</td><td><div class="cc"><div class="ca" style="background:#D97706">OS</div><span class="cn">Omar Al Shafar</span></div></td><td>950,000</td><td>475,000 (50%)</td><td><span class="b b-won">执行中</span></td><td>7月8日 · 285,000</td></tr></tbody></table></div></div></div>
+
+<!-- ===== PIPELINE ⭐ ===== -->
+<div class="page" id="pg-pipeline"><div class="ph"><div><h1 class="pt">销售漏斗 <span class="upgrade-tag">V2 UPGRADED</span></h1><p class="ps">看板视图 · 紧急着色 · 点击卡片查看详情</p></div><button class="btn btn1 btns" onclick="openLeadModal()">+ 新建</button></div><div class="kb" id="kanbanBoard"></div></div>
+
+<!-- ===== ANALYTICS ===== -->
+<div class="page" id="pg-analytics"><div class="ph"><div><h1 class="pt">数据分析</h1><p class="ps">销售业绩 · 转化率 · ROI · 团队排行</p></div></div><div class="metrics"><div class="mc"><div class="mi" style="background:#FCE4F1;color:var(--brand)">💰</div><div class="ml">本月流水</div><div class="mv">184,000</div><div class="md"><span class="grn">↑ 22%</span> AED</div></div><div class="mc"><div class="mi" style="background:#ECFDF5;color:var(--green)">📊</div><div class="ml">整体转化率</div><div class="mv">14.3%</div><div class="md"><span class="grn">↑ 2.1%</span> vs上月</div></div><div class="mc"><div class="mi" style="background:#EFF6FF;color:var(--blue)">⏱</div><div class="ml">平均成交周期</div><div class="mv">32<small style="font-size:13px;font-weight:400">天</small></div><div class="md"><span class="grn">↓ 5天</span> 改善</div></div><div class="mc"><div class="mi" style="background:#FFFBEB;color:var(--yellow)">🎯</div><div class="ml">线索→报价率</div><div class="mv">42.8%</div><div class="md">12/28 转化</div></div></div><div class="card"><div class="ch"><span class="ct">🏆 销售排行 (本月)</span></div><div style="display:flex;gap:10px;flex-wrap:wrap;"><div style="flex:1;min-width:120px;padding:10px;background:var(--bs);border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:700;color:var(--brand)">🥇</div><div style="font-weight:600;font-size:12px;">Lina Hassan</div><div style="font-size:10px;color:var(--text-3);">¥ 68万 · 3单</div></div><div style="flex:1;min-width:120px;padding:10px;background:var(--bs);border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:700;color:var(--text-2)">🥈</div><div style="font-weight:600;font-size:12px;">Omar Al Balushi</div><div style="font-size:10px;color:var(--text-3);">¥ 52万 · 2单</div></div><div style="flex:1;min-width:120px;padding:10px;background:var(--bs);border-radius:8px;text-align:center;"><div style="font-size:22px;font-weight:700;color:#CD7F32">🥉</div><div style="font-weight:600;font-size:12px;">Yuki Tanaka</div><div style="font-size:10px;color:var(--text-3);">¥ 37万 · 1单</div></div></div></div></div>
+
+<!-- ===== ADS ===== -->
+<div class="page" id="pg-ads"><div class="ph"><div><h1 class="pt">广告管理</h1><p class="ps">Meta Ads (FB/IG) 线索采集管道 · ROI追踪</p></div><button class="btn btn1 btns">+ 新建广告</button></div><div class="card" style="padding:0;overflow:hidden;"><div class="tw"><table><thead><tr><th>广告系列</th><th>平台</th><th>花费 (AED)</th><th>线索数</th><th>单线索成本</th><th>ROI</th><th>状态</th></tr></thead><tbody><tr><td style="font-weight:600;">Dubai Villa 智能家居</td><td>FB + IG</td><td>12,400</td><td>28</td><td>443</td><td style="color:var(--green);font-weight:600;">4.2x</td><td><span class="b b-won">投放中</span></td></tr><tr><td style="font-weight:600;">Luxury KNX Retargeting</td><td>FB</td><td>5,800</td><td>9</td><td>644</td><td style="color:var(--green);font-weight:600;">2.8x</td><td><span class="b b-won">投放中</span></td></tr><tr><td style="font-weight:600;">商业办公楼方案</td><td>FB</td><td>8,200</td><td>15</td><td>547</td><td style="color:var(--text-2);">待评估</td><td><span class="b b-analysis">审核中</span></td></tr></tbody></table></div></div></div>
+
+<!-- ===== PRODUCTS ===== -->
+<div class="page" id="pg-products"><div class="ph"><div><h1 class="pt">产品库</h1><p class="ps">KNX设备 · DALI灯具 · 电机传感器 · 参考价格</p></div><button class="btn btn1 btns">+ 新增产品</button></div><div class="card" style="padding:0;overflow:hidden;"><div class="tw"><table><thead><tr><th>产品名称</th><th>类别</th><th>品牌</th><th>参考价 (AED)</th><th>库存</th></tr></thead><tbody><tr><td style="font-weight:600;">KNX IP Interface</td><td>KNX总线</td><td>ABB</td><td>1,200</td><td>45</td></tr><tr><td style="font-weight:600;">DALI Gateway Pro</td><td>照明控制</td><td>Siemens</td><td>2,800</td><td>32</td></tr><tr><td style="font-weight:600;">KNX Actuator 8CH</td><td>开关执行器</td><td>Gira</td><td>3,500</td><td>28</td></tr><tr><td style="font-weight:600;">Curtain Motor KNX</td><td>窗帘电机</td><td>Somfy</td><td>1,850</td><td>60</td></tr><tr><td style="font-weight:600;">Presence Sensor KNX</td><td>传感器</td><td>Theben</td><td>950</td><td>78</td></tr><tr><td style="font-weight:600;">Touch Panel 7"</td><td>面板</td><td>Jung</td><td>4,200</td><td>15</td></tr></tbody></table></div></div></div>
+
+<!-- ===== TEAM ===== -->
+<div class="page" id="pg-team"><div class="ph"><div><h1 class="pt">团队管理</h1><p class="ps">5名销售 · KPI追踪 · 权限管理</p></div><button class="btn btn1 btns">+ 添加成员</button></div><div class="card" style="padding:0;overflow:hidden;"><div class="tw"><table><thead><tr><th>姓名</th><th>角色</th><th>线索数</th><th>成交数</th><th>流水 (AED)</th><th>转化率</th></tr></thead><tbody><tr><td><div class="cc"><div class="ca" style="background:var(--brand)">LH</div><span class="cn">Lina Hassan</span></div></td><td><span class="b b-hot">Admin</span></td><td>8</td><td>3</td><td>680,000</td><td>37.5%</td></tr><tr><td><div class="cc"><div class="ca" style="background:#7C3AED">OA</div><span class="cn">Omar Al Balushi</span></div></td><td><span class="b b-warm">Sales</span></td><td>7</td><td>2</td><td>520,000</td><td>28.6%</td></tr><tr><td><div class="cc"><div class="ca" style="background:#D97706">FA</div><span class="cn">Fatima Al Ali</span></div></td><td><span class="b b-warm">Sales</span></td><td>6</td><td>1</td><td>310,000</td><td>16.7%</td></tr><tr><td><div class="cc"><div class="ca" style="background:#2563EB">YT</div><span class="cn">Yuki Tanaka</span></div></td><td><span class="b b-warm">Sales</span></td><td>5</td><td>1</td><td>370,000</td><td>20.0%</td></tr><tr><td><div class="cc"><div class="ca" style="background:#6B7280">RN</div><span class="cn">Rashid Al Nuaimi</span></div></td><td><span class="b b-cold">Sales</span></td><td>2</td><td>0</td><td>—</td><td>0%</td></tr></tbody></table></div></div></div>
+
+<!-- ===== PROJECTS ===== -->
+<div class="page" id="pg-projects"><div class="ph"><div><h1 class="pt">项目管理</h1><p class="ps">已签项目 · 实施追踪 · 甘特图</p></div></div><div class="card" style="padding:0;overflow:hidden;"><div class="tw"><table><thead><tr><th>项目</th><th>客户</th><th>阶段</th><th>进度</th><th>项目经理</th><th>预计交付</th></tr></thead><tbody><tr><td style="font-weight:600;">P-012 · Palm Jumeirah 全屋</td><td>Noura Al Ghurair</td><td><span class="b b-analysis">施工中</span></td><td><div style="display:flex;align-items:center;gap:6px;"><div style="flex:1;height:6px;background:var(--bs);border-radius:3px;"><div style="width:65%;height:100%;background:var(--green);border-radius:3px;"></div></div><span style="font-size:10px;">65%</span></div></td><td>Ahmed</td><td>8月15日</td></tr><tr><td style="font-weight:600;">P-011 · Zarooni Tower</td><td>Mariam Al Zarooni</td><td><span class="b b-won">已完成</span></td><td>100%</td><td>Ahmed</td><td>6月8日</td></tr><tr><td style="font-weight:600;">P-010 · Dubai Marina Tower</td><td>Yousef Al Shamsi</td><td><span class="b b-won">已完成</span></td><td>100%</td><td>Hassan</td><td>6月5日</td></tr><tr><td style="font-weight:600;">P-009 · Bluewaters Apt</td><td>Omar Al Shafar</td><td><span class="b b-won">已完成</span></td><td>100%</td><td>Hassan</td><td>6月10日</td></tr></tbody></table></div></div></div>
+
+<!-- ===== SETTINGS ===== -->
+<div class="page" id="pg-settings"><div class="ph"><div><h1 class="pt">系统设置</h1><p class="ps">权限 · 通知 · 业务规则 · 日志</p></div></div><div class="card"><div class="ch"><span class="ct">用户权限</span></div><div style="font-size:11px;color:var(--text-2);">当前: <b>Lina Hassan</b> · 角色: <span class="b b-hot" style="vertical-align:middle;">Admin</span> · 可管理所有线索、报价、合同、团队</div></div><div class="card"><div class="ch"><span class="ct">通知偏好</span></div><div style="font-size:11px;color:var(--text-2);">✅ 逾期跟进提醒 · ✅ 新线索分配 · ✅ 报价状态变更 · ❌ 系统维护通知</div></div><div class="card"><div class="ch"><span class="ct">业务规则</span></div><div style="font-size:11px;color:var(--text-2);">线索分配: 手动分配 · 14天未跟进→恢复池 · 30天→移交池 · 逾期3天→经理通知</div></div></div>
+
+<!-- ===== PAYMENTS ===== -->
+<div class="page" id="pg-payments"><div class="ph"><div><h1 class="pt">回款管理</h1><p class="ps">个人回款追踪 · 分期计划 · 逾期提醒</p></div></div><div class="card" style="padding:0;overflow:hidden;"><div class="tw"><table><thead><tr><th>回款编号</th><th>客户</th><th>合同</th><th>金额 (AED)</th><th>到期日</th><th>状态</th></tr></thead><tbody><tr><td style="font-weight:600;">R-2026-0089</td><td>Noura Al Ghurair</td><td>C-2026-0018-2</td><td>660,000</td><td>7月15日</td><td><span class="b b-warm">待收</span></td></tr><tr><td style="font-weight:600;">R-2026-0088</td><td>Mariam Al Zarooni</td><td>C-2026-0017-3</td><td>540,000</td><td>7月30日</td><td><span class="b b-warm">待收</span></td></tr><tr><td style="font-weight:600;">R-2026-0087</td><td>Omar Al Shafar</td><td>C-2026-0015-2</td><td>285,000</td><td>7月8日</td><td><span class="b b-warm">待收</span></td></tr><tr><td style="font-weight:600;">R-2026-0086</td><td>Yousef Al Shamsi</td><td>C-2026-0016-4</td><td>225,000</td><td>6月5日</td><td><span class="b b-won">已收</span></td></tr></tbody></table></div></div></div>
+
+<!-- ===== GAMES ===== -->
+<div class="page" id="pg-games"><div class="ph"><div><h1 class="pt">游戏</h1><p class="ps">团队娱乐模块</p></div></div><div class="card" style="text-align:center;padding:40px;"><div style="font-size:40px;margin-bottom:10px;">🎮</div><h3 style="font-size:16px;">游戏中心</h3><p style="font-size:11px;color:var(--text-3);">掼蛋 · 锄大地 · 更多游戏即将上线</p></div></div>
+
+</main>
+
+<!-- BANNER -->
+<div class="banner">⚠️ 升级效果预览 Demo · 非可操作的生产环境 · 3个V2页面可交互 · 其余展示现有功能结构</div>
+
+<!-- DRAWER -->
+<div class="ovl" id="drawerOverlay" onclick="closeDrawer()"></div>
+<div class="dr" id="drawer">
+  <div class="drh"><div><div style="font-size:9px;color:var(--text-3);text-transform:uppercase;">线索详情</div><div style="font-weight:700;font-size:14px;" id="drawerName"></div></div><button class="drc" onclick="closeDrawer()">✕</button></div>
+  <div class="drb" id="drawerBody"></div>
+</div>
+
+<!-- MODAL -->
+<div class="md" id="leadModal">
+  <div class="mdb" onclick="closeLeadModal()"></div>
+  <div class="mdx">
+    <div class="mdt" id="modalTitle">新建线索</div>
+    <form onsubmit="saveLead(event)"><div class="fr"><div class="fg"><label>姓名 *</label><input id="fName" required></div><div class="fg"><label>公司</label><input id="fCompany"></div></div><div class="fr"><div class="fg"><label>电话</label><input id="fPhone" placeholder="+971"></div><div class="fg"><label>邮箱</label><input id="fEmail"></div></div><div class="fr"><div class="fg"><label>来源 *</label><select id="fSource" required><option value="">选择</option></select></div><div class="fg"><label>质量</label><select id="fQuality"><option value="热">🔥热</option><option value="温" selected>🌤温</option><option value="冷">❄冷</option></select></div></div><div class="fr"><div class="fg"><label>状态</label><select id="fStatus"></select></div><div class="fg"><label>销售</label><select id="fSales"></select></div></div><div class="fg"><label>备注</label><textarea id="fNotes"></textarea></div><input type="hidden" id="fId"><div class="ma"><button type="button" class="btn btn2 btns" onclick="closeLeadModal()">取消</button><button type="submit" class="btn btn1 btns">保存</button></div></form>
+  </div>
+</div>
+
+<!-- CONFIRM -->
+<div class="co" id="confirmDialog">
+  <div class="cx"><h4 id="confirmTitle">确认删除</h4><p id="confirmMsg"></p><div class="ca"><button class="btn btn2 btns" onclick="closeConfirm()">取消</button><button class="btn btnd btns" id="confirmBtn" onclick="executeConfirm()">删除</button></div></div>
+</div>
+
+<!-- TOAST -->
+<div class="tc" id="toastContainer"></div>
+
+<script>
+/* DATA */
+const now = new Date();
+const fmt = d => { const dt=new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; };
+const addDays = (d,n) => { const r=new Date(d); r.setDate(r.getDate()+n); return fmt(r); };
+const today = fmt(now);
+const statuses = ['潜在客户','初步联系','需求分析','报价已发','谈判中','已成交','已流失'];
+const sources = ['官网','展会','推荐','Meta广告','Google','电话咨询'];
+const qualities = ['热','温','冷'];
+const salesTeam = ['Lina Hassan','Omar Al Balushi','Fatima Al Ali','Rashid Al Nuaimi','Yuki Tanaka'];
+const salesEmoji = {'Lina Hassan':'👑','Omar Al Balushi':'💼','Fatima Al Ali':'🌸','Rashid Al Nuaimi':'🦅','Yuki Tanaka':'🎯'};
+const avatarColors = ['#E5007E','#7C3AED','#2563EB','#059669','#D97706','#DC2626','#0891B2'];
+function hashColor(s) { let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))|0; return avatarColors[Math.abs(h)%avatarColors.length]; }
+function initials(s) { return s.split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
+function smartDate(d) { if(!d||d==='-') return '-'; if(d===today) return '今天'; const dt=new Date(d); const days=Math.floor((now-dt)/86400000); if(days<=14&&days>=0) return `${days===0?'今天':days+'天前'}`; return `${dt.getMonth()+1}月${dt.getDate()}日`; }
+function isOverdue(d) { if(!d||d==='-') return false; return new Date(d) < new Date(today); }
+
+const leads = [
+  { id:1, name:'Ahmed Al Rashid', company:'Palm Jumeirah Villa 42', phone:'+971 50 123 4567', email:'ahmed@rashid.ae', source:'官网', status:'需求分析', quality:'热', sales:'Lina Hassan', nextFollowUp:today, notes:'8卧超级别墅，预算300万AED，KNX全屋+私人影院+泳池自动化', history:[{date:'2026-06-19',author:'Lina Hassan',content:'客户对KNX有深入了解，要求认证方案'},{date:'2026-06-17',author:'Lina Hassan',content:'发送公司简介和案例手册'}] },
+  { id:2, name:'Fatima Al Mazrouei', company:'Emirates Hills Villa', phone:'+971 56 234 5678', email:'fatima@emirates.ae', source:'推荐', status:'报价已发', quality:'热', sales:'Fatima Al Ali', nextFollowUp:today, notes:'5卧别墅翻新，Control4→KNX，预算150万AED', history:[{date:'2026-06-18',author:'Fatima',content:'发送定制报价，DALI照明+KNX窗帘+HVAC'},{date:'2026-06-16',author:'Fatima',content:'现场勘查，现有布线可用'}] },
+  { id:3, name:'Mohammed Bin Sulayem', company:'Dubai Hills Estate', phone:'+971 55 345 6789', email:'m@dubaihills.ae', source:'展会', status:'谈判中', quality:'热', sales:'Omar Al Balushi', nextFollowUp:today, notes:'12套联排统一智能化，预算500万AED，分期实施', history:[{date:'2026-06-19',author:'Omar',content:'第二轮谈判，客户要求分期付款方案'},{date:'2026-06-17',author:'Omar',content:'提交第一期技术方案'}] },
+  { id:4, name:'Sara Al Qasimi', company:'Jumeirah Bay Island', phone:'+971 52 456 7890', email:'sara@outlook.com', source:'Meta广告', status:'初步联系', quality:'热', sales:'Yuki Tanaka', nextFollowUp:addDays(now,1), notes:'3卧公寓，智能照明+安防，预算80万AED', history:[{date:'2026-06-18',author:'Yuki',content:'电话了解需求，约下周勘查'}] },
+  { id:5, name:'Khalid Al Habtoor', company:'Al Habtoor Group', phone:'+971 50 567 8901', email:'k@habtoor.com', source:'Google', status:'潜在客户', quality:'温', sales:'Rashid Al Nuaimi', nextFollowUp:addDays(now,2), notes:'办公楼智能照明，关注能耗管理', history:[{date:'2026-06-17',author:'Rashid',content:'发送商业方案白皮书'}] },
+  { id:6, name:'Noura Al Ghurair', company:'Al Barari Villa', phone:'+971 56 678 9012', email:'noura@me.com', source:'推荐', status:'已成交', quality:'热', sales:'Lina Hassan', nextFollowUp:'-', notes:'6卧别墅全屋KNX+影院+景观照明，220万AED已签', history:[{date:'2026-06-12',author:'Lina',content:'合同签署，首付款到账'},{date:'2026-06-08',author:'Lina',content:'最终方案确认'}] },
+  { id:7, name:'Rashid Al Futtaim', company:'Al Futtaim Residence', phone:'+971 55 789 0123', email:'r@alfuttaim.ae', source:'官网', status:'需求分析', quality:'温', sales:'Omar Al Balushi', nextFollowUp:addDays(now,1), notes:'4卧公寓+客厅，KNX窗帘和HVAC控制', history:[{date:'2026-06-16',author:'Omar',content:'视频会议演示KNX功能'}] },
+  { id:8, name:'Aisha Al Maktoum', company:'District One Villa', phone:'+971 50 890 1234', email:'aisha@districtone.ae', source:'电话咨询', status:'报价已发', quality:'热', sales:'Fatima Al Ali', nextFollowUp:addDays(now,-1), notes:'10卧奢华别墅，预算无上限，顶级方案含SPA+影院+酒窖温控', history:[{date:'2026-06-18',author:'Fatima',content:'发送顶级定制方案，估价450万AED'},{date:'2026-06-15',author:'Fatima',content:'现场勘查2500㎡'}] },
+  { id:9, name:'Omar Al Shafar', company:'Bluewaters Island Apt', phone:'+971 52 901 2345', email:'omar@bluewaters.ae', source:'Google', status:'已成交', quality:'热', sales:'Yuki Tanaka', nextFollowUp:'-', notes:'3卧海景公寓，照明+窗帘+音响，95万AED', history:[{date:'2026-06-10',author:'Yuki',content:'合同签署完成'},{date:'2026-06-05',author:'Yuki',content:'方案确认无修改'}] },
+  { id:10, name:'Layla Al Tayer', company:'The Villa Project', phone:'+971 56 012 3456', email:'layla@gmail.com', source:'展会', status:'谈判中', quality:'温', sales:'Rashid Al Nuaimi', nextFollowUp:addDays(now,1), notes:'5套联排统一配置，预算350万AED', history:[{date:'2026-06-17',author:'Rashid',content:'客户要求10%折扣'},{date:'2026-06-14',author:'Rashid',content:'提交5套联排方案'}] },
+  { id:11, name:'Mariam Al Zarooni', company:'Zarooni Tower', phone:'+971 50 234 5671', email:'m@zarooni.com', source:'官网', status:'已成交', quality:'热', sales:'Lina Hassan', nextFollowUp:'-', notes:'办公楼3层智能化，KNX照明+门禁+会议室，180万AED', history:[{date:'2026-06-08',author:'Lina',content:'项目交付'},{date:'2026-05-20',author:'Lina',content:'合同签署'}] },
+  { id:12, name:'Reem Al Hashimi', company:'Al Hashimi Tower', phone:'+971 50 678 9015', email:'reem@hashimi.ae', source:'展会', status:'报价已发', quality:'温', sales:'Omar Al Balushi', nextFollowUp:addDays(now,-2), notes:'商业办公楼整栋KNX+能源管理，800万AED', history:[{date:'2026-06-17',author:'Omar',content:'发送完整商业方案+ROI分析'},{date:'2026-06-13',author:'Omar',content:'现场勘查'}] },
+  { id:13, name:'Abdullah Al Marri', company:'Arabian Ranches Villa', phone:'+971 56 789 0126', email:'a@arabianranches.ae', source:'推荐', status:'谈判中', quality:'热', sales:'Lina Hassan', nextFollowUp:today, notes:'最后谈判阶段，对手Control4，需强调KNX开放生态', history:[{date:'2026-06-18',author:'Lina',content:'发送KNX vs Control4对比表'},{date:'2026-06-15',author:'Lina',content:'客户也在考虑Control4'}] },
+  { id:14, name:'Shaikha Al Nuaimi', company:'La Mer Villa', phone:'+971 55 890 1237', email:'s@lamer.ae', source:'官网', status:'已流失', quality:'温', sales:'Fatima Al Ali', nextFollowUp:'-', notes:'最终选择Control4，价格低15%', history:[{date:'2026-06-10',author:'Fatima',content:'客户告知已选Control4'},{date:'2026-06-05',author:'Fatima',content:'发送最终报价'}] },
+  { id:15, name:'Yousef Al Shamsi', company:'Dubai Marina Tower', phone:'+971 52 901 2348', email:'y@marina.ae', source:'Google', status:'已成交', quality:'热', sales:'Yuki Tanaka', nextFollowUp:'-', notes:'高层海景公寓，照明+窗帘+空调集成，75万AED', history:[{date:'2026-06-05',author:'Yuki',content:'项目交付'},{date:'2026-05-25',author:'Yuki',content:'签约'}] },
+  { id:16, name:'Hamad Al Suwaidi', company:'Jumeirah Golf Estate', phone:'+971 55 123 4560', email:'hamad@golf.ae', source:'推荐', status:'初步联系', quality:'冷', sales:'Omar Al Balushi', nextFollowUp:addDays(now,4), notes:'高尔夫别墅，智能灌溉+户外照明', history:[{date:'2026-06-15',author:'Omar',content:'初次电话，客户近期不在迪拜'}] },
+  { id:17, name:'Salem Al Dhaheri', company:'Al Dhaheri Palace', phone:'+971 50 678 9013', email:'salem@dhaheri.ae', source:'电话咨询', status:'报价已发', quality:'热', sales:'Omar Al Balushi', nextFollowUp:today, notes:'皇宫级项目，博物馆温控+金库安防+全宅自动化，预算1000万AED+', history:[{date:'2026-06-18',author:'Omar',content:'发送顶级旗舰方案'},{date:'2026-06-14',author:'Omar',content:'现场勘查，规模超出预期'}] },
+  { id:18, name:'Hind Al Owais', company:'Meydan Villa', phone:'+971 55 456 7893', email:'hind@meydan.ae', source:'Google', status:'需求分析', quality:'热', sales:'Yuki Tanaka', nextFollowUp:addDays(now,-1), notes:'智能安防+视频监控+门禁，120万AED', history:[{date:'2026-06-17',author:'Yuki',content:'发送安防方案和案例'},{date:'2026-06-15',author:'Yuki',content:'视频会议了解需求'}] },
+  { id:19, name:'Hassan Al Fardan', company:'Fardan Villa Complex', phone:'+971 50 345 6780', email:'h@fardan.com', source:'官网', status:'需求分析', quality:'热', sales:'Fatima Al Ali', nextFollowUp:addDays(now,-1), notes:'3栋豪华别墅群统一配置，600万AED', history:[{date:'2026-06-17',author:'Fatima',content:'现场勘查，结构相似可复用方案'},{date:'2026-06-14',author:'Fatima',content:'官网提交需求'}] },
+  { id:20, name:'Faisal Al Qassimi', company:'Sharjah Palace', phone:'+971 55 555 6666', email:'faisal@sharjah.ae', source:'电话咨询', status:'潜在客户', quality:'热', sales:'Omar Al Balushi', nextFollowUp:addDays(now,-2), notes:'沙迦客户，大宅项目，预算250万AED，需尽快跟进', history:[{date:'2026-06-15',author:'Omar',content:'电话沟通初步需求'}] },
+];
+
+const saved = localStorage.getItem('nme_crm_demo');
+if (saved) { try { const s=JSON.parse(saved); leads.length=0; leads.push(...s); } catch(e){} }
+function saveData() { localStorage.setItem('nme_crm_demo', JSON.stringify(leads)); }
+
+/* STATE */
+let role = 'admin', pg = 'dashboard';
+
+/* SIDEBAR */
+function buildSidebar() {
+  const adminItems = [
+    { id:'dashboard', label:'驾驶舱' },
+    { id:'leads', label:'线索', up:true },
+    { id:'quotes', label:'报价' },
+    { id:'contracts', label:'合同&回款' },
+    { id:'pipeline', label:'销售漏斗', up:true },
+    { id:'analytics', label:'分析' },
+    { id:'ads', label:'广告' },
+    { id:'products', label:'产品库' },
+    { id:'team', label:'团队' },
+    { id:'projects', label:'项目管理' },
+    { id:'settings', label:'设置' },
+    { id:'games', label:'游戏' },
+  ];
+  const salesItems = [
+    { id:'dashboard', label:'我的工作台' },
+    { id:'leads', label:'我的线索', up:true },
+    { id:'quotes', label:'报价' },
+    { id:'contracts', label:'合同&回款' },
+    { id:'payments', label:'回款' },
+    { id:'pipeline', label:'销售漏斗', up:true },
+    { id:'analytics', label:'分析' },
+    { id:'products', label:'产品库' },
+  ];
+  const items = role === 'admin' ? adminItems : salesItems;
+  document.getElementById('sbNav').innerHTML = `
+    <div class="sb-sec">${role==='admin'?'MANAGEMENT':'SALES'}</div>
+    ${items.map(i => `<button class="sb-it ${i.id===pg?'act':''} ${i.up?'upgrade':''}" onclick="navTo('${i.id}')">${i.label}${i.up?' <span style="font-size:8px;background:var(--bs);color:var(--brand);padding:1px 5px;border-radius:4px;margin-left:auto;font-weight:600;">V2</span>':''}</button>`).join('')}`;
+}
+
+function setRole(r) { role=r; document.querySelectorAll('.sb-role button').forEach((b,i)=>{b.classList.toggle('act',(i===0&&r==='admin')||(i===1&&r==='sales'));}); buildSidebar(); }
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sbBackdrop').classList.toggle('show');
+}
+
+function navTo(p) {
+  pg=p; document.querySelectorAll('.page').forEach(el=>el.classList.remove('act'));
+  const el=document.getElementById('pg-'+p); if(el) el.classList.add('act');
+  buildSidebar();
+  const labels={dashboard:'驾驶舱',leads:'线索',quotes:'报价',contracts:'合同&回款',pipeline:'销售漏斗',analytics:'分析',ads:'广告',products:'产品库',team:'团队',projects:'项目管理',settings:'设置',games:'游戏',payments:'回款'};
+  document.getElementById('headerTitle').textContent=labels[p]||p;
+  if (p==='dashboard') renderDashboard();
+  if (p==='leads') renderLeads();
+  if (p==='pipeline') renderKanban();
+  // close mobile sidebar after nav
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sbBackdrop').classList.remove('show');
+}
+
+/* DASHBOARD */
+function renderDashboard() {
+  const total=leads.length;
+  const following=leads.filter(l=>l.nextFollowUp&&l.nextFollowUp!=='-'&&new Date(l.nextFollowUp)>=new Date(today)).length;
+  const won=leads.filter(l=>l.status==='已成交').length;
+  const todayCount=leads.filter(l=>l.nextFollowUp===today).length;
+  document.getElementById('todayCount').textContent=todayCount;
+  document.getElementById('metricsRow').innerHTML=`
+    <div class="mc"><div class="mi" style="background:#FCE4F1;color:var(--brand)">👥</div><div class="ml">总线索数</div><div class="mv">${total}</div><div class="md"><span class="grn">↑ 12.4%</span> 较上月</div></div>
+    <div class="mc"><div class="mi" style="background:#ECFDF5;color:var(--green)">📈</div><div class="ml">本月新增</div><div class="mv">${leads.filter(l=>l.history&&l.history[0]&&l.history[0].date>=addDays(now,-30)).length}</div><div class="md"><span class="grn">↑ 8.1%</span> vs上月</div></div>
+    <div class="mc"><div class="mi" style="background:#EFF6FF;color:var(--blue)">⏰</div><div class="ml">跟进中</div><div class="mv">${following}</div><div class="md">${todayCount}条今日待跟进</div></div>
+    <div class="mc"><div class="mi" style="background:#FEF2F2;color:var(--red)">🏆</div><div class="ml">已成交</div><div class="mv">${won}</div><div class="md"><span class="grn">${(won/total*100).toFixed(1)}%</span> 转化率</div></div>`;
+
+  const days=[], dayNames=['日','一','二','三','四','五','六'];
+  for(let i=6;i>=0;i--) { const d=addDays(now,-i); days.push({label:'周'+dayNames[new Date(d).getDay()], count:Math.floor(Math.random()*7)+1}); }
+  const maxC=Math.max(...days.map(d=>d.count),1);
+  document.getElementById('trendChart').innerHTML=days.map(d=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;"><div style="font-size:10px;font-weight:600;">${d.count}</div><div style="width:100%;max-width:30px;border-radius:3px 3px 0 0;background:var(--brand);opacity:.6;height:${(d.count/maxC*60)|0}px;"></div><div style="font-size:9px;color:var(--text-3);">${d.label}</div></div>`).join('');
+
+  const fStages=['潜在客户','初步联系','需求分析','报价已发','谈判中','已成交'];
+  const fColors=['#E5E7EB','#BFDBFE','#C4B5FD','#FED7AA','#67E8F9','#6EE7B7'];
+  const fData=fStages.map(s=>leads.filter(l=>l.status===s).length);
+  const fMax=Math.max(...fData,1);
+  document.getElementById('funnelChart').innerHTML=fStages.map((s,i)=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;"><div style="width:60px;font-size:10px;color:var(--text-2);text-align:right;flex-shrink:0;">${s}</div><div style="height:22px;border-radius:4px;display:flex;align-items:center;padding:0 7px;font-size:10px;font-weight:600;color:#fff;width:${(fData[i]/fMax*100)|0}%;min-width:30px;background:${fColors[i]};color:${i===0?'var(--text-2)':'#fff'}">${fData[i]}</div></div>`).join('');
+
+  const up=[...leads].filter(l=>l.nextFollowUp&&l.nextFollowUp!=='-').sort((a,b)=>new Date(a.nextFollowUp)-new Date(b.nextFollowUp)).slice(0,5);
+  const sc=s=>s==='潜在客户'?'potential':s==='初步联系'?'contact':s==='需求分析'?'analysis':s==='报价已发'?'quote':s==='谈判中'?'nego':s==='已成交'?'won':'lost';
+  document.getElementById('upcomingTable').innerHTML=up.map(l=>`<tr><td><div class="cc" onclick="navTo('leads');setTimeout(()=>openDrawer(${l.id}),200)"><div class="ca" style="background:${hashColor(l.name)}">${initials(l.name)}</div><div class="cn">${l.name}</div></div></td><td style="font-size:10px;color:var(--text-2)">${l.company||'-'}</td><td><span class="b b-${sc(l.status)}">${l.status}</span></td><td style="font-size:10px;">${salesEmoji[l.sales]||''} ${l.sales}</td><td style="font-size:10px;color:${isOverdue(l.nextFollowUp)?'var(--red)':'var(--text-2)'}">${smartDate(l.nextFollowUp)}</td></tr>`).join('');
+}
+
+/* LEADS */
+function renderLeads() {
+  const q=(document.getElementById('leadSearch')?.value||'').toLowerCase();
+  const fs=document.getElementById('filterStatus')?.value||'', fr=document.getElementById('filterSource')?.value||'', fq=document.getElementById('filterQuality')?.value||'', fa=document.getElementById('filterSales')?.value||'';
+  let filtered=leads.filter(l=>{if(q&&!l.name.toLowerCase().includes(q)&&!l.phone.includes(q)&&!(l.company||'').toLowerCase().includes(q))return false;if(fs&&l.status!==fs)return false;if(fr&&l.source!==fr)return false;if(fq&&l.quality!==fq)return false;if(fa&&l.sales!==fa)return false;return true;});
+  document.getElementById('leadsTotal').textContent=filtered.length;
+  const sc=s=>s==='潜在客户'?'potential':s==='初步联系'?'contact':s==='需求分析'?'analysis':s==='报价已发'?'quote':s==='谈判中'?'nego':s==='已成交'?'won':'lost';
+  const qc=q=>q==='热'?'hot':q==='温'?'warm':'cold';
+  document.getElementById('leadsTableBody').innerHTML=filtered.map(l=>{const ov=isOverdue(l.nextFollowUp);return`<tr><td><input type="checkbox" class="lcb" data-id="${l.id}" onchange="updateSel()" onclick="event.stopPropagation()"></td><td><div class="cc" onclick="openDrawer(${l.id})"><div class="ca" style="background:${hashColor(l.name)}">${initials(l.name)}</div><div class="cn">${l.name}</div></div></td><td style="font-size:10px;color:var(--text-2)">${l.company||'-'}</td><td style="font-size:10px;">${l.phone}</td><td><span class="stg">${l.source}</span></td><td><span class="b b-${sc(l.status)}">${l.status}</span></td><td><span class="b b-${qc(l.quality)}">${l.quality}</span></td><td style="font-size:10px;">${salesEmoji[l.sales]||''} ${l.sales}</td><td style="font-size:10px;color:${ov?'var(--red)':'var(--text-2)'};">${smartDate(l.nextFollowUp)}</td><td><button class="btn btn3 btns" onclick="event.stopPropagation();openDrawer(${l.id})">跟进</button><button class="btn btn3 btns" onclick="event.stopPropagation();editLead(${l.id})">编辑</button></td></tr>`}).join('');
+}
+
+/* KANBAN */
+function renderKanban() {
+  document.getElementById('kanbanBoard').innerHTML=statuses.map(st=>{const items=leads.filter(l=>l.status===st);return`<div class="kc"><div class="kch"><span class="kct">${st}</span><span class="kcc">${items.length}</span></div>${items.map(l=>`<div class="kcd ${isOverdue(l.nextFollowUp)?'urg':l.nextFollowUp===today?'2dy':''}" onclick="openDrawer(${l.id})"><div class="kn">${l.name}</div><div class="ko">${l.company||''}</div><div class="km"><span class="kd" style="color:${isOverdue(l.nextFollowUp)?'var(--red)':'var(--text-2)'}">${smartDate(l.nextFollowUp)}</span><div class="ks" style="background:${hashColor(l.sales)}">${initials(l.sales)}</div></div></div>`).join('')}</div>`}).join('');
+}
+
+/* DRAWER */
+let drawerId=null;
+function openDrawer(id) {
+  const l=leads.find(x=>x.id===id); if(!l)return; drawerId=id;
+  document.getElementById('drawerName').textContent=l.name;
+  const sc=s=>s==='潜在客户'?'potential':s==='初步联系'?'contact':s==='需求分析'?'analysis':s==='报价已发'?'quote':s==='谈判中'?'nego':s==='已成交'?'won':'lost';
+  const qc=q=>q==='热'?'hot':q==='温'?'warm':'cold';
+  document.getElementById('drawerBody').innerHTML=`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--bs);">
+      <div style="width:40px;height:40px;border-radius:50%;background:${hashColor(l.name)};display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;">${initials(l.name)}</div>
+      <div><div style="font-size:9px;color:var(--text-3);">${l.company||''}</div><div style="margin-top:2px;"><span class="b b-${sc(l.status)}">${l.status}</span> <span class="b b-${qc(l.quality)}">${l.quality}</span></div></div>
+      <div style="margin-left:auto;display:flex;gap:3px;"><button class="btn btn3 btns" onclick="editLead(${l.id})">编辑</button><button class="btn btn3 btns" style="color:var(--red)" onclick="confirmDelete(${l.id})">删除</button></div></div>
+    <div class="ds"><h4>联系信息</h4><div class="df"><span class="dl">电话</span><span class="dv">${l.phone}</span></div><div class="df"><span class="dl">邮箱</span><span class="dv">${l.email}</span></div><div class="df"><span class="dl">来源</span><span class="dv"><span class="stg">${l.source}</span></span></div><div class="df"><span class="dl">销售</span><span class="dv">${salesEmoji[l.sales]||''} ${l.sales}</span></div></div>
+    <div class="ds"><h4>备注</h4><div style="background:var(--bg);border-radius:6px;padding:8px;font-size:11px;line-height:1.5;">${l.notes||'暂无'}</div></div>
+    <div class="ds"><h4>跟进历史 (${l.history.length})</h4><div class="tl">${l.history.map(h=>`<div class="tli"><div class="tld">${h.date}</div><div class="tlc">${h.content}</div><div class="tla">— ${h.author}</div></div>`).join('')}</div></div>
+    <div class="ds"><h4>添加跟进</h4><textarea id="nfn" style="width:100%;height:45px;border:1px solid var(--border);border-radius:5px;padding:6px;font-size:11px;resize:vertical;" placeholder="输入跟进内容..."></textarea><div style="display:flex;gap:5px;margin-top:5px;"><input type="date" id="nfd" style="border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:10px;" value="${addDays(now,1)}"><button class="btn btn1 btns" onclick="addFollowup()">添加</button></div></div>`;
+  document.getElementById('drawerOverlay').classList.add('show'); document.getElementById('drawer').classList.add('open');
+}
+function closeDrawer(){document.getElementById('drawerOverlay').classList.remove('show');document.getElementById('drawer').classList.remove('open');drawerId=null;}
+function addFollowup(){if(!drawerId)return;const n=document.getElementById('nfn').value.trim();if(!n){showToast('error','请输入跟进内容');return;}const l=leads.find(x=>x.id===drawerId);l.history.unshift({date:today,author:l.sales,content:n});const nd=document.getElementById('nfd').value;if(nd)l.nextFollowUp=nd;saveData();showToast('success','跟进已添加');renderAll();openDrawer(drawerId);}
+
+/* MODAL */
+let editId=null;
+function openLeadModal(id){editId=id||null;document.getElementById('modalTitle').textContent=id?'编辑线索':'新建线索';document.getElementById('fId').value=id||'';document.getElementById('fName').value=id?leads.find(l=>l.id===id).name:'';document.getElementById('fCompany').value=id?(leads.find(l=>l.id===id).company||''):'';document.getElementById('fPhone').value=id?leads.find(l=>l.id===id).phone:'';document.getElementById('fEmail').value=id?leads.find(l=>l.id===id).email:'';document.getElementById('fNotes').value=id?(leads.find(l=>l.id===id).notes||''):'';document.getElementById('fSource').innerHTML='<option value="">选择</option>'+sources.map(s=>`<option>${s}</option>`).join('');document.getElementById('fStatus').innerHTML=statuses.map(s=>`<option>${s}</option>`).join('');document.getElementById('fSales').innerHTML=salesTeam.map(s=>`<option>${s}</option>`).join('');if(id){const l=leads.find(x=>x.id===id);document.getElementById('fSource').value=l.source;document.getElementById('fQuality').value=l.quality;document.getElementById('fStatus').value=l.status;document.getElementById('fSales').value=l.sales;}document.getElementById('leadModal').classList.add('show');}
+function closeLeadModal(){document.getElementById('leadModal').classList.remove('show');editId=null;}
+function saveLead(e){e.preventDefault();const nm=document.getElementById('fName').value.trim();if(!nm){showToast('error','请输入姓名');return;}const d={name:nm,company:document.getElementById('fCompany').value.trim(),phone:document.getElementById('fPhone').value.trim()||'+971',email:document.getElementById('fEmail').value.trim(),source:document.getElementById('fSource').value||'官网',quality:document.getElementById('fQuality').value||'温',status:document.getElementById('fStatus').value||'潜在客户',sales:document.getElementById('fSales').value||'Lina Hassan',notes:document.getElementById('fNotes').value.trim(),nextFollowUp:addDays(now,2)};if(editId){const i=leads.findIndex(l=>l.id===editId);if(i>=0)Object.assign(leads[i],d);showToast('success','已更新');}else{leads.unshift({id:Math.max(...leads.map(l=>l.id),0)+1,...d,history:[]});showToast('success','已创建');}saveData();closeLeadModal();renderAll();}
+function editLead(id){openLeadModal(id);}
+
+/* DELETE/BULK */
+let pdi=null,pbd=false;
+function confirmDelete(id){pdi=id;pbd=false;document.getElementById('confirmTitle').textContent='确认删除';document.getElementById('confirmMsg').textContent=`确定删除"${leads.find(l=>l.id===id)?.name}"？不可撤销。`;document.getElementById('confirmBtn').textContent='确认删除';document.getElementById('confirmDialog').classList.add('show');}
+function closeConfirm(){document.getElementById('confirmDialog').classList.remove('show');pdi=null;pbd=false;}
+function executeConfirm(){if(pbd){const ids=[...document.querySelectorAll('.lcb:checked')].map(c=>parseInt(c.dataset.id));ids.forEach(id=>{const i=leads.findIndex(l=>l.id===id);if(i>=0)leads.splice(i,1);});showToast('success',`已删除 ${ids.length} 条`);}else if(pdi){const i=leads.findIndex(l=>l.id===pdi);if(i>=0)leads.splice(i,1);showToast('success','已删除');}saveData();closeConfirm();renderAll();closeDrawer();}
+function toggleSelectAll(){document.querySelectorAll('.lcb').forEach(c=>c.checked=document.getElementById('selectAll').checked);updateSel();}
+function updateSel(){const n=document.querySelectorAll('.lcb:checked').length;document.getElementById('selectedInfo').textContent=`已选 ${n} 条`;document.getElementById('bulkActions').style.display=n>0?'flex':'none';}
+function bulkChangeStatus(){const s=document.getElementById('bulkStatus').value;if(!s)return;document.querySelectorAll('.lcb:checked').forEach(c=>{const l=leads.find(x=>x.id===parseInt(c.dataset.id));if(l)l.status=s;});saveData();showToast('success',`状态→"${s}"`);renderAll();document.getElementById('bulkStatus').value='';}
+function bulkAssignSales(){const s=document.getElementById('bulkSales').value;if(!s)return;document.querySelectorAll('.lcb:checked').forEach(c=>{const l=leads.find(x=>x.id===parseInt(c.dataset.id));if(l)l.sales=s;});saveData();showToast('success',`已分配给${s}`);renderAll();document.getElementById('bulkSales').value='';}
+function bulkDelete(){pbd=true;const n=document.querySelectorAll('.lcb:checked').length;document.getElementById('confirmTitle').textContent='批量删除';document.getElementById('confirmMsg').textContent=`确定删除选中${n}条？不可撤销。`;document.getElementById('confirmBtn').textContent=`删除${n}条`;document.getElementById('confirmDialog').classList.add('show');}
+
+/* TOAST */
+function showToast(t,m,d){const icons={success:'✅',error:'❌',info:'ℹ️'};const e=document.createElement('div');e.className=`to t${t==='success'?'s':t==='error'?'e':'i'}`;e.innerHTML=`${icons[t]||''} <div><b>${m}</b>${d?`<br><span style="font-size:9px;opacity:.7">${d}</span>`:''}</div>`;document.getElementById('toastContainer').appendChild(e);setTimeout(()=>{e.style.opacity='0';e.style.transition='opacity .3s';setTimeout(()=>e.remove(),300);},3000);}
+
+function renderAll(){if(pg==='dashboard')renderDashboard();if(pg==='leads')renderLeads();if(pg==='pipeline')renderKanban();}
+
+/* INIT */
+['filterStatus','filterSource','filterQuality','filterSales'].forEach(id=>{const el=document.getElementById(id);const arr=id.includes('Status')?statuses:id.includes('Source')?sources:id.includes('Quality')?qualities:salesTeam;el.innerHTML='<option value="">'+el.previousElementSibling?.textContent?.replace('🔍','')||'全部'+'</option>'+arr.map(v=>`<option>${v}</option>`).join('');});
+document.getElementById('bulkStatus').innerHTML='<option value="">状态→</option>'+statuses.map(s=>`<option>${s}</option>`).join('');
+document.getElementById('bulkSales').innerHTML='<option value="">分配→</option>'+salesTeam.map(s=>`<option>${s}</option>`).join('');
+
+buildSidebar(); renderDashboard();
+</script>
+</body>
+</html>

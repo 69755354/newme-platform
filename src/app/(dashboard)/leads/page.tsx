@@ -115,6 +115,7 @@ function LeadsContent() {
   const [reviewFilter, setReviewFilter] = useState(!!searchParams.get("review"));
   const [probabilityFilter, setProbabilityFilter] = useState<number | null>(null);
   const [followupFilter, setFollowupFilter] = useState(false);
+  const [timeFilter, setTimeFilter] = useState<"all" | "today" | "month" | "quarter" | "year">("all");
   const [assignedToFilter, setAssignedToFilter] = useState(searchParams.get("assigned_to") || "all");
   const [showPipelineSummary, setShowPipelineSummary] = useState(true);
 
@@ -218,6 +219,16 @@ function LeadsContent() {
     // P-05: limit 500→200（当前数据量足够；真正分页待后续迭代加游标分页）
     let q = supabase.from("leads").select("id, customer_name, phone, stage, lead_status, assigned_to, source, location, property_type, quotation_value, win_probability, last_contact_date, next_followup_date, next_action, followup_count, lost_reason, recovery_candidate, transfer_candidate, sales_manager_review, updated_at, created_at");
     if (salesRole === "sales") q = q.eq("assigned_to", currentUserId);
+    // Time filter — DB-layer created_at range
+    if (timeFilter !== "all") {
+      const now = new Date();
+      let boundary: Date;
+      if (timeFilter === "today") boundary = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      else if (timeFilter === "month") boundary = new Date(now.getFullYear(), now.getMonth(), 1);
+      else if (timeFilter === "quarter") boundary = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+      else boundary = new Date(now.getFullYear(), 0, 1); // year
+      q = q.gte("created_at", boundary.toISOString());
+    }
     const { data, error: err } = await q.order("updated_at", { ascending: false }).limit(200);
     if (err) {
       console.error("Failed to fetch leads:", err);
@@ -227,7 +238,7 @@ function LeadsContent() {
     }
     if (data) setLeads(data as Lead[]);
     setLoading(false);
-  }, [salesRole, currentUserId]); // supabase is module-singleton, t is context-stable — exclude to prevent #310 render loops
+  }, [salesRole, currentUserId, timeFilter]); // supabase is module-singleton, t is context-stable — exclude to prevent #310 render loops
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
@@ -668,6 +679,23 @@ function LeadsContent() {
 
       {/* Filters */}
       <div className="flex gap-2 flex-wrap items-center">
+        {/* Time filter — button group */}
+        <div className="flex rounded-lg border border-border overflow-hidden">
+          {(["all", "today", "month", "quarter", "year"] as const).map((k) => (
+            <button
+              key={k}
+              onClick={() => setTimeFilter(k)}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium transition-colors border-r border-border last:border-r-0",
+                timeFilter === k
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
+              )}
+            >
+              {k === "all" ? "全部" : k === "today" ? "今天" : k === "month" ? "当月" : k === "quarter" ? "本季" : "全年"}
+            </button>
+          ))}
+        </div>
         <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder={t("leads.searchPlaceholder")} value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />

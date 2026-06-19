@@ -16,11 +16,13 @@ CREATE TABLE IF NOT EXISTS kpi_targets (
 ALTER TABLE kpi_targets ENABLE ROW LEVEL SECURITY;
 
 -- Admin/boss can do everything
+DROP POLICY IF EXISTS "kpi_admin_all" ON kpi_targets;
 CREATE POLICY "kpi_admin_all" ON kpi_targets FOR ALL
   USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss')))
   WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss')));
 
 -- Sales can read their own targets
+DROP POLICY IF EXISTS "kpi_sales_read_own" ON kpi_targets;
 CREATE POLICY "kpi_sales_read_own" ON kpi_targets FOR SELECT
   USING (assigned_to = auth.uid() OR assigned_to IS NULL);
 

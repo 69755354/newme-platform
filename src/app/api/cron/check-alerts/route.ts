@@ -33,14 +33,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: "No alerts", count: 0 });
     }
 
-    // 2. Check ALL existing dedup-type notifications (no time limit — permanent dedup)
+    // 2. Check dedup-type notifications from last 7 days (NOT permanent)
+    //  7-day window: same lead+alert_type gets at most one notification per week.
+    //  This prevents spamming but lets persistent issues surface periodically.
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data: recentNotifs } = await supabaseAdmin
       .from("notifications")
       .select("related_id, type")
       .in("type", [
         "followup_reminder",
         "follow_up_overdue",
-      ]);
+      ])
+      .gte("created_at", sevenDaysAgo);
 
     const recentKeys = new Set(
       (recentNotifs || []).map((n) => `${n.related_id}:${n.type}`)

@@ -24,9 +24,7 @@ import {
   FileText, ClipboardList, CheckCircle, DollarSign, ExternalLink, Calculator, WandSparkles,
   Wrench, GitBranch, Pencil, X, Save,
 } from "lucide-react";
-import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
-import LeadWorkflow from "@/components/lead-workflow";
 import { Toaster } from "sonner";
 import { updateLead } from "@/lib/api/leads";
 
@@ -222,8 +220,8 @@ export default function LeadDetailPage() {
     }
   };
 
-  const handleFieldChange = <K extends keyof typeof editForm>(key: K, value: string) => {
-    setEditForm((prev) => ({ ...prev, [key]: value }));
+  const handleFieldChange = (key: keyof typeof editForm, value: string | null) => {
+    setEditForm((prev) => ({ ...prev, [key]: value ?? "" }));
   };
 
   if (loading) {
@@ -237,8 +235,7 @@ export default function LeadDetailPage() {
   if (error || !lead) {
     return (
       <ErrorState
-        title={t("errors.leadNotFound") || "Lead not found"}
-        description={error ?? undefined}
+        message={error ?? (t("errors.leadNotFound") || "Lead not found")}
         onRetry={() => fetchLead()}
       />
     );
@@ -376,7 +373,7 @@ export default function LeadDetailPage() {
               displayValue={lead.property_type ? (t(`leads.propertyTypes.${lead.property_type}`) || lead.property_type) : null}
             >
               <Select
-                value={editForm.property_type}
+                value={editForm.property_type ?? ""}
                 onValueChange={(v) => handleFieldChange("property_type", v)}
                 disabled={saving}
               >
@@ -416,9 +413,6 @@ export default function LeadDetailPage() {
           </InlineField>
         </CardContent>
       </Card>
-
-      {/* Lead Workflow */}
-      <LeadWorkflow lead={lead} onUpdate={(updated) => setLead(updated as Lead)} />
 
       {/* Property Details (read-only display) */}
       <Card>
@@ -618,8 +612,15 @@ export default function LeadDetailPage() {
               {t("leads.quoteCalculator") || "Quote Calculator"}
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <QuoteCalculator leadId={lead.id} />
+          <CardContent className="text-center py-6">
+            <Button
+              onClick={() => router.push(`/quotes/new?leadId=${lead.id}`)}
+              variant="default"
+              className="gap-2"
+            >
+              <Calculator className="h-4 w-4" />
+              {t("leads.createQuote") || "Create Quote"}
+            </Button>
           </CardContent>
         </Card>
 

@@ -8,8 +8,7 @@ import {
   FileText, Calculator, CreditCard, TrendingUp,
   LogOut, ShieldCheck, Settings, Megaphone,
   Package, FolderKanban, UsersRound, Briefcase,
-  BarChart3, LayoutList,
-  Gamepad2,
+  BarChart3,
 } from "lucide-react";
 import { Toaster } from "sonner";
 import { useState, useEffect, Suspense } from "react";
@@ -28,7 +27,6 @@ interface NavItem {
 
 // ─── Management nav — 5 core + settings ───
 const MGMT_NAV: NavItem[] = [
-  { href: "/workbench", labelKey: "mgmtWorkbench", icon: LayoutList },
   { href: "/dashboard", labelKey: "mgmtDashboard", icon: LayoutDashboard },
   { href: "/leads",     labelKey: "mgmtLeads", icon: Users },
   { href: "/quotes",    labelKey: "mgmtQuotes", icon: Calculator },
@@ -40,12 +38,10 @@ const MGMT_NAV: NavItem[] = [
   { href: "/team",      labelKey: "mgmtTeam", icon: UsersRound },
   { href: "/projects",  labelKey: "mgmtProjects", icon: Briefcase },
   { href: "/settings",  labelKey: "mgmtSettings", icon: Settings },
-  { href: "/games",     labelKey: "mgmtGames", icon: Gamepad2 },
 ];
 
 // ─── Sales nav — personal scope, 6 items ───
 const SALES_NAV: NavItem[] = [
-  { href: "/workbench", labelKey: "salesWorkbench", icon: LayoutList },
   { href: "/dashboard", labelKey: "salesDashboard", icon: LayoutDashboard },
   { href: "/leads",     labelKey: "salesLeads", icon: Users },
   { href: "/quotes",    labelKey: "salesQuotes", icon: Calculator },

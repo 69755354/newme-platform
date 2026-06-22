@@ -18,6 +18,7 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { createClient } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
+import { ActivityTracker } from "@/components/ActivityTracker";
 
 // ─── Nav item type ───
 interface NavItem {
@@ -330,6 +331,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
       </main>
     </div>
     <Toaster position="top-center" richColors />
+    <ActivityTracker />
     </>
   );
 }

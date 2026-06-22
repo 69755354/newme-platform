@@ -46,7 +46,8 @@ export interface CalculateResult {
 // ──────────────────────────────────────────────
 
 export function calculateQuotation(input: CalculateInput): CalculateResult {
-  const { devices, discount_rate = 0, notes } = input;
+  const { devices, notes } = input;
+  const discount_rate = Math.max(0, Math.min(100, input.discount_rate ?? 0));
 
   // Build flat device lookup map: id → DeviceInfo
   const deviceLookup = buildDeviceLookup();

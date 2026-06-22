@@ -12,36 +12,24 @@ import { calculateQuotation, CalculateResult } from "../../../../lib/quotation-e
  * Output: { status, quote_id, quote_no, total, valid_until }
  */
 
-/** Generate quote number: NM-YYYY-XXXX (sequential) */
-async function generateQuoteNo(supabase: any): Promise<string> {
-  const year = new Date().getFullYear().toString();
-
-  // Find current max sequence for this year
-  const { data } = await (supabase as any)
-    .from("quotations")
-    .select("quote_no")
-    .like("quote_no", `NM-${year}-%`)
-    .order("quote_no", { ascending: false })
-    .limit(1);
-
-  let nextSeq = 1;
-  if (data && data.length > 0) {
-    const lastNo: string = data[0].quote_no;
-    const parts = lastNo.split("-");
-    const lastSeq = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastSeq)) {
-      nextSeq = lastSeq + 1;
-    }
+/** Generate quote number: NM-YYYY-XXXX (sequential, race-safe via DB advisory lock) */
+async function generateQuoteNo(): Promise<string> {
+  const year = new Date().getFullYear();
+  const { data, error } = await supabaseAdmin.rpc("generate_quote_no", { year_param: year });
+  if (error || !data) {
+    console.error("[Quotation Generate] RPC generate_quote_no failed:", error);
+    throw new Error("Failed to generate quote number");
   }
-
-  const seqStr = nextSeq.toString().padStart(4, "0");
-  return `NM-${year}-${seqStr}`;
+  return data as string;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createServerSupabase();
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    const authHeader = request.headers.get("authorization");
+    const { data: { user }, error: authErr } = authHeader?.startsWith("Bearer ")
+      ? await supabase.auth.getUser(authHeader.slice(7))
+      : await supabase.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -80,7 +68,7 @@ export async function POST(request: NextRequest) {
     // 2. Verify lead exists
     const { data: lead, error: leadErr } = await supabaseAdmin
       .from("leads")
-      .select("id, customer_name")
+      .select("id, customer_name, assigned_to")
       .eq("id", lead_id)
       .single();
 
@@ -89,8 +77,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
 
+    // Permission check: non-admin/boss can only quote their own leads
+    const { data: userProfile } = await supabaseAdmin
+      .from("user_profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    const userRole = userProfile?.role;
+    const isPrivileged = userRole === "admin" || userRole === "boss";
+
+    if (!isPrivileged && lead.assigned_to !== user.id) {
+      return NextResponse.json(
+        { error: "Forbidden: you do not have permission to operate on this lead" },
+        { status: 403 }
+      );
+    }
+
     // 3. Generate quote number
-    const quoteNo = await generateQuoteNo(supabaseAdmin);
+    const quoteNo = await generateQuoteNo();
 
     // 4. Save quotation to DB
     const { data: quote, error: quoteErr } = await supabaseAdmin

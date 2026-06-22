@@ -243,7 +243,10 @@ function sleep(ms: number) {
 export async function POST(request: NextRequest) {
   try {
     const supabaseAuth = await createServerSupabase();
-    const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
+    const authHeader = request.headers.get("authorization");
+    const { data: { user }, error: authErr } = authHeader?.startsWith("Bearer ")
+      ? await supabaseAuth.auth.getUser(authHeader.slice(7))
+      : await supabaseAuth.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -257,7 +260,7 @@ export async function POST(request: NextRequest) {
     // Verify lead exists and user has permission
     const { data: lead, error: leadErr } = await (supabaseAdmin as any)
       .from("leads")
-      .select("id, customer_name, property_type, property_size_sqm, service_needs, devices_json")
+      .select("id, customer_name, property_type, property_size_sqm, service_needs, devices_json, assigned_to")
       .eq("id", lead_id)
       .single();
 

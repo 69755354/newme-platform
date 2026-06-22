@@ -157,7 +157,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
       const res = await fetch("/api/cos/download-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: url, expires: 3600 }),
+        body: JSON.stringify({ key: url, expires: 3600, lead_id: quote.lead_id }),
       });
       const data = await res.json();
       if (data.url) {

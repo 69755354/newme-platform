@@ -14,28 +14,15 @@ import { calculateQuotation } from "../../../../lib/quotation-engine";
  * 调用 quotation-engine 计算，保存到数据库。
  */
 
-/** Generate quote number: NM-YYYY-XXXX (sequential) */
-async function generateQuoteNo(supabase: any): Promise<string> {
-  const year = new Date().getFullYear().toString();
-  const { data } = await (supabase as any)
-    .from("quotations")
-    .select("quote_no")
-    .like("quote_no", `NM-${year}-%`)
-    .order("quote_no", { ascending: false })
-    .limit(1);
-
-  let nextSeq = 1;
-  if (data && data.length > 0) {
-    const lastNo: string = data[0].quote_no;
-    const parts = lastNo.split("-");
-    const lastSeq = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastSeq)) {
-      nextSeq = lastSeq + 1;
-    }
+/** Generate quote number: NM-YYYY-XXXX (sequential, race-safe via DB advisory lock) */
+async function generateQuoteNo(): Promise<string> {
+  const year = new Date().getFullYear();
+  const { data, error } = await supabaseAdmin.rpc("generate_quote_no", { year_param: year });
+  if (error || !data) {
+    console.error("[Generate Quote] RPC generate_quote_no failed:", error);
+    throw new Error("Failed to generate quote number");
   }
-
-  const seqStr = nextSeq.toString().padStart(4, "0");
-  return `NM-${year}-${seqStr}`;
+  return data as string;
 }
 
 /**
@@ -156,7 +143,7 @@ export async function POST(request: NextRequest) {
     });
 
     // 4. Generate quote number
-    const quoteNo = await generateQuoteNo(supabaseAdmin);
+    const quoteNo = await generateQuoteNo();
 
     // 5. Save quotation to DB (quotations table)
     const { data: quote, error: quoteErr } = await (supabaseAdmin as any)

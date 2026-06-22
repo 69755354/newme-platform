@@ -37,3 +37,25 @@ export async function createServerSupabase() {
     },
   );
 }
+
+/**
+ * Get authenticated user from request. Tries:
+ * 1. Cookie-based auth (normal flow)
+ * 2. Bearer token header (API testing with service_role or user JWT)
+ */
+export async function getAuthUser(request: Request) {
+  // Try cookie auth first
+  const supabase = await createServerSupabase();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (!error && user) return { user, supabase };
+
+  // Fallback: Bearer token (for automated testing)
+  const authHeader = request.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    const { data: { user: tokenUser }, error: tokenErr } = await supabase.auth.getUser(token);
+    if (!tokenErr && tokenUser) return { user: tokenUser, supabase };
+  }
+
+  return { user: null, supabase, error };
+}

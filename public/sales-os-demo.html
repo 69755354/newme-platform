@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NewMe Sales OS · v3 预览</title>
+<style>
+:root {
+  --brand: #3B4F6B;
+  --brand-light: #5A7A9A;
+  --brand-bg: #F0F4F8;
+  --green: #10B981;
+  --green-bg: #ECFDF5;
+  --yellow: #F59E0B;
+  --yellow-bg: #FFFBEB;
+  --red: #EF4444;
+  --red-bg: #FEF2F2;
+  --gray: #6B7280;
+  --gray-bg: #F3F4F6;
+  --bg: #F5F6F8;
+  --card: #FFFFFF;
+  --text: #1A1D23;
+  --text-2: #5F6672;
+  --text-3: #969BA8;
+  --border: #E5E7EB;
+  --sw: 220px;
+  --hh: 52px;
+  --R: 10px;
+  --r: 6px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); font-size:14px; line-height:1.5; }
+
+/* Sidebar */
+.sidebar { position:fixed; inset:0 auto 0 0; width:var(--sw); background:#fff; border-right:1px solid var(--border); z-index:300; display:flex; flex-direction:column; }
+.sb-logo { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; font-weight:700; font-size:14px; }
+.sb-logo .mk { width:28px;height:28px; background:var(--brand); border-radius:7px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px; font-weight:800; }
+.sb-nav { flex:1; overflow-y:auto; padding:8px; }
+.sb-sec { font-size:9px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:1px; padding:12px 10px 4px; }
+.sb-it { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:7px; cursor:pointer; font-size:12px; color:var(--text-2); transition:.1s; margin-bottom:1px; border:none; background:none; width:100%; text-align:left; }
+.sb-it:hover { background:var(--brand-bg); }
+.sb-it.act { background:var(--brand-bg); color:var(--brand); font-weight:600; }
+.sb-user { padding:12px; border-top:1px solid var(--border); display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-2); }
+.sb-user .av { width:26px;height:26px; border-radius:50%; background:var(--brand); display:flex; align-items:center; justify-content:center; color:#fff; font-size:10px; font-weight:700; }
+.role-switch { display:flex; gap:2px; padding:8px 12px; background:var(--gray-bg); margin:4px 8px; border-radius:7px; }
+.role-switch button { flex:1; padding:5px; border-radius:5px; border:none; background:none; cursor:pointer; font-size:10px; color:var(--text-3); }
+.role-switch button.act { background:#fff; color:var(--text); font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,.06); }
+
+/* Header */
+.header { position:fixed; top:0; left:var(--sw); right:0; height:var(--hh); background:rgba(255,255,255,.94); backdrop-filter:blur(10px); border-bottom:1px solid var(--border); z-index:200; display:flex; align-items:center; padding:0 16px; gap:12px; }
+.header-title { font-weight:600; font-size:14px; color:var(--brand); }
+.header-right { margin-left:auto; display:flex; align-items:center; gap:8px; }
+.notif { width:32px;height:32px; border-radius:50%; border:none; background:var(--gray-bg); cursor:pointer; font-size:14px; position:relative; }
+.notif .dot { position:absolute; top:6px;right:6px; width:7px;height:7px; background:var(--red); border-radius:50%; border:2px solid #fff; }
+.user-badge { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:500; }
+
+/* Main */
+.main { margin-left:var(--sw); padding-top:var(--hh); min-height:100vh; padding-bottom:40px; }
+.page { display:none; padding:18px; max-width:1100px; }
+.page.act { display:block; animation:fade .15s; }
+@keyframes fade { from{opacity:0} to{opacity:1} }
+.ph { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; gap:8px; flex-wrap:wrap; }
+.pt { font-size:18px; font-weight:700; }
+.ps { color:var(--text-2); font-size:11px; margin-top:2px; }
+
+/* Buttons */
+.btn { padding:6px 12px; border-radius:var(--r); border:none; cursor:pointer; font-size:11px; font-weight:500; display:inline-flex; align-items:center; gap:5px; transition:.1s; }
+.btn-primary { background:var(--brand); color:#fff; }
+.btn-primary:hover { background:var(--brand-light); }
+.btn-outline { background:#fff; color:var(--text); border:1px solid var(--border); }
+.btn-outline:hover { background:var(--gray-bg); }
+.btn-ghost { background:none; color:var(--text-2); border:none; padding:4px 8px; }
+.btn-ghost:hover { background:var(--gray-bg); }
+.btn-sm { padding:4px 8px; font-size:10px; }
+.btn-green { background:var(--green); color:#fff; }
+.btn-red { background:var(--red); color:#fff; }
+
+/* Cards */
+.card { background:var(--card); border-radius:var(--R); padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.06); border:1px solid var(--border); margin-bottom:12px; }
+.ch { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.ct { font-size:13px; font-weight:600; }
+.cb { font-size:11px; color:var(--text-3); cursor:pointer; }
+.badge { display:inline-flex; padding:2px 7px; border-radius:10px; font-size:9px; font-weight:600; }
+.badge-g { background:var(--green-bg); color:var(--green); }
+.badge-y { background:var(--yellow-bg); color:var(--yellow); }
+.badge-r { background:var(--red-bg); color:var(--red); }
+.badge-gy { background:var(--gray-bg); color:var(--gray); }
+
+/* Inbox items */
+.inbox-item { display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); cursor:pointer; }
+.inbox-item:last-child { border-bottom:none; }
+.inbox-icon { width:28px;height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0; }
+.inbox-icon.msg { background:#EBF5FF; }
+.inbox-icon.file { background:var(--green-bg); }
+.inbox-icon.confirm { background:var(--yellow-bg); }
+.inbox-body { flex:1; min-width:0; }
+.inbox-text { font-size:12px; line-height:1.4; }
+.inbox-meta { font-size:10px; color:var(--text-3); margin-top:2px; }
+
+/* Task list */
+.task-item { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); cursor:pointer; }
+.task-item:last-child { border-bottom:none; }
+.task-dot { width:6px;height:6px; border-radius:50%; flex-shrink:0; }
+.task-dot.red { background:var(--red); }
+.task-dot.yellow { background:var(--yellow); }
+.task-dot.gray { background:var(--gray); }
+.task-body { flex:1; }
+.task-title { font-size:12px; }
+.task-meta { font-size:10px; color:var(--text-3); }
+.task-action { font-size:10px; color:var(--brand); font-weight:500; }
+
+/* Metrics row */
+.metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px; }
+.mc { background:var(--card); border-radius:var(--R); padding:14px; box-shadow:0 1px 3px rgba(0,0,0,.06); border:1px solid var(--border); }
+.mc .ml { font-size:10px; color:var(--text-3); font-weight:500; margin-bottom:2px; }
+.mc .mv { font-size:22px; font-weight:700; letter-spacing:-1px; }
+.mc .md { font-size:10px; margin-top:3px; }
+
+/* Lead detail card */
+.lead-header { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px; }
+.lead-header .lh-main { flex:1; min-width:200px; }
+.lead-header .lh-tags { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0; }
+.lead-tag { display:flex; align-items:center; gap:4px; padding:3px 8px; border-radius:6px; font-size:10px; font-weight:500; }
+.lead-tag.gy { background:var(--gray-bg); color:var(--gray); }
+.lead-header .lh-action { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
+.health-score { display:flex; align-items:center; gap:6px; padding:4px 10px; border-radius:6px; font-size:11px; font-weight:600; }
+.health-score.green { background:var(--green-bg); color:var(--green); }
+.health-score.yellow { background:var(--yellow-bg); color:var(--yellow); }
+.health-score.red { background:var(--red-bg); color:var(--red); }
+
+/* Timeline */
+.timeline-item { display:flex; gap:10px; padding:8px 0; border-left:2px solid var(--border); padding-left:14px; margin-left:4px; position:relative; }
+.timeline-item::before { content:''; position:absolute; left:-5px; top:12px; width:8px;height:8px; border-radius:50%; background:var(--brand-bg); border:2px solid var(--brand); }
+.timeline-item:last-child { border-left-color:transparent; }
+.tl-icon { font-size:13px; width:20px; text-align:center; }
+.tl-date { font-size:10px; color:var(--text-3); width:44px; flex-shrink:0; margin-top:1px; }
+.tl-body { flex:1; }
+.tl-text { font-size:12px; }
+.tl-meta { font-size:10px; color:var(--text-3); }
+.tl-month { font-weight:600; font-size:12px; color:var(--text-2); padding:8px 0 4px; display:flex; align-items:center; gap:6px; cursor:pointer; }
+.tl-month .count { font-weight:400; font-size:10px; color:var(--text-3); }
+
+/* Pipeline card */
+.pl-card { background:var(--card); border-radius:var(--R); padding:14px; box-shadow:0 1px 3px rgba(0,0,0,.06); border:1px solid var(--border); margin-bottom:8px; cursor:pointer; transition:.1s; }
+.pl-card:hover { box-shadow:0 2px 8px rgba(0,0,0,.1); }
+.pl-card .pl-name { font-weight:600; font-size:13px; }
+.pl-card .pl-meta { font-size:11px; color:var(--text-2); margin:4px 0; }
+.pl-card .pl-bottom { display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--text-3); }
+
+/* Command center */
+.cmd-section { margin-bottom:16px; }
+.cmd-section .cmd-title { font-size:11px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+.cmd-item { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+.cmd-item:last-child { border-bottom:none; }
+.cmd-bar { height:6px; border-radius:3px; background:var(--gray-bg); flex:1; max-width:200px; }
+.cmd-bar .fill { height:100%; border-radius:3px; }
+.cmd-bar .fill.green { background:var(--green); }
+.cmd-bar .fill.yellow { background:var(--yellow); }
+.cmd-bar .fill.red { background:var(--red); width:8%; }
+
+/* Tabs */
+.tabs { display:flex; gap:4px; margin-bottom:14px; background:var(--gray-bg); padding:3px; border-radius:var(--r); width:fit-content; }
+.tab { padding:5px 12px; border-radius:4px; border:none; cursor:pointer; font-size:11px; color:var(--text-2); background:none; }
+.tab.act { background:#fff; color:var(--text); font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,.06); }
+
+/* Banner */
+.banner { position:fixed; bottom:0; left:var(--sw); right:0; height:28px; background:var(--brand); color:#fff; font-size:9px; font-weight:600; display:flex; align-items:center; justify-content:center; z-index:250; letter-spacing:.3px; }
+
+/* Fold sections */
+.fold-header { display:flex; align-items:center; gap:6px; padding:8px 0; cursor:pointer; color:var(--text-2); font-size:11px; font-weight:500; }
+.fold-header:hover { color:var(--text); }
+.fold-content { display:none; }
+.fold-content.open { display:block; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <div class="sb-logo"><div class="mk">N</div> NewMe Sales OS</div>
+  <div class="role-switch">
+    <button class="act" onclick="switchRole('sales')">销售</button>
+    <button onclick="switchRole('boss')">老板</button>
+  </div>
+  <div class="sb-nav">
+    <div class="sb-sec">工作区</div>
+    <button class="sb-it act" data-page="workbench" onclick="showPage('workbench',this)">📋 工作台</button>
+    <button class="sb-it" data-page="pipeline" onclick="showPage('pipeline',this)">📊 Pipeline</button>
+    <button class="sb-it" data-page="leads" onclick="showPage('leads',this)">👥 客户</button>
+    <button class="sb-it" data-page="command" onclick="showPage('command',this)">🏛️ Command Center</button>
+    <div class="sb-sec">管理</div>
+    <button class="sb-it" data-page="quotes" onclick="showPage('quotes',this)">📄 报价</button>
+    <button class="sb-it" data-page="ads" onclick="showPage('ads',this)">📢 广告</button>
+    <button class="sb-it" data-page="team" onclick="showPage('team',this)">👤 团队</button>
+  </div>
+  <div class="sb-user"><div class="av">M</div> Mohamed · 销售</div>
+</div>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-title">NewMe Sales OS</div>
+  <div class="header-right">
+    <button class="notif"><span>🔔</span><span class="dot"></span></button>
+    <div class="user-badge"><div class="av" style="width:24px;height:24px;font-size:9px;">M</div> Mohamed</div>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+<!-- ════════════════════════════ PAGE: Workbench ════════════════════════════ -->
+<div class="page act" id="page-workbench">
+  <div class="ph"><div><div class="pt">早安，Mohamed 👋</div><div class="ps">6月22日 · 星期一 · 迪拜</div></div></div>
+
+  <!-- Inbox -->
+  <div class="card">
+    <div class="ch"><div class="ct">📥 需要处理</div><span class="cb">3条新</span></div>
+    <div class="inbox-item">
+      <div class="inbox-icon msg">💬</div>
+      <div class="inbox-body">
+        <div class="inbox-text"><b>Ahmed</b> 回复了 WhatsApp: "方案价格能再低点吗"</div>
+        <div class="inbox-meta">2分钟前 · Villa 67</div>
+      </div>
+      <span class="badge badge-y">新</span>
+    </div>
+    <div class="inbox-item">
+      <div class="inbox-icon file">📎</div>
+      <div class="inbox-body">
+        <div class="inbox-text"><b>Fatima</b> 发来了图纸 · 灯光电路图 + 空调图</div>
+        <div class="inbox-meta">10分钟前 · Sharjah Tower</div>
+      </div>
+      <span class="badge badge-y">新</span>
+    </div>
+    <div class="inbox-item">
+      <div class="inbox-icon confirm">✅</div>
+      <div class="inbox-body">
+        <div class="inbox-text"><b>Ali</b> 确认了面谈时间 → 明天 14:00</div>
+        <div class="inbox-meta">1小时前 · Al Barari Villa</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Today's tasks -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+    <div class="card">
+      <div class="ch"><div class="ct">📋 今日需跟进 <span style="font-weight:400;color:var(--text-3);font-size:11px;">8条</span></div></div>
+      <div class="task-item">
+        <div class="task-dot red"></div>
+        <div class="task-body">
+          <div class="task-title">Ahmed · Villa 67 — No Answer ×3</div>
+          <div class="task-meta">今天到期 · 上次跟进 06-18</div>
+        </div>
+        <span class="task-action">跟进</span>
+      </div>
+      <div class="task-item">
+        <div class="task-dot yellow"></div>
+        <div class="task-body">
+          <div class="task-title">Fatima · Sharjah Tower ⭐ 面谈</div>
+          <div class="task-meta">14:00 · 准备方案报价</div>
+        </div>
+        <span class="task-action">准备</span>
+      </div>
+      <div class="task-item">
+        <div class="task-dot gray"></div>
+        <div class="task-body">
+          <div class="task-title">Salem · Apartment — 报价后3天未跟进</div>
+          <div class="task-meta">上次跟进 06-19 · 发送了报价</div>
+        </div>
+        <span class="task-action">跟进</span>
+      </div>
+      <div class="task-item">
+        <div class="task-dot gray"></div>
+        <div class="task-body">
+          <div class="task-title">Noura · Palm Villa — 等待客户图纸</div>
+          <div class="task-meta">06-18 面谈 · 客户说本周发图纸</div>
+        </div>
+        <span class="task-action">催</span>
+      </div>
+      <div class="task-item" style="border:none;">
+        <div class="task-dot gray"></div>
+        <div class="task-body">
+          <div class="task-title">Rashid · Office — 方案制作中</div>
+          <div class="task-meta">预计面谈 06-28</div>
+        </div>
+        <span class="task-action">继续</span>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="ch"><div class="ct">⏰ 已超时 <span style="font-weight:400;color:var(--red);font-size:11px;">3条</span></div></div>
+        <div class="task-item">
+          <div class="task-dot red"></div>
+          <div class="task-body">
+            <div class="task-title">Omar · The Villa — 逾期1天</div>
+            <div class="task-meta">应跟进 06-21 · No Answer ×2</div>
+          </div>
+          <span class="task-action" style="color:var(--red);">⚠️</span>
+        </div>
+        <div class="task-item">
+          <div class="task-dot red"></div>
+          <div class="task-body">
+            <div class="task-title">Hessa · Springs — 逾期3天</div>
+            <div class="task-meta">应跟进 06-19 · 已发方案未回复</div>
+          </div>
+          <span class="task-action" style="color:var(--red);">⚠️</span>
+        </div>
+        <div class="task-item" style="border:none;">
+          <div class="task-dot red"></div>
+          <div class="task-body">
+            <div class="task-title">Khalid · JVC — 逾期5天 ⚠️已抄送admin</div>
+            <div class="task-meta">应跟进 06-17 · 冷线索风险</div>
+          </div>
+          <span class="task-action" style="color:var(--red);">⚠️</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><div class="ct">🆕 今日新增</div></div>
+        <div class="inbox-item" style="padding:6px 0;">
+          <div class="inbox-icon msg" style="background:var(--green-bg);">📢</div>
+          <div class="inbox-body">
+            <div class="inbox-text"><b>New Lead</b> · Jumeirah Villa</div>
+            <div class="inbox-meta">15分钟前 · 来自 Meta Ads · 未联系</div>
+          </div>
+          <span class="badge badge-g">新</span>
+        </div>
+        <div class="inbox-item" style="padding:6px 0;border:none;">
+          <div class="inbox-icon msg" style="background:var(--green-bg);">📢</div>
+          <div class="inbox-body">
+            <div class="inbox-text"><b>New Lead</b> · Dubai Hills Apartment</div>
+            <div class="inbox-meta">2小时前 · 来自 Meta Ads · 未联系</div>
+          </div>
+          <span class="badge badge-g">新</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="ch"><div class="ct">📊 本月进度</div></div>
+    <div style="display:flex;gap:24px;flex-wrap:wrap;">
+      <div><span class="badge badge-g" style="font-size:11px;padding:4px 10px;">已签 2单 / AED 680K</span></div>
+      <div><span class="badge badge-y" style="font-size:11px;padding:4px 10px;">目标 AED 2M · 完成 34%</span></div>
+      <div><span class="badge badge-gy" style="font-size:11px;padding:4px 10px;">管线 8条 / AED 3.2M</span></div>
+      <div><span class="badge badge-y" style="font-size:11px;padding:4px 10px;">预计本周签约 AED 420K</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════ PAGE: Lead Detail ════════════════════════════ -->
+<div class="page" id="page-leads">
+  <div class="ph">
+    <div>
+      <div class="pt" style="display:flex;align-items:center;gap:8px;">
+        <span style="cursor:pointer;color:var(--text-3);" onclick="showPage('workbench',document.querySelector('[data-page=workbench]'))">← 工作台</span>
+        Fatima · Sharjah Tower
+        <span class="health-score yellow">🟡 At Risk</span>
+      </div>
+      <div class="ps">预算 AED 80-120k · 跟单中 · 需求: 灯光+窗帘+空调</div>
+    </div>
+  </div>
+
+  <!-- Top: Identity Card -->
+  <div class="card">
+    <div class="lead-header">
+      <div class="lh-main">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+          <span class="lead-tag gy">🏠 别墅</span>
+          <span class="lead-tag gy">🔨 在建</span>
+          <span class="lead-tag gy">📍 Sharjah</span>
+          <span class="lead-tag gy">📞 +971 55 XXX XXXX</span>
+        </div>
+        <div class="lh-tags">
+          <span>空调: Daikin</span>
+          <span>·</span>
+          <span>图纸: ✅ 已收</span>
+          <span>·</span>
+          <span>报价: Q-2026-0042 · AED 105K</span>
+        </div>
+        <div style="font-size:13px;font-weight:600;margin-top:8px;">
+          下一动作: 6月28日 跟进报价反馈
+        </div>
+        <div class="lh-action">
+          <button class="btn btn-primary">📝 记录跟进</button>
+          <button class="btn btn-outline">💬 WhatsApp</button>
+          <button class="btn btn-outline">📞 打电话</button>
+          <button class="btn btn-outline">📎 上传文件</button>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;min-width:140px;padding:10px;background:var(--gray-bg);border-radius:8px;">
+        <div style="font-size:10px;color:var(--text-3);">Milestone</div>
+        <div style="font-size:11px;">✅ 首次联系 <span style="color:var(--text-3);">06-01</span></div>
+        <div style="font-size:11px;">✅ 基础资料 <span style="color:var(--text-3);">06-01</span></div>
+        <div style="font-size:11px;">✅ 图纸收集 <span style="color:var(--text-3);">06-05</span></div>
+        <div style="font-size:11px;">✅ 需求确认 <span style="color:var(--text-3);">06-05</span></div>
+        <div style="font-size:11px;">✅ 方案完成 <span style="color:var(--text-3);">06-10</span></div>
+        <div style="font-size:11px;">✅ 面谈 <span style="color:var(--text-3);">06-15</span></div>
+        <div style="font-size:11px;color:var(--brand);font-weight:500;">⬜ 跟单终结</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Middle: Timeline (last 5, with month fold) -->
+  <div class="card">
+    <div class="ch"><div class="ct">📜 时间线</div><span class="cb">共18条 · 点击展开全部</span></div>
+    
+    <div class="tl-month">▶ 6月 <span class="count">· 跟进12次 · 面谈2次 · 报价1次</span></div>
+    <div class="timeline-item">
+      <div class="tl-date">06-20</div>
+      <div class="tl-icon">💬</div>
+      <div class="tl-body">
+        <div class="tl-text">客户反馈价格偏高，说考虑中</div>
+        <div class="tl-meta">WhatsApp · 下次跟进 06-28</div>
+      </div>
+    </div>
+    <div class="timeline-item">
+      <div class="tl-date">06-15</div>
+      <div class="tl-icon">🤝</div>
+      <div class="tl-body">
+        <div class="tl-text">面谈方案报价 — 客户对方案满意，预算80-120k</div>
+        <div class="tl-meta">面谈 · 现场演示 · 下次跟进 06-28</div>
+      </div>
+    </div>
+    <div class="timeline-item">
+      <div class="tl-date">06-10</div>
+      <div class="tl-icon">📧</div>
+      <div class="tl-body">
+        <div class="tl-text">发送方案PDF + 报价单</div>
+        <div class="tl-meta">邮件 · 方案版本 v1.2</div>
+      </div>
+    </div>
+    <div class="timeline-item">
+      <div class="tl-date">06-05</div>
+      <div class="tl-icon">📎</div>
+      <div class="tl-body">
+        <div class="tl-text">收到图纸 - 灯光电路图 + 空调图</div>
+        <div class="tl-meta">客户发送 · 空调品牌: Daikin</div>
+      </div>
+    </div>
+    <div class="timeline-item">
+      <div class="tl-date">06-01</div>
+      <div class="tl-icon">📞</div>
+      <div class="tl-body">
+        <div class="tl-text">首次联系 — 客户感兴趣，咨询智能家居方案</div>
+        <div class="tl-meta">电话 · 来源: Meta Ads</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom: Folded sections -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+    <div class="card">
+      <div class="fold-header" onclick="this.nextElementSibling.classList.toggle('open');this.querySelector('span').textContent=this.nextElementSibling.classList.contains('open')?'▼':'▶'">
+        <span>▶</span> 项目信息 · 智能需求
+      </div>
+      <div class="fold-content">
+        <div style="font-size:11px;line-height:1.8;">
+          <b>类型:</b> 别墅 · <b>状态:</b> 在建<br>
+          <b>位置:</b> Sharjah · Al Taawun<br>
+          <b>空调品牌:</b> Daikin<br>
+          <b>需求:</b> 灯光(调光) ✓ · 窗帘 ✓ · 空调 ✓ · CCTV ✓ · 网络 ✓
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="fold-header" onclick="this.nextElementSibling.classList.toggle('open');this.querySelector('span').textContent=this.nextElementSibling.classList.contains('open')?'▼':'▶'">
+        <span>▶</span> 报价 · 合同
+      </div>
+      <div class="fold-content">
+        <div style="font-size:11px;line-height:1.8;">
+          <b>报价:</b> Q-2026-0042 · AED 105,000<br>
+          <b>状态:</b> 已发送 (06-10)<br>
+          <b>合同:</b> 未创建
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════ PAGE: Pipeline ════════════════════════════ -->
+<div class="page" id="page-pipeline">
+  <div class="ph"><div><div class="pt">📊 Pipeline</div><div class="ps">8条管线 · AED 3.2M</div></div></div>
+  
+  <div class="tabs">
+    <button class="tab act">全部</button>
+    <button class="tab">别墅</button>
+    <button class="tab">公寓</button>
+    <button class="tab">办公楼</button>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+    <div class="pl-card">
+      <div class="pl-name">Fatima · Sharjah Tower</div>
+      <div class="pl-meta">Sharjah · AED 120K · 别墅 · 在建</div>
+      <div class="pl-bottom">
+        <span class="health-score yellow" style="font-size:9px;padding:2px 6px;">🟡 At Risk</span>
+        <span>等待方案确认 · 下次 06-28</span>
+      </div>
+    </div>
+    <div class="pl-card">
+      <div class="pl-name">Ahmed · Villa 67</div>
+      <div class="pl-meta">Dubai Hills · AED 280K · 别墅 · 翻新</div>
+      <div class="pl-bottom">
+        <span class="health-score red" style="font-size:9px;padding:2px 6px;">🔴 Stale</span>
+        <span>No Answer ×3 · 逾期中</span>
+      </div>
+    </div>
+    <div class="pl-card">
+      <div class="pl-name">Noura · Palm Villa</div>
+      <div class="pl-meta">Palm Jumeirah · AED 450K · 别墅 · 已建好</div>
+      <div class="pl-bottom">
+        <span class="health-score" style="font-size:9px;padding:2px 6px;background:var(--green-bg);color:var(--green);">🟢 Healthy</span>
+        <span>等待图纸 · 客户承诺本周</span>
+      </div>
+    </div>
+    <div class="pl-card">
+      <div class="pl-name">Rashid · Business Bay Office</div>
+      <div class="pl-meta">Business Bay · AED 780K · 办公楼</div>
+      <div class="pl-bottom">
+        <span class="health-score yellow" style="font-size:9px;padding:2px 6px;">🟡 At Risk</span>
+        <span>方案制作中 · 预计面谈 06-28</span>
+      </div>
+    </div>
+    <div class="pl-card">
+      <div class="pl-name">Salem · Marina Apartment</div>
+      <div class="pl-meta">Dubai Marina · AED 95K · 公寓 · 已建好</div>
+      <div class="pl-bottom">
+        <span class="health-score yellow" style="font-size:9px;padding:2px 6px;">🟡 At Risk</span>
+        <span>报价后3天未跟进</span>
+      </div>
+    </div>
+    <div class="pl-card">
+      <div class="pl-name">Ali · Al Barari</div>
+      <div class="pl-meta">Al Barari · AED 350K · 别墅 · 在建</div>
+      <div class="pl-bottom">
+        <span class="health-score" style="font-size:9px;padding:2px 6px;background:var(--green-bg);color:var(--green);">🟢 Healthy</span>
+        <span>面谈确认 明天14:00</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════ PAGE: Command Center ════════════════════════════ -->
+<div class="page" id="page-command">
+  <div class="ph">
+    <div>
+      <div class="pt">🏛️ Command Center</div>
+      <div class="ps">6月第4周 · 6月22日</div>
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="switchRole('boss')">切换到老板视角</button>
+  </div>
+
+  <div class="card">
+    <div class="ch">
+      <div class="ct">📈 本月目标 AED 2M</div>
+      <span style="font-size:22px;font-weight:700;">34%</span>
+    </div>
+    <div style="height:8px;background:var(--gray-bg);border-radius:4px;overflow:hidden;margin-bottom:12px;">
+      <div style="height:100%;width:34%;background:var(--yellow);border-radius:4px;"></div>
+    </div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;">
+      <div><span class="badge badge-g" style="font-size:11px;">Mohamed 56%</span></div>
+      <div><span class="badge badge-y" style="font-size:11px;">Fatima 30%</span></div>
+      <div><span class="badge badge-r" style="font-size:11px;">Omar 8%</span></div>
+    </div>
+    <div style="font-size:11px;color:var(--red);margin-top:8px;">⚠️ 预计本月缺口 AED 420K</div>
+  </div>
+
+  <div class="card">
+    <div class="cmd-section">
+      <div class="cmd-title">🚨 需要关注</div>
+      <div class="cmd-item">
+        <div style="display:flex;align-items:center;gap:8px;flex:1;">
+          <span class="cmd-bar"><div class="fill green" style="width:56%;"></div></span>
+          <span style="font-size:11px;font-weight:500;width:80px;">Mohamed</span>
+          <span style="font-size:11px;color:var(--green);">56%</span>
+        </div>
+      </div>
+      <div class="cmd-item">
+        <div style="display:flex;align-items:center;gap:8px;flex:1;">
+          <span class="cmd-bar"><div class="fill yellow" style="width:30%;"></div></span>
+          <span style="font-size:11px;font-weight:500;width:80px;">Fatima</span>
+          <span style="font-size:11px;color:var(--yellow);">30%</span>
+        </div>
+      </div>
+      <div class="cmd-item" style="background:var(--red-bg);border-radius:6px;padding:10px;">
+        <div style="display:flex;align-items:center;gap:8px;flex:1;">
+          <span class="cmd-bar"><div class="fill red" style="width:8%;"></div></span>
+          <span style="font-size:11px;font-weight:500;width:80px;">Omar</span>
+          <span style="font-size:11px;color:var(--red);">8%</span>
+          <span style="font-size:10px;color:var(--red);">← 拖后腿</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+    <div class="card">
+      <div class="cmd-section">
+        <div class="cmd-title">⏰ 超时跟进 <span style="font-weight:400;color:var(--red);">12条</span></div>
+        <div class="cmd-item">
+          <span style="font-size:11px;flex:1;">Omar · The Villa</span>
+          <span class="badge badge-r">逾期1天</span>
+        </div>
+        <div class="cmd-item">
+          <span style="font-size:11px;flex:1;">Hessa · Springs</span>
+          <span class="badge badge-r">逾期3天</span>
+        </div>
+        <div class="cmd-item" style="border:none;">
+          <span style="font-size:11px;flex:1;">Khalid · JVC</span>
+          <span class="badge badge-r">逾期5天</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cmd-section">
+        <div class="cmd-title">💰 回款 <span style="font-weight:400;color:var(--text-3);">应收 1.2M · 已收 420K</span></div>
+        <div class="cmd-item">
+          <span style="font-size:11px;flex:1;">逾期回款总额</span>
+          <span style="font-size:13px;font-weight:600;color:var(--red);">AED 180K</span>
+        </div>
+        <div class="cmd-item" style="border:none;">
+          <span style="font-size:11px;flex:1;">本期到期 7月</span>
+          <span style="font-size:13px;font-weight:600;">AED 350K</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="border-left:3px solid var(--red);">
+    <div class="ch"><div class="ct">👑 需要老板介入</div></div>
+    <div class="cmd-item">
+      <span style="font-size:11px;flex:1;"><b>Fahim</b> · AED 120k Villa · 客户要求老板面谈</span>
+      <button class="btn btn-primary btn-sm">接手</button>
+    </div>
+    <div class="cmd-item" style="border:none;">
+      <span style="font-size:11px;flex:1;"><b>Shamsi</b> · AED 45k Apartment · 价格谈不拢需决策</span>
+      <button class="btn btn-outline btn-sm">查看</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════ PAGE: Quotes / Ads / Team (placeholders) ════════════════════════════ -->
+<div class="page" id="page-quotes">
+  <div class="ph"><div class="pt">📄 报价管理</div></div>
+  <div class="card" style="text-align:center;padding:40px;color:var(--text-3);font-size:13px;">
+    报价模块 · 保留v2.3现有功能<br><br>
+    <span style="font-size:11px;">Quotes / Calculator / Wizard 三个报价入口沿用</span>
+  </div>
+</div>
+
+<div class="page" id="page-ads">
+  <div class="ph"><div class="pt">📢 广告管理</div></div>
+  <div class="card" style="text-align:center;padding:40px;color:var(--text-3);font-size:13px;">
+    广告模块 · Phase B 增加线索质量分析<br><br>
+    <span style="font-size:11px;">当前保留Meta Ads基础功能</span>
+  </div>
+</div>
+
+<div class="page" id="page-team">
+  <div class="ph"><div class="pt">👤 团队</div></div>
+  <div class="card" style="text-align:center;padding:40px;color:var(--text-3);font-size:13px;">
+    团队管理 · KPI排行 · Phase B增强<br><br>
+    <span style="font-size:11px;">当前保留v2.3基础功能</span>
+  </div>
+</div>
+
+</div>
+
+<div class="banner">
+  NewMe Sales OS v3 预览 · 设计稿 · 非生产环境
+</div>
+
+<script>
+function showPage(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('act'));
+  document.getElementById('page-' + id).classList.add('act');
+  document.querySelectorAll('.sb-it').forEach(b => b.classList.remove('act'));
+  if (btn) btn.classList.add('act');
+}
+
+function switchRole(role) {
+  document.querySelectorAll('.role-switch button').forEach(b => b.classList.remove('act'));
+  if (role === 'sales') {
+    document.querySelector('.role-switch button:first-child').classList.add('act');
+    showPage('workbench', document.querySelector('[data-page=workbench]'));
+  } else {
+    document.querySelector('.role-switch button:last-child').classList.add('act');
+    showPage('command', document.querySelector('[data-page=command]'));
+  }
+}
+
+// Click on any pipeline card to go to lead detail
+document.querySelectorAll('.pl-card').forEach(card => {
+  card.addEventListener('click', function() {
+    showPage('leads', document.querySelector('[data-page=leads]'));
+  });
+});
+
+// Click on any task or inbox item to go to lead detail
+document.querySelectorAll('.task-item, .inbox-item').forEach(item => {
+  item.addEventListener('click', function() {
+    showPage('leads', document.querySelector('[data-page=leads]'));
+  });
+});
+</script>
+
+</body>
+</html>

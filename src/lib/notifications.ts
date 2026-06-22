@@ -1,4 +1,8 @@
 import { supabaseAdmin } from "./supabase-admin";
+import * as fs from "fs";
+import * as path from "path";
+
+const NOTIFICATION_ERROR_LOG = path.join(process.cwd(), "logs", "notification-errors.log");
 
 /**
  * Shared list of valid notification types.
@@ -40,6 +44,11 @@ export async function createNotification(params: {
 
   if (error) {
     console.error("[Notifications] Failed to create notification:", error);
+    try {
+      const dir = path.dirname(NOTIFICATION_ERROR_LOG);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.appendFileSync(NOTIFICATION_ERROR_LOG, JSON.stringify({ ts: new Date().toISOString(), error: error.message, params: { userId, type } }) + "\n");
+    } catch {}
   }
 }
 
@@ -68,6 +77,11 @@ export async function createNotificationsBulk(
   const { error } = await supabaseAdmin.from("notifications").insert(rows);
   if (error) {
     console.error("[Notifications] Bulk insert failed:", error);
+    try {
+      const dir = path.dirname(NOTIFICATION_ERROR_LOG);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.appendFileSync(NOTIFICATION_ERROR_LOG, JSON.stringify({ ts: new Date().toISOString(), error: error.message, count: rows.length }) + "\n");
+    } catch {}
   }
 }
 

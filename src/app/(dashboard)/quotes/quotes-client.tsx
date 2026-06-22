@@ -331,7 +331,7 @@ export default function QuotesClient({ initialData, fetchError }: QuotesClientPr
       const res = await fetch("/api/cos/download-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: url, expires: 3600 }),
+        body: JSON.stringify({ key: url, expires: 3600, lead_id: quote.lead_id }),
       });
       const data = await res.json();
       window.open(data.url || url, "_blank");

@@ -3,7 +3,7 @@
 # v3: added hook chain self-verification + commit provenance check
 set -e
 
-HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+HOOK_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 REPO_ROOT="$(cd "$HOOK_DIR/.." && pwd)"
 MANIFEST="$HOOK_DIR/manifest.json"
 MY_HASH=$(sha256sum "$0" | cut -d' ' -f1)

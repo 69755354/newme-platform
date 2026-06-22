@@ -4,7 +4,7 @@
 # Part of NewMe hook chain (integrity checked by pre-push)
 set -e
 
-HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+HOOK_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 REPO_ROOT="$(cd "$HOOK_DIR/.." && pwd)"
 MANIFEST="$HOOK_DIR/manifest.json"
 MY_HASH=$(sha256sum "$0" | cut -d' ' -f1)

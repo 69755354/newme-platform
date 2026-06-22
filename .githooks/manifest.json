@@ -2,10 +2,10 @@
   "version": 1,
   "_comment": "\u6bcf\u4e2ahook\u7684sha256\u3002install-hooks.sh\u5728\u5b89\u88c5\u65f6\u5199\u5165\u5b9e\u9645hash\uff0c\u94a9\u5b50\u4e92\u76f8\u6821\u9a8c\u3002\u7be1\u6539=\u5168\u90e8\u81ea\u9501",
   "hooks": {
-    "pre-commit": "15bfee7cc34410381fbfb2223b484cfab508b5d3be81cf0c7909c4bebbed59e2",
-    "commit-msg": "29e90f6882b5b81e3e87e64cbe8fff16b7cad06365d8916d51432228f1e0d377",
-    "pre-push": "e3cea82fd9fe1852c63ae2d317dea9e86f2a077b0e6481e1ff1c3109986539b4"
+    "pre-commit": "3e8e26f0013390233ea8d97d4661bf7c036dbfe2c1d0c26f7685ebc4d3b823dd",
+    "commit-msg": "c28ce40b0de517bd7f7a572e898d183f170d272d9231dddca83914fa4c23c1af",
+    "pre-push": "2a64b8960641831d2e85b705420c16bb14fd22070b2eff199480c4eaa92a7a31"
   },
-  "installed_at": "2026-06-22T20:26:38Z",
+  "installed_at": "2026-06-22T20:27:16Z",
   "installed_by": "ubuntu"
 }

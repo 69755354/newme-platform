@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "_comment": "\u6bcf\u4e2ahook\u7684sha256\u3002install-hooks.sh\u5728\u5b89\u88c5\u65f6\u5199\u5165\u5b9e\u9645hash\uff0c\u94a9\u5b50\u4e92\u76f8\u6821\u9a8c\u3002\u7be1\u6539=\u5168\u90e8\u81ea\u9501",
+  "hooks": {
+    "pre-commit": "15bfee7cc34410381fbfb2223b484cfab508b5d3be81cf0c7909c4bebbed59e2",
+    "commit-msg": "29e90f6882b5b81e3e87e64cbe8fff16b7cad06365d8916d51432228f1e0d377",
+    "pre-push": "3c000bc49ed63c4a8730ec238bb3b971b6c7f9f1b398e2d6115b41c659c51163"
+  },
+  "installed_at": "2026-06-22T20:21:42Z",
+  "installed_by": "ubuntu"
+}

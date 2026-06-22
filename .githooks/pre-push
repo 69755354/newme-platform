@@ -261,13 +261,17 @@ print(len(orphans))
     fi
 fi
 
-# ── Zero Check ──
+# ── Boundary 3: Perfect Zero Check before push ──
 echo ""
 echo "── [ZERO CHECK] Perfect zero verification ──"
-python3 "$HOME/.hermes/scripts/run_agent.py" --check-zero </dev/null 2>/dev/null
-ZERO_EXIT=$?
-if [ $ZERO_EXIT -ne 0 ]; then
-    echo -e "${YELLOW}[WARNING] Zero drift detected — review state before pushing${NC}"
+if [ -f "$HOME/.hermes/scripts/run_agent.py" ]; then
+    python3 "$HOME/.hermes/scripts/run_agent.py" --check-zero </dev/null 2>/dev/null
+    ZERO_EXIT=$?
+    if [ $ZERO_EXIT -ne 0 ]; then
+        echo -e "${YELLOW}[WARNING] Zero drift detected — review state before pushing${NC}"
+    fi
+else
+    echo "[SKIP] run_agent.py not found"
 fi
 
 echo ""

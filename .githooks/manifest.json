@@ -4,8 +4,8 @@
   "hooks": {
     "pre-commit": "15bfee7cc34410381fbfb2223b484cfab508b5d3be81cf0c7909c4bebbed59e2",
     "commit-msg": "29e90f6882b5b81e3e87e64cbe8fff16b7cad06365d8916d51432228f1e0d377",
-    "pre-push": "3c000bc49ed63c4a8730ec238bb3b971b6c7f9f1b398e2d6115b41c659c51163"
+    "pre-push": "e3cea82fd9fe1852c63ae2d317dea9e86f2a077b0e6481e1ff1c3109986539b4"
   },
-  "installed_at": "2026-06-22T20:21:42Z",
+  "installed_at": "2026-06-22T20:26:38Z",
   "installed_by": "ubuntu"
 }

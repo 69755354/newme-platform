@@ -66,6 +66,7 @@ export const translations = {
       platformTitle: "CRM Platform",
       logout: "Logout",
       // Management nav items
+      mgmtWorkbench: "Workbench",
       mgmtDashboard: "Dashboard",
       mgmtLeads: "Leads",
       mgmtQuotes: "Quotes",
@@ -78,6 +79,7 @@ export const translations = {
       mgmtProjects: "Projects",
       mgmtSettings: "Settings",
       // Sales nav items
+      salesWorkbench: "Workbench",
       salesDashboard: "My Desk",
       salesLeads: "My Leads",
       salesQuotes: "Products & Quotes",

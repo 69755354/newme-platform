@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
     for (const lead of activeLeads ?? []) {
       if (!lead.current_milestone) continue
       const milestone = normalizeMilestone(lead.current_milestone)
-      if (!grouped[milestone]) grouped[milestone] = { count: 0 }
+      if (!grouped[milestone]) grouped[milestone] = { count: 0, total_value: 0 }
       grouped[milestone].count += 1
     }
 

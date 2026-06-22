@@ -1,0 +1,244 @@
+# CRM v3 — Task Contract
+# 每个 Epic/Task 分发给执行器（GLM CP / Codex）时的上下文契约。
+# 执行器只拿此文件 + architecture-rules.yaml 中的相关规则，不拿整个 PRD。
+# 版本: v1.0
+
+
+
+# ─── Epic 1: 数据库层 ───
+
+- epic: epic_1
+  name: "数据库层 — Migration + Schema + RLS + Seed"
+  executor: glm-cp
+
+  context_files:
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_001"   # follow_up_logs immutable
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_002"   # tasks future_only
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_003"   # profiles FK
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_006"   # milestone 顺序
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_007"   # milestone ≠ final_status
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_009"   # migration 幂等
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_010"   # prod 禁止实验
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_101"   # RLS 模板
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_102"   # service_role 限制
+
+  allowed_files:
+    - "supabase/migrations/"
+    - "supabase/seed.sql"
+
+  forbidden_files:
+    - "app/"
+    - "lib/"
+    - "types/"
+    - "components/"
+
+  # 目标数据库表
+  database_tables:
+    create:
+      - lead_milestones
+      - follow_up_logs
+      - tasks
+      - lead_documents
+      - user_features
+      - crm_daily_funnel_snapshot
+    alter:
+      - leads (add current_milestone, change FK to profiles)
+
+  # 业务约束（执行器必须遵守）
+  constraints:
+    - rule_001: "follow_up_logs 只 INSERT，不 UPDATE/DELETE"
+    - rule_002: "tasks.due_at > now()（未来待办）"
+    - rule_003: "所有 FK → profiles.id，不走 auth.users"
+    - rule_006: "milestone 按顺序完成，不可跳过"
+    - rule_007: "won/lost → leads.final_status，不入 milestone"
+    - rule_009: "CREATE TABLE IF NOT EXISTS / DROP POLICY IF EXISTS"
+    - rule_101: "每张新表必须 RLS 开启，且覆盖 own/admin 策略"
+    - rule_102: "API 路由不用 service_role key"
+
+  # 交付清单
+  deliverables:
+    - "001_*.sql — 6 张新表创建"
+    - "002_*.sql — leads 表迁移"
+    - "003_*.sql — RLS 策略（6 张表 × 2 策略）"
+    - "004_*.sql — 约束/索引/触发器"
+    - "seed.sql — 20 条匿名 leads（含各阶段）"
+    - "rollback.sql — 每步逆操作"
+
+  # 验收标准
+  acceptance:
+    - "所有 CREATE TABLE 有 IF NOT EXISTS"
+    - "所有 FK REFERENCES profiles(id) 无误"
+    - "6 张新表全部 RLS 开启"
+    - "seed 数据 20 条 leads，覆盖各 milestone 阶段"
+    - "rollback.sql 能完整回退所有 migration"
+    - "npm run build 通过"
+
+
+# ─── Epic 2: 销售工作台 ───
+
+- epic: epic_2
+  name: "销售工作台 — Inbox + TaskList + Overdue + Progress"
+  executor: glm-cp
+  reviewer: codex
+
+  context_files:
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_012"   # feature flag 按 user
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_101"   # RLS 策略
+
+  allowed_files:
+    - "app/workbench/"
+    - "app/api/workbench/"
+    - "components/workbench/"
+
+  forbidden_files:
+    - "supabase/"
+    - "app/leads/"
+    - "app/dashboard/"
+
+  # 业务约束
+  constraints:
+    - "Feature Flag 从 user_features 表读，不依赖环境变量"
+    - "Inbox = assigned_to 当前用户 + next_followup_date ≤ now()"
+    - "Overdue = next_followup_date < now() - 24h"
+    - "Progress = milestone_count 进度条"
+
+  deliverables:
+    - "GET /api/workbench — 4 个聚合接口"
+    - "app/workbench/page.tsx — 工作台主页"
+    - "components/workbench/*.tsx — Inbox/TaskList/Overdue/Progress 组件"
+
+  acceptance:
+    - "工作台 4 个面板正确展示待办数据"
+    - "Feature Flag 控制功能显示/隐藏"
+    - "按用户粒度正确过滤（销售只看自己，admin 看全部）"
+    - "npm run build 通过"
+
+
+# ─── Epic 3: Lead 详情页 ───
+
+- epic: epic_3
+  name: "Lead 详情 — Timeline + Milestone + 下一动作"
+  executor: glm-cp
+  reviewer: codex
+
+  context_files:
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_001"   # follow_up_logs immutable
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_002"   # tasks future_only
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_006"   # milestone 顺序
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_007"   # milestone ≠ final_status
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_008"   # 旧字段兼容
+
+  allowed_files:
+    - "app/leads/"
+    - "app/api/leads/"
+    - "components/leads/"
+
+  forbidden_files:
+    - "app/workbench/"
+    - "supabase/"
+    - "cron/"
+
+  # 业务约束
+  constraints:
+    - rule_001: "follow_up_logs API 只 INSERT，不暴露 UPDATE/DELETE"
+    - rule_002: "tasks 创建时 due_at > now()"
+    - rule_006: "POST milestone 按顺序校验"
+    - rule_007: "点击「成交/丢失」只写 leads.final_status，不插入 milestone"
+    - rule_008: "Day45 前保留 stage 字段展示（只读）"
+
+  deliverables:
+    - "GET /api/leads/[id] — 详情 + 时间线 + 里程碑"
+    - "POST /api/leads/[id]/milestone — 完成里程碑"
+    - "POST /api/leads/[id]/follow-up — 记录跟进（自动创建 task）"
+    - "app/leads/[id]/page.tsx — 三区布局（身份卡 + 时间线 + 折叠面板）"
+
+  acceptance:
+    - "三区布局：身份卡(左) + 时间线(中) + 动作面板(右)"
+    - "时间线月度折叠，按 created_at 倒序"
+    - "里程碑点击后按顺序校验，跳级报错"
+    - "follow-up 提交后自动在 tasks 表创建未来待办"
+    - "Day45 前 stage 字段展示（只读）"
+    - "npm run build 通过"
+
+
+# ─── Epic 4: 跟进引擎 ───
+
+- epic: epic_4
+  name: "跟进引擎 — follow-up + task auto-create + No Answer + cron"
+  executor: glm-cp
+  reviewer: codex
+
+  context_files:
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_001"   # follow_up_logs immutable
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_002"   # tasks future_only
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_102"   # service_role 限制
+
+  allowed_files:
+    - "app/api/follow-ups/"
+    - "app/api/tasks/"
+    - "cron/"
+
+  forbidden_files:
+    - "app/workbench/"
+    - "app/leads/"
+    - "supabase/"
+
+  # 业务约束
+  constraints:
+    - rule_001: "follow_up_logs 写入即 immutable"
+    - rule_002: "tasks 自动创建时 due_at = now() + 配置的间隔（默认 24h）"
+    - "No Answer 检测：连续 3 次 follow-up 无回应 → 标记 lead No Answer"
+    - "cron 使用 service_role key，不走用户 auth"
+
+  deliverables:
+    - "follow_up_logs CRUD（只有 CREATE + READ，无 UPDATE/DELETE）"
+    - "tasks auto-create hook（follow-up 提交 → 自动生成新 tasks 行）"
+    - "No Answer 检测 cron（每日扫描）"
+    - "到期提醒 cron（今日待办推送）"
+
+  acceptance:
+    - "follow_up_logs API 拒绝 UPDATE/DELETE 请求"
+    - "follow-up 提交后 tasks 表出现对应记录"
+    - "No Answer 检测正确标记 3 次无回应的 lead"
+    - "到期提醒 cron 正确推送当日待办"
+    - "npm run build 通过"
+
+
+# ─── Epic 5: 可观测性 ───
+
+- epic: epic_5
+  name: "可观测性 — 日结指标 + 漏斗快照 + 使用量看板"
+  executor: glm-cp
+  reviewer: codex
+
+  context_files:
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_004"   # Pending Decision 含 quotation
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_005"   # 漏斗按 current_milestone
+
+  allowed_files:
+    - "app/dashboard/"
+    - "app/api/metrics/"
+    - "cron/"  # 漏斗快照 cron
+
+  forbidden_files:
+    - "app/workbench/"
+    - "app/leads/"
+    - "supabase/"
+
+  # 业务约束
+  constraints:
+    - rule_004: "Pending Decision = solution + quotation + meeting"
+    - rule_005: "漏斗快照按 current_milestone 统计，非累计"
+    - "cron 用 service_role key"
+
+  deliverables:
+    - "crm_daily_funnel_snapshot cron（每日凌晨执行）"
+    - "GET /api/metrics/daily — 日结指标"
+    - "GET /api/metrics/funnel — 漏斗分布"
+    - "app/dashboard/page.tsx — 看板页面"
+
+  acceptance:
+    - "漏斗快照 cron 正确将每个 lead 只计入当前 milestone"
+    - "Pending Decision 含 quotation 阶段"
+    - "看板页面显示日结 + 漏斗 + 使用量"
+    - "npm run build 通过"

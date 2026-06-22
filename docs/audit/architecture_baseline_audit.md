@@ -358,16 +358,37 @@ enforcement:
 
 ## 8. 审计结论与决策建议
 
+### 8.1 Audit Summary
+
+| 维度 | 状态 | 说明 |
+|------|------|------|
+| Architecture | ✅ PASS | 生产与 ARCH_RULES 一致，语义分析确认设计合理 |
+| Schema | ✅ PASS | 所有P0冲突已判决，生产schema无需回滚 |
+| Migration | ✅ READY | 当前r migration 已完成，后续 migration 需遵守 rule_011 |
+| Environment | ⏳ DEV pending | 建 dev Supabase 安排在 Phase B 前，不阻塞当前进度 |
+
 **结论：有漂移，但不致命。**
 
 经过审计，当前生产和 ARCH_RULES 之间没有不可修复的冲突。涉及语义差异的三项（user_id、contact_type、assignee_id nullable）生产和ARCH_RULES一致，DEV_PLAN已过期。
 
-**建议动作：**
+### 8.2 Migration Readiness Checklist
+
+```
+[✅] Schema authority resolved — ARCH_RULES 确认为 Source of Truth
+[✅] Naming conflicts resolved — user_id/contact_type 语义分析完成
+[✅] FK semantics resolved — 所有 FK → profiles(id)，ON DELETE 策略一致
+[✅] RLS strategy resolved — 行内 subquery，所有表 RLS 开启
+[✅] Deferred fields separated — leads 13字段标记 Deferred
+[✅] Production schema snapshot archived — 当前 commit dacf97d
+[✅] Rollback plan verified — supabase/migrations/rollback_crm_v3.sql 已存在
+[⏳] Dev Supabase migration test — 安排在 Phase B 前
+[⏳] Acceptance criteria pass — 12条验收标准待 Tanya 验证
+```
+
+### 8.3 建议动作
 
 1. ✅ 确认 ARCHITECTURE_RULES.yaml 为 Schema Source of Truth（本文档即确认）
-2. 🔲 更新 02_DEV_PLAN.md — 删除或修正与ARCH_RULES冲突的schema描述（2.1和2.2节）
-3. 🔲 在 ARCHITECTURE_RULES.yaml 中追加 rule_011
-4. 🔲 将 `project_status` 和 `lost_reason` 两个"幽灵字段"补注册到 ARCH_RULES（或移除）
-5. 🔲 恢复Epic 5执行（已上线，无需额外migration）
-
-**迁移条件：** 以上5项完成后，可以恢复后续Epic。
+2. 🔲 在 ARCHITECTURE_RULES.yaml 中追加 rule_011（architecture source control）
+3. 🔲 将 `project_status` 和 `lost_reason` 两个"幽灵字段"补注册到 ARCH_RULES（或移除）
+4. 🔲 更新 02_DEV_PLAN.md — 修正与ARCH_RULES冲突的schema描述（2.1和2.2节）
+5. 🔲 建 dev Supabase 作为长期开发环境（Phase B 前完成）

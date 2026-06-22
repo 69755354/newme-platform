@@ -1,7 +1,7 @@
 # CRM v3 — Architecture Rules
 # 执行器（Codex/GLM CP）必须遵守的显式约束
 # 散落在万字文档里的核心规则，这里集中声明
-# 版本: v1.2 — 新增 rule_013~016（Timeline统一/Milestone集中/stage隔离/tasks唯一源）
+# 版本: v1.3 — 新增 rule_011 架构权威控制（Architecture Source Control）
 
 ---
 rules:
@@ -242,6 +242,35 @@ rules:
         全部改为查 tasks 表
     depends_on: [rule_002]
 
+  # ─── 架构治理 ───
+
+  - id: rule_011
+    title: "架构权威控制 (Architecture Source Control)"
+    description: |
+      定义架构文档的权威层级，防止设计意图在传递过程中产生漂移。
+      任何 schema 变更必须遵循此层级。
+    scope: governance
+    authority_order:
+      - "ARCHITECTURE_RULES.yaml — Schema Authority: 所有 schema 定义以本文档为准"
+      - "production database schema — Ground Truth: 运行时事实"
+      - "migration files (supabase/migrations/) — Implementation: schema 的可重复构建脚本"
+      - "application code (src/) — Consumer: 消费 schema，不定义 schema"
+      - "DEV_PLAN.md — Design Archive: 设计意图记录，不作为 schema 定义源"
+      - "PRD — Product Archive: 产品需求，不定义数据库 schema"
+    enforcement:
+      process: |
+        1. 任何 schema 变更必须先更新 ARCHITECTURE_RULES.yaml
+        2. 然后编写 migration SQL
+        3. 然后更新 DEV_PLAN 中过时的 schema 描述
+        4. 禁止从 DEV_PLAN 或 PRD 直接生成 migration
+        5. 禁止 application code 通过 ORM 定义 schema
+    audit:
+      frequency:
+        - "每次 migration: ARCH_RULES 更新在前，migration 在后"
+        - "每次 push: migration ↔ ARCH_RULES 同步检查"
+        - "每月: ARCH_RULES ↔ production schema ↔ migration files 全量核对"
+    depends_on: []
+
 # ─── 文件所有权 ───
 # 执行器不得跨目录修改
 
@@ -424,4 +453,9 @@ constraint_index:
   - id: C014
     rule: "Prod 数据库禁止直接实验"
     rule_ref: rule_010
+    priority: critical
+
+  - id: C015
+    rule: "架构权威控制 — ARCH_RULES 为唯一 Schema Authority"
+    rule_ref: rule_011
     priority: critical

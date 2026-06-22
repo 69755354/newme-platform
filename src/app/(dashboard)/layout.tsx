@@ -8,7 +8,8 @@ import {
   FileText, Calculator, CreditCard, TrendingUp,
   LogOut, ShieldCheck, Settings, Megaphone,
   Package, FolderKanban, UsersRound, Briefcase,
-  BarChart3,
+  BarChart3, LayoutList,
+  Gamepad2,
 } from "lucide-react";
 import { Toaster } from "sonner";
 import { useState, useEffect, Suspense } from "react";
@@ -27,6 +28,7 @@ interface NavItem {
 
 // ─── Management nav — 5 core + settings ───
 const MGMT_NAV: NavItem[] = [
+  { href: "/workbench", labelKey: "mgmtWorkbench", icon: LayoutList },
   { href: "/dashboard", labelKey: "mgmtDashboard", icon: LayoutDashboard },
   { href: "/leads",     labelKey: "mgmtLeads", icon: Users },
   { href: "/quotes",    labelKey: "mgmtQuotes", icon: Calculator },
@@ -38,10 +40,12 @@ const MGMT_NAV: NavItem[] = [
   { href: "/team",      labelKey: "mgmtTeam", icon: UsersRound },
   { href: "/projects",  labelKey: "mgmtProjects", icon: Briefcase },
   { href: "/settings",  labelKey: "mgmtSettings", icon: Settings },
+  { href: "/games",     labelKey: "mgmtGames", icon: Gamepad2 },
 ];
 
 // ─── Sales nav — personal scope, 6 items ───
 const SALES_NAV: NavItem[] = [
+  { href: "/workbench", labelKey: "salesWorkbench", icon: LayoutList },
   { href: "/dashboard", labelKey: "salesDashboard", icon: LayoutDashboard },
   { href: "/leads",     labelKey: "salesLeads", icon: Users },
   { href: "/quotes",    labelKey: "salesQuotes", icon: Calculator },
@@ -104,19 +108,12 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         storeSession(signInData.session);
       }
 
-      function storeSession(session: { access_token: string; refresh_token: string; expires_at?: number; user?: any }) {
-        localStorage.setItem("sb-vfopmpxlhwzpxqegayew-auth-token", JSON.stringify({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-          expires_at: session.expires_at || Math.floor(Date.now() / 1000) + 3600,
-          user: (session as any).user || {},
-        }));
-        document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=3600; SameSite=Lax`;
-        document.cookie = `sb-refresh-token=${session.refresh_token}; path=/; max-age=2592000; SameSite=Lax`;
-        supabase.auth.setSession({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-        });
+      function storeSession(_session: unknown) {
+        // createBrowserClient (@supabase/ssr) manages the auth cookie itself
+        // after signInWithPassword. We only update React state here — no manual
+        // localStorage / document.cookie writes (those conflicted with the ssr
+        // chunked-cookie refresh and caused intermittent session loss).
+        void _session;
         setUserEmail(DEV_EMAIL);
         setRole("admin");
         setAuthLoading(false);

@@ -1,7 +1,7 @@
 # CRM v3 — Architecture Rules
 # 执行器（Codex/GLM CP）必须遵守的显式约束
 # 散落在万字文档里的核心规则，这里集中声明
-# 版本: v1.3 — 新增 rule_011 架构权威控制（Architecture Source Control）
+# 版本: v1.4 — 追加 Phase B 规则（leads扩展字段 + Health Score + Command Center）
 
 ---
 rules:
@@ -271,6 +271,60 @@ rules:
         - "每月: ARCH_RULES ↔ production schema ↔ migration files 全量核对"
     depends_on: []
 
+  # ─── Phase B 规则 ───
+
+  - id: rule_017
+    title: "leads Phase B 扩展字段"
+    description: |
+      Phase A 未落地的 10 个 leads 字段，必须按此定义逐批迁移。
+      已有幽灵字段（ac_brand, lost_reason, project_status）保持不动，补注册到 ARCH_RULES。
+    scope: database
+    fields:
+      - {name: "contact_result", type: "TEXT", constraint: "CHECK (contact_result IN ('interested','not_interested','no_answer'))", phase: "B", source: "PRD 4.2"}
+      - {name: "not_interested_reason", type: "TEXT", phase: "B", source: "PRD 4.2"}
+      - {name: "project_type", type: "TEXT", constraint: "CHECK (project_type IN ('villa','apartment','developer'))", phase: "B", source: "PRD 4.2"}
+      - {name: "project_status", type: "TEXT", ghost: true, phase: "B", source: "existing"}
+      - {name: "emirate", type: "TEXT", phase: "B", source: "PRD 4.2"}
+      - {name: "area", type: "TEXT", phase: "B", source: "PRD 4.2"}
+      - {name: "customer_company_type", type: "TEXT", phase: "B", source: "PRD 4.2"}
+      - {name: "customer_position", type: "TEXT", phase: "B", source: "PRD 4.2"}
+      - {name: "ac_brand", type: "TEXT", ghost: true, phase: "B", source: "existing"}
+      - {name: "smart_requirements", type: "JSONB", phase: "B", source: "PRD 4.2"}
+      - {name: "customer_budget", type: "NUMERIC(12,2)", phase: "B", source: "PRD 4.2"}
+      - {name: "expected_sign_date", type: "DATE", phase: "B", source: "PRD 4.2"}
+      - {name: "lost_reason", type: "TEXT", ghost: true, phase: "B", source: "existing"}
+    enforcement:
+      migration: "ALTER TABLE leads ADD COLUMN IF NOT EXISTS ..."
+    depends_on: []
+
+  - id: rule_018
+    title: "Health Score 规则计算"
+    description: |
+      不让人工填概率。规则自动计算：
+      - 最近7天有跟进回复: +20
+      - 已面谈: +20
+      - 已收图纸: +15
+      - 已发报价: +15
+      - 超过14天无回复: -30
+      结果: >=50 🟢 Healthy, 20~49 🟡 At Risk, <20 🔴 Stale
+    scope: business_logic
+    enforcement:
+      application_logic: "lib/health-score.ts — 纯函数，无副作用，输入 milestones + follow_up_logs，输出 {score, level}"
+    depends_on: [rule_005, rule_006]
+
+  - id: rule_019
+    title: "Command Center 数据来源"
+    description: |
+      Command Center（老板看板）的数据必须来自：
+      - 月度目标: leads 聚合（expected_sign_date + customer_budget）
+      - 销售进度: 按 assigned_to 分组的 milestone 进度
+      - 超时跟进: tasks WHERE completed_at IS NULL AND due_at < now()
+      - 需介入线索: leads WHERE assigned_to IS NULL OR stage IN ('pending_decision')
+    scope: business_logic
+    enforcement:
+      api: "GET /api/command-center — 聚合接口，不直接在页面计算"
+    depends_on: [rule_017, rule_016]
+
 # ─── 文件所有权 ───
 # 执行器不得跨目录修改
 
@@ -370,6 +424,16 @@ epics:
       - "日结指标 API"
       - "使用量看板 UI"
 
+  epic_6:
+    name: "Phase B — leads扩展字段 + Health Score + Command Center"
+    executor: executor-database + executor-lead-detail
+    tasks:
+      - "Migration: 10 leads 扩展字段（幂等 ADD COLUMN IF NOT EXISTS）"
+      - "lib/health-score.ts — 纯函数实现 Health Score 规则"
+      - "GET /api/command-center — 老板看板聚合接口"
+      - "前端：leads详情页展示 Health Score（🟢🟡🔴）"
+      - "前端：Command Center 页面（替代现有 dashboard 首页）"
+
 # ─── 约束索引 ───
 # 每个约束在文档中的位置，方便执行器追溯
 
@@ -459,3 +523,20 @@ constraint_index:
     rule: "架构权威控制 — ARCH_RULES 为唯一 Schema Authority"
     rule_ref: rule_011
     priority: critical
+
+  # ─── Phase B ───
+
+  - id: C016
+    rule: "leads 扩展字段定义"
+    rule_ref: rule_017
+    priority: high
+
+  - id: C017
+    rule: "Health Score 规则计算"
+    rule_ref: rule_018
+    priority: high
+
+  - id: C018
+    rule: "Command Center 数据来源"
+    rule_ref: rule_019
+    priority: high

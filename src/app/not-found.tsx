@@ -18,7 +18,7 @@ export default function NotFound() {
         style={{
           marginTop: "1rem",
           padding: "0.6rem 1.5rem",
-          background: "#E5007E",
+          background: "#4A5568",
           color: "white",
           borderRadius: "6px",
           textDecoration: "none",

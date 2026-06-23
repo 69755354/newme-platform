@@ -22,7 +22,7 @@ import {
   Calendar, Clock, User, Target, AlertTriangle, ShieldAlert,
   RotateCcw, BarChart3, TrendingUp, MessageCircle,
   FileText, ClipboardList, CheckCircle, DollarSign, ExternalLink, Calculator, WandSparkles,
-  Wrench, GitBranch,
+  Wrench, GitBranch, ChevronDown,
 } from "lucide-react";
 import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
@@ -175,6 +175,8 @@ export default function LeadDetailPage() {
   const [showSalesDropdown, setShowSalesDropdown] = useState(false);
   const [reassigning, setReassigning] = useState(false);
   const [showQuoteCalculator, setShowQuoteCalculator] = useState(false);
+  // Bottom folding panel — which of the 6 blocks is open (null = all closed)
+  const [openPanel, setOpenPanel] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -1119,6 +1121,72 @@ export default function LeadDetailPage() {
     );
   }
 
+  // ─── Bottom folding panel — 6 collapsible blocks (accordion, one open at a time) ───
+  function renderFoldingPanel() {
+    if (!lead) return null;
+    const PANELS: { key: string; icon: string; title: string }[] = [
+      { key: "project_info", icon: "📋", title: "项目信息" },
+      { key: "smart_req", icon: "🎯", title: "智能需求" },
+      { key: "quotation", icon: "💰", title: "报价" },
+      { key: "drawings", icon: "📄", title: "图纸" },
+      { key: "contract", icon: "📎", title: "合同" },
+      { key: "project_exec", icon: "🏗️", title: "项目" },
+    ];
+    return (
+      <div className="space-y-2">
+        {PANELS.map(({ key, icon, title }) => {
+          const isOpen = openPanel === key;
+          return (
+            <Card key={key} className="bg-card border-border overflow-hidden">
+              <button type="button"
+                onClick={() => setOpenPanel(isOpen ? null : key)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/40 transition-colors">
+                <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <span className="text-base leading-none">{icon}</span>{title}
+                </span>
+                <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
+              </button>
+              {isOpen && (
+                <CardContent className="pt-4 border-t border-border">
+                  {key === "project_info" && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                      <div><Label className="text-muted-foreground text-xs">{t("leadDetail.projectType")}</Label>{renderInlineEdit("project_type", t("leadDetail.projectType"))}</div>
+                      <div><Label className="text-muted-foreground text-xs">{t("leadDetail.emirate")}</Label>{renderInlineEdit("emirate", t("leadDetail.emirate"))}</div>
+                      <div><Label className="text-muted-foreground text-xs">{t("leadDetail.areaLocality")}</Label>{renderInlineEdit("area", t("leadDetail.areaLocality"))}</div>
+                      <div><Label className="text-muted-foreground text-xs">{t("leadDetail.acBrand")}</Label>{renderInlineEdit("ac_brand", t("leadDetail.acBrand"))}</div>
+                      <div><Label className="text-muted-foreground text-xs">{t("leadDetail.customerBudget")}</Label>{renderInlineEdit("customer_budget", t("leadDetail.customerBudget"))}</div>
+                    </div>
+                  )}
+                  {key === "smart_req" && (
+                    <div className="text-sm">
+                      <Label className="text-muted-foreground text-xs">{t("leadDetail.smartRequirements")}</Label>
+                      {renderJsonEdit("smart_requirements", t("leadDetail.smartRequirements"))}
+                    </div>
+                  )}
+                  {key === "quotation" && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <Label className="text-muted-foreground text-xs">{t("leadDetail.quotationValue")}</Label>
+                        <p className="text-foreground mt-1">{lead.quotation_value != null && lead.quotation_value > 0 ? fmtAED(lead.quotation_value) : "—"}</p>
+                      </div>
+                      <div>
+                        <Label className="text-muted-foreground text-xs">Quotation Sent</Label>
+                        <p className="text-foreground mt-1">{lead.quotation_sent_date ? new Date(lead.quotation_sent_date).toLocaleDateString(t("locale.dateLocale")) : "—"}</p>
+                      </div>
+                    </div>
+                  )}
+                  {(key === "drawings" || key === "contract" || key === "project_exec") && (
+                    <div className="py-8 text-center text-sm text-muted-foreground">Coming soon…</div>
+                  )}
+                </CardContent>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    );
+  }
+
   // ═══════════════ MAIN RENDER ═══════════════
   return (
     <div className="max-w-5xl space-y-6">
@@ -1212,6 +1280,9 @@ export default function LeadDetailPage() {
           <KnxDesignPanel leadId={id as string} />
         </div>
       </div>
+
+      {/* Bottom folding panel — 6 collapsible blocks */}
+      {renderFoldingPanel()}
 
       {showQuoteCalculator && (
         <QuoteCalculator

@@ -44,17 +44,17 @@
   --color-copper-700: #8C5A32;
   --color-copper-800: #704828;
   --color-copper-900: #543620;
-  /* NewMe brand — brand red #E5007E */
-  --color-wine-50: #FDF2F6;
-  --color-wine-100: #FEE2F0;
-  --color-wine-200: #FCC4DD;
-  --color-wine-300: #FA93BE;
-  --color-wine-400: #F7609F;
-  --color-wine-500: #E5007E;
-  --color-wine-600: #C5006B;
-  --color-wine-700: #A50059;
-  --color-wine-800: #850047;
-  --color-wine-900: #650036;
+  /* NewMe brand — blue-gray (蓝灰系) palette */
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
   /* NewMe brand — warm surface */
   --color-cream: #F5F0EC;
   --color-cream-bright: #EAE6DF;
@@ -89,7 +89,7 @@
   --card-foreground: #1E1B18;
   --popover: #FFFFFF;
   --popover-foreground: #1E1B18;
-  --primary: #E5007E;
+  --primary: #4A5568;
   --primary-foreground: #FFFFFF;
   --secondary: #F5F0EC;
   --secondary-foreground: #2C2420;
@@ -100,8 +100,8 @@
   --destructive: #EF4444;
   --border: #E5E0D8;
   --input: #E5E0D8;
-  --ring: #E5007E;
-  --chart-1: #E5007E;
+  --ring: #4A5568;
+  --chart-1: #4A5568;
   --chart-2: #D4A373;
   --chart-3: #C48A52;
   --chart-4: #2C2420;
@@ -109,12 +109,12 @@
   --radius: 0.75rem;
   --sidebar: #FAF8F5;
   --sidebar-foreground: #2C2420;
-  --sidebar-primary: #E5007E;
+  --sidebar-primary: #4A5568;
   --sidebar-primary-foreground: #FFFFFF;
   --sidebar-accent: #F0EBE5;
   --sidebar-accent-foreground: #2C2420;
   --sidebar-border: #E5E0D8;
-  --sidebar-ring: #E5007E;
+  --sidebar-ring: #4A5568;
 }
 
 .dark {

@@ -40,7 +40,7 @@ export default function SubNavTabs({ items }: SubNavTabsProps) {
             className={cn(
               "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 -mb-[1px] transition-colors whitespace-nowrap",
               active
-                ? "border-wine-500 text-wine-600 bg-wine-500/5"
+                ? "border-slate-600 text-slate-700 bg-slate-600/5"
                 : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
             )}
           >

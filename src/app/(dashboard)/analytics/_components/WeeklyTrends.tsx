@@ -54,7 +54,7 @@ function fmtAED(v: number): string {
 
 /* ─── Chart colors ─── */
 const COLORS = {
-  leads: "#E5007E",
+  leads: "#4A5568",
   signed: "#8B5CF6",
   conversion: "#4ADE80",
   collected: "#3B82F6",

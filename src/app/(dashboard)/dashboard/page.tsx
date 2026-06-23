@@ -44,7 +44,7 @@ interface InstallmentPlan {
 const STAGE_KEYS = ["new","contacted","requirement_confirmed","solution_submitted","quotation_submitted","negotiation","pending_decision","won","lost"] as const;
 const STAGE_COLORS: Record<string,string> = {
   new: "#6B7280", contacted: "#C48A52", requirement_confirmed: "#E0B95A",
-  solution_submitted: "#E5007E", quotation_submitted: "#8B5CF6",
+  solution_submitted: "#4A5568", quotation_submitted: "#8B5CF6",
   negotiation: "#3B82F6", pending_decision: "#F59E0B", won: "#4ADE80", lost: "#6B7280",
 };
 

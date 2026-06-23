@@ -199,7 +199,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         {/* Logo + role badge */}
         <div className="p-5">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-wine-500 flex items-center justify-center font-bold text-foreground text-base">
+            <div className="w-8 h-8 rounded-lg bg-slate-600 flex items-center justify-center font-bold text-foreground text-base">
               N
             </div>
             <div className="flex-1 min-w-0">
@@ -214,7 +214,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           <div className={cn(
             "mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium",
             isManagement
-              ? "bg-wine-500/10 text-wine-600 border border-wine-500/20"
+              ? "bg-slate-600/10 text-slate-700 border border-slate-600/20"
               : "bg-copper-500/10 text-copper-600 border border-copper-500/20"
           )}>
             <ShieldCheck className="w-3 h-3" />
@@ -241,7 +241,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                 className={cn(
                   "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors",
                   active
-                    ? "bg-wine-500/10 text-wine-600 font-medium border-l-[3px] border-wine-500 pl-2.5"
+                    ? "bg-slate-600/10 text-slate-700 font-medium border-l-[3px] border-slate-600 pl-2.5"
                     : "text-muted-foreground hover:text-foreground hover:bg-accent"
                 )}
               >
@@ -259,7 +259,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         <div className="p-3 border-t border-border space-y-2">
           {userEmail && (
             <div className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-muted-foreground">
-              <div className="w-6 h-6 rounded-full bg-wine-500/20 flex items-center justify-center text-wine-500 text-[10px] font-bold shrink-0">
+              <div className="w-6 h-6 rounded-full bg-slate-600/20 flex items-center justify-center text-slate-600 text-[10px] font-bold shrink-0">
                 {userEmail.charAt(0).toUpperCase()}
               </div>
               <span className="truncate">{userEmail}</span>
@@ -294,7 +294,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             {/* Notification bell */}
             <NotificationBell />
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-wine-500/20 flex items-center justify-center text-wine-500 text-xs font-bold">
+              <div className="w-7 h-7 rounded-full bg-slate-600/20 flex items-center justify-center text-slate-600 text-xs font-bold">
                 {userEmail ? userEmail.charAt(0).toUpperCase() : "?"}
               </div>
               <div className="text-right">
@@ -316,7 +316,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           ) : authError ? (
             <div className="flex flex-col items-center justify-center h-64 gap-3">
               <p className="text-rose-400 text-sm">Connection failed</p>
-              <button onClick={() => window.location.reload()} className="text-xs text-wine-500 underline">Retry</button>
+              <button onClick={() => window.location.reload()} className="text-xs text-slate-600 underline">Retry</button>
             </div>
           ) : (
             <Suspense

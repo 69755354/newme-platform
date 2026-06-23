@@ -23,7 +23,7 @@ export default function DashboardError({
       </div>
       <button
         onClick={reset}
-        className="px-4 py-2 rounded-lg bg-wine-500 text-foreground text-sm font-medium hover:bg-wine-600 transition-colors"
+        className="px-4 py-2 rounded-lg bg-slate-600 text-foreground text-sm font-medium hover:bg-slate-700 transition-colors"
       >
         {t("common.tryAgain")}
       </button>

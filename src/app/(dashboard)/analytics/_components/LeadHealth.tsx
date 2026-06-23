@@ -98,8 +98,8 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
 }) {
   return (
     <div className="bg-card border border-border rounded-xl p-4 flex items-start gap-3">
-      <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${color || "bg-wine-500/10"}`}>
-        <Icon className={`w-5 h-5 ${color ? "text-white" : "text-wine-500"}`} />
+      <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${color || "bg-slate-600/10"}`}>
+        <Icon className={`w-5 h-5 ${color ? "text-white" : "text-slate-600"}`} />
       </div>
       <div className="min-w-0">
         <p className="text-xs text-muted-foreground">{label}</p>
@@ -345,7 +345,7 @@ export default function LeadHealth() {
             label="Total Leads"
             value={data.totalLeads.toLocaleString()}
             sub={`+${data.weeklyNew} this week`}
-            color="bg-wine-500/10"
+            color="bg-slate-600/10"
           />
           <StatCard
             icon={Activity}
@@ -391,7 +391,7 @@ export default function LeadHealth() {
           label="My Leads"
           value={data.totalLeads.toLocaleString()}
           sub={`+${data.weeklyNew} this week`}
-          color="bg-wine-500/10"
+          color="bg-slate-600/10"
         />
         <StatCard
           icon={Activity}

@@ -310,7 +310,9 @@ export default function ContractsPage() {
                 <div className="space-y-1 flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <FileText className="w-4 h-4 text-copper-400 shrink-0" />
-                    <span className="font-medium text-foreground">{c.contract_no}</span>
+                    <Link href={`/contracts/${c.id}`} className="font-medium text-foreground hover:text-copper-400 transition-colors">
+                      {c.contract_no}
+                    </Link>
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-copper-500/10 text-copper-400">{statusLabel(c.status)}</span>
                     {/* First payment badge */}
                     {c.first_payment_status && (

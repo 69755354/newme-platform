@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { createClient } from "@/lib/supabase";
 import {
   CheckCircle,
   MessageCircle,
@@ -84,25 +83,24 @@ export default function Timeline({ leadId }: TimelineProps) {
 
   useEffect(() => {
     let cancelled = false;
-    const supabase = createClient();
 
     async function load() {
       setLoading(true);
       setError(null);
       try {
-        // Activity events (milestones / follow-ups / tasks / documents)
-        const [eventsRes, chatRes] = await Promise.all([
-          fetch(`/api/leads/${leadId}/timeline`, {
+        // Single source of truth: the timeline API already returns chat
+        // messages server-side as `event_type: "chat"` events (content in
+        // `description`, direction in `metadata.direction`). Do NOT fetch
+        // chat_messages directly from Supabase here — that was a redundant
+        // double fetch. Ask for a large limit so chats + activity are both
+        // surfaced in one request.
+        const eventsRes = await fetch(
+          `/api/leads/${leadId}/timeline?limit=100`,
+          {
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-          }),
-          supabase
-            .from("chat_messages")
-            .select("id, content, direction, created_at")
-            .eq("lead_id", leadId)
-            .order("created_at", { ascending: true })
-            .limit(200),
-        ]);
+          }
+        );
 
         if (!eventsRes.ok) {
           throw new Error(`Failed to load timeline (${eventsRes.status})`);
@@ -113,26 +111,46 @@ export default function Timeline({ leadId }: TimelineProps) {
           ? json
           : json?.events ?? json?.data ?? [];
 
-        // Keep every event type except "chat" — chat is rendered as bubbles.
-        const list: TimelineEvent[] = Array.isArray(raw)
+        const all: TimelineEvent[] = Array.isArray(raw)
           ? (raw as TimelineEvent[])
-              .filter(
-                (e) =>
-                  e &&
-                  typeof e.created_at === "string" &&
-                  typeof e.event_type === "string" &&
-                  e.event_type !== "chat"
-              )
-              .sort(
-                (a, b) =>
-                  new Date(b.created_at).getTime() -
-                  new Date(a.created_at).getTime()
-              )
           : [];
+
+        // Activity events (everything except chat) — rendered as a timeline.
+        const list: TimelineEvent[] = all
+          .filter(
+            (e) =>
+              e &&
+              typeof e.created_at === "string" &&
+              typeof e.event_type === "string" &&
+              e.event_type !== "chat"
+          )
+          .sort(
+            (a, b) =>
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+
+        // Chat messages come from the same API response (the `chat` events the
+        // old code used to discard and then re-fetch). Rendered as bubbles,
+        // oldest → newest.
+        const chats: ChatMessage[] = all
+          .filter(
+            (e) =>
+              e && e.event_type === "chat" && typeof e.created_at === "string"
+          )
+          .map((e) => ({
+            id: e.id,
+            content: e.description ?? null,
+            direction: (e.metadata?.direction as string | undefined) ?? null,
+            created_at: e.created_at,
+          }))
+          .sort(
+            (a, b) =>
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
 
         if (!cancelled) {
           setEvents(list);
-          setChatMessages((chatRes.data as ChatMessage[]) ?? []);
+          setChatMessages(chats);
         }
       } catch (e) {
         if (!cancelled) {

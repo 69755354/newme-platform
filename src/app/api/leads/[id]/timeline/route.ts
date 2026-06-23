@@ -13,6 +13,8 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const leadId = (await context.params).id
+
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("role")
@@ -23,15 +25,16 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    const leadId = (await context.params).id
-
-    // sales 只能看自己负责的 lead
-    if (profile.role === "sales") {
+    // Authorization: management roles (admin/boss/operator/manager) may view any
+    // lead's timeline. Everyone else (e.g. sales) may only view leads assigned
+    // to them. Note: the leads owner column is `assigned_to`, NOT `owner_id`.
+    const MANAGEMENT_ROLES = ["admin", "boss", "operator", "manager"]
+    if (!MANAGEMENT_ROLES.includes(profile.role)) {
       const { data: ownLead } = await supabase
         .from("leads")
         .select("id")
         .eq("id", leadId)
-        .eq("owner_id", user.id)
+        .eq("assigned_to", user.id)
         .maybeSingle()
 
       if (!ownLead) {
@@ -58,7 +61,7 @@ export async function GET(
 
     const events: Array<{
       id: string
-      eventType: string
+      event_type: string
       description: string | null
       created_at: string
       metadata: Record<string, unknown>
@@ -67,7 +70,7 @@ export async function GET(
     for (const m of milestonesRes.data || []) {
       events.push({
         id: `milestone-${m.id}`,
-        eventType: "milestone",
+        event_type: "milestone",
         description: m.milestone_key ?? null,
         created_at: m.created_at,
         metadata: m,
@@ -77,7 +80,7 @@ export async function GET(
     for (const f of followUpsRes.data || []) {
       events.push({
         id: `follow_up-${f.id}`,
-        eventType: "follow_up",
+        event_type: "follow_up",
         description: f.summary ?? null,
         created_at: f.created_at,
         metadata: f,
@@ -87,7 +90,7 @@ export async function GET(
     for (const t of tasksRes.data || []) {
       events.push({
         id: `task-${t.id}`,
-        eventType: "task",
+        event_type: "task",
         description: t.title ?? null,
         created_at: t.created_at,
         metadata: t,
@@ -97,7 +100,7 @@ export async function GET(
     for (const d of documentsRes.data || []) {
       events.push({
         id: `document-${d.id}`,
-        eventType: "document",
+        event_type: "document",
         description: d.file_name ?? null,
         created_at: d.created_at,
         metadata: d,
@@ -107,7 +110,7 @@ export async function GET(
     for (const c of chatRes.data || []) {
       events.push({
         id: `chat-${c.id}`,
-        eventType: "chat",
+        event_type: "chat",
         description: c.content ?? null,
         created_at: c.created_at,
         metadata: { direction: c.direction ?? "inbound" },

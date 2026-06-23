@@ -28,6 +28,7 @@ import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadWorkflow from "@/components/lead-workflow";
 import { calculateHealthScore } from "@/lib/health-score";
+import LeadContractsPanel from "./LeadContractsPanel";
 import { Toaster } from "sonner";
 
 const STAGES = ["new", "contacted", "requirement_confirmed", "solution_submitted", "quotation_submitted", "negotiation", "pending_decision", "won", "lost"];
@@ -342,8 +343,18 @@ export default function LeadDetailPage() {
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              let parsed: any = editValue;
-              try { parsed = editValue ? JSON.parse(editValue) : null; } catch { parsed = editValue; }
+              let parsed: any;
+              if (!editValue) {
+                parsed = null; // field cleared
+              } else {
+                try {
+                  parsed = JSON.parse(editValue);
+                } catch {
+                  // Invalid JSON — fall back to the original value instead of
+                  // saving the raw (garbled) string into the JSONB column.
+                  parsed = value;
+                }
+              }
               updateField(field, parsed, "note_added", `${label}: ${editValue}`);
               setEditField(null);
             }
@@ -1207,13 +1218,14 @@ export default function LeadDetailPage() {
                         <p className="text-foreground mt-1">{lead.quotation_value != null && lead.quotation_value > 0 ? fmtAED(lead.quotation_value) : "—"}</p>
                       </div>
                       <div>
-                        <Label className="text-muted-foreground text-xs">Quotation Sent</Label>
+                        <Label className="text-muted-foreground text-xs">{t("leadDetail.quotationSent")}</Label>
                         <p className="text-foreground mt-1">{lead.quotation_sent_date ? new Date(lead.quotation_sent_date).toLocaleDateString(t("locale.dateLocale")) : "—"}</p>
                       </div>
                     </div>
                   )}
-                  {(key === "drawings" || key === "contract" || key === "project_exec") && (
-                    <div className="py-8 text-center text-sm text-muted-foreground">Coming soon…</div>
+                  {key === "contract" && <LeadContractsPanel leadId={lead.id} />}
+                  {(key === "drawings" || key === "project_exec") && (
+                    <div className="py-8 text-center text-sm text-muted-foreground">{t("leadDetail.comingSoon")}</div>
                   )}
                 </CardContent>
               )}

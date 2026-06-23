@@ -36,7 +36,6 @@ function NewContractPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const presetLeadId = searchParams.get("lead_id");
-  const supabase = createClient();
   const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
   const [leads, setLeads] = useState<LeadOption[]>([]);
@@ -51,6 +50,7 @@ function NewContractPageInner() {
   const [dueDays, setDueDays] = useState(DEFAULT_DAYS.join(", "));
 
   useEffect(() => {
+    const supabase = createClient();
     // Fetch eligible leads (not won/lost, or those with quotation_value)
     const fetchLeads = async () => {
       try {
@@ -73,9 +73,22 @@ function NewContractPageInner() {
           if (preset) {
             const lead = preset as LeadOption;
             setSelectedLead(lead);
-            if (!contractAmount && lead.quotation_value) setContractAmount(String(lead.quotation_value));
-            if (!partyAName && lead.customer_name) setPartyAName(lead.customer_name);
-            if (!partyAPhone && lead.phone) setPartyAPhone(lead.phone);
+            // Use functional updaters so we don't read state directly (keeps
+            // the effect's dep array correct). Only prefill when still empty.
+            // Narrow into locals first — TS doesn't preserve property-access
+            // narrowing (lead.customer_name) inside the updater closures.
+            if (lead.quotation_value) {
+              const amount = String(lead.quotation_value);
+              setContractAmount((prev) => prev || amount);
+            }
+            if (lead.customer_name) {
+              const name = lead.customer_name;
+              setPartyAName((prev) => prev || name);
+            }
+            if (lead.phone) {
+              const phone = lead.phone;
+              setPartyAPhone((prev) => prev || phone);
+            }
           }
         }
       } catch (err) {
@@ -83,7 +96,6 @@ function NewContractPageInner() {
       }
     };
     fetchLeads();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetLeadId]);
 
   if (roleLoading || blocked) return null;

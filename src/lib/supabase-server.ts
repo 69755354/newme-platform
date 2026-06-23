@@ -46,6 +46,32 @@ async function tryRefreshToken(
   }
 }
 
+/**
+ * Module-level lock for token refresh. Supabase invalidates a refresh_token
+ * after each use, so if several concurrent SSR requests share an expired token
+ * they MUST share a single in-flight refresh — otherwise only the first caller
+ * succeeds and the rest hit a revoked-token error. Keyed by refreshToken so
+ * distinct sessions don't collide, and cleared once the refresh settles.
+ */
+const refreshInFlight = new Map<
+  string,
+  Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null>
+>();
+
+function tryRefreshTokenLocked(
+  supabaseUrl: string,
+  anonKey: string,
+  refreshToken: string,
+): Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null> {
+  const existing = refreshInFlight.get(refreshToken);
+  if (existing) return existing;
+  const promise = tryRefreshToken(supabaseUrl, anonKey, refreshToken).finally(() => {
+    refreshInFlight.delete(refreshToken);
+  });
+  refreshInFlight.set(refreshToken, promise);
+  return promise;
+}
+
 export async function createServerSupabase() {
   const cookieStore = await cookies();
   const allCookies = cookieStore.getAll();
@@ -82,7 +108,7 @@ export async function createServerSupabase() {
 
   // ── 2. If token is expired, try to refresh ──
   if (!accessToken && refreshToken) {
-    const refreshed = await tryRefreshToken(supabaseUrl, anonKey, refreshToken);
+    const refreshed = await tryRefreshTokenLocked(supabaseUrl, anonKey, refreshToken);
     if (refreshed) {
       accessToken = refreshed.accessToken;
       // Update the auth token cookie so subsequent requests don't need to refresh again

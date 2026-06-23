@@ -10,13 +10,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { createClient } = await import("@supabase/supabase-js");
-    const adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    const { count, error } = await adminClient
+    const { count, error } = await supabase
       .from("notifications")
       .select("*", { count: "exact", head: true })
       .eq("user_id", user.id)

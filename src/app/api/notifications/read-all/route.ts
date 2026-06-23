@@ -10,13 +10,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { createClient } = await import("@supabase/supabase-js");
-    const adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    const { data, error } = await adminClient
+    const { data, error } = await supabase
       .from("notifications")
       .update({ is_read: true })
       .eq("user_id", user.id)

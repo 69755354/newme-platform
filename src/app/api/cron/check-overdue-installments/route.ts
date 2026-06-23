@@ -8,7 +8,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
  */
 export async function GET(request: NextRequest) {
   const cronSecret = request.headers.get("x-cron-secret");
-  if (cronSecret !== process.env.CRON_SECRET) {
+  if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

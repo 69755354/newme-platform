@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase-admin';
+import { createServerSupabase } from '@/lib/supabase-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +19,20 @@ interface NeedsAttentionLead {
 }
 
 export async function GET() {
-  const supabase = supabaseAdmin;
+  const supabase = await createServerSupabase();
+  const { data: { user }, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+  if (!profile || !['admin', 'boss'].includes(profile.role)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   try {
     const now = new Date();

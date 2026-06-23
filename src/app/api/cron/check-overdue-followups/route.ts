@@ -11,12 +11,13 @@ import { createNotification, getAdminUserIds } from "@/lib/notifications";
  */
 export async function GET(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const { searchParams } = new URL(request.url);
-    const token = searchParams.get("token");
-    if (token !== cronSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!cronSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { searchParams } = new URL(request.url);
+  const token = searchParams.get("token");
+  if (token !== cronSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const supabase = await createServerSupabase();

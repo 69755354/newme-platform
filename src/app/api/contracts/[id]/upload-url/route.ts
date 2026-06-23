@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 
 /**
  * POST /api/contracts/[id]/upload-url
@@ -45,7 +44,7 @@ export async function POST(
     }
 
     // Verify the contract exists
-    const { data: contract, error: contractErr } = await supabaseAdmin
+    const { data: contract, error: contractErr } = await supabase
       .from("contracts")
       .select("id, sales_id")
       .eq("id", contractId)

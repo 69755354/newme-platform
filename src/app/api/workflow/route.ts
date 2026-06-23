@@ -1,12 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
-
-function getAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return createClient(url, key);
-}
 
 /** POST /api/workflow/start-stage — mark a stage as in_progress, set deadline */
 export async function POST(request: NextRequest) {
@@ -22,8 +15,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "lead_id and stage_key required" }, { status: 400 });
     }
 
-    const supabaseAdmin = getAdmin();
-
     // Permission check: user must be admin/boss OR assigned to this lead
     const { data: profile } = await supabase
       .from("profiles")
@@ -34,7 +25,7 @@ export async function POST(request: NextRequest) {
     const isAdminBoss = profile?.role === "admin" || profile?.role === "boss";
 
     if (!isAdminBoss) {
-      const { data: lead } = await supabaseAdmin
+      const { data: lead } = await supabase
         .from("leads")
         .select("assigned_to")
         .eq("id", lead_id)
@@ -58,7 +49,7 @@ export async function POST(request: NextRequest) {
     const hours = deadlineHours[stage_key] || 24;
     const deadline = new Date(Date.now() + hours * 3600 * 1000).toISOString();
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from("lead_workflow_stages")
       .update({
         status: "in_progress",
@@ -97,8 +88,6 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "lead_id and stage_key required" }, { status: 400 });
     }
 
-    const supabaseAdmin = getAdmin();
-
     // Permission check: user must be admin/boss OR assigned to this lead
     const { data: profile } = await supabase
       .from("profiles")
@@ -109,7 +98,7 @@ export async function PUT(request: NextRequest) {
     const isAdminBoss = profile?.role === "admin" || profile?.role === "boss";
 
     if (!isAdminBoss) {
-      const { data: lead } = await supabaseAdmin
+      const { data: lead } = await supabase
         .from("leads")
         .select("assigned_to")
         .eq("id", lead_id)
@@ -122,7 +111,7 @@ export async function PUT(request: NextRequest) {
 
     const now = new Date().toISOString();
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from("lead_workflow_stages")
       .update({
         status: "completed",

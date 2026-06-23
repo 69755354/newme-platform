@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 
 /**
  * POST /api/contracts/[id]/confirm-upload
@@ -48,7 +47,7 @@ export async function POST(
     }
 
     // Verify the contract exists
-    const { data: contract, error: contractErr } = await supabaseAdmin
+    const { data: contract, error: contractErr } = await supabase
       .from("contracts")
       .select("id, sales_id")
       .eq("id", contractId)
@@ -93,7 +92,7 @@ export async function POST(
     }
 
     // Update the contract record
-    const { error: updateErr } = await supabaseAdmin
+    const { error: updateErr } = await supabase
       .from("contracts")
       .update({
         file_url: fileUrl,

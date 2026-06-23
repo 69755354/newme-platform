@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { createClient } from "@/lib/supabase";
+import { createServerSupabase } from "@/lib/supabase-server";
 
 /**
  * GET /api/activities
@@ -9,7 +8,7 @@ import { createClient } from "@/lib/supabase";
  */
 export async function GET(request: NextRequest) {
   // Auth check — must be authenticated
-  const supabase = createClient();
+  const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -19,7 +18,7 @@ export async function GET(request: NextRequest) {
   const leadId = searchParams.get("lead_id");
   const limit = parseInt(searchParams.get("limit") || "30", 10);
 
-  let query = supabaseAdmin
+  let query = supabase
     .from("activities")
     .select("id,lead_id,type,content,created_at,user_id,metadata")
     .order("created_at", { ascending: false })

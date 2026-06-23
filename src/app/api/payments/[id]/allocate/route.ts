@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
 
 interface AllocationItem {
@@ -71,7 +70,7 @@ export async function POST(
     }
 
     // Verify the payment exists
-    const { data: payment, error: paymentErr } = await supabaseAdmin
+    const { data: payment, error: paymentErr } = await supabase
       .from("payments")
       .select("id, confirmed")
       .eq("id", paymentId)
@@ -89,7 +88,7 @@ export async function POST(
     }
 
     // Call the RPC function to allocate the payment
-    const { data: result, error: rpcErr } = await supabaseAdmin.rpc("allocate_payment", {
+    const { data: result, error: rpcErr } = await supabase.rpc("allocate_payment", {
       p_payment_id: paymentId,
       p_allocations: allocations,
       p_allocated_by: user.id,

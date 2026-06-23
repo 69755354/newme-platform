@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { VALID_NOTIFICATION_TYPES } from "@/lib/notifications";
 import type { NotificationType } from "@/lib/notifications";
 
@@ -27,14 +26,7 @@ export async function GET(request: NextRequest) {
 
     const isAdmin = profile && ["admin", "boss"].includes(profile.role);
 
-    // Use supabaseAdmin to bypass RLS for admin users who need to see all
-    const { createClient } = await import("@supabase/supabase-js");
-    const adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    let query = adminClient
+    let query = supabase
       .from("notifications")
       .select("*");
 
@@ -107,7 +99,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Invalid type: ${type}` }, { status: 400 });
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from("notifications")
       .insert({
         user_id,

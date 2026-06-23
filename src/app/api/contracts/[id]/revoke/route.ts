@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   createNotification,
   getAdminUserIds,
@@ -54,7 +53,7 @@ export async function POST(
     }
 
     // Fetch the contract
-    const { data: contract, error: contractErr } = await supabaseAdmin
+    const { data: contract, error: contractErr } = await supabase
       .from("contracts")
       .select("id, contract_no, status, sales_id")
       .eq("id", contractId)
@@ -84,7 +83,7 @@ export async function POST(
     const newStatus = supersede ? "superseded" : "revoking";
 
     // Update contract status
-    const { error: updateErr } = await supabaseAdmin
+    const { error: updateErr } = await supabase
       .from("contracts")
       .update({
         status: newStatus,

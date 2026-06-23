@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
 
 /**
@@ -24,7 +23,7 @@ export async function POST(
     }
 
     // Fetch quotation with lead info
-    const { data: quote, error: quoteErr } = await supabaseAdmin
+    const { data: quote, error: quoteErr } = await supabase
       .from("quotations")
       .select("*, leads(id, customer_name)")
       .eq("id", quotationId)
@@ -71,7 +70,7 @@ export async function POST(
     // Generate contract number
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
-    const { count } = await supabaseAdmin
+    const { count } = await supabase
       .from("contracts")
       .select("id", { count: "exact", head: true })
       .gte("created_at", now.toISOString().slice(0, 10));
@@ -83,7 +82,7 @@ export async function POST(
     const installments = body.installments || [];
 
     // Create contract from quotation data
-    const { data: contract, error: contractErr } = await supabaseAdmin
+    const { data: contract, error: contractErr } = await supabase
       .from("contracts")
       .insert({
         lead_id: quote.lead_id,
@@ -120,7 +119,7 @@ export async function POST(
         description: inst.description || "",
         status: "pending",
       }));
-      const { error: instErr } = await supabaseAdmin
+      const { error: instErr } = await supabase
         .from("installment_plans")
         .insert(rows);
       if (instErr) {
@@ -129,7 +128,7 @@ export async function POST(
     }
 
     // Create first approval record
-    await supabaseAdmin.from("contract_approvals").insert({
+    await supabase.from("contract_approvals").insert({
       contract_id: contract.id,
       step: "admin_review",
       status: "pending",
@@ -137,7 +136,7 @@ export async function POST(
     });
 
     // Update quotation: link contract + change status
-    await supabaseAdmin
+    await supabase
       .from("quotations")
       .update({
         contract_id: contract.id,
@@ -148,14 +147,14 @@ export async function POST(
 
     // Update lead stage to contract_won
     if (quote.lead_id) {
-      await supabaseAdmin
+      await supabase
         .from("leads")
         .update({ stage: "contract_won", updated_at: new Date().toISOString() })
         .eq("id", quote.lead_id);
     }
 
     // Log activity
-    await supabaseAdmin.from("activities").insert({
+    await supabase.from("activities").insert({
       lead_id: quote.lead_id,
       type: "note",
       content: `合同 ${contractNo} 已从报价 ${quote.quote_no} 自动创建，待审批`,

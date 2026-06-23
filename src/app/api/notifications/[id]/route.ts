@@ -17,12 +17,6 @@ export async function PATCH(
     const body = await request.json().catch(() => ({}));
     const isRead = body.is_read !== false; // default to true
 
-    const { createClient } = await import("@supabase/supabase-js");
-    const adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
     // Ensure user owns this notification (or is admin/boss)
     const { data: profile } = await supabase
       .from("profiles")
@@ -32,7 +26,7 @@ export async function PATCH(
 
     const isAdmin = profile && ["admin", "boss"].includes(profile.role);
 
-    let query = adminClient
+    let query = supabase
       .from("notifications")
       .update({ is_read: isRead })
       .eq("id", id);

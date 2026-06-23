@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
 
 /**
@@ -34,7 +33,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify the contract exists
-    const { data: contract, error: contractErr } = await supabaseAdmin
+    const { data: contract, error: contractErr } = await supabase
       .from("contracts")
       .select("id, sales_id")
       .eq("id", contract_id)
@@ -59,7 +58,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const { data: payment, error: insertErr } = await supabaseAdmin
+    const { data: payment, error: insertErr } = await supabase
       .from("payments")
       .insert({
         contract_id,
@@ -124,7 +123,7 @@ export async function GET(request: NextRequest) {
     const contractId = searchParams.get("contract_id");
     const confirmed = searchParams.get("confirmed");
 
-    let query = supabaseAdmin
+    let query = supabase
       .from("payments")
       .select("*")
       .order("created_at", { ascending: false });
@@ -139,7 +138,7 @@ export async function GET(request: NextRequest) {
     // Sales can only see payments for their own contracts
     if (userRole === "sales") {
       // Get contract IDs owned by this sales user
-      const { data: ownContracts, error: contractsErr } = await supabaseAdmin
+      const { data: ownContracts, error: contractsErr } = await supabase
         .from("contracts")
         .select("id")
         .eq("sales_id", user.id);

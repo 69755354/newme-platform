@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createServerSupabase } from "@/lib/supabase-server";
 
 // ─── CSV parser ───
 function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
@@ -142,45 +143,27 @@ function buildProductRow(row: Record<string, string>) {
 // ─── Route handler ───
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createServerSupabase();
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    if (!profile || profile.role !== "admin") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     // Use service role for bulk insert (bypasses RLS)
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const adminClient = createClient(supabaseUrl, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-
-    // Verify auth — read user from cookie
-    const cookieHeader = request.headers.get("cookie") || "";
-    const cookieMatch = cookieHeader.match(
-      /sb-vfopmpxlhwzpxqegayew-auth-token(?:\.\d+)?=([^;]+)/
-    );
-    if (!cookieMatch) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    let session: any = null;
-    try { session = JSON.parse(cookieMatch[1]); } catch {}
-    if (!session) {
-      try { session = JSON.parse(atob(cookieMatch[1])); } catch {}
-    }
-    if (!session) {
-      try { session = JSON.parse(decodeURIComponent(cookieMatch[1])); } catch {}
-    }
-
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Check role — only boss/admin can import
-    const { data: profile } = await adminClient
-      .from("profiles")
-      .select("role")
-      .eq("id", session.user.id)
-      .single();
-
-    if (!profile || !["boss", "admin"].includes(profile.role)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
 
     // Parse the uploaded file
     const formData = await request.formData();

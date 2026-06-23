@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createServerSupabase } from "@/lib/supabase-server";
 import { calculateQuotation } from "../../../../lib/quotation-engine";
 
 /**
@@ -135,7 +136,7 @@ function deriveDevices(lead: Record<string, any>): Record<string, number> {
 export async function POST(request: NextRequest) {
   try {
     // ── Auth check ──
-    const supabaseAuth = getSupabaseAuth(request);
+    const supabaseAuth = await createServerSupabase();
     const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

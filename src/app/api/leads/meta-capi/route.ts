@@ -24,12 +24,13 @@ export async function POST(request: NextRequest) {
   try {
     // Webhook secret verification
     const webhookSecret = process.env.META_CAPI_WEBHOOK_SECRET;
-    if (webhookSecret) {
-      const authHeader = request.headers.get("authorization");
-      const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-      if (token !== webhookSecret) {
-        return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-      }
+    if (!webhookSecret) {
+      return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
+    }
+    const authHeader = request.headers.get("authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (token !== webhookSecret) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { getStore } from "@/lib/knx-task-store";
+import { createServerSupabase } from "@/lib/supabase-server";
 
 /**
  * GET /api/hermes/knx-design/status?task_id=xxx
@@ -30,37 +30,17 @@ function getTaskStore(): Map<string, any> {
   return (global as any).__hermesKnxTasks;
 }
 
-function getSupabaseAuth(req: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  if (!url || !key) throw new Error("Missing Supabase env vars");
-  const client = createClient(url, key, {
-    auth: { autoRefreshToken: false, detectSessionInUrl: false },
-  });
-  const accessToken = req.cookies.get("sb-access-token")?.value;
-  const refreshToken = req.cookies.get("sb-refresh-token")?.value;
-  if (accessToken && refreshToken) {
-    client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-  }
-  return client;
-}
-
 export async function GET(request: NextRequest) {
   try {
     // Auth check
-    const supabaseAuth = getSupabaseAuth(request);
+    const supabaseAuth = await createServerSupabase();
     const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Role check — only admin/boss/sales can check design status
-    const { createClient: createAdmin } = await import("@supabase/supabase-js");
-    const adminClient = createAdmin(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-    const { data: profile } = await adminClient
+    const { data: profile } = await supabaseAuth
       .from("profiles").select("role").eq("id", user.id).single();
     if (!profile || !["admin", "boss", "sales"].includes(profile.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });

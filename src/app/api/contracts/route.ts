@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
 
 /**
@@ -38,14 +37,14 @@ export async function POST(request: NextRequest) {
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
 
-    const { count } = await supabaseAdmin
+    const { count } = await supabase
       .from("contracts")
       .select("id", { count: "exact", head: true })
       .gte("created_at", now.toISOString().slice(0, 10));
     const seq = String((count ?? 0) + 1).padStart(3, "0");
     const contractNo = `NEW-${dateStr}-${seq}`;
 
-    const { data: contract, error: contractErr } = await supabaseAdmin
+    const { data: contract, error: contractErr } = await supabase
       .from("contracts")
       .insert({
         lead_id,
@@ -79,7 +78,7 @@ export async function POST(request: NextRequest) {
         status: "pending",
       }));
 
-      const { error: instErr } = await supabaseAdmin
+      const { error: instErr } = await supabase
         .from("installment_plans")
         .insert(installmentRows);
 
@@ -94,7 +93,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create first approval record (admin_review step)
-    const { error: approvalErr } = await supabaseAdmin
+    const { error: approvalErr } = await supabase
       .from("contract_approvals")
       .insert({
         contract_id: contract.id,
@@ -170,7 +169,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const leadId = searchParams.get("lead_id");
 
-    let q = supabaseAdmin.from("contracts").select("*, installment_plans(*)").order("created_at", { ascending: false });
+    let q = supabase.from("contracts").select("*, installment_plans(*)").order("created_at", { ascending: false });
     if (leadId) q = q.eq("lead_id", leadId);
 
     // sales role: only see own contracts
@@ -217,7 +216,7 @@ export async function PUT(request: NextRequest) {
     const isAdmin = profile?.role && ["admin", "boss", "operator"].includes(profile.role);
 
     if (!isAdmin) {
-      const { data: contract } = await supabaseAdmin
+      const { data: contract } = await supabase
         .from("contracts")
         .select("sales_id")
         .eq("id", id)
@@ -244,7 +243,7 @@ export async function PUT(request: NextRequest) {
 
     updates.updated_at = new Date().toISOString();
 
-    const { error } = await supabaseAdmin
+    const { error } = await supabase
       .from("contracts")
       .update(updates)
       .eq("id", id);

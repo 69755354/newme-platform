@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
 
 /**
@@ -46,7 +45,7 @@ export async function GET(
       role === "admin" || role === "boss" || role === "operator" || role === "finance";
 
     // ── Contract row (single FK to leads → safe; sales via constraint name) ──
-    const { data: contract, error } = await supabaseAdmin
+    const { data: contract, error } = await supabase
       .from("contracts")
       .select(
         `*,
@@ -65,14 +64,14 @@ export async function GET(
     }
 
     // ── Installment plans ──
-    const { data: installments } = await supabaseAdmin
+    const { data: installments } = await supabase
       .from("installment_plans")
       .select("id, seq, amount, due_date, status, paid_amount, allocated_amount, description")
       .eq("contract_id", contractId)
       .order("seq", { ascending: true });
 
     // ── Payments ──
-    const { data: payments } = await supabaseAdmin
+    const { data: payments } = await supabase
       .from("payments")
       .select(
         "id, amount, payment_date, payment_method, reference_no, confirmed, confirmed_at, confirmed_by, installment_plan_id, created_at"
@@ -81,7 +80,7 @@ export async function GET(
       .order("payment_date", { ascending: false });
 
     // ── Approval history ──
-    const { data: approvals } = await supabaseAdmin
+    const { data: approvals } = await supabase
       .from("contract_approvals")
       .select("id, step, status, notes, reviewed_at, created_at, approver_id")
       .eq("contract_id", contractId)
@@ -93,7 +92,7 @@ export async function GET(
     (approvals ?? []).forEach((a: any) => { if (a.approver_id) nameIds.add(a.approver_id); });
     const nameMap: Record<string, string> = {};
     if (nameIds.size > 0) {
-      const { data: users } = await supabaseAdmin
+      const { data: users } = await supabase
         .from("profiles")
         .select("id, full_name")
         .in("id", [...nameIds]);

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
 
 /**
@@ -41,7 +40,7 @@ export async function POST(
     }
 
     // Verify the payment exists and is not already confirmed
-    const { data: payment, error: paymentErr } = await supabaseAdmin
+    const { data: payment, error: paymentErr } = await supabase
       .from("payments")
       .select("id, confirmed")
       .eq("id", paymentId)
@@ -59,7 +58,7 @@ export async function POST(
     }
 
     // Call the RPC function to confirm the payment with cascading updates
-    const { data: result, error: rpcErr } = await supabaseAdmin.rpc("confirm_payment", {
+    const { data: result, error: rpcErr } = await supabase.rpc("confirm_payment", {
       p_payment_id: paymentId,
       p_confirmer_id: user.id,
     });

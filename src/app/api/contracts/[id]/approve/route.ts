@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
 
 /**
@@ -65,7 +64,7 @@ export async function POST(
     // ── Determine current approval step ────────────────────────────────
     // Fetch the pending approval record for this contract (if any).
     const { data: pendingApproval, error: approvalFetchErr } =
-      await supabaseAdmin
+      await supabase
         .from("contract_approvals")
         .select("id, step, status")
         .eq("contract_id", contractId)
@@ -117,7 +116,7 @@ export async function POST(
     }
 
     // ── Call RPC ───────────────────────────────────────────────────────
-    const { data: rpcResult, error: rpcErr } = await supabaseAdmin.rpc(
+    const { data: rpcResult, error: rpcErr } = await supabase.rpc(
       "approve_contract",
       {
         p_contract_id: contractId,
@@ -143,7 +142,7 @@ export async function POST(
         action === "approve" ? "contract_approved" : "contract_rejected";
 
       // Fetch contract info for a richer notification body
-      const { data: contractInfo } = await supabaseAdmin
+      const { data: contractInfo } = await supabase
         .from("contracts")
         .select("contract_no, sales_id")
         .eq("id", contractId)

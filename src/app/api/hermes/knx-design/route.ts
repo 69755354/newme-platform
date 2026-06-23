@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getStore } from "@/lib/knx-task-store";
+import { createServerSupabase } from "@/lib/supabase-server";
 
 const store = getStore();
 
@@ -263,7 +264,7 @@ function sleep(ms: number) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabaseAuth = getSupabaseAuth(request);
+    const supabaseAuth = await createServerSupabase();
     const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

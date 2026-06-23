@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createNotification } from "@/lib/notifications";
 
 /**
@@ -23,7 +22,7 @@ export async function POST(
     }
 
     // Fetch the contract with sales person info
-    const { data: contract, error: contractErr } = await supabaseAdmin
+    const { data: contract, error: contractErr } = await supabase
       .from("contracts")
       .select(`
         id,

@@ -28,6 +28,7 @@ interface LeadHealthData {
 interface OverdueItem {
   id: string;
   customer_name: string | null;
+  phone: string | null;
   assigned_to: string | null;
   assigned_name: string | null;
   stage: string;
@@ -253,14 +254,14 @@ function SalesOverdueList({ items, stageLabels, t }: {
             </Link>
             <div className="flex items-center gap-1 shrink-0 ml-2">
               <button
-                onClick={() => window.open(`tel:${item.customer_name}`, "_self")}
+                onClick={() => window.open(`tel:${item.phone || item.customer_name}`, "_self")}
                 className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
                 title={t("analytics.call")}
               >
                 <Phone className="w-3.5 h-3.5" />
               </button>
               <button
-                onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(`Hi ${item.customer_name}, following up on your enquiry`)}`, "_blank")}
+                onClick={() => window.open(`https://wa.me/${item.phone ? item.phone.replace(/[^0-9]/g, '') : ''}?text=${encodeURIComponent(`Hi ${item.customer_name}, following up on your enquiry`)}`, "_blank")}
                 className="p-1.5 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
                 title={t("analytics.whatsapp")}
               >

@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
     let overdueQuery = supabase
       .from("leads")
       .select(`
-        id, customer_name, assigned_to, stage, last_contact_date,
+        id, customer_name, phone, assigned_to, stage, last_contact_date,
         next_followup_date, followup_count, created_at, quotation_value
       `)
       .or(
@@ -135,6 +135,7 @@ export async function GET(request: NextRequest) {
       return {
         id: r.id,
         customer_name: r.customer_name,
+        phone: r.phone,
         assigned_to: r.assigned_to,
         assigned_name: nameMap[r.assigned_to] || null,
         stage: r.stage,

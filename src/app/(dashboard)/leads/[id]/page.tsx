@@ -27,6 +27,7 @@ import {
 import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadWorkflow from "@/components/lead-workflow";
+import { calculateHealthScore } from "@/lib/health-score";
 import { Toaster } from "sonner";
 
 const STAGES = ["new", "contacted", "requirement_confirmed", "solution_submitted", "quotation_submitted", "negotiation", "pending_decision", "won", "lost"];
@@ -77,6 +78,10 @@ interface Lead {
   quotation_value: number | null;
   project_name: string | null; project_status: string | null;
   ac_brand: string | null; system_preference: string | null;
+  // Phase B extension fields
+  project_type: string | null; emirate: string | null; area: string | null;
+  customer_budget: number | null; smart_requirements: any | null;
+  expected_sign_date: string | null;
   visit_status: string | null; rejection_detail: string | null;
   circuit_diagrams: boolean | null;
   sales_phase: string | null; phase_pct: number | null; sub_phase: string | null;
@@ -322,9 +327,49 @@ export default function LeadDetailPage() {
     );
   }
 
+  function renderJsonEdit(field: string, label: string) {
+    const value = (lead as any)[field];
+    let display: string | null = null;
+    if (value != null) {
+      try { display = typeof value === "string" ? value : JSON.stringify(value); }
+      catch { display = String(value); }
+    }
+    return editField === field ? (
+      <div className="flex gap-1 mt-1">
+        <input autoFocus value={editValue} placeholder='{"rooms": 4, "lights": "KNX"}'
+          onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              let parsed: any = editValue;
+              try { parsed = editValue ? JSON.parse(editValue) : null; } catch { parsed = editValue; }
+              updateField(field, parsed, "note_added", `${label}: ${editValue}`);
+              setEditField(null);
+            }
+            if (e.key === "Escape") setEditField(null);
+          }}
+          className="flex-1 h-8 text-xs bg-muted border border-border rounded px-2 text-foreground" />
+      </div>
+    ) : (
+      <p className="text-foreground mt-1 cursor-pointer hover:text-copper-400 break-all text-xs"
+        onClick={() => { setEditField(field); setEditValue(display || ""); }}>
+        {display || <span className="text-gray-600">{t("leadDetail.placeholderClickToFill")}</span>}
+      </p>
+    );
+  }
+
   // ─── Tab: 概览 ───
   function TabOverview() {
     if (!lead) return null;
+    // Health score (Phase B) — derived from follow-up recency, stage, quotation, drawings, overdue
+    const health = calculateHealthScore({
+      hasRecentFollowUp: (lead.followup_count ?? 0) > 0 && (daysSince(lead.last_contact_date) ?? Infinity) <= 7,
+      hasMeeting: ["negotiation", "pending_decision", "won"].includes(lead.stage),
+      hasDrawings: !!lead.circuit_diagrams,
+      hasQuotation: ["quotation_submitted", "negotiation", "pending_decision", "won"].includes(lead.stage),
+      isOverdue: !!lead.next_followup_date && new Date(lead.next_followup_date).getTime() < Date.now(),
+    });
+    const healthLevelLabel = health.level === "healthy" ? t("leadDetail.health_healthy") : health.level === "at_risk" ? t("leadDetail.health_at_risk") : t("leadDetail.health_stale");
+    const healthColor = health.score >= 50 ? "bg-emerald-500/10 text-emerald-400" : health.score >= 20 ? "bg-amber-500/10 text-amber-400" : "bg-red-500/10 text-red-400";
     return (
       <div className="space-y-4">
         {/* AI Summary */}
@@ -350,6 +395,9 @@ export default function LeadDetailPage() {
         <div className="flex flex-wrap items-center gap-3">
           <Badge className={cn("text-sm px-3 py-1", STAGE_COLORS[lead.stage] || "")}>
             {t(`stageLabels.${lead.stage}`) || lead.stage}
+          </Badge>
+          <Badge className={cn("text-sm px-3 py-1", healthColor)} title={t("leadDetail.healthScore")}>
+            <ShieldAlert className="w-3.5 h-3.5 mr-1" />{healthLevelLabel} · {health.score}
           </Badge>
           {lead.lead_status && (
             <Badge className={cn("text-sm px-3 py-1", getStatusLabels(t)[lead.lead_status]?.bg)}>
@@ -480,6 +528,26 @@ export default function LeadDetailPage() {
               <div><Label className="text-muted-foreground text-xs">{t("leadDetail.decisionMaker")}</Label>{renderInlineEdit("decision_maker", t("leadDetail.decisionMaker"))}</div>
               <div><Label className="text-muted-foreground text-xs">{t("leadDetail.decisionDate")}</Label>{renderDateEdit("decision_date", t("leadDetail.decisionDate"))}</div>
               <div><Label className="text-muted-foreground text-xs">{t("leadDetail.competitor")}</Label>{renderInlineEdit("competitor", t("leadDetail.competitor"))}</div>
+              {/* Phase B: project extension fields */}
+              <div>
+                <Label className="text-muted-foreground text-xs">{t("leadDetail.projectType")}</Label>
+                <div className="mt-1">
+                  <Select value={lead.project_type || ""} onValueChange={v => updateField("project_type", v || null, "note_added", `${t("leadDetail.projectType")}: ${v}`)}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="—" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="villa">{t("leadDetail.projectType_villa")}</SelectItem>
+                      <SelectItem value="apartment">{t("leadDetail.projectType_apartment")}</SelectItem>
+                      <SelectItem value="developer">{t("leadDetail.projectType_developer")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div><Label className="text-muted-foreground text-xs">{t("leadDetail.emirate")}</Label>{renderInlineEdit("emirate", t("leadDetail.emirate"))}</div>
+              <div><Label className="text-muted-foreground text-xs">{t("leadDetail.areaLocality")}</Label>{renderInlineEdit("area", t("leadDetail.areaLocality"))}</div>
+              <div><Label className="text-muted-foreground text-xs">{t("leadDetail.customerBudget")}</Label>{renderInlineEdit("customer_budget", t("leadDetail.customerBudget"))}</div>
+              <div><Label className="text-muted-foreground text-xs">{t("leadDetail.smartRequirements")}</Label>{renderJsonEdit("smart_requirements", t("leadDetail.smartRequirements"))}</div>
+              <div><Label className="text-muted-foreground text-xs">{t("leadDetail.expectedSignDate")}</Label>{renderDateEdit("expected_sign_date", t("leadDetail.expectedSignDate"))}</div>
+              <div><Label className="text-muted-foreground text-xs">{t("leadDetail.acBrand")}</Label>{renderInlineEdit("ac_brand", t("leadDetail.acBrand"))}</div>
             </div>
           </CardContent>
         </Card>

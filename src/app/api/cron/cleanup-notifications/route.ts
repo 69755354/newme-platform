@@ -5,19 +5,13 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
  * GET /api/cron/cleanup-notifications
  * Cron endpoint: deletes notifications older than 90 days.
  *
- * Authorization: CRON_SECRET token (required).
- * Set CRON_SECRET env var and pass it as ?token=xxx.
+ * Authorization: x-cron-secret header (matches all other cron routes).
+ * Set CRON_SECRET env var and pass it as x-cron-secret header.
  */
 export async function GET(request: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) {
-    console.error("[cron/cleanup-notifications] CRON_SECRET not set — rejecting request");
-    return NextResponse.json({ error: "Server misconfigured" }, { status: 503 });
-  }
-  const { searchParams } = new URL(request.url);
-  const token = searchParams.get("token");
-  if (token !== cronSecret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const cronSecret = request.headers.get("x-cron-secret");
+  if (cronSecret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Calculate cutoff date (90 days ago)

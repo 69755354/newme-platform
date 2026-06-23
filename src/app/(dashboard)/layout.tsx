@@ -8,7 +8,7 @@ import {
   FileText, Calculator, CreditCard, TrendingUp,
   LogOut, ShieldCheck, Settings, Megaphone,
   Package, FolderKanban, UsersRound, Briefcase,
-  BarChart3,
+  BarChart3, Swords,
 } from "lucide-react";
 import { Toaster } from "sonner";
 import { useState, useEffect, Suspense } from "react";
@@ -28,6 +28,7 @@ interface NavItem {
 // ─── Management nav — 5 core + settings ───
 const MGMT_NAV: NavItem[] = [
   { href: "/dashboard", labelKey: "mgmtDashboard", icon: LayoutDashboard },
+  { href: "/command-center", labelKey: "commandCenter", icon: Swords },
   { href: "/leads",     labelKey: "mgmtLeads", icon: Users },
   { href: "/quotes",    labelKey: "mgmtQuotes", icon: Calculator },
   { href: "/contracts", labelKey: "mgmtContracts", icon: FileText },

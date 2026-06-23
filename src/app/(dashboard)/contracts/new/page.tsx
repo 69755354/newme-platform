@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,9 +31,11 @@ interface LeadOption {
   quotation_value: number | null;
 }
 
-export default function NewContractPage() {
+function NewContractPageInner() {
   const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss"]);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const presetLeadId = searchParams.get("lead_id");
   const supabase = createClient();
   const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
@@ -61,12 +63,28 @@ export default function NewContractPage() {
           .limit(100);
         if (error) console.error("Failed to fetch leads:", error);
         if (data) setLeads(data as LeadOption[]);
+
+        // Pre-select a lead passed via ?lead_id= (e.g. navigated from a won lead)
+        if (presetLeadId) {
+          const { data: preset } = await supabase.from("leads")
+            .select("id, customer_name, phone, quotation_value")
+            .eq("id", presetLeadId)
+            .maybeSingle();
+          if (preset) {
+            const lead = preset as LeadOption;
+            setSelectedLead(lead);
+            if (!contractAmount && lead.quotation_value) setContractAmount(String(lead.quotation_value));
+            if (!partyAName && lead.customer_name) setPartyAName(lead.customer_name);
+            if (!partyAPhone && lead.phone) setPartyAPhone(lead.phone);
+          }
+        }
       } catch (err) {
         console.error("Network error fetching leads:", err);
       }
     };
     fetchLeads();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetLeadId]);
 
   if (roleLoading || blocked) return null;
 
@@ -289,5 +307,14 @@ export default function NewContractPage() {
 
       <Toaster position="top-center" richColors />
     </div>
+  );
+}
+
+// Wrap in Suspense so useSearchParams() works without a CSR bailout error.
+export default function NewContractPage() {
+  return (
+    <Suspense fallback={<div className="text-muted-foreground p-8">Loading…</div>}>
+      <NewContractPageInner />
+    </Suspense>
   );
 }

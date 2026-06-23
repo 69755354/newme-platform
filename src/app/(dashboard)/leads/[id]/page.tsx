@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Phone, MessageSquare, MapPin, Home, Plus, Send,
   Calendar, Clock, User, Target, AlertTriangle, ShieldAlert,
-  RotateCcw, BarChart3, TrendingUp, MessageCircle,
+  RotateCcw, BarChart3, TrendingUp, MessageCircle, PhoneIncoming, PhoneOutgoing,
   FileText, ClipboardList, CheckCircle, DollarSign, ExternalLink, Calculator, WandSparkles,
   Wrench, GitBranch, ChevronDown,
 } from "lucide-react";
@@ -477,6 +477,13 @@ export default function LeadDetailPage() {
               onClick={openQuoteCalculator}>
               <Plus className="w-4 h-4 mr-2" />{t("leadDetail.createQuote")}
             </Button>
+            {lead.stage === "won" && (
+              <Button variant="outline" size="sm"
+                className="w-full border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 justify-start mt-2"
+                onClick={() => router.push(`/contracts/new?lead_id=${lead.id}`)}>
+                <FileText className="w-4 h-4 mr-2" />{t("leadDetail.createContract")}
+              </Button>
+            )}
             <Button variant="outline" size="sm"
               className="w-full border-purple-500/30 text-purple-400 hover:bg-purple-500/10 justify-start mt-2"
               onClick={() => {
@@ -896,10 +903,15 @@ export default function LeadDetailPage() {
 
   function TabTimeline() {
     if (!lead) return null;
+    // WhatsApp chat messages rendered as directional chat bubbles (oldest → newest)
+    const chatItems = [...chatMessages]
+      .map(c => ({ id: c.id, content: c.content || "", direction: c.direction, created_at: c.created_at }))
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+    // Activity + business events feed (newest first). Chat is rendered separately above.
     const allItems = [
-      ...activities.map(a => ({ ...a, _type: "activity" as const, _icon: null })),
-      ...events.map(e => ({ id: e.id, type: e.event_type, content: e.description, ai_generated: false, created_at: e.created_at, _type: "event" as const, _icon: null })),
-      ...chatMessages.map(c => ({ id: c.id, type: "chat", content: c.content || "", ai_generated: false, created_at: c.created_at, _type: "chat" as const, _icon: "💬" as const, direction: c.direction })),
+      ...activities.map(a => ({ ...a, _type: "activity" as const })),
+      ...events.map(e => ({ id: e.id, type: e.event_type, content: e.description, ai_generated: false, created_at: e.created_at, _type: "event" as const })),
     ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100);
 
     return (
@@ -922,41 +934,66 @@ export default function LeadDetailPage() {
           </div>
           <Separator className="bg-border" />
 
+          {/* WhatsApp chat bubbles */}
+          {chatItems.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <MessageCircle className="w-3.5 h-3.5" /> {t("leadDetail.whatsappChat")} ({chatItems.length})
+              </p>
+              <div className="rounded-xl bg-[#e5ddd5] p-3 space-y-1.5 max-h-[420px] overflow-y-auto">
+                {chatItems.map((msg) => {
+                  const outbound = msg.direction === "outbound";
+                  return (
+                    <div key={msg.id} className={cn("flex", outbound ? "justify-end" : "justify-start")}>
+                      <div className={cn("max-w-[78%] rounded-lg px-3 py-1.5 shadow-sm",
+                        outbound ? "bg-[#dcf8c6] text-gray-900 rounded-tr-none" : "bg-white text-gray-900 rounded-tl-none")}>
+                        <div className="flex items-center gap-1 mb-0.5 text-[10px] font-medium text-gray-500">
+                          {outbound
+                            ? <><PhoneOutgoing className="w-3 h-3" /><span>{t("leadDetail.chatSent")}</span></>
+                            : <><PhoneIncoming className="w-3 h-3" /><span>{t("leadDetail.chatReceived")}</span></>}
+                        </div>
+                        <p className="break-words whitespace-pre-wrap text-sm leading-snug">
+                          {msg.content || <span className="italic text-gray-400">—</span>}
+                        </p>
+                        <p className="mt-0.5 text-right text-[10px] text-gray-500">
+                          {new Date(msg.created_at).toLocaleTimeString(t("locale.dateTimeLocale"), { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Activity / events feed */}
           <div className="space-y-3">
-            {allItems.map((item) => (
+            {allItems.map((item) => {
+              const type: string = item.type;
+              return (
               <div key={`${item._type}-${item.id}`} className="flex gap-3 text-sm">
-                {item._type === "chat" ? (
-                  <span className="text-lg shrink-0 mt-0.5">💬</span>
-                ) : (
-                  <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0",
-                    item.type.includes("stage") ? "bg-amber-500" :
-                    item.type.includes("note") ? "bg-gray-500" :
-                    item.type.includes("quote") ? "bg-blue-500" :
-                    item.type.includes("lost") ? "bg-red-500" :
-                    item.type.includes("probability") || item.type.includes("status") ? "bg-purple-500" :
-                    item.type.includes("followup") ? "bg-emerald-500" :
-                    item.type.includes("review") ? "bg-violet-500" :
-                    item.type.includes("recovery") || item.type.includes("transfer") ? "bg-orange-500" :
-                    "bg-gray-600")} />
-                )}
+                <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0",
+                  type.includes("stage") ? "bg-amber-500" :
+                  type.includes("note") ? "bg-gray-500" :
+                  type.includes("quote") ? "bg-blue-500" :
+                  type.includes("lost") ? "bg-red-500" :
+                  type.includes("probability") || type.includes("status") ? "bg-purple-500" :
+                  type.includes("followup") ? "bg-emerald-500" :
+                  type.includes("review") ? "bg-violet-500" :
+                  type.includes("recovery") || type.includes("transfer") ? "bg-orange-500" :
+                  "bg-gray-600")} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-foreground">
-                    {item._type === "chat" && item.direction === "inbound"
-                      ? <><span className="text-emerald-400">📩 </span>{item.content}</>
-                      : item._type === "chat" && item.direction === "outbound"
-                      ? <><span className="text-blue-400">📤 </span>{item.content}</>
-                      : item.content}
-                  </p>
+                  <p className="text-foreground">{item.content}</p>
                   <p className="text-xs text-gray-600 mt-0.5 flex items-center gap-2">
                     {new Date(item.created_at).toLocaleString(t("locale.dateTimeLocale"))}
                     {"ai_generated" in item && (item as any).ai_generated && <span className="text-purple-500">🤖 AI</span>}
-                    {"_type" in item && item._type === "event" && <span className="text-blue-500">{t("leadDetail.event")}</span>}
-                    {item._type === "chat" && <span className="text-cyan-500">💬 Chat</span>}
+                    {item._type === "event" && <span className="text-blue-500">{t("leadDetail.event")}</span>}
                   </p>
                 </div>
               </div>
-            ))}
-            {allItems.length === 0 && (
+              );
+            })}
+            {allItems.length === 0 && chatItems.length === 0 && (
               <p className="text-gray-600 text-sm text-center py-4">{t("leadDetail.noActivity")}</p>
             )}
           </div>
@@ -1273,6 +1310,13 @@ export default function LeadDetailPage() {
                 onClick={openQuoteCalculator}>
                 <Plus className="w-4 h-4 mr-2" />{t("leadDetail.createQuote")}
               </Button>
+              {lead.stage === "won" && (
+                <Button variant="outline" size="sm"
+                  className="w-full border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 justify-start mt-2"
+                  onClick={() => router.push(`/contracts/new?lead_id=${lead.id}`)}>
+                  <FileText className="w-4 h-4 mr-2" />{t("leadDetail.createContract")}
+                </Button>
+              )}
             </CardContent>
           </Card>
 

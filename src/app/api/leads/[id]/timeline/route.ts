@@ -43,11 +43,17 @@ export async function GET(
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10))
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)))
 
-    const [milestonesRes, followUpsRes, tasksRes, documentsRes] = await Promise.all([
+    const [milestonesRes, followUpsRes, tasksRes, documentsRes, chatRes] = await Promise.all([
       supabase.from("lead_milestones").select("*").eq("lead_id", leadId),
       supabase.from("follow_up_logs").select("*").eq("lead_id", leadId),
       supabase.from("tasks").select("*").eq("lead_id", leadId),
       supabase.from("lead_documents").select("*").eq("lead_id", leadId),
+      supabase
+        .from("chat_messages")
+        .select("id, content, direction, created_at")
+        .eq("lead_id", leadId)
+        .order("created_at", { ascending: true })
+        .limit(200),
     ])
 
     const events: Array<{
@@ -95,6 +101,16 @@ export async function GET(
         description: d.file_name ?? null,
         created_at: d.created_at,
         metadata: d,
+      })
+    }
+
+    for (const c of chatRes.data || []) {
+      events.push({
+        id: `chat-${c.id}`,
+        eventType: "chat",
+        description: c.content ?? null,
+        created_at: c.created_at,
+        metadata: { direction: c.direction ?? "inbound" },
       })
     }
 

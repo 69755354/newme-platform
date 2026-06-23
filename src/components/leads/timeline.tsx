@@ -2,20 +2,31 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
+import { createClient } from "@/lib/supabase";
 import {
   CheckCircle,
   MessageCircle,
   ClipboardList,
   FileText,
+  PhoneIncoming,
+  PhoneOutgoing,
   type LucideIcon,
 } from "lucide-react";
 
-type EventType = "milestone" | "follow_up" | "task" | "document";
+type EventType = "milestone" | "follow_up" | "task" | "document" | "chat";
 
 interface TimelineEvent {
   id: string;
   event_type: EventType;
   description: string;
+  created_at: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface ChatMessage {
+  id: string;
+  content: string | null;
+  direction: string | null;
   created_at: string;
 }
 
@@ -31,6 +42,7 @@ const EVENT_CONFIG: Record<
   follow_up: { icon: MessageCircle, color: "text-blue-500", label: "Follow-up" },
   task: { icon: ClipboardList, color: "text-orange-500", label: "Task" },
   document: { icon: FileText, color: "text-gray-500", label: "Document" },
+  chat: { icon: MessageCircle, color: "text-cyan-500", label: "Chat" },
 };
 
 function formatDate(iso: string): string {
@@ -40,6 +52,15 @@ function formatDate(iso: string): string {
     month: "short",
     day: "numeric",
     year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -57,38 +78,50 @@ function getGroupKey(date: Date): "thisMonth" | "lastMonth" | "earlier" {
 
 export default function Timeline({ leadId }: TimelineProps) {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const supabase = createClient();
 
     async function load() {
       setLoading(true);
       setError(null);
       try {
-        // Fetch timeline data
-        const res = await fetch(`/api/leads/${leadId}/timeline`, {
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        });
+        // Activity events (milestones / follow-ups / tasks / documents)
+        const [eventsRes, chatRes] = await Promise.all([
+          fetch(`/api/leads/${leadId}/timeline`, {
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+          }),
+          supabase
+            .from("chat_messages")
+            .select("id, content, direction, created_at")
+            .eq("lead_id", leadId)
+            .order("created_at", { ascending: true })
+            .limit(200),
+        ]);
 
-        if (!res.ok) {
-          throw new Error(`Failed to load timeline (${res.status})`);
+        if (!eventsRes.ok) {
+          throw new Error(`Failed to load timeline (${eventsRes.status})`);
         }
 
-        const json = await res.json();
+        const json = await eventsRes.json();
         const raw: unknown = Array.isArray(json)
           ? json
           : json?.events ?? json?.data ?? [];
 
+        // Keep every event type except "chat" — chat is rendered as bubbles.
         const list: TimelineEvent[] = Array.isArray(raw)
           ? (raw as TimelineEvent[])
               .filter(
                 (e) =>
                   e &&
                   typeof e.created_at === "string" &&
-                  typeof e.event_type === "string"
+                  typeof e.event_type === "string" &&
+                  e.event_type !== "chat"
               )
               .sort(
                 (a, b) =>
@@ -97,7 +130,10 @@ export default function Timeline({ leadId }: TimelineProps) {
               )
           : [];
 
-        if (!cancelled) setEvents(list);
+        if (!cancelled) {
+          setEvents(list);
+          setChatMessages((chatRes.data as ChatMessage[]) ?? []);
+        }
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Failed to load timeline");
@@ -145,7 +181,10 @@ export default function Timeline({ leadId }: TimelineProps) {
     );
   }
 
-  if (events.length === 0) {
+  const hasChat = chatMessages.length > 0;
+  const hasEvents = events.length > 0;
+
+  if (!hasChat && !hasEvents) {
     return (
       <Card className="p-6 text-center text-sm text-gray-500">
         No events yet
@@ -164,6 +203,59 @@ export default function Timeline({ leadId }: TimelineProps) {
 
   return (
     <div className="space-y-6">
+      {/* WhatsApp chat bubbles */}
+      {hasChat && (
+        <section className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <MessageCircle className="inline w-3.5 h-3.5 mr-1 -mt-0.5" />
+            WhatsApp Chat
+            <span className="ml-2 text-gray-400">({chatMessages.length})</span>
+          </h3>
+          <div className="rounded-xl border border-gray-200 bg-[#e5ddd5] p-3 space-y-1.5 max-h-[420px] overflow-y-auto">
+            {chatMessages.map((msg) => {
+              const outbound = msg.direction === "outbound";
+              return (
+                <div
+                  key={msg.id}
+                  className={`flex ${outbound ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`max-w-[78%] rounded-lg px-3 py-1.5 shadow-sm ${
+                      outbound
+                        ? "bg-[#dcf8c6] text-gray-900 rounded-tr-none"
+                        : "bg-white text-gray-900 rounded-tl-none"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1 mb-0.5 text-[10px] font-medium text-gray-500">
+                      {outbound ? (
+                        <>
+                          <PhoneOutgoing className="w-3 h-3" />
+                          <span>Sent</span>
+                        </>
+                      ) : (
+                        <>
+                          <PhoneIncoming className="w-3 h-3" />
+                          <span>Received</span>
+                        </>
+                      )}
+                    </div>
+                    <p className="break-words whitespace-pre-wrap text-sm leading-snug">
+                      {msg.content || (
+                        <span className="italic text-gray-400">No content</span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-right text-[10px] text-gray-500">
+                      {formatTime(msg.created_at)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Activity events */}
       {sections.map(({ key, label }) => {
         const items = grouped[key];
         if (items.length === 0) return null;

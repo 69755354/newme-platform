@@ -66,6 +66,8 @@ export const translations = {
       platformTitle: "CRM Platform",
       logout: "Logout",
       // Management nav items
+      commandCenter: "Command Center",
+      mgmtWorkbench: "Workbench",
       mgmtDashboard: "Dashboard",
       mgmtLeads: "Leads",
       mgmtQuotes: "Quotes",
@@ -78,6 +80,7 @@ export const translations = {
       mgmtProjects: "Projects",
       mgmtSettings: "Settings",
       // Sales nav items
+      salesWorkbench: "Workbench",
       salesDashboard: "My Desk",
       salesLeads: "My Leads",
       salesQuotes: "Products & Quotes",
@@ -1209,6 +1212,18 @@ export const translations = {
       duePrefix: "Due",
       overduePrefix: "overdue",
     },
+    commandCenter: {
+      title: "Command Center",
+      monthTarget: "Monthly Target",
+      monthCompleted: "Completed",
+      progress: "Progress",
+      todayFollowUps: "Today Follow-up",
+      salesTeam: "Sales Team",
+      needsAttention: "Needs Attention",
+      allClear: "All clear — no items need attention",
+      customer: "Customer",
+      reason: "Reason",
+    },
   },
   zh: {
     common: {
@@ -1283,6 +1298,7 @@ export const translations = {
       mgmtPipeline: "销售漏斗",
       mgmtAnalytics: "分析",
       mgmtAds: "广告",
+      commandCenter: "战情室",
       mgmtProducts: "产品库",
       mgmtTeam: "团队",
       mgmtProjects: "项目管理",
@@ -2418,6 +2434,18 @@ export const translations = {
       dueLabel: "到期:",
       duePrefix: "到期",
       overduePrefix: "逾期",
+    },
+    commandCenter: {
+      title: "战情室",
+      monthTarget: "月度目标",
+      monthCompleted: "已完成",
+      progress: "进度",
+      todayFollowUps: "今日待跟进",
+      salesTeam: "销售团队",
+      needsAttention: "待处理",
+      allClear: "一切正常 — 没有待处理事项",
+      customer: "客户",
+      reason: "原因",
     },
   },
 } as const;

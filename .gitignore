@@ -27,3 +27,6 @@ Thumbs.db
 # Temp files
 """"
 *.tmp
+.next.backup.*
+tsconfig.tsbuildinfo
+supabase/.temp/

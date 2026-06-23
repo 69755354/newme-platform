@@ -8,7 +8,7 @@ import {
   FileText, Calculator, CreditCard, TrendingUp,
   LogOut, ShieldCheck, Settings, Megaphone,
   Package, FolderKanban, UsersRound, Briefcase,
-  BarChart3,
+  BarChart3, Swords,
 } from "lucide-react";
 import { Toaster } from "sonner";
 import { useState, useEffect, Suspense } from "react";
@@ -28,6 +28,7 @@ interface NavItem {
 // ─── Management nav — 5 core + settings ───
 const MGMT_NAV: NavItem[] = [
   { href: "/dashboard", labelKey: "mgmtDashboard", icon: LayoutDashboard },
+  { href: "/command-center", labelKey: "commandCenter", icon: Swords },
   { href: "/leads",     labelKey: "mgmtLeads", icon: Users },
   { href: "/quotes",    labelKey: "mgmtQuotes", icon: Calculator },
   { href: "/contracts", labelKey: "mgmtContracts", icon: FileText },
@@ -104,19 +105,12 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         storeSession(signInData.session);
       }
 
-      function storeSession(session: { access_token: string; refresh_token: string; expires_at?: number; user?: any }) {
-        localStorage.setItem("sb-vfopmpxlhwzpxqegayew-auth-token", JSON.stringify({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-          expires_at: session.expires_at || Math.floor(Date.now() / 1000) + 3600,
-          user: (session as any).user || {},
-        }));
-        document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=3600; SameSite=Lax`;
-        document.cookie = `sb-refresh-token=${session.refresh_token}; path=/; max-age=2592000; SameSite=Lax`;
-        supabase.auth.setSession({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-        });
+      function storeSession(_session: unknown) {
+        // createBrowserClient (@supabase/ssr) manages the auth cookie itself
+        // after signInWithPassword. We only update React state here — no manual
+        // localStorage / document.cookie writes (those conflicted with the ssr
+        // chunked-cookie refresh and caused intermittent session loss).
+        void _session;
         setUserEmail(DEV_EMAIL);
         setRole("admin");
         setAuthLoading(false);

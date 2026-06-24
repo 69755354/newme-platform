@@ -23,29 +23,38 @@ export async function GET() {
   }
 
   const isSales = profile.role === "sales"
-  const today = new Date().toISOString().split("T")[0]
   const nowIso = new Date().toISOString()
 
-  const inboxCols = "id,customer_name,phone,source,stage,current_milestone,quality,next_followup_date,next_action,property_type,location,assigned_to,created_at"
   const taskCols = "id,lead_id,title,due_at,status,source,created_at,assignee_id"
 
-  // inbox
+  // Inbox follows open tasks rather than the retired lead follow-up fields.
   let inboxQuery = supabase
-    .from("leads")
-    .select(inboxCols)
-    .or(`and(next_followup_date.lte.${today},stage.not.in.(won,lost)),current_milestone.not.in.(won,lost)`)
-    .order("next_followup_date", { ascending: true })
+    .from("tasks")
+    .select("lead_id,title,leads!inner(id,customer_name,phone,location,final_status)")
+    .is("completed_at", null)
+    .order("due_at", { ascending: true })
     .limit(20)
 
-  if (isSales) inboxQuery = inboxQuery.eq("assigned_to", user.id)
-  const { data: inboxItems } = await inboxQuery
+  if (isSales) inboxQuery = inboxQuery.eq("assignee_id", user.id)
+  const { data: inboxTasks } = await inboxQuery
+  const inboxItems = (inboxTasks ?? []).flatMap((task: any) => {
+    const lead = Array.isArray(task.leads) ? task.leads[0] : task.leads
+    if (!lead || lead.final_status) return []
+    return [{
+      id: lead.id,
+      customer_name: lead.customer_name,
+      phone: lead.phone,
+      location: lead.location,
+      next_action: task.title,
+    }]
+  })
 
   // tasks
   const { data: tasksItems } = await supabase
     .from("tasks")
     .select(taskCols)
     .eq("assignee_id", user.id)
-    .eq("status", "pending")
+    .is("completed_at", null)
     .order("due_at", { ascending: true })
     .limit(20)
 
@@ -54,7 +63,7 @@ export async function GET() {
     .from("tasks")
     .select(taskCols)
     .eq("assignee_id", user.id)
-    .eq("status", "pending")
+    .is("completed_at", null)
     .lt("due_at", nowIso)
     .order("due_at", { ascending: true })
     .limit(20)
@@ -70,6 +79,14 @@ export async function GET() {
     progress[k] = (progress[k] || 0) + 1
   }
 
+  // Convert progress Record to array matching frontend ProgressGroup interface
+  const totalLeads = (progressRows || []).length
+  const progressArray = Object.entries(progress).map(([current_milestone, count]) => ({
+    current_milestone,
+    count,
+    percentage: totalLeads > 0 ? Math.round((count / totalLeads) * 100) : 0,
+  }))
+
   // features
   const { data: featureRows } = await supabase
     .from("user_features")
@@ -80,12 +97,10 @@ export async function GET() {
   for (const f of featureRows || []) features[f.feature_key] = Boolean(f.enabled)
 
   return NextResponse.json({
-    panels: {
-      inbox: { label: "Needs Follow-up", count: inboxItems?.length ?? 0, items: inboxItems ?? [] },
-      tasks: { label: "My Tasks", count: tasksItems?.length ?? 0, items: tasksItems ?? [] },
-      overdue: { label: "Overdue", count: overdueItems?.length ?? 0, items: overdueItems ?? [] },
-      progress: { label: "My Pipeline", items: progress },
-    },
+    inbox: inboxItems ?? [],
+    tasks: tasksItems ?? [],
+    overdue: overdueItems ?? [],
+    progress: progressArray,
     profile: { id: profile.id, name: profile.full_name, role: profile.role },
     features,
   })

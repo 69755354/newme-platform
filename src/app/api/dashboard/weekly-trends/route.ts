@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
 
     let leadsQuery = supabase
       .from("leads")
-      .select("id, created_at, stage, quotation_value, assigned_to")
+      .select("id, created_at, stage, quotation_value, assigned_to, final_status")
       .gte("created_at", rangeStart)
       .lte("created_at", rangeEnd);
 
@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
       });
 
       // Won leads in this week (using leads table)
-      const wonLeads = newLeads.filter((l) => l.stage === "won");
+      const wonLeads = newLeads.filter((l) => l.final_status === "won");
 
       // Signed amount from contracts created this week
       const weekContracts = (contracts || []).filter((c) => {

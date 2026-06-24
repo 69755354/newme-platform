@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
       const repIds = reps.map((r: any) => r.id);
       const { data: allLeads } = await supabase
         .from("leads")
-        .select("id, assigned_to, stage, quotation_value, followup_count, last_contact_date, next_followup_date, created_at")
+        .select("id, assigned_to, stage, final_status, quotation_value, followup_count, last_contact_date, next_followup_date, created_at")
         .in("assigned_to", repIds);
 
       const leadsByRep: Record<string, any[]> = {};
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
       const repStats = reps.map((rep: any) => {
         const myLeads = leadsByRep[rep.id] || [];
         const totalLeads = myLeads.length;
-        const wonLeads = myLeads.filter((l: any) => l.stage === "won").length;
+        const wonLeads = myLeads.filter((l: any) => l.final_status === "won").length;
         const contactedLeads = myLeads.filter(
           (l: any) => l.last_contact_date || (l.followup_count ?? 0) > 0
         ).length;
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
         // Overdue count
         const overdueCount = myLeads.filter(
           (l: any) =>
-            l.next_followup_date && l.next_followup_date < now && !["won", "lost"].includes(l.stage)
+            l.next_followup_date && l.next_followup_date < now && !l.final_status
         ).length;
 
         return {
@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
       // ── Sales view: my own stats ──
       const { data: myLeads } = await supabase
         .from("leads")
-        .select("id, stage, followup_count, last_contact_date, next_followup_date, quotation_value")
+        .select("id, stage, final_status, followup_count, last_contact_date, next_followup_date, quotation_value")
         .eq("assigned_to", user.id);
 
       const total = myLeads?.length ?? 0;
@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
       (myLeads ?? []).forEach((l: any) => {
         stageDist[l.stage] = (stageDist[l.stage] ?? 0) + 1;
         if (l.last_contact_date || (l.followup_count ?? 0) > 0) contactedCount++;
-        if (l.next_followup_date && l.next_followup_date < now && !["won", "lost"].includes(l.stage)) {
+        if (l.next_followup_date && l.next_followup_date < now && !l.final_status) {
           overdueCount++;
         }
       });

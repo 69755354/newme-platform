@@ -16,7 +16,7 @@ import {
 /* ─── Types ─── */
 interface Lead {
   id: string; customer_name: string | null;
-  stage: string; quotation_value: number | null;
+  stage: string; final_status: string | null; quotation_value: number | null;
   win_probability: number | null;
   last_contact_date: string | null; next_followup_date: string | null;
   next_action: string | null; created_at: string; updated_at: string;
@@ -62,12 +62,12 @@ function LeadCard({ lead, onLeadClick, salesUsers }: { lead: Lead; onLeadClick: 
   const hoursSinceUpdate = lead.updated_at
     ? Math.floor((Date.now() - new Date(lead.updated_at).getTime()) / 3_600_000)
     : null;
-  const isInactive24h = hoursSinceUpdate !== null && hoursSinceUpdate >= 24 && !["won", "lost"].includes(lead.stage);
-  const isStale = days !== null && days > 7 && !["won", "lost"].includes(lead.stage);
-  const isCrit = days !== null && days >= 14 && !["won", "lost"].includes(lead.stage);
+  const isInactive24h = hoursSinceUpdate !== null && hoursSinceUpdate >= 24 && !lead.final_status;
+  const isStale = days !== null && days > 7 && !lead.final_status;
+  const isCrit = days !== null && days >= 14 && !lead.final_status;
   const isHot = lead.lead_status === "hot";
-  const isWon = lead.stage === "won";
-  const isLost = lead.stage === "lost";
+  const isWon = lead.final_status === "won";
+  const isLost = lead.final_status === "lost";
 
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData("text/plain", lead.id);
@@ -265,7 +265,8 @@ export default function PipelinePage() {
   const columns = useMemo(() => {
     const g: Record<string, Lead[]> = {};
     for (const s of STAGES) g[s.key] = [];
-    for (const l of leads) { if (g[l.stage]) g[l.stage].push(l); }
+    // won/lost now live in final_status; fall back to stage for the dual-source transition
+    for (const l of leads) { const key = l.final_status || l.stage; if (g[key]) g[key].push(l); }
     return g;
   }, [leads]);
 
@@ -288,8 +289,8 @@ export default function PipelinePage() {
     if (lead.stage === targetStage) return null;
     // Guard 2: valid target stage
     if (!(targetStage in STAGE_INDEX)) return t("common.invalidStage") + `: "${targetStage}"`;
-    // Guard 3: terminal stages can't be moved from
-    if (TERMINAL_STAGES.has(lead.stage)) return t("common.cannotChangeClosedLead");
+    // Guard 3: terminal leads can't be moved — won/lost now live in final_status
+    if (lead.final_status === "won" || lead.final_status === "lost") return t("common.cannotChangeClosedLead");
     // Guard 4: forward-only for non-admin/boss
     const canRevert = role === "admin" || role === "boss";
     if (!canRevert && STAGE_INDEX[targetStage] < STAGE_INDEX[lead.stage]) return t("common.cannotMoveBackward");
@@ -317,13 +318,22 @@ export default function PipelinePage() {
 
     setUpdating(true);
     const oldStage = lead.stage;
+    const oldFinal = lead.final_status;
 
-    // Optimistic update
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: targetStage } : l));
+    // Optimistic update — won/lost persist to final_status, process stages to stage
+    setLeads(prev => prev.map(l => l.id === leadId ? {
+      ...l,
+      ...(targetStage === "won" || targetStage === "lost"
+        ? { final_status: targetStage }
+        : { stage: targetStage })
+    } : l));
 
     // Build auto-updates (same logic as leads/page.tsx changeStage)
     const now = new Date().toISOString();
-    const updates: Record<string, any> = { stage: targetStage, updated_at: now, last_contact_date: now };
+    // won/lost are terminal → persist to final_status, not stage; process stages keep stage
+    const updates: Record<string, any> = targetStage === "won" || targetStage === "lost"
+      ? { final_status: targetStage, updated_at: now, last_contact_date: now }
+      : { stage: targetStage, updated_at: now, last_contact_date: now };
     if (TERMINAL_STAGES.has(targetStage)) {
       updates.decision_date = now;
       // Cascade: close related open quotes
@@ -336,8 +346,8 @@ export default function PipelinePage() {
     // Persist
     const { error: updateErr } = await supabase.from("leads").update(updates).eq("id", leadId);
     if (updateErr) {
-      // Revert UI
-      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: oldStage } : l));
+      // Revert UI (restore both stage and final_status)
+      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: oldStage, final_status: oldFinal } : l));
       toast.error(t("common.failedToUpdateStage") + `: ${updateErr.message}`);
       setUpdating(false);
       return;

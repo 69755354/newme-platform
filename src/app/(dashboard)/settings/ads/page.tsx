@@ -34,7 +34,7 @@ export default async function SettingsAdsPage() {
   const { data: leads } = await supabase
     .from("leads")
     .select(
-      "source, source_platform, campaign_name, utm_campaign, meta_campaign, adset_name, ad_name, stage, quotation_value, quality"
+      "source, source_platform, campaign_name, utm_campaign, meta_campaign, adset_name, ad_name, stage, final_status, quotation_value, quality"
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -52,12 +52,11 @@ export default async function SettingsAdsPage() {
     groups[key].total++;
     if (l.quality === "valid") groups[key].valid++;
     if (
-      ["quotation_submitted", "negotiation", "pending_decision", "won"].includes(
-        l.stage
-      )
+      l.final_status === "won" ||
+      ["quotation_submitted", "negotiation", "pending_decision"].includes(l.stage)
     )
       groups[key].quoted++;
-    if (l.stage === "won") groups[key].won++;
+    if (l.final_status === "won") groups[key].won++;
     groups[key].value += l.quotation_value || 0;
   }
 

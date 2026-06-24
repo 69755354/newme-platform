@@ -21,22 +21,28 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = await createServerSupabase();
-  const today = new Date().toISOString().split("T")[0];
+  const now = new Date().toISOString();
 
-  // Fetch all leads with overdue follow-ups (not won/lost, with assigned sales rep)
-  const { data: overdueLeads, error } = await supabase
-    .from("leads")
-    .select("id, customer_name, assigned_to, next_followup_date")
-    .not("stage", "in", '("won","lost")')
-    .lte("next_followup_date", today)
-    .not("assigned_to", "is", null);
+  // Tasks are the source of truth for overdue follow-ups.
+  const { data: overdueTasks, error } = await supabase
+    .from("tasks")
+    .select("id, lead_id, due_at, assignee_id, leads!inner(customer_name, final_status)")
+    .is("completed_at", null)
+    .lt("due_at", now)
+    .not("assignee_id", "is", null);
 
   if (error) {
     console.error("[cron/overdue-followups] Query error:", error);
     return NextResponse.json({ error: "Query failed" }, { status: 500 });
   }
 
-  if (!overdueLeads || overdueLeads.length === 0) {
+  const overdueFollowups = (overdueTasks ?? []).flatMap((task: any) => {
+    const lead = Array.isArray(task.leads) ? task.leads[0] : task.leads;
+    if (!lead || lead.final_status) return [];
+    return [{ ...task, lead }];
+  });
+
+  if (overdueFollowups.length === 0) {
     return NextResponse.json({ message: "No overdue follow-ups", count: 0 });
   }
 
@@ -51,43 +57,63 @@ export async function GET(request: NextRequest) {
     relatedType: string;
   }[] = [];
 
-  for (const lead of overdueLeads) {
-    const customerName = lead.customer_name || "Unnamed";
+  for (const task of overdueFollowups) {
+    const customerName = task.lead.customer_name || "Unnamed";
     const overdueDays = Math.floor(
-      (Date.now() - new Date(lead.next_followup_date).getTime()) / 86_400_000
+      (Date.now() - new Date(task.due_at).getTime()) / 86_400_000
     );
 
     // Notify assigned salesperson
-    if (lead.assigned_to) {
+    if (task.assignee_id) {
       notifications.push({
-        userId: lead.assigned_to,
+        userId: task.assignee_id,
         type: "follow_up_overdue",
         title: `Overdue follow-up: ${customerName}`,
         body: `Follow-up for "${customerName}" is ${overdueDays} day(s) overdue.`,
-        relatedId: lead.id,
+        relatedId: task.lead_id,
         relatedType: "lead",
       });
     }
 
     // Also notify admins
     for (const adminId of adminIds) {
-      if (adminId === lead.assigned_to) continue; // don't double-notify
+      if (adminId === task.assignee_id) continue; // don't double-notify
       notifications.push({
         userId: adminId,
         type: "follow_up_overdue",
         title: `Overdue follow-up: ${customerName}`,
         body: `Follow-up for "${customerName}" (assigned to sales) is ${overdueDays} day(s) overdue.`,
-        relatedId: lead.id,
+        relatedId: task.lead_id,
         relatedType: "lead",
       });
     }
   }
 
+  // Deduplicate: check existing notifications from last 7d
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: recentNotifs } = await supabase
+    .from("notifications")
+    .select("user_id, type, related_id")
+    .in("type", ["follow_up_overdue"])
+    .gte("created_at", sevenDaysAgo);
+
+  const recentKeys = new Set(
+    (recentNotifs || []).map((n) => `${n.user_id}:${n.type}:${n.related_id}`)
+  );
+
+  // Filter out duplicates
+  const deduped = notifications.filter((n) => {
+    const key = `${n.userId}:${n.type}:${n.relatedId}`;
+    if (recentKeys.has(key)) return false;
+    recentKeys.add(key); // prevent duplicates within same batch
+    return true;
+  });
+
   // Insert notifications in batches to avoid too-large inserts
   const batchSize = 50;
   let inserted = 0;
-  for (let i = 0; i < notifications.length; i += batchSize) {
-    const batch = notifications.slice(i, i + batchSize).map((n) => ({
+  for (let i = 0; i < deduped.length; i += batchSize) {
+    const batch = deduped.slice(i, i + batchSize).map((n) => ({
       user_id: n.userId,
       type: n.type,
       title: n.title,
@@ -105,8 +131,9 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     message: "Overdue follow-ups processed",
-    leadsChecked: overdueLeads.length,
+    leadsChecked: overdueFollowups.length,
     notificationsCreated: inserted,
-    today,
+    skippedDuplicates: notifications.length - deduped.length,
+    today: now,
   });
 }

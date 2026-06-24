@@ -58,7 +58,7 @@ function NewContractPageInner() {
           .select("id, customer_name, phone, quotation_value")
           .not("quotation_value", "is", null)
           .gt("quotation_value", 0)
-          .in("stage", ["won", "quotation_submitted", "negotiation", "pending_decision"])
+          .or("final_status.eq.won,current_milestone.in.(quotation_submitted,negotiation,pending_decision)")
           .order("customer_name", { ascending: true })
           .limit(100);
         if (error) console.error("Failed to fetch leads:", error);

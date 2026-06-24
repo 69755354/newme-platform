@@ -145,11 +145,11 @@ export async function POST(
       })
       .eq("id", quotationId);
 
-    // Update lead stage to contract_won
+    // Update lead final_status to won
     if (quote.lead_id) {
       await supabase
         .from("leads")
-        .update({ stage: "contract_won", updated_at: new Date().toISOString() })
+        .update({ final_status: "won", updated_at: new Date().toISOString() })
         .eq("id", quote.lead_id);
     }
 

@@ -65,7 +65,7 @@ const LOST_REASONS = ["Price", "Competitor", "No Budget", "Project Cancelled", "
 
 interface Lead {
   id: string; customer_name: string | null; phone: string | null;
-  source: string; stage: string; quotation_value: number | null;
+  source: string; stage: string; final_status?: string | null; quotation_value: number | null;
   location: string | null; property_type: string | null;
   property_size_sqm: number | null;
   ai_quality: string | null; lead_status: string | null;
@@ -293,8 +293,8 @@ function LeadsContent() {
       return;
     }
 
-    // Guard 3: can't move from terminal
-    if (TERMINAL_STAGES.has(oldLead.stage)) {
+    // Guard 3: can't move from terminal (won/lost now live in final_status, not stage)
+    if (oldLead.final_status) {
       setError(t("common.cannotChangeClosedLead"));
       return;
     }
@@ -317,7 +317,13 @@ function LeadsContent() {
     // Build updates
     const now = new Date().toISOString();
     const auto = STAGE_AUTO[newStage];
-    const updates: Record<string, any> = { stage: newStage, updated_at: now, last_contact_date: now };
+    // won/lost are terminal → persist to final_status, not stage
+    const updates: Record<string, any> = { updated_at: now, last_contact_date: now };
+    if (newStage === "won" || newStage === "lost") {
+      updates.final_status = newStage;
+    } else {
+      updates.stage = newStage;
+    }
     if (auto) {
       updates.win_probability = auto.win_probability;
       if (auto.lead_status) updates.lead_status = auto.lead_status;
@@ -395,7 +401,7 @@ function LeadsContent() {
   async function changeLostReason(leadId: string, reason: string) {
     setEditingLostReason(null);
     const { error: lostReasonErr } = await supabase.from("leads").update({
-      lost_reason: reason, stage: "lost", updated_at: new Date().toISOString(),
+      lost_reason: reason, final_status: "lost", updated_at: new Date().toISOString(),
     }).eq("id", leadId);
     if (lostReasonErr) {
       console.error("Failed to update lost reason:", lostReasonErr);
@@ -478,20 +484,20 @@ function LeadsContent() {
   // ─── Filtering ───
   const filtered = useMemo(() => {
     let result = [...leads];
-    if (stageFilter !== "all") result = result.filter(l => l.stage === stageFilter);
+    if (stageFilter !== "all") result = result.filter(l => (l.final_status || l.stage) === stageFilter);
     if (sourceFilter !== "all") result = result.filter(l => l.source === sourceFilter);
     if (statusFilter !== "all") result = result.filter(l => l.lead_status === statusFilter);
     if (probabilityFilter !== null) result = result.filter(l => l.win_probability === probabilityFilter);
     if (alertFilter === "yellow") {
       result = result.filter(l => {
         const d = daysSince(l.last_contact_date || l.updated_at);
-        return d !== null && d >= 7 && d < 14 && !["won", "lost"].includes(l.stage);
+        return d !== null && d >= 7 && d < 14 && !l.final_status;
       });
     }
     if (alertFilter === "red") {
       result = result.filter(l => {
         const d = daysSince(l.last_contact_date || l.updated_at);
-        return d !== null && d >= 14 && !["won", "lost"].includes(l.stage);
+        return d !== null && d >= 14 && !l.final_status;
       });
     }
     if (recoveryFilter) result = result.filter(l => l.recovery_candidate);
@@ -502,7 +508,7 @@ function LeadsContent() {
       const todayStr = new Date().toISOString().split("T")[0];
       result = result.filter(l => {
         if (!l.next_followup_date) return false;
-        if (["won", "lost"].includes(l.stage)) return false;
+        if (l.final_status) return false;
         return l.next_followup_date <= todayStr;
       });
     }
@@ -522,7 +528,8 @@ function LeadsContent() {
   const columns = useMemo(() => {
     const g: Record<string, Lead[]> = {};
     for (const s of PIPELINE_STAGES) g[s.key] = [];
-    for (const l of filtered) { if (g[l.stage]) g[l.stage].push(l); }
+    // won/lost now live in final_status; fall back to stage for the dual-source transition
+    for (const l of filtered) { const key = l.final_status || l.stage; if (g[key]) g[key].push(l); }
     return g;
   }, [filtered]);
 
@@ -534,8 +541,8 @@ function LeadsContent() {
     return t;
   }, [columns]);
 
-  const activeCount = filtered.filter(l => !["won", "lost"].includes(l.stage)).length;
-  const totalPipeline = filtered.filter(l => !["won", "lost"].includes(l.stage)).reduce((sum, l) => sum + (l.quotation_value || 0), 0);
+  const activeCount = filtered.filter(l => !l.final_status).length;
+  const totalPipeline = filtered.filter(l => !l.final_status).reduce((sum, l) => sum + (l.quotation_value || 0), 0);
   const sources = useMemo(() => [...new Set(leads.map(l => l.source))].filter(Boolean).sort(), [leads]);
 
   return (
@@ -728,8 +735,8 @@ function LeadsContent() {
                     {items.map((lead) => {
                       const days = daysSince(lead.last_contact_date || lead.updated_at);
                       const isHot = lead.lead_status === "hot";
-                      const isStale = days !== null && days > 7 && !["won", "lost"].includes(lead.stage);
-                      const isCrit = days !== null && days >= 14 && !["won", "lost"].includes(lead.stage);
+                      const isStale = days !== null && days > 7 && !lead.final_status;
+                      const isCrit = days !== null && days >= 14 && !lead.final_status;
                       const isEditing = editingStage === lead.id;
                       const isEditingProb = editingProbability === lead.id;
                       const isEditingSt = editingStatus === lead.id;

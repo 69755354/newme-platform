@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     // 判断来源: meta (Facebook) 或 instagram
     const platform = (custom_data?.platform || "").toLowerCase();
     const formName = (custom_data?.form_name || "").toLowerCase();
-    let source = "meta";
+    let source = "meta_ads";
     if (platform === "instagram" || formName.includes("instagram")) {
       source = "instagram";
     }
@@ -69,14 +69,12 @@ export async function POST(request: NextRequest) {
       phone,
       email,
       location,
-      stage: "new",
       lead_status: "hot",
       next_action: "call",
       next_followup_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0],
       meta_campaign: custom_data?.campaign_name || null,
       meta_click_id: user_data?.fbc || null,
       meta_ad_id: custom_data?.ad_id || null,
-      meta_creative_id: custom_data?.creative_id || null,
       utm_source: custom_data?.utm_source || null,
       utm_campaign: custom_data?.utm_campaign || null,
       first_touch_at: eventTimestamp,
@@ -129,7 +127,6 @@ export async function POST(request: NextRequest) {
           meta_campaign: leadData.meta_campaign,
           meta_click_id: leadData.meta_click_id,
           meta_ad_id: leadData.meta_ad_id,
-          meta_creative_id: leadData.meta_creative_id,
           utm_source: leadData.utm_source,
           utm_campaign: leadData.utm_campaign,
           // 如果之前的 phone/email 为空，补填

@@ -273,20 +273,15 @@ export default function QuotesClient({ initialData, fetchError }: QuotesClientPr
     if (!err) {
       // Cascade to lead: if quote accepted, advance lead stage to quotation_submitted
       if (newStatus === "accepted") {
-        const { data: quote } = await supabase.from("quotations").select("lead_id").eq("id", id).single();
+        const { data: quote } = await supabase.from("quotations").select("lead_id, quote_no").eq("id", id).single();
         if (quote?.lead_id) {
-          const { data: lead } = await supabase.from("leads").select("stage").eq("id", quote.lead_id).single();
-          const STAGE_ORDER = ["new","contacted","requirement_confirmed","solution_submitted","quotation_submitted","negotiation","pending_decision","won","lost"];
-          const currentIdx = STAGE_ORDER.indexOf(lead?.stage || "");
-          const targetIdx = STAGE_ORDER.indexOf("quotation_submitted");
-          if (currentIdx >= 0 && currentIdx < targetIdx) {
-            await supabase.from("leads").update({
-              stage: "quotation_submitted",
-              win_probability: 50,
-              updated_at: new Date().toISOString(),
-              last_contact_date: new Date().toISOString(),
-            }).eq("id", quote.lead_id);
-          }
+          const { data: { user } } = await supabase.auth.getUser();
+          await supabase.from("lead_milestones").insert({
+            lead_id: quote.lead_id,
+            milestone_key: "quotation",
+            completed_by: user?.id || null,
+            notes: `报价已生成 #${quote.quote_no || ""}`,
+          });
         }
       }
       fetchQuotes();

@@ -16,7 +16,7 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 /* ─── Types ─── */
 interface Lead {
   id: string; customer_name: string | null; phone: string | null;
-  stage: string; assigned_to: string | null; owner: string | null;
+  stage: string; final_status: string | null; assigned_to: string | null; owner: string | null;
   sales_manager: string | null; location: string | null;
   source: string; quotation_value: number | null;
 }
@@ -120,7 +120,7 @@ export default function SettingsPage() {
     setError(null);
     try {
       const [leadsRes, profilesRes] = await Promise.all([
-        supabase.from("leads").select("id,customer_name,phone,stage,assigned_to,owner,sales_manager,location,source,quotation_value").order("updated_at", { ascending: false }).limit(1000),
+        supabase.from("leads").select("id,customer_name,phone,stage,final_status,assigned_to,owner,sales_manager,location,source,quotation_value").order("updated_at", { ascending: false }).limit(1000),
         supabase.from("profiles").select("id,email,full_name,role"),
       ]);
       if (leadsRes.error) throw new Error(leadsRes.error.message);
@@ -229,7 +229,7 @@ export default function SettingsPage() {
 
   // Stats
   const totalUnassigned = leads.filter(l => !l.assigned_to).length;
-  const activeUnassigned = leads.filter(l => !l.assigned_to && !["won","lost"].includes(l.stage)).length;
+  const activeUnassigned = leads.filter(l => !l.assigned_to && !l.final_status).length;
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">{t("common.loading")}</div>;
   if (error) return <div className="p-10 text-center text-rose-400">{t("common.error")}: {error} <button onClick={fetchData} className="underline ml-4">{t("common.retry")}</button></div>;
@@ -391,10 +391,10 @@ export default function SettingsPage() {
                     </td>
                     <td className="py-2.5 px-3">
                       <span className={cn("text-xs px-2 py-0.5 rounded-full",
-                        lead.stage === "won" ? "bg-emerald-500/10 text-emerald-400" :
-                        lead.stage === "lost" ? "bg-gray-500/10 text-muted-foreground" :
+                        lead.final_status === "won" ? "bg-emerald-500/10 text-emerald-400" :
+                        lead.final_status === "lost" ? "bg-gray-500/10 text-muted-foreground" :
                         "bg-muted text-muted-foreground"
-                      )}>{t(`stages.${lead.stage}`) || lead.stage}</span>
+                      )}>{t(`stages.${lead.final_status || lead.stage}`) || lead.final_status || lead.stage}</span>
                     </td>
                     <td className="py-2.5 px-3">
                       {lead.assigned_to ? (
@@ -480,4 +480,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-

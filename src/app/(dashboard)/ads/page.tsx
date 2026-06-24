@@ -14,7 +14,7 @@ import Link from "next/link";
 
 interface Lead {
   id: string; customer_name: string | null;
-  source: string; stage: string; quotation_value: number | null;
+  source: string; stage: string; final_status: string | null; quotation_value: number | null;
   lead_status: string | null; win_probability: number | null;
   meta_campaign: string | null;
   source_platform: string | null; source_channel: string | null;
@@ -93,8 +93,8 @@ export default function AdsPage() {
       if (!groups[key]) groups[key] = { total: 0, valid: 0, quoted: 0, won: 0, value: 0 };
       groups[key].total++;
       if (l.quality === "valid") groups[key].valid++;
-      if (l.stage === "quotation_submitted" || l.stage === "negotiation" || l.stage === "pending_decision" || l.stage === "won") groups[key].quoted++;
-      if (l.stage === "won") groups[key].won++;
+      if (l.stage === "quotation_submitted" || l.stage === "negotiation" || l.stage === "pending_decision" || l.final_status === "won") groups[key].quoted++;
+      if (l.final_status === "won") groups[key].won++;
       groups[key].value += l.quotation_value || 0;
     }
 

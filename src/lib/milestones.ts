@@ -1,3 +1,15 @@
+// 可完成的里程碑（不含 new/negotiation——它们是 stage 标签，非里程碑动作）
+export const COMPLETABLE_MILESTONES = [
+  'first_contact',
+  'basic_info',
+  'drawings',
+  'requirements',
+  'solution',
+  'quotation',
+  'meeting'
+];
+
+// 完整顺序（含 new/negotiation，供 DB trigger 和 funnel 排序使用）
 export const MILESTONE_KEYS = [
   'new',
   'first_contact',
@@ -37,7 +49,7 @@ export function canCompleteMilestone(
   currentMilestones: string[],
   targetKey: string
 ): { allowed: boolean; reason?: string } {
-  if (!MILESTONE_KEYS.includes(targetKey)) {
+  if (!COMPLETABLE_MILESTONES.includes(targetKey)) {
     return { allowed: false, reason: '无效的里程碑节点' };
   }
 
@@ -45,16 +57,16 @@ export function canCompleteMilestone(
     return { allowed: false, reason: '该里程碑已完成，不能重复标记' };
   }
 
-  const targetOrder = milestoneOrder(targetKey);
-
   if (currentMilestones.length === 0) {
-    if (targetOrder === 0) {
+    // First milestone must be 'first_contact' (position 0 in COMPLETABLE_MILESTONES)
+    if (targetKey === COMPLETABLE_MILESTONES[0]) {
       return { allowed: true };
     }
-    return { allowed: false, reason: '不能跳级，请先完成前置里程碑' };
+    return { allowed: false, reason: '不能跳级，请从首次联系开始' };
   }
 
-  const currentOrders = currentMilestones.map(m => milestoneOrder(m));
+  const targetOrder = MILESTONE_KEYS.indexOf(targetKey);
+  const currentOrders = currentMilestones.map(m => MILESTONE_KEYS.indexOf(m));
   const maxCurrentOrder = Math.max(...currentOrders);
 
   if (targetOrder <= maxCurrentOrder) {

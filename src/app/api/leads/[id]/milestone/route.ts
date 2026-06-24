@@ -48,14 +48,12 @@ export async function POST(
     return NextResponse.json({ error: "线索不存在" }, { status: 404 });
   }
 
-  // 4. rule_007: meeting 里程碑，若 lead 已 won/lost 则禁止
-  if (milestoneKey === "meeting") {
-    if (lead.final_status === "won" || lead.final_status === "lost") {
-      return NextResponse.json(
-        { error: "已成交/失败的线索不能再完成 meeting 里程碑 (rule_007)" },
-        { status: 400 }
-      );
-    }
+  // 4. rule_007: won/lost lead 禁止完成任何里程碑
+  if (lead.final_status === "won" || lead.final_status === "lost") {
+    return NextResponse.json(
+      { error: "已成交/失败的线索不能继续推进里程碑" },
+      { status: 400 }
+    );
   }
 
   // 5. 查询已有的 milestones
@@ -74,12 +72,12 @@ export async function POST(
 
   // 6. rule_006: 顺序校验（不能跳级、不能往回）
   const completedKeys = (existingMilestones ?? []).map((m) => m.milestone_key);
-  const allowed = canCompleteMilestone(completedKeys, milestoneKey);
+  const check = canCompleteMilestone(completedKeys, milestoneKey);
 
-  if (!allowed) {
+  if (!check.allowed) {
     return NextResponse.json(
       {
-        error: "里程碑顺序不合法 (rule_006)",
+        error: check.reason ?? "里程碑顺序不合法 (rule_006)",
         current: lead.current_milestone,
         attempted: milestoneKey,
       },
@@ -104,6 +102,22 @@ export async function POST(
       { error: "写入里程碑失败", detail: insertError.message },
       { status: 500 }
     );
+  }
+
+  // Terminal outcomes are authoritative in final_status. Keep the legacy
+  // stage column in sync only for compatibility with older consumers.
+  if (milestoneKey === "won" || milestoneKey === "lost") {
+    const { error: statusError } = await supabase
+      .from("leads")
+      .update({ final_status: milestoneKey, stage: milestoneKey })
+      .eq("id", leadId);
+
+    if (statusError) {
+      return NextResponse.json(
+        { error: "同步线索最终状态失败", detail: statusError.message },
+        { status: 500 }
+      );
+    }
   }
 
   return NextResponse.json({ success: true, milestone: inserted });

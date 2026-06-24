@@ -55,12 +55,12 @@ export async function GET(request: NextRequest) {
     const activePct = total > 0 ? Math.round((activeCount ?? 0) / total * 100) : 0;
 
     // ── Dormant leads ──
-    // lead_status = 'dormant' OR (last_contact_date < NOW() - 14d AND stage NOT IN ('won', 'lost'))
+    // lead_status = 'dormant' OR (last_contact_date < NOW() - 14d AND final_status IS NULL)
     let dormantQuery = supabase
       .from("leads")
       .select("id", { count: "exact", head: true })
       .or(
-        `lead_status.eq.dormant,and(last_contact_date.lt.${fourteenDaysAgo},not.stage.in.(won,lost))`
+        `lead_status.eq.dormant,and(last_contact_date.lt.${fourteenDaysAgo},final_status.is.null)`
       );
     if (!isCEO) dormantQuery = dormantQuery.eq("assigned_to", user.id);
     const { count: dormantCount } = await dormantQuery;

@@ -13,6 +13,17 @@ import { createServerSupabase } from "@/lib/supabase-server";
  *   stuckLeads: { id, customer_name, stage, days_in_stage }[]
  * }
  */
+
+// won/lost now live in final_status; process stages in current_milestone.
+// Mirrors metrics/funnel/route.ts: collapse late milestones (solution/quotation/
+// meeting) into the funnel's pending_decision bucket, pass the rest through.
+function normalizeMilestone(milestone: string): string {
+  if (milestone === "solution" || milestone === "quotation" || milestone === "meeting") {
+    return "pending_decision";
+  }
+  return milestone;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createServerSupabase();
@@ -49,7 +60,7 @@ export async function GET(request: NextRequest) {
     ];
 
     // ─── Step 1: Query leads count per stage ───
-    let leadsQuery = supabase.from("leads").select("id,stage,created_at,updated_at,last_contact_date,assigned_to,customer_name");
+    let leadsQuery = supabase.from("leads").select("id,stage,created_at,updated_at,last_contact_date,assigned_to,customer_name,current_milestone,final_status");
     if (!isManagement) {
       leadsQuery = leadsQuery.eq("assigned_to", targetUserId);
     }
@@ -70,7 +81,7 @@ export async function GET(request: NextRequest) {
     }
 
     for (const l of leads || []) {
-      const s = l.stage || "new";
+      const s = l.final_status || normalizeMilestone(l.current_milestone) || "new";
       if (stageCountMap[s] !== undefined) {
         stageCountMap[s]++;
         stageLeads[s].push(l);

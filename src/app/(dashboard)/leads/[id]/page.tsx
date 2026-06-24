@@ -28,6 +28,7 @@ import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadWorkflow from "@/components/lead-workflow";
 import { calculateHealthScore } from "@/lib/health-score";
+import { createFollowUpTask } from "@/lib/tasks";
 import LeadContractsPanel from "./LeadContractsPanel";
 import { Toaster } from "sonner";
 
@@ -49,7 +50,7 @@ const PROBABILITIES = [10, 30, 50, 70, 90];
 const LOST_REASON_KEYS = ["price", "competitor", "noBudget", "cancelled", "delayed", "noResponse", "other"];
 
 interface Lead {
-  id: string; source: string; quality: string; stage: string;
+  id: string; source: string; quality: string; stage: string; final_status: string | null;
   customer_name: string | null; phone: string | null; email: string | null;
   property_type: string | null; property_size_sqm: number | null;
   location: string | null; budget_range: string | null;
@@ -93,6 +94,7 @@ interface Lead {
 interface Activity { id: string; type: string; content: string; ai_generated: boolean; created_at: string; }
 interface BusinessEvent { id: string; event_type: string; description: string; event_data: any; created_at: string; }
 interface ChatMessage { id: string; content: string | null; direction: string; created_at: string; }
+interface Task { id: string; title: string; due_at: string; }
 interface LeadTrace {
   lead_id: string; customer_name: string | null; stage: string; quotation_value: number | null;
   quotation_id: string | null; quotation_price: number | null; quotation_status: string | null;
@@ -164,6 +166,7 @@ export default function LeadDetailPage() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [events, setEvents] = useState<BusinessEvent[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [nextTask, setNextTask] = useState<Task | null>(null);
   const [leadTrace, setLeadTrace] = useState<LeadTrace[]>([]);
   const [noteText, setNoteText] = useState("");
   const [updating, setUpdating] = useState(false);
@@ -192,6 +195,14 @@ export default function LeadDetailPage() {
     if (e) setEvents(e);
     const { data: c } = await supabase.from("chat_messages").select("id, content, direction, created_at").eq("lead_id", id).order("created_at", { ascending: false }).limit(100);
     if (c) setChatMessages(c);
+    const { data: tasks } = await supabase
+      .from("tasks")
+      .select("id, title, due_at")
+      .eq("lead_id", id)
+      .is("completed_at", null)
+      .order("due_at", { ascending: true })
+      .limit(1);
+    setNextTask(tasks?.[0] ?? null);
     const { data: tr } = await supabase.from("v_lead_trace").select("*").eq("lead_id", id);
     if (tr) setLeadTrace(tr);
     setLoading(false);
@@ -243,12 +254,12 @@ export default function LeadDetailPage() {
     await supabase.from("business_events").insert({ lead_id: id, event_type: eventType, description, event_data: eventData || {}, user_id: (await supabase.auth.getUser()).data.user?.id });
   }
 
-  async function updateField(field: string, value: any, eventType?: string, eventDesc?: string) {
+  async function updateField(field: string, value: any, eventType?: string, eventDesc?: string): Promise<boolean> {
     setUpdating(true);
     const updates: Record<string, any> = { updated_at: new Date().toISOString() };
     updates[field] = value;
     const { error: err } = await supabase.from("leads").update(updates).eq("id", id);
-    if (err) { console.error("Failed to update field:", err); setError(t("common.saveFailed") || "Save failed"); setUpdating(false); return; }
+    if (err) { console.error("Failed to update field:", err); setError(t("common.saveFailed") || "Save failed"); setUpdating(false); return false; }
     if (eventType && eventDesc) {
       await supabase.from("activities").insert({ lead_id: id, type: eventType, content: eventDesc, user_id: (await supabase.auth.getUser()).data.user?.id });
       await writeEvent(eventType, eventDesc, { [field]: value });
@@ -256,10 +267,41 @@ export default function LeadDetailPage() {
     setEditField(null);
     fetchData();
     setUpdating(false);
+    return true;
   }
 
-  async function updateStage(stage: string) {
-    await updateField("stage", stage, "stage_change", `${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
+  async function updateStage(stage: string): Promise<boolean> {
+    // won/lost write final_status (trg_lead_won trigger fires on it);
+    // other stages keep the legacy stage column (migrated in W7-W9).
+    const field = stage === "won" || stage === "lost" ? "final_status" : "stage";
+    return updateField(field, stage, "stage_change", `${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
+  }
+
+  async function updateNextTask(updates: Partial<Pick<Task, "title" | "due_at">>) {
+    if (nextTask) {
+      const { error: err } = await supabase.from("tasks").update(updates).eq("id", nextTask.id);
+      if (err) {
+        console.error("Failed to update next task:", err);
+        setError(t("common.saveFailed") || "Save failed");
+        return;
+      }
+    } else {
+      // P0-7: 还没有 task 时，设置 follow-up 必须创建一条 task 记录（之前会静默 no-op）。
+      const { error: err } = await createFollowUpTask(supabase, {
+        leadId: id,
+        dueAt: updates.due_at ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        title: updates.title,
+        assigneeId: lead?.assigned_to ?? null,
+        source: "manual",
+      });
+      if (err) {
+        console.error("Failed to create next task:", err);
+        setError(t("common.saveFailed") || "Save failed");
+        return;
+      }
+    }
+    setEditField(null);
+    fetchData();
   }
 
   async function handleWon() {
@@ -267,7 +309,8 @@ export default function LeadDetailPage() {
     try {
       // Stage update only — contract & installment creation is handled
       // by the DB trigger trg_lead_won to avoid duplicates
-      await updateStage("won");
+      const updated = await updateStage("won");
+      if (!updated) return;
       toast.success(t("leads.markedWon"));
     } catch (e: any) {
       console.error("handleWon error:", e);
@@ -295,8 +338,8 @@ export default function LeadDetailPage() {
   if (!lead) return <div className="text-muted-foreground p-8">{t("common.loading")}</div>;
 
   const dSinceContact = daysSince(lead.last_contact_date || lead.updated_at);
-  const isYellow = dSinceContact !== null && dSinceContact >= 7 && dSinceContact < 14 && !["won", "lost"].includes(lead.stage);
-  const isRed = dSinceContact !== null && dSinceContact >= 14 && !["won", "lost"].includes(lead.stage);
+  const isYellow = dSinceContact !== null && dSinceContact >= 7 && dSinceContact < 14 && !lead.final_status;
+  const isRed = dSinceContact !== null && dSinceContact >= 14 && !lead.final_status;
 
   // ─── Render helpers ───
 
@@ -376,10 +419,10 @@ export default function LeadDetailPage() {
     // Health score (Phase B) — derived from follow-up recency, stage, quotation, drawings, overdue
     const health = calculateHealthScore({
       hasRecentFollowUp: (lead.followup_count ?? 0) > 0 && (daysSince(lead.last_contact_date) ?? Infinity) <= 7,
-      hasMeeting: ["negotiation", "pending_decision", "won"].includes(lead.stage),
+      hasMeeting: (lead.final_status === "won" || ["negotiation", "pending_decision"].includes(lead.stage)),
       hasDrawings: !!lead.circuit_diagrams,
-      hasQuotation: ["quotation_submitted", "negotiation", "pending_decision", "won"].includes(lead.stage),
-      isOverdue: !!lead.next_followup_date && new Date(lead.next_followup_date).getTime() < Date.now(),
+      hasQuotation: (lead.final_status === "won" || ["quotation_submitted", "negotiation", "pending_decision"].includes(lead.stage)),
+      isOverdue: !!nextTask && new Date(nextTask.due_at).getTime() < Date.now(),
     });
     const healthLevelLabel = health.level === "healthy" ? t("leadDetail.health_healthy") : health.level === "at_risk" ? t("leadDetail.health_at_risk") : t("leadDetail.health_stale");
     const healthColor = health.score >= 50 ? "bg-emerald-500/10 text-emerald-400" : health.score >= 20 ? "bg-amber-500/10 text-amber-400" : "bg-red-500/10 text-red-400";
@@ -488,7 +531,7 @@ export default function LeadDetailPage() {
               onClick={openQuoteCalculator}>
               <Plus className="w-4 h-4 mr-2" />{t("leadDetail.createQuote")}
             </Button>
-            {lead.stage === "won" && (
+            {lead.final_status === "won" && (
               <Button variant="outline" size="sm"
                 className="w-full border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 justify-start mt-2"
                 onClick={() => router.push(`/contracts/new?lead_id=${lead.id}`)}>
@@ -748,13 +791,13 @@ export default function LeadDetailPage() {
                 <Label className="text-muted-foreground text-xs">{t("leadDetail.nextFollowUp")} *{t("leadDetail.required")}</Label>
                 {editField === "next_followup_date" ? (
                   <input type="date" autoFocus value={editValue} onChange={(e) => setEditValue(e.target.value)}
-                    onBlur={() => { if (editValue) updateField("next_followup_date", editValue, "followup_scheduled", `${t("leadDetail.nextFollowUp")}: ${editValue}`); }}
+                    onBlur={() => { if (editValue) updateNextTask({ due_at: new Date(editValue).toISOString() }); }}
                     className="w-full h-8 text-xs bg-muted border border-border rounded px-2 text-foreground mt-1" />
                 ) : (
                   <p className={cn("mt-1 cursor-pointer hover:text-copper-400",
-                    !lead.next_followup_date ? "text-rose-400 font-medium" : "text-foreground")}
-                    onClick={() => { setEditField("next_followup_date"); setEditValue(lead.next_followup_date || ""); }}>
-                    {lead.next_followup_date ? new Date(lead.next_followup_date).toLocaleDateString(t("locale.dateLocale")) : t("leadDetail.placeholderRequired")}
+                    !nextTask ? "text-rose-400 font-medium" : "text-foreground")}
+                    onClick={() => { setEditField("next_followup_date"); setEditValue(nextTask?.due_at.slice(0, 10) || ""); }}>
+                    {nextTask ? new Date(nextTask.due_at).toLocaleDateString(t("locale.dateLocale")) : t("leadDetail.placeholderRequired")}
                   </p>
                 )}
               </div>
@@ -763,14 +806,14 @@ export default function LeadDetailPage() {
                 {editField === "next_action" ? (
                   <div className="flex gap-1 mt-1">
                     <input autoFocus value={editValue} onChange={(e) => setEditValue(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter" && editValue.trim()) updateField("next_action", editValue.trim(), "followup_scheduled", `${t("leadDetail.nextAction")}: ${editValue.trim()}`); if (e.key === "Escape") setEditField(null); }}
+                      onKeyDown={(e) => { if (e.key === "Enter" && editValue.trim()) updateNextTask({ title: editValue.trim() }); if (e.key === "Escape") setEditField(null); }}
                       className="flex-1 h-8 text-xs bg-muted border border-border rounded px-2 text-foreground" />
                   </div>
                 ) : (
                   <p className={cn("mt-1 cursor-pointer hover:text-copper-400",
-                    !lead.next_action ? "text-rose-400 font-medium" : "text-foreground")}
-                    onClick={() => { setEditField("next_action"); setEditValue(lead.next_action || ""); }}>
-                    {lead.next_action || t("leadDetail.placeholderRequired")}
+                    !nextTask ? "text-rose-400 font-medium" : "text-foreground")}
+                    onClick={() => { setEditField("next_action"); setEditValue(nextTask?.title || ""); }}>
+                    {nextTask?.title || t("leadDetail.placeholderRequired")}
                   </p>
                 )}
               </div>
@@ -842,7 +885,7 @@ export default function LeadDetailPage() {
         </Card>
 
         {/* Lost Reason (if lost) */}
-        {lead.stage === "lost" && (
+        {lead.final_status === "lost" && (
           <Card className="bg-card border-red-800/30">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-red-400 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> {t("leadDetail.lostInfo")}</CardTitle>
@@ -1322,7 +1365,7 @@ export default function LeadDetailPage() {
                 onClick={openQuoteCalculator}>
                 <Plus className="w-4 h-4 mr-2" />{t("leadDetail.createQuote")}
               </Button>
-              {lead.stage === "won" && (
+              {lead.final_status === "won" && (
                 <Button variant="outline" size="sm"
                   className="w-full border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 justify-start mt-2"
                   onClick={() => router.push(`/contracts/new?lead_id=${lead.id}`)}>

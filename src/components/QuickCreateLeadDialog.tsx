@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase";
+import { createFollowUpTask } from "@/lib/tasks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,6 +60,7 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
 
     const { data: { user } } = await supabase.auth.getUser();
 
+    const followupDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
     const { data, error: insertErr } = await supabase
       .from("leads")
       .insert({
@@ -66,11 +68,10 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
         customer_name: form.customer_name.trim() || null,
         phone: form.phone.trim() || null,
         location: form.location.trim() || null,
-        stage: "new",
         quality: "pending",
         assigned_to: user?.id || null,
         next_action: "call",
-        next_followup_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+        next_followup_date: followupDate,
       })
       .select("id")
       .single();
@@ -91,6 +92,18 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
         user_id: user?.id,
       });
       if (noteErr) console.error("Note save failed:", noteErr);
+    }
+
+    // P0-7: 建 lead 时同步写一条跟进 task，确保 Workbench 今日待办立即可见
+    if (data) {
+      const { error: taskErr } = await createFollowUpTask(supabase, {
+        leadId: data.id,
+        dueAt: followupDate,
+        title: "Follow up",
+        assigneeId: user?.id ?? null,
+        source: "follow_up",
+      });
+      if (taskErr) console.error("Follow-up task create failed:", taskErr);
     }
 
     // Notify admins about new lead

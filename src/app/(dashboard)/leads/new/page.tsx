@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase";
+import { createFollowUpTask } from "@/lib/tasks";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
@@ -25,17 +26,17 @@ export default function NewLeadPage() {
     e.preventDefault();
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
+    const followupDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
     const { data, error } = await supabase.from("leads").insert({
       source: form.source,
       customer_name: form.customer_name || null,
       phone: form.phone || null,
       email: form.email || null,
       location: form.location || null,
-      stage: "new",
       quality: "pending",
       assigned_to: user?.id || null,
       next_action: "call",
-      next_followup_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      next_followup_date: followupDate,
     }).select("id").single();
 
     if (error) {
@@ -54,6 +55,15 @@ export default function NewLeadPage() {
           import("sonner").then(({ toast }) => toast.error("Note save failed"));
         }
       }
+      // P0-7: 建 lead 时同步写一条跟进 task，确保 Workbench 今日待办立即可见
+      const { error: taskErr } = await createFollowUpTask(supabase, {
+        leadId: data.id,
+        dueAt: followupDate,
+        title: "Follow up",
+        assigneeId: user?.id ?? null,
+        source: "follow_up",
+      });
+      if (taskErr) console.error("Follow-up task create failed:", taskErr);
       // Notify admins about new lead
       import("@/lib/notify").then(({ notify }) => {
         notify({ type: "lead_created", lead_id: data.id, customer_name: form.customer_name || "Unknown" });

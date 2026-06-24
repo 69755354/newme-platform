@@ -49,8 +49,8 @@ export async function GET() {
     // ─── 2. Leads from meta ───
     const { data: metaLeads, error: leadsErr } = await supabase
       .from("leads")
-      .select("id, campaign_name, stage, quotation_value, ai_quality, source")
-      .eq("source", "meta");
+      .select("id, campaign_name, stage, quotation_value, ai_quality, source, final_status")
+      .eq("source", "meta_ads");
 
     if (leadsErr) throw leadsErr;
 
@@ -64,7 +64,7 @@ export async function GET() {
     for (const lead of metaLeads || []) {
       const campaign = lead.campaign_name || "Uncategorized";
       leadsByCampaign[campaign] = (leadsByCampaign[campaign] || 0) + 1;
-      if (lead.stage === "won") {
+      if (lead.final_status === "won") {
         conversionsByCampaign[campaign] =
           (conversionsByCampaign[campaign] || 0) + 1;
         signedAmountByCampaign[campaign] =
@@ -73,9 +73,9 @@ export async function GET() {
       }
     }
 
-    const totalConversions = metaLeads?.filter((l) => l.stage === "won").length || 0;
+    const totalConversions = metaLeads?.filter((l) => l.final_status === "won").length || 0;
     const totalSignedAmount = (metaLeads || [])
-      .filter((l) => l.stage === "won")
+      .filter((l) => l.final_status === "won")
       .reduce((sum, l) => sum + (parseFloat(l.quotation_value as any) || 0), 0);
 
     // ─── 3. Campaign breakdown ───
@@ -107,7 +107,7 @@ export async function GET() {
     // ─── 4. Source vs Quality ───
     const { data: allLeads, error: allLeadsErr } = await supabase
       .from("leads")
-      .select("source, ai_quality, stage");
+      .select("source, ai_quality, stage, final_status");
 
     if (allLeadsErr) throw allLeadsErr;
 
@@ -130,7 +130,7 @@ export async function GET() {
       } else {
         sourceQuality[source].pending++;
       }
-      if (lead.stage === "won") {
+      if (lead.final_status === "won") {
         sourceQuality[source].won++;
       }
     }

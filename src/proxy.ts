@@ -111,15 +111,3 @@ export const config = {
     "/api/:path*",
   ],
 };
-const PUBLIC_API_PATHS = new Set([
-  "/api/health",
-  "/api/leads/meta-capi",
-  "/api/meta/oauth-callback",
-  "/api/monitoring/report",
-  "/api/dev/setup",
-]);
-
-    const isCronRoute = pathname.startsWith("/api/cron/");
-    if (pathname.startsWith("/api/") && !isCronRoute && !PUBLIC_API_PATHS.has(pathname) && !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }

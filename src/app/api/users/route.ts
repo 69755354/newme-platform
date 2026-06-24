@@ -135,7 +135,11 @@ export async function POST(request: NextRequest) {
       });
 
     if (authError) {
-      return NextResponse.json({ error: authError.message }, { status: 400 });
+      console.error("[users] createUser auth error:", authError);
+      return NextResponse.json(
+        { error: authError.message || "Failed to create auth user" },
+        { status: 400 }
+      );
     }
 
     if (!authData.user) {

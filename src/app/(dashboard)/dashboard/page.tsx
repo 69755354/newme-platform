@@ -15,7 +15,7 @@ import AlertPanel from "./_components/AlertPanel";
 /* ─── Types ─── */
 interface Lead {
   id: string; customer_name: string | null; phone: string | null;
-  source: string; stage: string; quotation_value: number | null;
+  source: string; stage: string; final_status: string | null; quotation_value: number | null;
   location: string | null; property_type: string | null;
   ai_quality: string | null; lead_status: string | null;
   assigned_to: string | null; win_probability: number | null;
@@ -38,6 +38,12 @@ interface Payment {
 
 interface InstallmentPlan {
   id: string; amount: number; due_date: string; status: string; paid_amount: number | null;
+}
+
+interface FollowupTask {
+  lead_id: string;
+  due_at: string;
+  leads: Lead | Lead[] | null;
 }
 
 /* ─── 9-stage funnel ─── */
@@ -80,6 +86,7 @@ export default function DashboardPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [salesUsers, setSalesUsers] = useState<any[]>([]);
+  const [teamOwnership, setTeamOwnership] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
   const [showActivityFeed, setShowActivityFeed] = useState(false);
   
@@ -234,6 +241,13 @@ export default function DashboardPage() {
     });
   }, []);
 
+  // Fetch team ownership
+  useEffect(() => {
+    fetch("/api/dashboard/team-ownership").then(r => r.json()).then(d => {
+      if (d.users) setTeamOwnership(d.users);
+    }).catch(() => {});
+  }, []);
+
   // Fetch KPI targets for selected period
   useEffect(() => {
     supabase.from("kpi_targets").select("*").eq("period", period).then(({ data }) => {
@@ -269,53 +283,62 @@ export default function DashboardPage() {
         }
       } catch {
         // Fallback: query leads directly for overdue/missing followups
-        const today = new Date().toISOString().split("T")[0];
+        const now = new Date().toISOString();
         let riskQuery = supabase
-          .from("leads")
+          .from("tasks")
           .select("id", { count: "exact", head: true })
-          .lt("next_followup_date", today)
-          .not("stage", "in", '("won","lost")');
+          .is("completed_at", null)
+          .lt("due_at", now);
         if (userRole === "sales" && userId) {
-          riskQuery = riskQuery.eq("assigned_to", userId);
+          riskQuery = riskQuery.eq("assignee_id", userId);
         }
-        const { data: overdue } = await riskQuery;
-        setRiskPoolCount(overdue?.length || 0);
+        const { count } = await riskQuery;
+        setRiskPoolCount(count || 0);
       }
 
       // Today's follow-ups
-      const today = new Date().toISOString().split("T")[0];
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const tomorrowStart = new Date(todayStart);
+      tomorrowStart.setDate(tomorrowStart.getDate() + 1);
       let followupQuery = supabase
-        .from("leads")
-        .select("*")
-        .eq("next_followup_date", today)
-        .not("stage", "in", '("won","lost")');
+        .from("tasks")
+        .select("lead_id, due_at, leads!inner(*)")
+        .is("completed_at", null)
+        .gte("due_at", todayStart.toISOString())
+        .lt("due_at", tomorrowStart.toISOString());
       if (userRole === "sales" && userId) {
-        followupQuery = followupQuery.eq("assigned_to", userId);
+        followupQuery = followupQuery.eq("assignee_id", userId);
       }
-      const { data: followups } = await followupQuery.order("customer_name");
-      if (followups) setTodayFollowups(followups as Lead[]);
+      const { data: followups } = await followupQuery.order("due_at");
+      if (followups) {
+        setTodayFollowups((followups as FollowupTask[]).flatMap((task) => {
+          const lead = Array.isArray(task.leads) ? task.leads[0] : task.leads;
+          return lead && !lead.final_status ? [lead] : [];
+        }));
+      }
       setFollowupLoading(false);
 
       // Top 5 Actions: overdue followups, hot leads, high-value stale, draft quotes, expiring quotes
       const actions: TopAction[] = [];
 
-      // 1. Overdue followups — leads with next_followup_date in the past
+      // 1. Overdue followups — incomplete tasks with a past due_at
       try {
-        const today = new Date().toISOString().split("T")[0];
+        const now = new Date().toISOString();
         let followupQ = supabase
-          .from("leads")
-          .select("id, customer_name, quotation_value, next_followup_date, stage, last_contact_date, phone")
-          .lt("next_followup_date", today)
-          .not("stage", "in", '("won","lost")')
-          .order("next_followup_date", { ascending: true })
+          .from("tasks")
+          .select("lead_id, due_at, leads!inner(id, customer_name, quotation_value, last_contact_date, phone, final_status)")
+          .is("completed_at", null)
+          .lt("due_at", now)
+          .order("due_at", { ascending: true })
           .limit(5);
-        if (userRole === "sales" && userId) followupQ = followupQ.eq("assigned_to", userId);
+        if (userRole === "sales" && userId) followupQ = followupQ.eq("assignee_id", userId);
         const { data: overdueFollowups } = await followupQ;
         if (overdueFollowups) {
-          overdueFollowups.forEach((l: any) => {
-            const daysLate = l.next_followup_date
-              ? Math.ceil((Date.now() - new Date(l.next_followup_date).getTime()) / 86400000)
-              : 0;
+          (overdueFollowups as FollowupTask[]).forEach((task) => {
+            const l = Array.isArray(task.leads) ? task.leads[0] : task.leads;
+            if (!l || l.final_status) return;
+            const daysLate = Math.ceil((Date.now() - new Date(task.due_at).getTime()) / 86400000);
             actions.push({
               type: "overdue_followup",
               title: l.customer_name || t("common.unnamed"),
@@ -338,7 +361,7 @@ export default function DashboardPage() {
           .from("leads")
           .select("id, customer_name, quotation_value, win_probability, stage, phone")
           .eq("lead_status", "hot")
-          .not("stage", "in", '("won","lost")')
+          .is("final_status", null)
           .order("quotation_value", { ascending: false })
           .limit(3);
         if (userRole === "sales" && userId) hotQ = hotQ.eq("assigned_to", userId);
@@ -391,7 +414,7 @@ export default function DashboardPage() {
       try {
         const cutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
         let sQ = supabase.from("leads").select("id, customer_name, quotation_value, last_contact_date, stage, phone")
-          .not("stage", "in", '("won","lost")')
+          .is("final_status", null)
           .or(`last_contact_date.lt.${cutoff},last_contact_date.is.null`)
           .order("quotation_value", { ascending: false })
           .limit(3);
@@ -491,17 +514,20 @@ export default function DashboardPage() {
     const stageCounts: Record<string, number> = {};
     const stageValues: Record<string, number> = {};
     for (const key of STAGE_KEYS) {
-      const items = active.filter(l => l.stage === key);
+      // won/lost now live in final_status; process stages in stage. The
+      // `final_status || stage` fallback buckets each lead exactly once
+      // (won/lost leads short-circuit on final_status, never a process key).
+      const items = active.filter(l => (l.final_status || l.stage) === key);
       stageCounts[key] = items.length;
       stageValues[key] = items.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
     }
 
-    const pipeline = active.filter(l => !["won", "lost"].includes(l.stage));
+    const pipeline = active.filter(l => !l.final_status);
     const totalPipeline = pipeline.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
     const weightedPipeline = pipeline.reduce((sum, l) => sum + (l.quotation_value || 0) * (l.win_probability || 0) / 100, 0);
 
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const wonThisMonth = active.filter(l => l.stage === "won" && l.updated_at && new Date(l.updated_at) >= monthStart);
+    const wonThisMonth = active.filter(l => l.final_status === "won" && l.updated_at && new Date(l.updated_at) >= monthStart);
     const monthlyRevenue = wonThisMonth.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
 
     const yellowLeads = pipeline.filter(l => { const d = daysSince(l.last_contact_date || l.updated_at); return d !== null && d >= 7 && d < 14; });
@@ -527,7 +553,7 @@ export default function DashboardPage() {
     for (const l of active) {
       const src = l.source_platform || l.source || "other";
       sourceCounts[src] = (sourceCounts[src] || 0) + 1;
-      if (l.stage === "won") sourceWon[src] = (sourceWon[src] || 0) + 1;
+      if (l.final_status === "won") sourceWon[src] = (sourceWon[src] || 0) + 1;
     }
 
     const wonCount = stageCounts.won || 0;
@@ -560,7 +586,7 @@ export default function DashboardPage() {
   const collectionTarget = userRole === "sales" ? myCollectionTarget : companyCollectionTarget;
 
   // Actuals: sales only counts their own, management counts all
-  const myWonLeads = leads.filter(l => l.assigned_to === userId && l.stage === "won");
+  const myWonLeads = leads.filter(l => l.assigned_to === userId && l.final_status === "won");
   const mySigningActual = myWonLeads.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
   const signingActual = userRole === "sales" ? mySigningActual : (financeStats.received + financeStats.outstanding);
   const myCollectionActual = financeStats.received; // TODO: filter by sales_id when finance supports it
@@ -593,7 +619,7 @@ export default function DashboardPage() {
       const s = l.source || "unknown";
       if (!sources[s]) sources[s] = { total: 0, won: 0, value: 0 };
       sources[s].total++;
-      if (l.stage === "won") sources[s].won++;
+      if (l.final_status === "won") sources[s].won++;
       if (l.quotation_value) sources[s].value += l.quotation_value;
     });
     const sourceLabels: Record<string, string> = { meta_ads: t("sourceLabels.meta_ads"), whatsapp: t("sourceLabels.whatsapp"), other: t("sourceLabels.other"), unknown: t("sourceLabels.unknown") };
@@ -609,12 +635,12 @@ export default function DashboardPage() {
     return sales.map((s: any) => {
       const target = kpiTargets.find((t: any) => t.target_type === "signing" && t.assigned_to === s.id);
       const salesLeads = leads.filter(l => l.assigned_to === s.id);
-      const activeLeads = salesLeads.filter(l => !["won", "lost"].includes(l.stage));
-      const wonLeads = salesLeads.filter(l => l.stage === "won");
+      const activeLeads = salesLeads.filter(l => !l.final_status);
+      const wonLeads = salesLeads.filter(l => l.final_status === "won");
       const wonValue = wonLeads.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
       const pipelineValue = activeLeads.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
-      const contacted = salesLeads.filter(l => 
-        ["contacted", "requirement_confirmed", "solution_submitted", "quotation_submitted", "negotiation", "pending_decision", "won"].includes(l.stage)
+      const contacted = salesLeads.filter(l =>
+        !l.final_status && ["contacted", "requirement_confirmed", "solution_submitted", "quotation_submitted", "negotiation", "pending_decision"].includes(l.stage)
       ).length;
       const conversionRate = salesLeads.length > 0 ? Math.round((wonLeads.length / salesLeads.length) * 100) : 0;
       const targetAmount = target?.target_amount || 0;
@@ -925,6 +951,42 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* L3b: Team Lead Ownership */}
+        {teamOwnership.length > 0 && (
+          <div>
+            <SectionHeader title={language === "zh" ? "团队 Lead 归属" : "Team Lead Ownership"} />
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/50 text-muted-foreground text-xs">
+                    <th className="text-left py-2 pr-3">{language === "zh" ? "成员" : "Member"}</th>
+                    <th className="text-right py-2 px-2">{language === "zh" ? "角色" : "Role"}</th>
+                    <th className="text-right py-2 px-2">{language === "zh" ? "负责" : "Assigned"}</th>
+                    <th className="text-right py-2 px-2">{language === "zh" ? "创建" : "Created"}</th>
+                    <th className="text-right py-2 px-2">{language === "zh" ? "活跃" : "Active"}</th>
+                    <th className="text-right py-2 px-2">{language === "zh" ? "成交" : "Won"}</th>
+                    <th className="text-right py-2 pl-2">{language === "zh" ? "流失" : "Lost"}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamOwnership.map((u: any) => (
+                    <tr key={u.user_id} className="border-b border-border/30 hover:bg-accent/30 cursor-pointer"
+                      onClick={() => router.push(`/leads?assigned_to=${u.user_id}`)}>
+                      <td className="py-2 pr-3 font-medium truncate max-w-[120px]">{u.full_name}</td>
+                      <td className="py-2 px-2 text-right text-xs text-muted-foreground">{u.role}</td>
+                      <td className="py-2 px-2 text-right">{u.assigned_leads}</td>
+                      <td className="py-2 px-2 text-right">{u.created_leads}</td>
+                      <td className="py-2 px-2 text-right">{u.active_leads}</td>
+                      <td className="py-2 px-2 text-right text-emerald-400">{u.won_leads}</td>
+                      <td className="py-2 pl-2 text-right text-red-400">{u.lost_leads}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}

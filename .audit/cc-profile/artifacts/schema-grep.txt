@@ -1,0 +1,768 @@
+src/components/NotificationBell.tsx:    return `/leads/${relatedId}`;
+src/components/NotificationBell.tsx:    return `/contracts?focus=${relatedId}`;
+src/components/QuickCreateLeadDialog.tsx:  { value: "whatsapp", labelKey: "leads.sourceWhatsApp" },
+src/components/QuickCreateLeadDialog.tsx:  { value: "meta_ads", labelKey: "leads.sourceMetaAds" },
+src/components/QuickCreateLeadDialog.tsx:      setError(t("leads.nameOrPhoneRequired"));
+src/components/QuickCreateLeadDialog.tsx:      .from("leads")
+src/components/QuickCreateLeadDialog.tsx:      setError(t("leads.createFailed"));
+src/components/QuickCreateLeadDialog.tsx:            {t("leads.quickCreate")}
+src/components/QuickCreateLeadDialog.tsx:              <Label className="text-gray-400 text-xs">{t("leads.name")}</Label>
+src/components/QuickCreateLeadDialog.tsx:                placeholder={t("leads.customerNamePlaceholder")}
+src/components/QuickCreateLeadDialog.tsx:              <Label className="text-gray-400 text-xs">{t("leads.phone2")}</Label>
+src/components/QuickCreateLeadDialog.tsx:              <Label className="text-gray-400 text-xs">{t("leads.source")}</Label>
+src/components/QuickCreateLeadDialog.tsx:              <Label className="text-gray-400 text-xs">{t("leads.region")}</Label>
+src/components/QuickCreateLeadDialog.tsx:            <Label className="text-gray-400 text-xs">{t("leads.notes")}</Label>
+src/components/QuickCreateLeadDialog.tsx:              placeholder={t("leads.notesPlaceholder")}
+src/components/QuickCreateLeadDialog.tsx:              {saving ? t("leads.creating") : t("leads.createLead")}
+src/components/leads/timeline.tsx:          `/api/leads/${leadId}/timeline?limit=100`,
+src/lib/i18n/translations.ts:      leads: "Leads",
+src/lib/i18n/translations.ts:      leads: "leads",
+src/lib/i18n/translations.ts:      overdueAlert: "{n} leads overdue follow-up (48h+)",
+src/lib/i18n/translations.ts:    leads: {
+src/lib/i18n/translations.ts:      noMatching: "No matching leads",
+src/lib/i18n/translations.ts:      transferDesc: "Transfer ALL leads from one sales person to another. Includes won and in-progress. Irreversible.",
+src/lib/i18n/translations.ts:      dropLeadsHere: "Drop leads here",
+src/lib/i18n/translations.ts:      contracts: "contracts",
+src/lib/i18n/translations.ts:      onlyYourLeads: "Your leads only",
+src/lib/i18n/translations.ts:      traceNoDataDesc: "No related quotes, contracts, projects created yet",
+src/lib/i18n/translations.ts:    contracts: {
+src/lib/i18n/translations.ts:      noContracts: "No contracts yet",
+src/lib/i18n/translations.ts:      noEligibleLeads: "No eligible leads (need won/negotiation stage leads with quotation)",
+src/lib/i18n/translations.ts:      noLeadsFound: "No leads found",
+src/lib/i18n/translations.ts:      noLeadsAssigned: "No leads assigned yet.",
+src/lib/i18n/translations.ts:      leads: "Leads",
+src/lib/i18n/translations.ts:      leadsLower: "leads",
+src/lib/i18n/translations.ts:      totalLeadsLower: "total leads",
+src/lib/i18n/translations.ts:      leads: "线索",
+src/lib/i18n/translations.ts:      leads: "线索",
+src/lib/i18n/translations.ts:    leads: {
+src/lib/i18n/translations.ts:      contracts: "个合同",
+src/lib/i18n/translations.ts:    contracts: {
+src/lib/i18n/translations.ts:      leads: "线索数",
+src/lib/i18n/translations.ts:      leadsLower: "个线索",
+src/proxy.ts:    "/leads/:path*",
+src/proxy.ts:    "/contracts/:path*",
+src/app/api/dashboard/ads-roi/route.ts:    const { data: metaLeads, error: leadsErr } = await supabase
+src/app/api/dashboard/ads-roi/route.ts:      .from("leads")
+src/app/api/dashboard/ads-roi/route.ts:    if (leadsErr) throw leadsErr;
+src/app/api/dashboard/ads-roi/route.ts:    const leadsByCampaign: Record<string, number> = {};
+src/app/api/dashboard/ads-roi/route.ts:      leadsByCampaign[campaign] = (leadsByCampaign[campaign] || 0) + 1;
+src/app/api/dashboard/ads-roi/route.ts:      ...Object.keys(leadsByCampaign),
+src/app/api/dashboard/ads-roi/route.ts:        const leads = leadsByCampaign[campaign] || 0;
+src/app/api/dashboard/ads-roi/route.ts:        const cpl = leads > 0 ? Math.round((spend / leads) * 100) / 100 : 0;
+src/app/api/dashboard/ads-roi/route.ts:          leads,
+src/app/api/dashboard/ads-roi/route.ts:      .from("leads")
+src/app/api/dashboard/ads-roi/route.ts:        total_leads: totalMetaLeads,
+src/app/api/dashboard/lead-health/route.ts:    let baseQuery = supabase.from("leads").select("*", { count: "exact" });
+src/app/api/dashboard/lead-health/route.ts:    // ── Total leads ──
+src/app/api/dashboard/lead-health/route.ts:    // ── Weekly new leads ──
+src/app/api/dashboard/lead-health/route.ts:      .from("leads")
+src/app/api/dashboard/lead-health/route.ts:    // ── Active leads ──
+src/app/api/dashboard/lead-health/route.ts:      .from("leads")
+src/app/api/dashboard/lead-health/route.ts:    // ── Dormant leads ──
+src/app/api/dashboard/lead-health/route.ts:      .from("leads")
+src/app/api/dashboard/lead-health/route.ts:    // ── Zero followup leads ──
+src/app/api/dashboard/lead-health/route.ts:      .from("leads")
+src/app/api/dashboard/lead-health/route.ts:      .from("leads")
+src/app/api/dashboard/lead-health/route.ts:      .from("leads")
+src/app/api/dashboard/lead-sources/route.ts: *   - sales assignment: how many leads each rep owns, per source
+src/app/api/dashboard/lead-sources/route.ts: * Revenue is derived from the contracts table (non-terminated contracts) joined
+src/app/api/dashboard/lead-sources/route.ts:      .from("leads")
+src/app/api/dashboard/lead-sources/route.ts:    const { data: leads } = await leadQuery;
+src/app/api/dashboard/lead-sources/route.ts:    const leadRows = (leads ?? []) as any[];
+src/app/api/dashboard/lead-sources/route.ts:    // ── Revenue per lead (from contracts, non-terminated) ──
+src/app/api/dashboard/lead-sources/route.ts:      const { data: contracts } = await supabase
+src/app/api/dashboard/lead-sources/route.ts:        .from("contracts")
+src/app/api/dashboard/lead-sources/route.ts:      (contracts ?? []).forEach((c: any) => {
+src/app/api/dashboard/sales-load/route.ts:      // Get all leads assigned to these reps
+src/app/api/dashboard/sales-load/route.ts:        .from("leads")
+src/app/api/dashboard/sales-load/route.ts:      const leadsByRep: Record<string, any[]> = {};
+src/app/api/dashboard/sales-load/route.ts:        if (!leadsByRep[l.assigned_to]) leadsByRep[l.assigned_to] = [];
+src/app/api/dashboard/sales-load/route.ts:        leadsByRep[l.assigned_to].push(l);
+src/app/api/dashboard/sales-load/route.ts:      // Get won amounts per rep from contracts
+src/app/api/dashboard/sales-load/route.ts:      const { data: contracts } = await supabase
+src/app/api/dashboard/sales-load/route.ts:        .from("contracts")
+src/app/api/dashboard/sales-load/route.ts:      (contracts ?? []).forEach((c: any) => {
+src/app/api/dashboard/sales-load/route.ts:        const myLeads = leadsByRep[rep.id] || [];
+src/app/api/dashboard/sales-load/route.ts:        .from("leads")
+src/app/api/dashboard/sales-load/rebalance/route.ts:// Round-robin transfer of transferable leads from overloaded reps to underloaded reps
+src/app/api/dashboard/sales-load/rebalance/route.ts:    // ── Get leads per rep ──
+src/app/api/dashboard/sales-load/rebalance/route.ts:      .from("leads")
+src/app/api/dashboard/sales-load/rebalance/route.ts:    const leadsByRep: Record<string, number> = {};
+src/app/api/dashboard/sales-load/rebalance/route.ts:      leadsByRep[l.assigned_to] = (leadsByRep[l.assigned_to] ?? 0) + 1;
+src/app/api/dashboard/sales-load/rebalance/route.ts:      count: leadsByRep[r.id] ?? 0,
+src/app/api/dashboard/sales-load/rebalance/route.ts:    // ── Find transferable leads from overloaded reps ──
+src/app/api/dashboard/sales-load/rebalance/route.ts:      .from("leads")
+src/app/api/dashboard/sales-load/rebalance/route.ts:        message: "No transferable leads found (new leads with no contact).",
+src/app/api/dashboard/sales-load/rebalance/route.ts:        message: "All transferable leads already assigned to underloaded reps.",
+src/app/api/dashboard/sales-load/rebalance/route.ts:        .from("leads")
+src/app/api/dashboard/sales-load/rebalance/route.ts:      message: `Rebalanced ${updates.length} leads across ${underloaded.length} reps.`,
+src/app/api/dashboard/payment-tracker/route.ts:    // ─── Step 1: Fetch contracts with installment plans and payments ───
+src/app/api/dashboard/payment-tracker/route.ts:      .from("contracts")
+src/app/api/dashboard/payment-tracker/route.ts:        leads!inner(customer_name, assigned_to),
+src/app/api/dashboard/payment-tracker/route.ts:    const { data: contracts, error: contractsErr } = await contractQuery;
+src/app/api/dashboard/payment-tracker/route.ts:    if (contractsErr) {
+src/app/api/dashboard/payment-tracker/route.ts:      console.error("[payment-tracker] Failed to fetch contracts:", contractsErr);
+src/app/api/dashboard/payment-tracker/route.ts:      return NextResponse.json({ error: "Failed to fetch contracts" }, { status: 500 });
+src/app/api/dashboard/payment-tracker/route.ts:    for (const contract of contracts || []) {
+src/app/api/dashboard/payment-tracker/route.ts:        const leadInfo = Array.isArray(contract.leads) ? contract.leads[0] : contract.leads;
+src/app/api/dashboard/payment-tracker/route.ts:    for (const contract of contracts || []) {
+src/app/api/dashboard/weekly-trends/route.ts:    // ─── Fetch leads in the 12-week range ───
+src/app/api/dashboard/weekly-trends/route.ts:    let leadsQuery = supabase
+src/app/api/dashboard/weekly-trends/route.ts:      .from("leads")
+src/app/api/dashboard/weekly-trends/route.ts:      leadsQuery = leadsQuery.eq("assigned_to", userId);
+src/app/api/dashboard/weekly-trends/route.ts:    const { data: leads, error: leadsErr } = await leadsQuery;
+src/app/api/dashboard/weekly-trends/route.ts:    if (leadsErr) throw leadsErr;
+src/app/api/dashboard/weekly-trends/route.ts:    // ─── Fetch contracts (for signed amount) ───
+src/app/api/dashboard/weekly-trends/route.ts:    let contractsQuery = supabase
+src/app/api/dashboard/weekly-trends/route.ts:      .from("contracts")
+src/app/api/dashboard/weekly-trends/route.ts:      contractsQuery = contractsQuery.eq("sales_id", userId);
+src/app/api/dashboard/weekly-trends/route.ts:    const { data: contracts, error: contractsErr } = await contractsQuery;
+src/app/api/dashboard/weekly-trends/route.ts:    if (contractsErr) throw contractsErr;
+src/app/api/dashboard/weekly-trends/route.ts:        .from("contracts")
+src/app/api/dashboard/weekly-trends/route.ts:      // New leads in this week
+src/app/api/dashboard/weekly-trends/route.ts:      const newLeads = (leads || []).filter((l) => {
+src/app/api/dashboard/weekly-trends/route.ts:      // Won leads in this week (using leads table)
+src/app/api/dashboard/weekly-trends/route.ts:      // Signed amount from contracts created this week
+src/app/api/dashboard/weekly-trends/route.ts:      const weekContracts = (contracts || []).filter((c) => {
+src/app/api/dashboard/weekly-trends/route.ts:        new_leads: newCount,
+src/app/api/dashboard/weekly-trends/route.ts:      new_leads: calcWow(currentWeek.new_leads, prevWeek.new_leads),
+src/app/api/dashboard/team-ownership/route.ts:  // For each user, count leads
+src/app/api/dashboard/team-ownership/route.ts:      const base = supabase.from("leads").select("id, final_status, stage, archived");
+src/app/api/dashboard/team-ownership/route.ts:        assigned_leads: assigned || 0,
+src/app/api/dashboard/team-ownership/route.ts:        created_leads: created || 0,
+src/app/api/dashboard/team-ownership/route.ts:        active_leads: active || 0,
+src/app/api/dashboard/team-ownership/route.ts:        won_leads: won || 0,
+src/app/api/dashboard/team-ownership/route.ts:        lost_leads: lost || 0,
+src/app/api/dashboard/team-ownership/route.ts:    (r) => r.assigned_leads > 0 || r.created_leads > 0
+src/app/api/dashboard/pipeline-funnel/route.ts: * CEO/Admin: all leads. Sales: only assigned leads.
+src/app/api/dashboard/pipeline-funnel/route.ts:    // ─── Step 1: Query leads count per stage ───
+src/app/api/dashboard/pipeline-funnel/route.ts:    let leadsQuery = supabase.from("leads").select("id,stage,created_at,updated_at,last_contact_date,assigned_to,customer_name,current_milestone,final_status");
+src/app/api/dashboard/pipeline-funnel/route.ts:      leadsQuery = leadsQuery.eq("assigned_to", targetUserId);
+src/app/api/dashboard/pipeline-funnel/route.ts:    const { data: leads, error: leadsErr } = await leadsQuery;
+src/app/api/dashboard/pipeline-funnel/route.ts:    if (leadsErr) {
+src/app/api/dashboard/pipeline-funnel/route.ts:      console.error("[pipeline-funnel] Failed to fetch leads:", leadsErr);
+src/app/api/dashboard/pipeline-funnel/route.ts:      return NextResponse.json({ error: "Failed to fetch leads" }, { status: 500 });
+src/app/api/dashboard/pipeline-funnel/route.ts:    const totalLeads = leads?.length || 0;
+src/app/api/dashboard/pipeline-funnel/route.ts:    for (const l of leads || []) {
+src/app/api/dashboard/pipeline-funnel/route.ts:    // For each stage, we look at leads CURRENTLY in that stage and calculate
+src/app/api/dashboard/pipeline-funnel/route.ts:    // For "won"/"lost" we look at leads that reached that outcome.
+src/app/api/dashboard/pipeline-funnel/route.ts:    function calcAvgDaysInStage(stageKey: string, leadsInStage: any[]): number {
+src/app/api/dashboard/pipeline-funnel/route.ts:      if (leadsInStage.length === 0) return 0;
+src/app/api/dashboard/pipeline-funnel/route.ts:      for (const l of leadsInStage) {
+src/app/api/dashboard/pipeline-funnel/route.ts:    // ─── Step 5: Stuck leads — in a stage for > 2x average duration ───
+src/app/api/dashboard/pipeline-funnel/route.ts:    // Sort stuck leads by days_in_stage desc
+src/app/api/dashboard/pipeline-funnel/route.ts:    // ─── Step 6: "Where I lose most" — for sales view, find the stage with the most leads lost ───
+src/app/api/dashboard/pipeline-funnel/route.ts:      eventsQuery = eventsQuery.eq("lead_id", supabase.rpc("get_user_leads_ids", { p_user_id: targetUserId }));
+src/app/api/dashboard/team-performance/route.ts: *  - Per-salesperson metrics (leads, won, revenue, conversion, avg deal size)
+src/app/api/dashboard/team-performance/route.ts: * Revenue is derived from the contracts table (non-terminated contracts).
+src/app/api/dashboard/team-performance/route.ts:      const { data: leads } = await supabase
+src/app/api/dashboard/team-performance/route.ts:        .from("leads")
+src/app/api/dashboard/team-performance/route.ts:      const { data: contracts } = await supabase
+src/app/api/dashboard/team-performance/route.ts:        .from("contracts")
+src/app/api/dashboard/team-performance/route.ts:      const leadsByRep: Record<string, any[]> = {};
+src/app/api/dashboard/team-performance/route.ts:      (leads ?? []).forEach((l: any) => {
+src/app/api/dashboard/team-performance/route.ts:        (leadsByRep[l.assigned_to] ??= []).push(l);
+src/app/api/dashboard/team-performance/route.ts:      (contracts ?? []).forEach((c: any) => {
+src/app/api/dashboard/team-performance/route.ts:      (leads ?? []).forEach((l: any) => {
+src/app/api/dashboard/team-performance/route.ts:      (leads ?? []).forEach((l: any) => {
+src/app/api/dashboard/team-performance/route.ts:          const myLeads = leadsByRep[rep.id] ?? [];
+src/app/api/dashboard/team-performance/route.ts:      .from("leads")
+src/app/api/dashboard/team-performance/route.ts:          .from("contracts")
+src/app/api/cos/download-url/route.ts:    const knownPrefixes = ["quotations/", "attachments/", "leads/", "media/", "contracts/"];
+src/app/api/quotations/export/route.ts:      .select("*, leads!inner(assigned_to)")
+src/app/api/quotations/export/route.ts:    // Ownership check: non-admin/boss users can only export their own leads' quotations
+src/app/api/quotations/export/route.ts:      const assignedTo = quote.leads?.assigned_to;
+src/app/api/quotations/generate/route.ts:      .from("leads")
+src/app/api/quotations/generate/route.ts:      .from("leads")
+src/app/api/quotations/generate/route.ts:    revalidatePath("/leads");
+src/app/api/quotations/[id]/convert/route.ts:      .select("*, leads(id, customer_name)")
+src/app/api/quotations/[id]/convert/route.ts:      .from("contracts")
+src/app/api/quotations/[id]/convert/route.ts:      .from("contracts")
+src/app/api/quotations/[id]/convert/route.ts:        party_a_name: quote.leads?.customer_name || "Unknown",
+src/app/api/quotations/[id]/convert/route.ts:        .from("leads")
+src/app/api/quotations/[id]/convert/route.ts:    revalidatePath("/contracts");
+src/app/api/quotations/[id]/convert/route.ts:    revalidatePath("/leads");
+src/app/api/workbench/route.ts:    .select("lead_id,title,leads!inner(id,customer_name,phone,location,final_status)")
+src/app/api/workbench/route.ts:    const lead = Array.isArray(task.leads) ? task.leads[0] : task.leads
+src/app/api/workbench/route.ts:  let progQuery = supabase.from("leads").select("current_milestone")
+src/app/api/workflow/route.ts:        .from("leads")
+src/app/api/workflow/route.ts:        .from("leads")
+src/app/api/cron/daily-funnel-snapshot/route.ts:      .from('leads')
+src/app/api/cron/check-overdue-followups/route.ts: * Cron endpoint: checks all leads for overdue follow-ups and creates notifications.
+src/app/api/cron/check-overdue-followups/route.ts:    .select("id, lead_id, due_at, assignee_id, leads!inner(customer_name, final_status)")
+src/app/api/cron/check-overdue-followups/route.ts:    const lead = Array.isArray(task.leads) ? task.leads[0] : task.leads;
+src/app/api/cron/check-overdue-followups/route.ts:    leadsChecked: overdueFollowups.length,
+src/app/api/cron/check-overdue-installments/route.ts:            .from("contracts")
+src/app/api/cron/check-no-answer/route.ts:    const { data: leads, error: leadsError } = await supabaseAdmin
+src/app/api/cron/check-no-answer/route.ts:      .from('leads')
+src/app/api/cron/check-no-answer/route.ts:    if (leadsError) {
+src/app/api/cron/check-no-answer/route.ts:      return NextResponse.json({ error: leadsError.message }, { status: 500 })
+src/app/api/cron/check-no-answer/route.ts:    if (!leads || leads.length === 0) {
+src/app/api/cron/check-no-answer/route.ts:    for (const lead of leads) {
+src/app/api/cron/check-no-answer/route.ts:        .from('follow_up_logs')
+src/app/api/cron/check-no-answer/route.ts:        .from('leads')
+src/app/api/cron/check-no-answer/route.ts:      checked: leads.length,
+src/app/api/cron/daily-reminder/route.ts:        leads ( id, customer_name )
+src/app/api/cron/daily-reminder/route.ts:        const name = t.leads?.customer_name
+src/app/api/payments/route.ts:      .from("contracts")
+src/app/api/payments/route.ts:    // Sales can only record payments against their own contracts
+src/app/api/payments/route.ts:    // Sales can only see payments for their own contracts
+src/app/api/payments/route.ts:      const { data: ownContracts, error: contractsErr } = await supabase
+src/app/api/payments/route.ts:        .from("contracts")
+src/app/api/payments/route.ts:      if (contractsErr) {
+src/app/api/payments/route.ts:        console.error("[API Payments] Failed to fetch sales contracts:", contractsErr);
+src/app/api/payments/[id]/confirm/route.ts:    revalidatePath("/contracts");
+src/app/api/metrics/funnel/route.ts:    const { data: leads, error: leadsError } = await supabase
+src/app/api/metrics/funnel/route.ts:      .from('leads')
+src/app/api/metrics/funnel/route.ts:    if (leadsError) {
+src/app/api/metrics/funnel/route.ts:      return NextResponse.json({ error: leadsError.message }, { status: 500 })
+src/app/api/metrics/funnel/route.ts:    for (const lead of leads ?? []) {
+src/app/api/metrics/daily/route.ts:      .from('leads')
+src/app/api/metrics/daily/route.ts:      .from('leads')
+src/app/api/metrics/daily/route.ts:      .from('leads')
+src/app/api/metrics/daily/route.ts:      .from('leads')
+src/app/api/metrics/daily/route.ts:      .from('follow_up_logs')
+src/app/api/notify/route.ts:          .from("leads")
+src/app/api/notify/route.ts:        .from("leads")
+src/app/api/notify/route.ts:        .from("leads")
+src/app/api/notify/route.ts:          .from("contracts")
+src/app/api/notify/route.ts:          .from("contracts")
+src/app/api/notify/route.ts:          .from("contracts")
+src/app/api/notify/route.ts:          .from("contracts")
+src/app/api/notify/route.ts:        .from("leads")
+src/app/api/notify/route.ts:        .from("leads")
+src/app/api/notify/route.ts:        .from("contracts")
+src/app/api/follow-ups/route.ts:      leads (
+src/app/api/follow-ups/route.ts:        .from('follow_up_logs')
+src/app/api/follow-ups/route.ts:      .from('follow_up_logs')
+src/app/api/command-center/route.ts:      .from('leads')
+src/app/api/command-center/route.ts:      .from('leads')
+src/app/api/command-center/route.ts:      .from('leads')
+src/app/api/command-center/route.ts:    const leadsByAssignee = new Map<string, string[]>();
+src/app/api/command-center/route.ts:        const arr = leadsByAssignee.get(l.assigned_to) ?? [];
+src/app/api/command-center/route.ts:        leadsByAssignee.set(l.assigned_to, arr);
+src/app/api/command-center/route.ts:        const leadIds = leadsByAssignee.get(p.id) ?? [];
+src/app/api/command-center/route.ts:    // 4b. Today's follow-ups — leads whose next_followup_date is today (server local timezone).
+src/app/api/command-center/route.ts:      .from('leads')
+src/app/api/command-center/route.ts:      .from('leads')
+src/app/api/hermes/generate-quote/route.ts:      .from("leads")
+src/app/api/hermes/generate-quote/route.ts:    // Permission check: sales role can only generate quotes for their own leads
+src/app/api/hermes/generate-quote/route.ts:        .from("leads")
+src/app/api/hermes/generate-quote/route.ts:      .from("leads")
+src/app/api/hermes/knx-design/route.ts:      .from("leads")
+src/app/api/tasks/route.ts:  leads (
+src/app/api/tasks/[id]/route.ts:  leads (
+src/app/api/users/[id]/route.ts:    // Reassign leads assigned to this user
+src/app/api/users/[id]/route.ts:      .from("leads")
+src/app/api/users/[id]/route.ts:        .from("leads")
+src/app/api/users/[id]/route.ts:      if (leadErr) throw new Error(`Failed to reassign leads: ${leadErr.message}`);
+src/app/api/users/[id]/route.ts:    // Reassign contracts where this user is sales_id
+src/app/api/users/[id]/route.ts:      .from("contracts")
+src/app/api/users/[id]/route.ts:        .from("contracts")
+src/app/api/users/[id]/route.ts:      if (contractErr) throw new Error(`Failed to reassign contracts: ${contractErr.message}`);
+src/app/api/leads/follow-up-overdue/route.ts: * GET /api/leads/follow-up-overdue
+src/app/api/leads/follow-up-overdue/route.ts: * Returns leads where next_followup_date <= today AND stage is active (not won/lost).
+src/app/api/leads/follow-up-overdue/route.ts:    .from("leads")
+src/app/api/leads/follow-up-overdue/route.ts:  // Sales users only see their own leads
+src/app/api/leads/follow-up-overdue/route.ts:  return NextResponse.json({ leads: data, count: data?.length || 0, today });
+src/app/api/leads/import/preview/route.ts:// POST /api/leads/import/preview — Parse Excel, return preview rows (no DB write)
+src/app/api/leads/import/confirm/route.ts:// POST /api/leads/import/confirm — Confirm import, write leads + follow_up_logs with batch trace
+src/app/api/leads/import/confirm/route.ts:        .from("leads")
+src/app/api/leads/import/confirm/route.ts:      // Notes → follow_up_logs
+src/app/api/leads/import/confirm/route.ts:        await supabase.from("follow_up_logs").insert({
+src/app/api/leads/archive/route.ts:// POST /api/leads/archive — Soft-archive leads (Mohamed or specific lead_ids)
+src/app/api/leads/archive/route.ts:  let query = supabase.from("leads").update({
+src/app/api/leads/archive/route.ts:    archive_reason: archive_reason || "Mohamed old leads cleanup",
+src/app/api/leads/archive/route.ts:    // Archive all leads assigned to Mohamed that are not already archived
+src/app/api/leads/archive/route.ts:// GET /api/leads/archive?batch_id=xxx — Lookup archived leads by batch
+src/app/api/leads/archive/route.ts:    .from("leads")
+src/app/api/leads/archive/route.ts:  return NextResponse.json({ leads: data, count: data.length });
+src/app/api/leads/[id]/milestone/route.ts:    .from("leads")
+src/app/api/leads/[id]/milestone/route.ts:  // 7. 插入里程碑（leads.current_milestone 由 trigger trg_check_milestone_order 自动维护）
+src/app/api/leads/[id]/milestone/route.ts:      .from("leads")
+src/app/api/leads/[id]/timeline/route.ts:    // lead's timeline. Everyone else (e.g. sales) may only view leads assigned
+src/app/api/leads/[id]/timeline/route.ts:    // to them. Note: the leads owner column is `assigned_to`, NOT `owner_id`.
+src/app/api/leads/[id]/timeline/route.ts:        .from("leads")
+src/app/api/leads/[id]/timeline/route.ts:      supabase.from("follow_up_logs").select("*").eq("lead_id", leadId),
+src/app/api/leads/[id]/timeline/route.ts:      supabase.from("lead_documents").select("*").eq("lead_id", leadId),
+src/app/api/leads/[id]/follow-up/route.ts:      .from('leads')
+src/app/api/leads/[id]/follow-up/route.ts:    // 2. INSERT follow_up_logs
+src/app/api/leads/[id]/follow-up/route.ts:      .from('follow_up_logs')
+src/app/api/leads/meta-capi/route.ts: * 存入 Supabase leads 表，触发 Hermes 分析
+src/app/api/leads/meta-capi/route.ts: * POST /api/leads/meta-capi
+src/app/api/leads/meta-capi/route.ts:        .from("leads")
+src/app/api/leads/meta-capi/route.ts:        .from("leads")
+src/app/api/leads/meta-capi/route.ts:        .from("leads")
+src/app/api/alerts/route.ts: * Admin/boss: all alerts. Sales: only their assigned leads.
+src/app/api/alerts/route.ts:  // Sales users only see their own leads
+src/app/api/contracts/route.ts: * POST /api/contracts
+src/app/api/contracts/route.ts:      .from("contracts")
+src/app/api/contracts/route.ts:      .from("contracts")
+src/app/api/contracts/route.ts:    revalidatePath("/contracts");
+src/app/api/contracts/route.ts:    revalidatePath("/leads");
+src/app/api/contracts/route.ts: * GET /api/contracts — list contracts with optional filters
+src/app/api/contracts/route.ts:    // Deny access to roles that shouldn't see contracts
+src/app/api/contracts/route.ts:    let q = supabase.from("contracts").select("*, installment_plans(*)").order("created_at", { ascending: false });
+src/app/api/contracts/route.ts:    // sales role: only see own contracts
+src/app/api/contracts/route.ts:      return NextResponse.json({ error: "Failed to fetch contracts" }, { status: 500 });
+src/app/api/contracts/route.ts: * PUT /api/contracts — update contract fields including first_payment_status
+src/app/api/contracts/route.ts:        .from("contracts")
+src/app/api/contracts/route.ts:      .from("contracts")
+src/app/api/contracts/route.ts:    revalidatePath("/contracts");
+src/app/api/contracts/[id]/remind-payment/route.ts: * POST /api/contracts/[id]/remind-payment
+src/app/api/contracts/[id]/remind-payment/route.ts:      .from("contracts")
+src/app/api/contracts/[id]/remind-payment/route.ts:        profiles!contracts_sales_id_fkey(full_name, email)
+src/app/api/contracts/[id]/upload-url/route.ts: * POST /api/contracts/[id]/upload-url
+src/app/api/contracts/[id]/upload-url/route.ts:      .from("contracts")
+src/app/api/contracts/[id]/upload-url/route.ts:        { error: "Only admin/boss can upload sealed contracts" },
+src/app/api/contracts/[id]/upload-url/route.ts:    const key = `contracts/${contractId}/${uploadVersion}_${safeFilename}`;
+src/app/api/contracts/[id]/confirm-upload/route.ts: * POST /api/contracts/[id]/confirm-upload
+src/app/api/contracts/[id]/confirm-upload/route.ts:    const expectedPrefix = `contracts/${contractId}/`;
+src/app/api/contracts/[id]/confirm-upload/route.ts:      .from("contracts")
+src/app/api/contracts/[id]/confirm-upload/route.ts:      .from("contracts")
+src/app/api/contracts/[id]/route.ts: * GET /api/contracts/[id]
+src/app/api/contracts/[id]/route.ts: *   - sales                              → only own contracts (sales_id = user.id)
+src/app/api/contracts/[id]/route.ts:    // ── Contract row (single FK to leads → safe; sales via constraint name) ──
+src/app/api/contracts/[id]/route.ts:      .from("contracts")
+src/app/api/contracts/[id]/route.ts:        leads ( id, customer_name, phone, source ),
+src/app/api/contracts/[id]/route.ts:        profiles!contracts_sales_id_fkey ( id, full_name, email )`
+src/app/api/contracts/[id]/approve/route.ts: * POST /api/contracts/[id]/approve
+src/app/api/contracts/[id]/approve/route.ts: * updates both the `contract_approvals` row and the parent `contracts`
+src/app/api/contracts/[id]/approve/route.ts:        .from("contracts")
+src/app/api/contracts/[id]/revoke/route.ts: * POST /api/contracts/[id]/revoke
+src/app/api/contracts/[id]/revoke/route.ts:        { error: "Only admin or boss can revoke contracts" },
+src/app/api/contracts/[id]/revoke/route.ts:      .from("contracts")
+src/app/api/contracts/[id]/revoke/route.ts:      .from("contracts")
+src/app/(dashboard)/dashboard/_components/AlertPanel.tsx:            onClick={() => router.push(`/leads/${alert.id}`)}
+src/app/(dashboard)/dashboard/_components/AlertPanel.tsx:          onClick={() => router.push("/leads?alert=all")}
+src/app/(dashboard)/dashboard/page.tsx:  leads: Lead | Lead[] | null;
+src/app/(dashboard)/dashboard/page.tsx:  const [leads, setLeads] = useState<Lead[]>([]);
+src/app/(dashboard)/dashboard/page.tsx:    // A sales user running unfiltered query would see all leads.
+src/app/(dashboard)/dashboard/page.tsx:    let query = supabase.from("leads").select("*");
+src/app/(dashboard)/dashboard/page.tsx:    if (err) { console.error("Failed to fetch leads:", err); setError(t("common.loadFailedRetry")); setLoading(false); return; }
+src/app/(dashboard)/dashboard/page.tsx:        .from("contracts")
+src/app/(dashboard)/dashboard/page.tsx:      const { data: contracts, error: cErr } = await contractQuery;
+src/app/(dashboard)/dashboard/page.tsx:      const activeContracts = (contracts as Contract[] || []).filter(c => c.status !== "terminated");
+src/app/(dashboard)/dashboard/page.tsx:      const contractIds = (contracts as Contract[] || []).map(c => c.id);
+src/app/(dashboard)/dashboard/page.tsx:        // Fallback: query leads directly for overdue/missing followups
+src/app/(dashboard)/dashboard/page.tsx:        .select("lead_id, due_at, leads!inner(*)")
+src/app/(dashboard)/dashboard/page.tsx:          const lead = Array.isArray(task.leads) ? task.leads[0] : task.leads;
+src/app/(dashboard)/dashboard/page.tsx:      // Top 5 Actions: overdue followups, hot leads, high-value stale, draft quotes, expiring quotes
+src/app/(dashboard)/dashboard/page.tsx:          .select("lead_id, due_at, leads!inner(id, customer_name, quotation_value, last_contact_date, phone, final_status)")
+src/app/(dashboard)/dashboard/page.tsx:            const l = Array.isArray(task.leads) ? task.leads[0] : task.leads;
+src/app/(dashboard)/dashboard/page.tsx:              link: `/leads/${l.id}`,
+src/app/(dashboard)/dashboard/page.tsx:      // 2. Hot leads — leads with lead_status='hot' and high win_probability, not yet won/lost
+src/app/(dashboard)/dashboard/page.tsx:          .from("leads")
+src/app/(dashboard)/dashboard/page.tsx:              link: `/leads/${l.id}`,
+src/app/(dashboard)/dashboard/page.tsx:        let qQ = supabase.from("quotations").select("*, leads!inner(customer_name, quotation_value, id, phone)")
+src/app/(dashboard)/dashboard/page.tsx:              title: q.leads?.customer_name || t("common.unnamed"),
+src/app/(dashboard)/dashboard/page.tsx:              subtitle: `${q.leads?.customer_name || t("common.unnamed")} · ${q.quote_no || t("dashboard.draftQuote")}`,
+src/app/(dashboard)/dashboard/page.tsx:              customerName: q.leads?.customer_name || t("common.unnamed"),
+src/app/(dashboard)/dashboard/page.tsx:              phone: q.leads?.phone || null,
+src/app/(dashboard)/dashboard/page.tsx:              leadId: q.leads?.id || "",
+src/app/(dashboard)/dashboard/page.tsx:      // 4. High-value stale leads — no contact in 48h+, sorted by quotation_value
+src/app/(dashboard)/dashboard/page.tsx:        let sQ = supabase.from("leads").select("id, customer_name, quotation_value, last_contact_date, stage, phone")
+src/app/(dashboard)/dashboard/page.tsx:              link: `/leads/${l.id}`,
+src/app/(dashboard)/dashboard/page.tsx:        let wfQ = supabase.from("lead_workflow_stages").select("*, leads!inner(customer_name, quotation_value, phone)")
+src/app/(dashboard)/dashboard/page.tsx:            const leadName = w.leads?.customer_name || t("common.unnamed");
+src/app/(dashboard)/dashboard/page.tsx:              link: `/leads/${w.lead_id}`,
+src/app/(dashboard)/dashboard/page.tsx:              value: w.leads?.quotation_value || 0,
+src/app/(dashboard)/dashboard/page.tsx:              phone: w.leads?.phone || null,
+src/app/(dashboard)/dashboard/page.tsx:        const { data } = await supabase.from("leads").select("id").eq("assigned_to", userId);
+src/app/(dashboard)/dashboard/page.tsx:    const active = leads;
+src/app/(dashboard)/dashboard/page.tsx:      // (won/lost leads short-circuit on final_status, never a process key).
+src/app/(dashboard)/dashboard/page.tsx:  }, [leads]);
+src/app/(dashboard)/dashboard/page.tsx:  const myWonLeads = leads.filter(l => l.assigned_to === userId && l.final_status === "won");
+src/app/(dashboard)/dashboard/page.tsx:    leads.forEach(l => {
+src/app/(dashboard)/dashboard/page.tsx:  }, [leads]);
+src/app/(dashboard)/dashboard/page.tsx:      const salesLeads = leads.filter(l => l.assigned_to === s.id);
+src/app/(dashboard)/dashboard/page.tsx:  }, [salesUsers, leads, kpiTargets]);
+src/app/(dashboard)/dashboard/page.tsx:      <button onClick={() => router.push("/leads?alert=red")}
+src/app/(dashboard)/dashboard/page.tsx:          onClick={() => router.push("/leads/new")}
+src/app/(dashboard)/dashboard/page.tsx:        { label: t("dashboard.kpiLeads"), value: String(stats.totalActive), sub: t("dashboard.plusNwk").replace("{n}", String(stats.newThisWeek)), href: "/leads" },
+src/app/(dashboard)/dashboard/page.tsx:        { label: t("dashboard.kpiActive"), value: String(contractCount), sub: t("dashboard.nPipeline").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=negotiation" },
+src/app/(dashboard)/dashboard/page.tsx:        { label: t("dashboard.pipelineValue"), value: fmtAED(stats.totalPipeline), sub: t("dashboard.nDeals").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=quotation_submitted" },
+src/app/(dashboard)/dashboard/page.tsx:        { label: t("dashboard.won"), value: fmtAED(stats.monthlyRevenue), sub: t("dashboard.nClosed").replace("{n}", String(stats.wonCount)), href: "/leads?stage=won" },
+src/app/(dashboard)/dashboard/page.tsx:        { label: t("dashboard.kpiConv"), value: `${stats.conversionRate}%`, sub: t("dashboard.nPctContacted").replace("{n}", String(stats.contactRate)), href: "/leads" },
+src/app/(dashboard)/dashboard/page.tsx:            { label: t("kpi.signing"), pct: signingPct, actual: signingActual, target: signingTarget, sub: t("kpi.contracts").replace("{n}", String(contractCount)) },
+src/app/(dashboard)/dashboard/page.tsx:                  onClick={() => router.push(`/leads?assigned_to=${s.id}`)}
+src/app/(dashboard)/dashboard/page.tsx:                          {t("dashboard.won")} {fmtAED(s.wonValue)} · {s.wonCount} {t("dashboard.deals")} · {s.totalLeads} {t("leads.title").toLowerCase()} · {s.conversionRate}% {t("dashboard.kpiConv")}
+src/app/(dashboard)/dashboard/page.tsx:                      onClick={() => router.push(`/leads?assigned_to=${u.user_id}`)}>
+src/app/(dashboard)/dashboard/page.tsx:                      <td className="py-2 px-2 text-right">{u.assigned_leads}</td>
+src/app/(dashboard)/dashboard/page.tsx:                      <td className="py-2 px-2 text-right">{u.created_leads}</td>
+src/app/(dashboard)/dashboard/page.tsx:                      <td className="py-2 px-2 text-right">{u.active_leads}</td>
+src/app/(dashboard)/dashboard/page.tsx:                      <td className="py-2 px-2 text-right text-emerald-400">{u.won_leads}</td>
+src/app/(dashboard)/dashboard/page.tsx:                      <td className="py-2 pl-2 text-right text-red-400">{u.lost_leads}</td>
+src/app/(dashboard)/dashboard/page.tsx:            <SectionHeader title={t("dashboard.leadSources")} subtitle={`(${sourceBreakdown.reduce((a, b) => a + b.total, 0)} ${t("dashboard.leads")})`} />
+src/app/(dashboard)/dashboard/page.tsx:                        {s.total} {t("leads.title").toLowerCase()} · {s.won} {t("dashboard.won")} · {convRate}%
+src/app/(dashboard)/dashboard/page.tsx:            <p className="text-xs text-muted-foreground">{fmtAED(signingActual)} / {fmtAED(signingTarget)} · {t("kpi.contracts").replace("{n}", String(contractCount))}</p>
+src/app/(dashboard)/dashboard/page.tsx:            <SectionHeader title={t("dashboard.leadSources")} subtitle={`(${sourceBreakdown.reduce((a, b) => a + b.total, 0)} ${t("dashboard.leads")})`} />
+src/app/(dashboard)/dashboard/page.tsx:                      {s.total} leads · {s.won} won · {convRate}%
+src/app/(dashboard)/workbench/page.tsx:                      href={`/leads/${item.id}`}
+src/app/(dashboard)/workbench/page.tsx:                {t("workbench.empty.progress") || "No leads"}
+src/app/(dashboard)/workbench/page.tsx:        <Link href="/leads/new">
+src/app/(dashboard)/workbench/page.tsx:        <Link href="/leads">
+src/app/(dashboard)/layout.tsx:  { href: "/leads",     labelKey: "mgmtLeads", icon: Users },
+src/app/(dashboard)/layout.tsx:  { href: "/contracts", labelKey: "mgmtContracts", icon: FileText },
+src/app/(dashboard)/layout.tsx:  { href: "/leads",     labelKey: "salesLeads", icon: Users },
+src/app/(dashboard)/layout.tsx:  { href: "/contracts", labelKey: "salesContracts", icon: FileText },
+src/app/(dashboard)/payments/page.tsx:  contracts?: { contract_no: string; party_a_name: string } | null;
+src/app/(dashboard)/payments/page.tsx:  const [contracts, setContracts] = useState<Contract[]>([]);
+src/app/(dashboard)/payments/page.tsx:      .from("contracts")
+src/app/(dashboard)/payments/page.tsx:    if (err) console.error("Fetch contracts failed:", err);
+src/app/(dashboard)/payments/page.tsx:  contracts.forEach((c) => contractMap.set(c.id, c.contract_no));
+src/app/(dashboard)/payments/page.tsx:    if (p.contracts?.contract_no) contractMap.set(p.contract_id, p.contracts.contract_no);
+src/app/(dashboard)/payments/page.tsx:    setRecContractId(contracts[0]?.id || "");
+src/app/(dashboard)/payments/page.tsx:                  {contracts.map((c) => (
+src/app/(dashboard)/settings/page.tsx:  const [leads, setLeads] = useState<Lead[]>([]);
+src/app/(dashboard)/settings/page.tsx:      const [leadsRes, profilesRes] = await Promise.all([
+src/app/(dashboard)/settings/page.tsx:        supabase.from("leads").select("id,customer_name,phone,stage,final_status,assigned_to,owner,sales_manager,location,source,quotation_value").order("updated_at", { ascending: false }).limit(1000),
+src/app/(dashboard)/settings/page.tsx:      if (leadsRes.error) throw new Error(leadsRes.error.message);
+src/app/(dashboard)/settings/page.tsx:      setLeads(leadsRes.data as Lead[] || []);
+src/app/(dashboard)/settings/page.tsx:  const filtered = leads.filter(l => {
+src/app/(dashboard)/settings/page.tsx:    const { error } = await supabase.from("leads").update({ assigned_to: userId }).eq("id", leadId);
+src/app/(dashboard)/settings/page.tsx:      const { error } = await supabase.from("leads").update({ assigned_to: targetUserId }).in("id", batch);
+src/app/(dashboard)/settings/page.tsx:      const { error } = await supabase.from("leads").update({ assigned_to: null }).in("id", batch);
+src/app/(dashboard)/settings/page.tsx:    const { error } = await supabase.from("leads").update({ assigned_to: toUserId }).eq("assigned_to", fromUserId);
+src/app/(dashboard)/settings/page.tsx:  const totalUnassigned = leads.filter(l => !l.assigned_to).length;
+src/app/(dashboard)/settings/page.tsx:  const activeUnassigned = leads.filter(l => !l.assigned_to && !l.final_status).length;
+src/app/(dashboard)/settings/page.tsx:          <p className="text-2xl font-bold text-foreground mt-1">{leads.length}</p>
+src/app/(dashboard)/settings/page.tsx:                        <span className="text-xs text-muted-foreground/60 italic">{t("leads.unassigned")}</span>
+src/app/(dashboard)/settings/ads/page.tsx:  const { data: leads } = await supabase
+src/app/(dashboard)/settings/ads/page.tsx:    .from("leads")
+src/app/(dashboard)/settings/ads/page.tsx:  for (const l of leads ?? []) {
+src/app/(dashboard)/pipeline/page.tsx:  const [leads, setLeads] = useState<Lead[]>([]);
+src/app/(dashboard)/pipeline/page.tsx:      // 2. Fetch contracts for this sales person
+src/app/(dashboard)/pipeline/page.tsx:      supabase.from("contracts").select("id,contract_amount,status").eq("sales_id", userId),
+src/app/(dashboard)/pipeline/page.tsx:      // 3. Fetch payments for this sales person's contracts
+src/app/(dashboard)/pipeline/page.tsx:        // Collection: payments where confirmed=true for this user's contracts
+src/app/(dashboard)/pipeline/page.tsx:  // Fetch leads
+src/app/(dashboard)/pipeline/page.tsx:      let q = supabase.from("leads").select("*").limit(500);
+src/app/(dashboard)/pipeline/page.tsx:        console.error("Failed to fetch leads:", err);
+src/app/(dashboard)/pipeline/page.tsx:  // Group leads by stage
+src/app/(dashboard)/pipeline/page.tsx:    for (const l of leads) { const key = l.final_status || l.stage; if (g[key]) g[key].push(l); }
+src/app/(dashboard)/pipeline/page.tsx:  }, [leads]);
+src/app/(dashboard)/pipeline/page.tsx:  // ─── Stage guard helpers (shared with leads/page.tsx) ───
+src/app/(dashboard)/pipeline/page.tsx:    // Guard 3: terminal leads can't be moved — won/lost now live in final_status
+src/app/(dashboard)/pipeline/page.tsx:    const lead = leads.find(l => l.id === leadId);
+src/app/(dashboard)/pipeline/page.tsx:    // Build auto-updates (same logic as leads/page.tsx changeStage)
+src/app/(dashboard)/pipeline/page.tsx:    const { error: updateErr } = await supabase.from("leads").update(updates).eq("id", leadId);
+src/app/(dashboard)/pipeline/page.tsx:  }, [leads, role, supabase]);
+src/app/(dashboard)/pipeline/page.tsx:              <span className="text-xs text-muted-foreground">{kpiContractCount} {t("kpi.contracts")}</span>
+src/app/(dashboard)/pipeline/page.tsx:        <button onClick={() => router.push("/leads/new")}
+src/app/(dashboard)/pipeline/page.tsx:          const totalAll = leads.length;
+src/app/(dashboard)/pipeline/page.tsx:                      onClick={() => router.push(`/leads?stage=${stage.key}`)}
+src/app/(dashboard)/pipeline/page.tsx:                    <LeadCard key={lead.id} lead={lead} onLeadClick={(id) => router.push(`/leads/${id}`)} salesUsers={salesUsers} />
+src/app/(dashboard)/team/page.tsx:                      {t("leads.email")}
+src/app/(dashboard)/team/page.tsx:                {t("leads.email")} <span className="text-rose-400">*</span>
+src/app/(dashboard)/ads/page.tsx:  const [leads, setLeads] = useState<Lead[]>([]);
+src/app/(dashboard)/ads/page.tsx:      const { data, error: err } = await supabase.from("leads").select("*").order("created_at", { ascending: false }).limit(500);
+src/app/(dashboard)/ads/page.tsx:        console.error("Failed to fetch leads:", err);
+src/app/(dashboard)/ads/page.tsx:    for (const l of leads) {
+src/app/(dashboard)/ads/page.tsx:  }, [leads, viewMode, search]);
+src/app/(dashboard)/ads/page.tsx:      <Link href="/leads" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+src/app/(dashboard)/analytics/_components/AdsROI.tsx:    total_leads: number;
+src/app/(dashboard)/analytics/_components/AdsROI.tsx:  leads: number;
+src/app/(dashboard)/analytics/_components/AdsROI.tsx:          { label: t("analytics.totalLeads"), value: fmtNum(summary.total_leads) },
+src/app/(dashboard)/analytics/_components/AdsROI.tsx:                  <TableCell className="text-right">{row.leads}</TableCell>
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:                onClick={() => window.open(`/leads/${item.id}`, "_self")}
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:            <Link href={`/leads/${item.id}`} className="flex-1 min-w-0">
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:            sub={`${data.activeCount} leads`}
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:            sub={`${data.dormantCount} leads`}
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:            sub={`${data.zeroCount} leads`}
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:          sub={`${data.activeCount} leads`}
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:          sub={`${data.dormantCount} leads`}
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:          sub={`${data.zeroCount} leads`}
+src/app/(dashboard)/analytics/_components/LeadSources.tsx:        <span className="text-[11px] text-muted-foreground">{totals.count} {t("analytics.totalLeadsLower") || t("analytics.leadsLower")}</span>
+src/app/(dashboard)/analytics/_components/LeadSources.tsx:          <div className="col-span-3">{t("leads.source")}</div>
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:                  onClick={() => router.push(`/contracts`)}
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:                onClick={() => router.push(`/contracts`)}
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:                onClick={() => router.push(`/contracts`)}
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:                  onClick={() => router.push(`/leads?assigned_to=${rep.user_id}`)}
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:      onClick={() => router.push(`/leads?stage=${stage.key}`)}
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:              {data.totalLeads} {t("analytics.totalLeadsLower") || t("analytics.leadsLower")}
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:      {/* Stuck leads section */}
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:                onClick={() => router.push(`/leads/${lead.id}`)}
+src/app/(dashboard)/analytics/_components/WeeklyTrends.tsx:  new_leads: number;
+src/app/(dashboard)/analytics/_components/WeeklyTrends.tsx:  new_leads: WoWChange;
+src/app/(dashboard)/analytics/_components/WeeklyTrends.tsx:  leads: "#4A5568",
+src/app/(dashboard)/analytics/_components/WeeklyTrends.tsx:    [t("analytics.newLeads")]: w.new_leads,
+src/app/(dashboard)/analytics/_components/WeeklyTrends.tsx:                fill={COLORS.leads}
+src/app/(dashboard)/analytics/_components/WeeklyTrends.tsx:            { label: t("analytics.newLeads"), wow: wow_comparison.new_leads, current: weeks[weeks.length - 1].new_leads },
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:      setRebalMsg(result.message || `Transferred ${result.transferred} leads`);
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:    leads: r.totalLeads,
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:              {data.overloaded.map((r) => r.name).join(", ")} {t('analytics.overloaded').toLowerCase()} ({data.overloaded[0]?.totalLeads ?? 0} {t('analytics.leadsLower')} vs {t('analytics.avgLoad')} {data.avgLoad}).
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:              <Bar dataKey="leads" fill="hsl(327, 100%, 45%)" radius={[0, 4, 4, 0]} />
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:                <th className="text-right py-2 px-2 font-medium">{t('analytics.leads')}</th>
+src/app/(dashboard)/leads/new/page.tsx:    const { data, error } = await supabase.from("leads").insert({
+src/app/(dashboard)/leads/new/page.tsx:      import("sonner").then(({ toast }) => toast.error(t("leads.createFailed") || "Failed to create lead"));
+src/app/(dashboard)/leads/new/page.tsx:      router.push("/leads");
+src/app/(dashboard)/leads/new/page.tsx:        <h1 className="text-2xl font-bold text-foreground">{t("leads.newLead")}</h1>
+src/app/(dashboard)/leads/new/page.tsx:          <CardTitle className="text-foreground text-lg">{t("leads.customerInfo")}</CardTitle>
+src/app/(dashboard)/leads/new/page.tsx:              <Label className="text-foreground">{t("leads.name")}</Label>
+src/app/(dashboard)/leads/new/page.tsx:                placeholder={t("leads.name")}
+src/app/(dashboard)/leads/new/page.tsx:              <Label className="text-foreground">{t("leads.phone")}</Label>
+src/app/(dashboard)/leads/new/page.tsx:              <Label className="text-foreground">{t("leads.email")}</Label>
+src/app/(dashboard)/leads/new/page.tsx:              <Label className="text-foreground">{t("leads.location")}</Label>
+src/app/(dashboard)/leads/new/page.tsx:              <Label className="text-foreground">{t("leads.source")}</Label>
+src/app/(dashboard)/leads/new/page.tsx:              <Label className="text-foreground">{t("leads.notes")}</Label>
+src/app/(dashboard)/leads/new/page.tsx:                placeholder={t("leads.notes")}
+src/app/(dashboard)/leads/new/page.tsx:              {saving ? t("common.saving") : t("leads.createLead")}
+src/app/(dashboard)/leads/page.tsx:  const [leads, setLeads] = useState<Lead[]>([]);
+src/app/(dashboard)/leads/page.tsx:      const oldLead = leads.find(l => l.id === leadId);
+src/app/(dashboard)/leads/page.tsx:      await supabase.from("leads").update({ assigned_to: bulkTransferTargetId }).eq("id", leadId);
+src/app/(dashboard)/leads/page.tsx:    // render leads they shouldn't see. Frontend filtering is defence-in-depth ONLY;
+src/app/(dashboard)/leads/page.tsx:    let q = supabase.from("leads").select("*");
+src/app/(dashboard)/leads/page.tsx:      console.error("Failed to fetch leads:", err);
+src/app/(dashboard)/leads/page.tsx:    const oldLead = leads.find(l => l.id === leadId);
+src/app/(dashboard)/leads/page.tsx:    await supabase.from("leads").update({ assigned_to: newUserId, updated_at: new Date().toISOString() }).eq("id", leadId);
+src/app/(dashboard)/leads/page.tsx:    const oldLead = leads.find(l => l.id === leadId);
+src/app/(dashboard)/leads/page.tsx:      .from("leads")
+src/app/(dashboard)/leads/page.tsx:      content: t("leads.eventStageChange").replace("{stage}", t(`stageLabels.${newStage}`)),
+src/app/(dashboard)/leads/page.tsx:    await writeEvent(leadId, "stage_changed", t("leads.eventStageChanged").replace("{from}", t(`stageLabels.${oldLead?.stage || "?"}`)).replace("{to}", t(`stageLabels.${newStage}`)), {
+src/app/(dashboard)/leads/page.tsx:    const { error: changeProbErr } = await supabase.from("leads").update({ win_probability: prob, updated_at: new Date().toISOString() }).eq("id", leadId);
+src/app/(dashboard)/leads/page.tsx:    await writeEvent(leadId, "probability_changed", t("leads.eventWinProb").replace("{prob}", String(prob)), { probability: prob });
+src/app/(dashboard)/leads/page.tsx:    const { error: changeStatusErr } = await supabase.from("leads").update({ lead_status: status, updated_at: new Date().toISOString() }).eq("id", leadId);
+src/app/(dashboard)/leads/page.tsx:    await writeEvent(leadId, "status_changed", t("leads.eventStatus").replace("{status}", t(`statusLabels.${status}`)), { status });
+src/app/(dashboard)/leads/page.tsx:    const { error: lostReasonErr } = await supabase.from("leads").update({
+src/app/(dashboard)/leads/page.tsx:      content: t("leads.eventLostReason").replace("{reason}", reason),
+src/app/(dashboard)/leads/page.tsx:    await writeEvent(leadId, "lost_reason_set", t("leads.eventLostReason").replace("{reason}", reason), { lost_reason: reason });
+src/app/(dashboard)/leads/page.tsx:    const { error: quickNoteLeadErr } = await supabase.from("leads").update({ last_contact_date: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", leadId);
+src/app/(dashboard)/leads/page.tsx:    await writeEvent(leadId, "note_added", t("leads.eventNote").replace("{note}", noteText.trim()));
+src/app/(dashboard)/leads/page.tsx:    const { error: nextActionErr } = await supabase.from("leads").update({ next_action: nextActionText.trim(), updated_at: new Date().toISOString() }).eq("id", leadId);
+src/app/(dashboard)/leads/page.tsx:    await writeEvent(leadId, "followup_scheduled", t("leads.eventNextAction").replace("{action}", nextActionText.trim()), { next_action: nextActionText.trim() });
+src/app/(dashboard)/leads/page.tsx:    const oldLead = leads.find(l => l.id === leadId);
+src/app/(dashboard)/leads/page.tsx:    const { error: nextFollowupErr } = await supabase.from("leads").update({
+src/app/(dashboard)/leads/page.tsx:    await writeEvent(leadId, "followup_scheduled", t("leads.eventFollowup").replace("{date}", nextFollowupText), { next_followup_date: nextFollowupText });
+src/app/(dashboard)/leads/page.tsx:    let result = [...leads];
+src/app/(dashboard)/leads/page.tsx:  }, [leads, search, stageFilter, sourceFilter, statusFilter, alertFilter, recoveryFilter, transferFilter, reviewFilter, probabilityFilter, followupFilter, assignedToFilter]);
+src/app/(dashboard)/leads/page.tsx:  const sources = useMemo(() => [...new Set(leads.map(l => l.source))].filter(Boolean).sort(), [leads]);
+src/app/(dashboard)/leads/page.tsx:          { href: "/leads", labelKey: "leads.subnavAllLeads", iconName: "users" },
+src/app/(dashboard)/leads/page.tsx:          { href: "/ads", labelKey: "leads.subnavAdAnalytics", iconName: "megaphone" },
+src/app/(dashboard)/leads/page.tsx:          <h1 className="text-2xl font-bold text-foreground tracking-tight">{t("leads.title")}</h1>
+src/app/(dashboard)/leads/page.tsx:          <p className="text-muted-foreground text-sm mt-0.5">{t("leads.activePipeline").replace("{count}", String(activeCount)).replace("{value}", fmtAED(totalPipeline) || "—")}</p>
+src/app/(dashboard)/leads/page.tsx:            <TrendingUp className="w-3.5 h-3.5" />{t("leads.pipelineOverview")}
+src/app/(dashboard)/leads/page.tsx:          <span className="text-sm font-medium text-copper-300">{selectedLeadIds.size} leads selected</span>
+src/app/(dashboard)/leads/page.tsx:          <Input placeholder={t("leads.searchPlaceholder")} value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />
+src/app/(dashboard)/leads/page.tsx:          <option value="all">{t("leads.allStages")}</option>
+src/app/(dashboard)/leads/page.tsx:          <option value="all">{t("leads.allSources")}</option>
+src/app/(dashboard)/leads/page.tsx:          <option value="all">{t("leads.allStatus")}</option>
+src/app/(dashboard)/leads/page.tsx:          <option value="all">{t("leads.probability")}</option>
+src/app/(dashboard)/leads/page.tsx:            <RotateCcw className="w-3 h-3" />{t("leads.recovery")} <X className="w-3 h-3" />
+src/app/(dashboard)/leads/page.tsx:            <GripHorizontal className="w-3 h-3" />{t("leads.transfer")} <X className="w-3 h-3" />
+src/app/(dashboard)/leads/page.tsx:          <button onClick={() => { setAssignedToFilter("all"); router.replace("/leads"); }}
+src/app/(dashboard)/leads/page.tsx:          <Calendar className="w-3 h-3" />{t("leads.needsFollowup")}{followupFilter && <X className="w-3 h-3 ml-0.5" />}
+src/app/(dashboard)/leads/page.tsx:        <span className="text-xs text-muted-foreground ml-auto">{t("leads.nResults").replace("{n}", String(filtered.length))}</span>
+src/app/(dashboard)/leads/page.tsx:                          onClick={() => { if (!isEditing && !isEditingProb && !isEditingSt && !isEditingLost && !isEditingAction && !isEditingFollowup && !isNoting && !isReassigning) router.push(`/leads/${lead.id}`); }}>
+src/app/(dashboard)/leads/page.tsx:                                  {lead.recovery_candidate && <span className="text-[9px] px-1 py-0.5 rounded bg-orange-500/10 text-orange-400">{t("leads.recovery")}</span>}
+src/app/(dashboard)/leads/page.tsx:                                  {lead.transfer_candidate && <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/10 text-red-400">{t("leads.transfer")}</span>}
+src/app/(dashboard)/leads/page.tsx:                                  {lead.sales_manager_review && <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/10 text-purple-400">{t("leads.review")}</span>}
+src/app/(dashboard)/leads/page.tsx:                              {lead.next_action && <span className="flex items-center gap-0.5"><span className="text-[10px]">📋</span>{t(`leads.nextActionLabels.${lead.next_action}`) || lead.next_action}</span>}
+src/app/(dashboard)/leads/page.tsx:                              {lead.followup_count != null && <span>{t("leads.nFollowups").replace("{n}", String(lead.followup_count))}</span>}
+src/app/(dashboard)/leads/page.tsx:                                    <span>{userNameMap[lead.assigned_to] || t("leads.unassigned")}</span>
+src/app/(dashboard)/leads/page.tsx:                                    <button key={ns.key} title={t("leads.moveTo").replace("{stage}", t(`stageLabels.${ns.key}`))}
+src/app/(dashboard)/leads/page.tsx:                                  <button title={t("leads.quickNote")}
+src/app/(dashboard)/leads/page.tsx:                                    {t("leads.probability")} {lead.win_probability || "—"}%
+src/app/(dashboard)/leads/page.tsx:                                    {t("leads.status")} {lead.lead_status ? `${STATUS_EMOJIS[lead.lead_status] || ""} ${t(`statusLabels.${lead.lead_status}`)}` : "—"}
+src/app/(dashboard)/leads/page.tsx:                                    📋{t("leads.nextAction")}
+src/app/(dashboard)/leads/page.tsx:                                    📅{t("leads.followUp")}
+src/app/(dashboard)/leads/page.tsx:                                <input autoFocus placeholder={t("leads.nextActionRequired")} value={nextActionText}
+src/app/(dashboard)/leads/page.tsx:                                <input autoFocus placeholder={t("leads.addNote")} value={noteText} onChange={(e) => setNoteText(e.target.value)}
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:  const [contracts, setContracts] = useState<ContractRow[]>([]);
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:        const res = await fetch(`/api/contracts?lead_id=${leadId}`);
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:  if (contracts.length === 0) {
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:          href={`/contracts/new?lead_id=${leadId}`}
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:      {contracts.map((c) => {
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:            href={`/contracts/${c.id}`}
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:                  {paid}/{total} {t("contracts.installments")}
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:        href={`/contracts/new?lead_id=${leadId}`}
+src/app/(dashboard)/leads/[id]/page.tsx:  hot: { label: "🔥 " + t("leads.hot"), color: "text-rose-400", bg: "bg-rose-500/10" },
+src/app/(dashboard)/leads/[id]/page.tsx:  warm: { label: "☀️ " + t("leads.warm"), color: "text-amber-400", bg: "bg-amber-500/10" },
+src/app/(dashboard)/leads/[id]/page.tsx:  cold: { label: "❄️ " + t("leads.cold"), color: "text-sky-400", bg: "bg-sky-500/10" },
+src/app/(dashboard)/leads/[id]/page.tsx:  dormant: { label: "💤 " + t("leads.dormant"), color: "text-muted-foreground", bg: "bg-gray-500/10" },
+src/app/(dashboard)/leads/[id]/page.tsx:// follow_up_logs row — immutable CRM v3 activity log. `contact_type` acts as the
+src/app/(dashboard)/leads/[id]/page.tsx:    const { data: l, error: err1 } = await supabase.from("leads").select("*").eq("id", id).single();
+src/app/(dashboard)/leads/[id]/page.tsx:    // P0-1: notes (and all follow-up activity) live in follow_up_logs. Newest first.
+src/app/(dashboard)/leads/[id]/page.tsx:      .from("follow_up_logs")
+src/app/(dashboard)/leads/[id]/page.tsx:    await supabase.from("leads").update({ assigned_to: newUserId, updated_at: new Date().toISOString() }).eq("id", id);
+src/app/(dashboard)/leads/[id]/page.tsx:    const { error: err } = await supabase.from("leads").update(updates).eq("id", id);
+src/app/(dashboard)/leads/[id]/page.tsx:  // Saving / Saved / Error feedback. Persists to the leads row; survives refresh.
+src/app/(dashboard)/leads/[id]/page.tsx:    const { error: err } = await supabase.from("leads").update(updates).eq("id", id);
+src/app/(dashboard)/leads/[id]/page.tsx:      toast.success(t("leads.markedWon"));
+src/app/(dashboard)/leads/[id]/page.tsx:  // P0-1: notes are written to follow_up_logs (contact_type='note', summary=content,
+src/app/(dashboard)/leads/[id]/page.tsx:    const { error: insertError } = await supabase.from("follow_up_logs").insert({
+src/app/(dashboard)/leads/[id]/page.tsx:    await supabase.from("leads").update({ last_contact_date: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id);
+src/app/(dashboard)/leads/[id]/page.tsx:          {lead.recovery_candidate && <Badge className="bg-orange-500/10 text-orange-400">{t("leads.recovery")}</Badge>}
+src/app/(dashboard)/leads/[id]/page.tsx:          {lead.transfer_candidate && <Badge className="bg-red-500/10 text-red-400">{t("leads.transfer")}</Badge>}
+src/app/(dashboard)/leads/[id]/page.tsx:                onClick={() => router.push(`/contracts/new?lead_id=${lead.id}`)}>
+src/app/(dashboard)/leads/[id]/page.tsx:    // Activity + business events + follow_up_logs feed (newest first).
+src/app/(dashboard)/leads/[id]/page.tsx:    // P0-1: follow_up_logs (incl. 'note' and 'import_note') are merged in so the
+src/app/(dashboard)/leads/[id]/page.tsx:        <Button variant="ghost" size="icon" onClick={() => router.push("/leads")} className="text-muted-foreground">
+src/app/(dashboard)/leads/[id]/page.tsx:                  onClick={() => router.push(`/contracts/new?lead_id=${lead.id}`)}>
+src/app/(dashboard)/projects/projects-client.tsx:            lead:leads!lead_id(customer_name)
+src/app/(dashboard)/projects/projects-client.tsx:      <Link href="/contracts" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+src/app/(dashboard)/projects/page.tsx:          lead:leads!lead_id(customer_name)
+src/app/(dashboard)/quotes/quote-wizard.tsx:  const [leads, setLeads] = useState<Lead[]>([]);
+src/app/(dashboard)/quotes/quote-wizard.tsx:      supabase.from("leads").select("id, customer_name, phone, property_type, property_size_sqm")
+src/app/(dashboard)/quotes/quote-wizard.tsx:      supabase.from("leads").select("id, customer_name, phone")
+src/app/(dashboard)/quotes/quote-wizard.tsx:    const lead = leads.find((l) => l.id === leadId);
+src/app/(dashboard)/quotes/quote-wizard.tsx:              {leads.map((l) => <option key={l.id} value={l.id}>{l.customer_name || "—"} {l.phone ? `(${l.phone})` : ""}</option>)}
+src/app/(dashboard)/quotes/quote-calculator.tsx:  const [leads, setLeads] = useState<Lead[]>([]);
+src/app/(dashboard)/quotes/quote-calculator.tsx:      supabase.from("leads").select("id, customer_name, phone, property_type, property_size_sqm")
+src/app/(dashboard)/quotes/quote-calculator.tsx:      supabase.from("leads").select("id, customer_name, phone")
+src/app/(dashboard)/quotes/quote-calculator.tsx:    const lead = leads.find((l) => l.id === leadId);
+src/app/(dashboard)/quotes/quote-calculator.tsx:                  {leads.map((lead) => (
+src/app/(dashboard)/quotes/quotes-client.tsx:  leads: { customer_name: string | null; phone: string | null } | null;
+src/app/(dashboard)/quotes/quotes-client.tsx:  const [leads, setLeads] = useState<Lead[]>([]);
+src/app/(dashboard)/quotes/quotes-client.tsx:      .select("*, leads(customer_name, phone)")
+src/app/(dashboard)/quotes/quotes-client.tsx:      .from("leads")
+src/app/(dashboard)/quotes/quotes-client.tsx:        const name = q.leads?.customer_name || "";
+src/app/(dashboard)/quotes/quotes-client.tsx:    const name = q.leads?.customer_name;
+src/app/(dashboard)/quotes/quotes-client.tsx:                {leads.map((lead) => (
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:  leads: { customer_name: string | null; phone: string | null } | null;
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:  const customerName = quote.leads?.customer_name || t("contracts.unnamed");
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:              href="/contracts"
+src/app/(dashboard)/quotes/page.tsx:      .select("*, leads(customer_name, phone)")
+src/app/(dashboard)/contracts/new/page.tsx:  const [leads, setLeads] = useState<LeadOption[]>([]);
+src/app/(dashboard)/contracts/new/page.tsx:    // Fetch eligible leads (not won/lost, or those with quotation_value)
+src/app/(dashboard)/contracts/new/page.tsx:        const { data, error } = await supabase.from("leads")
+src/app/(dashboard)/contracts/new/page.tsx:        if (error) console.error("Failed to fetch leads:", error);
+src/app/(dashboard)/contracts/new/page.tsx:          const { data: preset } = await supabase.from("leads")
+src/app/(dashboard)/contracts/new/page.tsx:        console.error("Network error fetching leads:", err);
+src/app/(dashboard)/contracts/new/page.tsx:      toast.error(t("contracts.selectLead"));
+src/app/(dashboard)/contracts/new/page.tsx:      toast.error(t("contracts.validAmount"));
+src/app/(dashboard)/contracts/new/page.tsx:      toast.error(t("contracts.invalidInstallment"));
+src/app/(dashboard)/contracts/new/page.tsx:        description: i === 0 ? t("contracts.installmentFirst") : i === installCount - 1 ? t("contracts.installmentLast") : t("contracts.installmentNth").replace("{n}", String(i + 1)),
+src/app/(dashboard)/contracts/new/page.tsx:      res = await fetch("/api/contracts", {
+src/app/(dashboard)/contracts/new/page.tsx:      toast.error(t("contracts.createFailed") || "Network error");
+src/app/(dashboard)/contracts/new/page.tsx:      toast.error(result.error || t("contracts.createFailed"));
+src/app/(dashboard)/contracts/new/page.tsx:    toast.success(t("contracts.created").replace("{no}", result.contract_no));
+src/app/(dashboard)/contracts/new/page.tsx:    router.push("/contracts");
+src/app/(dashboard)/contracts/new/page.tsx:        <Button variant="ghost" size="icon" onClick={() => router.push("/contracts")} className="text-muted-foreground">
+src/app/(dashboard)/contracts/new/page.tsx:        <h1 className="text-2xl font-bold">{t("contracts.new")}</h1>
+src/app/(dashboard)/contracts/new/page.tsx:            <CardTitle className="text-sm text-muted-foreground">{t("contracts.customerLead")}</CardTitle>
+src/app/(dashboard)/contracts/new/page.tsx:                  <p className="text-foreground font-medium">{selectedLead.customer_name || t("contracts.unnamed")}</p>
+src/app/(dashboard)/contracts/new/page.tsx:                  <p className="text-xs text-muted-foreground">{selectedLead.phone || t("contracts.noPhone")} · {t("contracts.quotation")}: AED {selectedLead.quotation_value?.toLocaleString() || "—"}</p>
+src/app/(dashboard)/contracts/new/page.tsx:                  {t("contracts.change")}
+src/app/(dashboard)/contracts/new/page.tsx:                {t("contracts.selectLead")}
+src/app/(dashboard)/contracts/new/page.tsx:            <CardTitle className="text-sm text-muted-foreground">{t("contracts.contractInfo")}</CardTitle>
+src/app/(dashboard)/contracts/new/page.tsx:              <Label className="text-muted-foreground text-xs">{t("contracts.contractAmount")}</Label>
+src/app/(dashboard)/contracts/new/page.tsx:                placeholder={t("contracts.amountPlaceholder")}
+src/app/(dashboard)/contracts/new/page.tsx:                <Label className="text-muted-foreground text-xs">{t("contracts.partyAName")}</Label>
+src/app/(dashboard)/contracts/new/page.tsx:                  placeholder={t("contracts.partyANamePlaceholder")}
+src/app/(dashboard)/contracts/new/page.tsx:                <Label className="text-muted-foreground text-xs">{t("contracts.partyAContact")}</Label>
+src/app/(dashboard)/contracts/new/page.tsx:                  placeholder={t("contracts.partyAContactPlaceholder")}
+src/app/(dashboard)/contracts/new/page.tsx:            <CardTitle className="text-sm text-muted-foreground">{t("contracts.paymentPlan")}</CardTitle>
+src/app/(dashboard)/contracts/new/page.tsx:              <Label className="text-muted-foreground text-xs">{t("contracts.pctLabel")}</Label>
+src/app/(dashboard)/contracts/new/page.tsx:              <Label className="text-muted-foreground text-xs">{t("contracts.daysLabel")}</Label>
+src/app/(dashboard)/contracts/new/page.tsx:          <Button type="button" variant="ghost" onClick={() => router.push("/contracts")} className="text-muted-foreground">
+src/app/(dashboard)/contracts/new/page.tsx:            {saving ? t("contracts.creating") : t("contracts.createContract")}
+src/app/(dashboard)/contracts/new/page.tsx:            <DialogTitle className="text-foreground text-lg">{t("contracts.selectLeadShort")}</DialogTitle>
+src/app/(dashboard)/contracts/new/page.tsx:            {leads.length === 0 ? (
+src/app/(dashboard)/contracts/new/page.tsx:              <p className="text-muted-foreground text-sm text-center py-4">{t("contracts.noEligibleLeads")}</p>
+src/app/(dashboard)/contracts/new/page.tsx:            ) : leads.map((lead) => (
+src/app/(dashboard)/contracts/new/page.tsx:                <p className="text-foreground text-sm font-medium">{lead.customer_name || t("contracts.unnamed")}</p>
+src/app/(dashboard)/contracts/new/page.tsx:                <p className="text-xs text-muted-foreground mt-0.5">{lead.phone || t("contracts.noPhone")} · AED {lead.quotation_value?.toLocaleString() || "—"}</p>
+src/app/(dashboard)/contracts/page.tsx:  leads?: { customer_name: string | null } | null;
+src/app/(dashboard)/contracts/page.tsx:    draft: t("contracts.statusDraft"),
+src/app/(dashboard)/contracts/page.tsx:    pending_admin: t("contracts.statusPendingAdmin"),
+src/app/(dashboard)/contracts/page.tsx:    pending_ceo: t("contracts.statusPendingCeo"),
+src/app/(dashboard)/contracts/page.tsx:    signed: t("contracts.statusSigned"),
+src/app/(dashboard)/contracts/page.tsx:    active: t("contracts.statusActive"),
+src/app/(dashboard)/contracts/page.tsx:    approved: t("contracts.statusApproved"),
+src/app/(dashboard)/contracts/page.tsx:    completed: t("contracts.statusCompleted"),
+src/app/(dashboard)/contracts/page.tsx:    terminated: t("contracts.statusTerminated"),
+src/app/(dashboard)/contracts/page.tsx:    expired: t("contracts.statusExpired"),
+src/app/(dashboard)/contracts/page.tsx:    rejected: t("contracts.statusRejected"),
+src/app/(dashboard)/contracts/page.tsx:    revoking: t("contracts.statusRevoking"),
+src/app/(dashboard)/contracts/page.tsx:    superseded: t("contracts.statusSuperseded"),
+src/app/(dashboard)/contracts/page.tsx:    suspended: t("contracts.statusSuspended"),
+src/app/(dashboard)/contracts/page.tsx:  const [contracts, setContracts] = useState<Contract[]>([]);
+src/app/(dashboard)/contracts/page.tsx:      const res = await fetch(`/api/contracts/${contractId}/remind-payment`, {
+src/app/(dashboard)/contracts/page.tsx:        toast.success(t("contracts.reminderSent"));
+src/app/(dashboard)/contracts/page.tsx:        toast.error(err.error || t("contracts.reminderFailed"));
+src/app/(dashboard)/contracts/page.tsx:      const input = prompt(t("contracts.rejectPrompt"));
+src/app/(dashboard)/contracts/page.tsx:      const res = await fetch(`/api/contracts/${contractId}/approve`, {
+src/app/(dashboard)/contracts/page.tsx:        toast.success(t("contracts.approvalSuccess"));
+src/app/(dashboard)/contracts/page.tsx:        toast.error(err.error || t("contracts.approvalFailed"));
+src/app/(dashboard)/contracts/page.tsx:      toast.error(t("contracts.approvalFailed"));
+src/app/(dashboard)/contracts/page.tsx:    const reason = prompt(t("contracts.revokePrompt"));
+src/app/(dashboard)/contracts/page.tsx:      const res = await fetch(`/api/contracts/${contractId}/revoke`, {
+src/app/(dashboard)/contracts/page.tsx:        toast.success(t("contracts.revokeSuccess"));
+src/app/(dashboard)/contracts/page.tsx:        toast.error(err.error || t("contracts.revokeFailed"));
+src/app/(dashboard)/contracts/page.tsx:      toast.error(t("contracts.revokeFailed"));
+src/app/(dashboard)/contracts/page.tsx:      const urlRes = await fetch(`/api/contracts/${id}/upload-url`, {
+src/app/(dashboard)/contracts/page.tsx:        toast.error(err.error || t("contracts.uploadFailed"));
+src/app/(dashboard)/contracts/page.tsx:      const confirmRes = await fetch(`/api/contracts/${id}/confirm-upload`, {
+src/app/(dashboard)/contracts/page.tsx:        toast.success(t("contracts.uploadSuccess"));
+src/app/(dashboard)/contracts/page.tsx:        toast.error(err.error || t("contracts.uploadFailed"));
+src/app/(dashboard)/contracts/page.tsx:      toast.error(t("contracts.uploadFailed"));
+src/app/(dashboard)/contracts/page.tsx:    let q = supabase.from("contracts").select(`
+src/app/(dashboard)/contracts/page.tsx:      *, leads(customer_name), profiles!contracts_sales_id_fkey(full_name, email),
+src/app/(dashboard)/contracts/page.tsx:  const totalActive = contracts.reduce((s, c) => ["signed","active","approved"].includes(c.status) ? s + c.contract_amount : s, 0);
+src/app/(dashboard)/contracts/page.tsx:          { href: "/contracts", labelKey: "contracts.subnavContracts", iconName: "file-text" },
+src/app/(dashboard)/contracts/page.tsx:          { href: "/projects", labelKey: "contracts.subnavProjects", iconName: "briefcase" },
+src/app/(dashboard)/contracts/page.tsx:        <h1 className="text-2xl font-bold">{t("contracts.title")}</h1>
+src/app/(dashboard)/contracts/page.tsx:        <Link href="/contracts/new" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-600 text-foreground text-sm font-medium hover:bg-slate-700 transition-colors">
+src/app/(dashboard)/contracts/page.tsx:          {t("contracts.newContract")}
+src/app/(dashboard)/contracts/page.tsx:        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.total")}</p><p className="text-xl font-bold">{contracts.length}</p></CardContent></Card>
+src/app/(dashboard)/contracts/page.tsx:        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.activeValue")}</p><p className="text-xl font-bold">{fmtAED(totalActive)}</p></CardContent></Card>
+src/app/(dashboard)/contracts/page.tsx:        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.signed")}</p><p className="text-xl font-bold">{contracts.filter(c => c.status === "signed").length}</p></CardContent></Card>
+src/app/(dashboard)/contracts/page.tsx:        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.active")}</p><p className="text-xl font-bold">{contracts.filter(c => c.status === "active").length}</p></CardContent></Card>
+src/app/(dashboard)/contracts/page.tsx:        {contracts.length === 0 ? (
+src/app/(dashboard)/contracts/page.tsx:          <Card className="bg-card border-border"><CardContent className="p-8 text-center text-muted-foreground">{t("contracts.noContracts")}</CardContent></Card>
+src/app/(dashboard)/contracts/page.tsx:        ) : contracts.map(c => {
+src/app/(dashboard)/contracts/page.tsx:                    <Link href={`/contracts/${c.id}`} className="font-medium text-foreground hover:text-copper-400 transition-colors">
+src/app/(dashboard)/contracts/page.tsx:                  <p className="text-sm text-foreground">{c.leads?.customer_name || c.party_a_name || "—"}</p>
+src/app/(dashboard)/contracts/page.tsx:                        <CheckCircle2 className="w-3 h-3 mr-1" />{t("contracts.approve")}
+src/app/(dashboard)/contracts/page.tsx:                        <XCircle className="w-3 h-3 mr-1" />{t("contracts.reject")}
+src/app/(dashboard)/contracts/page.tsx:                        <>{t("contracts.uploading")} {uploadProgress}%</>
+src/app/(dashboard)/contracts/page.tsx:                        <><Upload className="w-3 h-3 mr-1" />{t("contracts.uploadContract")}</>
+src/app/(dashboard)/contracts/page.tsx:                      <Ban className="w-3 h-3 mr-1" />{t("contracts.revoke")}
+src/app/(dashboard)/contracts/[id]/page.tsx:      const res = await fetch(`/api/contracts/${contractId}`);
+src/app/(dashboard)/contracts/[id]/page.tsx:    draft: t("contracts.statusDraft"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    pending_admin: t("contracts.statusPendingAdmin"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    pending_ceo: t("contracts.statusPendingCeo"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    signed: t("contracts.statusSigned"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    active: t("contracts.statusActive"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    approved: t("contracts.statusApproved"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    completed: t("contracts.statusCompleted"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    terminated: t("contracts.statusTerminated"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    rejected: t("contracts.statusRejected"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    revoking: t("contracts.statusRevoking"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    superseded: t("contracts.statusSuperseded"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    suspended: t("contracts.statusSuspended"),
+src/app/(dashboard)/contracts/[id]/page.tsx:            onClick={() => router.push("/contracts")}
+src/app/(dashboard)/contracts/[id]/page.tsx:            {t("contracts.title")}
+src/app/(dashboard)/contracts/[id]/page.tsx:                onClick={() => postAction(`/api/contracts/${contractId}/approve`, { action: "approve" }, t("contracts.approvalSuccess"))}
+src/app/(dashboard)/contracts/[id]/page.tsx:                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />{t("contracts.approve")}
+src/app/(dashboard)/contracts/[id]/page.tsx:                  const notes = prompt(t("contracts.rejectPrompt"));
+src/app/(dashboard)/contracts/[id]/page.tsx:                  postAction(`/api/contracts/${contractId}/approve`, { action: "reject", notes: notes || undefined }, t("contracts.approvalSuccess"));
+src/app/(dashboard)/contracts/[id]/page.tsx:                <XCircle className="w-3.5 h-3.5 mr-1" />{t("contracts.reject")}
+src/app/(dashboard)/contracts/[id]/page.tsx:            onClick={() => postAction(`/api/contracts/${contractId}/remind-payment`, {}, t("contracts.reminderSent"))}
+src/app/(dashboard)/contracts/[id]/page.tsx:            <Bell className="w-3.5 h-3.5 mr-1" />{t("contracts.remind")}
+src/app/(dashboard)/contracts/[id]/page.tsx:                const reason = prompt(t("contracts.revokePrompt"));
+src/app/(dashboard)/contracts/[id]/page.tsx:                postAction(`/api/contracts/${contractId}/revoke`, { reason }, t("contracts.revokeSuccess"));
+src/app/(dashboard)/contracts/[id]/page.tsx:              <Ban className="w-3.5 h-3.5 mr-1" />{t("contracts.revoke")}
+src/app/(dashboard)/contracts/[id]/page.tsx:              <ShieldCheck className="w-3.5 h-3.5" />{t("contracts.title")}
+src/app/(dashboard)/contracts/[id]/page.tsx:            <InfoRow icon={<Calendar className="w-3.5 h-3.5" />} label={t("contracts.contractDate")} value={contract.contract_date?.slice(0, 10)} />
+src/app/(dashboard)/contracts/[id]/page.tsx:            <InfoRow icon={<User className="w-3.5 h-3.5" />} label={t("contracts.partyA")} value={contract.party_a_name} sub={contract.party_a_contact} />
+src/app/(dashboard)/contracts/[id]/page.tsx:            <InfoRow icon={<User className="w-3.5 h-3.5" />} label={t("contracts.partyB")} value={contract.party_b_name} sub={contract.party_b_contact} />
+src/app/(dashboard)/contracts/[id]/page.tsx:            <InfoRow icon={<DollarSign className="w-3.5 h-3.5" />} label={t("contracts.amount")} value={fmtAED(totalContract)} sub={contract.currency} />
+src/app/(dashboard)/contracts/[id]/page.tsx:            {contract.leads ? (
+src/app/(dashboard)/contracts/[id]/page.tsx:                <InfoRow icon={<User className="w-3.5 h-3.5" />} label={t("leadDetail.customerName")} value={contract.leads.customer_name || "—"} />
+src/app/(dashboard)/contracts/[id]/page.tsx:                <InfoRow icon={<FileText className="w-3.5 h-3.5" />} label={t("leads.source")} value={contract.leads.source || "—"} />
+src/app/(dashboard)/contracts/[id]/page.tsx:                <Link href={`/leads/${contract.leads.id}`} className="inline-flex items-center gap-1 text-xs text-copper-400 hover:underline mt-1">
+src/app/(dashboard)/contracts/[id]/page.tsx:              <InfoRow icon={<User className="w-3.5 h-3.5" />} label={t("contracts.sales")} value={contract.profiles?.full_name || contract.profiles?.email || "—"} />
+src/app/(dashboard)/contracts/[id]/page.tsx:            <h2 className="text-sm font-semibold text-foreground">{t("contracts.installments")}</h2>
+src/app/(dashboard)/contracts/[id]/page.tsx:            <p className="text-xs text-muted-foreground py-4 text-center">{t("contracts.noInstallments")}</p>
+src/app/(dashboard)/contracts/[id]/page.tsx:              <h2 className="text-sm font-semibold text-foreground">{t("contracts.payments")}</h2>
+src/app/(dashboard)/contracts/[id]/page.tsx:              <p className="text-xs text-muted-foreground py-4 text-center">{t("contracts.noPayments")}</p>
+src/app/(dashboard)/contracts/[id]/page.tsx:                            <Clock className="w-2.5 h-2.5" />{t("contracts.pendingConfirm")}
+src/app/(dashboard)/contracts/[id]/page.tsx:              <h2 className="text-sm font-semibold text-foreground">{t("contracts.approvalHistory")}</h2>
+src/app/(dashboard)/contracts/[id]/page.tsx:              <p className="text-xs text-muted-foreground py-4 text-center">{t("contracts.noApprovals")}</p>
+src/app/(dashboard)/contracts/[id]/page.tsx:              <h2 className="text-sm font-semibold text-foreground">{t("contracts.contractFile")}</h2>
+src/app/(dashboard)/contracts/[id]/page.tsx:                  <ShieldCheck className="w-3.5 h-3.5" />{t("contracts.sealedFile")}
+src/app/(dashboard)/contracts/[id]/page.tsx:                  <Download className="w-3.5 h-3.5" />{t("contracts.downloadFile")}
+src/app/(dashboard)/contracts/[id]/page.tsx:  if (status === "partial") return { color: "bg-amber-500/10 text-amber-400 border-amber-500/30", label: t("contracts.partial"), icon: <Clock className="w-2.5 h-2.5" /> };

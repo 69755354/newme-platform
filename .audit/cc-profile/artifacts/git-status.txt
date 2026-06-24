@@ -1,0 +1,28 @@
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   logs/pm2-error.log
+	modified:   logs/pm2-out.log
+	modified:   package-lock.json
+	modified:   package.json
+	modified:   supabase/.temp/gotrue-version
+	modified:   supabase/.temp/storage-version
+	modified:   tsconfig.tsbuildinfo
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	.audit/
+	.next.backup/
+	AUDIT-LOGGING-PLAN.md
+	deploy-backup-20260624.json
+	deploy-backup-20260624.sql
+	docs/context-pack/
+	docs/crm-v3/p3-stage-retirement-checklist.md
+	docs/crm-v3/p6-fix-patch.md
+	docs/crm-v3/phase-b-scan-plan.md
+	docs/employee-readiness-20260624.md
+
+no changes added to commit (use "git add" and/or "git commit -a")

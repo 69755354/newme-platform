@@ -1,0 +1,19 @@
+你是 GLM 5.2。审计 CRM 项目的 stage/workflow 混用风险。
+
+## 输入
+.audit/cc-profile/artifacts/workflow-grep.txt（1477行）
+
+## 只查四件事
+1. 有没有旧 `stage` 残留（代码写 `stage` 而非 `final_status`/`current_milestone`）
+2. 有没有双真相源（`stage` 和 `final_status` 同时判断 won/lost）
+3. 前台 5 阶段（new→contacted→requirement→solution→quotation→won）与后台状态机是否冲突
+4. milestone 跳序风险（是否可能从 new 直接跳到 won）
+
+## 输出
+- P0: 双真相源 / 数据错乱
+- P1: 残留/冲突
+- 建议修复方向
+
+## 约束
+- DO NOT enter plan mode — just execute
+- 只读，只基于 grep 结果判断

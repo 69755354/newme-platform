@@ -1,0 +1,30 @@
+你是 GLM 5.2。审计 CRM 项目未入库的新 migration 文件。
+
+## 要读的文件（必读，每个都要看）
+1. supabase/migrations/20260623000001_auth_login_trigger.sql
+2. supabase/migrations/20260623020001_crm_v3_new_tables.sql
+3. supabase/migrations/20260623020002_crm_v3_rls_policies.sql
+4. supabase/migrations/20260624000000_next_quote_no_rpc.sql
+5. supabase/migrations/20260624000001_fix_milestone_order.sql
+6. supabase/migrations/20260624000002_fix_won_lost_migration.sql
+7. supabase/migrations/20260624000003_fix_trg_lead_won.sql
+8. supabase/migrations/20260624000004_add_approval_status.sql
+9. supabase/migrations/20260624095205_fix_p0_won_trigger_perms.sql
+10. supabase/migrations/20260624130000_add_default_next_action.sql
+11. supabase/migrations/20260624143000_fix_auth_login_trigger.sql
+12. supabase/migrations/20260625000000_relax_tasks_due_check.sql
+13. supabase/migrations/20260625020000_crm_v3_import_archive.sql
+
+## 只查三件事
+1. 有没有 DROP TABLE / DROP COLUMN（destructive）
+2. 有没有 lead/stage/won/lost 数据丢失风险
+3. 字段：created_by 在 leads 表里吗？archive_reason 在 leads 表里吗？
+
+## 输出格式
+- 每个文件一句话风险
+- P0: 列出所有 P0
+- 字段缺失: 列出所有代码引用但 migration 没建的字段
+
+## 约束
+- DO NOT enter plan mode — just execute
+- 只读

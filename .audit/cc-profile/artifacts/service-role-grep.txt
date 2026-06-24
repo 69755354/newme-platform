@@ -1,0 +1,108 @@
+src/hooks/useUserRole.ts:import { createClient } from "@/lib/supabase";
+src/hooks/useUserRole.ts:  const supabase = createClient();
+src/hooks/useRequireRole.ts:import { createClient } from "@/lib/supabase";
+src/hooks/useRequireRole.ts:      const supabase = createClient();
+src/components/lead-workflow.tsx:import { createClient } from "@/lib/supabase";
+src/components/lead-workflow.tsx:  const supabase = createClient();
+src/components/QuickCreateLeadDialog.tsx:import { createClient } from "@/lib/supabase";
+src/components/QuickCreateLeadDialog.tsx:  const supabase = createClient();
+src/lib/supabase.ts:import { createClient as _createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+src/lib/supabase.ts:export function createClient(): SupabaseClient {
+src/lib/supabase-admin.ts:import { createClient } from "@supabase/supabase-js";
+src/lib/supabase-admin.ts:const supabaseAdmin = createClient(
+src/lib/supabase-admin.ts:  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+src/lib/supabase-server.ts:import { createClient } from "@supabase/supabase-js";
+src/lib/supabase-server.ts:  return createClient(supabaseUrl, anonKey, {
+src/proxy.ts:  // Use createMiddlewareClient to validate session (no service_role needed)
+src/proxy.ts:  // Fetch role from profiles using user's own session (no service_role needed)
+src/app/api/meta/oauth-callback/route.ts:import { createClient } from "@supabase/supabase-js";
+src/app/api/meta/oauth-callback/route.ts:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+src/app/api/meta/oauth-callback/route.ts:  return createClient(url, key, {
+src/app/api/dev/setup/route.ts:import { createClient } from "@supabase/supabase-js";
+src/app/api/dev/setup/route.ts:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+src/app/api/dev/setup/route.ts:  const admin = createClient(url, key, {
+src/app/api/quotations/export/route.ts:import { createClient } from "@supabase/supabase-js";
+src/app/api/quotations/export/route.ts:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+src/app/api/quotations/export/route.ts:      "SUPABASE_SERVICE_ROLE_KEY not configured — set it in production environment variables.",
+src/app/api/quotations/export/route.ts:  return createClient(url, key);
+src/app/api/quotations/generate/route.ts:import { createClient } from "@supabase/supabase-js";
+src/app/api/quotations/generate/route.ts:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+src/app/api/quotations/generate/route.ts:      "SUPABASE_SERVICE_ROLE_KEY not configured — set it in production environment variables.",
+src/app/api/quotations/generate/route.ts:  return createClient(url, key);
+src/app/api/products/import/route.ts:import { createClient } from "@supabase/supabase-js";
+src/app/api/products/import/route.ts:    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+src/app/api/products/import/route.ts:    const adminClient = createClient(supabaseUrl, serviceKey, {
+src/app/api/hermes/generate-quote/route.ts:import { createClient } from "@supabase/supabase-js";
+src/app/api/hermes/generate-quote/route.ts:  const client = createClient(url, key, {
+src/app/api/hermes/generate-quote/route.ts:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+src/app/api/hermes/generate-quote/route.ts:      "SUPABASE_SERVICE_ROLE_KEY not configured — set it in production environment variables.",
+src/app/api/hermes/generate-quote/route.ts:  return createClient(url, key);
+src/app/api/hermes/knx-design/route.ts:import { createClient } from "@supabase/supabase-js";
+src/app/api/hermes/knx-design/route.ts:  const client = createClient(url, key, {
+src/app/api/hermes/knx-design/route.ts:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+src/app/api/hermes/knx-design/route.ts:    throw new Error("SUPABASE_SERVICE_ROLE_KEY not configured");
+src/app/api/hermes/knx-design/route.ts:  return createClient(url, key);
+src/app/api/users/[id]/password/route.ts:import { createClient } from "@supabase/supabase-js";
+src/app/api/users/[id]/password/route.ts:    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+src/app/api/users/[id]/password/route.ts:    const adminClient = createClient(supabaseUrl, serviceKey, {
+src/app/api/users/[id]/password/route.ts:    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+src/app/api/users/[id]/password/route.ts:    const adminClient = createClient(supabaseUrl, serviceKey, {
+src/app/api/leads/[id]/follow-up/route.ts:    // rule_102: use auth.getUser() via SSR client, NOT service_role
+src/app/api/leads/meta-capi/route.ts:import { createClient } from "@supabase/supabase-js";
+src/app/api/leads/meta-capi/route.ts:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+src/app/api/leads/meta-capi/route.ts:      "SUPABASE_SERVICE_ROLE_KEY not configured — set it in production environment variables.",
+src/app/api/leads/meta-capi/route.ts:  return createClient(url, key);
+src/app/(auth)/change-password/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(auth)/change-password/page.tsx:  const supabase = createClient();
+src/app/login/page.tsx:      // Store session in localStorage for client-side createClient()
+src/app/(dashboard)/dashboard/_components/AlertPanel.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/dashboard/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/dashboard/page.tsx:  const supabase = createClient();
+src/app/(dashboard)/dashboard/page.tsx:      const supabase = createClient();
+src/app/(dashboard)/workbench/page.tsx:import { createClient } from "@/lib/supabase"
+src/app/(dashboard)/layout.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/layout.tsx:  const supabase = createClient();
+src/app/(dashboard)/payments/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/payments/page.tsx:  const supabase = createClient();
+src/app/(dashboard)/settings/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/settings/page.tsx:  const supabase = createClient();
+src/app/(dashboard)/settings/kpi-management.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/settings/kpi-management.tsx:  const supabase = createClient();
+src/app/(dashboard)/products/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/products/page.tsx:  const supabase = createClient();
+src/app/(dashboard)/pipeline/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/pipeline/page.tsx:  const supabase = createClient();
+src/app/(dashboard)/team/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/team/page.tsx:  const supabase = createClient();
+src/app/(dashboard)/ads/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/ads/page.tsx:  const supabase = createClient();
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:  const supabase = createClient();
+src/app/(dashboard)/analytics/_components/LeadSources.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/analytics/_components/LeadSources.tsx:  const supabase = createClient();
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:  const supabase = createClient();
+src/app/(dashboard)/analytics/_components/TeamPerformance.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/analytics/_components/TeamPerformance.tsx:  const supabase = createClient();
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:  const supabase = createClient();
+src/app/(dashboard)/analytics/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/analytics/page.tsx:    const supabase = createClient();
+src/app/(dashboard)/leads/new/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/leads/new/page.tsx:  const supabase = createClient();
+src/app/(dashboard)/leads/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/leads/page.tsx:  const supabase = createClient();
+src/app/(dashboard)/leads/[id]/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/leads/[id]/page.tsx:  const supabase = createClient();
+src/app/(dashboard)/projects/projects-client.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/projects/projects-client.tsx:  const supabase = createClient();
+src/app/(dashboard)/quotes/quote-wizard.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/quotes/quote-wizard.tsx:  const supabase = createClient();
+src/app/(dashboard)/quotes/quote-calculator.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/quotes/quote-calculator.tsx:  const supabase = createClient();
+src/app/(dashboard)/quotes/quotes-client.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/quotes/quotes-client.tsx:  const supabase = createClient();
+src/app/(dashboard)/contracts/new/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/contracts/new/page.tsx:    const supabase = createClient();
+src/app/(dashboard)/contracts/page.tsx:import { createClient } from "@/lib/supabase";
+src/app/(dashboard)/contracts/page.tsx:  const supabase = createClient();

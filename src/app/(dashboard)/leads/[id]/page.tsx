@@ -95,6 +95,10 @@ interface Activity { id: string; type: string; content: string; ai_generated: bo
 interface BusinessEvent { id: string; event_type: string; description: string; event_data: any; created_at: string; }
 interface ChatMessage { id: string; content: string | null; direction: string; created_at: string; }
 interface Task { id: string; title: string; due_at: string; }
+// follow_up_logs row — immutable CRM v3 activity log. `contact_type` acts as the
+// "type" (e.g. 'note', 'phone', 'whatsapp', 'import_note'), `summary` is the content,
+// `user_id` is the author (created_by). See migration 20260623020001_crm_v3_new_tables.sql.
+interface FollowUpLog { id: string; contact_type: string; summary: string; user_id: string | null; created_at: string; }
 interface LeadTrace {
   lead_id: string; customer_name: string | null; stage: string; quotation_value: number | null;
   quotation_id: string | null; quotation_price: number | null; quotation_status: string | null;
@@ -113,6 +117,19 @@ function fmtAED(v: number | null | undefined): string {
 function daysSince(d: string | null): number | null {
   if (!d) return null;
   return Math.floor((Date.now() - new Date(d).getTime()) / 86_400_000);
+}
+
+// Build the Project Info batch-save draft from a lead row. Used both on initial
+// fetch (keep form in sync with persisted values) and by resetProjectInfoDraft
+// (undo local edits back to the last saved values).
+function projectDraftFromLead(l: any) {
+  return {
+    project_type: l?.project_type || "",
+    emirate: l?.emirate || "",
+    area: l?.area || "",
+    ac_brand: l?.ac_brand || "",
+    customer_budget: l?.customer_budget != null ? String(l.customer_budget) : "",
+  };
 }
 
 const TABS = [
@@ -169,6 +186,14 @@ export default function LeadDetailPage() {
   const [nextTask, setNextTask] = useState<Task | null>(null);
   const [leadTrace, setLeadTrace] = useState<LeadTrace[]>([]);
   const [noteText, setNoteText] = useState("");
+  const [followUpLogs, setFollowUpLogs] = useState<FollowUpLog[]>([]);
+  // Inline field-save status (Saving / Saved / Error) shown for any updateField call.
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  // Project Info batch-save form (bottom folding panel) — local draft + status.
+  const [projectInfoDraft, setProjectInfoDraft] = useState({
+    project_type: "", emirate: "", area: "", ac_brand: "", customer_budget: "",
+  });
+  const [projectInfoStatus, setProjectInfoStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -187,7 +212,19 @@ export default function LeadDetailPage() {
     setError(null);
     const { data: l, error: err1 } = await supabase.from("leads").select("*").eq("id", id).single();
     if (err1) { console.error("Failed to fetch lead:", err1); setError(t("common.loadFailedRetry")); setLoading(false); return; }
-    if (l) setLead(l);
+    if (l) {
+      setLead(l);
+      // Keep the Project Info batch-save form in sync with the persisted lead.
+      setProjectInfoDraft(projectDraftFromLead(l));
+    }
+    // P0-1: notes (and all follow-up activity) live in follow_up_logs. Newest first.
+    const { data: ful } = await supabase
+      .from("follow_up_logs")
+      .select("id, contact_type, summary, user_id, created_at")
+      .eq("lead_id", id)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (ful) setFollowUpLogs(ful as FollowUpLog[]);
     const res = await fetch(`/api/activities?lead_id=${id}`);
     const a = res.ok ? await res.json() : null;
     if (a) setActivities(a);
@@ -256,10 +293,20 @@ export default function LeadDetailPage() {
 
   async function updateField(field: string, value: any, eventType?: string, eventDesc?: string): Promise<boolean> {
     setUpdating(true);
+    setSaveStatus("saving");
     const updates: Record<string, any> = { updated_at: new Date().toISOString() };
     updates[field] = value;
     const { error: err } = await supabase.from("leads").update(updates).eq("id", id);
-    if (err) { console.error("Failed to update field:", err); setError(t("common.saveFailed") || "Save failed"); setUpdating(false); return false; }
+    if (err) {
+      console.error("Failed to update field:", err);
+      setError(t("common.saveFailed") || "Save failed");
+      setSaveStatus("error");
+      setUpdating(false);
+      toast.error(t("common.saveFailed"));
+      return false;
+    }
+    setSaveStatus("saved");
+    toast.success(lang === "zh" ? "已保存" : "Saved");
     if (eventType && eventDesc) {
       await supabase.from("activities").insert({ lead_id: id, type: eventType, content: eventDesc, user_id: (await supabase.auth.getUser()).data.user?.id });
       await writeEvent(eventType, eventDesc, { [field]: value });
@@ -267,7 +314,40 @@ export default function LeadDetailPage() {
     setEditField(null);
     fetchData();
     setUpdating(false);
+    setTimeout(() => setSaveStatus("idle"), 2500);
     return true;
+  }
+
+  // P1-6: batch-save the Project Info form (bottom folding panel) with explicit
+  // Saving / Saved / Error feedback. Persists to the leads row; survives refresh.
+  async function saveProjectInfo() {
+    setProjectInfoStatus("saving");
+    const updates: Record<string, any> = {
+      project_type: projectInfoDraft.project_type || null,
+      emirate: projectInfoDraft.emirate.trim() || null,
+      area: projectInfoDraft.area.trim() || null,
+      ac_brand: projectInfoDraft.ac_brand.trim() || null,
+      customer_budget: projectInfoDraft.customer_budget ? Number(projectInfoDraft.customer_budget) : null,
+      updated_at: new Date().toISOString(),
+    };
+    const { error: err } = await supabase.from("leads").update(updates).eq("id", id);
+    if (err) {
+      console.error("Failed to save project info:", err);
+      setProjectInfoStatus("error");
+      toast.error(t("common.saveFailed"));
+      return;
+    }
+    setProjectInfoStatus("saved");
+    toast.success(lang === "zh" ? "项目信息已保存" : "Project info saved");
+    fetchData();
+    setTimeout(() => setProjectInfoStatus("idle"), 2500);
+  }
+
+  // Undo local Project Info edits — restore the draft to the last persisted
+  // lead values (the same values the form was seeded with on fetch).
+  function resetProjectInfoDraft() {
+    setProjectInfoDraft(projectDraftFromLead(lead));
+    setProjectInfoStatus("idle");
   }
 
   async function updateStage(stage: string): Promise<boolean> {
@@ -320,12 +400,31 @@ export default function LeadDetailPage() {
     }
   }
 
+  // P0-1: notes are written to follow_up_logs (contact_type='note', summary=content,
+  // user_id=author). The immutable follow-up log is the source of truth shown in the
+  // timeline. Errors surface via toast so a failed insert never silently drops a note.
   async function addNote() {
-    if (!noteText.trim()) return;
-    await supabase.from("activities").insert({ lead_id: id, type: "note", content: noteText.trim(), user_id: (await supabase.auth.getUser()).data.user?.id });
-    await writeEvent("note_added", `${t("leadDetail.eventTypes.note_added")}: ${noteText.trim()}`);
+    const text = noteText.trim();
+    if (!text) return;
+    setUpdating(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error: insertError } = await supabase.from("follow_up_logs").insert({
+      lead_id: id,
+      user_id: user?.id ?? null,
+      contact_type: "note",
+      summary: text,
+      no_answer: false,
+    });
+    if (insertError) {
+      console.error("Failed to save note:", insertError);
+      setUpdating(false);
+      toast.error(t("common.saveFailed"));
+      return;
+    }
     await supabase.from("leads").update({ last_contact_date: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id);
     setNoteText("");
+    setUpdating(false);
+    toast.success(lang === "zh" ? "备注已保存" : "Note saved");
     fetchData();
   }
 
@@ -962,10 +1061,20 @@ export default function LeadDetailPage() {
       .map(c => ({ id: c.id, content: c.content || "", direction: c.direction, created_at: c.created_at }))
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
-    // Activity + business events feed (newest first). Chat is rendered separately above.
+    // Activity + business events + follow_up_logs feed (newest first).
+    // P0-1: follow_up_logs (incl. 'note' and 'import_note') are merged in so the
+    // timeline shows every follow-up entry. Chat is rendered separately above.
     const allItems = [
       ...activities.map(a => ({ ...a, _type: "activity" as const })),
       ...events.map(e => ({ id: e.id, type: e.event_type, content: e.description, ai_generated: false, created_at: e.created_at, _type: "event" as const })),
+      ...followUpLogs.map(f => ({
+        id: f.id,
+        type: f.contact_type || "follow_up",
+        content: f.summary,
+        ai_generated: false,
+        created_at: f.created_at,
+        _type: "followup" as const,
+      })),
     ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100);
 
     return (
@@ -1028,6 +1137,7 @@ export default function LeadDetailPage() {
               <div key={`${item._type}-${item.id}`} className="flex gap-3 text-sm">
                 <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0",
                   type.includes("stage") ? "bg-amber-500" :
+                  type.includes("import") ? "bg-sky-500" :
                   type.includes("note") ? "bg-gray-500" :
                   type.includes("quote") ? "bg-blue-500" :
                   type.includes("lost") ? "bg-red-500" :
@@ -1037,11 +1147,20 @@ export default function LeadDetailPage() {
                   type.includes("recovery") || type.includes("transfer") ? "bg-orange-500" :
                   "bg-gray-600")} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-foreground">{item.content}</p>
+                  <p className="text-foreground whitespace-pre-wrap break-words">{item.content}</p>
                   <p className="text-xs text-gray-600 mt-0.5 flex items-center gap-2">
                     {new Date(item.created_at).toLocaleString(t("locale.dateTimeLocale"))}
                     {"ai_generated" in item && (item as any).ai_generated && <span className="text-purple-500">🤖 AI</span>}
                     {item._type === "event" && <span className="text-blue-500">{t("leadDetail.event")}</span>}
+                    {item._type === "followup" && (
+                      <span className="text-copper-500">
+                        {item.type === "note" ? (lang === "zh" ? "📝 备注" : "📝 Note")
+                          : item.type === "import_note" ? (lang === "zh" ? "📥 导入备注" : "📥 Imported")
+                          : item.type === "phone" ? (lang === "zh" ? "📞 电话跟进" : "📞 Follow-up")
+                          : item.type === "whatsapp" ? "💬 WhatsApp"
+                          : (lang === "zh" ? "跟进" : "Follow-up")}
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -1240,12 +1359,58 @@ export default function LeadDetailPage() {
               {isOpen && (
                 <CardContent className="pt-4 border-t border-border">
                   {key === "project_info" && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                      <div><Label className="text-muted-foreground text-xs">{t("leadDetail.projectType")}</Label>{renderInlineEdit("project_type", t("leadDetail.projectType"))}</div>
-                      <div><Label className="text-muted-foreground text-xs">{t("leadDetail.emirate")}</Label>{renderInlineEdit("emirate", t("leadDetail.emirate"))}</div>
-                      <div><Label className="text-muted-foreground text-xs">{t("leadDetail.areaLocality")}</Label>{renderInlineEdit("area", t("leadDetail.areaLocality"))}</div>
-                      <div><Label className="text-muted-foreground text-xs">{t("leadDetail.acBrand")}</Label>{renderInlineEdit("ac_brand", t("leadDetail.acBrand"))}</div>
-                      <div><Label className="text-muted-foreground text-xs">{t("leadDetail.customerBudget")}</Label>{renderInlineEdit("customer_budget", t("leadDetail.customerBudget"))}</div>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <Label className="text-muted-foreground text-xs">{t("leadDetail.projectType")}</Label>
+                          <Select value={projectInfoDraft.project_type}
+                            onValueChange={v => setProjectInfoDraft(d => ({ ...d, project_type: v ?? "" }))}>
+                            <SelectTrigger className="h-8 text-xs mt-1"><SelectValue placeholder="—" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="villa">{t("leadDetail.projectType_villa")}</SelectItem>
+                              <SelectItem value="apartment">{t("leadDetail.projectType_apartment")}</SelectItem>
+                              <SelectItem value="developer">{t("leadDetail.projectType_developer")}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label className="text-muted-foreground text-xs">{t("leadDetail.emirate")}</Label>
+                          <Input value={projectInfoDraft.emirate}
+                            onChange={e => setProjectInfoDraft(d => ({ ...d, emirate: e.target.value }))}
+                            className="h-8 text-xs mt-1 bg-muted border-border" />
+                        </div>
+                        <div>
+                          <Label className="text-muted-foreground text-xs">{t("leadDetail.areaLocality")}</Label>
+                          <Input value={projectInfoDraft.area}
+                            onChange={e => setProjectInfoDraft(d => ({ ...d, area: e.target.value }))}
+                            className="h-8 text-xs mt-1 bg-muted border-border" />
+                        </div>
+                        <div>
+                          <Label className="text-muted-foreground text-xs">{t("leadDetail.acBrand")}</Label>
+                          <Input value={projectInfoDraft.ac_brand}
+                            onChange={e => setProjectInfoDraft(d => ({ ...d, ac_brand: e.target.value }))}
+                            className="h-8 text-xs mt-1 bg-muted border-border" />
+                        </div>
+                        <div>
+                          <Label className="text-muted-foreground text-xs">{t("leadDetail.customerBudget")}</Label>
+                          <Input type="number" value={projectInfoDraft.customer_budget}
+                            onChange={e => setProjectInfoDraft(d => ({ ...d, customer_budget: e.target.value }))}
+                            className="h-8 text-xs mt-1 bg-muted border-border" />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <Button size="sm" onClick={saveProjectInfo} disabled={projectInfoStatus === "saving"}
+                          className="bg-copper-500 hover:bg-copper-600 text-black">
+                          {projectInfoStatus === "saving" ? (lang === "zh" ? "保存中…" : "Saving…") : (lang === "zh" ? "保存" : "Save")}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={resetProjectInfoDraft}
+                          disabled={projectInfoStatus === "saving"}
+                          className="border-border text-muted-foreground">
+                          <RotateCcw className="w-3.5 h-3.5 mr-1" />{lang === "zh" ? "撤销" : "Undo"}
+                        </Button>
+                        {projectInfoStatus === "saved" && <span className="text-xs text-emerald-400">{lang === "zh" ? "已保存" : "Saved"}</span>}
+                        {projectInfoStatus === "error" && <span className="text-xs text-rose-400">{lang === "zh" ? "保存失败" : "Save failed"}</span>}
+                      </div>
                     </div>
                   )}
                   {key === "smart_req" && (

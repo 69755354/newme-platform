@@ -11,12 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import QuickCreateLeadDialog from "@/components/QuickCreateLeadDialog";
+import ExcelImportDialog from "@/components/leads/ExcelImportDialog";
 import SubNavTabs from "@/components/SubNavTabs";
 import {
   Search, X, Plus, Phone, Calendar, MapPin, ChevronRight,
   MoreHorizontal, Edit3, Send, TrendingUp, Building2,
   User, Users, Clock, AlertTriangle, RotateCcw, GripHorizontal, ShieldAlert,
-  BarChart3, Megaphone,
+  BarChart3, Megaphone, Upload,
 } from "lucide-react";
 
 /* ─── 9-stage pipeline ─── */
@@ -115,6 +116,7 @@ function LeadsContent() {
   const [showPipelineSummary, setShowPipelineSummary] = useState(true);
 
   const [showQuickCreate, setShowQuickCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editingStage, setEditingStage] = useState<string | null>(null);
   const [editingProbability, setEditingProbability] = useState<string | null>(null);
   const [editingStatus, setEditingStatus] = useState<string | null>(null);
@@ -568,6 +570,10 @@ function LeadsContent() {
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/85 transition-colors">
             <Plus className="w-3.5 h-3.5" />{t("common.create")}
           </button>
+          <button onClick={() => setShowImport(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+            <Upload className="w-3.5 h-3.5" />{t("leads.importBtn")}
+          </button>
         </div>
       </div>
 
@@ -1012,6 +1018,7 @@ function LeadsContent() {
         </div>
       )}
       <QuickCreateLeadDialog open={showQuickCreate} onOpenChange={setShowQuickCreate} onCreated={fetchLeads} />
+      <ExcelImportDialog open={showImport} onOpenChange={setShowImport} onImported={fetchLeads} />
     </div>
     </div>
   );

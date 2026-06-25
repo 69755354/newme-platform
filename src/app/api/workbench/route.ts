@@ -27,27 +27,31 @@ export async function GET() {
 
   const taskCols = "id,lead_id,title,due_at,status,source,created_at,assignee_id"
 
-  // Inbox follows open tasks rather than the retired lead follow-up fields.
+  // Inbox: active leads the current user is responsible for, surfaced directly
+  // from the leads table — leads without a task still show up.
   let inboxQuery = supabase
-    .from("tasks")
-    .select("lead_id,title,leads!inner(id,customer_name,phone,location,final_status)")
-    .is("completed_at", null)
-    .order("due_at", { ascending: true })
+    .from("leads")
+    .select("id,customer_name,phone,current_milestone,next_followup_date,next_action,updated_at")
+    .eq("archived", false)
+    .is("final_status", null)
+
+  if (isSales) inboxQuery = inboxQuery.eq("assigned_to", user.id)
+
+  inboxQuery = inboxQuery
+    .order("next_followup_date", { ascending: true, nullsFirst: false })
+    .order("updated_at", { ascending: false })
     .limit(20)
 
-  if (isSales) inboxQuery = inboxQuery.eq("assignee_id", user.id)
-  const { data: inboxTasks } = await inboxQuery
-  const inboxItems = (inboxTasks ?? []).flatMap((task: any) => {
-    const lead = Array.isArray(task.leads) ? task.leads[0] : task.leads
-    if (!lead || lead.final_status) return []
-    return [{
-      id: lead.id,
-      customer_name: lead.customer_name,
-      phone: lead.phone,
-      location: lead.location,
-      next_action: task.title,
-    }]
-  })
+  const { data: inboxRows } = await inboxQuery
+  const inboxItems = (inboxRows ?? []).map((lead: any) => ({
+    id: lead.id,
+    customer_name: lead.customer_name,
+    phone: lead.phone,
+    current_milestone: lead.current_milestone,
+    next_followup_date: lead.next_followup_date,
+    next_action: lead.next_action,
+    updated_at: lead.updated_at,
+  }))
 
   // tasks
   const { data: tasksItems } = await supabase
@@ -67,6 +71,57 @@ export async function GET() {
     .lt("due_at", nowIso)
     .order("due_at", { ascending: true })
     .limit(20)
+
+  // Attach lead names to task rows so the UI can link into lead detail.
+  const taskLeadIds = Array.from(
+    new Set(
+      [...(tasksItems ?? []), ...(overdueItems ?? [])]
+        .map((t: any) => t.lead_id as string)
+        .filter(Boolean),
+    ),
+  )
+  const leadNameById: Record<string, string> = {}
+  if (taskLeadIds.length > 0) {
+    const { data: leadRows } = await supabase
+      .from("leads")
+      .select("id,customer_name")
+      .in("id", taskLeadIds)
+    for (const l of leadRows ?? []) leadNameById[l.id] = l.customer_name
+  }
+  const withLeadName = (t: any) => ({
+    ...t,
+    lead_name: t.lead_id ? leadNameById[t.lead_id] ?? null : null,
+  })
+  const tasksWithNames = (tasksItems ?? []).map(withLeadName)
+  const overdueWithNames = (overdueItems ?? []).map(withLeadName)
+
+  // alerts: leads needing attention — flagged no-answer or overdue follow-up.
+  const nowMs = Date.now()
+  const { data: alertsRows } = await supabase
+    .from("leads")
+    .select("id,customer_name,phone,next_followup_date,no_answer_flag")
+    .eq("assigned_to", user.id)
+    .eq("archived", false)
+    .is("final_status", null)
+    .or(`no_answer_flag.eq.true,next_followup_date.lt.${nowIso}`)
+    .order("next_followup_date", { ascending: true, nullsFirst: false })
+    .limit(20)
+
+  const alertsItems = (alertsRows ?? []).map((lead: any) => {
+    let days_overdue: number | null = null
+    if (lead.next_followup_date) {
+      const diff = nowMs - new Date(lead.next_followup_date).getTime()
+      days_overdue = diff > 0 ? Math.floor(diff / 86400000) : 0
+    }
+    return {
+      id: lead.id,
+      customer_name: lead.customer_name,
+      phone: lead.phone,
+      next_followup_date: lead.next_followup_date,
+      no_answer_flag: Boolean(lead.no_answer_flag),
+      days_overdue,
+    }
+  })
 
   // progress
   let progQuery = supabase.from("leads").select("current_milestone")
@@ -98,8 +153,9 @@ export async function GET() {
 
   return NextResponse.json({
     inbox: inboxItems ?? [],
-    tasks: tasksItems ?? [],
-    overdue: overdueItems ?? [],
+    tasks: tasksWithNames,
+    overdue: overdueWithNames,
+    alerts: alertsItems ?? [],
     progress: progressArray,
     profile: { id: profile.id, name: profile.full_name, role: profile.role },
     features,

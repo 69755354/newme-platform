@@ -13,8 +13,10 @@ interface InboxItem {
   id: string
   customer_name: string
   phone?: string
-  location?: string
+  current_milestone?: string
+  next_followup_date?: string
   next_action?: string
+  updated_at?: string
 }
 
 interface TaskItem {
@@ -22,6 +24,17 @@ interface TaskItem {
   title: string
   due_at: string
   source?: string
+  lead_id?: string
+  lead_name?: string | null
+}
+
+interface AlertItem {
+  id: string
+  customer_name: string
+  phone?: string
+  next_followup_date?: string
+  no_answer_flag: boolean
+  days_overdue: number | null
 }
 
 interface ProgressGroup {
@@ -34,6 +47,7 @@ interface WorkbenchData {
   inbox: InboxItem[]
   tasks: TaskItem[]
   overdue: TaskItem[]
+  alerts: AlertItem[]
   progress: ProgressGroup[]
 }
 
@@ -107,6 +121,7 @@ export default function WorkbenchPage() {
   const inbox = data?.inbox ?? []
   const tasks = data?.tasks ?? []
   const overdue = data?.overdue ?? []
+  const alerts = data?.alerts ?? []
   const progress = data?.progress ?? []
 
   return (
@@ -122,7 +137,7 @@ export default function WorkbenchPage() {
       </div>
 
       {/* Card grid */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         {/* Inbox */}
         <Card className="flex flex-col">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
@@ -138,35 +153,59 @@ export default function WorkbenchPage() {
               </p>
             ) : (
               <ul className="-mx-2 max-h-[320px] space-y-0.5 overflow-y-auto">
-                {inbox.map((item) => (
-                  <li key={item.id}>
-                    <Link
-                      href={`/leads/${item.id}`}
-                      className="flex flex-col gap-1 rounded-md px-2 py-2 transition hover:bg-slate-100"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-medium">
-                          {item.customer_name}
-                        </span>
-                        {item.phone && (
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {item.phone}
+                {inbox.map((item) => {
+                  const overdue =
+                    !!item.next_followup_date &&
+                    new Date(item.next_followup_date).getTime() < Date.now()
+                  return (
+                    <li key={item.id}>
+                      <Link
+                        href={`/leads/${item.id}`}
+                        className="flex flex-col gap-1 rounded-md px-2 py-2 transition hover:bg-slate-100"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm font-medium">
+                            {item.customer_name}
+                          </span>
+                          {item.current_milestone && (
+                            <span
+                              className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium capitalize text-white ${
+                                milestoneColors[item.current_milestone] ||
+                                "bg-slate-400"
+                              }`}
+                            >
+                              {item.current_milestone}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          {item.phone && (
+                            <span className="text-xs text-muted-foreground">
+                              {item.phone}
+                            </span>
+                          )}
+                          {item.next_followup_date && (
+                            <span
+                              className={`flex items-center gap-1 text-xs ${
+                                overdue
+                                  ? "font-medium text-red-600"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              <Clock className="h-3 w-3" />
+                              {formatDate(item.next_followup_date)}
+                            </span>
+                          )}
+                        </div>
+                        {item.next_action && (
+                          <span className="line-clamp-1 text-xs text-slate-600">
+                            {item.next_action}
                           </span>
                         )}
-                      </div>
-                      {item.location && (
-                        <span className="text-xs text-muted-foreground">
-                          {item.location}
-                        </span>
-                      )}
-                      {item.next_action && (
-                        <span className="line-clamp-1 text-xs text-slate-600">
-                          {item.next_action}
-                        </span>
-                      )}
-                    </Link>
-                  </li>
-                ))}
+                      </Link>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </CardContent>
@@ -187,27 +226,48 @@ export default function WorkbenchPage() {
               </p>
             ) : (
               <ul className="-mx-2 max-h-[320px] space-y-0.5 overflow-y-auto">
-                {tasks.map((task) => (
-                  <li
-                    key={task.id}
-                    className="flex flex-col gap-1 rounded-md px-2 py-2 hover:bg-slate-50"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="line-clamp-1 text-sm font-medium">
-                        {task.title}
-                      </span>
-                      {task.source && (
-                        <Badge variant="secondary" className="shrink-0 text-[10px]">
-                          {task.source}
-                        </Badge>
+                {tasks.map((task) => {
+                  const href = task.lead_id ? `/leads/${task.lead_id}` : null
+                  const inner = (
+                    <>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="line-clamp-1 text-sm font-medium">
+                          {task.title}
+                        </span>
+                        {task.source && (
+                          <Badge variant="secondary" className="shrink-0 text-[10px]">
+                            {task.source}
+                          </Badge>
+                        )}
+                      </div>
+                      {task.lead_name && (
+                        <span className="line-clamp-1 text-xs text-slate-500">
+                          {task.lead_name}
+                        </span>
                       )}
-                    </div>
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3" />
-                      {formatDate(task.due_at)}
-                    </span>
-                  </li>
-                ))}
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {formatDate(task.due_at)}
+                      </span>
+                    </>
+                  )
+                  return (
+                    <li key={task.id}>
+                      {href ? (
+                        <Link
+                          href={href}
+                          className="flex flex-col gap-1 rounded-md px-2 py-2 transition hover:bg-slate-100"
+                        >
+                          {inner}
+                        </Link>
+                      ) : (
+                        <div className="flex flex-col gap-1 rounded-md px-2 py-2 hover:bg-slate-50">
+                          {inner}
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </CardContent>
@@ -228,20 +288,41 @@ export default function WorkbenchPage() {
               </p>
             ) : (
               <ul className="-mx-2 max-h-[320px] space-y-1 overflow-y-auto">
-                {overdue.map((task) => (
-                  <li
-                    key={task.id}
-                    className="flex flex-col gap-1 rounded-md border border-red-200 bg-red-50/60 px-2 py-2"
-                  >
-                    <span className="line-clamp-1 text-sm font-medium text-red-800">
-                      {task.title}
-                    </span>
-                    <span className="flex items-center gap-1 text-xs text-red-600">
-                      <Clock className="h-3 w-3" />
-                      {formatDate(task.due_at)}
-                    </span>
-                  </li>
-                ))}
+                {overdue.map((task) => {
+                  const href = task.lead_id ? `/leads/${task.lead_id}` : null
+                  const inner = (
+                    <>
+                      <span className="line-clamp-1 text-sm font-medium text-red-800">
+                        {task.title}
+                      </span>
+                      {task.lead_name && (
+                        <span className="line-clamp-1 text-xs text-red-500/80">
+                          {task.lead_name}
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1 text-xs text-red-600">
+                        <Clock className="h-3 w-3" />
+                        {formatDate(task.due_at)}
+                      </span>
+                    </>
+                  )
+                  return (
+                    <li key={task.id}>
+                      {href ? (
+                        <Link
+                          href={href}
+                          className="flex flex-col gap-1 rounded-md border border-red-200 bg-red-50/60 px-2 py-2 transition hover:bg-red-100/70"
+                        >
+                          {inner}
+                        </Link>
+                      ) : (
+                        <div className="flex flex-col gap-1 rounded-md border border-red-200 bg-red-50/60 px-2 py-2">
+                          {inner}
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </CardContent>
@@ -282,6 +363,70 @@ export default function WorkbenchPage() {
                           style={{ width: `${width}%` }}
                         />
                       </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Follow-up Alerts */}
+        <Card className="flex flex-col border-amber-300">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+            <CardTitle className="text-sm font-medium text-amber-700">
+              Follow-up Alerts
+            </CardTitle>
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+          </CardHeader>
+          <CardContent className="flex-1">
+            {alerts.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No alerts
+              </p>
+            ) : (
+              <ul className="-mx-2 max-h-[320px] space-y-1 overflow-y-auto">
+                {alerts.map((a) => {
+                  const isOverdue = (a.days_overdue ?? 0) > 0
+                  // red = no-answer (stuck), amber = overdue follow-up
+                  const tone = a.no_answer_flag ? "red" : "amber"
+                  return (
+                    <li key={a.id}>
+                      <Link
+                        href={`/leads/${a.id}`}
+                        className={`flex flex-col gap-1 rounded-md border px-2 py-2 transition hover:opacity-80 ${
+                          tone === "red"
+                            ? "border-red-200 bg-red-50/60"
+                            : "border-amber-200 bg-amber-50/60"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className={`truncate text-sm font-medium ${
+                              tone === "red" ? "text-red-800" : "text-amber-800"
+                            }`}
+                          >
+                            {a.customer_name}
+                          </span>
+                          <span className="flex shrink-0 items-center gap-1">
+                            {isOverdue && (
+                              <Badge className="bg-amber-500 text-[10px] text-white">
+                                {a.days_overdue}d
+                              </Badge>
+                            )}
+                            {a.no_answer_flag && (
+                              <Badge className="bg-red-500 text-[10px] text-white">
+                                No answer
+                              </Badge>
+                            )}
+                          </span>
+                        </div>
+                        {a.phone && (
+                          <span className="text-xs text-muted-foreground">
+                            {a.phone}
+                          </span>
+                        )}
+                      </Link>
                     </li>
                   )
                 })}

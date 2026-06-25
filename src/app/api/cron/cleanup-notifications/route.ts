@@ -19,8 +19,6 @@ export async function GET(request: NextRequest) {
   cutoffDate.setDate(cutoffDate.getDate() - 90);
   const cutoffISO = cutoffDate.toISOString();
 
-  console.log(`[cron/cleanup-notifications] Deleting notifications older than ${cutoffISO}`);
-
   // First count how many will be deleted
   const { count, error: countErr } = await supabaseAdmin
     .from("notifications")
@@ -70,10 +68,7 @@ export async function GET(request: NextRequest) {
     }
 
     deleted += ids.length;
-    console.log(`[cron/cleanup-notifications] Deleted batch of ${ids.length}, total: ${deleted}`);
   }
-
-  console.log(`[cron/cleanup-notifications] Done. Total deleted: ${deleted}`);
 
   return NextResponse.json({
     message: "Cleanup complete",

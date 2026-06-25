@@ -48,7 +48,7 @@ export async function GET() {
         .eq("assigned_to", p.id)
         .eq("archived", false)
         .or("final_status.eq.lost,stage.eq.lost");
-      // created (proxy: leads this person imported — imported_by is the main creation path)
+      // imported (leads this person imported via Excel)
       const { count: created } = await supabase
         .from("leads")
         .select("id", { count: "exact", head: true })
@@ -62,13 +62,13 @@ export async function GET() {
         active_leads: active || 0,
         won_leads: won || 0,
         lost_leads: lost || 0,
-        created_leads: created || 0,
+        imported_leads: created || 0,
       };
     })
   );
 
   // Filter: users with any leads (assigned or created/imported)
-  const filtered = results.filter((r) => r.assigned_leads > 0 || r.created_leads > 0);
+  const filtered = results.filter((r) => r.assigned_leads > 0 || r.imported_leads > 0);
 
   return NextResponse.json({ users: filtered });
 }

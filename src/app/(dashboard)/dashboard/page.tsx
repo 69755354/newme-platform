@@ -972,7 +972,7 @@ export default function DashboardPage() {
                     <th className="text-left py-2 pr-3">{language === "zh" ? "成员" : "Member"}</th>
                     <th className="text-right py-2 px-2">{language === "zh" ? "角色" : "Role"}</th>
                     <th className="text-right py-2 px-2">{language === "zh" ? "负责" : "Assigned"}</th>
-                    <th className="text-right py-2 px-2">{language === "zh" ? "创建" : "Created"}</th>
+                    <th className="text-right py-2 px-2">{language === "zh" ? "导入" : "Imported"}</th>
                     <th className="text-right py-2 px-2">{language === "zh" ? "活跃" : "Active"}</th>
                     <th className="text-right py-2 px-2">{language === "zh" ? "成交" : "Won"}</th>
                     <th className="text-right py-2 pl-2">{language === "zh" ? "流失" : "Lost"}</th>
@@ -985,7 +985,7 @@ export default function DashboardPage() {
                       <td className="py-2 pr-3 font-medium truncate max-w-[120px]">{u.full_name}</td>
                       <td className="py-2 px-2 text-right text-xs text-muted-foreground">{u.role}</td>
                       <td className="py-2 px-2 text-right">{u.assigned_leads}</td>
-                      <td className="py-2 px-2 text-right">{u.created_leads}</td>
+                      <td className="py-2 px-2 text-right">{u.imported_leads}</td>
                       <td className="py-2 px-2 text-right">{u.active_leads}</td>
                       <td className="py-2 px-2 text-right text-emerald-400">{u.won_leads}</td>
                       <td className="py-2 pl-2 text-right text-red-400">{u.lost_leads}</td>

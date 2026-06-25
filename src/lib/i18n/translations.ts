@@ -296,6 +296,7 @@ export const translations = {
         "Meeting": "🤝 Meeting",
         "follow-up": "🔄 Follow up",
         "Follow-up": "🔄 Follow up",
+        "Import from Sheets - needs review": "Import Review",
       },
     },
     settings: {
@@ -1586,6 +1587,7 @@ export const translations = {
         "Meeting": "🤝 会议",
         "follow-up": "🔄 跟进",
         "Follow-up": "🔄 跟进",
+        "Import from Sheets - needs review": "待审核导入",
       },
     },
     settings: {

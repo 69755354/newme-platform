@@ -69,14 +69,14 @@ export async function GET() {
           (conversionsByCampaign[campaign] || 0) + 1;
         signedAmountByCampaign[campaign] =
           (signedAmountByCampaign[campaign] || 0) +
-          (parseFloat(lead.quotation_value as any) || 0);
+          (parseFloat(String(lead.quotation_value || "")) || 0);
       }
     }
 
     const totalConversions = metaLeads?.filter((l) => l.final_status === "won").length || 0;
     const totalSignedAmount = (metaLeads || [])
       .filter((l) => l.final_status === "won")
-      .reduce((sum, l) => sum + (parseFloat(l.quotation_value as any) || 0), 0);
+      .reduce((sum, l) => sum + (parseFloat(String(l.quotation_value || "")) || 0), 0);
 
     // ─── 3. Campaign breakdown ───
     const allCampaigns = new Set([
@@ -194,12 +194,12 @@ export async function GET() {
       campaign_breakdown: campaignBreakdown,
       source_quality: sourceQualityBreakdown,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Ads ROI] Error:", err);
     const message =
       process.env.NODE_ENV === "production"
         ? "Internal server error"
-        : err.message;
+        : err instanceof Error ? err.message : String(err);
     return NextResponse.json(
       { error: message || "Failed to fetch ad ROI data" },
       { status: 500 }

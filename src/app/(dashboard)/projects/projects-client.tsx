@@ -26,6 +26,7 @@ interface PhaseConfig {
   border: string;
 }
 
+// Phase values must match DB CHECK constraint: projects_phase_check
 const PHASES: PhaseConfig[] = [
   { key: "design", label: "Design", color: "#8B5CF6", bg: "bg-purple-500/10", border: "border-purple-500/20" },
   { key: "procurement", label: "Procurement", color: "#3B82F6", bg: "bg-blue-500/10", border: "border-blue-500/20" },

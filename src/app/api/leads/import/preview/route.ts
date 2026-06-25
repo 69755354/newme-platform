@@ -22,6 +22,17 @@ function mapSource(raw: string | null): string {
   return v;
 }
 
+// DB CHECK constraint: project_type IN ('villa','apartment','developer').
+// Unknown values (e.g. "Townhouse") are left empty rather than guessed.
+const PROJECT_TYPES = new Set(["villa", "apartment", "developer"]);
+
+function normalizeProjectType(raw: string | null): { projectType: string | null; warning?: string } {
+  if (!raw || raw.trim() === "") return { projectType: null };
+  const v = raw.trim().toLowerCase();
+  if (PROJECT_TYPES.has(v)) return { projectType: v };
+  return { projectType: null, warning: `Unknown project_type '${raw.trim()}' → left empty` };
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
@@ -59,6 +70,10 @@ export async function POST(request: NextRequest) {
     const { quality, warning: qw } = mapQuality(qualityRaw);
     if (qw) warnings.push(`Row ${i}: ${qw}`);
 
+    const projectTypeRaw = String(r["Project Type"] || r["project_type"] || "").trim();
+    const { projectType, warning: ptw } = normalizeProjectType(projectTypeRaw);
+    if (ptw) warnings.push(`Row ${i}: ${ptw}`);
+
     const entry = {
       row_number: i,
       raw_id: idVal || null,
@@ -66,12 +81,14 @@ export async function POST(request: NextRequest) {
       phone: phone || null,
       source: mapSource(sourceRaw),
       raw_source: sourceRaw || null,
-      current_milestone: statusRaw ? "contacted" : "new",
+      // "contacted" is not a valid milestone key (only in deprecated STAGE_MAP).
+      // Default to "new" to avoid silently polluting funnel data.
+      current_milestone: "new",
       raw_status: statusRaw || null,
       quality,
       raw_quality: qualityRaw || null,
       location: String(r["Emirate / Location"] || r["emirate"] || "").trim() || null,
-      project_type: String(r["Project Type"] || r["project_type"] || "").trim() || null,
+      project_type: projectType,
       quotation_value: parseFloat(String(r["Quotation Value"] || r["quotation_value"] || "0")) || null,
       notes: notesRaw || null,
       has_notes: !!notesRaw,

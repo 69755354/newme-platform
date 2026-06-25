@@ -2,6 +2,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 
+// DB CHECK constraint: project_type IN ('villa','apartment','developer').
+// Defensive allowlist — only persist legal values, coerce anything else to null.
+const ALLOWED_PROJECT_TYPES = ["villa", "apartment", "developer"];
+
 export async function POST(request: NextRequest) {
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
@@ -29,7 +33,7 @@ export async function POST(request: NextRequest) {
         current_milestone: row.current_milestone || "new",
         quality: row.quality || "pending",
         location: row.location || null,
-        project_type: row.project_type || null,
+        project_type: ALLOWED_PROJECT_TYPES.includes(row.project_type) ? row.project_type : null,
         quotation_value: row.quotation_value || null,
         assigned_to: row.assigned_to || user.id,
         import_batch_id: batchId,
@@ -55,13 +59,21 @@ export async function POST(request: NextRequest) {
 
       // Notes → follow_up_logs
       if (row.notes && row.notes.trim()) {
-        await supabase.from("follow_up_logs").insert({
+        const { error: noteErr } = await supabase.from("follow_up_logs").insert({
           lead_id: lead.id,
           contact_type: "import_note",
           summary: row.notes.trim(),
           user_id: user.id,
           created_at: now,
         });
+        // Lead was inserted, but the note failed (RLS/constraint) → partial.
+        // Don't swallow it; surface as a per-row error with row_number and cause.
+        if (noteErr) {
+          errors.push({
+            row: row.row_number,
+            error: `lead ${lead.id} imported but note failed: ${noteErr.message}`,
+          });
+        }
       }
 
       imported.push({ id: lead.id, row_number: row.row_number });

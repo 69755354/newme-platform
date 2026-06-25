@@ -296,8 +296,15 @@ export default function LeadDetailPage() {
     setSaveStatus("saving");
     const updates: Record<string, any> = { updated_at: new Date().toISOString() };
     updates[field] = value;
-    const { error: err } = await supabase.from("leads").update(updates).eq("id", id);
-    if (err) {
+    const { data: updated, error: err } = await supabase
+      .from("leads")
+      .update(updates)
+      .eq("id", id)
+      .select("id")
+      .single();
+    // Fix B: RLS can reject with HTTP 200 + error=null but 0 rows updated.
+    // Require the row back so a blocked update never shows a false "Saved".
+    if (err || !updated) {
       console.error("Failed to update field:", err);
       setError(t("common.saveFailed") || "Save failed");
       setSaveStatus("error");
@@ -330,12 +337,34 @@ export default function LeadDetailPage() {
       customer_budget: projectInfoDraft.customer_budget ? Number(projectInfoDraft.customer_budget) : null,
       updated_at: new Date().toISOString(),
     };
-    const { error: err } = await supabase.from("leads").update(updates).eq("id", id);
-    if (err) {
-      console.error("Failed to save project info:", err);
+    // Fix B: require the row back so an RLS rejection (HTTP 200, error=null,
+    // 0 rows updated) surfaces as a failure instead of a false "Saved".
+    const { data: updated, error: err } = await supabase
+      .from("leads")
+      .update(updates)
+      .eq("id", id)
+      .select("id")
+      .single();
+    if (err || !updated) {
+      console.error("Failed to save project info (no row written):", err);
       setProjectInfoStatus("error");
       toast.error(t("common.saveFailed"));
       return;
+    }
+    // Fix D: write audit (activities + business_event), mirroring updateField().
+    // Only fields that actually changed are listed, so the timeline stays useful.
+    const before = projectDraftFromLead(lead);
+    const changed = (["project_type", "emirate", "area", "ac_brand", "customer_budget"] as const).filter(
+      (k) => String(projectInfoDraft[k] ?? "") !== String(before[k] ?? "")
+    );
+    if (changed.length > 0) {
+      const { data: { user } } = await supabase.auth.getUser();
+      const prefix = lang === "zh" ? "项目信息已更新" : "Project info updated";
+      const desc = `${prefix}: ${changed.join(", ")}`;
+      await supabase.from("activities").insert({
+        lead_id: id, type: "note_added", content: desc, user_id: user?.id ?? null,
+      });
+      await writeEvent("project_info_updated", desc, Object.fromEntries(changed.map((k) => [k, updates[k]])));
     }
     setProjectInfoStatus("saved");
     toast.success(lang === "zh" ? "项目信息已保存" : "Project info saved");
@@ -735,7 +764,6 @@ export default function LeadDetailPage() {
                   </Select>
                 </div>
               </div>
-              <div><Label className="text-muted-foreground text-xs">{t("leadDetail.acBrand")}</Label>{renderInlineEdit("ac_brand", t("leadDetail.acBrand"))}</div>
               <div>
                 <Label className="text-muted-foreground text-xs">{t("leadDetail.systemPreference")}</Label>
                 <div className="mt-1">

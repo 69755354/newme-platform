@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/knx-task-store";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
 
 /**
  * GET /api/hermes/knx-design/status?task_id=xxx
@@ -16,33 +16,14 @@ import { createServerSupabase } from "@/lib/supabase-server";
  *   }
  */
 
-const tasks = new Map<string, any>();
-
-// We need to share the in-memory task store with the POST route.
-// This is a simple approach — in production use Redis/DB.
-// We use a global variable to share state across route files.
-const globalStore = (global as any).__hermesKnxTasks;
-if (!(global as any).__hermesKnxTasks) {
-  (global as any).__hermesKnxTasks = new Map<string, any>();
-}
-
-function getTaskStore(): Map<string, any> {
-  return (global as any).__hermesKnxTasks;
-}
-
 export async function GET(request: NextRequest) {
   try {
-    // Auth check
-    const supabaseAuth = await createServerSupabase();
-    const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
-    if (authErr || !user) {
+    const profile = await getAuthProfile();
+    if (!profile) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Role check — only admin/boss/sales can check design status
-    const { data: profile } = await supabaseAuth
-      .from("profiles").select("role").eq("id", user.id).single();
-    if (!profile || !["admin", "boss", "sales"].includes(profile.role)) {
+    if (!isAdminOrBoss(profile) && profile.role !== "sales") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

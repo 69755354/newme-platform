@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { canCompleteMilestone } from "@/lib/milestones";
+import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
 
 export async function POST(
   req: NextRequest,
@@ -8,25 +9,10 @@ export async function POST(
 ) {
   const supabase = await createServerSupabase();
 
-  // 1. 鉴权
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (authError || !user) {
+  // 1. 鉴权 + 角色
+  const profile = await getAuthProfile();
+  if (!profile) {
     return NextResponse.json({ error: "未登录" }, { status: 401 });
-  }
-
-  // 2. 角色
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (profileError || !profile) {
-    return NextResponse.json({ error: "无角色档案" }, { status: 403 });
   }
 
   const leadId = (await context.params).id;
@@ -40,12 +26,17 @@ export async function POST(
   // 3. 校验 lead 存在
   const { data: lead, error: leadError } = await supabase
     .from("leads")
-    .select("id, current_milestone, final_status")
+    .select("id, current_milestone, final_status, assigned_to")
     .eq("id", leadId)
     .single();
 
   if (leadError || !lead) {
     return NextResponse.json({ error: "线索不存在" }, { status: 404 });
+  }
+
+  // 3.1 所有权校验：非管理员/主管仅能推进自己负责的线索 (rule_idor)
+  if (!isAdminOrBoss(profile) && lead.assigned_to !== profile.userId) {
+    return NextResponse.json({ error: "无权操作此线索" }, { status: 403 });
   }
 
   // 4. rule_007: won/lost lead 禁止完成任何里程碑
@@ -91,7 +82,7 @@ export async function POST(
     .insert({
       lead_id: leadId,
       milestone_key: milestoneKey,
-      completed_by: user.id,
+      completed_by: profile.userId,
       notes: notes ?? null,
     })
     .select()

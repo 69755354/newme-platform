@@ -1,6 +1,97 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { getAuthProfile, canAccessLead, isAdminOrBoss } from "@/lib/lead-auth";
+
+/** Service-role client used only to map a COS key back to its owning lead. */
+function getSupabaseAdmin(): SupabaseClient | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
+/**
+ * Resolve a COS object key back to the lead_id that owns it.
+ * Returns null when the owning lead cannot be determined.
+ *
+ *   leads/{leadId}/...          → leadId is the lead id directly
+ *   contracts/{contractId}/...  → contracts.lead_id
+ *   quotations/{quoteId}/...    → quotations.lead_id (falls back to quote_no stem)
+ *   attachments/{file}          → lead_documents.lead_id (by file_url/file_name)
+ *   media/{file}                → chat_messages.lead_id (by media_url)
+ */
+async function resolveLeadIdFromKey(
+  key: string,
+  admin: SupabaseClient | null,
+): Promise<string | null> {
+  const segments = key.split("/");
+  const prefix = segments[0];
+  const id = segments[1];
+  if (!id) return null;
+
+  // leads/{leadId}/... → the lead id is embedded in the path
+  if (prefix === "leads") {
+    return id;
+  }
+
+  if (!admin) return null;
+
+  if (prefix === "contracts") {
+    const { data } = await admin
+      .from("contracts")
+      .select("lead_id")
+      .eq("id", id)
+      .maybeSingle();
+    return (data?.lead_id as string) ?? null;
+  }
+
+  if (prefix === "quotations") {
+    const { data } = await admin
+      .from("quotations")
+      .select("lead_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (data?.lead_id) return data.lead_id as string;
+    // fall back to matching quote_no from the filename stem (e.g. NM-2026-0001.pdf)
+    const stem = id.replace(/\.[^.]+$/, "");
+    const { data: byNo } = await admin
+      .from("quotations")
+      .select("lead_id")
+      .eq("quote_no", stem)
+      .maybeSingle();
+    return (byNo?.lead_id as string) ?? null;
+  }
+
+  if (prefix === "attachments") {
+    const filename = segments[segments.length - 1];
+    const { data } = await admin
+      .from("lead_documents")
+      .select("lead_id")
+      .eq("file_url", key)
+      .maybeSingle();
+    if (data?.lead_id) return data.lead_id as string;
+    const { data: byName } = await admin
+      .from("lead_documents")
+      .select("lead_id")
+      .eq("file_name", filename)
+      .maybeSingle();
+    return (byName?.lead_id as string) ?? null;
+  }
+
+  if (prefix === "media") {
+    const { data } = await admin
+      .from("chat_messages")
+      .select("lead_id")
+      .eq("media_url", key)
+      .maybeSingle();
+    return (data?.lead_id as string) ?? null;
+  }
+
+  return null;
+}
 
 /**
  * POST /api/cos/download-url
@@ -9,9 +100,8 @@ import { createServerSupabase } from "@/lib/supabase-server";
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerSupabase();
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
-    if (authErr || !user) {
+    const profile = await getAuthProfile();
+    if (!profile) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -30,6 +120,19 @@ export async function POST(request: NextRequest) {
     const hasKnownPrefix = knownPrefixes.some(p => key.startsWith(p));
     if (!hasKnownPrefix) {
       return NextResponse.json({ error: "Invalid key: unknown path prefix" }, { status: 400 });
+    }
+
+    // Ownership check: resolve the COS key back to its owning lead and verify
+    // the caller may access that lead. admin/boss bypass. If the owning lead
+    // cannot be determined, fall back to admin/boss only.
+    const admin = getSupabaseAdmin();
+    const ownerLeadId = await resolveLeadIdFromKey(key, admin);
+    if (!ownerLeadId) {
+      if (!isAdminOrBoss(profile)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    } else if (!(await canAccessLead(ownerLeadId, profile))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const expireSec = typeof expires === "number" && expires > 0 ? expires : 3600;

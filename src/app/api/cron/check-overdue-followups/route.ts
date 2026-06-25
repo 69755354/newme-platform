@@ -7,16 +7,11 @@ import { createNotification, getAdminUserIds } from "@/lib/notifications";
  * Cron endpoint: checks all leads for overdue follow-ups and creates notifications.
  *
  * Authorization: cron secret token (required in production).
- * Set CRON_SECRET env var and pass it as ?token=xxx.
+ * Set CRON_SECRET env var and pass it via the x-cron-secret request header.
  */
 export async function GET(request: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const { searchParams } = new URL(request.url);
-  const token = searchParams.get("token");
-  if (token !== cronSecret) {
+  const cronSecret = request.headers.get("x-cron-secret");
+  if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

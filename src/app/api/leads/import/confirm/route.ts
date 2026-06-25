@@ -32,7 +32,6 @@ export async function POST(request: NextRequest) {
         project_type: row.project_type || null,
         quotation_value: row.quotation_value || null,
         assigned_to: row.assigned_to || user.id,
-        created_by: user.id,
         import_batch_id: batchId,
         imported_by: user.id,
         imported_at: now,

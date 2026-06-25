@@ -20,6 +20,12 @@ function fingerprint(message: string, stack?: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  // Require shared secret — this is an internal monitoring endpoint
+  const secret = req.headers.get("x-monitoring-secret");
+  if (!process.env.MONITORING_SECRET || secret !== process.env.MONITORING_SECRET) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const {

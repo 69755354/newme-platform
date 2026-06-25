@@ -16,32 +16,44 @@ export async function GET() {
 
   if (!profiles) return NextResponse.json({ users: [] });
 
-  // For each user, count leads
+  // For each user, count leads. Use a FRESH builder per metric — PostgrestFilterBuilder
+  // mutates in place, so reusing one would leak filters across queries. head:true + exact
+  // count is required so the query returns a count instead of null.
   const results = await Promise.all(
     profiles.map(async (p) => {
-      const base = supabase.from("leads").select("id, final_status, stage, archived");
-
       // assigned
-      const { count: assigned } = await base.eq("assigned_to", p.id).is("archived", null);
-      // created
-      const { count: created } = await base.eq("created_by", p.id).is("archived", null);
-      // active (not won/lost)
-      const { count: active } = await base
+      const { count: assigned } = await supabase
+        .from("leads")
+        .select("id", { count: "exact", head: true })
         .eq("assigned_to", p.id)
-        .is("archived", null)
-        .is("final_status", null)
-        .not("stage", "in", "(won,lost)");
+        .eq("archived", false);
+      // active (assigned, not archived, final_status IS NULL)
+      const { count: active } = await supabase
+        .from("leads")
+        .select("id", { count: "exact", head: true })
+        .eq("assigned_to", p.id)
+        .eq("archived", false)
+        .is("final_status", null);
       // won
-      const { count: won } = await base.eq("assigned_to", p.id).or("final_status.eq.won,stage.eq.won");
+      const { count: won } = await supabase
+        .from("leads")
+        .select("id", { count: "exact", head: true })
+        .eq("assigned_to", p.id)
+        .eq("archived", false)
+        .or("final_status.eq.won,stage.eq.won");
       // lost
-      const { count: lost } = await base.eq("assigned_to", p.id).or("final_status.eq.lost,stage.eq.lost");
+      const { count: lost } = await supabase
+        .from("leads")
+        .select("id", { count: "exact", head: true })
+        .eq("assigned_to", p.id)
+        .eq("archived", false)
+        .or("final_status.eq.lost,stage.eq.lost");
 
       return {
         user_id: p.id,
         full_name: p.full_name,
         role: p.role,
         assigned_leads: assigned || 0,
-        created_leads: created || 0,
         active_leads: active || 0,
         won_leads: won || 0,
         lost_leads: lost || 0,
@@ -49,10 +61,8 @@ export async function GET() {
     })
   );
 
-  // Filter: only users with any data
-  const filtered = results.filter(
-    (r) => r.assigned_leads > 0 || r.created_leads > 0
-  );
+  // Filter: only users with assigned leads
+  const filtered = results.filter((r) => r.assigned_leads > 0);
 
   return NextResponse.json({ users: filtered });
 }

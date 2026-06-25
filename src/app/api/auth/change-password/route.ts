@@ -53,12 +53,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: updateErr.message }, { status: 500 });
     }
 
-    // Update profile: clear force_password_change, clear password_hint (user chose their own)
+    // Update profile: clear force_password_change, update password_changed_at timestamp
     await supabaseAdmin
       .from("profiles")
       .update({
         force_password_change: false,
-        password_hint: newPassword, // Store plaintext for admin reference
         password_changed_at: new Date().toISOString(),
       })
       .eq("id", user.id);

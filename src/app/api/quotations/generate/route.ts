@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
 import { calculateQuotation, CalculateResult } from "../../../../lib/quotation-engine";
 
 /**
@@ -63,6 +64,17 @@ export async function POST(request: NextRequest) {
     if (!lead_id) {
       return NextResponse.json({ error: "lead_id is required" }, { status: 400 });
     }
+
+    // Ownership check: caller must have access to this lead (admin/boss bypass).
+    // Verified before any service_role write.
+    const profile = await getAuthProfile();
+    if (!profile) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!(await canAccessLead(lead_id, profile))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     if (!devices || typeof devices !== "object" || Object.keys(devices).length === 0) {
       return NextResponse.json(
         { error: "devices object is required with at least one device" },

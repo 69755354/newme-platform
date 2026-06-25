@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
+import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
 
 export async function POST(
   req: NextRequest,
@@ -31,26 +32,10 @@ export async function POST(
       }
     );
 
-    // 1. Auth check
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    // 1. Auth + role check
+    const profile = await getAuthProfile();
+    if (!profile) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // 1. Role check
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (profileError || !profile) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const allowedRoles = ['admin', 'sales', 'manager'];
-    if (!allowedRoles.includes(profile.role)) {
-      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const { id: leadId } = await params;
@@ -73,10 +58,10 @@ export async function POST(
       return NextResponse.json({ error: 'summary is required' }, { status: 400 });
     }
 
-    // Verify lead exists
+    // Verify lead exists + ownership
     const { data: lead, error: leadError } = await supabase
       .from('leads')
-      .select('id')
+      .select('id, assigned_to')
       .eq('id', leadId)
       .single();
 
@@ -84,11 +69,19 @@ export async function POST(
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
+    // Non-admin/boss may only write follow-ups to leads they own (rule_idor)
+    if (!isAdminOrBoss(profile) && lead.assigned_to !== profile.userId) {
+      return NextResponse.json(
+        { error: 'Forbidden: lead not assigned to you' },
+        { status: 403 }
+      );
+    }
+
     // 2. INSERT follow_up_logs
     // rule_001: only INSERT — never expose UPDATE/DELETE
     const insertPayload = {
       lead_id: leadId,
-      user_id: user.id,
+      user_id: profile.userId,
       contact_type: contactType?.trim() || null,
       summary: summary.trim(),
       result: noAnswer ? 'no_answer' : 'contacted',

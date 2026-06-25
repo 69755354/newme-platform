@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getStore } from "@/lib/knx-task-store";
-import { createServerSupabase } from "@/lib/supabase-server";
-
-const store = getStore();
+import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
 
 /**
  * POST /api/hermes/knx-design
@@ -43,17 +41,6 @@ function getSupabaseAdmin() {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY not configured");
   }
   return createClient(url, key);
-}
-
-/**
- * In-memory task store shared with status route via global.
- * In production, use Redis / DB-backed task queue.
- */
-function getTaskStore(): Map<string, any> {
-  if (!(global as any).__hermesKnxTasks) {
-    (global as any).__hermesKnxTasks = new Map<string, any>();
-  }
-  return (global as any).__hermesKnxTasks;
 }
 
 const HERMES_BRIDGE_URL = process.env.HERMES_BRIDGE_URL || "http://127.0.0.1:22884";
@@ -128,9 +115,9 @@ async function deriveDevices(supabaseAdmin: any, lead: Record<string, any>): Pro
 }
 
 async function runKnxDesignPipeline(taskId: string, leadId: string, devices: Record<string, number>, userId?: string) {
+  const store = getStore();
   try {
     const supabaseAdmin = getSupabaseAdmin();
-    const store = getTaskStore();
 
     // Step 1: Analyze / compute
     store.set(taskId, { status: "running", progress_pct: 10, progress_label: "knxProgressAnalyzing" });
@@ -264,23 +251,27 @@ function sleep(ms: number) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabaseAuth = await createServerSupabase();
-    const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
-    if (authErr || !user) {
+    const profile = await getAuthProfile();
+    if (!profile) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const supabaseAdmin = getSupabaseAdmin();
     const { lead_id } = await request.json();
-
     if (!lead_id) {
       return NextResponse.json({ error: "lead_id required" }, { status: 400 });
     }
 
-    // Verify lead exists and user has permission
+    // Ownership check
+    if (!(await canAccessLead(lead_id, profile))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const supabaseAdmin = getSupabaseAdmin();
+
+    // Verify lead exists
     const { data: lead, error: leadErr } = await (supabaseAdmin as any)
       .from("leads")
-      .select("id, customer_name, property_type, property_size_sqm, service_needs, devices_json")
+      .select("id, customer_name, property_type, property_size_sqm, service_needs, devices_json, assigned_to")
       .eq("id", lead_id)
       .single();
 
@@ -288,23 +279,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
 
-    const { data: profile } = await (supabaseAdmin as any)
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    const userRole = profile?.role || "sales";
-    if (userRole === "sales" && lead.assigned_to !== user.id) {
-      return NextResponse.json({ error: "Forbidden: not your lead" }, { status: 403 });
-    }
-
     // Derive initial device list
     const devices = await deriveDevices(supabaseAdmin, lead);
 
     // Create a task ID and start background pipeline
     const taskId = await generateTaskId();
-    const store = getTaskStore();
+    const store = getStore();
 
     store.set(taskId, {
       status: "started",
@@ -313,7 +293,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Fire-and-forget the pipeline
-    runKnxDesignPipeline(taskId, lead_id, devices, user.id);
+    runKnxDesignPipeline(taskId, lead_id, devices, profile.userId);
 
     return NextResponse.json({
       status: "started",

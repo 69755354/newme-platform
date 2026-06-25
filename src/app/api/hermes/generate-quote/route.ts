@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
 import { calculateQuotation } from "../../../../lib/quotation-engine";
 
 /**
@@ -135,23 +135,19 @@ function deriveDevices(lead: Record<string, any>): Record<string, number> {
 
 export async function POST(request: NextRequest) {
   try {
-    // ── Auth check ──
-    const supabaseAuth = await createServerSupabase();
-    const { data: { user }, error: authErr } = await supabaseAuth.auth.getUser();
-    if (authErr || !user) {
+    const profile = await getAuthProfile();
+    if (!profile) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    // Verify user has permission (admin/operator) or owns the lead
-    const { data: profile } = await supabaseAuth
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
 
     const { lead_id } = await request.json();
-
     if (!lead_id) {
       return NextResponse.json({ error: "lead_id required" }, { status: 400 });
+    }
+
+    // Ownership check
+    if (!(await canAccessLead(lead_id, profile))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const supabaseAdmin = getSupabaseAdmin();
@@ -169,12 +165,6 @@ export async function POST(request: NextRequest) {
     }
     if (!lead) {
       return NextResponse.json({ error: "lead not found" }, { status: 404 });
-    }
-
-    // Permission check: sales role can only generate quotes for their own leads
-    const userRole = profile?.role || "sales";
-    if (userRole === "sales" && lead.assigned_to !== user.id) {
-      return NextResponse.json({ error: "Forbidden: not your lead" }, { status: 403 });
     }
 
     // 2. Derive device quantities from lead data
@@ -238,7 +228,7 @@ export async function POST(request: NextRequest) {
         type: "quote_sent",
         content: `报价已生成 (AED ${calculation.total.toLocaleString()})`,
         ai_generated: true,
-        user_id: user.id,
+        user_id: profile.userId,
       });
       if (activityErr) {
         console.error("[Hermes API] Failed to insert activity:", activityErr);
@@ -254,7 +244,7 @@ export async function POST(request: NextRequest) {
           total: calculation.total,
           currency: calculation.currency,
         },
-        user_id: user.id,
+        user_id: profile.userId,
       });
       if (eventErr) {
         console.error("[Hermes API] Failed to insert business event:", eventErr);
@@ -285,7 +275,7 @@ export async function POST(request: NextRequest) {
       type: "quote_sent",
       content: `报价已生成 #${quoteNo} (AED ${calculation.total.toLocaleString()})`,
       ai_generated: true,
-      user_id: user.id,
+      user_id: profile.userId,
     });
     if (activityErr) {
       console.error("[Hermes API] Failed to insert activity:", activityErr);
@@ -302,7 +292,7 @@ export async function POST(request: NextRequest) {
         total: calculation.total,
         currency: calculation.currency,
       },
-      user_id: user.id,
+      user_id: profile.userId,
     });
     if (eventErr) {
       console.error("[Hermes API] Failed to insert business event:", eventErr);

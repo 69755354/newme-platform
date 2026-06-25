@@ -67,8 +67,8 @@ export async function GET() {
     })
   );
 
-  // Filter: only users with assigned leads
-  const filtered = results.filter((r) => r.assigned_leads > 0);
+  // Filter: users with any leads (assigned or created/imported)
+  const filtered = results.filter((r) => r.assigned_leads > 0 || r.created_leads > 0);
 
   return NextResponse.json({ users: filtered });
 }

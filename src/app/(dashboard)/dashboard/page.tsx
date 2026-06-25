@@ -958,10 +958,14 @@ export default function DashboardPage() {
         )}
 
         {/* L3b: Team Lead Ownership */}
-        {teamOwnership.length > 0 && (
-          <div>
-            <SectionHeader title={language === "zh" ? "团队 Lead 归属" : "Team Lead Ownership"} />
-            <div className="overflow-x-auto">
+        <div>
+          <SectionHeader title={language === "zh" ? "团队 Lead 归属" : "Team Lead Ownership"} />
+          <div className="overflow-x-auto">
+            {teamOwnership.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                {language === "zh" ? "暂无数据" : "No data yet"}
+              </p>
+            ) : (
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border/50 text-muted-foreground text-xs">
@@ -989,9 +993,9 @@ export default function DashboardPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            )}
           </div>
-        )}
+        </div>
 
         {/* L4: Lead Sources */}
         {sourceBreakdown.length > 0 && (

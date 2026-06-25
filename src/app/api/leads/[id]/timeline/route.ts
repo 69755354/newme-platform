@@ -46,7 +46,7 @@ export async function GET(
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10))
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)))
 
-    const [milestonesRes, followUpsRes, tasksRes, documentsRes, chatRes] = await Promise.all([
+    const [milestonesRes, followUpsRes, tasksRes, documentsRes, chatRes, activitiesRes, businessEventsRes] = await Promise.all([
       supabase.from("lead_milestones").select("*").eq("lead_id", leadId),
       supabase.from("follow_up_logs").select("*").eq("lead_id", leadId),
       supabase.from("tasks").select("*").eq("lead_id", leadId),
@@ -57,6 +57,8 @@ export async function GET(
         .eq("lead_id", leadId)
         .order("created_at", { ascending: true })
         .limit(200),
+      supabase.from("activities").select("*").eq("lead_id", leadId),
+      supabase.from("business_events").select("*").eq("lead_id", leadId),
     ])
 
     const events: Array<{
@@ -114,6 +116,26 @@ export async function GET(
         description: c.content ?? null,
         created_at: c.created_at,
         metadata: { direction: c.direction ?? "inbound" },
+      })
+    }
+
+    for (const a of activitiesRes.data || []) {
+      events.push({
+        id: `activity-${a.id}`,
+        event_type: "activity",
+        description: a.content ?? null,
+        created_at: a.created_at,
+        metadata: a,
+      })
+    }
+
+    for (const be of businessEventsRes.data || []) {
+      events.push({
+        id: `business_event-${be.id}`,
+        event_type: "business_event",
+        description: be.description ?? null,
+        created_at: be.created_at,
+        metadata: be,
       })
     }
 

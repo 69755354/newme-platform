@@ -15,13 +15,18 @@ import { createServerSupabase } from "@/lib/supabase-server";
  */
 
 // won/lost now live in final_status; process stages in current_milestone.
-// Mirrors metrics/funnel/route.ts: collapse late milestones (solution/quotation/
-// meeting) into the funnel's pending_decision bucket, pass the rest through.
+// Map each production current_milestone value onto its funnel stage key.
+// Unknown values pass through as-is (they won't match any STAGE_DEFS key and
+// are therefore dropped from the counts).
 function normalizeMilestone(milestone: string): string {
-  if (milestone === "solution" || milestone === "quotation" || milestone === "meeting") {
-    return "pending_decision";
+  switch (milestone) {
+    case "first_contact":  return "contacted";
+    case "requirements":   return "requirement_confirmed";
+    case "drawings":       return "solution_submitted";
+    case "quotation":      return "quotation_submitted";
+    case "meeting":        return "negotiation"; // meeting done → in negotiation
+    default:               return milestone; // unknown → pass through as-is
   }
-  return milestone;
 }
 
 export async function GET(request: NextRequest) {
@@ -81,7 +86,8 @@ export async function GET(request: NextRequest) {
     }
 
     for (const l of leads || []) {
-      const s = l.final_status || normalizeMilestone(l.current_milestone) || "new";
+      const s = l.final_status || normalizeMilestone(l.current_milestone || "");
+      if (!s) continue; // skip leads with no milestone
       if (stageCountMap[s] !== undefined) {
         stageCountMap[s]++;
         stageLeads[s].push(l);

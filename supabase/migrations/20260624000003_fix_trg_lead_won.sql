@@ -1,3 +1,6 @@
+-- VERIFIED 2026-06-26: trigger active in production. Contracts empty because no leads have quotation_value set.
+-- To test: PATCH lead with quotation_value>0 THEN set final_status='won'
+--
 -- 20260624000003_fix_trg_lead_won.sql
 -- P3: change trg_lead_won from stage → final_status
 -- Trigger & guard clause now key off final_status = 'won' instead of stage = 'won'.

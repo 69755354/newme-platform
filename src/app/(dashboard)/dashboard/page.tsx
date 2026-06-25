@@ -778,10 +778,12 @@ export default function DashboardPage() {
     if (!note) return;
     try {
       const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
       await supabase.from("activities").insert({
         lead_id: leadId,
-        action_type: "followup",
-        note,
+        type: "followup",
+        content: note,
+        user_id: user?.id,
         created_at: new Date().toISOString(),
       });
       alert(t("dashboard.activityLogged"));

@@ -48,6 +48,11 @@ export async function GET() {
         .eq("assigned_to", p.id)
         .eq("archived", false)
         .or("final_status.eq.lost,stage.eq.lost");
+      // created (proxy: leads this person imported — imported_by is the main creation path)
+      const { count: created } = await supabase
+        .from("leads")
+        .select("id", { count: "exact", head: true })
+        .eq("imported_by", p.id);
 
       return {
         user_id: p.id,
@@ -57,6 +62,7 @@ export async function GET() {
         active_leads: active || 0,
         won_leads: won || 0,
         lost_leads: lost || 0,
+        created_leads: created || 0,
       };
     })
   );

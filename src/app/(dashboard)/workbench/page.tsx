@@ -450,6 +450,24 @@ export default function WorkbenchPage() {
           </Button>
         </Link>
       </div>
+
+      {/* Feedback banner */}
+      <Card className="border-slate-200 bg-slate-50/60">
+        <CardContent className="flex flex-col items-start gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-slate-500">
+            遇到问题请截图发 CRM PROJECT 群
+          </p>
+          <a
+            href="https://t.me/+YOUR_INVITE"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Button variant="outline" size="sm" className="h-7 text-xs">
+              Report Issue
+            </Button>
+          </a>
+        </CardContent>
+      </Card>
     </div>
   )
 }

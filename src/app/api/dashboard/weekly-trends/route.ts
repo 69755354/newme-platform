@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       .single();
 
     const role = profile?.role || "sales";
-    const isManagement = ["boss", "admin"].includes(role);
+    const isManagement = ["boss", "admin", "operator"].includes(role);
     const userId = user.id;
 
     // ─── Compute past 12 ISO weeks ───

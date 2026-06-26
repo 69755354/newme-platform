@@ -36,11 +36,18 @@ smoke() {
 
 smoke "/login"
 smoke "/dashboard"
+smoke "/command-center"
 smoke "/workbench"
 smoke "/leads"
+smoke "/quotes"
+smoke "/projects"
+smoke "/contracts"
 smoke "/pipeline"
 smoke "/analytics"
 smoke "/ads"
+smoke "/products"
+smoke "/team"
+smoke "/settings"
 
 echo ""
 if [[ $FAILED -gt 0 ]]; then

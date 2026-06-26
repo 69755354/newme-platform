@@ -25,7 +25,7 @@ export async function POST(
     // Fetch quotation with lead info
     const { data: quote, error: quoteErr } = await supabase
       .from("quotations")
-      .select("*, leads(id, customer_name)")
+      .select("*, leads(id, customer_name, property_type, property_size_sqm, location, phone)")
       .eq("id", quotationId)
       .single();
 
@@ -152,6 +152,23 @@ export async function POST(
         .update({ final_status: "won", updated_at: new Date().toISOString() })
         .eq("id", quote.lead_id);
     }
+
+    // Create project for won lead
+    const lead = quote.leads as any;
+    const projectName = `${lead?.customer_name || "Client"} - ${lead?.property_type || "Smart Home"}`;
+    await supabase.from("projects").insert({
+      lead_id: quote.lead_id,
+      contract_id: contract.id,
+      sales_id: quote.created_by,
+      customer_id: lead?.customer_id || null,
+      name: projectName,
+      property_type: lead?.property_type || null,
+      property_size: lead?.property_size_sqm || null,
+      location: lead?.location || null,
+      phase: "design",
+      status: "active",
+      contract_amount: quote.total_amount,
+    });
 
     // Log activity
     await supabase.from("activities").insert({

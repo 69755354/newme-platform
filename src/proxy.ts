@@ -68,9 +68,9 @@ export async function proxy(request: NextRequest) {
         }
       });
       supabase.from("audit_logs").insert({
-        user_id: user.id,
-        event_type: "PAGE_VISIT",
-        metadata: { page: pathname },
+        actor_id: user.id,
+        action: "PAGE_VISIT",
+        details: { page: pathname },
         ip_address: clientIp,
       }).then(({ error }) => {
         if (error) {

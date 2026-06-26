@@ -305,7 +305,10 @@ export default function LeadDetailPage() {
     // Fix B: RLS can reject with HTTP 200 + error=null but 0 rows updated.
     // Require the row back so a blocked update never shows a false "Saved".
     if (err || !updated) {
-      console.error("Failed to update field:", err);
+      const uid = (await supabase.auth.getUser()).data.user?.id;
+      console.error("Failed to update field:", {
+        user_id: uid, lead_id: id, action: `update_${field}`, error: err
+      });
       setError(t("common.saveFailed") || "Save failed");
       setSaveStatus("error");
       setUpdating(false);
@@ -346,7 +349,10 @@ export default function LeadDetailPage() {
       .select("id")
       .single();
     if (err || !updated) {
-      console.error("Failed to save project info (no row written):", err);
+      const uid = (await supabase.auth.getUser()).data.user?.id;
+      console.error("Failed to save project info (no row written):", {
+        user_id: uid, lead_id: id, action: "save_project_info", error: err
+      });
       setProjectInfoStatus("error");
       toast.error(t("common.saveFailed"));
       return;
@@ -445,7 +451,9 @@ export default function LeadDetailPage() {
       no_answer: false,
     });
     if (insertError) {
-      console.error("Failed to save note:", insertError);
+      console.error("Failed to save note:", {
+        user_id: user?.id, lead_id: id, action: "add_note", error: insertError
+      });
       setUpdating(false);
       toast.error(t("common.saveFailed"));
       return;
@@ -644,7 +652,8 @@ export default function LeadDetailPage() {
             <div className="flex gap-2">
               <Button size="sm" variant="outline"
                 className="flex-1 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
-                onClick={() => handleWon()}>
+                onClick={() => handleWon()}
+                disabled={updating}>
                 <CheckCircle className="w-4 h-4 mr-1" />{t("stageLabels.won")}
               </Button>
               <Button size="sm" variant="outline"

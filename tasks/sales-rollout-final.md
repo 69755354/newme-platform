@@ -2,9 +2,9 @@
 
 ## Status: ✅ READY
 
-**Main commit**: `eb578d83`  
+**Main commit**: `d493aaa` (hotfix `eb578d8` + migration applied)  
 **Service version**: `rzF2lZUbvetD`  
-**Branch**: `main` (clean merge from `hotfix/sales-rollout-clean`)
+**Branch**: `main`
 
 ---
 
@@ -14,7 +14,7 @@
 |------|--------|---------|
 | `src/app/api/contracts/route.ts` | +46 | P0-1: Duplicate contract prevention (SELECT check → 409 + 23505 catch) + P0-2: Error context |
 | `src/app/(dashboard)/leads/[id]/page.tsx` | +17 | P0-2: Error context (user_id/lead_id/action/error) + P1-1: Won button disabled |
-| `supabase/migrations/20260627000000_...sql` | +10 | PENDING DEBT: DB partial unique index (not applied) |
+| `supabase/migrations/20260627000000_...sql` | +10 | **APPLIED**: DB partial unique index (`idx_contracts_one_active_per_lead`) |
 
 ---
 
@@ -48,15 +48,25 @@
 
 ---
 
-## P1 Ops Debt
+## P1 Ops Debt — CLOSED ✅
 
 | Item | Status |
 |------|--------|
-| **DB partial unique index** | **PENDING** |
-| Migration | `20260627000000_contracts_unique_active_per_lead.sql` |
-| Blocker | Supabase PAT `sbp_bbaf...` lacks `database:query` scope |
-| Risk | Extremely low — L1+L2+L3 already protect |
-| Resolution | Apply when scope available; verify concurrent POST → only 1 succeeds |
+| **DB partial unique index** | **APPLIED** |
+| Index name | `idx_contracts_one_active_per_lead` |
+| Condition | `WHERE status NOT IN ('archived', 'cancelled', 'terminated')` |
+| Verified | PostgREST direct insert → 23505 blocked |
+| Date applied | 2026-06-27 02:05 UTC |
+| Full chain | L1 disabled + L2 SELECT 409 + L3 23505 catch + L4 DB index ✅ |
+
+### Protection layers (all active)
+
+| Layer | Type | Mechanism |
+|-------|------|-----------|
+| L1 | Frontend | `disabled={saving/updating}` on submit buttons |
+| L2 | API SELECT | Pre-INSERT check → 409 "Contract already exists" |
+| L3 | API 23505 | Postgres unique_violation → 409 (race condition catch) |
+| L4 | DB Index | Partial unique index → blocks duplicate at storage level |
 
 ---
 

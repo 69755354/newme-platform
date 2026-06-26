@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
       const { data: allLeads } = await supabase
         .from("leads")
         .select("id, assigned_to, stage, final_status, quotation_value, followup_count, last_contact_date, next_followup_date, created_at")
+        .eq("archived", false)
         .in("assigned_to", repIds);
 
       const leadsByRep: Record<string, any[]> = {};
@@ -122,6 +123,7 @@ export async function GET(request: NextRequest) {
       const { data: myLeads } = await supabase
         .from("leads")
         .select("id, stage, final_status, followup_count, last_contact_date, next_followup_date, quotation_value")
+        .eq("archived", false)
         .eq("assigned_to", user.id);
 
       const total = myLeads?.length ?? 0;

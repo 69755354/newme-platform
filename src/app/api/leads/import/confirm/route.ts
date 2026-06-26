@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         location: row.location || null,
         project_type: ALLOWED_PROJECT_TYPES.includes(row.project_type) ? row.project_type : null,
         quotation_value: row.quotation_value || null,
-        assigned_to: row.assigned_to || user.id,
+        assigned_to: user.id,
         import_batch_id: batchId,
         imported_by: user.id,
         imported_at: now,

@@ -70,6 +70,7 @@ export async function GET(request: NextRequest) {
     let leadsQuery = supabase
       .from("leads")
       .select("id, created_at, stage, quotation_value, assigned_to, final_status")
+      .eq("archived", false)
       .gte("created_at", rangeStart)
       .lte("created_at", rangeEnd);
 

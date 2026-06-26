@@ -35,7 +35,8 @@ export async function GET(request: NextRequest) {
     // ── Base lead query ──
     let leadQuery = supabase
       .from("leads")
-      .select("id, source, stage, lead_status, final_status, assigned_to");
+      .select("id, source, stage, lead_status, final_status, assigned_to")
+      .eq("archived", false);
     if (!isCEO) leadQuery = leadQuery.eq("assigned_to", user.id);
     const { data: leads } = await leadQuery;
     const leadRows = (leads ?? []) as any[];

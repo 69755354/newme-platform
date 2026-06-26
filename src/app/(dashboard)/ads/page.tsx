@@ -63,7 +63,7 @@ export default function AdsPage() {
           return;
         }
       }
-      const { data, error: err } = await supabase.from("leads").select("*").order("created_at", { ascending: false }).limit(500);
+      const { data, error: err } = await supabase.from("leads").select("*").eq("archived", false).order("created_at", { ascending: false }).limit(500);
       if (err) {
         console.error("Failed to fetch leads:", err);
         setError(t("common.loadFailedRetry"));

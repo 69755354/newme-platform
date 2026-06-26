@@ -50,7 +50,8 @@ export async function GET() {
     const { data: metaLeads, error: leadsErr } = await supabase
       .from("leads")
       .select("id, campaign_name, stage, quotation_value, ai_quality, source, final_status")
-      .eq("source", "meta_ads");
+      .eq("source", "meta_ads")
+      .eq("archived", false);
 
     if (leadsErr) throw leadsErr;
 
@@ -107,7 +108,8 @@ export async function GET() {
     // ─── 4. Source vs Quality ───
     const { data: allLeads, error: allLeadsErr } = await supabase
       .from("leads")
-      .select("source, ai_quality, stage, final_status");
+      .select("source, ai_quality, stage, final_status")
+      .eq("archived", false);
 
     if (allLeadsErr) throw allLeadsErr;
 

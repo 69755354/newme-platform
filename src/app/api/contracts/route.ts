@@ -34,6 +34,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Valid amount is required" }, { status: 400 });
     }
 
+    // P0-1: Prevent duplicate contracts for the same lead
+    const { data: existing } = await supabase
+      .from("contracts")
+      .select("id, contract_no")
+      .eq("lead_id", lead_id)
+      .neq("status", "archived")
+      .limit(1);
+    if (existing && existing.length > 0) {
+      console.error("[API Contracts] Duplicate prevented:", {
+        user_id: user.id,
+        lead_id,
+        action: "create_contract",
+        existing_contract: existing[0].contract_no,
+      });
+      return NextResponse.json(
+        {
+          error: "Contract already exists for this lead",
+          existing_contract_id: existing[0].id,
+          existing_contract_no: existing[0].contract_no,
+        },
+        { status: 409 }
+      );
+    }
+
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
 
@@ -64,7 +88,19 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (contractErr) {
-      console.error("[API Contracts] Insert failed:", contractErr);
+      // P0-1b: DB-level unique violation → 409
+      if (contractErr.code === "23505") {
+        console.error("[API Contracts] Duplicate prevented (DB):", {
+          user_id: user.id, lead_id, action: "create_contract", error_code: contractErr.code
+        });
+        return NextResponse.json(
+          { error: "Contract already exists for this lead" },
+          { status: 409 }
+        );
+      }
+      console.error("[API Contracts] Insert failed:", {
+        user_id: user.id, lead_id, action: "create_contract", error: contractErr
+      });
       return NextResponse.json({ error: "Failed to create contract" }, { status: 500 });
     }
 
@@ -83,7 +119,9 @@ export async function POST(request: NextRequest) {
         .insert(installmentRows);
 
       if (instErr) {
-        console.error("[API Contracts] Installment insert failed:", instErr);
+        console.error("[API Contracts] Installment insert failed:", {
+          user_id: user.id, lead_id, contract_id: contract.id, action: "create_installments", error: instErr
+        });
         return NextResponse.json({
           id: contract.id,
           contract_no: contractNo,
@@ -132,7 +170,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id: contract.id, contract_no: contractNo });
   } catch (err: any) {
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
-    console.error("[API Contracts] Error:", err);
+    console.error("[API Contracts] POST Error:", {
+      route: "POST /api/contracts", error: err.message
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

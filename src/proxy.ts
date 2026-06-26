@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase-middleware";
+import { reportServerError } from "@/lib/report-server-error";
 
 const PROTECTED_ROUTES: Record<string, string[]> = {
   "/settings": ["admin", "boss", "operator"],
@@ -54,7 +55,17 @@ export async function proxy(request: NextRequest) {
         || "unknown";
       // Fire-and-forget: update profile activity + log IP audit
       supabase.from("profiles").update({ last_active_at: new Date().toISOString() }).eq("id", user.id).then(({ error }) => {
-        if (error) console.error("Activity tracking error:", error.message);
+        if (error) {
+          // Production monitoring requirement - report server errors
+          reportServerError({
+            message: error.message,
+            type: "activity_tracking_error",
+            url: pathname,
+          }).catch(() => {
+            // Silent fail to prevent circular reporting
+          });
+          console.error("Activity tracking error:", error.message);
+        }
       });
       supabase.from("audit_logs").insert({
         user_id: user.id,
@@ -62,7 +73,17 @@ export async function proxy(request: NextRequest) {
         metadata: { page: pathname },
         ip_address: clientIp,
       }).then(({ error }) => {
-        if (error) console.error("Audit log error:", error.message);
+        if (error) {
+          // Production monitoring requirement - report server errors
+          reportServerError({
+            message: error.message,
+            type: "audit_log_error",
+            url: pathname,
+          }).catch(() => {
+            // Silent fail to prevent circular reporting
+          });
+          console.error("Audit log error:", error.message);
+        }
       });
     }
   }

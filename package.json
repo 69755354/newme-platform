@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "deploy": "bash scripts/deploy.sh"
+    "deploy": "bash scripts/deploy.sh",
+    "check:schema-refs": "python3 scripts/check-schema-refs.py",
+    "check:route-files": "bash scripts/check-route-files.sh",
+    "check:release": "npm run check:schema-refs && npm run check:route-files"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

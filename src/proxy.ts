@@ -56,7 +56,7 @@ export async function proxy(request: NextRequest) {
       supabase.from("profiles").update({ last_active_at: new Date().toISOString() }).eq("id", user.id).then(({ error }) => {
         if (error) console.error("Activity tracking error:", error.message);
       });
-      supabase.from("audit_log").insert({
+      supabase.from("audit_logs").insert({
         user_id: user.id,
         event_type: "PAGE_VISIT",
         metadata: { page: pathname },

@@ -88,6 +88,16 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (contractErr) {
+      // P0-1b: DB-level unique violation → 409
+      if (contractErr.code === "23505") {
+        console.error("[API Contracts] Duplicate prevented (DB):", {
+          user_id: user.id, lead_id, action: "create_contract", error_code: contractErr.code
+        });
+        return NextResponse.json(
+          { error: "Contract already exists for this lead" },
+          { status: 409 }
+        );
+      }
       console.error("[API Contracts] Insert failed:", {
         user_id: user.id, lead_id, action: "create_contract", error: contractErr
       });

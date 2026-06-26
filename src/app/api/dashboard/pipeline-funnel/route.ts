@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     ];
 
     // ─── Step 1: Query leads count per stage ───
-    let leadsQuery = supabase.from("leads").select("id,stage,created_at,updated_at,last_contact_date,assigned_to,customer_name,current_milestone,final_status");
+    let leadsQuery = supabase.from("leads").select("id,stage,created_at,updated_at,last_contact_date,assigned_to,customer_name,current_milestone,final_status").eq("archived", false);
     if (!isManagement) {
       leadsQuery = leadsQuery.eq("assigned_to", targetUserId);
     }

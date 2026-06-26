@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
       const { data: leads } = await supabase
         .from("leads")
         .select("id, assigned_to, source, stage, final_status")
+        .eq("archived", false)
         .in("assigned_to", repIds);
 
       const { data: contracts } = await supabase
@@ -134,6 +135,7 @@ export async function GET(request: NextRequest) {
     const { data: myLeads } = await supabase
       .from("leads")
       .select("id, source, stage, final_status")
+      .eq("archived", false)
       .eq("assigned_to", user.id);
 
     const myLeadRows = myLeads ?? [];

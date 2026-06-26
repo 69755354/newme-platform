@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // ── Base query builder ──
-    let baseQuery = supabase.from("leads").select("*", { count: "exact" });
+    let baseQuery = supabase.from("leads").select("*", { count: "exact" }).eq("archived", false);
     if (!isCEO) {
       baseQuery = baseQuery.eq("assigned_to", user.id);
     }
@@ -40,16 +40,18 @@ export async function GET(request: NextRequest) {
     let weeklyQuery = supabase
       .from("leads")
       .select("id", { count: "exact", head: true })
+      .eq("archived", false)
       .gte("created_at", weekAgo);
     if (!isCEO) weeklyQuery = weeklyQuery.eq("assigned_to", user.id);
     const { count: weeklyNew } = await weeklyQuery;
 
     // ── Active leads ──
-    // lead_status IN ('hot', 'warm') OR last_contact_date > NOW() - 7d
+    // final_status IS NULL (consistent with team-ownership, pipeline, workbench)
     let activeQuery = supabase
       .from("leads")
       .select("id", { count: "exact", head: true })
-      .or(`lead_status.in.(hot,warm),last_contact_date.gt.${weekAgo}`);
+      .eq("archived", false)
+      .is("final_status", null);
     if (!isCEO) activeQuery = activeQuery.eq("assigned_to", user.id);
     const { count: activeCount } = await activeQuery;
     const activePct = total > 0 ? Math.round((activeCount ?? 0) / total * 100) : 0;
@@ -59,6 +61,7 @@ export async function GET(request: NextRequest) {
     let dormantQuery = supabase
       .from("leads")
       .select("id", { count: "exact", head: true })
+      .eq("archived", false)
       .or(
         `lead_status.eq.dormant,and(last_contact_date.lt.${fourteenDaysAgo},final_status.is.null)`
       );
@@ -71,6 +74,7 @@ export async function GET(request: NextRequest) {
     let zeroQuery = supabase
       .from("leads")
       .select("id", { count: "exact", head: true })
+      .eq("archived", false)
       .or("followup_count.eq.0,last_contact_date.is.null");
     if (!isCEO) zeroQuery = zeroQuery.eq("assigned_to", user.id);
     const { count: zeroCount } = await zeroQuery;
@@ -81,7 +85,8 @@ export async function GET(request: NextRequest) {
     // Values: 'pending', 'good', 'bad', 'unknown'
     let qualityQuery = supabase
       .from("leads")
-      .select("quality, ai_quality");
+      .select("quality, ai_quality")
+      .eq("archived", false);
     if (!isCEO) qualityQuery = qualityQuery.eq("assigned_to", user.id);
     const { data: qualityRows } = await qualityQuery;
 
@@ -109,6 +114,7 @@ export async function GET(request: NextRequest) {
         id, customer_name, phone, assigned_to, stage, last_contact_date,
         next_followup_date, followup_count, created_at, quotation_value
       `)
+      .eq("archived", false)
       .or(
         `next_followup_date.lt.${now},and(last_contact_date.is.null,created_at.lt.${twoDaysAgo})`
       )

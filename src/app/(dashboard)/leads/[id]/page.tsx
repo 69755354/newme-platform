@@ -22,13 +22,14 @@ import {
   Calendar, Clock, User, Target, AlertTriangle, ShieldAlert,
   RotateCcw, BarChart3, TrendingUp, MessageCircle, PhoneIncoming, PhoneOutgoing,
   FileText, ClipboardList, CheckCircle, DollarSign, ExternalLink, Calculator, WandSparkles,
-  Wrench, GitBranch, ChevronDown,
+  Wrench, GitBranch, ChevronDown, Trash2,
 } from "lucide-react";
 import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadWorkflow from "@/components/lead-workflow";
 import { calculateHealthScore } from "@/lib/health-score";
 import { createFollowUpTask } from "@/lib/tasks";
+import { COMPLETABLE_MILESTONES, MILESTONE_LABELS, milestoneOrder } from "@/lib/milestones";
 import LeadContractsPanel from "./LeadContractsPanel";
 import { Toaster } from "sonner";
 
@@ -99,6 +100,7 @@ interface Task { id: string; title: string; due_at: string; }
 // "type" (e.g. 'note', 'phone', 'whatsapp', 'import_note'), `summary` is the content,
 // `user_id` is the author (created_by). See migration 20260623020001_crm_v3_new_tables.sql.
 interface FollowUpLog { id: string; contact_type: string; summary: string; user_id: string | null; created_at: string; }
+interface LeadMilestone { id: string; lead_id: string; milestone_key: string; completed: boolean; completed_at: string | null; }
 interface LeadTrace {
   lead_id: string; customer_name: string | null; stage: string; quotation_value: number | null;
   quotation_id: string | null; quotation_price: number | null; quotation_status: string | null;
@@ -187,6 +189,7 @@ export default function LeadDetailPage() {
   const [leadTrace, setLeadTrace] = useState<LeadTrace[]>([]);
   const [noteText, setNoteText] = useState("");
   const [followUpLogs, setFollowUpLogs] = useState<FollowUpLog[]>([]);
+  const [leadMilestones, setLeadMilestones] = useState<LeadMilestone[]>([]);
   // Inline field-save status (Saving / Saved / Error) shown for any updateField call.
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   // Project Info batch-save form (bottom folding panel) — local draft + status.
@@ -206,6 +209,8 @@ export default function LeadDetailPage() {
   const [showQuoteCalculator, setShowQuoteCalculator] = useState(false);
   // Bottom folding panel — which of the 6 blocks is open (null = all closed)
   const [openPanel, setOpenPanel] = useState<string | null>(null);
+  const [salesRole, setSalesRole] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -225,6 +230,18 @@ export default function LeadDetailPage() {
       .order("created_at", { ascending: false })
       .limit(200);
     if (ful) setFollowUpLogs(ful as FollowUpLog[]);
+    // Fetch milestones for this lead (7-step checklist)
+    const { data: milestones } = await supabase
+      .from("lead_milestones")
+      .select("id, lead_id, milestone_key, completed_at")
+      .eq("lead_id", id)
+      .order("completed_at", { ascending: true });
+    if (milestones) setLeadMilestones(
+      milestones.map((m: any) => ({
+        ...m,
+        completed: !!m.completed_at,
+      })) as LeadMilestone[]
+    );
     const res = await fetch(`/api/activities?lead_id=${id}`);
     const a = res.ok ? await res.json() : null;
     if (a) setActivities(a);
@@ -267,6 +284,18 @@ export default function LeadDetailPage() {
     });
   }, []);
 
+  // Fetch current user role for delete visibility
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+        const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+        setSalesRole(profile?.role || "sales");
+      }
+    })();
+  }, []);
+
   async function reassignSales(newUserId: string) {
     setReassigning(true);
     const oldLead = lead!;
@@ -285,6 +314,22 @@ export default function LeadDetailPage() {
     setLead({ ...oldLead, assigned_to: newUserId, rep_name: newUserName });
     setShowSalesDropdown(false);
     setReassigning(false);
+  }
+
+  async function handleDelete() {
+    if (!lead) return;
+    const canDelete = salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId);
+    if (!canDelete) return;
+    const confirmed = confirm(t("leadDetail.confirmDelete") || "Are you sure you want to delete this lead? This action cannot be undone.");
+    if (!confirmed) return;
+    const { error: delErr } = await supabase.from("leads").delete().eq("id", lead.id);
+    if (delErr) {
+      console.error("Failed to delete lead:", delErr);
+      toast.error(t("common.saveFailed") || "Delete failed");
+      return;
+    }
+    toast.success(lang === "zh" ? "已删除" : "Lead deleted");
+    router.push("/leads");
   }
 
   async function writeEvent(eventType: string, description: string, eventData?: Record<string, any>) {
@@ -462,6 +507,46 @@ export default function LeadDetailPage() {
     setNoteText("");
     setUpdating(false);
     toast.success(lang === "zh" ? "备注已保存" : "Note saved");
+    fetchData();
+  }
+
+  // Milestone toggle: complete the next pending milestone, or uncomplete a completed one
+  async function toggleMilestone(milestoneKey: string, currentlyCompleted: boolean) {
+    setUpdating(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (currentlyCompleted) {
+      // Uncomplete: delete the milestone row
+      const { error: delErr } = await supabase
+        .from("lead_milestones")
+        .delete()
+        .eq("lead_id", id)
+        .eq("milestone_key", milestoneKey);
+      if (delErr) {
+        console.error("Failed to uncomplete milestone:", delErr);
+        toast.error(t("common.saveFailed"));
+        setUpdating(false);
+        return;
+      }
+      toast.success(lang === "zh" ? "里程碑已撤销" : "Milestone undone");
+    } else {
+      // Complete: insert a new milestone row
+      const { error: insErr } = await supabase
+        .from("lead_milestones")
+        .insert({
+          lead_id: id,
+          milestone_key: milestoneKey,
+          completed_by: user?.id ?? null,
+          notes: lang === "zh" ? `手动完成里程碑: ${MILESTONE_LABELS[milestoneKey] || milestoneKey}` : `Manually completed milestone: ${MILESTONE_LABELS[milestoneKey] || milestoneKey}`,
+        });
+      if (insErr) {
+        console.error("Failed to complete milestone:", insErr);
+        toast.error(t("common.saveFailed"));
+        setUpdating(false);
+        return;
+      }
+      toast.success(lang === "zh" ? "里程碑已完成" : "Milestone completed");
+    }
+    setUpdating(false);
     fetchData();
   }
 
@@ -1368,6 +1453,235 @@ export default function LeadDetailPage() {
     );
   }
 
+  // ─── Timeline + Milestones section (below identity card per PRD 3-zone layout) ───
+  function LeadTimelineAndMilestones() {
+    if (!lead) return null;
+    const [activeInnerTab, setActiveInnerTab] = useState<"timeline" | "milestones">("timeline");
+    const [showAll, setShowAll] = useState(false);
+
+    // ── Timeline: monthly-folded follow_up_logs ──
+    const timelineLogs = [...followUpLogs].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    const displayedLogs = showAll ? timelineLogs : timelineLogs.slice(0, 5);
+
+    // Group by month for the monthly summary header
+    const monthGroups: Record<string, { logs: FollowUpLog[]; meetings: number }> = {};
+    for (const log of timelineLogs) {
+      const d = new Date(log.created_at);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (!monthGroups[key]) monthGroups[key] = { logs: [], meetings: 0 };
+      monthGroups[key].logs.push(log);
+      if (log.contact_type === "meeting" || log.contact_type === "面谈") {
+        monthGroups[key].meetings++;
+      }
+    }
+    const sortedMonths = Object.keys(monthGroups).sort((a, b) => b.localeCompare(a));
+
+    // Contact type icon mapping
+    function contactIcon(contactType: string) {
+      const t = contactType?.toLowerCase() || "";
+      if (t.includes("whatsapp") || t.includes("message")) return <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />;
+      if (t.includes("phone") || t.includes("电话")) return <Phone className="w-3.5 h-3.5 text-blue-400" />;
+      if (t.includes("email")) return <MessageSquare className="w-3.5 h-3.5 text-amber-400" />;
+      if (t.includes("meeting") || t.includes("面谈")) return <Calendar className="w-3.5 h-3.5 text-purple-400" />;
+      return <Clock className="w-3.5 h-3.5 text-gray-400" />;
+    }
+
+    // ── Milestones: 7-step checklist with lock/unlock logic ──
+    const completedKeys = leadMilestones
+      .filter((m) => m.completed)
+      .map((m) => m.milestone_key);
+    const nextPendingKey = COMPLETABLE_MILESTONES.find((k) => !completedKeys.includes(k));
+    // Determine if a key is locked (future, not clickable)
+    function isLocked(key: string): boolean {
+      if (completedKeys.includes(key)) return false; // completed = not locked
+      if (key === nextPendingKey) return false; // next pending = not locked
+      return true; // everything else = locked
+    }
+
+    return (
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-4">
+            <CardTitle className="text-sm text-muted-foreground">
+              {t("leadDetail.timeline")}
+            </CardTitle>
+            <div className="flex gap-1 bg-muted/50 rounded-md p-0.5 border border-border">
+              <button
+                onClick={() => setActiveInnerTab("timeline")}
+                className={cn(
+                  "px-3 py-1 text-xs rounded font-medium transition-colors",
+                  activeInnerTab === "timeline"
+                    ? "bg-copper-500/15 text-copper-400"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Clock className="w-3 h-3 inline mr-1" />
+                {t("leadDetail.timeline")}
+              </button>
+              <button
+                onClick={() => setActiveInnerTab("milestones")}
+                className={cn(
+                  "px-3 py-1 text-xs rounded font-medium transition-colors",
+                  activeInnerTab === "milestones"
+                    ? "bg-copper-500/15 text-copper-400"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <CheckCircle className="w-3 h-3 inline mr-1" />
+                {t("leadDetail.milestones")}
+              </button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {activeInnerTab === "timeline" ? (
+            <div className="space-y-3">
+              {timelineLogs.length === 0 ? (
+                <p className="text-gray-600 text-sm text-center py-4">
+                  {t("leadDetail.noTimelineRecords")}
+                </p>
+              ) : (
+                <>
+                  {/* Monthly fold headers */}
+                  {sortedMonths.map((monthKey) => {
+                    const mg = monthGroups[monthKey];
+                    const [y, m] = monthKey.split("-");
+                    const monthNum = parseInt(m);
+                    const monthLabel = lang === "zh" ? `${monthNum}月` : new Date(parseInt(y), monthNum - 1).toLocaleString("en", { month: "short" });
+                    const summary = t("leadDetail.milestoneMonthSummary")
+                      .replace("{month}", monthLabel)
+                      .replace("{total}", String(mg.logs.length))
+                      .replace("{meetings}", String(mg.meetings));
+                    return (
+                      <div key={monthKey} className="text-xs text-muted-foreground px-1 py-0.5">
+                        ▶ {summary}
+                      </div>
+                    );
+                  })}
+                  <Separator className="bg-border" />
+
+                  {/* Timeline entries */}
+                  {displayedLogs.map((log) => (
+                    <div key={log.id} className="flex gap-3 text-sm">
+                      <div className="mt-0.5 shrink-0">
+                        {contactIcon(log.contact_type)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-foreground whitespace-pre-wrap break-words leading-snug">
+                          {log.summary || (
+                            <span className="italic text-gray-500">
+                              {log.contact_type === "note" ? (lang === "zh" ? "备注" : "Note") : log.contact_type}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-gray-600 mt-0.5">
+                          {new Date(log.created_at).toLocaleString(
+                            lang === "zh" ? "zh-CN" : "en-US",
+                            { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
+                          )}
+                          {" · "}
+                          <span className="text-copper-500">
+                            {log.contact_type === "note" ? (lang === "zh" ? "📝 备注" : "📝 Note")
+                              : log.contact_type === "import_note" ? (lang === "zh" ? "📥 导入" : "📥 Imported")
+                              : log.contact_type === "phone" ? (lang === "zh" ? "📞 电话" : "📞 Phone")
+                              : log.contact_type === "whatsapp" ? "💬 WhatsApp"
+                              : log.contact_type === "meeting" ? (lang === "zh" ? "🤝 面谈" : "🤝 Meeting")
+                              : log.contact_type === "email" ? "📧 Email"
+                              : log.contact_type}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Show all / Show less toggle */}
+                  {timelineLogs.length > 5 && (
+                    <button
+                      onClick={() => setShowAll(!showAll)}
+                      className="w-full text-center text-xs text-copper-400 hover:text-copper-300 py-1 transition-colors"
+                    >
+                      {showAll ? t("leadDetail.showLess") : t("leadDetail.showAll") + ` (${timelineLogs.length})`}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          ) : (
+            /* ── Milestones checklist ── */
+            <div className="space-y-0">
+              {COMPLETABLE_MILESTONES.map((key, idx) => {
+                const completed = completedKeys.includes(key);
+                const locked = isLocked(key);
+                const isNext = key === nextPendingKey;
+                return (
+                  <div
+                    key={key}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors",
+                      locked ? "opacity-40" : "",
+                      isNext && !completed ? "bg-copper-500/5 border border-copper-500/15" : ""
+                    )}
+                  >
+                    <button
+                      onClick={() => {
+                        if (locked) return;
+                        toggleMilestone(key, completed);
+                      }}
+                      disabled={locked}
+                      className={cn(
+                        "w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
+                        completed
+                          ? "bg-emerald-500 border-emerald-500 text-white cursor-pointer"
+                          : locked
+                          ? "border-gray-700 bg-transparent cursor-not-allowed"
+                          : "border-copper-500 bg-transparent hover:bg-copper-500/10 cursor-pointer"
+                      )}
+                    >
+                      {completed && <CheckCircle className="w-3.5 h-3.5" />}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className={cn(
+                          "text-sm",
+                          completed ? "text-foreground line-through opacity-60" : "text-foreground"
+                        )}
+                      >
+                        {t(`leadDetail.milestone_${key}`)}
+                      </p>
+                      {completed && (
+                        <p className="text-[10px] text-emerald-400">
+                          {t("leadDetail.milestoneCompleted")}
+                        </p>
+                      )}
+                      {isNext && !completed && (
+                        <p className="text-[10px] text-copper-400">
+                          {t("leadDetail.milestoneNext")}
+                        </p>
+                      )}
+                      {locked && (
+                        <p className="text-[10px] text-gray-600">
+                          {t("leadDetail.milestoneLocked")}
+                        </p>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground">{idx + 1}/7</span>
+                  </div>
+                );
+              })}
+              {leadMilestones.length === 0 && (
+                <p className="text-gray-600 text-sm text-center py-4">
+                  {lang === "zh" ? "尚未完成任何里程碑" : "No milestones completed yet"}
+                </p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
   // ─── Bottom folding panel — 6 collapsible blocks (accordion, one open at a time) ───
   function renderFoldingPanel() {
     if (!lead) return null;
@@ -1510,7 +1824,18 @@ export default function LeadDetailPage() {
             {lead.rep_name && ` · ${lead.rep_name}`}
           </p>
         </div>
+        {(salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
+          <Button variant="ghost" size="icon"
+            className="text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+            onClick={handleDelete}
+            title={t("common.delete") || "Delete"}>
+            <Trash2 className="w-5 h-5" />
+          </Button>
+        )}
       </div>
+
+      {/* Timeline + Milestones (PRD 3-zone middle section) */}
+      <LeadTimelineAndMilestones />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* ────── Left: Tabs ────── */}

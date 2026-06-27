@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import QuickCreateLeadDialog from "@/components/QuickCreateLeadDialog";
 import ExcelImportDialog from "@/components/leads/ExcelImportDialog";
 import SubNavTabs from "@/components/SubNavTabs";
@@ -17,7 +18,7 @@ import {
   Search, X, Plus, Phone, Calendar, MapPin, ChevronRight,
   MoreHorizontal, Edit3, Send, TrendingUp, Building2,
   User, Users, Clock, AlertTriangle, RotateCcw, GripHorizontal, ShieldAlert,
-  BarChart3, Megaphone, Upload,
+  BarChart3, Megaphone, Upload, Trash2,
 } from "lucide-react";
 
 /* ─── 9-stage pipeline ─── */
@@ -262,6 +263,21 @@ function LeadsContent() {
       user_id: userId,
     });
     if (writeEventErr) console.error("Failed to write business event:", writeEventErr);
+  }
+
+  async function handleDelete(leadId: string, leadAssignedTo: string | null) {
+    const canDelete = salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && leadAssignedTo === currentUserId);
+    if (!canDelete) return;
+    const confirmed = confirm(t("leadDetail.confirmDelete") || "Are you sure you want to delete this lead? This action cannot be undone.");
+    if (!confirmed) return;
+    const { error: delErr } = await supabase.from("leads").delete().eq("id", leadId);
+    if (delErr) {
+      console.error("Failed to delete lead:", delErr);
+      toast.error(t("common.saveFailed") || "Delete failed");
+      return;
+    }
+    toast.success(lang === "zh" ? "已删除" : "Lead deleted");
+    fetchLeads();
   }
 
   // ─── Stage auto-properties ───
@@ -881,6 +897,13 @@ function LeadsContent() {
                                     onClick={(e) => { e.stopPropagation(); setEditingStage(isEditing ? null : lead.id); }}>
                                     <MoreHorizontal className="w-3.5 h-3.5" />
                                   </button>
+                                  {(salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
+                                    <button title={t("common.delete") || "Delete"}
+                                      className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
+                                      onClick={(e) => { e.stopPropagation(); handleDelete(lead.id, lead.assigned_to); }}>
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             </div>

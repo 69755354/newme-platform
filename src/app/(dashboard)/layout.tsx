@@ -41,9 +41,9 @@ const MGMT_NAV: NavItem[] = [
   { href: "/settings",  labelKey: "mgmtSettings", icon: Settings },
 ];
 
-// ─── Sales nav — personal scope, 6 items ───
+// ─── Sales nav — personal scope, 8 items ───
 const SALES_NAV: NavItem[] = [
-  { href: "/dashboard", labelKey: "salesDashboard", icon: LayoutDashboard },
+  { href: "/workbench", labelKey: "salesWorkbench", icon: Briefcase },
   { href: "/leads",     labelKey: "salesLeads", icon: Users },
   { href: "/quotes",    labelKey: "salesQuotes", icon: Calculator },
   { href: "/contracts", labelKey: "salesContracts", icon: FileText },
@@ -145,11 +145,21 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; clearTimeout(t); };
   }, []);
 
+  // Redirect sales users from /dashboard to /workbench (default sales homepage)
+  useEffect(() => {
+    if (!role) return;
+    const isMgmt = role === "admin" || role === "boss" || role === "operator";
+    if (!isMgmt && pathname === "/dashboard") {
+      router.replace("/workbench");
+    }
+  }, [role, pathname, router]);
+
   const isManagement = role === "admin" || role === "boss" || role === "operator";
   const nav = isManagement ? MGMT_NAV : SALES_NAV;
 
   const isItemActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
+    if (href === "/workbench") return pathname === "/workbench";
     if (href === "/pipeline" && isManagement) return pathname.startsWith("/pipeline");
     if (href === "/pipeline" && !isManagement) return pathname.startsWith("/pipeline"); 
     return pathname.startsWith(href);

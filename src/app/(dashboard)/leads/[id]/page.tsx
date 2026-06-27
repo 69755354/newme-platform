@@ -1012,7 +1012,7 @@ export default function LeadDetailPage() {
                 <Label className="text-muted-foreground text-xs">{t("leadDetail.nextFollowUp")} *{t("leadDetail.required")}</Label>
                 {editField === "next_followup_date" ? (
                   <input type="date" autoFocus value={editValue} onChange={(e) => setEditValue(e.target.value)}
-                    onBlur={() => { if (editValue) updateNextTask({ due_at: new Date(editValue).toISOString() }); }}
+                    onBlur={() => { if (editValue) updateNextTask({ due_at: editValue }); }}
                     className="w-full h-8 text-xs bg-muted border border-border rounded px-2 text-foreground mt-1" />
                 ) : (
                   <p className={cn("mt-1 cursor-pointer hover:text-copper-400",

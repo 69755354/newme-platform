@@ -63,7 +63,7 @@ export default function NewLeadPage() {
         assigneeId: user?.id ?? null,
         source: "follow_up",
       });
-      if (taskErr) console.error("Follow-up task create failed:", taskErr);
+      if (taskErr) import("sonner").then(({ toast }) => toast.warning("Lead created but follow-up task creation failed"));
       // Notify admins about new lead
       import("@/lib/notify").then(({ notify }) => {
         notify({ type: "lead_created", lead_id: data.id, customer_name: form.customer_name || "Unknown" });

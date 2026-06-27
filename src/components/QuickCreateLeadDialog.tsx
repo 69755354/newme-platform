@@ -103,7 +103,7 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
         assigneeId: user?.id ?? null,
         source: "follow_up",
       });
-      if (taskErr) console.error("Follow-up task create failed:", taskErr);
+      if (taskErr) import("sonner").then(({ toast }) => toast.warning("Lead created but follow-up task creation failed"));
     }
 
     // Notify admins about new lead

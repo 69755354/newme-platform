@@ -1,0 +1,3 @@
+{
+  "/api/cron/daily-funnel-snapshot/route": "app/api/cron/daily-funnel-snapshot/route.js"
+}

@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": [],
+  "debugId": "a409b383-07b2-fa78-e6ca-6714133051d9",
+  "sections": [
+    {"offset": {"line": 1, "column": 0}, "map": {"version":3,"sources":["../../../../src/app/%28auth%29/layout.tsx"],"sourcesContent":["\"use client\";\n\nimport { LanguageProvider } from \"@/lib/i18n/LanguageContext\";\n\n/**\n * (auth) route-group layout.\n * The (auth) group sits OUTSIDE the (dashboard) layout, so it does not inherit\n * the dashboard's LanguageProvider. Pages here (e.g. change-password) call\n * useLanguage() and would crash at prerender with \"must be used within\n * LanguageProvider\" without this wrapper. Keep it minimal — just the i18n provider.\n */\nexport default function AuthLayout({ children }: { children: React.ReactNode }) {\n  return <LanguageProvider>{children}</LanguageProvider>;\n}\n"],"names":["AuthLayout","children"],"mappings":"wDAEA,EAAA,EAAA,CAAA,CAAA,wBASe,SAASA,AAAW,UAAEC,CAAQ,CAAiC,EAC5E,MAAO,CAAA,EAAA,EAAA,GAAA,EAAC,EAAA,gBAAgB,CAAA,UAAEA,GAC5B"}}]
+}

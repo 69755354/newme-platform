@@ -729,7 +729,7 @@ export default function DashboardPage() {
           })()}
         </select>
         <button
-          onClick={() => router.push("/leads/new")}
+          onClick={() => { window.location.href = "/leads/new"; }}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/85 transition-colors"
         >
           + {t("dashboard.newLeads")}

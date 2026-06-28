@@ -39,8 +39,9 @@ const sentryConfig = withSentryConfig(nextConfig, {
     deleteSourcemapsAfterUpload: true,
   },
 
-  // Don't widen the client bundle unnecessarily
-  widenClientFileUpload: false,
+  // Widen client file upload for Turbopack compatibility
+  // Fixes React Client Manifest errors (global-error.tsx, icon-mark.js, etc.)
+  widenClientFileUpload: true,
 });
 
 export default sentryConfig;

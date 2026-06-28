@@ -17,7 +17,7 @@
   "dependencies": {
     "@base-ui/react": "^1.5.0",
     "@radix-ui/react-collapsible": "^1.1.12",
-    "@sentry/nextjs": "^10.57.0",
+    "@sentry/nextjs": "^10.62.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",
     "class-variance-authority": "^0.7.1",

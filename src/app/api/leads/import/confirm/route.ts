@@ -1,92 +1,146 @@
-// POST /api/leads/import/confirm — Confirm import, write leads + follow_up_logs with batch trace
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
 
-// DB CHECK constraint: project_type IN ('villa','apartment','developer').
-// Defensive allowlist — only persist legal values, coerce anything else to null.
-const ALLOWED_PROJECT_TYPES = ["villa", "apartment", "developer"];
-
+// ─── POST /api/leads/import/confirm ───
 export async function POST(request: NextRequest) {
-  const supabase = await createServerSupabase();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const supabase = await createServerSupabase();
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-  let body: any;
-  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    if (!profile || !["admin", "boss"].includes(profile.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
-  const { rows } = body;
-  if (!rows || !Array.isArray(rows) || rows.length === 0) {
-    return NextResponse.json({ error: "rows array required" }, { status: 400 });
-  }
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const adminClient = createClient(supabaseUrl, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
 
-  const batchId = crypto.randomUUID();
-  const now = new Date().toISOString();
-  const imported: any[] = [];
-  const errors: any[] = [];
+    const body = await request.json();
+    const allRows: any[] = body.rows || [];
 
-  for (const row of rows) {
-    try {
-      const leadPayload: Record<string, any> = {
-        customer_name: row.customer_name || null,
-        phone: row.phone || null,
-        source: row.source || "unknown_import",
-        current_milestone: row.current_milestone || "new",
-        quality: row.quality || "pending",
-        location: row.location || null,
-        project_type: ALLOWED_PROJECT_TYPES.includes(row.project_type) ? row.project_type : null,
-        quotation_value: row.quotation_value || null,
-        assigned_to: user.id,
-        import_batch_id: batchId,
-        imported_by: user.id,
-        imported_at: now,
-        raw_import_data: {
-          row_number: row.row_number,
-          raw_status: row.raw_status || null,
-          raw_source: row.raw_source || null,
-          raw_note: row.notes || null,
-          raw_quality: row.raw_quality || null,
-          source_file: "Book2.xlsx",
-        },
-      };
+    if (!Array.isArray(allRows) || allRows.length === 0) {
+      return NextResponse.json({ error: "No rows provided" }, { status: 400 });
+    }
 
-      const { data: lead, error: leadErr } = await supabase
+    const importBatchId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    // Build lead insert rows
+    const leadsToInsert = allRows.map((row) => ({
+      customer_name: row.customer_name || `Row ${row.row_number}`,
+      phone: row.phone || null,
+      source: row.source || "unknown_import",
+      quality: row.quality || "pending",
+      lead_status: row.lead_status || "pending",
+      stage: row.stage || "new",
+      emirate: row.emirate || null,
+      property_type: row.property_type || null,
+      country: row.country || null,
+      first_contact_date: row.first_contact_date || null,
+      quotation_value: row.quotation_value || null,
+      raw_import_data: row.raw_import_data ? JSON.stringify(row.raw_import_data) : null,
+      import_batch_id: importBatchId,
+      imported_by: user.id,
+      imported_at: now,
+      assigned_to: null,
+      next_action: "call",
+      next_followup_date: new Date(Date.now() + 86400000).toISOString(),
+      created_at: row.first_contact_date
+        ? `${row.first_contact_date}T00:00:00Z`
+        : now,
+      updated_at: now,
+    }));
+
+    // Batch insert
+    const BATCH_SIZE = 50;
+    let imported = 0;
+    const importedIds: string[] = [];
+    const errors: { row: number; error: string }[] = [];
+
+    for (let i = 0; i < leadsToInsert.length; i += BATCH_SIZE) {
+      const batch = leadsToInsert.slice(i, i + BATCH_SIZE);
+      const { data, error: insertErr } = await adminClient
         .from("leads")
-        .insert(leadPayload)
-        .select("id")
-        .single();
+        .insert(batch)
+        .select("id");
 
-      if (leadErr) { errors.push({ row: row.row_number, error: leadErr.message }); continue; }
+      if (insertErr) {
+        // Row-by-row fallback
+        for (let j = 0; j < batch.length; j++) {
+          const { data: single, error: singleErr } = await adminClient
+            .from("leads")
+            .insert(batch[j])
+            .select("id")
+            .single();
+          if (singleErr) {
+            errors.push({
+              row: i + j + 1,
+              error: singleErr.message,
+            });
+          } else {
+            imported++;
+            importedIds.push(single.id);
+          }
+        }
+      } else {
+        imported += data.length;
+        for (const d of data) importedIds.push(d.id);
+      }
+    }
 
-      // Notes → follow_up_logs
-      if (row.notes && row.notes.trim()) {
-        const { error: noteErr } = await supabase.from("follow_up_logs").insert({
-          lead_id: lead.id,
-          contact_type: "import_note",
-          summary: row.notes.trim(),
+    // Insert follow_up_logs for notes
+    let notesCreated = 0;
+    const notesToInsert: any[] = [];
+    for (let i = 0; i < allRows.length; i++) {
+      const row = allRows[i];
+      const notes = row.notes?.trim();
+      if (notes && i < importedIds.length) {
+        notesToInsert.push({
+          lead_id: importedIds[i],
+          contact_type: "note",
+          summary: notes,
           user_id: user.id,
+          no_answer: false,
           created_at: now,
         });
-        // Lead was inserted, but the note failed (RLS/constraint) → partial.
-        // Don't swallow it; surface as a per-row error with row_number and cause.
-        if (noteErr) {
-          errors.push({
-            row: row.row_number,
-            error: `lead ${lead.id} imported but note failed: ${noteErr.message}`,
-          });
-        }
       }
-
-      imported.push({ id: lead.id, row_number: row.row_number });
-    } catch (e: any) {
-      errors.push({ row: row.row_number, error: e.message || "Unknown error" });
     }
-  }
 
-  return NextResponse.json({
-    batch_id: batchId,
-    imported: imported.length,
-    failed: errors.length,
-    errors: errors.slice(0, 50),
-    imported_ids: imported.map((i) => i.id),
-  });
+    if (notesToInsert.length > 0) {
+      const { error: logErr } = await adminClient
+        .from("follow_up_logs")
+        .insert(notesToInsert);
+      if (!logErr) {
+        notesCreated = notesToInsert.length;
+      } else {
+        console.error("[Import Confirm] follow_up_logs insert failed:", logErr);
+      }
+    }
+
+    return NextResponse.json({
+      batch_id: importBatchId,
+      imported,
+      failed: errors.length,
+      imported_ids: importedIds,
+      errors,
+      notes_created: notesCreated,
+    });
+  } catch (err: any) {
+    console.error("[Import Confirm] Error:", err);
+    return NextResponse.json(
+      { error: err.message || "Import failed" },
+      { status: 500 }
+    );
+  }
 }

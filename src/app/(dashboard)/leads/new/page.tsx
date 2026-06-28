@@ -47,9 +47,10 @@ export default function NewLeadPage() {
 
     if (data) {
       if (form.notes) {
-        const { error: newLeadNoteErr } = await supabase.from("activities").insert({
-          lead_id: data.id, type: "note", content: form.notes,
-          user_id: (await supabase.auth.getUser()).data.user?.id,
+        const { error: newLeadNoteErr } = await supabase.from("follow_up_logs").insert({
+          lead_id: data.id, contact_type: "note", summary: form.notes,
+          user_id: user?.id ?? null,
+          no_answer: false,
         });
         if (newLeadNoteErr) {
           import("sonner").then(({ toast }) => toast.error("Note save failed"));

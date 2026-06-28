@@ -329,7 +329,7 @@ export default function LeadDetailPage() {
       return;
     }
     toast.success(lang === "zh" ? "已删除" : "Lead deleted");
-    router.push("/leads");
+    window.location.href = "/leads";
   }
 
   async function writeEvent(eventType: string, description: string, eventData?: Record<string, any>) {

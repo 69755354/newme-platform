@@ -1,8 +1,18 @@
-# CRM v3.1 Sales Rollout GO — 部署日志
+# CRM v3.1 部署日志
 
-## 部署信息
-- **日期**: 2026-06-26/27
-- **Commit**: 33eb1195b90e470d51f0c7ca7ca615f757ccd61f
+## 2026-06-28 02:15 Dubai — P0-2+P0-7 合并部署
+- **Commit**: 2ffc723 (P0-7) + 7bfcca5 (P0-2) + d501e03 (Phase 1)
+- **BUILD_ID**: LagCCIRGDgNE
+- **改动**:
+  - P0-2: Dashboard `+ New Leads` 按钮 → window.location.href
+  - P0-7: due_at UTC锚点统一 + 错误toast化 + QuickCreateLeadDialog同修
+  - Phase 1: Workbench + Timeline + Delete + Cron Mute
+- **验证**: tsc ✅ | build ✅ | health 200 | /leads/new 200 | /dashboard 200
+- **审计**: Codex+CC双审 P0=0 P1=6 P2=6，交叉验证一致
+- **已知问题**: router.push跨页缓存（见session-summary）
+
+## 2026-06-26/27 Dubai — Sales Rollout GO
+- **Commit**: 33eb119
 - **BUILD_ID**: Ldp9LtvoJ-n8
 - **Branch**: main
 - **Deploy time**: 2026-06-27 02:18 CST (2026-06-26 22:18 Dubai)

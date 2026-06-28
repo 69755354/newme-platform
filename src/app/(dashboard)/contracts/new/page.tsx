@@ -175,7 +175,7 @@ function NewContractPageInner() {
 
     toast.success(t("contracts.created").replace("{no}", result.contract_no));
     setSaving(false);
-    router.push("/contracts");
+    window.location.href = "/contracts";
   }
 
   return (

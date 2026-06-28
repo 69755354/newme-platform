@@ -77,7 +77,7 @@ export default function NewLeadPage() {
           location: form.location || undefined,
         });
       }
-      router.push("/leads");
+      window.location.href = "/leads";
     }
     setSaving(false);
   }

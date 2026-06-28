@@ -54,13 +54,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Update profile: clear force_password_change, update password_changed_at timestamp
-    await supabaseAdmin
+    const { error: profileErr } = await supabaseAdmin
       .from("profiles")
       .update({
         force_password_change: false,
         password_changed_at: new Date().toISOString(),
       })
       .eq("id", user.id);
+
+    if (profileErr) {
+      return NextResponse.json(
+        { error: "Password changed but session invalidation failed. Please contact admin." },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (e: any) {

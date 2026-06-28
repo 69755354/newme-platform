@@ -80,7 +80,18 @@ export async function PATCH(
         if (error) {
           return NextResponse.json({ error: error.message || "Update failed" }, { status: 400 });
         }
-        // Note: passwords are no longer stored in profiles
+        // Invalidate existing sessions by marking password change time
+        const { error: profileErr } = await adminClient
+          .from("profiles")
+          .update({ password_changed_at: new Date().toISOString() })
+          .eq("id", user.id);
+
+        if (profileErr) {
+          return NextResponse.json(
+            { error: "Password changed but session invalidation failed. Please contact admin." },
+            { status: 500 }
+          );
+        }
         return NextResponse.json({ success: true });
       } catch {
         return NextResponse.json({ error: "Session invalid" }, { status: 401 });
@@ -99,7 +110,19 @@ export async function PATCH(
     const { error } = await adminClient.auth.admin.updateUserById(targetId, { password });
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-    // Note: passwords are no longer stored in profiles
+    // Invalidate existing sessions by marking password change time
+    const { error: profileErr } = await adminClient
+      .from("profiles")
+      .update({ password_changed_at: new Date().toISOString() })
+      .eq("id", targetId);
+
+    if (profileErr) {
+      return NextResponse.json(
+        { error: "Password changed but session invalidation failed. Please contact admin." },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({ success: true });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Internal error" }, { status: 500 });

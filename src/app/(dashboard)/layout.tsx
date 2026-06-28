@@ -278,7 +278,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           <div className="flex items-center justify-between px-2">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              v2.3
+              v{process.env.NEXT_PUBLIC_APP_VERSION || "dev"}
             </div>
             <button
               onClick={handleLogout}

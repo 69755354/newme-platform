@@ -113,3 +113,16 @@ export const MILESTONE_LABELS: Record<string, string> = {
   'meeting': '会面/洽谈',
   'negotiation': '最终谈判'
 };
+
+// P1-12: Human-readable milestone descriptions with i18n support
+export const MILESTONE_DESCRIPTIONS: Record<string, { en: string; zh: string }> = {
+  'new': { en: 'New lead, no contact yet', zh: '新线索，尚未联系' },
+  'first_contact': { en: 'Initial contact made, gathering information', zh: '已初次联系，收集信息中' },
+  'basic_info': { en: 'Basic client info collected, moving to drawings', zh: '基础信息已收集，进入图纸阶段' },
+  'drawings': { en: 'Designing solution, confirming floor plans and quotes', zh: '方案设计中，确认点位图和报价' },
+  'requirements': { en: 'Requirements confirmed, preparing solution', zh: '需求已确认，准备方案' },
+  'solution': { en: 'Solution presented, awaiting client feedback', zh: '方案已提交，等待客户反馈' },
+  'quotation': { en: 'Quote submitted, entering negotiation', zh: '报价已提交，进入谈判阶段' },
+  'meeting': { en: 'Meeting/consultation in progress', zh: '会面/洽谈中' },
+  'negotiation': { en: 'Final negotiation, close to decision', zh: '最终谈判，接近成交' }
+};

@@ -43,6 +43,46 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // Q6: Password reset session invalidation — if password was changed after the
+  // JWT was issued, force re-login so stale tokens can't be used.
+  if (user) {
+    try {
+      // Decode JWT iat claim from session
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (accessToken) {
+        const payload = JSON.parse(
+          Buffer.from(accessToken.split(".")[1], "base64url").toString(),
+        );
+        const jwtIat = payload.iat;
+        if (jwtIat) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("password_changed_at")
+            .eq("id", user.id)
+            .single();
+          if (profile?.password_changed_at) {
+            const changedAt = Math.floor(
+              new Date(profile.password_changed_at).getTime() / 1000,
+            );
+            if (changedAt > jwtIat) {
+              const loginUrl = new URL("/login", request.url);
+              loginUrl.searchParams.set(
+                "reason",
+                "password_changed",
+              );
+              return NextResponse.redirect(loginUrl);
+            }
+          }
+        }
+      }
+    } catch {
+      // If decoding fails, allow the request — don't block on parse errors
+    }
+  }
+
   // Track activity: update last_active_at (throttled to once per 5 min)
   // Also capture client IP for audit_log (x-forwarded-for → first IP)
   if (user && !pathname.startsWith("/_next") && !pathname.startsWith("/api")) {

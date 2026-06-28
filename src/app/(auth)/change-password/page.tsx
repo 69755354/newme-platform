@@ -49,7 +49,10 @@ export default function ChangePasswordPage() {
       }
 
       toast.success(t("changePassword.success"));
-      router.push("/dashboard");
+      toast.info("Please log in again with your new password.");
+      setTimeout(() => {
+        window.location.href = "/login";
+      }, 2000);
     } catch {
       toast.error(t("changePassword.error"));
     } finally {

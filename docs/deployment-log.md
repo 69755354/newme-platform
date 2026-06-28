@@ -1,5 +1,19 @@
 # CRM v3.1 部署日志
 
+## 2026-06-28 23:25 CST — P1 import hardening + Sentry fix
+- **Commit**: 4444e50
+- **BUILD_ID**: 5c11Z75CcTUj
+- **改动**:
+  - P1-1: import confirm 服务端重验 source/quality/status (mapSource/mapQuality/mapStatus)
+  - P1-2: notes索引 Map(row_number→lead_id) 替代数组索引
+  - P1-3: service_role 文档 + 纵深缺口分析
+  - P0: row_number 在 insert 前剥离（leads表无此列）
+  - Sentry: widenClientFileUpload=true + 10.57.0→10.62.0
+  - Systemd: ExecStartPost login预热 curl
+- **审计**: Codex 1审(两轮) + Hermes 2审。P0发现→CC重修→再审PASS
+- **验证**: tsc ✅ | build ✅ | health 200 | /login 200 | /dashboard 200 | /leads 200 | prod 200 | 0 error
+- **GitHub push**: ⚠️ 未推送 (远端认证问题)
+
 ## 2026-06-28 02:15 Dubai — P0-2+P0-7 合并部署
 - **Commit**: 2ffc723 (P0-7) + 7bfcca5 (P0-2) + d501e03 (Phase 1)
 - **BUILD_ID**: LagCCIRGDgNE

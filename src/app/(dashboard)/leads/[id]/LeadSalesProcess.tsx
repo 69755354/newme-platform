@@ -249,7 +249,7 @@ export default function LeadSalesProcess({
                       {t(`leadDetail.milestone_${key}`)}
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {t(`milestone_desc_${key}`)}
+                      {t(`leadDetail.milestone_desc_${key}`)}
                     </p>
                     {completed && <p className="text-[10px] text-emerald-400">{t("leadDetail.milestoneCompleted")}</p>}
                     {isNext && !completed && <p className="text-[10px] text-copper-400">{t("leadDetail.milestoneNext")}</p>}

@@ -7,7 +7,9 @@ def generate_presigned_url(secret_id, secret_key, bucket, region, key, expires=3
     now = int(time.time())
     expire_time = now + expires
     sign_time = f"{now};{expire_time}"
-    http_string = f"get\n/{key}\n\nhost={host}\n"
+    # URL-encode the key for the HTTP path (but keep / as-is)
+    encoded_key = urllib.parse.quote(key, safe='/')
+    http_string = f"get\n/{encoded_key}\n\nhost={host}\n"
     string_to_sign = f"sha1\n{sign_time}\n{hashlib.sha1(http_string.encode()).hexdigest()}\n"
     sign_key = hmac.new(secret_key.encode(), sign_time.encode(), hashlib.sha1).hexdigest()
     signature = hmac.new(sign_key.encode(), string_to_sign.encode(), hashlib.sha1).hexdigest()
@@ -20,7 +22,7 @@ def generate_presigned_url(secret_id, secret_key, bucket, region, key, expires=3
         "q-url-param-list": "",
         "q-signature": signature,
     }
-    return f"https://{host}/{key}?{urllib.parse.urlencode(params)}"
+    return f"https://{host}/{encoded_key}?{urllib.parse.urlencode(params)}"
 
 if __name__ == "__main__":
     try:

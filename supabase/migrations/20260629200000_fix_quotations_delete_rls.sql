@@ -7,6 +7,7 @@ DROP POLICY IF EXISTS "quotations_sales_delete_own" ON quotations;
 
 -- Create correct policy: creator can delete their own quotations
 -- No need to check role - if you created it, you can delete it
+DROP POLICY IF EXISTS "quotations_creator_delete_own" ON quotations;
 CREATE POLICY "quotations_creator_delete_own" ON quotations
   FOR DELETE
   USING (created_by = auth.uid());

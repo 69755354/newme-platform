@@ -195,7 +195,7 @@ export default function LeadDetailPage() {
     if (!confirmed) return;
     const { error: delErr } = await supabase.from("leads").delete().eq("id", lead.id);
     if (delErr) {
-      console.error("Failed to delete lead:", delErr);
+      console.error("[LeadDetail] delete failed");
       toast.error(t("common.saveFailed") || "Delete failed");
       return;
     }
@@ -306,7 +306,7 @@ export default function LeadDetailPage() {
     if (nextTask) {
       const { error: err } = await supabase.from("tasks").update(updates).eq("id", nextTask.id);
       if (err) {
-        console.error("Failed to update next task:", err);
+        console.error("[LeadDetail] task update failed");
         setError(t("common.saveFailed") || "Save failed");
         return;
       }
@@ -320,7 +320,7 @@ export default function LeadDetailPage() {
         source: "manual",
       });
       if (err) {
-        console.error("Failed to create next task:", err);
+        console.error("[LeadDetail] task create failed");
         setError(t("common.saveFailed") || "Save failed");
         return;
       }
@@ -338,7 +338,7 @@ export default function LeadDetailPage() {
       if (!updated) return;
       toast.success(t("leads.markedWon"));
     } catch (e: any) {
-      console.error("handleWon error:", e);
+      console.error("[LeadDetail] handleWon error");
       toast.error(t("common.operationFailed"));
     } finally {
       setUpdating(false);
@@ -350,9 +350,9 @@ export default function LeadDetailPage() {
     try {
       const updated = await updateStage("lost");
       if (!updated) return;
-      toast.success(lang === "zh" ? "已标记为丢失" : "Marked as lost");
+      toast.success(t("leads.markedLost"));
     } catch (e: any) {
-      console.error("handleLost error:", e);
+      console.error("[LeadDetail] handleLost error");
       toast.error(t("common.operationFailed"));
     } finally {
       setUpdating(false);
@@ -400,7 +400,7 @@ export default function LeadDetailPage() {
         .eq("lead_id", id)
         .eq("milestone_key", milestoneKey);
       if (delErr) {
-        console.error("Failed to uncomplete milestone:", delErr);
+        console.error("[LeadDetail] milestone uncomplete failed");
         toast.error(t("common.saveFailed"));
         setUpdating(false);
         return;
@@ -417,7 +417,7 @@ export default function LeadDetailPage() {
           notes: lang === "zh" ? `手动完成里程碑: ${MILESTONE_LABELS[milestoneKey] || milestoneKey}` : `Manually completed milestone: ${MILESTONE_LABELS[milestoneKey] || milestoneKey}`,
         });
       if (insErr) {
-        console.error("Failed to complete milestone:", insErr);
+        console.error("[LeadDetail] milestone complete failed");
         toast.error(t("common.saveFailed"));
         setUpdating(false);
         return;

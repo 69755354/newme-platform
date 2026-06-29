@@ -318,7 +318,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         )}
-        <div className="flex-1 p-6">
+        <div className="flex-1 p-6 min-w-0 overflow-hidden">
           {authLoading ? (
             <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
               {t("common.loading")}

@@ -571,7 +571,8 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
                   >
                     <Eye className="w-4 h-4" />
                   </button>
-                  {currentUserId && quote.created_by === currentUserId && (
+                  {(currentUserId && quote.created_by === currentUserId) ||
+                   userRole === "admin" || userRole === "boss" || userRole === "operator" ? (
                     <button
                       onClick={(e) => handleDeleteQuote(e, quote)}
                       disabled={deletingQuoteId === quote.id}
@@ -580,7 +581,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
-                  )}
+                  ) : null}
                 </div>
               </div>
             );

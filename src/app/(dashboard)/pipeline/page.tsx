@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import {
   Users, DollarSign, TrendingDown, Clock, Target, AlertTriangle,
   GripVertical, User, Plus, TrendingUp, Wallet, CheckCircle2,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 
 /* ─── Types ─── */
@@ -167,7 +168,10 @@ export default function PipelinePage() {
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [salesUsers, setSalesUsers] = useState<any[]>([]);
+  const [showEmptyStages, setShowEmptyStages] = useState(false);
+  const [activeStageKey, setActiveStageKey] = useState<string | null>(null);
   const dragCounter = useRef<Record<string, number>>({});
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Get current user and role
   useEffect(() => {
@@ -234,6 +238,21 @@ export default function PipelinePage() {
   const kpiCollectionTarget = kpiTargets.find(t => t.target_type === "collection")?.target_amount || 0;
   const kpiSigningPct = kpiSigningTarget > 0 ? Math.round((kpiSigningActual / kpiSigningTarget) * 100) : null;
   const kpiCollectionPct = kpiCollectionTarget > 0 ? Math.round((kpiCollectionActual / kpiCollectionTarget) * 100) : null;
+
+  // Keyboard navigation for kanban board
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+        e.preventDefault();
+        const dir = e.key === 'ArrowLeft' ? -1 : 1;
+        container.scrollBy({ left: dir * 310, behavior: 'smooth' });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const fmtAED = (v: number) => v >= 1_000_000 ? `AED ${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `AED ${(v / 1_000).toFixed(0)}K` : `AED ${v.toLocaleString()}`;
   const kpiPctColor = (v: number | null) => {
@@ -509,10 +528,18 @@ export default function PipelinePage() {
             {updating && <span className="ml-2 text-[10px] text-amber-400">{t("common.saving")}</span>}
           </p>
         </div>
-        <button onClick={() => router.push("/leads/new")}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/85 transition-colors">
-          <Plus className="w-3.5 h-3.5" />{t("common.create")}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowEmptyStages(!showEmptyStages)}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border/40 hover:border-border"
+          >
+            {showEmptyStages ? t("pipeline.hideEmpty") : t("pipeline.showEmpty")}
+          </button>
+          <button onClick={() => router.push("/leads/new")}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/85 transition-colors">
+            <Plus className="w-3.5 h-3.5" />{t("common.create")}
+          </button>
+        </div>
       </div>
 
       {/* Stage totals bar */}
@@ -526,9 +553,18 @@ export default function PipelinePage() {
           // For terminal stages (won/lost), use totalAll as denominator to avoid >100% overflow
           const denominator = isTerminal ? totalAll : totalActive;
           const pct = denominator > 0 ? Math.round((items.length / denominator) * 100) : 0;
+          const isActive = activeStageKey === s.key;
           return (
             <div key={s.key}
-              className={cn("text-left p-2 rounded-lg border transition-all", s.bg, s.border)}>
+              onClick={() => {
+                const el = document.getElementById(`stage-${s.key}`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+              }}
+              className={cn(
+                "text-left p-2 rounded-lg border transition-all cursor-pointer hover:border-copper-500/50",
+                s.bg, s.border,
+                isActive && "ring-2 ring-copper-500/60"
+              )}>
               <div className="flex items-center justify-between mb-0.5">
                 <span className="text-[10px] font-medium text-muted-foreground truncate">{t(s.labelKey as any)}</span>
                 <span className="text-[9px] text-muted-foreground/70">{pct}%</span>
@@ -545,69 +581,102 @@ export default function PipelinePage() {
       </div>
 
       {/* ═══════ Kanban Board ═══════ */}
-      <div className="overflow-x-auto pb-4 -mx-4 px-4">
-        <div className="flex gap-3 min-w-max md:min-w-0" style={{ minHeight: "65vh" }}>
-          {STAGES.map((stage) => {
-            const items = columns[stage.key] || [];
-            const isOver = draggingOver === stage.key;
-            const isWon = stage.key === "won";
-            const isLost = stage.key === "lost";
+      <div className="relative">
+        {/* Left arrow button */}
+        <button
+          onClick={() => scrollContainerRef.current?.scrollBy({ left: -310, behavior: 'smooth' })}
+          className="absolute left-2 top-1/2 -translate-y-1/2 z-20 bg-background/80 rounded-full p-1.5 shadow hover:bg-background"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
 
-            return (
-              <div
-                key={stage.key}
-                onDragEnter={() => handleDragEnter(stage.key)}
-                onDragOver={(e) => handleDragOver(e, stage.key)}
-                onDragLeave={() => handleDragLeave(stage.key)}
-                onDrop={(e) => handleDrop(e, stage.key)}
-                className={cn(
-                  "flex flex-col w-[300px] shrink-0 rounded-xl border transition-all duration-150",
-                  stage.bg, stage.border,
-                  isOver && "ring-2 ring-copper-500/50 border-copper-500/30 scale-[1.01]",
-                  isWon && "bg-emerald-950/10",
-                  isLost && "bg-muted/20",
-                )}
-              >
-                {/* Column header */}
-                <div className="flex items-center justify-between px-3 py-2.5 border-b border-inherit/30 sticky top-0 z-10">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
-                    <span className="text-sm font-semibold text-foreground">{t(stage.labelKey as any)}</span>
-                    <span className="text-xs text-muted-foreground bg-background/30 px-1.5 py-0.5 rounded-full">
-                      {items.length}
-                    </span>
-                  </div>
-                  {!isWon && !isLost && (
-                    <button
-                      onClick={() => router.push(`/leads?stage=${stage.key}`)}
-                      className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                      title={t("pipeline.viewAllInStage")}
-                    >
-                      <Plus className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
+        {/* Right arrow button */}
+        <button
+          onClick={() => scrollContainerRef.current?.scrollBy({ left: 310, behavior: 'smooth' })}
+          className="absolute right-2 top-1/2 -translate-y-1/2 z-20 bg-background/80 rounded-full p-1.5 shadow hover:bg-background"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
 
-                {/* Cards container */}
-                <div className={cn(
-                  "flex-1 p-2 space-y-2 overflow-y-auto transition-colors rounded-b-xl",
-                  isOver && "bg-copper-500/5",
-                )}>
-                  {/* Empty state */}
-                  {items.length === 0 && (
-                    <div className="flex items-center justify-center h-24">
-                      <span className="text-xs text-muted-foreground/30">{t("pipeline.dropLeadsHere")}</span>
+        {/* Scroll container */}
+        <div
+          ref={scrollContainerRef}
+          className="overflow-x-auto pb-4 px-10 snap-x snap-mandatory"
+          style={{ scrollBehavior: 'smooth' }}
+        >
+          <div className="flex gap-3 min-w-max" style={{ minHeight: "65vh" }}>
+            {(() => {
+              // Filter stages: always show won/lost, others based on showEmptyStages
+              const visibleStages = STAGES.filter(s => {
+                if (s.key === 'won' || s.key === 'lost') return true;
+                if (showEmptyStages) return true;
+                return (columns[s.key]?.length || 0) > 0;
+              });
+
+              return visibleStages.map((stage) => {
+                const items = columns[stage.key] || [];
+                const isOver = draggingOver === stage.key;
+                const isWon = stage.key === "won";
+                const isLost = stage.key === "lost";
+
+                return (
+                  <div
+                    key={stage.key}
+                    id={`stage-${stage.key}`}
+                    onDragEnter={() => handleDragEnter(stage.key)}
+                    onDragOver={(e) => handleDragOver(e, stage.key)}
+                    onDragLeave={() => handleDragLeave(stage.key)}
+                    onDrop={(e) => handleDrop(e, stage.key)}
+                    className={cn(
+                      "flex flex-col w-[300px] shrink-0 rounded-xl border transition-all duration-150 snap-start",
+                      stage.bg, stage.border,
+                      isOver && "ring-2 ring-copper-500/50 border-copper-500/30 scale-[1.01]",
+                      isWon && "bg-emerald-950/10",
+                      isLost && "bg-muted/20",
+                    )}
+                  >
+                    {/* Column header */}
+                    <div className="flex items-center justify-between px-3 py-2.5 border-b border-inherit/30 sticky top-0 z-10">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
+                        <span className="text-sm font-semibold text-foreground">{t(stage.labelKey as any)}</span>
+                        <span className="text-xs text-muted-foreground bg-background/30 px-1.5 py-0.5 rounded-full">
+                          {items.length}
+                        </span>
+                      </div>
+                      {!isWon && !isLost && (
+                        <button
+                          onClick={() => router.push(`/leads?stage=${stage.key}`)}
+                          className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                          title={t("pipeline.viewAllInStage")}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
-                  )}
 
-                  {/* Cards */}
-                  {items.map((lead) => (
-                    <LeadCard key={lead.id} lead={lead} onLeadClick={(id) => router.push(`/leads/${id}`)} salesUsers={salesUsers} />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+                    {/* Cards container */}
+                    <div className={cn(
+                      "flex-1 p-2 space-y-2 overflow-y-auto transition-colors rounded-b-xl",
+                      isOver && "bg-copper-500/5",
+                    )}>
+                      {/* Empty state */}
+                      {items.length === 0 && (
+                        <div className="flex items-center justify-center h-24">
+                          <span className="text-xs text-muted-foreground/30">{t("pipeline.dropLeadsHere")}</span>
+                        </div>
+                      )}
+
+                      {/* Cards */}
+                      {items.map((lead) => (
+                        <LeadCard key={lead.id} lead={lead} onLeadClick={(id) => router.push(`/leads/${id}`)} salesUsers={salesUsers} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
         </div>
       </div>
     </div>

@@ -375,6 +375,8 @@ export const translations = {
       stagePendingDecision: "Pending Decision",
       stageWon: "Won",
       stageLost: "Lost",
+      hideEmpty: "Hide empty",
+      showEmpty: "Show all",
     },
     kpi: {
       title: "My Performance",
@@ -1745,6 +1747,8 @@ export const translations = {
       stagePendingDecision: "待决策",
       stageWon: "已成交",
       stageLost: "已流失",
+      hideEmpty: "隐藏空阶段",
+      showEmpty: "显示全部",
     },
     kpi: {
       title: "我的业绩",

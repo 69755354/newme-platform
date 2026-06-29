@@ -21,6 +21,7 @@ import {
 import {
   Search, X, Plus, FileText, Calendar, DollarSign,
   Hash, User, Clock, RefreshCw, Eye, Download, MoreHorizontal,
+  Trash2,
 } from "lucide-react";
 import QuoteCalculator from "./quote-calculator";
 import QuoteWizard from "./quote-wizard";
@@ -160,8 +161,16 @@ export default function QuotesClient({ initialData, fetchError }: QuotesClientPr
   // Row download loading
   const [downloadLoading, setDownloadLoading] = useState<string | null>(null);
 
+  // Current user ID for creator delete
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [deletingQuoteId, setDeletingQuoteId] = useState<string | null>(null);
+
   // Auth — role is detected by layout; passed via props or context.
-  // No separate auth useEffect needed here.
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setCurrentUserId(user.id);
+    });
+  }, [supabase]);
 
   /* ─── Fetch data ─── */
   const fetchQuotes = useCallback(async () => {
@@ -327,6 +336,25 @@ export default function QuotesClient({ initialData, fetchError }: QuotesClientPr
       window.open(url, "_blank");
     } finally {
       setDownloadLoading(null);
+    }
+  };
+
+  /* ─── Delete quote (creator only) ─── */
+  const handleDeleteQuote = async (e: React.MouseEvent, quote: Quotation) => {
+    e.stopPropagation();
+    if (deletingQuoteId) return; // prevent double-click
+    if (!confirm(t("quotes.confirmDelete"))) return;
+    setDeletingQuoteId(quote.id);
+    try {
+      const { error: err } = await supabase.from("quotations").delete().eq("id", quote.id);
+      if (err) throw err;
+      setQuotations(prev => prev.filter(q => q.id !== quote.id));
+      toast.success(t("quotes.deletedSuccess"));
+    } catch (err) {
+      console.error("Failed to delete quote:", err);
+      toast.error(t("quotes.deleteFailed"));
+    } finally {
+      setDeletingQuoteId(null);
     }
   };
 
@@ -542,6 +570,16 @@ export default function QuotesClient({ initialData, fetchError }: QuotesClientPr
                   >
                     <Eye className="w-4 h-4" />
                   </button>
+                  {currentUserId && quote.created_by === currentUserId && (
+                    <button
+                      onClick={(e) => handleDeleteQuote(e, quote)}
+                      disabled={deletingQuoteId === quote.id}
+                      className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-rose-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={t("quotes.deleteQuote")}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             );

@@ -1,7 +1,15 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
+import { execSync } from "child_process";
+
+// Get git hash at build time
+const gitHash = process.env.NEXT_PUBLIC_APP_VERSION || 
+  execSync("git rev-parse --short HEAD").toString().trim();
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_APP_VERSION: gitHash,
+  },
   poweredByHeader: false,
   async headers() {
     return [

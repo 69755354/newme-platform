@@ -1,1 +1,5 @@
-{"expires_at": 1782700000}
+{
+  "session_id": "manual-fix-p1-11",
+  "expires_at": "2026-06-30T00:30:00Z",
+  "reason": "P1-11 complete fix - remove unused createClient"
+}

@@ -115,10 +115,11 @@ function daysUntil(d: string | null | undefined): number | null {
 interface QuotesClientProps {
   initialData: Quotation[];
   fetchError?: string | null;
+  userRole?: string;
 }
 
 /* ════════════════════════════════════════ */
-export default function QuotesClient({ initialData, fetchError }: QuotesClientProps) {
+export default function QuotesClient({ initialData, fetchError, userRole }: QuotesClientProps) {
   const supabase = createClient();
   const { t, lang } = useLanguage();
 

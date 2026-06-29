@@ -15,7 +15,7 @@ async function authorize() {
 }
 
 export default async function QuotesPage() {
-  await authorize();
+  const { user, role } = await authorize();
   let initialData: any[] = [];
   let fetchError: string | null = null;
 
@@ -41,7 +41,7 @@ export default async function QuotesPage() {
           { href: "/products", labelKey: "quotes.subnavProducts", iconName: "package" },
         ]}
       />
-      <QuotesClient initialData={initialData} fetchError={fetchError} />
+      <QuotesClient initialData={initialData} fetchError={fetchError} userRole={role} />
     </div>
   );
 }

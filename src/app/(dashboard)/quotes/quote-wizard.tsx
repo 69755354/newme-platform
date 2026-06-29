@@ -214,7 +214,9 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
     if (!s.selectedLeadId) return;
     d({ type: "SV", saving: true });
     try {
-      const qn = `Q-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      const { data: rpcQuoteNo, error: rpcError } = await supabase.rpc('next_quote_no');
+      if (rpcError || !rpcQuoteNo) { console.error("RPC error:", rpcError); toast.error(t("quotes.calc.saveFailed") + (rpcError?.message || "Failed to generate quote number")); return; }
+      const qn = rpcQuoteNo as string;
       const dp = Object.entries(flatQ).map(([id, qty]) => {
         const dev = findDevice(id);
         return { device_id: id, name: dev?.name || id, price: dev?.price || 0, quantity: qty, unit: dev?.unit || "pcs", subtotal: (dev?.price || 0) * qty };

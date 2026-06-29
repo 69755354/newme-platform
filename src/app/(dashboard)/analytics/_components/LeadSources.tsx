@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { createClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { TrendingUp, Users, Gauge } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -67,7 +66,6 @@ function fmtAED(v: number): string {
 
 /* ─── Main Component ─── */
 export default function LeadSources() {
-  const supabase = createClient();
   const { t } = useLanguage();
   const [data, setData] = useState<LeadSourcesData | null>(null);
   const [loading, setLoading] = useState(true);

@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+const supabase = createClient();
+
 /* ─── Types ─── */
 interface LeadHealthData {
   totalLeads: number;
@@ -218,7 +220,6 @@ function OverdueTable({ items, stageLabels, t }: {
 function SalesOverdueList({ items, stageLabels, t }: {
   items: OverdueItem[]; stageLabels: Record<string, string>; t: any;
 }) {
-  const supabase = createClient();
 
   const addNote = async (leadId: string) => {
     const note = prompt("Add a quick note for this follow-up:");

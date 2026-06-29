@@ -97,9 +97,9 @@ function LeadCard({ lead, onLeadClick, salesUsers }: { lead: Lead; onLeadClick: 
         isLost && "border-border/30 bg-muted/40",
       )}
     >
-      {/* Drag handle */}
-      <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-40 transition-opacity">
-        <GripVertical className="w-3 h-3 text-muted-foreground" />
+      {/* Drag handle - always visible */}
+      <div className="absolute top-1 right-1 opacity-40 group-hover:opacity-80 transition-opacity pointer-events-none">
+        <GripVertical className="w-4 h-4 text-muted-foreground" />
       </div>
 
       {/* Customer name */}
@@ -598,13 +598,17 @@ export default function PipelinePage() {
           <ChevronRight className="w-4 h-4" />
         </button>
 
-        {/* Scroll container */}
+        {/* Scroll container - fixed height for internal scroll */}
         <div
           ref={scrollContainerRef}
-          className="overflow-x-auto pb-4 px-10 snap-x snap-mandatory"
-          style={{ scrollBehavior: 'smooth' }}
+          className="overflow-x-auto overflow-y-auto snap-x snap-mandatory scrollbar-visible"
+          style={{ 
+            scrollBehavior: 'smooth',
+            height: 'calc(100vh - 280px)',
+            minHeight: '400px'
+          }}
         >
-          <div className="flex gap-3 min-w-max" style={{ minHeight: "65vh" }}>
+          <div className="flex gap-3 min-w-max px-10 pb-4" style={{ minHeight: "100%" }}>
             {(() => {
               // Filter stages: always show won/lost, others based on showEmptyStages
               const visibleStages = STAGES.filter(s => {
@@ -655,9 +659,10 @@ export default function PipelinePage() {
                       )}
                     </div>
 
-                    {/* Cards container */}
+                    {/* Cards container - independent vertical scroll */}
                     <div className={cn(
                       "flex-1 p-2 space-y-2 overflow-y-auto transition-colors rounded-b-xl",
+                      "max-h-[calc(100vh-360px)]",
                       isOver && "bg-copper-500/5",
                     )}>
                       {/* Empty state */}

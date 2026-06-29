@@ -183,6 +183,15 @@ export default function LeadCustomerProfile({
           </div>
         </div>
 
+        {/* Creator info — read-only */}
+        {lead.created_by && (
+          <div className="border-t border-border pt-3">
+            <Field label={t("leadDetail.createdBy")}>
+              <span className="text-sm">{lead.creator_name || "—"}</span>
+            </Field>
+          </div>
+        )}
+
         {/* Owner — assigned_to display + reassign dropdown */}
         <div className="border-t border-border pt-3">
           <div className="relative flex items-center justify-between">

@@ -125,6 +125,8 @@ export interface Lead {
   quotation_sent_date: string | null;
   reminder_24h_sent: boolean | null;
   reminder_48h_sent: boolean | null;
+  created_by: string | null;
+  creator_name: string | null;
 }
 
 export interface Activity {

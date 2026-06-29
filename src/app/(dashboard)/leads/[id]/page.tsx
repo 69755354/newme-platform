@@ -81,10 +81,11 @@ export default function LeadDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data: l, error: err1 } = await supabase.from("leads").select("*").eq("id", id).single();
+      const { data: l, error: err1 } = await supabase.from("leads").select("*, creator:profiles!created_by(id, name)").eq("id", id).single();
       if (err1) { console.error("[LeadDetail] fetch lead failed"); setError(t("common.loadFailedRetry")); return; }
       if (l) {
-        setLead(l);
+        const creatorName = (l as any).creator?.name || null;
+        setLead({ ...l, creator_name: creatorName } as any);
         setProjectInfoDraft(projectDraftFromLead(l));
       }
       const { data: ful } = await supabase

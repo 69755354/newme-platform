@@ -749,6 +749,7 @@ export const translations = {
       whatsapp: "WhatsApp",
       noNotes: "No notes yet",
       reassigning: "Reassigning...",
+      createdBy: "Created by",
     },
     stageLabels: {
       new: "New Lead",
@@ -2118,6 +2119,7 @@ export const translations = {
       whatsapp: "WhatsApp",
       noNotes: "暂无备注",
       reassigning: "重新分配中...",
+      createdBy: "创建者",
     },
     stageLabels: {
       new: "新线索",

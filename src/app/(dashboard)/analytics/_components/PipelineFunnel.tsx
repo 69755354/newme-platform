@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Users, Clock, ChevronRight, TrendingDown } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
+const supabase = createClient();
+
 /* ─── Types ─── */
 interface StageData {
   key: string;
@@ -151,7 +153,6 @@ function FunnelBar({ stage, maxCount, showConversion }: {
 /* ─── Main Component ─── */
 export default function PipelineFunnel() {
   const router = useRouter();
-  const supabase = createClient();
   const { t } = useLanguage();
 
   const [data, setData] = useState<FunnelData | null>(null);

@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
+const supabase = createClient();
+
 /* ─── Types ─── */
 interface PaymentSummary {
   totalContractValue: number;
@@ -83,7 +85,6 @@ function SummaryCard({ label, value, sub, alert }: {
 
 /* ─── Main Component ─── */
 export default function PaymentTracker() {
-  const supabase = createClient();
   const router = useRouter();
   const { t } = useLanguage();
 

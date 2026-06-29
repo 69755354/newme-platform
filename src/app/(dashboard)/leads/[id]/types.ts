@@ -47,6 +47,7 @@ export interface Lead {
   id: string;
   source: string;
   quality: string;
+  poor_reason: string | null;
   stage: string;
   final_status: string | null;
   customer_name: string | null;

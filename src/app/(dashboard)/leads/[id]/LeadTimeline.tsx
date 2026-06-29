@@ -22,6 +22,7 @@ import {
   PhoneOutgoing,
   PhoneIncoming,
 } from "lucide-react";
+import { MILESTONE_DESCRIPTIONS } from "@/lib/milestones";
 import type {
   Activity,
   BusinessEvent,
@@ -210,6 +211,11 @@ export default function LeadTimeline({
                 />
                 <div className="flex-1 min-w-0">
                   <p className="text-foreground whitespace-pre-wrap break-words">{item.content}</p>
+                  {type === "milestone" && MILESTONE_DESCRIPTIONS[item.content] && (
+                    <p className="text-xs text-muted-foreground">
+                      {lang === 'zh' ? MILESTONE_DESCRIPTIONS[item.content].zh : MILESTONE_DESCRIPTIONS[item.content].en}
+                    </p>
+                  )}
                   <p className="text-xs text-gray-600 mt-0.5 flex items-center gap-2">
                     {new Date(item.created_at).toLocaleString(t("locale.dateTimeLocale"))}
                     {item.ai_generated && <span className="text-purple-500">🤖 AI</span>}

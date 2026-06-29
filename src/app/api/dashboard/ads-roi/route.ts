@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 
+function normalizeCampaign(name: string | null): string {
+  if (!name) return "Uncategorized";
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, '-');
+}
+
 /**
  * GET /api/dashboard/ads-roi
  *
@@ -38,12 +48,15 @@ export async function GET() {
       0
     );
 
-    // Spend per campaign
+    // Spend per campaign (normalized keys)
     const spendByCampaign: Record<string, number> = {};
+    const displayNameMap: Record<string, string> = {};
     for (const row of adSpend || []) {
-      const campaign = row.campaign_name || "Uncategorized";
+      const raw = row.campaign_name || "Uncategorized";
+      const campaign = normalizeCampaign(raw);
       spendByCampaign[campaign] =
         (spendByCampaign[campaign] || 0) + (parseFloat(row.amount) || 0);
+      if (!displayNameMap[campaign]) displayNameMap[campaign] = raw;
     }
 
     // ─── 2. Leads from meta ───
@@ -63,7 +76,9 @@ export async function GET() {
     const signedAmountByCampaign: Record<string, number> = {};
 
     for (const lead of metaLeads || []) {
-      const campaign = lead.campaign_name || "Uncategorized";
+      const raw = lead.campaign_name || "Uncategorized";
+      const campaign = normalizeCampaign(raw);
+      if (!displayNameMap[campaign]) displayNameMap[campaign] = raw;
       leadsByCampaign[campaign] = (leadsByCampaign[campaign] || 0) + 1;
       if (lead.final_status === "won") {
         conversionsByCampaign[campaign] =
@@ -94,7 +109,8 @@ export async function GET() {
         const cpl = leads > 0 ? Math.round((spend / leads) * 100) / 100 : 0;
         const roas = spend > 0 ? Math.round((signedAmount / spend) * 100) / 100 : 0;
         return {
-          campaign,
+          campaign: displayNameMap[campaign] || campaign,
+          campaign_key: campaign,
           spend: Math.round(spend * 100) / 100,
           leads,
           cpl,
@@ -180,6 +196,10 @@ export async function GET() {
         ? Math.round((totalSignedAmount / totalSpend) * 100) / 100
         : 0;
 
+    const unmatched_spend = Object.entries(spendByCampaign)
+      .filter(([k]) => k === 'uncategorized')
+      .reduce((s, [, v]) => s + v, 0);
+
     return NextResponse.json({
       period: {
         start_date: startDate,
@@ -194,6 +214,7 @@ export async function GET() {
         roas: overall_roas,
       },
       campaign_breakdown: campaignBreakdown,
+      unmatched_spend,
       source_quality: sourceQualityBreakdown,
     });
   } catch (err: unknown) {

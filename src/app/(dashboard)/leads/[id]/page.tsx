@@ -19,7 +19,7 @@ import { ArrowLeft, Trash2 } from "lucide-react";
 import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
 import { createFollowUpTask } from "@/lib/tasks";
-import { MILESTONE_LABELS } from "@/lib/milestones";
+import { MILESTONE_LABELS, MILESTONE_DESCRIPTIONS } from "@/lib/milestones";
 import LeadCustomerProfile from "./LeadCustomerProfile";
 import LeadSalesProcess from "./LeadSalesProcess";
 import LeadTimeline from "./LeadTimeline";
@@ -68,6 +68,8 @@ export default function LeadDetailPage() {
   const [salesUsers, setSalesUsers] = useState<any[]>([]);
   const [showSalesDropdown, setShowSalesDropdown] = useState(false);
   const [reassigning, setReassigning] = useState(false);
+  const [markingPoor, setMarkingPoor] = useState(false);
+  const [poorReasonText, setPoorReasonText] = useState("");
   const [showQuoteCalculator, setShowQuoteCalculator] = useState(false);
   // Bottom folding panel — which of the 6 blocks is open (null = all closed)
   const [openPanel, setOpenPanel] = useState<string | null>(null);
@@ -201,6 +203,19 @@ export default function LeadDetailPage() {
     }
     toast.success(lang === "zh" ? "已删除" : "Lead deleted");
     window.location.href = "/leads";
+  }
+
+  async function handleMarkPoor() {
+    if (!poorReasonText.trim() || !lead) return;
+    const { error } = await supabase.from("leads").update({
+      quality: "poor",
+      poor_reason: poorReasonText.trim(),
+      updated_at: new Date().toISOString()
+    }).eq("id", lead.id);
+    if (error) { toast.error("Failed to mark poor"); return; }
+    setMarkingPoor(false);
+    setPoorReasonText("");
+    router.refresh();
   }
 
   async function writeEvent(eventType: string, description: string, eventData?: Record<string, any>) {
@@ -414,7 +429,9 @@ export default function LeadDetailPage() {
           lead_id: id,
           milestone_key: milestoneKey,
           completed_by: user?.id ?? null,
-          notes: lang === "zh" ? `手动完成里程碑: ${MILESTONE_LABELS[milestoneKey] || milestoneKey}` : `Manually completed milestone: ${MILESTONE_LABELS[milestoneKey] || milestoneKey}`,
+          notes: lang === "zh"
+            ? `手动完成里程碑: ${MILESTONE_LABELS[milestoneKey] || milestoneKey} — ${MILESTONE_DESCRIPTIONS[milestoneKey]?.zh || ''}`
+            : `Manually completed milestone: ${MILESTONE_LABELS[milestoneKey] || milestoneKey} — ${MILESTONE_DESCRIPTIONS[milestoneKey]?.en || ''}`,
         });
       if (insErr) {
         console.error("[LeadDetail] milestone complete failed");
@@ -578,6 +595,11 @@ export default function LeadDetailPage() {
                 {t(`statusLabels.${lead.lead_status}`)}
               </span>
             )}
+            {lead.quality === 'poor' && (
+              <span className="text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-400">
+                ⚠️ {t("leads.poorLead")}{lead.poor_reason && `: ${lead.poor_reason}`}
+              </span>
+            )}
           </div>
           <p className="text-muted-foreground text-sm">
             {new Date(lead.created_at).toLocaleDateString(t("locale.dateLocale"))} · {lead.source}
@@ -585,12 +607,30 @@ export default function LeadDetailPage() {
           </p>
         </div>
         {(salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
+          <>
           <Button variant="ghost" size="icon"
             className="text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
             onClick={handleDelete}
             title={t("common.delete") || "Delete"}>
             <Trash2 className="w-5 h-5" />
           </Button>
+          {(salesRole === "admin" || salesRole === "boss") && (
+            <Button variant="ghost" size="sm"
+              className="text-amber-400 hover:bg-amber-500/10"
+              onClick={() => { setMarkingPoor(true); }}
+              title={t("leads.markPoor")}>
+              ⚠️ {t("leads.markPoor")}
+            </Button>
+          )}
+          </>
+        )}
+        {markingPoor && (
+          <div className="flex items-center gap-2 mt-2">
+            <input value={poorReasonText} onChange={e => setPoorReasonText(e.target.value)}
+              placeholder={t("leads.poorReasonPlaceholder")} className="text-sm border border-border rounded px-2 py-1 bg-background" />
+            <Button size="sm" variant="ghost" onClick={handleMarkPoor} className="text-amber-400">✓</Button>
+            <Button size="sm" variant="ghost" onClick={() => setMarkingPoor(false)} className="text-muted-foreground">✗</Button>
+          </div>
         )}
       </div>
 

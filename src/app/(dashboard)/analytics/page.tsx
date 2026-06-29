@@ -12,6 +12,8 @@ import PaymentTracker from "./_components/PaymentTracker";
 import AdsROI from "./_components/AdsROI";
 import WeeklyTrends from "./_components/WeeklyTrends";
 
+const supabase = createClient();
+
 export default function AnalyticsPage() {
   const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss", "sales"]);
   const { t } = useLanguage();
@@ -19,7 +21,6 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const supabase = createClient();
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {

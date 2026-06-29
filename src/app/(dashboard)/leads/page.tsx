@@ -81,6 +81,8 @@ interface Lead {
   decision_date: string | null; competitor: string | null;
   owner: string | null; sales_manager: string | null;
   campaign_name: string | null; source_platform: string | null;
+  quality: string | null;
+  poor_reason: string | null;
 }
 
 function daysSince(d: string | null): number | null {
@@ -115,6 +117,7 @@ function LeadsContent() {
   const [followupFilter, setFollowupFilter] = useState(false);
   const [assignedToFilter, setAssignedToFilter] = useState(searchParams.get("assigned_to") || "all");
   const [showPipelineSummary, setShowPipelineSummary] = useState(true);
+  const [qualityFilter, setQualityFilter] = useState("all");
 
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -505,6 +508,7 @@ function LeadsContent() {
     if (stageFilter !== "all") result = result.filter(l => (l.final_status || l.stage) === stageFilter);
     if (sourceFilter !== "all") result = result.filter(l => l.source === sourceFilter);
     if (statusFilter !== "all") result = result.filter(l => l.lead_status === statusFilter);
+    if (qualityFilter !== "all") result = result.filter(l => l.quality === qualityFilter);
     if (probabilityFilter !== null) result = result.filter(l => l.win_probability === probabilityFilter);
     if (alertFilter === "yellow") {
       result = result.filter(l => {
@@ -541,7 +545,7 @@ function LeadsContent() {
     }
     result.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
     return result;
-  }, [leads, search, stageFilter, sourceFilter, statusFilter, alertFilter, recoveryFilter, transferFilter, reviewFilter, probabilityFilter, followupFilter, assignedToFilter]);
+  }, [leads, search, stageFilter, sourceFilter, statusFilter, alertFilter, recoveryFilter, transferFilter, reviewFilter, probabilityFilter, followupFilter, assignedToFilter, qualityFilter]);
 
   const columns = useMemo(() => {
     const g: Record<string, Lead[]> = {};
@@ -669,6 +673,11 @@ function LeadsContent() {
           className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[110px]">
           <option value="all">{t("leads.allSources")}</option>
           {sources.map(src => <option key={src} value={src}>{t(`sourceLabels.${src}`) || src}</option>)}
+        </select>
+        <select value={qualityFilter} onChange={(e) => setQualityFilter(e.target.value)}
+          className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[110px]">
+          <option value="all">{t("leads.allQuality")}</option>
+          {['good','normal','pending','poor'].map(q => <option key={q} value={q}>{t(`qualityLabels.${q}`)}</option>)}
         </select>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
           className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[110px]">
@@ -806,6 +815,7 @@ function LeadsContent() {
                                     </span>
                                   )}
                                   {lead.recovery_candidate && <span className="text-[9px] px-1 py-0.5 rounded bg-orange-500/10 text-orange-400">{t("leads.recovery")}</span>}
+                                  {lead.quality === 'poor' && <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-red-500/10 text-red-400">⚠️ {t("leads.poorLead")}</span>}
                                   {lead.transfer_candidate && <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/10 text-red-400">{t("leads.transfer")}</span>}
                                   {lead.sales_manager_review && <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/10 text-purple-400">{t("leads.review")}</span>}
                                 </div>

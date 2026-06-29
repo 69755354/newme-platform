@@ -248,6 +248,9 @@ export default function LeadSalesProcess({
                     <p className={cn("text-sm", completed ? "text-foreground line-through opacity-60" : "text-foreground")}>
                       {t(`leadDetail.milestone_${key}`)}
                     </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {t(`milestone_desc_${key}`)}
+                    </p>
                     {completed && <p className="text-[10px] text-emerald-400">{t("leadDetail.milestoneCompleted")}</p>}
                     {isNext && !completed && <p className="text-[10px] text-copper-400">{t("leadDetail.milestoneNext")}</p>}
                     {locked && <p className="text-[10px] text-gray-600">{t("leadDetail.milestoneLocked")}</p>}

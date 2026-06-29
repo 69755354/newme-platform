@@ -299,6 +299,10 @@ export const translations = {
         "Follow-up": "🔄 Follow up",
         "Import from Sheets - needs review": "Import Review",
       },
+      poorLead: "Poor Lead",
+      markPoor: "Mark as Poor",
+      poorReasonPlaceholder: "e.g. No budget, wrong audience...",
+      allQuality: "All Quality",
     },
     settings: {
       subnavSystem: "System Settings",
@@ -762,6 +766,12 @@ export const translations = {
       warm: "Warm",
       cold: "Cold",
       dormant: "Dormant",
+    },
+    qualityLabels: {
+      poor: "Poor",
+      good: "Good",
+      normal: "Normal",
+      pending: "Pending",
     },
     sourceLabels: {
       meta: "Meta Ads",
@@ -1658,6 +1668,10 @@ export const translations = {
         "Follow-up": "🔄 跟进",
         "Import from Sheets - needs review": "待审核导入",
       },
+      poorLead: "劣质线索",
+      markPoor: "标记为劣质",
+      poorReasonPlaceholder: "如：无预算、非目标客户...",
+      allQuality: "全部质量",
     },
     settings: {
       subnavSystem: "系统设置",
@@ -2121,6 +2135,12 @@ export const translations = {
       warm: "温",
       cold: "冷",
       dormant: "休眠",
+    },
+    qualityLabels: {
+      poor: "劣质",
+      good: "优质",
+      normal: "普通",
+      pending: "待审",
     },
     sourceLabels: {
       meta: "Meta 广告",

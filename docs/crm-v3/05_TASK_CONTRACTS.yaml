@@ -39,7 +39,7 @@
     - "RLS 策略"
     - "约束/索引/触发器"
     - "seed.sql / rollback.sql"
-  acceptance: ["npm run build 通过"]
+  acceptance: ["npm run typecheck 通过"]
 
 
 # ─── Epic 2: 销售工作台 ───
@@ -52,7 +52,7 @@
   forbidden_files: ["supabase/", "app/leads/", "app/dashboard/"]
   constraints: ["Feature Flag 从 user_features 表读", "Inbox/Overdue/Progress 四个面板"]
   deliverables: ["GET /api/workbench", "app/workbench/page.tsx", "Inbox/TaskList/Overdue/Progress 组件"]
-  acceptance: ["npm run build 通过"]
+  acceptance: ["npm run typecheck 通过"]
 
 
 # ─── Epic 3: Lead 详情页 ───
@@ -65,7 +65,7 @@
   forbidden_files: ["app/workbench/", "supabase/", "cron/"]
   constraints: ["follow_up_logs 只 INSERT", "tasks due_at > now()", "milestone 顺序校验", "Day45 前保留 stage"]
   deliverables: ["GET /api/leads/[id]", "POST milestone/follow-up", "app/leads/[id]/page.tsx 三区布局"]
-  acceptance: ["npm run build 通过"]
+  acceptance: ["npm run typecheck 通过"]
 
 
 # ─── Epic 4: 跟进引擎 ───
@@ -78,7 +78,7 @@
   forbidden_files: ["app/workbench/", "app/leads/", "supabase/"]
   constraints: ["follow_up_logs immutable", "tasks due_at = now() + 24h", "No Answer 检测", "cron service_role"]
   deliverables: ["follow_up_logs CRUD", "tasks auto-create hook", "No Answer cron", "到期提醒 cron"]
-  acceptance: ["npm run build 通过"]
+  acceptance: ["npm run typecheck 通过"]
 
 
 # ─── Epic 5: 可观测性 ───
@@ -91,7 +91,7 @@
   forbidden_files: ["app/workbench/", "app/leads/", "supabase/"]
   constraints: ["Pending Decision 含 quotation", "漏斗按 current_milestone"]
   deliverables: ["crm_daily_funnel_snapshot cron", "GET /api/metrics/daily", "GET /api/metrics/funnel", "app/dashboard/page.tsx"]
-  acceptance: ["npm run build 通过"]
+  acceptance: ["npm run typecheck 通过"]
 
 
 # ─── Epic 6: Phase B — 收尾 + 颜色体系 ───

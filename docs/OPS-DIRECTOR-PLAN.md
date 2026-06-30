@@ -848,7 +848,7 @@ Security:
   cd ~/newme-platform
   git stash           # 撤销未提交更改
   git checkout HEAD~1 # 回退到上一个版本
-  npm run build && sudo systemctl restart newme-platform
+  npm run typecheck && npm run deploy
 ```
 
 ---

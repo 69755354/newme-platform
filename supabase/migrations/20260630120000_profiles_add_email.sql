@@ -23,7 +23,7 @@ CREATE OR REPLACE FUNCTION sync_user_email_to_profile()
 RETURNS TRIGGER AS $$
 BEGIN
   IF NEW.email IS DISTINCT FROM OLD.email THEN
-    UPDATE profiles SET email = NEW.email WHERE id = NEW.id;
+    UPDATE public.profiles SET email = NEW.email WHERE id = NEW.id;
   END IF;
   RETURN NEW;
 END;

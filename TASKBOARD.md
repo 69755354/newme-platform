@@ -1,6 +1,7 @@
 # TASKBOARD.md — Machine-Verifiable Task Tracking
 # Last updated: 2026-07-01
 # Owner: MoA Tier 1 Technical Debt
+# Source: COS crm-v3/v3.1/v3.1 P1P1计划0629.txt (4990 lines, 4-round MoA audit)
 
 ## ⚠️ RULE
 - Every audit/plan that produces action items MUST be converted into this file.
@@ -10,37 +11,82 @@
 
 ---
 
-## MoA Tier 1 — Technical Debt (Source: COS v3.1 P1P1计划0629.txt, lines 4189-4208)
+## MoA Tier 1 — Technical Debt (IMMEDIATE, 1-2 weeks)
+Source: MoA 4-round audit, 3-model unanimous sign-off, lines 478-500 + 559-600 + 643-675
+
+### 1A. New Files (infrastructure)
 
 | # | File | Operation | Verification | Status | Done Date |
 |---|------|-----------|-------------|--------|-----------|
-| 1 | src/lib/supabaseQuery.ts | CREATE | file exists + contains AbortController + contains withTimeout | ❌ | |
-| 2 | src/components/DashboardErrorBoundary.tsx | CREATE | file exists + contains errorId | ❌ | |
-| 3 | src/app/(dashboard)/layout.tsx | MODIFY | contains ErrorBoundary wrapping children | ✅ | 2026-06-30 |
-| 4 | src/shared/hooks/usePipelineDragDrop.ts | CREATE | file exists + contains dragDrop | ❌ | |
-| 5 | src/app/(dashboard)/leads/page.tsx | MODIFY | contains usePipelineDragDrop import | ❌ | |
-| 6 | src/app/(dashboard)/pipeline/page.tsx | MODIFY | contains usePipelineDragDrop import | ❌ | |
-| 7 | src/app/(dashboard)/leads/[id]/page.tsx | MODIFY | maybeSingle count >= 3 | ⚠️ (1/3) | |
-| 8 | src/app/globals.css | MODIFY | contains error-boundary-fallback | ❌ | |
+| T1-1 | src/lib/supabaseQuery.ts | CREATE | file exists + contains `useSupabaseQuery` + `AbortController` + retry logic (>=2 retries) + timeout (8s default) | ❌ | |
+| T1-2 | src/components/DashboardErrorBoundary.tsx | CREATE | file exists + contains `errorId` + `Sentry` (or `sentry`) + fallback UI | ❌ | |
+| T1-3 | src/shared/hooks/usePipelineDragDrop.ts | CREATE | file exists + contains `onDragStart` + `onDrop` + `draggingLeadId` | ❌ | |
+| T1-4 | src/shared/hooks/useStageGuard.ts | CREATE | file exists + contains `stageGuard` or `validTransition` + STAGES definition | ❌ | |
 
-**Progress: 2/8 (25%)**
+### 1B. Modified Files (integration)
 
-### Deploy Gate (6 steps from MoA)
+| # | File | Operation | Verification | Status | Done Date |
+|---|------|-----------|-------------|--------|-----------|
+| T1-5 | src/app/(dashboard)/layout.tsx | MODIFY | contains `ErrorBoundary` wrapping children | ✅ | 2026-06-30 |
+| T1-6 | src/app/(dashboard)/leads/page.tsx | MODIFY | contains `usePipelineDragDrop` + `useStageGuard` + `useSupabaseQuery` + empty stages visible by default | ❌ | |
+| T1-7 | src/app/(dashboard)/pipeline/page.tsx | MODIFY | contains `usePipelineDragDrop` (replaces inline drag) + `useSupabaseQuery` (replaces direct supabase calls) + `useStageGuard` | ❌ | |
+| T1-8 | src/app/(dashboard)/leads/[id]/page.tsx | MODIFY | `maybeSingle` count >= 3 + contains `skeleton` or `Skeleton` or `loading` fallback + `useSupabaseQuery` | ⚠️ (1/3 maybeSingle, no skeleton) | |
+| T1-9 | src/app/(dashboard)/products/page.tsx | MODIFY | contains `useSupabaseQuery` (replaces direct supabase calls) | ❌ | |
+| T1-10 | src/app/globals.css | MODIFY | contains `error-boundary-fallback` class | ❌ | |
 
-| Step | Requirement | Status |
-|------|------------|--------|
-| 1 | useSupabaseQuery unit test (8s timeout + 2 retries + AbortController) | ❌ |
-| 2 | layout.tsx ErrorBoundary → throw doesn't white-screen | ✅ |
-| 3 | leads/[id] foreign key degradation → invalid ID doesn't crash | ⚠️ |
-| 4 | Extract pipeline drag-drop as shared hook → pipeline regression | ❌ |
-| 5 | leads integrates drag-drop → E2E + stage guard | ❌ |
-| 6 | build + restart + full verification | ❌ |
+### 1C. Sentry Integration
+
+| # | Requirement | Verification | Status | Done Date |
+|---|-------------|-------------|--------|-----------|
+| T1-11 | Sentry captureException in ErrorBoundary | DashboardErrorBoundary.tsx contains `Sentry.captureException` or `captureException` | ❌ | |
+| T1-12 | Sentry error events actually received | Manual: trigger error → Sentry dashboard shows event | ❌ | |
+
+**Tier 1 Progress: 1/12 (8%)**
 
 ---
 
-## Phase 1 — Business Features (25/25 ✅ Complete)
+## MoA Tier 2 — UI Consistency (SHORT-TERM, 2-4 weeks)
+Blocked by Tier 1 completion. Do NOT start until all Tier 1 = ✅.
+
+| # | Problem | Requirement | Verification | Status | Done Date |
+|---|---------|-------------|-------------|--------|-----------|
+| T2-1 | P-2: Scroll behavior inconsistency | Unified scroll strategy across all dashboard pages | All pages use consistent overflow/scroll container | ❌ (Tier 2) | |
+| T2-2 | P-3: Kanban stats scattered | Merge progress bar + numbers + percentage into single visual unit | Single stats component, not 3 separate elements | ❌ (Tier 2) | |
+| T2-3 | P-5: Empty stage visibility | Default show empty stages + collapse toggle button | `showEmptyStages` default = true, toggle button exists | ❌ (Tier 2) | |
+
+**Tier 2 Progress: 0/3 (0%) — BLOCKED by Tier 1**
+
+---
+
+## MoA Tier 3 — Architecture (LONG-TERM, 1-2 months)
+Blocked by Tier 2 completion.
+
+| # | Problem | Requirement | Verification | Status | Done Date |
+|---|---------|-------------|-------------|--------|-----------|
+| T3-1 | DashboardLayout unification | Full DashboardLayout refactor (方案A) | Single layout component, all pages conform | ❌ (Tier 3) | |
+| T3-2 | Performance monitoring + alerts | Lighthouse/Web Vitals baseline + alerting | Baseline recorded, alerts configured | ❌ (Tier 3) | |
+| T3-3 | Code debt elimination | Refactor large files (leads 1067行, pipeline 689行) | No single file > 500 lines, shared components extracted | ❌ (Tier 3) | |
+
+**Tier 3 Progress: 0/3 (0%) — BLOCKED by Tier 2**
+
+---
+
+## Phase 1 — Business Features (25/25 ✅ COMPLETE)
 
 All 25 items from Phase 1 business delivery are DONE. No action needed.
+Includes: P0-1~P0-7, Sentry fix, RLS matrix (35 tables, 250 policies, 0 FOR ALL),
+log_activity prefix, AI gateway v2.0-2.1, profiles.email migration, 3.3-3.7 dev,
+integration tests, Codex review fixes, decision points 3-4, public→authenticated RLS fix.
+
+---
+
+## Freeze Rules (from MoA sign-off)
+
+1. **禁止** 在任何页面直接调用 `supabase.from().select()` — 必须通过 `useSupabaseQuery`
+2. **禁止** 在 leads/pipeline 实现新拖拽逻辑 — 必须复用 `usePipelineDragDrop`
+3. **禁止** 移除或绕过全局 ErrorBoundary
+4. **禁止** 在 Tier 1 完成前启动 Tier 2/Tier 3 工作
+5. **禁止** 在 leads 详情页假设外键数据必然存在
 
 ---
 

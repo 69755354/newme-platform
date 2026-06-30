@@ -93,7 +93,7 @@ BEGIN
     ) RETURNING id INTO new_lead_id;
 
     -- Log assignment event
-    INSERT INTO business_events (event_type, entity_type, entity_id, performed_by, metadata)
+    INSERT INTO public.business_events (event_type, entity_type, entity_id, performed_by, metadata)
     VALUES (
         'lead_auto_assigned', 'lead', new_lead_id, auth.uid(),
         jsonb_build_object(
@@ -103,7 +103,7 @@ BEGIN
     );
 
     -- Create notification for the assigned sales rep
-    INSERT INTO notifications (user_id, type, title, message, related_id)
+    INSERT INTO public.notifications (user_id, type, title, message, related_id)
     VALUES (
         assigned_sales,
         'lead_assigned',
@@ -133,32 +133,32 @@ BEGIN
 
     FOR stale_lead IN
         SELECT l.id, l.assigned_to, l.customer_name
-        FROM leads l
+        FROM public.leads l
         WHERE l.lead_status NOT IN ('closed_won', 'closed_lost', 'disqualified')
           AND l.recovery_candidate = false
           AND l.assigned_to IS NOT NULL
           AND NOT EXISTS (
               -- No activity in the last N days
-              SELECT 1 FROM activities a
+              SELECT 1 FROM public.activities a
               WHERE a.lead_id = l.id
                 AND a.created_at > now() - (stale_days || ' days')::INTERVAL
           )
           AND NOT EXISTS (
               -- No follow-up scheduled in the future
-              SELECT 1 FROM activities a
+              SELECT 1 FROM public.activities a
               WHERE a.lead_id = l.id
                 AND a.activity_type = 'follow_up'
                 AND a.scheduled_at > now()
           )
     LOOP
         -- Mark as recovery candidate
-        UPDATE leads
+        UPDATE public.leads
         SET recovery_candidate = true,
             sales_manager_review = true
         WHERE id = stale_lead.id;
 
         -- Log event
-        INSERT INTO business_events (event_type, entity_type, entity_id, performed_by, metadata)
+        INSERT INTO public.business_events (event_type, entity_type, entity_id, performed_by, metadata)
         VALUES (
             'lead_stale_detected', 'lead', stale_lead.id, NULL,
             jsonb_build_object(
@@ -169,11 +169,11 @@ BEGIN
         );
 
         -- Notify admin (boss)
-        INSERT INTO notifications (user_id, type, title, message, related_id)
+        INSERT INTO public.notifications (user_id, type, title, message, related_id)
         SELECT p.id, 'followup_reminder', 'Stale Lead Alert',
                'Lead "' || stale_lead.customer_name || '" has no activity for ' || stale_days || ' days. Consider reassignment.',
                stale_lead.id
-        FROM profiles p
+        FROM public.profiles p
         WHERE p.role = 'admin' AND p.is_active = true;
 
         affected_count := affected_count + 1;
@@ -198,14 +198,14 @@ DECLARE
     v_customer_name TEXT;
 BEGIN
     SELECT assigned_to, customer_name INTO old_sales, v_customer_name
-    FROM leads WHERE id = p_lead_id;
+    FROM public.leads WHERE id = p_lead_id;
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Lead not found: %', p_lead_id;
     END IF;
 
     -- Update assignment
-    UPDATE leads
+    UPDATE public.leads
     SET assigned_to = p_new_sales,
         transfer_candidate = false,
         recovery_candidate = false,
@@ -213,7 +213,7 @@ BEGIN
     WHERE id = p_lead_id;
 
     -- Log transfer
-    INSERT INTO business_events (event_type, entity_type, entity_id, performed_by, metadata)
+    INSERT INTO public.business_events (event_type, entity_type, entity_id, performed_by, metadata)
     VALUES (
         'lead_reassigned', 'lead', p_lead_id, auth.uid(),
         jsonb_build_object(
@@ -224,7 +224,7 @@ BEGIN
     );
 
     -- Notify new sales
-    INSERT INTO notifications (user_id, type, title, message, related_id)
+    INSERT INTO public.notifications (user_id, type, title, message, related_id)
     VALUES (
         p_new_sales, 'lead_assigned', 'Lead Transferred to You',
         'Lead "' || COALESCE(v_customer_name, 'Unknown') || '" has been transferred to you.',

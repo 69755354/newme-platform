@@ -9,13 +9,13 @@ DECLARE
   lead_status TEXT;
 BEGIN
   -- 检查 lead 是否 won/lost（rule_007: won/lost 不允许继续推进里程碑）
-  SELECT final_status INTO lead_status FROM leads WHERE id = NEW.lead_id;
+  SELECT final_status INTO lead_status FROM public.leads WHERE id = NEW.lead_id;
   IF lead_status IN ('won', 'lost') THEN
     RAISE EXCEPTION 'Cannot complete milestone on won/lost lead';
   END IF;
 
   SELECT milestone_key INTO last_key
-  FROM lead_milestones WHERE lead_id = NEW.lead_id
+  FROM public.lead_milestones WHERE lead_id = NEW.lead_id
   ORDER BY completed_at DESC LIMIT 1;
 
   IF last_key IS NOT NULL THEN
@@ -32,7 +32,7 @@ BEGIN
     END IF;
   END IF;
 
-  UPDATE leads SET current_milestone = NEW.milestone_key WHERE id = NEW.lead_id;
+  UPDATE public.leads SET current_milestone = NEW.milestone_key WHERE id = NEW.lead_id;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

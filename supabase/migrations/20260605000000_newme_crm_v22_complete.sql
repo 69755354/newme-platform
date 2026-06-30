@@ -343,18 +343,18 @@ DECLARE
 BEGIN
   IF NEW.confirmed != true OR NEW.installment_plan_id IS NULL THEN RETURN NEW; END IF;
   SELECT ip.amount, ip.contract_id INTO v_plan_amount, v_contract_id
-  FROM installment_plans ip WHERE ip.id = NEW.installment_plan_id;
+  FROM public.installment_plans ip WHERE ip.id = NEW.installment_plan_id;
   SELECT COALESCE(SUM(amount), 0) INTO v_total_paid
-  FROM payments WHERE installment_plan_id = NEW.installment_plan_id AND confirmed = true;
-  UPDATE installment_plans SET paid_amount = v_total_paid, updated_at = now()
+  FROM public.payments WHERE installment_plan_id = NEW.installment_plan_id AND confirmed = true;
+  UPDATE public.installment_plans SET paid_amount = v_total_paid, updated_at = now()
   WHERE id = NEW.installment_plan_id;
   IF v_total_paid >= v_plan_amount THEN
-    UPDATE installment_plans SET status = 'paid', updated_at = now()
+    UPDATE public.installment_plans SET status = 'paid', updated_at = now()
     WHERE id = NEW.installment_plan_id AND status = 'pending';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM installment_plans
+  IF NOT EXISTS (SELECT 1 FROM public.installment_plans
     WHERE contract_id = v_contract_id AND status NOT IN ('paid', 'cancelled')) THEN
-    UPDATE contracts SET status = 'completed', updated_at = now()
+    UPDATE public.contracts SET status = 'completed', updated_at = now()
     WHERE id = v_contract_id AND status = 'active';
   END IF;
   RETURN NEW;

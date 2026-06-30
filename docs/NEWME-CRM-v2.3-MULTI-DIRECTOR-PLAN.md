@@ -254,7 +254,7 @@ Quote No | Customer | Project Type | Total (AED) | Status | Valid Until | Action
 3. **工作流 deadline**: 用 Supabase `pg_cron` 或 Hermes cronjob 每 1h 扫描
 4. **L1 表格**: 保持现有 client-side 搜索逻辑，不引入 server-side pagination（数据量小）
 5. **所有新增用 migration 文件**，不放 `schema.sql` 直接改
-6. **构建后 deploy 前** 必须跑 `npm run build` 确认无 TS 错误
+6. **构建前验证** 跑 `npm run typecheck` 确认无 TS 错误（比 build 快 10x，不覆盖 .next）
 
 ---
 

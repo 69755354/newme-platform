@@ -85,14 +85,14 @@ BEGIN
     RAISE EXCEPTION 'Not authenticated';
   END IF;
 
-  SELECT tenant_id INTO v_tenant_id FROM profiles WHERE id = v_user_id;
+  SELECT tenant_id INTO v_tenant_id FROM public.profiles WHERE id = v_user_id;
 
-  INSERT INTO activity_logs (tenant_id, user_id, action, entity_type, entity_id, details, page_path, duration_seconds)
+  INSERT INTO public.activity_logs (tenant_id, user_id, action, entity_type, entity_id, details, page_path, duration_seconds)
   VALUES (COALESCE(v_tenant_id, '00000000-0000-0000-0000-000000000000'), v_user_id, p_action, p_entity_type, p_entity_id, p_details, p_page_path, p_duration_seconds)
   RETURNING id INTO v_result;
 
   -- 更新每日汇总
-  INSERT INTO user_session_daily (tenant_id, user_id, session_date, first_login, last_active, actions_count)
+  INSERT INTO public.user_session_daily (tenant_id, user_id, session_date, first_login, last_active, actions_count)
   VALUES (
     COALESCE(v_tenant_id, '00000000-0000-0000-0000-000000000000'),
     v_user_id,
@@ -140,8 +140,8 @@ BEGIN
     us.login_count,
     us.pages_viewed,
     us.actions_count
-  FROM user_session_daily us
-  JOIN profiles p ON us.user_id = p.id
+  FROM public.user_session_daily us
+  JOIN public.profiles p ON us.user_id = p.id
   WHERE us.session_date = p_date
   ORDER BY
     CASE p.role

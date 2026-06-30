@@ -88,18 +88,20 @@ export default function LeadDetailPage() {
         setLead({ ...l, creator_name: creatorName } as any);
         setProjectInfoDraft(projectDraftFromLead(l));
       }
-      const { data: ful } = await supabase
+      const { data: ful, error: fulErr } = await supabase
         .from("follow_up_logs")
         .select("id, contact_type, summary, user_id, created_at")
         .eq("lead_id", id)
         .order("created_at", { ascending: false })
         .limit(200);
+      if (fulErr) console.warn("[LeadDetail] Failed to fetch follow_up_logs (non-fatal):", fulErr);
       if (ful) setFollowUpLogs(ful as FollowUpLog[]);
-      const { data: milestones } = await supabase
+      const { data: milestones, error: milestonesErr } = await supabase
         .from("lead_milestones")
         .select("id, lead_id, milestone_key, completed_at")
         .eq("lead_id", id)
         .order("completed_at", { ascending: true });
+      if (milestonesErr) console.warn("[LeadDetail] Failed to fetch lead_milestones (non-fatal):", milestonesErr);
       if (milestones) setLeadMilestones(
         milestones.map((m: any) => ({ ...m, completed: !!m.completed_at })) as LeadMilestone[]
       );
@@ -107,22 +109,26 @@ export default function LeadDetailPage() {
       const res = await fetch(`/api/activities?lead_id=${encodedId}`);
       const a = res.ok ? await res.json() : null;
       if (a) setActivities(a);
-      const { data: e } = await supabase.from("business_events").select("*").eq("lead_id", id).order("created_at", { ascending: false }).limit(50);
+      const { data: e, error: eErr } = await supabase.from("business_events").select("*").eq("lead_id", id).order("created_at", { ascending: false }).limit(50);
+      if (eErr) console.warn("[LeadDetail] Failed to fetch business_events (non-fatal):", eErr);
       if (e) setEvents(e);
-      const { data: c } = await supabase.from("chat_messages").select("id, content, direction, created_at").eq("lead_id", id).order("created_at", { ascending: false }).limit(100);
+      const { data: c, error: cErr } = await supabase.from("chat_messages").select("id, content, direction, created_at").eq("lead_id", id).order("created_at", { ascending: false }).limit(100);
+      if (cErr) console.warn("[LeadDetail] Failed to fetch chat_messages (non-fatal):", cErr);
       if (c) setChatMessages(c);
-      const { data: tasks } = await supabase
+      const { data: tasks, error: tasksErr } = await supabase
         .from("tasks")
         .select("id, title, due_at")
         .eq("lead_id", id)
         .is("completed_at", null)
         .order("due_at", { ascending: true })
         .limit(1);
+      if (tasksErr) console.warn("[LeadDetail] Failed to fetch tasks (non-fatal):", tasksErr);
       setNextTask(tasks?.[0] ?? null);
-      const { data: tr } = await supabase.from("v_lead_trace").select("*").eq("lead_id", id);
+      const { data: tr, error: trErr } = await supabase.from("v_lead_trace").select("*").eq("lead_id", id);
+      if (trErr) console.warn("[LeadDetail] Failed to fetch v_lead_trace (non-fatal):", trErr);
       if (tr) setLeadTrace(tr);
     } catch (err) {
-      console.error("[LeadDetail] fetchData error");
+      console.warn("[LeadDetail] fetchData degraded:", err);
       setError(t("common.loadFailedRetry"));
     } finally {
       setLoading(false);
@@ -155,7 +161,8 @@ export default function LeadDetailPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUserId(user.id);
-        const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+        const { data: profile, error: profileErr } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+        if (profileErr) console.warn("[LeadDetail] Failed to fetch current user profile (non-fatal):", profileErr);
         setSalesRole(profile?.role || "sales");
       }
     })();

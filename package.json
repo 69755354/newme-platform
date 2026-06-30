@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "typecheck": "tsc --noEmit",
+    "build": "bash -c 'if systemctl is-active --quiet newme-platform.service 2>/dev/null; then echo \"❌ Production server is running! Use: npm run deploy (which backs up and restarts)\" >&2; exit 1; fi; next build'",
     "start": "next start",
     "lint": "eslint",
     "deploy": "bash scripts/deploy.sh",

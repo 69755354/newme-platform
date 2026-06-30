@@ -15,6 +15,22 @@ PROJECT_ROOT=$(pwd)
 echo "=== 📦 Deploy: $(date -u +'%Y-%m-%dT%H:%M:%SZ') ==="
 echo "Project: $PROJECT_ROOT"
 
+# ── Step 0: Taskboard gate ─────────────────────────────────
+echo "--- Step 0/5: Taskboard gate ---"
+if [ -f "scripts/check-taskboard.sh" ]; then
+  bash scripts/check-taskboard.sh
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo "🚫 DEPLOY ABORTED: Taskboard verification failed."
+    echo "   Complete all ❌ items in TASKBOARD.md, then retry."
+    exit 1
+  fi
+  echo "✅ Taskboard gate passed"
+else
+  echo "⚠️  scripts/check-taskboard.sh not found, skipping gate"
+fi
+echo ""
+
 # ── Step 1: Pre-flight type check ──────────────────────────
 echo "--- Step 1/5: TypeScript check ---"
 npx tsc --noEmit 2>&1 || {

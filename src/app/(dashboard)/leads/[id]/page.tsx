@@ -52,6 +52,7 @@ export default function LeadDetailPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [nextTask, setNextTask] = useState<Task | null>(null);
   const [leadTrace, setLeadTrace] = useState<LeadTrace[]>([]);
+  const [transferHistory, setTransferHistory] = useState<any[]>([]);
   const [noteText, setNoteText] = useState("");
   const [followUpLogs, setFollowUpLogs] = useState<FollowUpLog[]>([]);
   const [leadMilestones, setLeadMilestones] = useState<LeadMilestone[]>([]);
@@ -127,9 +128,14 @@ export default function LeadDetailPage() {
       } catch (fetchErr) {
         console.warn("[LeadDetail] activities fetch failed (non-fatal):", fetchErr);
       }
-      const { data: e, error: eErr } = await supabase.from("business_events").select("*").eq("lead_id", id).order("created_at", { ascending: false }).limit(50);
+      const { data: e, error: eErr } = await supabase.from("business_events").select("*, operator:profiles!fk_business_events_user_id(id, full_name)").eq("lead_id", id).order("created_at", { ascending: false }).limit(50);
       if (eErr) console.warn("[LeadDetail] Failed to fetch business_events (non-fatal):", eErr);
-      if (e) setEvents(e);
+      if (e) {
+        setEvents(e);
+        // Filter transfer events for transfer history display
+        const transfers = e.filter((ev: any) => ev.event_type === "transfer");
+        if (transfers.length > 0) setTransferHistory(transfers);
+      }
       const { data: c, error: cErr } = await supabase.from("chat_messages").select("id, content, direction, created_at").eq("lead_id", id).order("created_at", { ascending: false }).limit(100);
       if (cErr) console.warn("[LeadDetail] Failed to fetch chat_messages (non-fatal):", cErr);
       if (c) setChatMessages(c);
@@ -728,6 +734,7 @@ export default function LeadDetailPage() {
             showSalesDropdown={showSalesDropdown}
             setShowSalesDropdown={setShowSalesDropdown}
             reassigning={reassigning}
+            transferHistory={transferHistory}
           />
         </aside>
 

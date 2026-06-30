@@ -33,6 +33,7 @@ interface Props {
   showSalesDropdown: boolean;
   setShowSalesDropdown: (v: boolean) => void;
   reassigning: boolean;
+  transferHistory: any[];
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -55,6 +56,7 @@ export default function LeadCustomerProfile({
   showSalesDropdown,
   setShowSalesDropdown,
   reassigning,
+  transferHistory,
 }: Props) {
   // WhatsApp deep link from the phone digits (strip everything non-numeric).
   const phoneDigits = (lead.phone || "").replace(/[^\d]/g, "");
@@ -183,12 +185,37 @@ export default function LeadCustomerProfile({
           </div>
         </div>
 
-        {/* Creator info — read-only */}
+        {/* Creator info — read-only with created_at */}
         {lead.created_by && (
-          <div className="border-t border-border pt-3">
+          <div className="border-t border-border pt-3 space-y-1.5">
             <Field label={t("leadDetail.createdBy")}>
               <span className="text-sm">{lead.creator_name || "—"}</span>
             </Field>
+            {lead.created_at && (
+              <Field label={t("leadDetail.createdAt") || "Created"}>
+                <span className="text-xs text-muted-foreground">
+                  {new Date(lead.created_at).toLocaleDateString("zh-CN", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </Field>
+            )}
+          </div>
+        )}
+
+        {/* Transfer history */}
+        {transferHistory.length > 0 && (
+          <div className="border-t border-border pt-3 space-y-2">
+            <span className="text-muted-foreground text-xs font-medium">{t("leadDetail.transferHistory") || "Transfer History"}</span>
+            {transferHistory.slice(0, 5).map((tr: any, i: number) => (
+              <div key={tr.id || i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                <span className="text-[10px] mt-0.5 shrink-0">→</span>
+                <div>
+                  <span>{tr.description || (tr.operator?.full_name ? `Reassigned by ${tr.operator.full_name}` : "Reassigned")}</span>
+                  <span className="block text-[10px] opacity-60">
+                    {new Date(tr.created_at).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

@@ -14,9 +14,9 @@ PASS=0
 FAIL=0
 WARN=0
 
-pass() { ((PASS++)); echo "  ✅ $1"; }
-fail() { ((FAIL++)); echo "  ❌ $1"; }
-warn() { ((WARN++)); echo "  ⚠️  $1"; }
+pass() { PASS=$((PASS+1)); echo "  ✅ $1"; }
+fail() { FAIL=$((FAIL+1)); echo "  ❌ $1"; }
+warn() { WARN=$((WARN+1)); echo "  ⚠️  $1"; }
 
 echo "=== 📋 Taskboard Verification: $(date -u +'%Y-%m-%dT%H:%M:%SZ') ==="
 echo ""

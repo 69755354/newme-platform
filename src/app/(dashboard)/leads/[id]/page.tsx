@@ -85,31 +85,21 @@ export default function LeadDetailPage() {
     try {
       // Ensure auth session is set before any queries (fixes setSession race condition)
       await supabase.auth.getUser();
-      const { data: l, error: err1 } = await supabase.from("leads").select("*").eq("id", id).maybeSingle();
+      const { data: l, error: err1 } = await supabase.from("leads").select("*, creator:profiles!fk_leads_created_by(id, full_name, email, role), assignee:profiles!fk_leads_assigned_to(id, full_name, email, role)").eq("id", id).maybeSingle();
       if (err1) { console.error("[LeadDetail] fetch lead failed:", err1); setError(t("common.loadFailedRetry")); return; }
       if (l) {
-        setLead({ ...l } as any);
+        const creatorName = (l as any).creator?.full_name || null;
+        const creatorProfile = (l as any).creator || null;
+        const assigneeProfile = (l as any).assignee || null;
+        setLead({ ...l, creator_name: creatorName, creator_profile: creatorProfile, assignee_profile: assigneeProfile } as any);
         setProjectInfoDraft(projectDraftFromLead(l));
 
-        // Fetch foreign-key related entities in parallel (maybeSingle for graceful null handling)
-        const fetchCustomer = (l as any).customer_id
-          ? (async () => { const r = await supabase.from("customers").select("id, name, email, phone").eq("id", (l as any).customer_id).maybeSingle(); return r.data; })().catch(() => null)
-          : Promise.resolve(null);
-        const fetchCreator = l.created_by
-          ? (async () => { const r = await supabase.from("profiles").select("id, full_name, email, role").eq("id", l.created_by).maybeSingle(); return r.data; })().catch(() => null)
-          : Promise.resolve(null);
-
-        const [customer, creatorProfile] = await Promise.all([fetchCustomer, fetchCreator]);
-        
-        if (customer || creatorProfile) {
-          setLead(prev => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              ...(customer && { customer }),
-              ...(creatorProfile && { creator_profile: creatorProfile, creator_name: creatorProfile.full_name }),
-            } as any;
-          });
+        // Fetch customer info in parallel (customer_id FK not set up in PostgREST yet)
+        if ((l as any).customer_id) {
+          (async () => {
+            const r = await supabase.from("customers").select("id, name, email, phone").eq("id", (l as any).customer_id).maybeSingle();
+            if (r.data) setLead(prev => prev ? { ...prev, customer: r.data } : prev);
+          })().catch(() => {});
         }
       }
       const { data: ful, error: fulErr } = await supabase

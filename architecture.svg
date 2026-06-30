@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2702.00" height="717.46" viewBox="0 0 2702.00 717.46">
+<defs>
+    <marker id="arr-a0a0a0" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#a0a0a0"/></marker>
+  </defs>
+<rect width="2702.00" height="717.46" fill="#1e1e1e"/>
+<rect x="2048.00" y="43.50" width="247.00" height="55.00" rx="8" fill="#6f7070" stroke="#495057" stroke-width="2" opacity="1.00"/>
+<rect x="991.00" y="261.81" width="1055.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="2280.00" y="618.96" width="157.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="515.50" y="615.46" width="1055.00" height="62.00" rx="8" fill="#626672" stroke="#364fc7" stroke-width="2" opacity="1.00"/>
+<rect x="1028.40" y="621.46" width="29.20" height="21.00" rx="8" fill="#3d3d3d" stroke="#364fc7" stroke-width="1" opacity="1.00"/>
+<rect x="1690.50" y="618.96" width="238.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="1790.00" y="40.00" width="193.00" height="62.00" rx="8" fill="#72685b" stroke="#d9480f" stroke-width="2" opacity="1.00"/>
+<rect x="1862.00" y="46.00" width="49.00" height="21.00" rx="8" fill="#3d3d3d" stroke="#d9480f" stroke-width="1" opacity="1.00"/>
+<rect x="2415.00" y="43.50" width="247.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="1239.00" y="43.50" width="157.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="917.00" y="43.50" width="202.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="657.00" y="43.50" width="140.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="317.00" y="43.50" width="220.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="40.00" y="43.50" width="157.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<rect x="1456.00" y="43.50" width="274.00" height="55.00" rx="8" fill="#2d2d2d" stroke="#a0a0a0" stroke-width="2" opacity="1.00"/>
+<path d="M 2056.00,98.50 L 1622.40,261.81" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 1778.25,316.81 L 2140.14,437.67 L 2335.00,618.96" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 1258.75,316.81 L 1359.71,436.27 L 1414.07,615.46" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 1518.50,316.81 L 1635.50,437.67 L 1698.50,618.96" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 1798.00,102.00 L 1414.60,261.81" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 2577.00,98.50 L 2382.00,618.96" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 2500.00,98.50 L 1830.20,261.81" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 1247.00,98.50 L 951.00,184.82 L 951.00,434.41 L 1265.64,615.46" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 1043.00,98.50 L 951.00,184.82 L 951.00,434.41 L 1117.21,615.46" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 789.00,98.50 L 968.79,615.46" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 529.00,98.50 L 718.38,305.28 L 820.36,615.46" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 189.00,98.50 L 502.90,305.28 L 671.93,615.46" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<path d="M 1518.50,98.50 L 1206.80,261.81" fill="none" stroke="#a0a0a0" stroke-width="2" opacity="1.00" marker-end="url(#arr-a0a0a0)"/>
+<text x="2171.50" y="61.00" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="2171.50" dy="16.00">浏览器 Client (Next.js 16)</tspan></text>
+<text x="1518.50" y="279.31" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="1518.50" dy="16.00">Next.js App (@/src)</tspan></text>
+<text x="2358.50" y="636.46" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="2358.50" dy="16.00">Supabase Auth</tspan></text>
+<text x="1043.00" y="644.46" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="1043.00" dy="16.00">Supabase PostgreSQL</tspan></text>
+<text x="1043.00" y="624.46" font-size="12" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="1043.00" dy="12.00">DB</tspan></text>
+<text x="1809.50" y="636.46" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="1809.50" dy="16.00">Hermes Engine (:22884)</tspan></text>
+<text x="1886.50" y="69.00" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="1886.50" dy="16.00">Meta CAPI Webhook</tspan></text>
+<text x="1886.50" y="49.00" font-size="12" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="1886.50" dy="12.00">Queue</tspan></text>
+<text x="2538.50" y="61.00" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="2538.50" dy="16.00">登录页 (localStorage Auth)</tspan></text>
+<text x="1317.50" y="61.00" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="1317.50" dy="16.00">驾驶舱 Dashboard</tspan></text>
+<text x="1018.00" y="61.00" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="1018.00" dy="16.00">Leads Kanban Board</tspan></text>
+<text x="727.00" y="61.00" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="727.00" dy="16.00">Lead 详情页</tspan></text>
+<text x="427.00" y="61.00" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="427.00" dy="16.00">归因分析 Ads Attribution</tspan></text>
+<text x="118.50" y="61.00" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="118.50" dy="16.00">Pipeline 漏斗分析</tspan></text>
+<text x="1593.00" y="61.00" font-size="16" font-family="cursive" fill="#e0e0e0" text-anchor="middle" opacity="1.00"><tspan x="1593.00" dy="16.00">i18n 中英文 (LanguageContext)</tspan></text>
+<text x="1839.20" y="171.41" font-size="14" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="1839.20" dy="14.00">用户请求</tspan></text>
+<text x="2085.42" y="410.64" font-size="14" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="2085.42" dy="14.00">Auth API (password grant)</tspan></text>
+<text x="1364.19" y="442.28" font-size="14" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="1364.19" dy="14.00">Supabase SDK (anon key + service role)</tspan></text>
+<text x="1639.39" y="440.12" font-size="14" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="1639.39" dy="14.00">POST /api/smart-home/quote</tspan></text>
+<text x="1606.30" y="173.16" font-size="14" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="1606.30" dy="14.00">POST /api/leads/meta-capi</tspan></text>
+<text x="2479.50" y="349.98" font-size="14" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="2479.50" dy="14.00">直接 REST POST /auth/v1/token</tspan></text>
+<text x="2165.10" y="171.41" font-size="14" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="2165.10" dy="14.00">localStorage session → 路由</tspan></text>
+<text x="951.00" y="328.21" font-size="14" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="951.00" dy="14.00">SELECT * FROM leads (limit 500)</tspan></text>
+<text x="951.00" y="360.67" font-size="14" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="951.00" dy="14.00">CRUD leads + activities + business_events</tspan></text>
+<text x="878.89" y="348.23" font-size="14" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="878.89" dy="14.00">CRUD leads + activities + business_events</tspan></text>
+<text x="725.58" y="318.43" font-size="14" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="725.58" dy="14.00">SELECT, GROUP BY source/campaign</tspan></text>
+<text x="493.45" y="290.30" font-size="14" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="493.45" dy="14.00">SELECT * FROM leads</tspan></text>
+<text x="1362.65" y="171.41" font-size="14" font-family="cursive" fill="#c0c0c0" text-anchor="middle" opacity="1.00"><tspan x="1362.65" dy="14.00">LanguageContext 注入</tspan></text>
+</svg>

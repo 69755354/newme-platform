@@ -1,0 +1,25 @@
+### CC-04 prompt (API/Security Audit)
+
+你是 GLM 5.2。审计 CRM 项目的 API 安全。
+
+## 输入
+.audit/cc-profile/artifacts/routes-list.txt（71 条 API 路由）
+.audit/cc-profile/artifacts/service-role-grep.txt（service_role 使用分布）
+
+## 只查五件事
+1. Auth Pattern — service_role vs user auth，是否合理
+2. Auth Check — 每条路由是否有显式身份验证
+3. CRON Auth — cron 路由是否验证 x-cron-secret header
+4. Admin/Sensitive — impersonate/dev/password 路由权限是否正确
+5. RLS Bypass — service_role 是否在 UPDATE/INSERT 中绕过了应有的权限检查
+
+## 输出
+- P0: 认证绕过 / IDOR / 凭据泄露（阻断生产）
+- P1: 不必要的 service_role / 弱校验
+- P2: 审计日志缺失 / 限流缺失
+- GO/NO-GO 判定
+
+## 约束
+- DO NOT enter plan mode — just execute
+- 只读，不修改文件
+- 每项附带文件:行号

@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="6314.25" height="1656.61" viewBox="0 0 6314.25 1656.61">
+<defs>
+    <marker id="arr-495057" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#495057"/></marker>
+  </defs>
+<rect width="6314.25" height="1656.61" fill="#ffffff"/>
+<rect x="783.38" y="175.00" width="238.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="3785.38" y="175.00" width="1325.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1330.12" y="1104.52" width="1145.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="2595.12" y="1104.52" width="1145.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="2004.62" y="469.21" width="1235.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="3359.62" y="469.21" width="229.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="3708.62" y="469.21" width="202.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1081.38" y="175.00" width="373.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1594.25" y="1561.61" width="436.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1035.25" y="1561.61" width="499.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="2207.75" y="1561.61" width="319.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="5982.25" y="175.00" width="292.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1890.38" y="175.00" width="1775.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="515.00" y="748.52" width="472.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1514.38" y="175.00" width="256.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1492.50" y="748.52" width="319.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="40.00" y="748.52" width="355.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="240.75" y="469.21" width="1370.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1360.38" y="1351.64" width="292.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1712.38" y="1351.64" width="1145.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="2609.38" y="40.00" width="337.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1094.88" y="40.00" width="346.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="4292.88" y="40.00" width="310.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1161.25" y="1426.61" width="247.00" height="55.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<path d="M 4011.54,230.00 L 3628.62,369.45 L 3628.62,726.30 L 2184.87,1104.52" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 4447.88,230.00 L 3835.87,579.81 L 3506.33,1104.52" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 4229.71,230.00 L 3382.87,325.68 L 2926.88,469.21" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 4666.04,230.00 L 3914.37,325.68 L 3509.62,469.21" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 4884.21,230.00 L 4246.18,325.68 L 3902.63,469.21" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 2284.88,1159.52 L 2002.63,1351.64" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 2603.12,1159.52 L 1644.37,1351.64" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 2284.88,524.21 L 2515.13,902.43 L 2515.13,1245.16 L 2284.88,1351.64" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 3367.62,524.21 L 2555.12,902.43 L 2555.12,1245.16 L 2567.12,1351.64" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 2096.71,1406.64 L 2022.25,1561.61" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1368.38,1406.64 L 1448.26,1406.64 L 1448.26,1533.61 L 1365.26,1561.61" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 2473.04,1406.64 L 2284.87,1561.61" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1602.25,1561.61 L 1121.25,1533.61 L 1121.25,653.23 L 1267.87,524.21" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 925.75,524.21 L 925.75,748.53" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1264.25,524.21 L 1417.81,613.94 L 1500.50,748.53" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 587.25,524.21 L 457.09,613.94 L 387.00,748.53" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 2777.88,95.00 L 2777.88,175.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 4447.88,95.00 L 4447.88,175.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 2777.88,230.00 L 3279.63,369.45 L 3279.63,726.30 L 3280.53,1104.52" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 2338.12,230.00 L 2522.72,325.68 L 2622.12,469.21" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 3217.62,230.00 L 3361.27,325.68 L 3438.62,469.21" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1284.75,1481.61 L 1204.25,1561.61" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 675.00,803.52 L 1289.49,923.92 L 1620.38,1104.52" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 827.00,803.52 L 2128.25,923.92 L 2828.93,1104.52" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1682.38,230.00 L 3279.63,369.45 L 3279.63,726.30 L 3054.73,1104.52" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1602.38,230.00 L 2067.13,325.68 L 2317.38,469.21" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1803.50,803.52 L 1902.62,1104.52" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1267.88,95.00 L 1267.88,175.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1089.38,230.00 L 1205.41,325.68 L 1602.76,469.21" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<text x="902.38" y="192.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="902.38" dy="16.00">&quot;/(auth)/login&lt;br/&gt;认证&quot;</tspan></text>
+<text x="4447.88" y="192.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="4447.88" dy="16.00">&quot;/(dashboard)/&lt;br/&gt;认证路由组&quot;</tspan></text>
+<text x="1902.62" y="1122.02" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1902.62" dy="16.00">&quot;/overview&lt;br/&gt;驾驶舱 ★&quot;</tspan></text>
+<text x="3167.62" y="1122.02" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="3167.62" dy="16.00">&quot;/sales/*&lt;br/&gt;销售管理 ★&quot;</tspan></text>
+<text x="2622.13" y="486.71" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="2622.13" dy="16.00">&quot;/marketing/*&lt;br/&gt;市场投流&quot;</tspan></text>
+<text x="3474.12" y="486.71" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="3474.12" dy="16.00">&quot;/analytics/*&lt;br/&gt;分析&quot;</tspan></text>
+<text x="3809.63" y="486.71" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="3809.63" dy="16.00">&quot;/messages&lt;br/&gt;消息&quot;</tspan></text>
+<text x="1267.88" y="192.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1267.88" dy="16.00">&quot;GlobalFilterContext&lt;br/&gt;时间范围 + 销售筛选&quot;</tspan></text>
+<text x="1812.25" y="1579.11" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1812.25" dy="16.00">&quot;RPC: get_dashboard_overview&lt;br/&gt;单次聚合 JSONB&quot;</tspan></text>
+<text x="1284.75" y="1579.11" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1284.75" dy="16.00">&quot;原生表&lt;br/&gt;leads / contracts&lt;br/&gt;payments / profiles&quot;</tspan></text>
+<text x="2367.25" y="1579.11" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="2367.25" dy="16.00">&quot;物化视图&lt;br/&gt;sales_performance_v2&quot;</tspan></text>
+<text x="6128.25" y="192.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="6128.25" dy="16.00">&quot;Supabase Storage&lt;br/&gt;合同PDF&quot;</tspan></text>
+<text x="2777.88" y="192.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="2777.88" dy="16.00">&quot;Layer 2: AuthGate&lt;br/&gt;+ RoleGuard&quot;</tspan></text>
+<text x="751.00" y="766.02" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="751.00" dy="16.00">&quot;SalesPipeline&lt;br/&gt;多态: board/table/compact/mini&quot;</tspan></text>
+<text x="1642.38" y="192.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1642.38" dy="16.00">&quot;DataTable&lt;br/&gt;通用排序筛选分页&quot;</tspan></text>
+<text x="1652.00" y="766.02" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1652.00" dy="16.00">&quot;KPICard + MetricGrid&lt;br/&gt;指标卡片&quot;</tspan></text>
+<text x="217.50" y="766.02" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="217.50" dy="16.00">&quot;图表组件&lt;br/&gt;FunnelChart/RevenueTrend&quot;</tspan></text>
+<text x="925.75" y="486.71" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="925.75" dy="16.00">&quot;React Query&lt;br/&gt;缓存层 5min&quot;</tspan></text>
+<text x="1506.37" y="1369.14" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1506.37" dy="16.00">&quot;Server Actions&lt;br/&gt;CRUD 实时&quot;</tspan></text>
+<text x="2284.87" y="1369.14" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="2284.87" dy="16.00">&quot;RPC 聚合&lt;br/&gt;驾驶舱 ~分钟级&quot;</tspan></text>
+<text x="2777.88" y="57.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="2777.88" dy="16.00">&quot;Sidebar&lt;br/&gt;一级: 业务域&lt;br/&gt;二级: 子模块&quot;</tspan></text>
+<text x="1267.88" y="57.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1267.88" dy="16.00">&quot;TopBar&lt;br/&gt;面包屑 + 全局筛选&lt;br/&gt;+ 用户菜单&quot;</tspan></text>
+<text x="4447.88" y="57.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="4447.88" dy="16.00">&quot;Layer 1: Proxy&lt;br/&gt;认证 + 角色路由&quot;</tspan></text>
+<text x="1284.75" y="1444.11" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1284.75" dy="16.00">&quot;Layer 3: RLS&lt;br/&gt;行级安全&quot;</tspan></text>
+</svg>

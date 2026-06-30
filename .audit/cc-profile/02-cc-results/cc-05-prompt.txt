@@ -1,0 +1,25 @@
+### CC-05 prompt (Analytics Loading Audit)
+
+你是 GLM 5.2。审计 CRM 项目的 Analytics/Dashboard 加载行为。
+
+## 输入
+.audit/cc-profile/artifacts/analytics-grep.txt（440 行）
+.audit/cc-profile/artifacts/build.log（1013 行）
+
+## 五个维度
+1. Component Mount Safety — loading/error/empty 状态，null deref，fetch() catch
+2. API Route Health — 所有 /api/dashboard/* 是否返回正确错误响应，空结果处理
+3. Data Dependency Chains — 瀑布请求，嵌套 null-check，i18n 完整性
+4. Build Health — 警告、chunk size、废弃 API
+5. Performance/UX — loading 指示器、empty state、error 消息
+
+## 输出
+- 每维度 PASS/WARN/FAIL
+- P0 = 加载崩溃/未处理异常/空白页面
+- P1 = 缺少 loading/error 状态/null deref 风险
+- P2 = 性能问题/empty state 缺失/i18n 缺口
+- GO/NO-GO
+
+## 约束
+- DO NOT enter plan mode — just execute
+- 只读，不修改文件

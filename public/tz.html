@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="background:#1a1a2e;color:#eee;font-family:sans-serif;text-align:center;padding-top:40vh">
+<script>
+// window.Telegram.WebApp is auto-injected by Telegram WebView
+setTimeout(function(){
+  var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  var off = -(new Date().getTimezoneOffset());
+  try {
+    window.Telegram.WebApp.ready();
+    window.Telegram.WebApp.sendData(JSON.stringify({tz:tz, offset:off}));
+  } catch(e) {
+    document.body.innerText = '✗ Error: ' + e.message;
+    return;
+  }
+  document.body.innerText = '✓ ' + tz + ' (UTC' + (off>=0?'+':'') + (off/60) + ')';
+}, 200);
+</script>
+</body>
+</html>

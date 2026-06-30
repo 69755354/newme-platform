@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2220.30" height="935.00" viewBox="0 0 2220.30 935.00">
+<defs>
+    <marker id="arr-495057" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#495057"/></marker>
+  </defs>
+<rect width="2220.30" height="935.00" fill="#ffffff"/>
+<ellipse cx="554.00" cy="326.25" rx="92.00" ry="137.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="1607.30" cy="867.50" rx="110.00" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="858.15" cy="613.25" rx="114.50" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="1213.15" cy="666.25" rx="146.00" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="1213.15" cy="441.25" rx="110.00" ry="137.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="1607.30" cy="182.50" rx="155.00" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="1607.30" cy="357.50" rx="141.50" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="1607.30" cy="642.50" rx="105.50" ry="137.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="2016.30" cy="412.50" rx="164.00" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="2016.30" cy="642.50" rx="155.00" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="2016.30" cy="817.50" rx="164.00" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="2016.30" cy="185.50" rx="105.50" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="858.15" cy="242.50" rx="110.00" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="258.00" cy="381.25" rx="114.50" ry="137.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="858.15" cy="67.50" rx="119.00" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="1213.15" cy="67.50" rx="137.00" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="186.00" cy="326.25" rx="146.00" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<path d="M 646.00,403.95 L 743.65,606.75" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 646.00,352.15 L 1103.15,376.50" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 646.00,300.35 L 748.15,262.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 646.00,248.55 L 739.15,74.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 972.65,619.75 L 1067.15,646.75" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1359.15,685.75 L 1497.30,848.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 972.65,606.75 L 1103.15,506.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1323.15,363.55 L 1452.30,202.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1323.15,467.15 L 1465.80,377.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1323.15,415.35 L 1395.01,480.00 L 1910.80,480.00 L 1910.80,192.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1323.15,518.95 L 1501.80,599.33" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1762.30,185.50 L 1910.80,179.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1712.80,577.75 L 1852.30,432.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1712.80,642.50 L 1861.30,642.50" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1712.80,707.25 L 1852.30,798.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 372.50,338.08 L 462.00,369.41" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 372.50,381.25 L 407.15,503.75 L 811.14,503.75 L 1103.15,441.25" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 372.50,424.42 L 407.15,523.75 L 703.29,523.75 L 743.65,619.75" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 372.50,467.58 L 604.30,773.75 L 1429.95,773.75 L 1501.80,685.66" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 372.50,294.92 L 407.15,88.75 L 701.94,88.75 L 739.15,61.00" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 332.00,326.25 L 332.00,203.75 L 427.35,203.75 L 462.00,283.08" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 977.15,67.50 L 1076.15,67.50" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<text x="554.00" y="316.25" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="554.00" dy="16.00">&quot;leads&lt;br/&gt;(线索)&quot;</tspan></text>
+<text x="1607.30" y="857.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1607.30" dy="16.00">&quot;products&lt;br/&gt;(产品库)&quot;</tspan></text>
+<text x="858.15" y="603.25" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="858.15" dy="16.00">&quot;quotations&lt;br/&gt;(报价)&quot;</tspan></text>
+<text x="1213.15" y="656.25" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1213.15" dy="16.00">&quot;quotation_items&lt;br/&gt;(报价明细)&quot;</tspan></text>
+<text x="1213.15" y="431.25" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1213.15" dy="16.00">&quot;contracts&lt;br/&gt;(合同)&quot;</tspan></text>
+<text x="1607.30" y="172.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1607.30" dy="16.00">&quot;installment_plans&lt;br/&gt;(分期计划)&quot;</tspan></text>
+<text x="1607.30" y="347.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1607.30" dy="16.00">&quot;delivery_plans&lt;br/&gt;(交付计划)&quot;</tspan></text>
+<text x="1607.30" y="632.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1607.30" dy="16.00">&quot;projects&lt;br/&gt;(项目)&quot;</tspan></text>
+<text x="2016.30" y="402.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="2016.30" dy="16.00">&quot;project_milestones&lt;br/&gt;(项目里程碑)&quot;</tspan></text>
+<text x="2016.30" y="632.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="2016.30" dy="16.00">&quot;project_documents&lt;br/&gt;(项目文档)&quot;</tspan></text>
+<text x="2016.30" y="807.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="2016.30" dy="16.00">&quot;project_inspections&lt;br/&gt;(项目验收)&quot;</tspan></text>
+<text x="2016.30" y="175.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="2016.30" dy="16.00">&quot;payments&lt;br/&gt;(回款)&quot;</tspan></text>
+<text x="858.15" y="232.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="858.15" dy="16.00">&quot;customers&lt;br/&gt;(客户)&quot;</tspan></text>
+<text x="258.00" y="371.25" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="258.00" dy="16.00">&quot;activities&lt;br/&gt;(活动)&quot;</tspan></text>
+<text x="858.15" y="57.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="858.15" dy="16.00">&quot;profiles&lt;br/&gt;(用户/团队)&quot;</tspan></text>
+<text x="1213.15" y="57.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1213.15" dy="16.00">&quot;sales_targets&lt;br/&gt;(销售目标)&quot;</tspan></text>
+<text x="186.00" y="316.25" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="186.00" dy="16.00">&quot;business_events&lt;br/&gt;(事件日志)&quot;</tspan></text>
+<text x="694.83" y="496.60" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="694.83" dy="14.00">&quot;1:N&quot;</tspan></text>
+<text x="874.58" y="355.57" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="874.58" dy="14.00">&quot;1:N&quot;</tspan></text>
+<text x="697.08" y="272.43" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="697.08" dy="14.00">&quot;1:1&quot;</tspan></text>
+<text x="692.58" y="152.53" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="692.58" dy="14.00">&quot;N:1&quot;</tspan></text>
+<text x="1019.90" y="624.50" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1019.90" dy="14.00">&quot;1:N&quot;</tspan></text>
+<text x="1428.23" y="758.12" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1428.23" dy="14.00">&quot;N:1&quot;</tspan></text>
+<text x="1037.90" y="547.62" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1037.90" dy="14.00">&quot;1:1&quot;</tspan></text>
+<text x="1387.73" y="274.02" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1387.73" dy="14.00">&quot;1:N&quot;</tspan></text>
+<text x="1394.48" y="413.32" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1394.48" dy="14.00">&quot;1:N&quot;</tspan></text>
+<text x="1748.57" y="471.25" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1748.57" dy="14.00">&quot;1:N&quot;</tspan></text>
+<text x="1412.48" y="550.39" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1412.48" dy="14.00">&quot;1:1&quot;</tspan></text>
+<text x="1836.55" y="173.50" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1836.55" dy="14.00">&quot;1:N&quot;</tspan></text>
+<text x="1782.55" y="496.12" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1782.55" dy="14.00">&quot;1:N&quot;</tspan></text>
+<text x="1787.05" y="633.75" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1787.05" dy="14.00">&quot;1:N&quot;</tspan></text>
+<text x="1782.55" y="743.88" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1782.55" dy="14.00">&quot;1:N&quot;</tspan></text>
+<text x="417.25" y="345.00" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="417.25" dy="14.00">&quot;N:1&quot;</tspan></text>
+<text x="694.80" y="495.00" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="694.80" dy="14.00">&quot;N:1&quot;</tspan></text>
+<text x="554.69" y="515.00" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="554.69" dy="14.00">&quot;N:1&quot;</tspan></text>
+<text x="881.95" y="765.00" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="881.95" dy="14.00">&quot;N:1&quot;</tspan></text>
+<text x="473.22" y="80.00" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="473.22" dy="14.00">&quot;N:1&quot;</tspan></text>
+<text x="361.71" y="195.00" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="361.71" dy="14.00">&quot;N:1&quot;</tspan></text>
+<text x="1026.65" y="58.75" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1026.65" dy="14.00">&quot;1:N&quot;</tspan></text>
+</svg>

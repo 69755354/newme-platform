@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": [],
+  "debugId": "303544fa-e2e3-4ccc-86c0-7752831e263f",
+  "sections": [
+    {"offset": {"line": 1, "column": 0}, "map": {"version":3,"sources":["../../../sentry.server.config.ts"],"sourcesContent":["import * as Sentry from \"@sentry/nextjs\";\n\nSentry.init({\n  dsn: process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN,\n\n  tracesSampleRate: process.env.NODE_ENV === \"production\" ? 0.1 : 1.0,\n\n  // Server-side specific: don't send health check data\n  beforeSendTransaction(event) {\n    if (event.transaction?.includes(\"/api/health\")) {\n      return null;\n    }\n    return event;\n  },\n});\n"],"names":["dsn","process","env","SENTRY_DSN","tracesSampleRate","beforeSendTransaction","event","transaction","includes"],"mappings":"uCAAA,AAEA,EAFA,CAAA,CAAA,OAEA,IAAW,CAAC,CACVA,IAAKC,QAAQC,GAAG,CAACC,UAAU,EAAA,kGAE3BC,iBAA0D,CAAxC,KAA8C,mBAGhEC,AAAsBC,GACpB,AAAIA,EADqB,AACfC,WAAW,EAAEC,SAAS,eACvB,CADuC,IAGzCF,CAEX"}}]
+}

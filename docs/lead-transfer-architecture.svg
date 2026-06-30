@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1460.00" height="1266.05" viewBox="0 0 1460.00 1266.05">
+<defs>
+    <marker id="arr-495057" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#495057"/></marker>
+  </defs>
+<rect width="1460.00" height="1266.05" fill="#ffffff"/>
+<ellipse cx="672.00" cy="67.50" rx="460.00" ry="27.50" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="185.50" y="183.66" width="140.00" height="68.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="445.50" y="183.66" width="140.00" height="68.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="705.50" y="183.66" width="193.00" height="68.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1018.50" y="183.66" width="140.00" height="68.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<polygon points="672.00,343.39 1109.50,377.39 672.00,411.39 234.50,377.39" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="151.00" y="491.39" width="875.00" height="68.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="44.00" y="689.33" width="140.00" height="68.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="289.50" y="689.33" width="202.00" height="68.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="552.50" y="689.33" width="193.00" height="68.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="939.00" y="689.33" width="148.00" height="68.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="1254.00" y="689.33" width="166.00" height="68.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="40.00" y="837.33" width="148.00" height="68.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="1050.00" cy="1192.05" rx="70.00" ry="34.00" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<ellipse cx="114.00" cy="1192.05" rx="70.00" ry="34.00" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<rect x="275.00" y="837.33" width="140.00" height="68.00" rx="8" fill="#e7f5ff" stroke="#1971c2" stroke-width="2" opacity="1.00"/>
+<path d="M 400.80,95.00 L 317.50,183.66" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 581.60,95.00 L 577.50,183.66" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 762.40,95.00 L 713.50,183.66" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 943.20,95.00 L 1026.50,183.66" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 317.50,251.65 L 414.30,363.41" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 577.50,251.65 L 586.10,350.06" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 713.50,251.65 L 757.90,350.06" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1026.50,251.65 L 929.70,363.41" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 588.50,404.90 L 672.00,491.39" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 302.17,559.39 L 176.00,689.33" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 445.33,559.39 L 483.50,689.33" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 588.50,559.39 L 588.50,689.33" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 731.67,559.39 L 947.00,689.33" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 874.83,559.39 L 1262.00,689.33" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 114.00,757.33 L 114.00,837.33" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 136.00,905.33 L 716.67,1006.42 L 1029.33,1158.05" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 92.00,905.33 L 114.00,1158.05" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 1262.00,757.33 L 1070.67,1158.05" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<path d="M 345.00,757.33 L 390.50,837.33" fill="none" stroke="#495057" stroke-width="2" opacity="1.00" marker-end="url(#arr-495057)"/>
+<text x="672.00" y="57.50" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="672.00" dy="16.00">👤 Admin/Operator</tspan></text>
+<text x="255.50" y="197.66" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="255.50" dy="16.00">Dashboard</tspan><tspan x="255.50" dy="20.00">(预警触发入口)</tspan></text>
+<text x="515.50" y="197.66" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="515.50" dy="16.00">Leads 列表</tspan><tspan x="515.50" dy="20.00">(批量选择+单条)</tspan></text>
+<text x="802.00" y="197.66" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="802.00" dy="16.00">Lead 详情页</tspan><tspan x="802.00" dy="20.00">(Manager Section)</tspan></text>
+<text x="1088.50" y="197.66" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1088.50" dy="16.00">Pipeline 看板</tspan><tspan x="1088.50" dy="20.00">(瓶颈卡片操作)</tspan></text>
+<text x="672.00" y="357.39" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="672.00" dy="16.00">🔁 TransferModal</tspan><tspan x="672.00" dy="20.00">(核心复用组件)</tspan></text>
+<text x="588.50" y="505.39" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="588.50" dy="16.00">transfer_lead()</tspan><tspan x="588.50" dy="20.00">RPC 函数</tspan></text>
+<text x="114.00" y="703.33" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="114.00" dy="16.00">leads 表</tspan><tspan x="114.00" dy="20.00">assigned_to</tspan></text>
+<text x="390.50" y="703.33" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="390.50" dy="16.00">transfer_history 表</tspan><tspan x="390.50" dy="20.00">(全量审计)</tspan></text>
+<text x="649.00" y="703.33" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="649.00" dy="16.00">business_events 表</tspan><tspan x="649.00" dy="20.00">owner_change事件</tspan></text>
+<text x="1013.00" y="703.33" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1013.00" dy="16.00">activities 表</tspan><tspan x="1013.00" dy="20.00">Timeline条目</tspan></text>
+<text x="1337.00" y="703.33" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1337.00" dy="16.00">🔔 Notification</tspan><tspan x="1337.00" dy="20.00">Realtime订阅</tspan></text>
+<text x="114.00" y="851.33" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="114.00" dy="16.00">RLS Policies</tspan><tspan x="114.00" dy="20.00">(行级安全)</tspan></text>
+<text x="1050.00" y="1172.05" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="1050.00" dy="16.00">👤 目标 Sales</tspan><tspan x="1050.00" dy="20.00">(收到通知)</tspan></text>
+<text x="114.00" y="1172.05" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="114.00" dy="16.00">👤 原 Sales</tspan><tspan x="114.00" dy="20.00">(失去权限)</tspan></text>
+<text x="345.00" y="851.33" font-size="16" font-family="cursive" fill="#1e1e1e" text-anchor="middle" opacity="1.00"><tspan x="345.00" dy="16.00">📊 分析报表</tspan><tspan x="345.00" dy="20.00">(转移统计)</tspan></text>
+<text x="359.15" y="130.58" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="359.15" dy="14.00">发现Red Alert</tspan></text>
+<text x="579.55" y="130.58" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="579.55" dy="14.00">浏览列表</tspan></text>
+<text x="737.95" y="130.58" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="737.95" dy="14.00">查看详情</tspan></text>
+<text x="984.85" y="130.58" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="984.85" dy="14.00">查看瓶颈</tspan></text>
+<text x="365.90" y="298.78" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="365.90" dy="14.00">点击转移</tspan></text>
+<text x="581.80" y="292.10" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="581.80" dy="14.00">点击转移</tspan></text>
+<text x="735.70" y="292.10" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="735.70" dy="14.00">点击转移</tspan></text>
+<text x="978.10" y="298.78" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="978.10" dy="14.00">点击转移</tspan></text>
+<text x="630.25" y="439.39" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="630.25" dy="14.00">确认 → 调用</tspan></text>
+<text x="239.09" y="615.61" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="239.09" dy="14.00">1. UPDATE assigned_to</tspan></text>
+<text x="464.41" y="615.61" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="464.41" dy="14.00">2. INSERT 审计记录</tspan></text>
+<text x="588.50" y="615.61" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="588.50" dy="14.00">3. INSERT 事件</tspan></text>
+<text x="839.33" y="615.61" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="839.33" dy="14.00">4. INSERT Timeline</tspan></text>
+<text x="1068.41" y="615.61" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1068.41" dy="14.00">5. 触发通知</tspan></text>
+<text x="114.00" y="788.58" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="114.00" dy="14.00">RLS控制可见性</tspan></text>
+<text x="597.50" y="976.92" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="597.50" dy="14.00">✅ 新销售可见</tspan></text>
+<text x="103.00" y="1022.94" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="103.00" dy="14.00">❌ 原销售不可见</tspan></text>
+<text x="1166.33" y="948.94" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="1166.33" dy="14.00">Toast通知</tspan></text>
+<text x="367.75" y="788.58" font-size="14" font-family="cursive" fill="#495057" text-anchor="middle" opacity="1.00"><tspan x="367.75" dy="14.00">分析数据源</tspan></text>
+</svg>

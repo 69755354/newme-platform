@@ -1,0 +1,3 @@
+{
+  "/api/metrics/daily/route": "app/api/metrics/daily/route.js"
+}

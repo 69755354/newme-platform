@@ -1,0 +1,98 @@
+# CRM v3 — Constraint Index
+# 约束优先级分级。Hermes Review 阶段直接读取此文件判定合并条件。
+# P0 > 阻止合并 · P1 > 要求修复 · P2 > 可带上线
+
+version: v1.0
+
+P0:
+  - id: rule_003
+    title: profiles.id 为唯一用户引用
+    reason: "auth.users 删除会导致业务数据全挂。所有 FK 必须指向 profiles.id。"
+    review_action: "检测到 auth.users(id) 引用 → 阻止合并"
+
+  - id: rule_005
+    title: 漏斗统计按 current_milestone
+    reason: "累计覆盖率算出的漏斗数字完全失真，老板无法做决策。"
+    review_action: "检测到 milestone_count >= N 的漏斗查询 → 阻止合并"
+
+  - id: rule_006
+    title: 里程碑不可跳过顺序
+    reason: "跳级完成 milestone 导致业务语义错乱（meeting 完成但 solution 未完成）"
+    review_action: "检测到 POST milestone 无顺序校验 → 阻止合并"
+
+  - id: rule_013
+    title: Timeline 必须可重建客户完整历史
+    reason: "缺失 1-2 种事件的 timeline = 销售无法全面了解客户，导致丢单"
+    review_action: "Timeline 页面未 UNION ALL 4 张表 → 阻止合并"
+
+  - id: rule_016
+    title: 是否待跟进只看 tasks
+    reason: "三套真相源必有同步问题，30天必定出现已跟进还显示待跟进的神奇bug"
+    review_action: "检测到 leads.next_follow_up 用于跟进判断 → 阻止合并"
+
+  - id: rule_101
+    title: RLS 无全局绕过
+    reason: "无 RLS = 销售能看到全市所有客户，数据安全事件"
+    review_action: "检测到新表未启用 RLS → 阻止合并"
+
+  - id: rule_102
+    title: service_role 仅限 cron/后台
+    reason: "API 路由泄露 service_role key = 任意用户可绕过 RLS 访问全部数据"
+    review_action: "检测到 API route 使用 service_role 而非 auth.getUser() → 阻止合并"
+
+P1:
+  - id: rule_001
+    title: follow_up_logs 只追加
+    reason: "UPDATE/DELETE follow_up_logs 导致历史丢失，无法审计。但加 RLS 策略容易补，不算 P0"
+    review_action: "检测到 follow_up_logs 有 UPDATE/DELETE 路径 → 要求修复"
+
+  - id: rule_002
+    title: tasks 只包含未来待办
+    reason: "过去任务的 task 污染待办列表。但可以加 CHECK 约束补救"
+    review_action: "检测到 tasks 表无 future_only 约束 → 要求修复"
+
+  - id: rule_004
+    title: Pending Decision 包含 quotation
+    reason: "漏斗统计失真，但影响的是报表准确度不是系统安全性"
+    review_action: "检测到 Pending Decision 不含 quotation → 要求修复"
+
+  - id: rule_007
+    title: Milestone 只表示过程
+    reason: "won/lost 进入 milestone 导致基准线污染。但不会导致数据丢失"
+    review_action: "检测到 won/lost 作为 milestone 插入 → 要求修复"
+
+  - id: rule_009
+    title: Migration 必须幂等
+    reason: "migration 重复执行导致报错。但不会丢数据"
+    review_action: "检测到 migration 无 IF NOT EXISTS → 要求修复"
+
+  - id: rule_012
+    title: Feature Flag 按用户
+    reason: "按环境变量/域名切功能=灰度失去意义。但用户可以回滚"
+    review_action: "检测到 feature flag 用环境变量而非 user_features → 要求修复"
+
+  - id: rule_014
+    title: Milestone 逻辑统一在 lib/milestones.ts
+    reason: "多份实现必有不一致，维护成本急剧上升。但短期内不会炸"
+    review_action: "检测到 milestone 逻辑在 2 个以上文件中重复实现 → 要求修复"
+
+  - id: rule_015
+    title: Day30 后禁止依赖 leads.stage
+    reason: "业务逻辑绑定旧字段导致永远删不掉。但 Day30 之前不算违规"
+    review_action: "Day30 后检测到 leads.stage 在业务代码中引用 → 要求修复"
+
+P2:
+  - id: rule_008
+    title: Lead 详情页旧字段兼容
+    reason: "Day45 之前允许旧字段展示。超期才需要拦截"
+    review_action: "仅在 Day45 后检查"
+
+  - id: rule_010
+    title: Prod 禁止直接实验
+    reason: "违反此规则影响的是开发流程，不是生产数据"
+    review_action: "检测到 migration 未经 dev 验证直接上 prod → 标记"
+
+  - id: rule_011
+    title: Day30/60 stage 退役计划
+    reason: "灰度上线初期允许双写。超期才需要拦截"
+    review_action: "仅在 Day30/Day60 后检查"

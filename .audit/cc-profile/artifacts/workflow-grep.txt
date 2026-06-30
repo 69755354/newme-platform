@@ -1,0 +1,1477 @@
+src/components/knx-design-panel.tsx:  status: "started" | "running" | "completed" | "failed";
+src/components/knx-design-panel.tsx:  const [status, setStatus] = useState<KnxDesignStatus | null>(null);
+src/components/knx-design-panel.tsx:        const res = await fetch(`/api/hermes/knx-design/status?task_id=${id}`);
+src/components/knx-design-panel.tsx:          if (res.status === 404) {
+src/components/knx-design-panel.tsx:          throw new Error(`Status check failed: ${res.status}`);
+src/components/knx-design-panel.tsx:        if (data.status === "completed" || data.status === "failed") {
+src/components/knx-design-panel.tsx:        throw new Error(errData.error || `Request failed: ${res.status}`);
+src/components/knx-design-panel.tsx:      // Initial status
+src/components/knx-design-panel.tsx:        status: "started",
+src/components/knx-design-panel.tsx:  const progressLabel = status?.progress_label
+src/components/knx-design-panel.tsx:    ? t(`leadDetail.${status.progress_label}` as any) || status.progress_label
+src/components/knx-design-panel.tsx:  const progressPct = status?.progress_pct || 0;
+src/components/knx-design-panel.tsx:        {!generating && !status?.result && !error && (
+src/components/knx-design-panel.tsx:        {generating && status && status.status !== "completed" && status.status !== "failed" && (
+src/components/knx-design-panel.tsx:        {status?.result && (
+src/components/knx-design-panel.tsx:                <span className="text-white font-medium">{status.result.device_count}</span>
+src/components/knx-design-panel.tsx:                <span className="text-copper-400 font-medium">{fmtAED(status.result.total_aed)}</span>
+src/components/knx-design-panel.tsx:              {status.result.quote_url && (
+src/components/knx-design-panel.tsx:                  href={status.result.quote_url}
+src/components/knx-design-panel.tsx:              {status.result.ppt_url && (
+src/components/knx-design-panel.tsx:                  href={status.result.ppt_url}
+src/components/knx-design-panel.tsx:              {status.result.layout_url && (
+src/components/knx-design-panel.tsx:                  href={status.result.layout_url}
+src/components/knx-design-panel.tsx:              {!status.result.quote_url && !status.result.ppt_url && !status.result.layout_url && (
+src/components/knx-design-panel.tsx:        {status?.status === "failed" && !error && (
+src/components/knx-design-panel.tsx:              <span>{status.error || "Generation failed"}</span>
+src/components/lead-workflow.tsx:  stage_key: string;
+src/components/lead-workflow.tsx:  stage_order: number;
+src/components/lead-workflow.tsx:  status: "pending" | "in_progress" | "completed" | "skipped";
+src/components/lead-workflow.tsx:  const [stages, setStages] = useState<WorkflowStage[]>([]);
+src/components/lead-workflow.tsx:  // Form data for each stage
+src/components/lead-workflow.tsx:      .from("lead_workflow_stages")
+src/components/lead-workflow.tsx:      .order("stage_order", { ascending: true })
+src/components/lead-workflow.tsx:  const updateFormField = (stageKey: string, field: string, value: any) => {
+src/components/lead-workflow.tsx:      [stageKey]: { ...(prev[stageKey] || {}), [field]: value },
+src/components/lead-workflow.tsx:  const handleStartStage = async (stageKey: string) => {
+src/components/lead-workflow.tsx:    setActing(stageKey);
+src/components/lead-workflow.tsx:        body: JSON.stringify({ lead_id: leadId, stage_key: stageKey }),
+src/components/lead-workflow.tsx:      if (data.status === "ok") {
+src/components/lead-workflow.tsx:          prev.map((s) => (s.stage_key === stageKey ? { ...s, ...data.data } : s))
+src/components/lead-workflow.tsx:        setExpandedStage(stageKey);
+src/components/lead-workflow.tsx:        toast.success(`Started: ${STAGE_CONFIG[stageKey]?.label}`);
+src/components/lead-workflow.tsx:        toast.error(data.error || "Failed to start stage");
+src/components/lead-workflow.tsx:  const handleCompleteStage = async (stageKey: string) => {
+src/components/lead-workflow.tsx:    setActing(stageKey);
+src/components/lead-workflow.tsx:      const notes = formData[stageKey] ? JSON.stringify(formData[stageKey]) : null;
+src/components/lead-workflow.tsx:        body: JSON.stringify({ lead_id: leadId, stage_key: stageKey, notes }),
+src/components/lead-workflow.tsx:      if (data.status === "ok") {
+src/components/lead-workflow.tsx:          prev.map((s) => (s.stage_key === stageKey ? { ...s, ...data.data } : s))
+src/components/lead-workflow.tsx:        toast.success(`Completed: ${STAGE_CONFIG[stageKey]?.label}`);
+src/components/lead-workflow.tsx:        // Auto-expand next pending stage
+src/components/lead-workflow.tsx:        const nextIdx = STAGE_ORDER.indexOf(stageKey) + 1;
+src/components/lead-workflow.tsx:          // Only auto-expand if it exists in our stages
+src/components/lead-workflow.tsx:            const nextStage = prev.find((s) => s.stage_key === nextKey);
+src/components/lead-workflow.tsx:            if (nextStage && nextStage.status === "pending") {
+src/components/lead-workflow.tsx:        toast.error(data.error || "Failed to complete stage");
+src/components/lead-workflow.tsx:  const renderBasicInfoForm = (stage: WorkflowStage) => {
+src/components/lead-workflow.tsx:  const renderRequirementsForm = (stage: WorkflowStage) => {
+src/components/lead-workflow.tsx:            value={data.project_status || ""}
+src/components/lead-workflow.tsx:            onValueChange={(v) => updateFormField("requirements", "project_status", v)}
+src/components/lead-workflow.tsx:              <SelectValue placeholder="Select status..." />
+src/components/lead-workflow.tsx:  const renderDesignProposalForm = (stage: WorkflowStage) => {
+src/components/lead-workflow.tsx:  const renderContractForm = (stage: WorkflowStage) => {
+src/components/lead-workflow.tsx:            value={data.visit_status || ""}
+src/components/lead-workflow.tsx:            onValueChange={(v) => updateFormField("contract", "visit_status", v)}
+src/components/lead-workflow.tsx:              <SelectValue placeholder="Select visit status..." />
+src/components/lead-workflow.tsx:  const renderDecisionForm = (stage: WorkflowStage) => {
+src/components/lead-workflow.tsx:    const status = data.status || "";
+src/components/lead-workflow.tsx:                status === "deepening_proposal"
+src/components/lead-workflow.tsx:                name="decision_status"
+src/components/lead-workflow.tsx:                checked={status === "deepening_proposal"}
+src/components/lead-workflow.tsx:                onChange={() => updateFormField("decision", "status", "deepening_proposal")}
+src/components/lead-workflow.tsx:                {status === "deepening_proposal" && (
+src/components/lead-workflow.tsx:                status === "preparing_to_sign"
+src/components/lead-workflow.tsx:                name="decision_status"
+src/components/lead-workflow.tsx:                checked={status === "preparing_to_sign"}
+src/components/lead-workflow.tsx:                onChange={() => updateFormField("decision", "status", "preparing_to_sign")}
+src/components/lead-workflow.tsx:                {status === "preparing_to_sign" && (
+src/components/lead-workflow.tsx:                status === "rejected"
+src/components/lead-workflow.tsx:                name="decision_status"
+src/components/lead-workflow.tsx:                checked={status === "rejected"}
+src/components/lead-workflow.tsx:                onChange={() => updateFormField("decision", "status", "rejected")}
+src/components/lead-workflow.tsx:                {status === "rejected" && (
+src/components/lead-workflow.tsx:  const renderStageDetail = (stage: WorkflowStage) => {
+src/components/lead-workflow.tsx:    const isCurrent = stage.status === "in_progress";
+src/components/lead-workflow.tsx:    const isFuture = stage.status === "pending";
+src/components/lead-workflow.tsx:    const isDone = stage.status === "completed";
+src/components/lead-workflow.tsx:    const config = STAGE_CONFIG[stage.stage_key];
+src/components/lead-workflow.tsx:    const isExpanded = expandedStage === stage.stage_key;
+src/components/lead-workflow.tsx:    const timeLeft = stage.deadline_at ? fmtTimeLeft(stage.deadline_at) : null;
+src/components/lead-workflow.tsx:    // Determine which stages should show detail
+src/components/lead-workflow.tsx:    // Show if: completed (collapsible summary) OR in_progress (form) OR it's the first pending and no active stage
+src/components/lead-workflow.tsx:    const firstPendingIdx = stages.findIndex((s) => s.status === "pending");
+src/components/lead-workflow.tsx:    const hasActive = stages.some((s) => s.status === "in_progress");
+src/components/lead-workflow.tsx:      (isFuture && !hasActive && stages.indexOf(stage) === firstPendingIdx);
+src/components/lead-workflow.tsx:    // Parse stored notes for completed stages
+src/components/lead-workflow.tsx:    if (isDone && stage.notes) {
+src/components/lead-workflow.tsx:        storedData = JSON.parse(stage.notes);
+src/components/lead-workflow.tsx:        key={stage.stage_key}
+src/components/lead-workflow.tsx:              setExpandedStage(isExpanded ? null : stage.stage_key);
+src/components/lead-workflow.tsx:                  setExpandedStage(isExpanded ? null : stage.stage_key);
+src/components/lead-workflow.tsx:              {isCurrent && stage.stage_key === "basic_info" && renderBasicInfoForm(stage)}
+src/components/lead-workflow.tsx:              {isCurrent && stage.stage_key === "requirements" && renderRequirementsForm(stage)}
+src/components/lead-workflow.tsx:              {isCurrent && stage.stage_key === "design_proposal" && renderDesignProposalForm(stage)}
+src/components/lead-workflow.tsx:              {isCurrent && stage.stage_key === "contract" && renderContractForm(stage)}
+src/components/lead-workflow.tsx:              {isCurrent && stage.stage_key === "decision" && renderDecisionForm(stage)}
+src/components/lead-workflow.tsx:              {/* Completed stage data summary */}
+src/components/lead-workflow.tsx:                  onClick={() => handleCompleteStage(stage.stage_key)}
+src/components/lead-workflow.tsx:                    acting === stage.stage_key && "opacity-50 cursor-wait"
+src/components/lead-workflow.tsx:                  {acting === stage.stage_key ? (
+src/components/lead-workflow.tsx:            {/* Start button for first pending stage if no stage is active */}
+src/components/lead-workflow.tsx:            {isFuture && !hasActive && stages.indexOf(stage) === firstPendingIdx && (
+src/components/lead-workflow.tsx:                  onClick={() => handleStartStage(stage.stage_key)}
+src/components/lead-workflow.tsx:                    acting === stage.stage_key && "opacity-50 cursor-wait"
+src/components/lead-workflow.tsx:                  {acting === stage.stage_key ? (
+src/components/lead-workflow.tsx:  if (stages.length === 0) {
+src/components/lead-workflow.tsx:    return <div className="text-xs text-muted-foreground py-4 text-center">No workflow stages</div>;
+src/components/lead-workflow.tsx:  const completedCount = stages.filter((s) => s.status === "completed").length;
+src/components/lead-workflow.tsx:  const totalWeight = stages.reduce((sum, s) => (s.status === "completed" ? sum + s.weight : sum), 0);
+src/components/lead-workflow.tsx:  const allComplete = stages.every((s) => s.status === "completed");
+src/components/lead-workflow.tsx:            {completedCount}/{stages.length} done · {totalWeight}% progress
+src/components/lead-workflow.tsx:            style={{ width: `${(completedCount / stages.length) * 100}%` }}
+src/components/lead-workflow.tsx:          {stages.map((stage) => {
+src/components/lead-workflow.tsx:            const config = STAGE_CONFIG[stage.stage_key];
+src/components/lead-workflow.tsx:            const isCompleted = stage.status === "completed";
+src/components/lead-workflow.tsx:            const isActive = stage.status === "in_progress";
+src/components/lead-workflow.tsx:            const isPending = stage.status === "pending";
+src/components/lead-workflow.tsx:            const timeLeft = stage.deadline_at ? fmtTimeLeft(stage.deadline_at) : null;
+src/components/lead-workflow.tsx:            const isLoading = acting === stage.stage_key;
+src/components/lead-workflow.tsx:                key={stage.stage_key}
+src/components/lead-workflow.tsx:                    if (isPending) handleStartStage(stage.stage_key);
+src/components/lead-workflow.tsx:                    else if (isActive) setExpandedStage(stage.stage_key);
+src/components/lead-workflow.tsx:                    else if (isCompleted) setExpandedStage(expandedStage === stage.stage_key ? null : stage.stage_key);
+src/components/lead-workflow.tsx:                  Stage {stage.stage_order + 1}
+src/components/lead-workflow.tsx:        {stages.map((stage) => renderStageDetail(stage))}
+src/components/NotificationBell.tsx:  lead_stage_change: "🔄",
+src/components/NotificationBell.tsx:  lead_stage_changed: "🔄",
+src/components/NotificationBell.tsx:  lead_stage_change: "notifications.types.lead_stage_change",
+src/components/NotificationBell.tsx:  lead_stage_changed: "notifications.types.lead_stage_changed",
+src/components/NotificationBell.tsx:  if (relatedType === "lead" || type === "lead_assigned" || type === "lead_stage_change" || type === "lead_stage_changed" || type === "lead_created") {
+src/components/leads/timeline.tsx:          throw new Error(`Failed to load timeline (${eventsRes.status})`);
+src/components/leads/timeline.tsx:        role="status"
+src/lib/logger.ts: *   logger.info({ userId, leadId }, "Lead stage changed");
+src/lib/hermes.ts:      return { quote_id: "", total_aed: 0, devices: {}, quote_url: null, ppt_url: null, error: `Hermes API ${res.status}` };
+src/lib/notifications.ts:  "lead_created", "lead_assigned", "lead_stage_change", "lead_stage_changed",
+src/lib/milestones.ts:// 可完成的里程碑（不含 new/negotiation——它们是 stage 标签，非里程碑动作）
+src/lib/milestones.ts:  const groupByField = useCurrentMilestone ? 'current_milestone' : 'latest_milestone';
+src/lib/notify.ts: * Called after business actions complete (assign lead, stage change, etc.).
+src/lib/notify.ts:  type: "lead_created" | "lead_assigned" | "lead_stage_change" | "lead_stage_changed" | "quote_created" | "contract_created" | "contract_signed" | "contract_pending_approval" | "contract_approved" | "contract_rejected" | "payment_due" | "payment_received" | "payment_overdue" | "first_payment_reminder" | "kpi_target_set" | "followup_reminder" | "follow_up_overdue" | "team_member_added";
+src/lib/notify.ts:      console.warn("[notify] Failed:", res.status, err);
+src/lib/i18n/translations.ts:      cannotChangeClosedLead: "Cannot change stage — lead is already closed",
+src/lib/i18n/translations.ts:      cannotSkipStages: "Cannot skip stages — advance one step at a time",
+src/lib/i18n/translations.ts:      invalidStage: "Invalid stage",
+src/lib/i18n/translations.ts:      failedToUpdateStage: "Failed to update stage",
+src/lib/i18n/translations.ts:      stageBreakdown: "Funnel Stage Breakdown",
+src/lib/i18n/translations.ts:      stageToWon: "Stage → Won",
+src/lib/i18n/translations.ts:      stageFunnel: "Stage Funnel",
+src/lib/i18n/translations.ts:      stageOverdue: "{stage} overdue",
+src/lib/i18n/translations.ts:      workflowOverdue: "Workflow stage overdue",
+src/lib/i18n/translations.ts:      stage: "Stage",
+src/lib/i18n/translations.ts:      status: "Status",
+src/lib/i18n/translations.ts:      eventStageChange: "Stage changed → {stage}",
+src/lib/i18n/translations.ts:      eventStatus: "Lead Status: {status}",
+src/lib/i18n/translations.ts:      moveTo: "Move to {stage}",
+src/lib/i18n/translations.ts:      stage: "Stage",
+src/lib/i18n/translations.ts:      subtitle: "Stage-by-stage breakdown",
+src/lib/i18n/translations.ts:      viewAllInStage: "View all in this stage",
+src/lib/i18n/translations.ts:      stageNew: "New Lead",
+src/lib/i18n/translations.ts:      stageContacted: "Contacted",
+src/lib/i18n/translations.ts:      stageReqConfirmed: "Req Confirmed",
+src/lib/i18n/translations.ts:      stageSolutionSub: "Solution Sub.",
+src/lib/i18n/translations.ts:      stageQuotationSub: "Quotation Sub.",
+src/lib/i18n/translations.ts:      stageNegotiation: "Negotiation",
+src/lib/i18n/translations.ts:      stagePendingDecision: "Pending Decision",
+src/lib/i18n/translations.ts:      stageWon: "Won",
+src/lib/i18n/translations.ts:      stageLost: "Lost",
+src/lib/i18n/translations.ts:        lead_stage_change: "Stage Change",
+src/lib/i18n/translations.ts:        lead_stage_changed: "Stage Changed",
+src/lib/i18n/translations.ts:      overdueUpdated: "Overdue status updated",
+src/lib/i18n/translations.ts:      status: "Status",
+src/lib/i18n/translations.ts:        stage_changed: "Stage changed",
+src/lib/i18n/translations.ts:        status_changed: "Status changed",
+src/lib/i18n/translations.ts:    stageLabels: {
+src/lib/i18n/translations.ts:    statusLabels: {
+src/lib/i18n/translations.ts:    stages: {
+src/lib/i18n/translations.ts:      statusDraft: "Draft",
+src/lib/i18n/translations.ts:      statusSigned: "Signed",
+src/lib/i18n/translations.ts:      statusActive: "Active",
+src/lib/i18n/translations.ts:      statusCompleted: "Completed",
+src/lib/i18n/translations.ts:      statusTerminated: "Terminated",
+src/lib/i18n/translations.ts:      statusExpired: "Expired",
+src/lib/i18n/translations.ts:      noEligibleLeads: "No eligible leads (need won/negotiation stage leads with quotation)",
+src/lib/i18n/translations.ts:      statusPendingAdmin: "Pending Admin Review",
+src/lib/i18n/translations.ts:      statusPendingCeo: "Pending CEO Review",
+src/lib/i18n/translations.ts:      statusApproved: "Approved",
+src/lib/i18n/translations.ts:      statusRejected: "Rejected",
+src/lib/i18n/translations.ts:      statusRevoking: "Revoking",
+src/lib/i18n/translations.ts:      statusSuperseded: "Superseded",
+src/lib/i18n/translations.ts:      statusSuspended: "Suspended",
+src/lib/i18n/translations.ts:      status: "Status",
+src/lib/i18n/translations.ts:      status: "Status",
+src/lib/i18n/translations.ts:      statusActive: "Active",
+src/lib/i18n/translations.ts:      statusOnHold: "On Hold",
+src/lib/i18n/translations.ts:      statusCompleted: "Completed",
+src/lib/i18n/translations.ts:      statusCancelled: "Cancelled",
+src/lib/i18n/translations.ts:      status: "Status",
+src/lib/i18n/translations.ts:      statusUpdated: "Status updated",
+src/lib/i18n/translations.ts:      statusChangedTo: "Status changed to",
+src/lib/i18n/translations.ts:      status: "Status",
+src/lib/i18n/translations.ts:      stages: "Stages",
+src/lib/i18n/translations.ts:      stageDistribution: "Stage Distribution",
+src/lib/i18n/translations.ts:      stage: "Stage",
+src/lib/i18n/translations.ts:      stageTable: "Stage",
+src/lib/i18n/translations.ts:      stageBreakdown: "漏斗阶段分布",
+src/lib/i18n/translations.ts:      stageToWon: "总阶段→成交",
+src/lib/i18n/translations.ts:      stageFunnel: "阶段销售漏斗",
+src/lib/i18n/translations.ts:      stageOverdue: "{stage} 逾期",
+src/lib/i18n/translations.ts:      stage: "阶段",
+src/lib/i18n/translations.ts:      status: "状态",
+src/lib/i18n/translations.ts:      eventStageChange: "阶段变更 → {stage}",
+src/lib/i18n/translations.ts:      eventStatus: "客户状态: {status}",
+src/lib/i18n/translations.ts:      moveTo: "移到{stage}",
+src/lib/i18n/translations.ts:      stage: "阶段",
+src/lib/i18n/translations.ts:      stageNew: "新线索",
+src/lib/i18n/translations.ts:      stageContacted: "已联系",
+src/lib/i18n/translations.ts:      stageReqConfirmed: "需求确认",
+src/lib/i18n/translations.ts:      stageSolutionSub: "方案提交",
+src/lib/i18n/translations.ts:      stageQuotationSub: "报价提交",
+src/lib/i18n/translations.ts:      stageNegotiation: "谈判中",
+src/lib/i18n/translations.ts:      stagePendingDecision: "待决策",
+src/lib/i18n/translations.ts:      stageWon: "已成交",
+src/lib/i18n/translations.ts:      stageLost: "已流失",
+src/lib/i18n/translations.ts:        lead_stage_change: "阶段变更",
+src/lib/i18n/translations.ts:        lead_stage_changed: "阶段已变更",
+src/lib/i18n/translations.ts:      status: "状态",
+src/lib/i18n/translations.ts:        stage_changed: "阶段变更",
+src/lib/i18n/translations.ts:        status_changed: "状态变更",
+src/lib/i18n/translations.ts:    stageLabels: {
+src/lib/i18n/translations.ts:    statusLabels: {
+src/lib/i18n/translations.ts:    stages: {
+src/lib/i18n/translations.ts:      statusDraft: "草稿",
+src/lib/i18n/translations.ts:      statusSigned: "已签署",
+src/lib/i18n/translations.ts:      statusActive: "执行中",
+src/lib/i18n/translations.ts:      statusCompleted: "已完成",
+src/lib/i18n/translations.ts:      statusTerminated: "已终止",
+src/lib/i18n/translations.ts:      statusExpired: "已过期",
+src/lib/i18n/translations.ts:      statusPendingAdmin: "待管理员审核",
+src/lib/i18n/translations.ts:      statusPendingCeo: "待CEO审核",
+src/lib/i18n/translations.ts:      statusApproved: "已审批",
+src/lib/i18n/translations.ts:      statusRejected: "已驳回",
+src/lib/i18n/translations.ts:      statusRevoking: "撤销中",
+src/lib/i18n/translations.ts:      statusSuperseded: "已替代",
+src/lib/i18n/translations.ts:      statusSuspended: "已暂停",
+src/lib/i18n/translations.ts:      status: "状态",
+src/lib/i18n/translations.ts:      status: "状态",
+src/lib/i18n/translations.ts:      statusActive: "进行中",
+src/lib/i18n/translations.ts:      statusOnHold: "暂停",
+src/lib/i18n/translations.ts:      statusCompleted: "已完成",
+src/lib/i18n/translations.ts:      statusCancelled: "已取消",
+src/lib/i18n/translations.ts:      status: "状态",
+src/lib/i18n/translations.ts:      statusUpdated: "状态已更新",
+src/lib/i18n/translations.ts:      statusChangedTo: "状态已变更为",
+src/lib/i18n/translations.ts:      status: "状态",
+src/lib/i18n/translations.ts:      stages: "阶段数",
+src/lib/i18n/translations.ts:      stageDistribution: "阶段分布",
+src/lib/i18n/translations.ts:      stage: "阶段",
+src/lib/i18n/translations.ts:      stageTable: "阶段",
+src/lib/knx-task-store.ts:// Both route.ts and status/route.ts import this singleton
+src/app/api/meta/oauth-callback/route.ts:    return new NextResponse("No code parameter", { status: 400 });
+src/app/api/meta/oauth-callback/route.ts:    console.error(`[OAuth] Token exchange HTTP ${resp.status}: ${errorText}`);
+src/app/api/meta/oauth-callback/route.ts:      console.error(`[OAuth] Long-lived exchange HTTP ${resp.status}: ${errorText}`);
+src/app/api/dashboard/ads-roi/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/dashboard/ads-roi/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/dashboard/ads-roi/route.ts:      .select("id, campaign_name, stage, quotation_value, ai_quality, source, final_status")
+src/app/api/dashboard/ads-roi/route.ts:      if (lead.final_status === "won") {
+src/app/api/dashboard/ads-roi/route.ts:    const totalConversions = metaLeads?.filter((l) => l.final_status === "won").length || 0;
+src/app/api/dashboard/ads-roi/route.ts:      .filter((l) => l.final_status === "won")
+src/app/api/dashboard/ads-roi/route.ts:      .select("source, ai_quality, stage, final_status");
+src/app/api/dashboard/ads-roi/route.ts:      if (lead.final_status === "won") {
+src/app/api/dashboard/ads-roi/route.ts:      { status: 500 }
+src/app/api/dashboard/ads-roi/import/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/dashboard/ads-roi/import/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/dashboard/ads-roi/import/route.ts:        { status: 400 }
+src/app/api/dashboard/ads-roi/import/route.ts:        { status: 500 }
+src/app/api/dashboard/ads-roi/import/route.ts:      { status: 500 }
+src/app/api/dashboard/lead-health/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/dashboard/lead-health/route.ts:    // lead_status IN ('hot', 'warm') OR last_contact_date > NOW() - 7d
+src/app/api/dashboard/lead-health/route.ts:      .or(`lead_status.in.(hot,warm),last_contact_date.gt.${weekAgo}`);
+src/app/api/dashboard/lead-health/route.ts:    // lead_status = 'dormant' OR (last_contact_date < NOW() - 14d AND final_status IS NULL)
+src/app/api/dashboard/lead-health/route.ts:        `lead_status.eq.dormant,and(last_contact_date.lt.${fourteenDaysAgo},final_status.is.null)`
+src/app/api/dashboard/lead-health/route.ts:        id, customer_name, phone, assigned_to, stage, last_contact_date,
+src/app/api/dashboard/lead-health/route.ts:        stage: r.stage,
+src/app/api/dashboard/lead-health/route.ts:    return NextResponse.json({ error: "Failed to fetch lead health data" }, { status: 500 });
+src/app/api/dashboard/lead-sources/route.ts: *   - quality distribution via `lead_status` (hot/warm/cold/dormant + unknown)
+src/app/api/dashboard/lead-sources/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/dashboard/lead-sources/route.ts:      .select("id, source, stage, lead_status, final_status, assigned_to");
+src/app/api/dashboard/lead-sources/route.ts:        .select("lead_id, contract_amount, status")
+src/app/api/dashboard/lead-sources/route.ts:        if (c.status === "terminated" || !c.lead_id) return;
+src/app/api/dashboard/lead-sources/route.ts:      if (l.final_status === "won") a.won += 1;
+src/app/api/dashboard/lead-sources/route.ts:      const q = l.lead_status || "unknown";
+src/app/api/dashboard/lead-sources/route.ts:    return NextResponse.json({ error: "Failed to fetch lead source analysis" }, { status: 500 });
+src/app/api/dashboard/sales-load/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/dashboard/sales-load/route.ts:        .select("id, assigned_to, stage, final_status, quotation_value, followup_count, last_contact_date, next_followup_date, created_at")
+src/app/api/dashboard/sales-load/route.ts:        .select("sales_id, contract_amount, status");
+src/app/api/dashboard/sales-load/route.ts:        if (c.status !== "terminated" && c.sales_id) {
+src/app/api/dashboard/sales-load/route.ts:        const wonLeads = myLeads.filter((l: any) => l.final_status === "won").length;
+src/app/api/dashboard/sales-load/route.ts:        const stageDist: Record<string, number> = {};
+src/app/api/dashboard/sales-load/route.ts:          stageDist[l.stage] = (stageDist[l.stage] ?? 0) + 1;
+src/app/api/dashboard/sales-load/route.ts:            l.next_followup_date && l.next_followup_date < now && !l.final_status
+src/app/api/dashboard/sales-load/route.ts:          stageDistribution: stageDist,
+src/app/api/dashboard/sales-load/route.ts:          // Transferable: stage='new' AND last_contact_date IS NULL
+src/app/api/dashboard/sales-load/route.ts:            .filter((l: any) => l.stage === "new" && !l.last_contact_date)
+src/app/api/dashboard/sales-load/route.ts:        .select("id, stage, final_status, followup_count, last_contact_date, next_followup_date, quotation_value")
+src/app/api/dashboard/sales-load/route.ts:      const stageDist: Record<string, number> = {};
+src/app/api/dashboard/sales-load/route.ts:        stageDist[l.stage] = (stageDist[l.stage] ?? 0) + 1;
+src/app/api/dashboard/sales-load/route.ts:        if (l.next_followup_date && l.next_followup_date < now && !l.final_status) {
+src/app/api/dashboard/sales-load/route.ts:        stageDistribution: stageDist,
+src/app/api/dashboard/sales-load/route.ts:    return NextResponse.json({ error: "Failed to fetch sales load data" }, { status: 500 });
+src/app/api/dashboard/sales-load/rebalance/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/dashboard/sales-load/rebalance/route.ts:    return NextResponse.json({ error: "Only admins can rebalance" }, { status: 403 });
+src/app/api/dashboard/sales-load/rebalance/route.ts:    // Transferable: stage='new' AND last_contact_date IS NULL
+src/app/api/dashboard/sales-load/rebalance/route.ts:      .eq("stage", "new")
+src/app/api/dashboard/sales-load/rebalance/route.ts:    return NextResponse.json({ error: "Failed to rebalance" }, { status: 500 });
+src/app/api/dashboard/payment-tracker/route.ts: *                   seq, amount, due_date, status, overdue_days, paid_amount }[]
+src/app/api/dashboard/payment-tracker/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/dashboard/payment-tracker/route.ts:        id, contract_no, contract_amount, contract_date, status, sales_id,
+src/app/api/dashboard/payment-tracker/route.ts:        installment_plans(id, seq, amount, due_date, status, paid_amount),
+src/app/api/dashboard/payment-tracker/route.ts:      return NextResponse.json({ error: "Failed to fetch contracts" }, { status: 500 });
+src/app/api/dashboard/payment-tracker/route.ts:        let status = inst.status; // base status from DB
+src/app/api/dashboard/payment-tracker/route.ts:        // Override status logic
+src/app/api/dashboard/payment-tracker/route.ts:        if (status !== "paid" && status !== "cancelled") {
+src/app/api/dashboard/payment-tracker/route.ts:            status = "paid";
+src/app/api/dashboard/payment-tracker/route.ts:            status = "overdue";
+src/app/api/dashboard/payment-tracker/route.ts:            status = "due_soon";
+src/app/api/dashboard/payment-tracker/route.ts:            status = "pending";
+src/app/api/dashboard/payment-tracker/route.ts:        const overdueDays = status === "overdue" && dueDate
+src/app/api/dashboard/payment-tracker/route.ts:        if (status === "overdue") {
+src/app/api/dashboard/payment-tracker/route.ts:        if (status === "due_soon") {
+src/app/api/dashboard/payment-tracker/route.ts:          status,
+src/app/api/dashboard/payment-tracker/route.ts:      if (a.status === "overdue" && b.status !== "overdue") return -1;
+src/app/api/dashboard/payment-tracker/route.ts:      if (a.status !== "overdue" && b.status === "overdue") return 1;
+src/app/api/dashboard/payment-tracker/route.ts:        if (inst.status !== "paid" && inst.status !== "cancelled" && dueDate < today) {
+src/app/api/dashboard/payment-tracker/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/dashboard/weekly-trends/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/dashboard/weekly-trends/route.ts:      .select("id, created_at, stage, quotation_value, assigned_to, final_status")
+src/app/api/dashboard/weekly-trends/route.ts:      .select("id, contract_amount, created_at, status, sales_id")
+src/app/api/dashboard/weekly-trends/route.ts:      const wonLeads = newLeads.filter((l) => l.final_status === "won");
+src/app/api/dashboard/weekly-trends/route.ts:          c.status !== "terminated"
+src/app/api/dashboard/weekly-trends/route.ts:      { status: 500 }
+src/app/api/dashboard/team-ownership/route.ts:  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/dashboard/team-ownership/route.ts:      const base = supabase.from("leads").select("id, final_status, stage, archived");
+src/app/api/dashboard/team-ownership/route.ts:        .is("final_status", null)
+src/app/api/dashboard/team-ownership/route.ts:        .not("stage", "in", "(won,lost)");
+src/app/api/dashboard/team-ownership/route.ts:      const { count: won } = await base.eq("assigned_to", p.id).or("final_status.eq.won,stage.eq.won");
+src/app/api/dashboard/team-ownership/route.ts:      const { count: lost } = await base.eq("assigned_to", p.id).or("final_status.eq.lost,stage.eq.lost");
+src/app/api/dashboard/pipeline-funnel/route.ts: * Returns funnel data grouped by lead stage.
+src/app/api/dashboard/pipeline-funnel/route.ts: *   stages: { key, label, count, pctOfTop, conversionToNext, avgDaysInStage, isBottleneck }[]
+src/app/api/dashboard/pipeline-funnel/route.ts: *   stuckLeads: { id, customer_name, stage, days_in_stage }[]
+src/app/api/dashboard/pipeline-funnel/route.ts:// won/lost now live in final_status; process stages in current_milestone.
+src/app/api/dashboard/pipeline-funnel/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/dashboard/pipeline-funnel/route.ts:    // ─── Pipeline stage definitions (ordered) ───
+src/app/api/dashboard/pipeline-funnel/route.ts:    // ─── Step 1: Query leads count per stage ───
+src/app/api/dashboard/pipeline-funnel/route.ts:    let leadsQuery = supabase.from("leads").select("id,stage,created_at,updated_at,last_contact_date,assigned_to,customer_name,current_milestone,final_status");
+src/app/api/dashboard/pipeline-funnel/route.ts:      return NextResponse.json({ error: "Failed to fetch leads" }, { status: 500 });
+src/app/api/dashboard/pipeline-funnel/route.ts:    // ─── Step 2: Build stage counts ───
+src/app/api/dashboard/pipeline-funnel/route.ts:    const stageCountMap: Record<string, number> = {};
+src/app/api/dashboard/pipeline-funnel/route.ts:    const stageLeads: Record<string, any[]> = {};
+src/app/api/dashboard/pipeline-funnel/route.ts:      stageCountMap[def.key] = 0;
+src/app/api/dashboard/pipeline-funnel/route.ts:      stageLeads[def.key] = [];
+src/app/api/dashboard/pipeline-funnel/route.ts:      const s = l.final_status || normalizeMilestone(l.current_milestone) || "new";
+src/app/api/dashboard/pipeline-funnel/route.ts:      if (stageCountMap[s] !== undefined) {
+src/app/api/dashboard/pipeline-funnel/route.ts:        stageCountMap[s]++;
+src/app/api/dashboard/pipeline-funnel/route.ts:        stageLeads[s].push(l);
+src/app/api/dashboard/pipeline-funnel/route.ts:    // ─── Step 3: Calculate average days in stage ───
+src/app/api/dashboard/pipeline-funnel/route.ts:    // For each stage, we look at leads CURRENTLY in that stage and calculate
+src/app/api/dashboard/pipeline-funnel/route.ts:    function calcAvgDaysInStage(stageKey: string, leadsInStage: any[]): number {
+src/app/api/dashboard/pipeline-funnel/route.ts:    // ─── Step 4: Build funnel stages with metrics ───
+src/app/api/dashboard/pipeline-funnel/route.ts:    const topCount = stageCountMap[STAGE_DEFS[0].key] || 1; // "new" is top
+src/app/api/dashboard/pipeline-funnel/route.ts:    const stages = STAGE_DEFS.map((def, idx) => {
+src/app/api/dashboard/pipeline-funnel/route.ts:      const count = stageCountMap[def.key] || 0;
+src/app/api/dashboard/pipeline-funnel/route.ts:      const avgDaysInStage = calcAvgDaysInStage(def.key, stageLeads[def.key]);
+src/app/api/dashboard/pipeline-funnel/route.ts:      // Conversion rate to next stage
+src/app/api/dashboard/pipeline-funnel/route.ts:        const nextCount = stageCountMap[nextDef.key] || 0;
+src/app/api/dashboard/pipeline-funnel/route.ts:      // Bottleneck: conversion < 30% to next stage (only for pipeline stages, not won/lost)
+src/app/api/dashboard/pipeline-funnel/route.ts:    // ─── Step 5: Stuck leads — in a stage for > 2x average duration ───
+src/app/api/dashboard/pipeline-funnel/route.ts:    const stuckLeads: { id: string; customer_name: string | null; stage: string; days_in_stage: number; stage_label: string }[] = [];
+src/app/api/dashboard/pipeline-funnel/route.ts:      const avgDays = stages.find(s => s.key === def.key)?.avgDaysInStage || 1;
+src/app/api/dashboard/pipeline-funnel/route.ts:      for (const l of stageLeads[def.key] || []) {
+src/app/api/dashboard/pipeline-funnel/route.ts:            stage: l.stage,
+src/app/api/dashboard/pipeline-funnel/route.ts:            days_in_stage: Math.round(daysInStage),
+src/app/api/dashboard/pipeline-funnel/route.ts:            stage_label: def.label,
+src/app/api/dashboard/pipeline-funnel/route.ts:    // Sort stuck leads by days_in_stage desc
+src/app/api/dashboard/pipeline-funnel/route.ts:    stuckLeads.sort((a, b) => b.days_in_stage - a.days_in_stage);
+src/app/api/dashboard/pipeline-funnel/route.ts:    // ─── Step 6: "Where I lose most" — for sales view, find the stage with the most leads lost ───
+src/app/api/dashboard/pipeline-funnel/route.ts:    const lostStage = stages.find(s => s.key === "lost");
+src/app/api/dashboard/pipeline-funnel/route.ts:    // Look at business_events for stage_change events that ended in lost
+src/app/api/dashboard/pipeline-funnel/route.ts:      .eq("event_type", "stage_change");
+src/app/api/dashboard/pipeline-funnel/route.ts:        if (data?.to_stage === "lost" && data?.from_stage) {
+src/app/api/dashboard/pipeline-funnel/route.ts:          lostFromStage[data.from_stage] = (lostFromStage[data.from_stage] || 0) + 1;
+src/app/api/dashboard/pipeline-funnel/route.ts:      stages,
+src/app/api/dashboard/pipeline-funnel/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/dashboard/team-performance/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/dashboard/team-performance/route.ts:        .select("id, assigned_to, source, stage, final_status")
+src/app/api/dashboard/team-performance/route.ts:        .select("id, sales_id, lead_id, contract_amount, status");
+src/app/api/dashboard/team-performance/route.ts:        if (c.status === "terminated") return;
+src/app/api/dashboard/team-performance/route.ts:        if (l.final_status === "won") s.won += 1;
+src/app/api/dashboard/team-performance/route.ts:          const wonLeads = myLeads.filter((l: any) => l.final_status === "won").length;
+src/app/api/dashboard/team-performance/route.ts:            (l: any) => !l.final_status
+src/app/api/dashboard/team-performance/route.ts:      .select("id, source, stage, final_status")
+src/app/api/dashboard/team-performance/route.ts:          .select("lead_id, contract_amount, status")
+src/app/api/dashboard/team-performance/route.ts:      if (c.status === "terminated") return;
+src/app/api/dashboard/team-performance/route.ts:      if (l.final_status === "won") s.won += 1;
+src/app/api/dashboard/team-performance/route.ts:    const wonLeads = myLeadRows.filter((l: any) => l.final_status === "won").length;
+src/app/api/dashboard/team-performance/route.ts:          activeLeads: myLeadRows.filter((l: any) => !l.final_status).length,
+src/app/api/dashboard/team-performance/route.ts:    return NextResponse.json({ error: "Failed to fetch team performance" }, { status: 500 });
+src/app/api/cos/download-url/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/cos/download-url/route.ts:      return NextResponse.json({ error: "key is required" }, { status: 400 });
+src/app/api/cos/download-url/route.ts:      return NextResponse.json({ error: "Invalid key: contains unsafe characters" }, { status: 400 });
+src/app/api/cos/download-url/route.ts:      return NextResponse.json({ error: "Invalid key: unknown path prefix" }, { status: 400 });
+src/app/api/cos/download-url/route.ts:      return NextResponse.json({ error: data.error }, { status: 500 });
+src/app/api/cos/download-url/route.ts:      { status: 500 }
+src/app/api/activity/daily-report/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/activity/daily-report/route.ts:    return NextResponse.json({ error: "Profile not found" }, { status: 403 });
+src/app/api/activity/daily-report/route.ts:      { status: 403 },
+src/app/api/activity/daily-report/route.ts:      { status: 400 },
+src/app/api/activity/daily-report/route.ts:      { status: 500 },
+src/app/api/activity/daily-report/route.ts:      { status: 500 },
+src/app/api/activities/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/activities/route.ts:    return NextResponse.json({ error: error.message }, { status: 500 });
+src/app/api/dev/setup/route.ts:    return NextResponse.json({ error: "Not in dev mode" }, { status: 403 });
+src/app/api/dev/setup/route.ts:        return NextResponse.json({ error: createErr.message }, { status: 500 });
+src/app/api/dev/setup/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/quotations/calculate/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/quotations/calculate/route.ts:        { status: 400 },
+src/app/api/quotations/calculate/route.ts:          { status: 400 },
+src/app/api/quotations/calculate/route.ts:      { status: 500 },
+src/app/api/quotations/export/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/quotations/export/route.ts:        { status: 400 },
+src/app/api/quotations/export/route.ts:      return NextResponse.json({ error: "Quotation not found" }, { status: 404 });
+src/app/api/quotations/export/route.ts:        return NextResponse.json({ error: "Forbidden: not assigned to this lead" }, { status: 403 });
+src/app/api/quotations/export/route.ts:    rows.push(["Status:", quote.status]);
+src/app/api/quotations/export/route.ts:      status: 200,
+src/app/api/quotations/export/route.ts:      { status: 500 },
+src/app/api/quotations/generate/route.ts: * Output: { status, quote_id, quote_no, total, valid_until }
+src/app/api/quotations/generate/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/quotations/generate/route.ts:      return NextResponse.json({ error: "lead_id is required" }, { status: 400 });
+src/app/api/quotations/generate/route.ts:        { status: 400 },
+src/app/api/quotations/generate/route.ts:          { status: 400 },
+src/app/api/quotations/generate/route.ts:      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+src/app/api/quotations/generate/route.ts:        status: "draft",
+src/app/api/quotations/generate/route.ts:      return NextResponse.json({ error: "Failed to save quotation" }, { status: 500 });
+src/app/api/quotations/generate/route.ts:    // 7. Update lead stage
+src/app/api/quotations/generate/route.ts:        stage: "quotation_submitted",
+src/app/api/quotations/generate/route.ts:      console.error("[Quotation Generate] Failed to update lead stage:", updateErr);
+src/app/api/quotations/generate/route.ts:      status: "ok",
+src/app/api/quotations/generate/route.ts:      { status: 500 },
+src/app/api/quotations/[id]/convert/route.ts: * Sets quotation status to 'contract_created' and links back via contract_id.
+src/app/api/quotations/[id]/convert/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/quotations/[id]/convert/route.ts:        { status: 404 }
+src/app/api/quotations/[id]/convert/route.ts:    if (quote.status !== "accepted") {
+src/app/api/quotations/[id]/convert/route.ts:        { error: "Only accepted quotations can be converted", current_status: quote.status },
+src/app/api/quotations/[id]/convert/route.ts:        { status: 400 }
+src/app/api/quotations/[id]/convert/route.ts:        { status: 409 }
+src/app/api/quotations/[id]/convert/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/quotations/[id]/convert/route.ts:        status: "draft",
+src/app/api/quotations/[id]/convert/route.ts:        { status: 500 }
+src/app/api/quotations/[id]/convert/route.ts:        status: "pending",
+src/app/api/quotations/[id]/convert/route.ts:      status: "pending",
+src/app/api/quotations/[id]/convert/route.ts:    // Update quotation: link contract + change status
+src/app/api/quotations/[id]/convert/route.ts:        status: "contract_created",
+src/app/api/quotations/[id]/convert/route.ts:    // Update lead final_status to won
+src/app/api/quotations/[id]/convert/route.ts:        .update({ final_status: "won", updated_at: new Date().toISOString() })
+src/app/api/quotations/[id]/convert/route.ts:      quotation_status: "contract_created",
+src/app/api/quotations/[id]/convert/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/notifications/read-all/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/notifications/read-all/route.ts:      return NextResponse.json({ error: "Failed to mark all as read" }, { status: 500 });
+src/app/api/notifications/read-all/route.ts:    return NextResponse.json({ error: msg }, { status: 500 });
+src/app/api/notifications/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/notifications/route.ts:      return NextResponse.json({ error: "Failed to fetch notifications" }, { status: 500 });
+src/app/api/notifications/route.ts:    return NextResponse.json({ error: msg }, { status: 500 });
+src/app/api/notifications/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/notifications/route.ts:      return NextResponse.json({ error: "Forbidden: admin/boss only" }, { status: 403 });
+src/app/api/notifications/route.ts:      return NextResponse.json({ error: "user_id, type, and title are required" }, { status: 400 });
+src/app/api/notifications/route.ts:      return NextResponse.json({ error: `Invalid type: ${type}` }, { status: 400 });
+src/app/api/notifications/route.ts:      return NextResponse.json({ error: "Failed to create notification" }, { status: 500 });
+src/app/api/notifications/route.ts:    return NextResponse.json({ success: true, id: data.id }, { status: 201 });
+src/app/api/notifications/route.ts:    return NextResponse.json({ error: msg }, { status: 500 });
+src/app/api/notifications/unread-count/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/notifications/unread-count/route.ts:      return NextResponse.json({ error: "Failed to get unread count" }, { status: 500 });
+src/app/api/notifications/unread-count/route.ts:    return NextResponse.json({ error: msg }, { status: 500 });
+src/app/api/notifications/[id]/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/notifications/[id]/route.ts:      return NextResponse.json({ error: "Failed to update notification" }, { status: 500 });
+src/app/api/notifications/[id]/route.ts:    return NextResponse.json({ error: msg }, { status: 500 });
+src/app/api/kpi/targets/route.ts:  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/kpi/targets/route.ts:    return NextResponse.json({ error: msg }, { status: 500 });
+src/app/api/kpi/targets/route.ts:  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/kpi/targets/route.ts:    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/kpi/targets/route.ts:    return NextResponse.json({ error: "period and targets required" }, { status: 400 });
+src/app/api/kpi/targets/route.ts:    return NextResponse.json({ error: msg }, { status: 500 });
+src/app/api/kpi/targets/route.ts:    return NextResponse.json({ error: msg }, { status: 500 });
+src/app/api/kpi/targets/route.ts:  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/kpi/targets/route.ts:    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/kpi/targets/route.ts:  if (!period) return NextResponse.json({ error: "period required" }, { status: 400 });
+src/app/api/kpi/targets/route.ts:    return NextResponse.json({ error: msg }, { status: 500 });
+src/app/api/workbench/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+src/app/api/workbench/route.ts:    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+src/app/api/workbench/route.ts:  const taskCols = "id,lead_id,title,due_at,status,source,created_at,assignee_id"
+src/app/api/workbench/route.ts:    .select("lead_id,title,leads!inner(id,customer_name,phone,location,final_status)")
+src/app/api/workbench/route.ts:    if (!lead || lead.final_status) return []
+src/app/api/workbench/route.ts:  let progQuery = supabase.from("leads").select("current_milestone")
+src/app/api/workbench/route.ts:    const k = row.current_milestone || "new"
+src/app/api/workbench/route.ts:  const progressArray = Object.entries(progress).map(([current_milestone, count]) => ({
+src/app/api/workbench/route.ts:    current_milestone,
+src/app/api/workflow/route.ts:/** POST /api/workflow/start-stage — mark a stage as in_progress, set deadline */
+src/app/api/workflow/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/workflow/route.ts:    const { lead_id, stage_key } = await request.json();
+src/app/api/workflow/route.ts:    if (!lead_id || !stage_key) {
+src/app/api/workflow/route.ts:      return NextResponse.json({ error: "lead_id and stage_key required" }, { status: 400 });
+src/app/api/workflow/route.ts:        return NextResponse.json({ error: "Forbidden: not assigned to this lead" }, { status: 403 });
+src/app/api/workflow/route.ts:    // Calculate deadline based on stage
+src/app/api/workflow/route.ts:    const hours = deadlineHours[stage_key] || 24;
+src/app/api/workflow/route.ts:      .from("lead_workflow_stages")
+src/app/api/workflow/route.ts:        status: "in_progress",
+src/app/api/workflow/route.ts:      .eq("stage_key", stage_key)
+src/app/api/workflow/route.ts:      console.error("[Workflow] Start stage error:", error);
+src/app/api/workflow/route.ts:      return NextResponse.json({ error: "Failed to update stage" }, { status: 500 });
+src/app/api/workflow/route.ts:    return NextResponse.json({ status: "ok", data });
+src/app/api/workflow/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/workflow/route.ts:/** PUT /api/workflow/complete-stage — mark a stage as completed */
+src/app/api/workflow/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/workflow/route.ts:    const { lead_id, stage_key, notes } = await request.json();
+src/app/api/workflow/route.ts:    if (!lead_id || !stage_key) {
+src/app/api/workflow/route.ts:      return NextResponse.json({ error: "lead_id and stage_key required" }, { status: 400 });
+src/app/api/workflow/route.ts:        return NextResponse.json({ error: "Forbidden: not assigned to this lead" }, { status: 403 });
+src/app/api/workflow/route.ts:      .from("lead_workflow_stages")
+src/app/api/workflow/route.ts:        status: "completed",
+src/app/api/workflow/route.ts:      .eq("stage_key", stage_key)
+src/app/api/workflow/route.ts:      console.error("[Workflow] Complete stage error:", error);
+src/app/api/workflow/route.ts:      return NextResponse.json({ error: "Failed to update stage" }, { status: 500 });
+src/app/api/workflow/route.ts:    return NextResponse.json({ status: "ok", data });
+src/app/api/workflow/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/cron/check-alerts/route.ts:    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/cron/check-alerts/route.ts:      return NextResponse.json({ error: "Failed to query alerts" }, { status: 500 });
+src/app/api/cron/check-alerts/route.ts:    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+src/app/api/cron/daily-funnel-snapshot/route.ts:      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+src/app/api/cron/daily-funnel-snapshot/route.ts:      .select('current_milestone')
+src/app/api/cron/daily-funnel-snapshot/route.ts:      .is('final_status', null)
+src/app/api/cron/daily-funnel-snapshot/route.ts:      return NextResponse.json({ error: fetchError.message }, { status: 500 })
+src/app/api/cron/daily-funnel-snapshot/route.ts:      if (!lead.current_milestone) continue
+src/app/api/cron/daily-funnel-snapshot/route.ts:      const milestone = normalizeMilestone(lead.current_milestone)
+src/app/api/cron/daily-funnel-snapshot/route.ts:      return NextResponse.json({ error: deleteError.message }, { status: 500 })
+src/app/api/cron/daily-funnel-snapshot/route.ts:      current_milestone: milestone,
+src/app/api/cron/daily-funnel-snapshot/route.ts:        return NextResponse.json({ error: insertError.message }, { status: 500 })
+src/app/api/cron/daily-funnel-snapshot/route.ts:    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+src/app/api/cron/check-overdue-followups/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/cron/check-overdue-followups/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/cron/check-overdue-followups/route.ts:    .select("id, lead_id, due_at, assignee_id, leads!inner(customer_name, final_status)")
+src/app/api/cron/check-overdue-followups/route.ts:    return NextResponse.json({ error: "Query failed" }, { status: 500 });
+src/app/api/cron/check-overdue-followups/route.ts:    if (!lead || lead.final_status) return [];
+src/app/api/cron/check-overdue-installments/route.ts:    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/cron/check-overdue-installments/route.ts:      .update({ status: "overdue", updated_at: new Date().toISOString() })
+src/app/api/cron/check-overdue-installments/route.ts:      .in("status", ["pending", "partial"])
+src/app/api/cron/check-overdue-installments/route.ts:      return NextResponse.json({ error: "Update failed" }, { status: 500 });
+src/app/api/cron/check-overdue-installments/route.ts:    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+src/app/api/cron/check-no-answer/route.ts:      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+src/app/api/cron/check-no-answer/route.ts:      return NextResponse.json({ error: leadsError.message }, { status: 500 })
+src/app/api/cron/check-no-answer/route.ts:    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+src/app/api/cron/daily-reminder/route.ts:    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+src/app/api/cron/daily-reminder/route.ts:      .eq('status', 'pending')
+src/app/api/cron/daily-reminder/route.ts:      return NextResponse.json({ error: tasksError.message }, { status: 500 })
+src/app/api/cron/daily-reminder/route.ts:    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+src/app/api/cron/cleanup-notifications/route.ts:    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/cron/cleanup-notifications/route.ts:    return NextResponse.json({ error: "Count query failed" }, { status: 500 });
+src/app/api/payments/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/payments/route.ts:      return NextResponse.json({ error: "contract_id is required" }, { status: 400 });
+src/app/api/payments/route.ts:      return NextResponse.json({ error: "Valid amount is required" }, { status: 400 });
+src/app/api/payments/route.ts:      return NextResponse.json({ error: "payment_date is required" }, { status: 400 });
+src/app/api/payments/route.ts:      return NextResponse.json({ error: "payment_method is required" }, { status: 400 });
+src/app/api/payments/route.ts:      return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+src/app/api/payments/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/payments/route.ts:      return NextResponse.json({ error: "Failed to record payment" }, { status: 500 });
+src/app/api/payments/route.ts:    return NextResponse.json({ id: payment.id, amount: payment.amount }, { status: 201 });
+src/app/api/payments/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/payments/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/payments/route.ts:      return NextResponse.json({ error: "Profile not found" }, { status: 403 });
+src/app/api/payments/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/payments/route.ts:        return NextResponse.json({ error: "Failed to fetch payments" }, { status: 500 });
+src/app/api/payments/route.ts:      return NextResponse.json({ error: "Failed to fetch payments" }, { status: 500 });
+src/app/api/payments/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/payments/[id]/confirm/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/payments/[id]/confirm/route.ts:      return NextResponse.json({ error: "Profile not found" }, { status: 403 });
+src/app/api/payments/[id]/confirm/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/payments/[id]/confirm/route.ts:      return NextResponse.json({ error: "Payment not found" }, { status: 404 });
+src/app/api/payments/[id]/confirm/route.ts:        { status: 400 }
+src/app/api/payments/[id]/confirm/route.ts:        { status: 500 }
+src/app/api/payments/[id]/confirm/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/payments/[id]/allocate/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/payments/[id]/allocate/route.ts:      return NextResponse.json({ error: "Profile not found" }, { status: 403 });
+src/app/api/payments/[id]/allocate/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/payments/[id]/allocate/route.ts:        { status: 400 }
+src/app/api/payments/[id]/allocate/route.ts:          { status: 400 }
+src/app/api/payments/[id]/allocate/route.ts:          { status: 400 }
+src/app/api/payments/[id]/allocate/route.ts:      return NextResponse.json({ error: "Payment not found" }, { status: 404 });
+src/app/api/payments/[id]/allocate/route.ts:        { status: 400 }
+src/app/api/payments/[id]/allocate/route.ts:        { status: 500 }
+src/app/api/payments/[id]/allocate/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/metrics/funnel/route.ts:      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+src/app/api/metrics/funnel/route.ts:      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+src/app/api/metrics/funnel/route.ts:      return NextResponse.json({ error: 'Forbidden — admin or boss only' }, { status: 403 })
+src/app/api/metrics/funnel/route.ts:      .select('current_milestone, final_status')
+src/app/api/metrics/funnel/route.ts:      return NextResponse.json({ error: leadsError.message }, { status: 500 })
+src/app/api/metrics/funnel/route.ts:      if (lead.final_status === 'won' || lead.final_status === 'lost') {
+src/app/api/metrics/funnel/route.ts:        bucket = lead.final_status
+src/app/api/metrics/funnel/route.ts:      } else if (lead.current_milestone) {
+src/app/api/metrics/funnel/route.ts:        bucket = normalizeMilestone(lead.current_milestone)
+src/app/api/metrics/funnel/route.ts:    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+src/app/api/metrics/daily/route.ts:      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+src/app/api/metrics/daily/route.ts:      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+src/app/api/metrics/daily/route.ts:      .is('final_status', null)
+src/app/api/metrics/daily/route.ts:      .eq('final_status', 'won')
+src/app/api/metrics/daily/route.ts:      .eq('final_status', 'lost')
+src/app/api/metrics/daily/route.ts:      .eq('status', 'pending')
+src/app/api/metrics/daily/route.ts:      .eq('status', 'pending')
+src/app/api/metrics/daily/route.ts:    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+src/app/api/notify/route.ts:  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/notify/route.ts:  if (!type) return NextResponse.json({ error: "type required" }, { status: 400 });
+src/app/api/notify/route.ts:    return NextResponse.json({ error: `Invalid notification type: ${type}` }, { status: 400 });
+src/app/api/notify/route.ts:  if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 403 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "lead_id required" }, { status: 400 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "lead_id and assigned_to required" }, { status: 400 });
+src/app/api/notify/route.ts:          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "quote_id required" }, { status: 400 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "contract_id required" }, { status: 400 });
+src/app/api/notify/route.ts:    case "lead_stage_change":
+src/app/api/notify/route.ts:    case "lead_stage_changed": {
+src/app/api/notify/route.ts:      const { lead_id, from_stage, to_stage } = body as {
+src/app/api/notify/route.ts:        from_stage?: string;
+src/app/api/notify/route.ts:        to_stage?: string;
+src/app/api/notify/route.ts:      if (!lead_id || !to_stage) {
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "lead_id and to_stage required" }, { status: 400 });
+src/app/api/notify/route.ts:          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/notify/route.ts:      // Notify admins about important stage changes
+src/app/api/notify/route.ts:      if (importantStages.includes(to_stage)) {
+src/app/api/notify/route.ts:                type: "lead_stage_change",
+src/app/api/notify/route.ts:                title: `${customerName}: ${from_stage || "new"} → ${to_stage}`,
+src/app/api/notify/route.ts:                body: `Lead "${customerName}" moved to ${to_stage} by ${profile.full_name || "sales"}`,
+src/app/api/notify/route.ts:          type: "lead_stage_change",
+src/app/api/notify/route.ts:          title: `${customerName}: ${from_stage || "new"} → ${to_stage}`,
+src/app/api/notify/route.ts:          body: `Lead "${customerName}" moved to ${to_stage} by ${profile.full_name || "sales"}`,
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "contract_id required" }, { status: 400 });
+src/app/api/notify/route.ts:          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "contract_id required" }, { status: 400 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "contract_id required" }, { status: 400 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "payment_id required" }, { status: 400 });
+src/app/api/notify/route.ts:          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "installment_id required" }, { status: 400 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "installment_id required" }, { status: 400 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "period required" }, { status: 400 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "lead_id and assigned_to required" }, { status: 400 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "new_user_id required" }, { status: 400 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "lead_id and assigned_to required" }, { status: 400 });
+src/app/api/notify/route.ts:        return NextResponse.json({ error: "contract_id and sales_id required" }, { status: 400 });
+src/app/api/notify/route.ts:        .select("contract_no, contract_amount, party_a_name, first_payment_status")
+src/app/api/notify/route.ts:        body: notifBody || `Contract ${contract?.contract_no || ""} first payment needs attention. Status: ${contract?.first_payment_status || "unpaid"}.`,
+src/app/api/notify/route.ts:      return NextResponse.json({ error: `Unknown notification type: ${type}` }, { status: 400 });
+src/app/api/products/import/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/products/import/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/products/import/route.ts:      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+src/app/api/products/import/route.ts:      return NextResponse.json({ error: "CSV file is empty or invalid" }, { status: 400 });
+src/app/api/products/import/route.ts:      { status: 500 },
+src/app/api/follow-ups/route.ts:      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+src/app/api/follow-ups/route.ts:        return NextResponse.json({ error: error.message }, { status: 500 })
+src/app/api/follow-ups/route.ts:      return NextResponse.json({ error: error.message }, { status: 500 })
+src/app/api/follow-ups/route.ts:    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+src/app/api/health/route.ts:      checks.supabase_api = res.ok ? "UP" : `DOWN: HTTP ${res.status}`;
+src/app/api/health/route.ts:      status: healthy ? "healthy" : "degraded",
+src/app/api/health/route.ts:    { status: healthy ? 200 : 503 }
+src/app/api/command-center/route.ts:    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+src/app/api/command-center/route.ts:    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+src/app/api/command-center/route.ts:      .is('final_status', null);
+src/app/api/command-center/route.ts:      .eq('final_status', 'won')
+src/app/api/command-center/route.ts:      { status: 500 }
+src/app/api/admin/impersonate/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/admin/impersonate/route.ts:    return NextResponse.json({ error: "Forbidden: admin/boss only" }, { status: 403 });
+src/app/api/admin/impersonate/route.ts:    return NextResponse.json({ error: "targetUserId required" }, { status: 400 });
+src/app/api/admin/impersonate/route.ts:    return NextResponse.json({ error: "Target user not found" }, { status: 404 });
+src/app/api/admin/impersonate/route.ts:    return NextResponse.json({ error: error.message }, { status: 500 });
+src/app/api/monitoring/report/route.ts:    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+src/app/api/hermes/generate-quote/route.ts: * Output: { status, quote_id, total_aed, quote_url }
+src/app/api/hermes/generate-quote/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/hermes/generate-quote/route.ts:      return NextResponse.json({ error: "lead_id required" }, { status: 400 });
+src/app/api/hermes/generate-quote/route.ts:      return NextResponse.json({ error: "Failed to fetch lead data" }, { status: 500 });
+src/app/api/hermes/generate-quote/route.ts:      return NextResponse.json({ error: "lead not found" }, { status: 404 });
+src/app/api/hermes/generate-quote/route.ts:      return NextResponse.json({ error: "Forbidden: not your lead" }, { status: 403 });
+src/app/api/hermes/generate-quote/route.ts:        status: "draft",
+src/app/api/hermes/generate-quote/route.ts:          status: "draft",
+src/app/api/hermes/generate-quote/route.ts:        return NextResponse.json({ error: "Failed to save quotation" }, { status: 500 });
+src/app/api/hermes/generate-quote/route.ts:      // 8. Update lead stage
+src/app/api/hermes/generate-quote/route.ts:        .update({ stage: "quotation_submitted", updated_at: new Date().toISOString() })
+src/app/api/hermes/generate-quote/route.ts:        console.error("[Hermes API] Failed to update lead stage:", updateErr);
+src/app/api/hermes/generate-quote/route.ts:        status: "ok",
+src/app/api/hermes/generate-quote/route.ts:    // 8. Update lead stage to 'quotation_submitted'
+src/app/api/hermes/generate-quote/route.ts:      .update({ stage: "quotation_submitted", updated_at: new Date().toISOString() })
+src/app/api/hermes/generate-quote/route.ts:      console.error("[Hermes API] Failed to update lead stage:", updateErr);
+src/app/api/hermes/generate-quote/route.ts:      status: "ok",
+src/app/api/hermes/generate-quote/route.ts:      { status: 500 },
+src/app/api/hermes/knx-design/route.ts: * Output: { status: "started", task_id: string }
+src/app/api/hermes/knx-design/route.ts: * The caller polls GET /api/hermes/knx-design/status?task_id=xxx for progress.
+src/app/api/hermes/knx-design/route.ts: * In-memory task store shared with status route via global.
+src/app/api/hermes/knx-design/route.ts:    store.set(taskId, { status: "running", progress_pct: 10, progress_label: "knxProgressAnalyzing" });
+src/app/api/hermes/knx-design/route.ts:    store.set(taskId, { status: "running", progress_pct: 30, progress_label: "knxProgressComputing" });
+src/app/api/hermes/knx-design/route.ts:    store.set(taskId, { status: "running", progress_pct: 50, progress_label: "knxProgressQuote" });
+src/app/api/hermes/knx-design/route.ts:    store.set(taskId, { status: "running", progress_pct: 70, progress_label: "knxProgressPpt" });
+src/app/api/hermes/knx-design/route.ts:      status: "completed",
+src/app/api/hermes/knx-design/route.ts:        status: "completed",
+src/app/api/hermes/knx-design/route.ts:      status: "failed",
+src/app/api/hermes/knx-design/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/hermes/knx-design/route.ts:      return NextResponse.json({ error: "lead_id required" }, { status: 400 });
+src/app/api/hermes/knx-design/route.ts:      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+src/app/api/hermes/knx-design/route.ts:      return NextResponse.json({ error: "Forbidden: not your lead" }, { status: 403 });
+src/app/api/hermes/knx-design/route.ts:      status: "started",
+src/app/api/hermes/knx-design/route.ts:      status: "started",
+src/app/api/hermes/knx-design/route.ts:      { status: 500 },
+src/app/api/hermes/knx-design/status/route.ts: * GET /api/hermes/knx-design/status?task_id=xxx
+src/app/api/hermes/knx-design/status/route.ts: *   { status: "started"|"running"|"completed"|"failed",
+src/app/api/hermes/knx-design/status/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/hermes/knx-design/status/route.ts:    // Role check — only admin/boss/sales can check design status
+src/app/api/hermes/knx-design/status/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/hermes/knx-design/status/route.ts:      return NextResponse.json({ error: "task_id required" }, { status: 400 });
+src/app/api/hermes/knx-design/status/route.ts:      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+src/app/api/hermes/knx-design/status/route.ts:      { status: 500 },
+src/app/api/tasks/route.ts:  status,
+src/app/api/tasks/route.ts:      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+src/app/api/tasks/route.ts:    const statusParam = searchParams.get('status')
+src/app/api/tasks/route.ts:    const status: string = statusParam ?? 'pending'
+src/app/api/tasks/route.ts:    if (status !== 'all') {
+src/app/api/tasks/route.ts:      if (!VALID_STATUSES.includes(status as TaskStatus)) {
+src/app/api/tasks/route.ts:          { error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}, all` },
+src/app/api/tasks/route.ts:          { status: 400 }
+src/app/api/tasks/route.ts:      query = query.eq('status', status)
+src/app/api/tasks/route.ts:      return NextResponse.json({ error: error.message }, { status: 500 })
+src/app/api/tasks/route.ts:    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+src/app/api/tasks/route.ts:  status: 'completed' | 'cancelled'
+src/app/api/tasks/route.ts:      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+src/app/api/tasks/route.ts:    const { ids, status } = body
+src/app/api/tasks/route.ts:      return NextResponse.json({ error: 'ids must be a non-empty array' }, { status: 400 })
+src/app/api/tasks/route.ts:    if (status !== 'completed' && status !== 'cancelled') {
+src/app/api/tasks/route.ts:      return NextResponse.json({ error: 'status must be "completed" or "cancelled"' }, { status: 400 })
+src/app/api/tasks/route.ts:    const updateData: { status: string; completed_at: string | null } = {
+src/app/api/tasks/route.ts:      status,
+src/app/api/tasks/route.ts:      completed_at: status === 'completed' ? new Date().toISOString() : null,
+src/app/api/tasks/route.ts:      .select('id, status, completed_at')
+src/app/api/tasks/route.ts:      return NextResponse.json({ error: error.message }, { status: 500 })
+src/app/api/tasks/route.ts:    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+src/app/api/tasks/[id]/route.ts:  status,
+src/app/api/tasks/[id]/route.ts:      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+src/app/api/tasks/[id]/route.ts:        return NextResponse.json({ error: 'Task not found' }, { status: 404 })
+src/app/api/tasks/[id]/route.ts:      return NextResponse.json({ error: error.message }, { status: 500 })
+src/app/api/tasks/[id]/route.ts:    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+src/app/api/tasks/[id]/route.ts:  status?: TaskStatus
+src/app/api/tasks/[id]/route.ts:      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+src/app/api/tasks/[id]/route.ts:        return NextResponse.json({ error: 'title must be a non-empty string' }, { status: 400 })
+src/app/api/tasks/[id]/route.ts:    if (body.status !== undefined) {
+src/app/api/tasks/[id]/route.ts:      if (!VALID_STATUSES.includes(body.status as TaskStatus)) {
+src/app/api/tasks/[id]/route.ts:        return NextResponse.json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` }, { status: 400 })
+src/app/api/tasks/[id]/route.ts:      updateData.status = body.status
+src/app/api/tasks/[id]/route.ts:      updateData.completed_at = body.status === 'completed' ? new Date().toISOString() : null
+src/app/api/tasks/[id]/route.ts:        return NextResponse.json({ error: 'due_at must be a valid ISO date string' }, { status: 400 })
+src/app/api/tasks/[id]/route.ts:        return NextResponse.json({ error: 'due_at must be in the future (rule_002)' }, { status: 400 })
+src/app/api/tasks/[id]/route.ts:      return NextResponse.json({ error: 'No updatable fields provided. Allowed: status, title, due_at' }, { status: 400 })
+src/app/api/tasks/[id]/route.ts:        return NextResponse.json({ error: 'Task not found or not assigned to current user' }, { status: 404 })
+src/app/api/tasks/[id]/route.ts:      return NextResponse.json({ error: error.message }, { status: 500 })
+src/app/api/tasks/[id]/route.ts:    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+src/app/api/users/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/users/route.ts:    return NextResponse.json({ error: "Profile not found" }, { status: 403 });
+src/app/api/users/route.ts:      { status: 403 },
+src/app/api/users/route.ts:    return NextResponse.json({ error: "Failed to fetch users" }, { status: 500 });
+src/app/api/users/route.ts:        { status: 400 },
+src/app/api/users/route.ts:        { status: 400 },
+src/app/api/users/route.ts:        { status: 403 },
+src/app/api/users/route.ts:        { status: 400 }
+src/app/api/users/route.ts:        { status: 500 },
+src/app/api/users/route.ts:        { status: 500 },
+src/app/api/users/route.ts:      { status: 201 },
+src/app/api/users/route.ts:      { status: 400 },
+src/app/api/users/[id]/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/users/[id]/route.ts:    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/users/[id]/route.ts:    return NextResponse.json({ error: "Cannot delete yourself" }, { status: 400 });
+src/app/api/users/[id]/route.ts:    return NextResponse.json({ error: e.message }, { status: 500 });
+src/app/api/users/[id]/password/route.ts:      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+src/app/api/users/[id]/password/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/users/[id]/password/route.ts:      return NextResponse.json({ error: "User not found" }, { status: 404 });
+src/app/api/users/[id]/password/route.ts:    return NextResponse.json({ error: e?.message || "Internal error" }, { status: 500 });
+src/app/api/users/[id]/password/route.ts:      return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+src/app/api/users/[id]/password/route.ts:      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+src/app/api/users/[id]/password/route.ts:          return NextResponse.json({ error: error.message || "Update failed" }, { status: 400 });
+src/app/api/users/[id]/password/route.ts:        return NextResponse.json({ error: "Session invalid" }, { status: 401 });
+src/app/api/users/[id]/password/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/users/[id]/password/route.ts:    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+src/app/api/users/[id]/password/route.ts:    return NextResponse.json({ error: e?.message || "Internal error" }, { status: 500 });
+src/app/api/leads/follow-up-overdue/route.ts: * Returns leads where next_followup_date <= today AND stage is active (not won/lost).
+src/app/api/leads/follow-up-overdue/route.ts:  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/leads/follow-up-overdue/route.ts:  if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 403 });
+src/app/api/leads/follow-up-overdue/route.ts:    .is("final_status", null)
+src/app/api/leads/follow-up-overdue/route.ts:    return NextResponse.json({ error: "Failed to fetch overdue follow-ups" }, { status: 500 });
+src/app/api/leads/import/preview/route.ts:  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/leads/import/preview/route.ts:  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+src/app/api/leads/import/preview/route.ts:  if (!rows || !Array.isArray(rows)) return NextResponse.json({ error: "rows array required" }, { status: 400 });
+src/app/api/leads/import/preview/route.ts:    const statusRaw = String(r["Status"] || r["status"] || "").trim();
+src/app/api/leads/import/preview/route.ts:    if (idVal && !clientName && !phone && !statusRaw && !sourceRaw && !notesRaw) {
+src/app/api/leads/import/preview/route.ts:      current_milestone: statusRaw ? "contacted" : "new",
+src/app/api/leads/import/preview/route.ts:      raw_status: statusRaw || null,
+src/app/api/leads/import/confirm/route.ts:  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/leads/import/confirm/route.ts:  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+src/app/api/leads/import/confirm/route.ts:    return NextResponse.json({ error: "rows array required" }, { status: 400 });
+src/app/api/leads/import/confirm/route.ts:        current_milestone: row.current_milestone || "new",
+src/app/api/leads/import/confirm/route.ts:          raw_status: row.raw_status || null,
+src/app/api/leads/archive/route.ts:  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/leads/archive/route.ts:    return NextResponse.json({ error: "Forbidden: boss/admin only" }, { status: 403 });
+src/app/api/leads/archive/route.ts:  try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+src/app/api/leads/archive/route.ts:    if (!mohamed) return NextResponse.json({ error: "Mohamed not found in profiles" }, { status: 404 });
+src/app/api/leads/archive/route.ts:  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+src/app/api/leads/archive/route.ts:  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/leads/archive/route.ts:  if (!batchId) return NextResponse.json({ error: "batch_id required" }, { status: 400 });
+src/app/api/leads/archive/route.ts:  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+src/app/api/leads/[id]/milestone/route.ts:    return NextResponse.json({ error: "未登录" }, { status: 401 });
+src/app/api/leads/[id]/milestone/route.ts:    return NextResponse.json({ error: "无角色档案" }, { status: 403 });
+src/app/api/leads/[id]/milestone/route.ts:    return NextResponse.json({ error: "缺少 milestoneKey" }, { status: 400 });
+src/app/api/leads/[id]/milestone/route.ts:    .select("id, current_milestone, final_status")
+src/app/api/leads/[id]/milestone/route.ts:    return NextResponse.json({ error: "线索不存在" }, { status: 404 });
+src/app/api/leads/[id]/milestone/route.ts:  if (lead.final_status === "won" || lead.final_status === "lost") {
+src/app/api/leads/[id]/milestone/route.ts:      { status: 400 }
+src/app/api/leads/[id]/milestone/route.ts:      { status: 500 }
+src/app/api/leads/[id]/milestone/route.ts:        current: lead.current_milestone,
+src/app/api/leads/[id]/milestone/route.ts:      { status: 400 }
+src/app/api/leads/[id]/milestone/route.ts:  // 7. 插入里程碑（leads.current_milestone 由 trigger trg_check_milestone_order 自动维护）
+src/app/api/leads/[id]/milestone/route.ts:      { status: 500 }
+src/app/api/leads/[id]/milestone/route.ts:  // Terminal outcomes are authoritative in final_status. Keep the legacy
+src/app/api/leads/[id]/milestone/route.ts:  // stage column in sync only for compatibility with older consumers.
+src/app/api/leads/[id]/milestone/route.ts:    const { error: statusError } = await supabase
+src/app/api/leads/[id]/milestone/route.ts:      .update({ final_status: milestoneKey, stage: milestoneKey })
+src/app/api/leads/[id]/milestone/route.ts:    if (statusError) {
+src/app/api/leads/[id]/milestone/route.ts:        { error: "同步线索最终状态失败", detail: statusError.message },
+src/app/api/leads/[id]/milestone/route.ts:        { status: 500 }
+src/app/api/leads/[id]/timeline/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+src/app/api/leads/[id]/timeline/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+src/app/api/leads/[id]/timeline/route.ts:        return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+src/app/api/leads/[id]/timeline/route.ts:      { status: 500 }
+src/app/api/leads/[id]/follow-up/route.ts:      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+src/app/api/leads/[id]/follow-up/route.ts:      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+src/app/api/leads/[id]/follow-up/route.ts:      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
+src/app/api/leads/[id]/follow-up/route.ts:      return NextResponse.json({ error: 'summary is required' }, { status: 400 });
+src/app/api/leads/[id]/follow-up/route.ts:      return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
+src/app/api/leads/[id]/follow-up/route.ts:        { status: 500 }
+src/app/api/leads/[id]/follow-up/route.ts:    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+src/app/api/leads/meta-capi/route.ts:      return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
+src/app/api/leads/meta-capi/route.ts:      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+src/app/api/leads/meta-capi/route.ts:      return NextResponse.json({ status: "skipped", reason: "not lead event" });
+src/app/api/leads/meta-capi/route.ts:      lead_status: "hot",
+src/app/api/leads/meta-capi/route.ts:          { status: "error", message: "No valid email or phone provided" },
+src/app/api/leads/meta-capi/route.ts:          { status: 400 },
+src/app/api/leads/meta-capi/route.ts:          { status: "error", message: "Failed to update lead" },
+src/app/api/leads/meta-capi/route.ts:          { status: 500 },
+src/app/api/leads/meta-capi/route.ts:          { status: "error", message: "Failed to insert lead" },
+src/app/api/leads/meta-capi/route.ts:          { status: 500 },
+src/app/api/leads/meta-capi/route.ts:      status: "received",
+src/app/api/leads/meta-capi/route.ts:      { status: "error", message: message || "Internal error" },
+src/app/api/leads/meta-capi/route.ts:      { status: 500 },
+src/app/api/alerts/route.ts:  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/alerts/route.ts:  if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 403 });
+src/app/api/alerts/route.ts:    return NextResponse.json({ error: "Failed to fetch alerts" }, { status: 500 });
+src/app/api/auth/change-password/route.ts:    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/auth/change-password/route.ts:      return NextResponse.json({ error: "oldPassword and newPassword required" }, { status: 400 });
+src/app/api/auth/change-password/route.ts:      return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+src/app/api/auth/change-password/route.ts:      return NextResponse.json({ error: "Profile not found" }, { status: 400 });
+src/app/api/auth/change-password/route.ts:      return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });
+src/app/api/auth/change-password/route.ts:      return NextResponse.json({ error: updateErr.message }, { status: 500 });
+src/app/api/auth/change-password/route.ts:    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+src/app/api/contracts/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/contracts/route.ts:      return NextResponse.json({ error: "lead_id is required" }, { status: 400 });
+src/app/api/contracts/route.ts:      return NextResponse.json({ error: "Valid amount is required" }, { status: 400 });
+src/app/api/contracts/route.ts:        status: "draft",
+src/app/api/contracts/route.ts:      return NextResponse.json({ error: "Failed to create contract" }, { status: 500 });
+src/app/api/contracts/route.ts:        status: "pending",
+src/app/api/contracts/route.ts:        status: "pending",
+src/app/api/contracts/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/contracts/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/contracts/route.ts:      return NextResponse.json({ error: "Profile not found" }, { status: 403 });
+src/app/api/contracts/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/contracts/route.ts:      return NextResponse.json({ error: "Failed to fetch contracts" }, { status: 500 });
+src/app/api/contracts/route.ts:    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+src/app/api/contracts/route.ts: * PUT /api/contracts — update contract fields including first_payment_status
+src/app/api/contracts/route.ts: * Body: { id: string, first_payment_status?: string, first_payment_due_date?: string }
+src/app/api/contracts/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/contracts/route.ts:    const { id, first_payment_status, first_payment_due_date } = body;
+src/app/api/contracts/route.ts:      return NextResponse.json({ error: "id is required" }, { status: 400 });
+src/app/api/contracts/route.ts:        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/contracts/route.ts:    if (first_payment_status !== undefined) {
+src/app/api/contracts/route.ts:      if (!["unpaid", "partial", "paid"].includes(first_payment_status)) {
+src/app/api/contracts/route.ts:        return NextResponse.json({ error: "Invalid first_payment_status" }, { status: 400 });
+src/app/api/contracts/route.ts:      updates.first_payment_status = first_payment_status;
+src/app/api/contracts/route.ts:      return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+src/app/api/contracts/route.ts:      return NextResponse.json({ error: "Failed to update contract" }, { status: 500 });
+src/app/api/contracts/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/contracts/[id]/remind-payment/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/contracts/[id]/remind-payment/route.ts:        first_payment_status,
+src/app/api/contracts/[id]/remind-payment/route.ts:      return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+src/app/api/contracts/[id]/remind-payment/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/contracts/[id]/remind-payment/route.ts:        { status: 400 }
+src/app/api/contracts/[id]/remind-payment/route.ts:      body: `Contract ${contract.contract_no} (${contract.party_a_name || "Unknown"}) has first payment of AED ${contract.contract_amount?.toLocaleString() || "N/A"} that needs attention. Status: ${contract.first_payment_status || "unpaid"}.`,
+src/app/api/contracts/[id]/remind-payment/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/contracts/[id]/upload-url/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/contracts/[id]/upload-url/route.ts:        { status: 400 }
+src/app/api/contracts/[id]/upload-url/route.ts:        { status: 400 }
+src/app/api/contracts/[id]/upload-url/route.ts:        { status: 404 }
+src/app/api/contracts/[id]/upload-url/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/contracts/[id]/upload-url/route.ts:        { status: 403 }
+src/app/api/contracts/[id]/upload-url/route.ts:        { status: 500 }
+src/app/api/contracts/[id]/upload-url/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/contracts/[id]/confirm-upload/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/contracts/[id]/confirm-upload/route.ts:        { status: 400 }
+src/app/api/contracts/[id]/confirm-upload/route.ts:        { status: 400 }
+src/app/api/contracts/[id]/confirm-upload/route.ts:        { status: 400 }
+src/app/api/contracts/[id]/confirm-upload/route.ts:        { status: 404 }
+src/app/api/contracts/[id]/confirm-upload/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/contracts/[id]/confirm-upload/route.ts:        { status: 500 }
+src/app/api/contracts/[id]/confirm-upload/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/contracts/[id]/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/contracts/[id]/route.ts:      return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+src/app/api/contracts/[id]/route.ts:      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+src/app/api/contracts/[id]/route.ts:      .select("id, seq, amount, due_date, status, paid_amount, allocated_amount, description")
+src/app/api/contracts/[id]/route.ts:      .select("id, step, status, notes, reviewed_at, created_at, approver_id")
+src/app/api/contracts/[id]/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/contracts/[id]/approve/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/contracts/[id]/approve/route.ts:        { status: 403 }
+src/app/api/contracts/[id]/approve/route.ts:        { status: 400 }
+src/app/api/contracts/[id]/approve/route.ts:        .select("id, step, status")
+src/app/api/contracts/[id]/approve/route.ts:        .eq("status", "pending")
+src/app/api/contracts/[id]/approve/route.ts:        { status: 500 }
+src/app/api/contracts/[id]/approve/route.ts:        { status: 400 }
+src/app/api/contracts/[id]/approve/route.ts:          { status: 403 }
+src/app/api/contracts/[id]/approve/route.ts:          { status: 403 }
+src/app/api/contracts/[id]/approve/route.ts:        { status: 400 }
+src/app/api/contracts/[id]/approve/route.ts:        { status: 500 }
+src/app/api/contracts/[id]/approve/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/api/contracts/[id]/revoke/route.ts:      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+src/app/api/contracts/[id]/revoke/route.ts:        { status: 403 }
+src/app/api/contracts/[id]/revoke/route.ts:        { status: 400 }
+src/app/api/contracts/[id]/revoke/route.ts:      .select("id, contract_no, status, sales_id")
+src/app/api/contracts/[id]/revoke/route.ts:        { status: 404 }
+src/app/api/contracts/[id]/revoke/route.ts:    if (contract.status === "superseded") {
+src/app/api/contracts/[id]/revoke/route.ts:        { status: 400 }
+src/app/api/contracts/[id]/revoke/route.ts:    if (contract.status === "revoked") {
+src/app/api/contracts/[id]/revoke/route.ts:        { status: 400 }
+src/app/api/contracts/[id]/revoke/route.ts:    // Update contract status
+src/app/api/contracts/[id]/revoke/route.ts:        status: newStatus,
+src/app/api/contracts/[id]/revoke/route.ts:        { error: "Failed to update contract status" },
+src/app/api/contracts/[id]/revoke/route.ts:        { status: 500 }
+src/app/api/contracts/[id]/revoke/route.ts:      status: newStatus,
+src/app/api/contracts/[id]/revoke/route.ts:    return NextResponse.json({ error: message }, { status: 500 });
+src/app/(dashboard)/dashboard/_components/AlertPanel.tsx:  funnel_stage: string;
+src/app/(dashboard)/dashboard/page.tsx:  source: string; stage: string; final_status: string | null; quotation_value: number | null;
+src/app/(dashboard)/dashboard/page.tsx:  ai_quality: string | null; lead_status: string | null;
+src/app/(dashboard)/dashboard/page.tsx:  id: string; contract_amount: number; status: string; created_at: string;
+src/app/(dashboard)/dashboard/page.tsx:  id: string; amount: number; due_date: string; status: string; paid_amount: number | null;
+src/app/(dashboard)/dashboard/page.tsx:/* ─── 9-stage funnel ─── */
+src/app/(dashboard)/dashboard/page.tsx:      // 1. Contract Value: sum of contract_amount where status != 'terminated'
+src/app/(dashboard)/dashboard/page.tsx:        .select("id,contract_amount,status,created_at");
+src/app/(dashboard)/dashboard/page.tsx:      const activeContracts = (contracts as Contract[] || []).filter(c => c.status !== "terminated");
+src/app/(dashboard)/dashboard/page.tsx:        .select("amount,due_date,status,paid_amount")
+src/app/(dashboard)/dashboard/page.tsx:        .neq("status", "paid");
+src/app/(dashboard)/dashboard/page.tsx:        .select("amount,due_date,status,paid_amount")
+src/app/(dashboard)/dashboard/page.tsx:        .eq("status", "pending");
+src/app/(dashboard)/dashboard/page.tsx:          return lead && !lead.final_status ? [lead] : [];
+src/app/(dashboard)/dashboard/page.tsx:          .select("lead_id, due_at, leads!inner(id, customer_name, quotation_value, last_contact_date, phone, final_status)")
+src/app/(dashboard)/dashboard/page.tsx:            if (!l || l.final_status) return;
+src/app/(dashboard)/dashboard/page.tsx:      // 2. Hot leads — leads with lead_status='hot' and high win_probability, not yet won/lost
+src/app/(dashboard)/dashboard/page.tsx:          .select("id, customer_name, quotation_value, win_probability, stage, phone")
+src/app/(dashboard)/dashboard/page.tsx:          .eq("lead_status", "hot")
+src/app/(dashboard)/dashboard/page.tsx:          .is("final_status", null)
+src/app/(dashboard)/dashboard/page.tsx:          .eq("status", "draft")
+src/app/(dashboard)/dashboard/page.tsx:        let sQ = supabase.from("leads").select("id, customer_name, quotation_value, last_contact_date, stage, phone")
+src/app/(dashboard)/dashboard/page.tsx:          .is("final_status", null)
+src/app/(dashboard)/dashboard/page.tsx:      // 5. Overdue workflow stages (complementary signal)
+src/app/(dashboard)/dashboard/page.tsx:        let wfQ = supabase.from("lead_workflow_stages").select("*, leads!inner(customer_name, quotation_value, phone)")
+src/app/(dashboard)/dashboard/page.tsx:          .eq("status", "in_progress")
+src/app/(dashboard)/dashboard/page.tsx:              subtitle: `${leadName} · ${t("dashboard.stageOverdue").replace("{stage}", t("stageLabels." + w.stage_key))}`,
+src/app/(dashboard)/dashboard/page.tsx:    const stageCounts: Record<string, number> = {};
+src/app/(dashboard)/dashboard/page.tsx:    const stageValues: Record<string, number> = {};
+src/app/(dashboard)/dashboard/page.tsx:      // won/lost now live in final_status; process stages in stage. The
+src/app/(dashboard)/dashboard/page.tsx:      // `final_status || stage` fallback buckets each lead exactly once
+src/app/(dashboard)/dashboard/page.tsx:      // (won/lost leads short-circuit on final_status, never a process key).
+src/app/(dashboard)/dashboard/page.tsx:      const items = active.filter(l => (l.final_status || l.stage) === key);
+src/app/(dashboard)/dashboard/page.tsx:      stageCounts[key] = items.length;
+src/app/(dashboard)/dashboard/page.tsx:      stageValues[key] = items.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
+src/app/(dashboard)/dashboard/page.tsx:    const pipeline = active.filter(l => !l.final_status);
+src/app/(dashboard)/dashboard/page.tsx:    const wonThisMonth = active.filter(l => l.final_status === "won" && l.updated_at && new Date(l.updated_at) >= monthStart);
+src/app/(dashboard)/dashboard/page.tsx:    const contactedTotal = stageCounts.contacted + stageCounts.requirement_confirmed + stageCounts.solution_submitted + stageCounts.quotation_submitted + stageCounts.negotiation + stageCounts.pending_decision + stageCounts.won;
+src/app/(dashboard)/dashboard/page.tsx:    const conversionRate = contactedTotal > 0 ? Math.round((stageCounts.won / contactedTotal) * 100) : 0;
+src/app/(dashboard)/dashboard/page.tsx:    const pendingStale = active.filter(l => { if (l.stage !== "pending_decision") return false; const d = daysSince(l.hold_since || l.updated_at); return d !== null && d >= 30; }).length;
+src/app/(dashboard)/dashboard/page.tsx:    const statusCounts: Record<string, number> = {};
+src/app/(dashboard)/dashboard/page.tsx:    for (const l of active) { const s = l.lead_status || "unknown"; statusCounts[s] = (statusCounts[s] || 0) + 1; }
+src/app/(dashboard)/dashboard/page.tsx:      if (l.final_status === "won") sourceWon[src] = (sourceWon[src] || 0) + 1;
+src/app/(dashboard)/dashboard/page.tsx:    const wonCount = stageCounts.won || 0;
+src/app/(dashboard)/dashboard/page.tsx:    const contactRate = active.length > 0 ? Math.round(((stageCounts.contacted || 0) + (stageCounts.requirement_confirmed || 0)) / active.length * 100) : 0;
+src/app/(dashboard)/dashboard/page.tsx:      stageCounts, stageValues,
+src/app/(dashboard)/dashboard/page.tsx:      statusCounts, sourceCounts, sourceWon,
+src/app/(dashboard)/dashboard/page.tsx:  const myWonLeads = leads.filter(l => l.assigned_to === userId && l.final_status === "won");
+src/app/(dashboard)/dashboard/page.tsx:      if (l.final_status === "won") sources[s].won++;
+src/app/(dashboard)/dashboard/page.tsx:      const activeLeads = salesLeads.filter(l => !l.final_status);
+src/app/(dashboard)/dashboard/page.tsx:      const wonLeads = salesLeads.filter(l => l.final_status === "won");
+src/app/(dashboard)/dashboard/page.tsx:        !l.final_status && ["contacted", "requirement_confirmed", "solution_submitted", "quotation_submitted", "negotiation", "pending_decision"].includes(l.stage)
+src/app/(dashboard)/dashboard/page.tsx:        { label: t("dashboard.kpiActive"), value: String(contractCount), sub: t("dashboard.nPipeline").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=negotiation" },
+src/app/(dashboard)/dashboard/page.tsx:        { label: t("dashboard.kpiQuotes"), value: String(stats.stageCounts.quotation_submitted + stats.stageCounts.negotiation + stats.stageCounts.pending_decision), sub: t("dashboard.nPending").replace("{n}", String(stats.stageCounts.quotation_submitted)), href: "/quotes" },
+src/app/(dashboard)/dashboard/page.tsx:        { label: t("dashboard.pipelineValue"), value: fmtAED(stats.totalPipeline), sub: t("dashboard.nDeals").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=quotation_submitted" },
+src/app/(dashboard)/dashboard/page.tsx:        { label: t("dashboard.won"), value: fmtAED(stats.monthlyRevenue), sub: t("dashboard.nClosed").replace("{n}", String(stats.wonCount)), href: "/leads?stage=won" },
+src/app/(dashboard)/workbench/page.tsx:  current_milestone: string
+src/app/(dashboard)/workbench/page.tsx:        if (!res.ok) throw new Error(`Failed to load workbench (${res.status})`)
+src/app/(dashboard)/workbench/page.tsx:                  const color = milestoneColors[g.current_milestone] || "bg-slate-400"
+src/app/(dashboard)/workbench/page.tsx:                    <li key={g.current_milestone} className="space-y-1.5">
+src/app/(dashboard)/workbench/page.tsx:                          {g.current_milestone}
+src/app/(dashboard)/payments/page.tsx:  status: string;
+src/app/(dashboard)/payments/page.tsx:  status: string;
+src/app/(dashboard)/payments/page.tsx:      .select("id, contract_no, contract_amount, status, party_a_name, sales_id")
+src/app/(dashboard)/payments/page.tsx:      .in("status", ["signed", "active"])
+src/app/(dashboard)/payments/page.tsx:                          Amount: {fmtAED(plan.amount)} | Paid: {fmtAED(plan.paid_amount)} | Status: {plan.status}
+src/app/(dashboard)/settings/page.tsx:  stage: string; final_status: string | null; assigned_to: string | null; owner: string | null;
+src/app/(dashboard)/settings/page.tsx:  const [stageFilter, setStageFilter] = useState<string>("all");
+src/app/(dashboard)/settings/page.tsx:        supabase.from("leads").select("id,customer_name,phone,stage,final_status,assigned_to,owner,sales_manager,location,source,quotation_value").order("updated_at", { ascending: false }).limit(1000),
+src/app/(dashboard)/settings/page.tsx:    if (stageFilter !== "all" && l.stage !== stageFilter) return false;
+src/app/(dashboard)/settings/page.tsx:  const activeUnassigned = leads.filter(l => !l.assigned_to && !l.final_status).length;
+src/app/(dashboard)/settings/page.tsx:        <select value={stageFilter} onChange={e => setStageFilter(e.target.value)}
+src/app/(dashboard)/settings/page.tsx:          {STAGES.map(s => <option key={s} value={s}>{t(`stages.${s}`)}</option>)}
+src/app/(dashboard)/settings/page.tsx:                <th className="py-2.5 px-3 text-left text-muted-foreground font-medium text-xs">{t("settings.stage")}</th>
+src/app/(dashboard)/settings/page.tsx:                        lead.final_status === "won" ? "bg-emerald-500/10 text-emerald-400" :
+src/app/(dashboard)/settings/page.tsx:                        lead.final_status === "lost" ? "bg-gray-500/10 text-muted-foreground" :
+src/app/(dashboard)/settings/page.tsx:                      )}>{t(`stages.${lead.final_status || lead.stage}`) || lead.final_status || lead.stage}</span>
+src/app/(dashboard)/settings/ads/page.tsx:      "source, source_platform, campaign_name, utm_campaign, meta_campaign, adset_name, ad_name, stage, final_status, quotation_value, quality"
+src/app/(dashboard)/settings/ads/page.tsx:      l.final_status === "won" ||
+src/app/(dashboard)/settings/ads/page.tsx:      ["quotation_submitted", "negotiation", "pending_decision"].includes(l.stage)
+src/app/(dashboard)/settings/ads/page.tsx:    if (l.final_status === "won") groups[key].won++;
+src/app/(dashboard)/pipeline/page.tsx:  stage: string; final_status: string | null; quotation_value: number | null;
+src/app/(dashboard)/pipeline/page.tsx:  lead_status: string | null; assigned_to: string | null;
+src/app/(dashboard)/pipeline/page.tsx:  { key: "new", labelKey: "pipeline.stageNew", color: "#6B7280", bg: "bg-muted/30", border: "border-border/40" },
+src/app/(dashboard)/pipeline/page.tsx:  { key: "contacted", labelKey: "pipeline.stageContacted", color: "#C48A52", bg: "bg-amber-950/30", border: "border-amber-800/40" },
+src/app/(dashboard)/pipeline/page.tsx:  { key: "requirement_confirmed", labelKey: "pipeline.stageReqConfirmed", color: "#E0B95A", bg: "bg-yellow-950/20", border: "border-yellow-800/40" },
+src/app/(dashboard)/pipeline/page.tsx:  { key: "solution_submitted", labelKey: "pipeline.stageSolutionSub", color: "#4A5568", bg: "bg-slate-950/20", border: "border-slate-800/40" },
+src/app/(dashboard)/pipeline/page.tsx:  { key: "quotation_submitted", labelKey: "pipeline.stageQuotationSub", color: "#8B5CF6", bg: "bg-purple-950/20", border: "border-purple-800/40" },
+src/app/(dashboard)/pipeline/page.tsx:  { key: "negotiation", labelKey: "pipeline.stageNegotiation", color: "#3B82F6", bg: "bg-blue-950/20", border: "border-blue-800/40" },
+src/app/(dashboard)/pipeline/page.tsx:  { key: "pending_decision", labelKey: "pipeline.stagePendingDecision", color: "#F59E0B", bg: "bg-amber-950/20", border: "border-amber-800/40" },
+src/app/(dashboard)/pipeline/page.tsx:  { key: "won", labelKey: "pipeline.stageWon", color: "#4ADE80", bg: "bg-emerald-950/20", border: "border-emerald-800/40" },
+src/app/(dashboard)/pipeline/page.tsx:  { key: "lost", labelKey: "pipeline.stageLost", color: "#6B7280", bg: "bg-muted/30", border: "border-border/40" },
+src/app/(dashboard)/pipeline/page.tsx:  const isInactive24h = hoursSinceUpdate !== null && hoursSinceUpdate >= 24 && !lead.final_status;
+src/app/(dashboard)/pipeline/page.tsx:  const isStale = days !== null && days > 7 && !lead.final_status;
+src/app/(dashboard)/pipeline/page.tsx:  const isCrit = days !== null && days >= 14 && !lead.final_status;
+src/app/(dashboard)/pipeline/page.tsx:  const isHot = lead.lead_status === "hot";
+src/app/(dashboard)/pipeline/page.tsx:  const isWon = lead.final_status === "won";
+src/app/(dashboard)/pipeline/page.tsx:  const isLost = lead.final_status === "lost";
+src/app/(dashboard)/pipeline/page.tsx:        {lead.lead_status && (
+src/app/(dashboard)/pipeline/page.tsx:          <span className="text-[9px]">{STATUS_EMOJIS[lead.lead_status]}</span>
+src/app/(dashboard)/pipeline/page.tsx:      supabase.from("contracts").select("id,contract_amount,status").eq("sales_id", userId),
+src/app/(dashboard)/pipeline/page.tsx:        const active = (cRes.data as any[]).filter(c => c.status !== "terminated");
+src/app/(dashboard)/pipeline/page.tsx:  // Group leads by stage
+src/app/(dashboard)/pipeline/page.tsx:    // won/lost now live in final_status; fall back to stage for the dual-source transition
+src/app/(dashboard)/pipeline/page.tsx:    for (const l of leads) { const key = l.final_status || l.stage; if (g[key]) g[key].push(l); }
+src/app/(dashboard)/pipeline/page.tsx:    // Guard 1: same stage → no-op
+src/app/(dashboard)/pipeline/page.tsx:    if (lead.stage === targetStage) return null;
+src/app/(dashboard)/pipeline/page.tsx:    // Guard 2: valid target stage
+src/app/(dashboard)/pipeline/page.tsx:    // Guard 3: terminal leads can't be moved — won/lost now live in final_status
+src/app/(dashboard)/pipeline/page.tsx:    if (lead.final_status === "won" || lead.final_status === "lost") return t("common.cannotChangeClosedLead");
+src/app/(dashboard)/pipeline/page.tsx:    if (!canRevert && STAGE_INDEX[targetStage] < STAGE_INDEX[lead.stage]) return t("common.cannotMoveBackward");
+src/app/(dashboard)/pipeline/page.tsx:    if (!canRevert && STAGE_INDEX[targetStage] - STAGE_INDEX[lead.stage] > 1) return t("common.cannotSkipStages");
+src/app/(dashboard)/pipeline/page.tsx:  // Handle drop: move lead to new stage
+src/app/(dashboard)/pipeline/page.tsx:    // Run 5-stage guard
+src/app/(dashboard)/pipeline/page.tsx:    const oldStage = lead.stage;
+src/app/(dashboard)/pipeline/page.tsx:    const oldFinal = lead.final_status;
+src/app/(dashboard)/pipeline/page.tsx:    // Optimistic update — won/lost persist to final_status, process stages to stage
+src/app/(dashboard)/pipeline/page.tsx:        ? { final_status: targetStage }
+src/app/(dashboard)/pipeline/page.tsx:        : { stage: targetStage })
+src/app/(dashboard)/pipeline/page.tsx:    // won/lost are terminal → persist to final_status, not stage; process stages keep stage
+src/app/(dashboard)/pipeline/page.tsx:      ? { final_status: targetStage, updated_at: now, last_contact_date: now }
+src/app/(dashboard)/pipeline/page.tsx:      : { stage: targetStage, updated_at: now, last_contact_date: now };
+src/app/(dashboard)/pipeline/page.tsx:        .update({ status: targetStage === "lost" ? "draft" : undefined, updated_at: now })
+src/app/(dashboard)/pipeline/page.tsx:        .neq("status", "accepted");
+src/app/(dashboard)/pipeline/page.tsx:      // Revert UI (restore both stage and final_status)
+src/app/(dashboard)/pipeline/page.tsx:      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: oldStage, final_status: oldFinal } : l));
+src/app/(dashboard)/pipeline/page.tsx:      lead_id: leadId, type: "stage_change",
+src/app/(dashboard)/pipeline/page.tsx:    await writeEvent(leadId, "stage_changed", `Stage changed from ${oldStage} to ${targetStage} via Kanban drag-drop`, {
+src/app/(dashboard)/pipeline/page.tsx:  const handleDragOver = useCallback((e: React.DragEvent, stageKey: string) => {
+src/app/(dashboard)/pipeline/page.tsx:    setDraggingOver(stageKey);
+src/app/(dashboard)/pipeline/page.tsx:  const handleDragLeave = useCallback((stageKey: string) => {
+src/app/(dashboard)/pipeline/page.tsx:    dragCounter.current[stageKey] = (dragCounter.current[stageKey] || 0) - 1;
+src/app/(dashboard)/pipeline/page.tsx:    if (dragCounter.current[stageKey] <= 0) {
+src/app/(dashboard)/pipeline/page.tsx:      dragCounter.current[stageKey] = 0;
+src/app/(dashboard)/pipeline/page.tsx:      setDraggingOver(prev => prev === stageKey ? null : prev);
+src/app/(dashboard)/pipeline/page.tsx:  const handleDragEnter = useCallback((stageKey: string) => {
+src/app/(dashboard)/pipeline/page.tsx:    dragCounter.current[stageKey] = (dragCounter.current[stageKey] || 0) + 1;
+src/app/(dashboard)/pipeline/page.tsx:          // For terminal stages (won/lost), use totalAll as denominator to avoid >100% overflow
+src/app/(dashboard)/pipeline/page.tsx:          {STAGES.map((stage) => {
+src/app/(dashboard)/pipeline/page.tsx:            const items = columns[stage.key] || [];
+src/app/(dashboard)/pipeline/page.tsx:            const isOver = draggingOver === stage.key;
+src/app/(dashboard)/pipeline/page.tsx:            const isWon = stage.key === "won";
+src/app/(dashboard)/pipeline/page.tsx:            const isLost = stage.key === "lost";
+src/app/(dashboard)/pipeline/page.tsx:                key={stage.key}
+src/app/(dashboard)/pipeline/page.tsx:                onDragEnter={() => handleDragEnter(stage.key)}
+src/app/(dashboard)/pipeline/page.tsx:                onDragOver={(e) => handleDragOver(e, stage.key)}
+src/app/(dashboard)/pipeline/page.tsx:                onDragLeave={() => handleDragLeave(stage.key)}
+src/app/(dashboard)/pipeline/page.tsx:                onDrop={(e) => handleDrop(e, stage.key)}
+src/app/(dashboard)/pipeline/page.tsx:                  stage.bg, stage.border,
+src/app/(dashboard)/pipeline/page.tsx:                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
+src/app/(dashboard)/pipeline/page.tsx:                    <span className="text-sm font-semibold text-foreground">{t(stage.labelKey as any)}</span>
+src/app/(dashboard)/pipeline/page.tsx:                      onClick={() => router.push(`/leads?stage=${stage.key}`)}
+src/app/(dashboard)/team/page.tsx:                      {t("team.status")}
+src/app/(dashboard)/ads/page.tsx:  source: string; stage: string; final_status: string | null; quotation_value: number | null;
+src/app/(dashboard)/ads/page.tsx:  lead_status: string | null; win_probability: number | null;
+src/app/(dashboard)/ads/page.tsx:      if (l.stage === "quotation_submitted" || l.stage === "negotiation" || l.stage === "pending_decision" || l.final_status === "won") groups[key].quoted++;
+src/app/(dashboard)/ads/page.tsx:      if (l.final_status === "won") groups[key].won++;
+src/app/(dashboard)/analytics/_components/AdsROI.tsx:          if (res.status === 403) {
+src/app/(dashboard)/analytics/_components/AdsROI.tsx:          throw new Error(`HTTP ${res.status}`);
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:  stage: string;
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:    new: t("stageLabels.new"),
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:    contacted: t("stageLabels.contacted"),
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:    requirement_confirmed: t("stageLabels.requirement_confirmed"),
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:    solution_submitted: t("stageLabels.solution_submitted"),
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:    quotation_submitted: t("stageLabels.quotation_submitted"),
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:    negotiation: t("stageLabels.negotiation"),
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:    pending_decision: t("stageLabels.pending_decision"),
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:    won: t("stageLabels.won"),
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:    lost: t("stageLabels.lost"),
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:function OverdueTable({ items, stageLabels, t }: {
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:  items: OverdueItem[]; stageLabels: Record<string, string>; t: any;
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:              <th className="text-left py-2 px-2 font-medium">{t("analytics.stageTable")}</th>
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:                  <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${STAGE_COLORS[item.stage] || "bg-gray-500/20 text-gray-300"}`}>
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:                    {stageLabels[item.stage] || item.stage}
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:function SalesOverdueList({ items, stageLabels, t }: {
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:  items: OverdueItem[]; stageLabels: Record<string, string>; t: any;
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:                {item.overdue_days}d {t("analytics.overduePrefix")} · {stageLabels[item.stage] || item.stage} · {t("analytics.lastContact")}: {fmtDate(item.last_contact_date)}
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:    new: t("pipeline.stageNew"), contacted: t("pipeline.stageContacted"), requirement_confirmed: t("pipeline.stageReqConfirmed"),
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:    solution_submitted: t("pipeline.stageSolutionSub"), quotation_submitted: t("pipeline.stageQuotationSub"),
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:    negotiation: t("pipeline.stageNegotiation"), pending_decision: t("pipeline.stagePendingDecision"),
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:    won: t("pipeline.stageWon"), lost: t("pipeline.stageLost"),
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:          <OverdueTable items={data.overdue} stageLabels={STAGE_I18N_KEYS} t={t} />
+src/app/(dashboard)/analytics/_components/LeadHealth.tsx:      <SalesOverdueList items={data.overdue} stageLabels={STAGE_I18N_KEYS} t={t} />
+src/app/(dashboard)/analytics/_components/LeadSources.tsx:// Quality → (label, color). Lead quality uses the lead_status taxonomy.
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:  status: string;
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:  const myOverdue = useMemo(() => myInstallments.filter(i => i.status === "overdue"), [myInstallments]);
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:  const myDueSoon = useMemo(() => myInstallments.filter(i => i.status === "due_soon"), [myInstallments]);
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:  function StatusBadge({ status }: { status: string }) {
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:    const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.pending;
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:              <div className="flex-1 text-center">{t("analytics.status")}</div>
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:                      <StatusBadge status={inst.status} />
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:                        inst.status === "overdue" ? "text-red-400" : "text-muted-foreground"
+src/app/(dashboard)/analytics/_components/PaymentTracker.tsx:                      <StatusBadge status={inst.status} />
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:  stage: string;
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:  days_in_stage: number;
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:  stage_label: string;
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:  stages: StageData[];
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:function FunnelBar({ stage, maxCount, showConversion }: {
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:  stage: StageData;
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:  const widthPct = maxCount > 0 ? Math.max((stage.count / maxCount) * 100, 3) : 0;
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:  const color = STAGE_COLORS[stage.key] || "#6B7280";
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:      onClick={() => router.push(`/leads?stage=${stage.key}`)}
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:            STAGE_BG[stage.key] || "bg-gray-500/10",
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:            BORDER_COLORS[stage.key] || "border-gray-500/30",
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:            stage.isBottleneck && "ring-1 ring-red-400/60"
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:            {stage.label}
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:            {stage.count}
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:          {stage.pctOfTop < 100 && (
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:              ({stage.pctOfTop}%)
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:      {showConversion && stage.conversionToNext !== null && (
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:          stage.isBottleneck ? "text-red-400" : "text-emerald-400"
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:          {stage.isBottleneck && <TrendingDown className="w-3 h-3" />}
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:          {stage.conversionToNext}%
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:        {stage.avgDaysInStage > 0 ? `${stage.avgDaysInStage}d` : "—"}
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:    if (!data?.stages) return 1;
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:    return Math.max(...data.stages.map(s => s.count), 1);
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:  // Bottleneck stage
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:    return data?.stages.find(s => s.isBottleneck);
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:          <div className="flex-1">{t("analytics.stage")}</div>
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:        {data?.stages.filter(s => s.key !== "lost").map((stage) => (
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:            key={stage.key}
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:            stage={stage}
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:      {/* Legend: lost stage small */}
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:      {data?.stages.find(s => s.key === "lost") && (
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:          <span className="font-semibold">{data.stages.find(s => s.key === "lost")?.count || 0}</span>
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:                    ({lead.stage_label})
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:                    {lead.days_in_stage}d
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:              .map(([stageKey, count]) => {
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:                const stageLabel = data.stages.find(s => s.key === stageKey)?.label || stageKey;
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:                  <div key={stageKey} className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-red-500/5 border border-red-500/10">
+src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx:                    <span className="text-xs text-muted-foreground">{stageLabel}</span>
+src/app/(dashboard)/analytics/_components/WeeklyTrends.tsx:        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:  stageDistribution: Record<string, number>;
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:  stageDistribution: Record<string, number>;
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:  new: "pipeline.stageNew",
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:  contacted: "pipeline.stageContacted",
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:  requirement_confirmed: "pipeline.stageReqConfirmed",
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:  solution_submitted: "pipeline.stageSolutionSub",
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:  quotation_submitted: "pipeline.stageQuotationSub",
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:  negotiation: "pipeline.stageNegotiation",
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:  pending_decision: "pipeline.stagePendingDecision",
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:  won: "pipeline.stageWon",
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:  lost: "pipeline.stageLost",
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:  const stageEntries = Object.entries(data.stageDistribution).sort();
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:          label={t('analytics.stages')}
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:          value={stageEntries.length}
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:        <h3 className="text-sm font-semibold text-foreground mb-3">{t('analytics.stageDistribution')}</h3>
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:          {stageEntries.map(([stage, count]) => (
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:            <div key={stage} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-accent">
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:              <span className={`w-2 h-2 rounded-full ${STAGE_COLORS[stage]?.split(" ")[0] || "bg-gray-500"}`} />
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:              <span className="text-xs text-muted-foreground">{t(STAGE_I18N_KEYS[stage] || `stages.${stage}`)}</span>
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:          {stageEntries.length === 0 && (
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:        {/* Mini bar chart for stage distribution */}
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:        {stageEntries.length > 0 && (
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:              <BarChart data={stageEntries.map(([stage, count]) => ({ stage: t(STAGE_I18N_KEYS[stage] || `stages.${stage}`), count }))} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+src/app/(dashboard)/analytics/_components/SalesLoad.tsx:                <XAxis dataKey="stage" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+src/app/(dashboard)/leads/page.tsx:/* ─── 9-stage pipeline ─── */
+src/app/(dashboard)/leads/page.tsx:  source: string; stage: string; final_status?: string | null; quotation_value: number | null;
+src/app/(dashboard)/leads/page.tsx:  ai_quality: string | null; lead_status: string | null;
+src/app/(dashboard)/leads/page.tsx:  const [stageFilter, setStageFilter] = useState(searchParams.get("stage") || "all");
+src/app/(dashboard)/leads/page.tsx:  const [statusFilter, setStatusFilter] = useState("all");
+src/app/(dashboard)/leads/page.tsx:  const STAGE_AUTO: Record<string, { win_probability: number; lead_status?: string; next_action?: string }> = {
+src/app/(dashboard)/leads/page.tsx:    won: { win_probability: 100, lead_status: "hot", next_action: "Send contract" },
+src/app/(dashboard)/leads/page.tsx:    lost: { win_probability: 0, lead_status: "dormant", next_action: undefined },
+src/app/(dashboard)/leads/page.tsx:    if (oldLead.stage === newStage) return;
+src/app/(dashboard)/leads/page.tsx:    // Guard 2: valid stage
+src/app/(dashboard)/leads/page.tsx:    // Guard 3: can't move from terminal (won/lost now live in final_status, not stage)
+src/app/(dashboard)/leads/page.tsx:    if (oldLead.final_status) {
+src/app/(dashboard)/leads/page.tsx:    const oldIdx = STAGE_INDEX[oldLead.stage];
+src/app/(dashboard)/leads/page.tsx:    // won/lost are terminal → persist to final_status, not stage
+src/app/(dashboard)/leads/page.tsx:      updates.final_status = newStage;
+src/app/(dashboard)/leads/page.tsx:      updates.stage = newStage;
+src/app/(dashboard)/leads/page.tsx:      if (auto.lead_status) updates.lead_status = auto.lead_status;
+src/app/(dashboard)/leads/page.tsx:        .update({ status: newStage === "lost" ? "draft" : undefined, updated_at: now })
+src/app/(dashboard)/leads/page.tsx:        .neq("status", "accepted");
+src/app/(dashboard)/leads/page.tsx:    // React state. Prevents two reps clobbering each other's stage transition.
+src/app/(dashboard)/leads/page.tsx:      console.error("Failed to update lead stage:", changeStageErr);
+src/app/(dashboard)/leads/page.tsx:      lead_id: leadId, type: "stage_change",
+src/app/(dashboard)/leads/page.tsx:      content: t("leads.eventStageChange").replace("{stage}", t(`stageLabels.${newStage}`)),
+src/app/(dashboard)/leads/page.tsx:    await writeEvent(leadId, "stage_changed", t("leads.eventStageChanged").replace("{from}", t(`stageLabels.${oldLead?.stage || "?"}`)).replace("{to}", t(`stageLabels.${newStage}`)), {
+src/app/(dashboard)/leads/page.tsx:      from: oldLead?.stage, to: newStage, auto_updates: Object.keys(updates).filter(k => k !== "stage" && k !== "updated_at"),
+src/app/(dashboard)/leads/page.tsx:    // Notify admins about important stage changes
+src/app/(dashboard)/leads/page.tsx:      notify({ type: "lead_stage_change", lead_id: leadId, from_stage: oldLead?.stage, to_stage: newStage });
+src/app/(dashboard)/leads/page.tsx:  async function changeStatus(leadId: string, status: string) {
+src/app/(dashboard)/leads/page.tsx:    const { error: changeStatusErr } = await supabase.from("leads").update({ lead_status: status, updated_at: new Date().toISOString() }).eq("id", leadId);
+src/app/(dashboard)/leads/page.tsx:      console.error("Failed to update lead status:", changeStatusErr);
+src/app/(dashboard)/leads/page.tsx:    await writeEvent(leadId, "status_changed", t("leads.eventStatus").replace("{status}", t(`statusLabels.${status}`)), { status });
+src/app/(dashboard)/leads/page.tsx:      lost_reason: reason, final_status: "lost", updated_at: new Date().toISOString(),
+src/app/(dashboard)/leads/page.tsx:      lead_id: leadId, type: "stage_change",
+src/app/(dashboard)/leads/page.tsx:    if (stageFilter !== "all") result = result.filter(l => (l.final_status || l.stage) === stageFilter);
+src/app/(dashboard)/leads/page.tsx:    if (statusFilter !== "all") result = result.filter(l => l.lead_status === statusFilter);
+src/app/(dashboard)/leads/page.tsx:        return d !== null && d >= 7 && d < 14 && !l.final_status;
+src/app/(dashboard)/leads/page.tsx:        return d !== null && d >= 14 && !l.final_status;
+src/app/(dashboard)/leads/page.tsx:        if (l.final_status) return false;
+src/app/(dashboard)/leads/page.tsx:  }, [leads, search, stageFilter, sourceFilter, statusFilter, alertFilter, recoveryFilter, transferFilter, reviewFilter, probabilityFilter, followupFilter, assignedToFilter]);
+src/app/(dashboard)/leads/page.tsx:    // won/lost now live in final_status; fall back to stage for the dual-source transition
+src/app/(dashboard)/leads/page.tsx:    for (const l of filtered) { const key = l.final_status || l.stage; if (g[key]) g[key].push(l); }
+src/app/(dashboard)/leads/page.tsx:  const stageTotals = useMemo(() => {
+src/app/(dashboard)/leads/page.tsx:  const activeCount = filtered.filter(l => !l.final_status).length;
+src/app/(dashboard)/leads/page.tsx:  const totalPipeline = filtered.filter(l => !l.final_status).reduce((sum, l) => sum + (l.quotation_value || 0), 0);
+src/app/(dashboard)/leads/page.tsx:            const totals = stageTotals[s.key];
+src/app/(dashboard)/leads/page.tsx:              <button key={s.key} onClick={() => setStageFilter(stageFilter === s.key ? "all" : s.key)}
+src/app/(dashboard)/leads/page.tsx:                className={cn("text-left p-2 rounded-lg border transition-all", stageFilter === s.key ? "ring-2 ring-offset-1 ring-offset-background" : "", s.bg, s.border)}>
+src/app/(dashboard)/leads/page.tsx:                  <span className="text-[10px] font-medium text-muted-foreground truncate">{t(`stageLabels.${s.key}`)}</span>
+src/app/(dashboard)/leads/page.tsx:                  <div className="h-full rounded-full transition-all" style={{ width: `${Math.min((totals.count / Math.max(1, ...Object.values(stageTotals).map(x => x.count))) * 100, 100)}%`, backgroundColor: s.color }} />
+src/app/(dashboard)/leads/page.tsx:        <select value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setAlertFilter("all"); }}
+src/app/(dashboard)/leads/page.tsx:          {PIPELINE_STAGES.map(s => <option key={s.key} value={s.key}>{t(`stageLabels.${s.key}`)}</option>)}
+src/app/(dashboard)/leads/page.tsx:        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+src/app/(dashboard)/leads/page.tsx:          {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{STATUS_EMOJIS[k] || ""} {t(`statusLabels.${k}`)}</option>)}
+src/app/(dashboard)/leads/page.tsx:            {PIPELINE_STAGES.map((stage) => {
+src/app/(dashboard)/leads/page.tsx:              const items = columns[stage.key] || [];
+src/app/(dashboard)/leads/page.tsx:              const isLost = stage.key === "lost";
+src/app/(dashboard)/leads/page.tsx:                <div key={stage.key} className={cn("flex flex-col w-[340px] min-h-[400px] rounded-xl border p-3 shrink-0 md:w-1/5 md:min-w-0", stage.bg, stage.border)}>
+src/app/(dashboard)/leads/page.tsx:                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: stage.color }} />
+src/app/(dashboard)/leads/page.tsx:                      <span className="text-sm font-semibold text-foreground">{t(`stageLabels.${stage.key}`)}</span>
+src/app/(dashboard)/leads/page.tsx:                      const isHot = lead.lead_status === "hot";
+src/app/(dashboard)/leads/page.tsx:                      const isStale = days !== null && days > 7 && !lead.final_status;
+src/app/(dashboard)/leads/page.tsx:                      const isCrit = days !== null && days >= 14 && !lead.final_status;
+src/app/(dashboard)/leads/page.tsx:                      const statusStyle = STATUS_LABELS[lead.lead_status || ""];
+src/app/(dashboard)/leads/page.tsx:                      const stageIdx = PIPELINE_STAGES.findIndex(s => s.key === lead.stage);
+src/app/(dashboard)/leads/page.tsx:                      const nextStages = PIPELINE_STAGES.filter((s, i) => i > stageIdx && !["won", "lost"].includes(s.key));
+src/app/(dashboard)/leads/page.tsx:                                  {statusStyle && <span className={cn("text-[9px] px-1 py-0.5 rounded font-medium", statusStyle.bg, statusStyle.color)}>{STATUS_EMOJIS[lead.lead_status || ""] || ""} {t(`statusLabels.${lead.lead_status || ""}`)}</span>}
+src/app/(dashboard)/leads/page.tsx:                                    <button key={ns.key} title={t("leads.moveTo").replace("{stage}", t(`stageLabels.${ns.key}`))}
+src/app/(dashboard)/leads/page.tsx:                                      className={cn("text-[10px] px-2 py-1 rounded-full border transition-colors", lead.stage === s.key ? "border-transparent text-foreground" : "border-border text-muted-foreground hover:border-foreground/30")}
+src/app/(dashboard)/leads/page.tsx:                                      style={lead.stage === s.key ? { backgroundColor: s.color } : {}}
+src/app/(dashboard)/leads/page.tsx:                                      onClick={() => changeStage(lead.id, s.key)}>{t(`stageLabels.${s.key}`)}</button>
+src/app/(dashboard)/leads/page.tsx:                                    {t("leads.status")} {lead.lead_status ? `${STATUS_EMOJIS[lead.lead_status] || ""} ${t(`statusLabels.${lead.lead_status}`)}` : "—"}
+src/app/(dashboard)/leads/page.tsx:                                  {/* Lost reason (only show for lost stage) */}
+src/app/(dashboard)/leads/page.tsx:                                        lead.lead_status === k ? "border-transparent text-foreground" : "border-border text-muted-foreground hover:border-foreground/30")}
+src/app/(dashboard)/leads/page.tsx:                                      style={lead.lead_status === k ? { backgroundColor: k === "hot" ? "#f43f5e" : k === "warm" ? "#f59e0b" : k === "cold" ? "#0ea5e9" : "#6b7280" } : {}}
+src/app/(dashboard)/leads/page.tsx:                                      onClick={() => changeStatus(lead.id, k)}>{STATUS_EMOJIS[k] || ""} {t(`statusLabels.${k}`)}</button>
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:  status: string;
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:  first_payment_status?: string | null;
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:  installment_plans?: { seq: number; amount: number; due_date: string; status: string }[] | null;
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:        const paid = (c.installment_plans ?? []).filter((i) => i.status === "paid").length;
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:                <span className="text-[10px] px-1.5 py-0.5 rounded bg-copper-500/10 text-copper-400">{c.status}</span>
+src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx:              {c.first_payment_status && c.first_payment_status !== "paid" && (
+src/app/(dashboard)/leads/[id]/page.tsx:  id: string; source: string; quality: string; stage: string; final_status: string | null;
+src/app/(dashboard)/leads/[id]/page.tsx:  lead_status: string | null; win_probability: number | null;
+src/app/(dashboard)/leads/[id]/page.tsx:  stage_changed_at: string | null;
+src/app/(dashboard)/leads/[id]/page.tsx:  project_name: string | null; project_status: string | null;
+src/app/(dashboard)/leads/[id]/page.tsx:  visit_status: string | null; rejection_detail: string | null;
+src/app/(dashboard)/leads/[id]/page.tsx:  lead_id: string; customer_name: string | null; stage: string; quotation_value: number | null;
+src/app/(dashboard)/leads/[id]/page.tsx:  quotation_id: string | null; quotation_price: number | null; quotation_status: string | null;
+src/app/(dashboard)/leads/[id]/page.tsx:  contract_id: string | null; contract_no: string | null; contract_amount: number | null; contract_status: string | null;
+src/app/(dashboard)/leads/[id]/page.tsx:  installment_id: string | null; seq: number | null; installment_amount: number | null; due_date: string | null; installment_status: string | null;
+src/app/(dashboard)/leads/[id]/page.tsx:  project_id: string | null; project_name: string | null; project_phase: string | null; project_status: string | null;
+src/app/(dashboard)/leads/[id]/page.tsx:  // Inline field-save status (Saving / Saved / Error) shown for any updateField call.
+src/app/(dashboard)/leads/[id]/page.tsx:  // Project Info batch-save form (bottom folding panel) — local draft + status.
+src/app/(dashboard)/leads/[id]/page.tsx:        status: lead.stage || undefined,
+src/app/(dashboard)/leads/[id]/page.tsx:  async function updateStage(stage: string): Promise<boolean> {
+src/app/(dashboard)/leads/[id]/page.tsx:    // won/lost write final_status (trg_lead_won trigger fires on it);
+src/app/(dashboard)/leads/[id]/page.tsx:    // other stages keep the legacy stage column (migrated in W7-W9).
+src/app/(dashboard)/leads/[id]/page.tsx:    const field = stage === "won" || stage === "lost" ? "final_status" : "stage";
+src/app/(dashboard)/leads/[id]/page.tsx:    return updateField(field, stage, "stage_change", `${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
+src/app/(dashboard)/leads/[id]/page.tsx:  const isYellow = dSinceContact !== null && dSinceContact >= 7 && dSinceContact < 14 && !lead.final_status;
+src/app/(dashboard)/leads/[id]/page.tsx:  const isRed = dSinceContact !== null && dSinceContact >= 14 && !lead.final_status;
+src/app/(dashboard)/leads/[id]/page.tsx:    // Health score (Phase B) — derived from follow-up recency, stage, quotation, drawings, overdue
+src/app/(dashboard)/leads/[id]/page.tsx:      hasMeeting: (lead.final_status === "won" || ["negotiation", "pending_decision"].includes(lead.stage)),
+src/app/(dashboard)/leads/[id]/page.tsx:      hasQuotation: (lead.final_status === "won" || ["quotation_submitted", "negotiation", "pending_decision"].includes(lead.stage)),
+src/app/(dashboard)/leads/[id]/page.tsx:          <Badge className={cn("text-sm px-3 py-1", STAGE_COLORS[lead.stage] || "")}>
+src/app/(dashboard)/leads/[id]/page.tsx:            {t(`stageLabels.${lead.stage}`) || lead.stage}
+src/app/(dashboard)/leads/[id]/page.tsx:          {lead.lead_status && (
+src/app/(dashboard)/leads/[id]/page.tsx:            <Badge className={cn("text-sm px-3 py-1", getStatusLabels(t)[lead.lead_status]?.bg)}>
+src/app/(dashboard)/leads/[id]/page.tsx:              {getStatusLabels(t)[lead.lead_status]?.label}
+src/app/(dashboard)/leads/[id]/page.tsx:                      lead.stage === s ? "border-transparent text-foreground" : "border-border text-muted-foreground hover:border-gray-500")}
+src/app/(dashboard)/leads/[id]/page.tsx:                    style={lead.stage === s ? { backgroundColor: STAGE_COLORS[s]?.split(" ")[0]?.replace("/10", "/30") || "#6b7280" } : {}}
+src/app/(dashboard)/leads/[id]/page.tsx:                    onClick={() => updateStage(s)}>{t(`stageLabels.${s}`)}</button>
+src/app/(dashboard)/leads/[id]/page.tsx:                <CheckCircle className="w-4 h-4 mr-1" />{t("stageLabels.won")}
+src/app/(dashboard)/leads/[id]/page.tsx:                <AlertTriangle className="w-4 h-4 mr-1" />{t("stageLabels.lost")}
+src/app/(dashboard)/leads/[id]/page.tsx:            {lead.final_status === "won" && (
+src/app/(dashboard)/leads/[id]/page.tsx:                  <Select value={lead.project_status || ""} onValueChange={v => updateField("project_status", v || null, "note_added", `${t("leadDetail.projectStatus")}: ${v}`)}>
+src/app/(dashboard)/leads/[id]/page.tsx:                  <Select value={lead.visit_status || ""} onValueChange={v => updateField("visit_status", v || null, "note_added", `${t("leadDetail.visitStatus")}: ${v}`)}>
+src/app/(dashboard)/leads/[id]/page.tsx:                        lead.lead_status === k ? "border-transparent text-foreground" : "border-border text-muted-foreground hover:border-gray-500")}
+src/app/(dashboard)/leads/[id]/page.tsx:                      style={lead.lead_status === k ? { backgroundColor: k === "hot" ? "#f43f5e" : k === "warm" ? "#f59e0b" : k === "cold" ? "#0ea5e9" : "#6b7280" } : {}}
+src/app/(dashboard)/leads/[id]/page.tsx:                      onClick={() => updateField("lead_status", k, "status_changed", `${t("leadDetail.customerStatus")}: ${v.label}`)}>
+src/app/(dashboard)/leads/[id]/page.tsx:        {lead.final_status === "lost" && (
+src/app/(dashboard)/leads/[id]/page.tsx:                  type.includes("stage") ? "bg-amber-500" :
+src/app/(dashboard)/leads/[id]/page.tsx:                  type.includes("probability") || type.includes("status") ? "bg-purple-500" :
+src/app/(dashboard)/leads/[id]/page.tsx:                <Badge className={STAGE_COLORS[trace.stage] || ""}>{t(`stageLabels.${trace.stage}`) || trace.stage}</Badge>
+src/app/(dashboard)/leads/[id]/page.tsx:                      <Badge className={cn("text-[10px]", trace.quotation_status === "approved" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400")}>
+src/app/(dashboard)/leads/[id]/page.tsx:                        {trace.quotation_status || "—"}
+src/app/(dashboard)/leads/[id]/page.tsx:                      <Badge className={cn("text-[10px]", trace.contract_status === "active" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400")}>
+src/app/(dashboard)/leads/[id]/page.tsx:                        {trace.contract_status || "—"}
+src/app/(dashboard)/leads/[id]/page.tsx:                      <Badge className={cn("text-[10px]", trace.installment_status === "paid" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400")}>
+src/app/(dashboard)/leads/[id]/page.tsx:                        {trace.installment_status || "—"}
+src/app/(dashboard)/leads/[id]/page.tsx:                        <Badge className={cn("text-[10px]", trace.project_status === "active" ? "bg-emerald-500/10 text-emerald-400" : "bg-gray-500/10 text-muted-foreground")}>
+src/app/(dashboard)/leads/[id]/page.tsx:                          {trace.project_status || "—"}
+src/app/(dashboard)/leads/[id]/page.tsx:            {lead.lead_status && (
+src/app/(dashboard)/leads/[id]/page.tsx:                lead.lead_status === "hot" ? "bg-rose-500/10 text-rose-400" :
+src/app/(dashboard)/leads/[id]/page.tsx:                lead.lead_status === "warm" ? "bg-amber-500/10 text-amber-400" :
+src/app/(dashboard)/leads/[id]/page.tsx:                lead.lead_status === "cold" ? "bg-sky-500/10 text-sky-400" :
+src/app/(dashboard)/leads/[id]/page.tsx:                {lead.lead_status === "hot" ? "🔥 " : lead.lead_status === "warm" ? "☀️ " : lead.lead_status === "cold" ? "❄️ " : "💤 "}
+src/app/(dashboard)/leads/[id]/page.tsx:                {t(`statusLabels.${lead.lead_status}`)}
+src/app/(dashboard)/leads/[id]/page.tsx:              {lead.final_status === "won" && (
+src/app/(dashboard)/projects/projects-client.tsx:  status: string | null;
+src/app/(dashboard)/projects/projects-client.tsx:function getStatusLabel(status: string | null | undefined): string {
+src/app/(dashboard)/projects/projects-client.tsx:  if (status === "on_hold") return "OnHold";
+src/app/(dashboard)/projects/projects-client.tsx:  if (status === "active") return "Active";
+src/app/(dashboard)/projects/projects-client.tsx:  if (status === "completed") return "Completed";
+src/app/(dashboard)/projects/projects-client.tsx:  if (status === "cancelled") return "Cancelled";
+src/app/(dashboard)/projects/projects-client.tsx:  const [statusFilter, setStatusFilter] = useState("all");
+src/app/(dashboard)/projects/projects-client.tsx:    if (statusFilter !== "all") {
+src/app/(dashboard)/projects/projects-client.tsx:      result = result.filter(p => p.status === statusFilter);
+src/app/(dashboard)/projects/projects-client.tsx:  }, [projects, search, phaseFilter, statusFilter, memberFilter, sortKey, sortDir]);
+src/app/(dashboard)/projects/projects-client.tsx:    const active = projects.filter(p => p.status === "active").length;
+src/app/(dashboard)/projects/projects-client.tsx:    const completed = projects.filter(p => p.status === "completed" || p.phase === "completed").length;
+src/app/(dashboard)/projects/projects-client.tsx:      if (!p.end_date || p.status === "completed" || p.phase === "completed") return false;
+src/app/(dashboard)/projects/projects-client.tsx:          value={statusFilter}
+src/app/(dashboard)/projects/projects-client.tsx:          <option value="active">{t("projects.statusActive")}</option>
+src/app/(dashboard)/projects/projects-client.tsx:          <option value="on_hold">{t("projects.statusOnHold")}</option>
+src/app/(dashboard)/projects/projects-client.tsx:          <option value="completed">{t("projects.statusCompleted")}</option>
+src/app/(dashboard)/projects/projects-client.tsx:          <option value="cancelled">{t("projects.statusCancelled")}</option>
+src/app/(dashboard)/projects/projects-client.tsx:      {(phaseFilter !== "all" || statusFilter !== "all" || memberFilter !== "all") && (
+src/app/(dashboard)/projects/projects-client.tsx:          {statusFilter !== "all" && (
+src/app/(dashboard)/projects/projects-client.tsx:              {t(`projects.status${statusFilter === "on_hold" ? "OnHold" : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}`)} <X className="w-3 h-3" />
+src/app/(dashboard)/projects/projects-client.tsx:            const statusStyle = project.status ? STATUS_STYLES[project.status] : null;
+src/app/(dashboard)/projects/projects-client.tsx:            const isOverdue = endDays !== null && endDays > 0 && project.status !== "completed" && project.phase !== "completed";
+src/app/(dashboard)/projects/projects-client.tsx:                project.status === "cancelled" && "opacity-60",
+src/app/(dashboard)/projects/projects-client.tsx:                      {statusStyle && (
+src/app/(dashboard)/projects/projects-client.tsx:                        <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium", statusStyle.bg, statusStyle.color)}>
+src/app/(dashboard)/projects/projects-client.tsx:                          {t(`projects.status${getStatusLabel(project.status)}`)}
+src/app/(dashboard)/projects/projects-client.tsx:                        <InfoItem label={t("projects.status")} value={project.status ? t(`projects.status${getStatusLabel(project.status)}`) : "—"} />
+src/app/(dashboard)/quotes/quote-wizard.tsx:        total_amount: calc.total, currency: "AED", status: "draft",
+src/app/(dashboard)/quotes/quote-calculator.tsx:        total_amount: calc.total, currency: "AED", status: "draft",
+src/app/(dashboard)/quotes/quotes-client.tsx:  status: string;
+src/app/(dashboard)/quotes/quotes-client.tsx:  const [statusFilter, setStatusFilter] = useState("all");
+src/app/(dashboard)/quotes/quotes-client.tsx:    if (statusFilter !== "all") result = result.filter((q) => q.status === statusFilter);
+src/app/(dashboard)/quotes/quotes-client.tsx:  }, [quotations, search, statusFilter, dateFrom, dateTo]);
+src/app/(dashboard)/quotes/quotes-client.tsx:        status: "draft",
+src/app/(dashboard)/quotes/quotes-client.tsx:      .update({ status: newStatus, updated_at: new Date().toISOString() })
+src/app/(dashboard)/quotes/quotes-client.tsx:      // Cascade to lead: if quote accepted, advance lead stage to quotation_submitted
+src/app/(dashboard)/quotes/quotes-client.tsx:          value={statusFilter}
+src/app/(dashboard)/quotes/quotes-client.tsx:            <div className="col-span-1.5 flex items-center gap-1.5"><Clock className="w-3 h-3" />{t("quotes.status")}</div>
+src/app/(dashboard)/quotes/quotes-client.tsx:            const statusStyle = STATUS_STYLES[quote.status] || STATUS_STYLES.draft;
+src/app/(dashboard)/quotes/quotes-client.tsx:                    statusStyle.color, statusStyle.bg, statusStyle.border
+src/app/(dashboard)/quotes/quotes-client.tsx:                    {t(`quotes.${quote.status}`)}
+src/app/(dashboard)/quotes/quotes-client.tsx:                    quote.status === "accepted" ? "text-emerald-400" : "text-copper-400"
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:  status: string;
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:      setActiveStatus(quote.status);
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:  const statusStyle = STATUS_STYLES[quote.status] || STATUS_STYLES.draft;
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:    toast.success(`${t("quotes.statusChangedTo")} ${t("quotes." + newStatus)}`);
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:              <Badge className={cn("text-xs", statusStyle.color, statusStyle.bg, statusStyle.border)}>
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:                {t("quotes." + quote.status)}
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:          {/* Quick status actions */}
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:            disabled={quote.status === "sent"}
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:            disabled={quote.status === "accepted"}
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:            disabled={quote.status === "rejected"}
+src/app/(dashboard)/quotes/quote-detail-dialog.tsx:          {quote.status === "accepted" && !quote.contract_id && (
+src/app/(dashboard)/contracts/new/page.tsx:          .or("final_status.eq.won,current_milestone.in.(quotation_submitted,negotiation,pending_decision)")
+src/app/(dashboard)/contracts/page.tsx:  id: string; contract_no: string; contract_amount: number; status: string;
+src/app/(dashboard)/contracts/page.tsx:  first_payment_status?: string; first_payment_due_date?: string;
+src/app/(dashboard)/contracts/page.tsx:  installment_plans?: { id: string; amount: number; due_date: string; status: string; paid_amount: number; seq: number }[] | null;
+src/app/(dashboard)/contracts/page.tsx:    draft: t("contracts.statusDraft"),
+src/app/(dashboard)/contracts/page.tsx:    pending_admin: t("contracts.statusPendingAdmin"),
+src/app/(dashboard)/contracts/page.tsx:    pending_ceo: t("contracts.statusPendingCeo"),
+src/app/(dashboard)/contracts/page.tsx:    signed: t("contracts.statusSigned"),
+src/app/(dashboard)/contracts/page.tsx:    active: t("contracts.statusActive"),
+src/app/(dashboard)/contracts/page.tsx:    approved: t("contracts.statusApproved"),
+src/app/(dashboard)/contracts/page.tsx:    completed: t("contracts.statusCompleted"),
+src/app/(dashboard)/contracts/page.tsx:    terminated: t("contracts.statusTerminated"),
+src/app/(dashboard)/contracts/page.tsx:    expired: t("contracts.statusExpired"),
+src/app/(dashboard)/contracts/page.tsx:    rejected: t("contracts.statusRejected"),
+src/app/(dashboard)/contracts/page.tsx:    revoking: t("contracts.statusRevoking"),
+src/app/(dashboard)/contracts/page.tsx:    superseded: t("contracts.statusSuperseded"),
+src/app/(dashboard)/contracts/page.tsx:    suspended: t("contracts.statusSuspended"),
+src/app/(dashboard)/contracts/page.tsx:  const statusLabel = (s: string) => {
+src/app/(dashboard)/contracts/page.tsx:  // First payment status helper
+src/app/(dashboard)/contracts/page.tsx:    const status = c.first_payment_status || "unpaid";
+src/app/(dashboard)/contracts/page.tsx:    if (status === "paid") {
+src/app/(dashboard)/contracts/page.tsx:    if (status === "partial") {
+src/app/(dashboard)/contracts/page.tsx:        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("Upload failed")));
+src/app/(dashboard)/contracts/page.tsx:    if (c.status === "pending_admin" && (role === "admin" || role === "operator")) return true;
+src/app/(dashboard)/contracts/page.tsx:    if (c.status === "pending_ceo" && role === "boss") return true;
+src/app/(dashboard)/contracts/page.tsx:    return ["draft", "pending_admin", "pending_ceo"].includes(c.status);
+src/app/(dashboard)/contracts/page.tsx:    return (role === "admin" || role === "boss") && ["active", "approved"].includes(c.status);
+src/app/(dashboard)/contracts/page.tsx:      installment_plans(id, amount, due_date, status, paid_amount, seq)
+src/app/(dashboard)/contracts/page.tsx:  const totalActive = contracts.reduce((s, c) => ["signed","active","approved"].includes(c.status) ? s + c.contract_amount : s, 0);
+src/app/(dashboard)/contracts/page.tsx:        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.signed")}</p><p className="text-xl font-bold">{contracts.filter(c => c.status === "signed").length}</p></CardContent></Card>
+src/app/(dashboard)/contracts/page.tsx:        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.active")}</p><p className="text-xl font-bold">{contracts.filter(c => c.status === "active").length}</p></CardContent></Card>
+src/app/(dashboard)/contracts/page.tsx:          const needsReminder = (c.first_payment_status || "unpaid") !== "paid";
+src/app/(dashboard)/contracts/page.tsx:                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-copper-500/10 text-copper-400">{statusLabel(c.status)}</span>
+src/app/(dashboard)/contracts/page.tsx:                    {c.first_payment_status && (
+src/app/(dashboard)/contracts/page.tsx:                          #{ip.seq || ""} {fmtAED(ip.amount)} → {ip.due_date?.slice(0,10)} {ip.status === "paid" ? "✓" : ip.status === "overdue" ? "⚠️" : ""}
+src/app/(dashboard)/contracts/[id]/page.tsx:  status: string;
+src/app/(dashboard)/contracts/[id]/page.tsx:  status: string;
+src/app/(dashboard)/contracts/[id]/page.tsx:    draft: t("contracts.statusDraft"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    pending_admin: t("contracts.statusPendingAdmin"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    pending_ceo: t("contracts.statusPendingCeo"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    signed: t("contracts.statusSigned"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    active: t("contracts.statusActive"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    approved: t("contracts.statusApproved"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    completed: t("contracts.statusCompleted"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    terminated: t("contracts.statusTerminated"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    rejected: t("contracts.statusRejected"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    revoking: t("contracts.statusRevoking"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    superseded: t("contracts.statusSuperseded"),
+src/app/(dashboard)/contracts/[id]/page.tsx:    suspended: t("contracts.statusSuspended"),
+src/app/(dashboard)/contracts/[id]/page.tsx:  /* ── Payment status roll-up ── */
+src/app/(dashboard)/contracts/[id]/page.tsx:      i.status === "overdue" ||
+src/app/(dashboard)/contracts/[id]/page.tsx:      (i.status !== "paid" && i.due_date < today && Number(i.paid_amount ?? 0) < Number(i.amount));
+src/app/(dashboard)/contracts/[id]/page.tsx:    ((contract.status === "pending_admin" && true) ||
+src/app/(dashboard)/contracts/[id]/page.tsx:      contract.status === "pending_ceo");
+src/app/(dashboard)/contracts/[id]/page.tsx:              {STATUS_LABELS[contract.status] || contract.status}
+src/app/(dashboard)/contracts/[id]/page.tsx:          {canManage && ["active", "approved"].includes(contract.status) && (
+src/app/(dashboard)/contracts/[id]/page.tsx:      {/* ── KPI cards: payment status ── */}
+src/app/(dashboard)/contracts/[id]/page.tsx:                const isOverdue = ip.status !== "paid" && ip.due_date < today && Number(ip.paid_amount) < Number(ip.amount);
+src/app/(dashboard)/contracts/[id]/page.tsx:                const badge = installmentBadge(ip.status, isOverdue, t);
+src/app/(dashboard)/contracts/[id]/page.tsx:                  const b = approvalBadge(a.status);
+src/app/(dashboard)/contracts/[id]/page.tsx:function installmentBadge(status: string, isOverdue: boolean, t: (p: string) => string) {
+src/app/(dashboard)/contracts/[id]/page.tsx:  if (status === "paid") return { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", label: t("analytics.paid"), icon: <CheckCircle className="w-2.5 h-2.5" /> };
+src/app/(dashboard)/contracts/[id]/page.tsx:  if (isOverdue || status === "overdue") return { color: "bg-rose-500/10 text-rose-400 border-rose-500/30", label: t("analytics.overdueStatus"), icon: <AlertTriangle className="w-2.5 h-2.5" /> };
+src/app/(dashboard)/contracts/[id]/page.tsx:  if (status === "partial") return { color: "bg-amber-500/10 text-amber-400 border-amber-500/30", label: t("contracts.partial"), icon: <Clock className="w-2.5 h-2.5" /> };
+src/app/(dashboard)/contracts/[id]/page.tsx:function approvalBadge(status: string) {
+src/app/(dashboard)/contracts/[id]/page.tsx:  if (status === "approved") return { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", label: "Approved" };
+src/app/(dashboard)/contracts/[id]/page.tsx:  if (status === "rejected") return { color: "bg-rose-500/10 text-rose-400 border-rose-500/30", label: "Rejected" };

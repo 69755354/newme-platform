@@ -1,0 +1,207 @@
+# CRM v3 — Task Contract
+# 每个 Epic/Task 分发给执行器（CC + GLM CP）时的上下文契约。
+# 执行器只拿此文件 + architecture-rules.yaml 中的相关规则，不拿整个 PRD。
+# 版本: v1.2 — 追加 Phase B completions + Phase C + Phase D
+
+
+# ─── Epic 1: 数据库层 ───
+
+- epic: epic_1
+  name: "数据库层 — Migration + Schema + RLS + Seed"
+  executor: glm-cp
+  context_files:
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_001"
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_002"
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_003"
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_006"
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_007"
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_009"
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_010"
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_101"
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_102"
+  allowed_files: ["supabase/migrations/", "supabase/seed.sql"]
+  forbidden_files: ["app/", "lib/", "types/", "components/"]
+  database_tables:
+    create: [lead_milestones, follow_up_logs, tasks, lead_documents, user_features, crm_daily_funnel_snapshot]
+    alter: [leads (add current_milestone, change FK to profiles)]
+  constraints:
+    - rule_001: "follow_up_logs 只 INSERT，不 UPDATE/DELETE"
+    - rule_002: "tasks.due_at > now()"
+    - rule_003: "所有 FK → profiles.id"
+    - rule_006: "milestone 按顺序完成"
+    - rule_007: "won/lost → leads.final_status"
+    - rule_009: "IF NOT EXISTS / IF EXISTS"
+    - rule_101: "RLS 强制开启 × 2 策略"
+    - rule_102: "API 路由不用 service_role"
+  deliverables:
+    - "6 张新表创建"
+    - "leads 表迁移"
+    - "RLS 策略"
+    - "约束/索引/触发器"
+    - "seed.sql / rollback.sql"
+  acceptance: ["npm run build 通过"]
+
+
+# ─── Epic 2: 销售工作台 ───
+
+- epic: epic_2
+  name: "销售工作台 — Inbox + TaskList + Overdue + Progress"
+  executor: glm-cp
+  context_files: ["03_ARCHITECTURE_RULES.yaml#rules.rule_012", "03_ARCHITECTURE_RULES.yaml#rules.rule_101"]
+  allowed_files: ["app/workbench/", "app/api/workbench/", "components/workbench/"]
+  forbidden_files: ["supabase/", "app/leads/", "app/dashboard/"]
+  constraints: ["Feature Flag 从 user_features 表读", "Inbox/Overdue/Progress 四个面板"]
+  deliverables: ["GET /api/workbench", "app/workbench/page.tsx", "Inbox/TaskList/Overdue/Progress 组件"]
+  acceptance: ["npm run build 通过"]
+
+
+# ─── Epic 3: Lead 详情页 ───
+
+- epic: epic_3
+  name: "Lead 详情 — Timeline + Milestone + 下一动作"
+  executor: glm-cp
+  context_files: ["03_ARCHITECTURE_RULES.yaml#rules.rule_001", "03_ARCHITECTURE_RULES.yaml#rules.rule_002", "03_ARCHITECTURE_RULES.yaml#rules.rule_006", "03_ARCHITECTURE_RULES.yaml#rules.rule_007", "03_ARCHITECTURE_RULES.yaml#rules.rule_008"]
+  allowed_files: ["app/leads/", "app/api/leads/", "components/leads/"]
+  forbidden_files: ["app/workbench/", "supabase/", "cron/"]
+  constraints: ["follow_up_logs 只 INSERT", "tasks due_at > now()", "milestone 顺序校验", "Day45 前保留 stage"]
+  deliverables: ["GET /api/leads/[id]", "POST milestone/follow-up", "app/leads/[id]/page.tsx 三区布局"]
+  acceptance: ["npm run build 通过"]
+
+
+# ─── Epic 4: 跟进引擎 ───
+
+- epic: epic_4
+  name: "跟进引擎 — follow-up + task auto-create + No Answer + cron"
+  executor: glm-cp
+  context_files: ["03_ARCHITECTURE_RULES.yaml#rules.rule_001", "03_ARCHITECTURE_RULES.yaml#rules.rule_002", "03_ARCHITECTURE_RULES.yaml#rules.rule_102"]
+  allowed_files: ["app/api/follow-ups/", "app/api/tasks/", "cron/"]
+  forbidden_files: ["app/workbench/", "app/leads/", "supabase/"]
+  constraints: ["follow_up_logs immutable", "tasks due_at = now() + 24h", "No Answer 检测", "cron service_role"]
+  deliverables: ["follow_up_logs CRUD", "tasks auto-create hook", "No Answer cron", "到期提醒 cron"]
+  acceptance: ["npm run build 通过"]
+
+
+# ─── Epic 5: 可观测性 ───
+
+- epic: epic_5
+  name: "可观测性 — 日结指标 + 漏斗快照 + 使用量看板"
+  executor: glm-cp
+  context_files: ["03_ARCHITECTURE_RULES.yaml#rules.rule_004", "03_ARCHITECTURE_RULES.yaml#rules.rule_005"]
+  allowed_files: ["app/dashboard/", "app/api/metrics/", "cron/"]
+  forbidden_files: ["app/workbench/", "app/leads/", "supabase/"]
+  constraints: ["Pending Decision 含 quotation", "漏斗按 current_milestone"]
+  deliverables: ["crm_daily_funnel_snapshot cron", "GET /api/metrics/daily", "GET /api/metrics/funnel", "app/dashboard/page.tsx"]
+  acceptance: ["npm run build 通过"]
+
+
+# ─── Epic 6: Phase B — 收尾 + 颜色体系 ───
+
+- epic: epic_6
+  name: "Phase B — 折叠面板 + 品牌色体系"
+  executor: cc-glm-cp
+  reviewer: v4
+  context_files:
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_017"
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_018"
+    - "PRD-CRM-v3-sales-workflow.md#3.8"
+  allowed_files: ["app/leads/", "lib/", "components/", "app/globals.css", "tailwind.config.*"]
+  forbidden_files: ["supabase/", "app/workbench/", "cron/"]
+  constraints:
+    - "底部折叠面板包含：项目信息（project_type/emirate/area/ac_brand）、智能需求（smart_requirements JSON编辑器）、报价、图纸、合同、项目——每块一个折叠面板"
+    - "品牌色=蓝灰系，语义色=红黄绿（健康/逾期/风险），互不冲突"
+    - "所有颜色使用 tailwind 类名，不自定义 CSS"
+    - "Health Score 标签使用语义色（🟢绿 🟡黄 🔴红）"
+    - "折叠面板默认收起，点击展开"
+  deliverables:
+    - "Lead 详情底部折叠面板（6个折叠区：项目信息/智能需求/报价/图纸/合同/项目）"
+    - "折叠面板中扩展字段可编辑保存（写入 leads 表）"
+    - "tailwind.config.ts 和 globals.css 统一品牌色（蓝灰），语义色映射正确"
+  acceptance:
+    - "底部折叠面板可展开/收起，每个区块内容正确"
+    - "扩展字段在折叠面板可编辑保存"
+    - "颜色体系统一：品牌色蓝灰 + 语义色红黄绿"
+    - "npm run build 通过"
+
+
+# ─── Epic 7: Phase C — 合同回款 + WhatsApp + Analytics ───
+
+- epic: epic_7
+  name: "Phase C — 合同回款增强 + WhatsApp时间线 + Sales Analytics"
+  executor: cc-glm-cp
+  reviewer: v4
+  context_files:
+    - "PRD-CRM-v3-sales-workflow.md#5"
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_003"
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_101"
+  allowed_files: ["app/", "lib/", "components/", "supabase/migrations/"]
+  forbidden_files: []
+  constraints:
+    - "合同回款: 从 Quotation → Contract → Payment → Installment; won lead 创建合同时从 quotation 继承金额"
+    - "WhatsApp 时间线: chat_messages 表已存在，在 lead timeline 中展示 WhatsApp 消息"
+    - "Sales Analytics: 使用现有 metrics API 聚合，按销售分组"
+    - "线索资产分析: source→lead 转化率、线索质量分布、广告渠道 ROI"
+    - "all FK → profiles.id, not auth.users"
+    - "新表必须 ENABLE ROW LEVEL SECURITY"
+  sub_tasks:
+    - name: "C1_合同回款"
+      description: |
+        - won lead 自动创建 contract（从 quotation 复制金额）
+        - Contract 详情页、列表页
+        - 分期付款计划（installments）管理: 期数、金额、到期日、状态
+        - Payment tracking: 已收/应收/逾期
+        - 超时回款提醒
+    - name: "C2_WhatsApp时间线"
+      description: |
+        - 在 lead detail timeline 中展示 chat_messages 记录
+        - WhatsApp 消息标记为独立事件类型
+        - 从 chat_messages 表 UNION ALL 到 timeline
+    - name: "C3_Sales Analytics"
+      description: |
+        - 销售个人看板：本月业绩、成交数、跟进效率
+        - 管理员看板：团队对比、转化漏斗、Lead 来源分析
+        - 图表 + 数字卡片
+    - name: "C4_线索资产分析"
+      description: |
+        - 按来源（meta_ads/whatsapp/website/offline/referral）统计数量和转化率
+        - 按质量（hot/warm/cold/dormant）分布
+        - 按销售分配情况
+  acceptance:
+    - "合同创建流程完整（won lead → contract）"
+    - "WhatsApp 消息在 timeline 中展示"
+    - "Sales Analytics 页面数据显示正确"
+    - "线索资产分析展示来源转化漏斗"
+    - "npm run build 通过"
+
+
+# ─── Epic 8: Phase D — AI跟进总结 + 风险预警 ───
+
+- epic: epic_8
+  name: "Phase D — AI 跟进总结 + AI 风险预警"
+  executor: cc-glm-cp
+  reviewer: v4
+  context_files:
+    - "PRD-CRM-v3-sales-workflow.md#5"
+    - "03_ARCHITECTURE_RULES.yaml#rules.rule_018"
+  allowed_files: ["app/", "lib/", "components/", "app/api/"]
+  forbidden_files: ["supabase/migrations/"]
+  constraints:
+    - "AI 跟进总结: 在 lead detail timeline 顶部显示 AI 生成的近期互动摘要"
+    - "AI 风险预警: 基于 lead 行为模式检测风险（长期无跟进、多次 No Answer、价格谈不拢等）"
+    - "AI 调用使用 server-side API route，不在客户端直接调 LLM"
+    - "使用 env 中的 AI API key（非用户 key）"
+    - "风险预警写入 notifications 表"
+  sub_tasks:
+    - name: "D1_AI跟进总结"
+      description: |
+        - GET /api/leads/[id]/ai-summary — 从 follow_up_logs + activities + chat_messages 生成摘要
+        - 在 lead detail timeline 顶部显示 AI Summary 卡片
+        - 缓存 1 小时，减少 API 调用
+    - name: "D2_AI风险预警"
+      description: |
+        - AI 分析 lead 行为模式：无跟进 > 7 天 / No Answer 连续 3 次 / 报价后未跟进 > 3 天
+        - 写入 notifications 表
+        - 在 Command Center / lead detail 展示风险提示
+  acceptance:
+    - "AI 跟进总结正确显示近期互动摘要"
+    - "风险预警在 Command Center 展示"
+    - "npm run build 通过"

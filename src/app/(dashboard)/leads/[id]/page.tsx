@@ -85,11 +85,10 @@ export default function LeadDetailPage() {
     try {
       // Ensure auth session is set before any queries (fixes setSession race condition)
       await supabase.auth.getUser();
-      const { data: l, error: err1 } = await supabase.from("leads").select("*, creator:profiles!created_by(id, full_name)").eq("id", id).maybeSingle();
+      const { data: l, error: err1 } = await supabase.from("leads").select("*").eq("id", id).maybeSingle();
       if (err1) { console.error("[LeadDetail] fetch lead failed:", err1); setError(t("common.loadFailedRetry")); return; }
       if (l) {
-        const creatorName = (l as any).creator?.full_name || null;
-        setLead({ ...l, creator_name: creatorName } as any);
+        setLead({ ...l } as any);
         setProjectInfoDraft(projectDraftFromLead(l));
 
         // Fetch foreign-key related entities in parallel (maybeSingle for graceful null handling)
@@ -108,7 +107,7 @@ export default function LeadDetailPage() {
             return {
               ...prev,
               ...(customer && { customer }),
-              ...(creatorProfile && { creator_profile: creatorProfile }),
+              ...(creatorProfile && { creator_profile: creatorProfile, creator_name: creatorProfile.full_name }),
             } as any;
           });
         }

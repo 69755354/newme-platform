@@ -121,7 +121,7 @@ export default function LeadTimelinePage() {
     try {
       const { data, error } = await supabase
         .from("follow_up_logs")
-        .select("id, type, content, next_action, next_action_date, created_by, created_at, creator:profiles!created_by(full_name)")
+        .select("id, type, content, next_action, next_action_date, created_by, created_at, creator:profiles!fk_follow_up_logs_created_by(full_name)")
         .eq("lead_id", id)
         .order("created_at", { ascending: false });
 

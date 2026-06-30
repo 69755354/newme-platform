@@ -83,19 +83,21 @@ export default function LeadDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data: l, error: err1 } = await supabase.from("leads").select("*, creator:profiles!created_by(id, name)").eq("id", id).maybeSingle();
-      if (err1) { console.error("[LeadDetail] fetch lead failed"); setError(t("common.loadFailedRetry")); return; }
+      // Ensure auth session is set before any queries (fixes setSession race condition)
+      await supabase.auth.getUser();
+      const { data: l, error: err1 } = await supabase.from("leads").select("*, creator:profiles!created_by(id, full_name)").eq("id", id).maybeSingle();
+      if (err1) { console.error("[LeadDetail] fetch lead failed:", err1); setError(t("common.loadFailedRetry")); return; }
       if (l) {
-        const creatorName = (l as any).creator?.name || null;
+        const creatorName = (l as any).creator?.full_name || null;
         setLead({ ...l, creator_name: creatorName } as any);
         setProjectInfoDraft(projectDraftFromLead(l));
 
         // Fetch foreign-key related entities in parallel (maybeSingle for graceful null handling)
         const fetchCustomer = (l as any).customer_id
-          ? supabase.from("customers").select("id, name, email, phone").eq("id", (l as any).customer_id).maybeSingle().then(r => r.data)
+          ? (async () => { const r = await supabase.from("customers").select("id, name, email, phone").eq("id", (l as any).customer_id).maybeSingle(); return r.data; })().catch(() => null)
           : Promise.resolve(null);
         const fetchCreator = l.created_by
-          ? supabase.from("profiles").select("id, full_name, email, role").eq("id", l.created_by).maybeSingle().then(r => r.data)
+          ? (async () => { const r = await supabase.from("profiles").select("id, full_name, email, role").eq("id", l.created_by).maybeSingle(); return r.data; })().catch(() => null)
           : Promise.resolve(null);
 
         const [customer, creatorProfile] = await Promise.all([fetchCustomer, fetchCreator]);
@@ -129,9 +131,13 @@ export default function LeadDetailPage() {
         milestones.map((m: any) => ({ ...m, completed: !!m.completed_at })) as LeadMilestone[]
       );
       const encodedId = encodeURIComponent(id);
-      const res = await fetch(`/api/activities?lead_id=${encodedId}`);
-      const a = res.ok ? await res.json() : null;
-      if (a) setActivities(a);
+      try {
+        const res = await fetch(`/api/activities?lead_id=${encodedId}`);
+        const a = res.ok ? await res.json() : null;
+        if (a) setActivities(a);
+      } catch (fetchErr) {
+        console.warn("[LeadDetail] activities fetch failed (non-fatal):", fetchErr);
+      }
       const { data: e, error: eErr } = await supabase.from("business_events").select("*").eq("lead_id", id).order("created_at", { ascending: false }).limit(50);
       if (eErr) console.warn("[LeadDetail] Failed to fetch business_events (non-fatal):", eErr);
       if (e) setEvents(e);

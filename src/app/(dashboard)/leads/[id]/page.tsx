@@ -90,18 +90,25 @@ export default function LeadDetailPage() {
         setLead({ ...l, creator_name: creatorName } as any);
         setProjectInfoDraft(projectDraftFromLead(l));
 
-        // Fetch foreign-key related entities (maybeSingle for graceful null handling)
-        if ((l as any).customer_id) {
-          const { data: customer } = await supabase.from("customers").select("id, name, email, phone").eq("id", (l as any).customer_id).maybeSingle();
-          if (customer) setLead(prev => prev ? ({ ...prev, customer } as any) : prev);
-        }
-        if ((l as any).product_id) {
-          const { data: product } = await supabase.from("products").select("id, name, category, sku").eq("id", (l as any).product_id).maybeSingle();
-          if (product) setLead(prev => prev ? ({ ...prev, product } as any) : prev);
-        }
-        if (l.created_by) {
-          const { data: creatorProfile } = await supabase.from("profiles").select("id, full_name, email, role").eq("id", l.created_by).maybeSingle();
-          if (creatorProfile) setLead(prev => prev ? ({ ...prev, creator_profile: creatorProfile } as any) : prev);
+        // Fetch foreign-key related entities in parallel (maybeSingle for graceful null handling)
+        const fetchCustomer = (l as any).customer_id
+          ? supabase.from("customers").select("id, name, email, phone").eq("id", (l as any).customer_id).maybeSingle().then(r => r.data)
+          : Promise.resolve(null);
+        const fetchCreator = l.created_by
+          ? supabase.from("profiles").select("id, full_name, email, role").eq("id", l.created_by).maybeSingle().then(r => r.data)
+          : Promise.resolve(null);
+
+        const [customer, creatorProfile] = await Promise.all([fetchCustomer, fetchCreator]);
+        
+        if (customer || creatorProfile) {
+          setLead(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              ...(customer && { customer }),
+              ...(creatorProfile && { creator_profile: creatorProfile }),
+            } as any;
+          });
         }
       }
       const { data: ful, error: fulErr } = await supabase

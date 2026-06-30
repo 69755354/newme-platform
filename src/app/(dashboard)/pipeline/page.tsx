@@ -76,7 +76,13 @@ function LeadCard({ lead, onDragStart, onLeadClick, salesUsers }: { lead: Lead; 
   return (
     <div
       draggable
-      onDragStart={(e) => onDragStart(e, lead.id)}
+      onDragStart={(e) => {
+        (e.currentTarget as HTMLElement).classList.add("opacity-40");
+        onDragStart(e, lead.id);
+      }}
+      onDragEnd={(e) => {
+        (e.currentTarget as HTMLElement).classList.remove("opacity-40");
+      }}
       onClick={() => onLeadClick(lead.id)}
         className={cn(
         "p-3 rounded-lg border bg-muted/60 cursor-grab active:cursor-grabbing transition-all duration-150 select-none",

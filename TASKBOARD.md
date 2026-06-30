@@ -52,13 +52,13 @@ Blocked by Tier 1 completion. Do NOT start until all Tier 1 = ✅.
 |---|---------|-------------|-------------|--------|-----------|
 | T2-1 | P-2: Scroll behavior inconsistency | Unified scroll strategy across all dashboard pages | All pages use consistent overflow/scroll container | ❌ (Tier 2) | |
 | T2-2 | P-3: Kanban stats scattered | Merge progress bar + numbers + percentage into single visual unit | Single stats component, not 3 separate elements | ❌ (Tier 2) | |
-| T2-3 | P-5: Empty stage visibility | Default show empty stages + collapse toggle button | `showEmptyStages` default = true, toggle button exists | ❌ (Tier 2) | |
+| T2-3 | P-5: Empty stage visibility | Default show empty stages + collapse toggle button | `showEmptyStages` default = true, toggle button exists | ✅ | 2026-07-01 |
 
-**Tier 2 Progress: 0/3 (0%) — BLOCKED by Tier 1**
+**Tier 2 Progress: 1/3 (33%)**
 
 ---
 
-## MoA Tier 3 — Architecture (LONG-TERM, 1-2 months)
+### MoA Tier 3 — Architecture (LONG-TERM, 1-2 months)
 Blocked by Tier 2 completion.
 
 | # | Problem | Requirement | Verification | Status | Done Date |
@@ -66,8 +66,9 @@ Blocked by Tier 2 completion.
 | T3-1 | DashboardLayout unification | Full DashboardLayout refactor (方案A) | Single layout component, all pages conform | ❌ (Tier 3) | |
 | T3-2 | Performance monitoring + alerts | Lighthouse/Web Vitals baseline + alerting | Baseline recorded, alerts configured | ❌ (Tier 3) | |
 | T3-3 | Code debt elimination | Refactor large files (leads 1067行, pipeline 689行) | No single file > 500 lines, shared components extracted | ❌ (Tier 3) | |
+| T3-4 | Docs drift: coding_standards §4 contracts/payments stale | Refresh table schema section to match actual DB (contract_amount / sales_id / confirmed) | coding_standards.md §4 列与 DB service_role 查询结果一致 | ❌ (Tier 3) | |
 
-**Tier 3 Progress: 0/3 (0%) — BLOCKED by Tier 2**
+**Tier 3 Progress: 0/4 (0%) — BLOCKED by Tier 2**
 
 ---
 

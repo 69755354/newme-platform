@@ -165,7 +165,7 @@ export default function PipelinePage() {
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [salesUsers, setSalesUsers] = useState<any[]>([]);
-  const [showEmptyStages, setShowEmptyStages] = useState(false);
+  const [showEmptyStages, setShowEmptyStages] = useState(true);
   const [activeStageKey, setActiveStageKey] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 

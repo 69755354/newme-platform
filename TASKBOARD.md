@@ -39,9 +39,9 @@ Source: MoA 4-round audit, 3-model unanimous sign-off, lines 478-500 + 559-600 +
 | # | Requirement | Verification | Status | Done Date |
 |---|-------------|-------------|--------|-----------|
 | T1-11 | Sentry captureException in ErrorBoundary | DashboardErrorBoundary.tsx contains `Sentry.captureException` or `captureException` | ✅ | 2026-07-01 |
-| T1-12 | Sentry error events actually received | Manual: trigger error → Sentry dashboard shows event | ⚠️ | |
+| T1-12 | Sentry error events actually received | Manual: trigger error → Sentry dashboard shows event | ✅ | 2026-07-01 |
 
-**Tier 1 Progress: 11/12 (92%)**
+**Tier 1 Progress: 12/12 (100%) ✅**
 
 ---
 

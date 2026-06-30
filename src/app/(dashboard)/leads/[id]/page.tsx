@@ -15,7 +15,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSupabaseQuery } from "@/lib/supabaseQuery";
-import { cn } from "@/lib/utils";
+import { cn, fmtDubai } from "@/lib/utils";
 import { toast, Toaster } from "sonner";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
@@ -531,7 +531,7 @@ export default function LeadDetailPage() {
     ) : (
       <p className="text-foreground mt-1 cursor-pointer hover:text-copper-400"
         onClick={() => { setEditField(field); setEditValue(value || ""); }}>
-        {value ? new Date(value).toLocaleDateString(t("locale.dateLocale")) : <span className="text-gray-600">{t("leadDetail.placeholderClickToFill")}</span>}
+        {value ? fmtDubai(value, { locale: t("locale.dateLocale") }) : <span className="text-gray-600">{t("leadDetail.placeholderClickToFill")}</span>}
       </p>
     );
   };
@@ -586,7 +586,7 @@ export default function LeadDetailPage() {
     ) : (
       <p className={cn("mt-1 cursor-pointer hover:text-copper-400", !nextTask ? "text-rose-400 font-medium" : "text-foreground")}
         onClick={() => { setEditField("next_followup_date"); setEditValue(nextTask?.due_at.slice(0, 10) || ""); }}>
-        {nextTask ? new Date(nextTask.due_at).toLocaleDateString(t("locale.dateLocale")) : t("leadDetail.placeholderRequired")}
+        {nextTask ? fmtDubai(nextTask.due_at, { locale: t("locale.dateLocale") }) : t("leadDetail.placeholderRequired")}
       </p>
     );
 
@@ -688,7 +688,7 @@ export default function LeadDetailPage() {
             )}
           </div>
           <p className="text-muted-foreground text-sm">
-            {new Date(lead.created_at).toLocaleDateString(t("locale.dateLocale"))} · {lead.source}
+            {fmtDubai(lead.created_at, { locale: t("locale.dateLocale") })} · {lead.source}
             {lead.rep_name && ` · ${lead.rep_name}`}
           </p>
         </div>

@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn, fmtDubai } from "@/lib/utils";
 import { ChevronDown, RotateCcw } from "lucide-react";
 import LeadContractsPanel from "./LeadContractsPanel";
 import { fmtAED } from "./utils";
@@ -186,7 +186,7 @@ export default function LeadFoldingPanel({
                       <Label className="text-muted-foreground text-xs">{t("leadDetail.quotationSent")}</Label>
                       <p className="text-foreground mt-1">
                         {lead.quotation_sent_date
-                          ? new Date(lead.quotation_sent_date).toLocaleDateString(t("locale.dateLocale"))
+                          ? fmtDubai(lead.quotation_sent_date, { locale: t("locale.dateLocale") })
                           : "—"}
                       </p>
                     </div>

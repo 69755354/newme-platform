@@ -33,6 +33,7 @@ import {
   MoreHorizontal,
   Clock,
 } from "lucide-react";
+import { fmtDubai } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────
 interface FollowUpLogRow {
@@ -89,13 +90,7 @@ function formatDateTime(iso: string | null) {
 
 function formatDate(dateStr: string | null) {
   if (!dateStr) return "—";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  return fmtDubai(dateStr, { locale: "zh-CN", year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
 // ─── Page Component ───────────────────────────────────────────────────

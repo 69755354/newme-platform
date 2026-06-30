@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils";
+import { cn, fmtDubai } from "@/lib/utils";
 import {
   CheckCircle,
   AlertTriangle,
@@ -471,7 +471,7 @@ export default function LeadSalesProcess({
                   <p className="text-muted-foreground text-xs">{t("leadDetail.paymentLink")}</p>
                   <p className="text-foreground">
                     {fmtAED(trace?.payment_amount ?? null)}
-                    {trace?.payment_date ? ` · ${new Date(trace.payment_date).toLocaleDateString()}` : ""}
+                    {trace?.payment_date ? ` · ${fmtDubai(trace.payment_date)}` : ""}
                   </p>
                 </div>
                 <Badge className={cn("text-[10px]", trace?.confirmed ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400")}>

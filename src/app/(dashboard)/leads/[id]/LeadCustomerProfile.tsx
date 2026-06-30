@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn, fmtDubai } from "@/lib/utils";
 import { User, MessageCircle, ExternalLink } from "lucide-react";
 import type { Lead, RenderInlineEdit, RenderDateEdit } from "./types";
 
@@ -194,7 +194,7 @@ export default function LeadCustomerProfile({
             {lead.created_at && (
               <Field label={t("leadDetail.createdAt") || "Created"}>
                 <span className="text-xs text-muted-foreground">
-                  {new Date(lead.created_at).toLocaleDateString("zh-CN", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  {fmtDubai(lead.created_at, { locale: "zh-CN", hour: "2-digit", minute: "2-digit" })}
                 </span>
               </Field>
             )}
@@ -211,7 +211,7 @@ export default function LeadCustomerProfile({
                 <div>
                   <span>{tr.description || (tr.operator?.full_name ? `Reassigned by ${tr.operator.full_name}` : "Reassigned")}</span>
                   <span className="block text-[10px] opacity-60">
-                    {new Date(tr.created_at).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    {fmtDubai(tr.created_at, { locale: "zh-CN", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </div>
               </div>

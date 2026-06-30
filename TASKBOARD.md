@@ -18,30 +18,30 @@ Source: MoA 4-round audit, 3-model unanimous sign-off, lines 478-500 + 559-600 +
 
 | # | File | Operation | Verification | Status | Done Date |
 |---|------|-----------|-------------|--------|-----------|
-| T1-1 | src/lib/supabaseQuery.ts | CREATE | file exists + contains `useSupabaseQuery` + `AbortController` + retry logic (>=2 retries) + timeout (8s default) | ❌ | |
-| T1-2 | src/components/DashboardErrorBoundary.tsx | CREATE | file exists + contains `errorId` + `Sentry` (or `sentry`) + fallback UI | ❌ | |
-| T1-3 | src/shared/hooks/usePipelineDragDrop.ts | CREATE | file exists + contains `onDragStart` + `onDrop` + `draggingLeadId` | ❌ | |
-| T1-4 | src/shared/hooks/useStageGuard.ts | CREATE | file exists + contains `stageGuard` or `validTransition` + STAGES definition | ❌ | |
+| T1-1 | src/lib/supabaseQuery.ts | CREATE | file exists + contains `useSupabaseQuery` + `AbortController` + retry logic (>=2 retries) + timeout (8s default) | ✅ | 2026-06-30 |
+| T1-2 | src/components/DashboardErrorBoundary.tsx | CREATE | file exists + contains `errorId` + `Sentry` (or `sentry`) + fallback UI | ✅ | 2026-06-30 |
+| T1-3 | src/shared/hooks/usePipelineDragDrop.ts | CREATE | file exists + contains `onDragStart` + `onDrop` + `draggingLeadId` | ✅ | 2026-06-30 |
+| T1-4 | src/shared/hooks/useStageGuard.ts | CREATE | file exists + contains `stageGuard` or `validTransition` + STAGES definition | ✅ | 2026-06-30 |
 
 ### 1B. Modified Files (integration)
 
 | # | File | Operation | Verification | Status | Done Date |
 |---|------|-----------|-------------|--------|-----------|
 | T1-5 | src/app/(dashboard)/layout.tsx | MODIFY | contains `ErrorBoundary` wrapping children | ✅ | 2026-06-30 |
-| T1-6 | src/app/(dashboard)/leads/page.tsx | MODIFY | contains `usePipelineDragDrop` + `useStageGuard` + `useSupabaseQuery` + empty stages visible by default | ❌ | |
-| T1-7 | src/app/(dashboard)/pipeline/page.tsx | MODIFY | contains `usePipelineDragDrop` (replaces inline drag) + `useSupabaseQuery` (replaces direct supabase calls) + `useStageGuard` | ❌ | |
-| T1-8 | src/app/(dashboard)/leads/[id]/page.tsx | MODIFY | `maybeSingle` count >= 3 + contains `skeleton` or `Skeleton` or `loading` fallback + `useSupabaseQuery` | ⚠️ (1/3 maybeSingle, no skeleton) | |
-| T1-9 | src/app/(dashboard)/products/page.tsx | MODIFY | contains `useSupabaseQuery` (replaces direct supabase calls) | ❌ | |
-| T1-10 | src/app/globals.css | MODIFY | contains `error-boundary-fallback` class | ❌ | |
+| T1-6 | src/app/(dashboard)/leads/page.tsx | MODIFY | contains `usePipelineDragDrop` + `useStageGuard` + `useSupabaseQuery` + empty stages visible by default | ✅ | 2026-07-01 |
+| T1-7 | src/app/(dashboard)/pipeline/page.tsx | MODIFY | contains `usePipelineDragDrop` (replaces inline drag) + `useSupabaseQuery` (replaces direct supabase calls) + `useStageGuard` | ✅ | 2026-07-01 |
+| T1-8 | src/app/(dashboard)/leads/[id]/page.tsx | MODIFY | `maybeSingle` count >= 3 + contains `skeleton` or `Skeleton` or `loading` fallback + `useSupabaseQuery` | ✅ | 2026-07-01 |
+| T1-9 | src/app/(dashboard)/products/page.tsx | MODIFY | contains `useSupabaseQuery` (replaces direct supabase calls) | ✅ | 2026-07-01 |
+| T1-10 | src/app/globals.css | MODIFY | contains `error-boundary-fallback` class | ✅ | 2026-07-01 |
 
 ### 1C. Sentry Integration
 
 | # | Requirement | Verification | Status | Done Date |
 |---|-------------|-------------|--------|-----------|
-| T1-11 | Sentry captureException in ErrorBoundary | DashboardErrorBoundary.tsx contains `Sentry.captureException` or `captureException` | ❌ | |
-| T1-12 | Sentry error events actually received | Manual: trigger error → Sentry dashboard shows event | ❌ | |
+| T1-11 | Sentry captureException in ErrorBoundary | DashboardErrorBoundary.tsx contains `Sentry.captureException` or `captureException` | ✅ | 2026-07-01 |
+| T1-12 | Sentry error events actually received | Manual: trigger error → Sentry dashboard shows event | ⚠️ | |
 
-**Tier 1 Progress: 1/12 (8%)**
+**Tier 1 Progress: 11/12 (92%)**
 
 ---
 

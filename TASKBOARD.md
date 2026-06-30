@@ -87,6 +87,7 @@ integration tests, Codex review fixes, decision points 3-4, public→authenticat
 3. **禁止** 移除或绕过全局 ErrorBoundary
 4. **禁止** 在 Tier 1 完成前启动 Tier 2/Tier 3 工作
 5. **禁止** 在 leads 详情页假设外键数据必然存在
+6. **禁止** 引用未经 `supabase.from("table").select().limit(1)` 验证过的数据库列名。CC 子代理生成的任何 supabase 查询，必须在 commit 前用 service_role key 验证实际表结构
 
 ---
 

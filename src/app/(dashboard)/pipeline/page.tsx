@@ -60,7 +60,7 @@ function daysSince(d: string | null): number | null {
 }
 
 /* ─── Draggable Lead Card ─── */
-function LeadCard({ lead, onLeadClick, salesUsers }: { lead: Lead; onLeadClick: (id: string) => void; salesUsers: any[] }) {
+function LeadCard({ lead, onDragStart, onLeadClick, salesUsers }: { lead: Lead; onDragStart: (e: React.DragEvent, leadId: string) => void; onLeadClick: (id: string) => void; salesUsers: any[] }) {
   const { t } = useLanguage();
   const days = daysSince(lead.last_contact_date || lead.updated_at);
   const hoursSinceUpdate = lead.updated_at
@@ -73,21 +73,10 @@ function LeadCard({ lead, onLeadClick, salesUsers }: { lead: Lead; onLeadClick: 
   const isWon = lead.final_status === "won";
   const isLost = lead.final_status === "lost";
 
-  const handleDragStart = (e: React.DragEvent) => {
-    e.dataTransfer.setData("text/plain", lead.id);
-    e.dataTransfer.effectAllowed = "move";
-    (e.currentTarget as HTMLElement).classList.add("opacity-40");
-  };
-
-  const handleDragEnd = (e: React.DragEvent) => {
-    (e.currentTarget as HTMLElement).classList.remove("opacity-40");
-  };
-
   return (
     <div
       draggable
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
+      onDragStart={(e) => onDragStart(e, lead.id)}
       onClick={() => onLeadClick(lead.id)}
         className={cn(
         "p-3 rounded-lg border bg-muted/60 cursor-grab active:cursor-grabbing transition-all duration-150 select-none",
@@ -577,7 +566,7 @@ export default function PipelinePage() {
 
                       {/* Cards */}
                       {items.map((lead) => (
-                        <LeadCard key={lead.id} lead={lead} onLeadClick={(id) => router.push(`/leads/${id}`)} salesUsers={salesUsers} />
+                        <LeadCard key={lead.id} lead={lead} onDragStart={onDragStart} onLeadClick={(id) => router.push(`/leads/${id}`)} salesUsers={salesUsers} />
                       ))}
                     </div>
                   </div>

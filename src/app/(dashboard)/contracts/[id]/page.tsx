@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, FileText, DollarSign, Calendar, User, Clock, CheckCircle2,
-  XCircle, Ban, Bell, AlertTriangle, CheckCircle, Download, ShieldCheck,
+  XCircle, Ban, Bell, AlertTriangle, CheckCircle, Download, ShieldCheck, Upload,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -84,6 +84,9 @@ export default function ContractDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function load() {
     try {
@@ -129,9 +132,9 @@ export default function ContractDetailPage() {
 
   const STATUS_LABELS: Record<string, string> = {
     draft: t("contracts.statusDraft"),
+    signed: t("contracts.statusSigned"),
     pending_admin: t("contracts.statusPendingAdmin"),
     pending_ceo: t("contracts.statusPendingCeo"),
-    signed: t("contracts.statusSigned"),
     active: t("contracts.statusActive"),
     approved: t("contracts.statusApproved"),
     completed: t("contracts.statusCompleted"),
@@ -140,6 +143,7 @@ export default function ContractDetailPage() {
     revoking: t("contracts.statusRevoking"),
     superseded: t("contracts.statusSuperseded"),
     suspended: t("contracts.statusSuspended"),
+    cancelled: t("contracts.statusCancelled") || "Cancelled",
   };
 
   /* ── Payment status roll-up ── */
@@ -177,20 +181,121 @@ export default function ContractDetailPage() {
     }
   }
 
+  /* ── Upload contract file ── */
+  function startUpload() {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+      fileInputRef.current.click();
+    }
+  }
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadProgress(0);
+    try {
+      // 1. Get presigned URL
+      const urlRes = await fetch(`/api/contracts/${contractId}/upload-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name }),
+      });
+      if (!urlRes.ok) {
+        const err = await urlRes.json().catch(() => ({}));
+        toast.error(err.error || t("contracts.uploadFailed"));
+        setUploading(false);
+        return;
+      }
+      const { url, key } = await urlRes.json();
+
+      // 2. Upload to COS with progress
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", url);
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) setUploadProgress(Math.round((ev.loaded / ev.total) * 100));
+        };
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("Upload failed")));
+        xhr.onerror = () => reject(new Error("Upload failed"));
+        xhr.send(file);
+      });
+
+      // 3. Confirm upload
+      const confirmRes = await fetch(`/api/contracts/${contractId}/confirm-upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, filename: file.name, size: file.size }),
+      });
+      if (confirmRes.ok) {
+        toast.success(t("contracts.uploadSuccess"));
+        await load();
+      } else {
+        const err = await confirmRes.json().catch(() => ({}));
+        toast.error(err.error || t("contracts.uploadFailed"));
+      }
+    } catch {
+      toast.error(t("contracts.uploadFailed"));
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  }
+
+  /* ── Status change ── */
+  async function changeStatus(newStatus: string) {
+    if (!canManage) return;
+    const confirmed = confirm(t("contracts.confirmStatusChange") || `Change status to ${newStatus}?`);
+    if (!confirmed) return;
+    setActing(true);
+    try {
+      const res = await fetch(`/api/contracts/${contractId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        toast.success(t("contracts.statusUpdated") || "Status updated");
+        await load();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || t("common.operationFailed"));
+      }
+    } catch {
+      toast.error(t("login.networkError"));
+    } finally {
+      setActing(false);
+    }
+  }
+
   const showApprove =
     canManage &&
     ((contract.status === "pending_admin" && true) ||
       contract.status === "pending_ceo");
 
+  const showUploadButton =
+    canManage && ["draft", "pending_admin", "pending_ceo"].includes(contract.status);
+
+  const showStatusActions = canManage && contract.status !== "completed" && contract.status !== "terminated";
+
   return (
     <div className="space-y-5 max-w-5xl">
       <Toaster position="top-center" richColors />
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+        onChange={handleFileSelected}
+      />
 
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-1">
           <button
-            onClick={() => router.push("/contracts")}
+            onClick={() => { window.location.href = "/contracts"; }}
             className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
@@ -228,6 +333,19 @@ export default function ContractDetailPage() {
                 <XCircle className="w-3.5 h-3.5 mr-1" />{t("contracts.reject")}
               </Button>
             </>
+          )}
+          {showUploadButton && (
+            <Button
+              size="sm" variant="outline" disabled={uploading}
+              onClick={startUpload}
+              className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 h-8"
+            >
+              {uploading ? (
+                <>{t("contracts.uploading")} {uploadProgress}%</>
+              ) : (
+                <><Upload className="w-3.5 h-3.5 mr-1" />{t("contracts.uploadContract")}</>
+              )}
+            </Button>
           )}
           <Button
             size="sm" variant="outline" disabled={acting}
@@ -319,6 +437,9 @@ export default function ContractDetailPage() {
             <InfoRow icon={<User className="w-3.5 h-3.5" />} label={t("contracts.partyA")} value={contract.party_a_name} sub={contract.party_a_contact} />
             <InfoRow icon={<User className="w-3.5 h-3.5" />} label={t("contracts.partyB")} value={contract.party_b_name} sub={contract.party_b_contact} />
             <InfoRow icon={<DollarSign className="w-3.5 h-3.5" />} label={t("contracts.amount")} value={fmtAED(totalContract)} sub={contract.currency} />
+            {contract.signed_at && (
+              <InfoRow icon={<CheckCircle className="w-3.5 h-3.5" />} label={t("contracts.signedAt") || "Signed At"} value={contract.signed_at?.slice(0, 10)} />
+            )}
           </CardContent>
         </Card>
 
@@ -344,6 +465,35 @@ export default function ContractDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Status change (admin/manager only) ── */}
+      {showStatusActions && canManage && (
+        <Card className="bg-card border-border">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-1 h-4 rounded-full bg-amber-400" />
+              <h2 className="text-sm font-semibold text-foreground">{t("contracts.changeStatus") || "Change Status"}</h2>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {["draft", "signed", "pending_admin", "pending_ceo", "approved", "active", "completed", "terminated", "cancelled"].map((s) => (
+                <Button
+                  key={s}
+                  size="sm" variant="outline"
+                  disabled={acting || contract.status === s}
+                  onClick={() => changeStatus(s)}
+                  className={`text-xs h-7 ${
+                    contract.status === s
+                      ? "border-copper-500/50 text-copper-400 bg-copper-500/10"
+                      : "border-border/40 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {STATUS_LABELS[s] || s}
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Installment tracking ── */}
       <Card className="bg-card border-border">

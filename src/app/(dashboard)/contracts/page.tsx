@@ -7,7 +7,7 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
-import { FileText, DollarSign, Calendar, User, Clock, Briefcase, Plus, Bell, CheckCircle, AlertTriangle, Upload, Ban, CheckCircle2, XCircle } from "lucide-react";
+import { FileText, DollarSign, Calendar, User, Clock, Briefcase, Plus, Bell, CheckCircle, AlertTriangle, Upload, Ban, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Filter } from "lucide-react";
 import SubNavTabs from "@/components/SubNavTabs";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -30,9 +30,9 @@ export default function ContractsPage() {
 
   const STATUS_LABELS: Record<string, string> = {
     draft: t("contracts.statusDraft"),
+    signed: t("contracts.statusSigned"),
     pending_admin: t("contracts.statusPendingAdmin"),
     pending_ceo: t("contracts.statusPendingCeo"),
-    signed: t("contracts.statusSigned"),
     active: t("contracts.statusActive"),
     approved: t("contracts.statusApproved"),
     completed: t("contracts.statusCompleted"),
@@ -42,6 +42,7 @@ export default function ContractsPage() {
     revoking: t("contracts.statusRevoking"),
     superseded: t("contracts.statusSuperseded"),
     suspended: t("contracts.statusSuspended"),
+    cancelled: t("contracts.statusCancelled") || "Cancelled",
   };
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -53,8 +54,11 @@ export default function ContractsPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
 
-  // ❌ Remove this from here — hook order violation
-  // if (roleLoading || blocked) return null;
+  // Pagination + filtering state
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(10);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [totalCount, setTotalCount] = useState(0);
 
   const statusLabel = (s: string) => {
     return STATUS_LABELS[s] || s;
@@ -149,7 +153,6 @@ export default function ContractsPage() {
   // Upload contract file
   function startUpload(contractId: string) {
     setUploadTargetId(contractId);
-    // Use the ref to trigger file input
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
       fileInputRef.current.click();
@@ -237,27 +240,52 @@ export default function ContractsPage() {
 
   useEffect(() => {
     if (!userId || !role) return;
+    setLoading(true);
     let q = supabase.from("contracts").select(`
       *, leads(customer_name), profiles!contracts_sales_id_fkey(full_name, email),
       installment_plans(id, amount, due_date, status, paid_amount, seq)
-    `).order("created_at", { ascending: false });
+    `, { count: "exact" }).order("created_at", { ascending: false });
 
     if (role === "sales") q = q.eq("sales_id", userId);
+    if (statusFilter !== "all") q = q.eq("status", statusFilter);
 
-    q.then(({ data, error: err }) => {
+    // Pagination: use range
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    q = q.range(from, to);
+
+    q.then(({ data, error: err, count }) => {
       if (err) { setError(t("common.loadFailedRetry")); console.error(err); }
-      else setContracts(data as Contract[]);
+      else {
+        setContracts(data as Contract[]);
+        setTotalCount(count ?? 0);
+      }
       setLoading(false);
     });
-  }, [userId, role]);
+  }, [userId, role, page, statusFilter]);
 
   if (roleLoading || blocked) return null;
 
   if (loading) return <div className="text-muted-foreground p-8">{t("common.loading")}</div>;
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
 
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const fmtAED = (v: number) => v >= 1_000_000 ? `AED ${(v/1_000_000).toFixed(1)}M` : `AED ${v.toLocaleString()}`;
   const totalActive = contracts.reduce((s, c) => ["signed","active","approved"].includes(c.status) ? s + c.contract_amount : s, 0);
+
+  const STATUS_FILTER_OPTIONS = [
+    { value: "all", label: t("common.all") || "All" },
+    { value: "draft", label: STATUS_LABELS.draft },
+    { value: "signed", label: STATUS_LABELS.signed },
+    { value: "pending_admin", label: STATUS_LABELS.pending_admin },
+    { value: "pending_ceo", label: STATUS_LABELS.pending_ceo },
+    { value: "active", label: STATUS_LABELS.active },
+    { value: "approved", label: STATUS_LABELS.approved },
+    { value: "completed", label: STATUS_LABELS.completed },
+    { value: "terminated", label: STATUS_LABELS.terminated },
+    { value: "rejected", label: STATUS_LABELS.rejected },
+    { value: "cancelled", label: STATUS_LABELS.cancelled },
+  ];
 
   return (
     <div className="space-y-0">
@@ -275,6 +303,24 @@ export default function ContractsPage() {
         </Link>
       </div>
 
+      {/* Status filter */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <Filter className="w-4 h-4 text-muted-foreground" />
+        {STATUS_FILTER_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => { setStatusFilter(opt.value); setPage(1); }}
+            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+              statusFilter === opt.value
+                ? "bg-copper-500/20 border-copper-500/40 text-copper-400"
+                : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
       {/* Hidden file input for uploads */}
       <input
         ref={fileInputRef}
@@ -286,7 +332,7 @@ export default function ContractsPage() {
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.total")}</p><p className="text-xl font-bold">{contracts.length}</p></CardContent></Card>
+        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.total")}</p><p className="text-xl font-bold">{totalCount}</p></CardContent></Card>
         <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.activeValue")}</p><p className="text-xl font-bold">{fmtAED(totalActive)}</p></CardContent></Card>
         <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.signed")}</p><p className="text-xl font-bold">{contracts.filter(c => c.status === "signed").length}</p></CardContent></Card>
         <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.active")}</p><p className="text-xl font-bold">{contracts.filter(c => c.status === "active").length}</p></CardContent></Card>
@@ -406,6 +452,33 @@ export default function ContractsPage() {
           );
         })}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4 px-1">
+          <span className="text-xs text-muted-foreground">
+            {t("common.page") || "Page"} {page} / {totalPages} ({totalCount} {t("contracts.total")})
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm" variant="outline"
+              disabled={page <= 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              className="h-8 text-xs"
+            >
+              <ChevronLeft className="w-3.5 h-3.5 mr-1" />{t("common.prev") || "Prev"}
+            </Button>
+            <Button
+              size="sm" variant="outline"
+              disabled={page >= totalPages}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              className="h-8 text-xs"
+            >
+              {t("common.next") || "Next"}<ChevronRight className="w-3.5 h-3.5 ml-1" />
+            </Button>
+          </div>
+        </div>
+      )}
       <Toaster position="top-center" richColors />
     </div>
   );

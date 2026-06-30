@@ -181,7 +181,7 @@ function NewContractPageInner() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.push("/contracts")} className="text-muted-foreground">
+        <Button variant="ghost" size="icon" onClick={() => window.location.href = "/contracts"} className="text-muted-foreground">
           <ArrowLeft className="w-5 h-5" />
         </Button>
         <h1 className="text-2xl font-bold">{t("contracts.new")}</h1>
@@ -279,7 +279,7 @@ function NewContractPageInner() {
         </Card>
 
         <div className="flex items-center justify-end gap-2 pt-2">
-          <Button type="button" variant="ghost" onClick={() => router.push("/contracts")} className="text-muted-foreground">
+          <Button type="button" variant="ghost" onClick={() => window.location.href = "/contracts"} className="text-muted-foreground">
             {t("common.cancel")}
           </Button>
           <Button type="submit" disabled={saving}

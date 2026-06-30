@@ -17,6 +17,7 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { createClient } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
+import { DashboardErrorBoundary } from "@/components/DashboardErrorBoundary";
 
 // ─── Nav item type ───
 interface NavItem {
@@ -332,7 +333,9 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             <Suspense
               fallback={<div className="flex items-center justify-center h-64 text-muted-foreground text-sm">{t("common.loading")}</div>}
             >
-              {children}
+              <DashboardErrorBoundary>
+                {children}
+              </DashboardErrorBoundary>
             </Suspense>
           )}
         </div>

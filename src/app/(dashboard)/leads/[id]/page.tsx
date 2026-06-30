@@ -13,6 +13,8 @@ import { createClient } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ErrorState } from "@/components/ui/error-state";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSupabaseQuery } from "@/lib/supabaseQuery";
 import { cn } from "@/lib/utils";
 import { toast, Toaster } from "sonner";
 import { ArrowLeft, Trash2 } from "lucide-react";
@@ -81,12 +83,26 @@ export default function LeadDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data: l, error: err1 } = await supabase.from("leads").select("*, creator:profiles!created_by(id, name)").eq("id", id).single();
+      const { data: l, error: err1 } = await supabase.from("leads").select("*, creator:profiles!created_by(id, name)").eq("id", id).maybeSingle();
       if (err1) { console.error("[LeadDetail] fetch lead failed"); setError(t("common.loadFailedRetry")); return; }
       if (l) {
         const creatorName = (l as any).creator?.name || null;
         setLead({ ...l, creator_name: creatorName } as any);
         setProjectInfoDraft(projectDraftFromLead(l));
+
+        // Fetch foreign-key related entities (maybeSingle for graceful null handling)
+        if ((l as any).customer_id) {
+          const { data: customer } = await supabase.from("customers").select("id, name, email, phone").eq("id", (l as any).customer_id).maybeSingle();
+          if (customer) setLead(prev => prev ? ({ ...prev, customer } as any) : prev);
+        }
+        if ((l as any).product_id) {
+          const { data: product } = await supabase.from("products").select("id, name, category, sku").eq("id", (l as any).product_id).maybeSingle();
+          if (product) setLead(prev => prev ? ({ ...prev, product } as any) : prev);
+        }
+        if (l.created_by) {
+          const { data: creatorProfile } = await supabase.from("profiles").select("id, full_name, email, role").eq("id", l.created_by).maybeSingle();
+          if (creatorProfile) setLead(prev => prev ? ({ ...prev, creator_profile: creatorProfile } as any) : prev);
+        }
       }
       const { data: ful, error: fulErr } = await supabase
         .from("follow_up_logs")
@@ -581,6 +597,60 @@ export default function LeadDetailPage() {
     );
 
   // ═══════════════ MAIN RENDER ═══════════════
+  if (loading) {
+    return (
+      <div className="max-w-7xl space-y-6">
+        {/* Header skeleton */}
+        <div className="flex items-center gap-4">
+          <div className="h-10 w-10 rounded-lg bg-muted animate-pulse" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-8 w-64" />
+            <Skeleton className="h-4 w-48" />
+          </div>
+        </div>
+
+        {/* Three-column skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <aside className="lg:col-span-3 space-y-4">
+            <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+              <Skeleton className="h-6 w-32" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+            </div>
+          </aside>
+
+          <main className="lg:col-span-5 space-y-4">
+            <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+              <Skeleton className="h-6 w-40" />
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-4 w-full" />
+            </div>
+          </main>
+
+          <aside className="lg:col-span-4 space-y-4">
+            <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+              <Skeleton className="h-6 w-36" />
+              <Skeleton className="h-48 w-full" />
+            </div>
+          </aside>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return <ErrorState message={error} onRetry={() => window.location.reload()} />;
+  }
+
+  if (!lead) {
+    return (
+      <div className="text-center py-16">
+        <p className="text-muted-foreground">{t("common.notFound")}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl space-y-6">
       {/* Header: back + name + status badge + delete */}

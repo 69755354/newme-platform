@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase";
+import { useSupabaseQuery } from "@/lib/supabaseQuery";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
   Search, X, Grid3X3, List, Package, Wifi,
@@ -55,27 +57,25 @@ export default function ProductsPage() {
   const { t } = useLanguage();
   const { loading: roleLoading } = useRequireRole(["admin", "boss", "operator", "sales"]);
 
-  const [products, setProducts] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
-  const [loading, setLoading] = useState(true);
   const [importOpen, setImportOpen] = useState(false);
 
-  useEffect(() => {
-    setLoading(true);
-    supabase
-      .from("products")
-      .select("*")
-      .order("category")
-      .order("name")
-      .then(({ data }) => {
-        setProducts(data || []);
-        setLoading(false);
-      });
-  }, []);
+  // Fetch products using useSupabaseQuery
+  const { data: rawProducts, loading, error, refetch } = useSupabaseQuery<any[]>(
+    async () => {
+      return await supabase
+        .from("products")
+        .select("*")
+        .order("category")
+        .order("name");
+    },
+    []
+  );
+  const products = rawProducts || [];
 
   const filtered = useMemo(() => {
-    let result = products;
+    let result = products || [];
     if (activeCategory !== "all") {
       result = result.filter((p) => p.category === activeCategory);
     }
@@ -92,8 +92,9 @@ export default function ProductsPage() {
   }, [products, search, activeCategory]);
 
   const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: products.length };
-    for (const p of products) {
+    const items = products || [];
+    const counts: Record<string, number> = { all: items.length };
+    for (const p of items) {
       counts[p.category] = (counts[p.category] || 0) + 1;
     }
     return counts;
@@ -246,18 +247,7 @@ export default function ProductsPage() {
       <ProductImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
-        onImported={() => {
-          setLoading(true);
-          supabase
-            .from("products")
-            .select("*")
-            .order("category")
-            .order("name")
-            .then(({ data }) => {
-              setProducts(data || []);
-              setLoading(false);
-            });
-        }}
+        onImported={() => refetch()}
       />
     </div>
   );

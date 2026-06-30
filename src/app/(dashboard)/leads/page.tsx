@@ -14,6 +14,9 @@ import { toast } from "sonner";
 import QuickCreateLeadDialog from "@/components/QuickCreateLeadDialog";
 import ExcelImportDialog from "@/components/leads/ExcelImportDialog";
 import SubNavTabs from "@/components/SubNavTabs";
+import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
+import { useStageGuard } from "@/shared/hooks/useStageGuard";
+import { useSupabaseQuery } from "@/lib/supabaseQuery";
 import {
   Search, X, Plus, Phone, Calendar, MapPin, ChevronRight,
   MoreHorizontal, Edit3, Send, TrendingUp, Building2,
@@ -143,6 +146,11 @@ function LeadsContent() {
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [showBulkTransfer, setShowBulkTransfer] = useState(false);
   const [bulkTransferTargetId, setBulkTransferTargetId] = useState<string>("");
+
+  // ─── Infrastructure hooks ───
+  const showEmptyStages = true;
+  const { isValidTransition, getValidTransitions } = useStageGuard();
+  const { onDragStart, onDragOver, onDragLeave, onDragEnter, onDrop, draggingLeadId, draggingOverStage } = usePipelineDragDrop(leads, setLeads, currentUserId);
 
   const toggleSelect = (id: string) => {
     setSelectedLeadIds(prev => {
@@ -752,7 +760,12 @@ function LeadsContent() {
               const totalVal = items.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
               const isLost = stage.key === "lost";
               return (
-                <div key={stage.key} className={cn("flex flex-col w-[340px] min-h-[400px] rounded-xl border p-3 shrink-0 md:w-1/5 md:min-w-0", stage.bg, stage.border)}>
+                <div key={stage.key}
+                  onDragEnter={() => onDragEnter(stage.key)}
+                  onDragOver={(e) => onDragOver(e, stage.key)}
+                  onDragLeave={() => onDragLeave(stage.key)}
+                  onDrop={(e) => onDrop(e, stage.key)}
+                  className={cn("flex flex-col w-[340px] min-h-[400px] rounded-xl border p-3 shrink-0 md:w-1/5 md:min-w-0 transition-all duration-150", stage.bg, stage.border, draggingOverStage === stage.key && "ring-2 ring-copper-500/50 border-copper-500/30")}>
                   <div className="flex items-center justify-between mb-3 px-1">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full" style={{ backgroundColor: stage.color }} />
@@ -782,9 +795,13 @@ function LeadsContent() {
                       const isReassigning = reassignLeadId === lead.id;
 
                       return (
-                        <Card key={lead.id} className={cn(
+                        <Card key={lead.id}
+                          draggable
+                          onDragStart={(e) => onDragStart(e, lead.id)}
+                          className={cn(
                           "cursor-pointer transition-all duration-150 group relative",
                           "hover:-translate-y-0.5 hover:shadow-lg hover:shadow-foreground/5",
+                          draggingLeadId === lead.id && "opacity-40",
                           isHot && "ring-1 ring-rose-500/30",
                           isCrit ? "ring-2 ring-red-500/40" : isStale ? "ring-1 ring-amber-500/30" : "",
                           lead.recovery_candidate && "ring-1 ring-orange-500/30",

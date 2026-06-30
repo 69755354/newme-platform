@@ -13,6 +13,9 @@ import {
   GripVertical, User, Plus, TrendingUp, Wallet, CheckCircle2,
   ChevronLeft, ChevronRight,
 } from "lucide-react";
+import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
+import { useStageGuard } from "@/shared/hooks/useStageGuard";
+import { useSupabaseQuery } from "@/lib/supabaseQuery";
 
 /* ─── Types ─── */
 interface Lead {
@@ -163,15 +166,17 @@ export default function PipelinePage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [draggingOver, setDraggingOver] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [salesUsers, setSalesUsers] = useState<any[]>([]);
   const [showEmptyStages, setShowEmptyStages] = useState(false);
   const [activeStageKey, setActiveStageKey] = useState<string | null>(null);
-  const dragCounter = useRef<Record<string, number>>({});
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // ─── Infrastructure hooks ───
+  const { isValidTransition, getValidTransitions } = useStageGuard();
+  const { onDragStart, onDragOver, onDragLeave, onDragEnter, onDrop, draggingLeadId, draggingOverStage } = usePipelineDragDrop(leads, setLeads, userId);
 
   // Get current user and role
   useEffect(() => {
@@ -298,109 +303,7 @@ export default function PipelinePage() {
     });
   }
 
-  // ─── Stage guard helpers (shared with leads/page.tsx) ───
-  const STAGE_INDEX: Record<string, number> = {};
-  STAGES.forEach((s, i) => { STAGE_INDEX[s.key] = i; });
-  const TERMINAL_STAGES = new Set(["won", "lost"]);
 
-  function validateStageTransition(lead: Lead, targetStage: string): string | null {
-    // Guard 1: same stage → no-op
-    if (lead.stage === targetStage) return null;
-    // Guard 2: valid target stage
-    if (!(targetStage in STAGE_INDEX)) return t("common.invalidStage") + `: "${targetStage}"`;
-    // Guard 3: terminal leads can't be moved — won/lost now live in final_status
-    if (lead.final_status === "won" || lead.final_status === "lost") return t("common.cannotChangeClosedLead");
-    // Guard 4: forward-only for non-admin/boss
-    const canRevert = role === "admin" || role === "boss";
-    if (!canRevert && STAGE_INDEX[targetStage] < STAGE_INDEX[lead.stage]) return t("common.cannotMoveBackward");
-    // Guard 5: max 1 step forward for non-admin/boss
-    if (!canRevert && STAGE_INDEX[targetStage] - STAGE_INDEX[lead.stage] > 1) return t("common.cannotSkipStages");
-    return null;
-  }
-
-  // Handle drop: move lead to new stage
-  const handleDrop = useCallback(async (e: React.DragEvent, targetStage: string) => {
-    e.preventDefault();
-    setDraggingOver(null);
-    const leadId = e.dataTransfer.getData("text/plain");
-    if (!leadId) return;
-
-    const lead = leads.find(l => l.id === leadId);
-    if (!lead) return;
-
-    // Run 5-stage guard
-    const guardError = validateStageTransition(lead, targetStage);
-    if (guardError) {
-      toast.error(guardError);
-      return;
-    }
-
-    setUpdating(true);
-    const oldStage = lead.stage;
-    const oldFinal = lead.final_status;
-
-    // Optimistic update — won/lost persist to final_status, process stages to stage
-    setLeads(prev => prev.map(l => l.id === leadId ? {
-      ...l,
-      ...(targetStage === "won" || targetStage === "lost"
-        ? { final_status: targetStage }
-        : { stage: targetStage })
-    } : l));
-
-    // Build auto-updates (same logic as leads/page.tsx changeStage)
-    const now = new Date().toISOString();
-    // won/lost are terminal → persist to final_status, not stage; process stages keep stage
-    const updates: Record<string, any> = targetStage === "won" || targetStage === "lost"
-      ? { final_status: targetStage, updated_at: now, last_contact_date: now }
-      : { stage: targetStage, updated_at: now, last_contact_date: now };
-    if (TERMINAL_STAGES.has(targetStage)) {
-      updates.decision_date = now;
-      // Cascade: close related open quotes
-      await supabase.from("quotations")
-        .update({ status: targetStage === "lost" ? "draft" : undefined, updated_at: now })
-        .eq("lead_id", leadId)
-        .neq("status", "accepted");
-    }
-
-    // Persist
-    const { error: updateErr } = await supabase.from("leads").update(updates).eq("id", leadId);
-    if (updateErr) {
-      // Revert UI (restore both stage and final_status)
-      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: oldStage, final_status: oldFinal } : l));
-      toast.error(t("common.failedToUpdateStage") + `: ${updateErr.message}`);
-      setUpdating(false);
-      return;
-    }
-    await supabase.from("activities").insert({
-      lead_id: leadId, type: "stage_change",
-      content: `Stage changed from ${oldStage} to ${targetStage} (Kanban drag)`,
-      user_id: (await supabase.auth.getUser()).data.user?.id,
-    });
-    await writeEvent(leadId, "stage_changed", `Stage changed from ${oldStage} to ${targetStage} via Kanban drag-drop`, {
-      from: oldStage, to: targetStage,
-    });
-
-    setUpdating(false);
-  }, [leads, role, supabase]);
-
-  const handleDragOver = useCallback((e: React.DragEvent, stageKey: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDraggingOver(stageKey);
-  }, []);
-
-  const handleDragLeave = useCallback((stageKey: string) => {
-    // Use counter to handle nested drag leave events
-    dragCounter.current[stageKey] = (dragCounter.current[stageKey] || 0) - 1;
-    if (dragCounter.current[stageKey] <= 0) {
-      dragCounter.current[stageKey] = 0;
-      setDraggingOver(prev => prev === stageKey ? null : prev);
-    }
-  }, []);
-
-  const handleDragEnter = useCallback((stageKey: string) => {
-    dragCounter.current[stageKey] = (dragCounter.current[stageKey] || 0) + 1;
-  }, []);
 
   if (loading && role !== "sales") return <div className="text-center py-16 text-muted-foreground">{t("common.loading")}</div>;
   if (error && role !== "sales") return <ErrorState message={error} onRetry={() => window.location.reload()} />;
@@ -619,7 +522,7 @@ export default function PipelinePage() {
 
               return visibleStages.map((stage) => {
                 const items = columns[stage.key] || [];
-                const isOver = draggingOver === stage.key;
+                const isOver = draggingOverStage === stage.key;
                 const isWon = stage.key === "won";
                 const isLost = stage.key === "lost";
 
@@ -627,10 +530,10 @@ export default function PipelinePage() {
                   <div
                     key={stage.key}
                     id={`stage-${stage.key}`}
-                    onDragEnter={() => handleDragEnter(stage.key)}
-                    onDragOver={(e) => handleDragOver(e, stage.key)}
-                    onDragLeave={() => handleDragLeave(stage.key)}
-                    onDrop={(e) => handleDrop(e, stage.key)}
+                    onDragEnter={() => onDragEnter(stage.key)}
+                    onDragOver={(e) => onDragOver(e, stage.key)}
+                    onDragLeave={() => onDragLeave(stage.key)}
+                    onDrop={(e) => onDrop(e, stage.key)}
                     className={cn(
                       "flex flex-col w-[300px] shrink-0 rounded-xl border transition-all duration-150 snap-start",
                       stage.bg, stage.border,

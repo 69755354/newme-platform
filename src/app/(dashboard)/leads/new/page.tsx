@@ -35,6 +35,7 @@ export default function NewLeadPage() {
       location: form.location || null,
       quality: "pending",
       assigned_to: user?.id || null,
+      created_by: user?.id || null,
       next_action: "call",
       next_followup_date: followupDate,
     }).select("id").single();

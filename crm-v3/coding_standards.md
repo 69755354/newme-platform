@@ -152,6 +152,18 @@ CREATE INDEX my_index ON leads(assigned_to);  -- 禁止！
 详见 §3A。
 ```
 
+### 🔴 R9 — 审核权责规范（永久固化）
+所有代码 / 方案 / 文档变更必须遵循 `crm-v3/rules/hermes-rules.md` 定义的流转链路：
+- **调度** → **前置预检** → **CC** → **Codex 1 审** → **Hermes 2 审终审**
+- Codex 1 审和 Hermes 2 审权责完全解耦，不重叠
+- **强制前置预检**：CC 交付后必须先校验完整性 + 约束合规，未通过不打 Codex
+- **§3A 强制门禁**：改动 Supabase 查询时必须用 service_role 验证列存在
+- **流程异常**：见 hermes-rules.md §九（1 审越界 / 漏判 / 跨会话等兜底）
+- **模型可换**：规则只约束角色，不绑定具体 LLM 模型
+
+**原因**：2026-07-01 沉淀 4 轮 MoA 实战（T1-T2 全收 + T3-4）形成正式规则。
+**违反**：commit 被 pre-push hook 拦截。
+
 ---
 
 ## 3A. 数据库列验证规则（2026-07-01 CC 事故后立碑）

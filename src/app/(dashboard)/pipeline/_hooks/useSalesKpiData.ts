@@ -2,6 +2,8 @@
 
 /**
  * useSalesKpiData — T3-3 step 2 extracted from pipeline/page.tsx
+ * T3-3 step 3 HOTFIX: re-routed all 3 queries through useSupabaseQuery to
+ * comply with T1-1 freeze rule (no direct supabase.from() Promise chains).
  *
  * Encapsulates the 3-query parallel fetch (kpi_targets / contracts / payments)
  * plus the derived KPI calculations for the Sales KPI Dashboard.
@@ -13,6 +15,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase";
+import { useSupabaseQuery } from "@/lib/supabaseQuery";
 
 /* ─── Types ─── */
 interface KpiTarget {
@@ -49,63 +52,99 @@ export interface UseSalesKpiDataReturn {
 /* ─── Hook ─── */
 export function useSalesKpiData(currentUserId: string | null): UseSalesKpiDataReturn {
   const supabase = createClient();
-  const [kpiTargets, setKpiTargets] = useState<KpiTarget[]>([]);
+  // Period computed once per render — stable across the 3 queries below.
+  const period = new Date().toISOString().slice(0, 7);
+  const enabled = !!currentUserId;
+
+  // ── 3 parallel queries via useSupabaseQuery (replaces Promise.all + supabase.from chain).
+  // Each hook is independent; React triggers all 3 in parallel just like Promise.all did.
+  // useSupabaseQuery handles AbortController/timeout/retry internally — do NOT wrap externally.
+  // Pattern reference: src/app/(dashboard)/products/page.tsx
+  const {
+    data: kpiTargetsData,
+    loading: kpiLoading,
+  } = useSupabaseQuery<KpiTarget[]>(
+    async () => {
+      return await supabase
+        .from("kpi_targets")
+        .select("*")
+        .eq("period", period)
+        .eq("assigned_to", currentUserId as string);
+    },
+    [currentUserId, period],
+    { enabled }
+  );
+
+  const {
+    data: contractsData,
+    loading: contractsLoading,
+  } = useSupabaseQuery<ContractRow[]>(
+    async () => {
+      return await supabase
+        .from("contracts")
+        .select("id,contract_amount,status")
+        .eq("sales_id", currentUserId as string);
+    },
+    [currentUserId],
+    { enabled }
+  );
+
+  const {
+    data: paymentsData,
+    loading: paymentsLoading,
+  } = useSupabaseQuery<PaymentRow[]>(
+    async () => {
+      return await supabase.from("payments").select("amount,confirmed,contract_id");
+    },
+    [],
+    { enabled }
+  );
+
+  // ── Derived values (signingActual / collectionActual / contractCount) ──
+  // Recomputed synchronously from query data; synced into state via useEffect
+  // so the public hook return interface stays a stable 9-field shape.
   const [signingActual, setSigningActual] = useState(0);
   const [collectionActual, setCollectionActual] = useState(0);
   const [contractCount, setContractCount] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!currentUserId) return;
-    const period = new Date().toISOString().slice(0, 7);
-    setIsLoading(true);
+    const contracts = (contractsData ?? []) as ContractRow[];
+    const active = contracts.filter((c) => c.status !== "terminated");
+    const totalSigning = active.reduce((sum, c) => sum + (c.contract_amount || 0), 0);
+    setSigningActual(totalSigning);
+    setContractCount(active.length);
 
-    Promise.all([
-      // 1. Fetch KPI targets for this sales person
-      supabase.from("kpi_targets").select("*").eq("period", period).eq("assigned_to", currentUserId),
-      // 2. Fetch contracts for this sales person
-      supabase.from("contracts").select("id,contract_amount,status").eq("sales_id", currentUserId),
-      // 3. Fetch payments (all — filtered by contract ownership below)
-      supabase.from("payments").select("amount,confirmed,contract_id"),
-    ]).then(([tRes, cRes, pRes]) => {
-      if (tRes.data) setKpiTargets(tRes.data as KpiTarget[]);
+    if (paymentsData) {
+      const contractIds = new Set(contracts.map((c) => c.id));
+      const confirmedPayments = (paymentsData as PaymentRow[]).filter(
+        (p) => p.confirmed === true && contractIds.has(p.contract_id)
+      );
+      const totalCollected = confirmedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      setCollectionActual(totalCollected);
+    } else {
+      setCollectionActual(0);
+    }
+  }, [contractsData, paymentsData]);
 
-      if (cRes.data) {
-        const contracts = cRes.data as ContractRow[];
-        const active = contracts.filter(c => c.status !== "terminated");
-        const totalSigning = active.reduce((sum, c) => sum + (c.contract_amount || 0), 0);
-        setSigningActual(totalSigning);
-        setContractCount(active.length);
-
-        // Collection: payments where confirmed=true for this user's contracts
-        if (pRes.data) {
-          const contractIds = new Set(contracts.map(c => c.id));
-          const confirmedPayments = (pRes.data as PaymentRow[])
-            .filter(p => p.confirmed === true && contractIds.has(p.contract_id));
-          const totalCollected = confirmedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-          setCollectionActual(totalCollected);
-        }
-      }
-
-      setIsLoading(false);
-    }).catch(() => setIsLoading(false));
-  }, [currentUserId, supabase]);
+  // ── isLoading: true while ANY of the 3 queries is in flight ──
+  const isLoading = Boolean(kpiLoading || contractsLoading || paymentsLoading);
 
   // ─── Derived values ───
+  const kpiTargets = (kpiTargetsData ?? []) as KpiTarget[];
   const signingTarget = useMemo(
-    () => kpiTargets.find(t => t.target_type === "signing")?.target_amount || 0,
+    () => kpiTargets.find((t) => t.target_type === "signing")?.target_amount || 0,
     [kpiTargets]
   );
   const collectionTarget = useMemo(
-    () => kpiTargets.find(t => t.target_type === "collection")?.target_amount || 0,
+    () => kpiTargets.find((t) => t.target_type === "collection")?.target_amount || 0,
     [kpiTargets]
   );
   const signingPct = useMemo(
-    () => signingTarget > 0 ? Math.round((signingActual / signingTarget) * 100) : null,
+    () => (signingTarget > 0 ? Math.round((signingActual / signingTarget) * 100) : null),
     [signingTarget, signingActual]
   );
   const collectionPct = useMemo(
-    () => collectionTarget > 0 ? Math.round((collectionActual / collectionTarget) * 100) : null,
+    () => (collectionTarget > 0 ? Math.round((collectionActual / collectionTarget) * 100) : null),
     [collectionTarget, collectionActual]
   );
 

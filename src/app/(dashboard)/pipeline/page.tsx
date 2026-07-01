@@ -10,6 +10,9 @@ import { DashboardScrollContainer } from "@/components/DashboardScrollContainer"
 import { SalesKpiDashboard } from "./_components/SalesKpiDashboard";
 import { KanbanBoard } from "./_components/KanbanBoard";
 import type { Lead } from "./_components/LeadCard";
+// T3-3 step 3 HOTFIX: re-import useSupabaseQuery (project convention).
+// KPI data fetching is delegated to ./useSalesKpiData which uses the hook internally.
+import { useSupabaseQuery } from "@/lib/supabaseQuery";
 
 /* ─── Types ─── */
 // Lead interface is exported from ./_components/LeadCard (T3-3 step 1)

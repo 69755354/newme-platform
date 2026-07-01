@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn, fmtDubai } from "@/lib/utils";
 import { Toaster, toast } from "sonner";
 import {
   ArrowLeft,
@@ -114,11 +114,7 @@ function fmtAED(v: number | null | undefined): string {
 function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
   try {
-    return new Date(d).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+    return fmtDubai(d, { locale: "en-US", year: "numeric", month: "long", day: "numeric" });
   } catch {
     return "—";
   }
@@ -127,13 +123,7 @@ function fmtDate(d: string | null | undefined): string {
 function fmtDateTime(d: string | null | undefined): string {
   if (!d) return "—";
   try {
-    return new Date(d).toLocaleString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return fmtDubai(d, { locale: "en-US", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   } catch {
     return "—";
   }

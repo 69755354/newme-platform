@@ -35,6 +35,10 @@ export function PHProvider({ children }: { children: React.ReactNode }) {
       capture_exceptions: true,
       capture_pageview: true,
       capture_pageleave: true,
+      // T3-2: Web Vitals auto-capture (LCP/CLS/FCP/INP via bundled web-vitals callbacks)
+      // Note: posthog-js v1.386.6 ships web-vitals callbacks by default.
+      // capture_performance: true enables the performance event stream they emit to.
+      capture_performance: true,
       session_recording: {
         maskAllInputs: false,
         maskTextSelector: "",

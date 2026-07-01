@@ -80,6 +80,18 @@ Tier 2 unlocked (T2-1/2/3 ✅ 2026-07-01).
 
 ---
 
+### MoA Tier 4 — Process Governance (新建 2026-07-01)
+Tier 3 + P0 完成度不是前提——运维治理独立于产品进度。事由：2026-07-01 Sentry 131348591 流程违规补审。
+
+| # | Problem | Requirement | Verification | Status | Done Date |
+|---|---------|-------------|-------------|--------|-----------|
+| T4-1 | hermes-rules.md §十 缺运维操作边界 | 立 §十 运维操作三档分级（🟢/🟡/🔴）+ OEEC 紧急例外 + 速查表 10 类 | 章节落地、3 档表完整、OEEC 条款存在、速查表覆盖 Sentry/服务/数据库/Secrets | ✅ | 2026-07-01 |
+| T4-2 | Sentry issue 131348591 archived_forever 后未登记 ops-log | 在 HANDOFF-20260701.md 加 ## Ops Log 条目 + commit 留痕 | HANDOFF 含完整 6 字段（时间/命令/操作者/资源ID/缘由/审计报告路径） | 🔄 | 2026-07-01 |
+
+**Tier 4 Progress: 1/2 (50%)**
+
+---
+
 ## Phase 1 — Business Features (25/25 ✅ COMPLETE)
 
 All 25 items from Phase 1 business delivery are DONE. No action needed.

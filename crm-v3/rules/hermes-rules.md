@@ -195,9 +195,60 @@
 
 ---
 
-## 十、版本与维护
+## 十、运维操作边界（明确免审 / 单审 / 双审）
 
-- **当前版本**：v1.0（2026-07-01）
+> §1-§9 围绕"代码 / 方案 / 文档" review 链路。运维操作（Sentry / 服务 / 数据库 / 配置）的边界在本节明确。
+> 决策依据：**可逆性 + 影响半径 + 操作类型持久度**。
+
+### 1. 三档分级
+
+| 类别 | 操作 | 流程要求 | 理由 |
+|------|------|----------|------|
+| 🟢 **免审（只读 / 临时）** | 日志查询、health 检查、Sentry issue 状态**仅 resolve**、服务状态查询（curl / systemctl status） | **无** | 不可逆变更 = 0，可读即走 |
+| 🟡 **单审（调度单人 + 声明）** | 服务 restart、常规部署、`npm run deploy`、Sentry issue 状态调整（非 archived_forever） | **Hermes 单人决策 + commit message 标 `[OPS-Solo]` + 当日 `HANDOFF` 写一条 ops-log** | 改动有限、可快速回退 |
+| 🔴 **双审（强制 1 审 + 2 审）** | 数据库 DDL（migration）、生产数据库 DML（即使单行）、**Sentry issue archived_forever / merge / delete**、nginx / systemd 配置改动、Secrets / token / .env 修改 | **完整 CC → 1 审 → 2 审，且必须在 TASKBOARD 立对应任务** | 一旦出错不可逆 / 高破坏面 |
+
+### 2. 强制登记（无论免审 / 单审 / 双审）
+
+每次运维操作必须**当日**登记到 `crm-v3/ops/HANDOFF-YYYYMMDD.md` 的 `## Ops Log` 章节：
+- 操作时间戳
+- 操作命令 / API（粘贴原始 curl 命令）
+- 操作者（一般是 Hermes）
+- 影响的资源 ID（issue ID / service / row）
+- 缘由（≤1 句话）
+
+**登记缺失 → 当日 ops-log 反查时为虚假工作，按 §九 流程异常处理。**
+
+### 3. 紧急例外（OEEC, Operational Execution in Extreme Crisis）
+
+当告警 / 故障 / 生产事故下，需要**双审操作即刻执行**时：
+- 调度可单人先行执行 🔴 档操作
+- 但**必须**在同一会话内补建 TASKBOARD 任务 + 补 1+2 审审计（事后审计）
+- commit message 加 `[OPS-Crisis-Audit]` 标记
+- 24 小时内必须完成事后审计归档（参考 `crm-v3/ops/audit-20260701-sentry-131348591.md`）
+
+> **本节案例**：2026-07-01 Sentry issue 131348591（`SentryTestError` mock 验证遗留）由 Hermes 单人 archived_forever，事后 Codex 1 审 + Hermes 2 审补审 PASS（业务正确 + 流程违规），审计报告归档 `crm-v3/ops/`。
+
+### 4. 运维操作边界速查表
+
+| 类别 | 操作 | 档位 | 备注 |
+|------|------|------|------|
+| **监控/查询（只读）** | Sentry GET、journalctl、nginx access log、PostHog query、Supabase SELECT | 🟢 免审 | 不可逆变更 = 0 |
+| **Sentry（轻）** | resolve issue | 🟡 单审 | 保留可见、回到 history |
+| **Sentry（重）** | ignore / archived_forever / merge / delete | 🔴 双审 | 改变告警拓扑 |
+| **服务（轻）** | `systemctl restart`、`npm run deploy` | 🟡 单审 | 可回滚 |
+| **服务（重）** | 升级 Node、修改 systemd unit、nginx 站点配置 | 🔴 双审 | 影响开机/重启 |
+| **数据库（DDL）** | 任何 migration（CREATE TABLE / ALTER / DROP） | 🔴 双审 | 表结构变更核心 |
+| **数据库（DML 临时）** | 单行 UPDATE / INSERT 修数据（生产） | 🔴 双审 | 哪怕一行 |
+| **数据库（DML 批量）** | UPDATE / DELETE 多行（生产） | 🔴 双审 + 备份 | 影响不可逆 |
+| **Secrets & .env** | token 轮换、密钥增删、环境变量改值 | 🔴 双审 | 影响认证 |
+| **生产 debug** | 临时加 console.log、加 Sentry.setTag 排查 | 🟡 单审 | 当日清理 |
+
+---
+
+## 十一、版本与维护
+
+- **当前版本**：v1.1（2026-07-01）
 - **修订触发**：流程变更、新坑发现、模型/角色调整
 - **修订权**：Hermes 单方面修订
 - **修订记录**：见本文件底部 changelog（每次修订追加一条）

@@ -10,17 +10,18 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import QuickCreateLeadDialog from "@/components/QuickCreateLeadDialog";
 import ExcelImportDialog from "@/components/leads/ExcelImportDialog";
-import SubNavTabs from "@/components/SubNavTabs";
 import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { useLeadsData, Lead } from "./_hooks/useLeadsData";
 import { useLeadMutations } from "./_hooks/useLeadMutations";
 import { LeadCard } from "./_components/LeadCard";
+import { LeadsHeader } from "./_components/LeadsHeader";
+import { LeadsBulkTransferBar } from "./_components/LeadsBulkTransferBar";
 import {
-  Search, X, Plus, Calendar, MapPin, TrendingUp, Users, Clock,
+  Search, X, Calendar, MapPin, Users, Clock,
   AlertTriangle, RotateCcw, GripHorizontal, ShieldAlert,
-  BarChart3, Megaphone, Upload,
+  BarChart3, Megaphone,
 } from "lucide-react";
 import {
   PIPELINE_STAGES, STATUS_EMOJIS, STAGE_COLORS,
@@ -236,44 +237,21 @@ function LeadsContent() {
 
   return (
     <div className="space-y-0">
-      <SubNavTabs
-        items={[
-          { href: "/leads", labelKey: "leads.subnavAllLeads", iconName: "users" },
-          { href: "/ads", labelKey: "leads.subnavAdAnalytics", iconName: "megaphone" },
-        ]}
+      {/* T3-3 step 8: SubNavTabs + page-title sticky div extracted to LeadsHeader.
+          Returns Fragment so DOM is byte-identical: SubNavTabs stays outside
+          DashboardScrollContainer, page-title div stays inside. */}
+      <LeadsHeader
+        activeCount={activeCount}
+        totalPipeline={totalPipeline}
+        showPipelineSummary={showPipelineSummary}
+        setShowPipelineSummary={setShowPipelineSummary}
+        setShowQuickCreate={setShowQuickCreate}
+        setShowImport={setShowImport}
       />
       {/* T2-4: 锚定功能卡片 — 整页滚动时关键控件可见
           DashboardScrollContainer 建立 inner scroll 上下文，sticky 元素
           (page-title z-20 / filter-bar z-10) 才能正确锚定。 */}
       <DashboardScrollContainer className="p-4">
-      {/* page-title sticky: h1 + 顶部操作按钮 (Pipeline overview / Create / Import)
-          永远可见 — 用户滚到底部也知道自己在 leads 列表 */}
-      <div
-        data-sticky-region="page-title"
-        className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b -mx-4 px-4 py-2"
-      >
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">{t("leads.title")}</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">{t("leads.activePipeline").replace("{count}", String(activeCount)).replace("{value}", fmtAED(totalPipeline) || "—")}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShowPipelineSummary(!showPipelineSummary)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-            <TrendingUp className="w-3.5 h-3.5" />{t("leads.pipelineOverview")}
-          </button>
-          <button onClick={() => setShowQuickCreate(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/85 transition-colors">
-            <Plus className="w-3.5 h-3.5" />{t("common.create")}
-          </button>
-          <button onClick={() => setShowImport(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-            <Upload className="w-3.5 h-3.5" />{t("leads.importBtn")}
-          </button>
-        </div>
-      </div>
-      </div>
-
       {/* filter-bar sticky: pipeline summary (column header) + 筛选行
           锚定在 page-title 下方 — 滚下去也能改筛选条件 */}
       <div
@@ -454,47 +432,25 @@ function LeadsContent() {
         </div>
       )}
       </div>
-      {/* bulk-transfer-bar sticky: 选中 lead 后出现在底部，方便用户随时操作
-          选中的卡片滚到底，工具栏始终可见 */}
-      {selectedLeadIds.size > 0 && (salesRole === "admin" || salesRole === "boss") && (
-        <div
-          data-sticky-region="bulk-transfer-bar"
-          className="sticky bottom-0 z-10 bg-background/95 backdrop-blur-sm border-t -mx-4 px-4 py-2.5"
-        >
-          <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-copper-500/10 border border-copper-500/30">
-            <span className="text-sm font-medium text-copper-300">{selectedLeadIds.size} leads selected</span>
-            <div className="flex items-center gap-2">
-              <button onClick={() => selectAllVisible(filtered.map(l => l.id))}
-                className="text-xs text-copper-400 hover:text-copper-300">Select all {filtered.length}</button>
-              <button onClick={clearSelection}
-                className="text-xs text-muted-foreground hover:text-foreground">Clear</button>
-              {selectedLeadIds.size > 0 && !showBulkTransfer && (
-                <button onClick={() => { setShowBulkTransfer(true); setBulkTransferTargetId(""); }}
-                  className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-copper-500 text-foreground rounded-md hover:bg-copper-400 transition-colors">
-                  Transfer →
-                </button>
-              )}
-              {showBulkTransfer && (
-                <>
-                  <select value={bulkTransferTargetId} onChange={e => setBulkTransferTargetId(e.target.value)}
-                    className="text-xs bg-card border border-border/50 rounded px-2 py-1 text-foreground">
-                    <option value="">Select user...</option>
-                    {salesUsers.filter((u: any) => u.role === "sales").map((u: any) => (
-                      <option key={u.id} value={u.id}>{u.full_name || u.email}</option>
-                    ))}
-                  </select>
-                  <button onClick={bulkTransfer} disabled={reassigning || !bulkTransferTargetId}
-                    className="px-3 py-1 text-xs font-medium bg-emerald-600 text-foreground rounded-md hover:bg-emerald-500 disabled:opacity-40 transition-colors">
-                    {reassigning ? "Transferring..." : `Transfer ${selectedLeadIds.size}`}
-                  </button>
-                  <button onClick={() => setShowBulkTransfer(false)}
-                    className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* T3-3 step 10: bulk-transfer-bar sticky extracted to LeadsBulkTransferBar.
+          Visibility gate (selectedCount > 0 AND role admin/boss) is now inside
+          the component, matching the original conditional. All handlers
+          (bulkTransfer / onSelectAll / onClear) stay on the page since they
+          touch the page-level selection set and the bulkTransfer 4-table write. */}
+      <LeadsBulkTransferBar
+        selectedCount={selectedLeadIds.size}
+        totalFiltered={filtered.length}
+        salesRole={salesRole}
+        showBulkTransfer={showBulkTransfer}
+        setShowBulkTransfer={setShowBulkTransfer}
+        bulkTransferTargetId={bulkTransferTargetId}
+        setBulkTransferTargetId={setBulkTransferTargetId}
+        salesUsers={salesUsers}
+        reassigning={reassigning}
+        bulkTransfer={bulkTransfer}
+        onSelectAll={() => selectAllVisible(filtered.map(l => l.id))}
+        onClear={clearSelection}
+      />
       <QuickCreateLeadDialog open={showQuickCreate} onOpenChange={setShowQuickCreate} onCreated={fetchLeads} />
       <ExcelImportDialog open={showImport} onOpenChange={setShowImport} onImported={fetchLeads} />
     </DashboardScrollContainer>

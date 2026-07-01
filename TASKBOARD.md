@@ -64,7 +64,7 @@ Blocked by Tier 1 completion. Do NOT start until all Tier 1 = ✅.
 || T2-1 | P-2: Scroll behavior inconsistency | Unified scroll strategy across all dashboard pages | All pages use consistent overflow/scroll container | ✅ | 2026-07-01 |
 || T2-2 | P-3: Kanban stats scattered | Merge progress bar + numbers + percentage into single visual unit | Single stats component, not 3 separate elements | ✅ | 2026-07-01 |
 || T2-3 | P-5: Empty stage visibility | Default show empty stages + collapse toggle button | `showEmptyStages` default = true, toggle button exists | ✅ | 2026-07-01 |
-|| T2-4 | 锚定功能卡片 (sticky headers/filter/action bar) — 2026-07-01 新立 | 长页面滚动时 filter/标题/搜索/操作栏跟随屏幕 | leads/page.tsx (1ac84ca) + leads/[id]/page.tsx (a606d9b) 已锚定，剩 payments/quotations/tasks 3 页 | ⚠️ (2/5 done, 3 follow-up) | 2026-07-01 (commits 1ac84ca + a606d9b) |
+|| T2-4 | 锚定功能卡片 (sticky headers/filter/action bar) — 2026-07-01 新立 | 长页面滚动时 filter/标题/搜索/操作栏跟随屏幕 | leads/page.tsx + leads/[id]/page.tsx + payments/page.tsx 已锚定 (viewport 滚动模式)，剩 quotations/tasks 2 页 | ⚠️ (3/5 done, 2 follow-up) | 2026-07-01 (commits 1ac84ca + a606d9b + 0fe9543) |
 
 **Tier 2 Progress: 3.2/4 (80%)**
 

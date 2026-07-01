@@ -79,14 +79,7 @@ function getTypeLabel(type: string) {
 
 function formatDateTime(iso: string | null) {
   if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return fmtDubai(new Date(iso), { locale: "zh-CN", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 function formatDate(dateStr: string | null) {

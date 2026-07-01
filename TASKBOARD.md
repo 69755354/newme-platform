@@ -45,16 +45,24 @@ Source: MoA 4-round audit, 3-model unanimous sign-off, lines 478-500 + 559-600 +
 
 ---
 
+## P0 紧急性能修复（2026-07-01 立）
+
+| # | Problem | Requirement | Verification | Status | Done Date |
+|---|---------|-------------|-------------|--------|-----------|
+| P0-1 | leads/[id] 加载 2.1 分钟 / 431 请求 | fetchData 的 8 个串行查询改并行 + 关键路径用 PostgREST JOIN | 详情页加载 < 5s，请求数 < 50 | ❌ |  |
+
+---
+
 ## MoA Tier 2 — UI Consistency (SHORT-TERM, 2-4 weeks)
 Blocked by Tier 1 completion. Do NOT start until all Tier 1 = ✅.
 
 | # | Problem | Requirement | Verification | Status | Done Date |
 |---|---------|-------------|-------------|--------|-----------|
 | T2-1 | P-2: Scroll behavior inconsistency | Unified scroll strategy across all dashboard pages | All pages use consistent overflow/scroll container | ❌ (Tier 2) | |
-| T2-2 | P-3: Kanban stats scattered | Merge progress bar + numbers + percentage into single visual unit | Single stats component, not 3 separate elements | ❌ (Tier 2) | |
+| T2-2 | P-3: Kanban stats scattered | Merge progress bar + numbers + percentage into single visual unit | Single stats component, not 3 separate elements | ✅ | 2026-07-01 |
 | T2-3 | P-5: Empty stage visibility | Default show empty stages + collapse toggle button | `showEmptyStages` default = true, toggle button exists | ✅ | 2026-07-01 |
 
-**Tier 2 Progress: 1/3 (33%)**
+**Tier 2 Progress: 2/3 (67%)**
 
 ---
 

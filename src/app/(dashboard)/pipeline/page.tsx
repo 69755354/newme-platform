@@ -16,6 +16,7 @@ import {
 import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
 import { useSupabaseQuery } from "@/lib/supabaseQuery";
+import KanbanStats from "@/components/pipeline/KanbanStats";
 
 /* ─── Types ─── */
 interface Lead {
@@ -440,43 +441,15 @@ export default function PipelinePage() {
         </div>
       </div>
 
-      {/* Stage totals bar */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-1.5">
-        {STAGES.map((s) => {
-          const items = columns[s.key] || [];
-          const value = items.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
-          const isTerminal = ['won','lost'].includes(s.key);
-          const totalAll = leads.length;
-          const totalActive = STAGES.filter(x => !['won','lost'].includes(x.key)).reduce((sum, x) => sum + (columns[x.key]?.length || 0), 0);
-          // For terminal stages (won/lost), use totalAll as denominator to avoid >100% overflow
-          const denominator = isTerminal ? totalAll : totalActive;
-          const pct = denominator > 0 ? Math.round((items.length / denominator) * 100) : 0;
-          const isActive = activeStageKey === s.key;
-          return (
-            <div key={s.key}
-              onClick={() => {
-                const el = document.getElementById(`stage-${s.key}`);
-                if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
-              }}
-              className={cn(
-                "text-left p-2 rounded-lg border transition-all cursor-pointer hover:border-copper-500/50",
-                s.bg, s.border,
-                isActive && "ring-2 ring-copper-500/60"
-              )}>
-              <div className="flex items-center justify-between mb-0.5">
-                <span className="text-[10px] font-medium text-muted-foreground truncate">{t(s.labelKey as any)}</span>
-                <span className="text-[9px] text-muted-foreground/70">{pct}%</span>
-              </div>
-              <span className="text-sm font-bold text-foreground">{items.length}</span>
-              <div className="h-1.5 bg-muted rounded-full overflow-hidden mt-1">
-                <div className="h-full rounded-full transition-all duration-300"
-                  style={{ width: `${pct}%`, backgroundColor: s.color }} />
-              </div>
-              {value > 0 && <p className="text-[9px] text-muted-foreground mt-0.5">{fmtAED(value)}</p>}
-            </div>
-          );
-        })}
-      </div>
+      {/* Stage totals bar — unified KanbanStats unit (T2-2) */}
+      <KanbanStats
+        leads={leads}
+        activeStageKey={activeStageKey}
+        onStageClick={(k) => {
+          const el = document.getElementById(`stage-${k}`);
+          if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+        }}
+      />
 
       {/* ═══════ Kanban Board ═══════ */}
       <div className="relative">

@@ -79,78 +79,203 @@ export default function LeadDetailPage() {
   const [salesRole, setSalesRole] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
+  // P0-1 fetchData: 11 serial awaits → 2 parallel Promise.allSettled batches
+  // ──────────────────────────────────────────────────────────────────────────
+  // Batch 1 (1 HTTP): leads main + 5 embeds (creator/assignee profiles +
+  //   follow_ups + milestones + business_events+operator + next_task)
+  // Batch 2 (3 HTTP, parallel): activities (was Route Handler, now direct
+  //   supabase) + chat_messages (RLS-sensitive, kept independent) +
+  //   v_lead_trace (view has no PostgREST relation)
+  // Promise.allSettled: per-query errors → console.warn (non-fatal), only
+  //   the lead main query failure triggers setError (matches original
+  //   "fetchData degraded" semantics from Q1 in the design §6.4 risk list).
+  // Customers IIFE kept as a defensive no-op (all 49 leads have
+  //   customer_id=NULL per §3A verification); preserves T1-8 maybeSingle=3.
   const fetchData = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError(null);
+    const perfMark = typeof performance !== "undefined" ? performance.now() : 0;
     try {
-      // Ensure auth session is set before any queries (fixes setSession race condition)
+      // Ensure auth session is set before any queries (fixes setSession race)
       await supabase.auth.getUser();
-      const { data: l, error: err1 } = await supabase.from("leads").select("id,customer_name,phone,email,source,stage,lead_status,created_at,updated_at,created_by,assigned_to,customer_id,property_type,property_size_sqm,location,budget_range,service_needs,quotation_value,expected_close_date,expected_sign_date,win_probability,emirate,area,ac_brand,customer_budget,project_type,ai_summary,ai_tags,ai_quality,notes,lost_reason,lost_at,converted_at,final_status,next_action,next_followup_date,last_contact_date,followup_count,stage_changed_at,owner,sales_manager,decision_maker,decision_date,competitor,campaign_name,source_platform,source_channel,rep_name,quality,poor_reason,quotation_sent_date,circuit_diagrams,contact_result,smart_requirements,project_status,creator:profiles!fk_leads_created_by(id,full_name,email,role),assignee:profiles!fk_leads_assigned_to(id,full_name,email,role)").eq("id", id).maybeSingle();
-      if (err1) { console.error("[LeadDetail] fetch lead failed:", err1); setError(t("common.loadFailedRetry")); return; }
+
+      // ─── BATCH 1: leads + 5 embeds in one HTTP request ─────────────────
+      const leadPromise = supabase
+        .from("leads")
+        .select(
+          `id, customer_name, phone, email, source, stage, lead_status,
+           created_at, updated_at, created_by, assigned_to, customer_id,
+           property_type, property_size_sqm, location, budget_range,
+           service_needs, quotation_value, expected_close_date,
+           expected_sign_date, win_probability, emirate, area, ac_brand,
+           customer_budget, project_type, ai_summary, ai_tags, ai_quality,
+           notes, lost_reason, lost_at, converted_at, final_status,
+           next_action, next_followup_date, last_contact_date,
+           followup_count, stage_changed_at, owner, sales_manager,
+           decision_maker, decision_date, competitor, campaign_name,
+           source_platform, source_channel, rep_name, quality, poor_reason,
+           quotation_sent_date, circuit_diagrams, contact_result,
+           smart_requirements, project_status,
+           creator:profiles!fk_leads_created_by(id, full_name, email, role),
+           assignee:profiles!fk_leads_assigned_to(id, full_name, email, role),
+           follow_ups:follow_up_logs!follow_up_logs_lead_id_fkey(
+             id, contact_type, summary, user_id, created_at
+           ),
+           milestones:lead_milestones!lead_milestones_lead_id_fkey(
+             id, milestone_key, completed_at
+           ),
+           business_events:business_events!business_events_lead_id_fkey(
+             id, event_type, event_data, description, created_at, user_id,
+             operator:profiles!fk_business_events_user_id(id, full_name)
+           ),
+           next_task:tasks!tasks_lead_id_fkey(id, title, due_at)`
+        )
+        .eq("id", id)
+        .maybeSingle();
+
+      // ─── BATCH 2 (parallel to Batch 1): 3 independent queries ──────────
+      // Activities — direct PostgREST instead of Route Handler (saves
+      //   extra SSR + auth + service-client-rebuild hop).
+      const activitiesPromise = supabase
+        .from("activities")
+        .select("id, lead_id, type, content, created_at, user_id, metadata")
+        .eq("lead_id", id)
+        .order("created_at", { ascending: false })
+        .limit(30);
+
+      // Chat messages — RLS-sensitive (sales role + owner check) so kept
+      //   independent to avoid silent data loss via embed.
+      const chatMessagesPromise = supabase
+        .from("chat_messages")
+        .select("id, content, direction, created_at")
+        .eq("lead_id", id)
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      // v_lead_trace — view has no PostgREST relation, must be independent.
+      const leadTracePromise = supabase
+        .from("v_lead_trace")
+        .select("*")
+        .eq("lead_id", id);
+
+      // Run Batch 1 + Batch 2 in parallel. allSettled so a single failed
+      //   sub-query does NOT abort the rest (matches original per-query
+      //   console.warn behaviour — only lead main failure was fatal).
+      const settled = await Promise.allSettled([
+        leadPromise,
+        activitiesPromise,
+        chatMessagesPromise,
+        leadTracePromise,
+      ]);
+
+      const [leadRes, activitiesRes, chatRes, traceRes] = settled;
+
+      // ─── Rejection logging (network errors) ───────────────────────────
+      // for...of so TS narrows PromiseSettledResult properly.
+      for (const [i, s] of settled.entries()) {
+        if (s.status === "rejected") {
+          console.warn(`[LeadDetail] batch[${i}] promise rejected:`, s.reason);
+        }
+      }
+
+      // ─── Lead main query — fatal on rejection OR fulfillment-with-error ─
+      if (leadRes.status === "rejected") {
+        console.error("[LeadDetail] fetch lead failed (rejected):", leadRes.reason);
+        setError(t("common.loadFailedRetry"));
+        return;
+      }
+      const leadPayload = leadRes.value;
+      if (leadPayload.error) {
+        console.error("[LeadDetail] fetch lead failed:", leadPayload.error);
+        setError(t("common.loadFailedRetry"));
+        return;
+      }
+
+      const l = leadPayload.data as any;
       if (l) {
-        const creatorName = (l as any).creator?.full_name || null;
-        const creatorProfile = (l as any).creator || null;
-        const assigneeProfile = (l as any).assignee || null;
-        setLead({ ...l, creator_name: creatorName, creator_profile: creatorProfile, assignee_profile: assigneeProfile } as any);
+        const creatorProfile = l.creator || null;
+        const assigneeProfile = l.assignee || null;
+        setLead({
+          ...(l as unknown as Lead),
+          creator_name: creatorProfile?.full_name || null,
+          creator_profile: creatorProfile,
+          assignee_profile: assigneeProfile,
+        });
         setProjectInfoDraft(projectDraftFromLead(l));
 
-        // Fetch customer info in parallel (customer_id FK not set up in PostgREST yet)
-        if ((l as any).customer_id) {
+        // Customers IIFE — defensive no-op for when customer_id becomes
+        //   populated (FK fk_leads_customer_id now exists per migration
+        //   B.1). Currently all 49 leads have customer_id=NULL so this
+        //   branch never fires; kept for T1-8 maybeSingle=3 + future-proof.
+        if (l.customer_id) {
           (async () => {
-            const r = await supabase.from("customers").select("id, name, email, phone").eq("id", (l as any).customer_id).maybeSingle();
-            if (r.data) setLead(prev => prev ? { ...prev, customer: r.data } : prev);
+            const r = await supabase
+              .from("customers")
+              .select("id, name, email, phone")
+              .eq("id", l.customer_id)
+              .maybeSingle();
+            if (r.data) {
+              setLead((prev) =>
+                prev ? ({ ...prev, customer: r.data } as Lead) : prev
+              );
+            }
           })().catch(() => {});
         }
       }
-      const { data: ful, error: fulErr } = await supabase
-        .from("follow_up_logs")
-        .select("id, contact_type, summary, user_id, created_at")
-        .eq("lead_id", id)
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (fulErr) console.warn("[LeadDetail] Failed to fetch follow_up_logs (non-fatal):", fulErr);
-      if (ful) setFollowUpLogs(ful as FollowUpLog[]);
-      const { data: milestones, error: milestonesErr } = await supabase
-        .from("lead_milestones")
-        .select("id, lead_id, milestone_key, completed_at")
-        .eq("lead_id", id)
-        .order("completed_at", { ascending: true });
-      if (milestonesErr) console.warn("[LeadDetail] Failed to fetch lead_milestones (non-fatal):", milestonesErr);
-      if (milestones) setLeadMilestones(
-        milestones.map((m: any) => ({ ...m, completed: !!m.completed_at })) as LeadMilestone[]
-      );
-      const encodedId = encodeURIComponent(id);
-      try {
-        const res = await fetch(`/api/activities?lead_id=${encodedId}`);
-        const a = res.ok ? await res.json() : null;
-        if (a) setActivities(a);
-      } catch (fetchErr) {
-        console.warn("[LeadDetail] activities fetch failed (non-fatal):", fetchErr);
+
+      // ─── Sub-table data from lead embed (Batch 1) ─────────────────────
+      if (l?.follow_ups) setFollowUpLogs(l.follow_ups as FollowUpLog[]);
+      if (l?.milestones) {
+        setLeadMilestones(
+          (l.milestones).map((m: any) => ({
+            ...m,
+            completed: !!m.completed_at,
+          })) as LeadMilestone[]
+        );
       }
-      const { data: e, error: eErr } = await supabase.from("business_events").select("*, operator:profiles!fk_business_events_user_id(id, full_name)").eq("lead_id", id).order("created_at", { ascending: false }).limit(50);
-      if (eErr) console.warn("[LeadDetail] Failed to fetch business_events (non-fatal):", eErr);
-      if (e) {
-        setEvents(e);
-        // Filter transfer events for transfer history display
-        const transfers = e.filter((ev: any) => ev.event_type === "transfer");
+      if (l?.business_events) {
+        setEvents(l.business_events as BusinessEvent[]);
+        const transfers = (l.business_events).filter(
+          (ev: any) => ev.event_type === "transfer"
+        );
         if (transfers.length > 0) setTransferHistory(transfers);
       }
-      const { data: c, error: cErr } = await supabase.from("chat_messages").select("id, content, direction, created_at").eq("lead_id", id).order("created_at", { ascending: false }).limit(100);
-      if (cErr) console.warn("[LeadDetail] Failed to fetch chat_messages (non-fatal):", cErr);
-      if (c) setChatMessages(c);
-      const { data: tasks, error: tasksErr } = await supabase
-        .from("tasks")
-        .select("id, title, due_at")
-        .eq("lead_id", id)
-        .is("completed_at", null)
-        .order("due_at", { ascending: true })
-        .limit(1);
-      if (tasksErr) console.warn("[LeadDetail] Failed to fetch tasks (non-fatal):", tasksErr);
-      setNextTask(tasks?.[0] ?? null);
-      const { data: tr, error: trErr } = await supabase.from("v_lead_trace").select("*").eq("lead_id", id);
-      if (trErr) console.warn("[LeadDetail] Failed to fetch v_lead_trace (non-fatal):", trErr);
-      if (tr) setLeadTrace(tr);
+      // next_task: embed can't filter (no .where/.is/.limit on embed),
+      //   so filter + sort client-side to pick the next upcoming task.
+      const nt = ((l?.next_task || []) as any[])
+        .filter((t) => t.due_at != null)
+        .sort((a, b) => (a.due_at > b.due_at ? 1 : -1))[0] || null;
+      setNextTask(nt as Task | null);
+
+      // ─── Independent queries from Batch 2 — soft-error handling ──────
+      // Per design §6.4: original code wrapped each independent query in
+      //   console.warn (non-fatal). allSettled + per-result check keeps
+      //   the same semantics without blocking setError.
+      const batches2 = [
+        ["activities", activitiesRes],
+        ["chat_messages", chatRes],
+        ["v_lead_trace", traceRes],
+      ] as const;
+      for (const [name, r] of batches2) {
+        if (r.status === "fulfilled") {
+          const payload = r.value;
+          if (payload.error) {
+            console.warn(`[LeadDetail] non-fatal fetch (${name}):`, payload.error);
+          } else if (payload.data) {
+            if (name === "activities") setActivities(payload.data as Activity[]);
+            else if (name === "chat_messages") setChatMessages(payload.data as ChatMessage[]);
+            else if (name === "v_lead_trace") setLeadTrace(payload.data as LeadTrace[]);
+          }
+        }
+        // rejected cases already logged above
+      }
+
+      if (perfMark && typeof performance !== "undefined") {
+        console.info(
+          `[LeadDetail] fetchData complete in ${(performance.now() - perfMark).toFixed(0)}ms`
+        );
+      }
     } catch (err) {
       console.warn("[LeadDetail] fetchData degraded:", err);
       setError(t("common.loadFailedRetry"));

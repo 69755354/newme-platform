@@ -127,7 +127,82 @@ export interface Lead {
   reminder_48h_sent: boolean | null;
   created_by: string | null;
   creator_name: string | null;
+  // ── P0-1 embed children (PostgREST JOIN via lead query) ──────────────
+  // Populated by the optimised fetchData batch — may be missing for leads
+  // fetched outside that path (e.g. server-side prefetch). All optional.
+  /** Creator profile (FK fk_leads_created_by) */
+  creator?: ProfileEmbed | null;
+  /** Assignee profile (FK fk_leads_assigned_to) */
+  assignee?: ProfileEmbed | null;
+  /** All follow_up_logs for this lead (FK follow_up_logs_lead_id_fkey) */
+  follow_ups?: FollowUpLogEmbed[];
+  /** All lead_milestones for this lead (FK lead_milestones_lead_id_fkey) */
+  milestones?: LeadMilestoneEmbed[];
+  /** All business_events for this lead (FK business_events_lead_id_fkey) */
+  business_events?: BusinessEventEmbed[];
+  /** All tasks for this lead (FK tasks_lead_id_fkey); filtered client-side to next 1 */
+  next_task?: TaskEmbed[];
+  /** Customer info (FK fk_leads_customer_id) — currently always null (all leads have customer_id=NULL) */
+  customer?: CustomerEmbed | null;
+  /** Convenience pointer — set by fetchData() from embed */
+  creator_profile?: ProfileEmbed | null;
+  assignee_profile?: ProfileEmbed | null;
 }
+
+/** Profile row shape returned by embed hints (subset of full profile) */
+export interface ProfileEmbed {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  role: string | null;
+}
+
+/** follow_up_logs row shape returned by embed (subset) */
+export interface FollowUpLogEmbed {
+  id: string;
+  contact_type: string;
+  summary: string;
+  user_id: string | null;
+  created_at: string;
+}
+
+/** lead_milestones row shape returned by embed (subset) */
+export interface LeadMilestoneEmbed {
+  id: string;
+  lead_id?: string;
+  milestone_key: string;
+  completed_at: string | null;
+  completed_by?: string | null;
+}
+
+/** business_events row shape returned by embed (subset, with operator) */
+export interface BusinessEventEmbed {
+  id: string;
+  event_type: string;
+  event_data: any;
+  description: string | null;
+  created_at: string;
+  user_id: string | null;
+  operator?: { id: string; full_name: string | null } | null;
+}
+
+/** tasks row shape returned by embed (subset) */
+export interface TaskEmbed {
+  id: string;
+  title: string;
+  due_at: string | null;
+  completed_at?: string | null;
+}
+
+/** customers row shape returned by embed (subset, future-proof for when customer_id becomes populated) */
+export interface CustomerEmbed {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+}
+
+// (FetchResult<T> removed — Hermes 2 审 determined unused, dead code W1)
 
 export interface Activity {
   id: string;

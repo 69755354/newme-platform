@@ -6,20 +6,22 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit）
-## 当前状态（写时 commit `9719d06`）
-- **Branch**: `main` @ `9719d06`
-- **生产 BUILD_ID**: `ArQKmw3zZEOURr8dpxj0E` (待 deploy 切到 9719d06)
+## 当前状态（写时 commit `b84512a`）
+- **Branch**: `main` @ `b84512a`
+- **生产 BUILD_ID**: `ArQKmw3zZEOURr8dpxj0E` (T3-1 已 deploy, T3-3 step 8+10+12 待 deploy)
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
-- **今日 commit**: 28（3 次生产 deploy 完成 + T3-1 step 4 已 push 待 deploy）
+- **今日 commit**: 30（3 次生产 deploy + T3-1 step 4 + T3-3 step 8+10+12 全部 push）
 
 ## 架构关键
 | 路径 | 职责 | 风险 |
 |------|------|------|
-| `src/app/(dashboard)/layout.tsx` | DashboardLayout 92 行 (auth + TopBar/Sidebar 渲染 + 滚动容器 + 边界) | 🟢 T3-1 完成 |
+| `src/app/(dashboard)/layout.tsx` | DashboardLayout 92 行 | 🟢 T3-1 完成 |
 | `src/components/dashboard/DashboardSidebar.tsx` | Sidebar + mobile button + overlay 169 行 | 🟢 新建 |
 | `src/components/dashboard/DashboardTopBar.tsx` | Top header 75 行 | 🟢 拆完 |
-| `src/app/(dashboard)/leads/page.tsx` | Leads 列表 512 行 | 🟡 T3-3 步骤 8-12 待派 |
+| `src/app/(dashboard)/leads/page.tsx` | Leads 列表 468 行 | 🟡 T3-3 步骤 9 (Filters) + 步骤 11 (leads/[id]) 待派 |
+| `src/app/(dashboard)/leads/_components/LeadCard.tsx` | Lead 卡片 510 行 | 🟢 拆完 |
+| `src/app/(dashboard)/leads/_components/LeadsHeader.tsx` | Header + sticky page-title 108 行 | 🟢 新建 |
+| `src/app/(dashboard)/leads/_components/LeadsBulkTransferBar.tsx` | 批量转移 sticky bar 122 行 | 🟢 新建 |
 | `src/app/(dashboard)/pipeline/page.tsx` | Pipeline Kanban 146 行 | 🟢 拆完 |
 | `src/hooks/useAuthRedirect.ts` | DashboardLayout auth (157 行) | 🟢 拆完 |
 | `src/hooks/useSupabaseQuery.ts` | 数据 query hook (timeout 8s + retry 2) | T1-1 freeze 仅限 query |
@@ -46,7 +48,8 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 ## 进行中任务
 - T3-1 ✅ 完成 (DashboardLayout 326 → 92 行 -71.8%, Sidebar/TopBar 独立组件)
-- **T3-3 步骤 8-12**: leads _components 剩 4 个 + leads/[id] 拆 3 文件 + 三主 page.tsx 清理
+- T3-3 leads 拆分 **6/8** 完成 (5afce2f / ea791b1 / f9d3565 / 8b1c96c / 192bee2 / b84512a)
+- **T3-3 步骤 9** (Filters) + **T3-3 步骤 11** (leads/[id] 拆 3 文件) — T3-3 leads 收尾
 
 ## 已知坑和 workaround
 

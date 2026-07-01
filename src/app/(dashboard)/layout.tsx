@@ -3,13 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  LayoutDashboard, Users, Menu, X, Funnel,
-  FileText, Calculator, CreditCard, TrendingUp,
-  LogOut, ShieldCheck, Settings, Megaphone,
-  Package, FolderKanban, UsersRound, Briefcase,
-  BarChart3, Swords,
-} from "lucide-react";
+import { Menu, X, LogOut, ShieldCheck } from "lucide-react";
 import { Toaster } from "sonner";
 import { useState, useEffect, Suspense } from "react";
 import { LanguageProvider } from "@/lib/i18n/LanguageContext";
@@ -18,41 +12,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { createClient } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
 import { DashboardErrorBoundary } from "@/components/DashboardErrorBoundary";
-
-// ─── Nav item type ───
-interface NavItem {
-  href: string;
-  labelKey: string;
-  icon: React.ElementType;
-}
-
-// ─── Management nav — 5 core + settings ───
-const MGMT_NAV: NavItem[] = [
-  { href: "/dashboard", labelKey: "mgmtDashboard", icon: LayoutDashboard },
-  { href: "/command-center", labelKey: "commandCenter", icon: Swords },
-  { href: "/leads",     labelKey: "mgmtLeads", icon: Users },
-  { href: "/quotes",    labelKey: "mgmtQuotes", icon: Calculator },
-  { href: "/contracts", labelKey: "mgmtContracts", icon: FileText },
-  { href: "/pipeline",  labelKey: "mgmtPipeline", icon: Funnel },
-  { href: "/analytics", labelKey: "mgmtAnalytics", icon: BarChart3 },
-  { href: "/ads",       labelKey: "mgmtAds", icon: Megaphone },
-  { href: "/products",  labelKey: "mgmtProducts", icon: Package },
-  { href: "/team",      labelKey: "mgmtTeam", icon: UsersRound },
-  { href: "/projects",  labelKey: "mgmtProjects", icon: Briefcase },
-  { href: "/settings",  labelKey: "mgmtSettings", icon: Settings },
-];
-
-// ─── Sales nav — personal scope, 8 items ───
-const SALES_NAV: NavItem[] = [
-  { href: "/workbench", labelKey: "salesWorkbench", icon: Briefcase },
-  { href: "/leads",     labelKey: "salesLeads", icon: Users },
-  { href: "/quotes",    labelKey: "salesQuotes", icon: Calculator },
-  { href: "/contracts", labelKey: "salesContracts", icon: FileText },
-  { href: "/payments",  labelKey: "salesPayments", icon: CreditCard },
-  { href: "/pipeline",  labelKey: "salesPipeline", icon: TrendingUp },
-  { href: "/analytics", labelKey: "salesAnalytics", icon: BarChart3 },
-  { href: "/products",  labelKey: "salesProducts", icon: Package },
-];
+import { MGMT_NAV, SALES_NAV } from "@/lib/nav";
 
 // ─── Component ───
 

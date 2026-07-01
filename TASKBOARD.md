@@ -77,7 +77,7 @@ Tier 2 unlocked (T2-1/2/3 ✅ 2026-07-01).
 |---|---------|-------------|-------------|--------|-----------|
 | T3-1 | DashboardLayout unification | Full DashboardLayout refactor (方案A) | Single layout component, all pages conform | ❌ (Tier 3) | |
 | T3-2 | Performance monitoring + alerts | Lighthouse/Web Vitals baseline + alerting | Baseline recorded, alerts configured | ❌ (Tier 3) | |
-| T3-3 | Code debt elimination | Refactor large files (leads 1108行, leads/[id] 946行 — pipeline 已 566 行不拆) | No single file > 500 lines, shared components extracted | ⚠️ (方案就绪, 17 commits / 19h) | 2026-07-01 (CC 探查 deleg_a99a12cf 完成, 待下会话开第 1 步) |
+| T3-3 | Code debt elimination | Refactor large files (leads 1108行, leads/[id] 946行, pipeline 566→146行) | No single file > 500 lines, shared components extracted | ⚠️ (pipeline 拆完 3/3 + HOTFIX useSupabaseQuery 修复, leads 0/8 待开) | 2026-07-01 (pipeline: 5afce2f + ea791b1 + f9d3565 + 8b1c96c) |
 | T3-4 | Docs drift: coding_standards §4 contracts/payments stale | Refresh table schema section to match actual DB (contract_amount / sales_id / confirmed) | coding_standards.md §4 列与 DB service_role 查询结果一致 | ✅ | 2026-07-01 |
 
 **Tier 3 Progress: 1/4 (25%)**

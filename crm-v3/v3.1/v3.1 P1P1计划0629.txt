@@ -5237,6 +5237,12 @@ T2-4 进展 (2026-07-01 16:00):
   状态: 1/5 完成 (leads/page.tsx), 4 follow-up
   教训: CC 单次任务"5 页面"太大分 2 次都失败, 以后单次 ≤2 文件
 
+T3-3 步骤 3 教训 (2026-07-01):
+  教训: CC 拆 KanbanBoard 时误删 page.tsx 顶层 useSupabaseQuery import + useSalesKpiData 内部用 Promise.all 直调违反 T1-1 freeze 规则
+  根因: CC 派工模板里只要求跑 tsc + build，**没要求跑 check-taskboard.sh** — file-level check 漏检
+  防复发: T3-3 后续步骤 (4-12) + 所有未来 CC 派工模板必须三关验证 = tsc 0 + build OK + bash scripts/check-taskboard.sh (PASS/FAIL/WARN 数不变)
+  修复: HOTFIX 8b1c96c — useSalesKpiData 改走 3 个并行 useSupabaseQuery
+
 T2-4 follow-up (留待):
   - leads/[id]/page.tsx 三列布局 sticky 标题横跨 (935 行, 难点)
   - payments/page.tsx (809 行, 列表 + filter)

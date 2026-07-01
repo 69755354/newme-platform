@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   Users, DollarSign, TrendingDown, Target, AlertTriangle,
-  Plus, TrendingUp, Wallet, CheckCircle2,
+  Plus,
   ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
@@ -20,6 +20,7 @@ import KanbanStats from "@/components/pipeline/KanbanStats";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { LeadCard } from "./_components/LeadCard";
 import type { Lead } from "./_components/LeadCard";
+import { SalesKpiDashboard } from "./_components/SalesKpiDashboard";
 
 /* ─── Types ─── */
 // Lead interface is exported from ./_components/LeadCard (T3-3 step 1)
@@ -73,54 +74,9 @@ export default function PipelinePage() {
     });
   }, []);
 
-  // ─── KPI Performance for Sales ───
-  interface KpiTarget { id: string; period: string; target_type: string; target_amount: number; assigned_to: string | null; }
-  const [kpiTargets, setKpiTargets] = useState<KpiTarget[]>([]);
-  const [kpiLoading, setKpiLoading] = useState(false);
-  const [kpiSigningActual, setKpiSigningActual] = useState(0);
-  const [kpiCollectionActual, setKpiCollectionActual] = useState(0);
-  const [kpiContractCount, setKpiContractCount] = useState(0);
-
-  useEffect(() => {
-    if (role !== "sales" || !userId) return;
-    const period = new Date().toISOString().slice(0, 7);
-    setKpiLoading(true);
-
-    Promise.all([
-      // 1. Fetch KPI targets for this sales person
-      supabase.from("kpi_targets").select("*").eq("period", period).eq("assigned_to", userId),
-      // 2. Fetch contracts for this sales person
-      supabase.from("contracts").select("id,contract_amount,status").eq("sales_id", userId),
-      // 3. Fetch payments for this sales person's contracts
-      supabase.from("payments").select("amount,confirmed,contract_id"),
-    ]).then(([tRes, cRes, pRes]) => {
-      if (tRes.data) setKpiTargets(tRes.data as KpiTarget[]);
-
-      if (cRes.data) {
-        const active = (cRes.data as any[]).filter(c => c.status !== "terminated");
-        const totalSigning = active.reduce((sum: number, c: any) => sum + (c.contract_amount || 0), 0);
-        setKpiSigningActual(totalSigning);
-        setKpiContractCount(active.length);
-
-        // Collection: payments where confirmed=true for this user's contracts
-        if (pRes.data) {
-          const contractIds = new Set((cRes.data as any[]).map(c => c.id));
-          const confirmedPayments = (pRes.data as any[])
-            .filter(p => p.confirmed === true && contractIds.has(p.contract_id));
-          const totalCollected = confirmedPayments.reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
-          setKpiCollectionActual(totalCollected);
-        }
-      }
-
-      setKpiLoading(false);
-    }).catch(() => setKpiLoading(false));
-  }, [role, userId, supabase]);
-
-  // Resolve KPI targets
-  const kpiSigningTarget = kpiTargets.find(t => t.target_type === "signing")?.target_amount || 0;
-  const kpiCollectionTarget = kpiTargets.find(t => t.target_type === "collection")?.target_amount || 0;
-  const kpiSigningPct = kpiSigningTarget > 0 ? Math.round((kpiSigningActual / kpiSigningTarget) * 100) : null;
-  const kpiCollectionPct = kpiCollectionTarget > 0 ? Math.round((kpiCollectionActual / kpiCollectionTarget) * 100) : null;
+  // ─── Sales KPI Performance ───
+  // KPI fetch + derived values moved to ./useSalesKpiData (T3-3 step 2).
+  // The dashboard component below is mounted only when role === "sales".
 
   // Keyboard navigation for kanban board
   useEffect(() => {
@@ -138,12 +94,6 @@ export default function PipelinePage() {
   }, []);
 
   const fmtAED = (v: number) => v >= 1_000_000 ? `AED ${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `AED ${(v / 1_000).toFixed(0)}K` : `AED ${v.toLocaleString()}`;
-  const kpiPctColor = (v: number | null) => {
-    if (v === null) return "text-muted-foreground";
-    if (v >= 100) return "text-emerald-400";
-    if (v >= 50) return "text-amber-400";
-    return "text-rose-400";
-  };
 
   // Fetch leads
   useEffect(() => {
@@ -186,108 +136,9 @@ export default function PipelinePage() {
   if (loading && role !== "sales") return <div className="text-center py-16 text-muted-foreground">{t("common.loading")}</div>;
   if (error && role !== "sales") return <ErrorState message={error} onRetry={() => window.location.reload()} />;
 
-  // ─── Sales KPI Dashboard ───
+  // ─── Sales KPI Dashboard (T3-3 step 2: extracted to ./SalesKpiDashboard) ───
   if (role === "sales") {
-    return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight flex items-center gap-2">
-            <Target className="w-6 h-6 text-copper-400" />
-            {t("kpi.title")}
-          </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            {new Date().toISOString().slice(0, 7)} {t("kpi.subtitle")}
-            {kpiLoading && <span className="ml-2 text-[10px] text-muted-foreground animate-pulse">{t("common.loading")}</span>}
-          </p>
-        </div>
-
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          {/* Signing KPI */}
-          <div className="rounded-xl border border-border/50 bg-card/50 p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-copper-400" />
-                <span className="text-sm font-semibold text-foreground">{t("kpi.signing")}</span>
-              </div>
-              <span className="text-xs text-muted-foreground">{kpiContractCount} {t("kpi.contracts")}</span>
-            </div>
-            <div className="text-center">
-              <p className={cn("text-4xl font-bold leading-none", kpiPctColor(kpiSigningPct))}>
-                {kpiSigningPct !== null ? `${kpiSigningPct}%` : "—"}
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">
-                {fmtAED(kpiSigningActual)} / {kpiSigningTarget > 0 ? fmtAED(kpiSigningTarget) : t("kpi.noTargetSet")}
-              </p>
-            </div>
-            <div className="h-2.5 bg-muted rounded-full overflow-hidden">
-              <div
-                className={cn("h-full rounded-full transition-all duration-700", kpiSigningPct !== null && kpiSigningPct >= 100 ? "bg-emerald-500" : kpiSigningPct !== null && kpiSigningPct >= 50 ? "bg-amber-500" : "bg-rose-500")}
-                style={{ width: `${Math.min(kpiSigningPct ?? 0, 100)}%` }}
-              />
-            </div>
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{t("kpi.target")}: {kpiSigningTarget > 0 ? fmtAED(kpiSigningTarget) : "—"}</span>
-              <span>{t("kpi.actual")}: {fmtAED(kpiSigningActual)}</span>
-            </div>
-          </div>
-
-          {/* Collection KPI */}
-          <div className="rounded-xl border border-border/50 bg-card/50 p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Wallet className="w-5 h-5 text-emerald-400" />
-                <span className="text-sm font-semibold text-foreground">{t("kpi.collection")}</span>
-              </div>
-              {kpiCollectionPct !== null && kpiCollectionPct >= 100 && (
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-              )}
-            </div>
-            <div className="text-center">
-              <p className={cn("text-4xl font-bold leading-none", kpiPctColor(kpiCollectionPct))}>
-                {kpiCollectionPct !== null ? `${kpiCollectionPct}%` : "—"}
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">
-                {fmtAED(kpiCollectionActual)} / {kpiCollectionTarget > 0 ? fmtAED(kpiCollectionTarget) : t("kpi.noTargetSet")}
-              </p>
-            </div>
-            <div className="h-2.5 bg-muted rounded-full overflow-hidden">
-              <div
-                className={cn("h-full rounded-full transition-all duration-700", kpiCollectionPct !== null && kpiCollectionPct >= 100 ? "bg-emerald-500" : kpiCollectionPct !== null && kpiCollectionPct >= 50 ? "bg-amber-500" : "bg-rose-500")}
-                style={{ width: `${Math.min(kpiCollectionPct ?? 0, 100)}%` }}
-              />
-            </div>
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{t("kpi.target")}: {kpiCollectionTarget > 0 ? fmtAED(kpiCollectionTarget) : "—"}</span>
-              <span>{t("kpi.actual")}: {fmtAED(kpiCollectionActual)}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Detail breakdown */}
-        <div className="rounded-xl border border-border/50 p-5">
-          <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-copper-400" />
-            {t("kpi.detailData")}
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 rounded-lg bg-muted/30">
-              <p className="text-xs text-muted-foreground">{t("kpi.contractCount")}</p>
-              <p className="text-xl font-bold text-foreground mt-1">{kpiContractCount}</p>
-            </div>
-            <div className="p-4 rounded-lg bg-muted/30">
-              <p className="text-xs text-muted-foreground">{t("kpi.totalSigning")}</p>
-              <p className="text-xl font-bold text-copper-400 mt-1">{fmtAED(kpiSigningActual)}</p>
-            </div>
-            <div className="p-4 rounded-lg bg-muted/30">
-              <p className="text-xs text-muted-foreground">{t("kpi.totalCollected")}</p>
-              <p className="text-xl font-bold text-emerald-400 mt-1">{fmtAED(kpiCollectionActual)}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <SalesKpiDashboard currentUserId={userId} />;
   }
 
   // ─── Kanban Board (for management) ───

@@ -5255,10 +5255,12 @@ T4-3 + T4-4 进展 (2026-07-01 16:00):
   ✅ push origin main
 
 【技术债 (1)】
-chunks-cleanup 0~14i8bodcp 死引用清理
+chunks-cleanup 0~14i8bodcp 死引用清理 ✅ 2026-07-01 (no-op 已自然解决)
   任务: Turbopack build 留下死 chunk 引用，导致 ChunkLoadError
   影响: 防 ChunkLoadError 重发（低优，T3 范畴）
   验收: .next/build 中无死引用
+  状态: OpenClaw 只读分析 (deleg_2dce483a) — 源码 0 处引用、.next/ 0 处残留。
+  根因: T4-3 deploy.sh 切到 NEXT_NO_TURBOPACK=1 npx next build (commit 5d7b60b) 修复了 Turbopack chunk naming 不稳定问题，i18n-dubai 6 文件改动 + 新 build 后死引用自然消失。
 
 【P1P1 §醒来后清单 (2)】
 hermes-ci Hermes CI webhook 订阅 crm-ci

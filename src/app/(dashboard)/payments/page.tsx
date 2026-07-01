@@ -364,18 +364,29 @@ export default function PaymentsPage() {
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
 
   return (
+    // T2-4: payments 根容器 = 普通 <div>，没有用 DashboardScrollContainer
+    // → 走外层 viewport 滚动模式（与 leads/[id] 一致）。
+    // sticky 元素 (page-title z-20) 直接锚定到 viewport 顶部。
+    // payments 没有批量选择功能 → 无 bulk-bar；filter 是 Tabs 标签栏内嵌，
+    // 不在 sticky 三件套范围内。
     <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">{t("payment.title")}</h1>
-        <Button
-          size="sm"
-          onClick={openRecordDialog}
-          className="bg-copper-500 hover:bg-copper-600 text-black font-medium"
-        >
-          <Plus className="w-3.5 h-3.5 mr-1" />
-          {t("payment.recordPayment")}
-        </Button>
+      {/* T2-4: page-title sticky: 标题 + Record Payment 按钮
+          滚到底也能看到自己在 payments 页面，并可随时触发 Record Payment。 */}
+      <div
+        data-sticky-region="page-title"
+        className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b -mx-4 px-4 py-2 mb-6"
+      >
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">{t("payment.title")}</h1>
+          <Button
+            size="sm"
+            onClick={openRecordDialog}
+            className="bg-copper-500 hover:bg-copper-600 text-black font-medium"
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            {t("payment.recordPayment")}
+          </Button>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -565,6 +576,9 @@ export default function PaymentsPage() {
         </TabsContent>
       </Tabs>
 
+      {/* T2-4: dialog 层级约定 — z-modal z-40
+          Dialog 内部已固定 z-50 (overlay + popup)，本处约定为「modal 大类 = z-40」便于
+          与 page-title (z-20) 协调 — dialog 永远盖在 page-title 上。 */}
       {/* ─── Record Payment Dialog ──────────────────────────────── */}
       <Dialog open={recordDialogOpen} onOpenChange={setRecordDialogOpen}>
         <DialogContent className="sm:max-w-md bg-card border-border text-gray-100">
@@ -688,6 +702,7 @@ export default function PaymentsPage() {
       </Dialog>
 
       {/* ─── Allocate Payment Dialog ────────────────────────────── */}
+      {/* 同 Record Payment Dialog 注释：modal 大类 = z-40 (内部已 z-50) */}
       <Dialog open={allocateDialogOpen} onOpenChange={setAllocateDialogOpen}>
         <DialogContent className="sm:max-w-lg bg-card border-border text-gray-100">
           <DialogHeader>
@@ -803,6 +818,9 @@ export default function PaymentsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* T2-4: toast 层级约定 — z-toast z-50
+          sonner Toaster 已固定高 z-index (默认 999999)，作为最高优先级反馈层，
+          覆盖 page-title / modal / dropdown。 */}
       <Toaster position="top-center" richColors />
     </div>
   );

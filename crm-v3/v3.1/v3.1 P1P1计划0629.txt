@@ -5214,6 +5214,15 @@ i18n-dubai 12 处页面时区统一迪拜时间 fmtDubai()
 t2-1-followup 其他 11 页接入 DashboardScrollContainer
   任务: T2-1 一致性收尾
   验收: 11 个 dashboard 页面用 DashboardScrollContainer
+T2-4 锚定功能卡片 (sticky headers/filter/action bar) — 2026-07-01 新立
+  任务: 长页面（leads 1084行/quotations 513/payments 809/tasks 306 等）整页滚动时，
+        顶部 filter/标题/搜索/Tab 切换/批量操作栏 不跟随屏幕，
+        用户滚下去就找不到当前在看什么 → 痛点 = "一屏滚下来，看的是啥都不知道了"
+  根因: 全代码库除 timeline 1 处 sticky top-0 外，filter/header/action 都没 sticky
+  验收: 长页面滚动时关键控件可见；与 DashboardScrollContainer 嵌套 z-index 不冲突
+  范围: leads/page (1084) / leads/[id] (935) / quotations (513) / payments (809) / tasks (306)
+  风险: 🟡 中 — sticky 需协调 z-index 层级 + 与父级 overflow-hidden 兼容
+  来源: 2026-07-01 用户反馈 + P1P1 P-2 行 (滚动行为不统一 — leads整页)
 
 【技术债 (1)】
 chunks-cleanup 0~14i8bodcp 死引用清理
@@ -5277,3 +5286,51 @@ business-settings 系统设置（系统配置 + 用户偏好）
 3. 新增任务必须追加到本节对应分组，并打时间戳
 4. 完成时立即改 ✅ + 填 Done Date + 在 ops-log 记一笔
 5. 跨会话交接：本节是 LLM 醒来后第一读取源（P1P1 §醒来后清单更新）
+
+================================================================
+🤖 OpenClaw 派工验证报告（2026-07-01 14:45 立）
+================================================================
+**结论：OpenClaw 4 测试全通，可派工，但写码不能直接 commit**
+
+## 测试矩阵
+| # | 测试 | Agent | 模型 | 耗时 | 结果 | 验证 |
+|---|------|-------|------|------|------|------|
+| 1 | 纯推理 | local | deepseek-v4-flash | 6.9s | ✅ | "hello openclaw test 1" 回显 |
+| 2 | local agent turn | main | deepseek-v4-flash | 8.8s | ✅ | "1+1=2" 中文回答 |
+| 3 | worker 读文件 | calc-worker | deepseek-v4-flash | 13.5s | ✅ | 读到 /tmp/oc-test-marker.txt |
+| 4 | 写码实测 | shell-worker | **deepseek-v4-pro** | **25.5s** | ✅ | diff 2 处精确改动 + tsc 0 错 |
+
+## 测试 4 详情（写码实测）
+- **任务**：i18n-dubai 单文件试水，quotations/page.tsx fmtDate 改用 fmtDubai
+- **改前**：line 87-98 7 行（new Date(d).toLocaleDateString）
+- **改后**：5 行（fmtDubai(d, {...})）
+- **import 变更**：line 12 `cn` → `cn, fmtDubai`
+- **文件行数**：513 → 511 → 撤回时 513
+- **tsc --noEmit**：0 错误
+- **质量评估**：精确（2 处改动）、守卫生效（try/catch + null check 保留）、API 对（fmtDubai 签名匹配 lib/utils.ts:9）
+
+## 关键决策
+1. **qwen3-coder-plus 不可用**：qwen-oauth provider OAuth 未配置，infer 路由 fallback 到 deepseek → 400
+2. **glm-5.1 / glm-4.5-flash 可用**：zai-coding + zai provider 已配，可作为 qwen 替代
+3. **本次使用 deepseek-v4-pro**：用户决策"openclaw用ds v4pro吧"（2026-07-01 14:42）
+
+## 写入代码的硬约束（铁律）
+- ❌ **OpenClaw 不能直接 commit**——GLM-CP pre-commit hook 拦截 v4 写码
+- ✅ **正确流程**：OpenClaw 起草 diff → CC 复读/优化 → Codex 1 审 → Hermes 2 审 → CC 提交
+- ✅ **OpenClaw 可直接做**：只读分析（chunks-cleanup / moa-tier2-detail 文档）/ 机械脚本执行（部署验证 / health check）/ 非代码类操作
+- ✅ **本次撤回**：quotations/page.tsx 改回原始 513 行，等 CC 走正常 MoA 链重写
+
+## 派工适配矩阵（v4-pro 写码能力）
+| 任务类型 | OpenClaw 适合 | 备注 |
+|---------|--------------|------|
+| 机械替换（i18n-dubai 类）| ✅ 起草 | 25.5s 单文件，可批量 |
+| 只读分析（chunks-cleanup）| ✅ 直接干 | 不用 commit 链 |
+| 文档撰写（moa-tier2-detail）| ✅ 直接干 | markdown 写入 COS |
+| 多页改造（T2-4 锚定）| ⚠️ 起草 | 多文件需协调，仍需 CC 复读 |
+| 大文件拆分（T3-3）| ❌ 不派 | 风险高，需 MoA 全链 |
+| Layout 统一（T3-1）| ❌ 不派 | 同上 |
+
+## 写入规则
+- 所有 OpenClaw 派工记录追加到本节
+- 失败记录也写（便于后续审计）
+- 每次成功派工后回填：agent / 模型 / 耗时 / 产出路径 / 是否撤回

@@ -56,16 +56,17 @@ Source: MoA 4-round audit, 3-model unanimous sign-off, lines 478-500 + 559-600 +
 
 ---
 
-## MoA Tier 2 — UI Consistency (SHORT-TERM, 2-4 weeks)
+### MoA Tier 2 — UI Consistency (SHORT-TERM, 2-4 weeks)
 Blocked by Tier 1 completion. Do NOT start until all Tier 1 = ✅.
 
-| # | Problem | Requirement | Verification | Status | Done Date |
-|---|---------|-------------|-------------|--------|-----------|
-| T2-1 | P-2: Scroll behavior inconsistency | Unified scroll strategy across all dashboard pages | All pages use consistent overflow/scroll container | ✅ | 2026-07-01 |
-| T2-2 | P-3: Kanban stats scattered | Merge progress bar + numbers + percentage into single visual unit | Single stats component, not 3 separate elements | ✅ | 2026-07-01 |
-| T2-3 | P-5: Empty stage visibility | Default show empty stages + collapse toggle button | `showEmptyStages` default = true, toggle button exists | ✅ | 2026-07-01 |
+|| # | Problem | Requirement | Verification | Status | Done Date |
+||---|---------|-------------|-------------|--------|-----------|
+|| T2-1 | P-2: Scroll behavior inconsistency | Unified scroll strategy across all dashboard pages | All pages use consistent overflow/scroll container | ✅ | 2026-07-01 |
+|| T2-2 | P-3: Kanban stats scattered | Merge progress bar + numbers + percentage into single visual unit | Single stats component, not 3 separate elements | ✅ | 2026-07-01 |
+|| T2-3 | P-5: Empty stage visibility | Default show empty stages + collapse toggle button | `showEmptyStages` default = true, toggle button exists | ✅ | 2026-07-01 |
+|| T2-4 | 锚定功能卡片 (sticky headers/filter/action bar) — 2026-07-01 新立 | 长页面滚动时 filter/标题/搜索/操作栏跟随屏幕 | 长页（leads/quotations/payments/tasks 等）滚动时关键控件可见 | ❌ (Tier 2 follow-up) | |
 
-**Tier 2 Progress: 3/3 (100%) ✅**
+**Tier 2 Progress: 3/4 (75%)**
 
 ---
 

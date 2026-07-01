@@ -153,11 +153,23 @@ export default function TasksPage() {
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   return (
+    // T2-4: tasks 根容器 = 普通 <div className="space-y-4 p-4">，没有用 DashboardScrollContainer
+    // → 走外层 viewport 滚动模式（与 payments / quotations 一致）。
+    // sticky 元素 (page-title z-20) 直接锚定到 viewport 顶部。
+    // tasks 没有批量选择功能 → 无 bulk-bar；filter 状态/Assignee 行不 sticky。
+    // z-index 约定: page-title z-20 / dialog z-40 (z-modal) / toast z-50 (z-toast)
     <div className="space-y-4 p-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Tasks</h1>
-        <span className="text-sm text-muted-foreground">{totalCount} total</span>
+      {/* ─── Header (page-title sticky) ───
+          T2-4: 锚定功能卡片 — 整页滚动时标题永远可见。
+          z-index 约定: page-title z-20 / dialog z-40 (z-modal) / toast z-50 (z-toast) */}
+      <div
+        data-sticky-region="page-title"
+        className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b -mx-4 px-4 py-2"
+      >
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-semibold">Tasks</h1>
+          <span className="text-sm text-muted-foreground">{totalCount} total</span>
+        </div>
       </div>
 
       {/* Filters */}
@@ -301,6 +313,10 @@ export default function TasksPage() {
           )}
         </Card>
       )}
+
+      {/* T2-4: z-modal z-40 / z-toast z-50 层级约定 — 此页无 Dialog / Toaster
+          后续若添加：<Dialog ... /> 用 z-40；<Toaster position="top-center" richColors /> 用 z-50。
+          page-title 在此文件顶部已锚 z-20。 */}
     </div>
   );
 }

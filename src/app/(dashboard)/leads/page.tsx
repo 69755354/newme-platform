@@ -5,9 +5,7 @@ import { createClient } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ErrorState } from "@/components/ui/error-state";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 import QuickCreateLeadDialog from "@/components/QuickCreateLeadDialog";
 import ExcelImportDialog from "@/components/leads/ExcelImportDialog";
 import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
@@ -17,15 +15,10 @@ import { useLeadsData, Lead } from "./_hooks/useLeadsData";
 import { useLeadMutations } from "./_hooks/useLeadMutations";
 import { LeadCard } from "./_components/LeadCard";
 import { LeadsHeader } from "./_components/LeadsHeader";
+import { LeadsFilters } from "./_components/LeadsFilters";
 import { LeadsBulkTransferBar } from "./_components/LeadsBulkTransferBar";
 import {
-  Search, X, Calendar, MapPin, Users, Clock,
-  AlertTriangle, RotateCcw, GripHorizontal, ShieldAlert,
-  BarChart3, Megaphone,
-} from "lucide-react";
-import {
-  PIPELINE_STAGES, STATUS_EMOJIS, STAGE_COLORS,
-  STATUS_LABELS, PROBABILITIES,
+  PIPELINE_STAGES,
 } from "./_utils/constants";
 import { daysSince, fmtAED } from "./_utils/format";
 
@@ -283,87 +276,41 @@ function LeadsContent() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <div className="relative flex-1 min-w-[180px] max-w-xs">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder={t("leads.searchPlaceholder")} value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />
-          {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>}
-        </div>
-        <select value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setAlertFilter("all"); }}
-          className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[130px]">
-          <option value="all">{t("leads.allStages")}</option>
-          {PIPELINE_STAGES.map(s => <option key={s.key} value={s.key}>{t(`stageLabels.${s.key}`)}</option>)}
-        </select>
-        <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}
-          className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[110px]">
-          <option value="all">{t("leads.allSources")}</option>
-          {sources.map(src => <option key={src} value={src}>{t(`sourceLabels.${src}`) || src}</option>)}
-        </select>
-        <select value={qualityFilter} onChange={(e) => setQualityFilter(e.target.value)}
-          className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[110px]">
-          <option value="all">{t("leads.allQuality")}</option>
-          {['good','normal','pending','poor'].map(q => <option key={q} value={q}>{t(`qualityLabels.${q}`)}</option>)}
-        </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-          className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[110px]">
-          <option value="all">{t("leads.allStatus")}</option>
-          {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{STATUS_EMOJIS[k] || ""} {t(`statusLabels.${k}`)}</option>)}
-        </select>
-        <select value={probabilityFilter ?? "all"} onChange={(e) => setProbabilityFilter(e.target.value === "all" ? null : parseInt(e.target.value))}
-          className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[90px]">
-          <option value="all">{t("leads.probability")}</option>
-          {PROBABILITIES.map(p => <option key={p} value={p}>{p}%</option>)}
-        </select>
-
-        {/* Alert/Manager quick filters */}
-        {alertFilter === "yellow" && (
-          <button onClick={() => setAlertFilter("all")}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20">
-            <Clock className="w-3 h-3" />{t("dashboard.yellowAlerts")} <X className="w-3 h-3" />
-          </button>
-        )}
-        {alertFilter === "red" && (
-          <button onClick={() => setAlertFilter("all")}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-rose-500/10 text-rose-400 hover:bg-rose-500/20">
-            <AlertTriangle className="w-3 h-3" />{t("dashboard.redAlerts")} <X className="w-3 h-3" />
-          </button>
-        )}
-        {recoveryFilter && (
-          <button onClick={() => setRecoveryFilter(false)}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-orange-500/10 text-orange-400 hover:bg-orange-500/20">
-            <RotateCcw className="w-3 h-3" />{t("leads.recovery")} <X className="w-3 h-3" />
-          </button>
-        )}
-        {transferFilter && (
-          <button onClick={() => setTransferFilter(false)}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-red-500/10 text-red-400 hover:bg-red-500/20">
-            <GripHorizontal className="w-3 h-3" />{t("leads.transfer")} <X className="w-3 h-3" />
-          </button>
-        )}
-        {reviewFilter && (
-          <button onClick={() => setReviewFilter(false)}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-purple-500/10 text-purple-400 hover:bg-purple-500/20">
-            <ShieldAlert className="w-3 h-3" />{t("dashboard.managerReview")} <X className="w-3 h-3" />
-          </button>
-        )}
-        {assignedToFilter !== "all" && (
-          <button onClick={() => { setAssignedToFilter("all"); router.replace("/leads"); }}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-copper-500/10 text-copper-400 hover:bg-copper-500/20">
-            <Users className="w-3 h-3" />{salesUsers.find((u: any) => u.id === assignedToFilter)?.full_name || assignedToFilter} <X className="w-3 h-3" />
-          </button>
-        )}
-        <button onClick={() => setFollowupFilter(!followupFilter)}
-          className={cn(
-            "inline-flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors",
-            followupFilter
-              ? "bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
-              : "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
-          )}>
-          <Calendar className="w-3 h-3" />{t("leads.needsFollowup")}{followupFilter && <X className="w-3 h-3 ml-0.5" />}
-        </button>
-        <span className="text-xs text-muted-foreground ml-auto">{t("leads.nResults").replace("{n}", String(filtered.length))}</span>
-      </div>
+      {/* Filters — T3-3 step 9: filter row extracted to LeadsFilters
+          (was L286-366). All 8 filter states + sources + salesUsers +
+          filtered.length pass through; the wrapping <div className="flex
+          gap-2 flex-wrap items-center"> moved inside the component, so
+          DOM stays byte-identical. Stage→alert reset is now wired via
+          onStageChange wrapper below (parent owns the dual-setter). */}
+      <LeadsFilters
+        search={search}
+        setSearch={setSearch}
+        stageFilter={stageFilter}
+        onStageChange={(v) => { setStageFilter(v); setAlertFilter("all"); }}
+        sourceFilter={sourceFilter}
+        setSourceFilter={setSourceFilter}
+        qualityFilter={qualityFilter}
+        setQualityFilter={setQualityFilter}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        probabilityFilter={probabilityFilter}
+        setProbabilityFilter={setProbabilityFilter}
+        followupFilter={followupFilter}
+        setFollowupFilter={setFollowupFilter}
+        alertFilter={alertFilter}
+        setAlertFilter={setAlertFilter}
+        recoveryFilter={recoveryFilter}
+        setRecoveryFilter={setRecoveryFilter}
+        transferFilter={transferFilter}
+        setTransferFilter={setTransferFilter}
+        reviewFilter={reviewFilter}
+        setReviewFilter={setReviewFilter}
+        assignedToFilter={assignedToFilter}
+        setAssignedToFilter={setAssignedToFilter}
+        sources={sources}
+        salesUsers={salesUsers}
+        filteredCount={filtered.length}
+      />
 
       {/* Board */}
       {error ? (

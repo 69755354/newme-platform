@@ -189,9 +189,16 @@ else
   fail "DashboardErrorBoundary.tsx does not exist (needed for T1-11)"
 fi
 
-# ── T1-12: Sentry events received (manual) ──
+# ── T1-12: Sentry events received (reads TASKBOARD.md status) ──
 echo "Task T1-12: Sentry error events actually received (manual verification)"
-warn "Manual verification required: trigger error → check Sentry dashboard"
+T1_12_STATUS=$(grep -E "^\| T1-12 " TASKBOARD.md | head -1 | grep -oE "✅|⚠️|❌" | head -1)
+if [ "$T1_12_STATUS" = "✅" ]; then
+  pass "TASKBOARD.md marks T1-12 done"
+elif [ "$T1_12_STATUS" = "❌" ]; then
+  fail "TASKBOARD.md marks T1-12 not started"
+else
+  warn "TASKBOARD.md marks T1-12 partial (⚠️) — manual verification pending"
+fi
 
 echo ""
 echo "═══════════════════════════════════════"

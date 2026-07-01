@@ -18,6 +18,7 @@ import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { useLeadsData, Lead } from "./_hooks/useLeadsData";
+import { useLeadMutations } from "./_hooks/useLeadMutations";
 import {
   Search, X, Plus, Phone, Calendar, MapPin, ChevronRight,
   MoreHorizontal, Edit3, Send, TrendingUp, Building2,
@@ -96,6 +97,53 @@ function LeadsContent() {
   const error = hookError;
   const setError = hookSetError;
 
+  // ─── Mutation handlers (T3-3 step 6: extracted into _hooks/useLeadMutations) ───
+  // Owns all lead-level writes: reassignSales, changeStage (94-line optimistic
+  // lock + 4-table cascade), changeProbability, changeStatus, changeLostReason,
+  // addQuickNote, updateNextAction, updateNextFollowup, handleDelete, writeEvent.
+  // Mutations stay as direct supabase.from() calls (T1-1 freeze rule applies
+  // to queries only).
+  const {
+    reassignSales,
+    writeEvent,
+    handleDelete,
+    changeStage,
+    changeProbability,
+    changeStatus,
+    changeLostReason,
+    addQuickNote,
+    updateNextAction,
+    updateNextFollowup,
+  } = useLeadMutations({
+    leads,
+    setLeads,
+    userId: currentUserId,
+    role: salesRole,
+    salesUsers,
+    userNameMap,
+    fetchLeads,
+    setError,
+    t,
+    lang,
+    ui: {
+      noteText,
+      setNoteText,
+      setNoteLeadId,
+      nextActionText,
+      setNextActionText,
+      nextFollowupText,
+      setNextFollowupText,
+      setEditingStage,
+      setEditingProbability,
+      setEditingStatus,
+      setEditingLostReason,
+      setEditingNextAction,
+      setEditingNextFollowup,
+      setReassignLeadId,
+      setReassigning,
+    },
+  });
+
   // ─── Infrastructure hooks ───
   const showEmptyStages = true;
   const { isValidTransition, getValidTransitions } = useStageGuard();
@@ -134,286 +182,13 @@ function LeadsContent() {
   // mutation handlers (changeStage / reassignSales / handleDelete / etc.)
   // call after a successful write.
 
-  // Sales reassignment function
-  async function reassignSales(leadId: string, newUserId: string) {
-    setReassigning(true);
-    const oldLead = leads.find(l => l.id === leadId);
-    if (!oldLead) return;
-    const newUser = salesUsers.find(u => u.id === newUserId);
-    const oldUser = salesUsers.find(u => u.id === oldLead.assigned_to);
-    const newUserName = newUser?.full_name || newUser?.email || newUserId;
-    const oldName = oldUser?.full_name || oldUser?.email || "Unknown";
-
-    await supabase.from("leads").update({ assigned_to: newUserId, updated_at: new Date().toISOString() }).eq("id", leadId);
-
-    await supabase.from("transfer_history").insert({
-      lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId,
-      reason: "manual_reassign", transferred_by: (await supabase.auth.getUser()).data.user?.id,
-    });
-
-    await supabase.from("activities").insert({
-      lead_id: leadId, type: "transfer", content: `Reassigned from ${oldName} to ${newUserName}`,
-      user_id: (await supabase.auth.getUser()).data.user?.id,
-    });
-
-    await writeEvent(leadId, "transfer", `Reassigned from ${oldName} to ${newUserName}`);
-
-    // Notify the newly assigned salesperson
-    import("@/lib/notify").then(({ notify }) => {
-      notify({ type: "lead_assigned", lead_id: leadId, assigned_to: newUserId });
-    });
-
-    setReassignLeadId(null);
-    setReassigning(false);
-    fetchLeads();
-  }
-
-  // ─── Write business event ───
-  async function writeEvent(leadId: string, eventType: string, description: string, eventData?: Record<string, any>) {
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    const { error: writeEventErr } = await supabase.from("business_events").insert({
-      lead_id: leadId,
-      event_type: eventType,
-      description: description,
-      event_data: eventData || {},
-      user_id: userId,
-    });
-    if (writeEventErr) console.error("Failed to write business event:", writeEventErr);
-  }
-
-  async function handleDelete(leadId: string, leadAssignedTo: string | null) {
-    const canDelete = salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && leadAssignedTo === currentUserId);
-    if (!canDelete) return;
-    const confirmed = confirm(t("leadDetail.confirmDelete") || "Are you sure you want to delete this lead? This action cannot be undone.");
-    if (!confirmed) return;
-    const { error: delErr } = await supabase.from("leads").delete().eq("id", leadId);
-    if (delErr) {
-      console.error("Failed to delete lead:", delErr);
-      toast.error(t("common.saveFailed") || "Delete failed");
-      return;
-    }
-    toast.success(lang === "zh" ? "已删除" : "Lead deleted");
-    fetchLeads();
-  }
-
-  // ─── Stage auto-properties ───
-  const STAGE_AUTO: Record<string, { win_probability: number; lead_status?: string; next_action?: string }> = {
-    new: { win_probability: 10, next_action: "Contact lead" },
-    contacted: { win_probability: 10, next_action: "Confirm requirements" },
-    requirement_confirmed: { win_probability: 30, next_action: "Prepare solution" },
-    solution_submitted: { win_probability: 30, next_action: "Prepare quotation" },
-    quotation_submitted: { win_probability: 50, next_action: "Follow up on quotation" },
-    negotiation: { win_probability: 70, next_action: "Negotiate terms" },
-    pending_decision: { win_probability: 90, next_action: "Close deal" },
-    won: { win_probability: 100, lead_status: "hot", next_action: "Send contract" },
-    lost: { win_probability: 0, lead_status: "dormant", next_action: undefined },
-  };
-  // ⚠️ Backward transitions restricted except admin/boss can revert any non-terminal
-  const STAGE_INDEX: Record<string, number> = {};
-  PIPELINE_STAGES.forEach((s, i) => { STAGE_INDEX[s.key] = i; });
-  const TERMINAL_STAGES = new Set(["won", "lost"]);
-
-  async function changeStage(leadId: string, newStage: string) {
-    setEditingStage(null);
-    const oldLead = leads.find(l => l.id === leadId);
-    if (!oldLead) return;
-
-    // Guard 1: no-op
-    if (oldLead.stage === newStage) return;
-
-    // Guard 2: valid stage
-    if (!(newStage in STAGE_INDEX)) {
-      setError(t("common.invalidStage") + `: "${newStage}"`);
-      return;
-    }
-
-    // Guard 3: can't move from terminal (won/lost now live in final_status, not stage)
-    if (oldLead.final_status) {
-      setError(t("common.cannotChangeClosedLead"));
-      return;
-    }
-
-    // Guard 4: enforce forward-only for non-admin (admin/boss can revert)
-    const oldIdx = STAGE_INDEX[oldLead.stage];
-    const newIdx = STAGE_INDEX[newStage];
-    const canRevert = salesRole === "admin" || salesRole === "boss";
-    if (!canRevert && newIdx < oldIdx) {
-      setError(t("common.cannotMoveBackward"));
-      return;
-    }
-
-    // Guard 5: max 1 step forward for sales (admin/boss can skip)
-    if (!canRevert && newIdx - oldIdx > 1) {
-      setError(t("common.cannotSkipStages"));
-      return;
-    }
-
-    // Build updates
-    const now = new Date().toISOString();
-    const auto = STAGE_AUTO[newStage];
-    // won/lost are terminal → persist to final_status, not stage
-    const updates: Record<string, any> = { updated_at: now, last_contact_date: now };
-    if (newStage === "won" || newStage === "lost") {
-      updates.final_status = newStage;
-    } else {
-      updates.stage = newStage;
-    }
-    if (auto) {
-      updates.win_probability = auto.win_probability;
-      if (auto.lead_status) updates.lead_status = auto.lead_status;
-      if (auto.next_action) updates.next_action = auto.next_action;
-    }
-    if (TERMINAL_STAGES.has(newStage)) {
-      updates.decision_date = now;
-
-      // Cascade: close related open quotes
-      await supabase.from("quotations")
-        .update({ status: newStage === "lost" ? "draft" : undefined, updated_at: now })
-        .eq("lead_id", leadId)
-        .neq("status", "accepted");
-    }
-
-    // Optimistic lock: only write if the row hasn't changed since we read it into
-    // React state. Prevents two reps clobbering each other's stage transition.
-    // count:"exact" lets us detect a stale-write (0 rows matched = someone else moved it).
-    const { error: changeStageErr, count } = await supabase
-      .from("leads")
-      .update(updates, { count: "exact" })
-      .eq("id", leadId)
-      .eq("updated_at", oldLead.updated_at);
-    if (changeStageErr) {
-      console.error("Failed to update lead stage:", changeStageErr);
-      setError(t("common.saveFailed") || "Save failed");
-      return;
-    }
-    if (count === 0) {
-      // Stale write: the lead was modified by another user between read and write.
-      setError(t("common.staleWrite") || "This lead was just updated by someone else. Refreshing…");
-      fetchLeads();
-      return;
-    }
-    const { error: changeStageActErr } = await supabase.from("activities").insert({
-      lead_id: leadId, type: "stage_change",
-      content: t("leads.eventStageChange").replace("{stage}", t(`stageLabels.${newStage}`)),
-      user_id: (await supabase.auth.getUser()).data.user?.id,
-    });
-    if (changeStageActErr) console.error("Failed to insert activity:", changeStageActErr);
-    await writeEvent(leadId, "stage_changed", t("leads.eventStageChanged").replace("{from}", t(`stageLabels.${oldLead?.stage || "?"}`)).replace("{to}", t(`stageLabels.${newStage}`)), {
-      from: oldLead?.stage, to: newStage, auto_updates: Object.keys(updates).filter(k => k !== "stage" && k !== "updated_at"),
-    });
-    // Notify admins about important stage changes
-    import("@/lib/notify").then(({ notify }) => {
-      notify({ type: "lead_stage_change", lead_id: leadId, from_stage: oldLead?.stage, to_stage: newStage });
-    });
-    fetchLeads();
-  }
-
-  async function changeProbability(leadId: string, prob: number) {
-    setEditingProbability(null);
-    const { error: changeProbErr } = await supabase.from("leads").update({ win_probability: prob, updated_at: new Date().toISOString() }).eq("id", leadId);
-    if (changeProbErr) {
-      console.error("Failed to update probability:", changeProbErr);
-      setError(t("common.saveFailed") || "Save failed");
-      return;
-    }
-    await writeEvent(leadId, "probability_changed", t("leads.eventWinProb").replace("{prob}", String(prob)), { probability: prob });
-    fetchLeads();
-  }
-
-  async function changeStatus(leadId: string, status: string) {
-    setEditingStatus(null);
-    const { error: changeStatusErr } = await supabase.from("leads").update({ lead_status: status, updated_at: new Date().toISOString() }).eq("id", leadId);
-    if (changeStatusErr) {
-      console.error("Failed to update lead status:", changeStatusErr);
-      setError(t("common.saveFailed") || "Save failed");
-      return;
-    }
-    await writeEvent(leadId, "status_changed", t("leads.eventStatus").replace("{status}", t(`statusLabels.${status}`)), { status });
-    fetchLeads();
-  }
-
-  async function changeLostReason(leadId: string, reason: string) {
-    setEditingLostReason(null);
-    const { error: lostReasonErr } = await supabase.from("leads").update({
-      lost_reason: reason, final_status: "lost", updated_at: new Date().toISOString(),
-    }).eq("id", leadId);
-    if (lostReasonErr) {
-      console.error("Failed to update lost reason:", lostReasonErr);
-      setError(t("common.saveFailed") || "Save failed");
-      return;
-    }
-    const { error: lostReasonActErr } = await supabase.from("activities").insert({
-      lead_id: leadId, type: "stage_change",
-      content: t("leads.eventLostReason").replace("{reason}", reason),
-      user_id: (await supabase.auth.getUser()).data.user?.id,
-    });
-    if (lostReasonActErr) console.error("Failed to insert activity:", lostReasonActErr);
-    await writeEvent(leadId, "lost_reason_set", t("leads.eventLostReason").replace("{reason}", reason), { lost_reason: reason });
-    fetchLeads();
-  }
-
-  async function addQuickNote(leadId: string) {
-    if (!noteText.trim()) return;
-    const { error: quickNoteErr } = await supabase.from("activities").insert({ lead_id: leadId, type: "note", content: noteText.trim(), user_id: (await supabase.auth.getUser()).data.user?.id });
-    if (quickNoteErr) {
-      console.error("Failed to insert note activity:", quickNoteErr);
-      setError(t("common.saveFailed") || "Save failed");
-      return;
-    }
-    const { error: quickNoteLeadErr } = await supabase.from("leads").update({ last_contact_date: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", leadId);
-    if (quickNoteLeadErr) {
-      console.error("Failed to update lead last contact:", quickNoteLeadErr);
-      setError(t("common.saveFailed") || "Save failed");
-      return;
-    }
-    await writeEvent(leadId, "note_added", t("leads.eventNote").replace("{note}", noteText.trim()));
-    setNoteText(""); setNoteLeadId(null);
-    fetchLeads();
-  }
-
-  async function updateNextAction(leadId: string) {
-    if (!nextActionText.trim()) return;
-    setEditingNextAction(null);
-    const { error: nextActionErr } = await supabase.from("leads").update({ next_action: nextActionText.trim(), updated_at: new Date().toISOString() }).eq("id", leadId);
-    if (nextActionErr) {
-      console.error("Failed to update next action:", nextActionErr);
-      setError(t("common.saveFailed") || "Save failed");
-      return;
-    }
-    await writeEvent(leadId, "followup_scheduled", t("leads.eventNextAction").replace("{action}", nextActionText.trim()), { next_action: nextActionText.trim() });
-    setNextActionText("");
-    fetchLeads();
-  }
-
-  async function updateNextFollowup(leadId: string) {
-    if (!nextFollowupText) return;
-    setEditingNextFollowup(null);
-    const oldLead = leads.find(l => l.id === leadId);
-    const { error: nextFollowupErr } = await supabase.from("leads").update({
-      next_followup_date: nextFollowupText,
-      followup_count: (oldLead?.followup_count || 0) + 1,
-      updated_at: new Date().toISOString()
-    }).eq("id", leadId);
-    if (nextFollowupErr) {
-      console.error("Failed to update next followup:", nextFollowupErr);
-      setError(t("common.saveFailed") || "Save failed");
-      return;
-    }
-    // Create activity record
-    const { error: actErr } = await supabase.from("activities").insert({
-      lead_id: leadId, type: "followup_scheduled",
-      content: `Follow-up scheduled for ${nextFollowupText}`,
-      user_id: (await supabase.auth.getUser()).data.user?.id,
-    });
-    if (actErr) console.error("Failed to insert activity:", actErr);
-    await writeEvent(leadId, "followup_scheduled", t("leads.eventFollowup").replace("{date}", nextFollowupText), { next_followup_date: nextFollowupText });
-    // Notify the assigned salesperson
-    import("@/lib/notify").then(({ notify }) => {
-      notify({ type: "followup_reminder", lead_id: leadId, assigned_to: oldLead?.assigned_to, due_date: nextFollowupText });
-    });
-    setNextFollowupText("");
-    fetchLeads();
-  }
+  // ─── Mutation handlers ───
+  // reassignSales / writeEvent / handleDelete / changeStage / changeProbability /
+  // changeStatus / changeLostReason / addQuickNote / updateNextAction /
+  // updateNextFollowup (and the STAGE_AUTO / STAGE_INDEX / TERMINAL_STAGES
+  // constants consumed by changeStage) live in _hooks/useLeadMutations (T3-3
+  // step 6). They are bound to page-level UI state via the `ui` parameter
+  // object passed into the hook above.
 
   // ─── Filtering ───
   const filtered = useMemo(() => {

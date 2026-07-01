@@ -16,8 +16,8 @@ import ExcelImportDialog from "@/components/leads/ExcelImportDialog";
 import SubNavTabs from "@/components/SubNavTabs";
 import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
-import { useSupabaseQuery } from "@/lib/supabaseQuery";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { useLeadsData, Lead } from "./_hooks/useLeadsData";
 import {
   Search, X, Plus, Phone, Calendar, MapPin, ChevronRight,
   MoreHorizontal, Edit3, Send, TrendingUp, Building2,
@@ -30,35 +30,12 @@ import {
 } from "./_utils/constants";
 import { daysSince, fmtAED } from "./_utils/format";
 
-interface Lead {
-  id: string; customer_name: string | null; phone: string | null;
-  source: string; stage: string; final_status?: string | null; quotation_value: number | null;
-  location: string | null; property_type: string | null;
-  property_size_sqm: number | null;
-  ai_quality: string | null; lead_status: string | null;
-  assigned_to: string | null; win_probability: number | null;
-  last_contact_date: string | null; next_followup_date: string | null;
-  next_action: string | null; followup_count: number | null;
-  created_at: string; updated_at: string;
-  recovery_candidate: boolean; transfer_candidate: boolean;
-  sales_manager_review: boolean; hold_since: string | null;
-  lost_reason: string | null; decision_maker: string | null;
-  decision_date: string | null; competitor: string | null;
-  owner: string | null; sales_manager: string | null;
-  campaign_name: string | null; source_platform: string | null;
-  quality: string | null;
-  poor_reason: string | null;
-}
-
 function LeadsContent() {
   const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t, lang } = useLanguage();
 
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState(searchParams.get("stage") || "all");
   const [sourceFilter, setSourceFilter] = useState("all");
@@ -87,16 +64,37 @@ function LeadsContent() {
   const [nextFollowupText, setNextFollowupText] = useState("");
 
   // Sales reassignment
-  const [salesUsers, setSalesUsers] = useState<any[]>([]);
   const [reassignLeadId, setReassignLeadId] = useState<string | null>(null);
   const [reassigning, setReassigning] = useState(false);
-  const [salesRole, setSalesRole] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Bulk reassignment
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [showBulkTransfer, setShowBulkTransfer] = useState(false);
   const [bulkTransferTargetId, setBulkTransferTargetId] = useState<string>("");
+
+  // ─── Data layer (T3-3 step 5: extracted into _hooks/useLeadsData) ───
+  // Owns leads list, loading/error, current user role+id, sales users list,
+  // and the derived userNameMap. All 4 queries route through useSupabaseQuery.
+  const {
+    leads: hookLeads,
+    setLeads: hookSetLeads,
+    loading: hookLoading,
+    error: hookError,
+    setError: hookSetError,
+    userId: currentUserId,
+    role: salesRole,
+    salesUsers,
+    userNameMap,
+    fetchLeads,
+  } = useLeadsData();
+
+  // Local aliases for the rest of the file (preserve original names + keep
+  // page-level mutation entry points working).
+  const leads = hookLeads;
+  const setLeads = hookSetLeads;
+  const loading = hookLoading;
+  const error = hookError;
+  const setError = hookSetError;
 
   // ─── Infrastructure hooks ───
   const showEmptyStages = true;
@@ -131,54 +129,10 @@ function LeadsContent() {
     fetchLeads();
   };
 
-  const fetchLeads = useCallback(async () => {
-    // Async circuit-breaker: do NOT query until role + user id are resolved.
-    // A sales user running the unfiltered query before role loads would briefly
-    // render leads they shouldn't see. Frontend filtering is defence-in-depth ONLY;
-    // RLS remains the source of truth. Permission depends on COMPLETE conditions.
-    if (salesRole === null || currentUserId === null) return;
-    setLoading(true);
-    setError(null);
-    let q = supabase.from("leads").select("*");
-    if (salesRole === "sales") q = q.eq("assigned_to", currentUserId);
-    const { data, error: err } = await q.order("updated_at", { ascending: false }).limit(500);
-    if (err) {
-      console.error("Failed to fetch leads:", err);
-      setError(t("common.loadFailedRetry"));
-      setLoading(false);
-      return;
-    }
-    if (data) setLeads(data as Lead[]);
-    setLoading(false);
-  }, [salesRole, currentUserId]); // supabase is module-singleton, t is context-stable — exclude to prevent #310 render loops
-
-  useEffect(() => { fetchLeads(); }, [fetchLeads]);
-
-  // Fetch current user role for sales filtering
-  useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-        const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-        setSalesRole(profile?.role || "sales");
-      }
-    })();
-  }, []);
-
-  // Fetch sales users for reassignment
-  useEffect(() => {
-    supabase.from("profiles").select("id,email,role,full_name").in("role", ["admin", "sales", "operator"]).then(({ data }) => {
-      if (data) setSalesUsers(data);
-    });
-  }, []);
-
-  // User name lookup
-  const userNameMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    salesUsers.forEach(u => { if (u.id && u.full_name) map[u.id] = u.full_name; });
-    return map;
-  }, [salesUsers]);
+  // fetchLeads — provided by useLeadsData (T3-3 step 5). The hook owns the
+  // initial fetch via useSupabaseQuery and exposes a refetch wrapper that
+  // mutation handlers (changeStage / reassignSales / handleDelete / etc.)
+  // call after a successful write.
 
   // Sales reassignment function
   async function reassignSales(leadId: string, newUserId: string) {

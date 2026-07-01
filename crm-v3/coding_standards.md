@@ -70,17 +70,25 @@ YYYYMMDDHHMMSS_描述.sql
 
 ## 3. 硬规则清单（代码约束铁律）
 
-### 🔴 R1 — profiles.email 必须 JOIN
-```sql
--- ✅ 正确：从 auth.users 获取 email
-SELECT p.*, u.email
-FROM profiles p
-JOIN auth.users u ON u.id = p.id;
+### 🔴 R1 — profiles.email 镜像列（auth.users 同步）
 
--- ❌ 禁止：profiles 表不加 email 列
-ALTER TABLE profiles ADD COLUMN email TEXT;  -- 禁止！
+profiles.email 是 auth.users.email 的 trigger 同步镜像列（单源 = auth.users）。
+允许读 profiles.email，但禁止直接 UPDATE/INSERT profiles.email。
+所有修改 email 必须走 auth.users → trigger 同步。
+历史 R1 要求 JOIN auth.users（避免数据冗余）已不适用：trigger 保证单源。
+
+```sql
+-- ✅ 允许：直接读 profiles.email（trigger 同步自 auth.users）
+SELECT id, email, full_name FROM profiles;
+
+-- ❌ 禁止：直接 UPDATE/INSERT profiles.email（必须走 auth.users → trigger）
+UPDATE profiles SET email = 'x@y.com' WHERE id = ...;   -- 禁止！
+INSERT INTO profiles (id, email) VALUES (...);         -- 禁止！
 ```
-**原因**：email 是 auth 层管理的，profiles 冗余存储会导致双写不一致。
+
+**例外**：以下操作由 trigger 自动同步，不必手动维护
+- `UPDATE auth.users SET email = ...` → trigger 同步到 profiles
+- 新建 auth.users → trigger 自动 INSERT profiles(含 email)
 
 ### 🔴 R2 — assigned_to 统一用 UUID 列
 ```sql
@@ -206,7 +214,7 @@ s.from('表名').select('*').limit(1).then(r=>console.log(Object.keys(r.data[0]|
 | avatar_url | TEXT | | init |
 | created_at | TIMESTAMPTZ | DEFAULT now() | init |
 | updated_at | TIMESTAMPTZ | DEFAULT now() | init |
-> ⚠️ email 不在 profiles 表，JOIN auth.users 获取
+> ✅ email 在 profiles 表（trigger 同步自 auth.users, 2026-07-01 起正式豁免 R1 写入限制）
 
 ### leads
 | 字段 | 类型 | 约束 | 来源 |
@@ -449,7 +457,7 @@ router.push('/leads/' + newId);
 
 ### 数据获取
 - 使用 Supabase JS Client，禁止裸 fetch
-- email 字段：前端 JOIN 获取，不存 profiles 表
+- email 字段：前端可直读 profiles.email（v1.x 起，trigger 同步自 auth.users）；旧 JOIN 写法亦可
 
 ### 表单状态
 - Save / Saving / Saved / Error 四态
@@ -458,4 +466,11 @@ router.push('/leads/' + newId);
 
 ---
 
+## 变更日志（Changelog）
+
+- **2026-07-01 v1.x** — R1 豁免：profiles.email 改为 auth.users 同步镜像列，允许读，禁止直接写。原 R1 JOIN auth.users 规则已不适用（trigger 保证单源）。
+
+---
+
 _文档版本: v1.0 | 2026-06-30 | MoA 4轮审计产出_
+_v1.x 补丁: 2026-07-01 R1 豁免 — T3-5_

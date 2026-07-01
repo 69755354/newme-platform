@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "typecheck": "tsc --noEmit",
-    "build": "bash -c 'if systemctl is-active --quiet newme-platform.service 2>/dev/null; then echo \"❌ Production server is running! Use: npm run deploy (which backs up and restarts)\" >&2; exit 1; fi; next build'",
+    "build": "bash -c 'if [ \"${FORCE_BUILD:-0}\" = \"1\" ]; then echo \"⚠️  FORCE_BUILD=1 set — bypassing production server guard\" >&2; elif systemctl is-active --quiet newme-platform.service 2>/dev/null; then echo \"❌ Production server is running! Use: npm run deploy (which auto-stops → builds → restarts) — or set FORCE_BUILD=1 to bypass this guard.\" >&2; exit 1; fi; next build'",
     "start": "next start",
     "lint": "eslint",
     "deploy": "bash scripts/deploy.sh",

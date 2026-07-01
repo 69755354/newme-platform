@@ -52,15 +52,44 @@ else
 fi
 
 # ── Step 3: Build ──────────────────────────────────────────
+# Build conflicts with a running production server (port 3001 + .next dir).
+# Auto-stop the service, build, then Step 5 restarts it.
+# Guard in package.json still protects against accidental `npm run build`
+# while the server is up; deploy.sh passes FORCE_BUILD=1 to bypass it.
 echo "--- Step 3/5: Build ---"
+
+# Auto-stop the production service so the build guard in package.json can pass
+# and the build can write to .next/ without conflicting with the running process.
+SERVICE_WAS_ACTIVE=false
+if systemctl is-active --quiet newme-platform.service 2>/dev/null; then
+  SERVICE_WAS_ACTIVE=true
+  echo "🛑 Stopping newme-platform.service before build..."
+  sudo systemctl stop newme-platform.service
+  sleep 1
+  if systemctl is-active --quiet newme-platform.service 2>/dev/null; then
+    echo "❌ Failed to stop newme-platform.service. Abort."
+    exit 1
+  fi
+  echo "✅ Service stopped"
+else
+  echo "ℹ️  Service was not running — skipping stop"
+fi
+
 rm -rf .next
 
-NODE_OPTIONS="--max_old_space_size=2048" npm run build 2>&1 && BUILD_OK=true || BUILD_OK=false
+FORCE_BUILD=1 NODE_OPTIONS="--max_old_space_size=2048" npm run build 2>&1 && BUILD_OK=true || BUILD_OK=false
 
 if [ "$BUILD_OK" = false ]; then
   echo "⚠️  Turbopack build failed. Retrying with webpack (NEXT_NO_TURBOPACK=1)..."
   rm -rf .next
-  NODE_OPTIONS="--max_old_space_size=2048" NEXT_NO_TURBOPACK=1 npm run build 2>&1 && BUILD_OK=true || BUILD_OK=false
+  FORCE_BUILD=1 NODE_OPTIONS="--max_old_space_size=2048" NEXT_NO_TURBOPACK=1 npm run build 2>&1 && BUILD_OK=true || BUILD_OK=false
+fi
+
+# If the build failed permanently, restart the service before bailing out so
+# we don't leave the platform down.
+if [ "$BUILD_OK" = false ] && [ "$SERVICE_WAS_ACTIVE" = true ]; then
+  echo "↩️  Restarting service after failed build..."
+  sudo systemctl start newme-platform.service
 fi
 
 if [ "$BUILD_OK" = false ]; then

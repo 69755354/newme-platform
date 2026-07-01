@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { cn, fmtDubai } from "@/lib/utils";
 import { toast } from "sonner";
 import QuickCreateLeadDialog from "@/components/QuickCreateLeadDialog";
 import ExcelImportDialog from "@/components/leads/ExcelImportDialog";
@@ -836,7 +836,7 @@ function LeadsContent() {
                                 <span className={cn("flex items-center gap-0.5",
                                   new Date(lead.next_followup_date) < new Date() ? "text-rose-400" : "text-muted-foreground"
                                 )}>
-                                  <Calendar className="w-3 h-3" />{new Date(lead.next_followup_date).toLocaleDateString(t("locale.dateLocale"))}
+                                  <Calendar className="w-3 h-3" />{fmtDubai(new Date(lead.next_followup_date), { locale: t("locale.dateLocale") })}
                                 </span>
                               )}
                               {lead.followup_count != null && <span>{t("leads.nFollowups").replace("{n}", String(lead.followup_count))}</span>}

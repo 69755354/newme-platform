@@ -6,11 +6,11 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `b84512a`）
-- **Branch**: `main` @ `b84512a`
-- **生产 BUILD_ID**: `ArQKmw3zZEOURr8dpxj0E` (T3-1 已 deploy, T3-3 step 8+10+12 待 deploy)
+## 当前状态（写时 commit `6fb1860`）
+- **Branch**: `main` @ `6fb1860`
+- **生产 BUILD_ID**: `ArQKmw3zZEOURr8dpxj0E` (T3-1 + T3-3 step 8+10+12+9 待 deploy)
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
-- **今日 commit**: 30（3 次生产 deploy + T3-1 step 4 + T3-3 step 8+10+12 全部 push）
+- **今日 commit**: 33（3 次生产 deploy + T3-1 step 4 + T3-3 step 8+10+12/9/11 全部 push）
 
 ## 架构关键
 | 路径 | 职责 | 风险 |
@@ -18,10 +18,14 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | `src/app/(dashboard)/layout.tsx` | DashboardLayout 92 行 | 🟢 T3-1 完成 |
 | `src/components/dashboard/DashboardSidebar.tsx` | Sidebar + mobile button + overlay 169 行 | 🟢 新建 |
 | `src/components/dashboard/DashboardTopBar.tsx` | Top header 75 行 | 🟢 拆完 |
-| `src/app/(dashboard)/leads/page.tsx` | Leads 列表 468 行 | 🟡 T3-3 步骤 9 (Filters) + 步骤 11 (leads/[id]) 待派 |
+| `src/app/(dashboard)/leads/page.tsx` | Leads 列表 415 行 | 🟢 T3-3 step 8+9+10+12 完成 |
 | `src/app/(dashboard)/leads/_components/LeadCard.tsx` | Lead 卡片 510 行 | 🟢 拆完 |
 | `src/app/(dashboard)/leads/_components/LeadsHeader.tsx` | Header + sticky page-title 108 行 | 🟢 新建 |
+| `src/app/(dashboard)/leads/_components/LeadsFilters.tsx` | Filter row 198 行 | 🟢 新建 |
 | `src/app/(dashboard)/leads/_components/LeadsBulkTransferBar.tsx` | 批量转移 sticky bar 122 行 | 🟢 新建 |
+| `src/app/(dashboard)/leads/[id]/page.tsx` | Lead Detail 540 行 | 🟢 T3-3 step 11 完成 |
+| `src/app/(dashboard)/leads/[id]/useLeadDetailData.ts` | Detail 数据 hook (318 行,fetchData + 11 state + 16 查询) | 🟢 新建 |
+| `src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts` | Detail 写 hook (445 行,12 handlers) | 🟢 新建 |
 | `src/app/(dashboard)/pipeline/page.tsx` | Pipeline Kanban 146 行 | 🟢 拆完 |
 | `src/hooks/useAuthRedirect.ts` | DashboardLayout auth (157 行) | 🟢 拆完 |
 | `src/hooks/useSupabaseQuery.ts` | 数据 query hook (timeout 8s + retry 2) | T1-1 freeze 仅限 query |
@@ -48,8 +52,8 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 ## 进行中任务
 - T3-1 ✅ 完成 (DashboardLayout 326 → 92 行 -71.8%, Sidebar/TopBar 独立组件)
-- T3-3 leads 拆分 **6/8** 完成 (5afce2f / ea791b1 / f9d3565 / 8b1c96c / 192bee2 / b84512a)
-- **T3-3 步骤 9** (Filters) + **T3-3 步骤 11** (leads/[id] 拆 3 文件) — T3-3 leads 收尾
+- T3-3 leads 拆分 **8/8 完成** ✅ (5afce2f / ea791b1 / f9d3565 / 8b1c96c / 192bee2 / b84512a / b508f46 / 6fb1860)
+- 剩余 CRM 工作: v3.1 Phase 0-3 (Excel Import / Notes Timeline 等业务级,待 GO)
 
 ## 已知坑和 workaround
 

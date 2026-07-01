@@ -17,6 +17,7 @@ import SubNavTabs from "@/components/SubNavTabs";
 import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
 import { useSupabaseQuery } from "@/lib/supabaseQuery";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import {
   Search, X, Plus, Phone, Calendar, MapPin, ChevronRight,
   MoreHorizontal, Edit3, Send, TrendingUp, Building2,
@@ -583,7 +584,16 @@ function LeadsContent() {
           { href: "/ads", labelKey: "leads.subnavAdAnalytics", iconName: "megaphone" },
         ]}
       />
-      <div className="space-y-4 mt-5">
+      {/* T2-4: 锚定功能卡片 — 整页滚动时关键控件可见
+          DashboardScrollContainer 建立 inner scroll 上下文，sticky 元素
+          (page-title z-20 / filter-bar z-10) 才能正确锚定。 */}
+      <DashboardScrollContainer className="p-4">
+      {/* page-title sticky: h1 + 顶部操作按钮 (Pipeline overview / Create / Import)
+          永远可见 — 用户滚到底部也知道自己在 leads 列表 */}
+      <div
+        data-sticky-region="page-title"
+        className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b -mx-4 px-4 py-2"
+      >
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">{t("leads.title")}</h1>
@@ -604,43 +614,15 @@ function LeadsContent() {
           </button>
         </div>
       </div>
+      </div>
 
-      {/* Bulk Transfer Bar */}
-      {selectedLeadIds.size > 0 && (salesRole === "admin" || salesRole === "boss") && (
-        <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-copper-500/10 border border-copper-500/30">
-          <span className="text-sm font-medium text-copper-300">{selectedLeadIds.size} leads selected</span>
-          <div className="flex items-center gap-2">
-            <button onClick={() => selectAllVisible(filtered.map(l => l.id))}
-              className="text-xs text-copper-400 hover:text-copper-300">Select all {filtered.length}</button>
-            <button onClick={clearSelection}
-              className="text-xs text-muted-foreground hover:text-foreground">Clear</button>
-            {selectedLeadIds.size > 0 && !showBulkTransfer && (
-              <button onClick={() => { setShowBulkTransfer(true); setBulkTransferTargetId(""); }}
-                className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-copper-500 text-foreground rounded-md hover:bg-copper-400 transition-colors">
-                Transfer →
-              </button>
-            )}
-            {showBulkTransfer && (
-              <>
-                <select value={bulkTransferTargetId} onChange={e => setBulkTransferTargetId(e.target.value)}
-                  className="text-xs bg-card border border-border/50 rounded px-2 py-1 text-foreground">
-                  <option value="">Select user...</option>
-                  {salesUsers.filter((u: any) => u.role === "sales").map((u: any) => (
-                    <option key={u.id} value={u.id}>{u.full_name || u.email}</option>
-                  ))}
-                </select>
-                <button onClick={bulkTransfer} disabled={reassigning || !bulkTransferTargetId}
-                  className="px-3 py-1 text-xs font-medium bg-emerald-600 text-foreground rounded-md hover:bg-emerald-500 disabled:opacity-40 transition-colors">
-                  {reassigning ? "Transferring..." : `Transfer ${selectedLeadIds.size}`}
-                </button>
-                <button onClick={() => setShowBulkTransfer(false)}
-                  className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
+      {/* filter-bar sticky: pipeline summary (column header) + 筛选行
+          锚定在 page-title 下方 — 滚下去也能改筛选条件 */}
+      <div
+        data-sticky-region="filter-bar"
+        className="sticky z-10 bg-background/95 backdrop-blur-sm border-b -mx-4 px-4 py-2 space-y-3"
+        style={{ top: 52 }}
+      >
       {/* Pipeline summary bar */}
       {showPipelineSummary && (
         <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-1.5">
@@ -1067,9 +1049,51 @@ function LeadsContent() {
           </div>
         </div>
       )}
+      </div>
+      {/* bulk-transfer-bar sticky: 选中 lead 后出现在底部，方便用户随时操作
+          选中的卡片滚到底，工具栏始终可见 */}
+      {selectedLeadIds.size > 0 && (salesRole === "admin" || salesRole === "boss") && (
+        <div
+          data-sticky-region="bulk-transfer-bar"
+          className="sticky bottom-0 z-10 bg-background/95 backdrop-blur-sm border-t -mx-4 px-4 py-2.5"
+        >
+          <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-copper-500/10 border border-copper-500/30">
+            <span className="text-sm font-medium text-copper-300">{selectedLeadIds.size} leads selected</span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => selectAllVisible(filtered.map(l => l.id))}
+                className="text-xs text-copper-400 hover:text-copper-300">Select all {filtered.length}</button>
+              <button onClick={clearSelection}
+                className="text-xs text-muted-foreground hover:text-foreground">Clear</button>
+              {selectedLeadIds.size > 0 && !showBulkTransfer && (
+                <button onClick={() => { setShowBulkTransfer(true); setBulkTransferTargetId(""); }}
+                  className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-copper-500 text-foreground rounded-md hover:bg-copper-400 transition-colors">
+                  Transfer →
+                </button>
+              )}
+              {showBulkTransfer && (
+                <>
+                  <select value={bulkTransferTargetId} onChange={e => setBulkTransferTargetId(e.target.value)}
+                    className="text-xs bg-card border border-border/50 rounded px-2 py-1 text-foreground">
+                    <option value="">Select user...</option>
+                    {salesUsers.filter((u: any) => u.role === "sales").map((u: any) => (
+                      <option key={u.id} value={u.id}>{u.full_name || u.email}</option>
+                    ))}
+                  </select>
+                  <button onClick={bulkTransfer} disabled={reassigning || !bulkTransferTargetId}
+                    className="px-3 py-1 text-xs font-medium bg-emerald-600 text-foreground rounded-md hover:bg-emerald-500 disabled:opacity-40 transition-colors">
+                    {reassigning ? "Transferring..." : `Transfer ${selectedLeadIds.size}`}
+                  </button>
+                  <button onClick={() => setShowBulkTransfer(false)}
+                    className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <QuickCreateLeadDialog open={showQuickCreate} onOpenChange={setShowQuickCreate} onCreated={fetchLeads} />
       <ExcelImportDialog open={showImport} onOpenChange={setShowImport} onImported={fetchLeads} />
-    </div>
+    </DashboardScrollContainer>
     </div>
   );
 }

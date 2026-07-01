@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Menu, X, LogOut, ShieldCheck } from "lucide-react";
 import { Toaster } from "sonner";
-import { useState, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { LanguageProvider } from "@/lib/i18n/LanguageContext";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { createClient } from "@/lib/supabase";
+import { useAuthRedirect } from "@/hooks/useAuthRedirect";
 import NotificationBell from "@/components/NotificationBell";
 import { DashboardErrorBoundary } from "@/components/DashboardErrorBoundary";
 import { MGMT_NAV, SALES_NAV } from "@/lib/nav";
@@ -18,102 +18,9 @@ import { MGMT_NAV, SALES_NAV } from "@/lib/nav";
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const supabase = createClient();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t, lang } = useLanguage();
-  const [role, setRole] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [authError, setAuthError] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    // Dev mode — auto sign-in to get valid JWT so RLS passes (production-safe: NODE_ENV guard)
-    if (process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_DEV_MODE === "true") {
-      const DEV_EMAIL = process.env.DEV_EMAIL || "dev@newme.ae";
-      const DEV_PASSWORD = process.env.DEV_PASSWORD || "dev123456";
-
-      async function devLogin() {
-        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
-          email: DEV_EMAIL,
-          password: DEV_PASSWORD,
-        });
-
-        if (signInErr || !signInData.session) {
-          // User missing or email not confirmed — call setup endpoint
-          try {
-            await fetch("/api/dev/setup", { method: "POST" });
-            // Retry sign in after setup
-            const { data: retryData, error: retryErr } = await supabase.auth.signInWithPassword({
-              email: DEV_EMAIL,
-              password: DEV_PASSWORD,
-            });
-            if (retryErr || !retryData.session) {
-              setAuthError(true);
-              setAuthLoading(false);
-              return;
-            }
-            storeSession(retryData.session);
-            return;
-          } catch {
-            setAuthError(true);
-            setAuthLoading(false);
-            return;
-          }
-        }
-        storeSession(signInData.session);
-      }
-
-      function storeSession(_session: unknown) {
-        // createBrowserClient (@supabase/ssr) manages the auth cookie itself
-        // after signInWithPassword. We only update React state here — no manual
-        // localStorage / document.cookie writes (those conflicted with the ssr
-        // chunked-cookie refresh and caused intermittent session loss).
-        void _session;
-        setUserEmail(DEV_EMAIL);
-        setRole("admin");
-        setAuthLoading(false);
-      }
-
-      devLogin();
-      return;
-    }
-
-    const t = setTimeout(() => {
-      if (!cancelled) router.push("/login");
-    }, 5000);
-    supabase.auth.getUser().then(({ data: { user }, error }) => {
-      clearTimeout(t);
-      if (cancelled) return;
-      if (error || !user) { router.push("/login"); return; }
-      setUserEmail(user.email ?? null);
-      supabase.from("profiles").select("role, force_password_change, full_name").eq("id", user.id).single()
-        .then(({ data, error: profileErr }) => {
-          if (cancelled) return;
-          const r = data?.role ?? "sales";
-          setRole(r);
-          if (data?.force_password_change && pathname !== "/change-password") {
-            router.push("/change-password");
-          }
-          setAuthLoading(false);
-        });
-    }).catch(() => {
-      clearTimeout(t);
-      if (!cancelled) { setAuthError(true); setAuthLoading(false); }
-    });
-    return () => { cancelled = true; clearTimeout(t); };
-  }, []);
-
-  // Redirect sales users from /dashboard to /workbench (default sales homepage)
-  useEffect(() => {
-    if (!role) return;
-    const isMgmt = role === "admin" || role === "boss" || role === "operator";
-    if (!isMgmt && pathname === "/dashboard") {
-      router.replace("/workbench");
-    }
-  }, [role, pathname, router]);
+  const { role, userEmail, authLoading, authError, handleLogout } = useAuthRedirect();
 
   const isManagement = role === "admin" || role === "boss" || role === "operator";
   const nav = isManagement ? MGMT_NAV : SALES_NAV;
@@ -122,22 +29,8 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     if (href === "/dashboard") return pathname === "/dashboard";
     if (href === "/workbench") return pathname === "/workbench";
     if (href === "/pipeline" && isManagement) return pathname.startsWith("/pipeline");
-    if (href === "/pipeline" && !isManagement) return pathname.startsWith("/pipeline"); 
+    if (href === "/pipeline" && !isManagement) return pathname.startsWith("/pipeline");
     return pathname.startsWith(href);
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    // Clear all auth storage from login page
-    localStorage.removeItem("sb-vfopmpxlhwzpxqegayew-auth-token");
-    const clearCookie = (name: string) => {
-      document.cookie = `${name}=; path=/; max-age=0; SameSite=Lax`;
-    };
-    clearCookie("sb-vfopmpxlhwzpxqegayew-auth-token");
-    clearCookie("sb-vfopmpxlhwzpxqegayew-refresh-token");
-    clearCookie("sb-access-token");
-    clearCookie("sb-refresh-token");
-    router.push("/login");
   };
 
   const roleLabel = isManagement

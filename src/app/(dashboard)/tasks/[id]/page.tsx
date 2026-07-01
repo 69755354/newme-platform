@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, Calendar, Clock, User, CheckCircle2, XCircle, Loader2, Save, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { fmtDubai } from "@/lib/utils";
 
 /* ─── Types ─── */
 interface Task {
@@ -56,14 +57,7 @@ const PRIORITY_OPTIONS = [
 /* ─── Helpers ─── */
 function formatDateTime(d: string | null): string {
   if (!d) return "—";
-  const date = new Date(d);
-  return date.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return fmtDubai(new Date(d), { locale: "en-US", month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function formatDateForInput(d: string | null): string {

@@ -1,7 +1,8 @@
 # TASKBOARD.md — Machine-Verifiable Task Tracking
-# Last updated: 2026-07-01
+# Last updated: 2026-07-01 14:01 CST (commit db6bd0b, COS sync-metadata.json)
 # Owner: MoA Tier 1 Technical Debt
 # Source: COS crm-v3/v3.1/v3.1 P1P1计划0629.txt (4990 lines, 4-round MoA audit)
+# COS mirror: crm-v3/taskboard/TASKBOARD.md
 
 ## ⚠️ RULE
 - Every audit/plan that produces action items MUST be converted into this file.

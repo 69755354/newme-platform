@@ -786,8 +786,13 @@ export default function LeadDetailPage() {
 
   return (
     <div className="max-w-7xl space-y-6">
-      {/* Header: back + name + status badge + delete */}
-      <div className="flex items-center gap-4">
+      {/* T2-4: 锚定 Header — 整页滚动时返回按钮/客户名/状态徽章/delete 永远可见
+          注意：leads/[id] 不像 leads/page.tsx 包了 DashboardScrollContainer，
+          这里是外层 viewport 滚动。sticky 元素 (page-title z-20) 仍能锚定到 viewport 顶部。 */}
+      <div
+        data-sticky-region="page-title"
+        className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b -mx-4 px-4 py-2 flex items-center gap-4"
+      >
         <Button variant="ghost" size="icon" onClick={() => router.push("/leads")} className="text-muted-foreground">
           <ArrowLeft className="w-5 h-5" />
         </Button>
@@ -921,6 +926,9 @@ export default function LeadDetailPage() {
         lang={lang}
       />
 
+      {/* T2-4: dialog 层级约定 — z-modal z-40
+          Radix Dialog 内部已设 z-50，本处约定为「modal 大类 = z-40」便于
+          与 page-title (z-20) / dropdown (z-50 内嵌元素) 协调。 */}
       {showQuoteCalculator && (
         <QuoteCalculator
           open={showQuoteCalculator}
@@ -929,6 +937,9 @@ export default function LeadDetailPage() {
           onSaved={() => { fetchData(); }}
         />
       )}
+      {/* T2-4: toast 层级约定 — z-toast z-50
+          sonner Toaster 已固定 z-50，作为最高优先级反馈层，
+          覆盖 page-title / modal / dropdown。 */}
       <Toaster position="top-center" richColors />
     </div>
   );

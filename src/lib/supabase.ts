@@ -4,6 +4,8 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 let _client: SupabaseClient | null = null;
+let _sessionToken: string | null = null;
+let _initPromise: Promise<void> | null = null;
 
 interface AuthSession {
   access_token: string;
@@ -47,35 +49,44 @@ function getAuthSession(): AuthSession | null {
 }
 
 export function createClient(): SupabaseClient {
-  // Always try to refresh the session token — the client is a singleton
-  // but the session may change after login
   const session = getAuthSession();
+  const tokenChanged = session && session.access_token !== _sessionToken;
 
-  if (_client) {
-    if (session) {
-      _client.auth.setSession({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
-      });
-    }
+  if (_client && !tokenChanged) {
     return _client;
   }
 
-  _client = _createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-      detectSessionInUrl: false,
-      storage: undefined as any,
-    },
-  });
-
-  if (session) {
-    _client.auth.setSession({
-      access_token: session.access_token,
-      refresh_token: session.refresh_token,
+  if (!_client) {
+    _client = _createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+        storage: undefined as any,
+      },
     });
   }
 
+  if (session && tokenChanged) {
+    _sessionToken = session.access_token;
+    _initPromise = (async () => {
+      await _client!.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      });
+    })();
+  }
+
   return _client;
+}
+
+/**
+ * Must be called before using the client if you need authenticated requests.
+ * Waits for setSession to complete so getUser() uses the fresh token.
+ */
+export async function ensureSession(): Promise<void> {
+  if (_initPromise) {
+    await _initPromise;
+    _initPromise = null;
+  }
 }

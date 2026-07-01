@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
+import { createClient, ensureSession } from "@/lib/supabase";
 
 /**
  * useAuthRedirect — DashboardLayout 的鉴权 + 角色解析 + 重定向副作用集中点
@@ -94,7 +94,7 @@ export function useAuthRedirect() {
     const t = setTimeout(() => {
       if (!cancelled) router.push("/login");
     }, 5000);
-    supabase.auth.getUser().then(({ data: { user }, error }) => {
+    ensureSession().then(() => supabase.auth.getUser()).then(({ data: { user }, error }) => {
       clearTimeout(t);
       if (cancelled) return;
       if (error || !user) { router.push("/login"); return; }

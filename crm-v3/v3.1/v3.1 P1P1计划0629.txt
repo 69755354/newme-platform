@@ -5184,9 +5184,12 @@ T3-1 DashboardLayout 统一（方案A，全 6+ 页重构）
 T3-2 性能监控 + 告警（Lighthouse/Web Vitals baseline + alerting）
   任务: 防 P0 类问题再次悄悄出现
   验收: Baseline 记录 + alerts 配置
-T3-3 大文件拆分（leads 1067行 / pipeline 689行 拆到 <500 行/文件）
+T3-3 大文件拆分（leads 1108行 + leads/[id] 946行 拆到 <500 行/文件；pipeline 已 566 行不拆）⚠️
   任务: 可读性 + 维护性
   验收: 无单文件 > 500 行，共享组件抽取
+  方案: CC 探查 deleg_a99a12cf 报告 — 17 commits / ~19h / 路径约定 _components/_hooks/_utils
+  风险: 🔴 leads/page.tsx changeStage 94 行乐观锁 + leads/[id]/page.tsx P0-1 fetchData 161ms
+  顺序: 严格串行 1→12 (pipeline LeadCard → KPI → KanbanBoard → leads utils → hooks → components → leads/[id] utils → hooks)
 T3-5 profiles.email 列 vs R1 矛盾统一
   任务: profiles.email 由 trigger 同步 auth.users，违反 R1；要么删列要么正式豁免
   验收: coding_standards.md R1 修订 OR profiles.email 列删除

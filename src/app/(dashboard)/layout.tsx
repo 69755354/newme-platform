@@ -10,8 +10,8 @@ import { LanguageProvider } from "@/lib/i18n/LanguageContext";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useAuthRedirect } from "@/hooks/useAuthRedirect";
-import NotificationBell from "@/components/NotificationBell";
 import { DashboardErrorBoundary } from "@/components/DashboardErrorBoundary";
+import { DashboardTopBar } from "@/components/dashboard/DashboardTopBar";
 import { MGMT_NAV, SALES_NAV } from "@/lib/nav";
 
 // ─── Component ───
@@ -149,28 +149,12 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
       <main className="flex-1 min-w-0 flex flex-col">
         {/* Top header bar — user info always visible */}
         {(role || authError) && (
-          <div className="flex items-center justify-end gap-3 px-6 py-2.5 border-b border-border/50 bg-background/80 backdrop-blur-sm sticky top-0 z-30">
-            {authError && (
-              <button onClick={() => window.location.reload()} className="text-xs text-rose-400 hover:text-rose-300 mr-2">
-                Connection error — tap to retry
-              </button>
-            )}
-            {/* Notification bell */}
-            <NotificationBell />
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-slate-600/20 flex items-center justify-center text-slate-600 text-xs font-bold">
-                {userEmail ? userEmail.charAt(0).toUpperCase() : "?"}
-              </div>
-              <div className="text-right">
-                <p className="text-xs font-medium text-foreground leading-tight">{userEmail || "..."}</p>
-                <p className="text-[10px] text-muted-foreground leading-tight">{roleLabel}</p>
-              </div>
-            </div>
-            <button onClick={handleLogout}
-              className="text-[10px] text-muted-foreground hover:text-rose-400 transition-colors px-2 py-1 rounded hover:bg-accent">
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          <DashboardTopBar
+            role={role}
+            userEmail={userEmail}
+            authError={authError}
+            handleLogout={handleLogout}
+          />
         )}
         {/*
           T2-1 (Taskboard): 统一滚动策略 — page-scroll container.

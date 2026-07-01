@@ -319,7 +319,18 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         )}
-        <div className="flex-1 p-6 min-w-0 overflow-hidden">
+        {/*
+          T2-1 (Taskboard): 统一滚动策略 — page-scroll container.
+
+          此 div 是 dashboard 滚动边界 (overflow-hidden). 子页面应当:
+            - 在根 div 使用 `h-full` 配合 `<DashboardScrollContainer>` (推荐)
+              或 `useDashboardScroll()` hook — 让内部滚动继承父级高度
+            - 禁止使用 min-h-screen / 100vh / calc(100vh - Xpx)
+            - 禁止在根 div 声明 overflow-y-scroll (会和这里冲突)
+
+          父级 chain: main (flex-1) → header (固定高) → 本 div (flex-1) → 页面
+        */}
+        <div className="flex-1 p-6 min-w-0 overflow-hidden" data-dashboard-scroll-boundary="">
           {authLoading ? (
             <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
               {t("common.loading")}

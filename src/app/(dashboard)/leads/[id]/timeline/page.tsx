@@ -34,6 +34,7 @@ import {
   Clock,
 } from "lucide-react";
 import { fmtDubai } from "@/lib/utils";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 // ─── Types ────────────────────────────────────────────────────────────
 interface FollowUpLogRow {
@@ -186,7 +187,7 @@ export default function LeadTimelinePage() {
 
   // ─── Render ──────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-background">
+    <DashboardScrollContainer className="bg-background">
       <Toaster richColors position="top-center" />
 
       {/* Header */}
@@ -378,6 +379,6 @@ export default function LeadTimelinePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </DashboardScrollContainer>
   );
 }

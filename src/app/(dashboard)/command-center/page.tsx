@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { AlertTriangle, Target, Users, Clock, CalendarCheck } from "lucide-react";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 interface SalesPerson {
   name: string;
@@ -43,22 +44,25 @@ export default function CommandCenterPage() {
       .catch((e) => { setError(e.message); setLoading(false); });
   }, []);
 
+  // T2-1: replace min-h-screen with h-full + flex center. The dashboard
+  // layout already provides a full-height container; min-h-screen fought
+  // the flex chain and caused double scrollbars.
   if (loading) return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
+    <DashboardScrollContainer className="bg-black flex items-center justify-center" variant="contained">
       <p className="text-gray-400">{t("common.loading")}</p>
-    </div>
+    </DashboardScrollContainer>
   );
 
   if (error) return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
+    <DashboardScrollContainer className="bg-black flex items-center justify-center" variant="contained">
       <p className="text-red-400">{error}</p>
-    </div>
+    </DashboardScrollContainer>
   );
 
   if (!data) return null;
 
   return (
-    <div className="min-h-screen bg-black p-6">
+    <DashboardScrollContainer className="bg-black p-6">
       <h1 className="text-2xl font-bold text-white mb-6">{t("commandCenter.title")}</h1>
 
       {/* KPI Cards */}
@@ -182,6 +186,6 @@ export default function CommandCenterPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </DashboardScrollContainer>
   );
 }

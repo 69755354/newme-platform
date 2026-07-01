@@ -17,6 +17,7 @@ import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
 import { useSupabaseQuery } from "@/lib/supabaseQuery";
 import KanbanStats from "@/components/pipeline/KanbanStats";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 /* ─── Types ─── */
 interface Lead {
@@ -416,7 +417,9 @@ export default function PipelinePage() {
   const totalValue = pipelineStages.reduce((sum, s) => sum + (columns[s.key]?.reduce((v, l) => v + (l.quotation_value || 0), 0) || 0), 0);
 
   return (
-    <div className="space-y-4">
+    // T2-1: dashboard 滚动边界. pipeline 不让 page-level 滚动 — 让内部
+    // kanban 用 flex-1 撑满可用空间并独立滚动. 这样消除 calc(100vh - Xpx).
+    <DashboardScrollContainer className="flex flex-col gap-4" variant="contained" as="div">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -452,7 +455,9 @@ export default function PipelinePage() {
       />
 
       {/* ═══════ Kanban Board ═══════ */}
-      <div className="relative">
+      {/* T2-1: flex-1 + min-h-0 lets the kanban fill the remaining
+          DashboardScrollContainer space without calc(100vh - 280px). */}
+      <div className="relative flex-1 min-h-0">
         {/* Left arrow button */}
         <button
           onClick={() => scrollContainerRef.current?.scrollBy({ left: -310, behavior: 'smooth' })}
@@ -469,17 +474,16 @@ export default function PipelinePage() {
           <ChevronRight className="w-4 h-4" />
         </button>
 
-        {/* Scroll container - fixed height for internal scroll */}
+        {/* T2-1: scroll container is now h-full — no more calc(100vh - 280px).
+            min-h-0 lets the flex child shrink; scrollbar-visible is preserved. */}
         <div
           ref={scrollContainerRef}
-          className="overflow-x-auto overflow-y-auto snap-x snap-mandatory scrollbar-visible"
-          style={{ 
-            scrollBehavior: 'smooth',
-            height: 'calc(100vh - 280px)',
-            minHeight: '400px'
-          }}
+          className="h-full overflow-x-auto overflow-y-auto snap-x snap-mandatory scrollbar-visible"
+          style={{ scrollBehavior: 'smooth' }}
         >
-          <div className="flex gap-3 min-w-max px-10 pb-4" style={{ minHeight: "100%" }}>
+          {/* T2-1: h-full lets columns fill the kanban row, which fills the
+              DashboardScrollContainer. No more minHeight: 100%. */}
+          <div className="flex gap-3 min-w-max px-10 pb-4 h-full">
             {(() => {
               // Filter stages: always show won/lost, others based on showEmptyStages
               const visibleStages = STAGES.filter(s => {
@@ -503,7 +507,9 @@ export default function PipelinePage() {
                     onDragLeave={() => onDragLeave(stage.key)}
                     onDrop={(e) => onDrop(e, stage.key)}
                     className={cn(
-                      "flex flex-col w-[300px] shrink-0 rounded-xl border transition-all duration-150 snap-start",
+                      // T2-1: h-full lets the column fill the kanban row,
+                      // which in turn fills the DashboardScrollContainer.
+                      "h-full flex flex-col w-[300px] shrink-0 rounded-xl border transition-all duration-150 snap-start",
                       stage.bg, stage.border,
                       isOver && "ring-2 ring-copper-500/50 border-copper-500/30 scale-[1.01]",
                       isWon && "bg-emerald-950/10",
@@ -530,10 +536,10 @@ export default function PipelinePage() {
                       )}
                     </div>
 
-                    {/* Cards container - independent vertical scroll */}
+                    {/* T2-1: Cards container — flex-1 + min-h-0 lets it fill the
+                        column (which is now h-full). No more max-h-[calc(100vh-360px)]. */}
                     <div className={cn(
-                      "flex-1 p-2 space-y-2 overflow-y-auto transition-colors rounded-b-xl",
-                      "max-h-[calc(100vh-360px)]",
+                      "flex-1 min-h-0 p-2 space-y-2 overflow-y-auto transition-colors rounded-b-xl",
                       isOver && "bg-copper-500/5",
                     )}>
                       {/* Empty state */}
@@ -555,6 +561,6 @@ export default function PipelinePage() {
           </div>
         </div>
       </div>
-    </div>
+    </DashboardScrollContainer>
   );
 }

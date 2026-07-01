@@ -218,6 +218,10 @@ export default function QuotationsPage() {
   };
 
   return (
+    // T2-4: quotations 根容器 = 普通 <div className="space-y-0">，没有用 DashboardScrollContainer
+    // → 走外层 viewport 滚动模式（与 payments 一致）。
+    // sticky 元素 (page-title z-20) 直接锚定到 viewport 顶部。
+    // quotations 没有批量选择功能 → 无 bulk-bar；filter 搜索/状态 Tabs 行不 sticky。
     <div className="space-y-0">
       <SubNavTabs
         items={[
@@ -226,39 +230,48 @@ export default function QuotationsPage() {
         ]}
       />
 
-      {/* ─── Header ─── */}
-      <div className="flex items-center justify-between mb-6 mt-5 flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">
-            {t("quotations.title") || "Quotations"}
-          </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            {totalCount} {t("quotations.total") || "total"} · {fmtAED(totalValue)}{" "}
-            {t("quotations.value") || "value"}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={fetchQuotations}
-            className="h-9"
-            title={t("quotations.refresh") || "Refresh"}
-          >
-            <RefreshCw className="w-4 h-4" />
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => (window.location.href = "/quotes")}
-            className="bg-copper-500 hover:bg-copper-600 text-foreground"
-          >
-            <Plus className="w-4 h-4 mr-1.5" />
-            {t("quotations.newQuote") || "New Quote"}
-          </Button>
+      {/* ─── Header (page-title sticky) ───
+          T2-4: 锚定功能卡片 — 整页滚动时标题 + 关键操作按钮永远可见。
+          z-index 约定: page-title z-20 / dialog z-40 (z-modal) / toast z-50 (z-toast) */}
+      <div
+        data-sticky-region="page-title"
+        className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b -mx-4 px-4 py-2 mb-6"
+      >
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">
+              {t("quotations.title") || "Quotations"}
+            </h1>
+            <p className="text-muted-foreground text-sm mt-0.5">
+              {totalCount} {t("quotations.total") || "total"} · {fmtAED(totalValue)}{" "}
+              {t("quotations.value") || "value"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={fetchQuotations}
+              className="h-9"
+              title={t("quotations.refresh") || "Refresh"}
+            >
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => (window.location.href = "/quotes")}
+              className="bg-copper-500 hover:bg-copper-600 text-foreground"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              {t("quotations.newQuote") || "New Quote"}
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* ─── Filters ─── */}
+      {/* ─── Filters (非 sticky) ───
+          T2-4: 走 viewport 滚动模式，filter 行不 sticky，保持与 payments 一致。
+          z-index 约定见 page-title 注释。 */}
       <div className="flex gap-2 flex-wrap items-center mb-4">
         {/* Search */}
         <div className="relative flex-1 min-w-[200px] max-w-xs">
@@ -503,6 +516,7 @@ export default function QuotationsPage() {
         </div>
       )}
 
+      {/* z-toast z-50 — sonner Toaster 与 z-index 约定 (T2-4: page-title z-20 / z-modal z-40 / z-toast z-50) */}
       <Toaster position="top-center" richColors />
     </div>
   );

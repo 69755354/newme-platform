@@ -49,7 +49,7 @@ Source: MoA 4-round audit, 3-model unanimous sign-off, lines 478-500 + 559-600 +
 
 | # | Problem | Requirement | Verification | Status | Done Date |
 |---|---------|-------------|-------------|--------|-----------|
-| P0-1 | leads/[id] 加载 2.1 分钟 / 431 请求 | fetchData 的 8 个串行查询改并行 + 关键路径用 PostgREST JOIN | 详情页加载 < 5s，请求数 < 50 | 🔄 | 2026-07-01 (CC, 纯方案) |
+| P0-1 | leads/[id] 加载 2.1 分钟 / 431 请求 | fetchData 的 8 个串行查询改并行 + 关键路径用 PostgREST JOIN | 详情页加载 < 5s，请求数 < 50 | 🔄 | 2026-07-01 (CC 编码) |
 
 ---
 
@@ -67,16 +67,16 @@ Blocked by Tier 1 completion. Do NOT start until all Tier 1 = ✅.
 ---
 
 ### MoA Tier 3 — Architecture (LONG-TERM, 1-2 months)
-Blocked by Tier 2 completion.
+Tier 2 unlocked (T2-1/2/3 ✅ 2026-07-01).
 
 | # | Problem | Requirement | Verification | Status | Done Date |
 |---|---------|-------------|-------------|--------|-----------|
 | T3-1 | DashboardLayout unification | Full DashboardLayout refactor (方案A) | Single layout component, all pages conform | ❌ (Tier 3) | |
 | T3-2 | Performance monitoring + alerts | Lighthouse/Web Vitals baseline + alerting | Baseline recorded, alerts configured | ❌ (Tier 3) | |
 | T3-3 | Code debt elimination | Refactor large files (leads 1067行, pipeline 689行) | No single file > 500 lines, shared components extracted | ❌ (Tier 3) | |
-| T3-4 | Docs drift: coding_standards §4 contracts/payments stale | Refresh table schema section to match actual DB (contract_amount / sales_id / confirmed) | coding_standards.md §4 列与 DB service_role 查询结果一致 | ❌ (Tier 3) | |
+| T3-4 | Docs drift: coding_standards §4 contracts/payments stale | Refresh table schema section to match actual DB (contract_amount / sales_id / confirmed) | coding_standards.md §4 列与 DB service_role 查询结果一致 | ✅ | 2026-07-01 |
 
-**Tier 3 Progress: 0/4 (0%) — BLOCKED by Tier 2**
+**Tier 3 Progress: 1/4 (25%)**
 
 ---
 

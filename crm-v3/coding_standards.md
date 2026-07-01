@@ -239,15 +239,29 @@ s.from('表名').select('*').limit(1).then(r=>console.log(Object.keys(r.data[0]|
 ### contracts
 | 字段 | 类型 | 约束 | 来源 |
 |------|------|------|------|
-| id | UUID | PK | contract_pipeline_v1 |
-| lead_id | UUID | → leads(id), UNIQUE(lead_id) 仅一个活跃合同 | contract_pipeline_v1, unique_active |
-| contract_number | TEXT | NOT NULL | contract_pipeline_v1 |
-| total_amount | NUMERIC(12,2) | | contract_pipeline_v1 |
-| status | TEXT | CHECK(draft/signed/completed/cancelled) | contract_pipeline_v1 |
-| signed_at | TIMESTAMPTZ | | contract_pipeline_v1 |
-| created_at | TIMESTAMPTZ | DEFAULT now() | contract_pipeline_v1 |
-| created_by | UUID | → profiles(id) | contract_pipeline_v1 |
-| approval_status | TEXT | DEFAULT 'pending' | add_approval_status |
+| id | UUID | PK, DEFAULT gen_random_uuid() | newme_crm_v22_complete |
+| lead_id | UUID | → leads(id) ON DELETE SET NULL | newme_crm_v22_complete |
+| quotation_id | UUID | → quotations(id) | newme_crm_v22_complete |
+| customer_id | UUID | | newme_crm_v22_complete |
+| sales_id | UUID | → profiles(id) | newme_crm_v22_complete |
+| created_by | UUID | → profiles(id) | newme_crm_v22_complete |
+| contract_no | TEXT | NOT NULL UNIQUE | newme_crm_v22_complete |
+| contract_date | DATE | NOT NULL DEFAULT CURRENT_DATE | newme_crm_v22_complete |
+| contract_amount | NUMERIC(12,2) | NOT NULL CHECK(contract_amount > 0) | newme_crm_v22_complete |
+| currency | TEXT | DEFAULT 'AED' | newme_crm_v22_complete |
+| party_a_name | TEXT | NOT NULL | newme_crm_v22_complete |
+| party_a_contact | TEXT | | newme_crm_v22_complete |
+| party_b_name | TEXT | NOT NULL DEFAULT 'NewMe Smart Home FZCO' | newme_crm_v22_complete |
+| party_b_contact | TEXT | | newme_crm_v22_complete |
+| file_url | TEXT | | newme_crm_v22_complete |
+| file_metadata | JSONB | | newme_crm_v22_complete |
+| status | TEXT | NOT NULL DEFAULT 'draft' CHECK(draft/active/completed/terminated) | newme_crm_v22_complete |
+| approval_status | TEXT | DEFAULT 'none' CHECK(none/pending/approved/rejected) | newme_crm_v22_complete |
+| notes | TEXT | | newme_crm_v22_complete |
+| terminated_reason | TEXT | | newme_crm_v22_complete |
+| terminated_at | TIMESTAMPTZ | | newme_crm_v22_complete |
+| created_at | TIMESTAMPTZ | DEFAULT now() | newme_crm_v22_complete |
+| updated_at | TIMESTAMPTZ | DEFAULT now() | newme_crm_v22_complete |
 
 ### tasks
 | 字段 | 类型 | 约束 | 来源 |
@@ -292,12 +306,23 @@ s.from('表名').select('*').limit(1).then(r=>console.log(Object.keys(r.data[0]|
 ### payments
 | 字段 | 类型 | 约束 | 来源 |
 |------|------|------|------|
-| id | UUID | PK | init |
-| contract_id | UUID | → contracts(id) | init |
-| amount | NUMERIC(12,2) | NOT NULL | init |
-| status | TEXT | CHECK(pending/paid/failed) | init |
-| paid_at | TIMESTAMPTZ | | init |
-| first_payment | BOOLEAN | DEFAULT false | add_first_payment_tracking |
+| id | UUID | PK, DEFAULT gen_random_uuid() | newme_crm_v22_complete |
+| contract_id | UUID | → contracts(id) ON DELETE CASCADE | newme_crm_v22_complete |
+| installment_plan_id | UUID | → installment_plans(id) | newme_crm_v22_complete |
+| created_by | UUID | → profiles(id) | newme_crm_v22_complete |
+| amount | NUMERIC(12,2) | NOT NULL CHECK(amount > 0) | newme_crm_v22_complete |
+| currency | TEXT | DEFAULT 'AED' | newme_crm_v22_complete |
+| payment_date | DATE | NOT NULL DEFAULT CURRENT_DATE | newme_crm_v22_complete |
+| received_at | TIMESTAMPTZ | | newme_crm_v22_complete |
+| payment_method | TEXT | CHECK(bank_transfer/cash/cheque/card/other) | newme_crm_v22_complete |
+| reference_no | TEXT | | newme_crm_v22_complete |
+| confirmed | BOOLEAN | DEFAULT false | newme_crm_v22_complete |
+| confirmed_by | UUID | → profiles(id) | newme_crm_v22_complete |
+| confirmed_at | TIMESTAMPTZ | | newme_crm_v22_complete |
+| overpayment_action | TEXT | CHECK(refund/credit/adjust) | newme_crm_v22_complete |
+| notes | TEXT | | newme_crm_v22_complete |
+| created_at | TIMESTAMPTZ | DEFAULT now() | newme_crm_v22_complete |
+| updated_at | TIMESTAMPTZ | DEFAULT now() | newme_crm_v22_complete |
 
 ### quotations
 | 字段 | 类型 | 约束 | 来源 |

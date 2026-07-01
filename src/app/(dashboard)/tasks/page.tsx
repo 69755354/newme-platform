@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ChevronLeft, ChevronRight, CheckCircle2, Clock, XCircle, Loader2, AlertTriangle, Calendar } from "lucide-react";
+import { fmtDubai } from "@/lib/utils";
 
 /* ─── Constants ─── */
 const PAGE_SIZE = 20;
@@ -68,8 +69,7 @@ interface ProfileInfo {
 /* ─── Helpers ─── */
 function formatDate(d: string | null): string {
   if (!d) return "—";
-  const date = new Date(d);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return fmtDubai(new Date(d), { locale: "en-US", month: "short", day: "numeric", year: "numeric" });
 }
 
 function isOverdue(dueAt: string | null, status: string): boolean {

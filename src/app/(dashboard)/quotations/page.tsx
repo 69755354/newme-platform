@@ -9,7 +9,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { cn, fmtDubai } from "@/lib/utils";
 import SubNavTabs from "@/components/SubNavTabs";
 import { Toaster, toast } from "sonner";
 import {
@@ -87,11 +87,7 @@ function fmtAED(v: number | null | undefined): string {
 function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
   try {
-    return new Date(d).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
+    return fmtDubai(d, { locale: "en-US", year: "numeric", month: "short", day: "numeric" });
   } catch {
     return "—";
   }

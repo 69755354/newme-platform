@@ -26,10 +26,17 @@
  *   - DO NOT edit the block body when refactoring — it's covered by
  *     CRM v3.1 P1P1 plan risk register at line 5191.
  *
- * Local UI state (noteText, nextActionText, editing* flags, etc.) is owned
- * by the page and passed in as the `ui` object so the hook can both
- * *read* (current text to persist) and *clear* (reset on success) without
- * the hook owning layout state.
+ * T3-3 step 7 — ui interface slim-down
+ *   - The original `ui` parameter was a 13-setter bundle used by handlers
+ *     to read current editor text + close picker flags on completion.
+ *   - After step 7 (LeadCard.tsx), all editor state is owned by LeadCard
+ *     itself. The hook no longer needs the full UI bundle: editors are
+ *     closed on-click by LeadCard before invoking the mutation handler,
+ *     and the 3 text-input editors (note / nextAction / nextFollowup)
+ *     have their text passed as a handler argument.
+ *   - The hook invokes `onSuccess?.()` after each text-editor write
+ *     completes successfully, giving LeadCard the hook to clear its
+ *     input + close picker only on a confirmed DB write.
  */
 
 import { useCallback } from "react";
@@ -46,24 +53,6 @@ export interface SalesUser {
   full_name: string | null;
 }
 
-export interface LeadMutationsUI {
-  noteText: string;
-  setNoteText: (v: string) => void;
-  setNoteLeadId: (v: string | null) => void;
-  nextActionText: string;
-  setNextActionText: (v: string) => void;
-  nextFollowupText: string;
-  setNextFollowupText: (v: string) => void;
-  setEditingStage: (v: string | null) => void;
-  setEditingProbability: (v: string | null) => void;
-  setEditingStatus: (v: string | null) => void;
-  setEditingLostReason: (v: string | null) => void;
-  setEditingNextAction: (v: string | null) => void;
-  setEditingNextFollowup: (v: string | null) => void;
-  setReassignLeadId: (v: string | null) => void;
-  setReassigning: (v: boolean) => void;
-}
-
 export interface UseLeadMutationsParams {
   leads: Lead[];
   setLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
@@ -75,8 +64,15 @@ export interface UseLeadMutationsParams {
   setError: (msg: string | null) => void;
   t: (key: string) => string;
   lang: string;
-  ui: LeadMutationsUI;
-}
+  /**
+   * Page-level state setters (used by reassignSales to clear the
+   * reassign dropdown on completion). These are page concerns —
+   * not editor state — so they stay top-level instead of being
+   * lumped into `editors`.
+   */
+    setReassignLeadId: (v: string | null) => void;
+    setReassigning: (v: boolean) => void;
+  }
 
 export interface UseLeadMutationsReturn {
   reassignSales: (leadId: string, newUserId: string) => Promise<void>;
@@ -91,9 +87,15 @@ export interface UseLeadMutationsReturn {
   changeProbability: (leadId: string, prob: number) => Promise<void>;
   changeStatus: (leadId: string, status: string) => Promise<void>;
   changeLostReason: (leadId: string, reason: string) => Promise<void>;
-  addQuickNote: (leadId: string) => Promise<void>;
-  updateNextAction: (leadId: string) => Promise<void>;
-  updateNextFollowup: (leadId: string) => Promise<void>;
+  /**
+   * Add a quick note to a lead. Text comes from LeadCard (it owns the
+   * input state). `onSuccess` is invoked after the activity row + lead
+   * timestamp update both succeed — used by LeadCard to clear its own
+   * input + close the picker only on a confirmed write.
+   */
+  addQuickNote: (leadId: string, text: string, onSuccess?: () => void) => Promise<void>;
+  updateNextAction: (leadId: string, text: string, onSuccess?: () => void) => Promise<void>;
+  updateNextFollowup: (leadId: string, date: string, onSuccess?: () => void) => Promise<void>;
 }
 
 /* ─── Stage auto-properties (preserved verbatim) ─── */
@@ -125,7 +127,8 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
     setError,
     t,
     lang,
-    ui,
+    setReassignLeadId,
+    setReassigning,
   } = params;
 
   // ─── Write business event ───
@@ -147,7 +150,7 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
   // ─── Sales reassignment ───
   const reassignSales = useCallback(
     async (leadId: string, newUserId: string) => {
-      ui.setReassigning(true);
+      setReassigning(true);
       const oldLead = leads.find(l => l.id === leadId);
       if (!oldLead) return;
       const newUser = salesUsers.find(u => u.id === newUserId);
@@ -174,8 +177,8 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
         notify({ type: "lead_assigned", lead_id: leadId, assigned_to: newUserId });
       });
 
-      ui.setReassignLeadId(null);
-      ui.setReassigning(false);
+      setReassignLeadId(null);
+      setReassigning(false);
       fetchLeads();
     },
     [leads, salesUsers, writeEvent, fetchLeads] // eslint-disable-line react-hooks/exhaustive-deps
@@ -203,7 +206,6 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
   // ─── Change stage (the big one) ───
   const changeStage = useCallback(
     async (leadId: string, newStage: string) => {
-      ui.setEditingStage(null);
       const oldLead = leads.find(l => l.id === leadId);
       if (!oldLead) return;
 
@@ -302,7 +304,6 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
   // ─── Change probability ───
   const changeProbability = useCallback(
     async (leadId: string, prob: number) => {
-      ui.setEditingProbability(null);
       const { error: changeProbErr } = await supabase.from("leads").update({ win_probability: prob, updated_at: new Date().toISOString() }).eq("id", leadId);
       if (changeProbErr) {
         console.error("Failed to update probability:", changeProbErr);
@@ -318,7 +319,6 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
   // ─── Change lead status ───
   const changeStatus = useCallback(
     async (leadId: string, status: string) => {
-      ui.setEditingStatus(null);
       const { error: changeStatusErr } = await supabase.from("leads").update({ lead_status: status, updated_at: new Date().toISOString() }).eq("id", leadId);
       if (changeStatusErr) {
         console.error("Failed to update lead status:", changeStatusErr);
@@ -334,7 +334,6 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
   // ─── Change lost reason (final_status = "lost" + audit) ───
   const changeLostReason = useCallback(
     async (leadId: string, reason: string) => {
-      ui.setEditingLostReason(null);
       const { error: lostReasonErr } = await supabase.from("leads").update({
         lost_reason: reason, final_status: "lost", updated_at: new Date().toISOString(),
       }).eq("id", leadId);
@@ -357,9 +356,10 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
 
   // ─── Add quick note + bump last_contact_date ───
   const addQuickNote = useCallback(
-    async (leadId: string) => {
-      if (!ui.noteText.trim()) return;
-      const { error: quickNoteErr } = await supabase.from("activities").insert({ lead_id: leadId, type: "note", content: ui.noteText.trim(), user_id: (await supabase.auth.getUser()).data.user?.id });
+    async (leadId: string, text: string, onSuccess?: () => void) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const { error: quickNoteErr } = await supabase.from("activities").insert({ lead_id: leadId, type: "note", content: trimmed, user_id: (await supabase.auth.getUser()).data.user?.id });
       if (quickNoteErr) {
         console.error("Failed to insert note activity:", quickNoteErr);
         setError(t("common.saveFailed") || "Save failed");
@@ -371,8 +371,8 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
         setError(t("common.saveFailed") || "Save failed");
         return;
       }
-      await writeEvent(leadId, "note_added", t("leads.eventNote").replace("{note}", ui.noteText.trim()));
-      ui.setNoteText(""); ui.setNoteLeadId(null);
+      await writeEvent(leadId, "note_added", t("leads.eventNote").replace("{note}", trimmed));
+      onSuccess?.();
       fetchLeads();
     },
     [writeEvent, fetchLeads, setError, t]
@@ -380,17 +380,17 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
 
   // ─── Update next action ───
   const updateNextAction = useCallback(
-    async (leadId: string) => {
-      if (!ui.nextActionText.trim()) return;
-      ui.setEditingNextAction(null);
-      const { error: nextActionErr } = await supabase.from("leads").update({ next_action: ui.nextActionText.trim(), updated_at: new Date().toISOString() }).eq("id", leadId);
+    async (leadId: string, text: string, onSuccess?: () => void) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const { error: nextActionErr } = await supabase.from("leads").update({ next_action: trimmed, updated_at: new Date().toISOString() }).eq("id", leadId);
       if (nextActionErr) {
         console.error("Failed to update next action:", nextActionErr);
         setError(t("common.saveFailed") || "Save failed");
         return;
       }
-      await writeEvent(leadId, "followup_scheduled", t("leads.eventNextAction").replace("{action}", ui.nextActionText.trim()), { next_action: ui.nextActionText.trim() });
-      ui.setNextActionText("");
+      await writeEvent(leadId, "followup_scheduled", t("leads.eventNextAction").replace("{action}", trimmed), { next_action: trimmed });
+      onSuccess?.();
       fetchLeads();
     },
     [writeEvent, fetchLeads, setError, t]
@@ -398,12 +398,11 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
 
   // ─── Update next followup date (increment followup_count + notify) ───
   const updateNextFollowup = useCallback(
-    async (leadId: string) => {
-      if (!ui.nextFollowupText) return;
-      ui.setEditingNextFollowup(null);
+    async (leadId: string, date: string, onSuccess?: () => void) => {
+      if (!date) return;
       const oldLead = leads.find(l => l.id === leadId);
       const { error: nextFollowupErr } = await supabase.from("leads").update({
-        next_followup_date: ui.nextFollowupText,
+        next_followup_date: date,
         followup_count: (oldLead?.followup_count || 0) + 1,
         updated_at: new Date().toISOString()
       }).eq("id", leadId);
@@ -415,16 +414,16 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
       // Create activity record
       const { error: actErr } = await supabase.from("activities").insert({
         lead_id: leadId, type: "followup_scheduled",
-        content: `Follow-up scheduled for ${ui.nextFollowupText}`,
+        content: `Follow-up scheduled for ${date}`,
         user_id: (await supabase.auth.getUser()).data.user?.id,
       });
       if (actErr) console.error("Failed to insert activity:", actErr);
-      await writeEvent(leadId, "followup_scheduled", t("leads.eventFollowup").replace("{date}", ui.nextFollowupText), { next_followup_date: ui.nextFollowupText });
+      await writeEvent(leadId, "followup_scheduled", t("leads.eventFollowup").replace("{date}", date), { next_followup_date: date });
       // Notify the assigned salesperson
       import("@/lib/notify").then(({ notify }) => {
-        notify({ type: "followup_reminder", lead_id: leadId, assigned_to: oldLead?.assigned_to, due_date: ui.nextFollowupText });
+        notify({ type: "followup_reminder", lead_id: leadId, assigned_to: oldLead?.assigned_to, due_date: date });
       });
-      ui.setNextFollowupText("");
+      onSuccess?.();
       fetchLeads();
     },
     [leads, writeEvent, fetchLeads, setError, t]

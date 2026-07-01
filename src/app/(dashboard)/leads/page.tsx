@@ -5,11 +5,8 @@ import { createClient } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ErrorState } from "@/components/ui/error-state";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn, fmtDubai } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import QuickCreateLeadDialog from "@/components/QuickCreateLeadDialog";
 import ExcelImportDialog from "@/components/leads/ExcelImportDialog";
@@ -19,15 +16,15 @@ import { useStageGuard } from "@/shared/hooks/useStageGuard";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { useLeadsData, Lead } from "./_hooks/useLeadsData";
 import { useLeadMutations } from "./_hooks/useLeadMutations";
+import { LeadCard } from "./_components/LeadCard";
 import {
-  Search, X, Plus, Phone, Calendar, MapPin, ChevronRight,
-  MoreHorizontal, Edit3, Send, TrendingUp, Building2,
-  User, Users, Clock, AlertTriangle, RotateCcw, GripHorizontal, ShieldAlert,
-  BarChart3, Megaphone, Upload, Trash2,
+  Search, X, Plus, Calendar, MapPin, TrendingUp, Users, Clock,
+  AlertTriangle, RotateCcw, GripHorizontal, ShieldAlert,
+  BarChart3, Megaphone, Upload,
 } from "lucide-react";
 import {
-  PIPELINE_STAGES, STATUS_EMOJIS, STAGE_COLORS, isPlaceholder,
-  SOURCE_ICONS, STATUS_LABELS, PROBABILITIES, LOST_REASONS,
+  PIPELINE_STAGES, STATUS_EMOJIS, STAGE_COLORS,
+  STATUS_LABELS, PROBABILITIES,
 } from "./_utils/constants";
 import { daysSince, fmtAED } from "./_utils/format";
 
@@ -53,17 +50,10 @@ function LeadsContent() {
 
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [editingStage, setEditingStage] = useState<string | null>(null);
-  const [editingProbability, setEditingProbability] = useState<string | null>(null);
-  const [editingStatus, setEditingStatus] = useState<string | null>(null);
-  const [editingLostReason, setEditingLostReason] = useState<string | null>(null);
-  const [editingNextAction, setEditingNextAction] = useState<string | null>(null);
-  const [editingNextFollowup, setEditingNextFollowup] = useState<string | null>(null);
-  const [noteLeadId, setNoteLeadId] = useState<string | null>(null);
-  const [noteText, setNoteText] = useState("");
-  const [nextActionText, setNextActionText] = useState("");
-  const [nextFollowupText, setNextFollowupText] = useState("");
 
+  // ── T3-3 step 7: 7 editor flags + noteLeadId + 3 editor texts sunk
+  // into LeadCard. Page keeps reassignLeadId/reassigning because the
+  // bulk-transfer bar also reads them.
   // Sales reassignment
   const [reassignLeadId, setReassignLeadId] = useState<string | null>(null);
   const [reassigning, setReassigning] = useState(false);
@@ -125,23 +115,12 @@ function LeadsContent() {
     setError,
     t,
     lang,
-    ui: {
-      noteText,
-      setNoteText,
-      setNoteLeadId,
-      nextActionText,
-      setNextActionText,
-      nextFollowupText,
-      setNextFollowupText,
-      setEditingStage,
-      setEditingProbability,
-      setEditingStatus,
-      setEditingLostReason,
-      setEditingNextAction,
-      setEditingNextFollowup,
-      setReassignLeadId,
-      setReassigning,
-    },
+    setReassignLeadId,
+    setReassigning,
+    // No `ui` bundle anymore (T3-3 step 7): LeadCard owns its own editor
+    // state and resets its own pickers on click before invoking the
+    // mutation handler. The hook no longer needs editor-clear setters —
+    // those were only there because the page owned the state.
   });
 
   // ─── Infrastructure hooks ───
@@ -437,290 +416,36 @@ function LeadsContent() {
                   </div>
                   <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
                     {items.length === 0 && <div className="flex-1 flex items-center justify-center"><span className="text-xs text-muted-foreground/30">—</span></div>}
-                    {items.map((lead) => {
-                      const days = daysSince(lead.last_contact_date || lead.updated_at);
-                      const isHot = lead.lead_status === "hot";
-                      const isStale = days !== null && days > 7 && !lead.final_status;
-                      const isCrit = days !== null && days >= 14 && !lead.final_status;
-                      const isEditing = editingStage === lead.id;
-                      const isEditingProb = editingProbability === lead.id;
-                      const isEditingSt = editingStatus === lead.id;
-                      const isEditingLost = editingLostReason === lead.id;
-                      const isEditingAction = editingNextAction === lead.id;
-                      const isEditingFollowup = editingNextFollowup === lead.id;
-                      const isNoting = noteLeadId === lead.id;
-                      const statusStyle = STATUS_LABELS[lead.lead_status || ""];
-                      const stageIdx = PIPELINE_STAGES.findIndex(s => s.key === lead.stage);
-                      const nextStages = PIPELINE_STAGES.filter((s, i) => i > stageIdx && !["won", "lost"].includes(s.key));
-
-                      const isReassigning = reassignLeadId === lead.id;
-
-                      return (
-                        <Card key={lead.id}
-                          draggable
-                          onDragStart={(e) => onDragStart(e, lead.id)}
-                          className={cn(
-                          "cursor-pointer transition-all duration-150 group relative",
-                          "hover:-translate-y-0.5 hover:shadow-lg hover:shadow-foreground/5",
-                          draggingLeadId === lead.id && "opacity-40",
-                          isHot && "ring-1 ring-rose-500/30",
-                          isCrit ? "ring-2 ring-red-500/40" : isStale ? "ring-1 ring-amber-500/30" : "",
-                          lead.recovery_candidate && "ring-1 ring-orange-500/30",
-                          lead.transfer_candidate && "ring-1 ring-red-500/20",
-                          lead.sales_manager_review && "ring-1 ring-purple-500/30",
-                          selectedLeadIds.has(lead.id) && "ring-2 ring-copper-500 bg-copper-500/5",
-                        )}
-                          onClick={() => { if (!isEditing && !isEditingProb && !isEditingSt && !isEditingLost && !isEditingAction && !isEditingFollowup && !isNoting && !isReassigning) router.push(`/leads/${lead.id}`); }}>
-                          <CardContent className="p-3 space-y-2">
-                            {/* Bulk select checkbox — top-right */}
-                            {(salesRole === "admin" || salesRole === "boss") && (
-                              <div className="absolute top-2 right-2 z-10" onClick={e => e.stopPropagation()}>
-                                <input type="checkbox" checked={selectedLeadIds.has(lead.id)}
-                                  onChange={() => toggleSelect(lead.id)}
-                                  className="w-4 h-4 rounded border-border/50 bg-card accent-copper-500 cursor-pointer opacity-0 group-hover:opacity-100 checked:opacity-100 transition-opacity" />
-                              </div>
-                            )}
-                            {/* Header row */}
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <p className="text-sm font-medium text-foreground truncate max-w-[180px]">{!isPlaceholder(lead.customer_name) ? lead.customer_name : (lead.phone || t("common.unnamed"))}</p>
-                                  {isHot && <span className="text-[10px]">🔥</span>}
-                                  {statusStyle && <span className={cn("text-[9px] px-1 py-0.5 rounded font-medium", statusStyle.bg, statusStyle.color)}>{STATUS_EMOJIS[lead.lead_status || ""] || ""} {t(`statusLabels.${lead.lead_status || ""}`)}</span>}
-                                  {lead.win_probability != null && (
-                                    <span className={cn("text-[10px] font-semibold", lead.win_probability >= 70 ? "text-emerald-400" : lead.win_probability >= 30 ? "text-amber-400" : "text-muted-foreground")}>
-                                      {lead.win_probability}%
-                                    </span>
-                                  )}
-                                  {lead.recovery_candidate && <span className="text-[9px] px-1 py-0.5 rounded bg-orange-500/10 text-orange-400">{t("leads.recovery")}</span>}
-                                  {lead.quality === 'poor' && <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-red-500/10 text-red-400">⚠️ {t("leads.poorLead")}</span>}
-                                  {lead.transfer_candidate && <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/10 text-red-400">{t("leads.transfer")}</span>}
-                                  {lead.sales_manager_review && <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/10 text-purple-400">{t("leads.review")}</span>}
-                                </div>
-                                {(!isPlaceholder(lead.property_type) || !isPlaceholder(lead.location)) && (
-                                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground mt-0.5">
-                                    <Building2 className="w-3 h-3 shrink-0" />{[lead.property_type, lead.location].filter(v => !isPlaceholder(v)).join(" · ")}
-                                  </div>
-                                )}
-                              </div>
-                              {lead.quotation_value != null && lead.quotation_value > 0 && (
-                                <span className="text-xs font-semibold text-copper-400 shrink-0">{fmtAED(lead.quotation_value)}</span>
-                              )}
-                            </div>
-
-                            {/* Next action / follow-up row */}
-                            <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
-                              {lead.next_action && <span className="flex items-center gap-0.5"><span className="text-[10px]">📋</span>{t(`leads.nextActionLabels.${lead.next_action}`) || lead.next_action}</span>}
-                              {lead.next_followup_date && (
-                                <span className={cn("flex items-center gap-0.5",
-                                  new Date(lead.next_followup_date) < new Date() ? "text-rose-400" : "text-muted-foreground"
-                                )}>
-                                  <Calendar className="w-3 h-3" />{fmtDubai(new Date(lead.next_followup_date), { locale: t("locale.dateLocale") })}
-                                </span>
-                              )}
-                              {lead.followup_count != null && <span>{t("leads.nFollowups").replace("{n}", String(lead.followup_count))}</span>}
-                            </div>
-
-                            {/* Bottom info row */}
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                                <span>{SOURCE_ICONS[lead.source] || "📋"} {t(`sourceLabels.${lead.source}`) || lead.source}</span>
-                                {lead.assigned_to && (
-                                  <span className="relative inline-flex items-center gap-1">
-                                    <User className="w-3 h-3" />
-                                    <span>{userNameMap[lead.assigned_to] || t("leads.unassigned")}</span>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); setReassignLeadId(reassignLeadId === lead.id ? null : lead.id); }}
-                                      className="p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors ml-0.5"
-                                      title="Reassign"
-                                    >
-                                      ↔️
-                                    </button>
-                                    {reassignLeadId === lead.id && (
-                                      <div className="absolute top-full left-0 mt-1 w-48 z-50 bg-muted border border-border rounded-lg shadow-xl py-1 max-h-40 overflow-y-auto"
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        {reassigning && <div className="px-3 py-2 text-xs text-muted-foreground">Reassigning...</div>}
-                                        {salesUsers.map((u) => (
-                                          <button key={u.id}
-                                            onClick={() => reassignSales(lead.id, u.id)}
-                                            className={cn(
-                                              "w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-muted transition-colors",
-                                              lead.assigned_to === u.id ? "text-copper-400" : "text-foreground"
-                                            )}
-                                          >
-                                            <span className={cn("w-1.5 h-1.5 rounded-full", lead.assigned_to === u.id ? "bg-copper-400" : "bg-gray-600")} />
-                                            <span className="truncate">{u.full_name || u.email}</span>
-                                          </button>
-                                        ))}
-                                        {salesUsers.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">No users</p>}
-                                      </div>
-                                    )}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1">
-                                {days !== null && (
-                                  <span className={cn("text-[10px] flex items-center gap-0.5",
-                                    isCrit ? "text-rose-400 font-semibold" : isStale ? "text-amber-400" : "text-muted-foreground"
-                                  )}>
-                                    <Clock className="w-3 h-3" />{days === 0 ? t("common.today") : t("common.nDays").replace("{n}", String(days))}
-                                  </span>
-                                )}
-                                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  {!isLost && nextStages.slice(0, 2).map(ns => (
-                                    <button key={ns.key} title={t("leads.moveTo").replace("{stage}", t(`stageLabels.${ns.key}`))}
-                                      className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-                                      onClick={(e) => { e.stopPropagation(); changeStage(lead.id, ns.key); }}>
-                                      <ChevronRight className="w-3.5 h-3.5" />
-                                    </button>
-                                  ))}
-                                  <button title={t("leads.quickNote")}
-                                    className={cn("p-1 rounded hover:bg-accent transition-colors", isNoting ? "text-copper-400" : "text-muted-foreground hover:text-foreground")}
-                                    onClick={(e) => { e.stopPropagation(); setNoteLeadId(isNoting ? null : lead.id); setNoteText(""); }}>
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button title={t("common.actions")}
-                                    className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-                                    onClick={(e) => { e.stopPropagation(); setEditingStage(isEditing ? null : lead.id); }}>
-                                    <MoreHorizontal className="w-3.5 h-3.5" />
-                                  </button>
-                                  {(salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
-                                    <button title={t("common.delete") || "Delete"}
-                                      className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
-                                      onClick={(e) => { e.stopPropagation(); handleDelete(lead.id, lead.assigned_to); }}>
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* ─── Expandable Inline Editors ─── */}
-                            {/* Stage editor */}
-                            {isEditing && (
-                              <div className="pt-2 border-t border-border" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex flex-wrap gap-1 mb-1">
-                                  {PIPELINE_STAGES.map(s => (
-                                    <button key={s.key}
-                                      className={cn("text-[10px] px-2 py-1 rounded-full border transition-colors", lead.stage === s.key ? "border-transparent text-foreground" : "border-border text-muted-foreground hover:border-foreground/30")}
-                                      style={lead.stage === s.key ? { backgroundColor: s.color } : {}}
-                                      onClick={() => changeStage(lead.id, s.key)}>{t(`stageLabels.${s.key}`)}</button>
-                                  ))}
-                                </div>
-                                <div className="flex gap-1 mt-1 flex-wrap">
-                                  {/* Probability */}
-                                  <button onClick={() => { setEditingProbability(lead.id); setEditingStage(null); }}
-                                    className="text-[10px] px-2 py-0.5 rounded border border-border text-muted-foreground hover:bg-accent">
-                                    {t("leads.probability")} {lead.win_probability || "—"}%
-                                  </button>
-                                  {/* Status */}
-                                  <button onClick={() => { setEditingStatus(lead.id); setEditingStage(null); }}
-                                    className="text-[10px] px-2 py-0.5 rounded border border-border text-muted-foreground hover:bg-accent">
-                                    {t("leads.status")} {lead.lead_status ? `${STATUS_EMOJIS[lead.lead_status] || ""} ${t(`statusLabels.${lead.lead_status}`)}` : "—"}
-                                  </button>
-                                  {/* Next action */}
-                                  <button onClick={() => { setEditingNextAction(lead.id); setNextActionText(lead.next_action || ""); setEditingStage(null); }}
-                                    className="text-[10px] px-2 py-0.5 rounded border border-border text-muted-foreground hover:bg-accent">
-                                    📋{t("leads.nextAction")}
-                                  </button>
-                                  {/* Next followup */}
-                                  <button onClick={() => { setEditingNextFollowup(lead.id); setNextFollowupText(lead.next_followup_date || ""); setEditingStage(null); }}
-                                    className="text-[10px] px-2 py-0.5 rounded border border-border text-muted-foreground hover:bg-accent">
-                                    📅{t("leads.followUp")}
-                                  </button>
-                                  {/* Lost reason (only show for lost stage) */}
-                                  {isLost && (
-                                    <button onClick={() => { setEditingLostReason(lead.id); setEditingStage(null); }}
-                                      className="text-[10px] px-2 py-0.5 rounded border border-rose-500/30 text-rose-400 hover:bg-rose-500/10">
-                                      {t("leadDetail.lostReason")} {lead.lost_reason || "—"}
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Probability selector */}
-                            {isEditingProb && (
-                              <div className="pt-2 border-t border-border" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex gap-1 flex-wrap">
-                                  {PROBABILITIES.map(p => (
-                                    <button key={p}
-                                      className={cn("text-[10px] px-2 py-1 rounded-full border transition-colors",
-                                        lead.win_probability === p ? "bg-copper-500 text-black border-copper-500" : "border-border text-muted-foreground hover:border-foreground/30")}
-                                      onClick={() => changeProbability(lead.id, p)}>{p}%</button>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Status selector */}
-                            {isEditingSt && (
-                              <div className="pt-2 border-t border-border" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex gap-1 flex-wrap">
-                                  {Object.entries(STATUS_LABELS).map(([k, v]) => (
-                                    <button key={k}
-                                      className={cn("text-[10px] px-2 py-1 rounded-full border transition-colors",
-                                        lead.lead_status === k ? "border-transparent text-foreground" : "border-border text-muted-foreground hover:border-foreground/30")}
-                                      style={lead.lead_status === k ? { backgroundColor: k === "hot" ? "#f43f5e" : k === "warm" ? "#f59e0b" : k === "cold" ? "#0ea5e9" : "#6b7280" } : {}}
-                                      onClick={() => changeStatus(lead.id, k)}>{STATUS_EMOJIS[k] || ""} {t(`statusLabels.${k}`)}</button>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Lost reason selector */}
-                            {isEditingLost && (
-                              <div className="pt-2 border-t border-border" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex gap-1 flex-wrap">
-                                  {LOST_REASONS.map(r => (
-                                    <button key={r}
-                                      className={cn("text-[10px] px-2 py-1 rounded-full border transition-colors",
-                                        lead.lost_reason === r ? "bg-rose-500 text-foreground border-rose-500" : "border-border text-muted-foreground hover:border-foreground/30")}
-                                      onClick={() => changeLostReason(lead.id, r)}>{r}</button>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Next action editor */}
-                            {isEditingAction && (
-                              <div className="pt-2 border-t border-border flex gap-1" onClick={(e) => e.stopPropagation()}>
-                                <input autoFocus placeholder={t("leads.nextActionRequired")} value={nextActionText}
-                                  onChange={(e) => setNextActionText(e.target.value)}
-                                  onKeyDown={(e) => { if (e.key === "Enter") updateNextAction(lead.id); if (e.key === "Escape") setEditingNextAction(null); }}
-                                  className="flex-1 h-7 text-xs bg-background border border-border rounded px-2 focus:outline-none focus:ring-1 focus:ring-primary text-foreground" />
-                                <button onClick={() => updateNextAction(lead.id)} disabled={!nextActionText.trim()}
-                                  className="p-1 rounded bg-primary text-primary-foreground disabled:opacity-30"><Send className="w-3 h-3" /></button>
-                              </div>
-                            )}
-
-                            {/* Next followup editor */}
-                            {isEditingFollowup && (
-                              <div className="pt-2 border-t border-border flex gap-1" onClick={(e) => e.stopPropagation()}>
-                                <input autoFocus type="date" value={nextFollowupText}
-                                  onChange={(e) => setNextFollowupText(e.target.value)}
-                                  onKeyDown={(e) => { if (e.key === "Escape") setEditingNextFollowup(null); }}
-                                  className="flex-1 h-7 text-xs bg-background border border-border rounded px-2 focus:outline-none focus:ring-1 focus:ring-primary text-foreground" />
-                                <button onClick={() => updateNextFollowup(lead.id)} disabled={!nextFollowupText}
-                                  className="p-1 rounded bg-primary text-primary-foreground disabled:opacity-30"><Send className="w-3 h-3" /></button>
-                              </div>
-                            )}
-
-                            {/* Note editor */}
-                            {isNoting && (
-                              <div className="pt-2 border-t border-border flex gap-1" onClick={(e) => e.stopPropagation()}>
-                                <input autoFocus placeholder={t("leads.addNote")} value={noteText} onChange={(e) => setNoteText(e.target.value)}
-                                  onKeyDown={(e) => { if (e.key === "Enter") addQuickNote(lead.id); if (e.key === "Escape") setNoteLeadId(null); }}
-                                  className="flex-1 h-7 text-xs bg-background border border-border rounded px-2 focus:outline-none focus:ring-1 focus:ring-primary text-foreground" />
-                                <button onClick={() => addQuickNote(lead.id)} disabled={!noteText.trim()}
-                                  className="p-1 rounded bg-primary text-primary-foreground disabled:opacity-30"><Send className="w-3 h-3" /></button>
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
+                    {items.map((lead) => (
+                      <LeadCard
+                        key={lead.id}
+                        lead={lead}
+                        salesRole={salesRole}
+                        currentUserId={currentUserId}
+                        userNameMap={userNameMap}
+                        salesUsers={salesUsers}
+                        changeStage={changeStage}
+                        changeProbability={changeProbability}
+                        changeStatus={changeStatus}
+                        changeLostReason={changeLostReason}
+                        addQuickNote={addQuickNote}
+                        updateNextAction={updateNextAction}
+                        updateNextFollowup={updateNextFollowup}
+                        reassignSales={reassignSales}
+                        handleDelete={handleDelete}
+                        reassignLeadId={reassignLeadId}
+                        reassigning={reassigning}
+                        setReassignLeadId={setReassignLeadId}
+                        setReassigning={setReassigning}
+                        selected={selectedLeadIds.has(lead.id)}
+                        onToggleSelect={() => toggleSelect(lead.id)}
+                        onOpen={(id) => router.push(`/leads/${id}`)}
+                        draggingLeadId={draggingLeadId}
+                        onDragStart={onDragStart}
+                        isLostColumn={isLost}
+                        t={t}
+                      />
+                    ))}
                   </div>
                 </div>
               );

@@ -5034,8 +5034,8 @@ T3-5 profiles.email 列 vs R1 矛盾统一 ❌ 待开 (Codex 1 审附赠发现)
 #### Tier 4 (2/4) — 新建 MoA Tier 4 Process Governance
 T4-1 hermes-rules.md §10 运维操作边界（🟢/🟡/🔴 三档 + OEEC 紧急例外 + 速查表） ✅ 2026-07-01
 T4-2 Sentry ops-log + ChunkLoadError 紧急重建登记 ✅ 2026-07-01
-T4-3 deploy.sh Step 3 build guard 重构 ❌ 待开
-T4-4 PostHog eu-assets.i.posthog.com CSP 白名单 ❌ 待开
+T4-3 deploy.sh build auto-stop+restart + FORCE_BUILD=1 bypass ✅ 2026-07-01 (commit 5d7b60b: scripts/deploy.sh + package.json deploy 脚本)
+T4-4 PostHog eu-assets.i.posthog.com CSP 白名单 ✅ 2026-07-01 (nginx 改完 + reload, 生产 200 + CSP 头返回)
 
 #### P0 (1/1)
 P0-1 leads/[id] 性能优化（11 串行→4 并行 + embed hint + FK + 8 索引） ✅ 2026-07-01
@@ -5211,6 +5211,9 @@ verify-p0-1 P0-1 验收
 i18n-dubai 12 处页面时区统一迪拜时间 fmtDubai()
   任务: 全站时间展示统一迪拜时区
   验收: 所有 DateTime 显示 fmtDubai() 调用
+  进展: ✅ 2026-07-01 (6 commit push: 4dfcafc/c00a07e/17df4aa/ca7421c/aafba1b/18525f1, 6 文件 7 处)
+  来源: OpenClaw shell-worker (v4-pro) 起草 + CC 重写 (deleg_4312d09a) 走 MoA 链
+  剩余 6 文件 (纯数字格式化无日期): 无需改
 t2-1-followup 其他 11 页接入 DashboardScrollContainer
   任务: T2-1 一致性收尾
   验收: 11 个 dashboard 页面用 DashboardScrollContainer
@@ -5223,6 +5226,33 @@ T2-4 锚定功能卡片 (sticky headers/filter/action bar) — 2026-07-01 新立
   范围: leads/page (1084) / leads/[id] (935) / quotations (513) / payments (809) / tasks (306)
   风险: 🟡 中 — sticky 需协调 z-index 层级 + 与父级 overflow-hidden 兼容
   来源: 2026-07-01 用户反馈 + P1P1 P-2 行 (滚动行为不统一 — leads整页)
+
+T2-4 进展 (2026-07-01 16:00):
+  ✅ leads/page.tsx: commit 1ac84ca (1084→1108, 3 sticky region: page-title z-20 / filter-bar z-10 / bulk-bar z-10, tsc 0 错)
+  ⚠️ leads/[id]/page.tsx: CC 第二次未闭合 JSX 撤回, 列 follow-up
+  ⚠️ payments/quotations/tasks: 本次未尝试, 列 follow-up
+  状态: 1/5 完成 (leads/page.tsx), 4 follow-up
+  教训: CC 单次任务"5 页面"太大分 2 次都失败, 以后单次 ≤2 文件
+
+T2-4 follow-up (留待):
+  - leads/[id]/page.tsx 三列布局 sticky 标题横跨 (935 行, 难点)
+  - payments/page.tsx (809 行, 列表 + filter)
+  - quotations/page.tsx (513 行, 列表 + filter)
+  - tasks/page.tsx (306 行, 列表)
+
+i18n-dubai 进展 (2026-07-01 16:00):
+  ✅ OpenClaw 起草 (v4-pro shell-worker, 7 分钟): 12 文件扫描, 6 文件 7 处日期需改
+  ✅ CC 应用 (deleg_4312d09a): 6 commit 4dfcafc/c00a07e/17df4aa/ca7421c/aafba1b/18525f1
+  ✅ 1 审 (Codex deleg_077af8d9): PUSH: GO, 0 BLOCK, 3 WARN (follow-up)
+  ✅ 2 审 (Hermes spot check): check-taskboard 18/0/0 / tsc 0 错 / prod 200
+  ✅ push origin main (18525f1 HEAD)
+  CC 抓出 OpenClaw 2 处错: (1) leads/page.tsx line 857→839 偏差 (2) timeline import 已存在不该加
+
+T4-3 + T4-4 进展 (2026-07-01 16:00):
+  ✅ CC 应用 (deleg_820abd29): commit 5d7b60b (deploy.sh + package.json)
+  ✅ nginx 改完 reload, 生产 CSP 头返回
+  ✅ 1 审 + 2 审: PUSH: GO
+  ✅ push origin main
 
 【技术债 (1)】
 chunks-cleanup 0~14i8bodcp 死引用清理

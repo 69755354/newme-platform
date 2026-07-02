@@ -94,11 +94,16 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | `src/app/(dashboard)/layout.tsx` | DashboardLayout | 92 | 🟢 T3-1 完成 |
 | `src/components/dashboard/DashboardSidebar.tsx` | Sidebar + mobile button + overlay | 169 | 🟢 新建 |
 | `src/components/dashboard/DashboardTopBar.tsx` | Top header | 75 | 🟢 拆完 |
-| `src/app/(dashboard)/leads/page.tsx` | Leads 列表 | 415 | 🟢 T3-3 step 8+9+10+12 完成 |
+| `src/app/(dashboard)/leads/page.tsx` | Leads 列表 | 351 | 🟢 T3-3 step 13-15 完成 |
 | `src/app/(dashboard)/leads/_components/LeadCard.tsx` | Lead 卡片（含单卡 ↔️ reassign） | 510 | 🟢 拆完 |
 | `src/app/(dashboard)/leads/_components/LeadsHeader.tsx` | Header + sticky page-title | 108 | 🟢 新建 |
 | `src/app/(dashboard)/leads/_components/LeadsFilters.tsx` | Filter row | 198 | 🟢 新建 |
 | `src/app/(dashboard)/leads/_components/LeadsBulkTransferBar.tsx` | 批量转移 sticky bar（admin/boss + checkbox） | 122 | 🟢 新建 |
+| `src/app/(dashboard)/leads/_components/LeadsPipelineSummary.tsx` | Pipeline 阶段卡片 grid | 110 | 🟢 T3-3 step 13 新建 |
+| `src/app/(dashboard)/leads/_components/LeadsKanbanBoard.tsx` | Kanban board 容器 + drop zones | 203 | 🟢 T3-3 step 14 新建 |
+| `src/app/(dashboard)/leads/_hooks/useLeadsData.ts` | 数据 hook (4 queries → useSupabaseQuery) | — | T3-3 step 5 |
+| `src/app/(dashboard)/leads/_hooks/useLeadMutations.ts` | 写 hook (9 handlers + writeEvent) | — | T3-3 step 6 |
+| `src/app/(dashboard)/leads/_hooks/useLeadsFiltering.ts` | 过滤 hook (filtered/columns/stageTotals/sources) | 175 | 🟢 T3-3 step 15 新建 |
 | `src/app/(dashboard)/leads/[id]/page.tsx` | Lead Detail | 540 | 🟢 T3-3 step 11 完成 |
 | `src/app/(dashboard)/leads/[id]/useLeadDetailData.ts` | Detail 数据 hook (16 queries → 4 并行) | 318 | 🟢 P0-1 完成 |
 | `src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts` | Detail 写 hook (12 handlers) | 445 | 🟢 新建 |
@@ -147,7 +152,7 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 ## 七、进行中任务（基于实际 commit）
 
 - T3-1 ✅ 完成 (DashboardLayout 326 → 92 行 -71.8%, Sidebar/TopBar 独立组件, commits: `9719d06`)
-- T3-3 leads 拆分 **8/8 完成** ✅ (pipeline: `5afce2f` / `ea791b1` / `f9d3565` / `8b1c96c`；leads: `192bee2` / `b84512a` / `b508f46` / `6fb1860`)
+- T3-3 leads 拆分 **15/15 完成** ✅ (pipeline: `5afce2f` / `ea791b1` / `f9d3565` / `8b1c96c`；leads step 1-12: `192bee2` / `b84512a` / `b508f46` / `6fb1860`；leads step 13-15: `1f45fbb` / `3a3a2ed` / `a2b9dc5`)
 - P0-1 ✅ 完成（`d5bcac2` 编码 + migration `20260701130000`）
 - T4-3 ✅ 完成（`5d7b60b` deploy.sh 重构）
 - T4-4 ✅ 完成（nginx CSP 白名单已加）

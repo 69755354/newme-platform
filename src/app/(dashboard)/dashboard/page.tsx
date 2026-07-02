@@ -247,7 +247,7 @@ export default function DashboardPage() {
   useEffect(() => {
     fetch("/api/dashboard/team-ownership").then(r => r.json()).then(d => {
       if (d.users) setTeamOwnership(d.users);
-    }).catch(() => {});
+    }).catch((e) => console.error("team-ownership fetch failed", e));
   }, []);
 
   // Fetch KPI targets for selected period
@@ -355,7 +355,7 @@ export default function DashboardPage() {
             });
           });
         }
-      } catch {}
+      } catch (e) { console.error("top-actions overdue followups failed", e); }
 
       // 2. Hot leads — leads with lead_status='hot' and high win_probability, not yet won/lost
       try {
@@ -384,7 +384,7 @@ export default function DashboardPage() {
             });
           });
         }
-      } catch {}
+      } catch (e) { console.error("top-actions hot leads failed", e); }
 
       // 3. Draft quotes pending — from quotations table
       try {
@@ -410,7 +410,7 @@ export default function DashboardPage() {
             });
           });
         }
-      } catch {}
+      } catch (e) { console.error("top-actions draft quotes failed", e); }
 
       // 4. High-value stale leads — no contact in 48h+, sorted by quotation_value
       try {
@@ -441,7 +441,7 @@ export default function DashboardPage() {
             });
           });
         }
-      } catch {}
+      } catch (e) { console.error("top-actions stale leads failed", e); }
 
       // 5. Overdue workflow stages (complementary signal)
       try {
@@ -471,7 +471,7 @@ export default function DashboardPage() {
             });
           });
         }
-      } catch {}
+      } catch (e) { console.error("top-actions overdue workflow failed", e); }
 
       // Sort by priority score (value × urgency multiplier) and deduplicate by lead link
       const seenLinks = new Set<string>();

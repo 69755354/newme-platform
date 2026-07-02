@@ -12,6 +12,7 @@ import { createFollowUpTask } from "@/lib/tasks";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { toast } from "sonner";
 
 export default function NewLeadPage() {
   const router = useRouter();
@@ -42,7 +43,7 @@ export default function NewLeadPage() {
     }).select("id").single();
 
     if (error) {
-      import("sonner").then(({ toast }) => toast.error(t("leads.createFailed") || "Failed to create lead"));
+      toast.error(t("leads.createFailed") || "Failed to create lead");
       setSaving(false);
       return;
     }
@@ -55,7 +56,7 @@ export default function NewLeadPage() {
           no_answer: false,
         });
         if (newLeadNoteErr) {
-          import("sonner").then(({ toast }) => toast.error("Note save failed"));
+          toast.error("Note save failed");
         }
       }
       // P0-7: 建 lead 时同步写一条跟进 task，确保 Workbench 今日待办立即可见
@@ -66,7 +67,7 @@ export default function NewLeadPage() {
         assigneeId: user?.id ?? null,
         source: "follow_up",
       });
-      if (taskErr) import("sonner").then(({ toast }) => toast.warning("Lead created but follow-up task creation failed"));
+      if (taskErr) toast.warning("Lead created but follow-up task creation failed");
       // Notify admins about new lead
       import("@/lib/notify").then(({ notify }) => {
         notify({ type: "lead_created", lead_id: data.id, customer_name: form.customer_name || "Unknown" });
@@ -80,7 +81,8 @@ export default function NewLeadPage() {
           location: form.location || undefined,
         });
       }
-      window.location.href = "/leads";
+      toast.success(t("leads.created") || "Lead created successfully");
+      setTimeout(() => { window.location.href = "/leads"; }, 500);
     }
     setSaving(false);
   }

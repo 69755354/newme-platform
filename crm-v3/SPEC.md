@@ -178,6 +178,7 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | **Turbopack chunk naming 不稳定** | 全用 webpack build，chunks-cleanup 待做 | 2026-07-01 ChunkLoadError |
 | **P1P1 vs TASKBOARD 状态不同步** | TASKBOARD 是 ground truth，P1P1 下次同步要补 T4-3/T4-4/T2-4 | 2026-07-02 发现 |
 | **MEMORY 路径 vs 真实 COS key 不一致** | 用户给路径先用 `coscmd list` 实测，不靠 memory | 2026-07-02 v3.1 P1P1 事故 |
+| **deploy 重启后冷启动 502** | systemd ExecStartPost 改 10×2s 重试 + 4 路由全部健康（login/root/dashboard/leads 都不能 000）；旧版只看 login 撞冷启动就 break | 2026-07-02 systemd unit (`infra/systemd/newme-platform.service`) |
 
 ---
 

@@ -6,54 +6,33 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `6dda27d`）
-- **Branch**: `main` @ `6dda27d`
-- **生产 BUILD_ID**: `WHeSglDPoDcDPPXrrCRW-`（auth fix + SPEC 门禁 已部署）
-- **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN (脚本可见层)
-- **真相源**: `cos://newme-1302961787/crm-v3/v3.1/v3.1 P1P1计划0629.txt`（4990 → ~5279 行）
-- **本地指针**: `TASKBOARD.md`（薄指针文件，仅保留脚本可识别表 + check-taskboard.sh 依赖）
-- **上次更新**: 2026-07-02
+## 当前状态（写时 commit `4379573`）
+- **Branch**: `main` @ `4379573`
+- **生产 BUILD_ID**: `Sfs5kjC76sHaXV1-7Iod4`（T3-3 step 13-15 已部署）
+- **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
+- **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
+- **上次更新**: 2026-07-03
 
 ---
 
-## 一、COS 真相源 vs 本地对照（2026-07-02 核对）
+## 一、简化文档策略（2026-07-03 确立）
 
-✅ **P1P1 与 TASKBOARD 一致（10/10 已完成项）**
+**本文件是唯一本地真相源**，TASKBOARD.md 仅作为 deploy gate 的脚本可读格式（check-taskboard.sh 依赖）。
 
-| 项目 | P1P1 | TASKBOARD | 一致 |
-|------|------|-----------|------|
-| Phase 1 (25/25) | ✅ 2026-07-01 | ✅ COMPLETE | ✅ |
-| Phase 1.5 RLS (36 表) | ✅ 2026-07-01 | (合并在 Phase 1) | ✅ |
-| Tier 1 (12/12) | ✅ 2026-07-01 | 12/12 (100%) ✅ | ✅ |
-| Tier 2 (3/3) | ✅ 2026-07-01 | 3/4 (80%) ⚠️ | ⚠️ 详见下 |
-| Tier 3 / T3-4 | ✅ 2026-07-01 | ✅ | ✅ |
-| Tier 4 / T4-1 | ✅ 2026-07-01 | ✅ | ✅ |
-| Tier 4 / T4-2 | ✅ 2026-07-01 | ✅ | ✅ |
-| P0-1 编码 + migration | ✅ 2026-07-01 | ✅ (编码 + 161ms) | ✅ |
-| v3.1 合并 | ✅ 2026-07-01 | (薄指针) | ✅ |
-
-🔴 **矛盾：TASKBOARD 比 P1P1 多两项完成**
-
-| ID | P1P1 | TASKBOARD | 实际状态 |
-|----|------|-----------|---------|
-| T4-3 deploy.sh Step 3 build guard | ❌ 待开 | ✅ 2026-07-01 commit `5d7b60b` | **TASKBOARD 对**（已重构 deploy.sh + package.json）|
-| T4-4 PostHog CSP 白名单 | ❌ 待开 | ✅ 2026-07-01 (nginx 改完) | **TASKBOARD 对**（生产 200 + CSP 头返回）|
-| T2-4 锚定功能卡片 | 未列 | ✅ 2026-07-01 (commits 1ac84ca + a606d9b + 0fe9543 + aa54565 + 7c7d74c) | **TASKBOARD 对**（P1P1 漏写，但实际已完成 5 commits）|
-
-→ **结论**：2026-07-01 后又有进展，P1P1 没更新。**TASKBOARD.md 是当前事实上的 ground truth，P1P1 下次同步要补 T4-3/T4-4/T2-4。**
+~~**P1P1 COS 文件**~~（`cos://newme-1302961787/crm-v3/v3.1/v3.1 P1P1计划0629.txt`）**已废弃**：
+- coscmd 经常连不上（URL 编码 bug）
+- 本地 SPEC.md 信息更完整
+- 不再主动上传同步
 
 ---
 
-## 二、待办状态（P1P1 列出 31 项 + 实际 27 项）
+## 二、待办状态（26 项）
 
-### Tier 3 / Tier 4 / P0-1 验收（4 项）
+### 架构债（Tier 3，2 项）
 | ID | 任务 | 状态 |
 |----|------|------|
 | T3-1 | DashboardLayout 统一（方案 A，全 6+ 页重构） | ❌ |
 | T3-2 | 性能监控 + 告警（Lighthouse/Web Vitals） | ❌ |
-| T3-3 | 代码债清理（leads 1067 行 / pipeline 已拆完 3/3 + HOTFIX；leads 0/8 待开） | ⚠️ partial |
-| T3-5 | profiles.email 列 vs R1 矛盾统一 | ❌ |
-| verify-p0-1 | P0-1 验收（用户手机实测 <5s / <50 请求） | ❌ |
 
 ### UX 一致性 / 技术债 / Process 修复（4 项）
 | ID | 任务 | 状态 |
@@ -132,9 +111,9 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 - **派工不靠 CC 自己报"已完成"** — 必须 `git log --oneline -1` 看到新 hash 才回报
 - **SPEC.md 半自动** — CC 输出 `**SPEC Impact**:` 段，Hermes 决定写不写；2026-07-02 加强制门禁
 - **ensureSession() 机制** — 解决双登 bug，每次导航前等待 session 就绪 + token 去重
-- **Hermes 禁手令（待立 §十二）** — Hermes 调度员不直接写代码，违反 P1P1 §代码审查流程铁律
+- **Hermes 禁手令 §十二** — Hermes 调度员不直接写代码，违反 P1P1 §代码审查流程铁律
 - **MoA 三档分级** — 🟢免审 / 🟡单审 + OEEC 紧急例外 / 🔴双审（hermes-rules.md §十）
-- **TASKBOARD + P1P1 双源** — 本地 TASKBOARD.md 是脚本可识别层（deploy gate 依赖），COS P1P1 是文档真相源（人工查阅）
+- **SPEC.md 唯一真相源（2026-07-03 确立）** — 本文件包含架构+待办+设计决策；TASKBOARD.md 仅为 deploy gate 脚本格式；COS P1P1 已废弃
 
 ---
 
@@ -209,8 +188,7 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 ## 十、跨会话交接
 
-- **新 session / compact 后**: 读本文件 → 读最新 commit → 读 TASKBOARD → 读 COS P1P1（必须实测路径，不信 memory）
+- **新 session / compact 后**: 读本文件 → 读最新 commit → 读 TASKBOARD（仅 deploy gate 格式）
 - **本文件不准凭模型记忆更新** — 必须从 git log / 文件读出真状态后改
 - **夜场/中场交接**: 写 `crm-v3/HANDOFF-YYYYMMDD-{slot}.md`，commit 上去
-- **P1P1 同步检查**: 每次新 session 跑 `coscmd list crm-v3/v3.1/` 确认本地指针与 COS 一致
 - **Faheem 已离职**（2026-07-02）— CRM 仍保留其账号，未做权限清理

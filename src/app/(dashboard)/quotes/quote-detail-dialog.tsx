@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { cn, fmtDubai } from "@/lib/utils";
 import {
   ChevronDown, ChevronUp, Download, FileSpreadsheet,
   FileText, Send, CheckCircle, XCircle, Calendar,
@@ -73,8 +73,7 @@ function fmtAED(v: number | null | undefined): string {
 
 function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
-  try { return new Date(d).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); }
-  catch { return "—"; }
+  return fmtDubai(d, { locale: "en-US", month: "short", day: "numeric", year: "numeric" });
 }
 
 function getCategoryIcon(key: string): string {

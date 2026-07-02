@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { cn, fmtDubai } from "@/lib/utils";
 import {
   Clock,
   Send,
@@ -217,7 +217,7 @@ export default function LeadTimeline({
                     </p>
                   )}
                   <p className="text-xs text-gray-600 mt-0.5 flex items-center gap-2">
-                    {new Date(item.created_at).toLocaleString(t("locale.dateTimeLocale"))}
+                    {fmtDubai(item.created_at, { locale: t("locale.dateTimeLocale") })}
                     {item.ai_generated && <span className="text-purple-500">🤖 AI</span>}
                     {item._type === "event" && <span className="text-blue-500">{t("leadDetail.event")}</span>}
                     {item._type === "followup" && (

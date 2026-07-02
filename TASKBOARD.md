@@ -80,7 +80,7 @@ Tier 2 unlocked (T2-1/2/3 ✅ 2026-07-01).
 | T3-3 | Code debt elimination | Refactor large files (leads 1108行, leads/[id] 946行, pipeline 566→146行) | No single file > 500 lines, shared components extracted | ✅ | 2026-07-03 (pipeline: 5afce2f + ea791b1; leads: 15/15 steps done, page.tsx 351行) |
 | T3-4 | Docs drift: coding_standards §4 contracts/payments stale | Refresh table schema section to match actual DB (contract_amount / sales_id / confirmed) | coding_standards.md §4 列与 DB service_role 查询结果一致 | ✅ | 2026-07-01 |
 
-**Tier 3 Progress: 2/4 (50%)**
+**Tier 3 Progress: 4/4 (100%) ✅**
 
 ---
 

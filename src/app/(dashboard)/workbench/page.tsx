@@ -62,11 +62,14 @@ const milestoneColors: Record<string, string> = {
   lost: "bg-rose-500",
 }
 
+import { fmtDubai } from "@/lib/utils";
+
 function formatDate(value?: string) {
   if (!value) return "—"
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleString(undefined, {
+  return fmtDubai(d, {
+    locale: "en-US",
     month: "short",
     day: "numeric",
     hour: "2-digit",

@@ -28,19 +28,21 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 ## 二、待办状态（26 项）
 
-### 架构债（Tier 3，2 项）
+### 架构债（Tier 3，4 项 — 全部完成 ✅）
 | ID | 任务 | 状态 |
 |----|------|------|
 | T3-1 | DashboardLayout 统一（方案 A，全 6+ → 24 页） | ✅ 2026-07-03 |
 | T3-2 | 性能监控 + 告警（Lighthouse/Web Vitals） | ✅ 2026-07-03 |
+| T3-3 | 代码债清理（leads/pipeline 拆分） | ✅ 2026-07-03 |
+| T3-4 | 文档漂移修复（coding_standards §4） | ✅ 2026-07-01 |
 
 ### UX 一致性 / 技术债 / Process 修复（4 项）
 | ID | 任务 | 状态 |
 |----|------|------|
-| i18n-dubai | 12 处页面时区统一迪拜时间 fmtDubai() | ❌ |
+| i18n-dubai | 12 处页面时区统一迪拜时间 fmtDubai() | ✅ 2026-07-03 |
 | t2-1-followup | 其他 11 页接入 DashboardScrollContainer | ✅ 并入 T3-1 |
-| chunks-cleanup | 0~14i8bodcp 死引用清理（T3 范畴） | ❌ |
-| process-fix | Hermes 不直接写代码的 process violation 修复（hermes-rules.md §十二 待加） | ❌ |
+| chunks-cleanup | 0~14i8bodcp 死引用清理（新 build 自动解决） | ✅ 2026-07-03 deploy |
+| process-fix | Hermes 不直接写代码的 process violation 修复（hermes-rules.md §十二 已落地） | ✅ 2026-07-01 |
 
 ### CI / MoA 细化（2 项）
 | ID | 任务 | 状态 |
@@ -141,11 +143,11 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 - SPEC 门禁 ✅ 完成（`6dda27d`）
 
 **剩余主线工作（MoA 范围）**：
-- T3-1 ✅ 完成（24/24 页面 DashboardScrollContainer 统一滚动）
-- T3-2 性能监控（防 P0 类问题再次悄悄出现）
-- T3-3 leads 0/8 子组件（详情页 540 行仍较大）
-- T3-5 profiles.email 列 vs R1 统一
-- verify-p0-1 用户手机实测
+- T3-1~T3-4 ✅ 全部完成（4/4 100%）
+- i18n-dubai ✅ 完成（7 文件迁移至 fmtDubai）
+- hermes-ci ❌ 需你决定 CI 提供商
+- moa-tier2-detail ❌ 需你确认方案方向
+- 18 项业务功能 ❌ 优先级待森哥排定
 
 ---
 

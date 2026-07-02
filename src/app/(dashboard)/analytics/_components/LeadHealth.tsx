@@ -48,9 +48,11 @@ function fmtAED(v: number | null | undefined): string {
   return `AED ${v.toLocaleString()}`;
 }
 
+import { fmtDubai } from "@/lib/utils";
+
 function fmtDate(d: string | null): string {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+  return fmtDubai(d, { locale: "en-GB", day: "2-digit", month: "short" });
 }
 
 function getStageLabels(t: any): Record<string, string> {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase";
-import { cn } from "@/lib/utils";
+import { cn, fmtDubai } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import {
@@ -334,10 +334,7 @@ export default function TeamPage() {
     if (diff < 60) return t("team.justNow");
     if (diff < 3600) return t("team.minutesAgo").replace("{n}", String(Math.floor(diff / 60)));
     if (diff < 86400) return t("team.hoursAgo").replace("{n}", String(Math.floor(diff / 3600)));
-    return d.toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", {
-      month: "short",
-      day: "numeric",
-    });
+    return fmtDubai(d, { locale: lang === "zh" ? "zh-CN" : "en-US", month: "short", day: "numeric" });
   };
 
   // ─── Toggle user expand ───

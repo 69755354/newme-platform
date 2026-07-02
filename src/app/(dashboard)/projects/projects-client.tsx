@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { cn, fmtDubai } from "@/lib/utils";
 import {
   Search, X, ChevronDown, ChevronUp, ExternalLink,
   Calendar, DollarSign, User, MapPin, Clock,
@@ -101,13 +101,7 @@ function fmtCurrency(v: number | null | undefined): string {
 
 function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
-  try {
-    return new Date(d).toLocaleDateString("en-US", {
-      year: "numeric", month: "short", day: "numeric",
-    });
-  } catch {
-    return "—";
-  }
+  return fmtDubai(d, { locale: "en-US", month: "short", day: "numeric", year: "numeric" });
 }
 
 function daysDiff(dateStr: string | null | undefined): number | null {

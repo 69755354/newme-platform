@@ -32,7 +32,7 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | ID | 任务 | 状态 |
 |----|------|------|
 | T3-1 | DashboardLayout 统一（方案 A，全 6+ 页重构） | ❌ |
-| T3-2 | 性能监控 + 告警（Lighthouse/Web Vitals） | ❌ |
+| T3-2 | 性能监控 + 告警（Lighthouse/Web Vitals） | ✅ 2026-07-03 |
 
 ### UX 一致性 / 技术债 / Process 修复（4 项）
 | ID | 任务 | 状态 |

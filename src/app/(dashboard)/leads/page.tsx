@@ -17,6 +17,7 @@ import { LeadCard } from "./_components/LeadCard";
 import { LeadsHeader } from "./_components/LeadsHeader";
 import { LeadsFilters } from "./_components/LeadsFilters";
 import { LeadsBulkTransferBar } from "./_components/LeadsBulkTransferBar";
+import { LeadsPipelineSummary } from "./_components/LeadsPipelineSummary";
 import {
   PIPELINE_STAGES,
 } from "./_utils/constants";
@@ -252,28 +253,19 @@ function LeadsContent() {
         className="sticky z-10 bg-background/95 backdrop-blur-sm border-b -mx-4 px-4 py-2 space-y-3"
         style={{ top: 52 }}
       >
-      {/* Pipeline summary bar */}
+      {/* Pipeline summary bar — T3-3 step 13: 9-stage clickable summary
+          grid extracted to LeadsPipelineSummary. Same DOM (the grid +
+          per-stage button with chip + AED label + percentage bar), now
+          driven entirely by props. Page still gates the whole region on
+          `showPipelineSummary` and the surrounding sticky filter-bar. */}
       {showPipelineSummary && (
-        <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-1.5">
-          {PIPELINE_STAGES.map((s) => {
-            const totals = stageTotals[s.key];
-            return (
-              <button key={s.key} onClick={() => setStageFilter(stageFilter === s.key ? "all" : s.key)}
-                className={cn("text-left p-2 rounded-lg border transition-all", stageFilter === s.key ? "ring-2 ring-offset-1 ring-offset-background" : "", s.bg, s.border)}>
-                <div className="flex items-center justify-between mb-0.5">
-                  <span className="text-[10px] font-medium text-muted-foreground truncate">{t(`stageLabels.${s.key}`)}</span>
-                  <span className="text-xs font-bold text-foreground ml-1">{totals.count}</span>
-                </div>
-                <div className="text-right mb-1">
-                  <span className="text-[9px] text-muted-foreground">{totals.value > 0 ? fmtAED(totals.value) : "—"}</span>
-                </div>
-                <div className="h-1 bg-muted rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${Math.min((totals.count / Math.max(1, ...Object.values(stageTotals).map(x => x.count))) * 100, 100)}%`, backgroundColor: s.color }} />
-                </div>
-              </button>
-            );
-          })}
-        </div>
+        <LeadsPipelineSummary
+          stages={PIPELINE_STAGES}
+          stageTotals={stageTotals}
+          stageFilter={stageFilter}
+          onStageFilterChange={setStageFilter}
+          t={t}
+        />
       )}
 
       {/* Filters — T3-3 step 9: filter row extracted to LeadsFilters

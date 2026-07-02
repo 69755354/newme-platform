@@ -145,9 +145,13 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 **剩余主线工作（MoA 范围）**：
 - T3-1~T3-4 ✅ 全部完成（4/4 100%）
 - i18n-dubai ✅ 完成（7 文件迁移至 fmtDubai）
+- dashboard 🔧 6 处空 catch 块已加 console.error
+- leads/new 🔧 成功 Toast + 动态 import 静态化
 - hermes-ci ❌ 需你决定 CI 提供商
 - moa-tier2-detail ❌ 需你确认方案方向
-- 18 项业务功能 ❌ 优先级待森哥排定
+- contracts Dialog 改造 ⏳ 5 处 prompt()/confirm() 待替换
+- payments/tasks i18n ⏳ 大量硬编码字符串待国际化
+- 18 项业务功能 ❌ 部分已修，产品细节待森哥确认
 
 ---
 

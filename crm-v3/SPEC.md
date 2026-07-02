@@ -19,10 +19,10 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 **本文件是唯一本地真相源**，TASKBOARD.md 仅作为 deploy gate 的脚本可读格式（check-taskboard.sh 依赖）。
 
-~~**P1P1 COS 文件**~~（`cos://newme-1302961787/crm-v3/v3.1/v3.1 P1P1计划0629.txt`）**已废弃**：
-- coscmd 经常连不上（URL 编码 bug）
-- 本地 SPEC.md 信息更完整
-- 不再主动上传同步
+**P1P1 COS 文件**（`cos://newme-1302961787/crm-v3/v3.1/v3.1 P1P1计划0629.txt`）**继续同步**：
+- 本地 SPEC.md 是主真相源
+- 每次 SPEC.md 更新后，同步上传到 COS P1P1 作为归档备份
+- coscmd 路径：`cos://newme-1302961787/crm-v3/v3.1/v3.1 P1P1计划0629.txt`
 
 ---
 

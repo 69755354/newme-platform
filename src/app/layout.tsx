@@ -4,6 +4,7 @@ import "./globals.css";
 import { HtmlLangSync } from "@/components/HtmlLangSync";
 import MetaPixel from "@/components/MetaPixel";
 import { PHProvider } from "@/lib/posthog-provider";
+import { WebVitalsReporter } from "@/lib/WebVitalsReporter";
 import { ErrorBoundary } from "@/components/error-boundary";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -21,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <HtmlLangSync />
         <MetaPixel />
         <PHProvider>
+          <WebVitalsReporter />
           <ErrorBoundary>
             {children}
           </ErrorBoundary>

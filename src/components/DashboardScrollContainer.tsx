@@ -79,8 +79,8 @@ export function DashboardScrollContainer({
     variant === "contained"
       ? "h-full min-h-0 overflow-hidden"
       : variant === "padded"
-      ? "h-full min-h-0 overflow-y-auto p-6"
-      : "h-full min-h-0 overflow-y-auto";
+      ? "min-h-0 p-6"
+      : "min-h-0";
 
   const overflowX = allowHorizontalScroll ? "overflow-x-auto" : "overflow-x-hidden";
 

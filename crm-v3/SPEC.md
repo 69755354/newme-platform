@@ -6,11 +6,11 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `6fb1860`）
-- **Branch**: `main` @ `6fb1860`
-- **生产 BUILD_ID**: `ArQKmw3zZEOURr8dpxj0E` (T3-1 + T3-3 step 8+10+12+9 待 deploy)
+## 当前状态（写时 commit `0638dcd`）
+- **Branch**: `main` @ `0638dcd`
+- **生产 BUILD_ID**: `HNdM28xf98zucbQJ7gR0g`（auth fix 已部署）
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
-- **今日 commit**: 33（3 次生产 deploy + T3-1 step 4 + T3-3 step 8+10+12/9/11 全部 push）
+- **上次更新**: 2026-07-02
 
 ## 架构关键
 | 路径 | 职责 | 风险 |
@@ -27,7 +27,8 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | `src/app/(dashboard)/leads/[id]/useLeadDetailData.ts` | Detail 数据 hook (318 行,fetchData + 11 state + 16 查询) | 🟢 新建 |
 | `src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts` | Detail 写 hook (445 行,12 handlers) | 🟢 新建 |
 | `src/app/(dashboard)/pipeline/page.tsx` | Pipeline Kanban 146 行 | 🟢 拆完 |
-| `src/hooks/useAuthRedirect.ts` | DashboardLayout auth (157 行) | 🟢 拆完 |
+| `src/lib/supabase.ts` | Supabase client + ensureSession() + token 去重 (92 行) | 🟢 auth fix |
+| `src/hooks/useAuthRedirect.ts` | DashboardLayout auth (157 行) | 🟢 auth fix |
 | `src/hooks/useSupabaseQuery.ts` | 数据 query hook (timeout 8s + retry 2) | T1-1 freeze 仅限 query |
 | `src/lib/nav.ts` | 全部 nav 配置 65 行 | 🟢 拆完（仅 Sidebar 引用）|
 | `src/lib/supabaseQuery.ts` | useSupabaseQuery hook | T1-1 freeze |
@@ -41,14 +42,16 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 - **CC subagent 必跑三关** — tsc 0 + build OK + check-taskboard 18/0/0 才算完成
 - **派工不靠 CC 自己报"已完成"** — 必须 `git log --oneline -1` 看到新 hash 才回报（步骤 5 stash 教训）
 - **SPEC.md 半自动** — CC 在 commit 报里附 `**SPEC Impact**:` 段，Hermes 决定写不写
+- **ensureSession() 机制** — 解决双登 bug（第一次登录失败，第二次才成功），每次导航前等待 session 就绪 + token 去重（防止重复请求）
 
 ## 当前工作流
 
 1. **任务派工** — Hermes 读探查报告 → 派给 CC (GLM-CP) → CC 写代码 → commit
 2. **三关验证** — tsc 0 → build OK → check-taskboard 18/0/0（全在 `pre-push` hook 自动跑）
-3. **push** — Hermes 手动 `git push origin main`
-4. **deploy** — `npm run deploy` → `scripts/deploy.sh` 4 步（build → verify BUILD_ID → restart → health check）
-5. **SPEC 更新** — 每 commit 后 Hermes 看 `SPEC Impact` 段，必要时改 SPEC.md
+3. **SPEC 检查** — `scripts/check-spec.sh` 检查 SPEC.md 是否在 3 个 commit 内更新，超过 5 个硬上限则阻止 deploy
+4. **push** — Hermes 手动 `git push origin main`
+5. **deploy** — `npm run deploy` → `scripts/deploy.sh` 6 步（taskboard → SPEC → tsc → backup → build → verify → restart → health check）
+6. **SPEC 更新** — 每 commit 后 Hermes 审核 CC 的 `SPEC Impact` 段，必要时改 SPEC.md。commit 超过 3 个没更新 SPEC 会触发 deploy 警告
 
 ## 进行中任务
 - T3-1 ✅ 完成 (DashboardLayout 326 → 92 行 -71.8%, Sidebar/TopBar 独立组件)
@@ -78,7 +81,7 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 【⚠️ 硬铁律 — CC 必须 commit 成功才返回】
 - 最后必跑 git log --oneline -1 看到新 commit hash
 - 必跑 git status 看到 clean
-- **SPEC Impact:** [改了哪些文件/为什么/影响哪些架构决策]
+- **必须输出 SPEC Impact 段**（改了哪些文件/为什么/影响哪些架构决策）— 不输出本 commit 按"未完成"处理
 - 失败/配额耗尽/任何意外 → git reset --hard HEAD~1 + 报告 "未完成"
 - 禁止把改动 stash 后报告 "已完成"
 ```

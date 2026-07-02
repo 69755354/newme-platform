@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { Card, CardContent } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
@@ -218,11 +219,11 @@ export default function QuotationsPage() {
   };
 
   return (
-    // T2-4: quotations 根容器 = 普通 <div className="space-y-0">，没有用 DashboardScrollContainer
+    // T2-4: quotations 根容器 = 普通 <DashboardScrollContainer className="space-y-0">
     // → 走外层 viewport 滚动模式（与 payments 一致）。
     // sticky 元素 (page-title z-20) 直接锚定到 viewport 顶部。
     // quotations 没有批量选择功能 → 无 bulk-bar；filter 搜索/状态 Tabs 行不 sticky。
-    <div className="space-y-0">
+    <DashboardScrollContainer className="space-y-0">
       <SubNavTabs
         items={[
           { href: "/quotations", labelKey: "quotations.subnavQuotations", iconName: "file-text" },
@@ -518,6 +519,6 @@ export default function QuotationsPage() {
 
       {/* z-toast z-50 — sonner Toaster 与 z-index 约定 (T2-4: page-title z-20 / z-modal z-40 / z-toast z-50) */}
       <Toaster position="top-center" richColors />
-    </div>
+    </DashboardScrollContainer>
   );
 }

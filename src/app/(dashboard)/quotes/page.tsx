@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase-server";
 import QuotesClient from "./quotes-client";
 import SubNavTabs from "@/components/SubNavTabs";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export default async function QuotesPage() {
   }
 
   return (
-    <div className="space-y-0">
+    <DashboardScrollContainer className="space-y-0">
       <SubNavTabs
         items={[
           { href: "/quotes", labelKey: "quotes.subnavQuotes", iconName: "calculator" },
@@ -42,6 +43,6 @@ export default async function QuotesPage() {
         ]}
       />
       <QuotesClient initialData={initialData} fetchError={fetchError} userRole={role} />
-    </div>
+    </DashboardScrollContainer>
   );
 }

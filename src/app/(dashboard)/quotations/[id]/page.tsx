@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
@@ -440,8 +441,8 @@ export default function QuotationDetailPage() {
   const customerName = quotation.leads?.customer_name || t("common.unnamed") || "Unnamed";
 
   return (
-    <div className="space-y-6">
-      {/* ─── Header ─── */}
+    <DashboardScrollContainer className="space-y-6">
+      {/* Back button */}
       <div className="flex items-center gap-4">
         <Button
           variant="ghost"
@@ -830,6 +831,6 @@ export default function QuotationDetailPage() {
       </Card>
 
       <Toaster position="top-center" richColors />
-    </div>
+    </DashboardScrollContainer>
   );
 }

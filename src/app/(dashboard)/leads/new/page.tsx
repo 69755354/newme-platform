@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase";
 import { createFollowUpTask } from "@/lib/tasks";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 export default function NewLeadPage() {
   const router = useRouter();
@@ -85,7 +86,7 @@ export default function NewLeadPage() {
   }
 
   return (
-    <div className="max-w-lg space-y-6">
+    <DashboardScrollContainer className="max-w-lg space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => router.back()} className="text-muted-foreground">
           <ArrowLeft className="w-5 h-5" />
@@ -170,6 +171,6 @@ export default function NewLeadPage() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </DashboardScrollContainer>
   );
 }

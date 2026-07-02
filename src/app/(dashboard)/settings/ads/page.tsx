@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase-server";
 import AdsClient from "./ads-client";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 /* ─── Server-side role guard ─── */
 async function authorize() {
@@ -73,5 +74,9 @@ export default async function SettingsAdsPage() {
     { total: 0, valid: 0, quoted: 0, won: 0, value: 0 }
   );
 
-  return <AdsClient sorted={sorted} totals={totals} />;
+  return (
+    <DashboardScrollContainer>
+      <AdsClient sorted={sorted} totals={totals} />
+    </DashboardScrollContainer>
+  );
 }

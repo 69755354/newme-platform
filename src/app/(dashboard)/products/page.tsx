@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import ProductImportDialog from "@/components/ProductImportDialog";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 /* ─── Category config ─── */
 const CATEGORIES = [
@@ -104,7 +105,7 @@ export default function ProductsPage() {
   if (roleLoading) return <div className="text-center py-16 text-muted-foreground">{t("common.loading")}</div>;
 
   return (
-    <div className="space-y-4">
+    <DashboardScrollContainer className="space-y-4">
       <Link href="/quotes" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-1">
         <ArrowLeft className="w-3.5 h-3.5" />
         {t("products.backToQuotes")}
@@ -249,6 +250,6 @@ export default function ProductsPage() {
         onOpenChange={setImportOpen}
         onImported={() => refetch()}
       />
-    </div>
+    </DashboardScrollContainer>
   );
 }

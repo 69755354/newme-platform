@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
@@ -179,7 +180,7 @@ function NewContractPageInner() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <DashboardScrollContainer className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => window.location.href = "/contracts"} className="text-muted-foreground">
           <ArrowLeft className="w-5 h-5" />
@@ -318,7 +319,7 @@ function NewContractPageInner() {
       </Dialog>
 
       <Toaster position="top-center" richColors />
-    </div>
+    </DashboardScrollContainer>
   );
 }
 

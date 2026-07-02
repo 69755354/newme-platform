@@ -31,14 +31,14 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 ### 架构债（Tier 3，2 项）
 | ID | 任务 | 状态 |
 |----|------|------|
-| T3-1 | DashboardLayout 统一（方案 A，全 6+ 页重构） | ❌ |
+| T3-1 | DashboardLayout 统一（方案 A，全 6+ → 24 页） | ✅ 2026-07-03 |
 | T3-2 | 性能监控 + 告警（Lighthouse/Web Vitals） | ✅ 2026-07-03 |
 
 ### UX 一致性 / 技术债 / Process 修复（4 项）
 | ID | 任务 | 状态 |
 |----|------|------|
 | i18n-dubai | 12 处页面时区统一迪拜时间 fmtDubai() | ❌ |
-| t2-1-followup | 其他 11 页接入 DashboardScrollContainer | ❌ |
+| t2-1-followup | 其他 11 页接入 DashboardScrollContainer | ✅ 并入 T3-1 |
 | chunks-cleanup | 0~14i8bodcp 死引用清理（T3 范畴） | ❌ |
 | process-fix | Hermes 不直接写代码的 process violation 修复（hermes-rules.md §十二 待加） | ❌ |
 
@@ -70,6 +70,7 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 | 路径 | 职责 | 行数 | 状态 |
 |------|------|------|------|
+| `src/components/DashboardScrollContainer.tsx` | 统一滚动容器（24/24 页面使用） | 71 | 🟢 T3-1 完成 |
 | `src/app/(dashboard)/layout.tsx` | DashboardLayout | 92 | 🟢 T3-1 完成 |
 | `src/components/dashboard/DashboardSidebar.tsx` | Sidebar + mobile button + overlay | 169 | 🟢 新建 |
 | `src/components/dashboard/DashboardTopBar.tsx` | Top header | 75 | 🟢 拆完 |
@@ -130,7 +131,7 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 ## 七、进行中任务（基于实际 commit）
 
-- T3-1 ✅ 完成 (DashboardLayout 326 → 92 行 -71.8%, Sidebar/TopBar 独立组件, commits: `9719d06`)
+- T3-1 ✅ 完成 (DashboardLayout 326 → 92 行 -71.8%, Sidebar/TopBar 独立组件, commits: `9719d06`; DashboardScrollContainer 覆盖 24/24 页面, settings/ads syntax fix)
 - T3-3 leads 拆分 **15/15 完成** ✅ (pipeline: `5afce2f` / `ea791b1` / `f9d3565` / `8b1c96c`；leads step 1-12: `192bee2` / `b84512a` / `b508f46` / `6fb1860`；leads step 13-15: `1f45fbb` / `3a3a2ed` / `a2b9dc5`)
 - P0-1 ✅ 完成（`d5bcac2` 编码 + migration `20260701130000`）
 - T4-3 ✅ 完成（`5d7b60b` deploy.sh 重构）
@@ -140,7 +141,7 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 - SPEC 门禁 ✅ 完成（`6dda27d`）
 
 **剩余主线工作（MoA 范围）**：
-- T3-1 重构全 6+ 页（架构债最大）
+- T3-1 ✅ 完成（24/24 页面 DashboardScrollContainer 统一滚动）
 - T3-2 性能监控（防 P0 类问题再次悄悄出现）
 - T3-3 leads 0/8 子组件（详情页 540 行仍较大）
 - T3-5 profiles.email 列 vs R1 统一

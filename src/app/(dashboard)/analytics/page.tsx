@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase";
 import { ErrorState } from "@/components/ui/error-state";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useLanguage } from "@/lib/i18n/context";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import LeadHealth from "./_components/LeadHealth";
 import SalesLoad from "./_components/SalesLoad";
 import PipelineFunnel from "./_components/PipelineFunnel";
@@ -54,7 +55,7 @@ export default function AnalyticsPage() {
   if (isManagement) {
     /* ═══ CEO/Admin View: 2-column grid ═══ */
     return (
-      <div className="space-y-5">
+      <DashboardScrollContainer className="space-y-5">
         {/* Header */}
         <div>
           <h1 className="text-xl font-bold text-foreground tracking-tight">
@@ -92,13 +93,13 @@ export default function AnalyticsPage() {
 
         {/* Row 4: Weekly Trends (full width) */}
         <WeeklyTrends isManagement={true} />
-      </div>
+      </DashboardScrollContainer>
     );
   }
 
   /* ═══ Sales View: Single column, action-first ═══ */
   return (
-    <div className="space-y-5 max-w-3xl">
+    <DashboardScrollContainer className="space-y-5 max-w-3xl">
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-foreground tracking-tight">
@@ -127,6 +128,6 @@ export default function AnalyticsPage() {
 
       {/* Slot 5: My Weekly Trends */}
       <WeeklyTrends isManagement={false} />
-    </div>
+    </DashboardScrollContainer>
   );
 }

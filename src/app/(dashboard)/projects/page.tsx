@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase-server";
 import ProjectsClient from "./projects-client";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 export const dynamic = "force-dynamic";
 
@@ -51,8 +52,8 @@ export default async function ProjectsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <DashboardScrollContainer className="space-y-4">
       <ProjectsClient initialData={initialData} fetchError={fetchError} />
-    </div>
+    </DashboardScrollContainer>
   );
 }

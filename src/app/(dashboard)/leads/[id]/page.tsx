@@ -29,6 +29,7 @@ import LeadTimeline from "./LeadTimeline";
 import LeadFoldingPanel from "./LeadFoldingPanel";
 import { useLeadDetailData } from "./useLeadDetailData";
 import { useLeadDetailMutations } from "./useLeadDetailMutations";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import type {
   RenderInlineEdit,
   RenderDateEdit,
@@ -377,7 +378,7 @@ export default function LeadDetailPage() {
   }
 
   return (
-    <div className="max-w-7xl space-y-6">
+    <DashboardScrollContainer className="max-w-7xl space-y-6">
       {/* T2-4: 锚定 Header — 整页滚动时返回按钮/客户名/状态徽章/delete 永远可见
           注意：leads/[id] 不像 leads/page.tsx 包了 DashboardScrollContainer，
           这里是外层 viewport 滚动。sticky 元素 (page-title z-20) 仍能锚定到 viewport 顶部。 */}
@@ -535,6 +536,6 @@ export default function LeadDetailPage() {
           sonner Toaster 已固定 z-50，作为最高优先级反馈层，
           覆盖 page-title / modal / dropdown。 */}
       <Toaster position="top-center" richColors />
-    </div>
+    </DashboardScrollContainer>
   );
 }

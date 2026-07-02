@@ -11,6 +11,7 @@ import {
   ExternalLink, Filter, Search, X,
 } from "lucide-react";
 import Link from "next/link";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 interface Lead {
   id: string; customer_name: string | null;
@@ -131,7 +132,7 @@ export default function AdsPage() {
   }
 
   return (
-    <>
+    <DashboardScrollContainer>
       <Link href="/leads" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
         <ArrowLeft className="w-3.5 h-3.5" />Back to Leads
       </Link>
@@ -254,6 +255,6 @@ export default function AdsPage() {
         </div>
       </div>
     </div>
-    </>
+    </DashboardScrollContainer>
   );
 }

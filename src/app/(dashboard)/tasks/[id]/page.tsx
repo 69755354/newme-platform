@@ -19,6 +19,7 @@ import {
 import { ArrowLeft, Calendar, Clock, User, CheckCircle2, XCircle, Loader2, Save, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { fmtDubai } from "@/lib/utils";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 /* ─── Types ─── */
 interface Task {
@@ -231,7 +232,7 @@ export default function TaskDetailPage() {
   const StatusIcon = currentStatus?.icon || Clock;
 
   return (
-    <div className="space-y-4 p-4 max-w-4xl mx-auto">
+    <DashboardScrollContainer className="space-y-4 p-4 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button
@@ -400,6 +401,6 @@ export default function TaskDetailPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </DashboardScrollContainer>
   );
 }

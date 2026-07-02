@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
 import { FileText, DollarSign, Calendar, User, Clock, Briefcase, Plus, Bell, CheckCircle, AlertTriangle, Upload, Ban, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Filter } from "lucide-react";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import SubNavTabs from "@/components/SubNavTabs";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -288,7 +289,7 @@ export default function ContractsPage() {
   ];
 
   return (
-    <div className="space-y-0">
+    <DashboardScrollContainer className="space-y-0">
       <SubNavTabs
         items={[
           { href: "/contracts", labelKey: "contracts.subnavContracts", iconName: "file-text" },
@@ -480,6 +481,6 @@ export default function ContractsPage() {
         </div>
       )}
       <Toaster position="top-center" richColors />
-    </div>
+    </DashboardScrollContainer>
   );
 }

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
-import { ErrorState } from "@/components/ui/error-state";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { useRequireRole } from "@/hooks/useRequireRole";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
@@ -876,7 +877,7 @@ export default function DashboardPage() {
      ════════════════════════════════════════ */
   if (isManagement) {
     return (
-      <div className="space-y-5">
+      <DashboardScrollContainer className="space-y-5">
         <AlertPanel />
         {Header}
 
@@ -1034,7 +1035,7 @@ export default function DashboardPage() {
             {TodayActions}
           </div>
         )}
-      </div>
+      </DashboardScrollContainer>
     );
   }
 
@@ -1043,7 +1044,7 @@ export default function DashboardPage() {
      Today's actions → my KPI → my pipeline → sources
      ════════════════════════════════════════ */
   return (
-    <div className="space-y-5">
+    <DashboardScrollContainer className="space-y-5">
       <AlertPanel />
       {Header}
 
@@ -1120,6 +1121,6 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-    </div>
+    </DashboardScrollContainer>
   );
 }

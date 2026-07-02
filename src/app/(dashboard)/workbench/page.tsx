@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Inbox, ListTodo, Clock, AlertTriangle, BarChart3, User } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState } from "react"
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 interface InboxItem {
   id: string
@@ -107,14 +108,14 @@ export default function WorkbenchPage() {
 
   if (error) {
     return (
-      <div className="mx-auto max-w-2xl p-6">
+      <DashboardScrollContainer className="mx-auto max-w-2xl p-6">
         <Card className="border-red-200 bg-red-50">
           <CardContent className="flex items-center gap-3 py-6 text-red-700">
             <AlertTriangle className="h-5 w-5 shrink-0" />
             <span className="font-medium">{error}</span>
           </CardContent>
         </Card>
-      </div>
+      </DashboardScrollContainer>
     )
   }
 
@@ -125,7 +126,7 @@ export default function WorkbenchPage() {
   const progress = data?.progress ?? []
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
+    <DashboardScrollContainer className="mx-auto max-w-7xl space-y-6 p-6">
       {/* Header */}
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">
@@ -468,6 +469,6 @@ export default function WorkbenchPage() {
           </a>
         </CardContent>
       </Card>
-    </div>
+    </DashboardScrollContainer>
   )
 }

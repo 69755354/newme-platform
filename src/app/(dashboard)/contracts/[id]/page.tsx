@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import Link from "next/link";
 import {
   ArrowLeft, FileText, DollarSign, Calendar, User, Clock, CheckCircle2,
@@ -279,7 +280,7 @@ export default function ContractDetailPage() {
   const showStatusActions = canManage && contract.status !== "completed" && contract.status !== "terminated";
 
   return (
-    <div className="space-y-5 max-w-5xl">
+    <DashboardScrollContainer className="space-y-5 max-w-5xl">
       <Toaster position="top-center" richColors />
 
       {/* Hidden file input */}
@@ -646,7 +647,7 @@ export default function ContractDetailPage() {
           </CardContent>
         </Card>
       )}
-    </div>
+    </DashboardScrollContainer>
   );
 }
 

@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import SubNavTabs from "@/components/SubNavTabs";
 import KpiManagement from "./kpi-management";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 /* ─── Types ─── */
 interface Lead {
@@ -235,7 +236,7 @@ export default function SettingsPage() {
   if (error) return <div className="p-10 text-center text-rose-400">{t("common.error")}: {error} <button onClick={fetchData} className="underline ml-4">{t("common.retry")}</button></div>;
 
   return (
-    <div className="space-y-0">
+    <DashboardScrollContainer className="space-y-0">
       <SubNavTabs
         items={[
           { href: "/settings", labelKey: "settings.subnavSystem", iconName: "settings" },
@@ -477,6 +478,6 @@ export default function SettingsPage() {
       </>
       )}
     </div>
-    </div>
+    </DashboardScrollContainer>
   );
 }

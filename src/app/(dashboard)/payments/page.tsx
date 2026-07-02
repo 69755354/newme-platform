@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -364,12 +365,12 @@ export default function PaymentsPage() {
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
 
   return (
-    // T2-4: payments 根容器 = 普通 <div>，没有用 DashboardScrollContainer
+    // T3-1: payments 根容器 = <DashboardScrollContainer>
     // → 走外层 viewport 滚动模式（与 leads/[id] 一致）。
     // sticky 元素 (page-title z-20) 直接锚定到 viewport 顶部。
     // payments 没有批量选择功能 → 无 bulk-bar；filter 是 Tabs 标签栏内嵌，
     // 不在 sticky 三件套范围内。
-    <div>
+    <DashboardScrollContainer>
       {/* T2-4: page-title sticky: 标题 + Record Payment 按钮
           滚到底也能看到自己在 payments 页面，并可随时触发 Record Payment。 */}
       <div
@@ -822,6 +823,6 @@ export default function PaymentsPage() {
           sonner Toaster 已固定高 z-index (默认 999999)，作为最高优先级反馈层，
           覆盖 page-title / modal / dropdown。 */}
       <Toaster position="top-center" richColors />
-    </div>
+    </DashboardScrollContainer>
   );
 }

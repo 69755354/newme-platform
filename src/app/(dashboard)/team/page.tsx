@@ -36,6 +36,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import {
   Dialog,
   DialogContent,
@@ -376,7 +377,7 @@ export default function TeamPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <DashboardScrollContainer className="space-y-6">
       <Link href="/settings" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
         <ArrowLeft className="w-3.5 h-3.5" />
         {t("team.backToSettings")}
@@ -927,6 +928,6 @@ export default function TeamPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </DashboardScrollContainer>
   );
 }

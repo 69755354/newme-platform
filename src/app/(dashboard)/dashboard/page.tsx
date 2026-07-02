@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
@@ -10,8 +11,8 @@ import {
   AlertTriangle,
   ArrowUpRight, CheckCircle2,
 } from "lucide-react";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
 import AlertPanel from "./_components/AlertPanel";
+import { ErrorState } from "@/components/ui/error-state";
 
 /* ─── Types ─── */
 interface Lead {

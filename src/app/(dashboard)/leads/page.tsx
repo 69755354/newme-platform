@@ -1,18 +1,18 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, Suspense } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
 import { createClient } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ErrorState } from "@/components/ui/error-state";
-import { cn } from "@/lib/utils";
 import QuickCreateLeadDialog from "@/components/QuickCreateLeadDialog";
 import ExcelImportDialog from "@/components/leads/ExcelImportDialog";
 import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
-import { useLeadsData, Lead } from "./_hooks/useLeadsData";
+import { useLeadsData } from "./_hooks/useLeadsData";
 import { useLeadMutations } from "./_hooks/useLeadMutations";
+import { useLeadsFiltering } from "./_hooks/useLeadsFiltering";
 import { LeadsHeader } from "./_components/LeadsHeader";
 import { LeadsFilters } from "./_components/LeadsFilters";
 import { LeadsBulkTransferBar } from "./_components/LeadsBulkTransferBar";
@@ -21,7 +21,6 @@ import { LeadsKanbanBoard } from "./_components/LeadsKanbanBoard";
 import {
   PIPELINE_STAGES,
 } from "./_utils/constants";
-import { daysSince, fmtAED } from "./_utils/format";
 
 function LeadsContent() {
   const supabase = createClient();
@@ -165,69 +164,35 @@ function LeadsContent() {
   // object passed into the hook above.
 
   // ─── Filtering ───
-  const filtered = useMemo(() => {
-    let result = [...leads];
-    if (stageFilter !== "all") result = result.filter(l => (l.final_status || l.stage) === stageFilter);
-    if (sourceFilter !== "all") result = result.filter(l => l.source === sourceFilter);
-    if (statusFilter !== "all") result = result.filter(l => l.lead_status === statusFilter);
-    if (qualityFilter !== "all") result = result.filter(l => l.quality === qualityFilter);
-    if (probabilityFilter !== null) result = result.filter(l => l.win_probability === probabilityFilter);
-    if (alertFilter === "yellow") {
-      result = result.filter(l => {
-        const d = daysSince(l.last_contact_date || l.updated_at);
-        return d !== null && d >= 7 && d < 14 && !l.final_status;
-      });
-    }
-    if (alertFilter === "red") {
-      result = result.filter(l => {
-        const d = daysSince(l.last_contact_date || l.updated_at);
-        return d !== null && d >= 14 && !l.final_status;
-      });
-    }
-    if (recoveryFilter) result = result.filter(l => l.recovery_candidate);
-    if (transferFilter) result = result.filter(l => l.transfer_candidate);
-    if (reviewFilter) result = result.filter(l => l.sales_manager_review);
-    if (assignedToFilter !== "all") result = result.filter(l => l.assigned_to === assignedToFilter);
-    if (followupFilter) {
-      const todayStr = new Date().toISOString().split("T")[0];
-      result = result.filter(l => {
-        if (!l.next_followup_date) return false;
-        if (l.final_status) return false;
-        return l.next_followup_date <= todayStr;
-      });
-    }
-    if (search.trim()) {
-      const s = search.toLowerCase().trim();
-      result = result.filter(l =>
-        (l.customer_name || "").toLowerCase().includes(s) ||
-        (l.phone || "").includes(s) ||
-        (l.location || "").toLowerCase().includes(s) ||
-        (l.assigned_to || "").toLowerCase().includes(s)
-      );
-    }
-    result.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
-    return result;
-  }, [leads, search, stageFilter, sourceFilter, statusFilter, alertFilter, recoveryFilter, transferFilter, reviewFilter, probabilityFilter, followupFilter, assignedToFilter, qualityFilter]);
-
-  const columns = useMemo(() => {
-    const g: Record<string, Lead[]> = {};
-    for (const s of PIPELINE_STAGES) g[s.key] = [];
-    // won/lost now live in final_status; fall back to stage for the dual-source transition
-    for (const l of filtered) { const key = l.final_status || l.stage; if (g[key]) g[key].push(l); }
-    return g;
-  }, [filtered]);
-
-  const stageTotals = useMemo(() => {
-    const t: Record<string, { count: number; value: number }> = {};
-    for (const s of PIPELINE_STAGES) {
-      t[s.key] = { count: columns[s.key]?.length || 0, value: columns[s.key]?.reduce((sum, l) => sum + (l.quotation_value || 0), 0) || 0 };
-    }
-    return t;
-  }, [columns]);
+  // T3-3 step 15: filter pipeline (filtered / columns / stageTotals /
+  // sources) extracted to useLeadsFiltering. 11 filter clauses + sort
+  // by updated_at desc + 9-stage bucket map + per-stage count/value
+  // reductions + distinct source list — all moved there 1:1.
+  //
+  // The hook only reads state — it does not own any. All setters
+  // (setSearch, setStageFilter, ...) still live on the page and feed
+  // straight into LeadsFilters. Hook return values feed LeadsHeader /
+  // LeadsPipelineSummary / LeadsFilters / LeadsKanbanBoard. Behaviour
+  // is byte-identical to the inline useMemo triplet that used to live
+  // here.
+  const { filtered, columns, stageTotals, sources } = useLeadsFiltering({
+    leads,
+    search,
+    stageFilter,
+    sourceFilter,
+    statusFilter,
+    qualityFilter,
+    probabilityFilter,
+    alertFilter,
+    recoveryFilter,
+    transferFilter,
+    reviewFilter,
+    followupFilter,
+    assignedToFilter,
+  });
 
   const activeCount = filtered.filter(l => !l.final_status).length;
   const totalPipeline = filtered.filter(l => !l.final_status).reduce((sum, l) => sum + (l.quotation_value || 0), 0);
-  const sources = useMemo(() => [...new Set(leads.map(l => l.source))].filter(Boolean).sort(), [leads]);
 
   return (
     <div className="space-y-0">

@@ -32,12 +32,11 @@ This document establishes the performance baseline for NewMe CRM's critical user
 |--------|------|-------------------|------|
 | **LCP** (Largest Contentful Paint) | < 2500ms | 2500-4000ms | > 4000ms |
 | **CLS** (Cumulative Layout Shift) | < 0.1 | 0.1-0.25 | > 0.25 |
-| **FID** (First Input Delay) | < 100ms | 100-300ms | > 300ms |
 | **INP** (Interaction to Next Paint) | < 200ms | 200-500ms | > 500ms |
 | **FCP** (First Contentful Paint) | < 1800ms | 1800-3000ms | > 3000ms |
 | **TTFB** (Time to First Byte) | < 800ms | 800-1800ms | > 1800ms |
 
-**Note:** FID was deprecated in web-vitals v4 and replaced by INP. Our monitoring tracks both for backward compatibility.
+**Note:** FID was deprecated in web-vitals v4 and replaced by INP. Our monitoring tracks the 5 current metrics: LCP, CLS, INP, FCP, TTFB.
 
 ---
 
@@ -57,7 +56,7 @@ This document establishes the performance baseline for NewMe CRM's critical user
 **Core Web Vitals:**
 - LCP: TBD ms
 - CLS: TBD
-- FID: TBD ms
+- INP: TBD ms
 - FCP: TBD ms
 - TTFB: TBD ms
 
@@ -82,7 +81,7 @@ This document establishes the performance baseline for NewMe CRM's critical user
 **Core Web Vitals:**
 - LCP: TBD ms
 - CLS: TBD
-- FID: TBD ms
+- INP: TBD ms
 - FCP: TBD ms
 - TTFB: TBD ms
 
@@ -109,7 +108,7 @@ This document establishes the performance baseline for NewMe CRM's critical user
 **Core Web Vitals:**
 - LCP: TBD ms
 - CLS: TBD
-- FID: TBD ms
+- INP: TBD ms
 - FCP: TBD ms
 - TTFB: TBD ms
 
@@ -136,7 +135,7 @@ This document establishes the performance baseline for NewMe CRM's critical user
 **Core Web Vitals:**
 - LCP: TBD ms
 - CLS: TBD
-- FID: TBD ms
+- INP: TBD ms
 - FCP: TBD ms
 - TTFB: TBD ms
 
@@ -201,7 +200,7 @@ This document establishes the performance baseline for NewMe CRM's critical user
          "assertions": {
            "largest-contentful-paint": ["warn", { "maxNumericValue": 2500 }],
            "cumulative-layout-shift": ["warn", { "maxNumericValue": 0.1 }],
-           "first-input-delay": ["warn", { "maxNumericValue": 100 }],
+           "interaction-to-next-paint": ["warn", { "maxNumericValue": 200 }],
            "first-contentful-paint": ["warn", { "maxNumericValue": 1800 }]
          }
        }
@@ -227,7 +226,7 @@ Web Vitals are automatically collected via `src/lib/web-vitals.ts` and sent to P
 **Event Name:** `web_vitals`
 
 **Properties:**
-- `metric_name`: LCP | CLS | FID | INP | FCP | TTFB
+- `metric_name`: LCP | CLS | INP | FCP | TTFB
 - `metric_value`: Numeric value (ms or unitless for CLS)
 - `metric_rating`: "good" | "needs-improvement" | "poor"
 - `page_path`: Current route (e.g., `/leads`)

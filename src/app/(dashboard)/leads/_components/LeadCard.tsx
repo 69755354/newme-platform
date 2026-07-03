@@ -323,7 +323,7 @@ export function LeadCard({
 
         {/* Bottom info row */}
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground min-w-0">
             <span>{SOURCE_ICONS[lead.source] || "📋"} {t(`sourceLabels.${lead.source}`) || lead.source}</span>
             {lead.assigned_to && (
               <>
@@ -370,7 +370,7 @@ export function LeadCard({
                 <Clock className="w-3 h-3" />{days === 0 ? t("common.today") : t("common.nDays").replace("{n}", String(days))}
               </span>
             )}
-            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
               {!isLost && nextStages.slice(0, 2).map(ns => (
                 <button key={ns.key} title={t("leads.moveTo").replace("{stage}", t(`stageLabels.${ns.key}`))}
                   className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
@@ -391,7 +391,7 @@ export function LeadCard({
             </div>
             {(salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
               <button title={t("common.delete") || "Delete"}
-                className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
+                className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors shrink-0"
                 onClick={(e) => { e.stopPropagation(); void handleDelete(lead.id, lead.assigned_to); }}>
                 <Trash2 className="w-3.5 h-3.5" />
               </button>

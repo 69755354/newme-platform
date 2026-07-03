@@ -39,6 +39,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@next/bundle-analyzer": "^16.2.10",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",

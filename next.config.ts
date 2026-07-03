@@ -1,6 +1,11 @@
 import { withSentryConfig } from "@sentry/nextjs";
+import bundleAnalyzer from "@next/bundle-analyzer";
 import type { NextConfig } from "next";
 import { execSync } from "child_process";
+
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: process.env.ANALYZE === "true",
+});
 
 // Get git hash at build time
 const gitHash = process.env.NEXT_PUBLIC_APP_VERSION || 
@@ -52,4 +57,4 @@ const sentryConfig = withSentryConfig(nextConfig, {
   widenClientFileUpload: true,
 });
 
-export default sentryConfig;
+export default withBundleAnalyzer(sentryConfig);

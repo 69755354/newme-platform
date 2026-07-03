@@ -15,6 +15,15 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 
 /* ─── Types ─── */
 interface DetailResponse {
@@ -87,6 +96,12 @@ export default function ContractDetailPage() {
   const [acting, setActing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectNotes, setRejectNotes] = useState("");
+  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
+  const [revokeReason, setRevokeReason] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function load() {
@@ -146,6 +161,7 @@ export default function ContractDetailPage() {
     suspended: t("contracts.statusSuspended"),
     cancelled: t("contracts.statusCancelled") || "Cancelled",
   };
+  const confirmStatusMessage = t("contracts.confirmStatusChange");
 
   /* ── Payment status roll-up ── */
   const totalContract = Number(contract.contract_amount ?? 0);
@@ -244,10 +260,16 @@ export default function ContractDetailPage() {
   }
 
   /* ── Status change ── */
-  async function changeStatus(newStatus: string) {
+  function changeStatus(newStatus: string) {
     if (!canManage) return;
-    const confirmed = confirm(t("contracts.confirmStatusChange") || `Change status to ${newStatus}?`);
-    if (!confirmed) return;
+    setPendingStatus(newStatus);
+    setConfirmDialogOpen(true);
+  }
+
+  async function confirmStatusChange() {
+    if (!pendingStatus) return;
+    const newStatus = pendingStatus;
+    setConfirmDialogOpen(false);
     setActing(true);
     try {
       const res = await fetch(`/api/contracts/${contractId}`, {
@@ -266,7 +288,29 @@ export default function ContractDetailPage() {
       toast.error(t("login.networkError"));
     } finally {
       setActing(false);
+      setPendingStatus(null);
     }
+  }
+
+  async function submitRejection() {
+    setRejectDialogOpen(false);
+    await postAction(
+      `/api/contracts/${contractId}/approve`,
+      { action: "reject", notes: rejectNotes || undefined },
+      t("contracts.approvalSuccess"),
+    );
+    setRejectNotes("");
+  }
+
+  async function submitRevocation() {
+    if (!revokeReason) return;
+    setRevokeDialogOpen(false);
+    await postAction(
+      `/api/contracts/${contractId}/revoke`,
+      { reason: revokeReason },
+      t("contracts.revokeSuccess"),
+    );
+    setRevokeReason("");
   }
 
   const showApprove =
@@ -325,9 +369,8 @@ export default function ContractDetailPage() {
               <Button
                 size="sm" variant="outline" disabled={acting}
                 onClick={() => {
-                  const notes = prompt(t("contracts.rejectPrompt"));
-                  if (notes === null) return;
-                  postAction(`/api/contracts/${contractId}/approve`, { action: "reject", notes: notes || undefined }, t("contracts.approvalSuccess"));
+                  setRejectNotes("");
+                  setRejectDialogOpen(true);
                 }}
                 className="border-rose-500/30 text-rose-400 hover:bg-rose-500/10 h-8"
               >
@@ -359,9 +402,8 @@ export default function ContractDetailPage() {
             <Button
               size="sm" variant="outline" disabled={acting}
               onClick={() => {
-                const reason = prompt(t("contracts.revokePrompt"));
-                if (!reason) return;
-                postAction(`/api/contracts/${contractId}/revoke`, { reason }, t("contracts.revokeSuccess"));
+                setRevokeReason("");
+                setRevokeDialogOpen(true);
               }}
               className="border-orange-500/30 text-orange-400 hover:bg-orange-500/10 h-8"
             >
@@ -647,6 +689,73 @@ export default function ContractDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader>
+            <DialogTitle>{t("common.confirm")}</DialogTitle>
+            <DialogDescription>
+              {confirmStatusMessage === "contracts.confirmStatusChange"
+                ? `Change status to ${pendingStatus ? STATUS_LABELS[pendingStatus] || pendingStatus : ""}?`
+                : confirmStatusMessage}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={acting} onClick={() => setConfirmDialogOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="button" disabled={acting || !pendingStatus} onClick={confirmStatusChange}>
+              {t("common.confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader>
+            <DialogTitle>{t("contracts.rejectPrompt")}</DialogTitle>
+          </DialogHeader>
+          <Textarea
+            value={rejectNotes}
+            onChange={(event) => setRejectNotes(event.target.value)}
+            placeholder={t("contracts.rejectPrompt")}
+            aria-label={t("contracts.rejectPrompt")}
+            rows={4}
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={acting} onClick={() => setRejectDialogOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="button" variant="destructive" disabled={acting} onClick={submitRejection}>
+              {t("contracts.reject")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader>
+            <DialogTitle>{t("contracts.revokePrompt")}</DialogTitle>
+          </DialogHeader>
+          <Textarea
+            value={revokeReason}
+            onChange={(event) => setRevokeReason(event.target.value)}
+            placeholder={t("contracts.revokePrompt")}
+            aria-label={t("contracts.revokePrompt")}
+            rows={4}
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={acting} onClick={() => setRevokeDialogOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="button" variant="destructive" disabled={acting || !revokeReason} onClick={submitRevocation}>
+              {t("contracts.revoke")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardScrollContainer>
   );
 }

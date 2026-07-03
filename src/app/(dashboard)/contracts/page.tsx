@@ -7,6 +7,14 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { FileText, DollarSign, Calendar, User, Clock, Briefcase, Plus, Bell, CheckCircle, AlertTriangle, Upload, Ban, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Filter } from "lucide-react";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import SubNavTabs from "@/components/SubNavTabs";
@@ -54,6 +62,12 @@ export default function ContractsPage() {
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectNotes, setRejectNotes] = useState("");
+  const [rejectContractId, setRejectContractId] = useState<string | null>(null);
+  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
+  const [revokeReason, setRevokeReason] = useState("");
+  const [revokeContractId, setRevokeContractId] = useState<string | null>(null);
 
   // Pagination + filtering state
   const [page, setPage] = useState(1);
@@ -104,13 +118,7 @@ export default function ContractsPage() {
   }
 
   // Approval / Reject action
-  async function handleApproval(contractId: string, action: "approve" | "reject") {
-    let notes: string | undefined;
-    if (action === "reject") {
-      const input = prompt(t("contracts.rejectPrompt"));
-      if (input === null) return; // cancelled
-      notes = input || undefined;
-    }
+  async function handleApproval(contractId: string, action: "approve" | "reject", notes?: string) {
     try {
       const res = await fetch(`/api/contracts/${contractId}/approve`, {
         method: "POST",
@@ -130,9 +138,7 @@ export default function ContractsPage() {
   }
 
   // Revoke action
-  async function handleRevoke(contractId: string) {
-    const reason = prompt(t("contracts.revokePrompt"));
-    if (!reason) return;
+  async function handleRevoke(contractId: string, reason: string) {
     try {
       const res = await fetch(`/api/contracts/${contractId}/revoke`, {
         method: "POST",
@@ -149,6 +155,32 @@ export default function ContractsPage() {
     } catch {
       toast.error(t("contracts.revokeFailed"));
     }
+  }
+
+  function openRejectDialog(contractId: string) {
+    setRejectContractId(contractId);
+    setRejectNotes("");
+    setRejectDialogOpen(true);
+  }
+
+  function submitRejection() {
+    if (!rejectContractId) return;
+    const notes = rejectNotes.trim() || undefined;
+    void handleApproval(rejectContractId, "reject", notes);
+    setRejectDialogOpen(false);
+  }
+
+  function openRevokeDialog(contractId: string) {
+    setRevokeContractId(contractId);
+    setRevokeReason("");
+    setRevokeDialogOpen(true);
+  }
+
+  function submitRevocation() {
+    const reason = revokeReason.trim();
+    if (!revokeContractId || !reason) return;
+    void handleRevoke(revokeContractId, reason);
+    setRevokeDialogOpen(false);
   }
 
   // Upload contract file
@@ -414,7 +446,7 @@ export default function ContractsPage() {
                       </Button>
                       <Button
                         size="sm" variant="outline"
-                        onClick={() => handleApproval(c.id, "reject")}
+                        onClick={() => openRejectDialog(c.id)}
                         className="border-rose-500/30 text-rose-400 hover:bg-rose-500/10 text-xs h-8"
                       >
                         <XCircle className="w-3 h-3 mr-1" />{t("contracts.reject")}
@@ -440,7 +472,7 @@ export default function ContractsPage() {
                   {showRevoke && (
                     <Button
                       size="sm" variant="outline"
-                      onClick={() => handleRevoke(c.id)}
+                      onClick={() => openRevokeDialog(c.id)}
                       className="border-orange-500/30 text-orange-400 hover:bg-orange-500/10 text-xs h-8"
                     >
                       <Ban className="w-3 h-3 mr-1" />{t("contracts.revoke")}
@@ -480,6 +512,58 @@ export default function ContractsPage() {
           </div>
         </div>
       )}
+
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader>
+            <DialogTitle>{t("contracts.rejectPrompt")}</DialogTitle>
+          </DialogHeader>
+          <Textarea
+            value={rejectNotes}
+            onChange={(event) => setRejectNotes(event.target.value)}
+            placeholder={t("contracts.rejectPrompt")}
+            aria-label={t("contracts.rejectPrompt")}
+            rows={4}
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRejectDialogOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="button" variant="destructive" onClick={submitRejection}>
+              {t("contracts.reject")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader>
+            <DialogTitle>{t("contracts.revokePrompt")}</DialogTitle>
+          </DialogHeader>
+          <Textarea
+            value={revokeReason}
+            onChange={(event) => setRevokeReason(event.target.value)}
+            placeholder={t("contracts.revokePrompt")}
+            aria-label={t("contracts.revokePrompt")}
+            rows={4}
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRevokeDialogOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!revokeReason.trim()}
+              onClick={submitRevocation}
+            >
+              {t("contracts.revoke")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Toaster position="top-center" richColors />
     </DashboardScrollContainer>
   );

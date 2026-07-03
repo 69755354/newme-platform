@@ -13,7 +13,6 @@ import {
   Loader2, Upload, FileSpreadsheet, CheckCircle2, XCircle,
   AlertCircle, AlertTriangle,
 } from "lucide-react";
-import * as XLSX from "xlsx";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { cn } from "@/lib/utils";
 
@@ -142,6 +141,7 @@ export default function ExcelImportDialog({ open, onOpenChange, onImported }: Pr
     setFileName(file.name);
     setParsing(true);
     try {
+      const XLSX = await import("xlsx");
       const data = new Uint8Array(await file.arrayBuffer());
       const wb = XLSX.read(data, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];

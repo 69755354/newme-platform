@@ -120,13 +120,14 @@ export function useLeadsData(): UseLeadsDataReturn {
   );
 
   useEffect(() => {
-    if (profileData?.role && role !== profileData.role) {
-      setRole(profileData.role);
-    } else if (profileData && !profileData.role && role !== "sales") {
-      // Default fallback (matches original behaviour): missing role → "sales"
+    if (profileData?.role) {
+      if (role !== profileData.role) setRole(profileData.role);
+    } else if (profileData && !profileData.role && role === null) {
+      // Only fallback to "sales" when role truly unknown (null),
+      // not when it's already resolved from a previous query
       setRole("sales");
     }
-  }, [profileData?.role]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [profileData, profileData?.role, role]);
 
   // ── Query 3: leads list (gated until BOTH role + userId are known) ──
   const leadsEnabled = !!role && !!userId;

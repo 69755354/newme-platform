@@ -246,7 +246,7 @@ export function LeadCard({
       draggable
       onDragStart={(e) => onDragStart(e, lead.id)}
       className={cn(
-        "cursor-pointer transition-all duration-150 group relative",
+        "cursor-pointer transition-all duration-150 group relative shrink-0",
         "hover:-translate-y-0.5 hover:shadow-lg hover:shadow-foreground/5",
         draggingLeadId === lead.id && "opacity-40",
         isHot && "ring-1 ring-rose-500/30",

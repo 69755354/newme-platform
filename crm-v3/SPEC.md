@@ -6,11 +6,12 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `6a6eb0a`）
+## 当前状态（写时 commit `c52adf9`）
 - **Build**: `mVr96pft3x5A23Udmcluf` (deploy v4.0 隔离构建)
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
 - **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
-- **上次更新**: 2026-07-04（deploy v4.0 + xlsx lazy-load + P0 incident closure）
+- **上次更新**: 2026-07-04（性能优化第一批完成 → 冻结生产）
+- **状态**: 🔒 **生产冻结** — 见 §十一
 - **事故**: 2026-07-04 deploy incident — 旧 deploy.sh 在生产 .next 原地构建导致停服 → v4.0 隔离构建修复（见 §四）
 
 ---
@@ -211,7 +212,7 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 - contracts Dialog 改造 ✅ 完成（`f764ca3`）
 - payments/tasks i18n ✅ 完成（`b365287`）
 - kanban-unify ❌ 待做：统一 stage 定义 + fmtAED 到 shared/
-- 全站性能优化 ❌ 待做：108 请求 / 3.3MB / 33.73s
+|- **全站性能优化** ✅ 第一批完成，🔒 剩余冻结（见 §十一）
 - 18 项业务功能 ❌ 部分已修，产品细节待森哥确认
 
 ---
@@ -264,3 +265,59 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 - **本文件不准凭模型记忆更新** — 必须从 git log / 文件读出真状态后改
 - **夜场/中场交接**: 写 `crm-v3/HANDOFF-YYYYMMDD-{slot}.md`，commit 上去
 - **Faheem 已离职**（2026-07-02）— CRM 仍保留其账号，未做权限清理
+
+---
+
+## 十一、🔒 生产冻结 — 2026-07-04 性能优化第一批
+
+**决策：今天停止性能优化，先跑 24-48 小时稳定观察。**
+
+### 已完成成果
+
+| 优化 | Commit | 收益 |
+|------|--------|------|
+| **xlsx 懒加载** | `c54d83b` | `/leads` 首屏 -234 KB（`import("xlsx")` 动态加载） |
+| **Meta Pixel 条件加载** | `6dca992` `e7363fa` | 15 个后台路径/子路由不加载 fbevents.js |
+| **Bundle Analyzer 基线** | `e50a9c4` | 全站客户端 JS map 已建立（见下方基线数据） |
+| **deploy.sh v4.0** | `77563c8` 等 6 个 commit | 隔离构建，生产 `.next` 零触碰 |
+| **P0 防复发** | `d25faf3` | guard-prod-build.sh 阻止直接构建 |
+| **P0 事故闭环** | `c52adf9` | 根因 + 修复 + 状态 Closed |
+
+### Bundle Analyzer 全站基线数据
+
+| 层级 | 大小 | 包含 |
+|------|------|------|
+| 所有页面共享 | **559 KB** | PostHog (195K) + Framer Motion (232K) + Next.js (132K) |
+| 认证页面额外 | **486 KB** | Supabase client (206K) + lucide/date-fns/组件 (280K) |
+| `/analytics` 额外 | **423 KB** | Recharts 图表库（已路由分离） |
+| 懒加载图表 | **412 KB** | 按需动态 import，不阻塞首屏 |
+
+| 页面 | 客户端 JS |
+|------|-----------|
+| `/login` | 976 KB |
+| 认证页面均值 | ~1,400 KB |
+| `/analytics` | 1,673 KB |
+
+### 冻结原因
+
+1. 刚经历 deploy 事故，当前第一优先级是**稳定**，不是继续压 bundle
+2. xlsx 已拿掉 234KB，Meta Pixel 已后台条件加载，第一批收益已到手
+3. PostHog (195KB) 涉及埋点、会话、转化归因，改错 = 数据不可信
+4. @base-ui tree-shaking 是中后期工程优化，不适合今天继续动
+5. v4.0 deploy 刚改完，应先跑 24-48 小时稳定观察
+
+### 生产观察清单（24h）
+
+- [ ] `app.newme.ae` 所有页面 200
+- [ ] `newme-platform.service` 无重启风暴
+- [ ] `/leads` 无 chunk 500
+- [ ] deploy.sh 不再原地构建
+- [ ] 销售团队正常使用
+
+### 下一轮优化顺序（解冻后）
+
+1. PostHog 条件加载 / lazy load（需确认哪些页面必须埋点）
+2. @base-ui import 检查（tree-shaking）
+3. Recharts 动态加载（/analytics 已路由分离，进一步拆分）
+4. 路由级 bundle 分析细化
+5. Supabase auth client 拆分评估

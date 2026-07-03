@@ -16,6 +16,11 @@ const BACKEND_PATHS = [
   "/team",
   "/settings",
   "/command-center",
+  "/payments",
+  "/projects",
+  "/quotations",
+  "/tasks",
+  "/workbench",
 ] as const;
 
 function isBackendPath(pathname: string, backendPaths: readonly string[]) {

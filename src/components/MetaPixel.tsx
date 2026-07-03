@@ -1,10 +1,40 @@
 "use client";
 
 import Script from "next/script";
+import { usePathname } from "next/navigation";
 
 const PIXEL_ID = "1612447067166445";
 
-export default function MetaPixel() {
+const BACKEND_PATHS = [
+  "/dashboard",
+  "/leads",
+  "/pipeline",
+  "/analytics",
+  "/quotes",
+  "/contracts",
+  "/products",
+  "/team",
+  "/settings",
+  "/command-center",
+] as const;
+
+function isBackendPath(pathname: string, backendPaths: readonly string[]) {
+  return backendPaths.some(
+    (backendPath) => pathname === backendPath || pathname.startsWith(`${backendPath}/`),
+  );
+}
+
+type MetaPixelProps = {
+  excludedPaths?: readonly string[];
+};
+
+export default function MetaPixel({ excludedPaths = BACKEND_PATHS }: MetaPixelProps) {
+  const pathname = usePathname();
+
+  if (isBackendPath(pathname, excludedPaths)) {
+    return null;
+  }
+
   return (
     <>
       <Script id="meta-pixel" strategy="afterInteractive">

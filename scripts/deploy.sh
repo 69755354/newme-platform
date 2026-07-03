@@ -171,3 +171,37 @@ echo ""
 echo "=== ✅ Deploy complete ==="
 echo "BUILD_ID: $BUILD_ID"
 echo "Time: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+# ── Step 5.1: Smoke test ──────────────────────────────────
+echo "--- Step 5.1/8: Smoke test ---"
+if [ -f "scripts/check-smoke.sh" ]; then
+  bash scripts/check-smoke.sh http://localhost:3001
+  echo "✅ Smoke test passed"
+else
+  echo "⚠️  scripts/check-smoke.sh not found, skipping"
+fi
+echo ""
+
+# ── Step 5.2: Journal error scan ──────────────────────────
+echo "--- Step 5.2/8: Journal error scan ---"
+if [ -f "scripts/check-logs.sh" ]; then
+  bash scripts/check-logs.sh "2 minutes ago"
+  echo "✅ Journal error scan passed"
+else
+  echo "⚠️  scripts/check-logs.sh not found, skipping"
+fi
+echo ""
+
+# ── Step 5.3: Regression test ─────────────────────────────
+echo "--- Step 5.3/8: Regression test ---"
+if [ -f "scripts/deploy-verify.sh" ]; then
+  bash scripts/deploy-verify.sh --no-git
+  echo "✅ Regression test passed"
+else
+  echo "⚠️  scripts/deploy-verify.sh not found, skipping"
+fi
+echo ""
+
+echo "=== ✅ Deploy pipeline complete ==="
+echo "BUILD_ID: $BUILD_ID"
+echo "Time: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"

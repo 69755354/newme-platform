@@ -1,0 +1,461 @@
+{
+  "project": "newme-platform",
+  "tech_stack": [
+    "Next.js 16",
+    "TypeScript",
+    "Supabase",
+    "Tailwind CSS"
+  ],
+  "generated": "2026-07-03T12:41:53.392000",
+  "structure": {
+    "src": [
+      "proxy.ts"
+    ],
+    "src/app": [
+      "error.tsx",
+      "global-error.tsx",
+      "globals.css",
+      "layout.tsx",
+      "not-found.tsx",
+      "page.tsx"
+    ],
+    "src/app/(auth)": [
+      "layout.tsx"
+    ],
+    "src/app/(auth)/change-password": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)": [
+      "error.tsx",
+      "layout.tsx",
+      "loading.tsx"
+    ],
+    "src/app/(dashboard)/ads": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/analytics": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/analytics/_components": [
+      "AdsROI.tsx",
+      "LeadHealth.tsx",
+      "LeadSources.tsx",
+      "PaymentTracker.tsx",
+      "PipelineFunnel.tsx",
+      "SalesLoad.tsx",
+      "TeamPerformance.tsx",
+      "WeeklyTrends.tsx"
+    ],
+    "src/app/(dashboard)/command-center": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/contracts": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/contracts/[id]": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/contracts/new": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/dashboard": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/dashboard/_components": [
+      "AlertPanel.tsx"
+    ],
+    "src/app/(dashboard)/leads": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/leads/[id]": [
+      "LeadContractsPanel.tsx",
+      "LeadCustomerProfile.tsx",
+      "LeadFoldingPanel.tsx",
+      "LeadSalesProcess.tsx",
+      "LeadTimeline.tsx",
+      "page.tsx",
+      "types.ts",
+      "useLeadDetailData.ts",
+      "useLeadDetailMutations.ts",
+      "utils.ts"
+    ],
+    "src/app/(dashboard)/leads/[id]/timeline": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/leads/_components": [
+      "LeadCard.tsx",
+      "LeadsBulkTransferBar.tsx",
+      "LeadsFilters.tsx",
+      "LeadsHeader.tsx",
+      "LeadsKanbanBoard.tsx",
+      "LeadsPipelineSummary.tsx"
+    ],
+    "src/app/(dashboard)/leads/_hooks": [
+      "useLeadMutations.ts",
+      "useLeadsData.ts",
+      "useLeadsFiltering.ts"
+    ],
+    "src/app/(dashboard)/leads/_utils": [
+      "constants.ts",
+      "format.ts"
+    ],
+    "src/app/(dashboard)/leads/new": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/payments": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/pipeline": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/pipeline/_components": [
+      "KanbanBoard.tsx",
+      "LeadCard.tsx",
+      "SalesKpiDashboard.tsx"
+    ],
+    "src/app/(dashboard)/pipeline/_hooks": [
+      "useSalesKpiData.ts"
+    ],
+    "src/app/(dashboard)/products": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/projects": [
+      "page.tsx",
+      "projects-client.tsx"
+    ],
+    "src/app/(dashboard)/quotations": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/quotations/[id]": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/quotes": [
+      "page.tsx",
+      "quote-calculator.tsx",
+      "quote-detail-dialog.tsx",
+      "quote-wizard.tsx",
+      "quotes-client.tsx"
+    ],
+    "src/app/(dashboard)/settings": [
+      "kpi-management.tsx",
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/settings/ads": [
+      "ads-client.tsx",
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/tasks": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/tasks/[id]": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/team": [
+      "page.tsx"
+    ],
+    "src/app/(dashboard)/workbench": [
+      "page.tsx"
+    ],
+    "src/app/api/activities": [
+      "route.ts"
+    ],
+    "src/app/api/activity/daily-report": [
+      "route.ts"
+    ],
+    "src/app/api/admin/impersonate": [
+      "route.ts"
+    ],
+    "src/app/api/alerts": [
+      "route.ts"
+    ],
+    "src/app/api/auth/change-password": [
+      "route.ts"
+    ],
+    "src/app/api/command-center": [
+      "route.ts"
+    ],
+    "src/app/api/contracts": [
+      "route.ts"
+    ],
+    "src/app/api/contracts/[id]": [
+      "route.ts"
+    ],
+    "src/app/api/contracts/[id]/approve": [
+      "route.ts"
+    ],
+    "src/app/api/contracts/[id]/confirm-upload": [
+      "route.ts"
+    ],
+    "src/app/api/contracts/[id]/remind-payment": [
+      "route.ts"
+    ],
+    "src/app/api/contracts/[id]/revoke": [
+      "route.ts"
+    ],
+    "src/app/api/contracts/[id]/upload-url": [
+      "route.ts"
+    ],
+    "src/app/api/cos/download-url": [
+      "route.ts"
+    ],
+    "src/app/api/cron/check-alerts": [
+      "route.ts"
+    ],
+    "src/app/api/cron/check-no-answer": [
+      "route.ts"
+    ],
+    "src/app/api/cron/check-overdue-followups": [
+      "route.ts"
+    ],
+    "src/app/api/cron/check-overdue-installments": [
+      "route.ts"
+    ],
+    "src/app/api/cron/cleanup-notifications": [
+      "route.ts"
+    ],
+    "src/app/api/cron/daily-funnel-snapshot": [
+      "route.ts"
+    ],
+    "src/app/api/cron/daily-reminder": [
+      "route.ts"
+    ],
+    "src/app/api/dashboard/ads-roi": [
+      "route.ts"
+    ],
+    "src/app/api/dashboard/ads-roi/import": [
+      "route.ts"
+    ],
+    "src/app/api/dashboard/lead-health": [
+      "route.ts"
+    ],
+    "src/app/api/dashboard/lead-sources": [
+      "route.ts"
+    ],
+    "src/app/api/dashboard/payment-tracker": [
+      "route.ts"
+    ],
+    "src/app/api/dashboard/pipeline-funnel": [
+      "route.ts"
+    ],
+    "src/app/api/dashboard/sales-load": [
+      "route.ts"
+    ],
+    "src/app/api/dashboard/sales-load/rebalance": [
+      "route.ts"
+    ],
+    "src/app/api/dashboard/team-ownership": [
+      "route.ts"
+    ],
+    "src/app/api/dashboard/team-performance": [
+      "route.ts"
+    ],
+    "src/app/api/dashboard/weekly-trends": [
+      "route.ts"
+    ],
+    "src/app/api/dev/setup": [
+      "route.ts"
+    ],
+    "src/app/api/follow-ups": [
+      "route.ts"
+    ],
+    "src/app/api/health": [
+      "route.ts"
+    ],
+    "src/app/api/hermes/generate-quote": [
+      "route.ts"
+    ],
+    "src/app/api/hermes/knx-design": [
+      "route.ts"
+    ],
+    "src/app/api/hermes/knx-design/status": [
+      "route.ts"
+    ],
+    "src/app/api/kpi/targets": [
+      "route.ts"
+    ],
+    "src/app/api/leads/[id]/follow-up": [
+      "route.ts"
+    ],
+    "src/app/api/leads/[id]/milestone": [
+      "route.ts"
+    ],
+    "src/app/api/leads/[id]/timeline": [
+      "route.ts"
+    ],
+    "src/app/api/leads/archive": [
+      "route.ts"
+    ],
+    "src/app/api/leads/follow-up-overdue": [
+      "route.ts"
+    ],
+    "src/app/api/leads/import/confirm": [
+      "route.ts"
+    ],
+    "src/app/api/leads/import/preview": [
+      "route.ts"
+    ],
+    "src/app/api/leads/meta-capi": [
+      "route.ts"
+    ],
+    "src/app/api/meta/oauth-callback": [
+      "route.ts"
+    ],
+    "src/app/api/metrics/daily": [
+      "route.ts"
+    ],
+    "src/app/api/metrics/funnel": [
+      "route.ts"
+    ],
+    "src/app/api/monitoring/report": [
+      "route.ts"
+    ],
+    "src/app/api/notifications": [
+      "route.ts"
+    ],
+    "src/app/api/notifications/[id]": [
+      "route.ts"
+    ],
+    "src/app/api/notifications/read-all": [
+      "route.ts"
+    ],
+    "src/app/api/notifications/unread-count": [
+      "route.ts"
+    ],
+    "src/app/api/notify": [
+      "route.ts"
+    ],
+    "src/app/api/payments": [
+      "route.ts"
+    ],
+    "src/app/api/payments/[id]/allocate": [
+      "route.ts"
+    ],
+    "src/app/api/payments/[id]/confirm": [
+      "route.ts"
+    ],
+    "src/app/api/products/import": [
+      "route.ts"
+    ],
+    "src/app/api/quotations/[id]/convert": [
+      "route.ts"
+    ],
+    "src/app/api/quotations/calculate": [
+      "route.ts"
+    ],
+    "src/app/api/quotations/export": [
+      "route.ts"
+    ],
+    "src/app/api/quotations/generate": [
+      "route.ts"
+    ],
+    "src/app/api/tasks": [
+      "route.ts"
+    ],
+    "src/app/api/tasks/[id]": [
+      "route.ts"
+    ],
+    "src/app/api/users": [
+      "route.ts"
+    ],
+    "src/app/api/users/[id]": [
+      "route.ts"
+    ],
+    "src/app/api/users/[id]/password": [
+      "route.ts"
+    ],
+    "src/app/api/workbench": [
+      "route.ts"
+    ],
+    "src/app/api/workflow": [
+      "route.ts"
+    ],
+    "src/app/login": [
+      "page.tsx"
+    ],
+    "src/components": [
+      "DashboardErrorBoundary.tsx",
+      "DashboardScrollContainer.tsx",
+      "HtmlLangSync.tsx",
+      "LanguageToggle.tsx",
+      "MetaPixel.tsx",
+      "NotificationBell.tsx",
+      "ProductImportDialog.tsx",
+      "QuickCreateLeadDialog.tsx",
+      "SubNavTabs.tsx",
+      "error-boundary.tsx",
+      "error-monitor.tsx",
+      "knx-design-panel.tsx",
+      "lead-workflow.tsx"
+    ],
+    "src/components/dashboard": [
+      "DashboardSidebar.tsx",
+      "DashboardTopBar.tsx"
+    ],
+    "src/components/leads": [
+      "ExcelImportDialog.tsx",
+      "timeline.tsx"
+    ],
+    "src/components/pipeline": [
+      "KanbanStats.tsx"
+    ],
+    "src/components/ui": [
+      "avatar.tsx",
+      "badge.tsx",
+      "button.tsx",
+      "card.tsx",
+      "collapsible.tsx",
+      "dialog.tsx",
+      "dropdown-menu.tsx",
+      "error-state.tsx",
+      "input.tsx",
+      "label.tsx",
+      "select.tsx",
+      "separator.tsx",
+      "sheet.tsx",
+      "skeleton.tsx",
+      "table.tsx",
+      "tabs.tsx",
+      "textarea.tsx",
+      "tooltip.tsx"
+    ],
+    "src/hooks": [
+      "useAuthRedirect.ts",
+      "useRequireRole.ts",
+      "useUserRole.ts"
+    ],
+    "src/lib": [
+      "WebVitalsReporter.tsx",
+      "device-catalog.ts",
+      "health-score.ts",
+      "hermes.ts",
+      "knx-task-store.ts",
+      "lead-auth.ts",
+      "logger.ts",
+      "milestones.ts",
+      "nav.ts",
+      "notifications.ts",
+      "notify.ts",
+      "posthog-provider.tsx",
+      "quotation-engine.ts",
+      "report-server-error.ts",
+      "supabase-admin.ts",
+      "supabase-middleware.ts",
+      "supabase-server.ts",
+      "supabase.ts",
+      "supabaseQuery.ts",
+      "tasks.ts",
+      "utils.ts",
+      "web-vitals.ts"
+    ],
+    "src/lib/i18n": [
+      "LanguageContext.tsx",
+      "context.tsx",
+      "translations.ts"
+    ],
+    "src/shared/hooks": [
+      "useDashboardScroll.ts",
+      "usePipelineDragDrop.ts",
+      "useStageGuard.ts"
+    ]
+  }
+}

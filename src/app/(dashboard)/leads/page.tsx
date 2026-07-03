@@ -195,7 +195,7 @@ function LeadsContent() {
   const totalPipeline = filtered.filter(l => !l.final_status).reduce((sum, l) => sum + (l.quotation_value || 0), 0);
 
   return (
-    <div className="space-y-0">
+    <div className="flex-1 min-h-0 flex flex-col">
       {/* T3-3 step 8: SubNavTabs + page-title sticky div extracted to LeadsHeader.
           Returns Fragment so DOM is byte-identical: SubNavTabs stays outside
           DashboardScrollContainer, page-title div stays inside. */}
@@ -210,7 +210,7 @@ function LeadsContent() {
       {/* T2-4: 锚定功能卡片 — 整页滚动时关键控件可见
           DashboardScrollContainer 建立 inner scroll 上下文，sticky 元素
           (page-title z-20 / filter-bar z-10) 才能正确锚定。 */}
-      <DashboardScrollContainer className="p-4">
+      <DashboardScrollContainer className="p-4" allowHorizontalScroll={true}>
       {/* filter-bar sticky: pipeline summary (column header) + 筛选行
           锚定在 page-title 下方 — 滚下去也能改筛选条件 */}
       <div

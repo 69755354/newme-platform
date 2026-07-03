@@ -115,7 +115,7 @@ export function LeadsKanbanBoard({
 }: Props) {
   return (
     <div className="overflow-x-auto pb-6 -mx-4 px-4">
-      <div className="flex gap-4 min-w-max md:min-w-0">
+      <div className="flex gap-4" style={{ minWidth: '900px' }}>
         {stages.map((stage) => {
           const items = columns[stage.key] || [];
           const totalVal = items.reduce(

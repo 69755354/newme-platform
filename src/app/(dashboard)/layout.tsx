@@ -25,7 +25,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-    <div className="min-h-screen bg-background text-foreground flex">
+    <div className="h-dvh bg-background text-foreground flex overflow-hidden print:h-auto print:overflow-visible">
       <DashboardSidebar
         pathname={pathname}
         isManagement={isManagement}
@@ -57,8 +57,8 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
           父级 chain: main (flex-1) → header (固定高) → 本 div (flex-1) → 页面
         */}
-        <div className="flex-1 p-6 min-w-0 overflow-y-auto" data-dashboard-scroll-boundary="">
-          <div className="min-h-full">
+        <div className="flex-1 min-h-0 p-6 min-w-0 overflow-hidden" data-dashboard-scroll-boundary="">
+          <div className="h-full flex flex-col">
           {authLoading ? (
             <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
               {t("common.loading")}

@@ -189,3 +189,14 @@
   color: var(--foreground);
   padding: 2rem;
 }
+
+@media print {
+  body {
+    overflow: visible !important;
+    height: auto !important;
+  }
+  [data-dashboard-scroll] {
+    overflow: visible !important;
+    height: auto !important;
+  }
+}

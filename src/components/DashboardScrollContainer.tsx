@@ -77,10 +77,10 @@ export function DashboardScrollContainer({
   // flex chain in layout.tsx dictate the available space.
   const variantClass =
     variant === "contained"
-      ? "h-full min-h-0 overflow-hidden"
+      ? "flex-1 min-h-0 overflow-hidden print:overflow-visible print:h-auto"
       : variant === "padded"
-      ? "min-h-0 p-6"
-      : "min-h-0";
+      ? "flex-1 min-h-0 overflow-y-auto p-6 print:overflow-visible print:h-auto"
+      : "flex-1 min-h-0 overflow-y-auto print:overflow-visible print:h-auto";
 
   const overflowX = allowHorizontalScroll ? "overflow-x-auto" : "overflow-x-hidden";
 

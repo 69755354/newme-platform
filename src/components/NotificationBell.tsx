@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Bell, CheckCheck, Circle, ExternalLink, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -99,6 +100,7 @@ export default function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const dropdownContentRef = useRef<HTMLDivElement>(null);
   const { lang, t } = useLanguage();
   const router = useRouter();
 
@@ -144,7 +146,10 @@ export default function NotificationBell() {
   // Click outside to close
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const insideAnchor = dropdownRef.current?.contains(target);
+      const insideDropdown = dropdownContentRef.current?.contains(target);
+      if (!insideAnchor && !insideDropdown) {
         setIsOpen(false);
       }
     }
@@ -206,9 +211,16 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {/* Dropdown */}
-      {isOpen && (
-        <div className="absolute right-0 top-full mt-2 z-50 w-[380px] max-h-[500px] bg-popover border border-border rounded-xl shadow-xl ring-1 ring-foreground/10 overflow-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95">
+      {/* Dropdown — rendered via portal so layout overflow-hidden cannot clip it */}
+      {isOpen && createPortal(
+        <div
+          ref={dropdownContentRef}
+          className="fixed z-[9999] w-[380px] max-h-[500px] bg-popover border border-border rounded-xl shadow-xl ring-1 ring-foreground/10 overflow-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95"
+          style={{
+            top: (dropdownRef.current?.getBoundingClientRect().bottom ?? 0) + 8,
+            left: (dropdownRef.current?.getBoundingClientRect().right ?? 380) - 380,
+          }}
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <h3 className="text-sm font-semibold text-foreground">
@@ -295,7 +307,8 @@ export default function NotificationBell() {
               ))
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

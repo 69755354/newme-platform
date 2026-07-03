@@ -99,7 +99,15 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | `src/components/DashboardErrorBoundary.tsx` | 全局 ErrorBoundary + Sentry captureException | — | T1-2 + T1-11 freeze |
 | `scripts/check-taskboard.sh` | TASKBOARD 验证（deploy Step 0） | 216 | 🟢 |
 | `scripts/check-spec.sh` | SPEC 新鲜度验证（deploy Step 0.5） | 65 | 🟢 2026-07-02 新建 |
+| `scripts/check-logs.sh` | deploy 前日志检查（health-check 冷却期） | — | 🟢 2026-07-03 |
+| `scripts/issue-coding-auth.py` | Coding Auth Gate 签名器 | — | 🟢 2026-07-03 |
 | `scripts/deploy.sh` | 6 步 deploy pipeline | 153 | 🟢 T4-3 重构 |
+| `src/app/(dashboard)/contracts/page.tsx` | Contracts 列表 + reject/revoke Dialog | 569 | 🟢 Dialog 改造 |
+| `src/app/(dashboard)/contracts/[id]/page.tsx` | Contract Detail + confirm/reject/revoke Dialog | 527 | 🟢 Dialog 改造 |
+| `src/app/(dashboard)/payments/page.tsx` | Payments 回款管理 + i18n | 589 | 🟢 i18n 完成 |
+| `src/app/(dashboard)/tasks/page.tsx` | Tasks 任务列表 + i18n | — | 🟢 i18n 完成 |
+| `src/components/NotificationBell.tsx` | 通知铃铛 + Portal fix + print styles | — | 🟢 2026-07-03 |
+| `src/lib/i18n/translations.ts` | i18n 词典（en/zh，含 payments/tasks keys） | — | 🟢 2026-07-03 |
 
 ---
 

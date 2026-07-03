@@ -194,6 +194,20 @@ fi
 echo "✅ Build succeeded"
 EVI_BUILD_STATUS="pass"
 
+# ── Step 3.5: Normalize build ownership ──────────────────────
+# deploy wrapper runs as root → .next is root-owned.
+# systemd service runs as ubuntu → must be ubuntu-readable.
+echo "--- Step 3.5/8: Normalize build ownership ---"
+if [ "$(id -u)" = "0" ]; then
+  chown -R ubuntu:ubuntu .next
+  find .next -type d -exec chmod 755 {} \;
+  find .next -type f -exec chmod 644 {} \;
+  echo "✅ .next ownership normalized to ubuntu:ubuntu"
+else
+  echo "ℹ️  Not running as root — skipping ownership normalization"
+fi
+echo ""
+
 # ── Step 4: Verify BUILD_ID ────────────────────────────────
 echo "--- Step 4/6: Verify BUILD_ID ---"
 if [ ! -f .next/BUILD_ID ]; then
@@ -207,7 +221,15 @@ if [ ! -f .next/BUILD_ID ]; then
   exit 1
 fi
 BUILD_ID=$(cat .next/BUILD_ID)
-echo "✅ BUILD_ID: $BUILD_ID"
+# Verify service user can read BUILD_ID
+if ! sudo -u ubuntu test -r .next/BUILD_ID; then
+  echo "❌ BUILD_ID not readable by ubuntu user (systemd service user)."
+  echo "   .next/ ownership: $(stat -c '%U:%G' .next/)"
+  EVI_BUILD_STATUS="fail"
+  EVI_RESULT="fail"
+  exit 1
+fi
+echo "✅ BUILD_ID: $BUILD_ID (readable by ubuntu)"
 
 # ── Step 5: Restart + Health check ─────────────────────────
 echo "--- Step 5/6: Restart service ---"

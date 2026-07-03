@@ -252,10 +252,19 @@ echo "--- Step 4/6: Swap into production ---"
 
 cd "$PROJECT_ROOT"
 
-# Stop service (downtime begins — ~3 seconds)
+# Stop service (downtime begins — ~3-5 seconds)
 echo "🛑 Stopping service..."
 sudo systemctl stop newme-platform.service
 sleep 1
+
+# Wait for port 3001 to be fully released (avoid EADDRINUSE)
+for i in 1 2 3 4 5; do
+  if ! ss -tlnp | grep -q ':3001 '; then
+    break
+  fi
+  echo "⏳ Waiting for port 3001 release (attempt $i)..."
+  sleep 1
+done
 
 # Swap: move old .next aside, bring new .next in
 echo "🔄 Swapping .next..."

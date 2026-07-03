@@ -80,6 +80,7 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | **control-plane root approval** — 手动 coding auth 需 root 审批 | `d826cbe` | 防止绕签名 gate |
 | **Command Center API 并行化** — 8 个 Supabase 查询改 Promise.all | `6cd01e9` | API 响应时间从串行 → 并行，减少 ~7 个 round-trip |
 | **Meta Pixel 条件加载** — 后台页面不加载 fbevents.js | `6dca992` `e7363fa` | 15 个后台路径（含子路由）不加载 Pixel 脚本，减少 JS 体积 |
+| **Bundle Analyzer** — `@next/bundle-analyzer` 安装（observe-only） | `e50a9c4` | `ANALYZE=true npm run build` 可生成 bundle 报告 |
 | **Ed25519 coding auth 强制** — commit + deploy gate 签名校验 | `acae40e` | 所有代码变更必须 Ed25519 签名 |
 
 ---

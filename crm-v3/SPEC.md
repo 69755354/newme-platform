@@ -6,11 +6,12 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `acae40e`）
-- **Branch**: `main` @ `acae40e`
+## 当前状态（写时 commit `6a6eb0a`）
+- **Build**: `mVr96pft3x5A23Udmcluf` (deploy v4.0 隔离构建)
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
 - **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
-- **上次更新**: 2026-07-04（对账三文件 + control-plane Ed25519 加固 + role fix）
+- **上次更新**: 2026-07-04（deploy v4.0 + xlsx lazy-load + P0 incident closure）
+- **事故**: 2026-07-04 deploy incident — 旧 deploy.sh 在生产 .next 原地构建导致停服 → v4.0 隔离构建修复（见 §四）
 
 ---
 
@@ -58,7 +59,30 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 ---
 
-## 三、2026-07-03 新增变更（对比 P1P1 真相源）
+## 事故：2026-07-04 Deploy Incident Closure
+
+**Root Cause:**
+旧 `deploy.sh` 在构建前停止生产服务 (`systemctl stop`)，然后在生产 `.next` 目录原地运行 `npm run build`。如果 Next.js 构建/OOM/TypeScript 检查/静态生成失败，`.next` 可能不完整（甚至无 BUILD_ID），服务无法重启，站点停服。
+
+**Fix — deploy.sh v4.0:**
+构建在 `/tmp/newme-build-$DEPLOY_ID` 隔离目录进行。生产 `.next` 在构建期间完全不触碰。只有 `.next/BUILD_ID` 验证通过、ubuntu 用户可读后，才执行 stop → swap → start（停机 ~5 秒）。
+
+**Defense Layers:**
+1. `guard-prod-build.sh` v2 — 允许 `/tmp/newme-build-*` 隔离构建，阻止直接生产构建
+2. `cp -al` 硬链接 — 构建目录复制 <1s
+3. 端口释放等待 — 消除 EADDRINUSE race condition
+
+**Key Commits:**
+- `77563c8` — deploy.sh v4.0 隔离构建
+- `2577e09` — guard-prod-build.sh v2
+- `6a6eb0a` — EADDRINUSE 端口释放等待
+- `57de43b` — cp -al 硬链接优化
+
+**Status: Closed.**
+
+---
+
+## 五、2026-07-03 新增变更（对比 P1P1 真相源）
 
 | 变更 | 提交 | 影响 |
 |------|------|------|

@@ -180,7 +180,7 @@ echo "📋 Copying project to build directory (hard links)..."
 rm -rf "$BUILD_DIR"
 cp -al "$PROJECT_ROOT/" "$BUILD_DIR/"
 # Clean up build-only artifacts from build dir (keeps production copy safe)
-rm -rf "$BUILD_DIR/.next" "$BUILD_DIR/.next.backup."* "$BUILD_DIR/.hermes-harness" "$BUILD_DIR/.hermes/deploy-in-progress" 2>/dev/null || true
+rm -rf "$BUILD_DIR/.next" "$BUILD_DIR/.next.backup."* "$BUILD_DIR/.hermes-harness" "$BUILD_DIR/.hermes/deploy-in-progress" "$BUILD_DIR/.hermes/IS_PRODUCTION" 2>/dev/null || true
 
 echo "✅ Project copied"
 

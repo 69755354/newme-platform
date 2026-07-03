@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REGRESSION_SCRIPT="$HOME/.hermes/scripts/crm-regression.py"
+REGRESSION_SCRIPT="/home/ubuntu/.hermes/scripts/crm-regression.py"
 
 echo "=== CRM Pre-Deploy Verification ==="
 python3 "$REGRESSION_SCRIPT" --pre-deploy

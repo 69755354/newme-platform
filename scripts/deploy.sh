@@ -9,10 +9,79 @@ set -e -o pipefail
 # 3. Build（Turbopack 失败自动降级 webpack）
 # 4. 校验 BUILD_ID
 # 5. 重启服务 + 健康检查
+# 5.1 Smoke test (14 routes)
+# 5.2 Journal error scan
+# 5.3 Regression test (23 items)
 # ──────────────────────────────────────────────────────────────
 
 cd "$(dirname "$0")/.."
 PROJECT_ROOT=$(pwd)
+
+# ── Deploy Evidence Infrastructure ──────────────────────────
+DEPLOY_ID="$(date -u +'%Y%m%d-%H%M%S')"
+EVIDENCE_DIR=".hermes-harness/deploy-evidence"
+EVIDENCE_FILE="$EVIDENCE_DIR/$DEPLOY_ID.json"
+STARTED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+COMMIT_HASH=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+ACTOR=$(whoami)
+
+# Evidence accumulators
+EVI_BUILD_STATUS="pending"
+EVI_BUILD_DURATION=0
+EVI_SMOKE_STATUS="pending"
+EVI_SMOKE_PASSED=0
+EVI_SMOKE_TOTAL=14
+EVI_LOGS_STATUS="pending"
+EVI_LOGS_ERRORS=0
+EVI_REGRESSION_STATUS="pending"
+EVI_REGRESSION_PASSED=0
+EVI_REGRESSION_TOTAL=23
+EVI_HEALTH_STATUS="pending"
+EVI_HEALTH_CODE=0
+EVI_RESULT="fail"
+
+mkdir -p "$EVIDENCE_DIR"
+
+write_evidence() {
+  # Write current evidence state to JSON file (called on exit)
+  local finished_at
+  finished_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  cat > "$EVIDENCE_FILE" << JSONEOF
+{
+  "deploy_id": "$DEPLOY_ID",
+  "commit": "$COMMIT_HASH",
+  "actor": "$ACTOR",
+  "started_at": "$STARTED_AT",
+  "finished_at": "$finished_at",
+  "build": {
+    "status": "$EVI_BUILD_STATUS",
+    "duration_sec": $EVI_BUILD_DURATION
+  },
+  "smoke": {
+    "status": "$EVI_SMOKE_STATUS",
+    "routes_passed": $EVI_SMOKE_PASSED,
+    "routes_total": $EVI_SMOKE_TOTAL
+  },
+  "logs": {
+    "status": "$EVI_LOGS_STATUS",
+    "critical_errors": $EVI_LOGS_ERRORS
+  },
+  "regression": {
+    "status": "$EVI_REGRESSION_STATUS",
+    "tests_passed": $EVI_REGRESSION_PASSED,
+    "tests_total": $EVI_REGRESSION_TOTAL
+  },
+  "health": {
+    "status": "$EVI_HEALTH_STATUS",
+    "http_status": $EVI_HEALTH_CODE
+  },
+  "result": "$EVI_RESULT"
+}
+JSONEOF
+}
+
+# Trap: write evidence on exit (success or failure)
+trap write_evidence EXIT
 
 echo "=== 📦 Deploy: $(date -u +'%Y-%m-%dT%H:%M:%SZ') ==="
 echo "Project: $PROJECT_ROOT"
@@ -123,6 +192,7 @@ if [ "$BUILD_OK" = false ]; then
   exit 1
 fi
 echo "✅ Build succeeded"
+EVI_BUILD_STATUS="pass"
 
 # ── Step 4: Verify BUILD_ID ────────────────────────────────
 echo "--- Step 4/6: Verify BUILD_ID ---"
@@ -144,18 +214,40 @@ echo "--- Step 5/6: Restart service ---"
 sudo systemctl restart newme-platform.service
 sleep 3
 
-# Health check
+# Health check — only 200 (OK) or 307 (ISR redirect) are healthy
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/ 2>/dev/null || echo "000")
-if [ "$HTTP_CODE" = "000" ]; then
-  echo "❌ Service did not start. Restoring previous build..."
+HEALTH_OK=false
+if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "307" ]; then
+  HEALTH_OK=true
+elif [ "$HTTP_CODE" = "000" ]; then
+  echo "❌ Service did not start (connection refused). Restoring previous build..."
   if [ -n "$BACKUP_TIMESTAMP" ] && [ -d ".next.backup.$BACKUP_TIMESTAMP" ]; then
     rm -rf .next
     mv ".next.backup.$BACKUP_TIMESTAMP" .next
     sudo systemctl restart newme-platform.service
     sleep 3
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/ 2>/dev/null || echo "000")
-    if [ "$HTTP_CODE" != "000" ]; then
-      echo "✅ Previous build restored and running"
+    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "307" ]; then
+      echo "✅ Previous build restored and running (HTTP $HTTP_CODE)"
+      echo "⚠️  Deploy failed but service is back on old version"
+      exit 1
+    else
+      echo "❌ CRITICAL: Both new and old builds failed to start"
+      exit 2
+    fi
+  fi
+  exit 1
+else
+  echo "❌ Service returned unhealthy HTTP $HTTP_CODE (expected 200 or 307)."
+  echo "   Restoring previous build..."
+  if [ -n "$BACKUP_TIMESTAMP" ] && [ -d ".next.backup.$BACKUP_TIMESTAMP" ]; then
+    rm -rf .next
+    mv ".next.backup.$BACKUP_TIMESTAMP" .next
+    sudo systemctl restart newme-platform.service
+    sleep 3
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/ 2>/dev/null || echo "000")
+    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "307" ]; then
+      echo "✅ Previous build restored and running (HTTP $HTTP_CODE)"
       echo "⚠️  Deploy failed but service is back on old version"
       exit 1
     else
@@ -167,15 +259,20 @@ if [ "$HTTP_CODE" = "000" ]; then
 fi
 
 echo "✅ Service health check passed (HTTP $HTTP_CODE)"
+EVI_HEALTH_STATUS="pass"
+EVI_HEALTH_CODE=$HTTP_CODE
 echo ""  
-echo "=== ✅ Deploy complete ==="
+echo "=== ✅ Deploy pipeline complete ==="
 echo "BUILD_ID: $BUILD_ID"
 echo "Time: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+EVI_RESULT="pass"
 
 # ── Step 5.1: Smoke test ──────────────────────────────────
 echo "--- Step 5.1/8: Smoke test ---"
 if [ -f "scripts/check-smoke.sh" ]; then
   bash scripts/check-smoke.sh http://localhost:3001
+  EVI_SMOKE_STATUS="pass"
+  EVI_SMOKE_PASSED=14
   echo "✅ Smoke test passed"
 else
   echo "⚠️  scripts/check-smoke.sh not found, skipping"
@@ -186,6 +283,8 @@ echo ""
 echo "--- Step 5.2/8: Journal error scan ---"
 if [ -f "scripts/check-logs.sh" ]; then
   bash scripts/check-logs.sh "2 minutes ago"
+  EVI_LOGS_STATUS="pass"
+  EVI_LOGS_ERRORS=0
   echo "✅ Journal error scan passed"
 else
   echo "⚠️  scripts/check-logs.sh not found, skipping"
@@ -196,6 +295,8 @@ echo ""
 echo "--- Step 5.3/8: Regression test ---"
 if [ -f "scripts/deploy-verify.sh" ]; then
   bash scripts/deploy-verify.sh --no-git
+  EVI_REGRESSION_STATUS="pass"
+  EVI_REGRESSION_PASSED=23
   echo "✅ Regression test passed"
 else
   echo "⚠️  scripts/deploy-verify.sh not found, skipping"

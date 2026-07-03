@@ -266,6 +266,13 @@ for i in 1 2 3 4 5; do
   sleep 1
 done
 
+# Hard kill any remaining process on port 3001 (defense against zombie children)
+if ss -tlnp | grep -q ':3001 '; then
+  echo "⚠️  Port 3001 still held — force killing..."
+  sudo fuser -k 3001/tcp 2>/dev/null || true
+  sleep 1
+fi
+
 # Swap: move old .next aside, bring new .next in
 echo "🔄 Swapping .next..."
 rm -rf .next

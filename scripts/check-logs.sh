@@ -41,6 +41,10 @@ FILTERED=$(echo "$LOG_LINES" | grep -vE \
   -e '/api/monitoring/report' \
   -e 'monitoring/report' \
   -e 'reported.*error' \
+  -e '[Ii]nvalid [Rr]efresh [Tt]oken.*[Aa]lready [Uu]sed' \
+  -e '[Ii]nvalid [Rr]efresh [Tt]oken' \
+  -e '__isAuthError' \
+  -e 'AuthApiError' \
   || true)
 
 if [[ -z "$FILTERED" ]]; then

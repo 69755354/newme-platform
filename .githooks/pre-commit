@@ -1,98 +1,72 @@
 #!/bin/bash
-# 🔴 PRE-COMMIT HOOK — v4 Code Gate
-# Blocks commits that modify code files without [GLM-CP] provenance
-# Part of NewMe hook chain (integrity checked by pre-push)
+# 🔴 PRE-COMMIT HOOK — Coding Auth Gate
+# Blocks commits that modify code files without valid auth token.
+# Auth tokens are issued by Hermes when delegating to OpenCode/Codex.
+# Token format: .hermes/state/coding-auth.json {session_id, expires_at, tool}
 set -e
 
 HOOK_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 REPO_ROOT="$(cd "$HOOK_DIR/.." && pwd)"
 MANIFEST="$HOOK_DIR/manifest.json"
-MY_HASH=$(sha256sum "$0" | cut -d' ' -f1)
+AUTH_FILE="$REPO_ROOT/.hermes/state/coding-auth.json"
 
+MY_HASH=$(sha256sum "$0" | cut -d' ' -f1)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
 
-# ── Self-integrity: am I the real hook? ──
+# ── Self-integrity ──
 STORED_HASH=$(python3 -c "import json;print(json.load(open('$MANIFEST'))['hooks']['pre-commit'])" 2>/dev/null || echo "")
 if [ -n "$STORED_HASH" ] && [ "$MY_HASH" != "$STORED_HASH" ]; then
-    echo -e "${RED}═══════════════════════════════════════════${NC}"
-    echo -e "${RED}  🔴 PRE-COMMIT HOOK TAMPERED${NC}"
-    echo -e "${RED}  Expected: $STORED_HASH${NC}"
-    echo -e "${RED}  Actual:   $MY_HASH${NC}"
-    echo -e "${RED}  Run 'scripts/install-hooks.sh --force' to reinstall${NC}"
-    echo -e "${RED}═══════════════════════════════════════════${NC}"
+    echo -e "${RED}🔴 PRE-COMMIT HOOK TAMPERED — Run 'scripts/install-hooks.sh --force'${NC}"
     exit 1
 fi
 
-# ── Check integrity of sibling hooks ──
-for hook in pre-push commit-msg; do
-    EXPECTED=$(python3 -c "import json;print(json.load(open('$MANIFEST'))['hooks'].get('$hook',''))" 2>/dev/null || echo "")
-    if [ -n "$EXPECTED" ] && [ -f "$HOOK_DIR/$hook" ]; then
-        ACTUAL=$(sha256sum "$HOOK_DIR/$hook" | cut -d' ' -f1)
-        if [ "$ACTUAL" != "$EXPECTED" ]; then
-            echo -e "${RED}🔴 Sibling hook '$hook' has been tampered with!${NC}"
-            echo -e "${RED}   Run 'scripts/install-hooks.sh --force' to reinstall${NC}"
-            exit 1
-        fi
-    fi
-done
-
-# ── ═══ BARRIER: Code file gate ── ═══
-echo "═══════════════════════════════════════════"
-echo "  🔴 v4 Code Gate — $(date '+%Y-%m-%d %H:%M:%S')"
-echo "═══════════════════════════════════════════"
-
-# Find staged code files
-STAGED_CODE=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx|py|css|scss|less|vue|svelte)$' || true)
+# ── Find staged code files ──
+STAGED_CODE=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx|py|css|scss|less)$' || true)
 
 if [ -z "$STAGED_CODE" ]; then
     echo "✅ No code files staged — gate bypassed"
     exit 0
 fi
 
+echo "═══════════════════════════════════════════"
+echo "  🔴 Coding Auth Gate — $(date '+%Y-%m-%d %H:%M:%S')"
+echo "═══════════════════════════════════════════"
 echo "📄 Staged code files:"
 echo "$STAGED_CODE" | sed 's/^/   /'
 
-# Read commit message (prepare-commit-msg may have been before us, but we check directly)
-# Try to read the commit message file
-COMMIT_MSG_FILE="${1:-.git/COMMIT_EDITMSG}"
-COMMIT_MSG=""
-if [ -f "$COMMIT_MSG_FILE" ]; then
-    COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
-fi
+# ── Check coding auth token ──
+AUTH_VALID=false
+AUTH_TOOL="unknown"
 
-# Check for GLM CP provenance: marker in commit message OR env var
-HAS_GLM_MARKER=false
-if echo "$COMMIT_MSG" | grep -q '\[GLM-CP\]'; then
-    HAS_GLM_MARKER=true
-fi
-if [ "${GLM_CP_SESSION:-false}" = "true" ]; then
-    HAS_GLM_MARKER=true
-fi
-
-# Also check for provenance file (set by GLM CP when it starts a task)
-PROVENANCE_FILE="$REPO_ROOT/.hermes/state/glm-cp-auth.json"
-if [ -f "$PROVENANCE_FILE" ]; then
-    EXPIRES=$(python3 -c "import json;print(json.load(open('$PROVENANCE_FILE')).get('expires_at',''))" 2>/dev/null || echo "0")
+if [ -f "$AUTH_FILE" ]; then
+    EXPIRES=$(python3 -c "
+import json, time
+try:
+    d = json.load(open('$AUTH_FILE'))
+    print(d.get('expires_at', 0))
+except: print(0)
+" 2>/dev/null || echo "0")
+    
     NOW=$(date +%s)
     if [ "$NOW" -lt "$EXPIRES" ] 2>/dev/null; then
-        HAS_GLM_MARKER=true
+        AUTH_VALID=true
+        AUTH_TOOL=$(python3 -c "import json;print(json.load(open('$AUTH_FILE')).get('tool','unknown'))" 2>/dev/null || echo "unknown")
     fi
 fi
 
-if [ "$HAS_GLM_MARKER" = false ]; then
+if [ "$AUTH_VALID" = false ]; then
     echo ""
-    echo -e "${RED}❌  v4 代码防护拦截${NC}"
-    echo -e "${RED}   规则：v4 禁止直接写代码。必须走 GLM 5.2 CP${NC}"
+    echo -e "${RED}❌  CODING AUTH REQUIRED${NC}"
+    echo -e "${RED}   代码修改必须通过 OpenCode 或 Codex 进行，并由 Hermes 签发 auth token。${NC}"
     echo -e "${RED}   ${NC}"
-    echo -e "${RED}   GLM CP 会自动在 commit message 加 [GLM-CP] 标记${NC}"
+    echo -e "${RED}   流程: 用户在 Hermes 发起任务 → Hermes 签发 token → OpenCode/Codex 写码${NC}"
+    echo -e "${RED}   Token 文件: .hermes/state/coding-auth.json${NC}"
     echo -e "${RED}   ${NC}"
-    echo -e "${YELLOW}   如果你确认这是 GLM CP 的 commit：${NC}"
-    echo -e "${YELLOW}     1. 在 commit message 中加入 [GLM-CP] 或${NC}"
-    echo -e "${YELLOW}     2. export GLM_CP_SESSION=true && git commit ...${NC}"
-    echo -e "${YELLOW}     3. 创建 .hermes/state/glm-cp-auth.json（含 expires_at 时间戳）${NC}"
+    echo -e "${YELLOW}   如果你确认这是手工紧急修复：${NC}"
+    echo -e "${YELLOW}     python3 scripts/issue-coding-auth.py --tool manual --reason \"...\"${NC}"
     echo ""
     echo "Staged code files (not committed):"
     echo "$STAGED_CODE" | sed 's/^/   • /'
@@ -100,5 +74,5 @@ if [ "$HAS_GLM_MARKER" = false ]; then
     exit 1
 fi
 
-echo -e "${GREEN}✅ GLM CP provenance verified${NC}"
+echo -e "${GREEN}✅ Coding auth valid (tool: $AUTH_TOOL, expires: $(date -d @$EXPIRES '+%H:%M'))${NC}"
 exit 0

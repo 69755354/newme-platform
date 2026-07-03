@@ -78,6 +78,8 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | **Coding Auth Gate** — pre-commit 升级为签名验证 | `86549cb` | 代码修改必须通过授权 |
 | **role resolution fix** — useLeadsData 防 admin 降级为 sales | `3f0a8ee` | stale profile 数据不再导致权限降级 |
 | **control-plane root approval** — 手动 coding auth 需 root 审批 | `d826cbe` | 防止绕签名 gate |
+| **Command Center API 并行化** — 8 个 Supabase 查询改 Promise.all | `6cd01e9` | API 响应时间从串行 → 并行，减少 ~7 个 round-trip |
+| **Meta Pixel 条件加载** — 后台页面不加载 fbevents.js | `6dca992` `e7363fa` | 15 个后台路径（含子路由）不加载 Pixel 脚本，减少 JS 体积 |
 | **Ed25519 coding auth 强制** — commit + deploy gate 签名校验 | `acae40e` | 所有代码变更必须 Ed25519 签名 |
 
 ---

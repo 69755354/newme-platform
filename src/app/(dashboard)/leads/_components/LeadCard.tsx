@@ -313,37 +313,39 @@ export function LeadCard({
           <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
             <span>{SOURCE_ICONS[lead.source] || "📋"} {t(`sourceLabels.${lead.source}`) || lead.source}</span>
             {lead.assigned_to && (
-              <span className="relative inline-flex items-center gap-1">
-                <User className="w-3 h-3" />
-                <span>{userNameMap[lead.assigned_to] || t("leads.unassigned")}</span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setReassignLeadId(reassignLeadId === lead.id ? null : lead.id); }}
-                  className="p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors ml-0.5"
-                  title="Reassign"
-                >
-                  ↔️
-                </button>
-                {reassignLeadId === lead.id && (
-                  <div className="absolute top-full left-0 mt-1 w-48 z-50 bg-muted border border-border rounded-lg shadow-xl py-1 max-h-40 overflow-y-auto"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {reassigning && <div className="px-3 py-2 text-xs text-muted-foreground">Reassigning...</div>}
-                    {salesUsers.map((u) => (
-                      <button key={u.id}
-                        onClick={() => onReassign(u.id)}
-                        className={cn(
-                          "w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-muted transition-colors",
-                          lead.assigned_to === u.id ? "text-copper-400" : "text-foreground"
-                        )}
-                      >
-                        <span className={cn("w-1.5 h-1.5 rounded-full", lead.assigned_to === u.id ? "bg-copper-400" : "bg-gray-600")} />
-                        <span className="truncate">{u.full_name || u.email}</span>
-                      </button>
-                    ))}
-                    {salesUsers.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">No users</p>}
-                  </div>
-                )}
+              <>
+              <span className="inline-flex items-center gap-1">
+              <User className="w-3 h-3" />
+              <span>{userNameMap[lead.assigned_to] || t("leads.unassigned")}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); setReassignLeadId(reassignLeadId === lead.id ? null : lead.id); }}
+                className="p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors ml-0.5"
+                title="Reassign"
+              >
+                ↔️
+              </button>
               </span>
+              {reassignLeadId === lead.id && (
+              <div className="w-full mt-1 z-50 bg-muted border border-border rounded-lg shadow-xl py-1 max-h-40 overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {reassigning && <div className="px-3 py-2 text-xs text-muted-foreground">正在转移...</div>}
+                {salesUsers.map((u) => (
+                  <button key={u.id}
+                    onClick={() => onReassign(u.id)}
+                    className={cn(
+                      "w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-muted transition-colors",
+                      lead.assigned_to === u.id ? "text-copper-400" : "text-foreground"
+                    )}
+                  >
+                    <span className={cn("w-1.5 h-1.5 rounded-full", lead.assigned_to === u.id ? "bg-copper-400" : "bg-gray-600")} />
+                    <span className="truncate">{u.full_name || u.email}</span>
+                  </button>
+                ))}
+                {salesUsers.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">无用户</p>}
+              </div>
+              )}
+              </>
             )}
           </div>
           <div className="flex items-center gap-1">

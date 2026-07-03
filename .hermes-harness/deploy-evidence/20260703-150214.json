@@ -1,0 +1,30 @@
+{
+  "deploy_id": "20260703-150214",
+  "commit": "d87379fd8274069b15a8f38a753bba0a7cbc0df0",
+  "actor": "ubuntu",
+  "started_at": "2026-07-03T15:02:14Z",
+  "finished_at": "2026-07-03T15:02:30Z",
+  "build": {
+    "status": "pending",
+    "duration_sec": 0
+  },
+  "smoke": {
+    "status": "pending",
+    "routes_passed": 0,
+    "routes_total": 14
+  },
+  "logs": {
+    "status": "pending",
+    "critical_errors": 0
+  },
+  "regression": {
+    "status": "pending",
+    "tests_passed": 0,
+    "tests_total": 23
+  },
+  "health": {
+    "status": "pending",
+    "http_status": 0
+  },
+  "result": "fail"
+}

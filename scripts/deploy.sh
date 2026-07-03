@@ -170,8 +170,7 @@ fi
 # ── Step 3: Build ──────────────────────────────────────────
 # Build conflicts with a running production server (port 3001 + .next dir).
 # Auto-stop the service, build, then Step 5 restarts it.
-# Guard in package.json still protects against accidental `npm run build`
-# while the server is up; deploy.sh passes FORCE_BUILD=1 to bypass it.
+# guard-prod-build.sh authorizes this via .hermes/deploy-in-progress lock.
 echo "--- Step 3/6: Build ---"
 
 # Auto-stop the production service so the build guard in package.json can pass
@@ -192,6 +191,11 @@ else
 fi
 
 rm -rf .next
+
+# 🔒 Signal to guard-prod-build.sh that this build is authorized by deploy.sh
+DEPLOY_LOCK=".hermes/deploy-in-progress"
+trap "rm -f $DEPLOY_LOCK" EXIT
+touch "$DEPLOY_LOCK"
 
 FORCE_BUILD=1 NODE_OPTIONS="--max_old_space_size=2048" npm run build 2>&1 && BUILD_OK=true || BUILD_OK=false
 

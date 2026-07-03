@@ -316,8 +316,46 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 ### 下一轮优化顺序（解冻后）
 
-1. PostHog 条件加载 / lazy load（需确认哪些页面必须埋点）
-2. @base-ui import 检查（tree-shaking）
-3. Recharts 动态加载（/analytics 已路由分离，进一步拆分）
-4. 路由级 bundle 分析细化
-5. Supabase auth client 拆分评估
+#### #1 PostHog 条件加载（-195 KB on /login, /change-password）
+
+**产品决策**：`/login` 不需要 PostHog pageview。CRM 是内部系统，login 访问量不是核心经营指标。真正重要的是 dashboard 内部行为（leads 查看、create/update、follow-up、quote/contract、boss dashboard）。
+
+**技术方案**：路径判断 + dynamic import Inner Provider
+
+**文件拆分**：
+
+```
+src/components/PostHogProvider.tsx      ← 改：只做 pathname 判断 + dynamic import
+src/components/PostHogProviderInner.tsx ← 新建：实际 PostHog 初始化
+```
+
+| 文件 | 允许 import | 禁止 import |
+|------|------------|------------|
+| `PostHogProvider.tsx` | `usePathname`, `next/dynamic`, `PUBLIC_PATHS` | `posthog-js`, `posthog-js/react` |
+| `PostHogProviderInner.tsx` | `posthog-js`, `posthog-js/react` | — |
+
+**逻辑**：
+```
+PUBLIC_PATHS = ["/login", "/change-password"]
+
+if (PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + "/")))
+  return <>{children}</>                              // 不加载 PostHog
+else
+  return <PostHogProviderInner>{children}</PostHogProviderInner>  // dynamic import
+```
+
+**不改动**：埋点事件、login 逻辑、auth 逻辑、layout 结构、CSP、Supabase
+
+**验收**：
+- [ ] `npm run build` PASS
+- [ ] `/login` Network 面板无 posthog 请求
+- [ ] `/login` bundle analyzer 不含 posthog-js
+- [ ] `/leads` Network 面板有 posthog 请求
+- [ ] `/leads` 页面正常
+- [ ] Sentry 无新增错误
+- [ ] PostHog dashboard 事件量无显著下降
+
+#### #2 @base-ui import 检查（tree-shaking）
+#### #3 Recharts 动态加载
+#### #4 路由级 bundle 分析细化
+#### #5 Supabase auth client 拆分评估

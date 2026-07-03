@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense } from "react";
+import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { createClient } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -29,6 +29,23 @@ function LeadsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t, lang } = useLanguage();
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Keyboard navigation for kanban board
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+        e.preventDefault();
+        const dir = e.key === 'ArrowLeft' ? -1 : 1;
+        container.scrollBy({ left: dir * 310, behavior: 'smooth' });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState(searchParams.get("stage") || "all");
@@ -295,6 +312,7 @@ function LeadsContent() {
         <div className="text-center text-muted-foreground py-16 text-sm">{t("common.loading")}</div>
       ) : (
         <LeadsKanbanBoard
+          ref={scrollContainerRef}
           stages={PIPELINE_STAGES}
           columns={columns}
           draggingLeadId={draggingLeadId}

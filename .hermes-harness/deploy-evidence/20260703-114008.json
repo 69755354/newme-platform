@@ -1,0 +1,30 @@
+{
+  "deploy_id": "20260703-114008",
+  "commit": "1e6c124a7812a91c53a87d8f58945171ebda771c",
+  "actor": "root",
+  "started_at": "2026-07-03T11:40:08Z",
+  "finished_at": "2026-07-03T11:41:34Z",
+  "build": {
+    "status": "pass",
+    "duration_sec": 0
+  },
+  "smoke": {
+    "status": "pass",
+    "routes_passed": 14,
+    "routes_total": 14
+  },
+  "logs": {
+    "status": "pass",
+    "critical_errors": 0
+  },
+  "regression": {
+    "status": "pass",
+    "tests_passed": 23,
+    "tests_total": 23
+  },
+  "health": {
+    "status": "pass",
+    "http_status": 307
+  },
+  "result": "pass"
+}

@@ -13,7 +13,9 @@ import { DashboardScrollContainer } from "@/components/DashboardScrollContainer"
 import { useLeadsData } from "./_hooks/useLeadsData";
 import { useLeadMutations } from "./_hooks/useLeadMutations";
 import { useLeadsFiltering } from "./_hooks/useLeadsFiltering";
-import { LeadsHeader } from "./_components/LeadsHeader";
+import SubNavTabs from "@/components/SubNavTabs";
+import { Plus, TrendingUp, Upload } from "lucide-react";
+import { fmtAED } from "./_utils/format";
 import { LeadsFilters } from "./_components/LeadsFilters";
 import { LeadsBulkTransferBar } from "./_components/LeadsBulkTransferBar";
 import { LeadsPipelineSummary } from "./_components/LeadsPipelineSummary";
@@ -195,28 +197,44 @@ function LeadsContent() {
   const totalPipeline = filtered.filter(l => !l.final_status).reduce((sum, l) => sum + (l.quotation_value || 0), 0);
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      {/* T3-3 step 8: SubNavTabs + page-title sticky div extracted to LeadsHeader.
-          Returns Fragment so DOM is byte-identical: SubNavTabs stays outside
-          DashboardScrollContainer, page-title div stays inside. */}
-      <LeadsHeader
-        activeCount={activeCount}
-        totalPipeline={totalPipeline}
-        showPipelineSummary={showPipelineSummary}
-        setShowPipelineSummary={setShowPipelineSummary}
-        setShowQuickCreate={setShowQuickCreate}
-        setShowImport={setShowImport}
+    <DashboardScrollContainer className="p-4">
+      <SubNavTabs
+        items={[
+          { href: "/leads", labelKey: "leads.subnavAllLeads", iconName: "users" },
+          { href: "/ads", labelKey: "leads.subnavAdAnalytics", iconName: "megaphone" },
+        ]}
       />
-      {/* T2-4: 锚定功能卡片 — 整页滚动时关键控件可见
-          DashboardScrollContainer 建立 inner scroll 上下文，sticky 元素
-          (page-title z-20 / filter-bar z-10) 才能正确锚定。 */}
-      <DashboardScrollContainer className="p-4" allowHorizontalScroll={true}>
-      {/* filter-bar sticky: pipeline summary (column header) + 筛选行
-          锚定在 page-title 下方 — 滚下去也能改筛选条件 */}
+      {/* page-title sticky: h1 + action buttons */}
+      <div
+        data-sticky-region="page-title"
+        className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b -mx-4 px-4 py-2"
+      >
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">{t("leads.title")}</h1>
+            <p className="text-muted-foreground text-sm mt-0.5">{t("leads.activePipeline").replace("{count}", String(activeCount)).replace("{value}", fmtAED(totalPipeline) || "—")}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowPipelineSummary(!showPipelineSummary)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+              <TrendingUp className="w-3.5 h-3.5" />{t("leads.pipelineOverview")}
+            </button>
+            <button onClick={() => setShowQuickCreate(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/85 transition-colors">
+              <Plus className="w-3.5 h-3.5" />{t("common.create")}
+            </button>
+            <button onClick={() => setShowImport(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+              <Upload className="w-3.5 h-3.5" />{t("leads.importBtn")}
+            </button>
+          </div>
+        </div>
+      </div>
+      {/* filter-bar sticky: pipeline summary + filters */}
       <div
         data-sticky-region="filter-bar"
         className="sticky z-10 bg-background/95 backdrop-blur-sm border-b -mx-4 px-4 py-2 space-y-3"
-        style={{ top: 52 }}
+        style={{ top: 68 }}
       >
       {/* Pipeline summary bar — T3-3 step 13: 9-stage clickable summary
           grid extracted to LeadsPipelineSummary. Same DOM (the grid +
@@ -268,14 +286,9 @@ function LeadsContent() {
         salesUsers={salesUsers}
         filteredCount={filtered.length}
       />
-
-      {/* Board — T3-3 step 14: the success-branch kanban grid extracted
-          to LeadsKanbanBoard. The page still owns the error/loading
-          branches (ErrorState / loading placeholder) because those are
-          ambient fall-throughs that don't belong in any one stage.
-          All LeadCard props + drag-drop wiring now route through the
-          new component. Behaviour identical: same column header, same
-          drop-zone ring, same empty-column em-dash, same dragstart. */}
+      </div>
+      {/* KanbanBoard — OUTSIDE filter-bar sticky div.
+          Has its own overflow-x-auto for horizontal kanban scroll. */}
       {error ? (
         <ErrorState message={error} onRetry={fetchLeads} />
       ) : loading ? (
@@ -314,7 +327,6 @@ function LeadsContent() {
           t={t}
         />
       )}
-      </div>
       {/* T3-3 step 10: bulk-transfer-bar sticky extracted to LeadsBulkTransferBar.
           Visibility gate (selectedCount > 0 AND role admin/boss) is now inside
           the component, matching the original conditional. All handlers
@@ -337,7 +349,6 @@ function LeadsContent() {
       <QuickCreateLeadDialog open={showQuickCreate} onOpenChange={setShowQuickCreate} onCreated={fetchLeads} />
       <ExcelImportDialog open={showImport} onOpenChange={setShowImport} onImported={fetchLeads} />
     </DashboardScrollContainer>
-    </div>
   );
 }
 

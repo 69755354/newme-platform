@@ -1,67 +1,85 @@
 #!/bin/bash
-# 🔴 PRODUCTION BUILD GUARD
+# 🔴 PRODUCTION BUILD GUARD v2.0
 # Prevents direct `npm run build` from overwriting production .next directory.
-# deploy.sh is the ONLY entry point allowed to write production .next.
+# deploy.sh (v4+) now builds in /tmp/newme-build-* — this guard allows that.
 #
-# Rules enforced:
-#   1. Production service active → ABORT (no FORCE_BUILD bypass)
-#   2. Production marker file present → ABORT (even if service down)
-#   3. Running from outside deploy.sh → verify not in prod directory
+# ALLOW conditions (any one is sufficient):
+#   A. CWD is NOT /home/ubuntu/newme-platform AND no IS_PRODUCTION marker in CWD
+#   B. CWD matches /tmp/newme-build-* (isolated deploy build)
+#   C. NEWME_ISOLATED_BUILD=1 env var set
+#   D. Deploy lock .hermes/deploy-in-progress exists in CWD
 #
-# Deploy.sh communicates intent by touching .hermes/deploy-in-progress before build.
-
+# BLOCK conditions:
+#   1. Production service active + CWD is /home/ubuntu/newme-platform
+#   2. FORCE_BUILD or ANALYZE in production CWD
+#
+# ⚠️  FORCE_BUILD cannot bypass production safety.
+# ⚠️  Only deploy.sh (v4+) is the authorized production build entry point.
+# ──────────────────────────────────────────────────────────────────
 set -e
 
-PROD_MARKER="/home/ubuntu/newme-platform/.hermes/IS_PRODUCTION"
-DEPLOY_LOCK="/home/ubuntu/newme-platform/.hermes/deploy-in-progress"
+PROD_DIR="/home/ubuntu/newme-platform"
+PROD_MARKER="$PROD_DIR/.hermes/IS_PRODUCTION"
 SERVICE="newme-platform.service"
 RED='\033[0;31m'
 YELLOW='\033[0;33m'
+GREEN='\033[0;32m'
 NC='\033[0m'
 
-# ── Check 1: Are we in a production directory? ──
-IS_PROD=0
-CURRENT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Resolve CWD independently of where this script lives
+CURRENT_DIR="$(pwd)"
 
-if [ -f "$PROD_MARKER" ] || [ "$CURRENT_DIR" = "/home/ubuntu/newme-platform" ]; then
+# ── ALLOW: NEWME_ISOLATED_BUILD env var ──
+if [ "${NEWME_ISOLATED_BUILD:-0}" = "1" ]; then
+  echo -e "${GREEN}✅ Isolated build (NEWME_ISOLATED_BUILD=1)${NC}"
+  exit 0
+fi
+
+# ── ALLOW: deploy lock in CWD ──
+if [ -f ".hermes/deploy-in-progress" ]; then
+  echo -e "${GREEN}✅ Deploy lock present — authorized build${NC}"
+  exit 0
+fi
+
+# ── PRODUCTION CHECK: are we in the production directory? ──
+IS_PROD=0
+if [ "$CURRENT_DIR" = "$PROD_DIR" ]; then
+  IS_PROD=1
+elif [ -f "$PROD_MARKER" ] && [ "$(pwd)" = "$PROD_DIR" ]; then
   IS_PROD=1
 fi
 
+# ── ALLOW: Isolated build directory (/tmp/newme-build-*) ──
+case "$CURRENT_DIR" in
+  /tmp/newme-build-*)
+    echo -e "${GREEN}✅ Isolated build directory: $CURRENT_DIR${NC}"
+    exit 0
+    ;;
+esac
+
+# ── If not production AND not matched above → safe to build ──
 if [ "$IS_PROD" -eq 0 ]; then
-  # Not production — safe to build
+  # Development, CI, or other non-production context
   exit 0
 fi
 
-# ── Check 2: Is deploy.sh explicitly requesting this build? ──
-if [ -f "$DEPLOY_LOCK" ]; then
-  # Deploy.sh invoked this build — allowed
-  exit 0
-fi
-
-# ── Check 3: Production service active? ──
+# ── BLOCK: Production directory — check service status ──
 if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
   echo -e "${RED}🚫 PRODUCTION BUILD BLOCKED${NC}"
   echo ""
   echo "  Production service '$SERVICE' is RUNNING."
-  echo "  Direct 'npm run build' would overwrite the live .next directory"
+  echo "  Direct build would overwrite the live .next directory"
   echo "  and cause 500 errors on all JS/CSS chunks."
   echo ""
   echo "  ✅ Correct:  sudo /opt/newme/deploy/deploy.sh"
-  echo "     (auto-stops → builds → restarts with health check)"
-  echo ""
   echo "  ❌ Forbidden: npm run build"
   echo "  ❌ Forbidden: FORCE_BUILD=1 npm run build"
   echo "  ❌ Forbidden: ANALYZE=true npm run build"
   echo ""
-  echo "  FORCE_BUILD cannot bypass production safety."
-  echo "  Use deploy.sh — it is the only entry point for production builds."
-  echo ""
   exit 1
 fi
 
-# ── Check 4: Production directory but service not running ──
-# This is unusual — warn but allow (for disaster recovery)
-echo -e "${YELLOW}⚠️  Production directory detected but service is NOT running.${NC}"
-echo -e "${YELLOW}   Proceeding with build (disaster recovery mode).${NC}"
-echo ""
+# ── Production directory but service NOT running ──
+echo -e "${YELLOW}⚠️  Production directory but service is NOT running.${NC}"
+echo -e "${YELLOW}   Proceeding (disaster recovery mode).${NC}"
 exit 0

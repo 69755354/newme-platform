@@ -6,11 +6,11 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `e20291c`）
-- **Branch**: `main` @ `e20291c`
+## 当前状态（写时 commit `acae40e`）
+- **Branch**: `main` @ `acae40e`
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
 - **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
-- **上次更新**: 2026-07-03 晚间（kanban-merge + 3 个 UI 修复 + deploy gate）
+- **上次更新**: 2026-07-04（对账三文件 + control-plane Ed25519 加固 + role fix）
 
 ---
 
@@ -76,6 +76,9 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | **NotificationBell** — Portal + print styles | `7f58969` | scroll chain 修复 |
 | **deploy gate** — 冒烟+日志+回归测试集成 | `212833b` | deploy.sh 增加 3 步验证 |
 | **Coding Auth Gate** — pre-commit 升级为签名验证 | `86549cb` | 代码修改必须通过授权 |
+| **role resolution fix** — useLeadsData 防 admin 降级为 sales | `3f0a8ee` | stale profile 数据不再导致权限降级 |
+| **control-plane root approval** — 手动 coding auth 需 root 审批 | `d826cbe` | 防止绕签名 gate |
+| **Ed25519 coding auth 强制** — commit + deploy gate 签名校验 | `acae40e` | 所有代码变更必须 Ed25519 签名 |
 
 ---
 
@@ -166,6 +169,8 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 - **kanban-merge** ✅ 完成（`d87379f` — pipeline 交互特性移植到 leads）
 - **LeadCard UI 修复** ✅ 3 commits（`83bc8a9` shrink-0 + `8a653dd` dropdown overflow + `e20291c` 删除按钮挤出）
 - **scroll fix** ✅ 完成（`248e987` — KanbanBoard 移出 filter-bar）
+- **role resolution fix** ✅ 完成（`3f0a8ee` — useLeadsData admin 降级防护）
+- **control-plane Ed25519 加固** ✅ 完成（`d826cbe` root approval + `acae40e` 签名强制）
 
 **剩余主线工作（MoA 范围）**：
 - T3-1~T3-4 ✅ 全部完成（4/4 100%）

@@ -1,5 +1,5 @@
 # TASKBOARD.md — Machine-Verifiable Task Tracking (本地工具脚本真相源)
-# Last updated: 2026-07-01 14:05 CST (commit 3eb6088)
+# Last updated: 2026-07-04 (commit acae40e)
 # Owner: MoA Tier 1 Technical Debt
 # ⚠️ 2026-07-01 v3.1 升级：所有任务/规范/审计/运维记录已合并到 COS
 #    crm-v3/v3.1/v3.1 P1P1计划0629.txt (4990 → 5151 行，含今日全部变更)
@@ -66,7 +66,7 @@ Blocked by Tier 1 completion. Do NOT start until all Tier 1 = ✅.
 || T2-3 | P-5: Empty stage visibility | Default show empty stages + collapse toggle button | `showEmptyStages` default = true, toggle button exists | ✅ | 2026-07-01 |
 || T2-4 | 锚定功能卡片 (sticky headers/filter/action bar) — 2026-07-01 新立 | 长页面滚动时 filter/标题/搜索/操作栏跟随屏幕 | leads/page.tsx (DashboardScrollContainer 内 3 件套) + leads/[id] + payments + quotations + tasks (4 页 viewport 滚动模式) 全部锚定 | ✅ | 2026-07-01 (commits 1ac84ca + a606d9b + 0fe9543 + aa54565 + 7c7d74c) |
 
-**Tier 2 Progress: 3.2/4 (80%)**
+**Tier 2 Progress: 4/4 (100%) ✅**
 
 ---
 
@@ -81,6 +81,17 @@ Tier 2 unlocked (T2-1/2/3 ✅ 2026-07-01).
 | T3-4 | Docs drift: coding_standards §4 contracts/payments stale | Refresh table schema section to match actual DB (contract_amount / sales_id / confirmed) | coding_standards.md §4 列与 DB service_role 查询结果一致 | ✅ | 2026-07-01 |
 
 **Tier 3 Progress: 4/4 (100%) ✅**
+
+---
+
+### Pending Tasks (未启动)
+
+| # | Task | Requirement | Verification | Status |
+|---|------|-------------|-------------|--------|
+| kanban-unify | 统一 kanban stage 定义 + fmtAED 到 shared/ | pipeline/leads 共享 KanbanShell + 共享 stage 常量 | shared/kanban/types.ts 存在 + leads/pipeline import from shared | ❌ |
+| perf-1 | 全站性能优化 | 108 请求 → <50, 3.3MB → <1.5MB, 33.73s → <5s | Lighthouse + bundle analyzer report | ❌ |
+| hermes-ci | Hermes CI webhook 订阅 crm-ci | CI pipeline 跑通 + webhook 触发 | CI job log + webhook delivery 200 | ❌ (需决定 CI 提供商) |
+| moa-tier2-detail | MoA Tier 2 决策点 3+4 方案细化 | 10-12 人天方案文档 | 文档 review + sign-off | ❌ (需确认方向) |
 
 ---
 

@@ -38,26 +38,70 @@ export async function GET() {
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    // 1. Month Target
-    const { data: targetLeads } = await supabase
-      .from('leads')
-      .select('customer_budget')
-      .gte('expected_sign_date', monthStart.toISOString())
-      .lt('expected_sign_date', monthEnd.toISOString())
-      .is('final_status', null);
+    // Execute all 8 independent queries in parallel
+    const [
+      { data: targetLeads },
+      { data: wonLeads },
+      { data: salesProfiles },
+      { data: allLeads },
+      { data: allMilestones },
+      { count: overdueFollowUps },
+      { count: todayFollowUps },
+      { data: unassignedLeads },
+    ] = await Promise.all([
+      // Q2: Month Target
+      supabase
+        .from('leads')
+        .select('customer_budget')
+        .gte('expected_sign_date', monthStart.toISOString())
+        .lt('expected_sign_date', monthEnd.toISOString())
+        .is('final_status', null),
+      // Q3: Month Completed
+      supabase
+        .from('leads')
+        .select('customer_budget')
+        .eq('final_status', 'won')
+        .gte('updated_at', monthStart.toISOString()),
+      // Q4: Sales Profiles
+      supabase
+        .from('profiles')
+        .select('id, full_name')
+        .eq('role', 'sales'),
+      // Q5: All Leads
+      supabase
+        .from('leads')
+        .select('id, assigned_to'),
+      // Q6: All Milestones
+      supabase
+        .from('lead_milestones')
+        .select('id, lead_id'),
+      // Q7: Overdue Follow-ups
+      supabase
+        .from('tasks')
+        .select('*', { count: 'exact', head: true })
+        .is('completed_at', null)
+        .lt('due_at', new Date().toISOString()),
+      // Q8: Today's Follow-ups — leads whose next_followup_date is today (server local timezone).
+      //     Column is DATE, so compare against a local YYYY-MM-DD string.
+      supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('next_followup_date', todayStr),
+      // Q9: Needs Attention
+      supabase
+        .from('leads')
+        .select('id, customer_name, project_type, customer_budget')
+        .is('assigned_to', null)
+        .order('customer_budget', { ascending: false, nullsFirst: false })
+        .limit(10),
+    ]);
 
     const monthTarget = (targetLeads ?? []).reduce(
       (sum, l) => sum + (l.customer_budget ?? 0),
       0
     );
-
-    // 2. Month Completed
-    const { data: wonLeads } = await supabase
-      .from('leads')
-      .select('customer_budget')
-      .eq('final_status', 'won')
-      .gte('updated_at', monthStart.toISOString());
 
     const monthCompleted = (wonLeads ?? []).reduce(
       (sum, l) => sum + (l.customer_budget ?? 0),
@@ -65,20 +109,6 @@ export async function GET() {
     );
 
     const monthProgress = monthTarget > 0 ? (monthCompleted / monthTarget) * 100 : 0;
-
-    // 3. Sales Team
-    const { data: salesProfiles } = await supabase
-      .from('profiles')
-      .select('id, full_name')
-      .eq('role', 'sales');
-
-    const { data: allLeads } = await supabase
-      .from('leads')
-      .select('id, assigned_to');
-
-    const { data: allMilestones } = await supabase
-      .from('lead_milestones')
-      .select('id, lead_id');
 
     const milestoneCountByLead = new Map<string, number>();
     for (const m of allMilestones ?? []) {
@@ -109,29 +139,6 @@ export async function GET() {
         };
       })
       .sort((a, b) => b.progress - a.progress);
-
-    // 4. Overdue Follow-ups
-    const { count: overdueFollowUps } = await supabase
-      .from('tasks')
-      .select('*', { count: 'exact', head: true })
-      .is('completed_at', null)
-      .lt('due_at', new Date().toISOString());
-
-    // 4b. Today's follow-ups — leads whose next_followup_date is today (server local timezone).
-    //     Column is DATE, so compare against a local YYYY-MM-DD string.
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const { count: todayFollowUps } = await supabase
-      .from('leads')
-      .select('*', { count: 'exact', head: true })
-      .eq('next_followup_date', todayStr);
-
-    // 5. Needs Attention
-    const { data: unassignedLeads } = await supabase
-      .from('leads')
-      .select('id, customer_name, project_type, customer_budget')
-      .is('assigned_to', null)
-      .order('customer_budget', { ascending: false, nullsFirst: false })
-      .limit(10);
 
     const needsAttention: NeedsAttentionLead[] = (unassignedLeads ?? []).map((l) => ({
       leadId: l.id,

@@ -36,7 +36,7 @@
  * exist if everything were funneled through.
  */
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn, fmtDubai } from "@/lib/utils";
@@ -147,6 +147,19 @@ export function LeadCard({
   const nextStages = PIPELINE_STAGES.filter((s, i) => i > stageIdx && !["won", "lost"].includes(s.key));
   const isReassigning = reassignLeadId === lead.id;
   const isLost = isLostColumn;
+
+  /* ─── Click-outside handler for reassign dropdown ─── */
+  const reassignRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isReassigning) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (reassignRef.current && !reassignRef.current.contains(e.target as Node)) {
+        setReassignLeadId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isReassigning, setReassignLeadId]);
 
   /* ─── Editor open/close helpers — close-on-commit then call mutation ─── */
   const openStageEditor = () => setEditingStage(isEditing ? null : lead.id);
@@ -264,7 +277,7 @@ export function LeadCard({
           <div className="absolute top-2 right-2 z-10" onClick={e => e.stopPropagation()}>
             <input type="checkbox" checked={selected}
               onChange={onToggleSelect}
-              className="w-4 h-4 rounded border-border/50 bg-card accent-copper-500 cursor-pointer opacity-0 group-hover:opacity-100 checked:opacity-100 transition-opacity" />
+              className="w-4 h-4 rounded border-border/50 bg-card accent-copper-500 cursor-pointer opacity-40 group-hover:opacity-100 checked:opacity-100 transition-opacity" />
           </div>
         )}
         {/* Header row */}
@@ -327,6 +340,7 @@ export function LeadCard({
               </span>
               {reassignLeadId === lead.id && (
               <div className="w-full mt-1 z-50 bg-muted border border-border rounded-lg shadow-xl py-1 max-h-40 overflow-y-auto"
+                ref={reassignRef}
                 onClick={(e) => e.stopPropagation()}
               >
                 {reassigning && <div className="px-3 py-2 text-xs text-muted-foreground">正在转移...</div>}

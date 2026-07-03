@@ -24,17 +24,12 @@ import {
 import { ChevronLeft, ChevronRight, CheckCircle2, Clock, XCircle, Loader2, AlertTriangle, Calendar } from "lucide-react";
 import { fmtDubai } from "@/lib/utils";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 /* ─── Constants ─── */
 const PAGE_SIZE = 20;
 
-const STATUS_OPTIONS = [
-  { value: "all", label: "All Statuses" },
-  { value: "pending", label: "Pending" },
-  { value: "in_progress", label: "In Progress" },
-  { value: "done", label: "Done" },
-  { value: "cancelled", label: "Cancelled" },
-];
+const STATUS_VALUES = ["all", "pending", "in_progress", "done", "cancelled"];
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
   pending: { bg: "bg-amber-500/10", text: "text-amber-400", icon: <Clock className="size-3" /> },
@@ -68,9 +63,9 @@ interface ProfileInfo {
 }
 
 /* ─── Helpers ─── */
-function formatDate(d: string | null): string {
+function formatDate(d: string | null, locale: string): string {
   if (!d) return "—";
-  return fmtDubai(new Date(d), { locale: "en-US", month: "short", day: "numeric", year: "numeric" });
+  return fmtDubai(new Date(d), { locale, month: "short", day: "numeric", year: "numeric" });
 }
 
 function isOverdue(dueAt: string | null, status: string): boolean {
@@ -81,6 +76,7 @@ function isOverdue(dueAt: string | null, status: string): boolean {
 /* ─── Component ─── */
 export default function TasksPage() {
   const supabase = createClient();
+  const { lang, t } = useLanguage();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
@@ -92,6 +88,20 @@ export default function TasksPage() {
   // Filters
   const [statusFilter, setStatusFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
+
+  const statusLabels: Record<string, string> = {
+    all: t("tasks.allStatuses"),
+    pending: t("tasks.statusPending"),
+    in_progress: t("tasks.statusInProgress"),
+    done: t("tasks.statusDone"),
+    cancelled: t("tasks.statusCancelled"),
+  };
+  const priorityLabels: Record<string, string> = {
+    low: t("tasks.priorityLow"),
+    medium: t("tasks.priorityMedium"),
+    high: t("tasks.priorityHigh"),
+    urgent: t("tasks.priorityUrgent"),
+  };
 
   // Profile name lookup
   const profileNameMap: Record<string, string> = {};
@@ -131,8 +141,8 @@ export default function TasksPage() {
     const { data, error: err, count } = await q;
 
     if (err) {
-      console.error("Failed to fetch tasks:", err);
-      setError("Failed to load tasks. Please retry.");
+      console.error(t("tasks.loadFailed"), err);
+      setError(t("tasks.loadFailed"));
       setLoading(false);
       return;
     }
@@ -140,7 +150,7 @@ export default function TasksPage() {
     if (data) setTasks(data as Task[]);
     setTotalCount(count ?? 0);
     setLoading(false);
-  }, [page, statusFilter, assigneeFilter]);
+  }, [page, statusFilter, assigneeFilter, t]);
 
   useEffect(() => {
     fetchTasks();
@@ -168,8 +178,10 @@ export default function TasksPage() {
         className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b -mx-4 px-4 py-2"
       >
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Tasks</h1>
-          <span className="text-sm text-muted-foreground">{totalCount} total</span>
+          <h1 className="text-xl font-semibold">{t("tasks.title")}</h1>
+          <span className="text-sm text-muted-foreground">
+            {totalCount} {t("tasks.total")}
+          </span>
         </div>
       </div>
 
@@ -178,12 +190,12 @@ export default function TasksPage() {
         {/* Status filter */}
         <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v ?? '')}>
           <SelectTrigger>
-            <SelectValue placeholder="All Statuses" />
+            <SelectValue placeholder={t("tasks.allStatuses")} />
           </SelectTrigger>
           <SelectContent>
-            {STATUS_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
+            {STATUS_VALUES.map((status) => (
+              <SelectItem key={status} value={status}>
+                {statusLabels[status]}
               </SelectItem>
             ))}
           </SelectContent>
@@ -192,10 +204,10 @@ export default function TasksPage() {
         {/* Assignee filter */}
         <Select value={assigneeFilter} onValueChange={(v) => setAssigneeFilter(v ?? '')}>
           <SelectTrigger>
-            <SelectValue placeholder="All Assignees" />
+            <SelectValue placeholder={t("tasks.allAssignees")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Assignees</SelectItem>
+            <SelectItem value="all">{t("tasks.allAssignees")}</SelectItem>
             {profiles.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.full_name || p.id}
@@ -222,17 +234,17 @@ export default function TasksPage() {
             {tasks.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
                 <AlertTriangle className="size-6 mb-2" />
-                <p className="text-sm">No tasks found</p>
+                <p className="text-sm">{t("tasks.noTasks")}</p>
               </div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Title</TableHead>
-                    <TableHead>Assigned To</TableHead>
-                    <TableHead>Due</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Priority</TableHead>
+                    <TableHead>{t("tasks.columnTitle")}</TableHead>
+                    <TableHead>{t("tasks.assignedTo")}</TableHead>
+                    <TableHead>{t("tasks.due")}</TableHead>
+                    <TableHead>{t("tasks.status")}</TableHead>
+                    <TableHead>{t("tasks.priority")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -258,7 +270,7 @@ export default function TasksPage() {
                         <TableCell>
                           <span className={overdue ? "text-rose-400 font-medium" : ""}>
                             {overdue && <AlertTriangle className="size-3 inline mr-1" />}
-                            {formatDate(task.due_at)}
+                            {formatDate(task.due_at, lang === "zh" ? "zh-CN" : "en-US")}
                           </span>
                         </TableCell>
                         <TableCell>
@@ -266,14 +278,14 @@ export default function TasksPage() {
                             className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${s.bg} ${s.text}`}
                           >
                             {s.icon}
-                            {task.status.replace("_", " ")}
+                            {statusLabels[task.status] || task.status.replace("_", " ")}
                           </span>
                         </TableCell>
                         <TableCell>
                           <span
                             className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_STYLES[task.priority] || PRIORITY_STYLES.medium}`}
                           >
-                            {task.priority}
+                            {priorityLabels[task.priority] || task.priority}
                           </span>
                         </TableCell>
                       </TableRow>
@@ -288,7 +300,7 @@ export default function TasksPage() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between border-t px-4 py-3">
               <span className="text-sm text-muted-foreground">
-                Page {page + 1} of {totalPages}
+                {t("tasks.page")} {page + 1} {t("tasks.of")} {totalPages}
               </span>
               <div className="flex items-center gap-2">
                 <Button
@@ -298,7 +310,7 @@ export default function TasksPage() {
                   onClick={() => setPage((p) => p - 1)}
                 >
                   <ChevronLeft className="size-4" />
-                  Prev
+                  {t("tasks.previous")}
                 </Button>
                 <Button
                   variant="outline"
@@ -306,7 +318,7 @@ export default function TasksPage() {
                   disabled={page >= totalPages - 1}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  Next
+                  {t("tasks.next")}
                   <ChevronRight className="size-4" />
                 </Button>
               </div>

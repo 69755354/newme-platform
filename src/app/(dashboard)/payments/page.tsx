@@ -143,12 +143,12 @@ export default function PaymentsPage() {
   const fetchPayments = useCallback(async () => {
     try {
       const res = await fetch("/api/payments");
-      if (!res.ok) throw new Error("Failed to fetch payments");
+      if (!res.ok) throw new Error(t("payments.fetchFailed"));
       const json = await res.json();
       setPayments(json.data || []);
     } catch (err) {
-      console.error("Fetch payments failed:", err);
-      setError(t("common.loadFailedRetry"));
+      console.error(t("payments.fetchFailed"), err);
+      setError(t("payments.fetchFailed"));
     }
   }, [t]);
 
@@ -162,9 +162,9 @@ export default function PaymentsPage() {
     if (role === "sales") q = q.eq("sales_id", userId!);
 
     const { data, error: err } = await q;
-    if (err) console.error("Fetch contracts failed:", err);
+    if (err) console.error(t("payments.fetchContractsFailed"), err);
     else setContracts((data as Contract[]) || []);
-  }, [supabase, role, userId]);
+  }, [supabase, role, userId, t]);
 
   useEffect(() => {
     if (!userId || !role) return;
@@ -184,10 +184,10 @@ export default function PaymentsPage() {
 
   const methodLabel = (m: string) => {
     const map: Record<string, string> = {
-      bank_transfer: "Bank Transfer",
-      cash: "Cash",
-      check: "Check",
-      online: "Online",
+      bank_transfer: t("payments.methodBankTransfer"),
+      cash: t("payments.methodCash"),
+      check: t("payments.methodCheck"),
+      online: t("payments.methodOnline"),
     };
     return map[m] || m;
   };
@@ -236,7 +236,7 @@ export default function PaymentsPage() {
 
     const amount = parseFloat(recAmount);
     if (isNaN(amount) || amount <= 0) {
-      toast.error(t("payment.validAmount"));
+      toast.error(t("payments.validAmount"));
       setRecSaving(false);
       return;
     }
@@ -257,16 +257,16 @@ export default function PaymentsPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        toast.error(err.error || t("payment.recordFailed"));
+        toast.error(err.error || t("payments.recordFailed"));
         setRecSaving(false);
         return;
       }
 
-      toast.success(t("payment.saved"));
+      toast.success(t("payments.saved"));
       setRecordDialogOpen(false);
       await fetchPayments();
     } catch {
-      toast.error(t("payment.recordFailed"));
+      toast.error(t("payments.recordFailed"));
     } finally {
       setRecSaving(false);
     }
@@ -280,13 +280,13 @@ export default function PaymentsPage() {
       const res = await fetch(`/api/payments/${paymentId}/confirm`, { method: "POST" });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        toast.error(err.error || "Failed to confirm");
+        toast.error(err.error || t("payments.confirmFailed"));
         return;
       }
-      toast.success("Payment confirmed");
+      toast.success(t("payments.confirmed"));
       await fetchPayments();
     } catch {
-      toast.error("Failed to confirm payment");
+      toast.error(t("payments.confirmFailed"));
     } finally {
       setConfirmingId(null);
     }
@@ -307,8 +307,8 @@ export default function PaymentsPage() {
       .order("seq", { ascending: true });
 
     if (err) {
-      console.error("Fetch installment plans failed:", err);
-      toast.error("Failed to load installment plans");
+      console.error(t("payments.loadInstallmentsFailed"), err);
+      toast.error(t("payments.loadInstallmentsFailed"));
       return;
     }
 
@@ -330,7 +330,7 @@ export default function PaymentsPage() {
       .map(([plan_id, amount]) => ({ plan_id, amount }));
 
     if (allocations.length === 0) {
-      toast.error("Please allocate to at least one installment");
+      toast.error(t("payments.allocationRequired"));
       setAllocSaving(false);
       return;
     }
@@ -344,16 +344,16 @@ export default function PaymentsPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        toast.error(err.error || "Allocation failed");
+        toast.error(err.error || t("payments.allocationFailed"));
         setAllocSaving(false);
         return;
       }
 
-      toast.success("Payment allocated successfully");
+      toast.success(t("payments.allocatedSuccessfully"));
       setAllocateDialogOpen(false);
       await fetchPayments();
     } catch {
-      toast.error("Allocation failed");
+      toast.error(t("payments.allocationFailed"));
     } finally {
       setAllocSaving(false);
     }
@@ -378,14 +378,14 @@ export default function PaymentsPage() {
         className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b -mx-4 px-4 py-2 mb-6"
       >
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">{t("payment.title")}</h1>
+          <h1 className="text-2xl font-bold">{t("payments.title")}</h1>
           <Button
             size="sm"
             onClick={openRecordDialog}
             className="bg-copper-500 hover:bg-copper-600 text-black font-medium"
           >
             <Plus className="w-3.5 h-3.5 mr-1" />
-            {t("payment.recordPayment")}
+            {t("payments.recordPayment")}
           </Button>
         </div>
       </div>
@@ -394,36 +394,38 @@ export default function PaymentsPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <Card className="bg-copper-500/5 border-copper-500/20">
           <CardContent className="p-4">
-            <p className="text-xs text-copper-400">Total Recorded</p>
+            <p className="text-xs text-copper-400">{t("payments.totalRecorded")}</p>
             <p className="text-xl font-bold">{fmtAED(totalRecorded)}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">{payments.length} payments</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {payments.length} {t("payments.paymentCount")}
+            </p>
           </CardContent>
         </Card>
         <Card className="bg-emerald-500/5 border-emerald-500/20">
           <CardContent className="p-4">
-            <p className="text-xs text-emerald-400">Total Confirmed</p>
+            <p className="text-xs text-emerald-400">{t("payments.totalConfirmed")}</p>
             <p className="text-xl font-bold">{fmtAED(totalConfirmed)}</p>
             <p className="text-[10px] text-muted-foreground mt-0.5">
-              {payments.filter((p) => p.confirmed).length} payments
+              {payments.filter((p) => p.confirmed).length} {t("payments.paymentCount")}
             </p>
           </CardContent>
         </Card>
         <Card className="bg-amber-500/5 border-amber-500/20">
           <CardContent className="p-4">
-            <p className="text-xs text-amber-400">Total Pending</p>
+            <p className="text-xs text-amber-400">{t("payments.totalPending")}</p>
             <p className="text-xl font-bold">{fmtAED(totalPending)}</p>
             <p className="text-[10px] text-muted-foreground mt-0.5">
-              {payments.filter((p) => !p.confirmed).length} payments
+              {payments.filter((p) => !p.confirmed).length} {t("payments.paymentCount")}
             </p>
           </CardContent>
         </Card>
         <Card className="bg-blue-500/5 border-blue-500/20">
           <CardContent className="p-4">
-            <p className="text-xs text-blue-400">Total Allocated</p>
+            <p className="text-xs text-blue-400">{t("payments.totalAllocated")}</p>
             <p className="text-xl font-bold">{fmtAED(totalAllocated)}</p>
             <p className="text-[10px] text-muted-foreground mt-0.5">
               {totalConfirmed > 0
-                ? `${Math.round((totalAllocated / totalConfirmed) * 100)}% of confirmed`
+                ? `${Math.round((totalAllocated / totalConfirmed) * 100)}% ${t("payments.ofConfirmed")}`
                 : "—"}
             </p>
           </CardContent>
@@ -437,15 +439,15 @@ export default function PaymentsPage() {
       >
         <TabsList className="mb-4">
           <TabsTrigger value="all">
-            All ({payments.length})
+            {t("payments.all")} ({payments.length})
           </TabsTrigger>
           <TabsTrigger value="pending">
             <Clock className="w-3 h-3 mr-1" />
-            Pending ({payments.filter((p) => !p.confirmed).length})
+            {t("payments.pending")} ({payments.filter((p) => !p.confirmed).length})
           </TabsTrigger>
           <TabsTrigger value="confirmed">
             <CheckCircle className="w-3 h-3 mr-1" />
-            Confirmed ({payments.filter((p) => p.confirmed).length})
+            {t("payments.confirmedStatus")} ({payments.filter((p) => p.confirmed).length})
           </TabsTrigger>
         </TabsList>
 
@@ -455,7 +457,7 @@ export default function PaymentsPage() {
             {filteredPayments.length === 0 ? (
               <Card className="bg-card border-border">
                 <CardContent className="p-8 text-center text-muted-foreground">
-                  {t("payment.noPayments")}
+                  {t("payments.noPayments")}
                 </CardContent>
               </Card>
             ) : (
@@ -486,12 +488,12 @@ export default function PaymentsPage() {
                             {payment.confirmed ? (
                               <Badge className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] px-1.5 py-0">
                                 <CheckCircle className="w-3 h-3 mr-0.5" />
-                                Confirmed
+                                {t("payments.confirmedStatus")}
                               </Badge>
                             ) : (
                               <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] px-1.5 py-0">
                                 <Clock className="w-3 h-3 mr-0.5" />
-                                Pending
+                                {t("payments.pending")}
                               </Badge>
                             )}
                           </div>
@@ -522,15 +524,17 @@ export default function PaymentsPage() {
                           {payment.confirmed && payment.allocated_amount != null && (
                             <div className="text-xs text-muted-foreground">
                               <span className="text-blue-400">
-                                Allocated: {fmtAED(payment.allocated_amount)}
+                                {t("payments.allocated")}: {fmtAED(payment.allocated_amount)}
                               </span>
                               {remaining != null && remaining > 0 && (
                                 <span className="text-amber-400 ml-2">
-                                  Unallocated: {fmtAED(remaining)}
+                                  {t("payments.unallocated")}: {fmtAED(remaining)}
                                 </span>
                               )}
                               {remaining === 0 && (
-                                <span className="text-emerald-400 ml-2">Fully allocated</span>
+                                <span className="text-emerald-400 ml-2">
+                                  {t("payments.fullyAllocated")}
+                                </span>
                               )}
                             </div>
                           )}
@@ -552,7 +556,7 @@ export default function PaymentsPage() {
                               className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 text-xs h-8"
                             >
                               <CheckCircle className="w-3 h-3 mr-1" />
-                              {confirmingId === payment.id ? "..." : "Confirm"}
+                              {confirmingId === payment.id ? "..." : t("payments.confirm")}
                             </Button>
                           )}
                           {payment.confirmed && isPrivileged && (
@@ -563,7 +567,7 @@ export default function PaymentsPage() {
                               className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs h-8"
                             >
                               <ArrowRightLeft className="w-3 h-3 mr-1" />
-                              Allocate
+                              {t("payments.allocate")}
                             </Button>
                           )}
                         </div>
@@ -585,18 +589,18 @@ export default function PaymentsPage() {
         <DialogContent className="sm:max-w-md bg-card border-border text-gray-100">
           <DialogHeader>
             <DialogTitle className="text-foreground text-lg">
-              {t("payment.recordPaymentTitle")}
+              {t("payments.recordPaymentTitle")}
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleRecordPayment} className="space-y-4 pt-2">
             {/* Contract selector */}
             <div className="space-y-1.5">
               <Label className="text-muted-foreground text-xs">
-                {t("payment.contract")} *
+                {t("payments.contract")} *
               </Label>
               <Select value={recContractId} onValueChange={(v: string | null) => v && setRecContractId(v)}>
                 <SelectTrigger className="w-full bg-muted border-border text-foreground h-9">
-                  <SelectValue placeholder="Select contract" />
+                  <SelectValue placeholder={t("payments.selectContract")} />
                 </SelectTrigger>
                 <SelectContent>
                   {contracts.map((c) => (
@@ -611,7 +615,7 @@ export default function PaymentsPage() {
             {/* Amount */}
             <div className="space-y-1.5">
               <Label className="text-muted-foreground text-xs">
-                {t("payment.amount")} *
+                {t("payments.amount")} *
               </Label>
               <Input
                 type="number"
@@ -627,7 +631,7 @@ export default function PaymentsPage() {
             {/* Payment Date */}
             <div className="space-y-1.5">
               <Label className="text-muted-foreground text-xs">
-                {t("payment.paymentDate")} *
+                {t("payments.paymentDate")} *
               </Label>
               <Input
                 type="date"
@@ -641,17 +645,17 @@ export default function PaymentsPage() {
             {/* Payment Method */}
             <div className="space-y-1.5">
               <Label className="text-muted-foreground text-xs">
-                Payment Method *
+                {t("payments.paymentMethod")} *
               </Label>
               <Select value={recMethod} onValueChange={(v: string | null) => v && setRecMethod(v)}>
                 <SelectTrigger className="w-full bg-muted border-border text-foreground h-9">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="check">Check</SelectItem>
-                  <SelectItem value="online">Online</SelectItem>
+                  <SelectItem value="bank_transfer">{t("payments.methodBankTransfer")}</SelectItem>
+                  <SelectItem value="cash">{t("payments.methodCash")}</SelectItem>
+                  <SelectItem value="check">{t("payments.methodCheck")}</SelectItem>
+                  <SelectItem value="online">{t("payments.methodOnline")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -659,10 +663,10 @@ export default function PaymentsPage() {
             {/* Reference No */}
             <div className="space-y-1.5">
               <Label className="text-muted-foreground text-xs">
-                Reference No ({t("payment.optional")})
+                {t("payments.referenceNo")} ({t("payments.optional")})
               </Label>
               <Input
-                placeholder="e.g. TXN-12345"
+                placeholder={t("payments.referencePlaceholder")}
                 value={recRefNo}
                 onChange={(e) => setRecRefNo(e.target.value)}
                 className="bg-muted border-border text-foreground h-9"
@@ -672,10 +676,10 @@ export default function PaymentsPage() {
             {/* Notes */}
             <div className="space-y-1.5">
               <Label className="text-muted-foreground text-xs">
-                {t("payment.notes")} ({t("payment.optional")})
+                {t("payments.notes")} ({t("payments.optional")})
               </Label>
               <Textarea
-                placeholder={t("payment.optional")}
+                placeholder={t("payments.optional")}
                 value={recNotes}
                 onChange={(e) => setRecNotes(e.target.value)}
                 className="bg-muted border-border text-foreground min-h-16"
@@ -687,7 +691,7 @@ export default function PaymentsPage() {
             <div className="flex items-center justify-end gap-2 pt-2">
               <DialogClose>
                 <Button type="button" variant="ghost" className="text-muted-foreground h-8">
-                  {t("payment.cancel")}
+                  {t("payments.cancel")}
                 </Button>
               </DialogClose>
               <Button
@@ -695,7 +699,7 @@ export default function PaymentsPage() {
                 disabled={recSaving || !recContractId}
                 className="bg-copper-500 hover:bg-copper-600 text-black font-medium h-8 text-sm"
               >
-                {recSaving ? t("payment.saving") : t("payment.confirmPayment")}
+                {recSaving ? t("payments.saving") : t("payments.confirmPayment")}
               </Button>
             </div>
           </form>
@@ -708,7 +712,7 @@ export default function PaymentsPage() {
         <DialogContent className="sm:max-w-lg bg-card border-border text-gray-100">
           <DialogHeader>
             <DialogTitle className="text-foreground text-lg">
-              Allocate Payment — {allocatePayment ? fmtAED(allocatePayment.amount) : ""}
+              {t("payments.allocatePayment")} — {allocatePayment ? fmtAED(allocatePayment.amount) : ""}
             </DialogTitle>
           </DialogHeader>
           {allocatePayment && (
@@ -716,20 +720,20 @@ export default function PaymentsPage() {
               {/* Summary */}
               <div className="text-sm text-muted-foreground bg-muted/50 rounded-lg p-3">
                 <p>
-                  Contract: <span className="text-foreground font-medium">{contractMap.get(allocatePayment.contract_id) || "—"}</span>
+                  {t("payments.contract")}: <span className="text-foreground font-medium">{contractMap.get(allocatePayment.contract_id) || "—"}</span>
                 </p>
                 <p>
-                  Payment amount: <span className="text-foreground font-medium">{fmtAED(allocatePayment.amount)}</span>
+                  {t("payments.paymentAmount")}: <span className="text-foreground font-medium">{fmtAED(allocatePayment.amount)}</span>
                 </p>
                 <p>
-                  Previously allocated: <span className="text-foreground font-medium">{fmtAED(allocatePayment.allocated_amount || 0)}</span>
+                  {t("payments.previouslyAllocated")}: <span className="text-foreground font-medium">{fmtAED(allocatePayment.allocated_amount || 0)}</span>
                 </p>
               </div>
 
               {/* Installment Plans */}
               {installmentPlans.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
-                  No installment plans found for this contract.
+                  {t("payments.noInstallmentPlans")}
                 </p>
               ) : (
                 <div className="space-y-3 max-h-64 overflow-y-auto">
@@ -741,14 +745,14 @@ export default function PaymentsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-foreground">
-                            Installment #{plan.seq}
+                            {t("payments.installment")} #{plan.seq}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
-                            Due: {plan.due_date?.slice(0, 10)}
+                            {t("payments.due")}: {plan.due_date?.slice(0, 10)}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          Amount: {fmtAED(plan.amount)} | Paid: {fmtAED(plan.paid_amount)} | Status: {plan.status}
+                          {t("payments.amount")}: {fmtAED(plan.amount)} | {t("payments.paid")}: {fmtAED(plan.paid_amount)} | {t("payments.status")}: {plan.status}
                         </p>
                         {plan.description && (
                           <p className="text-[10px] text-gray-500 mt-0.5">{plan.description}</p>
@@ -777,7 +781,7 @@ export default function PaymentsPage() {
 
               {/* Remaining indicator */}
               <div className="flex items-center justify-between text-sm border-t border-border pt-3">
-                <span className="text-muted-foreground">Allocating:</span>
+                <span className="text-muted-foreground">{t("payments.allocating")}:</span>
                 <span
                   className={cn(
                     "font-bold",
@@ -788,14 +792,14 @@ export default function PaymentsPage() {
                 >
                   {fmtAED(getAllocatedTotal())}
                   <span className="text-muted-foreground font-normal ml-2">
-                    of {fmtAED(allocatePayment.amount)}
+                    {t("payments.of")} {fmtAED(allocatePayment.amount)}
                   </span>
                 </span>
               </div>
               {getAllocatedTotal() > allocatePayment.amount && (
                 <div className="flex items-center gap-1 text-xs text-rose-400">
                   <AlertTriangle className="w-3 h-3" />
-                  Total allocation exceeds payment amount
+                  {t("payments.allocationExceeds")}
                 </div>
               )}
 
@@ -803,7 +807,7 @@ export default function PaymentsPage() {
               <div className="flex items-center justify-end gap-2 pt-2">
                 <DialogClose>
                   <Button type="button" variant="ghost" className="text-muted-foreground h-8">
-                    {t("payment.cancel")}
+                    {t("payments.cancel")}
                   </Button>
                 </DialogClose>
                 <Button
@@ -811,7 +815,7 @@ export default function PaymentsPage() {
                   disabled={allocSaving || getAllocatedTotal() <= 0}
                   className="bg-blue-600 hover:bg-blue-700 text-white font-medium h-8 text-sm"
                 >
-                  {allocSaving ? t("payment.saving") : "Allocate"}
+                  {allocSaving ? t("payments.saving") : t("payments.allocate")}
                 </Button>
               </div>
             </form>

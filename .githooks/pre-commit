@@ -37,42 +37,23 @@ echo "════════════════════════�
 echo "📄 Staged code files:"
 echo "$STAGED_CODE" | sed 's/^/   /'
 
-# ── Check coding auth token ──
-AUTH_VALID=false
-AUTH_TOOL="unknown"
-
-if [ -f "$AUTH_FILE" ]; then
-    EXPIRES=$(python3 -c "
-import json, time
-try:
-    d = json.load(open('$AUTH_FILE'))
-    print(d.get('expires_at', 0))
-except: print(0)
-" 2>/dev/null || echo "0")
-    
-    NOW=$(date +%s)
-    if [ "$NOW" -lt "$EXPIRES" ] 2>/dev/null; then
-        AUTH_VALID=true
-        AUTH_TOOL=$(python3 -c "import json;print(json.load(open('$AUTH_FILE')).get('tool','unknown'))" 2>/dev/null || echo "unknown")
-    fi
-fi
-
-if [ "$AUTH_VALID" = false ]; then
+# ── Check coding auth token (Ed25519-signed) ──
+if python3 "$REPO_ROOT/scripts/verify-coding-auth.py" --mode pre-commit 2>/dev/null; then
+    echo -e "${GREEN}✅ Coding auth: signed token valid${NC}"
+else
     echo ""
     echo -e "${RED}❌  CODING AUTH REQUIRED${NC}"
-    echo -e "${RED}   代码修改必须通过 OpenCode 或 Codex 进行，并由 Hermes 签发 auth token。${NC}"
+    echo -e "${RED}   代码修改必须通过 OpenCode 或 Codex 进行，令牌需 Ed25519 签名。${NC}"
     echo -e "${RED}   ${NC}"
-    echo -e "${RED}   流程: 用户在 Hermes 发起任务 → Hermes 签发 token → OpenCode/Codex 写码${NC}"
+    echo -e "${RED}   流程: 用户在 Hermes 发起任务 → Hermes 签发签名token → OpenCode/Codex 写码${NC}"
     echo -e "${RED}   Token 文件: .hermes/state/coding-auth.json${NC}"
     echo -e "${RED}   ${NC}"
-    echo -e "${YELLOW}   如果你确认这是手工紧急修复：${NC}"
-    echo -e "${YELLOW}     python3 scripts/issue-coding-auth.py --tool manual --reason \"...\"${NC}"
+    echo -e "${YELLOW}   手工紧急修复：${NC}"
+    echo -e "${YELLOW}     1. root 创建 approval: /var/lib/newme/coding-auth/manual-approval${NC}"
+    echo -e "${YELLOW}     2. python3 scripts/issue-coding-auth.py --tool manual --task-id ... --reason \"...\"${NC}"
     echo ""
     echo "Staged code files (not committed):"
     echo "$STAGED_CODE" | sed 's/^/   • /'
     echo ""
     exit 1
 fi
-
-echo -e "${GREEN}✅ Coding auth valid (tool: $AUTH_TOOL, expires: $(date -d @$EXPIRES '+%H:%M'))${NC}"
-exit 0

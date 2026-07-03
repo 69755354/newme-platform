@@ -2,7 +2,7 @@
   "version": 1,
   "_comment": "\u6bcf\u4e2ahook\u7684sha256\u3002install-hooks.sh\u5728\u5b89\u88c5\u65f6\u5199\u5165\u5b9e\u9645hash\uff0c\u94a9\u5b50\u4e92\u76f8\u6821\u9a8c\u3002\u7be1\u6539=\u5168\u90e8\u81ea\u9501",
   "hooks": {
-    "pre-commit": "f5fa68b3efc4cf350f0309e164ef96751c5cf3c2ee0172eefe91ba6ce7e82b54",
+    "pre-commit": "2a7004746957d164c8ce31fbf64a0608b2aac9cfeb327aad9d279d0abc0ea39e",
     "commit-msg": "03e72a04e83b0d4f1adbb9630effeee9c870c72bb7e8c748c4a7a6ab9a063094",
     "pre-push": "951ded6c0a24cac12aa58bbdb87ab9f22841168ef32876bebbf48d5514cef203"
   },

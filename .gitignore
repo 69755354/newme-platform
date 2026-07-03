@@ -31,3 +31,4 @@ Thumbs.db
 tsconfig.tsbuildinfo
 supabase/.temp/
 .hermes/
+scripts/.ed25519.key.bootstrap

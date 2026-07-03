@@ -120,7 +120,34 @@ else
 fi
 echo ""
 
-# ── Step 1: Pre-flight type check ──────────────────────────
+# ── Step 0.7/7: Coding Auth Gate (Ed25519 signature verification) ──
+echo "--- Step 0.7/7: Coding auth gate ---"
+if [ -f "scripts/verify-coding-auth.py" ]; then
+  KEY_FILE="/var/lib/newme/coding-auth/ed25519.key"
+  if [ ! -f "$KEY_FILE" ] && [ "$(id -u)" = "0" ]; then
+    echo "🔑 Setting up Ed25519 signing key..."
+    mkdir -p "$(dirname "$KEY_FILE")"
+    chown root:root "$(dirname "$KEY_FILE")"
+    chmod 755 "$(dirname "$KEY_FILE")"
+    if [ -f "scripts/.ed25519.key.bootstrap" ]; then
+      cp "scripts/.ed25519.key.bootstrap" "$KEY_FILE"
+      chown root:root "$KEY_FILE"
+      chmod 0400 "$KEY_FILE"
+      echo "✅ Ed25519 key installed"
+    fi
+  fi
+  if python3 scripts/verify-coding-auth.py --mode deploy 2>&1; then
+    echo "✅ Coding auth gate passed"
+  else
+    echo "🚫 DEPLOY ABORTED: Coding auth verification failed."
+    exit 1
+  fi
+else
+  echo "⚠️  verify-coding-auth.py not found, skipping gate"
+fi
+echo ""
+
+# ── Step 1/7: Pre-flight type check ─────────────────────────
 echo "--- Step 1/6: TypeScript check ---"
 npx tsc --noEmit 2>&1 || {
   echo "❌ TypeScript check failed. Abort. Run 'npx tsc --noEmit' to see errors."

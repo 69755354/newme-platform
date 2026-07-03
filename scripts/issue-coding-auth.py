@@ -1,25 +1,36 @@
 #!/usr/bin/env python3
 """
-Issue a coding auth token — called by Hermes when delegating to OpenCode/Codex.
+Issue a signed coding auth token — Ed25519-signed, verifiable at commit and deploy gates.
 
-CONTROL-PLANE GATE (2026-07-04):
-  --tool manual NOW REQUIRES a root-owned approval file.
-  Ubuntu cannot self-sign without human-approved root-level authorization.
+CONTROL-PLANE GATES:
+  1. --tool manual REQUIRES root-owned approval file (single-use)
+  2. All tokens are Ed25519-signed with a root-owned private key
+  3. Unsigned or forged tokens are rejected by verify-coding-auth.py
 
 Approval file: /var/lib/newme/coding-auth/manual-approval
-  - Must exist, owner root:root, mode 0xxx (not group/world writable)
-  - Must contain task_id matching --task-id
-  - Must not be expired (expires_at field)
-  - Consumed (deleted) after successful issuance — single-use only
+Private key:   /var/lib/newme/coding-auth/ed25519.key (root:root, 0400)
+Token file:    .hermes/state/coding-auth.json
 """
+import base64
 import json
 import os
+import secrets
 import stat
 import sys
 import time
 import argparse
+from datetime import datetime, timezone
+
+try:
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.exceptions import InvalidSignature
+except ImportError:
+    print("ERROR: cryptography package required (pip install cryptography)", file=sys.stderr)
+    sys.exit(1)
 
 APPROVAL_FILE = "/var/lib/newme/coding-auth/manual-approval"
+KEY_FILE = "/var/lib/newme/coding-auth/ed25519.key"
 TOKEN_FILE = ".hermes/state/coding-auth.json"
 LOG_FILE = ".hermes/state/coding-auth-issued.log"
 
@@ -48,33 +59,28 @@ def verify_approval(path: str, task_id: str) -> tuple[bool, str]:
 
     st = os.stat(path)
 
-    # Check owner
     if st.st_uid != 0 or st.st_gid != 0:
-        return False, f"approval file owner must be root:root (got uid={st.st_uid} gid={st.st_gid})"
+        return False, f"approval file owner must be root:root"
 
-    # Check group/world write
     mode = st.st_mode
     if mode & stat.S_IWGRP:
         return False, "approval file is group-writable"
     if mode & stat.S_IWOTH:
         return False, "approval file is world-writable"
 
-    # Parse content
     data = parse_approval_file(path)
     if not data:
         return False, "approval file empty or unparseable"
 
-    # Check expiration
     expires = data.get("expires_at")
     if expires:
         try:
-            exp_dt = time.mktime(time.strptime(expires, "%Y-%m-%dT%H:%M:%SZ"))
-            if time.time() > exp_dt:
+            exp_dt = datetime.fromisoformat(expires.replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) > exp_dt:
                 return False, f"approval expired at {expires}"
         except ValueError:
             return False, f"invalid expires_at format: {expires}"
 
-    # Check task_id match
     approved_task = data.get("task_id")
     if not approved_task:
         return False, "approval file missing task_id"
@@ -85,22 +91,43 @@ def verify_approval(path: str, task_id: str) -> tuple[bool, str]:
 
 
 def consume_approval(path: str):
-    """Delete the approval file after successful use (single-use)."""
+    """Delete the approval file after successful use."""
     try:
         os.remove(path)
     except OSError:
-        pass  # best-effort
+        pass
+
+
+def load_private_key() -> ed25519.Ed25519PrivateKey:
+    """Load Ed25519 private key. Must be readable (typically root-only)."""
+    if not os.path.isfile(KEY_FILE):
+        print(f"❌ Private key not found: {KEY_FILE}", file=sys.stderr)
+        print("   This file must be root-owned and created once during setup.", file=sys.stderr)
+        sys.exit(1)
+    try:
+        with open(KEY_FILE, "rb") as f:
+            return serialization.load_pem_private_key(f.read(), password=None)
+    except Exception as e:
+        print(f"❌ Cannot load private key: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def sign_token(payload: dict) -> str:
+    """Sign token payload with Ed25519, return base64 signature."""
+    private_key = load_private_key()
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    sig = private_key.sign(canonical.encode())
+    return base64.b64encode(sig).decode()
 
 
 def log_issuance(tool: str, reason: str, task_id: str | None, approved_by: str | None):
-    """Append an evidence line to the issuance log."""
+    """Append evidence to issuance log."""
     entry = {
         "tool": tool,
         "reason": reason,
         "task_id": task_id,
         "approved_by": approved_by,
         "issued_at": int(time.time()),
-        "approval_file": APPROVAL_FILE if os.path.isfile(APPROVAL_FILE) else None,
     }
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     try:
@@ -112,74 +139,71 @@ def log_issuance(tool: str, reason: str, task_id: str | None, approved_by: str |
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--tool", required=True, choices=["opencode", "codex", "manual"]
-    )
+    parser.add_argument("--tool", required=True, choices=["opencode", "codex", "manual"])
     parser.add_argument("--reason", required=True, help="Task description")
-    parser.add_argument(
-        "--ttl",
-        type=int,
-        default=7200,
-        help="Token lifetime in seconds (default 2h)",
-    )
-    parser.add_argument(
-        "--task-id",
-        default="",
-        help="Task identifier (required for --tool manual to match approval file)",
-    )
+    parser.add_argument("--ttl", type=int, default=7200, help="Token lifetime in seconds (default 2h)")
+    parser.add_argument("--task-id", default="", help="Task ID (required for manual to match approval)")
+    parser.add_argument("--agent", default="GLM-CP", help="Agent name (default: GLM-CP)")
+    parser.add_argument("--scope", default="*", help="Allowed file scope glob (default: *)")
     args = parser.parse_args()
 
-    # ── CONTROL-PLANE GATE: manual requires root approval ──
+    # ── Manual gate: require root approval file ──
+    approved_by = None
     if args.tool == "manual":
         if not args.task_id:
-            print(
-                "❌ --tool manual requires --task-id (must match approval file task_id)",
-                file=sys.stderr,
-            )
+            print("❌ --tool manual requires --task-id", file=sys.stderr)
             sys.exit(1)
-
         ok, reason = verify_approval(APPROVAL_FILE, args.task_id)
         if not ok:
             print(f"❌ Manual coding auth DENIED: {reason}", file=sys.stderr)
             print(f"   Approval file: {APPROVAL_FILE}", file=sys.stderr)
-            print(
-                "   This file must be root-owned, single-use, and created by a human.",
-                file=sys.stderr,
-            )
             sys.exit(1)
-
-        # Parse for logging
         approval_data = parse_approval_file(APPROVAL_FILE)
-        approved_by = (
-            approval_data.get("approved_by", "unknown") if approval_data else "unknown"
-        )
-
+        approved_by = approval_data.get("approved_by", "human") if approval_data else "human"
         consume_approval(APPROVAL_FILE)
-    else:
-        task_id = args.task_id or None
-        approved_by = "hermes-auto"
 
-    # ── Issue token ──
-    token = {
-        "session_id": f"hermes-{int(time.time())}",
+    # ── Build unsigned payload ──
+    issued_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    expires_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    # Recalculate expires_at properly
+    from datetime import timedelta
+    exp_dt = datetime.now(timezone.utc) + timedelta(seconds=args.ttl)
+    expires_at = exp_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    payload = {
+        "version": 1,
+        "agent": args.agent,
         "tool": args.tool,
-        "reason": args.reason,
         "task_id": args.task_id or None,
-        "issued_at": int(time.time()),
-        "expires_at": int(time.time()) + args.ttl,
-        "issued_by": "hermes-agent",
+        "scope": args.scope,
+        "issued_at": issued_at,
+        "expires_at": expires_at,
+        "nonce": secrets.token_hex(16),
+        "approved_by": approved_by,
     }
 
+    # ── Sign ──
+    try:
+        payload["signature"] = sign_token(payload)
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"❌ Signing failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # ── Write token ──
     os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
     with open(TOKEN_FILE, "w") as f:
-        json.dump(token, f, indent=2)
+        json.dump(payload, f, indent=2)
 
     log_issuance(args.tool, args.reason, args.task_id or None, approved_by)
 
-    print(f"✅ Coding auth issued: tool={args.tool}, expires in {args.ttl}s")
+    ttl_min = args.ttl // 60
+    print(f"✅ Coding auth issued: tool={args.tool}, expires in {ttl_min}min")
     if args.tool == "manual":
         print(f"   Task: {args.task_id}, Approved by: {approved_by}")
     print(f"   Reason: {args.reason}")
+    print(f"   Signed: Ed25519 ✓")
 
 
 if __name__ == "__main__":

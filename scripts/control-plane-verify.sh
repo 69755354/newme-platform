@@ -219,6 +219,82 @@ else
   pass "ubuntu CANNOT sudo systemctl restart newme-platform"
 fi
 
+# ── 8. Coding Auth Manual Gate ────────────────────────────────
+section "8. Coding Auth Manual Gate"
+
+AUTH_SCRIPT="scripts/issue-coding-auth.py"
+APPROVAL_DIR="/var/lib/newme/coding-auth"
+APPROVAL_FILE="$APPROVAL_DIR/manual-approval"
+
+# 8a — Script contains approval gate
+if [ -f "$AUTH_SCRIPT" ]; then
+  if grep -q "manual-approval" "$AUTH_SCRIPT" && grep -q "verify_approval" "$AUTH_SCRIPT"; then
+    pass "issue-coding-auth.py has manual approval gate"
+  else
+    fail "issue-coding-auth.py MISSING manual approval gate (can self-sign without root)"
+  fi
+else
+  fail "issue-coding-auth.py not found at $AUTH_SCRIPT"
+fi
+
+# 8b — Approval directory is not ubuntu-writable
+if [ -d "$APPROVAL_DIR" ]; then
+  if [ -w "$APPROVAL_DIR" ]; then
+    fail "$APPROVAL_DIR is WRITABLE by ubuntu — Agent can plant fake approval"
+  else
+    pass "$APPROVAL_DIR is NOT writable by ubuntu"
+  fi
+else
+  risk "$APPROVAL_DIR does not exist (will be created by root on first use)"
+fi
+
+# 8c — Approval file (if exists) must be root-owned + secure
+if [ -f "$APPROVAL_FILE" ]; then
+  OWNER=$(stat -c '%U:%G' "$APPROVAL_FILE" 2>/dev/null || echo "unknown")
+  MODE=$(stat -c '%a' "$APPROVAL_FILE" 2>/dev/null || echo "unknown")
+
+  if [ "$OWNER" = "root:root" ]; then
+    pass "approval file owner = root:root"
+  else
+    fail "approval file owner is $OWNER (expected root:root)"
+  fi
+
+  # Check group/world writable
+  if echo "$MODE" | grep -q '[2367]..$'; then
+    fail "approval file mode $MODE has group-write bit"
+  elif echo "$MODE" | grep -q '..[2367]$'; then
+    fail "approval file mode $MODE has world-write bit"
+  else
+    pass "approval file mode $MODE (not group/world writable)"
+  fi
+
+  # Check it has task_id + expires_at
+  if grep -q "task_id=" "$APPROVAL_FILE"; then
+    pass "approval file contains task_id"
+  else
+    fail "approval file MISSING task_id"
+  fi
+
+  if grep -q "expires_at=" "$APPROVAL_FILE"; then
+    pass "approval file contains expires_at"
+  else
+    risk "approval file missing expires_at (no time limit)"
+  fi
+else
+  pass "no stale approval file present (clean state)"
+fi
+
+# 8d — Token file is not writable by others
+TOKEN_FILE=".hermes/state/coding-auth.json"
+if [ -f "$TOKEN_FILE" ]; then
+  TOKEN_OWNER=$(stat -c '%U' "$TOKEN_FILE" 2>/dev/null || echo "unknown")
+  if [ "$TOKEN_OWNER" = "ubuntu" ] || [ "$TOKEN_OWNER" = "$(whoami)" ]; then
+    pass "coding-auth.json owner = $TOKEN_OWNER"
+  else
+    risk "coding-auth.json owner is $TOKEN_OWNER"
+  fi
+fi
+
 # ── Summary ──────────────────────────────────────────────────
 section "Summary"
 echo ""

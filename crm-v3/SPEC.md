@@ -6,9 +6,8 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `4379573`）
-- **Branch**: `main` @ `4379573`
-- **生产 BUILD_ID**: `Sfs5kjC76sHaXV1-7Iod4`（T3-3 step 13-15 已部署）
+## 当前状态（写时 commit `b365287`）
+- **Branch**: `main` @ `b365287`
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
 - **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
 - **上次更新**: 2026-07-03

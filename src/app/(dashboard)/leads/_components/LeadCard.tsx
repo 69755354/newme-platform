@@ -388,14 +388,14 @@ export function LeadCard({
                 onClick={(e) => { e.stopPropagation(); openStageEditor(); }}>
                 <MoreHorizontal className="w-3.5 h-3.5" />
               </button>
-              {(salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
-                <button title={t("common.delete") || "Delete"}
-                  className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
-                  onClick={(e) => { e.stopPropagation(); void handleDelete(lead.id, lead.assigned_to); }}>
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
             </div>
+            {(salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
+              <button title={t("common.delete") || "Delete"}
+                className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
+                onClick={(e) => { e.stopPropagation(); void handleDelete(lead.id, lead.assigned_to); }}>
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
 

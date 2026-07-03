@@ -6,11 +6,11 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `b365287`）
-- **Branch**: `main` @ `b365287`
+## 当前状态（写时 commit `e20291c`）
+- **Branch**: `main` @ `e20291c`
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
 - **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
-- **上次更新**: 2026-07-03
+- **上次更新**: 2026-07-03 晚间（kanban-merge + 3 个 UI 修复 + deploy gate）
 
 ---
 
@@ -58,12 +58,24 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 ---
 
-## 三、2026-07-02 新增变更（对比 P1P1 真相源）
+## 三、2026-07-03 新增变更（对比 P1P1 真相源）
 
 | 变更 | 提交 | 影响 |
 |------|------|------|
 | **auth fix** — ensureSession() + token 去重 | `0638dcd` | 修双登 bug + 删除 lead → 登录页 redirect 问题 |
 | **SPEC 门禁** — check-spec.sh + deploy.sh Step 0.5 | `6dda27d` | 强制 SPEC.md 在 3 commit 内更新，否则 deploy 警告 |
+| **kanban-merge** — 移植 pipeline 交互特性到 leads 页 | `d87379f` | leads 页获左右箭头/键盘←→/snap-x/列级垂直滚动 |
+| **LeadCard shrink-0** — 修复已联系列 33 条卡片空白 | `83bc8a9` | flex 压缩问题，卡片加 shrink-0 |
+| **reassign dropdown** — 修复被列 overflow 裁剪 | `8a653dd` | dropdown 改 inline flow，不再被裁剪 |
+| **删除按钮挤出** — 修复 LeadCard 底部按钮被内容挤出 | `e20291c` | hover actions 改 hidden + 按钮 shrink-0 |
+| **scroll fix** — leads 滚动修复（KanbanBoard 移出 filter-bar） | `248e987` | sticky filter-bar 不再包裹整个 kanban |
+| **control-plane** — deploy build ownership + service name | `0ddff02` `81897df` | root deploy 修复 |
+| **SPEC sync** — 8 文件收录 | `83f240b` | SPEC 更新 |
+| **i18n** — payments/tasks 国际化 | `b365287` | 中英文键完整覆盖 |
+| **contracts Dialog** — 5 处 prompt/confirm → Dialog | `f764ca3` | 统一自定义 Dialog |
+| **NotificationBell** — Portal + print styles | `7f58969` | scroll chain 修复 |
+| **deploy gate** — 冒烟+日志+回归测试集成 | `212833b` | deploy.sh 增加 3 步验证 |
+| **Coding Auth Gate** — pre-commit 升级为签名验证 | `86549cb` | 代码修改必须通过授权 |
 
 ---
 
@@ -81,7 +93,7 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | `src/app/(dashboard)/leads/_components/LeadsFilters.tsx` | Filter row | 198 | 🟢 新建 |
 | `src/app/(dashboard)/leads/_components/LeadsBulkTransferBar.tsx` | 批量转移 sticky bar（admin/boss + checkbox） | 122 | 🟢 新建 |
 | `src/app/(dashboard)/leads/_components/LeadsPipelineSummary.tsx` | Pipeline 阶段卡片 grid | 110 | 🟢 T3-3 step 13 新建 |
-| `src/app/(dashboard)/leads/_components/LeadsKanbanBoard.tsx` | Kanban board 容器 + drop zones | 203 | 🟢 T3-3 step 14 新建 |
+| `src/app/(dashboard)/leads/_components/LeadsKanbanBoard.tsx` | Kanban 容器（左右箭头/键盘/snap-x/列滚动，移植自 pipeline） | 258 | 🟢 kanban-merge 完成 |
 | `src/app/(dashboard)/leads/_hooks/useLeadsData.ts` | 数据 hook (4 queries → useSupabaseQuery) | — | T3-3 step 5 |
 | `src/app/(dashboard)/leads/_hooks/useLeadMutations.ts` | 写 hook (9 handlers + writeEvent) | — | T3-3 step 6 |
 | `src/app/(dashboard)/leads/_hooks/useLeadsFiltering.ts` | 过滤 hook (filtered/columns/stageTotals/sources) | 175 | 🟢 T3-3 step 15 新建 |
@@ -124,6 +136,9 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 - **Hermes 禁手令 §十二** — Hermes 调度员不直接写代码，违反 P1P1 §代码审查流程铁律
 - **MoA 三档分级** — 🟢免审 / 🟡单审 + OEEC 紧急例外 / 🔴双审（hermes-rules.md §十）
 - **SPEC.md 唯一真相源（2026-07-03 确立）** — 本文件包含架构+待办+设计决策；TASKBOARD.md 仅为 deploy gate 脚本格式；COS P1P1 已废弃
+- **kanban-merge（2026-07-03 晚间）** — pipeline 和 leads 共享交互模式（箭头/键盘/snap-x/列滚动），最终目标统一为共享 KanbanShell。当前分两个文件，代码已对齐
+- **overflow + dropdown 冲突** — 列容器 `overflow-y-auto` 会裁剪 `absolute` 子元素，dropdown 必须用 inline flow 或 Portal，禁止 `absolute top-full`
+- **hover-only 按钮不占空间** — `opacity-0` 仍占 DOM 空间，hover-only actions 必须用 `hidden group-hover:flex`
 
 ---
 
@@ -148,6 +163,9 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 - T2-4 ✅ 完成（5 commits：1ac84ca + a606d9b + 0fe9543 + aa54565 + 7c7d74c）
 - auth fix ✅ 完成（`0638dcd`）
 - SPEC 门禁 ✅ 完成（`6dda27d`）
+- **kanban-merge** ✅ 完成（`d87379f` — pipeline 交互特性移植到 leads）
+- **LeadCard UI 修复** ✅ 3 commits（`83bc8a9` shrink-0 + `8a653dd` dropdown overflow + `e20291c` 删除按钮挤出）
+- **scroll fix** ✅ 完成（`248e987` — KanbanBoard 移出 filter-bar）
 
 **剩余主线工作（MoA 范围）**：
 - T3-1~T3-4 ✅ 全部完成（4/4 100%）
@@ -156,8 +174,10 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 - leads/new 🔧 成功 Toast + 动态 import 静态化
 - hermes-ci ❌ 需你决定 CI 提供商
 - moa-tier2-detail ❌ 需你确认方案方向
-- contracts Dialog 改造 ⏳ 5 处 prompt()/confirm() 待替换
-- payments/tasks i18n ⏳ 大量硬编码字符串待国际化
+- contracts Dialog 改造 ✅ 完成（`f764ca3`）
+- payments/tasks i18n ✅ 完成（`b365287`）
+- kanban-unify ❌ 待做：统一 stage 定义 + fmtAED 到 shared/
+- 全站性能优化 ❌ 待做：108 请求 / 3.3MB / 33.73s
 - 18 项业务功能 ❌ 部分已修，产品细节待森哥确认
 
 ---
@@ -177,6 +197,10 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | **P1P1 vs TASKBOARD 状态不同步** | TASKBOARD 是 ground truth，P1P1 下次同步要补 T4-3/T4-4/T2-4 | 2026-07-02 发现 |
 | **MEMORY 路径 vs 真实 COS key 不一致** | 用户给路径先用 `coscmd list` 实测，不靠 memory | 2026-07-02 v3.1 P1P1 事故 |
 | **deploy 重启后冷启动 502** | systemd ExecStartPost 改 10×2s 重试 + 4 路由全部健康（login/root/dashboard/leads 都不能 000）；旧版只看 login 撞冷启动就 break | 2026-07-02 systemd unit (`infra/systemd/newme-platform.service`) |
+| **flex 压缩导致卡片空白** | 列容器 `max-h-[70vh]` + `overflow-y-auto` 时，子元素必须加 `shrink-0`，否则 flexbox 压缩到 ~2px | `83bc8a9` |
+| **overflow 裁剪 dropdown** | 列 `overflow-y-auto` 会裁剪 `absolute` 定位的子元素。dropdown 改 inline flow（`w-full mt-1`）或 Portal | `8a653dd` |
+| **hover actions 占空间导致按钮挤出** | `opacity-0` 仍占空间（仅透明），改 `hidden group-hover:flex` 不占空间 | `e20291c` |
+| **sticky filter-bar 包裹 kanban** | filter-bar sticky 容器包裹了整个 kanban，导致 sticky 失效 + 横滚异常。KanbanBoard 必须移出 sticky 容器 | `248e987` |
 
 ---
 

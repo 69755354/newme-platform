@@ -81,7 +81,8 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | **Command Center API 并行化** — 8 个 Supabase 查询改 Promise.all | `6cd01e9` | API 响应时间从串行 → 并行，减少 ~7 个 round-trip |
 | **Meta Pixel 条件加载** — 后台页面不加载 fbevents.js | `6dca992` `e7363fa` | 15 个后台路径（含子路由）不加载 Pixel 脚本，减少 JS 体积 |
 | **Bundle Analyzer** — `@next/bundle-analyzer` 安装（observe-only） | `e50a9c4` | `ANALYZE=true npm run build` 可生成 bundle 报告 |
-| **🔴 P0 PROD BUILD GUARD** — 防止直接 build 覆盖生产 .next | (current) | guard-prod-build.sh + deploy.sh lock + IS_PRODUCTION marker；6 条防复发规则 |
+| **🔴 P0 PROD BUILD GUARD** — 防止直接 build 覆盖生产 .next | `d25faf3` | guard-prod-build.sh + deploy.sh lock + IS_PRODUCTION marker；6 条防复发规则 |
+| **xlsx lazy-load** — ExcelImportDialog 动态 import xlsx | `c54d83b` | `/leads` 客户端首屏 -234 KB；xlsx 仅在用户上传 Excel 时加载 |
 | **Ed25519 coding auth 强制** — commit + deploy gate 签名校验 | `acae40e` | 所有代码变更必须 Ed25519 签名 |
 
 ---

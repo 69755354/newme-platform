@@ -244,7 +244,8 @@ if [ "$NEEDS_INSTALL" = true ]; then
 
   # Update cache
   echo "📦 Updating node_modules cache..."
-  rm -rf "$NODE_CACHE"
+  sudo chattr -R -i "$NODE_CACHE" 2>/dev/null || true
+  sudo rm -rf "$NODE_CACHE"
   mkdir -p "$NODE_CACHE"
   if cp -al "node_modules" "$NODE_CACHE/node_modules" 2>/dev/null; then
     cp "package-lock.json" "$NODE_CACHE_LOCK"

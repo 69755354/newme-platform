@@ -55,7 +55,7 @@ export default function AlertPanel() {
   const { lang } = useLanguage();
   const [data, setData] = useState<AlertsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
 
   const fetchAlerts = useCallback(async () => {
     try {

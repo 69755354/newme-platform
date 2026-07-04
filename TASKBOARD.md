@@ -144,4 +144,16 @@ After deployment + production verification, move completed rows to archive secti
 ---
 
 ## Archive
-(empty)
+
+### P1-B: Client Supabase Removal (analytics/ads/products) — 2026-07-04
+| # | File | Change | Result |
+|---|------|--------|--------|
+| P1-B | src/app/(dashboard)/analytics, /ads, /products | 移除 client Supabase → server actions + API routes | analytics 995→771KB (-224KB), ads 961→738KB (-223KB), products 1066→842KB (-224KB) |
+
+### P1-C: Dashboard Summary API Aggregation — 2026-07-04
+| # | File | Change | Result |
+|---|------|--------|--------|
+| P1-C | src/app/api/dashboard/summary/route.ts | NEW — 聚合 14 条 server Supabase 查询，30s cache | dashboard 18 client Supabase REST calls → 1 fetch (573ms) |
+| P1-C | src/app/(dashboard)/dashboard/page.tsx | −355 lines client Supabase reads, +30 lines fetch | 0 Supabase REST data calls on /dashboard Network panel |
+
+验收: `/api/dashboard/summary` 573ms。Network 面板 0 `supabase.co/rest/v1/` 调用（仅 1 auth token）。BUILD_ID `arpeAWPUml4dotHYJ10KK`。

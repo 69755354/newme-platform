@@ -6,12 +6,12 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `2ff1954`）
-- **Build**: 部署中（全站 prefetch={false} — 20 links across 12 files）
+## 当前状态（写时 commit `7ee3170`）
+- **Build**: 部署中（P1-B: dashboard layout Supabase client 移除）
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
 - **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
-- **上次更新**: 2026-07-04（性能优化第三批 → 全站 Link prefetch 关闭 + API 缓存 + alerts 白名单 + 死代码清理）
-- **状态**: 🔓 解冻 — 继续性能优化
+- **上次更新**: 2026-07-04（P1-B Supabase browser chunk removal — /analytics /ads /products 各 -224KB）
+- **状态**: 🔓 P1-B 完成，下一项待定
 - **事故**: 2026-07-04 deploy incident — 旧 deploy.sh 在生产 .next 原地构建导致停服 → v4.0 隔离构建修复（见 §四）
 
 ---
@@ -296,7 +296,9 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 || **alerts 查询优化 + 白名单** | `2c1aef4` | `select("*")` 28 列→6 列白名单、`limit(30)`、移除计算列二次排序 |
 || **API 缓存层** | `2c1aef4` | `src/lib/api-cache.ts` — 30s TTL 内存缓存，`role+userId` 键隔离；alerts 541→208ms、team 608→196ms |
 || **Sidebar Link prefetch 关闭** | `dc1b479` | `DashboardSidebar.tsx` 全 nav Link 加 `prefetch={false}`，dashboard `?_rsc=` 从 7-10 降到 0 |
-|| **全站 backend Link prefetch 关闭** | `2ff1954` | 12 文件 20 处 Link 加 `prefetch={false}`，覆盖 workbench/leads/contracts/team/ads/analytics/products/projects/settings/SubNavTabs/ErrorBoundary；预计全站 `?_rsc=` 清零 |
+|| **全站 backend Link prefetch 关闭** | `2ff1954` | 12 文件 20 处 Link 加 `prefetch={false}` |
+|| **deploy.sh 修复** | `f2c835c` `348a1b4` `d9236c0` | 移除 broken node_modules hardlink cache，always npm ci；2>/dev/null 埋错 + immutable attr 修复 |
+|| **P1-B Supabase client 移除** | `7ee3170` | `useAuthRedirect` 改 fetch API routes 替代 `createClient()`；移除 `/analytics` `/ads` `/products` 三个页面的 client-side Supabase import；新增 5 个 API route（/api/auth/me、/api/auth/logout、/api/auth/dev-login、/api/ads/leads、/api/products）；bundle 收益 -224KB/页面 |
 
 ### Bundle Analyzer 全站基线数据
 

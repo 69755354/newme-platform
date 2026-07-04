@@ -186,6 +186,14 @@ After this migration is applied, each new `follow_up_logs` row ensures the lead 
 
 Compatibility with `check_milestone_order`: an existing `(lead_id, milestone_key)` returns early so the caller's `ON CONFLICT` can make the insert idempotent, and `first_contact` returns early as a historical contact-fact backfill even when later milestones already exist. Every non-duplicate, non-`first_contact` insert still uses the existing no-backward/no-skip checks and updates `leads.current_milestone`; the `first_contact` bypass does not update the current milestone.
 
+### P3-3 quality API
+
+`GET /api/dashboard/quality` is the single BFF aggregation endpoint for contact-quality metrics. It returns camelCase counts for non-archived leads, first-contact coverage, missing and overdue follow-up, the production quality values (`pending`, `good`, `normal`), and a 0–100 weighted score: `(good * 100 + normal * 50) / (good + normal)`, rounded; the score is `0` when no leads are judged.
+
+Authentication uses the server Supabase client. `admin`, `boss`, and `operator` receive all-lead aggregates (`isCEO: true`); `sales` is restricted to `leads.assigned_to = user.id`, including milestone and no-answer log counts through an inner lead join. All aggregates use exact head-only count queries and run in parallel without loading row data.
+
+The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. Its returned `period.start` is the inclusive UTC month boundary and `period.end` is the exclusive next-month UTC boundary; absent periods return `period: null`, and malformed or out-of-range months return HTTP 400. Empty result sets return zero-valued metrics and `qualityScore: 0`.
+
 - **不用 Turbopack build** — race condition bug（`.tmp/_buildManifest.js.tmp` ENOENT），统一 `NEXT_NO_TURBOPACK=1 npx next build`。Turbopack chunk naming 不稳定导致 ChunkLoadError（chunks-cleanup 待做）
 - **useSupabaseQuery 替代 Promise.all** — 解决 3-4s 串行延迟，并行 + retry（leads/[id] P0-1 验证 161ms）
 - **self-hosted systemd 不上 Vercel** — 数据所有权 + 部署可控

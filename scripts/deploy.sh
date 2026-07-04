@@ -175,29 +175,10 @@ echo "ℹ️  Service is LIVE. Production .next is untouched."
 BUILD_START=$(date +%s)
 
 # Copy project to temp directory using rsync (fully isolated, no hardlinks)
-# This ensures the build directory is a complete independent copy
-# Skipping node_modules (2.2GB) and .git (59MB) — cached separately
-echo "📋 Copying project to build directory (rsync, fully isolated)..."
-
+# Skipping .next (build output), .git, and node_modules — rebuilt fresh each deploy
+echo "📋 Copying project to build directory (rsync, isolated)..."
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
-
-# ── Node modules cache ────────────────────────────────────────
-# Cache lives at /tmp/newme-node-cache — reuse via hardlinks.
-# Rebuilt only when package-lock.json changes.
-NODE_CACHE="/tmp/newme-node-cache"
-NODE_CACHE_LOCK="$NODE_CACHE/package-lock.json"
-
-if [ -d "$NODE_CACHE/node_modules" ] && [ -f "$NODE_CACHE_LOCK" ]; then
-  if cp -al "$NODE_CACHE/node_modules" "$BUILD_DIR/node_modules" 2>/dev/null && \
-     [ -x "$BUILD_DIR/node_modules/.bin/next" ]; then
-    echo "📦 Reused node_modules cache ($(du -sh "$NODE_CACHE/node_modules" 2>/dev/null | cut -f1))"
-  else
-    echo "⚠️  Cache hardlink failed or incomplete, cleaning up..."
-    rm -rf "$BUILD_DIR/node_modules" 2>/dev/null || true
-  fi
-fi
-# ───────────────────────────────────────────────────────────────
 
 rsync -a --delete \
   --exclude '.next' \
@@ -211,52 +192,23 @@ rsync -a --delete \
 
 echo "✅ Project copied (src: $(du -sh --exclude=node_modules "$BUILD_DIR" 2>/dev/null | cut -f1))"
 
-# ── Validate / rebuild node_modules ────────────────────────────
+# ── Install dependencies (fresh npm ci, no cache) ──────────────
 cd "$BUILD_DIR"
 
-NEEDS_INSTALL=false
-if [ ! -d "node_modules" ]; then
-  echo "📦 No node_modules — running npm ci..."
-  NEEDS_INSTALL=true
-elif [ -f "$NODE_CACHE_LOCK" ]; then
-  if ! diff -q "package-lock.json" "$NODE_CACHE_LOCK" >/dev/null 2>&1; then
-    echo "📦 package-lock.json changed — rebuilding node_modules..."
-    rm -rf node_modules
-    NEEDS_INSTALL=true
-  fi
-elif [ ! -f "$NODE_CACHE_LOCK" ]; then
-  echo "📦 No cache lock — running npm ci..."
-  rm -rf node_modules
-  NEEDS_INSTALL=true
+echo "📦 Installing dependencies (npm ci)..."
+if ! npm ci; then
+  echo "❌ npm ci failed."
+  echo "ℹ️  Production .next was NEVER touched. Service is unaffected."
+  exit 1
 fi
+echo "✅ npm ci complete"
 
-if [ "$NEEDS_INSTALL" = true ]; then
-  if ! npm ci > "$PROJECT_ROOT/.npm-ci-stdout.log" 2>&1; then
-    echo "❌ npm ci failed. Cache NOT updated."
-    tail -30 "$PROJECT_ROOT/.npm-ci-stdout.log"
-    rm -f "$PROJECT_ROOT/.npm-ci-stdout.log"
-    cd "$PROJECT_ROOT"
-    echo "ℹ️  Production .next was NEVER touched. Service is unaffected."
-    exit 1
-  fi
-  rm -f "$PROJECT_ROOT/.npm-ci-stdout.log"
-  echo "✅ npm ci complete"
-
-  # Update cache
-  echo "📦 Updating node_modules cache..."
-  sudo chattr -R -i "$NODE_CACHE" 2>/dev/null || true
-  sudo rm -rf "$NODE_CACHE"
-  mkdir -p "$NODE_CACHE"
-  if cp -al "node_modules" "$NODE_CACHE/node_modules" 2>/dev/null; then
-    cp "package-lock.json" "$NODE_CACHE_LOCK"
-    echo "✅ Cache updated ($(du -sh "$NODE_CACHE/node_modules" 2>/dev/null | cut -f1))"
-  else
-    echo "⚠️  Cache update failed (non-fatal, will npm ci next deploy)"
-  fi
-else
-  echo "✅ node_modules cache valid, skipping npm ci"
+# ── Verify critical binary exists ────────────────────────────
+if [ ! -x node_modules/.bin/next ]; then
+  echo "❌ node_modules/.bin/next not found or not executable after npm ci."
+  echo "ℹ️  Production .next was NEVER touched. Service is unaffected."
+  exit 1
 fi
-# ───────────────────────────────────────────────────────────────
 
 # Build in temp directory — completely isolated from production
 cd "$BUILD_DIR"

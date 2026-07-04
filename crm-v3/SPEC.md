@@ -6,12 +6,12 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `e5dc28f`）
-- **Build**: 已部署 P1-D — leads list 4 Supabase reads → /api/leads/list
+## 当前状态（写时 commit `db7f0f0`）
+- **Build**: 已部署 P1-E — analytics 6 条 API calls → /api/analytics/summary BFF endpoint
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
 - **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
-- **上次更新**: 2026-07-04（P1-D /leads list API aggregation）
-- **状态**: 🔓 P1-C/P1-D 完成，P1-E /analytics 下一项
+- **上次更新**: 2026-07-04（P1-E /analytics BFF aggregation，全 5 页 client Supabase reads 已清零）
+- **状态**: ✅ P1-C/P1-D/P1-E 全部完成
 - **事故**: 2026-07-04 deploy incident — 旧 deploy.sh 在生产 .next 原地构建导致停服 → v4.0 隔离构建修复（见 §四）
 
 ---
@@ -328,15 +328,14 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | `/dashboard` | 18 条 | `/api/dashboard/summary` (573ms) | ✅ |
 | `/workbench` | 1 死 import | — (已删除) | ✅ |
 | `/leads` | 4 条 read | `/api/leads/list` | ✅ |
-| `/analytics` | 多个 fetch + client reads | `/api/analytics/summary` | 🔴 待做 |
+| `/analytics` | 6 条 fetch | `/api/analytics/summary` | ✅ P1-E |
 
 ### 下一轮优化顺序
 
-#### #1 P1-E: /analytics BFF 聚合
-- 把 analytics 多个分散请求收敛成 1 个 `/api/analytics/summary`
-- 聚合 ads + funnel + revenue + conversion stats
-- server-side Promise.all 并行查询
-- 预期：Network calls 多→1，Bundle -100~200KB
+#### #1 P1-E: /analytics BFF 聚合 ✅ 完成
+- `db7f0f0` — 新建 `/api/analytics/summary`，7 条 server Supabase 查询 Promise.all 并行 + 30s cache
+- analytics page.tsx 单次 fetch 替代 6 条分散请求
+- BUILD_ID `SKwOrxKMZl2AoWmEzyXS0`，smoke 14/14
 
 #### #2 登录 session 后重跑 CRM performance test
 - playwright + 真实浏览器测量

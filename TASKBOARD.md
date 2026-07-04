@@ -1,16 +1,29 @@
 # TASKBOARD.md — Machine-Verifiable Task Tracking (本地工具脚本真相源)
-# Last updated: 2026-07-04 (commit acae40e)
-# Owner: MoA Tier 1 Technical Debt
-# ⚠️ 2026-07-01 v3.1 升级：所有任务/规范/审计/运维记录已合并到 COS
-#    crm-v3/v3.1/v3.1 P1P1计划0629.txt (4990 → 5151 行，含今日全部变更)
-#    本文件仅保留脚本可识别的 TASKBOARD 表格 + check-taskboard.sh 依赖
-#    完整进度请读 P1P1计划0629.txt 的【实时进度】章节
+# Last updated: 2026-07-04
+# Format: Frozen v2 (MoA签发版) — 4状态模型
+
+## ⚠️ STATE MACHINE (唯一状态流)
+```
+TODO → IN_PROGRESS → REVIEW → DONE
+                         ↓
+                      BLOCKED
+```
 
 ## ⚠️ RULE
-- Every audit/plan that produces action items MUST be converted into this file.
-- Items NOT in this file = do not exist.
-- Before every deploy: run `scripts/check-taskboard.sh`. Any ❌ = abort deploy.
-- Every session start: Hermes reads this file and reports status to user.
+- 每次状态变化 → 在【活动任务】区追加一行
+- Items NOT in this file = do not exist
+- Before every deploy: `scripts/check-taskboard.sh`. Any ❌ = abort
+- Every session start: Hermes reads this file first
+
+---
+
+## 活动任务
+
+| TASK_ID | STATUS | OWNER | UPDATED_AT |
+|---------|--------|-------|------------|
+|| task_P1-C | DONE | Hermes | 2026-07-04 |
+|| task_P1-D | DONE | Codex→Hermes | 2026-07-04 |
+|| task_P1-E | DONE | Codex→Hermes | 2026-07-04 |
 
 ---
 
@@ -157,3 +170,20 @@ After deployment + production verification, move completed rows to archive secti
 | P1-C | src/app/(dashboard)/dashboard/page.tsx | −355 lines client Supabase reads, +30 lines fetch | 0 Supabase REST data calls on /dashboard Network panel |
 
 验收: `/api/dashboard/summary` 573ms。Network 面板 0 `supabase.co/rest/v1/` 调用（仅 1 auth token）。BUILD_ID `arpeAWPUml4dotHYJ10KK`。
+
+### P1-D: Leads List API Aggregation — 2026-07-04
+|| # | File | Change | Result |
+||---|------|--------|--------|
+|| P1-D | src/app/api/leads/list/route.ts | NEW — 聚合 auth+profile+leads+salesUsers 4 queries | leads 4 client Supabase reads → 1 fetch |
+|| P1-D | src/app/(dashboard)/leads/_hooks/useLeadsData.ts | Supabase reads → fetch('/api/leads/list') | 0 Supabase REST data calls on /leads Network panel |
+|| P1-D | src/app/(dashboard)/leads/page.tsx | −createClient import, −supabase const | bulkTransfer → useLeadMutations integration |
+
+验收: BUILD_ID `34myA0cSpjO3BQHGA3DTc`。smoke 14/14。
+
+### P1-E: Analytics Summary API Aggregation — 2026-07-04
+|| # | File | Change | Result |
+||---|------|--------|--------|
+|| P1-E | src/app/api/analytics/summary/route.ts | NEW — 聚合 7 条 server Supabase 查询，Promise.all 并行，30s cache | analytics 6 条分散 fetch → 1 条 /api/analytics/summary |
+|| P1-E | src/app/(dashboard)/analytics/page.tsx | +AnalyticsContext, 单次 fetch 替代 6 条分散请求 | 0 client Supabase reads，AnalyticsContext 可供子组件未来迁移 |
+
+验收: BUILD_ID `SKwOrxKMZl2AoWmEzyXS0`。smoke 14/14。5/5 页面 client Supabase reads 清零。

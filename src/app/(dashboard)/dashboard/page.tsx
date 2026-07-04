@@ -89,7 +89,6 @@ export default function DashboardPage() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [salesUsers, setSalesUsers] = useState<any[]>([]);
   const [teamOwnership, setTeamOwnership] = useState<any[]>([]);
-  const [activities, setActivities] = useState<any[]>([]);
   const [showActivityFeed, setShowActivityFeed] = useState(false);
   
   // Period & KPI targets
@@ -491,22 +490,6 @@ export default function DashboardPage() {
       setTopActions(sorted.slice(0, 5));
     })();
   }, [userId, userRole, language]);
-
-  // Fetch recent activities for admin/boss transparency
-  useEffect(() => {
-    if (!userId) return;
-    (async () => {
-      let url = "/api/activities?limit=30";
-      if (userRole === "sales") {
-        const { data } = await supabase.from("leads").select("id").eq("assigned_to", userId);
-        if (data?.length) {
-          url += "&lead_id=" + data.map(l => l.id).join(",");
-        } else { setActivities([]); return; }
-      }
-      const res = await fetch(url);
-      if (res.ok) { const data = await res.json(); setActivities(data || []); }
-    })();
-  }, [userId, userRole]);
 
   /* ─── Computed ─── */
   const stats = useMemo(() => {

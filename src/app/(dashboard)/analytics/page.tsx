@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { createClient } from "@/lib/supabase";
 import { ErrorState } from "@/components/ui/error-state";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useLanguage } from "@/lib/i18n/context";
@@ -22,44 +20,15 @@ const WeeklyTrends = dynamic(() => import("./_components/WeeklyTrends"), {
   loading: () => <div className="h-80 animate-pulse bg-muted/20 rounded-lg" />,
 });
 
-const supabase = createClient();
-
 export default function AnalyticsPage() {
-  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss", "sales"]);
+  const { loading: roleLoading, blocked, role } = useRequireRole(["admin", "boss", "sales"]);
   const { t } = useLanguage();
-  const [role, setRole] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-      if (profile) setRole(profile.role);
-      setLoading(false);
-    })();
-  }, []);
 
   // Block render until role is resolved to prevent flash
   if (roleLoading || blocked) return null;
 
   const isManagement = role === "boss" || role === "admin";
   const isSales = role === "sales";
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-        {t("analytics.loading")}
-      </div>
-    );
-  }
 
   if (isManagement) {
     /* ═══ CEO/Admin View: 2-column grid ═══ */

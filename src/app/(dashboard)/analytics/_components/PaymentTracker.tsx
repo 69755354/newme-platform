@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { createClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import {
@@ -9,8 +8,8 @@ import {
   CheckCircle2, TrendingUp, ChevronRight, User,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
-
-const supabase = createClient();
+import { useRequireRole } from "@/hooks/useRequireRole";
+import { getCurrentUser } from "@/app/actions/auth";
 
 /* ─── Types ─── */
 interface PaymentSummary {
@@ -94,6 +93,8 @@ export default function PaymentTracker() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
+  const { loading: roleLoading, role } = useRequireRole(["admin", "boss", "operator", "sales"]);
+
   const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
     paid:     { label: t("analytics.paid"),       bg: "bg-emerald-500/10", text: "text-emerald-400", dot: "bg-emerald-500" },
     overdue:  { label: t("analytics.overdueStatus"),    bg: "bg-red-500/10",     text: "text-red-400",    dot: "bg-red-500" },
@@ -103,18 +104,14 @@ export default function PaymentTracker() {
   };
 
   useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      setUserId(user.id);
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role, full_name")
-        .eq("id", user.id)
-        .single();
-      setUserRole(profile?.role ?? "sales");
-    })();
-  }, []);
+    if (roleLoading) return;
+    getCurrentUser().then((user) => {
+      if (user) {
+        setUserId(user.id);
+        setUserRole(role);
+      }
+    });
+  }, [roleLoading, role]);
 
   useEffect(() => {
     if (!userRole) return;

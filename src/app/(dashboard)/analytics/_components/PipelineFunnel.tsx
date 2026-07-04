@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { createClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Users, Clock, ChevronRight, TrendingDown } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
-
-const supabase = createClient();
+import { useRequireRole } from "@/hooks/useRequireRole";
 
 /* ─── Types ─── */
 interface StageData {
@@ -20,133 +18,73 @@ interface StageData {
   isBottleneck: boolean;
 }
 
-interface StuckLead {
-  id: string;
-  customer_name: string | null;
-  stage: string;
-  days_in_stage: number;
-  stage_label: string;
-}
-
 interface FunnelData {
   stages: StageData[];
-  stuckLeads: StuckLead[];
   totalLeads: number;
+  stuckLeads: { id: string; customer_name: string | null; days_in_stage: number; stage_label: string }[];
   lostFromStage: Record<string, number>;
 }
 
-/* ─── Stage color config ─── */
-const STAGE_COLORS: Record<string, string> = {
-  new: "#6B7280",
-  contacted: "#C48A52",
-  requirement_confirmed: "#E0B95A",
-  solution_submitted: "#4A5568",
-  quotation_submitted: "#8B5CF6",
-  negotiation: "#3B82F6",
-  pending_decision: "#F59E0B",
-  won: "#4ADE80",
-  lost: "#6B7280",
-};
-
-const STAGE_BG: Record<string, string> = {
-  new: "bg-gray-500/10",
-  contacted: "bg-amber-700/20",
-  requirement_confirmed: "bg-yellow-600/20",
-  solution_submitted: "bg-slate-700/20",
-  quotation_submitted: "bg-purple-600/20",
-  negotiation: "bg-blue-600/20",
-  pending_decision: "bg-amber-600/20",
-  won: "bg-emerald-600/20",
-  lost: "bg-gray-500/10",
-};
-
-const BORDER_COLORS: Record<string, string> = {
-  new: "border-gray-500/30",
-  contacted: "border-amber-700/30",
-  requirement_confirmed: "border-yellow-600/30",
-  solution_submitted: "border-slate-700/30",
-  quotation_submitted: "border-purple-600/30",
-  negotiation: "border-blue-600/30",
-  pending_decision: "border-amber-600/30",
-  won: "border-emerald-600/30",
-  lost: "border-gray-500/30",
-};
-
-function fmtAED(v: number): string {
-  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
-  return `AED ${v}`;
+/* ─── Helpers ─── */
+function fmtPct(v: number): string {
+  return `${Math.round(v)}%`;
 }
 
-/* ─── Funnel Bar ─── */
-function FunnelBar({ stage, maxCount, showConversion }: {
+function fmtDays(v: number): string {
+  if (v >= 365) return `${Math.round(v / 30)}mo`;
+  return `${v}d`;
+}
+
+/* ─── Components ─── */
+function FunnelBar({
+  stage,
+  maxCount,
+  showConversion = true,
+}: {
   stage: StageData;
   maxCount: number;
-  showConversion: boolean;
+  showConversion?: boolean;
 }) {
-  const router = useRouter();
-  const widthPct = maxCount > 0 ? Math.max((stage.count / maxCount) * 100, 3) : 0;
-  const color = STAGE_COLORS[stage.key] || "#6B7280";
+  const pct = maxCount > 0 ? (stage.count / maxCount) * 100 : 0;
+  const isLost = stage.key === "lost";
+  const barColor = isLost
+    ? "bg-gray-500/30"
+    : stage.isBottleneck
+      ? "bg-rose-500/50"
+      : "bg-copper-400/60";
 
   return (
-    <button
-      onClick={() => router.push(`/leads?stage=${stage.key}`)}
-      className="w-full group relative flex items-center gap-3 py-1.5 hover:opacity-90 transition-all text-left"
-    >
-      {/* Funnel bar visualization */}
-      <div className="flex-1 relative h-11">
-        {/* Background bar */}
-        <div
-          className={cn(
-            "absolute inset-y-0 left-0 rounded-r-lg border transition-all duration-300",
-            STAGE_BG[stage.key] || "bg-gray-500/10",
-            BORDER_COLORS[stage.key] || "border-gray-500/30",
-            stage.isBottleneck && "ring-1 ring-red-400/60"
-          )}
-          style={{ width: `${widthPct}%` }}
-        >
-          {/* Filled portion with gradient */}
-          <div
-            className="absolute inset-0 rounded-r-lg opacity-80"
-            style={{
-              background: `linear-gradient(90deg, ${color}44, ${color}22)`,
-            }}
-          />
-        </div>
-
-        {/* Label overlay */}
-        <div className="absolute inset-0 flex items-center px-3 gap-2 z-10">
-          <span className="text-xs font-semibold text-foreground min-w-[100px] shrink-0">
+    <div className="flex items-center gap-3 py-0.5">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="text-[11px] font-medium text-foreground truncate">
             {stage.label}
           </span>
-          <span className="text-sm font-bold text-foreground">
+          <span className="text-[10px] text-muted-foreground shrink-0">
             {stage.count}
           </span>
-          {stage.pctOfTop < 100 && (
-            <span className="text-[10px] text-muted-foreground">
-              ({stage.pctOfTop}%)
-            </span>
+          {stage.isBottleneck && !isLost && (
+            <TrendingDown className="w-3 h-3 text-rose-400 shrink-0" />
           )}
         </div>
+        <div className="w-full h-2 rounded-full bg-muted/20 overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+            style={{ width: `${Math.max(pct, 2)}%` }}
+          />
+        </div>
       </div>
-
-      {/* Conversion rate to next */}
-      {showConversion && stage.conversionToNext !== null && (
-        <div className={cn(
-          "flex items-center gap-1 text-xs font-mono min-w-[60px] justify-end shrink-0",
-          stage.isBottleneck ? "text-red-400" : "text-emerald-400"
-        )}>
-          {stage.isBottleneck && <TrendingDown className="w-3 h-3" />}
-          {stage.conversionToNext}%
+      {showConversion && (
+        <div className="min-w-[60px] text-right">
+          <span className="text-[10px] text-muted-foreground">
+            {stage.conversionToNext !== null ? fmtPct(stage.conversionToNext) : "—"}
+          </span>
         </div>
       )}
-
-      {/* Avg days */}
-      <div className="flex items-center gap-1 text-[10px] text-muted-foreground min-w-[40px] justify-end shrink-0">
-        <Clock className="w-2.5 h-2.5" />
-        {stage.avgDaysInStage > 0 ? `${stage.avgDaysInStage}d` : "—"}
+      <div className="min-w-[40px] text-right">
+        <span className="text-[10px] text-muted-foreground">{fmtDays(stage.avgDaysInStage)}</span>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -154,24 +92,13 @@ function FunnelBar({ stage, maxCount, showConversion }: {
 export default function PipelineFunnel() {
   const router = useRouter();
   const { t } = useLanguage();
+  const { loading: roleLoading, role } = useRequireRole(["admin", "boss", "operator", "sales"]);
 
   const [data, setData] = useState<FunnelData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-      setUserRole(profile?.role ?? "sales");
-    })();
-  }, []);
+  const userRole = roleLoading ? null : role;
 
   useEffect(() => {
     if (!userRole) return;
@@ -235,7 +162,7 @@ export default function PipelineFunnel() {
         {bottleneck && (
           <div className="flex items-center gap-1 text-[11px] text-red-400">
             <AlertTriangle className="w-3 h-3" />
-            {t("analytics.bottleneck")} &quot;{bottleneck.label}&quot;
+            {t("analytics.bottleneck")} "{bottleneck.label}"
           </div>
         )}
       </div>

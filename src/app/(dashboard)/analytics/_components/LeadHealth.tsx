@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useLanguage } from "@/lib/i18n/context";
 import {
@@ -9,8 +8,7 @@ import {
   AlertTriangle, Phone, MessageSquare, FileText,
 } from "lucide-react";
 import Link from "next/link";
-
-const supabase = createClient();
+import { addLeadNote } from "@/app/actions/lead";
 
 /* ─── Types ─── */
 interface LeadHealthData {
@@ -226,13 +224,12 @@ function SalesOverdueList({ items, stageLabels, t }: {
   const addNote = async (leadId: string) => {
     const note = prompt("Add a quick note for this follow-up:");
     if (!note) return;
-    await supabase.from("activities").insert({
-      lead_id: leadId,
-      type: "note",
-      content: note,
-      user_id: (await supabase.auth.getUser()).data.user?.id,
-    });
-    alert("Note added!");
+    const ok = await addLeadNote(leadId, note);
+    if (ok) {
+      alert("Note added!");
+    } else {
+      alert("Failed to add note. Please try again.");
+    }
   };
 
   return (

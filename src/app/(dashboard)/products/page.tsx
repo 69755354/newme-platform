@@ -1,8 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { createClient } from "@/lib/supabase";
-import { useSupabaseQuery } from "@/lib/supabaseQuery";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { Button } from "@/components/ui/button";
@@ -54,25 +52,34 @@ const CATEGORY_I18N_MAP: Record<string, string> = {
 };
 
 export default function ProductsPage() {
-  const supabase = createClient();
   const { t } = useLanguage();
   const { loading: roleLoading } = useRequireRole(["admin", "boss", "operator", "sales"]);
 
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
   const [importOpen, setImportOpen] = useState(false);
+  const [rawProducts, setRawProducts] = useState<any[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Fetch products using useSupabaseQuery
-  const { data: rawProducts, loading, error, refetch } = useSupabaseQuery<any[]>(
-    async () => {
-      return await supabase
-        .from("products")
-        .select("*")
-        .order("category")
-        .order("name");
-    },
-    []
-  );
+  const fetchProducts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/products");
+      if (!res.ok) throw new Error("Failed to fetch");
+      const json = await res.json();
+      setRawProducts(json.products);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (!roleLoading) fetchProducts();
+  }, [roleLoading, fetchProducts]);
+
   const products = rawProducts || [];
 
   const filtered = useMemo(() => {
@@ -248,7 +255,7 @@ export default function ProductsPage() {
       <ProductImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
-        onImported={() => refetch()}
+        onImported={() => fetchProducts()}
       />
     </DashboardScrollContainer>
   );

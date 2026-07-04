@@ -154,12 +154,12 @@ else
 fi
 
 # ── T1-9: products/page.tsx ──
-echo "Task T1-9: src/app/(dashboard)/products/page.tsx (useSupabaseQuery)"
+echo "Task T1-9: src/app/(dashboard)/products/page.tsx (fetch /api/products)"
 if [ -f "src/app/(dashboard)/products/page.tsx" ]; then
-  if grep -q "useSupabaseQuery" "src/app/(dashboard)/products/page.tsx"; then
-    pass "products imports useSupabaseQuery"
+  if grep -q "fetch.*api/products" "src/app/(dashboard)/products/page.tsx"; then
+    pass "products uses fetch('/api/products') via API route"
   else
-    fail "products does NOT import useSupabaseQuery"
+    fail "products does NOT fetch /api/products"
   fi
 else
   fail "File products/page.tsx does not exist"

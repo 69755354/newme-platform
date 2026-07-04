@@ -2,13 +2,15 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
+import { getCurrentUser } from "@/app/actions/auth";
 
 const MANAGEMENT_ROLES = ["admin", "boss", "operator"];
 
 /**
  * Client-side role guard. Redirects to /dashboard if user lacks required role.
  * Returns { loading, role, blocked } so the page can block rendering.
+ *
+ * Uses server action (getCurrentUser) — no client-side Supabase dependency.
  */
 export function useRequireRole(allowedRoles: string[] = MANAGEMENT_ROLES) {
   const router = useRouter();
@@ -24,31 +26,28 @@ export function useRequireRole(allowedRoles: string[] = MANAGEMENT_ROLES) {
     let cancelled = false;
 
     async function check() {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      try {
+        const user = await getCurrentUser();
 
-      if (!user) {
-        router.push("/login");
-        return;
-      }
+        if (!user) {
+          router.push("/login");
+          return;
+        }
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
+        if (cancelled) return;
 
-      if (cancelled) return;
+        const userRole = user.role ?? null;
+        setRole(userRole);
+        setLoading(false);
 
-      const userRole = profile?.role ?? null;
-      setRole(userRole);
-      setLoading(false);
-
-      if (!userRole || !rolesRef.current.includes(userRole)) {
-        setBlocked(true);
-        router.push("/dashboard");
+        if (!userRole || !rolesRef.current.includes(userRole)) {
+          setBlocked(true);
+          router.push("/dashboard");
+        }
+      } catch {
+        if (!cancelled) {
+          router.push("/login");
+        }
       }
     }
 

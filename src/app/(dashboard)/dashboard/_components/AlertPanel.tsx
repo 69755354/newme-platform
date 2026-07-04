@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
   AlertTriangle, Clock, UserX, PhoneOff, DollarSign,

@@ -4,7 +4,6 @@ import { useEffect, useState, useMemo } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ErrorState } from "@/components/ui/error-state";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { createClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import {
   BarChart3, TrendingUp, Users, DollarSign, Target, ArrowLeft,
@@ -41,8 +40,7 @@ function fmtAED(v: number | null | undefined): string {
 }
 
 export default function AdsPage() {
-  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss"]);
-  const supabase = createClient();
+  const { loading: roleLoading, blocked, role: userRole } = useRequireRole(["admin", "boss"]);
   const { t } = useLanguage();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,29 +50,26 @@ export default function AdsPage() {
   const [viewMode, setViewMode] = useState<"source" | "campaign" | "adset" | "ad">("source");
 
   useEffect(() => {
+    if (roleLoading) return;
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-        const resolvedRole = profile?.role ?? "sales";
+      try {
+        const res = await fetch("/api/ads/leads");
+        if (!res.ok) throw new Error("Failed to fetch");
+        const json = await res.json();
+        const resolvedRole = json.role ?? userRole ?? "sales";
         setRole(resolvedRole);
-        // Sales users have no access to ads analytics — skip data fetch entirely
         if (resolvedRole === "sales") {
           setLoading(false);
           return;
         }
-      }
-      const { data, error: err } = await supabase.from("leads").select("*").eq("archived", false).order("created_at", { ascending: false }).limit(500);
-      if (err) {
+        if (json.leads) setLeads(json.leads as Lead[]);
+      } catch (err) {
         console.error("Failed to fetch leads:", err);
         setError(t("common.loadFailedRetry"));
-        setLoading(false);
-        return;
       }
-      if (data) setLeads(data as Lead[]);
       setLoading(false);
     })();
-  }, []);
+  }, [roleLoading, userRole]);
 
   const grouped = useMemo(() => {
     const groups: Record<string, { total: number; valid: number; quoted: number; won: number; value: number }> = {};

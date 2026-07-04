@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabase";
+import { getCurrentUser } from "@/app/actions/auth";
 
 export interface UserRoleInfo {
   role: string | null;
@@ -12,7 +12,6 @@ export interface UserRoleInfo {
 }
 
 export function useUserRole(): UserRoleInfo {
-  const supabase = createClient();
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -20,25 +19,20 @@ export function useUserRole(): UserRoleInfo {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data: { user }, error: authErr } = await supabase.auth.getUser();
-      if (authErr || !user) {
-        if (!cancelled) setLoading(false);
-        return;
-      }
-      if (cancelled) return;
-      setUserId(user.id);
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-
-      if (!cancelled) {
-        const r = profile?.role ?? "sales";
+      try {
+        const user = await getCurrentUser();
+        if (!user) {
+          if (!cancelled) setLoading(false);
+          return;
+        }
+        if (cancelled) return;
+        setUserId(user.id);
+        const r = user.role ?? "sales";
         setRole(r);
-        setLoading(false);
+      } catch {
+        // silent
       }
+      if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
   }, []);

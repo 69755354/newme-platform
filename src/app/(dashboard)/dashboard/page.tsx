@@ -79,7 +79,6 @@ interface FinanceStats {
 /* ════════════════════════════════════════ */
 export default function DashboardPage() {
   const router = useRouter();
-  const supabase = createClient();
   const { t, lang: language } = useLanguage();
 
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -129,119 +128,6 @@ export default function DashboardPage() {
   interface TopAction { type: string; title: string; subtitle: string; link: string; priority: "high" | "medium" | "low"; customerName: string; value: number; reason: string; phone: string | null; leadId: string; }
   const [topActions, setTopActions] = useState<TopAction[]>([]);
 
-  const fetchLeads = useCallback(async () => {
-    // Circuit-breaker: do NOT query until role is resolved.
-    // A sales user running unfiltered query would see all leads.
-    if (userRole === null) return;
-    setLoading(true);
-    setError(null);
-    let query = supabase.from("leads").select("*");
-    if (userRole === "sales" && userId) {
-      query = query.eq("assigned_to", userId);
-    }
-    const { data: l, error: err } = await query.order("updated_at", { ascending: false }).limit(500);
-    if (err) { console.error("Failed to fetch leads:", err); setError(t("common.loadFailedRetry")); setLoading(false); return; }
-    if (l) setLeads(l as Lead[]);
-    setLoading(false);
-  }, [supabase, userId, userRole, language]);
-
-  const fetchFinancialData = useCallback(async () => {
-    // Circuit-breaker: same as fetchLeads — wait for role resolution.
-    if (userRole === null) return;
-    setFinanceLoading(true);
-    try {
-      // 1. Contract Value: sum of contract_amount where status != 'terminated'
-      //    Must complete first to get contractIds for downstream filters
-      let contractQuery = supabase
-        .from("contracts")
-        .select("id,contract_amount,status,created_at");
-      if (userRole === "sales" && userId) {
-        contractQuery = contractQuery.eq("sales_id", userId);
-      }
-      const { data: contracts, error: cErr } = await contractQuery;
-      if (cErr) throw cErr;
-
-      const activeContracts = (contracts as Contract[] || []).filter(c => c.status !== "terminated");
-      const totalContractValue = activeContracts.reduce((sum, c) => sum + (c.contract_amount || 0), 0);
-      setContractCount(activeContracts.length);
-
-      // Collect contract IDs for downstream filters
-      const contractIds = (contracts as Contract[] || []).map(c => c.id);
-
-      // Compute date boundaries shared by overdue / dueNextWeek queries
-      const now = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-      const nextWeek = new Date();
-      nextWeek.setDate(nextWeek.getDate() + 7);
-      const nextWeekStr = nextWeek.toISOString().split("T")[0];
-
-      // 2-4. Run independent queries in parallel: payments, overdue, dueNextWeek
-      let paymentsQuery = supabase
-        .from("payments")
-        .select("amount,confirmed,payment_date");
-      if (userRole === "sales" && userId && contractIds.length > 0) {
-        paymentsQuery = paymentsQuery.in("contract_id", contractIds);
-      }
-
-      let overdueQuery = supabase
-        .from("installment_plans")
-        .select("amount,due_date,status,paid_amount")
-        .lt("due_date", now)
-        .neq("status", "paid");
-      if (userRole === "sales" && userId && contractIds.length > 0) {
-        overdueQuery = overdueQuery.in("contract_id", contractIds);
-      }
-
-      let dueQuery = supabase
-        .from("installment_plans")
-        .select("amount,due_date,status,paid_amount")
-        .gte("due_date", now)
-        .lte("due_date", nextWeekStr)
-        .eq("status", "pending");
-      if (userRole === "sales" && userId && contractIds.length > 0) {
-        dueQuery = dueQuery.in("contract_id", contractIds);
-      }
-
-      const [
-        { data: payments, error: pErr },
-        { data: overduePlans, error: oErr },
-        { data: duePlans, error: dErr },
-      ] = await Promise.all([
-        paymentsQuery,
-        overdueQuery,
-        dueQuery,
-      ]);
-
-      if (pErr) throw pErr;
-      if (oErr) throw oErr;
-      if (dErr) throw dErr;
-
-      // Compute derived values
-      const confirmedPayments = (payments as Payment[] || []).filter(p => p.confirmed === true);
-      const received = confirmedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-      const outstanding = totalContractValue - received;
-      const overdue = (overduePlans as InstallmentPlan[] || []).reduce((sum, p) => sum + (p.amount || 0), 0);
-      const dueNextWeek = (duePlans as InstallmentPlan[] || []).reduce((sum, p) => sum + (p.amount || 0), 0);
-
-      setFinanceStats({
-        totalContractValue: Math.round(totalContractValue),
-        received: Math.round(received),
-        outstanding: Math.round(outstanding),
-        overdue: Math.round(overdue),
-        dueNextWeek: Math.round(dueNextWeek),
-      });
-    } catch (err) {
-      console.error("Failed to fetch financial data:", err);
-    }
-    setFinanceLoading(false);
-  }, [supabase, userId, userRole, language]);
-
-  // Fetch sales users for name mapping
-  useEffect(() => {
-    supabase.from("profiles").select("id,email,role,full_name").in("role", ["admin", "sales", "operator", "boss"]).then(({ data }) => {
-      if (data) setSalesUsers(data);
-    });
-  }, []);
-
   // Fetch team ownership
   useEffect(() => {
     fetch("/api/dashboard/team-ownership").then(r => r.json()).then(d => {
@@ -249,247 +135,36 @@ export default function DashboardPage() {
     }).catch((e) => console.error("team-ownership fetch failed", e));
   }, []);
 
-  // Fetch KPI targets for selected period
+  // ── Unified dashboard data fetch via server-side API ──
   useEffect(() => {
-    supabase.from("kpi_targets").select("*").eq("period", period).then(({ data }) => {
-      if (data) setKpiTargets(data);
-    });
-  }, [supabase, period]);
-  useEffect(() => {
-    (async () => {
-      const { data: { user }, error: authErr } = await supabase.auth.getUser();
-      if (authErr || !user) return;
-      setUserId(user.id);
-      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-      if (profile) setUserRole(profile.role);
-    })();
-  }, [supabase]);
-
-  useEffect(() => { fetchLeads(); }, [fetchLeads]);
-  useEffect(() => { fetchFinancialData(); }, [fetchFinancialData]);
-
-  // Fetch risk pool & today's follow-ups
-  useEffect(() => {
-    if (!userId) return; // wait for user info before fetching
-    (async () => {
-      // Try v_risk_pool view first, fallback to direct query
-      try {
-        const { data: riskData } = await supabase.from("v_risk_pool").select("count", { count: "exact", head: true });
-        if (riskData !== null) {
-          // count is approximate from head:true
-          const { count } = await supabase.from("v_risk_pool").select("*", { count: "exact", head: true });
-          setRiskPoolCount(count || 0);
-        } else {
-          throw new Error("view not found");
-        }
-      } catch {
-        // Fallback: query leads directly for overdue/missing followups
-        const now = new Date().toISOString();
-        let riskQuery = supabase
-          .from("tasks")
-          .select("id", { count: "exact", head: true })
-          .is("completed_at", null)
-          .lt("due_at", now);
-        if (userRole === "sales" && userId) {
-          riskQuery = riskQuery.eq("assignee_id", userId);
-        }
-        const { count } = await riskQuery;
-        setRiskPoolCount(count || 0);
-      }
-
-      // Today's follow-ups
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      const tomorrowStart = new Date(todayStart);
-      tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-      let followupQuery = supabase
-        .from("tasks")
-        .select("lead_id, due_at, leads!inner(*)")
-        .is("completed_at", null)
-        .gte("due_at", todayStart.toISOString())
-        .lt("due_at", tomorrowStart.toISOString());
-      if (userRole === "sales" && userId) {
-        followupQuery = followupQuery.eq("assignee_id", userId);
-      }
-      const { data: followups } = await followupQuery.order("due_at");
-      if (followups) {
-        setTodayFollowups((followups as FollowupTask[]).flatMap((task) => {
-          const lead = Array.isArray(task.leads) ? task.leads[0] : task.leads;
-          return lead && !lead.final_status ? [lead] : [];
-        }));
-      }
-      setFollowupLoading(false);
-
-      // Top 5 Actions: overdue followups, hot leads, high-value stale, draft quotes, expiring quotes
-      const actions: TopAction[] = [];
-
-      // 1. Overdue followups — incomplete tasks with a past due_at
-      try {
-        const now = new Date().toISOString();
-        let followupQ = supabase
-          .from("tasks")
-          .select("lead_id, due_at, leads!inner(id, customer_name, quotation_value, last_contact_date, phone, final_status)")
-          .is("completed_at", null)
-          .lt("due_at", now)
-          .order("due_at", { ascending: true })
-          .limit(5);
-        if (userRole === "sales" && userId) followupQ = followupQ.eq("assignee_id", userId);
-        const { data: overdueFollowups } = await followupQ;
-        if (overdueFollowups) {
-          (overdueFollowups as FollowupTask[]).forEach((task) => {
-            const l = Array.isArray(task.leads) ? task.leads[0] : task.leads;
-            if (!l || l.final_status) return;
-            const daysLate = Math.ceil((Date.now() - new Date(task.due_at).getTime()) / 86400000);
-            actions.push({
-              type: "overdue_followup",
-              title: l.customer_name || t("common.unnamed"),
-              subtitle: `${l.customer_name || t("common.unnamed")} · ${t("dashboard.overdueFollowup").replace("{n}", String(daysLate))}`,
-              link: `/leads/${l.id}`,
-              priority: daysLate >= 3 ? "high" : "medium",
-              customerName: l.customer_name || t("common.unnamed"),
-              value: l.quotation_value || 0,
-              reason: t("dashboard.overdueFollowup").replace("{n}", String(daysLate)),
-              phone: l.phone || null,
-              leadId: l.id,
-            });
-          });
-        }
-      } catch (e) { console.error("top-actions overdue followups failed", e); }
-
-      // 2. Hot leads — leads with lead_status='hot' and high win_probability, not yet won/lost
-      try {
-        let hotQ = supabase
-          .from("leads")
-          .select("id, customer_name, quotation_value, win_probability, stage, phone")
-          .eq("lead_status", "hot")
-          .is("final_status", null)
-          .order("quotation_value", { ascending: false })
-          .limit(3);
-        if (userRole === "sales" && userId) hotQ = hotQ.eq("assigned_to", userId);
-        const { data: hotLeads } = await hotQ;
-        if (hotLeads) {
-          hotLeads.forEach((l: any) => {
-            actions.push({
-              type: "hot_lead",
-              title: l.customer_name || t("common.unnamed"),
-              subtitle: `${l.customer_name || t("common.unnamed")} · ${t("dashboard.winProb").replace("{n}", String(l.win_probability || 0))}`,
-              link: `/leads/${l.id}`,
-              priority: (l.win_probability || 0) >= 70 ? "high" : "medium",
-              customerName: l.customer_name || t("common.unnamed"),
-              value: l.quotation_value || 0,
-              reason: t("dashboard.hotLeadPriority"),
-              phone: l.phone || null,
-              leadId: l.id,
-            });
-          });
-        }
-      } catch (e) { console.error("top-actions hot leads failed", e); }
-
-      // 3. Draft quotes pending — from quotations table
-      try {
-        let qQ = supabase.from("quotations").select("*, leads!inner(customer_name, quotation_value, id, phone)")
-          .eq("status", "draft")
-          .order("total_amount", { ascending: false })
-          .limit(3);
-        if (userRole === "sales" && userId) qQ = qQ.eq("created_by", userId);
-        const { data: drafts } = await qQ;
-        if (drafts) {
-          drafts.forEach((q: any) => {
-            actions.push({
-              type: "quote_draft",
-              title: q.leads?.customer_name || t("common.unnamed"),
-              subtitle: `${q.leads?.customer_name || t("common.unnamed")} · ${q.quote_no || t("dashboard.draftQuote")}`,
-              link: `/quotes`,
-              priority: "medium",
-              customerName: q.leads?.customer_name || t("common.unnamed"),
-              value: q.total_amount || 0,
-              reason: t("dashboard.draftQuotePending"),
-              phone: q.leads?.phone || null,
-              leadId: q.leads?.id || "",
-            });
-          });
-        }
-      } catch (e) { console.error("top-actions draft quotes failed", e); }
-
-      // 4. High-value stale leads — no contact in 48h+, sorted by quotation_value
-      try {
-        const cutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
-        let sQ = supabase.from("leads").select("id, customer_name, quotation_value, last_contact_date, stage, phone")
-          .is("final_status", null)
-          .or(`last_contact_date.lt.${cutoff},last_contact_date.is.null`)
-          .order("quotation_value", { ascending: false })
-          .limit(3);
-        if (userRole === "sales" && userId) sQ = sQ.eq("assigned_to", userId);
-        const { data: stale } = await sQ;
-        if (stale) {
-          stale.forEach((l: any) => {
-            const daysInactive = l.last_contact_date
-              ? Math.ceil((Date.now() - new Date(l.last_contact_date).getTime()) / 86400000)
-              : 99;
-            actions.push({
-              type: "stale_lead",
-              title: l.customer_name || t("common.unnamed"),
-              subtitle: `${l.customer_name || t("common.unnamed")} · ${t("dashboard.dInactive").replace("{n}", String(daysInactive))}`,
-              link: `/leads/${l.id}`,
-              priority: daysInactive > 7 ? "high" : "medium",
-              customerName: l.customer_name || t("common.unnamed"),
-              value: l.quotation_value || 0,
-              reason: t("dashboard.dNoReply").replace("{n}", String(daysInactive)),
-              phone: l.phone || null,
-              leadId: l.id,
-            });
-          });
-        }
-      } catch (e) { console.error("top-actions stale leads failed", e); }
-
-      // 5. Overdue workflow stages (complementary signal)
-      try {
-        let wfQ = supabase.from("lead_workflow_stages").select("*, leads!inner(customer_name, quotation_value, phone)")
-          .eq("status", "in_progress")
-          .lt("deadline_at", new Date().toISOString())
-          .order("deadline_at", { ascending: true })
-          .limit(3);
-        if (userRole === "sales" && userId) {
-          wfQ = wfQ.eq("assigned_to", userId);
-        }
-        const { data: overdueWf } = await wfQ;
-        if (overdueWf) {
-          overdueWf.forEach((w: any) => {
-            const leadName = w.leads?.customer_name || t("common.unnamed");
-            actions.push({
-              type: "workflow_overdue",
-              title: leadName,
-              subtitle: `${leadName} · ${t("dashboard.stageOverdue").replace("{stage}", t("stageLabels." + w.stage_key))}`,
-              link: `/leads/${w.lead_id}`,
-              priority: "high",
-              customerName: leadName,
-              value: w.leads?.quotation_value || 0,
-              reason: t("dashboard.workflowOverdue"),
-              phone: w.leads?.phone || null,
-              leadId: w.lead_id,
-            });
-          });
-        }
-      } catch (e) { console.error("top-actions overdue workflow failed", e); }
-
-      // Sort by priority score (value × urgency multiplier) and deduplicate by lead link
-      const seenLinks = new Set<string>();
-      const priorityScore = (a: TopAction): number => {
-        const urgencyMult = a.priority === "high" ? 3 : a.priority === "medium" ? 2 : 1;
-        return a.value * urgencyMult;
-      };
-      const sorted = actions
-        .sort((a, b) => priorityScore(b) - priorityScore(a))
-        .filter((a) => {
-          // Deduplicate: keep first occurrence per link
-          if (seenLinks.has(a.link)) return false;
-          seenLinks.add(a.link);
-          return true;
-        });
-
-      setTopActions(sorted.slice(0, 5));
-    })();
-  }, [userId, userRole, language]);
+    const controller = new AbortController();
+    fetch(`/api/dashboard/summary?period=${period}`, { signal: controller.signal })
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(json => {
+        setUserId(json.profile.userId);
+        setUserRole(json.profile.role);
+        setSalesUsers(json.salesUsers);
+        setLeads(json.leads);
+        setFinanceStats(json.finance);
+        setFinanceLoading(false);
+        setContractCount(json.finance.contractCount);
+        setKpiTargets(json.kpiTargets);
+        setRiskPoolCount(json.riskPoolCount);
+        setTodayFollowups(json.todayFollowups);
+        setTopActions(json.topActions);
+        setFollowupLoading(false);
+        setLoading(false);
+      })
+      .catch(err => {
+        if (err.name === "AbortError") return;
+        setError(err.message);
+        setLoading(false);
+      });
+    return () => controller.abort();
+  }, [period, language]);
 
   /* ─── Computed ─── */
   const stats = useMemo(() => {
@@ -656,7 +331,7 @@ export default function DashboardPage() {
   // No more financeCards array — render L1 cards inline
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">{t("common.loading")}</div>;
-  if (error) return <ErrorState message={error} onRetry={fetchLeads} />;
+  if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
 
   const overdueCount = (stats.redCount || 0) + (stats.yellowCount || 0);
   const isManagement = userRole !== "sales";

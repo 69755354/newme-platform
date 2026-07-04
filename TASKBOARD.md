@@ -1,5 +1,5 @@
 # TASKBOARD.md — Machine-Verifiable Task Tracking (本地工具脚本真相源)
-# Last updated: 2026-07-04
+# Last updated: 2026-07-05
 # Format: Frozen v2 (MoA签发版) — 4状态模型
 
 ## ⚠️ STATE MACHINE (唯一状态流)
@@ -30,6 +30,10 @@ TODO → IN_PROGRESS → REVIEW → DONE
 || task_P2_mutations_low | DONE | Codex→Hermes | 2026-07-04 |
 || task_P2_mutations_core | DONE | Codex→Hermes | 2026-07-04 |
 || task_P2_mutations_settings | DONE | Codex→Hermes | 2026-07-04 |
+| task_true_codex_reaudit | DONE | Codex (GPT-5.5) via codex exec | 2026-07-05 |
+| task_true_codex_fail_fix | DONE | Codex (GPT-5.5) via codex exec | 2026-07-05 |
+| task_true_codex_reaudit_delta | DONE | Codex (GPT-5.5) via codex exec | 2026-07-05 |
+| task_true_codex_deploy | DONE | Hermes | 2026-07-05 |
 
 ---
 
@@ -204,6 +208,10 @@ After deployment + production verification, move completed rows to archive secti
 
 ### 下一步摘要
 - P2 reads all: ✅ 已上线 (6 页 reads → BFF API routes)
-- P2 mutations low: ✅ 已编码 (team/payments/tasks server actions)
-- P2 mutations core: ✅ 已编码 (pipeline/contracts server actions)，未部署
-- P2 mutations settings: ✅ 已编码 (settings lead-assignment server actions)
+- P2 mutations low: ✅ 已上线 (team/payments/tasks server actions)
+- P2 mutations core: ✅ 已上线 (pipeline/contracts server actions)
+- P2 mutations settings: ✅ 已上线 (settings lead-assignment server actions)
+- Post-audit patch: ✅ 已上线 (de3b52f: tasks + pipeline ownership + useSalesKpiData BFF)
+- TRUE_CODEX_REAUDIT 全链: ✅ 已上线 (49cd03f: 一审→修复→二审→部署, BUILD_ID o1toe2b6XmKR_8Jdfx8oP)
+- P2.5 Infra Hardening: ✅ 已上线 (11e3805 + 583ba89: 4 audit scripts + 2 release docs)
+- P1/P2 Archive: FULL PASS 恢复 ✅

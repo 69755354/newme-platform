@@ -176,18 +176,84 @@ BUILD_START=$(date +%s)
 
 # Copy project to temp directory using rsync (fully isolated, no hardlinks)
 # This ensures the build directory is a complete independent copy
+# Skipping node_modules (2.2GB) and .git (59MB) — cached separately
 echo "📋 Copying project to build directory (rsync, fully isolated)..."
+
 rm -rf "$BUILD_DIR"
+mkdir -p "$BUILD_DIR"
+
+# ── Node modules cache ────────────────────────────────────────
+# Cache lives at /tmp/newme-node-cache — reuse via hardlinks.
+# Rebuilt only when package-lock.json changes.
+NODE_CACHE="/tmp/newme-node-cache"
+NODE_CACHE_LOCK="$NODE_CACHE/package-lock.json"
+
+if [ -d "$NODE_CACHE/node_modules" ] && [ -f "$NODE_CACHE_LOCK" ]; then
+  if cp -al "$NODE_CACHE/node_modules" "$BUILD_DIR/node_modules" 2>/dev/null; then
+    echo "📦 Reused node_modules cache ($(du -sh "$NODE_CACHE/node_modules" 2>/dev/null | cut -f1))"
+  else
+    echo "⚠️  Cache hardlink failed, will do fresh install"
+  fi
+fi
+# ───────────────────────────────────────────────────────────────
+
 rsync -a --delete \
   --exclude '.next' \
   --exclude '.next.backup.*' \
   --exclude '.hermes-harness' \
   --exclude '.hermes/deploy-in-progress' \
   --exclude '.hermes/IS_PRODUCTION' \
-  --exclude 'node_modules/.cache' \
+  --exclude 'node_modules' \
+  --exclude '.git' \
   "$PROJECT_ROOT/" "$BUILD_DIR/"
 
-echo "✅ Project copied"
+echo "✅ Project copied ($(du -sh "$BUILD_DIR" 2>/dev/null | cut -f1))"
+
+# ── Validate / rebuild node_modules ────────────────────────────
+cd "$BUILD_DIR"
+
+NEEDS_INSTALL=false
+if [ ! -d "node_modules" ]; then
+  echo "📦 No node_modules — running npm ci..."
+  NEEDS_INSTALL=true
+elif [ -f "$NODE_CACHE_LOCK" ]; then
+  if ! diff -q "package-lock.json" "$NODE_CACHE_LOCK" >/dev/null 2>&1; then
+    echo "📦 package-lock.json changed — rebuilding node_modules..."
+    rm -rf node_modules
+    NEEDS_INSTALL=true
+  fi
+elif [ ! -f "$NODE_CACHE_LOCK" ]; then
+  echo "📦 No cache lock — running npm ci..."
+  rm -rf node_modules
+  NEEDS_INSTALL=true
+fi
+
+if [ "$NEEDS_INSTALL" = true ]; then
+  if ! npm ci > "$PROJECT_ROOT/.npm-ci-stdout.log" 2>&1; then
+    echo "❌ npm ci failed. Cache NOT updated."
+    tail -30 "$PROJECT_ROOT/.npm-ci-stdout.log"
+    rm -f "$PROJECT_ROOT/.npm-ci-stdout.log"
+    cd "$PROJECT_ROOT"
+    echo "ℹ️  Production .next was NEVER touched. Service is unaffected."
+    exit 1
+  fi
+  rm -f "$PROJECT_ROOT/.npm-ci-stdout.log"
+  echo "✅ npm ci complete"
+
+  # Update cache
+  echo "📦 Updating node_modules cache..."
+  rm -rf "$NODE_CACHE"
+  mkdir -p "$NODE_CACHE"
+  if cp -al "node_modules" "$NODE_CACHE/node_modules" 2>/dev/null; then
+    cp "package-lock.json" "$NODE_CACHE_LOCK"
+    echo "✅ Cache updated ($(du -sh "$NODE_CACHE/node_modules" 2>/dev/null | cut -f1))"
+  else
+    echo "⚠️  Cache update failed (non-fatal, will npm ci next deploy)"
+  fi
+else
+  echo "✅ node_modules cache valid, skipping npm ci"
+fi
+# ───────────────────────────────────────────────────────────────
 
 # Build in temp directory — completely isolated from production
 cd "$BUILD_DIR"

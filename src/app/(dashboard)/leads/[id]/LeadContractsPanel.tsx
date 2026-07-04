@@ -52,7 +52,7 @@ export default function LeadContractsPanel({ leadId }: { leadId: string }) {
     return (
       <div className="py-6 text-center space-y-3">
         <p className="text-sm text-muted-foreground">{t("leadDetail.contractNotCreated")}</p>
-        <Link
+        <Link prefetch={false}
           href={`/contracts/new?lead_id=${leadId}`}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-600 text-foreground text-xs font-medium hover:bg-slate-700 transition-colors"
         >
@@ -68,7 +68,7 @@ export default function LeadContractsPanel({ leadId }: { leadId: string }) {
         const paid = (c.installment_plans ?? []).filter((i) => i.status === "paid").length;
         const total = (c.installment_plans ?? []).length;
         return (
-          <Link
+          <Link prefetch={false}
             key={c.id}
             href={`/contracts/${c.id}`}
             className="block rounded-lg border border-border/50 bg-card/50 hover:border-copper-500/40 transition-colors p-3"
@@ -100,7 +100,7 @@ export default function LeadContractsPanel({ leadId }: { leadId: string }) {
           </Link>
         );
       })}
-      <Link
+      <Link prefetch={false}
         href={`/contracts/new?lead_id=${leadId}`}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-copper-500/30 text-copper-400 text-xs font-medium hover:bg-copper-500/10 transition-colors mt-1"
       >

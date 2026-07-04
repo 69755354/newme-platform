@@ -30,7 +30,7 @@ export default function AdsClient({ sorted, totals }: AdsClientProps) {
   return (
     <div className="space-y-6">
       {/* Back link */}
-      <Link
+      <Link prefetch={false}
         href="/settings"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
       >

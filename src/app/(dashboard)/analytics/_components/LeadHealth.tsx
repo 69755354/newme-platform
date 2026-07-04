@@ -244,7 +244,7 @@ function SalesOverdueList({ items, stageLabels, t }: {
       <div className="space-y-2">
         {items.map((item) => (
           <div key={item.id} className="flex items-center justify-between p-3 rounded-lg bg-rose-500/5 border border-rose-500/10">
-            <Link href={`/leads/${item.id}`} className="flex-1 min-w-0">
+            <Link prefetch={false} href={`/leads/${item.id}`} className="flex-1 min-w-0">
               <p className="text-sm font-medium text-foreground truncate">
                 {item.customer_name || t("analytics.unnamed")}
                 {item.quotation_value ? (

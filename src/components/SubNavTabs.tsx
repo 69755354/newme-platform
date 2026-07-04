@@ -34,7 +34,7 @@ export default function SubNavTabs({ items }: SubNavTabsProps) {
         const active = pathname === item.href || pathname.startsWith(item.href + "/");
         const Icon = item.iconName ? ICON_MAP[item.iconName] : null;
         return (
-          <Link
+          <Link prefetch={false}
             key={item.href}
             href={item.href}
             className={cn(

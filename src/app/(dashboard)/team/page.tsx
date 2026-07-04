@@ -375,7 +375,7 @@ export default function TeamPage() {
 
   return (
     <DashboardScrollContainer className="space-y-6">
-      <Link href="/settings" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+      <Link prefetch={false} href="/settings" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
         <ArrowLeft className="w-3.5 h-3.5" />
         {t("team.backToSettings")}
       </Link>

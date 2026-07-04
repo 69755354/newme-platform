@@ -163,7 +163,7 @@ export default function WorkbenchPage() {
                     new Date(item.next_followup_date).getTime() < Date.now()
                   return (
                     <li key={item.id}>
-                      <Link
+                      <Link prefetch={false}
                         href={`/leads/${item.id}`}
                         className="flex flex-col gap-1 rounded-md px-2 py-2 transition hover:bg-slate-100"
                       >
@@ -258,7 +258,7 @@ export default function WorkbenchPage() {
                   return (
                     <li key={task.id}>
                       {href ? (
-                        <Link
+                        <Link prefetch={false}
                           href={href}
                           className="flex flex-col gap-1 rounded-md px-2 py-2 transition hover:bg-slate-100"
                         >
@@ -313,7 +313,7 @@ export default function WorkbenchPage() {
                   return (
                     <li key={task.id}>
                       {href ? (
-                        <Link
+                        <Link prefetch={false}
                           href={href}
                           className="flex flex-col gap-1 rounded-md border border-red-200 bg-red-50/60 px-2 py-2 transition hover:bg-red-100/70"
                         >
@@ -396,7 +396,7 @@ export default function WorkbenchPage() {
                   const tone = a.no_answer_flag ? "red" : "amber"
                   return (
                     <li key={a.id}>
-                      <Link
+                      <Link prefetch={false}
                         href={`/leads/${a.id}`}
                         className={`flex flex-col gap-1 rounded-md border px-2 py-2 transition hover:opacity-80 ${
                           tone === "red"
@@ -442,13 +442,13 @@ export default function WorkbenchPage() {
 
       {/* Quick actions */}
       <div className="flex flex-wrap items-center gap-2 pt-2">
-        <Link href="/leads/new">
+        <Link prefetch={false} href="/leads/new">
           <Button>
             <User className="mr-2 h-4 w-4" />
             New Lead
           </Button>
         </Link>
-        <Link href="/leads">
+        <Link prefetch={false} href="/leads">
           <Button variant="outline">
             All Leads
           </Button>

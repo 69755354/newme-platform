@@ -133,7 +133,7 @@ export default function AdsPage() {
 
   return (
     <DashboardScrollContainer>
-      <Link href="/leads" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+      <Link prefetch={false} href="/leads" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
         <ArrowLeft className="w-3.5 h-3.5" />Back to Leads
       </Link>
       <div className="space-y-6 mt-4">

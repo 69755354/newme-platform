@@ -34,6 +34,16 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | task_true_codex_fail_fix | DONE | Codex (GPT-5.5) via codex exec | 2026-07-05 |
 | task_true_codex_reaudit_delta | DONE | Codex (GPT-5.5) via codex exec | 2026-07-05 |
 | task_true_codex_deploy | DONE | Hermes | 2026-07-05 |
+| task_P3_1_won_at | TODO | — | 2026-07-05 |
+| task_P3_1b_alertpanel | DONE | Codex (GPT-5.5) via codex exec | 2026-07-05 |
+| task_P3_2_first_contact_trigger | TODO | — | 2026-07-05 |
+| task_P3_3_quality_api | TODO | — | 2026-07-05 |
+| task_P3_4_deprecate_redirect | TODO | — | 2026-07-05 |
+| task_P3_5_dashboard_summary_api | TODO | — | 2026-07-05 |
+| task_P3_6_dashboard_month_filter | TODO | — | 2026-07-05 |
+| task_P3_7_leads_contact_quality_ui | TODO | — | 2026-07-05 |
+| task_P3_8_weekly_review | TODO | — | 2026-07-05 |
+| task_P3_9_smoke_acceptance | TODO | — | 2026-07-05 |
 
 ---
 

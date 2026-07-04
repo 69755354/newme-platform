@@ -207,7 +207,7 @@ rsync -a --delete \
   --exclude '.git' \
   "$PROJECT_ROOT/" "$BUILD_DIR/"
 
-echo "✅ Project copied ($(du -sh "$BUILD_DIR" 2>/dev/null | cut -f1))"
+echo "✅ Project copied (src: $(du -sh --exclude=node_modules "$BUILD_DIR" 2>/dev/null | cut -f1))"
 
 # ── Validate / rebuild node_modules ────────────────────────────
 cd "$BUILD_DIR"

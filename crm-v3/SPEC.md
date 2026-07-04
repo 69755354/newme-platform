@@ -6,13 +6,13 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `db7f0f0`）
-- **Build**: 已部署 P1-E — analytics 6 条 API calls → /api/analytics/summary BFF endpoint
+## 当前状态（写时 commit `de6672e`）
+- **Build**: P2 全完成 — 6 BFF API routes + 7 server action files。待部署 3 批 mutations。
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
 - **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
-- **上次更新**: 2026-07-04（P1-E /analytics BFF aggregation，全 5 页 client Supabase reads 已清零）
-- **状态**: ✅ P1-C/P1-D/P1-E 全部完成
-- **事故**: 2026-07-04 deploy incident — 旧 deploy.sh 在生产 .next 原地构建导致停服 → v4.0 隔离构建修复（见 §四）
+- **上次更新**: 2026-07-04（P2 mutations 全完成）
+- **状态**: P2 reads + mutations 全编码完毕。待部署。
+- **事故**: 2026-07-04 BUILD_ID ドリフト 3 回 → prebuild guard + next.config.ts guard + deploy 隔离三层防护
 
 ---
 
@@ -138,6 +138,20 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | `src/app/(dashboard)/leads/[id]/useLeadDetailData.ts` | Detail 数据 hook (16 queries → 4 并行) | 318 | 🟢 P0-1 完成 |
 | `src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts` | Detail 写 hook (12 handlers) | 445 | 🟢 新建 |
 | `src/app/(dashboard)/pipeline/page.tsx` | Pipeline Kanban | 146 | 🟢 拆完 3/3 |
+|| `src/app/actions/pipeline.ts` | Pipeline server actions (writeBusinessEvent, updateLeadStage, logStageChangeActivity) | 98 | 🟢 P2 mutations core |
+|| `src/app/actions/contracts.ts` | Contracts server actions (approveContract, revokeContract) | 171 | 🟢 P2 mutations core |
+|| `src/app/actions/team.ts` | Team server actions (addTeamMember, removeTeamMember, resetUserPassword) | — | 🟢 P2 mutations low |
+|| `src/app/actions/payments.ts` | Payments server actions (createPayment, confirmPayment, allocatePayment) | — | 🟢 P2 mutations low |
+|| `src/app/actions/tasks.ts` | Tasks server actions (updateTask, updateTaskStatus) | — | 🟢 P2 mutations low |
+|| `src/app/actions/settings.ts` | Settings server actions (assignLead, bulkAssignLeads, bulkUnassignLeads, transferAllLeads) | 115 | 🟢 P2 mutations settings |
+|| `src/app/api/pipeline/list/route.ts` | Pipeline BFF API (leads + role + salesUsers) | — | 🟢 P2 reads |
+|| `src/app/api/contracts/list/route.ts` | Contracts BFF API (contracts + joins + pagination) | — | 🟢 P2 reads |
+|| `src/app/api/settings/data/route.ts` | Settings BFF API (leads + profiles + kpiTargets) | — | 🟢 P2 reads |
+|| `src/app/api/tasks/list/route.ts` | Tasks BFF API (tasks + filters + pagination) | — | 🟢 P2 reads |
+|| `src/app/api/tasks/[id]/route.ts` | Task Detail BFF API | — | 🟢 P2 reads |
+|| `src/app/api/team/list/route.ts` | Team BFF API (userId + role) | — | 🟢 P2 reads |
+|| `src/app/api/payments/list/route.ts` | Payments BFF API (payments + contracts summary) | — | 🟢 P2 reads |
+|| `src/app/api/workbench/route.ts` | Workbench BFF API (6 并行查询 + 30s cache) | — | 🟢 P1-F |
 | `src/lib/supabase.ts` | Supabase client + ensureSession() + token 去重 | 92 | 🟢 auth fix |
 | `src/hooks/useAuthRedirect.ts` | DashboardLayout auth | 157 | 🟢 auth fix |
 | `src/hooks/useSupabaseQuery.ts` | 数据 query hook (timeout 8s + retry 2) | — | T1-1 freeze |
@@ -302,6 +316,12 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 ||| **P1-C Dashboard Summary API** | `50fc79f` | `/dashboard` 18 条 client Supabase REST calls → 1 条 `/api/dashboard/summary` (573ms)；新增 441 行 server route 聚合 14 条查询；page.tsx −355 行 +30 行 |
 ||| **workbench 死 import 清理** | `a9075e9` | 删除 `createClient` 死 import（无调用，纯拉 201KB chunk）；workbench LCP 1152ms → 预期下降 |
 ||| **P1-D Leads List API** | `e5dc28f` | `/leads` 4 条 read (auth+profile+leads+salesUsers) → 1 条 `/api/leads/list`；useLeadsData.ts 重写为 fetch；page.tsx 移除 `createClient` import + supabase const
+|| **P2 reads all** | `ce6cd68` | pipeline/contracts/settings/tasks/team/payments 6 页 client Supabase reads → 6 BFF API routes；全 12 页 reads 清零
+|| **workbench 并行化** | `da5e629` | workbench 9 次串行查询 → 6 并行 + 30s cache
+|| **BUILD_ID ドリフト三层防护** | `e3a3f0a` | prebuild guard (package.json) + next.config.ts guard + deploy.sh 隔离；阻止 npx next build 直接覆盖生产 .next
+|| **P2 mutations low** | `e3a3f0a` | team/payments/tasks 3 页 client Supabase mutations → server actions
+|| **P2 mutations core** | `c0acbd0` | pipeline/contracts 2 页 mutations → server actions
+|| **P2 mutations settings** | `bc2d7cb` | settings 4 lead-assignment mutations → server actions；全 6 页 mutations 清零
 
 ### Bundle Analyzer 全站基线数据
 
@@ -318,17 +338,36 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | 认证页面均值 | ~1,400 KB |
 | `/analytics` | 1,673 KB（含懒加载 Recharts 423KB） |
 
-### BFF Read Layer 迁移进度 (2026-07-04)
+### BFF Read Layer 迁移进度 (2026-07-04) — 全 12 页完成 ✅
 
 | 页面 | 原 client Supabase reads | 新 BFF API | 状态 |
 |------|------------------------|-----------|------|
 | `/analytics` | — (P1-B 已移除 import) | — | ✅ |
 | `/ads` | — (P1-B 已移除 import) | — | ✅ |
 | `/products` | — (P1-B 已移除 import) | — | ✅ |
-| `/dashboard` | 18 条 | `/api/dashboard/summary` (573ms) | ✅ |
-| `/workbench` | 1 死 import | — (已删除) | ✅ |
-| `/leads` | 4 条 read | `/api/leads/list` | ✅ |
+| `/dashboard` | 18 条 | `/api/dashboard/summary` (573ms) | ✅ P1-C |
+| `/workbench` | 1 死 import | — (已删除) | ✅ P1-F |
+| `/leads` | 4 条 read | `/api/leads/list` | ✅ P1-D |
 | `/analytics` | 6 条 fetch | `/api/analytics/summary` | ✅ P1-E |
+| `/pipeline` | 2 条 read | `/api/pipeline/list` | ✅ P2 reads |
+| `/contracts` | 3 条 read | `/api/contracts/list` | ✅ P2 reads |
+| `/settings` | 2 条 read | `/api/settings/data` | ✅ P2 reads |
+| `/tasks` | 2 条 read | `/api/tasks/list` + `/[id]` | ✅ P2 reads |
+| `/team` | 1 条 read | `/api/team/list` | ✅ P2 reads |
+| `/payments` | 2 条 read | `/api/payments/list` | ✅ P2 reads |
+
+### BFF Mutation Layer 迁移进度 (2026-07-04) — 全 6 页完成 ✅
+
+| 页面 | Server Actions | Commit | 状态 |
+|------|---------------|--------|------|
+| `/team` | addTeamMember, removeTeamMember, resetUserPassword | `e3a3f0a` | ✅ P2 mutations low |
+| `/payments` | createPayment, confirmPayment, allocatePayment | `e3a3f0a` | ✅ P2 mutations low |
+| `/tasks` | updateTask, updateTaskStatus | `e3a3f0a` | ✅ P2 mutations low |
+| `/pipeline` | writeBusinessEvent, updateLeadStage, logStageChangeActivity | `c0acbd0` | ✅ P2 mutations core |
+| `/contracts` | approveContract, revokeContract | `c0acbd0` | ✅ P2 mutations core |
+| `/settings` | assignLead, bulkAssignLeads, bulkUnassignLeads, transferAllLeads | `bc2d7cb` | ✅ P2 mutations settings |
+
+**全站 client Supabase reads = 0，全站 client Supabase mutations = 0。**
 
 ### 下一轮优化顺序
 

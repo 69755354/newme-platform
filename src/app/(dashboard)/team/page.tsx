@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { toast, Toaster } from "sonner";
+import { addTeamMember, removeTeamMember, resetUserPassword } from "@/app/actions/team";
 
 // ─── UI Components (shadcn / base-ui) ───
 import { Button } from "@/components/ui/button";
@@ -251,20 +252,11 @@ export default function TeamPage() {
     }
     setRevealLoading(true);
     try {
-      const res = await fetch(`/api/users/${revealTarget.id}/password`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: resetPasswordValue }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setRevealedPassword(resetPasswordValue);
-        toast.success(`${revealTarget.name} ${t("team.passwordReset")}`);
-      } else {
-        toast.error(data.error || t("common.saveFailed"));
-      }
-    } catch {
-      toast.error(t("login.networkError"));
+      await resetUserPassword(revealTarget.id, resetPasswordValue);
+      setRevealedPassword(resetPasswordValue);
+      toast.success(`${revealTarget.name} ${t("team.passwordReset")}`);
+    } catch (e: any) {
+      toast.error(e.message || t("common.saveFailed"));
     }
     setRevealLoading(false);
   };
@@ -272,11 +264,7 @@ export default function TeamPage() {
   // ─── Delete user ───
   const handleDeleteUser = async (userId: string) => {
     try {
-      const res = await fetch(`/api/users/${userId}`, { method: "DELETE" });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed");
-      }
+      await removeTeamMember(userId);
       toast.success(t("team.userDeleted"));
       fetchUsers();
     } catch (e: any) {
@@ -305,15 +293,7 @@ export default function TeamPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || t("team.createFailed"));
-      }
+      await addTeamMember(form);
       toast.success(`${form.full_name} ${t("team.userCreated")}`);
       setDialogOpen(false);
       setForm({ full_name: "", email: "", password: "", role: "sales", phone: "" });

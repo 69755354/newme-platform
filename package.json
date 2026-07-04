@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "typecheck": "tsc --noEmit",
-    "build": "bash scripts/guard-prod-build.sh && bash -c 'if [ \"${FORCE_BUILD:-0}\" = \"1\" ]; then echo \"⚠️  FORCE_BUILD=1 set — cache bypass only, prod safety still enforced\" >&2; fi; next build'",
+    "prebuild": "bash scripts/guard-prod-build.sh",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "deploy": "bash scripts/deploy.sh",

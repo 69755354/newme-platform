@@ -2,6 +2,26 @@ import { withSentryConfig } from "@sentry/nextjs";
 import bundleAnalyzer from "@next/bundle-analyzer";
 import type { NextConfig } from "next";
 import { execSync } from "child_process";
+import { existsSync } from "fs";
+
+// 🔴 PRODUCTION BUILD GUARD — prevents npx next build from overwriting live .next
+const PROD_DIR = "/home/ubuntu/newme-platform";
+const IS_PROD = process.cwd() === PROD_DIR;
+const IS_ISOLATED = process.cwd().startsWith("/tmp/newme-build-");
+if (IS_PROD && !IS_ISOLATED && process.env.NEWME_ISOLATED_BUILD !== "1") {
+  const marker = `${PROD_DIR}/.hermes/IS_PRODUCTION`;
+  if (existsSync(marker) || existsSync(".hermes/IS_PRODUCTION")) {
+    const serviceRunning = (() => {
+      try { execSync("systemctl is-active --quiet newme-platform.service", { stdio: "ignore" }); return true; } catch { return false; }
+    })();
+    if (serviceRunning) {
+      console.error("🚫 PRODUCTION BUILD BLOCKED by next.config.ts guard");
+      console.error("   Service is RUNNING. npx next build would overwrite .next.");
+      console.error("   Use: npm run deploy");
+      process.exit(1);
+    }
+  }
+}
 
 const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === "true",

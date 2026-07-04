@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { createClient } from "@/lib/supabase";
 import { ErrorState } from "@/components/ui/error-state";
+import { updateTask, updateTaskStatus } from "@/app/actions/tasks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,7 +69,6 @@ function formatDateForInput(d: string | null): string {
 
 /* ─── Component ─── */
 export default function TaskDetailPage() {
-  const supabase = createClient();
   const params = useParams();
   const taskId = params.id as string;
 
@@ -146,29 +145,23 @@ export default function TaskDetailPage() {
 
     setSaveState("saving");
 
-    const updates: Record<string, any> = {
-      title: editTitle.trim(),
-      description: editDescription.trim() || null,
-      priority: editPriority,
-      assigned_to: editAssignedTo || null,
-      due_at: editDueAt ? new Date(editDueAt).toISOString() : null,
-      updated_at: new Date().toISOString(),
-    };
+    try {
+      await updateTask(task.id, {
+        title: editTitle.trim(),
+        description: editDescription.trim() || null,
+        priority: editPriority,
+        assigned_to: editAssignedTo || null,
+        due_at: editDueAt ? new Date(editDueAt).toISOString() : null,
+      });
 
-    const { error: err } = await supabase
-      .from("tasks")
-      .update(updates)
-      .eq("id", task.id);
-
-    if (err) {
+      setSaveState("saved");
+      toast.success("Task saved successfully");
+    } catch (err: any) {
       console.error("Failed to save task:", err);
       setSaveState("error");
-      toast.error("Failed to save task");
+      toast.error(err.message || "Failed to save task");
       return;
     }
-
-    setSaveState("saved");
-    toast.success("Task saved successfully");
 
     // Refresh task data
     await fetchTask();
@@ -182,31 +175,17 @@ export default function TaskDetailPage() {
 
     setSaveState("saving");
 
-    const updates: Record<string, any> = {
-      status: newStatus,
-      updated_at: new Date().toISOString(),
-    };
+    try {
+      await updateTaskStatus(task.id, newStatus);
 
-    if (newStatus === "done") {
-      updates.completed_at = new Date().toISOString();
-    } else {
-      updates.completed_at = null;
-    }
-
-    const { error: err } = await supabase
-      .from("tasks")
-      .update(updates)
-      .eq("id", task.id);
-
-    if (err) {
+      setSaveState("saved");
+      toast.success(`Status changed to ${newStatus.replace("_", " ")}`);
+    } catch (err: any) {
       console.error("Failed to update status:", err);
       setSaveState("error");
-      toast.error("Failed to update status");
+      toast.error(err.message || "Failed to update status");
       return;
     }
-
-    setSaveState("saved");
-    toast.success(`Status changed to ${newStatus.replace("_", " ")}`);
 
     await fetchTask();
 

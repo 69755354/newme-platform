@@ -47,6 +47,7 @@ import {
 import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
+import { createPayment, confirmPayment, allocatePayment as allocatePaymentAction } from "@/app/actions/payments";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -217,31 +218,20 @@ export default function PaymentsPage() {
     }
 
     try {
-      const res = await fetch("/api/payments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contract_id: recContractId,
-          amount,
-          payment_date: recDate,
-          payment_method: recMethod,
-          reference_no: recRefNo || null,
-          notes: recNotes || null,
-        }),
+      await createPayment({
+        contract_id: recContractId,
+        amount,
+        payment_date: recDate,
+        payment_method: recMethod,
+        reference_no: recRefNo || null,
+        notes: recNotes || null,
       });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || t("payments.recordFailed"));
-        setRecSaving(false);
-        return;
-      }
 
       toast.success(t("payments.saved"));
       setRecordDialogOpen(false);
       await fetchData();
-    } catch {
-      toast.error(t("payments.recordFailed"));
+    } catch (err: any) {
+      toast.error(err.message || t("payments.recordFailed"));
     } finally {
       setRecSaving(false);
     }
@@ -252,16 +242,11 @@ export default function PaymentsPage() {
   async function handleConfirm(paymentId: string) {
     setConfirmingId(paymentId);
     try {
-      const res = await fetch(`/api/payments/${paymentId}/confirm`, { method: "POST" });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || t("payments.confirmFailed"));
-        return;
-      }
+      await confirmPayment(paymentId);
       toast.success(t("payments.confirmed"));
       await fetchData();
-    } catch {
-      toast.error(t("payments.confirmFailed"));
+    } catch (err: any) {
+      toast.error(err.message || t("payments.confirmFailed"));
     } finally {
       setConfirmingId(null);
     }
@@ -311,24 +296,13 @@ export default function PaymentsPage() {
     }
 
     try {
-      const res = await fetch(`/api/payments/${allocatePayment.id}/allocate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ allocations }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || t("payments.allocationFailed"));
-        setAllocSaving(false);
-        return;
-      }
+      await allocatePaymentAction(allocatePayment.id, allocations);
 
       toast.success(t("payments.allocatedSuccessfully"));
       setAllocateDialogOpen(false);
       await fetchData();
-    } catch {
-      toast.error(t("payments.allocationFailed"));
+    } catch (err: any) {
+      toast.error(err.message || t("payments.allocationFailed"));
     } finally {
       setAllocSaving(false);
     }

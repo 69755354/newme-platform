@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { assignLead, bulkAssignLeads, bulkUnassignLeads, transferAllLeads } from "@/app/actions/settings";
 import {
   Users, ArrowRight, Search, Check, RefreshCw,
   ShieldCheck, User, AlertCircle, GripHorizontal, Settings,
@@ -173,14 +173,16 @@ export default function SettingsPage() {
     }
   };
 
-  // Assign single lead — uses Supabase mutation (keep as-is)
-  const supabase = createClient();
-  const assignLead = async (leadId: string, userId: string) => {
+  // Assign single lead — uses server action
+  const handleAssignLead = async (leadId: string, userId: string) => {
     setSaving(true);
-    const { error } = await supabase.from("leads").update({ assigned_to: userId }).eq("id", leadId);
-    if (error) { toast.error(t("common.failedPrefix") + error.message); setSaving(false); return; }
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, assigned_to: userId } : l));
-    setSelected(prev => { const n = new Set(prev); n.delete(leadId); return n; });
+    try {
+      await assignLead(leadId, userId);
+      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, assigned_to: userId } : l));
+      setSelected(prev => { const n = new Set(prev); n.delete(leadId); return n; });
+    } catch (err: any) {
+      toast.error(t("common.failedPrefix") + err.message);
+    }
     setSaving(false);
   };
 
@@ -188,17 +190,15 @@ export default function SettingsPage() {
   const bulkAssign = async () => {
     if (!targetUserId || selected.size === 0) return;
     setSaving(true);
-    const ids = Array.from(selected);
-    const batchSize = 50;
-    for (let i = 0; i < ids.length; i += batchSize) {
-      const batch = ids.slice(i, i + batchSize);
-      const { error } = await supabase.from("leads").update({ assigned_to: targetUserId }).in("id", batch);
-      if (error) { toast.error(t("common.bulkAssignFailed") + error.message); setSaving(false); return; }
+    try {
+      await bulkAssignLeads(Array.from(selected), targetUserId);
+      setLeads(prev => prev.map(l => selected.has(l.id) ? { ...l, assigned_to: targetUserId } : l));
+      setSelected(new Set());
+      setSelectAll(false);
+      setTargetUserId("");
+    } catch (err: any) {
+      toast.error(t("common.bulkAssignFailed") + err.message);
     }
-    setLeads(prev => prev.map(l => selected.has(l.id) ? { ...l, assigned_to: targetUserId } : l));
-    setSelected(new Set());
-    setSelectAll(false);
-    setTargetUserId("");
     setSaving(false);
   };
 
@@ -206,16 +206,14 @@ export default function SettingsPage() {
   const bulkUnassign = async () => {
     if (selected.size === 0) return;
     setSaving(true);
-    const ids = Array.from(selected);
-    const batchSize = 50;
-    for (let i = 0; i < ids.length; i += batchSize) {
-      const batch = ids.slice(i, i + batchSize);
-      const { error } = await supabase.from("leads").update({ assigned_to: null }).in("id", batch);
-      if (error) { toast.error(t("common.bulkUnassignFailed") + error.message); setSaving(false); return; }
+    try {
+      await bulkUnassignLeads(Array.from(selected));
+      setLeads(prev => prev.map(l => selected.has(l.id) ? { ...l, assigned_to: null } : l));
+      setSelected(new Set());
+      setSelectAll(false);
+    } catch (err: any) {
+      toast.error(t("common.bulkUnassignFailed") + err.message);
     }
-    setLeads(prev => prev.map(l => selected.has(l.id) ? { ...l, assigned_to: null } : l));
-    setSelected(new Set());
-    setSelectAll(false);
     setSaving(false);
   };
 
@@ -223,9 +221,12 @@ export default function SettingsPage() {
   const transferAll = async (fromUserId: string, toUserId: string) => {
     if (!fromUserId || !toUserId || fromUserId === toUserId) return;
     setSaving(true);
-    const { error } = await supabase.from("leads").update({ assigned_to: toUserId }).eq("assigned_to", fromUserId);
-    if (error) { toast.error(t("common.transferFailed") + error.message); setSaving(false); return; }
-    setLeads(prev => prev.map(l => l.assigned_to === fromUserId ? { ...l, assigned_to: toUserId } : l));
+    try {
+      await transferAllLeads(fromUserId, toUserId);
+      setLeads(prev => prev.map(l => l.assigned_to === fromUserId ? { ...l, assigned_to: toUserId } : l));
+    } catch (err: any) {
+      toast.error(t("common.transferFailed") + err.message);
+    }
     setSaving(false);
   };
 
@@ -412,7 +413,7 @@ export default function SettingsPage() {
                       {profiles.length > 0 ? (
                         <select
                           value={lead.assigned_to || ""}
-                          onChange={e => { if (e.target.value) assignLead(lead.id, e.target.value); }}
+                          onChange={e => { if (e.target.value) handleAssignLead(lead.id, e.target.value); }}
                           disabled={saving}
                           className="bg-muted/50 border border-border/50 rounded-lg px-2 py-1 text-xs focus:outline-none max-w-[140px]"
                         >

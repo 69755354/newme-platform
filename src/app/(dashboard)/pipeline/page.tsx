@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ErrorState } from "@/components/ui/error-state";
-import { createClient } from "@/lib/supabase";
+import { writeBusinessEvent } from "@/app/actions/pipeline";
 import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
@@ -19,7 +19,6 @@ import { useSupabaseQuery } from "@/lib/supabaseQuery";
 
 /* ════════════════════════════════════════ */
 export default function PipelinePage() {
-  const supabase = createClient();
   const { t } = useLanguage();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,11 +77,11 @@ export default function PipelinePage() {
 
   // Write business event helper
   async function writeEvent(leadId: string, eventType: string, description: string, eventData?: Record<string, any>) {
-    const uid = (await supabase.auth.getUser()).data.user?.id;
-    await supabase.from("business_events").insert({
-      lead_id: leadId, event_type: eventType, description, event_data: eventData || {},
-      user_id: uid,
-    });
+    try {
+      await writeBusinessEvent(leadId, eventType, description, eventData);
+    } catch {
+      // Silently fail — events are non-critical
+    }
   }
 
   if (loading && role !== "sales") return <div className="text-center py-16 text-muted-foreground">{t("common.loading")}</div>;

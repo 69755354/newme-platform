@@ -20,6 +20,7 @@ import SubNavTabs from "@/components/SubNavTabs";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
+import { approveContract, revokeContract } from "@/app/actions/contracts";
 
 interface Contract {
   id: string; contract_no: string; contract_amount: number; status: string;
@@ -117,40 +118,22 @@ export default function ContractsPage() {
   // Approval / Reject action
   async function handleApproval(contractId: string, action: "approve" | "reject", notes?: string) {
     try {
-      const res = await fetch(`/api/contracts/${contractId}/approve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, ...(notes ? { notes } : {}) }),
-      });
-      if (res.ok) {
-        toast.success(t("contracts.approvalSuccess"));
-        window.location.reload();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || t("contracts.approvalFailed"));
-      }
-    } catch {
-      toast.error(t("contracts.approvalFailed"));
+      await approveContract(contractId, action, notes);
+      toast.success(t("contracts.approvalSuccess"));
+      window.location.reload();
+    } catch (err: any) {
+      toast.error(err.message || t("contracts.approvalFailed"));
     }
   }
 
   // Revoke action
   async function handleRevoke(contractId: string, reason: string) {
     try {
-      const res = await fetch(`/api/contracts/${contractId}/revoke`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason }),
-      });
-      if (res.ok) {
-        toast.success(t("contracts.revokeSuccess"));
-        window.location.reload();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || t("contracts.revokeFailed"));
-      }
-    } catch {
-      toast.error(t("contracts.revokeFailed"));
+      await revokeContract(contractId, reason);
+      toast.success(t("contracts.revokeSuccess"));
+      window.location.reload();
+    } catch (err: any) {
+      toast.error(err.message || t("contracts.revokeFailed"));
     }
   }
 

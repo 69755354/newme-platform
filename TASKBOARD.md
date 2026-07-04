@@ -25,7 +25,11 @@ TODO → IN_PROGRESS → REVIEW → DONE
 || task_P1-D | DONE | Codex→Hermes | 2026-07-04 |
 || task_P1-E | DONE | Codex→Hermes | 2026-07-04 |
 || task_P1-F | DONE | Codex→Hermes | 2026-07-04 |
-|| task_P1-G | TODO | pending | 2026-07-04 |
+|| task_P1-G | DONE | Codex→Hermes | 2026-07-04 |
+|| task_P2_reads_all | DONE | Codex→Hermes | 2026-07-04 |
+|| task_P2_mutations_low | DONE | Codex→Hermes | 2026-07-04 |
+|| task_P2_mutations_core | DONE | Codex→Hermes | 2026-07-04 |
+|| task_P2_mutations_settings | TODO | pending | 2026-07-04 |
 
 ---
 
@@ -199,6 +203,7 @@ After deployment + production verification, move completed rows to archive secti
 验收: BUILD_ID `w_RxXx-k8y8aJ2dcuze9`。smoke PASS。Sentry ChunkLoadError 告警已上线(#696330)。
 
 ### 下一步摘要
-- P1-G: 剩余6页面 client Supabase reads → BFF API routes
-- 候选: team(4读), payments(3读), tasks(4读), pipeline(8读写), contracts(9读写), settings(13读写)
-- 优先级待定
+- P2 reads all: ✅ 已上线 (6 页 reads → BFF API routes)
+- P2 mutations low: ✅ 已编码 (team/payments/tasks server actions)
+- P2 mutations core: ✅ 已编码 (pipeline/contracts server actions)，未部署
+- P2 mutations settings: 🔴 待派 (settings import/export/KPI)

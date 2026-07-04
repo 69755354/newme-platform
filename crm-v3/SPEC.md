@@ -202,6 +202,48 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 5. **deploy** — `npm run deploy` → `scripts/deploy.sh` 6 步（taskboard → SPEC → tsc → backup → build → verify → restart → health check）
 6. **SPEC 更新** — 每 commit 后 Hermes 审核 CC 的 `SPEC Impact` 段，必要时改 SPEC.md
 
+### 六.A、BFF/Client Supabase 架构规则（P1-B/C/D/E/F + P2 落地，2026-07-04）
+
+**这是 P3 起步前的硬约束。任何后续工作不得违反。**
+
+#### Read Side 规则（页面层）
+
+1. **`/dashboard` read side** — 已从 18 条 client Supabase REST calls 收敛为 1 条 `/api/dashboard/summary`（P1-C）
+2. **`/leads` read side** — 已从 4 条 client Supabase reads 收敛为 1 条 `/api/leads/list`（P1-D）
+3. **`/workbench` 死 Supabase import** — 已删除（`a9075e9`，仅删 import 无调用）
+4. **`/analytics` `/ads` `/products` read client** — 已移除（`7ee3170` P1-B）
+5. **页面层新规**：**禁止**在 dashboard/leads/analytics/pipeline/contracts/settings/tasks/team/payments 任一页面新增 `supabase.from().select()` read call，**必须**通过 `/api/*` BFF API
+6. **`/products` 是 performance baseline**，未经 SAM 明确批准不得改动（涉及初始 bundle 收益 -224KB）
+7. **`/analytics` 下一步方向** — 6 条 fetch 已收敛为 1 条 `/api/analytics/summary`（P1-E），未来扩展也必须走 BFF
+8. **P3 dashboard/leads/analytics 工作** 不得在页面层重新引入 Supabase read client
+
+#### Write Side 规则（页面层）
+
+9. **server actions 是 write 主路径** — 全 6 页 client Supabase mutations 已迁移到 server actions（`src/app/actions/*.ts`）：
+   - team: addTeamMember / removeTeamMember / resetUserPassword
+   - payments: createPayment / confirmPayment / allocatePayment
+   - tasks: updateTask / updateTaskStatus
+   - pipeline: writeBusinessEvent / updateLeadStage / logStageChangeActivity
+   - contracts: approveContract / revokeContract
+   - settings: assignLead / bulkAssignLeads / bulkUnassignLeads / transferAllLeads
+10. **已批准的低频 client-side Supabase mutations 可以保留**（如 follow_up_logs、quality 等不频繁的纯表单写入），但必须满足：
+    - RLS policy 覆盖
+    - 不在性能关键路径上
+    - 不出现在 dashboard / leads / analytics / pipeline / contracts / settings / tasks / team / payments 主页面
+11. **新增 write 路径优先 server actions**（`src/app/actions/*.ts`），client 直写 Supabase 必须经 review
+
+#### P3 起步前的待同步清单（task_P3_0_spec_sync，BLOCKER）
+
+- [x] /dashboard read side uses /api/dashboard/summary
+- [x] /leads read side uses /api/leads/list
+- [x] page-level Supabase reads are deprecated
+- [x] approved low-frequency client-side Supabase mutations may remain
+- [x] analytics direction is /api/analytics/summary
+- [x] products is performance baseline, do not modify without approval
+- [x] P3 dashboard/leads/analytics work must not reintroduce page-level Supabase reads
+
+**Commit**: 见 `task_P3_0_spec_sync` 关联 commit
+
 ---
 
 ## 七、进行中任务（基于实际 commit）

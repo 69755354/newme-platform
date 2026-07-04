@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { HtmlLangSync } from "@/components/HtmlLangSync";
 import MetaPixel from "@/components/MetaPixel";
-import { PHProvider } from "@/lib/posthog-provider";
+import { PostHogProviderWrapper } from "@/components/PostHogProvider";
 import { WebVitalsReporter } from "@/lib/WebVitalsReporter";
 import { ErrorBoundary } from "@/components/error-boundary";
 
@@ -21,12 +21,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#F5F3EF]`}>
         <HtmlLangSync />
         <MetaPixel />
-        <PHProvider>
+        <PostHogProviderWrapper>
           <WebVitalsReporter />
           <ErrorBoundary>
             {children}
           </ErrorBoundary>
-        </PHProvider>
+        </PostHogProviderWrapper>
       </body>
     </html>
   );

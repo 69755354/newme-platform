@@ -174,13 +174,18 @@ echo "ℹ️  Service is LIVE. Production .next is untouched."
 
 BUILD_START=$(date +%s)
 
-# Copy project to temp directory using hard links (instant, same filesystem)
-# Build will CoW-break links on modified files, leaving production copy untouched
-echo "📋 Copying project to build directory (hard links)..."
+# Copy project to temp directory using rsync (fully isolated, no hardlinks)
+# This ensures the build directory is a complete independent copy
+echo "📋 Copying project to build directory (rsync, fully isolated)..."
 rm -rf "$BUILD_DIR"
-cp -al "$PROJECT_ROOT/" "$BUILD_DIR/"
-# Clean up build-only artifacts from build dir (keeps production copy safe)
-rm -rf "$BUILD_DIR/.next" "$BUILD_DIR/.next.backup."* "$BUILD_DIR/.hermes-harness" "$BUILD_DIR/.hermes/deploy-in-progress" "$BUILD_DIR/.hermes/IS_PRODUCTION" 2>/dev/null || true
+rsync -a --delete \
+  --exclude '.next' \
+  --exclude '.next.backup.*' \
+  --exclude '.hermes-harness' \
+  --exclude '.hermes/deploy-in-progress' \
+  --exclude '.hermes/IS_PRODUCTION' \
+  --exclude 'node_modules/.cache' \
+  "$PROJECT_ROOT/" "$BUILD_DIR/"
 
 echo "✅ Project copied"
 

@@ -12,7 +12,6 @@ function identifyUser() {
     const session = JSON.parse(raw);
     if (!session?.access_token) return;
 
-    // Decode JWT to get user info
     const payload = JSON.parse(atob(session.access_token.split(".")[1]));
     if (payload?.sub) {
       posthog.identify(payload.sub, {
@@ -23,7 +22,11 @@ function identifyUser() {
   } catch {}
 }
 
-export function PHProvider({ children }: { children: React.ReactNode }) {
+export default function PostHogProviderInner({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -31,11 +34,11 @@ export function PHProvider({ children }: { children: React.ReactNode }) {
     if (!key) return;
 
     posthog.init(key, {
-      api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://eu.posthog.com",
+      api_host:
+        process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://eu.posthog.com",
       capture_exceptions: true,
       capture_pageview: true,
       capture_pageleave: true,
-      // T3-2: Web Vitals 由自定义 web-vitals.ts 收集，禁用 PostHog 自动收集避免双重采集
       session_recording: {
         maskAllInputs: false,
         maskTextSelector: "",
@@ -46,7 +49,6 @@ export function PHProvider({ children }: { children: React.ReactNode }) {
       },
     });
 
-    // Re-identify on storage changes (login/logout)
     window.addEventListener("storage", (e) => {
       if (e.key === "sb-vfopmpxlhwzpxqegayew-auth-token") {
         identifyUser();

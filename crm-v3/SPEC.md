@@ -6,12 +6,12 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `c52adf9`）
-- **Build**: `mVr96pft3x5A23Udmcluf` (deploy v4.0 隔离构建)
+## 当前状态（写时 commit `3b49226`）
+- **Build**: `cDtPvje4PQxTpCIZ-uO6j` (deploy v4.1 node_modules cache)
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
 - **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
-- **上次更新**: 2026-07-04（性能优化第一批完成 → 冻结生产）
-- **状态**: 🔒 **生产冻结** — 见 §十一
+- **上次更新**: 2026-07-04（性能优化第二批 → PostHog/Recharts/MetaPixel/deploy加速）
+- **状态**: 🔓 解冻 — 继续性能优化第三批
 - **事故**: 2026-07-04 deploy incident — 旧 deploy.sh 在生产 .next 原地构建导致停服 → v4.0 隔离构建修复（见 §四）
 
 ---
@@ -109,6 +109,10 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | **🔴 P0 PROD BUILD GUARD** — 防止直接 build 覆盖生产 .next | `d25faf3` | guard-prod-build.sh + deploy.sh lock + IS_PRODUCTION marker；6 条防复发规则 |
 | **xlsx lazy-load** — ExcelImportDialog 动态 import xlsx | `c54d83b` | `/leads` 客户端首屏 -234 KB；xlsx 仅在用户上传 Excel 时加载 |
 | **Ed25519 coding auth 强制** — commit + deploy gate 签名校验 | `acae40e` | 所有代码变更必须 Ed25519 签名 |
+| **PostHog 条件加载** — /login 和 /change-password 不加载 posthog-js | `ca0ca3b` | `/login` 976KB → 784KB (-19.7%)；`PostHogProvider` 拆分为 pathname 判断层 + `next/dynamic` Inner Provider |
+| **Recharts 动态 import** — /analytics 图表 lazy-load | `2ce1394` | SalesLoadChart + WeeklyTrendsChart 改 `next/dynamic`，/analytics 首屏 -423KB |
+| **MetaPixel 补完 + auth 缓存 + leads 白名单** — P1-P3 综合优化 | `a3fca77` | `/dashboard` 加入 BACKEND_PATHS（15→16 路径）；7 处 `auth.getUser()` 替换为 `currentUserId`；leads 查询 `select("*")` → 字段白名单；Excel 导入预览增加 `project_type`/`notes` |
+| **deploy.sh v4.1 加速** — rsync 排除 node_modules + .git + 缓存复用 | `3b49226` | 每次部署 rsync 从 2.3GB 降至 68MB；`/tmp/newme-node-cache` 硬链接缓存；`package-lock.json` 变化时自动 `npm ci` 重建 |
 
 ---
 
@@ -268,20 +272,25 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 ---
 
-## 十一、🔒 生产冻结 — 2026-07-04 性能优化第一批
+## 十一、性能优化进度 — 2026-07-04
 
-**决策：今天停止性能优化，先跑 24-48 小时稳定观察。**
+**状态：第二批完成，继续第三批。**
 
-### 已完成成果
+### 已完成
 
 | 优化 | Commit | 收益 |
 |------|--------|------|
 | **xlsx 懒加载** | `c54d83b` | `/leads` 首屏 -234 KB（`import("xlsx")` 动态加载） |
-| **Meta Pixel 条件加载** | `6dca992` `e7363fa` | 15 个后台路径/子路由不加载 fbevents.js |
-| **Bundle Analyzer 基线** | `e50a9c4` | 全站客户端 JS map 已建立（见下方基线数据） |
-| **deploy.sh v4.0** | `77563c8` 等 6 个 commit | 隔离构建，生产 `.next` 零触碰 |
+| **Meta Pixel 条件加载** | `6dca992` `e7363fa` `a3fca77` | 16 个后台路径/子路由不加载 fbevents.js |
+| **Bundle Analyzer 基线** | `e50a9c4` | 全站客户端 JS map 已建立 |
+| **deploy.sh v4.0 隔离构建** | `77563c8` 等 6 个 commit | 隔离构建，生产 `.next` 零触碰 |
 | **P0 防复发** | `d25faf3` | guard-prod-build.sh 阻止直接构建 |
 | **P0 事故闭环** | `c52adf9` | 根因 + 修复 + 状态 Closed |
+| **PostHog 条件加载** | `ca0ca3b` | `/login` 976KB → 784KB (-19.7%)，login/change-password 不加载 posthog-js |
+| **Recharts 动态 import** | `2ce1394` | `/analytics` 首屏 -423KB |
+| **auth.getUser() 缓存** | `a3fca77` | 7 处替换为 `currentUserId`，每操作省 1 次网络请求 |
+| **leads 字段白名单** | `a3fca77` | `select("*")` → 33 字段白名单 |
+| **deploy.sh v4.1 加速** | `3b49226` | rsync 从 2.3GB → 68MB，node_modules 硬链接缓存 |
 
 ### Bundle Analyzer 全站基线数据
 
@@ -294,68 +303,16 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 | 页面 | 客户端 JS |
 |------|-----------|
-| `/login` | 976 KB |
+| `/login` | 784 KB（PostHog 已移除） |
 | 认证页面均值 | ~1,400 KB |
-| `/analytics` | 1,673 KB |
+| `/analytics` | 1,673 KB（含懒加载 Recharts 423KB） |
 
-### 冻结原因
+### 下一轮优化顺序
 
-1. 刚经历 deploy 事故，当前第一优先级是**稳定**，不是继续压 bundle
-2. xlsx 已拿掉 234KB，Meta Pixel 已后台条件加载，第一批收益已到手
-3. PostHog (195KB) 涉及埋点、会话、转化归因，改错 = 数据不可信
-4. @base-ui tree-shaking 是中后期工程优化，不适合今天继续动
-5. v4.0 deploy 刚改完，应先跑 24-48 小时稳定观察
+#### #1 登录 session 后重跑 CRM performance test
+- 安装 playwright + 真实浏览器测量
+- 目标：获取后台页面真实加载指标（Supabase 请求数、JS chunk 大小、FCP/LCP）
 
-### 生产观察清单（24h）
-
-- [ ] `app.newme.ae` 所有页面 200
-- [ ] `newme-platform.service` 无重启风暴
-- [ ] `/leads` 无 chunk 500
-- [ ] deploy.sh 不再原地构建
-- [ ] 销售团队正常使用
-
-### 下一轮优化顺序（解冻后）
-
-#### #1 PostHog 条件加载（-195 KB on /login, /change-password）
-
-**产品决策**：`/login` 不需要 PostHog pageview。CRM 是内部系统，login 访问量不是核心经营指标。真正重要的是 dashboard 内部行为（leads 查看、create/update、follow-up、quote/contract、boss dashboard）。
-
-**技术方案**：路径判断 + dynamic import Inner Provider
-
-**文件拆分**：
-
-```
-src/components/PostHogProvider.tsx      ← 改：只做 pathname 判断 + dynamic import
-src/components/PostHogProviderInner.tsx ← 新建：实际 PostHog 初始化
-```
-
-| 文件 | 允许 import | 禁止 import |
-|------|------------|------------|
-| `PostHogProvider.tsx` | `usePathname`, `next/dynamic`, `PUBLIC_PATHS` | `posthog-js`, `posthog-js/react` |
-| `PostHogProviderInner.tsx` | `posthog-js`, `posthog-js/react` | — |
-
-**逻辑**：
-```
-PUBLIC_PATHS = ["/login", "/change-password"]
-
-if (PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + "/")))
-  return <>{children}</>                              // 不加载 PostHog
-else
-  return <PostHogProviderInner>{children}</PostHogProviderInner>  // dynamic import
-```
-
-**不改动**：埋点事件、login 逻辑、auth 逻辑、layout 结构、CSP、Supabase
-
-**验收**：
-- [ ] `npm run build` PASS
-- [ ] `/login` Network 面板无 posthog 请求
-- [ ] `/login` bundle analyzer 不含 posthog-js
-- [ ] `/leads` Network 面板有 posthog 请求
-- [ ] `/leads` 页面正常
-- [ ] Sentry 无新增错误
-- [ ] PostHog dashboard 事件量无显著下降
-
-#### #2 @base-ui import 检查（tree-shaking）
-#### #3 Recharts 动态加载
-#### #4 路由级 bundle 分析细化
-#### #5 Supabase auth client 拆分评估
+#### #2 @base-ui tree-shaking 评估（已完成评估，无优化余地）
+#### #3 路由级 bundle 分析细化
+#### #4 Supabase auth client 拆分评估

@@ -63,7 +63,9 @@ const PREVIEW_COLUMNS: { key: keyof PreviewRow; label: string }[] = [
   { key: "source", label: "Source" },
   { key: "quality", label: "Quality" },
   { key: "location", label: "Location" },
+  { key: "project_type", label: "Project Type" },
   { key: "quotation_value", label: "Quotation" },
+  { key: "notes", label: "Notes" },
 ];
 
 function StatCard({

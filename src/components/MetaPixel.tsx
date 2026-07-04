@@ -6,20 +6,21 @@ import { usePathname } from "next/navigation";
 const PIXEL_ID = "1612447067166445";
 
 const BACKEND_PATHS = [
+  "/ads",
+  "/analytics",
+  "/command-center",
+  "/contracts",
   "/dashboard",
   "/leads",
-  "/pipeline",
-  "/analytics",
-  "/quotes",
-  "/contracts",
-  "/products",
-  "/team",
-  "/settings",
-  "/command-center",
   "/payments",
+  "/pipeline",
+  "/products",
   "/projects",
   "/quotations",
+  "/quotes",
+  "/settings",
   "/tasks",
+  "/team",
   "/workbench",
 ] as const;
 

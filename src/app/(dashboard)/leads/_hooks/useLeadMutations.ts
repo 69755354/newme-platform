@@ -134,17 +134,17 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
   // ─── Write business event ───
   const writeEvent = useCallback(
     async (leadId: string, eventType: string, description: string, eventData?: Record<string, any>) => {
-      const userId = (await supabase.auth.getUser()).data.user?.id;
+      if (!currentUserId) return;
       const { error: writeEventErr } = await supabase.from("business_events").insert({
         lead_id: leadId,
         event_type: eventType,
         description: description,
         event_data: eventData || {},
-        user_id: userId,
+        user_id: currentUserId,
       });
       if (writeEventErr) console.error("Failed to write business event:", writeEventErr);
     },
-    [] // eslint-disable-line react-hooks/exhaustive-deps
+    [currentUserId]
   );
 
   // ─── Sales reassignment ───
@@ -162,12 +162,12 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
 
       await supabase.from("transfer_history").insert({
         lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId,
-        reason: "manual_reassign", transferred_by: (await supabase.auth.getUser()).data.user?.id,
+        reason: "manual_reassign", transferred_by: currentUserId,
       });
 
       await supabase.from("activities").insert({
         lead_id: leadId, type: "transfer", content: `Reassigned from ${oldName} to ${newUserName}`,
-        user_id: (await supabase.auth.getUser()).data.user?.id,
+        user_id: currentUserId,
       });
 
       await writeEvent(leadId, "transfer", `Reassigned from ${oldName} to ${newUserName}`);
@@ -286,7 +286,7 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
       const { error: changeStageActErr } = await supabase.from("activities").insert({
         lead_id: leadId, type: "stage_change",
         content: t("leads.eventStageChange").replace("{stage}", t(`stageLabels.${newStage}`)),
-        user_id: (await supabase.auth.getUser()).data.user?.id,
+        user_id: currentUserId,
       });
       if (changeStageActErr) console.error("Failed to insert activity:", changeStageActErr);
       await writeEvent(leadId, "stage_changed", t("leads.eventStageChanged").replace("{from}", t(`stageLabels.${oldLead?.stage || "?"}`)).replace("{to}", t(`stageLabels.${newStage}`)), {
@@ -345,7 +345,7 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
       const { error: lostReasonActErr } = await supabase.from("activities").insert({
         lead_id: leadId, type: "stage_change",
         content: t("leads.eventLostReason").replace("{reason}", reason),
-        user_id: (await supabase.auth.getUser()).data.user?.id,
+        user_id: currentUserId,
       });
       if (lostReasonActErr) console.error("Failed to insert activity:", lostReasonActErr);
       await writeEvent(leadId, "lost_reason_set", t("leads.eventLostReason").replace("{reason}", reason), { lost_reason: reason });
@@ -359,7 +359,7 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
     async (leadId: string, text: string, onSuccess?: () => void) => {
       const trimmed = text.trim();
       if (!trimmed) return;
-      const { error: quickNoteErr } = await supabase.from("activities").insert({ lead_id: leadId, type: "note", content: trimmed, user_id: (await supabase.auth.getUser()).data.user?.id });
+      const { error: quickNoteErr } = await supabase.from("activities").insert({ lead_id: leadId, type: "note", content: trimmed, user_id: currentUserId });
       if (quickNoteErr) {
         console.error("Failed to insert note activity:", quickNoteErr);
         setError(t("common.saveFailed") || "Save failed");
@@ -415,7 +415,7 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
       const { error: actErr } = await supabase.from("activities").insert({
         lead_id: leadId, type: "followup_scheduled",
         content: `Follow-up scheduled for ${date}`,
-        user_id: (await supabase.auth.getUser()).data.user?.id,
+        user_id: currentUserId,
       });
       if (actErr) console.error("Failed to insert activity:", actErr);
       await writeEvent(leadId, "followup_scheduled", t("leads.eventFollowup").replace("{date}", date), { next_followup_date: date });

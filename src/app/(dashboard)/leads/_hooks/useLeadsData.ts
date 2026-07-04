@@ -137,7 +137,9 @@ export function useLeadsData(): UseLeadsDataReturn {
     refetch: refetchLeads,
   } = useSupabaseQuery<Lead[]>(
     async () => {
-      let q = supabase.from("leads").select("*");
+      let q = supabase.from("leads").select(
+        "id,customer_name,phone,source,stage,final_status,quotation_value,location,property_type,property_size_sqm,ai_quality,lead_status,assigned_to,win_probability,last_contact_date,next_followup_date,next_action,followup_count,created_at,updated_at,recovery_candidate,transfer_candidate,sales_manager_review,hold_since,lost_reason,decision_maker,decision_date,competitor,campaign_name,source_platform,quality,poor_reason"
+      );
       if (role === "sales") q = q.eq("assigned_to", userId as string);
       const { data, error: leadsErr } = await q
         .order("updated_at", { ascending: false })

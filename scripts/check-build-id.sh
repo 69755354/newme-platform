@@ -37,22 +37,22 @@ fi
 # Try multiple patterns to extract buildId
 ONLINE_BUILD_ID=""
 
-# Pattern 1: __next_f.push with buildId
-ONLINE_BUILD_ID=$(echo "$HTML_BODY" | grep -oP '"buildId"\s*:\s*"\K[^"]+' 2>/dev/null | head -1 || true)
+# Pattern 1: RSC payload \"b\":\"BUILD_ID\" (Next.js 15+)
+ONLINE_BUILD_ID=$(echo "$HTML_BODY" | grep -oP '\\\\?"b\\\\?"\s*:\s*\\\\?"\K[^"\\\\]+' 2>/dev/null | head -1 || true)
 
-# Pattern 2: In __NEXT_DATA__ JSON
+# Pattern 2: __next_f.push with buildId field
+if [[ -z "$ONLINE_BUILD_ID" ]]; then
+  ONLINE_BUILD_ID=$(echo "$HTML_BODY" | grep -oP '"buildId"\s*:\s*"\K[^"]+' 2>/dev/null | head -1 || true)
+fi
+
+# Pattern 3: In __NEXT_DATA__ JSON
 if [[ -z "$ONLINE_BUILD_ID" ]]; then
   ONLINE_BUILD_ID=$(echo "$HTML_BODY" | grep -oP '__NEXT_DATA__\s*=\s*[^;]*"buildId"\s*:\s*"\K[^"]+' 2>/dev/null | head -1 || true)
 fi
 
-# Pattern 3: In script src with buildId path
+# Pattern 4: In script src with buildId hash path
 if [[ -z "$ONLINE_BUILD_ID" ]]; then
   ONLINE_BUILD_ID=$(echo "$HTML_BODY" | grep -oP '/_next/static/\K[^/]+(?=/)' 2>/dev/null | head -1 || true)
-fi
-
-# Pattern 4: Look for the BUILD_ID value directly in page source
-if [[ -z "$ONLINE_BUILD_ID" ]]; then
-  ONLINE_BUILD_ID=$(echo "$HTML_BODY" | grep -oP '"buildId"\s*:\s*"\K[^"]+' 2>/dev/null | head -1 || true)
 fi
 
 if [[ -z "$ONLINE_BUILD_ID" ]]; then
@@ -76,7 +76,6 @@ if [[ -n "$NEXT_PROCESS" ]]; then
   echo "$NEXT_PROCESS" | awk '{print "    PID="$2" CMD="$11" "$12" "$13" "$14}'
 else
   echo -e "${YELLOW}  No next-server process found (may be running as 'next start' or under PM2)${NC}"
-  # Also check for node/next processes
   NODE_NEXT=$(ps aux | grep "[n]ode.*next" 2>/dev/null | head -3 || true)
   if [[ -n "$NODE_NEXT" ]]; then
     echo -e "${YELLOW}  Found node+next processes:${NC}"

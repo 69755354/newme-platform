@@ -135,6 +135,191 @@ if [ -f "scripts/verify-coding-auth.py" ]; then
 fi
 echo ""
 
+# ═══════════════════════════════════════════════════════════════
+# Step 0.8: C++ Deploy Gate
+# Self-proving: git diff × manifest scope × actor
+# Does NOT trust Hermes-written review files as final authority.
+# Generates protected gate result at /var/lib/newme/deploy-gate/
+# ═══════════════════════════════════════════════════════════════
+echo "--- Step 0.8/8: C++ Deploy Gate ---"
+
+MANIFEST_DIR="$PROJECT_ROOT/.hermes/delegations"
+REVIEW_DIR="$PROJECT_ROOT/.hermes/reviews"
+GATE_RESULT_DIR="$HOME/.hermes/deploy-gate/results"
+mkdir -p "$GATE_RESULT_DIR"
+
+CURRENT_HEAD=$(git -C "$PROJECT_ROOT" rev-parse HEAD)
+GATE_RESULT_FILE="$GATE_RESULT_DIR/${CURRENT_HEAD}.json"
+
+# ── Detect Codex commit ─────────────────────────────────────
+IS_CODEX=false
+TASK_ID=""
+COMMIT_MSG=$(git -C "$PROJECT_ROOT" log -1 --format=%s HEAD 2>/dev/null || echo "")
+
+if echo "$COMMIT_MSG" | grep -q '\[CODEX\]'; then
+  IS_CODEX=true
+  TASK_ID=$(echo "$COMMIT_MSG" | grep -oP '\[task_[a-zA-Z0-9_-]+\]' | head -1 | tr -d '[]')
+  [ -z "$TASK_ID" ] && TASK_ID="unknown"
+fi
+
+# ── Get changed files ───────────────────────────────────────
+PARENT=$(git -C "$PROJECT_ROOT" rev-parse HEAD~1 2>/dev/null || echo "")
+if [ -n "$PARENT" ]; then
+  CHANGED_FILES=$(git -C "$PROJECT_ROOT" diff --name-only "$PARENT" HEAD 2>/dev/null)
+else
+  CHANGED_FILES=$(git -C "$PROJECT_ROOT" diff --name-only HEAD 2>/dev/null)
+fi
+
+PROTECTED_GLOB="^(src/|app/|components/|lib/|scripts/|migrations/|prisma/|deploy.sh|package.json|package-lock.json|pnpm-lock.yaml|yarn.lock|tsconfig.json|next.config.)"
+GATE_SCRIPTS_GLOB="^(scripts/deploy.sh|scripts/verify-coding-auth.py|.githooks/)"
+
+write_gate_result() {
+  local result="$1" reason="$2"
+  local t
+  t="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  cat > "$GATE_RESULT_FILE" << GEOF
+{
+  "commit_sha": "$CURRENT_HEAD",
+  "task_id": "$TASK_ID",
+  "actor_claim": "$([ "$IS_CODEX" = true ] && echo "Codex" || echo "non-Codex")",
+  "is_codex_commit": $IS_CODEX,
+  "changed_files": "$(echo "$CHANGED_FILES" | tr '\n' ' ' | sed 's/  *$//')",
+  "manifest_allowed": "$ALLOWED_FILES_LIST",
+  "manifest_forbidden": "$FORBIDDEN_FILES_LIST",
+  "hermes_review_seen": $([ -f "$REVIEW_FILE" ] && echo true || echo false),
+  "hermes_review_result": "${REVIEW_RESULT:-not_checked}",
+  "final_result": "$result",
+  "reason": "$reason",
+  "generated_by": "deploy.sh Step 0.8",
+  "timestamp": "$t"
+}
+GEOF
+}
+
+# ── Case A: NOT Codex commit ────────────────────────────────
+if [ "$IS_CODEX" = false ]; then
+  PROTECTED_HIT=false
+  for f in $CHANGED_FILES; do
+    if echo "$f" | grep -qE "$PROTECTED_GLOB"; then
+      echo "  🔴 Non-Codex commit touches PROTECTED: $f"
+      PROTECTED_HIT=true
+    fi
+  done
+  if $PROTECTED_HIT; then
+    write_gate_result "FAIL" "Non-Codex commit touches protected files"
+    echo "🚫 C++ GATE FAIL: Non-Codex commit ($COMMIT_MSG) touches protected files"
+    exit 1
+  fi
+  echo "✅ C++ Gate PASS (non-Codex commit, no protected files)"
+  write_gate_result "PASS" "Non-Codex, no protected files"
+  echo ""
+else
+# ── Case B: Codex commit — full gate ────────────────────────
+  MANIFEST_FILE="$MANIFEST_DIR/${TASK_ID}.json"
+  if [ ! -f "$MANIFEST_FILE" ]; then
+    write_gate_result "FAIL" "Manifest not found"
+    echo "🚫 C++ GATE FAIL: Manifest not found: $MANIFEST_FILE"
+    exit 1
+  fi
+
+  EXPIRES_AT=$(python3 -c "import json; print(json.load(open('$MANIFEST_FILE')).get('expires_at',''))" 2>/dev/null || echo "")
+  if [ -n "$EXPIRES_AT" ] && [ "$EXPIRES_AT" != "None" ]; then
+    EXPIRES_EPOCH=$(date -d "$EXPIRES_AT" +%s 2>/dev/null || echo 0)
+    if [ "$EXPIRES_EPOCH" -gt 0 ] && [ "$(date +%s)" -gt "$EXPIRES_EPOCH" ]; then
+      write_gate_result "FAIL" "Manifest expired"
+      echo "🚫 C++ GATE FAIL: Manifest expired at $EXPIRES_AT"
+      exit 1
+    fi
+  fi
+
+  ALLOWED_FILES_LIST=$(python3 -c "import json; print(' '.join(json.load(open('$MANIFEST_FILE')).get('allowed_files',[])))" 2>/dev/null || echo "")
+  FORBIDDEN_FILES_LIST=$(python3 -c "import json; print(' '.join(json.load(open('$MANIFEST_FILE')).get('forbidden_files',[])))" 2>/dev/null || echo "")
+
+  # Gate scripts check — requires CONTROL_PLANE_AUTH if modified
+  GATE_SCRIPT_HIT=false
+  for f in $CHANGED_FILES; do
+    if echo "$f" | grep -qE "$GATE_SCRIPTS_GLOB"; then
+      echo "  🔴 Codex commit modifies GATE SCRIPT: $f"
+      GATE_SCRIPT_HIT=true
+    fi
+  done
+  if $GATE_SCRIPT_HIT; then
+    # Gate scripts modified — require CONTROL_PLANE_AUTH, not just coding auth
+    CP_AUTH_FILE=".hermes/delegations/${TASK_ID}.control-plane.json"
+    if [ ! -f "$CP_AUTH_FILE" ]; then
+      write_gate_result "FAIL" "Gate script modified: $f — requires CONTROL_PLANE_AUTH"
+      echo "🚫 C++ GATE FAIL: Gate scripts modified. CONTROL_PLANE_AUTH required."
+      echo "   Gate scripts: $GATE_SCRIPTS_GLOB"
+      exit 1
+    fi
+    # Verify CONTROL_PLANE_AUTH expiration
+    CP_EXPIRES=$(python3 -c "import json; print(json.load(open('$CP_AUTH_FILE')).get('expires_at',''))" 2>/dev/null || echo "")
+    if [ -n "$CP_EXPIRES" ] && [ "$CP_EXPIRES" != "None" ]; then
+      CP_EPOCH=$(date -d "$CP_EXPIRES" +%s 2>/dev/null || echo 0)
+      if [ "$CP_EPOCH" -gt 0 ] && [ "$(date +%s)" -gt "$CP_EPOCH" ]; then
+        write_gate_result "FAIL" "CONTROL_PLANE_AUTH expired"
+        echo "🚫 C++ GATE FAIL: CONTROL_PLANE_AUTH expired at $CP_EXPIRES"
+        exit 1
+      fi
+    fi
+    echo "✅ C++ Gate: CONTROL_PLANE_AUTH verified for gate script modification"
+  fi
+
+  # Scope check
+  SCOPE_FAIL=false
+  for f in $CHANGED_FILES; do
+    for fb in $FORBIDDEN_FILES_LIST; do
+      if echo "$f" | grep -q "$fb"; then
+        echo "  🔴 $f matches FORBIDDEN: $fb"
+        SCOPE_FAIL=true
+      fi
+    done
+    if [ -n "$ALLOWED_FILES_LIST" ]; then
+      MATCHED=false
+      for af in $ALLOWED_FILES_LIST; do
+        if echo "$f" | grep -q "$af"; then MATCHED=true; break; fi
+      done
+      if ! $MATCHED; then
+        echo "  🔴 $f NOT in allowed_files"
+        SCOPE_FAIL=true
+      fi
+    fi
+  done
+
+  if $SCOPE_FAIL; then
+    write_gate_result "FAIL" "Changed files exceed manifest scope"
+    echo "🚫 C++ GATE FAIL: Scope violation"
+    exit 1
+  fi
+  echo "✅ C++ Gate: all files within manifest scope"
+
+  # Hermes review check
+  REVIEW_FILE="$REVIEW_DIR/${TASK_ID}.json"
+  if [ ! -f "$REVIEW_FILE" ]; then
+    write_gate_result "FAIL" "No Hermes review"
+    echo "🚫 C++ GATE FAIL: No Hermes review: $REVIEW_FILE"
+    exit 1
+  fi
+
+  REVIEW_RESULT=$(python3 -c "import json; print(json.load(open('$REVIEW_FILE')).get('result',''))" 2>/dev/null || echo "")
+  REVIEW_COMMIT=$(python3 -c "import json; print(json.load(open('$REVIEW_FILE')).get('commit_sha',''))" 2>/dev/null || echo "")
+
+  if [ "$REVIEW_RESULT" != "PASS" ]; then
+    write_gate_result "FAIL" "Hermes review not PASS"
+    echo "🚫 C++ GATE FAIL: Review result=$REVIEW_RESULT"
+    exit 1
+  fi
+  if [ -n "$REVIEW_COMMIT" ] && [ "$REVIEW_COMMIT" != "$CURRENT_HEAD" ]; then
+    write_gate_result "FAIL" "Review sha mismatch"
+    echo "🚫 C++ GATE FAIL: Review sha=$REVIEW_COMMIT, HEAD=$CURRENT_HEAD"
+    exit 1
+  fi
+
+  echo "✅ C++ Gate: review PASS @ $CURRENT_HEAD"
+  write_gate_result "PASS" "Codex scope OK, review PASS, gate scripts intact"
+  echo ""
+fi
+
 # ═══ Step 1: TypeScript check (in production dir, safe) ═══
 echo "--- Step 1/6: TypeScript check ---"
 npx tsc --noEmit 2>&1 || { echo "❌ TypeScript check failed."; exit 1; }

@@ -180,6 +180,10 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 won_at is current-state close timestamp, not immutable sales history. If a lead moves away from won, won_at is cleared; historical close/reopen events belong in business_events.
 
+### P3-2 first_contact semantics
+
+After this migration is applied, each new `follow_up_logs` row ensures the lead has one `first_contact` milestone; the first successful insert supplies the log's `created_at` and actor (`user_id`, falling back to `created_by`). Existing milestones, including historical rows, are preserved; no historical logs are backfilled, and source differentiation requires a future `lead_milestones` source column.
+
 - **不用 Turbopack build** — race condition bug（`.tmp/_buildManifest.js.tmp` ENOENT），统一 `NEXT_NO_TURBOPACK=1 npx next build`。Turbopack chunk naming 不稳定导致 ChunkLoadError（chunks-cleanup 待做）
 - **useSupabaseQuery 替代 Promise.all** — 解决 3-4s 串行延迟，并行 + retry（leads/[id] P0-1 验证 161ms）
 - **self-hosted systemd 不上 Vercel** — 数据所有权 + 部署可控

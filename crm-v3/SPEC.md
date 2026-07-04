@@ -176,6 +176,10 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 
 ## 五、设计决策（为什么这么做）
 
+### P3-1 won_at semantics
+
+won_at is current-state close timestamp, not immutable sales history. If a lead moves away from won, won_at is cleared; historical close/reopen events belong in business_events.
+
 - **不用 Turbopack build** — race condition bug（`.tmp/_buildManifest.js.tmp` ENOENT），统一 `NEXT_NO_TURBOPACK=1 npx next build`。Turbopack chunk naming 不稳定导致 ChunkLoadError（chunks-cleanup 待做）
 - **useSupabaseQuery 替代 Promise.all** — 解决 3-4s 串行延迟，并行 + retry（leads/[id] P0-1 验证 161ms）
 - **self-hosted systemd 不上 Vercel** — 数据所有权 + 部署可控

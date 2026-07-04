@@ -36,7 +36,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | task_true_codex_deploy | DONE | Hermes | 2026-07-05 |
 | task_P3_0_spec_sync | DONE | Hermes | 2026-07-05 |
 | task_INFRA_codex_sandbox_diagnosis | TODO | — | 2026-07-05 |
-| task_P3_1_won_at | TODO | — | 2026-07-05 |
+| task_P3_1_won_at | IN_PROGRESS | — | 2026-07-05 |
 | task_P3_1b_alertpanel | DONE | Codex (GPT-5.5) via codex exec | 2026-07-05 |
 | task_P3_2_first_contact_trigger | TODO | — | 2026-07-05 |
 | task_P3_3_quality_api | TODO | — | 2026-07-05 |

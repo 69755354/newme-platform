@@ -6,12 +6,12 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `de6672e`）
-- **Build**: P2 全完成 — 6 BFF API routes + 7 server action files。待部署 3 批 mutations。
+## 当前状态（写时 commit `49cd03f`）
+- **Build**: P2 全完成 + Post-Audit Patches + P2.5 Infra Hardening — 6 BFF API routes + 7 server action files + 4 审计脚本。
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
 - **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
-- **上次更新**: 2026-07-04（P2 mutations 全完成）
-- **状态**: P2 reads + mutations 全编码完毕。待部署。
+- **上次更新**: 2026-07-05（TRUE_CODEX_FAIL_FIX + P2.5 infra hardening）
+- **状态**: P2 reads + mutations 全部署完毕。Post-audit de3b52f 已部署。49cd03f 待部署（TRUE_CODEX_REAUDIT_DELTA 安全审核 24/24 PASS）。
 - **事故**: 2026-07-04 BUILD_ID ドリフト 3 回 → prebuild guard + next.config.ts guard + deploy 隔离三层防护
 
 ---
@@ -368,6 +368,37 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | `/settings` | assignLead, bulkAssignLeads, bulkUnassignLeads, transferAllLeads | `bc2d7cb` | ✅ P2 mutations settings |
 
 **全站 client Supabase reads = 0，全站 client Supabase mutations = 0。**
+
+### Post-Audit Patches (2026-07-04) — 2 HIGH 修复
+
+| 修复 | 文件 | Commit | 状态 |
+|------|------|--------|------|
+| tasks + pipeline ownership gates | `actions/tasks.ts` + `actions/pipeline.ts` + `useSalesKpiData.ts` | `de3b52f` | ✅ 已部署 |
+| TRUE_CODEX_REAUDIT: payment allocation + pipeline gate hardening | `actions/payments.ts` + `actions/pipeline.ts` | `49cd03f` | ✅ 已编码，待部署 |
+
+**de3b52f details:**
+- `tasks.ts`: updateTask/updateTaskStatus 新增 role gate + assignee ownership 检查
+- `pipeline.ts`: updateLeadStage 已有 ownership gate（确认）
+- `useSalesKpiData.ts`: createClient 完全删除，改用 API 数据透传
+
+**49cd03f details (TRUE_CODEX_FAIL_FIX):**
+- `payments.ts allocatePayment`: 新增 contract_id 校验，拒绝跨合同 plan allocation
+- `pipeline.ts`: updateRelatedQuotations + logStageChangeActivity 新增 `assertCanOperateOnLead()` gate
+  - admin/boss/operator 放行
+  - sales 验 assigned_to = current user
+- typecheck PASS, build PASS (隔离构建), 0 scope creep
+
+### P2.5 Infra Hardening (2026-07-05) — 审计脚本 + 发布文档
+
+| 文件 | 说明 | Commit | 状态 |
+|------|------|--------|------|
+| `scripts/audit-client-supabase.sh` | 客户端 Supabase residual 检测 (3-tier: CLEAN/WARN/FAIL) | `11e3805` | ✅ |
+| `scripts/audit-service-role.sh` | service_role 密钥暴露检测 | `11e3805` | ✅ |
+| `scripts/check-build-id.sh` | BUILD_ID 磁盘/在线/进程一致性检查 | `11e3805` | ✅ |
+| `scripts/day-end-health-check.sh` | 统合健康检查（全脚本统筹） | `11e3805` | ✅ |
+| `docs/releases/2026-07-04-p1-p2-full-pass.md` | P1/P2 发布报告 | `11e3805` | ✅ |
+| `docs/releases/residuals.md` | 剩余 Supabase 调用例外登记 | `11e3805` | ✅ |
+| check-build-id "media" 误提取修复 + WARN/FAIL 分类改善 | `scripts/check-build-id.sh` | `583ba89` | ✅ |
 
 ### 下一轮优化顺序
 

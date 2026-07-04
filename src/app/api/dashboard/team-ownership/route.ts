@@ -21,48 +21,45 @@ export async function GET() {
   // count is required so the query returns a count instead of null.
   const results = await Promise.all(
     profiles.map(async (p) => {
-      // assigned
-      const { count: assigned } = await supabase
-        .from("leads")
-        .select("id", { count: "exact", head: true })
-        .eq("assigned_to", p.id)
-        .eq("archived", false);
-      // active (assigned, not archived, final_status IS NULL)
-      const { count: active } = await supabase
-        .from("leads")
-        .select("id", { count: "exact", head: true })
-        .eq("assigned_to", p.id)
-        .eq("archived", false)
-        .is("final_status", null);
-      // won
-      const { count: won } = await supabase
-        .from("leads")
-        .select("id", { count: "exact", head: true })
-        .eq("assigned_to", p.id)
-        .eq("archived", false)
-        .or("final_status.eq.won,stage.eq.won");
-      // lost
-      const { count: lost } = await supabase
-        .from("leads")
-        .select("id", { count: "exact", head: true })
-        .eq("assigned_to", p.id)
-        .eq("archived", false)
-        .or("final_status.eq.lost,stage.eq.lost");
-      // imported (leads this person imported via Excel)
-      const { count: created } = await supabase
-        .from("leads")
-        .select("id", { count: "exact", head: true })
-        .eq("imported_by", p.id);
+      const [assigned, active, won, lost, created] = await Promise.all([
+        supabase
+          .from("leads")
+          .select("id", { count: "exact", head: true })
+          .eq("assigned_to", p.id)
+          .eq("archived", false),
+        supabase
+          .from("leads")
+          .select("id", { count: "exact", head: true })
+          .eq("assigned_to", p.id)
+          .eq("archived", false)
+          .is("final_status", null),
+        supabase
+          .from("leads")
+          .select("id", { count: "exact", head: true })
+          .eq("assigned_to", p.id)
+          .eq("archived", false)
+          .or("final_status.eq.won,stage.eq.won"),
+        supabase
+          .from("leads")
+          .select("id", { count: "exact", head: true })
+          .eq("assigned_to", p.id)
+          .eq("archived", false)
+          .or("final_status.eq.lost,stage.eq.lost"),
+        supabase
+          .from("leads")
+          .select("id", { count: "exact", head: true })
+          .eq("imported_by", p.id),
+      ]);
 
       return {
         user_id: p.id,
         full_name: p.full_name,
         role: p.role,
-        assigned_leads: assigned || 0,
-        active_leads: active || 0,
-        won_leads: won || 0,
-        lost_leads: lost || 0,
-        imported_leads: created || 0,
+        assigned_leads: assigned.count || 0,
+        active_leads: active.count || 0,
+        won_leads: won.count || 0,
+        lost_leads: lost.count || 0,
+        imported_leads: created.count || 0,
       };
     })
   );

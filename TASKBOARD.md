@@ -29,7 +29,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 || task_P2_reads_all | DONE | Codex→Hermes | 2026-07-04 |
 || task_P2_mutations_low | DONE | Codex→Hermes | 2026-07-04 |
 || task_P2_mutations_core | DONE | Codex→Hermes | 2026-07-04 |
-|| task_P2_mutations_settings | TODO | pending | 2026-07-04 |
+|| task_P2_mutations_settings | DONE | Codex→Hermes | 2026-07-04 |
 
 ---
 
@@ -206,4 +206,4 @@ After deployment + production verification, move completed rows to archive secti
 - P2 reads all: ✅ 已上线 (6 页 reads → BFF API routes)
 - P2 mutations low: ✅ 已编码 (team/payments/tasks server actions)
 - P2 mutations core: ✅ 已编码 (pipeline/contracts server actions)，未部署
-- P2 mutations settings: 🔴 待派 (settings import/export/KPI)
+- P2 mutations settings: ✅ 已编码 (settings lead-assignment server actions)

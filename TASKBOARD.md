@@ -39,7 +39,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | task_P3_1_won_at | DONE | Codex (GPT-5.5) via codex exec → Hermes apply | 2026-07-05 |
 | task_P3_1b_alertpanel | DONE | Codex (GPT-5.5) via codex exec | 2026-07-05 |
 | task_P3_2_first_contact_trigger | DONE | Codex (GPT-5.5) via codex exec → Hermes apply | 2026-07-05 |
-| task_P3_3_quality_api | IN_PROGRESS | Codex (GPT-5.5) | 2026-07-05 |
+| task_P3_3_quality_api | DONE | Codex (GPT-5.5) via codex exec | 2026-07-05 |
 | task_P3_4_deprecate_redirect | TODO | — | 2026-07-05 |
 | task_P3_5_dashboard_summary_api | TODO | — | 2026-07-05 |
 | task_P3_6_dashboard_month_filter | TODO | — | 2026-07-05 |

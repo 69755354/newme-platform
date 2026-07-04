@@ -24,6 +24,8 @@ TODO → IN_PROGRESS → REVIEW → DONE
 || task_P1-C | DONE | Hermes | 2026-07-04 |
 || task_P1-D | DONE | Codex→Hermes | 2026-07-04 |
 || task_P1-E | DONE | Codex→Hermes | 2026-07-04 |
+|| task_P1-F | DONE | Codex→Hermes | 2026-07-04 |
+|| task_P1-G | TODO | pending | 2026-07-04 |
 
 ---
 
@@ -187,3 +189,16 @@ After deployment + production verification, move completed rows to archive secti
 || P1-E | src/app/(dashboard)/analytics/page.tsx | +AnalyticsContext, 单次 fetch 替代 6 条分散请求 | 0 client Supabase reads，AnalyticsContext 可供子组件未来迁移 |
 
 验收: BUILD_ID `SKwOrxKMZl2AoWmEzyXS0`。smoke 14/14。5/5 页面 client Supabase reads 清零。
+
+### P1-F: Workbench Query Parallelization — 2026-07-04
+|| # | File | Change | Result |
+||---|------|--------|--------|
+|| P1-F | src/app/api/workbench/route.ts | 9 次串行 Supabase → 4 步（auth→profile→6并行→leadNames）+ 30s cache | -5 round-trips，缓存命中=0查询 |
+|| P1-F | scripts/deploy.sh | GATE_RESULT_DIR /var/lib→~/.hermes | ubuntu 可写，不再 Permission denied |
+
+验收: BUILD_ID `w_RxXx-k8y8aJ2dcuze9`。smoke PASS。Sentry ChunkLoadError 告警已上线(#696330)。
+
+### 下一步摘要
+- P1-G: 剩余6页面 client Supabase reads → BFF API routes
+- 候选: team(4读), payments(3读), tasks(4读), pipeline(8读写), contracts(9读写), settings(13读写)
+- 优先级待定

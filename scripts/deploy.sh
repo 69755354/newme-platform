@@ -189,10 +189,12 @@ NODE_CACHE="/tmp/newme-node-cache"
 NODE_CACHE_LOCK="$NODE_CACHE/package-lock.json"
 
 if [ -d "$NODE_CACHE/node_modules" ] && [ -f "$NODE_CACHE_LOCK" ]; then
-  if cp -al "$NODE_CACHE/node_modules" "$BUILD_DIR/node_modules" 2>/dev/null; then
+  if cp -al "$NODE_CACHE/node_modules" "$BUILD_DIR/node_modules" 2>/dev/null && \
+     [ -x "$BUILD_DIR/node_modules/.bin/next" ]; then
     echo "📦 Reused node_modules cache ($(du -sh "$NODE_CACHE/node_modules" 2>/dev/null | cut -f1))"
   else
-    echo "⚠️  Cache hardlink failed, will do fresh install"
+    echo "⚠️  Cache hardlink failed or incomplete, cleaning up..."
+    rm -rf "$BUILD_DIR/node_modules" 2>/dev/null || true
   fi
 fi
 # ───────────────────────────────────────────────────────────────

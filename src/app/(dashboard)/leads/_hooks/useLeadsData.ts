@@ -1,27 +1,19 @@
 "use client";
 
 /**
- * useLeadsData — T3-3 step 5 extracted from leads/page.tsx
+ * useLeadsData — P1-D refactored data layer for the leads dashboard.
  *
- * Encapsulates the core data layer for the leads dashboard:
- *   - current user id (auth) + profile role for RLS-respecting lead filtering
- *   - sales users list (for reassignment dropdowns)
- *   - the leads list itself (500-row cap, ordered by updated_at desc)
- *   - derived userNameMap (id → full_name) for inline owner display
+ * Replaces 4 client-side useSupabaseQuery calls (auth, profile, leads, salesUsers)
+ * with a single fetch to the server-side /api/leads/list aggregation endpoint.
+ * Auth, role resolution, and queries now happen on the server — zero client
+ * Supabase reads reach the database directly.
  *
- * All 4 queries are routed through useSupabaseQuery (T1-1 freeze rule —
- * no direct supabase.from() Promise chains). They run in parallel as 4
- * independent hook instances; React fires them concurrently.
- *
- * The async circuit-breaker is preserved: do NOT query leads until BOTH
- * role AND userId are resolved. A sales user running the unfiltered query
- * before role loads would briefly render leads they shouldn't see. RLS
- * remains the source of truth; this is defence-in-depth.
+ * The hook still exposes the same UseLeadsDataReturn shape so page.tsx and
+ * all downstream components (LeadsKanbanBoard, LeadsFilters, etc.) work
+ * without changes.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createClient } from "@/lib/supabase";
-import { useSupabaseQuery } from "@/lib/supabaseQuery";
 
 /* ─── Types ─── */
 export interface Lead {
@@ -51,11 +43,6 @@ interface SalesUser {
   full_name: string | null;
 }
 
-interface ProfileRow {
-  id: string;
-  role: string | null;
-}
-
 export interface UseLeadsDataReturn {
   leads: Lead[];
   setLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
@@ -73,118 +60,48 @@ export interface UseLeadsDataReturn {
 
 /* ─── Hook ─── */
 export function useLeadsData(): UseLeadsDataReturn {
-  const supabase = createClient();
-
   const [leads, setLeads] = useState<Lead[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [salesUsers, setSalesUsers] = useState<SalesUser[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // ── Query 1: current user id (auth) ──
-  // Bootstrap gate — until this resolves, profile + leads queries stay disabled.
-  const {
-    data: authData,
-    loading: authLoading,
-  } = useSupabaseQuery<{ id: string } | null>(
-    // supabase.auth.getUser returns AuthError (not PostgrestError); cast so
-    // the query function signature matches useSupabaseQuery's generic contract.
-    async () => {
-      const { data, error: authErr } = await supabase.auth.getUser();
-      if (authErr) return { data: null, error: authErr as unknown as never };
-      return { data: data.user ? { id: data.user.id } : null, error: null };
-    },
-    [],
-    { retry: 1 }
-  );
-
-  // Sync auth → userId state once the query settles.
-  useEffect(() => {
-    if (authData?.id && userId !== authData.id) setUserId(authData.id);
-  }, [authData?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Query 2: profile role (drives sales filtering) ──
-  const {
-    data: profileData,
-    loading: profileLoading,
-  } = useSupabaseQuery<ProfileRow | null>(
-    async () => {
-      if (!userId) return { data: null, error: null };
-      return await supabase
-        .from("profiles")
-        .select("id,role")
-        .eq("id", userId)
-        .single();
-    },
-    [userId],
-    { enabled: !!userId }
-  );
-
-  useEffect(() => {
-    if (profileData?.role) {
-      if (role !== profileData.role) setRole(profileData.role);
-    } else if (profileData && !profileData.role && role === null) {
-      // Only fallback to "sales" when role truly unknown (null),
-      // not when it's already resolved from a previous query
-      setRole("sales");
-    }
-  }, [profileData, profileData?.role, role]);
-
-  // ── Query 3: leads list (gated until BOTH role + userId are known) ──
-  const leadsEnabled = !!role && !!userId;
-  const {
-    data: leadsData,
-    loading: leadsLoading,
-    refetch: refetchLeads,
-  } = useSupabaseQuery<Lead[]>(
-    async () => {
-      let q = supabase.from("leads").select(
-        "id,customer_name,phone,source,stage,final_status,quotation_value,location,property_type,property_size_sqm,ai_quality,lead_status,assigned_to,win_probability,last_contact_date,next_followup_date,next_action,followup_count,created_at,updated_at,recovery_candidate,transfer_candidate,sales_manager_review,hold_since,lost_reason,decision_maker,decision_date,competitor,campaign_name,source_platform,quality,poor_reason"
-      );
-      if (role === "sales") q = q.eq("assigned_to", userId as string);
-      const { data, error: leadsErr } = await q
-        .order("updated_at", { ascending: false })
-        .limit(500);
-      if (leadsErr) return { data: null, error: leadsErr };
-      return { data: (data ?? []) as Lead[], error: null };
-    },
-    [role, userId],
-    { enabled: leadsEnabled }
-  );
-
-  // Sync query result → leads state.
-  useEffect(() => {
-    if (leadsData) setLeads(leadsData as Lead[]);
-  }, [leadsData]);
-
-  // Reset error whenever a fresh leads fetch starts.
-  useEffect(() => {
-    if (leadsLoading) setError(null);
-  }, [leadsLoading]);
-
-  // Public refetch — page-level mutations call this on success.
+  // ── Single fetch to server-side aggregation endpoint ──
   const fetchLeads = useCallback(() => {
-    if (leadsEnabled) refetchLeads();
-  }, [leadsEnabled, refetchLeads]);
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
 
-  // ── Query 4: sales users (for reassignment dropdown) ──
-  const {
-    data: salesUsersData,
-  } = useSupabaseQuery<SalesUser[]>(
-    async () => {
-      const { data, error: salesErr } = await supabase
-        .from("profiles")
-        .select("id,email,role,full_name")
-        .in("role", ["admin", "sales", "operator"]);
-      if (salesErr) return { data: [], error: salesErr };
-      return { data: (data ?? []) as SalesUser[], error: null };
-    },
-    []
-  );
+    fetch("/api/leads/list")
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((json) => {
+        if (cancelled) return;
+        setUserId(json.userId);
+        setRole(json.role);
+        setLeads((json.leads ?? []) as Lead[]);
+        setSalesUsers((json.salesUsers ?? []) as SalesUser[]);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message || "Failed to load leads");
+        setLoading(false);
+      });
 
-  const salesUsers: SalesUser[] = (salesUsersData ?? []) as SalesUser[];
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  // ── Aggregate loading flag — true until leads query has settled once ──
-  const loading = authLoading || profileLoading || leadsLoading;
+  // ── Initial fetch on mount ──
+  useEffect(() => {
+    const cleanup = fetchLeads();
+    return cleanup;
+  }, [fetchLeads]);
 
   // ── Derived: userNameMap (id → full_name) ──
   const userNameMap = useMemo(() => {

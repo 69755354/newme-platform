@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, Suspense } from "react";
-import { createClient } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ErrorState } from "@/components/ui/error-state";
@@ -25,7 +24,6 @@ import {
 } from "./_utils/constants";
 
 function LeadsContent() {
-  const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t, lang } = useLanguage();
@@ -153,15 +151,8 @@ function LeadsContent() {
     if (!bulkTransferTargetId || selectedLeadIds.size === 0) return;
     setReassigning(true);
     const ids = Array.from(selectedLeadIds);
-    const toUser = salesUsers.find((u: any) => u.id === bulkTransferTargetId);
-    const toName = toUser?.full_name || toUser?.email || bulkTransferTargetId;
     for (const leadId of ids) {
-      const oldLead = leads.find(l => l.id === leadId);
-      const oldName = salesUsers.find((u: any) => u.id === oldLead?.assigned_to)?.full_name || "unassigned";
-      await supabase.from("leads").update({ assigned_to: bulkTransferTargetId }).eq("id", leadId);
-      await supabase.from("transfer_history").insert({ lead_id: leadId, from_user_id: oldLead?.assigned_to, to_user_id: bulkTransferTargetId, reason: "batch_reassign", transferred_by: (await supabase.auth.getUser()).data.user?.id });
-      await supabase.from("activities").insert({ lead_id: leadId, type: "transfer", content: `Batch reassigned from ${oldName} to ${toName}`, user_id: (await supabase.auth.getUser()).data.user?.id });
-      await supabase.from("business_events").insert({ lead_id: leadId, event_type: "transfer", description: `Batch reassigned from ${oldName} to ${toName}`, user_id: (await supabase.auth.getUser()).data.user?.id });
+      await reassignSales(leadId, bulkTransferTargetId);
     }
     setReassigning(false);
     setShowBulkTransfer(false);

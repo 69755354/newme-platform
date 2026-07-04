@@ -184,6 +184,8 @@ won_at is current-state close timestamp, not immutable sales history. If a lead 
 
 After this migration is applied, each new `follow_up_logs` row ensures the lead has one `first_contact` milestone; the first successful insert supplies the log's `created_at` and actor (`user_id`, falling back to `created_by`). Existing milestones, including historical rows, are preserved; no historical logs are backfilled, and source differentiation requires a future `lead_milestones` source column.
 
+Compatibility with `check_milestone_order`: an existing `(lead_id, milestone_key)` returns early so the caller's `ON CONFLICT` can make the insert idempotent, and `first_contact` returns early as a historical contact-fact backfill even when later milestones already exist. Every non-duplicate, non-`first_contact` insert still uses the existing no-backward/no-skip checks and updates `leads.current_milestone`; the `first_contact` bypass does not update the current milestone.
+
 - **不用 Turbopack build** — race condition bug（`.tmp/_buildManifest.js.tmp` ENOENT），统一 `NEXT_NO_TURBOPACK=1 npx next build`。Turbopack chunk naming 不稳定导致 ChunkLoadError（chunks-cleanup 待做）
 - **useSupabaseQuery 替代 Promise.all** — 解决 3-4s 串行延迟，并行 + retry（leads/[id] P0-1 验证 161ms）
 - **self-hosted systemd 不上 Vercel** — 数据所有权 + 部署可控

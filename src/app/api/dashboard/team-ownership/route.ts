@@ -1,11 +1,29 @@
-// GET /api/dashboard/team-ownership — Team Lead Ownership stats (all roles with data)
+// GET /api/dashboard/team-ownership — Team Lead Ownership stats (30s cache)
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { getCached, setCache } from "@/lib/api-cache";
 
 export async function GET() {
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Get requester's role for cache key
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  const role = profile?.role || "unknown";
+  const isManagement = ["admin", "boss", "operator"].includes(role);
+  const cacheKey = `team-ownership:${role}:${isManagement ? "all" : user.id}`;
+
+  // ── Cache hit ──
+  const cached = getCached(cacheKey);
+  if (cached) {
+    return NextResponse.json(cached);
+  }
 
   // Get all relevant users
   const { data: profiles } = await supabase
@@ -16,9 +34,7 @@ export async function GET() {
 
   if (!profiles) return NextResponse.json({ users: [] });
 
-  // For each user, count leads. Use a FRESH builder per metric — PostgrestFilterBuilder
-  // mutates in place, so reusing one would leak filters across queries. head:true + exact
-  // count is required so the query returns a count instead of null.
+  // Per-user lead counts — parallelized per-user (5 queries each via Promise.all)
   const results = await Promise.all(
     profiles.map(async (p) => {
       const [assigned, active, won, lost, created] = await Promise.all([
@@ -66,6 +82,10 @@ export async function GET() {
 
   // Filter: users with any leads (assigned or created/imported)
   const filtered = results.filter((r) => r.assigned_leads > 0 || r.imported_leads > 0);
+  const result = { users: filtered };
 
-  return NextResponse.json({ users: filtered });
+  // ── Cache write (30s) ──
+  setCache(cacheKey, result, 30);
+
+  return NextResponse.json(result);
 }

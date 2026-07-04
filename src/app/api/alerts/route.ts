@@ -1,12 +1,8 @@
+// GET /api/alerts — Active lead alerts with 30s cache
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { getCached, setCache } from "@/lib/api-cache";
 
-/**
- * GET /api/alerts
- * Returns active alerts from the lead_alerts view.
- * Admin/boss: all alerts. Sales: only their assigned leads.
- * Query params: ?severity=red&type=overdue_followup
- */
 export async function GET(request: Request) {
   const supabase = await createServerSupabase();
   const { data: { user } } = await supabase.auth.getUser();
@@ -20,18 +16,26 @@ export async function GET(request: Request) {
 
   if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 403 });
 
-  const isManagement = ["admin", "boss"].includes(profile.role);
+  const isManagement = ["admin", "boss", "operator"].includes(profile.role);
+  const cacheKey = `alerts:${isManagement ? profile.role : "sales"}:${isManagement ? "all" : user.id}`;
+
+  // ── Cache hit ──
+  const cached = getCached<{ alerts: unknown[]; summary: unknown }>(cacheKey);
+  if (cached) {
+    return NextResponse.json(cached);
+  }
+
   const { searchParams } = new URL(request.url);
   const severity = searchParams.get("severity");
   const alertType = searchParams.get("type");
 
-  // Build query on lead_alerts view — only return rows with active alerts
+  // Field whitelist — only columns actually used by AlertPanel
   let query = supabase
     .from("lead_alerts")
-    .select("*")
+    .select("id,customer_name,alert_type,alert_message,severity,assigned_to")
     .not("alert_type", "is", null)
     .order("severity", { ascending: true })
-    .order("days_since_contact", { ascending: false });
+    .limit(30);
 
   if (severity) {
     query = query.eq("severity", severity);
@@ -40,7 +44,6 @@ export async function GET(request: Request) {
     query = query.eq("alert_type", alertType);
   }
 
-  // Sales users only see their own leads
   if (!isManagement) {
     query = query.eq("assigned_to", user.id);
   }
@@ -52,16 +55,20 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Failed to fetch alerts" }, { status: 500 });
   }
 
-  // Aggregate summary
   const summary = {
     total: data?.length ?? 0,
-    red: data?.filter((a) => a.severity === "red").length ?? 0,
-    yellow: data?.filter((a) => a.severity === "yellow").length ?? 0,
+    red: data?.filter((a: any) => a.severity === "red").length ?? 0,
+    yellow: data?.filter((a: any) => a.severity === "yellow").length ?? 0,
     byType: {} as Record<string, number>,
   };
-  data?.forEach((a) => {
+  data?.forEach((a: any) => {
     summary.byType[a.alert_type] = (summary.byType[a.alert_type] || 0) + 1;
   });
 
-  return NextResponse.json({ alerts: data, summary });
+  const result = { alerts: data, summary };
+
+  // ── Cache write (30s) ──
+  setCache(cacheKey, result, 30);
+
+  return NextResponse.json(result);
 }

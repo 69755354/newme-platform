@@ -47,6 +47,13 @@ export async function GET(request: Request) {
   // Period from query param
   const { searchParams } = new URL(request.url);
   const period = searchParams.get("period") || "";
+  let periodStart: string | null = null;
+  let periodEnd: string | null = null;
+  if (period) {
+    const [year, month] = period.split("-").map(Number);
+    periodStart = new Date(year, month - 1, 1).toISOString();
+    periodEnd = new Date(year, month, 0, 23, 59, 59, 999).toISOString();
+  }
 
   // ── Cache key ──
   const cacheKey = `dashboard-summary:${role}:${userId}:${period}`;
@@ -82,15 +89,78 @@ export async function GET(request: Request) {
     ? supabase.from("kpi_targets").select("*").eq("period", period)
     : Promise.resolve({ data: [], error: null });
 
+  const periodLeadsPromise = periodStart && periodEnd
+    ? (() => {
+        let q = supabase
+          .from("leads")
+          .select("quality,source")
+          .gte("created_at", periodStart)
+          .lte("created_at", periodEnd);
+        if (isSales && userId) q = q.eq("assigned_to", userId);
+        return q;
+      })()
+    : Promise.resolve({ data: [], error: null });
+
+  const periodContractsPromise = periodStart && periodEnd
+    ? (() => {
+        let q = supabase
+          .from("contracts")
+          .select("contract_amount")
+          .gte("created_at", periodStart)
+          .lte("created_at", periodEnd);
+        if (isSales && userId) q = q.eq("sales_id", userId);
+        return q;
+      })()
+    : Promise.resolve({ data: [], error: null });
+
+  const periodWonPromise = periodStart && periodEnd
+    ? (() => {
+        let q = supabase
+          .from("leads")
+          .select("id", { count: "exact", head: true })
+          .eq("final_status", "won")
+          .gte("won_at", periodStart)
+          .lte("won_at", periodEnd);
+        if (isSales && userId) q = q.eq("assigned_to", userId);
+        return q;
+      })()
+    : Promise.resolve({ count: 0, error: null });
+
+  const stageChangesPromise = periodStart && periodEnd
+    ? supabase
+        .from("business_events")
+        .select("lead_id,event_data,created_at")
+        .eq("event_type", "stage_changed")
+        .gte("created_at", periodStart)
+        .lte("created_at", periodEnd)
+        .order("created_at", { ascending: true })
+    : Promise.resolve({ data: [], error: null });
+
   // Run first batch in parallel (no contract-id dependency)
   const [
     { data: leads, error: leadsErr },
     { data: contracts, error: cErr },
     { data: kpiTargets },
-  ] = await Promise.all([leadsPromise, contractsPromise, kpiPromise]);
+    { data: periodLeadsRaw, error: periodLeadsErr },
+    { data: periodContractsRaw, error: periodContractsErr },
+    { count: periodWonCount, error: periodWonErr },
+    { data: stageChangesRaw, error: stageChangesErr },
+  ] = await Promise.all([
+    leadsPromise,
+    contractsPromise,
+    kpiPromise,
+    periodLeadsPromise,
+    periodContractsPromise,
+    periodWonPromise,
+    stageChangesPromise,
+  ]);
 
   if (leadsErr) console.error("leads fetch failed:", leadsErr);
   if (cErr) console.error("contracts fetch failed:", cErr);
+  if (periodLeadsErr) console.error("period leads fetch failed:", periodLeadsErr);
+  if (periodContractsErr) console.error("period contracts fetch failed:", periodContractsErr);
+  if (periodWonErr) console.error("period won leads fetch failed:", periodWonErr);
+  if (stageChangesErr) console.error("stage changes fetch failed:", stageChangesErr);
 
   const leadsData = (leads || []) as any[];
   const contractsData = (contracts || []) as any[];
@@ -117,6 +187,20 @@ export async function GET(request: Request) {
     if (isSales && userId && contractIds.length > 0) {
       q = q.in("contract_id", contractIds);
     }
+    return q;
+  };
+
+  const buildPeriodPaymentsQuery = () => {
+    if (!periodStart || !periodEnd || (isSales && contractIds.length === 0)) {
+      return Promise.resolve({ data: [], error: null });
+    }
+    let q = supabase
+      .from("payments")
+      .select("amount")
+      .eq("confirmed", true)
+      .gte("payment_date", periodStart)
+      .lte("payment_date", periodEnd);
+    if (isSales && userId) q = q.in("contract_id", contractIds);
     return q;
   };
 
@@ -252,6 +336,7 @@ export async function GET(request: Request) {
     { data: draftQuotes },
     { data: staleLeads },
     { data: overdueWorkflow },
+    { data: periodPaymentsRaw, error: periodPaymentsErr },
   ] = await Promise.all([
     buildPaymentsQuery(),
     buildOverdueQuery(),
@@ -263,11 +348,13 @@ export async function GET(request: Request) {
     buildDraftQuotesQuery(),
     buildStaleLeadsQuery(),
     buildOverdueWorkflowQuery(),
+    buildPeriodPaymentsQuery(),
   ]);
 
   if (pErr) console.error("payments fetch failed:", pErr);
   if (oErr) console.error("overdue plans fetch failed:", oErr);
   if (dErr) console.error("due plans fetch failed:", dErr);
+  if (periodPaymentsErr) console.error("period payments fetch failed:", periodPaymentsErr);
 
   // ── 5. Compute financeStats ──
   const activeContracts = contractsData.filter(
@@ -296,6 +383,15 @@ export async function GET(request: Request) {
     0
   );
 
+  const periodContractAmount = ((periodContractsRaw as any[]) || []).reduce(
+    (sum: number, contract: any) => sum + (contract.contract_amount || 0),
+    0
+  );
+  const periodPaymentAmount = ((periodPaymentsRaw as any[]) || []).reduce(
+    (sum: number, payment: any) => sum + (payment.amount || 0),
+    0
+  );
+
   const finance = {
     totalContractValue: Math.round(totalContractValue),
     received: Math.round(received),
@@ -303,6 +399,29 @@ export async function GET(request: Request) {
     overdue: Math.round(overdueAmount),
     dueNextWeek: Math.round(dueNextWeekAmount),
     contractCount: activeContracts.length,
+    ...(period
+      ? {
+          contractAmount: periodContractAmount,
+          paymentAmount: periodPaymentAmount,
+          wonCount: periodWonCount || 0,
+        }
+      : {}),
+  };
+
+  const groupPeriodLeads = (field: "quality" | "source") =>
+    ((periodLeadsRaw as any[]) || []).reduce<Record<string, number>>(
+      (groups, lead) => {
+        const key = String(lead[field] ?? "unknown");
+        groups[key] = (groups[key] || 0) + 1;
+        return groups;
+      },
+      {}
+    );
+
+  const periodLeads = {
+    count: ((periodLeadsRaw as any[]) || []).length,
+    byQuality: groupPeriodLeads("quality"),
+    bySource: groupPeriodLeads("source"),
   };
 
   // ── 6. Compute todayFollowups ──
@@ -432,6 +551,12 @@ export async function GET(request: Request) {
     topActions: sorted.slice(0, 5),
     // Include raw data needed for UI i18n
     overdueFollowups: overdueFollowups || [],
+    ...(period
+      ? {
+          periodLeads,
+          stageChanges: stageChangesRaw || [],
+        }
+      : {}),
   };
 
   // ── Cache write (30s) ──

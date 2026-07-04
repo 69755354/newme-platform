@@ -22,6 +22,14 @@ export async function updateTask(taskId: string, updates: UpdateTaskInput) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Unauthorized')
 
+  // Role + ownership gate
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  const isPrivileged = profile?.role && ['admin', 'boss', 'operator'].includes(profile.role)
+  if (!isPrivileged) {
+    const { data: task } = await supabase.from('tasks').select('assignee_id').eq('id', taskId).single()
+    if (!task || task.assignee_id !== user.id) throw new Error('Forbidden')
+  }
+
   const updateData: Record<string, any> = {
     title: updates.title.trim(),
     description: updates.description?.trim() || null,
@@ -48,6 +56,14 @@ export async function updateTaskStatus(taskId: string, status: string) {
   const supabase = await createServerSupabase()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Unauthorized')
+
+  // Role + ownership gate
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  const isPrivileged = profile?.role && ['admin', 'boss', 'operator'].includes(profile.role)
+  if (!isPrivileged) {
+    const { data: task } = await supabase.from('tasks').select('assignee_id').eq('id', taskId).single()
+    if (!task || task.assignee_id !== user.id) throw new Error('Forbidden')
+  }
 
   const updateData: Record<string, any> = {
     status,

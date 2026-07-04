@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import {
   Target, TrendingUp, Wallet, DollarSign, CheckCircle2,
 } from "lucide-react";
-import { useSalesKpiData } from "../_hooks/useSalesKpiData";
+import { useSalesKpiData, type KpiApiData } from "../_hooks/useSalesKpiData";
 
 /* ─── Local helpers (purely rendering concerns) ─── */
 function fmtAED(v: number): string {
@@ -33,13 +33,13 @@ function kpiPctColor(v: number | null): string {
 }
 
 /* ─── Component ─── */
-export function SalesKpiDashboard({ currentUserId }: { currentUserId: string | null }) {
+export function SalesKpiDashboard({ currentUserId, kpiData }: { currentUserId: string | null; kpiData: KpiApiData | null }) {
   const { t } = useLanguage();
   const {
     signingTarget, signingActual, signingPct,
     collectionTarget, collectionActual, collectionPct,
     contractCount, isLoading: kpiLoading,
-  } = useSalesKpiData(currentUserId);
+  } = useSalesKpiData(currentUserId, kpiData);
 
   return (
     <div className="space-y-6">

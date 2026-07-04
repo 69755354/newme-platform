@@ -8,6 +8,7 @@ import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { SalesKpiDashboard } from "./_components/SalesKpiDashboard";
+import type { KpiApiData } from "./_hooks/useSalesKpiData";
 import { KanbanBoard } from "./_components/KanbanBoard";
 import type { Lead } from "./_components/LeadCard";
 // T3-3 step 3 HOTFIX: re-import useSupabaseQuery (project convention).
@@ -27,6 +28,7 @@ export default function PipelinePage() {
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [salesUsers, setSalesUsers] = useState<any[]>([]);
+  const [kpiApiData, setKpiApiData] = useState<KpiApiData | null>(null);
   const [showEmptyStages, setShowEmptyStages] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -48,6 +50,7 @@ export default function PipelinePage() {
         setUserId(data.userId);
         setRole(data.role);
         setSalesUsers(data.salesUsers ?? []);
+        setKpiApiData(data.kpiData ?? null);
         setLeads((data.leads ?? []) as Lead[]);
       } catch {
         setError(t("kpi.loadFailed"));
@@ -89,7 +92,7 @@ export default function PipelinePage() {
 
   // ─── Sales KPI Dashboard (T3-3 step 2: extracted to ./SalesKpiDashboard) ───
   if (role === "sales") {
-    return <SalesKpiDashboard currentUserId={userId} />;
+    return <SalesKpiDashboard currentUserId={userId} kpiData={kpiApiData} />;
   }
 
   // ─── Kanban Board (T3-3 step 3: extracted to ./KanbanBoard) ───

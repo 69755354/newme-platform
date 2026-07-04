@@ -38,6 +38,14 @@ export async function updateLeadStage(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Unauthorized')
 
+  // Role + ownership gate
+  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  const isPrivileged = profile?.role && ['admin', 'boss', 'operator'].includes(profile.role)
+  if (!isPrivileged) {
+    const { data: lead } = await supabase.from('leads').select('assigned_to').eq('id', leadId).single()
+    if (!lead || lead.assigned_to !== user.id) throw new Error('Forbidden')
+  }
+
   const now = new Date().toISOString()
   const data: Record<string, any> = {
     ...updates,

@@ -6,12 +6,12 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `7ee3170`）
-- **Build**: 部署中（P1-B: dashboard layout Supabase client 移除）
+## 当前状态（写时 commit `e5dc28f`）
+- **Build**: 已部署 P1-D — leads list 4 Supabase reads → /api/leads/list
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
 - **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
-- **上次更新**: 2026-07-04（P1-B Supabase browser chunk removal — /analytics /ads /products 各 -224KB）
-- **状态**: 🔓 P1-B 完成，下一项待定
+- **上次更新**: 2026-07-04（P1-D /leads list API aggregation）
+- **状态**: 🔓 P1-C/P1-D 完成，P1-E /analytics 下一项
 - **事故**: 2026-07-04 deploy incident — 旧 deploy.sh 在生产 .next 原地构建导致停服 → v4.0 隔离构建修复（见 §四）
 
 ---
@@ -298,7 +298,10 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 || **Sidebar Link prefetch 关闭** | `dc1b479` | `DashboardSidebar.tsx` 全 nav Link 加 `prefetch={false}`，dashboard `?_rsc=` 从 7-10 降到 0 |
 || **全站 backend Link prefetch 关闭** | `2ff1954` | 12 文件 20 处 Link 加 `prefetch={false}` |
 || **deploy.sh 修复** | `f2c835c` `348a1b4` `d9236c0` | 移除 broken node_modules hardlink cache，always npm ci；2>/dev/null 埋错 + immutable attr 修复 |
-|| **P1-B Supabase client 移除** | `7ee3170` | `useAuthRedirect` 改 fetch API routes 替代 `createClient()`；移除 `/analytics` `/ads` `/products` 三个页面的 client-side Supabase import；新增 5 个 API route（/api/auth/me、/api/auth/logout、/api/auth/dev-login、/api/ads/leads、/api/products）；bundle 收益 -224KB/页面 |
+||| **P1-B Supabase client 移除** | `7ee3170` | `useAuthRedirect` 改 fetch API routes 替代 `createClient()`；移除 `/analytics` `/ads` `/products` 三个页面的 client-side Supabase import；新增 5 个 API route（/api/auth/me、/api/auth/logout、/api/auth/dev-login、/api/ads/leads、/api/products）；bundle 收益 -224KB/页面 |
+||| **P1-C Dashboard Summary API** | `50fc79f` | `/dashboard` 18 条 client Supabase REST calls → 1 条 `/api/dashboard/summary` (573ms)；新增 441 行 server route 聚合 14 条查询；page.tsx −355 行 +30 行 |
+||| **workbench 死 import 清理** | `a9075e9` | 删除 `createClient` 死 import（无调用，纯拉 201KB chunk）；workbench LCP 1152ms → 预期下降 |
+||| **P1-D Leads List API** | `e5dc28f` | `/leads` 4 条 read (auth+profile+leads+salesUsers) → 1 条 `/api/leads/list`；useLeadsData.ts 重写为 fetch；page.tsx 移除 `createClient` import + supabase const
 
 ### Bundle Analyzer 全站基线数据
 
@@ -315,12 +318,28 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | 认证页面均值 | ~1,400 KB |
 | `/analytics` | 1,673 KB（含懒加载 Recharts 423KB） |
 
+### BFF Read Layer 迁移进度 (2026-07-04)
+
+| 页面 | 原 client Supabase reads | 新 BFF API | 状态 |
+|------|------------------------|-----------|------|
+| `/analytics` | — (P1-B 已移除 import) | — | ✅ |
+| `/ads` | — (P1-B 已移除 import) | — | ✅ |
+| `/products` | — (P1-B 已移除 import) | — | ✅ |
+| `/dashboard` | 18 条 | `/api/dashboard/summary` (573ms) | ✅ |
+| `/workbench` | 1 死 import | — (已删除) | ✅ |
+| `/leads` | 4 条 read | `/api/leads/list` | ✅ |
+| `/analytics` | 多个 fetch + client reads | `/api/analytics/summary` | 🔴 待做 |
+
 ### 下一轮优化顺序
 
-#### #1 登录 session 后重跑 CRM performance test
-- 安装 playwright + 真实浏览器测量
-- 目标：获取后台页面真实加载指标（Supabase 请求数、JS chunk 大小、FCP/LCP）
+#### #1 P1-E: /analytics BFF 聚合
+- 把 analytics 多个分散请求收敛成 1 个 `/api/analytics/summary`
+- 聚合 ads + funnel + revenue + conversion stats
+- server-side Promise.all 并行查询
+- 预期：Network calls 多→1，Bundle -100~200KB
 
-#### #2 @base-ui tree-shaking 评估（已完成评估，无优化余地）
-#### #3 路由级 bundle 分析细化
-#### #4 Supabase auth client 拆分评估
+#### #2 登录 session 后重跑 CRM performance test
+- playwright + 真实浏览器测量
+- #3 @base-ui tree-shaking 评估（已完成，无优化余地）
+- #4 路由级 bundle 分析细化
+- #5 Supabase auth client 拆分评估

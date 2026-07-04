@@ -1,6 +1,5 @@
 "use client"
 
-import { createClient } from "@/lib/supabase"
 import { useLanguage } from "@/lib/i18n/LanguageContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"

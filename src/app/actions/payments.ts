@@ -153,12 +153,27 @@ export async function allocatePayment(paymentId: string, allocations: Allocation
   // Verify the payment exists and is confirmed
   const { data: payment, error: paymentErr } = await supabase
     .from('payments')
-    .select('id, confirmed')
+    .select('id, confirmed, contract_id')
     .eq('id', paymentId)
     .single()
 
   if (paymentErr || !payment) throw new Error('Payment not found')
   if (!payment.confirmed) throw new Error('Payment must be confirmed before allocation')
+
+  const planIds = [...new Set(allocations.map((allocation) => allocation.plan_id))]
+  const { data: plans, error: plansErr } = await supabase
+    .from('installment_plans')
+    .select('id, contract_id')
+    .in('id', planIds)
+
+  if (
+    plansErr ||
+    !plans ||
+    plans.length !== planIds.length ||
+    plans.some((plan) => plan.contract_id !== payment.contract_id)
+  ) {
+    throw new Error('All allocation plans must belong to the payment contract')
+  }
 
   // Call the RPC function to allocate the payment
   const { data: result, error: rpcErr } = await supabase.rpc('allocate_payment', {

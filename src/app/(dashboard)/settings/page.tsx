@@ -93,7 +93,6 @@ function PasswordChange() {
 /* ════════════════════════════════════════ */
 export default function SettingsPage() {
   const { t } = useLanguage();
-  const supabase = createClient();
   const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss", "operator"]);
 
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -120,18 +119,19 @@ export default function SettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [leadsRes, profilesRes] = await Promise.all([
-        supabase.from("leads").select("id,customer_name,phone,stage,final_status,assigned_to,owner,sales_manager,location,source,quotation_value").order("updated_at", { ascending: false }).limit(1000),
-        supabase.from("profiles").select("id,email,full_name,role"),
-      ]);
-      if (leadsRes.error) throw new Error(leadsRes.error.message);
-      setLeads(leadsRes.data as Lead[] || []);
-      setProfiles(profilesRes.data as Profile[] || []);
+      const res = await fetch("/api/settings/data");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to fetch settings data");
+      }
+      const data = await res.json();
+      setLeads((data.leads ?? []) as Lead[]);
+      setProfiles((data.profiles ?? []) as Profile[]);
     } catch (e: any) {
       setError(e.message);
     }
     setLoading(false);
-  }, [supabase]);
+  }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -173,7 +173,8 @@ export default function SettingsPage() {
     }
   };
 
-  // Assign single lead
+  // Assign single lead — uses Supabase mutation (keep as-is)
+  const supabase = createClient();
   const assignLead = async (leadId: string, userId: string) => {
     setSaving(true);
     const { error } = await supabase.from("leads").update({ assigned_to: userId }).eq("id", leadId);

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { createClient } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Target, TrendingUp, Wallet, Save, ChevronDown } from "lucide-react";
@@ -12,7 +11,6 @@ interface Profile { id: string; full_name: string | null; email: string | null; 
 interface KpiTarget { id: string; period: string; target_type: string; target_amount: number; assigned_to: string | null; notes: string | null; profiles?: { full_name: string | null } | null; }
 
 export default function KpiManagement() {
-  const supabase = createClient();
   const { t, lang } = useLanguage();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [targets, setTargets] = useState<KpiTarget[]>([]);
@@ -30,19 +28,24 @@ export default function KpiManagement() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const [pRes, tRes] = await Promise.all([
-      supabase.from("profiles").select("id,full_name,email,role").eq("role", "sales").order("full_name"),
-      supabase.from("kpi_targets").select("*, profiles(full_name)").eq("period", period),
-    ]);
-    if (pRes.data) setProfiles(pRes.data as Profile[]);
-    if (tRes.data) {
-      setTargets(tRes.data as KpiTarget[]);
+    try {
+      const res = await fetch(`/api/settings/data?period=${period}`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data = await res.json();
+
+      // Filter profiles to sales only
+      const salesProfiles = ((data.profiles ?? []) as any[]).filter((p: any) => p.role === "sales");
+      setProfiles(salesProfiles as Profile[]);
+
+      const kpiData = (data.kpiTargets ?? []) as KpiTarget[];
+      setTargets(kpiData);
+
       // Populate form
-      const signing = tRes.data.find((t: KpiTarget) => t.target_type === "signing" && !t.assigned_to);
-      const collection = tRes.data.find((t: KpiTarget) => t.target_type === "collection" && !t.assigned_to);
+      const signing = kpiData.find((t: KpiTarget) => t.target_type === "signing" && !t.assigned_to);
+      const collection = kpiData.find((t: KpiTarget) => t.target_type === "collection" && !t.assigned_to);
       const sig: Record<string, string> = {};
       const col: Record<string, string> = {};
-      tRes.data.forEach((t: KpiTarget) => {
+      kpiData.forEach((t: KpiTarget) => {
         if (t.target_type === "signing" && t.assigned_to) sig[t.assigned_to] = t.target_amount.toString();
         if (t.target_type === "collection" && t.assigned_to) col[t.assigned_to] = t.target_amount.toString();
       });
@@ -50,9 +53,11 @@ export default function KpiManagement() {
       setCompanyCollection(collection?.target_amount?.toString() || "");
       setSalesSigningTargets(sig);
       setSalesCollectionTargets(col);
+    } catch {
+      // silently fail
     }
     setLoading(false);
-  }, [supabase, period]);
+  }, [period]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

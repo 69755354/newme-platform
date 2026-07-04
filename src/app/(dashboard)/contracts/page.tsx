@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { createClient } from "@/lib/supabase";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,7 +33,6 @@ interface Contract {
 
 export default function ContractsPage() {
   const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss"]);
-  const supabase = createClient();
   const { t, lang } = useLanguage();
 
   const STATUS_LABELS: Record<string, string> = {
@@ -57,7 +55,6 @@ export default function ContractsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -262,40 +259,33 @@ export default function ContractsPage() {
     return (role === "admin" || role === "boss") && ["active", "approved"].includes(c.status);
   };
 
+  // Fetch auth + contracts from BFF API
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      setUserId(user.id);
-      supabase.from("profiles").select("role").eq("id", user.id).single()
-        .then(({ data }) => setRole(data?.role ?? "sales"));
-    });
-  }, []);
+    (async () => {
+      try {
+        const params = new URLSearchParams();
+        if (statusFilter !== "all") params.set("status", statusFilter);
+        params.set("page", String(page));
+        params.set("pageSize", String(pageSize));
 
-  useEffect(() => {
-    if (!userId || !role) return;
-    setLoading(true);
-    let q = supabase.from("contracts").select(`
-      *, leads(customer_name), profiles!contracts_sales_id_fkey(full_name, email),
-      installment_plans(id, amount, due_date, status, paid_amount, seq)
-    `, { count: "exact" }).order("created_at", { ascending: false });
-
-    if (role === "sales") q = q.eq("sales_id", userId);
-    if (statusFilter !== "all") q = q.eq("status", statusFilter);
-
-    // Pagination: use range
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
-    q = q.range(from, to);
-
-    q.then(({ data, error: err, count }) => {
-      if (err) { setError(t("common.loadFailedRetry")); console.error(err); }
-      else {
-        setContracts(data as Contract[]);
-        setTotalCount(count ?? 0);
+        const res = await fetch(`/api/contracts/list?${params.toString()}`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          setError(err.error || t("common.loadFailedRetry"));
+          setLoading(false);
+          return;
+        }
+        const json = await res.json();
+        setContracts((json.contracts ?? []) as Contract[]);
+        setTotalCount(json.totalCount ?? 0);
+        setRole(json.role);
+      } catch (err) {
+        console.error(err);
+        setError(t("common.loadFailedRetry"));
       }
       setLoading(false);
-    });
-  }, [userId, role, page, statusFilter]);
+    })();
+  }, [page, statusFilter]);
 
   if (roleLoading || blocked) return null;
 

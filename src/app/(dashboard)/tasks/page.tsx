@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase";
 import { ErrorState } from "@/components/ui/error-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -75,7 +74,6 @@ function isOverdue(dueAt: string | null, status: string): boolean {
 
 /* ─── Component ─── */
 export default function TasksPage() {
-  const supabase = createClient();
   const { lang, t } = useLanguage();
 
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -109,46 +107,30 @@ export default function TasksPage() {
     if (p.id && p.full_name) profileNameMap[p.id] = p.full_name;
   });
 
-  /* ─── Fetch profiles for assignee filter ─── */
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .order("full_name");
-      if (data) setProfiles(data as ProfileInfo[]);
-    })();
-  }, []);
-
-  /* ─── Fetch tasks ─── */
+  /* ─── Fetch tasks from BFF API ─── */
   const fetchTasks = useCallback(async () => {
     setLoading(true);
     setError(null);
 
-    let q = supabase
-      .from("tasks")
-      .select("*", { count: "exact" })
-      .order("created_at", { ascending: false })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    try {
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (assigneeFilter !== "all") params.set("assignee", assigneeFilter);
 
-    if (statusFilter !== "all") {
-      q = q.eq("status", statusFilter);
-    }
-    if (assigneeFilter !== "all") {
-      q = q.eq("assigned_to", assigneeFilter);
-    }
-
-    const { data, error: err, count } = await q;
-
-    if (err) {
+      const res = await fetch(`/api/tasks/list?${params.toString()}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || t("tasks.loadFailed"));
+      }
+      const json = await res.json();
+      setTasks((json.tasks ?? []) as Task[]);
+      setProfiles((json.profiles ?? []) as ProfileInfo[]);
+      setTotalCount(json.totalCount ?? 0);
+    } catch (err: any) {
       console.error(t("tasks.loadFailed"), err);
-      setError(t("tasks.loadFailed"));
-      setLoading(false);
-      return;
+      setError(err.message || t("tasks.loadFailed"));
     }
-
-    if (data) setTasks(data as Task[]);
-    setTotalCount(count ?? 0);
     setLoading(false);
   }, [page, statusFilter, assigneeFilter, t]);
 

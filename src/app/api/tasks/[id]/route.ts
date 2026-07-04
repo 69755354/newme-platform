@@ -4,22 +4,7 @@ import { createServerSupabase } from '@/lib/supabase-server'
 const VALID_STATUSES = ['pending', 'completed', 'cancelled'] as const
 type TaskStatus = (typeof VALID_STATUSES)[number]
 
-const TASK_DETAIL_SELECT = `
-  id,
-  lead_id,
-  title,
-  assignee_id,
-  due_at,
-  status,
-  source,
-  completed_at,
-  created_at,
-  leads (
-    id,
-    customer_name,
-    phone
-  )
-`
+const TASK_DETAIL_SELECT = `*`
 
 export async function GET(
   request: Request,

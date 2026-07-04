@@ -127,49 +127,24 @@ export default function PaymentsPage() {
 
   // ─── Auth & Data Loading ─────────────────────────────────────────
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      setUserId(user.id);
-      supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single()
-        .then(({ data }) => setRole(data?.role ?? "sales"));
-    });
-  }, []);
-
-  const fetchPayments = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const res = await fetch("/api/payments");
+      const res = await fetch("/api/payments/list");
       if (!res.ok) throw new Error(t("payments.fetchFailed"));
       const json = await res.json();
-      setPayments(json.data || []);
+      setPayments((json.payments ?? []) as Payment[]);
+      setContracts((json.contracts ?? []) as Contract[]);
+      setRole(json.role);
+      setUserId(json.userId);
     } catch (err) {
       console.error(t("payments.fetchFailed"), err);
       setError(t("payments.fetchFailed"));
     }
   }, [t]);
 
-  const fetchContracts = useCallback(async () => {
-    let q = supabase
-      .from("contracts")
-      .select("id, contract_no, contract_amount, status, party_a_name, sales_id")
-      .in("status", ["signed", "active"])
-      .order("contract_no", { ascending: true });
-
-    if (role === "sales") q = q.eq("sales_id", userId!);
-
-    const { data, error: err } = await q;
-    if (err) console.error(t("payments.fetchContractsFailed"), err);
-    else setContracts((data as Contract[]) || []);
-  }, [supabase, role, userId, t]);
-
   useEffect(() => {
-    if (!userId || !role) return;
-    Promise.all([fetchPayments(), fetchContracts()]).finally(() => setLoading(false));
-  }, [userId, role, fetchPayments, fetchContracts]);
+    fetchData().finally(() => setLoading(false));
+  }, [fetchData]);
 
   if (roleLoading || blocked) return null;
 
@@ -264,7 +239,7 @@ export default function PaymentsPage() {
 
       toast.success(t("payments.saved"));
       setRecordDialogOpen(false);
-      await fetchPayments();
+      await fetchData();
     } catch {
       toast.error(t("payments.recordFailed"));
     } finally {
@@ -284,7 +259,7 @@ export default function PaymentsPage() {
         return;
       }
       toast.success(t("payments.confirmed"));
-      await fetchPayments();
+      await fetchData();
     } catch {
       toast.error(t("payments.confirmFailed"));
     } finally {
@@ -351,7 +326,7 @@ export default function PaymentsPage() {
 
       toast.success(t("payments.allocatedSuccessfully"));
       setAllocateDialogOpen(false);
-      await fetchPayments();
+      await fetchData();
     } catch {
       toast.error(t("payments.allocationFailed"));
     } finally {

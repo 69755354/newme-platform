@@ -94,43 +94,44 @@ export default function TaskDetailPage() {
     if (p.id && p.full_name) profileNameMap[p.id] = p.full_name;
   });
 
-  /* ─── Fetch profiles ─── */
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .order("full_name");
-      if (data) setProfiles(data as ProfileInfo[]);
-    })();
-  }, []);
-
-  /* ─── Fetch task ─── */
+  /* ─── Fetch profiles and task from BFF API ─── */
   const fetchTask = async () => {
     setLoading(true);
     setError(null);
 
-    const { data, error: err } = await supabase
-      .from("tasks")
-      .select("*")
-      .eq("id", taskId)
-      .single();
+    try {
+      // Fetch profiles from BFF
+      const profilesRes = await fetch("/api/tasks/list?page=0");
+      if (profilesRes.ok) {
+        const json = await profilesRes.json();
+        setProfiles((json.profiles ?? []) as ProfileInfo[]);
+      }
 
-    if (err) {
-      console.error("Failed to fetch task:", err);
-      setError("Failed to load task. Please retry.");
-      setLoading(false);
-      return;
-    }
+      // Fetch single task detail
+      const taskRes = await fetch(`/api/tasks/${taskId}`);
+      if (!taskRes.ok) {
+        const err = await taskRes.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to load task");
+      }
 
-    if (data) {
-      const t = data as Task;
+      const taskJson = await taskRes.json();
+      const t = taskJson.data as Task;
+
+      if (!t) {
+        setError("Task not found");
+        setLoading(false);
+        return;
+      }
+
       setTask(t);
       setEditTitle(t.title);
       setEditDescription(t.description || "");
       setEditPriority(t.priority);
       setEditAssignedTo(t.assigned_to || "");
       setEditDueAt(formatDateForInput(t.due_at));
+    } catch (err) {
+      console.error("Failed to fetch task:", err);
+      setError("Failed to load task. Please retry.");
     }
     setLoading(false);
   };

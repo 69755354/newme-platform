@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { createClient } from "@/lib/supabase";
 import { cn, fmtDubai } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
@@ -123,7 +122,6 @@ function formatTime(iso: string): string {
 
 export default function TeamPage() {
   const { t, lang } = useLanguage();
-  const supabase = createClient();
   const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss", "operator"]);
 
   // ─── Tab state ───
@@ -187,17 +185,18 @@ export default function TeamPage() {
     fetchUsers();
   }, [fetchUsers]);
 
-  // Initialize current user info
+  // Initialize current user info from BFF API
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        setCurrentUserId(user.id);
-        supabase.from("profiles").select("role").eq("id", user.id).single()
-          .then(({ data }) => {
-            if (data?.role) setCurrentUserRole(data.role);
-          });
-      }
-    });
+    (async () => {
+      try {
+        const res = await fetch("/api/team/list");
+        if (res.ok) {
+          const data = await res.json();
+          setCurrentUserId(data.currentUserId);
+          setCurrentUserRole(data.currentUserRole);
+        }
+      } catch { /* ignore */ }
+    })();
   }, []);
 
   // ─── Fetch activity data ───

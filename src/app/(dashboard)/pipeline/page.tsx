@@ -35,21 +35,26 @@ export default function PipelinePage() {
   const { isValidTransition, getValidTransitions } = useStageGuard();
   const { onDragStart, onDragOver, onDragLeave, onDragEnter, onDrop, draggingLeadId, draggingOverStage } = usePipelineDragDrop(leads, setLeads, userId);
 
-  // Get current user and role
+  // Get current user, role, sales users, and leads from BFF API
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      setUserId(user.id);
-      supabase.from("profiles").select("role").eq("id", user.id).single()
-        .then(({ data }) => setRole(data?.role ?? "sales"));
-    });
-  }, []);
-
-  // Fetch sales users for name lookup
-  useEffect(() => {
-    supabase.from("profiles").select("id,email,role,full_name").in("role", ["admin", "sales", "operator", "boss"]).then(({ data }) => {
-      if (data) setSalesUsers(data);
-    });
+    (async () => {
+      try {
+        const res = await fetch("/api/pipeline/list");
+        if (!res.ok) {
+          setError(t("kpi.loadFailed"));
+          setLoading(false);
+          return;
+        }
+        const data = await res.json();
+        setUserId(data.userId);
+        setRole(data.role);
+        setSalesUsers(data.salesUsers ?? []);
+        setLeads((data.leads ?? []) as Lead[]);
+      } catch {
+        setError(t("kpi.loadFailed"));
+      }
+      setLoading(false);
+    })();
   }, []);
 
   // ─── Sales KPI Performance ───
@@ -70,24 +75,6 @@ export default function PipelinePage() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
-
-  // Fetch leads
-  useEffect(() => {
-    if (!userId || !role) return;
-    (async () => {
-      let q = supabase.from("leads").select("*").limit(500);
-      if (role === "sales") q = q.eq("assigned_to", userId);
-      const { data, error: err } = await q;
-      if (err) {
-        console.error("Failed to fetch leads:", err);
-        setError(t("kpi.loadFailed"));
-        setLoading(false);
-        return;
-      }
-      if (data) setLeads(data as Lead[]);
-      setLoading(false);
-    })();
-  }, [userId, role]);
 
   // Write business event helper
   async function writeEvent(leadId: string, eventType: string, description: string, eventData?: Record<string, any>) {

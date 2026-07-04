@@ -6,12 +6,12 @@
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
-## 当前状态（写时 commit `3b49226`）
-- **Build**: `cDtPvje4PQxTpCIZ-uO6j` (deploy v4.1 node_modules cache)
+## 当前状态（写时 commit `2ff1954`）
+- **Build**: 部署中（全站 prefetch={false} — 20 links across 12 files）
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
 - **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
-- **上次更新**: 2026-07-04（性能优化第二批 → PostHog/Recharts/MetaPixel/deploy加速）
-- **状态**: 🔓 解冻 — 继续性能优化第三批
+- **上次更新**: 2026-07-04（性能优化第三批 → 全站 Link prefetch 关闭 + API 缓存 + alerts 白名单 + 死代码清理）
+- **状态**: 🔓 解冻 — 继续性能优化
 - **事故**: 2026-07-04 deploy incident — 旧 deploy.sh 在生产 .next 原地构建导致停服 → v4.0 隔离构建修复（见 §四）
 
 ---
@@ -290,7 +290,13 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 | **Recharts 动态 import** | `2ce1394` | `/analytics` 首屏 -423KB |
 | **auth.getUser() 缓存** | `a3fca77` | 7 处替换为 `currentUserId`，每操作省 1 次网络请求 |
 | **leads 字段白名单** | `a3fca77` | `select("*")` → 33 字段白名单 |
-| **deploy.sh v4.1 加速** | `3b49226` | rsync 从 2.3GB → 68MB，node_modules 硬链接缓存 |
+|| **deploy.sh v4.1 加速** | `3b49226` | rsync 从 2.3GB → 68MB，node_modules 硬链接缓存 |
+|| **team-ownership 并行化** | `380df34` `4ff465a` | 用户内 5 个 `leads.count` 从串行改 `Promise.all`，消除 ~4 个 round-trip |
+|| **死 activities fetch 删除** | `4ff465a` | `dashboard/page.tsx` 移除未使用的 `/api/activities` 请求（847ms+770ms 重影） |
+|| **alerts 查询优化 + 白名单** | `2c1aef4` | `select("*")` 28 列→6 列白名单、`limit(30)`、移除计算列二次排序 |
+|| **API 缓存层** | `2c1aef4` | `src/lib/api-cache.ts` — 30s TTL 内存缓存，`role+userId` 键隔离；alerts 541→208ms、team 608→196ms |
+|| **Sidebar Link prefetch 关闭** | `dc1b479` | `DashboardSidebar.tsx` 全 nav Link 加 `prefetch={false}`，dashboard `?_rsc=` 从 7-10 降到 0 |
+|| **全站 backend Link prefetch 关闭** | `2ff1954` | 12 文件 20 处 Link 加 `prefetch={false}`，覆盖 workbench/leads/contracts/team/ads/analytics/products/projects/settings/SubNavTabs/ErrorBoundary；预计全站 `?_rsc=` 清零 |
 
 ### Bundle Analyzer 全站基线数据
 

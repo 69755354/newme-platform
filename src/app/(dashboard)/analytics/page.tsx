@@ -1,17 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase";
 import { ErrorState } from "@/components/ui/error-state";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useLanguage } from "@/lib/i18n/context";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import LeadHealth from "./_components/LeadHealth";
-import SalesLoad from "./_components/SalesLoad";
 import PipelineFunnel from "./_components/PipelineFunnel";
 import PaymentTracker from "./_components/PaymentTracker";
 import AdsROI from "./_components/AdsROI";
-import WeeklyTrends from "./_components/WeeklyTrends";
+
+const SalesLoad = dynamic(() => import("./_components/SalesLoad"), {
+  ssr: false,
+  loading: () => <div className="h-64 animate-pulse bg-muted/20 rounded-lg" />,
+});
+
+const WeeklyTrends = dynamic(() => import("./_components/WeeklyTrends"), {
+  ssr: false,
+  loading: () => <div className="h-80 animate-pulse bg-muted/20 rounded-lg" />,
+});
 
 const supabase = createClient();
 

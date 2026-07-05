@@ -136,12 +136,44 @@ export default function DashboardPage() {
   const [stageChanges, setStageChanges] = useState<any[] | null>(null);
   const [overdueFollowups, setOverdueFollowups] = useState<any[]>([]);
 
+  const [weeklyReviewData, setWeeklyReviewData] = useState<{
+    l1: { new_leads: number; contacted_leads: number; quality_judged: number; stage_advanced: number; won: number; lost: number };
+    l2: Array<{ user_id: string; full_name: string | null; assigned_leads: number; contacted: number; pending_quality: number; stage_advanced: number; won: number; lost: number; overdue_tasks: number }>;
+    l3_by_user: Record<string, Array<{ id: string; customer_name: string | null; assigned_to: string | null; owner_name: string | null; stage: string | null; last_contact_at: string | null; contact_count: number; quality: string | null; last_note: string | null; next_follow_up_at: string | null }>>;
+    periodStart: string;
+    periodEnd: string;
+  } | null>(null);
+  const [weeklyReviewRange, setWeeklyReviewRange] = useState<"this_week" | "last_week" | "this_month">("this_week");
+  const [weeklyReviewLoading, setWeeklyReviewLoading] = useState(false);
+
   // Fetch team ownership
   useEffect(() => {
     fetch("/api/dashboard/team-ownership").then(r => r.json()).then(d => {
       if (d.users) setTeamOwnership(d.users);
     }).catch((e) => console.error("team-ownership fetch failed", e));
   }, []);
+
+  useEffect(() => {
+    if (!userRole || userRole === "sales") return;
+    let cancelled = false;
+    setWeeklyReviewLoading(true);
+    fetch(`/api/dashboard/weekly-review?range=${weeklyReviewRange}`)
+      .then(async (r) => {
+        if (!r.ok) { if (!cancelled) setWeeklyReviewData(null); return; }
+        const json = await r.json();
+        if (cancelled) return;
+        setWeeklyReviewData({
+          l1: json.l1,
+          l2: json.l2 ?? [],
+          l3_by_user: json.l3_by_user ?? {},
+          periodStart: json.period_start ?? "",
+          periodEnd: json.period_end ?? "",
+        });
+      })
+      .catch(() => { if (!cancelled) setWeeklyReviewData(null); })
+      .finally(() => { if (!cancelled) setWeeklyReviewLoading(false); });
+    return () => { cancelled = true; };
+  }, [userRole, weeklyReviewRange]);
 
   // ── Unified dashboard data fetch via server-side API ──
   useEffect(() => {
@@ -711,7 +743,19 @@ export default function DashboardPage() {
             {TodayActions}
           </div>
         )}
-        <WeeklyReview {...weeklyReviewProps} />
+        {weeklyReviewData ? (
+          <WeeklyReview
+            {...weeklyReviewProps}
+            mode="period"
+            l1={weeklyReviewData.l1}
+            l2={weeklyReviewData.l2}
+            l3_by_user={weeklyReviewData.l3_by_user}
+            periodStart={weeklyReviewData.periodStart}
+            periodEnd={weeklyReviewData.periodEnd}
+          />
+        ) : (
+          <WeeklyReview {...weeklyReviewProps} />
+        )}
       </DashboardScrollContainer>
     );
   }

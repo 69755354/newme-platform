@@ -269,7 +269,7 @@ else
   SCOPE_FAIL=false
   for f in $CHANGED_FILES; do
     for fb in $FORBIDDEN_FILES_LIST; do
-      if echo "$f" | grep -q "$fb"; then
+      if echo "$f" | grep -qF "$fb"; then
         echo "  🔴 $f matches FORBIDDEN: $fb"
         SCOPE_FAIL=true
       fi
@@ -277,7 +277,7 @@ else
     if [ -n "$ALLOWED_FILES_LIST" ]; then
       MATCHED=false
       for af in $ALLOWED_FILES_LIST; do
-        if echo "$f" | grep -q "$af"; then MATCHED=true; break; fi
+        if echo "$f" | grep -qF "$af"; then MATCHED=true; break; fi
       done
       if ! $MATCHED; then
         echo "  🔴 $f NOT in allowed_files"

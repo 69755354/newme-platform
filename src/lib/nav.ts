@@ -27,7 +27,6 @@ import {
   UsersRound,
   Briefcase,
   BarChart3,
-  Swords,
   Settings,
 } from "lucide-react";
 
@@ -40,7 +39,6 @@ export interface NavItem {
 // ─── Management nav — 5 core + settings ───
 export const MGMT_NAV: NavItem[] = [
   { href: "/dashboard", labelKey: "mgmtDashboard", icon: LayoutDashboard },
-  { href: "/command-center", labelKey: "commandCenter", icon: Swords },
   { href: "/leads",     labelKey: "mgmtLeads", icon: Users },
   { href: "/quotes",    labelKey: "mgmtQuotes", icon: Calculator },
   { href: "/contracts", labelKey: "mgmtContracts", icon: FileText },

@@ -1,0 +1,55 @@
+{
+  "task_id": "task_P3_4_deprecate_redirect",
+  "worker": "hermes-manual",
+  "mode": "yolo",
+  "timestamp": "2026-07-05",
+  "scope": {
+    "allowed_files": [
+      "src/app/(dashboard)/command-center/page.tsx",
+      "src/app/(dashboard)/quotations/page.tsx",
+      "src/lib/nav.ts",
+      "TASKBOARD.md",
+      ".hermes/reviews/task_P3_4_deprecate_redirect.json",
+      ".hermes/delegations/task_P3_4_deprecate_redirect.json"
+    ],
+    "forbidden_files": [
+      "src/app/(dashboard)/leads/_hooks/useLeadMutations.ts",
+      "src/app/api/leads/list/route.ts",
+      "src/app/api/dashboard/summary/route.ts",
+      "src/app/api/payments/",
+      "src/app/api/contracts/",
+      "src/app/(dashboard)/products/",
+      "supabase/migrations/",
+      "src/app/api/dashboard/quality/route.ts",
+      "src/app/api/auth/",
+      "src/lib/supabase*",
+      "package.json",
+      "tsconfig.json",
+      "next.config.ts",
+      "scripts/deploy.sh",
+      ".githooks/"
+    ]
+  },
+  "summary": "Replace legacy /command-center and /quotations page contents with next/navigation redirect(). /command-center → /dashboard, /quotations → /quotes. Remove /command-center from MGMT_NAV in src/lib/nav.ts and clean unused Swords icon import. No business logic, no API changes, no migration.",
+  "redirects": {
+    "/command-center": "/dashboard",
+    "/quotations": "/quotes"
+  },
+  "nav_changes": "Removed /command-center from MGMT_NAV (line 43) + removed unused Swords icon import",
+  "files_modified": [
+    "src/app/(dashboard)/command-center/page.tsx",
+    "src/app/(dashboard)/quotations/page.tsx",
+    "src/lib/nav.ts",
+    "TASKBOARD.md",
+    ".hermes/reviews/task_P3_4_deprecate_redirect.json",
+    ".hermes/delegations/task_P3_4_deprecate_redirect.json"
+  ],
+  "verification": {
+    "typecheck": "PASS (pnpm tsc --noEmit exit 0)",
+    "build": "PASS (next build 89/89 static pages, BUILD_ID ALyuN2pZzcTuFngYWSILc)",
+    "taskboard": "PASS (18/18)"
+  },
+  "risk": "Low — pure UI redirect replacement. Old URLs preserved as 307 redirects. No data layer touched.",
+  "review_pass": true,
+  "commit_message": "[CODEX] [task_P3_4_deprecate_redirect] deprecate /command-center and /quotations routes (redirect to /dashboard and /quotes)"
+}

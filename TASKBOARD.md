@@ -45,6 +45,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | task_P3_6_dashboard_month_filter | DONE | Codex (GPT-5.5) via codex exec | 2026-07-05 |
 | task_P3_7_leads_contact_quality_ui | DONE | Codex (GPT-5.5) via codex exec | 2026-07-05 |
 | task_P3_8_weekly_review | DONE | Codex (GPT-5.5) via codex exec | 2026-07-05 |
+| task_P3_4_deprecate_redirect | IN_PROGRESS | Hermes (manual) | 2026-07-05 |
 | task_P3_9_smoke_acceptance | TODO | — | 2026-07-05 |
 
 ---

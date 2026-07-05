@@ -14,6 +14,16 @@ const activityThrottle = new Map<string, number>();
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // P3_6 (PRD §六 6.5): legacy URL redirects — return early so we don't run auth.
+  // /command-center → /dashboard
+  // /quotations (only the bare path; /quotations/[id] stays)
+  if (pathname === "/command-center" || pathname.startsWith("/command-center/")) {
+    return NextResponse.redirect(new URL("/dashboard", request.url), 307);
+  }
+  if (pathname === "/quotations") {
+    return NextResponse.redirect(new URL("/quotes", request.url), 307);
+  }
+
   // Check if this path requires specific roles
   let requiredRoles: string[] | null = null;
   for (const [prefix, roles] of Object.entries(PROTECTED_ROUTES)) {
@@ -170,5 +180,9 @@ export const config = {
     "/projects/:path*",
     "/products/:path*",
     "/api/:path*",
+    // P3_6 (PRD §六 6.5): legacy URL redirects at the edge.
+    // /quotations has no :path* so /quotations/[id] stays reachable.
+    "/command-center/:path*",
+    "/quotations",
   ],
 };

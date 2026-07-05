@@ -24,6 +24,7 @@ import { ArrowLeft, Trash2 } from "lucide-react";
 import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadCustomerProfile from "./LeadCustomerProfile";
+import LeadContactQualityPanel from "./LeadContactQualityPanel";
 import LeadSalesProcess from "./LeadSalesProcess";
 import LeadTimeline from "./LeadTimeline";
 import LeadFoldingPanel from "./LeadFoldingPanel";
@@ -486,6 +487,16 @@ export default function LeadDetailPage() {
             t={t}
             lang={lang}
           />
+          {loading ? null : (
+            <LeadContactQualityPanel
+              lead={lead}
+              followUpLogs={followUpLogs}
+              leadMilestones={leadMilestones}
+              loading={loading}
+              error={error}
+              t={t}
+            />
+          )}
           {/* KNX design panel — kept mounted so the "Generate KNX Plan" button
               (which drives it via the [data-knx-panel] selector) keeps working. */}
           <KnxDesignPanel leadId={id as string} />

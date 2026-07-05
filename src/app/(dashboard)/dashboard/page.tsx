@@ -133,7 +133,6 @@ export default function DashboardPage() {
   interface TopAction { type: string; title: string; subtitle: string; link: string; priority: "high" | "medium" | "low"; customerName: string; value: number; reason: string; phone: string | null; leadId: string; }
   const [topActions, setTopActions] = useState<TopAction[]>([]);
   const [periodLeads, setPeriodLeads] = useState<{ count: number; byQuality: Record<string, number>; bySource: Record<string, number> } | null>(null);
-  const [stageChanges, setStageChanges] = useState<any[] | null>(null);
   const [overdueFollowups, setOverdueFollowups] = useState<any[]>([]);
 
   const [weeklyReviewData, setWeeklyReviewData] = useState<{
@@ -196,7 +195,6 @@ export default function DashboardPage() {
         setTodayFollowups(json.todayFollowups);
         setTopActions(json.topActions);
         setPeriodLeads(json.periodLeads ?? null);
-        setStageChanges(json.stageChanges ?? []);
         setOverdueFollowups(json.overdueFollowups ?? []);
         setFollowupLoading(false);
         setLoading(false);
@@ -383,7 +381,6 @@ export default function DashboardPage() {
     yellowCount: stats.yellowCount, highProbStale: stats.highProbStale, pendingStale: stats.pendingStale,
     recoveryCount: stats.recoveryCount, transferCount: stats.transferCount, reviewCount: stats.reviewCount,
     isLoading: loading, language };
-  void stageChanges;
 
   /* ─── shared: alert banner ─── */
   const AlertBanner = overdueCount > 0 && (

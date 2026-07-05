@@ -44,14 +44,9 @@ export async function GET(request: Request) {
   const isManagement = ["admin", "boss", "operator"].includes(role);
   const isSales = role === "sales";
 
-  // Month from query param (legacy `period` remains temporarily supported)
+  // Month from query param (?period= legacy support removed in P3_9)
   const { searchParams } = new URL(request.url);
-  const monthParam = searchParams.get("month");
-  const legacyPeriodParam = searchParams.get("period");
-  if (monthParam === null && legacyPeriodParam !== null) {
-    console.warn("[DEPRECATED] /api/dashboard/summary?period= is deprecated; use ?month=");
-  }
-  const month = monthParam ?? legacyPeriodParam;
+  const month = searchParams.get("month");
   if (month !== null && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
     return NextResponse.json(
       { error: "Invalid month format (YYYY-MM required)" },

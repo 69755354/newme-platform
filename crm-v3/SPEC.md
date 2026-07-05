@@ -531,12 +531,12 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 
 **P3 期间严格遵守**：页面层禁新增 Supabase read client，统一走 BFF API（`/api/dashboard/*`、`/api/leads/*`）。`WeeklyReview` 和 `LeadContactQualityPanel` 均为纯展示组件，无 `createClient` 调用。验证手段：`grep createClient <component>` = 0 match。
 
-### P3 Known Residuals
+### P3 Known Residuals (resolved 2026-07-05 in P3_9)
 
 | 项 | 说明 | 处理 |
 |------|------|------|
-| `stageChanges` dead code | page.tsx 声明/setState 但 WeeklyReview 未消费 | P3_9 决定 wire-in 或移除 |
-| `/api/dashboard/summary?period=` legacy 兼容 | 临时支持 `period` query param | P3_9 收口时移除 |
-| `page.tsx` state `period` 命名 | UI state 仍叫 `period` 而非 `month` | P3_9 safe subset ✅（2026-07-05 收口）；control-plane 修复 deferred |
-| deploy.sh step 0.8 grep `[id]` regex bug | `grep -q` 把 `[id]` 当 regex 字符类 | P3_9 修复（当前用 `\[id\]` manifest escape 绕过） |
-| pre-commit hook 读 HEAD task_id 而非 staged msg | bug 导致 staging 期间不能正确验证 scope | P3_9 修复（当前用 `--no-verify` 绕过） |
+| `stageChanges` dead code | page.tsx 声明/setState 但 WeeklyReview 未消费 | ✅ P3_9 移除 (commit `2d77c0e`) |
+| `/api/dashboard/summary?period=` legacy 兼容 | 临时支持 `period` query param | ✅ P3_9 移除 |
+| `page.tsx` state `period` 命名 | UI state 仍叫 `period` 而非 `month` | ✅ Already named `month` (line 101) |
+| deploy.sh step 0.8 grep `[id]` regex bug | `grep -q` 把 `[id]` 当 regex 字符类 | ✅ Fixed in G1 commit `5637f28` (use `grep -qF`) |
+| pre-commit hook 读 HEAD task_id 而非 staged msg | bug 导致 staging 期间不能正确验证 scope | ⏸️ Control-plane fix deferred; 当前 manifest-based workaround 通过 |

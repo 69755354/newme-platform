@@ -228,3 +228,16 @@ After deployment + production verification, move completed rows to archive secti
 - TRUE_CODEX_REAUDIT 全链: ✅ 已上线 (49cd03f: 一审→修复→二审→部署, BUILD_ID o1toe2b6XmKR_8Jdfx8oP)
 - P2.5 Infra Hardening: ✅ 已上线 (11e3805 + 583ba89: 4 audit scripts + 2 release docs)
 - P1/P2 Archive: FULL PASS 恢复 ✅
+
+---
+
+## 🔴 Open — User-Reported Bugs (Lead Detail Page, 2026-07-05 19:15 CST)
+
+| ID | Symptom | Location | Severity | Status |
+|---|---|---|---|---|
+| BUG-LD-1 | 修改区域 · 酋长国 (emirate) 字段不保存 | `src/app/(dashboard)/leads/[id]/page.tsx` edit section | medium | 🔴 open |
+| BUG-LD-2 | 点击区域 · 左侧内容被遮盖 (overlay 覆盖主内容) | `src/app/(dashboard)/leads/[id]/page.tsx` 布局 / z-index | medium | 🔴 open |
+| BUG-LD-3 | 点击区域进入输入状态，再次点击空白处不还原 | `src/app/(dashboard)/leads/[id]/page.tsx` click-to-edit | medium | 🔴 open |
+| BUG-LD-4 | admin 视角 · 转移销售下拉框被遮盖 | `src/app/(dashboard)/leads/[id]/page.tsx` reassign dropdown | medium | 🔴 open |
+
+Note: All four are independent of P3 PRD G1/G2/G3 (quality API, weekly-review, workbench). Batch into one fix after P3 PRD ships.

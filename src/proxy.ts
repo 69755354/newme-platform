@@ -192,5 +192,8 @@ export const config = {
     // /quotations has no :path* so /quotations/[id] stays reachable.
     "/command-center/:path*",
     "/quotations",
+    // ROOT_WHITEPAGE_FIX (2026-07-05): bare "/" needs to be in matcher so proxy.ts
+    // actually intercepts it (otherwise Next.js prerenders and serves the empty shell).
+    "/",
   ],
 };

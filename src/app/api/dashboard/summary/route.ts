@@ -137,7 +137,7 @@ export async function GET(request: Request) {
     ? supabase
         .from("business_events")
         .select("lead_id,event_data,created_at")
-        .eq("event_type", "stage_changed")
+        .eq("event_type", "stage_change")
         .gte("created_at", monthStart)
         .lt("created_at", monthEnd)
         .order("created_at", { ascending: true })

@@ -38,7 +38,7 @@ interface PeriodL2Row {
 interface PeriodL3Row {
   id: string; customer_name: string | null;
   assigned_to: string | null; owner_name: string | null;
-  stage: string | null; last_contact_at: string | null;
+  stage: string | null; last_contact_date: string | null;
   contact_count: number; quality: string | null;
   last_note: string | null; next_follow_up_at: string | null;
 }
@@ -492,7 +492,7 @@ function WeeklyReviewPeriod({
                                       · {t("阶段", "stage")}: {lead.stage ?? "—"}
                                       · {t("联系次数", "contacts")}: {lead.contact_count}
                                       {lead.quality && ` · ${t("质量", "quality")}: ${lead.quality}`}
-                                      {` · ${t("上次联系", "last contact")}: ${fmtDate(lead.last_contact_at)}`}
+                                      {` · ${t("上次联系", "last contact")}: ${fmtDate(lead.last_contact_date)}`}
                                       {lead.next_follow_up_at && ` · ${t("下次跟进", "next")}: ${fmtDate(lead.next_follow_up_at)}`}
                                       {lead.last_note && ` · ${t("备注", "note")}: ${lead.last_note}`}
                                     </span>

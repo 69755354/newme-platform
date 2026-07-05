@@ -155,7 +155,7 @@ export function usePipelineDragDrop<T extends LeadBase>(
     // ─── Log business event ───
     await supabase.from("business_events").insert({
       lead_id: leadId,
-      event_type: "stage_changed",
+      event_type: "stage_change",
       description: `Stage changed from ${oldStage} to ${targetStage} via Kanban drag-drop`,
       event_data: { from: oldStage, to: targetStage },
       user_id: currentUserId,

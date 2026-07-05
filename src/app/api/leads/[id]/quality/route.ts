@@ -87,9 +87,9 @@ export async function POST(
     try {
       const { error: eventErr } = await supabase.from('business_events').insert({
         lead_id: leadId,
+        user_id: profile.userId,
         event_type: 'quality_checked',
-        actor_id: profile.userId,
-        payload: { quality, poor_reason },
+        event_data: { quality, poor_reason },
         created_at: new Date().toISOString(),
       });
       if (eventErr) {

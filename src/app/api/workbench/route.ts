@@ -257,14 +257,14 @@ export async function GET() {
       .from("business_events")
       .select("*", { count: "exact", head: true })
       .eq("event_type", "quality_checked")
-      .eq("actor_id", user.id)
+      .eq("user_id", user.id)
       .gte("created_at", weekBounds.startIso)
       .lt("created_at", weekBounds.endIso),
     supabase
       .from("business_events")
       .select("*", { count: "exact", head: true })
-      .eq("event_type", "stage_changed")
-      .eq("actor_id", user.id)
+      .eq("event_type", "stage_change")
+      .eq("user_id", user.id)
       .gte("created_at", weekBounds.startIso)
       .lt("created_at", weekBounds.endIso),
     supabase

@@ -22,6 +22,7 @@ interface Lead {
   location: string | null; property_type: string | null;
   ai_quality: string | null; lead_status: string | null;
   assigned_to: string | null; win_probability: number | null;
+  won_at: string | null;
   last_contact_date: string | null; created_at: string; updated_at: string;
   next_followup_date: string | null; next_action: string | null;
   followup_count: number | null;
@@ -138,7 +139,7 @@ export default function DashboardPage() {
   const [weeklyReviewData, setWeeklyReviewData] = useState<{
     l1: { new_leads: number; contacted_leads: number; quality_judged: number; stage_advanced: number; won: number; lost: number };
     l2: Array<{ user_id: string; full_name: string | null; assigned_leads: number; contacted: number; pending_quality: number; stage_advanced: number; won: number; lost: number; overdue_tasks: number }>;
-    l3_by_user: Record<string, Array<{ id: string; customer_name: string | null; assigned_to: string | null; owner_name: string | null; stage: string | null; last_contact_at: string | null; contact_count: number; quality: string | null; last_note: string | null; next_follow_up_at: string | null }>>;
+    l3_by_user: Record<string, Array<{ id: string; customer_name: string | null; assigned_to: string | null; owner_name: string | null; stage: string | null; last_contact_date: string | null; contact_count: number; quality: string | null; last_note: string | null; next_follow_up_at: string | null }>>;
     periodStart: string;
     periodEnd: string;
   } | null>(null);
@@ -228,7 +229,12 @@ export default function DashboardPage() {
     const weightedPipeline = pipeline.reduce((sum, l) => sum + (l.quotation_value || 0) * (l.win_probability || 0) / 100, 0);
 
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const wonThisMonth = active.filter(l => l.final_status === "won" && l.updated_at && new Date(l.updated_at) >= monthStart);
+    // P0 schema-alias fix: bind "monthly revenue" to leads.won_at (the
+    // moment a lead is marked final_status='won') rather than the generic
+    // leads.updated_at. updated_at changes on ANY field edit, so a record
+    // closed in June could otherwise re-appear under July simply because a
+    // sales rep edited a non-stage field on the 1st of the next month.
+    const wonThisMonth = active.filter(l => l.final_status === "won" && l.won_at && new Date(l.won_at) >= monthStart);
     const monthlyRevenue = wonThisMonth.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
 
     const yellowLeads = pipeline.filter(l => { const d = daysSince(l.last_contact_date || l.updated_at); return d !== null && d >= 7 && d < 14; });

@@ -289,7 +289,7 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
         user_id: currentUserId,
       });
       if (changeStageActErr) console.error("Failed to insert activity:", changeStageActErr);
-      await writeEvent(leadId, "stage_changed", t("leads.eventStageChanged").replace("{from}", t(`stageLabels.${oldLead?.stage || "?"}`)).replace("{to}", t(`stageLabels.${newStage}`)), {
+      await writeEvent(leadId, "stage_change", t("leads.eventStageChanged").replace("{from}", t(`stageLabels.${oldLead?.stage || "?"}`)).replace("{to}", t(`stageLabels.${newStage}`)), {
         from: oldLead?.stage, to: newStage, auto_updates: Object.keys(updates).filter(k => k !== "stage" && k !== "updated_at"),
       });
       // Notify admins about important stage changes

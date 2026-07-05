@@ -182,19 +182,52 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }, [lead, salesRole, currentUserId, t, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Mark lead as poor quality ───
+  // P0 schema-alias fix: route via /api/leads/[id]/quality instead of direct
+  // supabase.from('leads').update(). The API owns the leads.quality write AND
+  // the business_events audit insert (avoids the client-side column-mismatch
+  // trap where business_events column aliases differ between client and PROD
+  // DDL — the API writes the canonical shape; the client never sees the
+  // mismatch). For 'poor' ratings, a non-empty poor_reason is required
+  // (the API 400s otherwise); 'normal' and 'good' may be sent without it.
+  const postQuality = useCallback(
+    async (quality: "poor" | "normal" | "good", poor_reason: string | null) => {
+      const body: Record<string, unknown> = { quality };
+      if (quality === "poor") body.poor_reason = poor_reason ?? "";
+      const res = await fetch(`/api/leads/${leadId}/quality`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg =
+          (json as any)?.error ||
+          (res.status === 401
+            ? t("common.unauthorized") || "Unauthorized"
+            : res.status === 403
+              ? t("common.forbidden") || "Forbidden"
+              : t("common.saveFailed") || "Failed to update quality");
+        toast.error(msg);
+        return false;
+      }
+      // Surface the API-reported audit status in non-prod only.
+      if (process.env.NODE_ENV !== "production" && (json as any)?.eventError) {
+        console.warn("quality event log failed:", (json as any).eventError);
+      }
+      return true;
+    },
+    [leadId, t]
+  );
+
   const handleMarkPoor = useCallback(async () => {
     if (!poorReasonText.trim() || !lead) return;
-    const { error } = await supabase.from("leads").update({
-      quality: "poor",
-      poor_reason: poorReasonText.trim(),
-      updated_at: new Date().toISOString()
-    }).eq("id", lead.id);
-    if (error) { toast.error("Failed to mark poor"); return; }
+    const ok = await postQuality("poor", poorReasonText.trim());
+    if (!ok) return;
     setMarkingPoor(false);
     setPoorReasonText("");
     // Router refresh happens on the page side; we trigger fetchData instead.
     await fetchData();
-  }, [poorReasonText, lead, fetchData]);
+  }, [poorReasonText, lead, postQuality, fetchData]);
 
   // ─── Write a business_events row ───
   const writeEvent = useCallback(async (eventType: string, description: string, eventData?: Record<string, any>) => {

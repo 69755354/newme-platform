@@ -19,7 +19,7 @@ export interface WeeklyReviewLeadRow {
   assigned_to: string | null;
   owner_name: string | null;
   stage: string | null;
-  last_contact_at: string | null;
+  last_contact_date: string | null;
   contact_count: number;
   quality: string | null;
   last_note: string | null;
@@ -118,13 +118,13 @@ export async function GET(req: NextRequest) {
         .eq("event_type", "quality_checked")
         .gte("created_at", startIso).lt("created_at", endIso),
       supabase.from("business_events").select("*", { count: "exact", head: true })
-        .eq("event_type", "stage_changed")
+        .eq("event_type", "stage_change")
         .gte("created_at", startIso).lt("created_at", endIso),
       supabase.from("business_events").select("*", { count: "exact", head: true })
-        .eq("event_type", "stage_changed").eq("payload->>to", "won")
+        .eq("event_type", "stage_change").eq("event_data->>to", "won")
         .gte("created_at", startIso).lt("created_at", endIso),
       supabase.from("business_events").select("*", { count: "exact", head: true })
-        .eq("event_type", "stage_changed").eq("payload->>to", "lost")
+        .eq("event_type", "stage_change").eq("event_data->>to", "lost")
         .gte("created_at", startIso).lt("created_at", endIso),
     ]);
 
@@ -145,8 +145,8 @@ export async function GET(req: NextRequest) {
     const { data: pendingQuality } = await supabase.from("leads").select("assigned_to")
       .eq("quality", "pending").not("assigned_to", "is", null);
 
-    const { data: stageEvents } = await supabase.from("business_events").select("payload, actor_id")
-      .eq("event_type", "stage_changed")
+    const { data: stageEvents } = await supabase.from("business_events").select("event_data, user_id")
+      .eq("event_type", "stage_change")
       .gte("created_at", startIso).lt("created_at", endIso);
 
     const { data: overdueTasks } = await supabase.from("tasks").select("assignee_id")
@@ -174,8 +174,8 @@ export async function GET(req: NextRequest) {
     for (const [uid, set] of contactedByOwner) ensure(uid).contacted = set.size;
     for (const r of pendingQuality ?? []) if (r.assigned_to) ensure(r.assigned_to).pending_quality++;
     for (const ev of stageEvents ?? []) {
-      const actor = (ev as any).actor_id as string | null;
-      const to = (ev as any).payload?.to;
+      const actor = (ev as any).user_id as string | null;
+      const to = (ev as any).event_data?.to;
       if (!actor) continue;
       const row = ensure(actor);
       row.stage_advanced++;
@@ -189,7 +189,7 @@ export async function GET(req: NextRequest) {
     // L3: leads detail grouped by owner (top 8 per sales, leads touched this period)
     const touchedLeadIds = Array.from(new Set((contactedLogs ?? []).map((l: any) => l.lead_id)));
     const { data: leadsTouched } = await supabase.from("leads")
-      .select("id, customer_name, assigned_to, stage, last_contact_at, quality, profiles:assigned_to(full_name)")
+      .select("id, customer_name, assigned_to, stage, last_contact_date, quality, profiles:assigned_to(full_name)")
       .in("id", touchedLeadIds.length > 0 ? touchedLeadIds : ["__none__"])
       .limit(200);
 
@@ -199,11 +199,11 @@ export async function GET(req: NextRequest) {
     }
     const lastNoteByLead = new Map<string, string>();
     for (const log of (await supabase.from("follow_up_logs")
-      .select("lead_id, notes")
+      .select("lead_id, summary")
       .gte("created_at", startIso).lt("created_at", endIso)
       .order("created_at", { ascending: false })).data ?? []) {
       if (!lastNoteByLead.has(log.lead_id)) {
-        lastNoteByLead.set(log.lead_id, (log as any).notes ?? "");
+        lastNoteByLead.set(log.lead_id, (log as any).summary ?? "");
       }
     }
     const nextByLead = new Map<string, string>();
@@ -225,7 +225,7 @@ export async function GET(req: NextRequest) {
         assigned_to: row.assigned_to,
         owner_name: (row.profiles?.full_name) ?? null,
         stage: row.stage ?? null,
-        last_contact_at: row.last_contact_at ?? null,
+        last_contact_date: row.last_contact_date ?? null,
         contact_count: contactCountByLead.get(row.id) ?? 0,
         quality: row.quality ?? null,
         last_note: lastNoteByLead.get(row.id) ?? null,

@@ -568,3 +568,19 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 - `src/app/api/admin/impersonate/route.ts` — 同上，`audit_logs.actor_id` 注释已存在，本 patch 跳过 (no-op)。
 
 迁移配套：无 (本 patch 不新增 migration；CHECK 白名单沿用 P3-10 的 `20260706000003_quality_checked_event_check.sql`)。
+
+### P3-12 list-page hook business_events 写路径收口 (2026-07-06)
+
+> 任务 `task_P3_cleanup_followup` (本 dispatch)。P3-11 只覆盖了详情页 hook (`useLeadDetailMutations.ts`) 中的 `writeEvent` 和 `reassignSales` 两处 `supabase.from('business_events').insert(...)` 调用。当时 subagent 因为该文件不在 `allowed_files` 范围，跳过了 **列表页 hook** (`src/app/(dashboard)/leads/_hooks/useLeadMutations.ts`) 里的同一处直接 insert。本 dispatch 把这一处也统一到 `POST /api/leads/[id]/events` 路由上，与 P3-11 形成完整闭环。
+
+与 P3-11 的两个有意区分：
+
+- **Fire-and-forget 保留**：列表页没有 audit row 的关键 UI 反馈（详情页有 toast 模板来源 `postQuality`），所以保留原 `writeEvent` 的 fire-and-forget 语义——失败仅 `console.error`，**不** toast、不抛出。详情页 hook (`useLeadDetailMutations.ts`) 走 toast 路径是因为详情页本身有显式的 saveStatus 反馈契约。
+- **签名零改动**：`writeEvent(leadId, eventType, description, eventData?) => Promise<void>` 保持不变；hook 内 7 个调用点（`reassignSales` / `changeStage` / `changeProbability` / `changeStatus` / `changeLostReason` / `addQuickNote` / `updateNextAction` / `updateNextFollowup` ——实际为 8 个独立调用，spec 文本说 7 是粗估）一个都不动。
+
+覆盖文件清单 (2)：
+
+- `src/app/(dashboard)/leads/_hooks/useLeadMutations.ts` — 列表页 hook 改写：`writeEvent` useCallback 体内的 `supabase.from("business_events").insert({ lead_id, event_type, description, event_data, user_id })` 替换为 `fetch('/api/leads/${leadId}/events', POST JSON { eventType, description, eventData })`；当前用户校验 (`if (!currentUserId) return`) 保留在 hook 端，避免发出无意义请求；错误处理保留原 `console.error` fire-and-forget 行为；`useCallback` 依赖数组仍是 `[currentUserId]`（fetch 不引入额外依赖）；不动 hook 其余 7 个 handler 的业务逻辑、不动 `createClient` import（hook 内其他 supabase 写入仍需）。
+- `crm-v3/SPEC.md` — 本节 (`P3-12`)。
+
+迁移配套：无 (沿用 P3-11 的路由与 CHECK 白名单，DB schema 无变化)。

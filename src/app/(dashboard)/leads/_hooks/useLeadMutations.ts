@@ -21,7 +21,9 @@
  *     Stale writes short-circuit with a user-visible error and refetch.
  *   - 4-table cascade: leads (with STAGE_AUTO auto-fields), quotations
  *     (terminal stage closes open quotes), activities (audit), and
- *     business_events (analytics). All four inserts are preserved verbatim.
+ *     business_events (analytics). The business_events insert is no longer
+ *     direct — see P3-11/P3-12: changeStage's lead/quotation/activity inserts
+ *     stay direct, but the audit row is written via POST /api/leads/[id]/events.
  *   - Backwards / skip-stage guards are admin/boss-aware.
  *   - DO NOT edit the block body when refactoring — it's covered by
  *     CRM v3.1 P1P1 plan risk register at line 5191.
@@ -132,17 +134,30 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
   } = params;
 
   // ─── Write business event ───
+  // P3-12: route via POST /api/leads/[id]/events instead of the direct
+  // supabase.from('business_events').insert(...) that lived here before.
+  // Mirrors the P3-11 detail-page hook pattern but stays fire-and-forget
+  // by design — the list page has no critical UI for missing audit rows,
+  // so a console.error is enough and we deliberately do NOT toast.
+  // Signature is unchanged: (leadId, eventType, description, eventData?)
+  // → Promise<void>, so all 7 call sites (reassignSales, changeStage,
+  // changeProbability, changeStatus, changeLostReason, addQuickNote,
+  // updateNextAction, updateNextFollowup) keep working as-is.
   const writeEvent = useCallback(
     async (leadId: string, eventType: string, description: string, eventData?: Record<string, any>) => {
       if (!currentUserId) return;
-      const { error: writeEventErr } = await supabase.from("business_events").insert({
-        lead_id: leadId,
-        event_type: eventType,
-        description: description,
-        event_data: eventData || {},
-        user_id: currentUserId,
-      });
-      if (writeEventErr) console.error("Failed to write business event:", writeEventErr);
+      try {
+        const res = await fetch(`/api/leads/${leadId}/events`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventType, description, eventData: eventData ?? {} }),
+        });
+        if (!res.ok) {
+          console.error("Failed to write business event:", res.status);
+        }
+      } catch (e) {
+        console.error("Failed to write business event:", e);
+      }
     },
     [currentUserId]
   );

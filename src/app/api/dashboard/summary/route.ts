@@ -44,19 +44,31 @@ export async function GET(request: Request) {
   const isManagement = ["admin", "boss", "operator"].includes(role);
   const isSales = role === "sales";
 
-  // Period from query param
+  // Month from query param (legacy `period` remains temporarily supported)
   const { searchParams } = new URL(request.url);
-  const period = searchParams.get("period") || "";
-  let periodStart: string | null = null;
-  let periodEnd: string | null = null;
-  if (period) {
-    const [year, month] = period.split("-").map(Number);
-    periodStart = new Date(year, month - 1, 1).toISOString();
-    periodEnd = new Date(year, month, 0, 23, 59, 59, 999).toISOString();
+  const monthParam = searchParams.get("month");
+  const legacyPeriodParam = searchParams.get("period");
+  if (monthParam === null && legacyPeriodParam !== null) {
+    console.warn("[DEPRECATED] /api/dashboard/summary?period= is deprecated; use ?month=");
+  }
+  const month = monthParam ?? legacyPeriodParam;
+  if (month !== null && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return NextResponse.json(
+      { error: "Invalid month format (YYYY-MM required)" },
+      { status: 400 }
+    );
+  }
+
+  let monthStart: string | null = null;
+  let monthEnd: string | null = null;
+  if (month) {
+    const [year, monthNumber] = month.split("-").map(Number);
+    monthStart = new Date(year, monthNumber - 1, 1).toISOString();
+    monthEnd = new Date(year, monthNumber, 1).toISOString();
   }
 
   // ── Cache key ──
-  const cacheKey = `dashboard-summary:${role}:${userId}:${period}`;
+  const cacheKey = `dashboard-summary:${role}:${userId}:${month || ""}`;
   const cached = getCached(cacheKey);
   if (cached) {
     return NextResponse.json(cached);
@@ -85,54 +97,54 @@ export async function GET(request: Request) {
   const contractsPromise = contractQuery;
 
   // ── 4c. KPI targets (no dependency) ──
-  const kpiPromise = period
-    ? supabase.from("kpi_targets").select("*").eq("period", period)
+  const kpiPromise = month
+    ? supabase.from("kpi_targets").select("*").eq("period", month)
     : Promise.resolve({ data: [], error: null });
 
-  const periodLeadsPromise = periodStart && periodEnd
+  const periodLeadsPromise = monthStart && monthEnd
     ? (() => {
         let q = supabase
           .from("leads")
           .select("quality,source")
-          .gte("created_at", periodStart)
-          .lte("created_at", periodEnd);
+          .gte("created_at", monthStart)
+          .lt("created_at", monthEnd);
         if (isSales && userId) q = q.eq("assigned_to", userId);
         return q;
       })()
     : Promise.resolve({ data: [], error: null });
 
-  const periodContractsPromise = periodStart && periodEnd
+  const periodContractsPromise = monthStart && monthEnd
     ? (() => {
         let q = supabase
           .from("contracts")
           .select("contract_amount")
-          .gte("created_at", periodStart)
-          .lte("created_at", periodEnd);
+          .gte("created_at", monthStart)
+          .lt("created_at", monthEnd);
         if (isSales && userId) q = q.eq("sales_id", userId);
         return q;
       })()
     : Promise.resolve({ data: [], error: null });
 
-  const periodWonPromise = periodStart && periodEnd
+  const periodWonPromise = monthStart && monthEnd
     ? (() => {
         let q = supabase
           .from("leads")
           .select("id", { count: "exact", head: true })
           .eq("final_status", "won")
-          .gte("won_at", periodStart)
-          .lte("won_at", periodEnd);
+          .gte("won_at", monthStart)
+          .lt("won_at", monthEnd);
         if (isSales && userId) q = q.eq("assigned_to", userId);
         return q;
       })()
     : Promise.resolve({ count: 0, error: null });
 
-  const stageChangesPromise = periodStart && periodEnd
+  const stageChangesPromise = monthStart && monthEnd
     ? supabase
         .from("business_events")
         .select("lead_id,event_data,created_at")
         .eq("event_type", "stage_changed")
-        .gte("created_at", periodStart)
-        .lte("created_at", periodEnd)
+        .gte("created_at", monthStart)
+        .lt("created_at", monthEnd)
         .order("created_at", { ascending: true })
     : Promise.resolve({ data: [], error: null });
 
@@ -191,15 +203,15 @@ export async function GET(request: Request) {
   };
 
   const buildPeriodPaymentsQuery = () => {
-    if (!periodStart || !periodEnd || (isSales && contractIds.length === 0)) {
+    if (!monthStart || !monthEnd || (isSales && contractIds.length === 0)) {
       return Promise.resolve({ data: [], error: null });
     }
     let q = supabase
       .from("payments")
       .select("amount")
       .eq("confirmed", true)
-      .gte("payment_date", periodStart)
-      .lte("payment_date", periodEnd);
+      .gte("payment_date", monthStart)
+      .lt("payment_date", monthEnd);
     if (isSales && userId) q = q.in("contract_id", contractIds);
     return q;
   };
@@ -399,7 +411,7 @@ export async function GET(request: Request) {
     overdue: Math.round(overdueAmount),
     dueNextWeek: Math.round(dueNextWeekAmount),
     contractCount: activeContracts.length,
-    ...(period
+    ...(month
       ? {
           contractAmount: periodContractAmount,
           paymentAmount: periodPaymentAmount,
@@ -551,7 +563,7 @@ export async function GET(request: Request) {
     topActions: sorted.slice(0, 5),
     // Include raw data needed for UI i18n
     overdueFollowups: overdueFollowups || [],
-    ...(period
+    ...(month
       ? {
           periodLeads,
           stageChanges: stageChangesRaw || [],

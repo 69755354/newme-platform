@@ -138,7 +138,7 @@ export default function DashboardPage() {
   // ── Unified dashboard data fetch via server-side API ──
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/dashboard/summary?period=${period}`, { signal: controller.signal })
+    fetch(`/api/dashboard/summary?month=${period}`, { signal: controller.signal })
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();

@@ -73,7 +73,7 @@ export default function LeadFoldingPanel({
       {PANELS.map(({ key, icon, title }) => {
         const isOpen = openPanel === key;
         return (
-          <Card key={key} className="bg-card border-border overflow-hidden">
+          <Card key={key} className="bg-card border-border overflow-visible">
             <button
               type="button"
               onClick={() => onOpenPanelChange(isOpen ? null : key)}

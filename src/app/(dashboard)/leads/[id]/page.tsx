@@ -228,11 +228,33 @@ export default function LeadDetailPage() {
   const renderInlineEdit: RenderInlineEdit = (field, label, type = "text") => {
     const value = (lead as any)[field];
     return editField === field ? (
-      <div className="flex gap-1 mt-1">
-        <input autoFocus value={editValue} onChange={(e) => setEditValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") updateField(field, editValue, "note_added", `${label}: ${editValue}`); if (e.key === "Escape") setEditField(null); }}
-          className="flex-1 h-8 text-xs bg-muted border border-border rounded px-2 text-foreground" />
-      </div>
+      // BUG-LD-3 (2026-07-06): wrap the input in a click-eating span so a click
+      // outside the input (or on the span's padding) first clears editField via
+      // the onBlur handler before any ancestor click handler can fire. Without
+      // this, clicking elsewhere (e.g. a sidebar action) leaves the input open
+      // and the edit feels "stuck".
+      <span
+        className="block"
+        // Stop click events from bubbling up to the parent Card/click-area
+        // overlay that handles other UI affordances.
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <input
+          autoFocus
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={() => setEditField(null)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              updateField(field, editValue, "note_added", `${label}: ${editValue}`);
+              setEditField(null);
+            }
+            if (e.key === "Escape") setEditField(null);
+          }}
+          className="flex-1 w-full h-8 text-xs bg-muted border border-border rounded px-2 text-foreground"
+        />
+      </span>
     ) : (
       <p className="text-foreground mt-1 cursor-pointer hover:text-copper-400"
         onClick={() => { setEditField(field); setEditValue(String(value ?? "")); }}>
@@ -382,10 +404,13 @@ export default function LeadDetailPage() {
     <DashboardScrollContainer className="max-w-7xl space-y-6">
       {/* T2-4: 锚定 Header — 整页滚动时返回按钮/客户名/状态徽章/delete 永远可见
           注意：leads/[id] 不像 leads/page.tsx 包了 DashboardScrollContainer，
-          这里是外层 viewport 滚动。sticky 元素 (page-title z-20) 仍能锚定到 viewport 顶部。 */}
+          这里是外层 viewport 滚动。sticky 元素 (page-title z-20) 仍能锚定到 viewport 顶部。
+          BUG-LD-2 (2026-07-06): removed backdrop-blur-sm + reduced opacity to bg-background/70.
+          Previous bg-background/95 + backdrop-blur-sm was visually opaque and overlapped
+          the top of the lead content when scrolled, hiding the click-action area. */}
       <div
         data-sticky-region="page-title"
-        className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b -mx-4 px-4 py-2 flex items-center gap-4"
+        className="sticky top-0 z-20 bg-background/70 border-b -mx-4 px-4 py-2 flex items-center gap-4"
       >
         <Button variant="ghost" size="icon" onClick={() => router.push("/leads")} className="text-muted-foreground">
           <ArrowLeft className="w-5 h-5" />

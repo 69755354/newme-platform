@@ -231,14 +231,14 @@ After deployment + production verification, move completed rows to archive secti
 
 ---
 
-## 🔴 Open — User-Reported Bugs (Lead Detail Page, 2026-07-05 19:15 CST)
+## 🟡 Fixed (Pending Deploy) — User-Reported Bugs (Lead Detail Page, 2026-07-05)
 
-| ID | Symptom | Location | Severity | Status |
+| ID | Symptom | Root Cause | Fix | Status |
 |---|---|---|---|---|
-| BUG-LD-1 | 修改区域 · 酋长国 (emirate) 字段不保存 | `src/app/(dashboard)/leads/[id]/page.tsx` edit section | medium | 🔴 open |
-| BUG-LD-2 | 点击区域 · 左侧内容被遮盖 (overlay 覆盖主内容) | `src/app/(dashboard)/leads/[id]/page.tsx` 布局 / z-index | medium | 🔴 open |
-| BUG-LD-3 | 点击区域进入输入状态，再次点击空白处不还原 | `src/app/(dashboard)/leads/[id]/page.tsx` click-to-edit | medium | 🔴 open |
-| BUG-LD-4 | admin 视角 · 转移销售下拉框被遮盖 | `src/app/(dashboard)/leads/[id]/page.tsx` reassign dropdown | medium | 🔴 open |
+| BUG-LD-1 | 修改区域 · 酋长国 (emirate) 字段不保存 | `renderInlineEdit` 无 onBlur → 点空白不退出 → 误以为"没保存"（实际 BUG-LD-3 体现） | page.tsx 加 `onBlur={() => setEditField(null)}` + Enter 也清空 + span 包住防止 click 冒泡 | ⚠️ fixed, pending deploy |
+| BUG-LD-2 | 点击区域 · 左侧内容被遮盖 | sticky header `bg-background/95 backdrop-blur-sm` 不透明遮盖主内容 | page.tsx 改 `bg-background/70` 去掉 backdrop-blur | ⚠️ fixed, pending deploy |
+| BUG-LD-3 | 点击区域进入输入状态，再次点击空白处不还原 | `renderInlineEdit` input 无 onBlur handler | page.tsx 加 `onBlur={() => setEditField(null)}` | ⚠️ fixed, pending deploy |
+| BUG-LD-4 | admin 视角 · 转移销售下拉框被遮盖 | `LeadFoldingPanel.tsx:76` Card `overflow-hidden` 裁切 dropdown | 改 `overflow-visible` | ⚠️ fixed, pending deploy |
 
 Note: All four are independent of P3 PRD G1/G2/G3 (quality API, weekly-review, workbench). Batch into one fix after P3 PRD ships.
 

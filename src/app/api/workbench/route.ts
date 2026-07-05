@@ -2,6 +2,38 @@ import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
 import { getCached, setCache } from "@/lib/api-cache"
 
+// Dubai GST = UTC+4. All "day"/"week" math below is done in GST, then
+// converted back to UTC ISO strings for DB queries.
+const GST_OFFSET_MS = 4 * 3600 * 1000
+
+function dubaiTomorrowBounds(): { startIso: string; endIso: string } {
+  const now = new Date()
+  const gst = new Date(now.getTime() + GST_OFFSET_MS)
+  const tomorrowGst = new Date(gst)
+  tomorrowGst.setUTCDate(gst.getUTCDate() + 1)
+  tomorrowGst.setUTCHours(0, 0, 0, 0)
+  const startMs = tomorrowGst.getTime() - GST_OFFSET_MS
+  const endGst = new Date(tomorrowGst)
+  endGst.setUTCHours(23, 59, 59, 999)
+  const endMs = endGst.getTime() - GST_OFFSET_MS
+  return { startIso: new Date(startMs).toISOString(), endIso: new Date(endMs).toISOString() }
+}
+
+function dubaiWeekBounds(): { startIso: string; endIso: string } {
+  // Dubai Mon-Sat workweek. Upper bound is exclusive (start of next Monday),
+  // matching the canonical /api/dashboard/weekly-review implementation.
+  const now = new Date()
+  const gst = new Date(now.getTime() + GST_OFFSET_MS)
+  const dow = gst.getUTCDay() // 0=Sun..6=Sat
+  const monOffset = (dow + 6) % 7 // days since Monday
+  const mondayGst = new Date(gst)
+  mondayGst.setUTCDate(gst.getUTCDate() - monOffset)
+  mondayGst.setUTCHours(0, 0, 0, 0)
+  const startMs = mondayGst.getTime() - GST_OFFSET_MS
+  const endMs = startMs + 7 * 24 * 3600 * 1000
+  return { startIso: new Date(startMs).toISOString(), endIso: new Date(endMs).toISOString() }
+}
+
 export async function GET() {
   const supabase = await createServerSupabase()
 
@@ -172,12 +204,96 @@ export async function GET() {
   const features: Record<string, boolean> = {}
   for (const f of (featuresResult.data ?? [])) features[f.feature_key] = Boolean(f.enabled)
 
+  // ── Tomorrow's tasks (Dubai GST) ──
+  const tomorrowBounds = dubaiTomorrowBounds()
+  const { data: tomorrowRows } = await supabase
+    .from("tasks")
+    .select("id,lead_id,title,due_at,assignee_id,status")
+    .eq("assignee_id", user.id)
+    .neq("status", "done")
+    .gte("due_at", tomorrowBounds.startIso)
+    .lte("due_at", tomorrowBounds.endIso)
+    .order("due_at", { ascending: true })
+    .limit(20)
+
+  const tomorrowLeadIds = Array.from(
+    new Set(
+      ((tomorrowRows ?? []) as any[])
+        .map((t) => t.lead_id as string | null)
+        .filter((v): v is string => Boolean(v)),
+    ),
+  )
+  const tomorrowLeadNameById: Record<string, string> = {}
+  if (tomorrowLeadIds.length > 0) {
+    const { data: tomorrowLeadRows } = await supabase
+      .from("leads")
+      .select("id,customer_name")
+      .in("id", tomorrowLeadIds)
+    for (const l of tomorrowLeadRows ?? []) tomorrowLeadNameById[l.id] = l.customer_name
+  }
+  const tomorrowTasks = ((tomorrowRows ?? []) as any[]).map((t) => ({
+    id: t.id,
+    title: t.title,
+    lead_id: (t.lead_id as string | null) ?? null,
+    lead_name: t.lead_id ? (tomorrowLeadNameById[t.lead_id] ?? null) : null,
+    due_at: t.due_at as string | null,
+  }))
+
+  // ── My weekly stats (current user, Dubai Mon-Sat workweek) ──
+  const weekBounds = dubaiWeekBounds()
+  const [
+    { data: contactedRows },
+    { count: qualityJudgedCount },
+    { count: stageAdvancedCount },
+    { count: pendingQualityCount },
+  ] = await Promise.all([
+    supabase
+      .from("follow_up_logs")
+      .select("lead_id")
+      .eq("user_id", user.id)
+      .gte("created_at", weekBounds.startIso)
+      .lt("created_at", weekBounds.endIso),
+    supabase
+      .from("business_events")
+      .select("*", { count: "exact", head: true })
+      .eq("event_type", "quality_checked")
+      .eq("actor_id", user.id)
+      .gte("created_at", weekBounds.startIso)
+      .lt("created_at", weekBounds.endIso),
+    supabase
+      .from("business_events")
+      .select("*", { count: "exact", head: true })
+      .eq("event_type", "stage_changed")
+      .eq("actor_id", user.id)
+      .gte("created_at", weekBounds.startIso)
+      .lt("created_at", weekBounds.endIso),
+    supabase
+      .from("leads")
+      .select("*", { count: "exact", head: true })
+      .eq("assigned_to", user.id)
+      .eq("quality", "pending"),
+  ])
+  const contactedDistinct = new Set(
+    ((contactedRows ?? []) as any[]).map((r) => r.lead_id as string),
+  ).size
+  const myWeeklyStats = {
+    contacted_leads: contactedDistinct,
+    quality_judged: qualityJudgedCount ?? 0,
+    pending_quality: pendingQualityCount ?? 0,
+    stage_advanced: stageAdvancedCount ?? 0,
+    period_start: weekBounds.startIso,
+    period_end: weekBounds.endIso,
+    label: "本周表现",
+  }
+
   const responseData = {
     inbox: inboxItems,
     tasks: tasksWithNames,
     overdue: overdueWithNames,
     alerts: alertsItems,
     progress: progressArray,
+    tomorrowTasks,
+    myWeeklyStats,
     profile: { id: profile.id, name: profile.full_name, role: profile.role },
     features,
   }

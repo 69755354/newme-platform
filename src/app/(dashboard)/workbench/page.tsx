@@ -37,6 +37,24 @@ interface AlertItem {
   days_overdue: number | null
 }
 
+interface TomorrowTaskItem {
+  id: string
+  title: string
+  lead_id?: string | null
+  lead_name?: string | null
+  due_at?: string | null
+}
+
+interface MyWeeklyStats {
+  contacted_leads: number
+  quality_judged: number
+  pending_quality: number
+  stage_advanced: number
+  period_start: string
+  period_end: string
+  label: string
+}
+
 interface ProgressGroup {
   current_milestone: string
   count: number
@@ -49,6 +67,8 @@ interface WorkbenchData {
   overdue: TaskItem[]
   alerts: AlertItem[]
   progress: ProgressGroup[]
+  tomorrowTasks?: TomorrowTaskItem[]
+  myWeeklyStats?: MyWeeklyStats
 }
 
 const milestoneColors: Record<string, string> = {
@@ -74,6 +94,15 @@ function formatDate(value?: string) {
     hour: "2-digit",
     minute: "2-digit",
   })
+}
+
+function MetricBox({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border bg-slate-50/50 p-3">
+      <div className="text-2xl font-semibold">{value}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{label}</div>
+    </div>
+  )
 }
 
 export default function WorkbenchPage() {
@@ -141,6 +170,66 @@ export default function WorkbenchPage() {
 
       {/* Card grid */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+        {/* Tomorrow's Tasks (明日预告) */}
+        <Card className="flex flex-col border-emerald-200">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+            <CardTitle className="text-sm font-medium text-emerald-700">
+              {t("workbench.tomorrow") || "明日预告 (Tomorrow's Tasks)"}
+            </CardTitle>
+            <Clock className="h-4 w-4 text-emerald-600" />
+          </CardHeader>
+          <CardContent className="flex-1">
+            {(data?.tomorrowTasks ?? []).length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                {t("workbench.empty.tomorrow") || "暂无明日任务"}
+              </p>
+            ) : (
+              <ul className="-mx-2 max-h-[320px] space-y-0.5 overflow-y-auto">
+                {(data?.tomorrowTasks ?? []).slice(0, 5).map((task) => {
+                  const href = task.lead_id ? `/leads/${task.lead_id}` : null
+                  const inner = (
+                    <>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="line-clamp-1 text-sm font-medium">
+                          {task.title}
+                        </span>
+                      </div>
+                      {task.lead_name && (
+                        <span className="line-clamp-1 text-xs text-slate-500">
+                          {task.lead_name}
+                        </span>
+                      )}
+                      {task.due_at && (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Clock className="h-3 w-3" />
+                          {formatDate(task.due_at)}
+                        </span>
+                      )}
+                    </>
+                  )
+                  return (
+                    <li key={task.id}>
+                      {href ? (
+                        <Link
+                          prefetch={false}
+                          href={href}
+                          className="flex flex-col gap-1 rounded-md px-2 py-2 transition hover:bg-emerald-50"
+                        >
+                          {inner}
+                        </Link>
+                      ) : (
+                        <div className="flex flex-col gap-1 rounded-md px-2 py-2 hover:bg-emerald-50/60">
+                          {inner}
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Inbox */}
         <Card className="flex flex-col">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
@@ -373,6 +462,36 @@ export default function WorkbenchPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* This Week Performance (本周我的表现) — collapsible, default collapsed */}
+        <details className="col-span-full rounded-lg border bg-card text-card-foreground shadow-sm">
+          <summary className="flex cursor-pointer items-center justify-between px-6 py-4 text-sm font-medium [&::-webkit-details-marker]:hidden">
+            <span>
+              {t("workbench.weeklyStats") || "本周我的表现 (This Week)"}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {formatDate(data?.myWeeklyStats?.period_start)} – {formatDate(data?.myWeeklyStats?.period_end)}
+            </span>
+          </summary>
+          <div className="grid grid-cols-2 gap-4 px-6 pb-5 pt-1 sm:grid-cols-4">
+            <MetricBox
+              label={t("workbench.week.contacted") || "Contacted Leads"}
+              value={data?.myWeeklyStats?.contacted_leads ?? 0}
+            />
+            <MetricBox
+              label={t("workbench.week.qualityJudged") || "Quality Judged"}
+              value={data?.myWeeklyStats?.quality_judged ?? 0}
+            />
+            <MetricBox
+              label={t("workbench.week.pendingQuality") || "Pending Quality"}
+              value={data?.myWeeklyStats?.pending_quality ?? 0}
+            />
+            <MetricBox
+              label={t("workbench.week.stageAdvanced") || "Stage Advanced"}
+              value={data?.myWeeklyStats?.stage_advanced ?? 0}
+            />
+          </div>
+        </details>
 
         {/* Follow-up Alerts */}
         <Card className="flex flex-col border-amber-300">

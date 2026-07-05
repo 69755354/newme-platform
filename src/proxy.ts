@@ -24,6 +24,14 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/quotes", request.url), 307);
   }
 
+  // ROOT_WHITEPAGE_FIX (2026-07-05): bare "/" triggers Next.js 16
+  // BAILOUT_TO_CLIENT_SIDE_RENDERING and renders an empty shell, causing a
+  // 1-3s white flash before client-side redirect kicks in. Force HTTP 307
+  // at the edge so the browser never sees the empty shell.
+  if (pathname === "/") {
+    return NextResponse.redirect(new URL("/dashboard", request.url), 307);
+  }
+
   // Check if this path requires specific roles
   let requiredRoles: string[] | null = null;
   for (const [prefix, roles] of Object.entries(PROTECTED_ROUTES)) {

@@ -241,3 +241,9 @@ After deployment + production verification, move completed rows to archive secti
 | BUG-LD-4 | admin 视角 · 转移销售下拉框被遮盖 | `src/app/(dashboard)/leads/[id]/page.tsx` reassign dropdown | medium | 🔴 open |
 
 Note: All four are independent of P3 PRD G1/G2/G3 (quality API, weekly-review, workbench). Batch into one fix after P3 PRD ships.
+
+## 🔴 Open — Production (2026-07-05 23:55 CST)
+
+| ID | Symptom | Root Cause | Fix | Status |
+|---|---|---|---|---|
+| ROOT_WHITEPAGE_FIX | `https://app.newme.ae/` 打开后白屏 1-3s 后跳转 | Next.js 16 App Router `page.tsx` 的 `redirect()` 被编译为 client-side navigation，触发 `BAILOUT_TO_CLIENT_SIDE_RENDERING`，body 内只有空模板 | 在 `src/proxy.ts` 顶部加 `if (pathname === "/") return NextResponse.redirect(/dashboard, 307)`，edge 层强制 HTTP 307，无需客户端 JS | ⚠️ fixed in code, deploy pending |

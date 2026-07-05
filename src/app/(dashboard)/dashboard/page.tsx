@@ -98,12 +98,12 @@ export default function DashboardPage() {
   // Period & KPI targets
   const now = new Date();
   const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const [period, setPeriod] = useState(currentPeriod);
+  const [month, setMonth] = useState(currentPeriod);
   const [kpiTargets, setKpiTargets] = useState<any[]>([]);
-  const lastPeriod = useMemo(() => {
-    const [y, m] = period.split("-").map(Number);
+  const lastMonth = useMemo(() => {
+    const [y, m] = month.split("-").map(Number);
     return m === 1 ? `${y-1}-12` : `${y}-${String(m-1).padStart(2, "0")}`;
-  }, [period]);
+  }, [month]);
 
   // User name lookup
   const userNameMap = useMemo(() => {
@@ -146,7 +146,7 @@ export default function DashboardPage() {
   // ── Unified dashboard data fetch via server-side API ──
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/dashboard/summary?month=${period}`, { signal: controller.signal })
+    fetch(`/api/dashboard/summary?month=${month}`, { signal: controller.signal })
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -175,7 +175,7 @@ export default function DashboardPage() {
         setLoading(false);
       });
     return () => controller.abort();
-  }, [period, language]);
+  }, [month, language]);
 
   /* ─── Computed ─── */
   const stats = useMemo(() => {
@@ -346,7 +346,7 @@ export default function DashboardPage() {
 
   const overdueCount = (stats.redCount || 0) + (stats.yellowCount || 0);
   const isManagement = userRole !== "sales";
-  const weeklyReviewProps = { period, finance: financeStats, signingPct, collectionPct, signingTarget, collectionTarget,
+  const weeklyReviewProps = { month, finance: financeStats, signingPct, collectionPct, signingTarget, collectionTarget,
     periodLeads, topActions, riskPoolCount, todayFollowups, overdueFollowups, redCount: stats.redCount,
     yellowCount: stats.yellowCount, highProbStale: stats.highProbStale, pendingStale: stats.pendingStale,
     recoveryCount: stats.recoveryCount, transferCount: stats.transferCount, reviewCount: stats.reviewCount,
@@ -387,8 +387,8 @@ export default function DashboardPage() {
       </div>
       <div className="flex items-center gap-2">
         <select
-          value={period}
-          onChange={(e) => setPeriod(e.target.value)}
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
           className="h-9 px-3 text-sm rounded-lg border border-border/50 bg-background text-foreground"
         >
           {(() => {
@@ -597,7 +597,7 @@ export default function DashboardPage() {
         {/* L3: Sales Leaderboard */}
         {salesLeaderboard.length > 0 && (
           <div>
-            <SectionHeader title={t("dashboard.salesLeaderboard")} subtitle={`(${period})`} />
+            <SectionHeader title={t("dashboard.salesLeaderboard")} subtitle={`(${month})`} />
             <div className="space-y-2">
               {salesLeaderboard.slice(0, 5).map((s) => (
                 <div key={s.id}
@@ -737,7 +737,7 @@ export default function DashboardPage() {
 
       {/* L2: My KPI progress */}
       <div>
-        <SectionHeader title={t("dashboard.myProgress")} subtitle={period} />
+        <SectionHeader title={t("dashboard.myProgress")} subtitle={month} />
         {signingTarget === 0 && collectionTarget === 0 && (
           <div className="mb-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm">
             {t("dashboard.noKpiTarget")}

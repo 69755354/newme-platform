@@ -8,7 +8,7 @@ interface FinanceStats {
 interface TopAction { customerName?: string; reason?: string; leadId?: string; }
 interface Lead { id?: string; customer_name?: string | null; }
 interface WeeklyReviewProps {
-  period: string; finance: FinanceStats; signingPct: number | null; collectionPct: number | null;
+  month: string; finance: FinanceStats; signingPct: number | null; collectionPct: number | null;
   signingTarget: number; collectionTarget: number;
   periodLeads: { count: number; byQuality: Record<string, number>; bySource: Record<string, number> } | null;
   topActions: TopAction[]; riskPoolCount: number | null; todayFollowups: Lead[]; overdueFollowups: any[];
@@ -19,7 +19,7 @@ interface WeeklyReviewProps {
 const money = (value?: number) => `AED ${(value ?? 0).toLocaleString()}`;
 
 export default function WeeklyReview(props: WeeklyReviewProps) {
-  const { period, finance = {} as FinanceStats, signingPct = null, collectionPct = null,
+  const { month, finance = {} as FinanceStats, signingPct = null, collectionPct = null,
     signingTarget = 0, collectionTarget = 0, periodLeads = null, topActions = [],
     riskPoolCount = null, todayFollowups = [], overdueFollowups = [], redCount = 0,
     yellowCount = 0, highProbStale = 0, pendingStale = 0, recoveryCount = 0,
@@ -73,7 +73,7 @@ export default function WeeklyReview(props: WeeklyReviewProps) {
 
   return <section className="space-y-4" aria-label={i18n("bossTitle")}>
     <div className="rounded-xl border border-border/50 bg-card/50 p-4">
-      {title(i18n("bossTitle"), period)}
+      {title(i18n("bossTitle"), month)}
       {isLoading ? bars : <>
         <p className="mb-4 text-sm font-medium">{allEmpty ? (locale === "zh" ? "暂无足够数据生成周复盘" : "Not enough data for a weekly review") : verdict}</p>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

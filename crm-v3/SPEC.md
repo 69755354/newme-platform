@@ -493,7 +493,7 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 | P3_7_leads_contact_quality_ui | ✅ | `94523be` | `LeadContactQualityPanel`（读 lead.quality/followUpLogs/leadMilestones） |
 | P3_8_weekly_review | ✅ | `0bc8b2c` | `WeeklyReview` L1/L2/L3 三层（仅读 summary，无新 API） |
 | P3_4_deprecate_redirect | ✅ | `d9e5790` | `/command-center`+`/quotations` redirect（307） |
-| P3_9_smoke_acceptance | ⏳ TODO | — | SPEC 收口 + pre-commit hook bug + deploy.sh `[id]` regex fix |
+| P3_9_smoke_acceptance | 🟡 PARTIAL (safe subset) | TBD | period→month rename ✅；control-plane 修复 deferred to Monday（deploy.sh grep / pre-commit hook） |
 
 ### P3-4 deprecate_redirect 设计
 
@@ -537,6 +537,6 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 |------|------|------|
 | `stageChanges` dead code | page.tsx 声明/setState 但 WeeklyReview 未消费 | P3_9 决定 wire-in 或移除 |
 | `/api/dashboard/summary?period=` legacy 兼容 | 临时支持 `period` query param | P3_9 收口时移除 |
-| `page.tsx` state `period` 命名 | UI state 仍叫 `period` 而非 `month` | P3_9 收口时重命名 |
+| `page.tsx` state `period` 命名 | UI state 仍叫 `period` 而非 `month` | P3_9 safe subset ✅（2026-07-05 收口）；control-plane 修复 deferred |
 | deploy.sh step 0.8 grep `[id]` regex bug | `grep -q` 把 `[id]` 当 regex 字符类 | P3_9 修复（当前用 `\[id\]` manifest escape 绕过） |
 | pre-commit hook 读 HEAD task_id 而非 staged msg | bug 导致 staging 期间不能正确验证 scope | P3_9 修复（当前用 `--no-verify` 绕过） |

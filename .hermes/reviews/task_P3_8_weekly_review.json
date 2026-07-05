@@ -1,0 +1,46 @@
+{
+  "task_id": "task_P3_8_weekly_review",
+  "reviewer": "Hermes (audit mode)",
+  "timestamp": "2026-07-05",
+  "audit_13": {
+    "1_typecheck": "PASS",
+    "2_isolated_build": "PASS",
+    "3_auth_gate": "N/A",
+    "4_query_field_check": "PASS — component reads only from props, no Supabase calls",
+    "5_boundary_semantics": "PASS — verdict null-safe when signingPct/collectionPct null",
+    "6_backward_compat": "PASS — FinanceStats added 4 optional fields, optional types preserve existing usage",
+    "7_no_page_supabase": "PASS — grep createClient in WeeklyReview.tsx returns 0 matches",
+    "8_no_new_server_actions": "PASS — read-only display, zero mutations",
+    "9_scope": "PASS — only WeeklyReview.tsx (NEW, 117 lines) + page.tsx (small extension) + TASKBOARD.md",
+    "10_single_commit_marker": "PENDING — pending manual commit with [CODEX] [task_P3_8_weekly_review] marker",
+    "11_no_forbidden_files": "PASS — no touch to useLeadMutations/products/quality API/leads list/dashboard summary/RLS/auth/service_role",
+    "12_taskboard_gate": "PASS — P3_8 marked IN_PROGRESS in TASKBOARD.md",
+    "13_performance": "PASS — no N+1, no new API calls, all data from existing /api/dashboard/summary response"
+  },
+  "data_source": {
+    "api": "/api/dashboard/summary?month={period}",
+    "fields_consumed": [
+      "finance.contractAmount/paymentAmount/wonCount/overdue",
+      "periodLeads.{count,byQuality,bySource}",
+      "topActions",
+      "riskPoolCount",
+      "todayFollowups",
+      "overdueFollowups",
+      "stats.{redCount,yellowCount,highProbStale,pendingStale,recoveryCount,transferCount,reviewCount}"
+    ],
+    "new_api_calls": 0
+  },
+  "render_position": {
+    "management_view": "after L5 TodayActions, before closing </DashboardScrollContainer> (line 711)",
+    "sales_view": "after L4 Lead Sources, before closing </DashboardScrollContainer> (line 798)"
+  },
+  "states": {
+    "loading": "skeleton (4 gray bars) via isLoading prop",
+    "empty": "per-layer fallback '暂无数据' / 'No data yet'",
+    "error": "page-level ErrorState handled by DashboardPage; WeeklyReview guarded with defaults so never throws"
+  },
+  "i18n": "inline dict with zh/en; receives language prop from page.tsx",
+  "scope_check": "deploy.sh step 0.8 manifest will use \\[id\\] escape for [id] path regex trap (P3-9 fix pending)",
+  "known_residual": "stageChanges fetched but not consumed in WeeklyReview (dead state); P3-9 will either wire it in or remove from page.tsx",
+  "verdict": "PASS"
+}

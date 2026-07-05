@@ -12,6 +12,7 @@ import {
   ArrowUpRight, CheckCircle2,
 } from "lucide-react";
 import AlertPanel from "./_components/AlertPanel";
+import WeeklyReview from "./_components/WeeklyReview";
 import { ErrorState } from "@/components/ui/error-state";
 
 /* ─── Types ─── */
@@ -74,6 +75,10 @@ interface FinanceStats {
   outstanding: number;
   overdue: number;
   dueNextWeek: number;
+  contractCount?: number;
+  contractAmount?: number;
+  paymentAmount?: number;
+  wonCount?: number;
 }
 
 /* ════════════════════════════════════════ */
@@ -127,6 +132,9 @@ export default function DashboardPage() {
   // Top 5 Actions
   interface TopAction { type: string; title: string; subtitle: string; link: string; priority: "high" | "medium" | "low"; customerName: string; value: number; reason: string; phone: string | null; leadId: string; }
   const [topActions, setTopActions] = useState<TopAction[]>([]);
+  const [periodLeads, setPeriodLeads] = useState<{ count: number; byQuality: Record<string, number>; bySource: Record<string, number> } | null>(null);
+  const [stageChanges, setStageChanges] = useState<any[] | null>(null);
+  const [overdueFollowups, setOverdueFollowups] = useState<any[]>([]);
 
   // Fetch team ownership
   useEffect(() => {
@@ -155,6 +163,9 @@ export default function DashboardPage() {
         setRiskPoolCount(json.riskPoolCount);
         setTodayFollowups(json.todayFollowups);
         setTopActions(json.topActions);
+        setPeriodLeads(json.periodLeads ?? null);
+        setStageChanges(json.stageChanges ?? []);
+        setOverdueFollowups(json.overdueFollowups ?? []);
         setFollowupLoading(false);
         setLoading(false);
       })
@@ -335,6 +346,12 @@ export default function DashboardPage() {
 
   const overdueCount = (stats.redCount || 0) + (stats.yellowCount || 0);
   const isManagement = userRole !== "sales";
+  const weeklyReviewProps = { period, finance: financeStats, signingPct, collectionPct, signingTarget, collectionTarget,
+    periodLeads, topActions, riskPoolCount, todayFollowups, overdueFollowups, redCount: stats.redCount,
+    yellowCount: stats.yellowCount, highProbStale: stats.highProbStale, pendingStale: stats.pendingStale,
+    recoveryCount: stats.recoveryCount, transferCount: stats.transferCount, reviewCount: stats.reviewCount,
+    isLoading: loading, language };
+  void stageChanges;
 
   /* ─── shared: alert banner ─── */
   const AlertBanner = overdueCount > 0 && (
@@ -694,6 +711,7 @@ export default function DashboardPage() {
             {TodayActions}
           </div>
         )}
+        <WeeklyReview {...weeklyReviewProps} />
       </DashboardScrollContainer>
     );
   }
@@ -780,6 +798,7 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+      <WeeklyReview {...weeklyReviewProps} />
     </DashboardScrollContainer>
   );
 }

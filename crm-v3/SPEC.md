@@ -555,3 +555,16 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 - `src/proxy.ts` — Next.js middleware/proxy 等价物；负责登录态、路由保护、root/auth gate 等入口守卫
 
 迁移配套：`supabase/migrations/20260706000003_quality_checked_event_check.sql` — 放宽 `business_events.chk_event_type` 白名单纳入 `quality_checked` / `project_info_updated` / `lead_stale_detected` (含线上已存在的 19 行 DB trigger 写入)。
+
+### P3-11 business_events 写路径 API 化 + audit_logs 注释 (2026-07-06)
+
+> 任务 `task_P3_complete_cleanup` (本 dispatch)。将剩余两处客户端直接写 `business_events` 的调用统一收口到新建的 `POST /api/leads/[id]/events` 路由，避免浏览器侧继续持有 canonical 列定义 (user_id / event_data JSONB / created_at)；同时为 proxy.ts 和 admin/impersonate 的 `audit_logs.actor_id` 写入补注释，避免下一轮 audit 把正确的 `actor_id` 误判成 P0 时期的 `business_events` alias 错误。允许列表在 API 端硬校验，与 `chk_event_type` CHECK 一致；不允许的 type 直接 400。
+
+覆盖文件清单 (4)：
+
+- `src/app/api/leads/[id]/events/route.ts` — 新增 `POST /api/leads/[id]/events`：接收 `{ eventType, description, eventData? }`，沿用 `getAuthProfile + isAdminOrBoss + ownership` 三层 gate (与 `/quality` 同型)；硬校验 `eventType` 在 CHECK 白名单内 (`stage_change` / `lead_stale_detected` / `owner_change` / `transfer` / `quotation_sent` / `quotation_accepted` / `quotation_rejected` / `won` / `lost` / `contract_activated` / `contract_completed` / `payment_recorded` / `quality_checked` / `project_info_updated`)；以 `{ success: true, eventId }` 返回；失败 400/401/403/500 + `detail`。
+- `src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts` — 客户端 hook 改写：原 `writeEvent` 与 `reassignSales` 内的两处 `supabase.from("business_events").insert(...)` 全部替换为 `fetch('/api/leads/[id]/events', POST JSON)`；对外签名 `(eventType, description, eventData?) => Promise<void>` 保持不变；API 错误通过 `toast.error` 提示，沿用 `postQuality` 模板；不动 hook 其余 12 个 handler 的业务逻辑。
+- `src/proxy.ts` — `audit_logs.actor_id` 写入处已 pre-annotated (hermes 先于此 dispatch 加上)；注释明示 `actor_id` 是 audit_logs 的 genuine 列 (migration `20260613000000_audit_logs.sql:6`)，不是 `business_events` 的 alias，**Do NOT rename**；本 patch 跳过 (no-op)。
+- `src/app/api/admin/impersonate/route.ts` — 同上，`audit_logs.actor_id` 注释已存在，本 patch 跳过 (no-op)。
+
+迁移配套：无 (本 patch 不新增 migration；CHECK 白名单沿用 P3-10 的 `20260706000003_quality_checked_event_check.sql`)。

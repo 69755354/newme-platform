@@ -126,6 +126,9 @@ export async function proxy(request: NextRequest) {
         }
       });
       supabase.from("audit_logs").insert({
+        // NOTE: audit_logs.actor_id is the genuine column (NOT a business_events alias).
+        // Migration 20260613000000_audit_logs.sql:6 declares it. Unlike business_events
+        // (where actor_id was the wrong alias), audit_logs always used actor_id. Do NOT rename.
         actor_id: user.id,
         action: "PAGE_VISIT",
         details: { page: pathname },

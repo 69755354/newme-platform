@@ -53,6 +53,9 @@ export async function POST(request: NextRequest) {
   }
 
   // Log to audit_logs (graceful degradation if table not yet created)
+  // NOTE: audit_logs.actor_id is the genuine column (NOT a business_events alias).
+  // Migration 20260613000000_audit_logs.sql:6 declares it. Unlike business_events
+  // (where actor_id was the wrong alias), audit_logs always used actor_id. Do NOT rename.
   supabaseAdmin.from("audit_logs").insert({
     actor_id: user.id,
     actor_email: user.email,

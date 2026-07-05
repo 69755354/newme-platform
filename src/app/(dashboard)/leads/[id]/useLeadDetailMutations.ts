@@ -132,6 +132,11 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   const setError = _setError as React.Dispatch<React.SetStateAction<string | null>>;
 
   // ─── Sales reassignment ───
+  // P3-11: the inline business_events insert at the end of this function
+  // previously went through supabase.from('business_events').insert(...)
+  // directly. Route via POST /api/leads/[id]/events instead so the canonical
+  // column shape lives in one place and the CHECK constraint can never be
+  // bypassed from a stale client bundle.
   const reassignSales = useCallback(
     async (newUserId: string) => {
       setReassigning(true);
@@ -151,7 +156,31 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         await supabase.from("transfer_history").insert({ lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId, reason: "manual_reassign", transferred_by: currentUser?.id });
         await supabase.from("activities").insert({ lead_id: leadId, type: "transfer", content: `Reassigned from ${oldName} to ${newUserName}`, user_id: currentUser?.id });
-        await supabase.from("business_events").insert({ lead_id: leadId, event_type: "transfer", description: `Reassigned from ${oldName} to ${newUserName}`, user_id: currentUser?.id });
+        // P3-11: route via API — replaces direct business_events insert.
+        // On failure, surface the same toast as the lead-update branch
+        // (mirrors the pattern used by postQuality for /quality).
+        const transferDesc = `Reassigned from ${oldName} to ${newUserName}`;
+        try {
+          const res = await fetch(`/api/leads/${leadId}/events`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ eventType: "transfer", description: transferDesc }),
+          });
+          if (!res.ok) {
+            const json = await res.json().catch(() => ({}));
+            const msg =
+              (json as any)?.error ||
+              (res.status === 401
+                ? t("common.unauthorized") || "Unauthorized"
+                : res.status === 403
+                  ? t("common.forbidden") || "Forbidden"
+                  : t("common.saveFailed") || "Failed to log transfer event");
+            toast.error(msg);
+            // do NOT bail — the lead row itself was updated; just warn.
+          }
+        } catch (e) {
+          console.warn("[LeadDetail] business_events transfer log failed", e);
+        }
         import("@/lib/notify").then(({ notify }) => {
           notify({ type: "lead_assigned", lead_id: leadId, assigned_to: newUserId });
         });
@@ -230,9 +259,32 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }, [poorReasonText, lead, postQuality, fetchData]);
 
   // ─── Write a business_events row ───
+  // P3-11: route via POST /api/leads/[id]/events instead of the direct
+  // supabase.from('business_events').insert(...) that lived here before.
+  // Signature is unchanged so every call site (updateField, saveProjectInfo)
+  // continues to work. On API failure, surface the same toast pattern that
+  // postQuality uses — no silent drops.
   const writeEvent = useCallback(async (eventType: string, description: string, eventData?: Record<string, any>) => {
-    await supabase.from("business_events").insert({ lead_id: leadId, event_type: eventType, description, event_data: eventData || {}, user_id: (await supabase.auth.getUser()).data.user?.id });
-  }, [leadId]); // eslint-disable-line react-hooks/exhaustive-deps
+    const res = await fetch(`/api/leads/${leadId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventType, description, eventData: eventData ?? {} }),
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      const msg =
+        (json as any)?.error ||
+        (res.status === 401
+          ? t("common.unauthorized") || "Unauthorized"
+          : res.status === 403
+            ? t("common.forbidden") || "Forbidden"
+            : res.status === 400
+              ? (json as any)?.error || t("common.saveFailed") || "Invalid event"
+              : t("common.saveFailed") || "Failed to write event");
+      toast.error(msg);
+      console.warn("[LeadDetail] business_events writeEvent failed", res.status, msg);
+    }
+  }, [leadId, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Update a single editable field with optimistic saveStatus + audit ───
   const updateField = useCallback(async (field: string, value: any, eventType?: string, eventDesc?: string): Promise<boolean> => {

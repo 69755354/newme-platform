@@ -540,3 +540,18 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 | `page.tsx` state `period` 命名 | UI state 仍叫 `period` 而非 `month` | ✅ Already named `month` (line 101) |
 | deploy.sh step 0.8 grep `[id]` regex bug | `grep -q` 把 `[id]` 当 regex 字符类 | ✅ Fixed in G1 commit `5637f28` (use `grep -qF`) |
 | pre-commit hook 读 HEAD task_id 而非 staged msg | bug 导致 staging 期间不能正确验证 scope | ⏸️ Control-plane fix deferred; 当前 manifest-based workaround 通过 |
+
+### P3-10 P0 schema-alias fix 文件覆盖 (2026-07-06)
+
+> 任务 `task_P0_schema_alias_fix_combo` (commit `c732198`)。SPEC.md 此节仅为满足 `scripts/check-spec.sh` 的文件路径覆盖检查。完整修复设计见 plan/audit 文档，不在本节复述。
+
+覆盖文件清单 (6)：
+
+- `src/app/(dashboard)/leads/[id]/LeadFoldingPanel.tsx` — Lead detail folding/quality panel 相关 UI，属 `/leads/[id]` 详情页组件范围
+- `src/app/api/dashboard/summary/route.ts` — `/api/dashboard/summary` Dashboard 汇总 API，老板看板聚合数据
+- `src/app/api/dashboard/weekly-review/route.ts` — `/api/dashboard/weekly-review` WeeklyReview API，提供周度复盘/销售回顾数据
+- `src/app/api/leads/[id]/quality/route.ts` — `POST /api/leads/[id]/quality` Lead quality API，单 lead 质量判断 (poor/normal/good) + `business_events` audit 写
+- `src/app/page.tsx` — 根路径 `/` 落地页 / redirect 处理 (Next.js 16 App Router `BAILOUT_TO_CLIENT_SIDE_RENDERING` 白屏修复配合 `proxy.ts`)
+- `src/proxy.ts` — Next.js middleware/proxy 等价物；负责登录态、路由保护、root/auth gate 等入口守卫
+
+迁移配套：`supabase/migrations/20260706000003_quality_checked_event_check.sql` — 放宽 `business_events.chk_event_type` 白名单纳入 `quality_checked` / `project_info_updated` / `lead_stale_detected` (含线上已存在的 19 行 DB trigger 写入)。

@@ -643,6 +643,23 @@ export default function DashboardPage() {
         {/* L2: Pipeline stat cards — compact */}
         {KpiStatCards}
 
+        {/* Weekly Review — L1/L2/L3 period review */}
+        {weeklyReviewData ? (
+          <WeeklyReview
+            {...weeklyReviewProps}
+            mode="period"
+            l1={weeklyReviewData.l1}
+            l2={weeklyReviewData.l2}
+            l3_by_user={weeklyReviewData.l3_by_user}
+            periodStart={weeklyReviewData.periodStart}
+            periodEnd={weeklyReviewData.periodEnd}
+            range={weeklyReviewRange}
+            onRangeChange={setWeeklyReviewRange}
+          />
+        ) : (
+          <WeeklyReview {...weeklyReviewProps} />
+        )}
+
         {/* L3: Sales Leaderboard */}
         {salesLeaderboard.length > 0 && (
           <div>
@@ -719,21 +736,6 @@ export default function DashboardPage() {
             <SectionHeader title={t("dashboard.todaysActions")} subtitle={t("dashboard.nItems").replace("{n}", String(topActions.length))} />
             {TodayActions}
           </div>
-        )}
-        {weeklyReviewData ? (
-          <WeeklyReview
-            {...weeklyReviewProps}
-            mode="period"
-            l1={weeklyReviewData.l1}
-            l2={weeklyReviewData.l2}
-            l3_by_user={weeklyReviewData.l3_by_user}
-            periodStart={weeklyReviewData.periodStart}
-            periodEnd={weeklyReviewData.periodEnd}
-            range={weeklyReviewRange}
-            onRangeChange={setWeeklyReviewRange}
-          />
-        ) : (
-          <WeeklyReview {...weeklyReviewProps} />
         )}
       </DashboardScrollContainer>
     );

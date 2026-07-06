@@ -133,9 +133,13 @@ export async function GET(req: NextRequest) {
     const contactedDistinct = new Set((contactedData ?? []).map((r: any) => r.lead_id)).size;
 
     // L2 per-sales rollup
-    const { data: profilesAll } = await supabase.from("profiles").select("id, full_name");
+    const { data: profilesAll } = await supabase.from("profiles").select("id, full_name, role");
     const salesMap = new Map<string, string>();
-    for (const p of profilesAll ?? []) salesMap.set(p.id, p.full_name ?? "");
+    const roleMap = new Map<string, string>();
+    for (const p of profilesAll ?? []) {
+      salesMap.set(p.id, p.full_name ?? "");
+      roleMap.set(p.id, (p as any).role as string);
+    }
 
     const { data: assignedLeads } = await supabase.from("leads").select("id, assigned_to")
       .gte("created_at", startIso).lt("created_at", endIso).not("assigned_to", "is", null);
@@ -156,6 +160,8 @@ export async function GET(req: NextRequest) {
 
     const perUser = new Map<string, WeeklyReviewRow>();
     const ensure = (uid: string) => {
+      const r = roleMap.get(uid);
+      if (r && r !== "sales") return null as any;
       if (!perUser.has(uid)) {
         perUser.set(uid, {
           user_id: uid, full_name: salesMap.get(uid) ?? null,
@@ -165,7 +171,7 @@ export async function GET(req: NextRequest) {
       }
       return perUser.get(uid)!;
     };
-    for (const r of assignedLeads ?? []) if (r.assigned_to) ensure(r.assigned_to).assigned_leads++;
+    for (const r of assignedLeads ?? []) { const row = ensure(r.assigned_to); if (row) row.assigned_leads++; }
     const contactedByOwner = new Map<string, Set<string>>();
     for (const log of contactedLogs ?? []) {
       const owner = (log as any).leads?.assigned_to as string | null;
@@ -173,26 +179,38 @@ export async function GET(req: NextRequest) {
       if (!contactedByOwner.has(owner)) contactedByOwner.set(owner, new Set());
       contactedByOwner.get(owner)!.add(log.lead_id);
     }
-    for (const [uid, set] of contactedByOwner) ensure(uid).contacted = set.size;
-    for (const r of pendingQuality ?? []) if (r.assigned_to) ensure(r.assigned_to).pending_quality++;
+    for (const [uid, set] of contactedByOwner) { const row = ensure(uid); if (row) row.contacted = set.size; }
+    for (const r of pendingQuality ?? []) { if (r.assigned_to) { const row = ensure(r.assigned_to); if (row) row.pending_quality++; } }
     for (const ev of stageEvents ?? []) {
       const actor = (ev as any).user_id as string | null;
       const to = (ev as any).event_data?.to;
       if (!actor) continue;
       const row = ensure(actor);
+      if (!row) continue;
       row.stage_advanced++;
       if (to === "won") row.won++;
       else if (to === "lost") row.lost++;
     }
-    for (const t of overdueTasks ?? []) if (t.assignee_id) ensure(t.assignee_id).overdue_tasks++;
+    for (const t of overdueTasks ?? []) { if (t.assignee_id) { const row = ensure(t.assignee_id); if (row) row.overdue_tasks++; } }
 
     const l2 = Array.from(perUser.values()).sort((a, b) => b.stage_advanced - a.stage_advanced);
 
     // L3: leads created during the period, grouped by owner.
-    const { data: leadsAssigned } = await supabase.from("leads")
-      .select("id, customer_name, assigned_to, stage, last_contact_date, quality, profiles:assigned_to(full_name)")
+    const { data: leadsAssigned, error: leadsAssignedErr } = await supabase.from("leads")
+      .select("id, customer_name, assigned_to, stage, last_contact_date, quality")
       .gte("created_at", startIso).lt("created_at", endIso)
       .limit(200);
+    if (leadsAssignedErr) {
+      console.error("[weekly-review] leads query error:", leadsAssignedErr);
+    }
+
+    // Resolve owner full_name for each assigned_to via separate profiles query.
+    const assignedIds = [...new Set((leadsAssigned ?? []).map((r: any) => r.assigned_to).filter(Boolean))];
+    const { data: ownerProfiles } = assignedIds.length > 0
+      ? await supabase.from("profiles").select("id, full_name").in("id", assignedIds)
+      : { data: [] };
+    const ownerNameMap = new Map<string, string>();
+    for (const p of ownerProfiles ?? []) ownerNameMap.set(p.id, p.full_name ?? "");
 
     const contactCountByLead = new Map<string, number>();
     for (const log of contactedLogs ?? []) {
@@ -224,7 +242,7 @@ export async function GET(req: NextRequest) {
         id: row.id,
         customer_name: row.customer_name ?? null,
         assigned_to: row.assigned_to,
-        owner_name: joinedFullName(row.profiles),
+        owner_name: ownerNameMap.get(row.assigned_to) ?? null,
         stage: row.stage ?? null,
         last_contact_date: row.last_contact_date ?? null,
         contact_count: contactCountByLead.get(row.id) ?? 0,
@@ -255,7 +273,7 @@ export async function GET(req: NextRequest) {
         id: lead.id,
         customer_name: lead.customer_name ?? null,
         assigned_to: lead.assigned_to,
-        owner_name: joinedFullName(lead.profiles),
+        owner_name: ownerNameMap.get(lead.assigned_to) ?? null,
         stage: lead.stage ?? null,
         last_contact_date: lead.last_contact_date ?? null,
         contact_count: contactCountByLead.get(lead.id) ?? 0,

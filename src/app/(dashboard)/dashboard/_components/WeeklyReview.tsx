@@ -397,7 +397,7 @@ function WeeklyReviewPeriod({
   const l1Empty = !l1 || (l1.new_leads === 0 && l1.contacted_leads === 0
     && l1.quality_judged === 0 && l1.stage_advanced === 0 && l1.won === 0 && l1.lost === 0);
   const l2Empty = l2.length === 0;
-  const fmtDate = (iso?: string | null) => iso ? new Date(iso).toLocaleDateString() : "—";
+  const fmtDate = (iso?: string | null) => iso ? iso.slice(0, 10) : "—";
 
   const metric = (label: string, value: number | string) => (
     <div className="rounded-lg border border-border/50 p-3">

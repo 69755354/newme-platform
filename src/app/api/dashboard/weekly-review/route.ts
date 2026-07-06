@@ -147,7 +147,7 @@ export async function GET(req: NextRequest) {
     const { data: pendingQuality } = await supabase.from("leads").select("assigned_to")
       .eq("quality", "pending").not("assigned_to", "is", null);
 
-    const { data: stageEvents } = await supabase.from("business_events").select("event_data, user_id")
+    const { data: stageEvents } = await supabase.from("business_events").select("event_data, user_id, lead_id")
       .eq("event_type", "stage_change")
       .gte("created_at", startIso).lt("created_at", endIso);
 
@@ -235,6 +235,34 @@ export async function GET(req: NextRequest) {
     }
     for (const k of Object.keys(l3_by_user)) {
       l3_by_user[k].sort((a, b) => (b.contact_count - a.contact_count));
+    }
+
+    // Also group leads by stage-change actor so the L3
+    // expansion works for every L2 row.
+    const leadById = new Map<string, any>();
+    for (const lead of leadsAssigned ?? []) leadById.set(lead.id, lead);
+    for (const ev of stageEvents ?? []) {
+      const actor = (ev as any).user_id as string | null;
+      const lid = (ev as any).lead_id as string | null;
+      if (!actor || !lid) continue;
+      const lead = leadById.get(lid);
+      if (!lead) continue; // lead not in period scope, skip
+      if (!l3_by_user[actor]) l3_by_user[actor] = [];
+      // Avoid duplicate: only add if not already under this actor
+      const already = l3_by_user[actor].some((l: any) => l.id === lead.id);
+      if (already) continue;
+      l3_by_user[actor].push({
+        id: lead.id,
+        customer_name: lead.customer_name ?? null,
+        assigned_to: lead.assigned_to,
+        owner_name: joinedFullName(lead.profiles),
+        stage: lead.stage ?? null,
+        last_contact_date: lead.last_contact_date ?? null,
+        contact_count: contactCountByLead.get(lead.id) ?? 0,
+        quality: lead.quality ?? null,
+        last_note: lastNoteByLead.get(lead.id) ?? null,
+        next_follow_up_at: nextByLead.get(lead.id) ?? null,
+      });
     }
 
     return NextResponse.json({

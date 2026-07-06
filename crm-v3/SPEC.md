@@ -558,7 +558,7 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 
 ### P3-11 business_events 写路径 API 化 + audit_logs 注释 (2026-07-06)
 
-> 任务 `task_P3_complete_cleanup` (本 dispatch)。将剩余两处客户端直接写 `business_events` 的调用统一收口到新建的 `POST /api/leads/[id]/events` 路由，避免浏览器侧继续持有 canonical 列定义 (user_id / event_data JSONB / created_at)；同时为 proxy.ts 和 admin/impersonate 的 `audit_logs.actor_id` 写入补注释，避免下一轮 audit 把正确的 `actor_id` 误判成 P0 时期的 `business_events` alias 错误。允许列表在 API 端硬校验，与 `chk_event_type` CHECK 一致；不允许的 type 直接 400。
+> 任务 `task_P3_complete_cleanup` (本 dispatch)。将详情页剩余两处客户端直接写 `business_events` 的调用收口到新建的 `POST /api/leads/[id]/events` 路由，避免浏览器侧继续持有 canonical 列定义 (user_id / event_data JSONB / created_at)；同时为 proxy.ts 和 admin/impersonate 的 `audit_logs.actor_id` 写入补注释，避免下一轮 audit 把正确的 `actor_id` 误判成 P0 时期的 `business_events` alias 错误。允许列表在 API 端硬校验，与 `chk_event_type` CHECK 一致；不允许的 type 直接 400。P0 审计后，迁移 `20260706000004_audit_event_type_widening.sql` 新增 `note_added`、`probability_changed`、`status_changed`、`lost_reason_set`、`followup_scheduled`，使路由与 DB CHECK 的最终允许列表均为 19 个值。
 
 覆盖文件清单 (4)：
 
@@ -567,11 +567,11 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 - `src/proxy.ts` — `audit_logs.actor_id` 写入处已 pre-annotated (hermes 先于此 dispatch 加上)；注释明示 `actor_id` 是 audit_logs 的 genuine 列 (migration `20260613000000_audit_logs.sql:6`)，不是 `business_events` 的 alias，**Do NOT rename**；本 patch 跳过 (no-op)。
 - `src/app/api/admin/impersonate/route.ts` — 同上，`audit_logs.actor_id` 注释已存在，本 patch 跳过 (no-op)。
 
-迁移配套：无 (本 patch 不新增 migration；CHECK 白名单沿用 P3-10 的 `20260706000003_quality_checked_event_check.sql`)。
+迁移配套：后续 P0 hotfix 使用 `20260706000004_audit_event_type_widening.sql` 将 CHECK 从 14 个值扩为 19 个值。详情页销售转移同时固定为先 `POST /events`、再 `leads.update`，确保原负责人仍能通过路由 ownership 校验；事件记录失败仍提示但不阻断转移。
 
 ### P3-12 list-page hook business_events 写路径收口 (2026-07-06)
 
-> 任务 `task_P3_cleanup_followup` (本 dispatch)。P3-11 只覆盖了详情页 hook (`useLeadDetailMutations.ts`) 中的 `writeEvent` 和 `reassignSales` 两处 `supabase.from('business_events').insert(...)` 调用。当时 subagent 因为该文件不在 `allowed_files` 范围，跳过了 **列表页 hook** (`src/app/(dashboard)/leads/_hooks/useLeadMutations.ts`) 里的同一处直接 insert。本 dispatch 把这一处也统一到 `POST /api/leads/[id]/events` 路由上，与 P3-11 形成完整闭环。
+> 任务 `task_P3_cleanup_followup` (本 dispatch)。P3-11 只覆盖了详情页 hook (`useLeadDetailMutations.ts`) 中的 `writeEvent` 和 `reassignSales` 两处 `supabase.from('business_events').insert(...)` 调用。当时 subagent 因为该文件不在 `allowed_files` 范围，跳过了 **列表页 hook** (`src/app/(dashboard)/leads/_hooks/useLeadMutations.ts`) 里的同一处直接 insert。本 dispatch 把这一处也统一到 `POST /api/leads/[id]/events` 路由上；后续 P0 审计确认部分调用仍受 allow-list 和转移顺序影响，并由 `20260706000004_audit_event_type_widening.sql` 补齐。
 
 与 P3-11 的两个有意区分：
 
@@ -583,4 +583,4 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 - `src/app/(dashboard)/leads/_hooks/useLeadMutations.ts` — 列表页 hook 改写：`writeEvent` useCallback 体内的 `supabase.from("business_events").insert({ lead_id, event_type, description, event_data, user_id })` 替换为 `fetch('/api/leads/${leadId}/events', POST JSON { eventType, description, eventData })`；当前用户校验 (`if (!currentUserId) return`) 保留在 hook 端，避免发出无意义请求；错误处理保留原 `console.error` fire-and-forget 行为；`useCallback` 依赖数组仍是 `[currentUserId]`（fetch 不引入额外依赖）；不动 hook 其余 7 个 handler 的业务逻辑、不动 `createClient` import（hook 内其他 supabase 写入仍需）。
 - `crm-v3/SPEC.md` — 本节 (`P3-12`)。
 
-迁移配套：无 (沿用 P3-11 的路由与 CHECK 白名单，DB schema 无变化)。
+迁移配套：后续 `20260706000004_audit_event_type_widening.sql` 明确允许 `note_added`、`probability_changed`、`status_changed`、`lost_reason_set`、`followup_scheduled`；修复后 route allow-list 与 DB CHECK 均为 19 个值。列表页 `reassignSales` 必须先等待 `writeEvent('transfer')`，再执行 `leads.update`，避免更新 owner 后事件路由返回 403。

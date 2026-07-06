@@ -1,5 +1,5 @@
 # TASKBOARD.md — Machine-Verifiable Task Tracking (本地工具脚本真相源)
-# Last updated: 2026-07-05
+# Last updated: 2026-07-06
 # Format: Frozen v2 (MoA签发版) — 4状态模型
 
 ## ⚠️ STATE MACHINE (唯一状态流)
@@ -48,6 +48,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | task_P3_4_deprecate_redirect | DONE | Hermes (manual) | 2026-07-05 |
 | task_P3_9_smoke_acceptance | DONE | Hermes (manual safe subset) | 2026-07-05 |
 || task_P0_schema_alias_fix_combo | DONE | Codex (GPT-5.5) via codex exec → Hermes review | 2026-07-06 |
+| task_P0_hotfix_audit_trail | DONE | Codex→Hermes | 2026-07-06 |
 
 ---
 

@@ -153,7 +153,8 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
           body: JSON.stringify({ eventType, description, eventData: eventData ?? {} }),
         });
         if (!res.ok) {
-          console.error("Failed to write business event:", res.status);
+          const json = await res.json().catch(() => ({}));
+          console.error("Failed to write business event:", res.status, json?.error || "");
         }
       } catch (e) {
         console.error("Failed to write business event:", e);
@@ -173,6 +174,8 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
       const newUserName = newUser?.full_name || newUser?.email || newUserId;
       const oldName = oldUser?.full_name || oldUser?.email || "Unknown";
 
+      await writeEvent(leadId, "transfer", `Reassigned from ${oldName} to ${newUserName}`);
+
       await supabase.from("leads").update({ assigned_to: newUserId, updated_at: new Date().toISOString() }).eq("id", leadId);
 
       await supabase.from("transfer_history").insert({
@@ -184,8 +187,6 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
         lead_id: leadId, type: "transfer", content: `Reassigned from ${oldName} to ${newUserName}`,
         user_id: currentUserId,
       });
-
-      await writeEvent(leadId, "transfer", `Reassigned from ${oldName} to ${newUserName}`);
 
       // Notify the newly assigned salesperson
       import("@/lib/notify").then(({ notify }) => {

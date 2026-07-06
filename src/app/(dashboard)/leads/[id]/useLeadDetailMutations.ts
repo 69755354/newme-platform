@@ -146,20 +146,9 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         const oldUser = salesUsers.find((u) => u.id === oldLead.assigned_to);
         const newUserName = newUser?.full_name || newUser?.email || newUserId;
         const oldName = oldUser?.full_name || oldUser?.email || oldLead.rep_name || "Unknown";
-        // Update lead first — check error before side effects
-        const { error: updateErr } = await supabase.from("leads").update({ assigned_to: newUserId, updated_at: new Date().toISOString() }).eq("id", leadId);
-        if (updateErr) {
-          console.error("[LeadDetail] reassign failed");
-          toast.error(t("common.saveFailed"));
-          return;
-        }
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
-        await supabase.from("transfer_history").insert({ lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId, reason: "manual_reassign", transferred_by: currentUser?.id });
-        await supabase.from("activities").insert({ lead_id: leadId, type: "transfer", content: `Reassigned from ${oldName} to ${newUserName}`, user_id: currentUser?.id });
-        // P3-11: route via API — replaces direct business_events insert.
-        // On failure, surface the same toast as the lead-update branch
-        // (mirrors the pattern used by postQuality for /quality).
         const transferDesc = `Reassigned from ${oldName} to ${newUserName}`;
+        // Log while the current salesperson still owns the lead so the route's
+        // ownership check does not race the assigned_to update below.
         try {
           const res = await fetch(`/api/leads/${leadId}/events`, {
             method: "POST",
@@ -176,11 +165,21 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
                   ? t("common.forbidden") || "Forbidden"
                   : t("common.saveFailed") || "Failed to log transfer event");
             toast.error(msg);
-            // do NOT bail — the lead row itself was updated; just warn.
           }
         } catch (e) {
           console.warn("[LeadDetail] business_events transfer log failed", e);
+          toast.error(t("common.saveFailed") || "Failed to log transfer event");
         }
+        // Apply ownership change only after the best-effort audit attempt.
+        const { error: updateErr } = await supabase.from("leads").update({ assigned_to: newUserId, updated_at: new Date().toISOString() }).eq("id", leadId);
+        if (updateErr) {
+          console.error("[LeadDetail] reassign failed");
+          toast.error(t("common.saveFailed"));
+          return;
+        }
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        await supabase.from("transfer_history").insert({ lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId, reason: "manual_reassign", transferred_by: currentUser?.id });
+        await supabase.from("activities").insert({ lead_id: leadId, type: "transfer", content: transferDesc, user_id: currentUser?.id });
         import("@/lib/notify").then(({ notify }) => {
           notify({ type: "lead_assigned", lead_id: leadId, assigned_to: newUserId });
         });

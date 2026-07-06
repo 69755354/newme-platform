@@ -21,10 +21,10 @@ import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
  *   No actor_id — business_events uses user_id; actor_id is the audit_logs
  *   column (see proxy.ts + admin/impersonate annotation).
  *
- * Allowed event_type values mirror the chk_event_type CHECK constraint from
- * migration 20260706000003_quality_checked_event_check.sql:48-59. A 400 is
- * returned for any other value so the client never silently writes a row
- * that the DB will reject.
+ * The 19 allowed event_type values mirror the chk_event_type CHECK constraint
+ * after migration 20260706000004_audit_event_type_widening.sql. A 400 is
+ * returned for any other value so the client never silently writes a row that
+ * the DB will reject.
  */
 const ALLOWED_EVENT_TYPES = [
   'stage_change',
@@ -41,6 +41,11 @@ const ALLOWED_EVENT_TYPES = [
   'payment_recorded',
   'quality_checked',
   'project_info_updated',
+  'note_added',
+  'probability_changed',
+  'status_changed',
+  'lost_reason_set',
+  'followup_scheduled',
 ] as const;
 type AllowedEventType = typeof ALLOWED_EVENT_TYPES[number];
 

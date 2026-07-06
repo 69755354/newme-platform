@@ -44,12 +44,6 @@ export interface WeeklyReviewResponse {
 
 const WEEK_MS = 7 * 24 * 3600 * 1000;
 
-function isoDayStart(d: Date): Date {
-  const x = new Date(d);
-  x.setUTCHours(0, 0, 0, 0);
-  return x;
-}
-
 function joinedFullName(value: unknown): string | null {
   const profile = Array.isArray(value) ? value[0] : value;
   if (!profile || typeof profile !== "object" || !("full_name" in profile)) return null;
@@ -79,8 +73,10 @@ function periodBounds(range: "this_week" | "last_week" | "this_month"): { start:
     return { start: last, end };
   }
   // this_month
-  const start = isoDayStart(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)));
-  const end = isoDayStart(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)));
+  const GST_OFFSET_MS = 4 * 3600 * 1000;
+  const gst = new Date(now.getTime() + GST_OFFSET_MS);
+  const start = new Date(Date.UTC(gst.getUTCFullYear(), gst.getUTCMonth(), 1) - GST_OFFSET_MS);
+  const end = new Date(Date.UTC(gst.getUTCFullYear(), gst.getUTCMonth() + 1, 1) - GST_OFFSET_MS);
   return { start, end };
 }
 
@@ -137,7 +133,7 @@ export async function GET(req: NextRequest) {
     const contactedDistinct = new Set((contactedData ?? []).map((r: any) => r.lead_id)).size;
 
     // L2 per-sales rollup
-    const { data: profilesAll } = await supabase.from("profiles").select("id, full_name").eq("role", "sales");
+    const { data: profilesAll } = await supabase.from("profiles").select("id, full_name");
     const salesMap = new Map<string, string>();
     for (const p of profilesAll ?? []) salesMap.set(p.id, p.full_name ?? "");
 
@@ -192,25 +188,11 @@ export async function GET(req: NextRequest) {
 
     const l2 = Array.from(perUser.values()).sort((a, b) => b.stage_advanced - a.stage_advanced);
 
-    // L3: leads detail grouped by owner (top 8 per sales, leads touched this period)
-    const touchedLeadIds = Array.from(new Set((contactedLogs ?? []).map((l: any) => l.lead_id)));
-    const { data: leadsTouched } = await supabase.from("leads")
-      .select("id, customer_name, assigned_to, stage, last_contact_date, quality, profiles:assigned_to(full_name)")
-      .in("id", touchedLeadIds.length > 0 ? touchedLeadIds : ["__none__"])
-      .limit(200);
-
-    // Also include leads assigned this period (not just contacted).
-    const l2UserIds = l2.map((row) => row.user_id);
+    // L3: leads created during the period, grouped by owner.
     const { data: leadsAssigned } = await supabase.from("leads")
       .select("id, customer_name, assigned_to, stage, last_contact_date, quality, profiles:assigned_to(full_name)")
-      .in("assigned_to", l2UserIds.length > 0 ? l2UserIds : ["__none__"])
       .gte("created_at", startIso).lt("created_at", endIso)
       .limit(200);
-
-    type LeadDetailRow = NonNullable<typeof leadsTouched>[number];
-    const allLeads = new Map<string, LeadDetailRow>();
-    for (const lead of leadsTouched ?? []) allLeads.set(lead.id, lead);
-    for (const lead of leadsAssigned ?? []) allLeads.set(lead.id, lead);
 
     const contactCountByLead = new Map<string, number>();
     for (const log of contactedLogs ?? []) {
@@ -235,7 +217,7 @@ export async function GET(req: NextRequest) {
     }
 
     const l3_by_user: Record<string, WeeklyReviewLeadRow[]> = {};
-    for (const row of allLeads.values()) {
+    for (const row of leadsAssigned ?? []) {
       const owner = row.assigned_to ?? "_unassigned";
       if (!l3_by_user[owner]) l3_by_user[owner] = [];
       l3_by_user[owner].push({
@@ -269,7 +251,7 @@ export async function GET(req: NextRequest) {
       },
       l2,
       l3_by_user,
-    });
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (e) {
     console.error("[weekly-review] error:", e);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

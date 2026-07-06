@@ -50,6 +50,8 @@ TODO → IN_PROGRESS → REVIEW → DONE
 || task_P0_schema_alias_fix_combo | DONE | Codex (GPT-5.5) via codex exec → Hermes review | 2026-07-06 |
 | task_P0_hotfix_audit_trail | DONE | Codex→Hermes | 2026-07-06 |
 
+> `task_P0_hotfix_audit_trail`: `20260706000005_add_leads_archived.sql` adds `leads_archived` as the 20th allowed event type, closing the archive audit gap.
+
 ---
 
 ## MoA Tier 1 — Technical Debt (IMMEDIATE, 1-2 weeks)

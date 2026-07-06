@@ -12,7 +12,7 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 - **Deprecated**: `/command-center` → `/dashboard`（307）, `/quotations` → `/quotes`（307）。
 - **TASKBOARD**: 18 PASS / 0 FAIL / 0 WARN
 - **本文件**: 唯一本地真相源（架构 + 待办 + 设计决策）
-- **上次更新**: 2026-07-05（TRUE_CODEX_FAIL_FIX + P2.5 infra hardening）
+- **上次更新**: 2026-07-06（P0 audit trail 20-value closed loop）
 - **状态**: P2 reads + mutations 全部署完毕。Post-audit de3b52f 已部署。49cd03f 待部署（TRUE_CODEX_REAUDIT_DELTA 安全审核 24/24 PASS）。
 - **事故**: 2026-07-04 BUILD_ID ドリフト 3 回 → prebuild guard + next.config.ts guard + deploy 隔离三层防护
 
@@ -558,7 +558,7 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 
 ### P3-11 business_events 写路径 API 化 + audit_logs 注释 (2026-07-06)
 
-> 任务 `task_P3_complete_cleanup` (本 dispatch)。将详情页剩余两处客户端直接写 `business_events` 的调用收口到新建的 `POST /api/leads/[id]/events` 路由，避免浏览器侧继续持有 canonical 列定义 (user_id / event_data JSONB / created_at)；同时为 proxy.ts 和 admin/impersonate 的 `audit_logs.actor_id` 写入补注释，避免下一轮 audit 把正确的 `actor_id` 误判成 P0 时期的 `business_events` alias 错误。允许列表在 API 端硬校验，与 `chk_event_type` CHECK 一致；不允许的 type 直接 400。P0 审计后，迁移 `20260706000004_audit_event_type_widening.sql` 新增 `note_added`、`probability_changed`、`status_changed`、`lost_reason_set`、`followup_scheduled`，使路由与 DB CHECK 的最终允许列表均为 19 个值。
+> 任务 `task_P3_complete_cleanup` (本 dispatch)。将详情页剩余两处客户端直接写 `business_events` 的调用收口到新建的 `POST /api/leads/[id]/events` 路由，避免浏览器侧继续持有 canonical 列定义 (user_id / event_data JSONB / created_at)；同时为 proxy.ts 和 admin/impersonate 的 `audit_logs.actor_id` 写入补注释，避免下一轮 audit 把正确的 `actor_id` 误判成 P0 时期的 `business_events` alias 错误。允许列表在 API 端硬校验，与 `chk_event_type` CHECK 一致；不允许的 type 直接 400。P0 审计后，迁移 `20260706000004_audit_event_type_widening.sql` 新增 `note_added`、`probability_changed`、`status_changed`、`lost_reason_set`、`followup_scheduled`；后续迁移 `20260706000005_add_leads_archived.sql` 再加入 `leads_archived`，关闭 archive audit gap，使路由与 DB CHECK 的最终允许列表均为 20 个值。
 
 覆盖文件清单 (4)：
 
@@ -567,7 +567,7 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 - `src/proxy.ts` — `audit_logs.actor_id` 写入处已 pre-annotated (hermes 先于此 dispatch 加上)；注释明示 `actor_id` 是 audit_logs 的 genuine 列 (migration `20260613000000_audit_logs.sql:6`)，不是 `business_events` 的 alias，**Do NOT rename**；本 patch 跳过 (no-op)。
 - `src/app/api/admin/impersonate/route.ts` — 同上，`audit_logs.actor_id` 注释已存在，本 patch 跳过 (no-op)。
 
-迁移配套：后续 P0 hotfix 使用 `20260706000004_audit_event_type_widening.sql` 将 CHECK 从 14 个值扩为 19 个值。详情页销售转移同时固定为先 `POST /events`、再 `leads.update`，确保原负责人仍能通过路由 ownership 校验；事件记录失败仍提示但不阻断转移。
+迁移配套：P0 hotfix 使用 `20260706000004_audit_event_type_widening.sql` 将 CHECK 从 14 个值扩为 19 个值；后续 `20260706000005_add_leads_archived.sql` 加入 `leads_archived`，扩为 20 个值并关闭 archive audit gap。详情页销售转移同时固定为先 `POST /events`、再 `leads.update`，确保原负责人仍能通过路由 ownership 校验；事件记录失败仍提示但不阻断转移。
 
 ### P3-12 list-page hook business_events 写路径收口 (2026-07-06)
 
@@ -583,4 +583,4 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 - `src/app/(dashboard)/leads/_hooks/useLeadMutations.ts` — 列表页 hook 改写：`writeEvent` useCallback 体内的 `supabase.from("business_events").insert({ lead_id, event_type, description, event_data, user_id })` 替换为 `fetch('/api/leads/${leadId}/events', POST JSON { eventType, description, eventData })`；当前用户校验 (`if (!currentUserId) return`) 保留在 hook 端，避免发出无意义请求；错误处理保留原 `console.error` fire-and-forget 行为；`useCallback` 依赖数组仍是 `[currentUserId]`（fetch 不引入额外依赖）；不动 hook 其余 7 个 handler 的业务逻辑、不动 `createClient` import（hook 内其他 supabase 写入仍需）。
 - `crm-v3/SPEC.md` — 本节 (`P3-12`)。
 
-迁移配套：后续 `20260706000004_audit_event_type_widening.sql` 明确允许 `note_added`、`probability_changed`、`status_changed`、`lost_reason_set`、`followup_scheduled`；修复后 route allow-list 与 DB CHECK 均为 19 个值。列表页 `reassignSales` 必须先等待 `writeEvent('transfer')`，再执行 `leads.update`，避免更新 owner 后事件路由返回 403。
+迁移配套：`20260706000004_audit_event_type_widening.sql` 明确允许 `note_added`、`probability_changed`、`status_changed`、`lost_reason_set`、`followup_scheduled`；后续 `20260706000005_add_leads_archived.sql` 加入 `leads_archived` 以关闭 archive audit gap，修复后 route allow-list 与 DB CHECK 均为 20 个值。列表页 `reassignSales` 必须先等待 `writeEvent('transfer')`，再执行 `leads.update`，避免更新 owner 后事件路由返回 403。

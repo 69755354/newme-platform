@@ -148,7 +148,7 @@ export async function GET(req: NextRequest) {
       .eq("quality", "pending").not("assigned_to", "is", null);
 
     const { data: stageEvents } = await supabase.from("business_events").select("event_data, user_id, lead_id")
-      .eq("event_type", "stage_change")
+      .in("event_type", ["stage_change", "transfer", "owner_change"])
       .gte("created_at", startIso).lt("created_at", endIso);
 
     const { data: overdueTasks } = await supabase.from("tasks").select("assignee_id")

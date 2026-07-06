@@ -21,19 +21,20 @@ import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import KanbanStats from "@/components/pipeline/KanbanStats";
 import { LeadCard } from "./LeadCard";
 import type { Lead } from "./LeadCard";
+import { PIPELINE_STAGES } from "@/shared/kanban/types";
+import type { StageKey } from "@/shared/kanban/types";
 
-/* ─── Stage definitions (kanban-only; sales KPI dashboard has its own copy) ─── */
-const STAGES = [
-  { key: "new", labelKey: "pipeline.stageNew", color: "#6B7280", bg: "bg-muted/30", border: "border-border/40" },
-  { key: "contacted", labelKey: "pipeline.stageContacted", color: "#C48A52", bg: "bg-amber-950/30", border: "border-amber-800/40" },
-  { key: "requirement_confirmed", labelKey: "pipeline.stageReqConfirmed", color: "#E0B95A", bg: "bg-yellow-950/20", border: "border-yellow-800/40" },
-  { key: "solution_submitted", labelKey: "pipeline.stageSolutionSub", color: "#4A5568", bg: "bg-slate-950/20", border: "border-slate-800/40" },
-  { key: "quotation_submitted", labelKey: "pipeline.stageQuotationSub", color: "#8B5CF6", bg: "bg-purple-950/20", border: "border-purple-800/40" },
-  { key: "negotiation", labelKey: "pipeline.stageNegotiation", color: "#3B82F6", bg: "bg-blue-950/20", border: "border-blue-800/40" },
-  { key: "pending_decision", labelKey: "pipeline.stagePendingDecision", color: "#F59E0B", bg: "bg-amber-950/20", border: "border-amber-800/40" },
-  { key: "won", labelKey: "pipeline.stageWon", color: "#4ADE80", bg: "bg-emerald-950/20", border: "border-emerald-800/40" },
-  { key: "lost", labelKey: "pipeline.stageLost", color: "#6B7280", bg: "bg-muted/30", border: "border-border/40" },
-];
+const STAGE_LABEL_KEYS: Record<StageKey, string> = {
+  new: "pipeline.stageNew",
+  contacted: "pipeline.stageContacted",
+  requirement_confirmed: "pipeline.stageReqConfirmed",
+  solution_submitted: "pipeline.stageSolutionSub",
+  quotation_submitted: "pipeline.stageQuotationSub",
+  negotiation: "pipeline.stageNegotiation",
+  pending_decision: "pipeline.stagePendingDecision",
+  won: "pipeline.stageWon",
+  lost: "pipeline.stageLost",
+};
 
 /* ─── Local helper (rendering-only, no business logic) ─── */
 function fmtAED(v: number): string {
@@ -97,7 +98,7 @@ export function KanbanBoard({
   // the dual-source transition window.
   const columns = useMemo(() => {
     const g: Record<string, Lead[]> = {};
-    for (const s of STAGES) g[s.key] = [];
+    for (const s of PIPELINE_STAGES) g[s.key] = [];
     for (const l of leads) {
       const key = l.final_status || l.stage;
       if (g[key]) g[key].push(l);
@@ -168,7 +169,7 @@ export function KanbanBoard({
         >
           {/* T2-1: h-full lets columns fill the kanban row. */}
           <div className="flex gap-3 min-w-max px-10 pb-4 h-full">
-            {STAGES.filter((s) => {
+            {PIPELINE_STAGES.filter((s) => {
               // Always show won/lost; otherwise respect showEmptyStages toggle.
               if (s.key === "won" || s.key === "lost") return true;
               if (showEmptyStages) return true;
@@ -201,7 +202,7 @@ export function KanbanBoard({
                   <div className="flex items-center justify-between px-3 py-2.5 border-b border-inherit/30 sticky top-0 z-10">
                     <div className="flex items-center gap-2">
                       <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
-                      <span className="text-sm font-semibold text-foreground">{t(stage.labelKey as any)}</span>
+                      <span className="text-sm font-semibold text-foreground">{t(STAGE_LABEL_KEYS[stage.key] as any)}</span>
                       <span className="text-xs text-muted-foreground bg-background/30 px-1.5 py-0.5 rounded-full">
                         {items.length}
                       </span>

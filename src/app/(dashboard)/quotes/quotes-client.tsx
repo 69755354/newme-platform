@@ -26,6 +26,7 @@ import {
 import QuoteCalculator from "./quote-calculator";
 import QuoteWizard from "./quote-wizard";
 import QuoteDetailDialog from "./quote-detail-dialog";
+import { fmtAED } from "@/shared/utils/format";
 
 /* ─── Types ─── */
 interface Lead {
@@ -80,13 +81,6 @@ const STATUS_LABEL_KEYS: Record<string, string> = {
 const QUOTE_STATUSES = ["draft", "sent", "accepted", "rejected", "expired"];
 
 /* ─── Helpers ─── */
-function fmtAED(v: number | null | undefined): string {
-  if (v == null) return "—";
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K`;
-  return v.toLocaleString();
-}
-
 function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
   return fmtDubai(d, { locale: "en-US", month: "short", day: "numeric", year: "numeric" });
@@ -365,7 +359,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
             {t("quotes.title")}
           </h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            {filtered.length} {t("quotes.title").toLowerCase()} · AED {fmtAED(totalValue)} {t("quotes.total").toLowerCase()}
+            {filtered.length} {t("quotes.title").toLowerCase()} · {fmtAED(totalValue)} {t("quotes.total").toLowerCase()}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -499,7 +493,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
                     "text-sm font-semibold",
                     quote.status === "accepted" ? "text-emerald-400" : "text-copper-400"
                   )}>
-                    AED {fmtAED(quote.total_amount)}
+                    {fmtAED(quote.total_amount)}
                   </span>
                 </div>
 
@@ -671,17 +665,17 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
             {createForm.subtotal > 0 && (
               <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{t("quotes.subtotal")}</span><span>AED {fmtAED(createForm.subtotal)}</span>
+                  <span>{t("quotes.subtotal")}</span><span>{fmtAED(createForm.subtotal)}</span>
                 </div>
                 {createForm.discountRate > 0 && (
                   <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
                     <span>{t("quotes.discount")} ({createForm.discountRate}%)</span>
-                    <span className="text-rose-400">- AED {fmtAED(createForm.subtotal * createForm.discountRate / 100)}</span>
+                    <span className="text-rose-400">- {fmtAED(createForm.subtotal * createForm.discountRate / 100)}</span>
                   </div>
                 )}
                 <div className="flex items-center justify-between text-sm font-semibold text-copper-400 mt-2 pt-2 border-t border-border/30">
                   <span>{t("quotes.total")}</span>
-                  <span>AED {fmtAED(
+                  <span>{fmtAED(
                     (createForm.subtotal - createForm.subtotal * createForm.discountRate / 100) *
                     (1 + createForm.taxRate / 100)
                   )}</span>

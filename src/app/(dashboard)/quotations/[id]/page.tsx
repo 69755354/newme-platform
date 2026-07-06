@@ -37,6 +37,7 @@ import {
   Save,
   Loader2,
 } from "lucide-react";
+import { fmtAED } from "@/shared/utils/format";
 
 /* ─── Types ─── */
 interface QuotationLineItem {
@@ -107,11 +108,6 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 /* ─── Helpers ─── */
-function fmtAED(v: number | null | undefined): string {
-  if (v == null) return "—";
-  return `AED ${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
 function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
   try {

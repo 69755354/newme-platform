@@ -291,7 +291,7 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 - moa-tier2-detail ❌ 需你确认方案方向
 - contracts Dialog 改造 ✅ 完成（`f764ca3`）
 - payments/tasks i18n ✅ 完成（`b365287`）
-- kanban-unify ❌ 待做：统一 stage 定义 + fmtAED 到 shared/
+- kanban-unify ✅ 完成（2026-07-06）：统一 stage 定义 + fmtAED 到 shared/
 |- **全站性能优化** ✅ 第一批完成，🔒 剩余冻结（见 §十一）
 - 18 项业务功能 ❌ 部分已修，产品细节待森哥确认
 
@@ -584,3 +584,14 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 - `crm-v3/SPEC.md` — 本节 (`P3-12`)。
 
 迁移配套：`20260706000004_audit_event_type_widening.sql` 明确允许 `note_added`、`probability_changed`、`status_changed`、`lost_reason_set`、`followup_scheduled`；后续 `20260706000005_add_leads_archived.sql` 加入 `leads_archived` 以关闭 archive audit gap，修复后 route allow-list 与 DB CHECK 均为 20 个值。列表页 `reassignSales` 必须先等待 `writeEvent('transfer')`，再执行 `leads.update`，避免更新 owner 后事件路由返回 403。
+
+### kanban-unify 共享格式化与阶段定义 (2026-07-06)
+
+> 任务 `kanban-unify`。仅收口重复定义，不修改业务流程、阶段转换规则或 PRD 行为。
+
+- `src/shared/utils/format.ts` — canonical `fmtAED(number | null | undefined)`；统一 AED 前缀、百万缩写和 null/NaN 回退。
+- `src/shared/kanban/types.ts` — canonical `PIPELINE_STAGES`、`StageKey` 和 `TERMINAL_STAGES`。
+- `src/app/(dashboard)/contracts/[id]/page.tsx`、`src/app/(dashboard)/contracts/page.tsx`、`src/app/(dashboard)/quotes/quote-detail-dialog.tsx`、`src/app/(dashboard)/quotes/quotes-client.tsx`、`src/app/(dashboard)/settings/kpi-management.tsx`、`src/app/(dashboard)/settings/ads/ads-client.tsx`、`src/app/(dashboard)/payments/page.tsx`、`src/app/(dashboard)/quotations/[id]/page.tsx` — 删除本地 `fmtAED`，改用 shared utility；同时移除重复 AED 前缀。
+- `src/shared/hooks/useStageGuard.ts`、`src/shared/hooks/usePipelineDragDrop.ts`、`src/app/(dashboard)/pipeline/_components/KanbanBoard.tsx`、`src/app/(dashboard)/leads/[id]/types.ts`、`src/app/(dashboard)/settings/page.tsx` — 删除内联 stage 定义，由 shared source 派生；`useStageGuard.ts` 保留 `STAGES` / `StageKey` 兼容导出。
+- `src/app/(dashboard)/leads/_utils/constants.ts` — 保留旧 import path，从 shared source 重导出 `PIPELINE_STAGES`。
+- `TASKBOARD.md` — `kanban-unify` 标记完成。

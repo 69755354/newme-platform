@@ -1,26 +1,10 @@
 "use client";
 
 import { useCallback } from "react";
+import { TERMINAL_STAGES } from "@/shared/kanban/types";
 
-// ─── Stage Constants ───
-// Defines the CRM pipeline stages and their valid transitions.
-// Won and Lost are terminal states — no transitions out are allowed.
-export const STAGES = [
-  { key: "new", label: "New" },
-  { key: "contacted", label: "Contacted" },
-  { key: "requirement_confirmed", label: "Requirement Confirmed" },
-  { key: "solution_submitted", label: "Solution Submitted" },
-  { key: "quotation_submitted", label: "Quotation Submitted" },
-  { key: "negotiation", label: "Negotiation" },
-  { key: "pending_decision", label: "Pending Decision" },
-  { key: "won", label: "Won" },
-  { key: "lost", label: "Lost" },
-] as const;
-
-export type StageKey = typeof STAGES[number]["key"];
-
-// Terminal stages — cannot transition out
-const TERMINAL_STAGES: Set<string> = new Set(["won", "lost"]);
+export { PIPELINE_STAGES as STAGES } from "@/shared/kanban/types";
+export type { StageKey } from "@/shared/kanban/types";
 
 // Valid transitions map: from → set of allowed targets
 // Business rules:

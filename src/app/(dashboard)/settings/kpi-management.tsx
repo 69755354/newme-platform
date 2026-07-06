@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Target, TrendingUp, Wallet, Save, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { fmtAED } from "@/shared/utils/format";
 
 interface Profile { id: string; full_name: string | null; email: string | null; role: string; }
 interface KpiTarget { id: string; period: string; target_type: string; target_amount: number; assigned_to: string | null; notes: string | null; profiles?: { full_name: string | null } | null; }
@@ -114,8 +115,6 @@ export default function KpiManagement() {
     }
     setSaving(false);
   };
-
-  const fmtAED = (v: number) => v >= 1_000_000 ? `AED ${(v/1_000_000).toFixed(1)}M` : `AED ${v.toLocaleString()}`;
 
   const months: string[] = [];
   const now = new Date();

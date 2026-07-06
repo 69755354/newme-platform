@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
+import { PIPELINE_STAGES, TERMINAL_STAGES } from "@/shared/kanban/types";
 
 // ─── Types ───
 interface LeadBase {
@@ -22,23 +23,8 @@ interface UsePipelineDragDropReturn {
   draggingOverStage: string | null;
 }
 
-// ─── Stage Constants ───
-const STAGES = [
-  { key: "new", label: "New" },
-  { key: "contacted", label: "Contacted" },
-  { key: "requirement_confirmed", label: "Requirement Confirmed" },
-  { key: "solution_submitted", label: "Solution Submitted" },
-  { key: "quotation_submitted", label: "Quotation Submitted" },
-  { key: "negotiation", label: "Negotiation" },
-  { key: "pending_decision", label: "Pending Decision" },
-  { key: "won", label: "Won" },
-  { key: "lost", label: "Lost" },
-];
-
-const TERMINAL_STAGES = new Set(["won", "lost"]);
-
 const STAGE_INDEX: Record<string, number> = {};
-STAGES.forEach((s, i) => { STAGE_INDEX[s.key] = i; });
+PIPELINE_STAGES.forEach((s, i) => { STAGE_INDEX[s.key] = i; });
 
 // ─── usePipelineDragDrop Hook ───
 // Generic hook that works with any Lead type extending LeadBase.
@@ -161,7 +147,7 @@ export function usePipelineDragDrop<T extends LeadBase>(
       user_id: currentUserId,
     });
 
-    toast.success(`已移动到 ${STAGES.find(s => s.key === targetStage)?.label || targetStage}`);
+    toast.success(`已移动到 ${PIPELINE_STAGES.find(s => s.key === targetStage)?.label || targetStage}`);
   }, [leads, setLeads, currentUserId]);
 
   return {

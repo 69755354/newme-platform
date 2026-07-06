@@ -18,6 +18,7 @@ import {
 import { DEVICE_CATALOG } from "@/lib/device-catalog";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { toast } from "sonner";
+import { fmtAED } from "@/shared/utils/format";
 
 /* ─── Types ─── */
 interface Quotation {
@@ -66,11 +67,6 @@ const STATUS_STYLES: Record<string, { color: string; bg: string; border: string 
 const QUOTE_STATUSES = ["draft", "sent", "accepted", "rejected", "expired", "contract_created", "won"];
 
 /* ─── Helpers ─── */
-function fmtAED(v: number | null | undefined): string {
-  if (v == null) return "—";
-  return v.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-}
-
 function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
   return fmtDubai(d, { locale: "en-US", month: "short", day: "numeric", year: "numeric" });
@@ -236,24 +232,24 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
         <div className="grid grid-cols-5 gap-3 p-4 rounded-xl bg-muted/60 border border-border/30">
           <div className="text-center">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.devices")}</p>
-            <p className="text-sm font-medium text-foreground">AED {fmtAED(devicesTotal)}</p>
+            <p className="text-sm font-medium text-foreground">{fmtAED(devicesTotal)}</p>
           </div>
           <div className="text-center">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.discount")}</p>
-            <p className="text-sm font-medium text-rose-400">−AED {fmtAED(discountAmt)}</p>
+            <p className="text-sm font-medium text-rose-400">−{fmtAED(discountAmt)}</p>
           </div>
           <div className="text-center">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.servicesTax")}</p>
-            <p className="text-sm font-medium text-foreground">AED {fmtAED(estimatedServices)}</p>
+            <p className="text-sm font-medium text-foreground">{fmtAED(estimatedServices)}</p>
           </div>
           <div className="text-center col-span-1">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.tax")}</p>
-            <p className="text-sm font-medium text-amber-400">AED {fmtAED(taxAmt)}</p>
+            <p className="text-sm font-medium text-amber-400">{fmtAED(taxAmt)}</p>
           </div>
           <div className="text-center bg-copper-500/10 rounded-lg p-2 -m-1">
             <p className="text-[10px] text-copper-400 uppercase tracking-wider mb-0.5">{t("quotes.total")}</p>
             <p className="text-lg font-bold text-copper-400">
-              {quote.currency || "AED"} {fmtAED(quote.total_amount)}
+              {fmtAED(quote.total_amount)}
             </p>
           </div>
         </div>
@@ -285,7 +281,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
                       <span className="text-xs text-muted-foreground">({group.items.length} items)</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-foreground">AED {fmtAED(group.subtotal)}</span>
+                      <span className="text-sm font-medium text-foreground">{fmtAED(group.subtotal)}</span>
                       {isExpanded ? (
                         <ChevronUp className="w-4 h-4 text-muted-foreground" />
                       ) : (
@@ -306,9 +302,9 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
                             <p className="text-sm text-foreground">{item.name}</p>
                           </div>
                           <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span>AED {fmtAED(item.unit_price)} × {item.qty}</span>
+                            <span>{fmtAED(item.unit_price)} × {item.qty}</span>
                             <span className="text-sm font-medium text-foreground w-20 text-right">
-                              AED {fmtAED(item.line_total)}
+                              {fmtAED(item.line_total)}
                             </span>
                           </div>
                         </div>

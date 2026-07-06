@@ -5,6 +5,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
   BarChart3, ArrowLeft,
 } from "lucide-react";
+import { fmtAED } from "@/shared/utils/format";
 
 /* ─── Types ─── */
 interface GroupData {
@@ -14,14 +15,6 @@ interface GroupData {
 interface AdsClientProps {
   sorted: [string, GroupData][];
   totals: GroupData;
-}
-
-/* ─── Helpers ─── */
-function fmtAED(v: number | null | undefined): string {
-  if (v == null || v === 0) return "—";
-  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
-  return `AED ${v.toLocaleString()}`;
 }
 
 export default function AdsClient({ sorted, totals }: AdsClientProps) {

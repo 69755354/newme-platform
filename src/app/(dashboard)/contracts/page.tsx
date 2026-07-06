@@ -21,6 +21,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { approveContract, revokeContract } from "@/app/actions/contracts";
+import { fmtAED } from "@/shared/utils/format";
 
 interface Contract {
   id: string; contract_no: string; contract_amount: number; status: string;
@@ -276,7 +277,6 @@ export default function ContractsPage() {
   if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-  const fmtAED = (v: number) => v >= 1_000_000 ? `AED ${(v/1_000_000).toFixed(1)}M` : `AED ${v.toLocaleString()}`;
   const totalActive = contracts.reduce((s, c) => ["signed","active","approved"].includes(c.status) ? s + c.contract_amount : s, 0);
 
   const STATUS_FILTER_OPTIONS = [

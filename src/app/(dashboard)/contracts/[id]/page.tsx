@@ -24,6 +24,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { fmtAED } from "@/shared/utils/format";
 
 /* ─── Types ─── */
 interface DetailResponse {
@@ -76,9 +77,6 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
   card: "Card",
   other: "Other",
 };
-
-const fmtAED = (v: number) =>
-  v >= 1_000_000 ? `AED ${(v / 1_000_000).toFixed(2)}M` : `AED ${v.toLocaleString()}`;
 
 export default function ContractDetailPage() {
   const { loading: roleLoading, blocked } = useRequireRole([

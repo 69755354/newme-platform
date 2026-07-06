@@ -48,6 +48,7 @@ import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { createPayment, confirmPayment, allocatePayment as allocatePaymentAction } from "@/app/actions/payments";
+import { fmtAED } from "@/shared/utils/format";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -152,11 +153,6 @@ export default function PaymentsPage() {
   // ─── Helpers ─────────────────────────────────────────────────────
 
   const isPrivileged = role && ["admin", "boss", "finance", "operator"].includes(role);
-
-  const fmtAED = (v: number) =>
-    v >= 1_000_000
-      ? `AED ${(v / 1_000_000).toFixed(1)}M`
-      : `AED ${v.toLocaleString()}`;
 
   const methodLabel = (m: string) => {
     const map: Record<string, string> = {

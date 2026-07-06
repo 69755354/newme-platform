@@ -4,31 +4,14 @@
 // so this is a plain .ts module importable by every column component.
 
 import type { ReactNode } from "react";
+import { PIPELINE_STAGES } from "@/shared/kanban/types";
 
 // ─── Stage data ───
-export const STAGES: string[] = [
-  "new",
-  "contacted",
-  "requirement_confirmed",
-  "solution_submitted",
-  "quotation_submitted",
-  "negotiation",
-  "pending_decision",
-  "won",
-  "lost",
-];
+export const STAGES: string[] = PIPELINE_STAGES.map((stage) => stage.key);
 
-export const STAGE_COLORS: Record<string, string> = {
-  new: "bg-gray-500/10 text-muted-foreground",
-  contacted: "bg-amber-500/10 text-amber-400",
-  requirement_confirmed: "bg-yellow-500/10 text-yellow-400",
-  solution_submitted: "bg-rose-500/10 text-rose-400",
-  quotation_submitted: "bg-purple-500/10 text-purple-400",
-  negotiation: "bg-blue-500/10 text-blue-400",
-  pending_decision: "bg-amber-500/10 text-amber-400",
-  won: "bg-emerald-500/10 text-emerald-400",
-  lost: "bg-gray-500/10 text-muted-foreground",
-};
+export const STAGE_COLORS: Record<string, string> = Object.fromEntries(
+  PIPELINE_STAGES.map((stage) => [stage.key, stage.color])
+);
 
 export const PROBABILITIES = [10, 30, 50, 70, 90];
 

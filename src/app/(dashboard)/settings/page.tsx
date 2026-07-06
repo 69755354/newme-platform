@@ -13,6 +13,7 @@ import SubNavTabs from "@/components/SubNavTabs";
 import KpiManagement from "./kpi-management";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { PIPELINE_STAGES } from "@/shared/kanban/types";
 
 /* ─── Types ─── */
 interface Lead {
@@ -27,8 +28,7 @@ interface Profile {
   role: string;
 }
 
-const STAGES = ["new","contacted","requirement_confirmed","solution_submitted","quotation_submitted","negotiation","pending_decision","won","lost"];
-const STAGE_KEYS = ["new","contacted","requirement_confirmed","solution_submitted","quotation_submitted","negotiation","pending_decision","won","lost"] as const;
+const STAGES = PIPELINE_STAGES.map((stage) => stage.key);
 /* ════════════════════════════════════════ */
 
 function PasswordChange() {

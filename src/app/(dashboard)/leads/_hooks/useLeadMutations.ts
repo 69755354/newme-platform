@@ -255,6 +255,26 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
         return;
       }
 
+      // Guard 6: first_contact gate — new → contacted requires 3 contacts + quality filled
+      if (oldLead.stage === "new" && newStage === "contacted" && !canRevert) {
+        const { count: contactCount } = await supabase
+          .from("follow_up_logs")
+          .select("*", { count: "exact", head: true })
+          .eq("lead_id", leadId);
+        if ((contactCount ?? 0) < 3) {
+          setError(lang === "zh" 
+            ? `需要 3 次联系记录（当前 ${contactCount ?? 0}/3）` 
+            : `Need 3 contact records (current ${contactCount ?? 0}/3)`);
+          return;
+        }
+        if (!oldLead.quality || oldLead.quality === "pending") {
+          setError(lang === "zh" 
+            ? "请先完成质量判断（Poor/Normal/Good）" 
+            : "Please complete quality assessment first (Poor/Normal/Good)");
+          return;
+        }
+      }
+
       // Build updates
       const now = new Date().toISOString();
       const auto = STAGE_AUTO[newStage];

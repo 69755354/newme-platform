@@ -149,14 +149,16 @@ export async function GET(req: NextRequest) {
       .gte("created_at", startIso).lt("created_at", endIso);
 
     const { data: pendingQuality } = await supabase.from("leads").select("assigned_to")
-      .eq("quality", "pending").not("assigned_to", "is", null);
+      .eq("quality", "pending").not("assigned_to", "is", null)
+      .gte("created_at", startIso).lt("created_at", endIso);
 
     const { data: stageEvents } = await supabase.from("business_events").select("event_data, user_id, lead_id")
       .in("event_type", ["stage_change", "transfer", "owner_change"])
       .gte("created_at", startIso).lt("created_at", endIso);
 
     const { data: overdueTasks } = await supabase.from("tasks").select("assignee_id")
-      .lt("due_at", new Date().toISOString()).neq("status", "done").not("assignee_id", "is", null);
+      .lt("due_at", new Date().toISOString()).neq("status", "done").not("assignee_id", "is", null)
+      .gte("created_at", startIso).lt("created_at", endIso);
 
     const perUser = new Map<string, WeeklyReviewRow>();
     const ensure = (uid: string) => {
@@ -193,7 +195,9 @@ export async function GET(req: NextRequest) {
     }
     for (const t of overdueTasks ?? []) { if (t.assignee_id) { const row = ensure(t.assignee_id); if (row) row.overdue_tasks++; } }
 
-    const l2 = Array.from(perUser.values()).sort((a, b) => b.stage_advanced - a.stage_advanced);
+    const l2 = Array.from(perUser.values())
+      .filter(r => r.assigned_leads > 0 || r.contacted > 0 || r.stage_advanced > 0 || r.won > 0 || r.lost > 0)
+      .sort((a, b) => b.stage_advanced - a.stage_advanced);
 
     // L3: leads created during the period, grouped by owner.
     const { data: leadsAssigned, error: leadsAssignedErr } = await supabase.from("leads")

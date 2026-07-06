@@ -1,5 +1,7 @@
 "use client";
 
+// DEPRECATED — replaced by dashboard Sales Leaderboard
+
 import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Trophy, TrendingUp, Users, Target } from "lucide-react";

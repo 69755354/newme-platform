@@ -68,6 +68,8 @@ interface WeeklyReviewProps {
   mode?: "period";
   periodStart?: string;
   periodEnd?: string;
+  range?: Period;
+  onRangeChange?: (range: Period) => void;
   l1?: PeriodL1;
   l2?: PeriodL2Row[];
   l3_by_user?: Record<string, PeriodL3Row[]>;
@@ -85,6 +87,8 @@ export default function WeeklyReview(props: WeeklyReviewProps) {
         language={props.language ?? "en"}
         periodStart={props.periodStart}
         periodEnd={props.periodEnd}
+        range={props.range ?? "this_week"}
+        onRangeChange={props.onRangeChange ?? (() => {})}
         l1={props.l1}
         l2={props.l2 ?? []}
         l3_by_user={props.l3_by_user ?? {}}
@@ -370,11 +374,13 @@ function WeeklyReviewApi({ language }: { language: string }) {
 // L3 lead list per owner), with empty-state fallbacks. i18n zh/en inline.
 // ════════════════════════════════════════════════════════════════════
 function WeeklyReviewPeriod({
-  language, periodStart, periodEnd, l1, l2, l3_by_user,
+  language, periodStart, periodEnd, range, onRangeChange, l1, l2, l3_by_user,
 }: {
   language: string;
   periodStart?: string;
   periodEnd?: string;
+  range: Period;
+  onRangeChange: (range: Period) => void;
   l1?: PeriodL1;
   l2: PeriodL2Row[];
   l3_by_user: Record<string, PeriodL3Row[]>;
@@ -408,11 +414,23 @@ function WeeklyReviewPeriod({
           <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
             {t("L1 公司概览", "L1 Company overview")}
           </h2>
-          {(periodStart || periodEnd) && (
-            <span className="text-xs text-muted-foreground">
-              {periodStart ? fmtDate(periodStart) : "—"} → {periodEnd ? fmtDate(periodEnd) : "—"}
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {(periodStart || periodEnd) && (
+              <span className="text-xs text-muted-foreground">
+                {periodStart ? fmtDate(periodStart) : "—"} → {periodEnd ? fmtDate(periodEnd) : "—"}
+              </span>
+            )}
+            <div className="flex gap-1 rounded-lg border border-border/50 p-1">
+              {PERIOD_OPTIONS.map(opt => (
+                <button key={opt.value} type="button" onClick={() => onRangeChange(opt.value)}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    range === opt.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}>
+                  {locale === "zh" ? opt.zh : opt.en}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         {l1Empty ? (
           <p className="py-4 text-sm text-muted-foreground">{t("暂无数据", "No data")}</p>
@@ -483,21 +501,29 @@ function WeeklyReviewPeriod({
                               <p className="text-xs text-muted-foreground">{t("暂无数据", "No data")}</p>
                             ) : (
                               <ul className="space-y-2 text-xs">
-                                {leads.map(lead => (
-                                  <li key={lead.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                    <Link href={`/leads/${lead.id}`} className="text-copper-400 hover:underline">
-                                      {lead.customer_name || (locale === "zh" ? "未命名客户" : "Unnamed")}
-                                    </Link>
-                                    <span className="text-muted-foreground">
-                                      · {t("阶段", "stage")}: {lead.stage ?? "—"}
-                                      · {t("联系次数", "contacts")}: {lead.contact_count}
-                                      {lead.quality && ` · ${t("质量", "quality")}: ${lead.quality}`}
-                                      {` · ${t("上次联系", "last contact")}: ${fmtDate(lead.last_contact_date)}`}
-                                      {lead.next_follow_up_at && ` · ${t("下次跟进", "next")}: ${fmtDate(lead.next_follow_up_at)}`}
-                                      {lead.last_note && ` · ${t("备注", "note")}: ${lead.last_note}`}
-                                    </span>
-                                  </li>
-                                ))}
+                                {leads.map(lead => {
+                                  const noteText = (lead.last_note ?? "").replace(/\s+/g, " ").trim();
+                                  const truncated = noteText.length > 80 ? `${noteText.slice(0, 80)}…` : noteText;
+                                  return (
+                                    <li key={lead.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                      <Link href={`/leads/${lead.id}`} className="text-copper-400 hover:underline">
+                                        {lead.customer_name || (locale === "zh" ? "未命名客户" : "Unnamed")}
+                                      </Link>
+                                      <span className="text-muted-foreground">
+                                        · {t("阶段", "stage")}: {lead.stage ?? "—"}
+                                        · {t("联系次数", "contacts")}: {lead.contact_count}
+                                        {lead.quality && ` · ${t("质量", "quality")}: ${lead.quality}`}
+                                        {` · ${t("上次联系", "last contact")}: ${fmtDate(lead.last_contact_date)}`}
+                                        {lead.next_follow_up_at && ` · ${t("下次跟进", "next")}: ${fmtDate(lead.next_follow_up_at)}`}
+                                      </span>
+                                      {truncated && (
+                                        <span className="max-w-[300px] truncate inline-block align-bottom text-muted-foreground">
+                                          {`· ${t("备注", "note")}: ${truncated}`}
+                                        </span>
+                                      )}
+                                    </li>
+                                  );
+                                })}
                               </ul>
                             )}
                           </td>

@@ -50,6 +50,12 @@ function isoDayStart(d: Date): Date {
   return x;
 }
 
+function joinedFullName(value: unknown): string | null {
+  const profile = Array.isArray(value) ? value[0] : value;
+  if (!profile || typeof profile !== "object" || !("full_name" in profile)) return null;
+  return typeof profile.full_name === "string" ? profile.full_name : null;
+}
+
 function periodBounds(range: "this_week" | "last_week" | "this_month"): { start: Date; end: Date } {
   const now = new Date();
   if (range === "this_week") {
@@ -193,6 +199,19 @@ export async function GET(req: NextRequest) {
       .in("id", touchedLeadIds.length > 0 ? touchedLeadIds : ["__none__"])
       .limit(200);
 
+    // Also include leads assigned this period (not just contacted).
+    const l2UserIds = l2.map((row) => row.user_id);
+    const { data: leadsAssigned } = await supabase.from("leads")
+      .select("id, customer_name, assigned_to, stage, last_contact_date, quality, profiles:assigned_to(full_name)")
+      .in("assigned_to", l2UserIds.length > 0 ? l2UserIds : ["__none__"])
+      .gte("created_at", startIso).lt("created_at", endIso)
+      .limit(200);
+
+    type LeadDetailRow = NonNullable<typeof leadsTouched>[number];
+    const allLeads = new Map<string, LeadDetailRow>();
+    for (const lead of leadsTouched ?? []) allLeads.set(lead.id, lead);
+    for (const lead of leadsAssigned ?? []) allLeads.set(lead.id, lead);
+
     const contactCountByLead = new Map<string, number>();
     for (const log of contactedLogs ?? []) {
       contactCountByLead.set(log.lead_id, (contactCountByLead.get(log.lead_id) ?? 0) + 1);
@@ -216,14 +235,14 @@ export async function GET(req: NextRequest) {
     }
 
     const l3_by_user: Record<string, WeeklyReviewLeadRow[]> = {};
-    for (const row of (leadsTouched ?? []) as any[]) {
+    for (const row of allLeads.values()) {
       const owner = row.assigned_to ?? "_unassigned";
       if (!l3_by_user[owner]) l3_by_user[owner] = [];
       l3_by_user[owner].push({
         id: row.id,
         customer_name: row.customer_name ?? null,
         assigned_to: row.assigned_to,
-        owner_name: (row.profiles?.full_name) ?? null,
+        owner_name: joinedFullName(row.profiles),
         stage: row.stage ?? null,
         last_contact_date: row.last_contact_date ?? null,
         contact_count: contactCountByLead.get(row.id) ?? 0,

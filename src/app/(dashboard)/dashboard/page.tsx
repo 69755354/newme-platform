@@ -50,6 +50,14 @@ interface FollowupTask {
   leads: Lead | Lead[] | null;
 }
 
+interface TeamOwnership {
+  user_id: string;
+  imported_leads: number;
+  active_leads: number;
+  won_leads: number;
+  lost_leads: number;
+}
+
 /* ─── 9-stage funnel ─── */
 const STAGE_KEYS = ["new","contacted","requirement_confirmed","solution_submitted","quotation_submitted","negotiation","pending_decision","won","lost"] as const;
 const STAGE_COLORS: Record<string,string> = {
@@ -93,7 +101,7 @@ export default function DashboardPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [salesUsers, setSalesUsers] = useState<any[]>([]);
-  const [teamOwnership, setTeamOwnership] = useState<any[]>([]);
+  const [teamOwnership, setTeamOwnership] = useState<TeamOwnership[]>([]);
   const [showActivityFeed, setShowActivityFeed] = useState(false);
   
   // Period & KPI targets
@@ -339,7 +347,9 @@ export default function DashboardPage() {
   // Per-salesperson breakdown
   const salesLeaderboard = useMemo(() => {
     const sales = salesUsers.filter((u: any) => u.role === "sales");
+    const ownershipByUser = new Map(teamOwnership.map((u) => [u.user_id, u]));
     return sales.map((s: any) => {
+      const ownership = ownershipByUser.get(s.id);
       const target = kpiTargets.find((t: any) => t.target_type === "signing" && t.assigned_to === s.id);
       const salesLeads = leads.filter(l => l.assigned_to === s.id);
       const activeLeads = salesLeads.filter(l => !l.final_status);
@@ -364,9 +374,13 @@ export default function DashboardPage() {
         conversionRate,
         targetAmount,
         completionRate,
+        imported: ownership?.imported_leads ?? 0,
+        active: ownership?.active_leads ?? activeLeads.length,
+        won: ownership?.won_leads ?? wonLeads.length,
+        lost: ownership?.lost_leads ?? salesLeads.filter(l => l.final_status === "lost").length,
       };
     }).sort((a, b) => b.wonValue - a.wonValue);
-  }, [salesUsers, leads, kpiTargets]);
+  }, [salesUsers, leads, kpiTargets, teamOwnership]);
 
   // KPI-driven finance cards — replaces old kpiCards + financeCards
   const getKpiSub = (actual: number, target: number) => {
@@ -644,7 +658,7 @@ export default function DashboardPage() {
                     <div className="flex-1 space-y-1.5">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-muted-foreground">
-                          {t("dashboard.won")} {fmtAED(s.wonValue)} · {s.wonCount} {t("dashboard.deals")} · {s.totalLeads} {t("leads.title").toLowerCase()} · {s.conversionRate}% {t("dashboard.kpiConv")}
+                          {t("dashboard.won")} {fmtAED(s.wonValue)} · {language === "zh" ? "总计" : "Total"} {s.totalLeads} · {language === "zh" ? "导入" : "Imported"} {s.imported} · {language === "zh" ? "活跃" : "Active"} {s.active} · {language === "zh" ? "成交" : "Won"} {s.won} · {language === "zh" ? "流失" : "Lost"} {s.lost}
                         </span>
                         {s.targetAmount > 0 ? (
                           <span className={cn("font-medium", s.completionRate <= 0 ? "text-muted-foreground" : s.completionRate >= expectedPct ? "text-emerald-400" : "text-amber-400")}>
@@ -668,46 +682,6 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-
-        {/* L3b: Team Lead Ownership */}
-        <div>
-          <SectionHeader title={language === "zh" ? "团队 Lead 归属" : "Team Lead Ownership"} />
-          <div className="overflow-x-auto">
-            {teamOwnership.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">
-                {language === "zh" ? "暂无数据" : "No data yet"}
-              </p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border/50 text-muted-foreground text-xs">
-                    <th className="text-left py-2 pr-3">{language === "zh" ? "成员" : "Member"}</th>
-                    <th className="text-right py-2 px-2">{language === "zh" ? "角色" : "Role"}</th>
-                    <th className="text-right py-2 px-2">{language === "zh" ? "负责" : "Assigned"}</th>
-                    <th className="text-right py-2 px-2">{language === "zh" ? "导入" : "Imported"}</th>
-                    <th className="text-right py-2 px-2">{language === "zh" ? "活跃" : "Active"}</th>
-                    <th className="text-right py-2 px-2">{language === "zh" ? "成交" : "Won"}</th>
-                    <th className="text-right py-2 pl-2">{language === "zh" ? "流失" : "Lost"}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teamOwnership.map((u: any) => (
-                    <tr key={u.user_id} className="border-b border-border/30 hover:bg-accent/30 cursor-pointer"
-                      onClick={() => router.push(`/leads?assigned_to=${u.user_id}`)}>
-                      <td className="py-2 pr-3 font-medium truncate max-w-[120px]">{u.full_name}</td>
-                      <td className="py-2 px-2 text-right text-xs text-muted-foreground">{u.role}</td>
-                      <td className="py-2 px-2 text-right">{u.assigned_leads}</td>
-                      <td className="py-2 px-2 text-right">{u.imported_leads}</td>
-                      <td className="py-2 px-2 text-right">{u.active_leads}</td>
-                      <td className="py-2 px-2 text-right text-emerald-400">{u.won_leads}</td>
-                      <td className="py-2 pl-2 text-right text-red-400">{u.lost_leads}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
 
         {/* L4: Lead Sources */}
         {sourceBreakdown.length > 0 && (
@@ -755,6 +729,8 @@ export default function DashboardPage() {
             l3_by_user={weeklyReviewData.l3_by_user}
             periodStart={weeklyReviewData.periodStart}
             periodEnd={weeklyReviewData.periodEnd}
+            range={weeklyReviewRange}
+            onRangeChange={setWeeklyReviewRange}
           />
         ) : (
           <WeeklyReview {...weeklyReviewProps} />

@@ -164,8 +164,8 @@ export async function GET(req: NextRequest) {
     // Only these 3 sales team members appear in L2
     const ALLOWED_UIDS = new Set([
       "3666d8d0-baf4-45cb-8e7f-4243c999b2b1", // Mohamed
-      "28ec618c-94ad-4a9b-ba0c-b3b719e7f3a8", // Assem
-      "5c766c35-c3fe-4011-aec7-3b9b5704a6b2", // Tanya
+      "28ec618c-1210-4d5d-9c51-702b333e5760", // Assem
+      "5c766c35-fda0-4077-a7b0-478b0bbb85b4", // Tanya
     ]);
     const ensure = (uid: string) => {
       if (!ALLOWED_UIDS.has(uid)) return null as any;
@@ -178,6 +178,8 @@ export async function GET(req: NextRequest) {
       }
       return perUser.get(uid)!;
     };
+    // Pre-init all allowed users so they appear even with 0 activity
+    for (const uid of ALLOWED_UIDS) ensure(uid);
     for (const r of assignedLeads ?? []) { const row = ensure(r.assigned_to); if (row) row.assigned_leads++; }
     const contactedByOwner = new Map<string, Set<string>>();
     for (const log of contactedLogs ?? []) {

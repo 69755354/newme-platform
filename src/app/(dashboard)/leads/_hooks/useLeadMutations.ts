@@ -255,27 +255,27 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
         return;
       }
 
-      // Guard 6: first_contact gate — new → contacted requires 3 contacts + quality filled
+      // Guard 6: first_contact gate — new → contacted requires 3 contacts + quality filled + contact_time
       if (oldLead.stage === "new" && newStage === "contacted" && !canRevert) {
         const { count: contactCount } = await supabase
           .from("follow_up_logs")
           .select("*", { count: "exact", head: true })
-          .eq("lead_id", leadId);
+          .eq("lead_id", leadId)
+          .not("contact_time", "is", null);
         if ((contactCount ?? 0) < 3) {
-          setError(lang === "zh" 
-            ? `需要 3 次联系记录（当前 ${contactCount ?? 0}/3）` 
-            : `Need 3 contact records (current ${contactCount ?? 0}/3)`);
+          setError(lang === "zh"
+            ? `需要 3 次联系记录且每次都要有 contact_time（当前 ${contactCount ?? 0}/3）`
+            : `Need 3 contact records with contact_time (current ${contactCount ?? 0}/3)`);
           return;
         }
         if (!oldLead.quality || oldLead.quality === "pending") {
-          setError(lang === "zh" 
-            ? "请先完成质量判断（Poor/Normal/Good）" 
+          setError(lang === "zh"
+            ? "请先完成质量判断（Poor/Normal/Good）"
             : "Please complete quality assessment first (Poor/Normal/Good)");
           return;
         }
       }
 
-      // Build updates
       const now = new Date().toISOString();
       const auto = STAGE_AUTO[newStage];
       // won/lost are terminal → persist to final_status, not stage

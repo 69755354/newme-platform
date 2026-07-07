@@ -8,7 +8,9 @@ import { existsSync } from "fs";
 const PROD_DIR = "/home/ubuntu/newme-platform";
 const IS_PROD = process.cwd() === PROD_DIR;
 const IS_ISOLATED = process.cwd().startsWith("/tmp/newme-build-");
-if (IS_PROD && !IS_ISOLATED && process.env.NEWME_ISOLATED_BUILD !== "1") {
+// Only guard during build, not start
+const IS_START = process.env.npm_lifecycle_event === "start" || process.argv.includes("start");
+if (IS_PROD && !IS_ISOLATED && !IS_START && process.env.NEWME_ISOLATED_BUILD !== "1") {
   const marker = `${PROD_DIR}/.hermes/IS_PRODUCTION`;
   if (existsSync(marker) || existsSync(".hermes/IS_PRODUCTION")) {
     const serviceRunning = (() => {

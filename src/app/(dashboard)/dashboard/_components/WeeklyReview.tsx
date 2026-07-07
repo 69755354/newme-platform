@@ -393,18 +393,48 @@ function WeeklyReviewPeriod({
     if (next.has(uid)) next.delete(uid); else next.add(uid);
     return next;
   });
+  // P0-UI-2: L1 metric-click filter — clicking a metric tile filters L2 rows
+  type MetricKey = "new_leads" | "contacted" | "quality" | "stage_advanced" | "won" | "lost";
+  const [metricFilter, setMetricFilter] = useState<MetricKey | null>(null);
+  const metricToL2Key: Record<MetricKey, keyof PeriodL2Row> = {
+    new_leads: "assigned_leads",
+    contacted: "contacted",
+    quality: "pending_quality",
+    stage_advanced: "stage_advanced",
+    won: "won",
+    lost: "lost",
+  };
 
   const l1Empty = !l1 || (l1.new_leads === 0 && l1.contacted_leads === 0
     && l1.quality_judged === 0 && l1.stage_advanced === 0 && l1.won === 0 && l1.lost === 0);
   const l2Empty = l2.length === 0;
   const fmtDate = (iso?: string | null) => iso ? iso.slice(0, 10) : "—";
 
-  const metric = (label: string, value: number | string) => (
-    <div className="rounded-lg border border-border/50 p-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-2xl font-bold">{value}</p>
-    </div>
-  );
+  const metric = (label: string, value: number | string, mk?: MetricKey) => {
+    const isActive = mk != null && metricFilter === mk;
+    return (
+      <div
+        className={`rounded-lg border p-3 transition-colors cursor-pointer ${
+          isActive ? "border-primary bg-primary/10" : "border-border/50 hover:border-primary/40"
+        }`}
+        onClick={() => {
+          if (mk == null) return;
+          if (metricFilter === mk) { setMetricFilter(null); return; }
+          setMetricFilter(mk);
+          // Auto-expand all L2 rows that have non-zero values for this metric
+          const key = metricToL2Key[mk];
+          const toExpand = new Set<string>();
+          for (const row of l2) {
+            if ((row[key] as number) > 0) toExpand.add(row.user_id);
+          }
+          setExpanded(toExpand);
+        }}
+      >
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-2xl font-bold">{value}</p>
+      </div>
+    );
+  };
 
   return (
     <section className="space-y-4" aria-label={t("周复盘", "Weekly review")}>
@@ -436,12 +466,12 @@ function WeeklyReviewPeriod({
           <p className="py-4 text-sm text-muted-foreground">{t("暂无数据", "No data")}</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-            {metric(t("新线索", "New leads"), l1!.new_leads)}
-            {metric(t("已联系", "Contacted"), l1!.contacted_leads)}
-            {metric(t("质检", "Quality judged"), l1!.quality_judged)}
-            {metric(t("阶段推进", "Stage advanced"), l1!.stage_advanced)}
-            {metric(t("赢单", "Won"), l1!.won)}
-            {metric(t("输单", "Lost"), l1!.lost)}
+            {metric(t("新线索", "New leads"), l1!.new_leads, "new_leads")}
+            {metric(t("已联系", "Contacted"), l1!.contacted_leads, "contacted")}
+            {metric(t("质检", "Quality judged"), l1!.quality_judged, "quality")}
+            {metric(t("阶段推进", "Stage advanced"), l1!.stage_advanced, "stage_advanced")}
+            {metric(t("赢单", "Won"), l1!.won, "won")}
+            {metric(t("输单", "Lost"), l1!.lost, "lost")}
           </div>
         )}
       </div>
@@ -452,7 +482,7 @@ function WeeklyReviewPeriod({
           {t("L2 销售明细", "L2 Per-sales breakdown")}
         </h2>
         {l2Empty ? (
-          <p className="py-2 text-sm text-muted-foreground">{t("暂无数据", "No data")}</p>
+          <p className="py-2 text-sm text-muted-foreground">{t("暂无销售明细", "No sales rows")}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -470,7 +500,10 @@ function WeeklyReviewPeriod({
                 </tr>
               </thead>
               <tbody>
-                {l2.map(row => {
+                {(metricFilter
+                  ? l2.filter(r => (r[metricToL2Key[metricFilter]] as number) > 0)
+                  : l2
+                ).map(row => {
                   const isOpen = expanded.has(row.user_id);
                   const leads = l3_by_user[row.user_id] ?? [];
                   return (
@@ -498,7 +531,7 @@ function WeeklyReviewPeriod({
                         <tr className="bg-muted/10">
                           <td colSpan={9} className="px-4 pb-3 pt-2">
                             {leads.length === 0 ? (
-                              <p className="text-xs text-muted-foreground">{t("暂无数据", "No data")}</p>
+                              <p className="text-xs text-muted-foreground">{t("暂无 L3 记录", "No L3 rows")}</p>
                             ) : (
                               <ul className="space-y-2 text-xs">
                                 {leads.map(lead => {

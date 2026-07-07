@@ -92,7 +92,7 @@ export default function LeadTimeline({
       type: f.contact_type || "follow_up",
       content: f.summary,
       ai_generated: false,
-      created_at: f.created_at,
+      created_at: f.contact_time || f.created_at,
       _type: "followup" as const,
     })),
   ]

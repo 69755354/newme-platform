@@ -161,9 +161,16 @@ export async function GET(req: NextRequest) {
       .gte("created_at", startIso).lt("created_at", endIso);
 
     const perUser = new Map<string, WeeklyReviewRow>();
+    // Excluded user IDs (SAM & Ayana — removed from sales team)
+    const EXCLUDED_IDS = new Set([
+      "55d69083-7eb7-4749-943b-ad0de551f966", // SAM
+      "6c636722-f3a4-44f1-9789-62ba2f9c0547", // Ayana
+    ]);
     const ensure = (uid: string) => {
+      if (EXCLUDED_IDS.has(uid)) return null as any;
       const r = roleMap.get(uid);
-      if (r && r !== "sales") return null as any;
+      // P0-UI-2: allow admin/boss alongside sales; block only truly unrelated roles
+      if (r && !["sales", "admin", "boss"].includes(r)) return null as any;
       if (!perUser.has(uid)) {
         perUser.set(uid, {
           user_id: uid, full_name: salesMap.get(uid) ?? null,
@@ -201,9 +208,9 @@ export async function GET(req: NextRequest) {
 
     // L3: leads created during the period, grouped by owner.
     const { data: leadsAssigned, error: leadsAssignedErr } = await supabase.from("leads")
-      .select("id, customer_name, assigned_to, stage, last_contact_date, quality")
+      .select("id, customer_name, assigned_to, stage, last_contact_date, quality, contact_time")
       .gte("created_at", startIso).lt("created_at", endIso)
-      .limit(200);
+      .limit(500);
     if (leadsAssignedErr) {
       console.error("[weekly-review] leads query error:", leadsAssignedErr);
     }
@@ -248,7 +255,7 @@ export async function GET(req: NextRequest) {
         assigned_to: row.assigned_to,
         owner_name: ownerNameMap.get(row.assigned_to) ?? null,
         stage: row.stage ?? null,
-        last_contact_date: row.last_contact_date ?? null,
+        last_contact_date: row.contact_time ?? row.last_contact_date ?? null,
         contact_count: contactCountByLead.get(row.id) ?? 0,
         quality: row.quality ?? null,
         last_note: lastNoteByLead.get(row.id) ?? null,
@@ -263,12 +270,33 @@ export async function GET(req: NextRequest) {
     // expansion works for every L2 row.
     const leadById = new Map<string, any>();
     for (const lead of leadsAssigned ?? []) leadById.set(lead.id, lead);
+
+    // Fetch leads involved in stage changes that are NOT in leadsAssigned
+    // (leads created outside the period but with stage changes inside it).
+    const missingLeadIds = [...new Set(
+      (stageEvents ?? [])
+        .map((ev: any) => ev.lead_id as string | null)
+        .filter((lid): lid is string => !!lid && !leadById.has(lid))
+    )];
+    if (missingLeadIds.length > 0) {
+      const { data: missingLeads } = await supabase.from("leads")
+        .select("id, customer_name, assigned_to, stage, last_contact_date, quality, contact_time")
+        .in("id", missingLeadIds)
+        .limit(100);
+      for (const ml of missingLeads ?? []) {
+        leadById.set(ml.id, ml);
+        if (ml.assigned_to && !ownerNameMap.has(ml.assigned_to)) {
+          ownerNameMap.set(ml.assigned_to, null as any); // placeholder; name lookup will be null
+        }
+      }
+    }
+
     for (const ev of stageEvents ?? []) {
       const actor = (ev as any).user_id as string | null;
       const lid = (ev as any).lead_id as string | null;
       if (!actor || !lid) continue;
       const lead = leadById.get(lid);
-      if (!lead) continue; // lead not in period scope, skip
+      if (!lead) continue;
       if (!l3_by_user[actor]) l3_by_user[actor] = [];
       // Avoid duplicate: only add if not already under this actor
       const already = l3_by_user[actor].some((l: any) => l.id === lead.id);
@@ -279,7 +307,7 @@ export async function GET(req: NextRequest) {
         assigned_to: lead.assigned_to,
         owner_name: ownerNameMap.get(lead.assigned_to) ?? null,
         stage: lead.stage ?? null,
-        last_contact_date: lead.last_contact_date ?? null,
+        last_contact_date: lead.contact_time ?? lead.last_contact_date ?? null,
         contact_count: contactCountByLead.get(lead.id) ?? 0,
         quality: lead.quality ?? null,
         last_note: lastNoteByLead.get(lead.id) ?? null,

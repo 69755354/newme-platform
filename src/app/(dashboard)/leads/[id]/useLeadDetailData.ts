@@ -123,7 +123,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
            creator:profiles!fk_leads_created_by(id, full_name, email, role),
            assignee:profiles!fk_leads_assigned_to(id, full_name, email, role),
            follow_ups:follow_up_logs!follow_up_logs_lead_id_fkey(
-             id, contact_type, summary, user_id, created_at
+             id, contact_type, summary, user_id, contact_time, created_at
            ),
            milestones:lead_milestones!lead_milestones_lead_id_fkey(
              id, milestone_key, completed_at
@@ -291,7 +291,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
 
   // Sales users for reassignment dropdown
   useEffect(() => {
-    supabase.from("profiles").select("id,email,role,full_name").in("role", ["admin", "sales", "operator"]).then(({ data }) => {
+    supabase.from("profiles").select("id,email,role,full_name").in("role", ["sales", "boss"]).then(({ data }) => {
       if (data) setSalesUsers(data);
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

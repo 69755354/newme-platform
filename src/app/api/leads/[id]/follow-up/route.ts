@@ -47,15 +47,21 @@ export async function POST(
       contactType,
       nextAction,
       noAnswer,
+      contactTime,
     } = body as {
       summary: string;
       contactType?: string;
       nextAction?: string;
       noAnswer?: boolean;
+      contactTime?: string;
     };
 
     if (!summary || typeof summary !== 'string' || !summary.trim()) {
       return NextResponse.json({ error: 'summary is required' }, { status: 400 });
+    }
+    const parsedContactTime = contactTime ? new Date(contactTime) : null;
+    if (!parsedContactTime || Number.isNaN(parsedContactTime.getTime())) {
+      return NextResponse.json({ error: 'contactTime is required (ISO string)' }, { status: 400 });
     }
 
     // Verify lead exists + ownership
@@ -83,6 +89,7 @@ export async function POST(
       lead_id: leadId,
       user_id: profile.userId,
       contact_type: contactType?.trim() || null,
+      contact_time: parsedContactTime.toISOString(),
       summary: summary.trim(),
       result: noAnswer ? 'no_answer' : 'contacted',
       no_answer: Boolean(noAnswer),

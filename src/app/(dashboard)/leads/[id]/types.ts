@@ -146,6 +146,7 @@ export interface FollowUpLogEmbed {
   contact_type: string;
   summary: string;
   user_id: string | null;
+  contact_time: string | null;
   created_at: string;
 }
 
@@ -225,6 +226,7 @@ export interface FollowUpLog {
   contact_type: string;
   summary: string;
   user_id: string | null;
+  contact_time: string | null;
   created_at: string;
 }
 

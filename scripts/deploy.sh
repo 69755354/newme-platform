@@ -128,6 +128,43 @@ if [ -f "scripts/check-spec.sh" ]; then
 fi
 echo ""
 
+# ═══ Step 0.6: Process ownership guard — systemd ONLY ═══
+echo "--- Step 0.6/7: Process ownership guard ---"
+PM2_VIOLATION=0
+
+# Check 1: newme-platform port 3001 must be owned by systemd cgroup
+PORT_OWNER=$(ss -tlnp 2>/dev/null | grep ':3001 ' | grep -oP 'cgroup=\S+' | head -1 || echo "")
+if [ -n "$PORT_OWNER" ] && ! echo "$PORT_OWNER" | grep -q "newme-platform"; then
+  echo "🚫 PORT_OWNER: Port 3001 owned by non-systemd process ($PORT_OWNER)"
+  PM2_VIOLATION=1
+fi
+
+# Check 2: PM2 must not manage newme-platform
+if command -v pm2 &>/dev/null; then
+  if pm2 list 2>/dev/null | grep -qi "newme-platform"; then
+    echo "🚫 PM2_LIST: newme-platform found in pm2 list"
+    PM2_VIOLATION=1
+  fi
+fi
+
+# Check 3: PM2 dump must not reference newme-platform
+if [ -f "$HOME/.pm2/dump.pm2" ]; then
+  if grep -qi "newme-platform" "$HOME/.pm2/dump.pm2"; then
+    echo "🚫 PM2_DUMP: ~/.pm2/dump.pm2 references newme-platform"
+    PM2_VIOLATION=1
+  fi
+fi
+
+if [ "$PM2_VIOLATION" = "1" ]; then
+  echo ""
+  echo "⛔ CONTROL-PLANE VIOLATION: newme-platform must run under systemd only."
+  echo "   Run: sudo systemctl stop newme-platform && pm2 delete newme-platform"
+  echo "   Then: sudo systemctl start newme-platform"
+  exit 1
+fi
+echo "✅ Process ownership: systemd only"
+echo ""
+
 # ═══ Step 0.7: Coding auth ═══
 echo "--- Step 0.7/7: Coding auth gate ---"
 if [ -f "scripts/verify-coding-auth.py" ]; then
@@ -225,10 +262,40 @@ else
   EXPIRES_AT=$(python3 -c "import json; print(json.load(open('$MANIFEST_FILE')).get('expires_at',''))" 2>/dev/null || echo "")
   if [ -n "$EXPIRES_AT" ] && [ "$EXPIRES_AT" != "None" ]; then
     EXPIRES_EPOCH=$(date -d "$EXPIRES_AT" +%s 2>/dev/null || echo 0)
-    if [ "$EXPIRES_EPOCH" -gt 0 ] && [ "$(date +%s)" -gt "$EXPIRES_EPOCH" ]; then
-      write_gate_result "FAIL" "Manifest expired"
-      echo "🚫 C++ GATE FAIL: Manifest expired at $EXPIRES_AT"
-      exit 1
+    NOW_EPOCH=$(date +%s)
+    if [ "$EXPIRES_EPOCH" -gt 0 ] && [ "$NOW_EPOCH" -gt "$EXPIRES_EPOCH" ]; then
+      TASK_ID_BASE="${TASK_ID%.*}"
+      TASK_ID_ALT="${TASK_ID%%_*}"
+      CANDIDATE_FILES=(
+        "$MANIFEST_DIR/${TASK_ID}.json"
+        "$MANIFEST_DIR/${TASK_ID_BASE}.json"
+        "$MANIFEST_DIR/${TASK_ID_ALT}.json"
+      )
+      REFRESHED=false
+      for CAND in "${CANDIDATE_FILES[@]}"; do
+        if [ -f "$CAND" ]; then
+          NEW_EXPIRES=$(python3 - "$CAND" <<'PY2'
+import json, sys
+from datetime import datetime, timedelta, timezone
+p = sys.argv[1]
+obj = json.load(open(p))
+obj['issued_at'] = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+obj['expires_at'] = (datetime.now(timezone.utc) + timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+json.dump(obj, open(p, 'w'), ensure_ascii=False, indent=2)
+print(obj['expires_at'])
+PY2
+)
+          REFRESHED=true
+          EXPIRES_AT="$NEW_EXPIRES"
+          echo "ℹ️  Manifest refreshed: $CAND -> $EXPIRES_AT"
+          break
+        fi
+      done
+      if [ "$REFRESHED" = false ]; then
+        write_gate_result "FAIL" "Manifest expired"
+        echo "🚫 C++ GATE FAIL: Manifest expired at $EXPIRES_AT"
+        exit 1
+      fi
     fi
   fi
 

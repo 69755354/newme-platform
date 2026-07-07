@@ -63,7 +63,7 @@ export default function LeadCustomerProfile({
   const whatsappHref = phoneDigits ? `https://wa.me/${phoneDigits}` : null;
 
   return (
-    <Card className="bg-card border-border">
+    <Card className="bg-card border-border overflow-visible">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
           <User className="w-4 h-4" /> {t("leadDetail.customerProfile")}

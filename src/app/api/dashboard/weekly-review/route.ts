@@ -203,12 +203,12 @@ export async function GET(req: NextRequest) {
     for (const t of overdueTasks ?? []) { if (t.assignee_id) { const row = ensure(t.assignee_id); if (row) row.overdue_tasks++; } }
 
     const l2 = Array.from(perUser.values())
-      .filter(r => r.assigned_leads > 0 || r.contacted > 0 || r.stage_advanced > 0 || r.won > 0 || r.lost > 0)
+      .filter(r => true) // Show all sales/boss even with 0 activity
       .sort((a, b) => b.stage_advanced - a.stage_advanced);
 
     // L3: leads created during the period, grouped by owner.
     const { data: leadsAssigned, error: leadsAssignedErr } = await supabase.from("leads")
-      .select("id, customer_name, assigned_to, stage, last_contact_date, quality, contact_time")
+      .select("id, customer_name, assigned_to, stage, last_contact_date, quality")
       .gte("created_at", startIso).lt("created_at", endIso)
       .limit(500);
     if (leadsAssignedErr) {
@@ -255,7 +255,7 @@ export async function GET(req: NextRequest) {
         assigned_to: row.assigned_to,
         owner_name: ownerNameMap.get(row.assigned_to) ?? null,
         stage: row.stage ?? null,
-        last_contact_date: row.contact_time ?? row.last_contact_date ?? null,
+        last_contact_date: row.last_contact_date ?? null,
         contact_count: contactCountByLead.get(row.id) ?? 0,
         quality: row.quality ?? null,
         last_note: lastNoteByLead.get(row.id) ?? null,
@@ -280,7 +280,7 @@ export async function GET(req: NextRequest) {
     )];
     if (missingLeadIds.length > 0) {
       const { data: missingLeads } = await supabase.from("leads")
-        .select("id, customer_name, assigned_to, stage, last_contact_date, quality, contact_time")
+        .select("id, customer_name, assigned_to, stage, last_contact_date, quality")
         .in("id", missingLeadIds)
         .limit(100);
       for (const ml of missingLeads ?? []) {
@@ -307,7 +307,7 @@ export async function GET(req: NextRequest) {
         assigned_to: lead.assigned_to,
         owner_name: ownerNameMap.get(lead.assigned_to) ?? null,
         stage: lead.stage ?? null,
-        last_contact_date: lead.contact_time ?? lead.last_contact_date ?? null,
+        last_contact_date: lead.last_contact_date ?? null,
         contact_count: contactCountByLead.get(lead.id) ?? 0,
         quality: lead.quality ?? null,
         last_note: lastNoteByLead.get(lead.id) ?? null,

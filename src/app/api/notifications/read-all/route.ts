@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { createServerSupabase } from "@/models/supabase-server";
 
 // POST /api/notifications/read-all — mark all notifications as read
 export async function POST(request: NextRequest) {

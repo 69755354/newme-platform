@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { createServerSupabase } from "@/models/supabase-server";
 
 // PATCH /api/notifications/[id] — mark a single notification as read
 export async function PATCH(

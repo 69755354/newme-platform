@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { HtmlLangSync } from "@/components/HtmlLangSync";
-import MetaPixel from "@/components/MetaPixel";
-import { PostHogProviderWrapper } from "@/components/PostHogProvider";
-import { WebVitalsReporter } from "@/lib/WebVitalsReporter";
-import { ErrorBoundary } from "@/components/error-boundary";
+import { HtmlLangSync } from "@/views/providers/HtmlLangSync";
+import MetaPixel from "@/views/providers/MetaPixel";
+import { PostHogProviderWrapper } from "@/views/providers/PostHogProvider";
+import { WebVitalsReporter } from "@/views/providers/WebVitalsReporter";
+import { ErrorBoundary } from "@/views/providers/error-boundary";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { createNotification } from "@/lib/notifications";
+import { createServerSupabase } from "@/models/supabase-server";
+import { createNotification } from "@/services/notifications";
 
 /**
  * POST /api/contracts/[id]/remind-payment

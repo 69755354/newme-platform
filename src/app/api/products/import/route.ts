@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { createServerSupabase } from "@/models/supabase-server";
 
 // ─── CSV parser ───
 function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {

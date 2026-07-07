@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { createServerSupabase } from "@/models/supabase-server";
 
 // ─── POST /api/dashboard/sales-load/rebalance ───
 // Round-robin transfer of transferable leads from overloaded reps to underloaded reps

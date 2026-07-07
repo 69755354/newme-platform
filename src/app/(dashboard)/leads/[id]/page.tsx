@@ -12,30 +12,30 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
-import { useSupabaseQuery } from "@/lib/supabaseQuery";
-import { Button } from "@/components/ui/button";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { ErrorState } from "@/components/ui/error-state";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn, fmtDubai } from "@/lib/utils";
+import { createClient } from "@/models/supabase";
+import { useSupabaseQuery } from "@/models/supabaseQuery";
+import { Button } from "@/views/ui/button";
+import { useLanguage } from "@/views/i18n/LanguageContext";
+import { ErrorState } from "@/views/ui/error-state";
+import { Skeleton } from "@/views/ui/skeleton";
+import { cn, fmtDubai } from "@/models/utils";
 import { Toaster } from "sonner";
 import { ArrowLeft, Trash2 } from "lucide-react";
-import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
-import KnxDesignPanel from "@/components/knx-design-panel";
-import LeadCustomerProfile from "./LeadCustomerProfile";
-import LeadContactQualityPanel from "./LeadContactQualityPanel";
-import LeadSalesProcess from "./LeadSalesProcess";
-import LeadTimeline from "./LeadTimeline";
-import LeadFoldingPanel from "./LeadFoldingPanel";
-import { useLeadDetailData } from "./useLeadDetailData";
-import { useLeadDetailMutations } from "./useLeadDetailMutations";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import QuoteCalculator from "@/views/quotes/quote-calculator";
+import KnxDesignPanel from "@/views/leads/knx-design-panel";
+import LeadCustomerProfile from "@/views/leads/detail/LeadCustomerProfile";
+import LeadContactQualityPanel from "@/views/leads/detail/LeadContactQualityPanel";
+import LeadSalesProcess from "@/views/leads/detail/LeadSalesProcess";
+import LeadTimeline from "@/views/leads/detail/LeadTimeline";
+import LeadFoldingPanel from "@/views/leads/detail/LeadFoldingPanel";
+import { useLeadDetailData } from "@/views/leads/hooks/useLeadDetailData";
+import { useLeadDetailMutations } from "@/views/leads/hooks/useLeadDetailMutations";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 import type {
   RenderInlineEdit,
   RenderDateEdit,
   RenderJsonEdit,
-} from "./types";
+} from "@/views/leads/detail/types";
 
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();

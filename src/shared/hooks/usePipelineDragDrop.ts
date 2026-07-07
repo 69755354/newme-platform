@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { createClient } from "@/lib/supabase";
+import { createClient } from "@/models/supabase";
 import { toast } from "sonner";
 import { PIPELINE_STAGES, TERMINAL_STAGES } from "@/shared/kanban/types";
 

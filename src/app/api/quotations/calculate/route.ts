@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { calculateQuotation } from "../../../../lib/quotation-engine";
+import { createServerSupabase } from "@/models/supabase-server";
+import { calculateQuotation } from "@/services/quotation-engine";
 
 /**
  * POST /api/quotations/calculate

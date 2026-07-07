@@ -1,6 +1,6 @@
 "use client";
 
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { useLanguage } from "@/views/i18n/LanguageContext";
 
 export default function DashboardLoading() {
   const { t } = useLanguage();

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createServerSupabase } from "@/models/supabase-server";
+import { supabaseAdmin } from "@/models/supabase-admin";
 
 // POST /api/auth/change-password
 export async function POST(request: NextRequest) {

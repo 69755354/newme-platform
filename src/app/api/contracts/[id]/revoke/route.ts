@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { createServerSupabase } from "@/models/supabase-server";
 import {
   createNotification,
   getAdminUserIds,
-} from "@/lib/notifications";
+} from "@/services/notifications";
 
 /**
  * POST /api/contracts/[id]/revoke

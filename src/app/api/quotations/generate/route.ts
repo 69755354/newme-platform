@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
-import { calculateQuotation, CalculateResult } from "../../../../lib/quotation-engine";
+import { createServerSupabase } from "@/models/supabase-server";
+import { getAuthProfile, canAccessLead } from "@/services/lead-auth";
+import { calculateQuotation, CalculateResult } from "@/services/quotation-engine";
 
 /**
  * POST /api/quotations/generate

@@ -1,17 +1,17 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/views/ui/button";
+import { Input } from "@/views/ui/input";
+import { Label } from "@/views/ui/label";
+import { Textarea } from "@/views/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/views/ui/card";
 import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
-import { createClient } from "@/lib/supabase";
-import { createFollowUpTask } from "@/lib/tasks";
+import { createClient } from "@/models/supabase";
+import { createFollowUpTask } from "@/services/tasks";
 import { useRouter } from "next/navigation";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { useLanguage } from "@/views/i18n/LanguageContext";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 import { toast } from "sonner";
 
 export default function NewLeadPage() {
@@ -69,7 +69,7 @@ export default function NewLeadPage() {
       });
       if (taskErr) toast.warning("Lead created but follow-up task creation failed");
       // Notify admins about new lead
-      import("@/lib/notify").then(({ notify }) => {
+      import("@/services/notify").then(({ notify }) => {
         notify({ type: "lead_created", lead_id: data.id, customer_name: form.customer_name || "Unknown" });
       });
       // Meta Pixel: track Lead conversion

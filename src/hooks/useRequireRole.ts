@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { getCurrentUser } from "@/app/actions/auth";
+import { getCurrentUser } from "@/controllers/actions/auth";
 
 const MANAGEMENT_ROLES = ["admin", "boss", "operator"];
 

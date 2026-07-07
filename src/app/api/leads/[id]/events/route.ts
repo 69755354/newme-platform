@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
-import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
+import { getAuthProfile, isAdminOrBoss } from '@/services/lead-auth';
 
 /**
  * POST /api/leads/[id]/events

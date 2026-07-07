@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { createServerSupabase } from "@/models/supabase-server";
 
 const PERIOD_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
-import { calculateQuotation } from "../../../../lib/quotation-engine";
+import { getAuthProfile, canAccessLead } from "@/services/lead-auth";
+import { calculateQuotation } from "@/services/quotation-engine";
 
 /**
  * POST /api/hermes/generate-quote

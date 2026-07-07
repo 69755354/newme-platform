@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getStore } from "@/lib/knx-task-store";
-import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
+import { getStore } from "@/models/knx-task-store";
+import { getAuthProfile, isAdminOrBoss } from "@/services/lead-auth";
 
 /**
  * GET /api/hermes/knx-design/status?task_id=xxx

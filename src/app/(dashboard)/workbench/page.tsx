@@ -1,13 +1,13 @@
 "use client"
 
-import { useLanguage } from "@/lib/i18n/LanguageContext"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { useLanguage } from "@/views/i18n/LanguageContext"
+import { Card, CardContent, CardHeader, CardTitle } from "@/views/ui/card"
+import { Badge } from "@/views/ui/badge"
+import { Button } from "@/views/ui/button"
 import { Inbox, ListTodo, Clock, AlertTriangle, BarChart3, User } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState } from "react"
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 
 interface InboxItem {
   id: string
@@ -81,7 +81,7 @@ const milestoneColors: Record<string, string> = {
   lost: "bg-rose-500",
 }
 
-import { fmtDubai } from "@/lib/utils";
+import { fmtDubai } from "@/models/utils";
 
 function formatDate(value?: string) {
   if (!value) return "—"

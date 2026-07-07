@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/models/supabase-admin";
+import { createServerSupabase } from "@/models/supabase-server";
 
 // DELETE /api/users/[id] — admin/boss only, soft-delete
 export async function DELETE(

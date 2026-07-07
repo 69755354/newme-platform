@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getStore } from "@/lib/knx-task-store";
-import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
+import { getStore } from "@/models/knx-task-store";
+import { getAuthProfile, canAccessLead } from "@/services/lead-auth";
 
 /**
  * POST /api/hermes/knx-design
@@ -157,7 +157,7 @@ async function runKnxDesignPipeline(taskId: string, leadId: string, devices: Rec
     let deviceCount = 0;
     let devicesByType: Record<string, number> = {};
     try {
-      const { calculateQuotation } = await import("@/lib/quotation-engine");
+      const { calculateQuotation } = await import("@/services/quotation-engine");
       const calculation = calculateQuotation({ lead_id: leadId, devices, discount_rate: 0 });
       totalAed = calculation.total;
       devicesByType = calculation.devices_json || devices;

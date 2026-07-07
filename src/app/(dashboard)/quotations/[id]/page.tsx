@@ -2,24 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { createClient } from "@/models/supabase";
+import { useLanguage } from "@/views/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ErrorState } from "@/components/ui/error-state";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
+import { Card, CardContent, CardHeader, CardTitle } from "@/views/ui/card";
+import { ErrorState } from "@/views/ui/error-state";
+import { Button } from "@/views/ui/button";
+import { Badge } from "@/views/ui/badge";
+import { Input } from "@/views/ui/input";
+import { Textarea } from "@/views/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { cn, fmtDubai } from "@/lib/utils";
+} from "@/views/ui/select";
+import { cn, fmtDubai } from "@/models/utils";
 import { Toaster, toast } from "sonner";
 import {
   ArrowLeft,

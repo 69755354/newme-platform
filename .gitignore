@@ -1,15 +1,10 @@
 # Build
 .next/
-.next.bak/
 node_modules/
 
 # Logs
 logs/
 *.log
-
-# Python cache
-__pycache__/
-*.pyc
 
 # IDE
 .idea/
@@ -24,12 +19,7 @@ Thumbs.db
 .env.local
 .env.*.local
 
-# Temp files
-""""
+# Temp
 *.tmp
-.next.backup.*
 tsconfig.tsbuildinfo
 supabase/.temp/
-.hermes/
-.hermes-harness/
-scripts/.ed25519.key.bootstrap

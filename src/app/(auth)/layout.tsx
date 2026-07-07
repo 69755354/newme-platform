@@ -1,6 +1,6 @@
 "use client";
 
-import { LanguageProvider } from "@/lib/i18n/LanguageContext";
+import { LanguageProvider } from "@/views/i18n/LanguageContext";
 
 /**
  * (auth) route-group layout.

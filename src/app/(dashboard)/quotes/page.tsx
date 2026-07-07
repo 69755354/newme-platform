@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
-import { createServerSupabase } from "@/lib/supabase-server";
-import QuotesClient from "./quotes-client";
-import SubNavTabs from "@/components/SubNavTabs";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { createServerSupabase } from "@/models/supabase-server";
+import QuotesClient from "@/views/quotes/quotes-client";
+import SubNavTabs from "@/views/layout/SubNavTabs";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 
 export const dynamic = "force-dynamic";
 

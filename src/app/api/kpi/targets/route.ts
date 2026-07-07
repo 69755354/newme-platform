@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/models/supabase-admin";
+import { createServerSupabase } from "@/models/supabase-server";
 
 // GET /api/kpi/targets?period=2026-06
 export async function GET(request: NextRequest) {

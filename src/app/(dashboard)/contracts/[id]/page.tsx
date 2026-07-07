@@ -2,17 +2,17 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 import Link from "next/link";
 import {
   ArrowLeft, FileText, DollarSign, Calendar, User, Clock, CheckCircle2,
   XCircle, Ban, Bell, AlertTriangle, CheckCircle, Download, ShieldCheck, Upload,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { ErrorState } from "@/components/ui/error-state";
+import { Card, CardContent } from "@/views/ui/card";
+import { Button } from "@/views/ui/button";
+import { ErrorState } from "@/views/ui/error-state";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { useLanguage } from "@/views/i18n/LanguageContext";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
 import {
@@ -22,8 +22,8 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
+} from "@/views/ui/dialog";
+import { Textarea } from "@/views/ui/textarea";
 import { fmtAED } from "@/shared/utils/format";
 
 /* ─── Types ─── */

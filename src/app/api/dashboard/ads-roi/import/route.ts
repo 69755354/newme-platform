@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { createServerSupabase } from "@/models/supabase-server";
 
 /**
  * POST /api/dashboard/ads-roi/import

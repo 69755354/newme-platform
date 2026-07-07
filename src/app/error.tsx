@@ -1,6 +1,6 @@
 "use client";
 
-import { ErrorBoundary } from "@/components/error-boundary";
+import { ErrorBoundary } from "@/views/providers/error-boundary";
 import { useEffect } from "react";
 
 export default function Error({

@@ -2,18 +2,18 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { createClient } from "@/models/supabase";
+import { useLanguage } from "@/views/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
-import { cn } from "@/lib/utils";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
+import { cn } from "@/models/utils";
 import {
   AlertTriangle,
   ArrowUpRight, CheckCircle2,
 } from "lucide-react";
-import AlertPanel from "./_components/AlertPanel";
-import WeeklyReview from "./_components/WeeklyReview";
-import { ErrorState } from "@/components/ui/error-state";
+import AlertPanel from "@/views/dashboard/AlertPanel";
+import WeeklyReview from "@/views/dashboard/WeeklyReview";
+import { ErrorState } from "@/views/ui/error-state";
 
 /* ─── Types ─── */
 interface Lead {

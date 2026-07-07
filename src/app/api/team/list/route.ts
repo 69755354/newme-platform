@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { createServerSupabase } from "@/lib/supabase-server"
-import { getCached, setCache } from "@/lib/api-cache"
+import { createServerSupabase } from "@/models/supabase-server"
+import { getCached, setCache } from "@/models/api-cache"
 
 export async function GET() {
   const supabase = await createServerSupabase()

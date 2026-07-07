@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { ErrorState } from "@/components/ui/error-state";
+import { useLanguage } from "@/views/i18n/LanguageContext";
+import { ErrorState } from "@/views/ui/error-state";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { cn } from "@/lib/utils";
+import { cn } from "@/models/utils";
 import {
   BarChart3, TrendingUp, Users, DollarSign, Target, ArrowLeft,
   ExternalLink, Filter, Search, X,
 } from "lucide-react";
 import Link from "next/link";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 
 interface Lead {
   id: string; customer_name: string | null;

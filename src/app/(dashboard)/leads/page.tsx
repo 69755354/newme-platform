@@ -2,26 +2,26 @@
 
 import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { ErrorState } from "@/components/ui/error-state";
-import QuickCreateLeadDialog from "@/components/QuickCreateLeadDialog";
-import ExcelImportDialog from "@/components/leads/ExcelImportDialog";
+import { useLanguage } from "@/views/i18n/LanguageContext";
+import { ErrorState } from "@/views/ui/error-state";
+import QuickCreateLeadDialog from "@/views/leads/QuickCreateLeadDialog";
+import ExcelImportDialog from "@/views/leads/ExcelImportDialog";
 import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
-import { useLeadsData } from "./_hooks/useLeadsData";
-import { useLeadMutations } from "./_hooks/useLeadMutations";
-import { useLeadsFiltering } from "./_hooks/useLeadsFiltering";
-import SubNavTabs from "@/components/SubNavTabs";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
+import { useLeadsData } from "@/views/leads/hooks/useLeadsData";
+import { useLeadMutations } from "@/views/leads/hooks/useLeadMutations";
+import { useLeadsFiltering } from "@/views/leads/hooks/useLeadsFiltering";
+import SubNavTabs from "@/views/layout/SubNavTabs";
 import { Plus, TrendingUp, Upload } from "lucide-react";
-import { fmtAED } from "./_utils/format";
-import { LeadsFilters } from "./_components/LeadsFilters";
-import { LeadsBulkTransferBar } from "./_components/LeadsBulkTransferBar";
-import { LeadsPipelineSummary } from "./_components/LeadsPipelineSummary";
-import { LeadsKanbanBoard } from "./_components/LeadsKanbanBoard";
+import { fmtAED } from "@/views/leads/utils/format";
+import { LeadsFilters } from "@/views/leads/list/LeadsFilters";
+import { LeadsBulkTransferBar } from "@/views/leads/list/LeadsBulkTransferBar";
+import { LeadsPipelineSummary } from "@/views/leads/list/LeadsPipelineSummary";
+import { LeadsKanbanBoard } from "@/views/leads/list/LeadsKanbanBoard";
 import {
   PIPELINE_STAGES,
-} from "./_utils/constants";
+} from "@/views/leads/utils/constants";
 
 function LeadsContent() {
   const router = useRouter();

@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { createServerSupabase } from "@/models/supabase-server";
 import {
   createNotification,
   createNotificationsBulk,
   getAdminUserIds,
   getAllActiveUserIds,
   VALID_NOTIFICATION_TYPES,
-} from "@/lib/notifications";
-import type { NotificationType } from "@/lib/notifications";
+} from "@/services/notifications";
+import type { NotificationType } from "@/services/notifications";
 
 /**
  * POST /api/notify

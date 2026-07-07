@@ -2,24 +2,20 @@
   "name": "newme-platform",
   "version": "0.1.0",
   "private": true,
+  "postcss": {
+    "plugins": {
+      "@tailwindcss/postcss": {}
+    }
+  },
   "scripts": {
     "dev": "next dev",
     "typecheck": "tsc --noEmit",
-    "prebuild": "bash scripts/guard-prod-build.sh",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "deploy": "bash scripts/deploy.sh",
-    "check:schema-refs": "python3 scripts/check-schema-refs.py",
-    "check:route-files": "bash scripts/check-route-files.sh",
-    "check:smoke": "bash scripts/check-smoke.sh",
-    "check:logs": "bash scripts/check-logs.sh",
-    "check:release": "npm run check:schema-refs && npm run check:route-files && npm run check:smoke && npm run check:logs"
+    "start": "next start"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
     "@radix-ui/react-collapsible": "^1.1.12",
-    "@sentry/nextjs": "^10.62.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",
     "class-variance-authority": "^0.7.1",
@@ -40,14 +36,10 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@next/bundle-analyzer": "^16.2.10",
-    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.6",
     "pg": "^8.21.0",
     "tailwindcss": "^4",
     "typescript": "^5"

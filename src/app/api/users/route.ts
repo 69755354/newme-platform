@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createServerSupabase } from "@/models/supabase-server";
+import { supabaseAdmin } from "@/models/supabase-admin";
 
 // ─── Auth check ───
 async function checkRole(): Promise<NextResponse | string> {
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
 
     // Notify admins about new team member
     try {
-      const { getAdminUserIds, createNotificationsBulk } = await import("@/lib/notifications");
+      const { getAdminUserIds, createNotificationsBulk } = await import("@/services/notifications");
       const adminIds = await getAdminUserIds();
       if (adminIds.length > 0) {
         await createNotificationsBulk(

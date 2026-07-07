@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getCurrentUser } from "@/app/actions/auth";
+import { getCurrentUser } from "@/controllers/actions/auth";
 
 export interface UserRoleInfo {
   role: string | null;

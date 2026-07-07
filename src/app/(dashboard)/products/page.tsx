@@ -1,21 +1,21 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { useLanguage } from "@/views/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { Button } from "@/views/ui/button";
+import { Input } from "@/views/ui/input";
+import { Badge } from "@/views/ui/badge";
+import { Card, CardContent } from "@/views/ui/card";
+import { cn } from "@/models/utils";
 import {
   Search, X, Grid3X3, List, Package, Wifi,
   Cpu, SunMedium, Fan, Shield, Music,
   Cable, Wrench, Building2, ArrowLeft, Upload,
 } from "lucide-react";
 import Link from "next/link";
-import ProductImportDialog from "@/components/ProductImportDialog";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import ProductImportDialog from "@/views/products/ProductImportDialog";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 
 /* ─── Category config ─── */
 const CATEGORIES = [

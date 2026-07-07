@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { canCompleteMilestone } from "@/lib/milestones";
-import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
+import { createServerSupabase } from "@/models/supabase-server";
+import { canCompleteMilestone } from "@/services/milestones";
+import { getAuthProfile, isAdminOrBoss } from "@/services/lead-auth";
 
 export async function POST(
   req: NextRequest,

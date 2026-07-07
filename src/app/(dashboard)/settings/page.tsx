@@ -1,18 +1,18 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { cn } from "@/lib/utils";
-import { assignLead, bulkAssignLeads, bulkUnassignLeads, transferAllLeads } from "@/app/actions/settings";
+import { cn } from "@/models/utils";
+import { assignLead, bulkAssignLeads, bulkUnassignLeads, transferAllLeads } from "@/controllers/actions/settings";
 import {
   Users, ArrowRight, Search, Check, RefreshCw,
   ShieldCheck, User, AlertCircle, GripHorizontal, Settings,
 } from "lucide-react";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { useLanguage } from "@/views/i18n/LanguageContext";
 import { toast } from "sonner";
-import SubNavTabs from "@/components/SubNavTabs";
-import KpiManagement from "./kpi-management";
+import SubNavTabs from "@/views/layout/SubNavTabs";
+import KpiManagement from "@/views/settings/kpi-management";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 
 /* ─── Types ─── */

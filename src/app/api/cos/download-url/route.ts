@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { getAuthProfile, canAccessLead, isAdminOrBoss } from "@/lib/lead-auth";
+import { getAuthProfile, canAccessLead, isAdminOrBoss } from "@/services/lead-auth";
 
 /** Service-role client used only to map a COS key back to its owning lead. */
 function getSupabaseAdmin(): SupabaseClient | null {

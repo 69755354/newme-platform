@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase";
+import { createClient } from "@/models/supabase";
 import { useRouter } from "next/navigation";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useLanguage } from "@/views/i18n/LanguageContext";
+import { Button } from "@/views/ui/button";
+import { Input } from "@/views/ui/input";
+import { Label } from "@/views/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/views/ui/card";
 import { toast } from "sonner";
 import { KeyRound, Loader2 } from "lucide-react";
 

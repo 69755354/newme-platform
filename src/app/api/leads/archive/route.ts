@@ -1,8 +1,8 @@
 // POST /api/leads/archive — Soft-archive leads (Mohamed or specific lead_ids)
 import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createServerSupabase } from "@/models/supabase-server";
+import { supabaseAdmin } from "@/models/supabase-admin";
 
 /**
  * Verify the caller is boss/admin. Returns a 403 NextResponse when forbidden,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { VALID_NOTIFICATION_TYPES } from "@/lib/notifications";
-import type { NotificationType } from "@/lib/notifications";
+import { createServerSupabase } from "@/models/supabase-server";
+import { VALID_NOTIFICATION_TYPES } from "@/services/notifications";
+import type { NotificationType } from "@/services/notifications";
 
 // GET /api/notifications?limit=20&offset=0&unread_only=false
 export async function GET(request: NextRequest) {

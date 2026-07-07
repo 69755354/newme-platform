@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { cn, fmtDubai } from "@/lib/utils";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { cn, fmtDubai } from "@/models/utils";
+import { useLanguage } from "@/views/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import {
   Users,
@@ -29,14 +29,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { toast, Toaster } from "sonner";
-import { addTeamMember, removeTeamMember, resetUserPassword } from "@/app/actions/team";
+import { addTeamMember, removeTeamMember, resetUserPassword } from "@/controllers/actions/team";
 
 // ─── UI Components (shadcn / base-ui) ───
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { Button } from "@/views/ui/button";
+import { Input } from "@/views/ui/input";
+import { Label } from "@/views/ui/label";
+import { Badge } from "@/views/ui/badge";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 import {
   Dialog,
   DialogContent,
@@ -45,14 +45,14 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
-} from "@/components/ui/dialog";
+} from "@/views/ui/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/views/ui/select";
 import {
   Table,
   TableHeader,
@@ -60,9 +60,9 @@ import {
   TableHead,
   TableRow,
   TableCell,
-} from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+} from "@/views/ui/table";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/views/ui/tabs";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/views/ui/tooltip";
 
 // ─── Types ───
 interface UserProfile {

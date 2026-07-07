@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { createServerSupabase } from "@/lib/supabase-server";
-import AdsClient from "./ads-client";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { createServerSupabase } from "@/models/supabase-server";
+import AdsClient from "@/views/settings/ads-client";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 
 /* ─── Server-side role guard ─── */
 async function authorize() {

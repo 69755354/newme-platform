@@ -2,24 +2,24 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { createClient } from "@/models/supabase";
+import { Button } from "@/views/ui/button";
+import { Input } from "@/views/ui/input";
+import { Label } from "@/views/ui/label";
 import {
   Card, CardContent, CardHeader, CardTitle,
-} from "@/components/ui/card";
+} from "@/views/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+} from "@/views/ui/dialog";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { useLanguage } from "@/views/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
 
 const DEFAULT_PCTS = [50, 30, 20];

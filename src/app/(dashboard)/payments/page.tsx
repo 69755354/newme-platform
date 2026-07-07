@@ -1,37 +1,37 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/lib/supabase";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { createClient } from "@/models/supabase";
+import { useLanguage } from "@/views/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { ErrorState } from "@/components/ui/error-state";
-import { cn } from "@/lib/utils";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
+import { Card, CardContent } from "@/views/ui/card";
+import { Button } from "@/views/ui/button";
+import { Input } from "@/views/ui/input";
+import { Label } from "@/views/ui/label";
+import { Badge } from "@/views/ui/badge";
+import { ErrorState } from "@/views/ui/error-state";
+import { cn } from "@/models/utils";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/views/ui/select";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogClose,
-} from "@/components/ui/dialog";
+} from "@/views/ui/dialog";
 import {
   Tabs,
   TabsList,
   TabsTrigger,
   TabsContent,
-} from "@/components/ui/tabs";
+} from "@/views/ui/tabs";
 import {
   CreditCard,
   DollarSign,
@@ -46,8 +46,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
-import { Textarea } from "@/components/ui/textarea";
-import { createPayment, confirmPayment, allocatePayment as allocatePaymentAction } from "@/app/actions/payments";
+import { Textarea } from "@/views/ui/textarea";
+import { createPayment, confirmPayment, allocatePayment as allocatePaymentAction } from "@/controllers/actions/payments";
 import { fmtAED } from "@/shared/utils/format";
 
 // ─── Types ───────────────────────────────────────────────────────────

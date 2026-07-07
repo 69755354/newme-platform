@@ -3,19 +3,19 @@
 import { useEffect, useState, createContext, useContext } from "react";
 import dynamic from "next/dynamic";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { useLanguage } from "@/lib/i18n/context";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
-import LeadHealth from "./_components/LeadHealth";
-import PipelineFunnel from "./_components/PipelineFunnel";
-import PaymentTracker from "./_components/PaymentTracker";
-import AdsROI from "./_components/AdsROI";
+import { useLanguage } from "@/views/i18n/context";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
+import LeadHealth from "@/views/analytics/LeadHealth";
+import PipelineFunnel from "@/views/analytics/PipelineFunnel";
+import PaymentTracker from "@/views/analytics/PaymentTracker";
+import AdsROI from "@/views/analytics/AdsROI";
 
-const SalesLoad = dynamic(() => import("./_components/SalesLoad"), {
+const SalesLoad = dynamic(() => import("@/views/analytics/SalesLoad"), {
   ssr: false,
   loading: () => <div className="h-64 animate-pulse bg-muted/20 rounded-lg" />,
 });
 
-const WeeklyTrends = dynamic(() => import("./_components/WeeklyTrends"), {
+const WeeklyTrends = dynamic(() => import("@/views/analytics/WeeklyTrends"), {
   ssr: false,
   loading: () => <div className="h-80 animate-pulse bg-muted/20 rounded-lg" />,
 });

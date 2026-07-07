@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
-import { createMiddlewareClient } from "@/lib/supabase-middleware";
-import { reportServerError } from "@/lib/report-server-error";
+import { createMiddlewareClient } from "@/models/supabase-middleware";
+import { reportServerError } from "@/services/report-server-error";
 
 const PROTECTED_ROUTES: Record<string, string[]> = {
   "/settings": ["admin", "boss", "operator"],

@@ -1,26 +1,26 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { useLanguage } from "@/views/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ErrorState } from "@/components/ui/error-state";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/views/ui/card";
+import { ErrorState } from "@/views/ui/error-state";
+import { Button } from "@/views/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
+} from "@/views/ui/dialog";
+import { Textarea } from "@/views/ui/textarea";
 import { FileText, DollarSign, Calendar, User, Clock, Briefcase, Plus, Bell, CheckCircle, AlertTriangle, Upload, Ban, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Filter } from "lucide-react";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
-import SubNavTabs from "@/components/SubNavTabs";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
+import SubNavTabs from "@/views/layout/SubNavTabs";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
-import { approveContract, revokeContract } from "@/app/actions/contracts";
+import { approveContract, revokeContract } from "@/controllers/actions/contracts";
 import { fmtAED } from "@/shared/utils/format";
 
 interface Contract {

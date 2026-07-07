@@ -2,24 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { ErrorState } from "@/components/ui/error-state";
-import { updateTask, updateTaskStatus } from "@/app/actions/tasks";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { ErrorState } from "@/views/ui/error-state";
+import { updateTask, updateTaskStatus } from "@/controllers/actions/tasks";
+import { Card, CardContent, CardHeader, CardTitle } from "@/views/ui/card";
+import { Button } from "@/views/ui/button";
+import { Input } from "@/views/ui/input";
+import { Label } from "@/views/ui/label";
+import { Textarea } from "@/views/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/views/ui/select";
 import { ArrowLeft, Calendar, Clock, User, CheckCircle2, XCircle, Loader2, Save, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import { fmtDubai } from "@/lib/utils";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { fmtDubai } from "@/models/utils";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 
 /* ─── Types ─── */
 interface Task {

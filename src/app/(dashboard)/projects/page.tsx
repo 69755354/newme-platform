@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { createServerSupabase } from "@/lib/supabase-server";
-import ProjectsClient from "./projects-client";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { createServerSupabase } from "@/models/supabase-server";
+import ProjectsClient from "@/views/projects/projects-client";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 
 export const dynamic = "force-dynamic";
 

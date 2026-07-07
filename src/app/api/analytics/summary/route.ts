@@ -2,8 +2,8 @@
 // Aggregates: ads stats, funnel stats, revenue stats, lead conversion stats
 // Server-side auth.getUser() → profile role → all queries in Promise.all
 import { NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { getCached, setCache } from "@/lib/api-cache";
+import { createServerSupabase } from "@/models/supabase-server";
+import { getCached, setCache } from "@/models/api-cache";
 
 /* ─── Helpers ─── */
 function normalizeCampaign(name: string | null): string {

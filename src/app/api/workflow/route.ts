@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { createServerSupabase } from "@/models/supabase-server";
 
 /** POST /api/workflow/start-stage — mark a stage as in_progress, set deadline */
 export async function POST(request: NextRequest) {

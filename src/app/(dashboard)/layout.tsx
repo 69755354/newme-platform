@@ -3,12 +3,12 @@
 import { usePathname } from "next/navigation";
 import { Toaster } from "sonner";
 import { Suspense } from "react";
-import { LanguageProvider } from "@/lib/i18n/LanguageContext";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { LanguageProvider } from "@/views/i18n/LanguageContext";
+import { useLanguage } from "@/views/i18n/LanguageContext";
 import { useAuthRedirect } from "@/hooks/useAuthRedirect";
-import { DashboardErrorBoundary } from "@/components/DashboardErrorBoundary";
-import { DashboardTopBar } from "@/components/dashboard/DashboardTopBar";
-import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
+import { DashboardErrorBoundary } from "@/views/layout/DashboardErrorBoundary";
+import { DashboardTopBar } from "@/views/dashboard/DashboardTopBar";
+import { DashboardSidebar } from "@/views/dashboard/DashboardSidebar";
 
 // ─── Component ───
 

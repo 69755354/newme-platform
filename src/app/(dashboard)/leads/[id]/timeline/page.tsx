@@ -7,21 +7,21 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { createClient } from "@/lib/supabase";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { createClient } from "@/models/supabase";
+import { Button } from "@/views/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/views/ui/card";
+import { Badge } from "@/views/ui/badge";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+} from "@/views/ui/dialog";
+import { Input } from "@/views/ui/input";
+import { Label } from "@/views/ui/label";
+import { Textarea } from "@/views/ui/textarea";
+import { cn } from "@/models/utils";
 import { toast, Toaster } from "sonner";
 import {
   ArrowLeft,
@@ -33,8 +33,8 @@ import {
   MoreHorizontal,
   Clock,
 } from "lucide-react";
-import { fmtDubai } from "@/lib/utils";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { fmtDubai } from "@/models/utils";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
 
 // ─── Types ────────────────────────────────────────────────────────────
 interface FollowUpLogRow {

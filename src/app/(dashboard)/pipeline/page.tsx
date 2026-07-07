@@ -1,22 +1,22 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { ErrorState } from "@/components/ui/error-state";
-import { writeBusinessEvent } from "@/app/actions/pipeline";
+import { useLanguage } from "@/views/i18n/LanguageContext";
+import { ErrorState } from "@/views/ui/error-state";
+import { writeBusinessEvent } from "@/controllers/actions/pipeline";
 import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
-import { SalesKpiDashboard } from "./_components/SalesKpiDashboard";
-import type { KpiApiData } from "./_hooks/useSalesKpiData";
-import { KanbanBoard } from "./_components/KanbanBoard";
-import type { Lead } from "./_components/LeadCard";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
+import { SalesKpiDashboard } from "@/views/pipeline/SalesKpiDashboard";
+import type { KpiApiData } from "@/views/pipeline/hooks/useSalesKpiData";
+import { KanbanBoard } from "@/views/pipeline/KanbanBoard";
+import type { Lead } from "@/views/pipeline/LeadCard";
 // T3-3 step 3 HOTFIX: re-import useSupabaseQuery (project convention).
 // KPI data fetching is delegated to ./useSalesKpiData which uses the hook internally.
-import { useSupabaseQuery } from "@/lib/supabaseQuery";
+import { useSupabaseQuery } from "@/models/supabaseQuery";
 
 /* ─── Types ─── */
-// Lead interface is exported from ./_components/LeadCard (T3-3 step 1)
+// Lead interface is exported from @/views/pipeline/LeadCard (T3-3 step 1)
 
 /* ════════════════════════════════════════ */
 export default function PipelinePage() {

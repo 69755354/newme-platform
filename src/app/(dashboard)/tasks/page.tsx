@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { ErrorState } from "@/components/ui/error-state";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/views/ui/error-state";
+import { Card, CardContent } from "@/views/ui/card";
+import { Badge } from "@/views/ui/badge";
+import { Button } from "@/views/ui/button";
 import {
   Table,
   TableHeader,
@@ -12,18 +12,18 @@ import {
   TableRow,
   TableHead,
   TableCell,
-} from "@/components/ui/table";
+} from "@/views/ui/table";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/views/ui/select";
 import { ChevronLeft, ChevronRight, CheckCircle2, Clock, XCircle, Loader2, AlertTriangle, Calendar } from "lucide-react";
-import { fmtDubai } from "@/lib/utils";
-import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { fmtDubai } from "@/models/utils";
+import { DashboardScrollContainer } from "@/views/layout/DashboardScrollContainer";
+import { useLanguage } from "@/views/i18n/LanguageContext";
 
 /* ─── Constants ─── */
 const PAGE_SIZE = 20;

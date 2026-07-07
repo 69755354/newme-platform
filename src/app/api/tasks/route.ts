@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createServerSupabase } from '@/lib/supabase-server'
+import { createServerSupabase } from '@/models/supabase-server'
 
 const VALID_STATUSES = ['pending', 'completed', 'cancelled'] as const
 type TaskStatus = (typeof VALID_STATUSES)[number]

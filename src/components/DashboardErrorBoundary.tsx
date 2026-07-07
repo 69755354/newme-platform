@@ -3,6 +3,7 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import * as Sentry from "@sentry/nextjs";
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import Link from "next/link";
 
 // ─── Types ───
@@ -20,15 +21,19 @@ interface ErrorBoundaryState {
   errorId: string | null;
 }
 
+interface DashboardErrorBoundaryImplProps extends ErrorBoundaryProps {
+  lang: "en" | "zh";
+}
+
 // ─── DashboardErrorBoundary ───
 // React class component error boundary with Sentry integration.
 // Generates a unique errorId for each error to help users report issues
 // and for correlating with Sentry events.
-export class DashboardErrorBoundary extends Component<
-  ErrorBoundaryProps,
+class DashboardErrorBoundaryImpl extends Component<
+  DashboardErrorBoundaryImplProps,
   ErrorBoundaryState
 > {
-  constructor(props: ErrorBoundaryProps) {
+  constructor(props: DashboardErrorBoundaryImplProps) {
     super(props);
     this.state = {
       hasError: false,
@@ -68,7 +73,7 @@ export class DashboardErrorBoundary extends Component<
     });
   }
 
-  componentDidUpdate(prevProps: ErrorBoundaryProps): void {
+  componentDidUpdate(prevProps: DashboardErrorBoundaryImplProps): void {
     // Reset error state when resetKeys change
     if (this.state.hasError && this.props.resetKeys) {
       const hasChanged = this.props.resetKeys.some(
@@ -95,6 +100,8 @@ export class DashboardErrorBoundary extends Component<
   };
 
   render(): ReactNode {
+    const { lang } = this.props;
+
     if (this.state.hasError) {
       // Custom fallback
       if (this.props.fallback) {
@@ -125,17 +132,20 @@ export class DashboardErrorBoundary extends Component<
             {/* Error Message */}
             <div className="space-y-2">
               <h2 className="text-xl font-semibold text-foreground">
-                页面出现错误
+                {lang === "zh" ? "页面出现错误" : "Page Error"}
               </h2>
               <p className="text-muted-foreground max-w-md">
-                发生了意外错误。请尝试刷新页面，如果问题仍然存在请联系技术支持。
+                {lang === "zh"
+                  ? "发生了意外错误。请尝试刷新页面，如果问题仍然存在请联系技术支持。"
+                  : "An unexpected error occurred. Please try refreshing the page. Contact support if the issue persists."}
               </p>
             </div>
 
             {/* Error ID for support */}
             {this.state.errorId && (
               <div className="bg-muted/50 rounded-lg px-4 py-2 font-mono text-sm text-muted-foreground">
-                错误编号: <span className="text-foreground font-semibold">{this.state.errorId}</span>
+                {lang === "zh" ? "错误编号:" : "Error ID:"}{" "}
+                <span className="text-foreground font-semibold">{this.state.errorId}</span>
               </div>
             )}
 
@@ -143,7 +153,7 @@ export class DashboardErrorBoundary extends Component<
             {process.env.NODE_ENV === "development" && this.state.error && (
               <details className="w-full max-w-lg text-left">
                 <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
-                  错误详情 (开发模式)
+                  {lang === "zh" ? "错误详情 (开发模式)" : "Error Details (Dev Mode)"}
                 </summary>
                 <pre className="mt-2 p-3 bg-muted rounded-lg text-xs overflow-auto max-h-48 text-destructive">
                   {this.state.error.toString()}
@@ -163,7 +173,7 @@ export class DashboardErrorBoundary extends Component<
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                刷新页面
+                {lang === "zh" ? "刷新页面" : "Refresh Page"}
               </Button>
 
               <Link prefetch={false} href="/">
@@ -171,7 +181,7 @@ export class DashboardErrorBoundary extends Component<
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                   </svg>
-                  返回首页
+                  {lang === "zh" ? "返回首页" : "Back to Home"}
                 </Button>
               </Link>
             </div>
@@ -182,6 +192,11 @@ export class DashboardErrorBoundary extends Component<
 
     return this.props.children;
   }
+}
+
+export function DashboardErrorBoundary(props: ErrorBoundaryProps) {
+  const { lang } = useLanguage();
+  return <DashboardErrorBoundaryImpl {...props} lang={lang} />;
 }
 
 // ─── withErrorBoundary HOC ───

@@ -50,11 +50,11 @@ export function canCompleteMilestone(
   targetKey: string
 ): { allowed: boolean; reason?: string } {
   if (!COMPLETABLE_MILESTONES.includes(targetKey)) {
-    return { allowed: false, reason: '无效的里程碑节点' };
+    return { allowed: false, reason: MILESTONE_ERROR_REASONS.zh.invalidMilestone };
   }
 
   if (currentMilestones.includes(targetKey)) {
-    return { allowed: false, reason: '该里程碑已完成，不能重复标记' };
+    return { allowed: false, reason: MILESTONE_ERROR_REASONS.zh.alreadyCompleted };
   }
 
   if (currentMilestones.length === 0) {
@@ -62,7 +62,7 @@ export function canCompleteMilestone(
     if (targetKey === COMPLETABLE_MILESTONES[0]) {
       return { allowed: true };
     }
-    return { allowed: false, reason: '不能跳级，请从首次联系开始' };
+    return { allowed: false, reason: MILESTONE_ERROR_REASONS.zh.startWithFirstContact };
   }
 
   const targetOrder = MILESTONE_KEYS.indexOf(targetKey);
@@ -70,11 +70,11 @@ export function canCompleteMilestone(
   const maxCurrentOrder = Math.max(...currentOrders);
 
   if (targetOrder <= maxCurrentOrder) {
-    return { allowed: false, reason: '不能往回走，已完成后续里程碑' };
+    return { allowed: false, reason: MILESTONE_ERROR_REASONS.zh.cannotMoveBackward };
   }
 
   if (targetOrder > maxCurrentOrder + 1) {
-    return { allowed: false, reason: '不能跳级，请先完成前置里程碑' };
+    return { allowed: false, reason: MILESTONE_ERROR_REASONS.zh.completePreviousFirst };
   }
 
   return { allowed: true };
@@ -102,7 +102,7 @@ export function funnelQuery(useCurrentMilestone: boolean): string {
   `;
 }
 
-export const MILESTONE_LABELS: Record<string, string> = {
+const MILESTONE_LABELS_ZH: Record<string, string> = {
   'new': '新建线索',
   'first_contact': '初次接触',
   'basic_info': '基础信息收集',
@@ -113,6 +113,37 @@ export const MILESTONE_LABELS: Record<string, string> = {
   'meeting': '会面/洽谈',
   'negotiation': '最终谈判'
 };
+
+export const MILESTONE_LABELS = Object.assign(MILESTONE_LABELS_ZH, {
+  en: {
+    'new': 'New Lead',
+    'first_contact': 'First Contact',
+    'basic_info': 'Basic Info',
+    'drawings': 'Drawings & Planning',
+    'requirements': 'Requirements',
+    'solution': 'Solution',
+    'quotation': 'Quotation',
+    'meeting': 'Meeting',
+    'negotiation': 'Negotiation'
+  }
+});
+
+export const MILESTONE_ERROR_REASONS = {
+  zh: {
+    invalidMilestone: '无效的里程碑节点',
+    alreadyCompleted: '该里程碑已完成，不能重复标记',
+    startWithFirstContact: '不能跳级，请从首次联系开始',
+    cannotMoveBackward: '不能往回走，已完成后续里程碑',
+    completePreviousFirst: '不能跳级，请先完成前置里程碑'
+  },
+  en: {
+    invalidMilestone: 'Invalid milestone',
+    alreadyCompleted: 'This milestone has already been completed and cannot be marked again',
+    startWithFirstContact: 'Cannot skip stages. Please start with First Contact',
+    cannotMoveBackward: 'Cannot move backward because a later milestone has already been completed',
+    completePreviousFirst: 'Cannot skip stages. Please complete the previous milestone first'
+  }
+} as const;
 
 // P1-12: Human-readable milestone descriptions with i18n support
 export const MILESTONE_DESCRIPTIONS: Record<string, { en: string; zh: string }> = {

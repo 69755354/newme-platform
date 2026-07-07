@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
 import { PIPELINE_STAGES, TERMINAL_STAGES } from "@/shared/kanban/types";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 // ─── Types ───
 interface LeadBase {
@@ -34,6 +35,7 @@ export function usePipelineDragDrop<T extends LeadBase>(
   setLeads: React.Dispatch<React.SetStateAction<T[]>>,
   currentUserId: string | null
 ): UsePipelineDragDropReturn {
+  const { lang } = useLanguage();
   const [draggingLeadId, setDraggingLeadId] = useState<string | null>(null);
   const [draggingOverStage, setDraggingOverStage] = useState<string | null>(null);
   const dragCounter = useRef<Record<string, number>>({});
@@ -84,13 +86,13 @@ export function usePipelineDragDrop<T extends LeadBase>(
 
     // Valid target stage
     if (!(targetStage in STAGE_INDEX)) {
-      toast.error(`无效的阶段: "${targetStage}"`);
+      toast.error(`${lang === "zh" ? "无效的阶段" : "Invalid stage"}: "${targetStage}"`);
       return;
     }
 
     // Terminal leads can't be moved (won/lost in final_status)
     if (lead.final_status === "won" || lead.final_status === "lost") {
-      toast.error("无法移动已关闭的客户");
+      toast.error(lang === "zh" ? "无法移动已关闭的客户" : "Cannot move closed leads");
       return;
     }
 
@@ -126,7 +128,7 @@ export function usePipelineDragDrop<T extends LeadBase>(
     if (updateErr) {
       // Rollback optimistic update
       setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: oldStage, final_status: oldFinal } : l));
-      toast.error(`阶段更新失败: ${updateErr.message}`);
+      toast.error(`${lang === "zh" ? "阶段更新失败" : "Stage update failed"}: ${updateErr.message}`);
       return;
     }
 
@@ -147,8 +149,8 @@ export function usePipelineDragDrop<T extends LeadBase>(
       user_id: currentUserId,
     });
 
-    toast.success(`已移动到 ${PIPELINE_STAGES.find(s => s.key === targetStage)?.label || targetStage}`);
-  }, [leads, setLeads, currentUserId]);
+    toast.success(`${lang === "zh" ? "已移动到" : "Moved to"} ${PIPELINE_STAGES.find(s => s.key === targetStage)?.label || targetStage}`);
+  }, [leads, setLeads, currentUserId, lang]);
 
   return {
     onDragStart,

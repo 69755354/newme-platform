@@ -106,7 +106,7 @@ function MetricBox({ label, value }: { label: string; value: number }) {
 }
 
 export default function WorkbenchPage() {
-  const { t } = useLanguage()
+  const { lang, t } = useLanguage()
   const [data, setData] = useState<WorkbenchData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -577,7 +577,9 @@ export default function WorkbenchPage() {
       <Card className="border-slate-200 bg-slate-50/60">
         <CardContent className="flex flex-col items-start gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-slate-500">
-            遇到问题请截图发给 Tanya 或 Ayana
+            {lang === "zh"
+              ? "遇到问题请截图发给 Tanya 或 Ayana"
+              : "If you encounter issues, screenshot and send to Tanya or Ayana"}
           </p>
           <a
             href="https://t.me/+YOUR_INVITE"

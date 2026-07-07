@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { fmtDubai } from "@/lib/utils";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 // ─── Types ────────────────────────────────────────────────────────────
 interface FollowUpLogRow {
@@ -50,11 +51,11 @@ interface FollowUpLogRow {
 }
 
 const TYPE_OPTIONS = [
-  { value: "call", label: "电话", icon: Phone },
-  { value: "visit", label: "拜访", icon: Users },
-  { value: "email", label: "邮件", icon: Mail },
-  { value: "whatsapp", label: "WhatsApp", icon: MessageCircle },
-  { value: "other", label: "其他", icon: MoreHorizontal },
+  { value: "call", label: { zh: "电话", en: "Phone" }, icon: Phone },
+  { value: "visit", label: { zh: "拜访", en: "Visit" }, icon: Users },
+  { value: "email", label: { zh: "邮件", en: "Email" }, icon: Mail },
+  { value: "whatsapp", label: { zh: "WhatsApp", en: "WhatsApp" }, icon: MessageCircle },
+  { value: "other", label: { zh: "其他", en: "Other" }, icon: MoreHorizontal },
 ] as const;
 
 const TYPE_COLORS: Record<string, string> = {
@@ -72,9 +73,9 @@ function getTypeIcon(type: string) {
   return found.icon;
 }
 
-function getTypeLabel(type: string) {
+function getTypeLabel(type: string, lang: "en" | "zh") {
   const found = TYPE_OPTIONS.find((t) => t.value === type);
-  return found?.label ?? type;
+  return found?.label[lang] ?? type;
 }
 
 function formatDateTime(iso: string | null) {
@@ -90,6 +91,7 @@ function formatDate(dateStr: string | null) {
 // ─── Page Component ───────────────────────────────────────────────────
 export default function LeadTimelinePage() {
   const { id } = useParams<{ id: string }>();
+  const { lang } = useLanguage();
   const supabase = createClient();
 
   const [logs, setLogs] = useState<FollowUpLogRow[]>([]);
@@ -234,7 +236,7 @@ export default function LeadTimelinePage() {
                     <div className="flex items-start justify-between mb-3">
                       <Badge className={cn("gap-1 px-2 py-0.5 text-xs font-medium", TYPE_COLORS[log.type] || TYPE_COLORS.other)}>
                         <TypeIcon className="w-3 h-3" />
-                        {getTypeLabel(log.type)}
+                        {getTypeLabel(log.type, lang)}
                       </Badge>
                       <span className="text-xs text-muted-foreground shrink-0">
                         {formatDateTime(log.created_at)}
@@ -302,7 +304,7 @@ export default function LeadTimelinePage() {
                       )}
                     >
                       <Icon className="w-3.5 h-3.5" />
-                      {opt.label}
+                      {opt.label[lang]}
                     </Button>
                   );
                 })}

@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fmtDubai } from "@/lib/utils";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { AlertTriangle, CheckCircle2, Clock, Lock, MessageSquare, Phone, ShieldCheck, Unlock } from "lucide-react";
 import type { FollowUpLog, Lead, LeadMilestone } from "./types";
 
@@ -23,6 +24,8 @@ export default function LeadContactQualityPanel({
   error,
   t,
 }: Props) {
+  const { lang } = useLanguage();
+
   if (loading) {
     return (
       <Card>
@@ -231,7 +234,7 @@ export default function LeadContactQualityPanel({
           {isOverdue && (
             <div className="flex items-center gap-2 text-xs text-red-400">
               <Clock className="h-3 w-3" />
-              Follow-up overdue (
+              {lang === "zh" ? "跟进" : "Follow-up"} overdue (
               {fmtDubai(lead.next_followup_date!, { locale: "en" })})
             </div>
           )}

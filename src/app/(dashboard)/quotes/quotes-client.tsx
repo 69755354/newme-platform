@@ -280,7 +280,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
             lead_id: quote.lead_id,
             milestone_key: "quotation",
             completed_by: user?.id || null,
-            notes: `报价已生成 #${quote.quote_no || ""}`,
+            notes: `${lang === "zh" ? "报价已生成" : "Quote generated"} #${quote.quote_no || ""}`,
           });
         }
       }

@@ -493,6 +493,7 @@ export default function LeadDetailPage() {
           <LeadSalesProcess
             lead={lead}
             leadTrace={leadTrace}
+            followUpLogs={followUpLogs}
             milestones={leadMilestones}
             nextTask={nextTask}
             updating={updating}

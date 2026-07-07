@@ -33,6 +33,7 @@ import type {
   Lead,
   LeadTrace,
   LeadMilestone,
+  FollowUpLog,
   Task,
   RenderInlineEdit,
   RenderDateEdit,
@@ -42,6 +43,7 @@ import type {
 interface Props {
   lead: Lead;
   leadTrace: LeadTrace[];
+  followUpLogs: FollowUpLog[];
   milestones: LeadMilestone[];
   nextTask: Task | null;
   updating: boolean;
@@ -71,6 +73,7 @@ type MissingField = {
 export default function LeadSalesProcess({
   lead,
   leadTrace,
+  followUpLogs,
   milestones,
   nextTask,
   updating,
@@ -254,6 +257,25 @@ export default function LeadSalesProcess({
                     {completed && <p className="text-[10px] text-emerald-400">{t("leadDetail.milestoneCompleted")}</p>}
                     {isNext && !completed && <p className="text-[10px] text-copper-400">{t("leadDetail.milestoneNext")}</p>}
                     {locked && <p className="text-[10px] text-gray-600">{t("leadDetail.milestoneLocked")}</p>}
+                    {/* first_contact gate requirements */}
+                    {key === "first_contact" && !completed && isNext && (() => {
+                      const contactTimeCount = followUpLogs.filter(l => l.contact_time != null).length;
+                      const qAssessed = lead.quality && lead.quality !== "pending";
+                      return (
+                      <div className="mt-1.5 space-y-0.5">
+                        <div className="flex items-center gap-1.5 text-[10px]">
+                          <span className={contactTimeCount >= 3 ? "text-emerald-400" : "text-amber-400"}>
+                            {contactTimeCount >= 3 ? "✓" : "○"} {contactTimeCount}/3 contacts with time
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px]">
+                          <span className={qAssessed ? "text-emerald-400" : "text-amber-400"}>
+                            {qAssessed ? "✓" : "○"} Quality assessed
+                          </span>
+                        </div>
+                      </div>
+                      );
+                    })()}
                   </div>
                   <span className="text-xs text-muted-foreground">{idx + 1}/7</span>
                 </div>

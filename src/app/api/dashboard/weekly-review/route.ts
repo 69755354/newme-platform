@@ -161,16 +161,14 @@ export async function GET(req: NextRequest) {
       .gte("created_at", startIso).lt("created_at", endIso);
 
     const perUser = new Map<string, WeeklyReviewRow>();
-    // Excluded user IDs (SAM & Ayana — removed from sales team)
-    const EXCLUDED_IDS = new Set([
-      "55d69083-7eb7-4749-943b-ad0de551f966", // SAM
-      "6c636722-f3a4-44f1-9789-62ba2f9c0547", // Ayana
+    // Only these 3 sales team members appear in L2
+    const ALLOWED_UIDS = new Set([
+      "3666d8d0-baf4-45cb-8e7f-4243c999b2b1", // Mohamed
+      "28ec618c-94ad-4a9b-ba0c-b3b719e7f3a8", // Assem
+      "5c766c35-c3fe-4011-aec7-3b9b5704a6b2", // Tanya
     ]);
     const ensure = (uid: string) => {
-      if (EXCLUDED_IDS.has(uid)) return null as any;
-      const r = roleMap.get(uid);
-      // P0-UI-2: allow admin/boss alongside sales; block only truly unrelated roles
-      if (r && !["sales", "admin", "boss"].includes(r)) return null as any;
+      if (!ALLOWED_UIDS.has(uid)) return null as any;
       if (!perUser.has(uid)) {
         perUser.set(uid, {
           user_id: uid, full_name: salesMap.get(uid) ?? null,

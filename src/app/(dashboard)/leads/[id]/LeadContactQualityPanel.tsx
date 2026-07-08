@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn, fmtDubai } from "@/lib/utils";
@@ -25,6 +26,9 @@ export default function LeadContactQualityPanel({
   t,
 }: Props) {
   const { lang } = useLanguage();
+  const [poorReason, setPoorReason] = useState("");
+  const [showingPoorReason, setShowingPoorReason] = useState(false);
+  const [qualitySubmitting, setQualitySubmitting] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -284,29 +288,85 @@ export default function LeadContactQualityPanel({
             <div className="mb-2 text-xs font-medium text-muted-foreground">
               {lang === "zh" ? "设置联系质量" : "Set Contact Quality"}
             </div>
-            <div className="flex gap-2">
-              {(["good", "normal", "poor"] as const).map((q) => (
-                <button
-                  key={q}
-                  onClick={async () => {
-                    const res = await fetch(`/api/leads/${lead?.id}/quality`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ quality: q }),
-                    });
-                    if (res.ok) window.location.reload();
+            {showingPoorReason ? (
+              <div className="space-y-2">
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder={lang === "zh" ? "请填写标记为 Poor 的原因（至少3个字符）" : "Enter reason for marking as Poor (min 3 chars)"}
+                  value={poorReason}
+                  onChange={(e) => setPoorReason(e.target.value)}
+                  className="w-full text-xs bg-muted border border-border rounded px-2 py-1.5 text-foreground"
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") { setShowingPoorReason(false); setPoorReason(""); }
                   }}
-                  className={cn(
-                    "text-xs px-3 py-1.5 rounded border transition-colors",
-                    q === "good" ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" :
-                    q === "normal" ? "border-amber-500/30 text-amber-400 hover:bg-amber-500/10" :
-                    "border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
-                  )}
+                />
+                <div className="flex gap-2">
+                  <button
+                    disabled={poorReason.trim().length < 3 || qualitySubmitting === "poor"}
+                    onClick={async () => {
+                      setQualitySubmitting("poor");
+                      const res = await fetch(`/api/leads/${lead?.id}/quality`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ quality: "poor", poor_reason: poorReason.trim() }),
+                      });
+                      if (res.ok) window.location.reload();
+                      else {
+                        const err = await res.json().catch(() => ({}));
+                        alert((err as any)?.error || "Failed to set quality");
+                        setQualitySubmitting(null);
+                      }
+                    }}
+                    className={cn(
+                      "text-xs px-3 py-1.5 rounded border transition-colors border-rose-500/30 text-rose-400",
+                      poorReason.trim().length < 3 ? "opacity-50 cursor-not-allowed" : "hover:bg-rose-500/10"
+                    )}
+                  >
+                    {qualitySubmitting === "poor" ? "Saving..." : "Confirm Poor"}
+                  </button>
+                  <button
+                    onClick={() => { setShowingPoorReason(false); setPoorReason(""); }}
+                    className="text-xs px-3 py-1.5 rounded border border-border text-muted-foreground hover:border-gray-500"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                {(["good", "normal"] as const).map((q) => (
+                  <button
+                    key={q}
+                    disabled={qualitySubmitting === q}
+                    onClick={async () => {
+                      setQualitySubmitting(q);
+                      const res = await fetch(`/api/leads/${lead?.id}/quality`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ quality: q }),
+                      });
+                      if (res.ok) window.location.reload();
+                      else setQualitySubmitting(null);
+                    }}
+                    className={cn(
+                      "text-xs px-3 py-1.5 rounded border transition-colors",
+                      q === "good" ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" :
+                      "border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                    )}
+                  >
+                    {qualitySubmitting === q ? "..." : q === "good" ? "✓ Good" : "Normal"}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setShowingPoorReason(true)}
+                  disabled={qualitySubmitting !== null}
+                  className="text-xs px-3 py-1.5 rounded border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 transition-colors"
                 >
-                  {q === "good" ? "✓ Good" : q === "normal" ? "Normal" : "⚠️ Poor"}
+                  ⚠️ Poor
                 </button>
-              ))}
-            </div>
+              </div>
+            )}
           </div>
         )}
       </CardContent>

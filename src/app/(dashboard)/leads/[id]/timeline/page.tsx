@@ -56,6 +56,7 @@ export default function LeadTimelinePage() {
   const [formNextAction, setFormNextAction] = useState("");
 
   const [formContactTime, setFormContactTime] = useState("");
+  const [timeError, setTimeError] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -83,7 +84,7 @@ export default function LeadTimelinePage() {
 
   async function handleSubmit() {
     if (!formContent.trim()) return toast.error(lang === "zh" ? "请填写跟进内容" : "Please enter content");
-    if (!formContactTime) return toast.error(lang === "zh" ? "请填写实际动作发生时间" : "Please enter action time");
+    if (!formContactTime) { setTimeError(lang === "zh" ? "请填写实际动作发生时间" : "Please enter action time"); return; }
     setSubmitting(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -175,7 +176,7 @@ export default function LeadTimelinePage() {
           </div>
         )}
 
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setTimeError(""); }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{lang === "zh" ? "新增跟进" : "Add follow-up"}</DialogTitle>
@@ -211,7 +212,8 @@ export default function LeadTimelinePage() {
 
               <div className="space-y-2">
                 <Label>{lang === "zh" ? "实际动作发生时间" : "Action time"}</Label>
-                <input type="datetime-local" value={formContactTime} onChange={(e) => setFormContactTime(e.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm" />
+                <input type="datetime-local" value={formContactTime} onChange={(e) => { setFormContactTime(e.target.value); setTimeError(""); }} className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm" />
+                {timeError && <p className="text-red-500 text-xs mt-1">{timeError}</p>}
               </div>
 
               <div className="space-y-2">

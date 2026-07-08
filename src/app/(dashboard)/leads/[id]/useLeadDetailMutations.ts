@@ -375,11 +375,23 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
 
   // ─── Stage update (final_status for won/lost, stage otherwise) ───
   const updateStage = useCallback(async (stage: string): Promise<boolean> => {
-    // won/lost write final_status (trg_lead_won trigger fires on it);
-    // other stages keep the legacy stage column (migrated in W7-W9).
-    const field = stage === "won" || stage === "lost" ? "final_status" : "stage";
-    return updateField(field, stage, "stage_change", `${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
-  }, [updateField, t]);
+    // For terminal stages (won/lost), write to BOTH stage (trigger enforces sequence,
+    // detail page reads it) AND final_status (list page counts it, trg_lead_won fires on it).
+    if (stage === "won" || stage === "lost") {
+      const ok = await updateField("stage", stage, "stage_change", `${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
+      if (!ok) return false;
+      // Silently sync final_status after stage update passes trigger
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error: fsErr } = await supabase.from("leads").update({ 
+        final_status: stage,
+        updated_at: new Date().toISOString() 
+      }).eq("id", leadId);
+      if (fsErr) console.warn("[LeadDetail] final_status sync failed (non-fatal)", fsErr);
+      return true;
+    }
+    return updateField("stage", stage, "stage_change", `${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
+  }, [leadId, updateField, t]);
 
   // ─── Next Required Action — updates nextTask (creates a task if none) ───
   const updateNextTask = useCallback(async (updates: Partial<Pick<Task, "title" | "due_at">>) => {
@@ -460,6 +472,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       user_id: user?.id ?? null,
       contact_type: "note",
       summary: text,
+      contact_time: new Date().toISOString(),
       no_answer: false,
     });
     if (insertError) {

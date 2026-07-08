@@ -1,379 +1,231 @@
 "use client";
 
-// Follow-up Logs Timeline Page
-// Displays all follow_up_logs for a lead, ordered by created_at DESC.
-// Each record shows: type, content, next_action, next_action_date, created_by (full_name), created_at.
-// Top "新增跟进" button opens a dialog form; submit inserts into follow_up_logs and refreshes.
-
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { cn, fmtDubai } from "@/lib/utils";
 import { toast, Toaster } from "sonner";
-import {
-  ArrowLeft,
-  Plus,
-  Phone,
-  Users,
-  Mail,
-  MessageCircle,
-  MoreHorizontal,
-  Clock,
-} from "lucide-react";
-import { fmtDubai } from "@/lib/utils";
+import { ArrowLeft, Plus, Phone, MoreHorizontal, Clock, MessageSquare } from "lucide-react";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
-// ─── Types ────────────────────────────────────────────────────────────
 interface FollowUpLogRow {
   id: string;
-  type: string;
-  content: string;
+  contact_type: string;
+  summary: string;
   next_action: string | null;
-  next_action_date: string | null;
   created_by: string | null;
   created_at: string;
-  // Joined field
+  contact_time: string | null;
+  result: string | null;
   creator?: { full_name: string | null }[] | null;
 }
 
 const TYPE_OPTIONS = [
-  { value: "call", label: { zh: "电话", en: "Phone" }, icon: Phone },
-  { value: "visit", label: { zh: "拜访", en: "Visit" }, icon: Users },
-  { value: "email", label: { zh: "邮件", en: "Email" }, icon: Mail },
-  { value: "whatsapp", label: { zh: "WhatsApp", en: "WhatsApp" }, icon: MessageCircle },
+  { value: "wsa", label: { zh: "wsa", en: "wsa" }, icon: MessageSquare },
+  { value: "phone", label: { zh: "电话", en: "Phone" }, icon: Phone },
   { value: "other", label: { zh: "其他", en: "Other" }, icon: MoreHorizontal },
 ] as const;
 
 const TYPE_COLORS: Record<string, string> = {
-  call: "bg-emerald-500/10 text-emerald-600",
-  visit: "bg-blue-500/10 text-blue-600",
-  email: "bg-purple-500/10 text-purple-600",
-  whatsapp: "bg-green-500/10 text-green-600",
-  other: "bg-gray-500/10 text-gray-600",
+  wsa: "bg-cyan-500/10 text-cyan-400",
+  phone: "bg-emerald-500/10 text-emerald-400",
+  other: "bg-gray-500/10 text-gray-400",
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────
-function getTypeIcon(type: string) {
-  const found = TYPE_OPTIONS.find((t) => t.value === type);
-  if (!found) return MoreHorizontal;
-  return found.icon;
-}
+const getTypeIcon = (type: string) => TYPE_OPTIONS.find((t) => t.value === type)?.icon ?? MoreHorizontal;
+const getTypeLabel = (type: string, lang: "en" | "zh") => TYPE_OPTIONS.find((t) => t.value === type)?.label[lang] ?? type;
+const formatDateTime = (iso: string | null) => (iso ? fmtDubai(new Date(iso), { locale: "zh-CN", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
 
-function getTypeLabel(type: string, lang: "en" | "zh") {
-  const found = TYPE_OPTIONS.find((t) => t.value === type);
-  return found?.label[lang] ?? type;
-}
-
-function formatDateTime(iso: string | null) {
-  if (!iso) return "—";
-  return fmtDubai(new Date(iso), { locale: "zh-CN", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-function formatDate(dateStr: string | null) {
-  if (!dateStr) return "—";
-  return fmtDubai(dateStr, { locale: "zh-CN", year: "numeric", month: "2-digit", day: "2-digit" });
-}
-
-// ─── Page Component ───────────────────────────────────────────────────
 export default function LeadTimelinePage() {
   const { id } = useParams<{ id: string }>();
   const { lang } = useLanguage();
   const supabase = createClient();
-
   const [logs, setLogs] = useState<FollowUpLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-
-  // Form state
-  const [formType, setFormType] = useState("call");
+  const [formType, setFormType] = useState<(typeof TYPE_OPTIONS)[number]["value"]>("phone");
   const [formContent, setFormContent] = useState("");
   const [formNextAction, setFormNextAction] = useState("");
-  const [formNextActionDate, setFormNextActionDate] = useState("");
 
-  // ─── Fetch data ──────────────────────────────────────────────────
-  const fetchLogs = useCallback(async () => {
-    if (!id) return;
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("follow_up_logs")
-        .select("id, type, content, next_action, next_action_date, created_by, created_at, creator:profiles!fk_follow_up_logs_created_by(full_name)")
-        .eq("lead_id", id)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("[Timeline] fetch failed:", error);
-        toast.error("加载跟进记录失败");
-        return;
-      }
-      setLogs((data ?? []) as FollowUpLogRow[]);
-    } catch (err) {
-      console.error("[Timeline] fetch error:", err);
-      toast.error("加载跟进记录失败");
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
+  const [formContactTime, setFormContactTime] = useState("");
 
   useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
+    (async () => {
+      if (!id) return;
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from("follow_up_logs")
+          .select("id, contact_type, summary, next_action, created_by, created_at, contact_time, result, creator:profiles!fk_follow_up_logs_created_by(full_name)")
+          .eq("lead_id", id)
+          .order("created_at", { ascending: false });
+        if (error) {
+          toast.error(lang === "zh" ? "加载跟进记录失败" : "Failed to load follow-up logs");
+          return;
+        }
+        setLogs((data ?? []) as FollowUpLogRow[]);
+      } catch (err) {
+        console.error("[Timeline] fetch error:", err);
+        toast.error(lang === "zh" ? "加载跟进记录失败" : "Failed to load follow-up logs");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [id, supabase, lang]);
 
-  // ─── Submit form ─────────────────────────────────────────────────
   async function handleSubmit() {
-    if (!formContent.trim()) {
-      toast.error("请填写跟进内容");
-      return;
-    }
+    if (!formContent.trim()) return toast.error(lang === "zh" ? "请填写跟进内容" : "Please enter content");
+    if (!formContactTime) return toast.error(lang === "zh" ? "请填写实际动作发生时间" : "Please enter action time");
     setSubmitting(true);
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      const insertPayload: Record<string, any> = {
+      const { data: { user } } = await supabase.auth.getUser();
+      const contactTime = new Date(formContactTime);
+      const insertPayload = {
         lead_id: id,
-        type: formType,
-        content: formContent.trim(),
+        contact_type: formType,
+        summary: formContent.trim(),
         next_action: formNextAction.trim() || null,
-        next_action_date: formNextActionDate || null,
         created_by: user?.id ?? null,
+        contact_time: contactTime.toISOString(),
+        result: "contacted",
       };
-
       const { error } = await supabase.from("follow_up_logs").insert(insertPayload);
-
       if (error) {
-        console.error("[Timeline] insert failed:", error);
-        toast.error("保存失败: " + error.message);
+        toast.error((lang === "zh" ? "保存失败: " : "Save failed: ") + error.message);
         return;
       }
-
-      toast.success("跟进记录已保存");
-      // Reset form and close dialog
-      setFormType("call");
+      toast.success(lang === "zh" ? "跟进记录已保存" : "Follow-up saved");
+      setFormType("phone");
       setFormContent("");
       setFormNextAction("");
-      setFormNextActionDate("");
+      setFormContactTime("");
       setDialogOpen(false);
-      // Refresh list
-      fetchLogs();
-    } catch (err: any) {
+      const { data, error: reloadError } = await supabase
+        .from("follow_up_logs")
+        .select("id, contact_type, summary, next_action, created_by, created_at, contact_time, result, creator:profiles!fk_follow_up_logs_created_by(full_name)")
+        .eq("lead_id", id)
+        .order("created_at", { ascending: false });
+      if (!reloadError) setLogs((data ?? []) as FollowUpLogRow[]);
+    } catch (err) {
       console.error("[Timeline] submit error:", err);
-      toast.error("保存失败");
+      toast.error(lang === "zh" ? "保存失败" : "Save failed");
     } finally {
       setSubmitting(false);
     }
   }
 
-  // ─── Render ──────────────────────────────────────────────────────
   return (
     <DashboardScrollContainer className="bg-background">
       <Toaster richColors position="top-center" />
-
-      {/* Header */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                window.location.href = `/leads/${id}`;
-              }}
-              className="text-muted-foreground hover:text-foreground"
-            >
+            <Button variant="ghost" size="icon" onClick={() => { window.location.href = `/leads/${id}`; }} className="text-muted-foreground hover:text-foreground">
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <h1 className="text-lg font-semibold text-foreground flex items-center gap-2">
-              <Clock className="w-5 h-5 text-copper-500" />
-              跟进记录
+              <Clock className="w-5 h-5 text-copper-500" />{lang === "zh" ? "跟进记录" : "Follow-up Logs"}
             </h1>
           </div>
-          <Button
-            onClick={() => setDialogOpen(true)}
-            className="bg-copper-500 hover:bg-copper-600 text-black"
-          >
-            <Plus className="w-4 h-4 mr-1" />
-            新增跟进
+          <Button onClick={() => setDialogOpen(true)} className="bg-copper-500 hover:bg-copper-600 text-black">
+            <Plus className="w-4 h-4 mr-1" />{lang === "zh" ? "新增跟进" : "Add follow-up"}
           </Button>
         </div>
       </div>
 
-      {/* Content */}
       <div className="max-w-4xl mx-auto px-6 py-6">
         {loading ? (
-          <div className="text-center text-muted-foreground py-12">加载中...</div>
+          <div className="text-center text-muted-foreground py-12">{lang === "zh" ? "加载中..." : "Loading..."}</div>
         ) : logs.length === 0 ? (
-          <Card className="bg-card border-border">
-            <CardContent className="py-12 text-center text-muted-foreground">
-              <p className="text-lg mb-2">暂无跟进记录</p>
-              <p className="text-sm">点击上方"新增跟进"按钮添加第一条记录</p>
-            </CardContent>
-          </Card>
+          <Card className="bg-card border-border"><CardContent className="py-12 text-center text-muted-foreground">{lang === "zh" ? "暂无跟进记录" : "No follow-up logs"}</CardContent></Card>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {logs.map((log) => {
-              const TypeIcon = getTypeIcon(log.type);
+              const Icon = getTypeIcon(log.contact_type);
               return (
-                <Card key={log.id} className="bg-card border-border hover:border-copper-500/30 transition-colors">
-                  <CardContent className="p-5">
-                    {/* Top row: type badge + date */}
-                    <div className="flex items-start justify-between mb-3">
-                      <Badge className={cn("gap-1 px-2 py-0.5 text-xs font-medium", TYPE_COLORS[log.type] || TYPE_COLORS.other)}>
-                        <TypeIcon className="w-3 h-3" />
-                        {getTypeLabel(log.type, lang)}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {formatDateTime(log.created_at)}
-                      </span>
-                    </div>
-
-                    {/* Content */}
-                    <p className="text-sm text-foreground whitespace-pre-wrap break-words leading-relaxed mb-3">
-                      {log.content}
-                    </p>
-
-                    {/* Meta row */}
-                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-                      {log.creator?.[0]?.full_name && (
-                        <span className="flex items-center gap-1">
-                          <span className="text-gray-500">跟进人:</span>
-                          <span className="text-foreground font-medium">{log.creator[0].full_name}</span>
-                        </span>
-                      )}
-                      {log.next_action && (
-                        <span className="flex items-center gap-1">
-                          <span className="text-gray-500">下一步:</span>
-                          <span className="text-foreground">{log.next_action}</span>
-                        </span>
-                      )}
-                      {log.next_action_date && (
-                        <span className="flex items-center gap-1">
-                          <span className="text-gray-500">跟进日期:</span>
-                          <span className="text-foreground">{formatDate(log.next_action_date)}</span>
-                        </span>
-                      )}
-                    </div>
+                <Card key={log.id} className="bg-card border-border">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <Icon className="w-4 h-4 text-copper-500" />
+                        <span>{getTypeLabel(log.contact_type, lang)}</span>
+                        <Badge className={cn("text-[10px]", TYPE_COLORS[log.contact_type] || TYPE_COLORS.other)}>
+                          {lang === "zh" ? "实际动作时间" : "Action time"} {formatDateTime(log.contact_time || log.created_at)}
+                        </Badge>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{formatDateTime(log.created_at)}</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <p className="text-foreground whitespace-pre-wrap">{log.summary}</p>
+                    {log.next_action && <p className="text-xs text-muted-foreground">{lang === "zh" ? "下一步" : "Next"}：{log.next_action}</p>}
+                    <p className="text-xs text-muted-foreground">{lang === "zh" ? "记录人" : "Creator"}：{log.creator?.[0]?.full_name || "—"}</p>
                   </CardContent>
                 </Card>
               );
             })}
           </div>
         )}
-      </div>
 
-      {/* Add Follow-up Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-foreground">新增跟进记录</DialogTitle>
-          </DialogHeader>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{lang === "zh" ? "新增跟进" : "Add follow-up"}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>{lang === "zh" ? "类型" : "Type"}</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {TYPE_OPTIONS.map((option) => {
+                    const Icon = option.icon;
+                    const active = formType === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setFormType(option.value)}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors",
+                          active ? "border-copper-500 bg-copper-500/10 text-copper-400" : "border-border text-muted-foreground hover:border-copper-500/40 hover:text-foreground"
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />{option.label[lang]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-          <div className="space-y-4 py-2">
-            {/* Type selector */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-foreground">跟进方式</Label>
-              <div className="flex flex-wrap gap-2">
-                {TYPE_OPTIONS.map((opt) => {
-                  const Icon = opt.icon;
-                  return (
-                    <Button
-                      key={opt.value}
-                      type="button"
-                      variant={formType === opt.value ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setFormType(opt.value)}
-                      className={cn(
-                        "gap-1 text-xs",
-                        formType === opt.value && "bg-copper-500 hover:bg-copper-600 text-black"
-                      )}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                      {opt.label[lang]}
-                    </Button>
-                  );
-                })}
+              <div className="space-y-2">
+                <Label>{lang === "zh" ? "跟进内容" : "Content"}</Label>
+                <Textarea value={formContent} onChange={(e) => setFormContent(e.target.value)} placeholder={lang === "zh" ? "记录销售联系客户的实际动作" : "Describe the actual contact action"} />
+              </div>
+
+              <div className="space-y-2">
+                <Label>{lang === "zh" ? "实际动作发生时间" : "Action time"}</Label>
+                <input type="datetime-local" value={formContactTime} onChange={(e) => setFormContactTime(e.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm" />
+              </div>
+
+              <div className="space-y-2">
+                <Label>{lang === "zh" ? "下一步" : "Next step"}</Label>
+                <Textarea value={formNextAction} onChange={(e) => setFormNextAction(e.target.value)} placeholder={lang === "zh" ? "可选" : "Optional"} />
               </div>
             </div>
-
-            {/* Content */}
-            <div className="space-y-2">
-              <Label htmlFor="follow-content" className="text-sm font-medium text-foreground">
-                跟进内容 <span className="text-red-500">*</span>
-              </Label>
-              <Textarea
-                id="follow-content"
-                placeholder="记录本次跟进的详细内容..."
-                value={formContent}
-                onChange={(e) => setFormContent(e.target.value)}
-                className="min-h-[100px] resize-y bg-muted border-border text-foreground"
-                rows={4}
-              />
-            </div>
-
-            {/* Next action */}
-            <div className="space-y-2">
-              <Label htmlFor="next-action" className="text-sm font-medium text-foreground">
-                下一步行动
-              </Label>
-              <Input
-                id="next-action"
-                placeholder="例：发送报价单、安排拜访..."
-                value={formNextAction}
-                onChange={(e) => setFormNextAction(e.target.value)}
-                className="bg-muted border-border text-foreground"
-              />
-            </div>
-
-            {/* Next action date */}
-            <div className="space-y-2">
-              <Label htmlFor="next-action-date" className="text-sm font-medium text-foreground">
-                计划跟进日期
-              </Label>
-              <Input
-                id="next-action-date"
-                type="date"
-                value={formNextActionDate}
-                onChange={(e) => setFormNextActionDate(e.target.value)}
-                className="bg-muted border-border text-foreground"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setDialogOpen(false)}
-              disabled={submitting}
-              className="text-foreground"
-            >
-              取消
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={submitting || !formContent.trim()}
-              className="bg-copper-500 hover:bg-copper-600 text-black"
-            >
-              {submitting ? "保存中..." : "保存"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>{lang === "zh" ? "取消" : "Cancel"}</Button>
+              <Button onClick={handleSubmit} disabled={submitting} className="bg-copper-500 hover:bg-copper-600 text-black">{submitting ? (lang === "zh" ? "保存中..." : "Saving...") : (lang === "zh" ? "保存" : "Save")}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
     </DashboardScrollContainer>
   );
 }

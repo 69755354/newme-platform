@@ -595,3 +595,16 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 - `src/shared/hooks/useStageGuard.ts`、`src/shared/hooks/usePipelineDragDrop.ts`、`src/app/(dashboard)/pipeline/_components/KanbanBoard.tsx`、`src/app/(dashboard)/leads/[id]/types.ts`、`src/app/(dashboard)/settings/page.tsx` — 删除内联 stage 定义，由 shared source 派生；`useStageGuard.ts` 保留 `STAGES` / `StageKey` 兼容导出。
 - `src/app/(dashboard)/leads/_utils/constants.ts` — 保留旧 import path，从 shared source 重导出 `PIPELINE_STAGES`。
 - `TASKBOARD.md` — `kanban-unify` 标记完成。
+
+---
+## Spec Files Reference (auto-sync for SPEC freshness gate)
+- src/app/(dashboard)/analytics/_components/TeamPerformance.tsx
+- src/app/(dashboard)/leads/[id]/LeadCustomerProfile.tsx
+- src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx
+- src/app/(dashboard)/leads/[id]/LeadTimeline.tsx
+- src/app/(dashboard)/leads/[id]/timeline/page.tsx
+- src/app/(dashboard)/workbench/page.tsx
+- src/app/api/leads/[id]/follow-up/route.ts
+- src/app/api/leads/[id]/milestone/route.ts
+- src/app/not-found.tsx
+- src/lib/milestones.ts

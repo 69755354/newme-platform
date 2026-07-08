@@ -28,6 +28,7 @@ import {
 import { COMPLETABLE_MILESTONES } from "@/lib/milestones";
 import { calculateHealthScore } from "@/lib/health-score";
 import { STAGES, STAGE_COLORS } from "./types";
+import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { fmtAED, daysSince } from "./utils";
 import type {
   Lead,
@@ -376,25 +377,36 @@ export default function LeadSalesProcess({
           <div>
             <p className="text-xs text-muted-foreground mb-1.5">{t("leadDetail.updateStage")}</p>
             <div className="flex flex-wrap gap-1">
-              {STAGES.filter((s) => s !== "won" && s !== "lost").map((s) => (
-                <button
-                  key={s}
-                  className={cn(
-                    "text-[10px] px-2 py-1 rounded border transition-colors",
-                    lead.stage === s
-                      ? "border-transparent text-foreground"
-                      : "border-border text-muted-foreground hover:border-gray-500"
-                  )}
-                  style={
-                    lead.stage === s
-                      ? { backgroundColor: STAGE_COLORS[s]?.split(" ")[0]?.replace("/10", "/30") || "#6b7280" }
-                      : {}
-                  }
-                  onClick={() => onStageChange(s)}
-                >
-                  {t(`stageLabels.${s}`)}
-                </button>
-              ))}
+              {(() => {
+                const stageKeys: string[] = PIPELINE_STAGES.map(s => s.key);
+                const curIdx = stageKeys.indexOf(lead.stage ?? 'new');
+                return STAGES.filter((s) => s !== "won" && s !== "lost").map((s) => {
+                  const sIdx = stageKeys.indexOf(s);
+                  const isBeyondNext = curIdx >= 0 && sIdx > curIdx + 1;
+                  return (
+                    <button
+                      key={s}
+                      disabled={isBeyondNext}
+                      className={cn(
+                        "text-[10px] px-2 py-1 rounded border transition-colors",
+                        lead.stage === s
+                          ? "border-transparent text-foreground"
+                          : isBeyondNext
+                            ? "border-border text-muted-foreground/30 cursor-not-allowed"
+                            : "border-border text-muted-foreground hover:border-gray-500"
+                      )}
+                      style={
+                        lead.stage === s
+                          ? { backgroundColor: STAGE_COLORS[s]?.split(" ")[0]?.replace("/10", "/30") || "#6b7280" }
+                          : {}
+                      }
+                      onClick={() => onStageChange(s)}
+                    >
+                      {t(`stageLabels.${s}`)}
+                    </button>
+                  );
+                });
+              })()}
             </div>
           </div>
           <div className="flex gap-2">

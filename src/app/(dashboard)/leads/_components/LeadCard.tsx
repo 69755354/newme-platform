@@ -404,12 +404,21 @@ export function LeadCard({
         {isEditing && (
           <div className="pt-2 border-t border-border" onClick={(e) => e.stopPropagation()}>
             <div className="flex flex-wrap gap-1 mb-1">
-              {PIPELINE_STAGES.map(s => (
-                <button key={s.key}
-                  className={cn("text-[10px] px-2 py-1 rounded-full border transition-colors", lead.stage === s.key ? "border-transparent text-foreground" : "border-border text-muted-foreground hover:border-foreground/30")}
-                  style={lead.stage === s.key ? { backgroundColor: s.color } : {}}
-                  onClick={() => onChangeStage(s.key)}>{t(`stageLabels.${s.key}`)}</button>
-              ))}
+              {PIPELINE_STAGES.map(s => {
+                const curIdx = stageIdx;
+                const sIdx = PIPELINE_STAGES.findIndex(x => x.key === s.key);
+                const isBeyondNext = curIdx >= 0 && sIdx > curIdx + 1;
+                return (
+                  <button key={s.key}
+                    disabled={isBeyondNext}
+                    className={cn("text-[10px] px-2 py-1 rounded-full border transition-colors",
+                      lead.stage === s.key ? "border-transparent text-foreground"
+                      : isBeyondNext ? "border-border text-muted-foreground/30 cursor-not-allowed"
+                      : "border-border text-muted-foreground hover:border-foreground/30")}
+                    style={lead.stage === s.key ? { backgroundColor: s.color } : {}}
+                    onClick={() => onChangeStage(s.key)}>{t(`stageLabels.${s.key}`)}</button>
+                );
+              })}
             </div>
             <div className="flex gap-1 mt-1 flex-wrap">
               {/* Probability */}

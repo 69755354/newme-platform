@@ -2,7 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { fmtDubai } from "@/lib/utils";
+import { cn, fmtDubai } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { AlertTriangle, CheckCircle2, Clock, Lock, MessageSquare, Phone, ShieldCheck, Unlock } from "lucide-react";
 import type { FollowUpLog, Lead, LeadMilestone } from "./types";
@@ -275,8 +275,40 @@ export default function LeadContactQualityPanel({
                 </li>
               ))}
             </ul>
-          )}
-        </div>
+           )}
+         </div>
+
+        {/* ── Quality Selector — appears when quality not yet assessed ── */}
+        {qualityAssessed ? null : (
+          <div className="border-t border-border/50 pt-2 mt-2">
+            <div className="mb-2 text-xs font-medium text-muted-foreground">
+              {lang === "zh" ? "设置联系质量" : "Set Contact Quality"}
+            </div>
+            <div className="flex gap-2">
+              {(["good", "normal", "poor"] as const).map((q) => (
+                <button
+                  key={q}
+                  onClick={async () => {
+                    const res = await fetch(`/api/leads/${lead?.id}/quality`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ quality: q }),
+                    });
+                    if (res.ok) window.location.reload();
+                  }}
+                  className={cn(
+                    "text-xs px-3 py-1.5 rounded border transition-colors",
+                    q === "good" ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" :
+                    q === "normal" ? "border-amber-500/30 text-amber-400 hover:bg-amber-500/10" :
+                    "border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                  )}
+                >
+                  {q === "good" ? "✓ Good" : q === "normal" ? "Normal" : "⚠️ Poor"}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

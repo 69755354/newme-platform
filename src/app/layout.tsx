@@ -4,14 +4,13 @@ import "./globals.css";
 import { HtmlLangSync } from "@/components/HtmlLangSync";
 import MetaPixel from "@/components/MetaPixel";
 import { PostHogProviderWrapper } from "@/components/PostHogProvider";
-import { WebVitalsReporter } from "@/lib/WebVitalsReporter";
 import { ErrorBoundary } from "@/components/error-boundary";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "NewMe CRM",
+  title: "NewMe OS",
   description: "Smart Home Business Platform",
 };
 
@@ -22,7 +21,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <HtmlLangSync />
         <MetaPixel />
         <PostHogProviderWrapper>
-          <WebVitalsReporter />
           <ErrorBoundary>
             {children}
           </ErrorBoundary>

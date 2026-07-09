@@ -137,9 +137,9 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         .eq("id", leadId)
         .maybeSingle();
 
-      // ─── BATCH 2 (parallel to Batch 1): 3 independent queries ──────────
-      // Activities — direct PostgREST instead of Route Handler (saves
-      //   extra SSR + auth + service-client-rebuild hop).
+      // ─── Batch 2 (parallel to Batch 1): 3 independent queries ──────────
+      // Activities — direct PostgREST instead of Route Handler (removes
+      //   the extra Next.js/API hop and keeps it parallel with other reads).
       const activitiesPromise = supabase
         .from("activities")
         .select("id, lead_id, type, content, created_at, user_id, metadata")

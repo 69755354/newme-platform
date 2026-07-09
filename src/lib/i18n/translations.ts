@@ -63,7 +63,8 @@ export const translations = {
       quotes: "Quotes",
       roleManagement: "Management",
       roleSales: "Sales",
-      platformTitle: "CRM Platform",
+      platformTitle: "NewMe OS",
+      platformSubtitle: "全新思维智能环境",
       logout: "Logout",
       // Management nav items
       commandCenter: "Command Center",
@@ -890,8 +891,8 @@ export const translations = {
       Other: "Other",
     },
     login: {
-      title: "NewMe CRM Platform",
-      subtitle: "Sign in to your account",
+      title: "NewMe OS",
+      subtitle: "A new-minded intelligent environment",
       email: "Email",
       password: "Password",
       signIn: "Sign In",

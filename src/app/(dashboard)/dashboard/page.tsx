@@ -303,9 +303,9 @@ export default function DashboardPage() {
   // Actuals: sales only counts their own, management counts all
   const myWonLeads = leads.filter(l => l.assigned_to === userId && l.final_status === "won");
   const mySigningActual = myWonLeads.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
-  const signingActual = userRole === "sales" ? mySigningActual : (financeStats.received + financeStats.outstanding);
+  const signingActual = userRole === "sales" ? mySigningActual : financeStats.totalContractValue;
   const myCollectionActual = financeStats.received; // TODO: filter by sales_id when finance supports it
-  const collectionActual = userRole === "sales" ? myCollectionActual : financeStats.received;
+  const collectionActual = financeStats.received;
   const signingPct = signingTarget > 0 ? Math.round((signingActual / signingTarget) * 100) : null;
   const collectionPct = collectionTarget > 0 ? Math.round((collectionActual / collectionTarget) * 100) : null;
 

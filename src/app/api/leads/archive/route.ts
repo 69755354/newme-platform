@@ -1,3 +1,4 @@
+// RBAC: user (boss, admin)
 // POST /api/leads/archive — Soft-archive leads (Mohamed or specific lead_ids)
 import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";

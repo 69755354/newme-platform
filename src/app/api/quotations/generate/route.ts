@@ -1,3 +1,4 @@
+// RBAC: user (admin, boss) + service_role
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";

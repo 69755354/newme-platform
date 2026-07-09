@@ -1,3 +1,4 @@
+// RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/knx-task-store";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";

@@ -1,3 +1,4 @@
+// RBAC: user (boss, admin)
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { createServerSupabase } from "@/lib/supabase-server";

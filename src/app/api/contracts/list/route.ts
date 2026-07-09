@@ -1,3 +1,4 @@
+// RBAC: user (authenticated)
 import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
 import { getCached, setCache } from "@/lib/api-cache"

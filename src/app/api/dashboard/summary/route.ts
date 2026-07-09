@@ -1,3 +1,4 @@
+// RBAC: user (authenticated)
 // GET /api/dashboard/summary — Aggregated dashboard data with 30s cache
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";

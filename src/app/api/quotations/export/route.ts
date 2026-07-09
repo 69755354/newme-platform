@@ -1,3 +1,4 @@
+// RBAC: user (authenticated) + service_role
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";

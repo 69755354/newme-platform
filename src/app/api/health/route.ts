@@ -1,3 +1,4 @@
+// RBAC: public
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import fs from "fs";

@@ -1,3 +1,4 @@
+// RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getStore } from "@/lib/knx-task-store";

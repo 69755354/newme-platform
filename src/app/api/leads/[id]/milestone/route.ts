@@ -1,3 +1,4 @@
+// RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { canCompleteMilestone } from "@/lib/milestones";

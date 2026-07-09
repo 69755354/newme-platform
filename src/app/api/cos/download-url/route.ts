@@ -1,3 +1,4 @@
+// RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";

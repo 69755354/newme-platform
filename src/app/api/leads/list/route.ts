@@ -1,3 +1,4 @@
+// RBAC: user (authenticated)
 // GET /api/leads/list — Aggregated leads list data with 30s cache
 // Server-side auth.getUser() → profile role → leads (500 max) → sales users
 // All 4 queries parallelized with Promise.all

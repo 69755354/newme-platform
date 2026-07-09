@@ -1,3 +1,4 @@
+// RBAC: cron (x-cron-secret, disabled)
 import { NextRequest, NextResponse } from "next/server";
 
 /**

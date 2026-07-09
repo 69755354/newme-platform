@@ -1,3 +1,4 @@
+// RBAC: user (boss, admin)
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 

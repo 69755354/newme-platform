@@ -1,3 +1,4 @@
+// RBAC: user (authenticated)
 // GET /api/analytics/summary — Consolidated analytics data with 30s cache
 // Aggregates: ads stats, funnel stats, revenue stats, lead conversion stats
 // Server-side auth.getUser() → profile role → all queries in Promise.all

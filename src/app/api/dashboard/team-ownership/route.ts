@@ -1,3 +1,4 @@
+// RBAC: user (authenticated)
 // GET /api/dashboard/team-ownership — Team Lead Ownership stats (30s cache)
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";

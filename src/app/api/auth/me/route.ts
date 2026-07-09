@@ -1,3 +1,4 @@
+// RBAC: user (authenticated)
 import { createServerSupabase } from "@/lib/supabase-server";
 import { NextResponse } from "next/server";
 

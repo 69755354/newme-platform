@@ -510,6 +510,7 @@ export default function LeadDetailPage() {
             renderJsonEdit={renderJsonEdit}
             renderNextFollowupDate={renderNextFollowupDate}
             renderNextAction={renderNextAction}
+            onAddContact={async (text: string) => { await addNote(text); }}
             t={t}
             lang={lang}
           />

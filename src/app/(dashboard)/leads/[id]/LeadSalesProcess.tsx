@@ -8,6 +8,7 @@
 // onToggleMilestone, …). Inline edits reuse the page-owned render closures so the
 // single-edit-at-a-time behaviour is preserved across columns.
 
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,13 @@ import {
   FileText,
   WandSparkles,
   Calendar,
+  Send,
+  ThumbsUp,
+  Minus,
+  ThumbsDown,
+  Phone,
+  MessageSquare,
+  Clock,
 } from "lucide-react";
 import { COMPLETABLE_MILESTONES } from "@/lib/milestones";
 import { calculateHealthScore } from "@/lib/health-score";
@@ -61,6 +69,7 @@ interface Props {
   renderJsonEdit: RenderJsonEdit;
   renderNextFollowupDate: () => React.ReactNode;
   renderNextAction: () => React.ReactNode;
+  onAddContact: (noteText: string) => Promise<void>;
   t: (key: string) => string;
   lang: "en" | "zh";
 }
@@ -91,9 +100,17 @@ export default function LeadSalesProcess({
   renderJsonEdit,
   renderNextFollowupDate,
   renderNextAction,
+  onAddContact,
   t,
   lang,
 }: Props) {
+  // ── Inline workspace state for first_contact milestone ──
+  const [contactNote, setContactNote] = useState("");
+  const [contactSubmitting, setContactSubmitting] = useState(false);
+  const [showQualityPoorReason, setShowQualityPoorReason] = useState(false);
+  const [qualityPoorReason, setQualityPoorReason] = useState("");
+  const [qualitySetting, setQualitySetting] = useState<string | null>(null);
+
   // Latest trace row carries the quote / contract / payment state for the links.
   const trace = leadTrace[0];
 
@@ -258,22 +275,213 @@ export default function LeadSalesProcess({
                     {completed && <p className="text-[10px] text-emerald-400">{t("leadDetail.milestoneCompleted")}</p>}
                     {isNext && !completed && <p className="text-[10px] text-copper-400">{t("leadDetail.milestoneNext")}</p>}
                     {locked && <p className="text-[10px] text-gray-600">{t("leadDetail.milestoneLocked")}</p>}
-                    {/* first_contact gate requirements */}
+                    {/* first_contact inline workspace */}
                     {key === "first_contact" && !completed && isNext && (() => {
                       const contactTimeCount = followUpLogs.filter(l => l.contact_time != null).length;
                       const qAssessed = lead.quality && lead.quality !== "pending";
+                      const contactsNeeded = 3;
+                      const contactsMet = contactTimeCount >= contactsNeeded;
+
+                      // Sorted recent contacts
+                      const sortedLogs = [...followUpLogs]
+                        .filter(l => l.contact_time != null)
+                        .sort((a, b) =>
+                          new Date(b.contact_time!).getTime() - new Date(a.contact_time!).getTime()
+                        );
+                      const recentContacts = sortedLogs.slice(0, 3);
+
+                      const contactTypeIcon = (type: string) => {
+                        if (type === "phone") return <Phone className="h-3 w-3 shrink-0" />;
+                        if (type === "whatsapp") return <MessageSquare className="h-3 w-3 shrink-0" />;
+                        return <Clock className="h-3 w-3 shrink-0" />;
+                      };
+
+                      const handleAddContact = async () => {
+                        if (!contactNote.trim() || contactSubmitting) return;
+                        setContactSubmitting(true);
+                        try {
+                          await onAddContact(contactNote.trim());
+                          setContactNote("");
+                        } finally {
+                          setContactSubmitting(false);
+                        }
+                      };
+
+                      const handleSetQuality = async (q: "good" | "normal" | "poor", poorReason?: string) => {
+                        setQualitySetting(q);
+                        try {
+                          const body: Record<string, unknown> = { quality: q };
+                          if (q === "poor") body.poor_reason = poorReason ?? "";
+                          const res = await fetch(`/api/leads/${lead.id}/quality`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(body),
+                          });
+                          if (!res.ok) {
+                            const err = await res.json().catch(() => ({}));
+                            alert((err as any)?.error || "Failed to set quality");
+                          } else {
+                            window.location.reload();
+                          }
+                        } catch {
+                          // reload on any error to stay consistent with LeadContactQualityPanel
+                        } finally {
+                          setQualitySetting(null);
+                        }
+                      };
+
                       return (
-                      <div className="mt-1.5 space-y-0.5">
-                        <div className="flex items-center gap-1.5 text-[10px]">
-                          <span className={contactTimeCount >= 3 ? "text-emerald-400" : "text-amber-400"}>
-                            {contactTimeCount >= 3 ? "✓" : "○"} {contactTimeCount}/3 contacts with time
-                          </span>
+                      <div className="mt-2 space-y-2 border-t border-border/50 pt-2">
+                        {/* ── Status indicators ── */}
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5 text-[10px]">
+                            <span className={contactsMet ? "text-emerald-400" : "text-amber-400"}>
+                              {contactsMet ? "✓" : "○"} {contactTimeCount}/{contactsNeeded} {t("leadDetail.contactsWithTime") || "contacts with time"}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[10px]">
+                            <span className={qAssessed ? "text-emerald-400" : "text-amber-400"}>
+                              {qAssessed ? "✓" : "○"} {t("leadDetail.qualityAssessed") || "Quality assessed"}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5 text-[10px]">
-                          <span className={qAssessed ? "text-emerald-400" : "text-amber-400"}>
-                            {qAssessed ? "✓" : "○"} Quality assessed
-                          </span>
+
+                        {/* ── Add Contact inline form ── */}
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={contactNote}
+                            onChange={(e) => setContactNote(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && contactNote.trim()) handleAddContact();
+                            }}
+                            placeholder={t("leadDetail.addContactPlaceholder") || "Add contact note..."}
+                            disabled={contactSubmitting}
+                            className="flex-1 h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground placeholder:text-muted-foreground/50"
+                          />
+                          <button
+                            onClick={handleAddContact}
+                            disabled={!contactNote.trim() || contactSubmitting}
+                            className={cn(
+                              "h-7 w-7 flex items-center justify-center rounded border transition-colors shrink-0",
+                              contactNote.trim() && !contactSubmitting
+                                ? "border-copper-500/30 text-copper-400 hover:bg-copper-500/10"
+                                : "border-border text-muted-foreground/30 cursor-not-allowed"
+                            )}
+                          >
+                            <Send className="h-3 w-3" />
+                          </button>
                         </div>
+
+                        {/* ── Quality selector ── */}
+                        <div className="space-y-1">
+                          <p className="text-[10px] text-muted-foreground">
+                            {t("leadDetail.setContactQuality") || "Set Contact Quality"}
+                            {!contactsMet && (
+                              <span className="text-amber-400 ml-1">
+                                ({t("leadDetail.needMoreContacts") || `need ${contactsNeeded - contactTimeCount} more contacts`})
+                              </span>
+                            )}
+                          </p>
+                          {showQualityPoorReason ? (
+                            <div className="space-y-1.5">
+                              <input
+                                autoFocus
+                                type="text"
+                                value={qualityPoorReason}
+                                onChange={(e) => setQualityPoorReason(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Escape") { setShowQualityPoorReason(false); setQualityPoorReason(""); }
+                                }}
+                                placeholder={t("leadDetail.poorReasonPlaceholder") || "Enter reason for Poor (min 3 chars)"}
+                                className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground"
+                              />
+                              <div className="flex gap-1.5">
+                                <button
+                                  disabled={qualityPoorReason.trim().length < 3 || qualitySetting === "poor"}
+                                  onClick={() => handleSetQuality("poor", qualityPoorReason.trim())}
+                                  className="text-[10px] px-2 py-1 rounded border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {qualitySetting === "poor" ? "..." : t("leadDetail.confirmPoor") || "Confirm Poor"}
+                                </button>
+                                <button
+                                  onClick={() => { setShowQualityPoorReason(false); setQualityPoorReason(""); }}
+                                  className="text-[10px] px-2 py-1 rounded border border-border text-muted-foreground hover:border-gray-500"
+                                >
+                                  {t("common.cancel") || "Cancel"}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex gap-1.5">
+                              <button
+                                disabled={!contactsMet || qualitySetting !== null}
+                                onClick={() => handleSetQuality("good")}
+                                className={cn(
+                                  "text-[10px] px-2 py-1 rounded border transition-colors flex items-center gap-1",
+                                  contactsMet && qualitySetting === null
+                                    ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                                    : "border-border text-muted-foreground/30 cursor-not-allowed"
+                                )}
+                              >
+                                <ThumbsUp className="h-3 w-3" />
+                                {t("leadDetail.qualityGood") || "Good"}
+                              </button>
+                              <button
+                                disabled={!contactsMet || qualitySetting !== null}
+                                onClick={() => handleSetQuality("normal")}
+                                className={cn(
+                                  "text-[10px] px-2 py-1 rounded border transition-colors flex items-center gap-1",
+                                  contactsMet && qualitySetting === null
+                                    ? "border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                                    : "border-border text-muted-foreground/30 cursor-not-allowed"
+                                )}
+                              >
+                                <Minus className="h-3 w-3" />
+                                {t("leadDetail.qualityNormal") || "Normal"}
+                              </button>
+                              <button
+                                disabled={!contactsMet || qualitySetting !== null}
+                                onClick={() => setShowQualityPoorReason(true)}
+                                className={cn(
+                                  "text-[10px] px-2 py-1 rounded border transition-colors flex items-center gap-1",
+                                  contactsMet && qualitySetting === null
+                                    ? "border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                                    : "border-border text-muted-foreground/30 cursor-not-allowed"
+                                )}
+                              >
+                                <ThumbsDown className="h-3 w-3" />
+                                {t("leadDetail.qualityPoor") || "Poor"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ── Recent contacts list ── */}
+                        {recentContacts.length > 0 && (
+                          <div className="space-y-0.5">
+                            <p className="text-[10px] text-muted-foreground">
+                              {t("leadDetail.recentContacts") || "Recent Contacts"}
+                            </p>
+                            <ul className="space-y-0.5">
+                              {recentContacts.map((log) => (
+                                <li key={log.id} className="flex items-start gap-1.5 text-[10px]">
+                                  <span className="mt-0.5 text-muted-foreground">
+                                    {contactTypeIcon(log.contact_type)}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="truncate text-foreground/80">
+                                      {log.summary || "(no summary)"}
+                                    </div>
+                                    <div className="text-[9px] text-muted-foreground">
+                                      {fmtDubai(log.contact_time || log.created_at)}
+                                    </div>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                       );
                     })()}

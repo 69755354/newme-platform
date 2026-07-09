@@ -301,7 +301,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       .from("leads")
       .update(updates)
       .eq("id", leadId)
-      .select("id")
+      .select("id, project_type, emirate, area, ac_brand, customer_budget")
       .single();
     // Fix B: RLS can reject with HTTP 200 + error=null but 0 rows updated.
     // Require the row back so a blocked update never shows a false "Saved".
@@ -343,7 +343,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       .from("leads")
       .update(updates)
       .eq("id", leadId)
-      .select("id")
+      .select("id, project_type, emirate, area, ac_brand, customer_budget")
       .single();
     if (err || !updated) {
       console.error("[LeadDetail] project info save failed");
@@ -351,6 +351,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       toast.error(t("common.saveFailed"));
       return;
     }
+    params.setProjectInfoDraft(projectDraftFromLead(updated));
     // Fix D: write audit (activities + business_event), mirroring updateField().
     // Only fields that actually changed are listed, so the timeline stays useful.
     const before = projectDraftFromLead(lead);
@@ -402,8 +403,13 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   // ─── Next Required Action — updates nextTask (creates a task if none) ───
   const updateNextTask = useCallback(async (updates: Partial<Pick<Task, "title" | "due_at">>) => {
     if (nextTask) {
-      const { error: err } = await supabase.from("tasks").update(updates).eq("id", nextTask.id);
-      if (err) {
+      const { data: updated, error: err } = await supabase
+        .from("tasks")
+        .update(updates)
+        .eq("id", nextTask.id)
+        .select("id")
+        .single();
+      if (err || !updated) {
         console.error("[LeadDetail] task update failed");
         setError(t("common.saveFailed") || "Save failed");
         return;
@@ -425,7 +431,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     }
     setEditField(null);
     await fetchData();
-  }, [nextTask, leadId, lead, t, writeEvent, fetchData, setError]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nextTask, leadId, lead, t, fetchData, setError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Won / Lost handlers (Stage update + toast, contract via DB trigger) ─
   const handleWon = useCallback(async () => {

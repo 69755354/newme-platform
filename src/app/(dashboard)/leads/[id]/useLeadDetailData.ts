@@ -84,8 +84,8 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
 
   // P0-1 fetchData: 11 serial awaits → 2 parallel Promise.allSettled batches
   // ──────────────────────────────────────────────────────────────────────────
-  // Batch 1 (1 HTTP): leads main + 5 embeds (creator/assignee profiles +
-  //   follow_ups + milestones + business_events+operator + next_task)
+  // Batch 1 (1 HTTP): leads main + 4 embeds (creator/assignee profiles +
+  //   follow_ups + milestones + business_events+operator)
   // Batch 2 (3 HTTP, parallel): activities (was Route Handler, now direct
   //   supabase) + chat_messages (RLS-sensitive, kept independent) +
   //   v_lead_trace (view has no PostgREST relation)
@@ -103,7 +103,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
       // Ensure auth session is set before any queries (fixes setSession race)
       await supabase.auth.getUser();
 
-      // ─── BATCH 1: leads + 5 embeds in one HTTP request ─────────────────
+      // ─── BATCH 1: leads + 4 embeds in one HTTP request ─────────────────
       const leadPromise = supabase
         .from("leads")
         .select(
@@ -131,8 +131,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
            business_events:business_events!business_events_lead_id_fkey(
              id, event_type, event_data, description, created_at, user_id,
              operator:profiles!fk_business_events_user_id(id, full_name)
-           ),
-           next_task:tasks!tasks_lead_id_fkey(id, title, due_at)`
+           )`
         )
         .eq("id", leadId)
         .maybeSingle();
@@ -162,6 +161,18 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         .select("*")
         .eq("lead_id", leadId);
 
+      // Next Required Action source of truth is tasks, not leads.next_action
+      // or the unfiltered lead embed. Read the next open task directly.
+      const nextTaskPromise = supabase
+        .from("tasks")
+        .select("id, title, due_at, completed_at")
+        .eq("lead_id", leadId)
+        .eq("status", "pending")
+        .is("completed_at", null)
+        .order("due_at", { ascending: true, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+
       // Run Batch 1 + Batch 2 in parallel. allSettled so a single failed
       //   sub-query does NOT abort the rest (matches original per-query
       //   console.warn behaviour — only lead main failure was fatal).
@@ -170,9 +181,10 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         activitiesPromise,
         chatMessagesPromise,
         leadTracePromise,
+        nextTaskPromise,
       ]);
 
-      const [leadRes, activitiesRes, chatRes, traceRes] = settled;
+      const [leadRes, activitiesRes, chatRes, traceRes, nextTaskRes] = settled;
 
       // ─── Rejection logging (network errors) ───────────────────────────
       // for...of so TS narrows PromiseSettledResult properly.
@@ -244,13 +256,6 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         );
         if (transfers.length > 0) setTransferHistory(transfers);
       }
-      // next_task: embed can't filter (no .where/.is/.limit on embed),
-      //   so filter + sort client-side to pick the next upcoming task.
-      const nt = ((l?.next_task || []) as any[])
-        .filter((t) => t.due_at != null)
-        .sort((a, b) => (a.due_at > b.due_at ? 1 : -1))[0] || null;
-      setNextTask(nt as Task | null);
-
       // ─── Independent queries from Batch 2 — soft-error handling ──────
       // Per design §6.4: original code wrapped each independent query in
       //   console.warn (non-fatal). allSettled + per-result check keeps
@@ -272,6 +277,17 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
           }
         }
         // rejected cases already logged above
+      }
+
+      if (nextTaskRes.status === "fulfilled") {
+        const payload = nextTaskRes.value;
+        if (payload.error) {
+          console.warn("[LeadDetail] non-fatal fetch (tasks):", payload.error);
+        } else {
+          setNextTask((payload.data as Task | null) ?? null);
+        }
+      } else {
+        setNextTask(null);
       }
 
       if (perfMark && typeof performance !== "undefined") {

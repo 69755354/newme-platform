@@ -227,6 +227,7 @@ export interface FollowUpLog {
   summary: string;
   user_id: string | null;
   contact_time: string | null;
+  contact_result?: string | null;
   created_at: string;
 }
 

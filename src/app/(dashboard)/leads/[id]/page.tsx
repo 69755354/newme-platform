@@ -165,6 +165,7 @@ export default function LeadDetailPage() {
     handleLost,
     addNote,
     toggleMilestone,
+    addStructuredContact,
   } = useLeadDetailMutations({
     leadId: id as string,
     lead,
@@ -510,7 +511,7 @@ export default function LeadDetailPage() {
             renderJsonEdit={renderJsonEdit}
             renderNextFollowupDate={renderNextFollowupDate}
             renderNextAction={renderNextAction}
-            onAddContact={async (text: string) => { await addNote(text); }}
+            onAddStructuredContact={addStructuredContact}
             t={t}
             lang={lang}
           />

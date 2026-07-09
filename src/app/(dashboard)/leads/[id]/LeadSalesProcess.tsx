@@ -69,7 +69,12 @@ interface Props {
   renderJsonEdit: RenderJsonEdit;
   renderNextFollowupDate: () => React.ReactNode;
   renderNextAction: () => React.ReactNode;
-  onAddContact: (noteText: string) => Promise<void>;
+  onAddStructuredContact: (params: {
+    contact_method: string;
+    contact_time: string;
+    contact_result: string;
+    summary?: string;
+  }) => Promise<void>;
   t: (key: string) => string;
   lang: "en" | "zh";
 }
@@ -100,12 +105,16 @@ export default function LeadSalesProcess({
   renderJsonEdit,
   renderNextFollowupDate,
   renderNextAction,
-  onAddContact,
+  onAddStructuredContact,
   t,
   lang,
 }: Props) {
   // ── Inline workspace state for first_contact milestone ──
-  const [contactNote, setContactNote] = useState("");
+  const [contactMethod, setContactMethod] = useState("");
+  const [contactTime, setContactTime] = useState(new Date().toISOString().slice(0, 16));
+  const [contactResult, setContactResult] = useState("");
+  const [contactNotes, setContactNotes] = useState("");
+  const [contactFormOpen, setContactFormOpen] = useState(false);
   const [contactSubmitting, setContactSubmitting] = useState(false);
   const [showQualityPoorReason, setShowQualityPoorReason] = useState(false);
   const [qualityPoorReason, setQualityPoorReason] = useState("");
@@ -296,12 +305,23 @@ export default function LeadSalesProcess({
                         return <Clock className="h-3 w-3 shrink-0" />;
                       };
 
-                      const handleAddContact = async () => {
-                        if (!contactNote.trim() || contactSubmitting) return;
+                      const handleAddStructuredContact = async () => {
+                        if (contactSubmitting) return;
+                        if (!contactMethod || !contactTime || !contactResult.trim()) return;
                         setContactSubmitting(true);
                         try {
-                          await onAddContact(contactNote.trim());
-                          setContactNote("");
+                          await onAddStructuredContact({
+                            contact_method: contactMethod,
+                            contact_time: new Date(contactTime).toISOString(),
+                            contact_result: contactResult.trim(),
+                            summary: contactNotes.trim() || undefined,
+                          });
+                          // Reset form
+                          setContactMethod("");
+                          setContactTime(new Date().toISOString().slice(0, 16));
+                          setContactResult("");
+                          setContactNotes("");
+                          setContactFormOpen(false);
                         } finally {
                           setContactSubmitting(false);
                         }
@@ -330,6 +350,8 @@ export default function LeadSalesProcess({
                         }
                       };
 
+                      const canSubmit = contactMethod !== "" && contactTime !== "" && contactResult.trim() !== "" && !contactSubmitting;
+
                       return (
                       <div className="mt-2 space-y-2 border-t border-border/50 pt-2">
                         {/* ── Status indicators ── */}
@@ -346,32 +368,107 @@ export default function LeadSalesProcess({
                           </div>
                         </div>
 
-                        {/* ── Add Contact inline form ── */}
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="text"
-                            value={contactNote}
-                            onChange={(e) => setContactNote(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && contactNote.trim()) handleAddContact();
-                            }}
-                            placeholder={t("leadDetail.addContactPlaceholder") || "Add contact note..."}
-                            disabled={contactSubmitting}
-                            className="flex-1 h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground placeholder:text-muted-foreground/50"
-                          />
+                        {/* ── Add Structured Contact Record ── */}
+                        {!contactFormOpen ? (
                           <button
-                            onClick={handleAddContact}
-                            disabled={!contactNote.trim() || contactSubmitting}
-                            className={cn(
-                              "h-7 w-7 flex items-center justify-center rounded border transition-colors shrink-0",
-                              contactNote.trim() && !contactSubmitting
-                                ? "border-copper-500/30 text-copper-400 hover:bg-copper-500/10"
-                                : "border-border text-muted-foreground/30 cursor-not-allowed"
-                            )}
+                            onClick={() => setContactFormOpen(true)}
+                            className="flex items-center gap-1.5 text-[10px] text-copper-400 hover:text-copper-300 transition-colors w-full py-1"
                           >
-                            <Send className="h-3 w-3" />
+                            <Plus className="h-3 w-3" />
+                            {t("leadDetail.addContactRecord") || "+ Add Contact Record"}
                           </button>
-                        </div>
+                        ) : (
+                          <div className="space-y-2 p-2 rounded border border-copper-500/20 bg-copper-500/5">
+                            {/* Contact Method */}
+                            <div>
+                              <label className="text-[10px] text-muted-foreground block mb-0.5">
+                                {t("leadDetail.contactMethod") || "Contact Method"} *
+                              </label>
+                              <select
+                                value={contactMethod}
+                                onChange={(e) => setContactMethod(e.target.value)}
+                                disabled={contactSubmitting}
+                                className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground"
+                              >
+                                <option value="">{t("leadDetail.selectContactMethod") || "-- Select --"}</option>
+                                <option value="whatsapp">WhatsApp</option>
+                                <option value="phone">{t("leadDetail.contactMethodPhone") || "Phone"}</option>
+                                <option value="other">{t("common.other") || "Other"}</option>
+                              </select>
+                            </div>
+
+                            {/* Contact Time */}
+                            <div>
+                              <label className="text-[10px] text-muted-foreground block mb-0.5">
+                                {t("leadDetail.contactTime") || "Contact Time"} *
+                              </label>
+                              <input
+                                type="datetime-local"
+                                value={contactTime}
+                                onChange={(e) => setContactTime(e.target.value)}
+                                disabled={contactSubmitting}
+                                className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground"
+                              />
+                            </div>
+
+                            {/* Contact Result */}
+                            <div>
+                              <label className="text-[10px] text-muted-foreground block mb-0.5">
+                                {t("leadDetail.contactResult") || "Contact Result"} *
+                              </label>
+                              <input
+                                type="text"
+                                value={contactResult}
+                                onChange={(e) => setContactResult(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && canSubmit) handleAddStructuredContact();
+                                }}
+                                placeholder={t("leadDetail.contactResultPlaceholder") || "e.g. Interested, No answer..."}
+                                disabled={contactSubmitting}
+                                className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground placeholder:text-muted-foreground/50"
+                              />
+                            </div>
+
+                            {/* Summary / Notes (optional) */}
+                            <div>
+                              <label className="text-[10px] text-muted-foreground block mb-0.5">
+                                {t("leadDetail.contactNotes") || "Notes"}
+                              </label>
+                              <input
+                                type="text"
+                                value={contactNotes}
+                                onChange={(e) => setContactNotes(e.target.value)}
+                                placeholder={t("leadDetail.contactNotesPlaceholder") || "Optional notes..."}
+                                disabled={contactSubmitting}
+                                className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground placeholder:text-muted-foreground/50"
+                              />
+                            </div>
+
+                            {/* Submit / Cancel row */}
+                            <div className="flex gap-1.5 flex-wrap">
+                              <button
+                                onClick={handleAddStructuredContact}
+                                disabled={!canSubmit}
+                                className={cn(
+                                  "text-[10px] px-2 py-1 rounded border transition-colors flex items-center gap-1",
+                                  canSubmit
+                                    ? "border-copper-500/30 text-copper-400 hover:bg-copper-500/10"
+                                    : "border-border text-muted-foreground/30 cursor-not-allowed"
+                                )}
+                              >
+                                <Send className="h-3 w-3" />
+                                {contactSubmitting ? "..." : t("common.save") || "Save"}
+                              </button>
+                              <button
+                                onClick={() => setContactFormOpen(false)}
+                                disabled={contactSubmitting}
+                                className="text-[10px] px-2 py-1 rounded border border-border text-muted-foreground hover:border-gray-500"
+                              >
+                                {t("common.cancel") || "Cancel"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         {/* ── Quality selector ── */}
                         <div className="space-y-1">
@@ -413,7 +510,7 @@ export default function LeadSalesProcess({
                               </div>
                             </div>
                           ) : (
-                            <div className="flex gap-1.5">
+                            <div className="flex gap-1.5 flex-wrap">
                               <button
                                 disabled={!contactsMet || qualitySetting !== null}
                                 onClick={() => handleSetQuality("good")}
@@ -471,7 +568,7 @@ export default function LeadSalesProcess({
                                   </span>
                                   <div className="min-w-0 flex-1">
                                     <div className="truncate text-foreground/80">
-                                      {log.summary || "(no summary)"}
+                                      {log.contact_result || log.summary || "(no summary)"}
                                     </div>
                                     <div className="text-[9px] text-muted-foreground">
                                       {fmtDubai(log.contact_time || log.created_at)}
@@ -591,15 +688,27 @@ export default function LeadSalesProcess({
                 return STAGES.filter((s) => s !== "won" && s !== "lost").map((s) => {
                   const sIdx = stageKeys.indexOf(s);
                   const isBeyondNext = curIdx >= 0 && sIdx > curIdx + 1;
+                  // Gate 6: first_contact — require ≥3 contacts with time + quality before advancing to Contacted
+                  let gateDisabled = false;
+                  let gateTitle: string | undefined;
+                  if (s === "contacted") {
+                    const ctCount = followUpLogs.filter(l => l.contact_time != null).length;
+                    const qOk = lead.quality && lead.quality !== "pending";
+                    if (ctCount < 3 || !qOk) {
+                      gateDisabled = true;
+                      gateTitle = t("leadDetail.firstContactGateHint") || "Need 3 contact records with time and quality assessed";
+                    }
+                  }
                   return (
                     <button
                       key={s}
-                      disabled={isBeyondNext}
+                      disabled={isBeyondNext || gateDisabled}
+                      title={gateTitle}
                       className={cn(
                         "text-[10px] px-2 py-1 rounded border transition-colors",
                         lead.stage === s
                           ? "border-transparent text-foreground"
-                          : isBeyondNext
+                          : isBeyondNext || gateDisabled
                             ? "border-border text-muted-foreground/30 cursor-not-allowed"
                             : "border-border text-muted-foreground hover:border-gray-500"
                       )}
@@ -609,15 +718,6 @@ export default function LeadSalesProcess({
                           : {}
                       }
                       onClick={() => {
-                        // Gate 6: first_contact — require ≥3 contacts with time + quality before advancing to Contacted
-                        if (s === "contacted") {
-                          const ctCount = followUpLogs.filter(l => l.contact_time != null).length;
-                          const qOk = lead.quality && lead.quality !== "pending";
-                          if (ctCount < 3 || !qOk) {
-                            alert("Need 3 contact records with valid time before advancing");
-                            return;
-                          }
-                        }
                         onStageChange(s);
                       }}
                     >

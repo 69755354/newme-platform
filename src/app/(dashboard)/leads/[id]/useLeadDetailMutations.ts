@@ -95,6 +95,12 @@ export interface UseLeadDetailMutationsReturn {
   handleLost: () => Promise<void>;
   addNote: (noteText: string) => Promise<void>;
   toggleMilestone: (milestoneKey: string, currentlyCompleted: boolean) => Promise<void>;
+  addStructuredContact: (params: {
+    contact_method: string;
+    contact_time: string;
+    contact_result: string;
+    summary?: string;
+  }) => Promise<void>;
 }
 
 /* ─── Hook ─── */
@@ -487,6 +493,37 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     await fetchData();
   }, [updating, leadId, t, lang, fetchData]);
 
+  // ─── Add a structured contact record (first_contact workspace) ───
+  const addStructuredContact = useCallback(async (params: {
+    contact_method: string;
+    contact_time: string;
+    contact_result: string;
+    summary?: string;
+  }) => {
+    if (updating) return;
+    setUpdating(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error: insertError } = await supabase.from("follow_up_logs").insert({
+      lead_id: leadId,
+      user_id: user?.id ?? null,
+      contact_type: params.contact_method,
+      contact_time: params.contact_time,
+      contact_result: params.contact_result,
+      summary: params.summary ?? null,
+      no_answer: false,
+    });
+    if (insertError) {
+      console.error("[LeadDetail] structured contact save failed");
+      setUpdating(false);
+      toast.error(t("common.saveFailed"));
+      return;
+    }
+    await supabase.from("leads").update({ last_contact_date: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", leadId);
+    setUpdating(false);
+    toast.success(lang === "zh" ? "联系记录已保存" : "Contact record saved");
+    await fetchData();
+  }, [updating, leadId, t, lang, fetchData]);
+
   // ─── Milestone toggle: complete the next pending milestone, or uncomplete a completed one ─
   const toggleMilestone = useCallback(async (milestoneKey: string, currentlyCompleted: boolean) => {
     setUpdating(true);
@@ -535,7 +572,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     // Setters
     setUpdating, setEditField, setEditValue, setShowSalesDropdown, setMarkingPoor, setPoorReasonText, setProjectInfoStatus, setError,
     // Handlers
-    reassignSales, handleDelete, handleMarkPoor, writeEvent, updateField, saveProjectInfo, resetProjectInfoDraft, updateStage, updateNextTask, handleWon, handleLost, addNote, toggleMilestone,
+    reassignSales, handleDelete, handleMarkPoor, writeEvent, updateField, saveProjectInfo, resetProjectInfoDraft, updateStage, updateNextTask, handleWon, handleLost, addNote, toggleMilestone, addStructuredContact,
   };
 }
 

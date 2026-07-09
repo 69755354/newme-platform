@@ -546,6 +546,7 @@ export default function LeadDetailPage() {
       {/* Bottom folding panel — 6 collapsible blocks */}
       <LeadFoldingPanel
         lead={lead}
+        leadMilestones={leadMilestones}
         openPanel={openPanel}
         onOpenPanelChange={setOpenPanel}
         projectInfoDraft={projectInfoDraft}

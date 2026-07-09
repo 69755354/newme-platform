@@ -21,7 +21,7 @@ import { cn, fmtDubai } from "@/lib/utils";
 import { ChevronDown, RotateCcw } from "lucide-react";
 import LeadContractsPanel from "./LeadContractsPanel";
 import { fmtAED } from "./utils";
-import type { Lead, RenderJsonEdit } from "./types";
+import type { Lead, LeadMilestone, RenderJsonEdit } from "./types";
 
 // Project Info batch-save draft shape (mirrors the page.tsx useState).
 export type ProjectInfoDraft = {
@@ -34,6 +34,7 @@ export type ProjectInfoDraft = {
 
 interface Props {
   lead: Lead;
+  leadMilestones: LeadMilestone[];
   openPanel: string | null;
   onOpenPanelChange: (v: string | null) => void;
   projectInfoDraft: ProjectInfoDraft;
@@ -48,6 +49,7 @@ interface Props {
 
 export default function LeadFoldingPanel({
   lead,
+  leadMilestones,
   openPanel,
   onOpenPanelChange,
   projectInfoDraft,
@@ -68,16 +70,27 @@ export default function LeadFoldingPanel({
     { key: "project_exec", icon: "🏗️", title: t("leadDetail.projectTitle") },
   ];
 
+  // Gate: first_contact must be completed before bottom tabs are accessible
+  const firstContactMilestone = leadMilestones.find(m => m.milestone_key === "first_contact");
+  const firstContactDone = firstContactMilestone?.completed ?? false;
+
   return (
     <div className="space-y-2">
       {PANELS.map(({ key, icon, title }) => {
         const isOpen = openPanel === key;
+        const isGated = !firstContactDone && key !== "project_info";
         return (
-          <Card key={key} className="bg-card border-border overflow-visible">
+          <Card key={key} className={cn("bg-card border-border overflow-visible", isGated && "opacity-50")}>
             <button
               type="button"
-              onClick={() => onOpenPanelChange(isOpen ? null : key)}
-              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/40 transition-colors"
+              onClick={() => {
+                if (isGated) {
+                  alert("Complete first contact gate first");
+                  return;
+                }
+                onOpenPanelChange(isOpen ? null : key);
+              }}
+              className={cn("w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/40 transition-colors", isGated && "cursor-not-allowed")}
             >
               <span className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <span className="text-base leading-none">{icon}</span>

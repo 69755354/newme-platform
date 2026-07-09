@@ -282,8 +282,8 @@ export default function LeadContactQualityPanel({
            )}
          </div>
 
-        {/* ── Quality Selector — appears when quality not yet assessed ── */}
-        {qualityAssessed ? null : (
+        {/* ── Quality Selector — appears when ≥3 contacts met AND quality not yet assessed ── */}
+        {!contactsMet || qualityAssessed ? null : (
           <div className="border-t border-border/50 pt-2 mt-2">
             <div className="mb-2 text-xs font-medium text-muted-foreground">
               {lang === "zh" ? "设置联系质量" : "Set Contact Quality"}

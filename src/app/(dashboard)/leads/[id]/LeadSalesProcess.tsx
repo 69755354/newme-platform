@@ -400,7 +400,18 @@ export default function LeadSalesProcess({
                           ? { backgroundColor: STAGE_COLORS[s]?.split(" ")[0]?.replace("/10", "/30") || "#6b7280" }
                           : {}
                       }
-                      onClick={() => onStageChange(s)}
+                      onClick={() => {
+                        // Gate 6: first_contact — require ≥3 contacts with time + quality before advancing to Contacted
+                        if (s === "contacted") {
+                          const ctCount = followUpLogs.filter(l => l.contact_time != null).length;
+                          const qOk = lead.quality && lead.quality !== "pending";
+                          if (ctCount < 3 || !qOk) {
+                            alert("Need 3 contact records with valid time before advancing");
+                            return;
+                          }
+                        }
+                        onStageChange(s);
+                      }}
                     >
                       {t(`stageLabels.${s}`)}
                     </button>

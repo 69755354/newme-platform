@@ -14,3 +14,7 @@
 ## Dynamic verification risks
 - `GET /api/tasks/[id]` relies on RLS for ownership while PATCH adds explicit `assignee_id`; marked REVIEW in IDOR matrix.
 - Notification fanout paths in `src/app/api/notify/route.ts` require dynamic recipient tests.
+
+## npm audit classification
+
+`npm audit --omit=dev` and full `npm audit` currently return the same summary: 4 moderate, 2 high, 0 critical. Runtime/direct high: `xlsx` (SheetJS prototype pollution and ReDoS advisories; no safe blind force-upgrade in this Phase 0.5 change). Runtime/transitive high: `hono` via `@sentry/nextjs`. Runtime moderate: `next`/`postcss`, `dompurify`, and Sentry/Next transitive paths. These are recorded as P1 review risks rather than silently ignored.

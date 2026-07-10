@@ -11,3 +11,7 @@
 - Security: static IDOR evidence for lead quality, contract detail, payment confirm, task update, pipeline action, settings reassignment.
 - Integration/static: period/range and quality input validation evidence.
 - Regression DB/static: migration ordering and DB gate evidence.
+
+## Phase 0.5 clarification
+
+The current repository-owned tests are static/offline evidence tests and pure rule tests. They cover source structure, validation evidence, migration evidence tokens, and selected pure transition behavior. They do not execute multi-user dynamic IDOR attempts, real Supabase RLS policies, trigger transactions, or production-equivalent route handler requests against a database. Those remain Phase 1 dynamic-regression work.

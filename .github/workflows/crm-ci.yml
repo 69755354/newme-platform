@@ -1,68 +1,39 @@
 name: crm-ci
 
 on:
-  pull_request:
-  push:
+  workflow_run:
+    workflows:
+      - ci
     branches:
       - work
       - main
       - production
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
-  group: crm-ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: crm-ci-${{ github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  verify:
-    name: Taskboard, typecheck, lint, release guards
+  hermes-contract:
+    name: Hermes CI webhook contract
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
+    timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Record upstream CI result
+        run: |
+          echo "crm-ci is the Hermes workflow_run contract only."
+          echo "Upstream workflow: ${{ github.event.workflow_run.name || 'manual' }}"
+          echo "Conclusion: ${{ github.event.workflow_run.conclusion || 'manual' }}"
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Taskboard gate
-        run: bash scripts/check-taskboard.sh
-
-      - name: Route file gate
-        run: npm run check:route-files
-
-      - name: Schema reference gate
-        run: npm run check:schema-refs
-
-      - name: TypeScript typecheck
-        run: npm run typecheck
-
-      - name: Supabase boundary gate
-        run: npm run check:supabase-boundaries
-
-      - name: Database static regression gate
-        run: npm run check:db-static
-
-      - name: Repository tests
-        run: npm test
-
-      - name: Production build smoke
-        env:
-          NEXT_TELEMETRY_DISABLED: '1'
-          NODE_ENV: test
-          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
-          SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
-  SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
-          NEXT_PUBLIC_SENTRY_DSN: ''
-        run: npm run build
+      - name: Require upstream ci success
+        if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success' }}
+        run: |
+          echo "Upstream ci did not succeed; Hermes must treat this as blocking."
+          exit 1

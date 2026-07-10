@@ -1,33 +1,36 @@
 # Hermes CI webhook subscription — crm-ci
 
-Status: provider selected and repository workflow added on 2026-07-10.
+Status: provider selected; `crm-ci` is intentionally limited to the Hermes `workflow_run` contract after Phase 0.5.
 
 ## Provider
 
 - CI provider: GitHub Actions
 - Workflow file: `.github/workflows/crm-ci.yml`
 - Workflow name: `crm-ci`
-- Trigger events: `pull_request`, `push` to `work`, `main`, `production`, and manual `workflow_dispatch`
+- Trigger events: `workflow_run` after the `ci` workflow completes on `work`, `main`, or `production`, plus manual `workflow_dispatch`
+
+## Workflow responsibility split
+
+| Workflow | File | Triggers | Required check | Responsibility |
+|---|---|---|---|---|
+| `ci` | `.github/workflows/ci.yml` | `pull_request`, `push` to `work`/`main`/`production`, manual | `Repository validation` | Runs repository validation: install, taskboard, route/schema gates, Supabase boundary, DB static, lint baseline, typecheck, tests, build smoke. |
+| `crm-ci` | `.github/workflows/crm-ci.yml` | `workflow_run` after `ci`, manual | `Hermes CI webhook contract` | Provides the Hermes subscription target and fails if upstream `ci` did not succeed. It does not duplicate npm install/build/test gates. |
 
 ## Required GitHub repository secrets
 
-The build step reads these secrets if the production build requires live service configuration:
+None for Phase 0.5 CI validation. Build smoke uses safe placeholder values in `ci`; production secrets must not be used by CI.
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `NEXT_PUBLIC_SENTRY_DSN`
-- `SENTRY_AUTH_TOKEN`
-- `SENTRY_ORG`
-- `SENTRY_PROJECT`
-
-## Gates enforced by crm-ci
+## Gates enforced by ci
 
 1. `bash scripts/check-taskboard.sh`
 2. `npm run check:route-files`
 3. `npm run check:schema-refs`
-4. `npm run typecheck`
-5. `npm run build`
+4. `npm run check:supabase-boundaries`
+5. `npm run check:db-static`
+6. `npm run lint:baseline`
+7. `npm run typecheck`
+8. `npm test`
+9. `npm run build` with safe placeholder environment
 
 ## Hermes webhook subscription
 

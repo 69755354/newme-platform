@@ -104,6 +104,8 @@ export async function GET(request: NextRequest) {
       .lte("payment_date", rangeEnd)
       .eq("confirmed", true);
 
+    let payments: any[] = [];
+
     if (!isManagement) {
       // Get user's contract IDs first
       const { data: userContracts } = await supabase
@@ -114,13 +116,16 @@ export async function GET(request: NextRequest) {
       const userContractIds = (userContracts || []).map((c: any) => c.id);
       if (userContractIds.length > 0) {
         paymentsQuery = paymentsQuery.in("contract_id", userContractIds);
-      } else {
-        paymentsQuery = paymentsQuery.eq("contract_id", ""); // no results
+        const { data: p, error: paymentsErr } = await paymentsQuery;
+        if (paymentsErr) throw paymentsErr;
+        payments = p || [];
       }
+      // else: no contracts → payments stays empty, skip query
+    } else {
+      const { data: p, error: paymentsErr } = await paymentsQuery;
+      if (paymentsErr) throw paymentsErr;
+      payments = p || [];
     }
-
-    const { data: payments, error: paymentsErr } = await paymentsQuery;
-    if (paymentsErr) throw paymentsErr;
 
     // ─── Build weekly data ───
     const weeklyData = weeks.map((week) => {

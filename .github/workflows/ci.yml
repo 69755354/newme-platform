@@ -1,4 +1,4 @@
-name: crm-ci
+name: ci
 
 on:
   pull_request:
@@ -13,15 +13,21 @@ permissions:
   contents: read
 
 concurrency:
-  group: crm-ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  verify:
-    name: Taskboard, typecheck, lint, release guards
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+  NODE_ENV: test
+  NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
+  NEXT_PUBLIC_SENTRY_DSN: ''
 
+jobs:
+  validate:
+    name: Repository validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,23 +50,20 @@ jobs:
       - name: Schema reference gate
         run: npm run check:schema-refs
 
-      - name: TypeScript typecheck
-        run: npm run typecheck
-
       - name: Supabase boundary gate
         run: npm run check:supabase-boundaries
 
       - name: Database static regression gate
         run: npm run check:db-static
 
+      - name: Lint
+        run: npm run lint
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
       - name: Repository tests
         run: npm test
 
-      - name: Production build smoke
-        env:
-          NEXT_TELEMETRY_DISABLED: '1'
-          NODE_ENV: test
-          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
-          NEXT_PUBLIC_SENTRY_DSN: ''
+      - name: Build
         run: npm run build

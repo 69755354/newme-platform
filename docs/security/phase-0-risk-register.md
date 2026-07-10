@@ -1,0 +1,10 @@
+# Phase 0 Hardening Risk Register — 2026-07-11
+
+| ID | Class | Priority | Status | Evidence | Impact | Remediation | Verification |
+|---|---|---:|---|---|---|---|---|
+| P0-SB-001 | Architecture debt | P1 | REVIEW | `src/shared/hooks/usePipelineDragDrop.ts` performs client-side `leads`/`quotations` updates and event inserts. | Browser-reachable mutation path increases policy dependence and complicates auditability. | Move mutations behind server action/API with ownership checks; keep RLS as defense-in-depth. | `npm run check:supabase-boundaries`; targeted pipeline mutation tests. |
+| P0-CI-001 | Confirmed CI gap | P0 | FIXED | `.github/workflows/crm-ci.yml` used production repository secrets for build smoke. | Pull/push CI could depend on production secrets and mask unsafe env coupling. | Add `ci.yml` with safe placeholders; keep no deploy steps. | GitHub Actions plus local `npm run build`. |
+| P0-IDOR-001 | Dynamic verification risk | P1 | REVIEW | Dynamic resource APIs under `src/app/api/**/[id]/**` and server actions accept resource IDs. | Missing ownership checks can expose cross-sales records. | Maintain IDOR matrix and static/security tests; fix small confirmed gaps only. | `npm test`; `docs/security/idor-ownership-matrix.md`. |
+| P0-DB-001 | Regression gap | P1 | FIXED | Supabase migrations contain gates/triggers but no repo-owned static DB regression harness. | DB protections can regress silently. | Add static migration check and DB harness notes. | `npm run check:db-static`. |
+| P0-PM2-001 | Ops ambiguity | P2 | FIXED | `ecosystem.config.cjs` existed at repo root while production principle is systemd-only. | Operators may start PM2 instead of `newme-platform.service`. | Archive config and document PM2 ban for production. | `find`/`rg pm2`; docs review. |
+| P0-EXT-001 | BLOCKED_EXTERNAL_SOURCE | P2 | BLOCKED | `/home/ubuntu/.hermes/scripts/crm-regression.py` may be absent in CI/dev clones. | Historical regression intent may be unavailable. | Record block and maintain repository-owned deterministic tests. | `test -r /home/ubuntu/.hermes/scripts/crm-regression.py`. |

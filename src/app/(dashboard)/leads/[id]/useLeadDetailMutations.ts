@@ -306,11 +306,12 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     // Fix B: RLS can reject with HTTP 200 + error=null but 0 rows updated.
     // Require the row back so a blocked update never shows a false "Saved".
     if (err || !updated) {
-      console.error("[LeadDetail] field update failed");
-      setError(t("common.saveFailed") || "Save failed");
+      const detail = err?.message || t("common.saveFailed") || "Save failed";
+      console.error("[LeadDetail] field update failed", err);
+      setError(detail);
       setSaveStatus("error");
       setUpdating(false);
-      toast.error(t("common.saveFailed"));
+      toast.error(detail);
       return false;
     }
     setSaveStatus("saved");
@@ -346,9 +347,10 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       .select("id, project_type, emirate, area, ac_brand, customer_budget")
       .single();
     if (err || !updated) {
-      console.error("[LeadDetail] project info save failed");
+      const detail = err?.message || t("common.saveFailed") || "Save failed";
+      console.error("[LeadDetail] project info save failed", err);
       setProjectInfoStatus("error");
-      toast.error(t("common.saveFailed"));
+      toast.error(detail);
       return;
     }
     params.setProjectInfoDraft(projectDraftFromLead(updated));
@@ -507,6 +509,11 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     summary?: string;
   }) => {
     if (updating) return;
+    // Reject contacts without contact_result before hitting the DB trigger
+    if (!params.contact_result?.trim()) {
+      toast.error(t("leadDetail.contactResultRequired") || "Contact result is required");
+      return;
+    }
     setUpdating(true);
     const { data: { user } } = await supabase.auth.getUser();
     const { error: insertError } = await supabase.from("follow_up_logs").insert({

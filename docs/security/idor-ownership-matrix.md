@@ -1,0 +1,18 @@
+# IDOR / Ownership Matrix — Phase 0
+
+Status values: PASS = static evidence found; REVIEW = needs dynamic test or business confirmation; FAIL = confirmed missing guard.
+
+| Route/action | Method | Resource | Auth check | Role check | Ownership/team scope check | Server-side source of truth | User supplied owner/user ID? | Expected unauthorized result | Status | Evidence path | Test path |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `/api/leads/[id]/quality` | POST | lead quality | `getAuthProfile()` | admin/boss bypass | `lead.assigned_to === profile.userId` | `leads.assigned_to` | No | 401/403/404 | PASS | `src/app/api/leads/[id]/quality/route.ts` | `tests/security/idor-static.test.mjs` |
+| `/api/contracts/[id]` | GET | contract | `supabase.auth.getUser()` | admin/boss/operator/finance | `contract.sales_id === user.id` | `contracts.sales_id` | No | 401/403/404 | PASS | `src/app/api/contracts/[id]/route.ts` | `tests/security/idor-static.test.mjs` |
+| `/api/payments/[id]/confirm` | POST | payment | `supabase.auth.getUser()` | admin/boss/finance only | role-scoped; payment id resolved server-side | `payments.id`, RPC `confirm_payment` | No | 401/403/404 | PASS | `src/app/api/payments/[id]/confirm/route.ts` | `tests/security/idor-static.test.mjs` |
+| `/api/tasks/[id]` | PATCH | task | `supabase.auth.getUser()` | implicit assignee for PATCH | `.eq('assignee_id', user.id)` | `tasks.assignee_id` | No | 401/404 | PASS | `src/app/api/tasks/[id]/route.ts` | `tests/security/idor-static.test.mjs` |
+| `/api/tasks/[id]` | GET | task | `supabase.auth.getUser()` | RLS dependent | No explicit route ownership filter | Supabase RLS on `tasks` | No | 401/404 | REVIEW | `src/app/api/tasks/[id]/route.ts` | `tests/security/idor-static.test.mjs` |
+| `/api/notifications/[id]` | PATCH | notification | `supabase.auth.getUser()` | admin/boss bypass | non-admin `.eq('user_id', user.id)` | `notifications.user_id` | No | 401/404 | PASS | `src/app/api/notifications/[id]/route.ts` | future dynamic test |
+| `updateLeadStage` | server action | lead stage | `supabase.auth.getUser()` | admin/boss/operator bypass | `leads.assigned_to === user.id` | `leads.assigned_to` + DB stage gates | No | thrown Forbidden | PASS | `src/app/actions/pipeline.ts` | `tests/security/idor-static.test.mjs` |
+| `assignLead`/bulk assignment | server action | lead ownership | `supabase.auth.getUser()` | admin/boss/operator only | role-scoped assignment operation | `profiles.role`, `leads.assigned_to` | Yes, target user ID | thrown Forbidden | PASS | `src/app/actions/settings.ts` | `tests/security/idor-static.test.mjs` |
+| `createPayment` | server action | contract/payment | `supabase.auth.getUser()` | management bypass | `contract.sales_id === user.id` for sales | `contracts.sales_id` | No | thrown Forbidden | PASS | `src/app/actions/payments.ts` | future dynamic test |
+| `revokeContract` | server action | contract | `supabase.auth.getUser()` | admin/boss only | role-scoped | `profiles.role` | No | thrown error | PASS | `src/app/actions/contracts.ts` | future dynamic test |
+| `/api/cos/download-url` | POST | document object | `getAuthProfile()` | admin/boss fallback | resolves object key to lead then `canAccessLead` | object key -> `leads.assigned_to` | key supplied | 401/403/404 | PASS | `src/app/api/cos/download-url/route.ts` | future dynamic test |
+| `usePipelineDragDrop` | client hook | lead stage | browser session/RLS dependent | none in client | none before direct mutation | Supabase RLS + DB triggers | lead ID supplied by drag event | RLS error | REVIEW | `src/shared/hooks/usePipelineDragDrop.ts` | `scripts/check-supabase-boundaries.mjs` |

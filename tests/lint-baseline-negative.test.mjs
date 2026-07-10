@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const fixture = 'lint-baseline-negative-fixture.js';
-fs.writeFileSync(fixture, 'const unused = 1;\n');
+fs.writeFileSync(fixture, 'const = ;\n');
 try {
   const res = spawnSync('node', ['scripts/check-lint-baseline.mjs'], { encoding: 'utf8', maxBuffer: 1024 * 1024 * 20 });
   assert.notEqual(res.status, 0, 'lint baseline should block a new lint error');

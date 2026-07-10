@@ -149,3 +149,66 @@ Not performed:
 ```text
 https://github.com/69755354/newme-platform.git
 ```
+
+---
+
+# Phase 0.5 Re-review Update
+
+This section supersedes stale Phase 0 head-SHA facts above. It records the Phase 0.5 changes requested by GPT-5.6 review on PR #2.
+
+## Phase 0.5 fixes
+
+- Fixed malformed `.github/workflows/crm-ci.yml` YAML.
+- Split workflow responsibilities: `ci` is the main repository validation workflow; `crm-ci` is now the Hermes `workflow_run` contract and does not duplicate npm install/build/test gates.
+- Replaced permanently-red CI lint gate with `npm run lint:baseline`, which excludes generated/non-source directories, preserves the current baseline, and fails only on newly introduced lint errors.
+- Added `npm run lint:baseline:negative` to prove a deliberate new lint parse error is blocked.
+- Added `npm run check:workflows` YAML validation for all workflow files.
+- Clarified that current tests are static/offline evidence tests, not dynamic multi-user IDOR/RLS/trigger regression.
+- Added npm audit runtime/dev classification to the risk register and security audit.
+
+## Workflow responsibility split
+
+| Workflow | Required check | Trigger | Responsibility |
+|---|---|---|---|
+| `ci` | `Repository validation` | `pull_request`, `push` to `work`/`main`/`production`, manual | Runs install, taskboard, route/schema gates, Supabase boundary, DB static, lint baseline, workflow YAML validation, typecheck, tests, and build smoke. |
+| `crm-ci` | `Hermes CI webhook contract` | `workflow_run` after `ci`, manual | Serves as Hermes webhook subscription target and fails when upstream `ci` is not successful. |
+
+## Lint baseline policy
+
+- Full historical `npm run lint` remains a known baseline failure.
+- CI uses `npm run lint:baseline` instead of `npm run lint`.
+- The baseline excludes `.next/**`, `.next.backup/**`, `node_modules/**`, `docs/**`, `supabase/**`, and `coverage/**`.
+- `scripts/lint-baseline.json` stores the current controlled baseline.
+- New errors fail the gate.
+- The negative test creates a temporary invalid JS file and confirms the gate fails.
+
+## npm audit classification
+
+`npm audit --omit=dev` and full `npm audit` returned the same summary:
+
+- Runtime: 4 moderate, 2 high, 0 critical.
+- Dev-only delta: none observed in this run.
+- Direct high: `xlsx`.
+- Transitive high: `hono` via runtime dependency chain.
+- Moderate: `@sentry/nextjs`/`next`/`postcss`/`dompurify` related paths.
+
+No blind dependency upgrade was performed in Phase 0.5.
+
+## Phase 0.5 validation matrix
+
+- Workflow YAML validation: `npm run check:workflows` — PASS.
+- Lint baseline positive: `npm run lint:baseline` — PASS.
+- Lint baseline negative: `npm run lint:baseline:negative` — PASS; deliberate new lint error was blocked.
+- Typecheck: `npm run typecheck` — PASS.
+- Tests: `npm test` — PASS.
+- Build: safe placeholder `npm run build` — PASS expected after previous Phase 0 validation; re-run before final push/comment.
+- Supabase boundary: `npm run check:supabase-boundaries` — PASS.
+- DB static: `npm run check:db-static` — PASS.
+- Route gate: `npm run check:route-files` — PASS.
+- Schema gate: `npm run check:schema-refs` — PASS.
+- Migration status: no migration added, modified, or executed.
+- Production touch status: no production DB, no SSH, no deploy, no restart, no merge.
+
+## Latest-head note
+
+The authoritative latest remote head is the PR #2 `head.sha` read from GitHub after the final Phase 0.5 push. Do not rely on the older Phase 0 SHA above.

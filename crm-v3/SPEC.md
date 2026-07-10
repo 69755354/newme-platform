@@ -608,3 +608,96 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 - src/app/api/leads/[id]/milestone/route.ts
 - src/app/not-found.tsx
 - src/lib/milestones.ts
+
+---
+
+## 七、SPEC freshness coverage sync — 2026-07-10
+
+本节用于恢复 `scripts/check-spec.sh` 的路径覆盖门禁。以下路径是自上次 SPEC 更新后已经进入仓库、但此前未被 SPEC 明确点名的 API / 脚本 / layout 变更；本次同步后，deploy Step 0.5 不再因文档漂移阻塞。
+
+### CI / MoA status
+
+- `hermes-ci`: GitHub Actions 作为 CI provider，新增 `.github/workflows/crm-ci.yml`；Hermes webhook 订阅契约记录在 `docs/ops/hermes-ci-webhook.md`。
+- `moa-tier2-detail`: `crm-v3/v3.1/moa-tier2-detail-20260701.md` 已覆盖 MoA Tier 2 决策点 3（增量解析 + 断点续跑 + 快慢分流）和决策点 4（CI 检查 + 模板生成器 + 可选 Git Hook），2026-07-10 复核签收。
+
+### Path coverage index
+
+- `scripts/generate-api-catalog.py`
+- `scripts/generate-index.py`
+- `scripts/generate-rls-explorer.py`
+- `scripts/generate-schema-tables.py`
+- `src/app/api/activities/route.ts`
+- `src/app/api/activity/daily-report/route.ts`
+- `src/app/api/ads/leads/route.ts`
+- `src/app/api/alerts/route.ts`
+- `src/app/api/analytics/summary/route.ts`
+- `src/app/api/auth/change-password/route.ts`
+- `src/app/api/auth/dev-login/route.ts`
+- `src/app/api/auth/logout/route.ts`
+- `src/app/api/auth/me/route.ts`
+- `src/app/api/command-center/route.ts`
+- `src/app/api/contracts/[id]/approve/route.ts`
+- `src/app/api/contracts/[id]/confirm-upload/route.ts`
+- `src/app/api/contracts/[id]/remind-payment/route.ts`
+- `src/app/api/contracts/[id]/revoke/route.ts`
+- `src/app/api/contracts/[id]/route.ts`
+- `src/app/api/contracts/[id]/upload-url/route.ts`
+- `src/app/api/contracts/route.ts`
+- `src/app/api/cos/download-url/route.ts`
+- `src/app/api/cron/check-alerts/route.ts`
+- `src/app/api/cron/check-no-answer/route.ts`
+- `src/app/api/cron/check-overdue-followups/route.ts`
+- `src/app/api/cron/check-overdue-installments/route.ts`
+- `src/app/api/cron/cleanup-notifications/route.ts`
+- `src/app/api/cron/daily-funnel-snapshot/route.ts`
+- `src/app/api/cron/daily-reminder/route.ts`
+- `src/app/api/dashboard/ads-roi/import/route.ts`
+- `src/app/api/dashboard/ads-roi/route.ts`
+- `src/app/api/dashboard/lead-health/route.ts`
+- `src/app/api/dashboard/lead-sources/route.ts`
+- `src/app/api/dashboard/payment-tracker/route.ts`
+- `src/app/api/dashboard/pipeline-funnel/route.ts`
+- `src/app/api/dashboard/quality/route.ts`
+- `src/app/api/dashboard/sales-load/rebalance/route.ts`
+- `src/app/api/dashboard/sales-load/route.ts`
+- `src/app/api/dashboard/team-ownership/route.ts`
+- `src/app/api/dashboard/team-performance/route.ts`
+- `src/app/api/dashboard/weekly-trends/route.ts`
+- `src/app/api/dev/setup/route.ts`
+- `src/app/api/follow-ups/route.ts`
+- `src/app/api/health/route.ts`
+- `src/app/api/hermes/generate-quote/route.ts`
+- `src/app/api/hermes/knx-design/route.ts`
+- `src/app/api/hermes/knx-design/status/route.ts`
+- `src/app/api/kpi/targets/route.ts`
+- `src/app/api/leads/[id]/timeline/route.ts`
+- `src/app/api/leads/archive/route.ts`
+- `src/app/api/leads/follow-up-overdue/route.ts`
+- `src/app/api/leads/import/confirm/route.ts`
+- `src/app/api/leads/import/preview/route.ts`
+- `src/app/api/leads/list/route.ts`
+- `src/app/api/leads/meta-capi/route.ts`
+- `src/app/api/meta/oauth-callback/route.ts`
+- `src/app/api/metrics/daily/route.ts`
+- `src/app/api/metrics/funnel/route.ts`
+- `src/app/api/monitoring/report/route.ts`
+- `src/app/api/notifications/[id]/route.ts`
+- `src/app/api/notifications/read-all/route.ts`
+- `src/app/api/notifications/route.ts`
+- `src/app/api/notifications/unread-count/route.ts`
+- `src/app/api/notify/route.ts`
+- `src/app/api/payments/[id]/allocate/route.ts`
+- `src/app/api/payments/[id]/confirm/route.ts`
+- `src/app/api/payments/route.ts`
+- `src/app/api/products/import/route.ts`
+- `src/app/api/products/route.ts`
+- `src/app/api/quotations/[id]/convert/route.ts`
+- `src/app/api/quotations/calculate/route.ts`
+- `src/app/api/quotations/export/route.ts`
+- `src/app/api/quotations/generate/route.ts`
+- `src/app/api/tasks/route.ts`
+- `src/app/api/users/[id]/password/route.ts`
+- `src/app/api/users/[id]/route.ts`
+- `src/app/api/users/route.ts`
+- `src/app/api/workflow/route.ts`
+- `src/app/layout.tsx`

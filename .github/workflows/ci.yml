@@ -57,8 +57,11 @@ jobs:
       - name: Database static regression gate
         run: npm run check:db-static
 
-      - name: Lint
-        run: npm run lint
+      - name: Lint baseline gate
+        run: npm run lint:baseline
+
+      - name: Workflow YAML validation
+        run: npm run check:workflows
 
       - name: TypeScript typecheck
         run: npm run typecheck

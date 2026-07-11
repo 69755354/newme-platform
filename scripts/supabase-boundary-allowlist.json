@@ -1,70 +1,23 @@
 {
-  "allow": {
-    "client-side-supabase-mutation:src/shared/hooks/usePipelineDragDrop.ts": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase mutation path recorded in Phase 0 risk register; no expansion in this PR."
-    },
-    "client-side-supabase-mutation:src/app/(dashboard)/dashboard/page.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase mutation path recorded in Phase 0 risk register; no expansion in this PR."
-    },
-    "client-side-supabase-read:src/app/(dashboard)/dashboard/page.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase read path recorded for follow-up; server-side calls are not flagged."
-    },
-    "client-side-supabase-mutation:src/app/(dashboard)/leads/[id]/timeline/page.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase mutation path recorded in Phase 0 risk register; no expansion in this PR."
-    },
-    "client-side-supabase-read:src/app/(dashboard)/leads/[id]/timeline/page.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase read path recorded for follow-up; server-side calls are not flagged."
-    },
-    "client-side-supabase-mutation:src/app/(dashboard)/leads/[id]/useLeadDetailData.ts": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase mutation path recorded in Phase 0 risk register; no expansion in this PR."
-    },
-    "client-side-supabase-read:src/app/(dashboard)/leads/[id]/useLeadDetailData.ts": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase read path recorded for follow-up; server-side calls are not flagged."
-    },
-    "client-side-supabase-mutation:src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase mutation path recorded in Phase 0 risk register; no expansion in this PR."
-    },
-    "client-side-supabase-read:src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase read path recorded for follow-up; server-side calls are not flagged."
-    },
-    "client-side-supabase-mutation:src/app/(dashboard)/leads/_hooks/useLeadMutations.ts": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase mutation path recorded in Phase 0 risk register; no expansion in this PR."
-    },
-    "client-side-supabase-read:src/app/(dashboard)/leads/_hooks/useLeadMutations.ts": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase read path recorded for follow-up; server-side calls are not flagged."
-    },
-    "client-side-supabase-mutation:src/app/(dashboard)/leads/new/page.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase mutation path recorded in Phase 0 risk register; no expansion in this PR."
-    },
-    "client-side-supabase-read:src/app/(dashboard)/leads/new/page.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase read path recorded for follow-up; server-side calls are not flagged."
-    },
-    "client-side-supabase-mutation:src/app/(dashboard)/quotes/quote-calculator.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase mutation path recorded in Phase 0 risk register; no expansion in this PR."
-    },
-    "client-side-supabase-read:src/app/(dashboard)/quotes/quote-calculator.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase read path recorded for follow-up; server-side calls are not flagged."
-    },
-    "client-side-supabase-mutation:src/app/(dashboard)/quotes/quote-wizard.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase mutation path recorded in Phase 0 risk register; no expansion in this PR."
-    },
-    "client-side-supabase-read:src/app/(dashboard)/quotes/quote-wizard.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase read path recorded for follow-up; server-side calls are not flagged."
-    },
-    "client-side-supabase-mutation:src/app/(dashboard)/quotes/quotes-client.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase mutation path recorded in Phase 0 risk register; no expansion in this PR."
-    },
-    "client-side-supabase-read:src/app/(dashboard)/quotes/quotes-client.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase read path recorded for follow-up; server-side calls are not flagged."
-    },
-    "client-side-supabase-mutation:src/components/QuickCreateLeadDialog.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase mutation path recorded in Phase 0 risk register; no expansion in this PR."
-    },
-    "client-side-supabase-read:src/components/QuickCreateLeadDialog.tsx": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase read path recorded for follow-up; server-side calls are not flagged."
-    },
-    "client-side-supabase-read:src/shared/hooks/usePipelineDragDrop.ts": {
-      "reason": "BASELINE_REVIEW: existing browser-reachable Supabase read path recorded for follow-up; server-side calls are not flagged."
-    }
+  "generated_from": "e502afb040a0b4145c7f792b3419ad70bc2ca9d3",
+  "policy": "Counts are reviewed maxima. Any additional finding for the same rule/file fails CI.",
+  "max_findings": {
+    "client-side-supabase-mutation:src/shared/hooks/usePipelineDragDrop.ts": 4,
+    "client-side-supabase-mutation:src/app/(dashboard)/dashboard/page.tsx": 1,
+    "client-side-supabase-read:src/app/(dashboard)/leads/[id]/timeline/page.tsx": 2,
+    "client-side-supabase-mutation:src/app/(dashboard)/leads/[id]/timeline/page.tsx": 1,
+    "client-side-supabase-read:src/app/(dashboard)/leads/[id]/useLeadDetailData.ts": 7,
+    "client-side-supabase-mutation:src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts": 19,
+    "client-side-supabase-read:src/app/(dashboard)/leads/_hooks/useLeadMutations.ts": 1,
+    "client-side-supabase-mutation:src/app/(dashboard)/leads/_hooks/useLeadMutations.ts": 17,
+    "client-side-supabase-mutation:src/app/(dashboard)/leads/new/page.tsx": 2,
+    "client-side-supabase-read:src/app/(dashboard)/quotes/quote-calculator.tsx": 2,
+    "client-side-supabase-mutation:src/app/(dashboard)/quotes/quote-calculator.tsx": 1,
+    "client-side-supabase-read:src/app/(dashboard)/quotes/quote-wizard.tsx": 2,
+    "client-side-supabase-mutation:src/app/(dashboard)/quotes/quote-wizard.tsx": 1,
+    "client-side-supabase-read:src/app/(dashboard)/quotes/quotes-client.tsx": 3,
+    "client-side-supabase-mutation:src/app/(dashboard)/quotes/quotes-client.tsx": 4,
+    "client-side-supabase-mutation:src/components/QuickCreateLeadDialog.tsx": 2,
+    "client-side-supabase-mutation:src/lib/tasks.ts": 1
   }
 }

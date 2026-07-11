@@ -271,7 +271,7 @@ export default function LeadTimeline({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-foreground whitespace-pre-wrap break-words">{item.content}</p>
-                    {editableContact && (
+                    {editableContact && contact && (
                       <button
                         type="button"
                         onClick={() => beginContactEdit(contact)}

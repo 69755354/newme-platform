@@ -1,7 +1,21 @@
 // RBAC: user (authenticated)
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
+
+function importFingerprint(row: Record<string, unknown>): string {
+  // Includes the source row number so intentional identical rows in one workbook
+  // remain distinct, while uploading the same workbook again is idempotent.
+  const stable = JSON.stringify({
+    row_number: row.row_number ?? null,
+    customer_name: row.customer_name ?? null,
+    phone: row.phone ?? null,
+    first_contact_date: row.first_contact_date ?? null,
+    raw_import_data: row.raw_import_data ?? null,
+  });
+  return createHash("sha256").update(stable).digest("hex");
+}
 
 // ─── POST /api/leads/import/confirm ───
 export async function POST(request: NextRequest) {
@@ -126,6 +140,7 @@ export async function POST(request: NextRequest) {
         quotation_value: row.quotation_value || null,
         raw_import_data: row.raw_import_data ? JSON.stringify(row.raw_import_data) : null,
         import_batch_id: importBatchId,
+        import_fingerprint: importFingerprint(row),
         imported_by: user.id,
         imported_at: now,
         assigned_to: null,
@@ -143,39 +158,50 @@ export async function POST(request: NextRequest) {
     let imported = 0;
     const errors: { row: number; error: string }[] = [];
     const rowNumToLeadId = new Map<number, string>();
+    let skippedDuplicates = 0;
 
     for (let i = 0; i < leadsToInsert.length; i += BATCH_SIZE) {
       const batch = leadsToInsert.slice(i, i + BATCH_SIZE);
-      // Strip row_number from each element before insert (column doesn't exist in leads table)
       const cleanBatch = batch.map(({ row_number, ...rest }) => rest);
+      const rowByFingerprint = new Map(
+        batch.map((row) => [row.import_fingerprint, row.row_number]),
+      );
       const { data, error: insertErr } = await adminClient
         .from("leads")
-        .insert(cleanBatch)
-        .select("id");
+        .upsert(cleanBatch, {
+          onConflict: "import_fingerprint",
+          ignoreDuplicates: true,
+        })
+        .select("id, import_fingerprint");
 
       if (insertErr) {
-        // Row-by-row fallback — strip row_number per element
-        for (let j = 0; j < batch.length; j++) {
-          const { row_number, ...cleanRow } = batch[j];
+        // Preserve partial-import behavior while applying the same unique-key
+        // semantics to every fallback row.
+        for (const row of batch) {
+          const { row_number, ...cleanRow } = row;
           const { data: single, error: singleErr } = await adminClient
             .from("leads")
-            .insert(cleanRow)
-            .select("id")
-            .single();
+            .upsert(cleanRow, {
+              onConflict: "import_fingerprint",
+              ignoreDuplicates: true,
+            })
+            .select("id, import_fingerprint")
+            .maybeSingle();
           if (singleErr) {
-            errors.push({
-              row: batch[j].row_number,
-              error: singleErr.message,
-            });
+            errors.push({ row: row_number, error: singleErr.message });
+          } else if (!single) {
+            skippedDuplicates++;
           } else {
             imported++;
-            rowNumToLeadId.set(batch[j].row_number, single.id);
+            rowNumToLeadId.set(row_number, single.id);
           }
         }
       } else {
         imported += data.length;
-        for (let dIdx = 0; dIdx < data.length; dIdx++) {
-          rowNumToLeadId.set(batch[dIdx].row_number, data[dIdx].id);
+        skippedDuplicates += batch.length - data.length;
+        for (const lead of data) {
+          const rowNumber = rowByFingerprint.get(lead.import_fingerprint);
+          if (rowNumber != null) rowNumToLeadId.set(rowNumber, lead.id);
         }
       }
     }
@@ -214,6 +240,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       batch_id: importBatchId,
       imported,
+      skipped_duplicates: skippedDuplicates,
       failed: errors.length,
       imported_ids: Array.from(rowNumToLeadId.values()),
       errors,

@@ -71,12 +71,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-  notify-crm-ci:
-    name: Notify crm-ci
-    needs: validate
-    if: success() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    uses: 69755354/newme-platform/.github/workflows/crm-ci.yml@main
-    with:
-      ci_run_id: ${{ github.run_id }}
-      ci_conclusion: success

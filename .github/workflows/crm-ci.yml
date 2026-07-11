@@ -4,10 +4,6 @@ on:
   workflow_run:
     workflows:
       - ci
-    branches:
-      - work
-      - main
-      - production
     types:
       - completed
   workflow_dispatch:

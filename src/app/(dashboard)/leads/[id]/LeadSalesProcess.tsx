@@ -296,7 +296,7 @@ export default function LeadSalesProcess({
                     {locked && <p className="text-[10px] text-gray-600">{t("leadDetail.milestoneLocked")}</p>}
                     {/* first_contact inline workspace */}
                     {key === "first_contact" && !completed && isNext && (() => {
-                      const contactTimeCount = followUpLogs.filter(l => l.contact_time != null).length;
+                      const contactTimeCount = followUpLogs.filter(l => l.contact_time != null && !!l.contact_result?.trim()).length;
                       const qAssessed = lead.quality && lead.quality !== "pending";
                       const contactsNeeded = 1;
                       const coachingTarget = 3;

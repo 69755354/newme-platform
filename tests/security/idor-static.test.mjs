@@ -15,3 +15,9 @@ for (const [file, needles] of cases) {
     for (const needle of needles) assert.match(text, new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   });
 }
+
+test("task GET and PATCH both enforce assignee ownership", () => {
+  const text = fs.readFileSync("src/app/api/tasks/[id]/route.ts", "utf8");
+  const matches = text.match(/\.eq\(['"]assignee_id['"],\s*user\.id\)/g) ?? [];
+  assert.equal(matches.length, 2, "expected ownership filters on both GET and PATCH");
+});

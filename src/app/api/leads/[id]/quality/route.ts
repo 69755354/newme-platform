@@ -68,6 +68,28 @@ export async function POST(
       );
     }
 
+    // Quality may be assessed after the first complete contact, never before.
+    const { count: contactCount, error: contactError } = await supabase
+      .from('follow_up_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('lead_id', leadId)
+      .not('contact_time', 'is', null)
+      .not('contact_result', 'is', null)
+      .neq('contact_result', '');
+
+    if (contactError) {
+      return NextResponse.json(
+        { error: 'Unable to verify contact records' },
+        { status: 500 }
+      );
+    }
+    if ((contactCount ?? 0) < 1) {
+      return NextResponse.json(
+        { error: 'At least one complete contact record is required before setting Lead Quality' },
+        { status: 409 }
+      );
+    }
+
     // UPDATE leads.quality
     const { data: updated, error: updateError } = await supabase
       .from('leads')

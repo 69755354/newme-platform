@@ -30,7 +30,15 @@ function rel(filePath) {
   return path.relative(root, filePath).replaceAll(path.sep, '/');
 }
 function fingerprint(message) {
-  return message.replace(/\d+/g, '<n>').replace(/'[^']*'/g, "'<value>'").replace(/"[^"]*"/g, '"<value>"');
+  const normalizedRoot = root.replaceAll('\\\\', '/');
+  return message
+    .replaceAll('\\\\', '/')
+    .replaceAll(normalizedRoot, '<root>')
+    .replace(/\/home\/runner\/work\/[^/]+\/[^/]+/g, '<root>')
+    .replace(/\/workspace\/[^/]+/g, '<root>')
+    .replace(/\d+/g, '<n>')
+    .replace(/'[^']*'/g, "'<value>'")
+    .replace(/"[^"]*"/g, '"<value>"');
 }
 function collect(results) {
   const entries = [];

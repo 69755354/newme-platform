@@ -2,7 +2,6 @@ name: crm-ci
 
 on:
   repository_dispatch:
-    types: [crm-ci]
   workflow_dispatch:
 
 permissions:

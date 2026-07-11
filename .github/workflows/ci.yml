@@ -71,3 +71,11 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Notify crm-ci
+        if: success() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          curl -X POST https://api.github.com/repos/${{ github.repository }}/dispatches \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -d '{"event_type":"crm-ci","client_payload":{"ci_run_id":"${{ github.run_id }}","ci_conclusion":"success"}}'

@@ -1,11 +1,8 @@
 name: crm-ci
 
 on:
-  workflow_run:
-    workflows:
-      - ci.yml
-    types:
-      - completed
+  repository_dispatch:
+    types: [crm-ci]
   workflow_dispatch:
 
 permissions:
@@ -13,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: crm-ci-${{ github.event.workflow_run.head_branch || github.ref }}
+  group: crm-ci-${{ github.event.client_payload.ci_run_id || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -24,14 +21,14 @@ jobs:
     steps:
       - name: Record upstream CI result
         run: |
-          echo "crm-ci is the Hermes workflow_run contract only."
-          echo "Upstream workflow: ${{ github.event.workflow_run.name || 'manual' }}"
-          echo "Conclusion: ${{ github.event.workflow_run.conclusion || 'manual' }}"
+          echo "crm-ci is the Hermes CI contract."
+          echo "Upstream CI run: ${{ github.event.client_payload.ci_run_id || 'manual' }}"
+          echo "Upstream conclusion: ${{ github.event.client_payload.ci_conclusion || 'manual' }}"
 
       - name: Require upstream ci success
-        if: ${{ github.event_name == 'workflow_run' }}
+        if: ${{ github.event_name == 'repository_dispatch' }}
         run: |
-          if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
+          if [ "${{ github.event.client_payload.ci_conclusion }}" != "success" ]; then
             echo "Upstream ci did not succeed; Hermes must treat this as blocking."
             exit 1
           fi

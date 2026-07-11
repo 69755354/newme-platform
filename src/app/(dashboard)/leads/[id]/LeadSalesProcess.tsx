@@ -8,7 +8,7 @@
 // onToggleMilestone, …). Inline edits reuse the page-owned render closures so the
 // single-edit-at-a-time behaviour is preserved across columns.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -120,11 +120,22 @@ export default function LeadSalesProcess({
   const [showQualityPoorReason, setShowQualityPoorReason] = useState(false);
   const [qualityPoorReason, setQualityPoorReason] = useState("");
   const [qualitySetting, setQualitySetting] = useState<string | null>(null);
+  const [clockNow, setClockNow] = useState(0);
+
+  useEffect(() => {
+    const updateClock = () => setClockNow(Date.now());
+    const initialTimer = window.setTimeout(updateClock, 0);
+    const interval = window.setInterval(updateClock, 60_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+    };
+  }, []);
 
   // Latest trace row carries the quote / contract / payment state for the links.
   const trace = leadTrace[0];
 
-  const nextTaskOverdue = !!nextTask && new Date(nextTask.due_at).getTime() < Date.now();
+  const nextTaskOverdue = clockNow > 0 && !!nextTask && new Date(nextTask.due_at).getTime() < clockNow;
 
   // ── Health score (Phase B) — shown as a badge in Stage Progress ──
   const health = calculateHealthScore({

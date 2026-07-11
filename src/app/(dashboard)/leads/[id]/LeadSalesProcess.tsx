@@ -59,9 +59,9 @@ interface Props {
   updating: boolean;
   onToggleMilestone: (milestoneKey: string, currentlyCompleted: boolean) => void;
   onUpdateField: (field: string, value: any, eventType?: string, eventDesc?: string) => void;
-  onStageChange: (stage: string) => void;
-  onWon: () => void;
-  onLost: () => void;
+  onStageChange: (stage: string, note?: string) => Promise<boolean>;
+  onWon: (note?: string) => Promise<boolean>;
+  onLost: (note?: string) => Promise<boolean>;
   onOpenQuoteCalculator: () => void;
   onCreateContract: () => void;
   onGenerateKnx: () => void;
@@ -120,6 +120,7 @@ export default function LeadSalesProcess({
   const [showQualityPoorReason, setShowQualityPoorReason] = useState(false);
   const [qualityPoorReason, setQualityPoorReason] = useState("");
   const [qualitySetting, setQualitySetting] = useState<string | null>(null);
+  const [stageNote, setStageNote] = useState("");
   const [clockNow, setClockNow] = useState(0);
 
   useEffect(() => {
@@ -703,6 +704,20 @@ export default function LeadSalesProcess({
         </CardHeader>
         <CardContent className="space-y-3">
           <div>
+            <label htmlFor="stage-note" className="text-xs text-muted-foreground">
+              {lang === "zh" ? "阶段备注（可选）" : "Stage note (optional)"}
+            </label>
+            <textarea
+              id="stage-note"
+              value={stageNote}
+              maxLength={1000}
+              onChange={(event) => setStageNote(event.target.value)}
+              placeholder={lang === "zh" ? "记录本次阶段推进的原因或客户反馈" : "Reason, customer feedback, or next-step context"}
+              className="mt-1 min-h-16 w-full resize-y rounded border border-border bg-muted px-2 py-1.5 text-xs text-foreground"
+            />
+            <p className="text-right text-[10px] text-muted-foreground">{stageNote.length}/1000</p>
+          </div>
+          <div>
             <p className="text-xs text-muted-foreground mb-1.5">{t("leadDetail.updateStage")}</p>
             <div className="flex flex-wrap gap-1">
               {(() => {
@@ -738,8 +753,9 @@ export default function LeadSalesProcess({
                           ? { backgroundColor: STAGE_COLORS[s]?.split(" ")[0]?.replace("/10", "/30") || "#6b7280" }
                           : {}
                       }
-                      onClick={() => {
-                        onStageChange(s);
+                      onClick={async () => {
+                        const changed = await onStageChange(s, stageNote);
+                        if (changed) setStageNote("");
                       }}
                     >
                       {t(`stageLabels.${s}`)}
@@ -754,7 +770,10 @@ export default function LeadSalesProcess({
               size="sm"
               variant="outline"
               className="flex-1 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
-              onClick={onWon}
+              onClick={async () => {
+                const changed = await onWon(stageNote);
+                if (changed) setStageNote("");
+              }}
               disabled={updating || !firstContactGate.allowed}
               title={!firstContactGate.allowed ? firstContactGate.reasons.join("; ") : undefined}
             >
@@ -764,7 +783,10 @@ export default function LeadSalesProcess({
               size="sm"
               variant="outline"
               className="flex-1 border-red-500/30 text-red-400 hover:bg-red-500/10"
-              onClick={onLost}
+              onClick={async () => {
+                const changed = await onLost(stageNote);
+                if (changed) setStageNote("");
+              }}
               disabled={updating || !firstContactGate.allowed}
               title={!firstContactGate.allowed ? firstContactGate.reasons.join("; ") : undefined}
             >

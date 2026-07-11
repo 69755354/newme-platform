@@ -112,10 +112,12 @@ export async function POST(request: NextRequest) {
     // even if the client sends un-normalized or malicious values.
     const leadsToInsert = allRows.map((row) => {
       const rawImportData = row.raw_import_data || {};
-      const rawStatus = rawImportData.raw_status || row.lead_status;
+      const rawStatus = rawImportData.raw_status ?? row.lead_status;
+      const rawQuality = rawImportData.raw_quality ?? row.quality;
+      const rawSource = rawImportData.raw_source ?? row.source;
       const statusResult = mapStatus(String(rawStatus ?? ""));
-      const qualityResult = mapQuality(String(row.quality ?? ""));
-      const sourceResult = mapSource(row.source || "");
+      const qualityResult = mapQuality(String(rawQuality ?? ""));
+      const sourceResult = mapSource(String(rawSource ?? ""));
 
       // Log any normalization warnings server-side
       if (qualityResult.warning) {

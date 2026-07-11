@@ -124,6 +124,8 @@ export default function LeadSalesProcess({
   // Latest trace row carries the quote / contract / payment state for the links.
   const trace = leadTrace[0];
 
+  const nextTaskOverdue = !!nextTask && new Date(nextTask.due_at).getTime() < Date.now();
+
   // ── Health score (Phase B) — shown as a badge in Stage Progress ──
   const health = calculateHealthScore({
     hasRecentFollowUp:
@@ -135,7 +137,7 @@ export default function LeadSalesProcess({
     hasQuotation:
       lead.final_status === "won" ||
       ["quotation_submitted", "negotiation", "pending_decision"].includes(lead.stage),
-    isOverdue: !!nextTask && new Date(nextTask.due_at).getTime() < Date.now(),
+    isOverdue: nextTaskOverdue,
   });
   const healthLevelLabel =
     health.level === "healthy"
@@ -150,7 +152,6 @@ export default function LeadSalesProcess({
       ? "bg-amber-500/10 text-amber-400"
       : "bg-red-500/10 text-red-400";
 
-  const nextTaskOverdue = !!nextTask && new Date(nextTask.due_at).getTime() < Date.now();
   const completeContactCount = followUpLogs.filter(
     (log) => log.contact_time != null && !!log.contact_result?.trim(),
   ).length;

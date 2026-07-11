@@ -123,7 +123,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
            creator:profiles!fk_leads_created_by(id, full_name, email, role),
            assignee:profiles!fk_leads_assigned_to(id, full_name, email, role),
            follow_ups:follow_up_logs!follow_up_logs_lead_id_fkey(
-             id, contact_type, summary, user_id, contact_time, created_at
+             id, contact_type, summary, user_id, contact_time, contact_result, created_at
            ),
            milestones:lead_milestones!lead_milestones_lead_id_fkey(
              id, milestone_key, completed_at

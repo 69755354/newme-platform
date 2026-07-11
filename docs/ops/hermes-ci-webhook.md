@@ -54,3 +54,4 @@ git ls-remote origin HEAD
 
 Then use the GitHub Actions UI or API to confirm the first `crm-ci` run completed successfully and that the Hermes webhook delivery returned HTTP 200.
 # Hermes CI webhook — verified 2026-07-11T15:03:58Z
+# trigger retry 15:07:56Z

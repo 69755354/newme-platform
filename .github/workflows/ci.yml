@@ -78,5 +78,5 @@ jobs:
         run: |
           curl -X POST https://api.github.com/repos/${{ github.repository }}/dispatches \
             -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Authorization: Bearer ${{ secrets.CI_DISPATCH_TOKEN }}" \
             -d '{"event_type":"crm-ci","client_payload":{"ci_run_id":"${{ github.run_id }}","ci_conclusion":"success"}}'

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const read = (path) => readFile(new URL(\`../../\${path}\`, import.meta.url), "utf8");
+const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
 test("stage endpoint enforces ownership, complete-contact gate, concurrency, and analytics event", async () => {
   const source = await read("src/app/api/leads/[id]/stage/route.ts");
@@ -17,7 +17,7 @@ test("stage endpoint enforces ownership, complete-contact gate, concurrency, and
     '.eq("stage", lead.stage)',
     '.from("business_events")',
     'event_type: "stage_change"',
-  ]) assert.ok(source.includes(token), \`missing stage protection: \${token}\`);
+  ]) assert.ok(source.includes(token), `missing stage protection: ${token}`);
 });
 
 test("quality endpoint rejects assessment before a complete contact", async () => {
@@ -36,7 +36,7 @@ test("contact edit endpoint scopes the write to both contact and lead and return
     '.eq("lead_id", leadId)',
     ".select(",
     ".single()",
-  ]) assert.ok(source.includes(token), \`missing contact edit protection: \${token}\`);
+  ]) assert.ok(source.includes(token), `missing contact edit protection: ${token}`);
 });
 
 test("database trigger is the authoritative First Contact backstop", async () => {
@@ -49,7 +49,7 @@ test("database trigger is the authoritative First Contact backstop", async () =>
     "contact_result IS NOT NULL",
     "btrim(contact_result) <> ''",
     "quality NOT IN ('good', 'normal', 'poor')",
-  ]) assert.ok(source.includes(token), \`missing database gate: \${token}\`);
+  ]) assert.ok(source.includes(token), `missing database gate: ${token}`);
 });
 
 test("UI counts only complete contacts and exposes edit/readback wiring", async () => {

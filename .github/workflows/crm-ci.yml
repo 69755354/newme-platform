@@ -33,7 +33,10 @@ jobs:
           echo "Conclusion: ${{ github.event.workflow_run.conclusion || 'manual' }}"
 
       - name: Require upstream ci success
-        if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success' }}
+        if: ${{ github.event_name == 'workflow_run' }}
         run: |
-          echo "Upstream ci did not succeed; Hermes must treat this as blocking."
-          exit 1
+          if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
+            echo "Upstream ci did not succeed; Hermes must treat this as blocking."
+            exit 1
+          fi
+          echo "Upstream ci succeeded — Hermes OK"

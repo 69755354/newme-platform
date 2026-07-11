@@ -382,25 +382,23 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     setProjectInfoStatus("idle");
   }, [lead, params]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── Stage update (final_status for won/lost, stage otherwise) ───
+  // ─── Stage update through the owned server route ───
   const updateStage = useCallback(async (stage: string): Promise<boolean> => {
-    // For terminal stages (won/lost), write to BOTH stage (trigger enforces sequence,
-    // detail page reads it) AND final_status (list page counts it, trg_lead_won fires on it).
-    if (stage === "won" || stage === "lost") {
-      const ok = await updateField("stage", stage, "stage_change", `${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
-      if (!ok) return false;
-      // Silently sync final_status after stage update passes trigger
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      const { error: fsErr } = await supabase.from("leads").update({ 
-        final_status: stage,
-        updated_at: new Date().toISOString() 
-      }).eq("id", leadId);
-      if (fsErr) console.warn("[LeadDetail] final_status sync failed (non-fatal)", fsErr);
-      return true;
+    const response = await fetch(`/api/leads/${leadId}/stage`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const reasons = Array.isArray(json?.reasons) ? json.reasons.join("; ") : "";
+      toast.error(reasons || json?.error || t("common.saveFailed"));
+      return false;
     }
-    return updateField("stage", stage, "stage_change", `${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
-  }, [leadId, updateField, t]);
+    await fetchData();
+    toast.success(`${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
+    return true;
+  }, [leadId, fetchData, t]);
 
   // ─── Next Required Action — updates nextTask (creates a task if none) ───
   const updateNextTask = useCallback(async (updates: Partial<Pick<Task, "title" | "due_at">>) => {

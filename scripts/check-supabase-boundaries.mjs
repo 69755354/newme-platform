@@ -1,74 +1,149 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
 
 const root = process.cwd();
-const allowlistPath = path.join(root, 'scripts/supabase-boundary-allowlist.json');
-const allowlist = fs.existsSync(allowlistPath) ? JSON.parse(fs.readFileSync(allowlistPath, 'utf8')) : {};
-const allowed = new Map(Object.entries(allowlist.allow ?? {}).map(([k, v]) => [k, v]));
-const exts = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
-const ignore = new Set(['node_modules', '.next', '.next.backup', '.git', 'coverage']);
+const allowlistPath = path.join(root, "scripts/supabase-boundary-allowlist.json");
+const allowlist = fs.existsSync(allowlistPath)
+  ? JSON.parse(fs.readFileSync(allowlistPath, "utf8"))
+  : {};
+const allowedCounts = new Map(Object.entries(allowlist.max_findings ?? {}));
+const exts = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
+const ignored = new Set(["node_modules", ".next", ".next.backup", ".git", "coverage"]);
 
 function walk(dir, out = []) {
-  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (ignore.has(ent.name)) continue;
-    const p = path.join(dir, ent.name);
-    if (ent.isDirectory()) walk(p, out);
-    else if (exts.has(path.extname(ent.name))) out.push(p);
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (ignored.has(entry.name)) continue;
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(file, out);
+    else if (exts.includes(path.extname(entry.name))) out.push(file);
   }
   return out;
 }
-function rel(file) { return path.relative(root, file).replaceAll(path.sep, '/'); }
-function isBrowserReachable(r, text) {
-  return r.startsWith('src/') && (text.split(/\r?\n/, 8).some(l => /['\"]use client['\"]/.test(l)) || r.includes('/components/') || r.includes('/shared/hooks/'));
+function rel(file) {
+  return path.relative(root, file).replaceAll(path.sep, "/");
 }
-function isServerOnlyPath(r) {
-  return r.startsWith('src/app/api/') || r.startsWith('src/app/actions/') || r.includes('server') || r.startsWith('scripts/') || r.startsWith('tests/');
+function resolveImport(fromFile, specifier, files) {
+  let base;
+  if (specifier.startsWith("@/")) base = path.join(root, "src", specifier.slice(2));
+  else if (specifier.startsWith(".")) base = path.resolve(path.dirname(fromFile), specifier);
+  else return null;
+  const candidates = [
+    base,
+    ...exts.map((ext) => base + ext),
+    ...exts.map((ext) => path.join(base, "index" + ext)),
+  ];
+  return candidates.find((candidate) => files.has(path.resolve(candidate))) ?? null;
 }
-function add(findings, rule, file, lineNo, line, severity = 'error') {
-  const key = `${rule}:${rel(file)}:${lineNo}`;
-  const allow = allowed.get(key) ?? allowed.get(`${rule}:${rel(file)}`);
-  findings.push({ rule, file: rel(file), lineNo, line: line.trim(), severity, allowed: Boolean(allow), reason: allow?.reason });
+function importsOf(file, text, files) {
+  const dependencies = [];
+  const pattern = /(?:import|export)\s+(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']|require\(\s*["']([^"']+)["']\s*\)/g;
+  for (const match of text.matchAll(pattern)) {
+    const resolved = resolveImport(file, match[1] ?? match[2], files);
+    if (resolved) dependencies.push(path.resolve(resolved));
+  }
+  return dependencies;
+}
+function isBrowserRoot(file, text) {
+  const name = rel(file);
+  return name.startsWith("src/") && (
+    text.split(/\r?\n/, 8).some((line) => /["']use client["']/.test(line)) ||
+    name.includes("/components/") ||
+    name.includes("/shared/hooks/")
+  );
+}
+function isServerOnlyPath(name) {
+  return name.startsWith("src/app/api/") ||
+    name.startsWith("src/app/actions/") ||
+    name.includes("server") ||
+    name.startsWith("scripts/") ||
+    name.startsWith("tests/");
+}
+function lineAt(text, offset) {
+  return text.slice(0, offset).split(/\r?\n/).length;
+}
+function add(findings, rule, file, lineNo, evidence) {
+  findings.push({ rule, file: rel(file), lineNo, evidence: evidence.trim().replace(/\s+/g, " ") });
 }
 
-const findings = [];
-for (const file of walk(root)) {
-  const r = rel(file);
-  const text = fs.readFileSync(file, 'utf8');
-  const lines = text.split(/\r?\n/);
-  const browser = isBrowserReachable(r, text);
-  lines.forEach((line, idx) => {
-    const n = idx + 1;
-    if (r === 'scripts/check-supabase-boundaries.mjs') return;
-    if (/^\s*\/\//.test(line)) return;
-    if (/SUPABASE_SERVICE_ROLE_KEY|service_role/i.test(line)) {
-      if (browser) add(findings, 'service-role-in-browser-reachable-code', file, n, line);
-      if (/NEXT_PUBLIC_.*(SERVICE|SECRET|ROLE|TOKEN|KEY)/i.test(line)) add(findings, 'sensitive-next-public-name', file, n, line);
+const fileList = walk(root).map((file) => path.resolve(file));
+const fileSet = new Set(fileList);
+const contents = new Map(fileList.map((file) => [file, fs.readFileSync(file, "utf8")]));
+const browserReachable = new Set();
+const queue = [];
+for (const file of fileList) {
+  if (isBrowserRoot(file, contents.get(file))) {
+    browserReachable.add(file);
+    queue.push(file);
+  }
+}
+while (queue.length) {
+  const file = queue.shift();
+  for (const dependency of importsOf(file, contents.get(file), fileSet)) {
+    if (!browserReachable.has(dependency)) {
+      browserReachable.add(dependency);
+      queue.push(dependency);
     }
-    if (/NEXT_PUBLIC_.*(SERVICE_ROLE|SECRET|TOKEN|PRIVATE)/i.test(line)) add(findings, 'sensitive-next-public-name', file, n, line);
-    if (browser && /from\([^)]*\)\s*\.\s*(insert|update|upsert|delete)\s*\(/.test(line)) {
-      add(findings, 'client-side-supabase-mutation', file, n, line);
-    }
-    if (browser && /from\([^)]*\)\s*\.\s*select\s*\(/.test(line)) {
-      add(findings, 'client-side-supabase-read', file, n, line);
-    }
-    if (/createClient\s*\([^\n]*(SERVICE_ROLE|serviceRole|serviceKey|srKey)/.test(line) && !isServerOnlyPath(r)) {
-      add(findings, 'admin-client-outside-server-only', file, n, line);
-    }
-  });
-  if (r.startsWith('src/lib/') && /SUPABASE_SERVICE_ROLE_KEY|service_role/i.test(text) && !/import ['\"]server-only['\"]/.test(text)) {
-    add(findings, 'server-only-missing-for-admin-module', file, 1, 'module references service role without import "server-only"');
   }
 }
 
+const findings = [];
+for (const file of fileList) {
+  const name = rel(file);
+  if (name === "scripts/check-supabase-boundaries.mjs") continue;
+  const text = contents.get(file);
+  const browser = browserReachable.has(file);
+
+  if (browser) {
+    let offset = 0;
+    while ((offset = text.indexOf(".from", offset)) >= 0) {
+      let end = text.indexOf(";", offset);
+      if (end < 0) end = Math.min(text.length, offset + 1200);
+      const chain = text.slice(offset, Math.min(end, offset + 1200));
+      const mutation = chain.match(/\.\s*(insert|update|upsert|delete)\s*\(/);
+      if (mutation) add(findings, "client-side-supabase-mutation", file, lineAt(text, offset), chain);
+      else if (/\.\s*select\s*\(/.test(chain)) add(findings, "client-side-supabase-read", file, lineAt(text, offset), chain);
+      offset += 5;
+    }
+  }
+
+  const lines = text.split(/\r?\n/);
+  lines.forEach((line, index) => {
+    if (/^\s*\/\//.test(line)) return;
+    if (/SUPABASE_SERVICE_ROLE_KEY|service_role/i.test(line)) {
+      if (browser) add(findings, "service-role-in-browser-reachable-code", file, index + 1, line);
+      if (/NEXT_PUBLIC_.*(SERVICE|SECRET|ROLE|TOKEN|KEY)/i.test(line)) add(findings, "sensitive-next-public-name", file, index + 1, line);
+    }
+    if (/NEXT_PUBLIC_.*(SERVICE_ROLE|SECRET|TOKEN|PRIVATE)/i.test(line)) add(findings, "sensitive-next-public-name", file, index + 1, line);
+    if (/createClient\s*\([^\n]*(SERVICE_ROLE|serviceRole|serviceKey|srKey)/.test(line) && !isServerOnlyPath(name)) {
+      add(findings, "admin-client-outside-server-only", file, index + 1, line);
+    }
+  });
+  if (name.startsWith("src/lib/") && /SUPABASE_SERVICE_ROLE_KEY|service_role/i.test(text) && !/import ["']server-only["']/.test(text)) {
+    add(findings, "server-only-missing-for-admin-module", file, 1, 'module references service role without import "server-only"');
+  }
+}
+
+const counts = new Map();
+for (const finding of findings) {
+  const key = `${finding.rule}:${finding.file}`;
+  counts.set(key, (counts.get(key) ?? 0) + 1);
+}
 let failures = 0;
-for (const f of findings) {
-  const status = f.allowed ? 'ALLOW' : 'FAIL';
-  console.log(`${status} ${f.rule} ${f.file}:${f.lineNo} ${f.allowed ? `(${f.reason}) ` : ''}${f.line}`);
-  if (!f.allowed && f.severity === 'error') failures++;
+for (const [key, count] of counts) {
+  const maximum = allowedCounts.get(key) ?? 0;
+  const status = count <= maximum ? "ALLOW" : "FAIL";
+  console.log(`${status} ${key} count=${count} baseline=${maximum}`);
+  if (count > maximum) failures += count - maximum;
+}
+for (const finding of findings) {
+  const key = `${finding.rule}:${finding.file}`;
+  if ((counts.get(key) ?? 0) > (allowedCounts.get(key) ?? 0)) {
+    console.log(`  ${finding.file}:${finding.lineNo} ${finding.evidence}`);
+  }
 }
 if (failures) {
-  console.error(`Supabase boundary check failed: ${failures} unallowed finding(s).`);
+  console.error(`Supabase boundary check failed: ${failures} finding(s) over the reviewed baseline.`);
   process.exit(1);
 }
-console.log(`Supabase boundary check passed with ${findings.length} finding(s), all allowed or informational.`);
+console.log(`Supabase boundary check passed with ${findings.length} finding(s); no rule/file count exceeded the reviewed baseline.`);

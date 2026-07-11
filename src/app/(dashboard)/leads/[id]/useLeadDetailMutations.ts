@@ -89,10 +89,10 @@ export interface UseLeadDetailMutationsReturn {
   updateField: (field: string, value: any, eventType?: string, eventDesc?: string) => Promise<boolean>;
   saveProjectInfo: () => Promise<void>;
   resetProjectInfoDraft: () => void;
-  updateStage: (stage: string) => Promise<boolean>;
+  updateStage: (stage: string, note?: string) => Promise<boolean>;
   updateNextTask: (updates: Partial<Pick<Task, "title" | "due_at">>) => Promise<void>;
-  handleWon: () => Promise<void>;
-  handleLost: () => Promise<void>;
+  handleWon: (note?: string) => Promise<boolean>;
+  handleLost: (note?: string) => Promise<boolean>;
   addNote: (noteText: string) => Promise<void>;
   toggleMilestone: (milestoneKey: string, currentlyCompleted: boolean) => Promise<void>;
   addStructuredContact: (params: {
@@ -383,11 +383,11 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }, [lead, params]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Stage update through the owned server route ───
-  const updateStage = useCallback(async (stage: string): Promise<boolean> => {
+  const updateStage = useCallback(async (stage: string, note = ""): Promise<boolean> => {
     const response = await fetch(`/api/leads/${leadId}/stage`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stage }),
+      body: JSON.stringify({ stage, note: note.trim() }),
     });
     const json = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -434,31 +434,35 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }, [nextTask, leadId, lead, t, fetchData, setError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Won / Lost handlers (Stage update + toast, contract via DB trigger) ─
-  const handleWon = useCallback(async () => {
+  const handleWon = useCallback(async (note = ""): Promise<boolean> => {
     setUpdating(true);
     try {
       // Stage update only — contract & installment creation is handled
-      // by the DB trigger trg_lead_won to avoid duplicates
-      const updated = await updateStage("won");
-      if (!updated) return;
+      // by the DB trigger trg_lead_won to avoid duplicates.
+      const updated = await updateStage("won", note);
+      if (!updated) return false;
       toast.success(t("leads.markedWon"));
-    } catch (e: any) {
+      return true;
+    } catch {
       console.error("[LeadDetail] handleWon error");
       toast.error(t("common.operationFailed"));
+      return false;
     } finally {
       setUpdating(false);
     }
   }, [updateStage, t]);
 
-  const handleLost = useCallback(async () => {
+  const handleLost = useCallback(async (note = ""): Promise<boolean> => {
     setUpdating(true);
     try {
-      const updated = await updateStage("lost");
-      if (!updated) return;
+      const updated = await updateStage("lost", note);
+      if (!updated) return false;
       toast.success(t("leads.markedLost"));
-    } catch (e: any) {
+      return true;
+    } catch {
       console.error("[LeadDetail] handleLost error");
       toast.error(t("common.operationFailed"));
+      return false;
     } finally {
       setUpdating(false);
     }

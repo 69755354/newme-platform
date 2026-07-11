@@ -30,9 +30,9 @@ function rel(filePath) {
   return path.relative(root, filePath).replaceAll(path.sep, '/');
 }
 function fingerprint(message) {
-  const normalizedRoot = root.replaceAll('\\\\', '/');
+  const normalizedRoot = root.replace(/\\\\/g, '/');
   return message
-    .replaceAll('\\\\', '/')
+    .replace(/\\\\/g, '/')
     .replaceAll(normalizedRoot, '<root>')
     .replace(/\/home\/runner\/work\/[^/]+\/[^/]+/g, '<root>')
     .replace(/\/workspace\/[^/]+/g, '<root>')
@@ -58,7 +58,7 @@ function collect(results) {
 function counts(entries) {
   const out = new Map();
   for (const e of entries) {
-    const k = `${e.file}\0${e.ruleId}\0${e.message}`;
+    const k = `${e.file}\0${e.ruleId}\0${fingerprint(e.message)}`;
     out.set(k, (out.get(k) ?? 0) + 1);
   }
   return out;

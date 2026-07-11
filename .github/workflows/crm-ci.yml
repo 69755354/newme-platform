@@ -3,7 +3,7 @@ name: crm-ci
 on:
   workflow_run:
     workflows:
-      - ci
+      - ci.yml
     types:
       - completed
   workflow_dispatch:

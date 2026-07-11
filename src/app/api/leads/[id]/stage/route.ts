@@ -20,7 +20,12 @@ export async function PATCH(
     if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { id: leadId } = await params;
-    const stage = String((await req.json())?.stage ?? "").trim();
+    const body = await req.json();
+    const stage = String(body?.stage ?? "").trim();
+    const note = String(body?.note ?? "").trim();
+    if (note.length > 1000) {
+      return NextResponse.json({ error: "Stage note must be 1000 characters or fewer" }, { status: 400 });
+    }
     if (!VALID_STAGES.has(stage)) {
       return NextResponse.json({ error: "Invalid stage" }, { status: 400 });
     }
@@ -95,8 +100,10 @@ export async function PATCH(
       lead_id: leadId,
       user_id: profile.userId,
       event_type: "stage_change",
-      description: `Stage changed from ${lead.stage} to ${stage}`,
-      event_data: { from: lead.stage, to: stage },
+      description: note
+        ? `Stage changed from ${lead.stage} to ${stage}: ${note}`
+        : `Stage changed from ${lead.stage} to ${stage}`,
+      event_data: { from: lead.stage, to: stage, ...(note ? { note } : {}) },
       created_at: new Date().toISOString(),
     });
     if (eventError) {

@@ -14,7 +14,14 @@
     "check:route-files": "bash scripts/check-route-files.sh",
     "check:smoke": "bash scripts/check-smoke.sh",
     "check:logs": "bash scripts/check-logs.sh",
-    "check:release": "npm run check:schema-refs && npm run check:route-files && npm run check:smoke && npm run check:logs"
+    "check:release": "npm run check:schema-refs && npm run check:route-files && npm run check:smoke && npm run check:logs",
+    "test": "node --test tests/**/*.test.mjs",
+    "check:supabase-boundaries": "node scripts/check-supabase-boundaries.mjs",
+    "check:db-static": "node scripts/check-db-static.mjs",
+    "check:security": "npm run check:supabase-boundaries && npm run check:db-static",
+    "check:workflows": "bash scripts/check-workflows-yaml.sh",
+    "lint:baseline": "node scripts/check-lint-baseline.mjs",
+    "lint:baseline:negative": "node tests/lint-baseline-negative.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

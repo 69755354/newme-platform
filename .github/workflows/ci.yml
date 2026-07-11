@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - work
+      - main
+      - production
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+  NODE_ENV: test
+  NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
+  SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
+  NEXT_PUBLIC_SENTRY_DSN: ''
+
+jobs:
+  validate:
+    name: Repository validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Taskboard gate
+        run: bash scripts/check-taskboard.sh
+
+      - name: Route file gate
+        run: npm run check:route-files
+
+      - name: Schema reference gate
+        run: npm run check:schema-refs
+
+      - name: Supabase boundary gate
+        run: npm run check:supabase-boundaries
+
+      - name: Database static regression gate
+        run: npm run check:db-static
+
+      - name: Lint baseline gate
+        run: npm run lint:baseline
+
+      - name: Workflow YAML validation
+        run: npm run check:workflows
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Repository tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

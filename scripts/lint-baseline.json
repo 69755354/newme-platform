@@ -1,0 +1,2519 @@
+{
+  "generated_at": "2026-07-10T20:25:20.253Z",
+  "ignored": [
+    ".next/**",
+    ".next.backup/**",
+    "node_modules/**",
+    "docs/**",
+    "supabase/**",
+    "coverage/**"
+  ],
+  "error_count": 501,
+  "entries": [
+    {
+      "file": "e2e/auth.setup.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "scripts/apply_migrations_0604.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "message": "A `require()` style import is forbidden."
+    },
+    {
+      "file": "scripts/apply_migrations_0604.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "message": "A `require()` style import is forbidden."
+    },
+    {
+      "file": "scripts/apply_notification_related_types.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "message": "A `require()` style import is forbidden."
+    },
+    {
+      "file": "scripts/apply_notification_related_types.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "message": "A `require()` style import is forbidden."
+    },
+    {
+      "file": "scripts/apply_notification_types.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "message": "A `require()` style import is forbidden."
+    },
+    {
+      "file": "scripts/apply_notification_types.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "message": "A `require()` style import is forbidden."
+    },
+    {
+      "file": "scripts/apply_notifications_migration.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "message": "A `require()` style import is forbidden."
+    },
+    {
+      "file": "scripts/apply_notifications_migration.cjs",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "message": "A `require()` style import is forbidden."
+    },
+    {
+      "file": "scripts/check-browser-smoke.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "scripts/crm-daily-report.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "message": "A `require()` style import is forbidden."
+    },
+    {
+      "file": "scripts/crm-daily-report.js",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "message": "A `require()` style import is forbidden."
+    },
+    {
+      "file": "scripts/fix-lead-customer-name.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "scripts/seed-products.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "scripts/seed-products.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "scripts/seed-products.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "scripts/seed-products.ts",
+      "ruleId": "@typescript-eslint/no-require-imports",
+      "message": "A `require()` style import is forbidden."
+    },
+    {
+      "file": "src/app/(dashboard)/ads/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/_components/AdsROI.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/_components/LeadHealth.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/_components/LeadHealth.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/_components/LeadHealth.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/_components/LeadHealth.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx",
+      "ruleId": "react/no-unescaped-entities",
+      "message": "`\"` can be escaped with `&quot;`, `&ldquo;`, `&#<n>;`, `&rdquo;`."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx",
+      "ruleId": "react/no-unescaped-entities",
+      "message": "`\"` can be escaped with `&quot;`, `&ldquo;`, `&#<n>;`, `&rdquo;`."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/_components/WeeklyTrends.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/analytics/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/contracts/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/contracts/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/contracts/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/contracts/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/contracts/[id]/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/contracts/[id]/page.tsx:<n>:<n>\n  <n> |   useEffect(() => {\n  <n> |     if (!contractId) return;\n> <n> |     load();\n      |     ^^^^ Avoid calling setState() directly within an effect\n  <n> |     // eslint-disable-next-line react-hooks/exhaustive-deps\n  <n> |   }, [contractId]);\n  <n> |"
+    },
+    {
+      "file": "src/app/(dashboard)/contracts/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/contracts/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/contracts/page.tsx",
+      "ruleId": "react-hooks/purity",
+      "message": "Error: Cannot call impure function during render\n\n`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n/workspace/newme-platform/src/app/(dashboard)/contracts/page.tsx:<n>:<n>\n   <n> |       return { color: \"<value>\", label: \"<value>\", icon: <AlertTriangle className=\"<value>\" /> };\n   <n> |     }\n>  <n> |     if (dueDate && dueDate <= new Date(Date.now() + <n> * <n>).toISOString().slice(<n>, <n>)) {\n      |                                        ^^^^^^^^^^ Cannot call impure function\n   <n> |       return { color: \"<value>\", label: \"<value>\", icon: <Clock className=\"<value>\" /> };\n   <n> |     }\n  <n> |     return { color: \"<value>\", label: \"<value>\", icon: <Clock className=\"<value>\" /> };"
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/_components/AlertPanel.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/_components/AlertPanel.tsx:<n>:<n>\n  <n> |\n  <n> |   useEffect(() => {\n> <n> |     fetchAlerts();\n     |     ^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |   }, [fetchAlerts]);\n  <n> |\n  <n> |   if (loading) return null;"
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/_components/WeeklyReview.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/_components/WeeklyReview.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/_components/WeeklyReview.tsx:<n>:<n>\n  <n> |   }, [locale]);\n  <n> |\n> <n> |   useEffect(() => { fetchData(period); }, [period, fetchData]);\n      |                     ^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |\n  <n> |   const bars = <div className=\"<value>\" aria-label={t(\"<value>\", \"<value>\")}>\n  <n> |     <div className=\"<value>\" />"
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/page.tsx:<n>:<n>\n  <n> |     if (!userRole || userRole === \"<value>\") return;\n  <n> |     let cancelled = false;\n> <n> |     setWeeklyReviewLoading(true);\n      |     ^^^^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |     fetch(`/api/dashboard/weekly-review?range=${weeklyReviewRange}`)\n  <n> |       .then(async (r) => {\n  <n> |         if (!r.ok) { if (!cancelled) setWeeklyReviewData(null); return; }"
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "react-hooks/static-components",
+      "message": "Error: Cannot create components during render\n\nComponents created during render will reset their state each time they are created. Declare components outside of render.\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/page.tsx:<n>:<n>\n  <n> |         {salesLeaderboard.length > <n> && (\n  <n> |           <div>\n> <n> |             <SectionHeader title={t(\"<value>\")} subtitle={`(${month})`} />\n      |              ^^^^^^^^^^^^^ This component is created during render\n  <n> |             <div className=\"<value>\">\n  <n> |               {salesLeaderboard.slice(<n>, <n>).map((s) => (\n  <n> |                 <div key={s.id}\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/page.tsx:<n>:<n>\n  <n> |\n  <n> |   /* ─── shared: section header ─── */\n> <n> |   const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (\n      |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |     <div className=\"<value>\">\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       <div className=\"<value>\" />\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       <h<n> className=\"<value>\">{title}</h<n>>\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       {subtitle && <span className=\"<value>\">{subtitle}</span>}\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |     </div>\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |   );\n      | ^^^^ The component is created during render here\n  <n> |\n  <n> |   /* ════════════════════════════════════════\n  <n> |      MANAGEMENT VIEW"
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "react-hooks/static-components",
+      "message": "Error: Cannot create components during render\n\nComponents created during render will reset their state each time they are created. Declare components outside of render.\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/page.tsx:<n>:<n>\n  <n> |         {sourceBreakdown.length > <n> && (\n  <n> |           <div>\n> <n> |             <SectionHeader title={t(\"<value>\")} subtitle={`(${sourceBreakdown.reduce((a, b) => a + b.total, <n>)} ${t(\"<value>\")})`} />\n      |              ^^^^^^^^^^^^^ This component is created during render\n  <n> |             <div className=\"<value>\">\n  <n> |               {sourceBreakdown.map((s) => {\n  <n> |                 const pct = Math.round((s.total / maxSourceTotal) * <n>);\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/page.tsx:<n>:<n>\n  <n> |\n  <n> |   /* ─── shared: section header ─── */\n> <n> |   const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (\n      |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |     <div className=\"<value>\">\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       <div className=\"<value>\" />\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       <h<n> className=\"<value>\">{title}</h<n>>\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       {subtitle && <span className=\"<value>\">{subtitle}</span>}\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |     </div>\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |   );\n      | ^^^^ The component is created during render here\n  <n> |\n  <n> |   /* ════════════════════════════════════════\n  <n> |      MANAGEMENT VIEW"
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "react-hooks/static-components",
+      "message": "Error: Cannot create components during render\n\nComponents created during render will reset their state each time they are created. Declare components outside of render.\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/page.tsx:<n>:<n>\n  <n> |         {topActions.length > <n> && (\n  <n> |           <div>\n> <n> |             <SectionHeader title={t(\"<value>\")} subtitle={t(\"<value>\").replace(\"<value>\", String(topActions.length))} />\n      |              ^^^^^^^^^^^^^ This component is created during render\n  <n> |             {TodayActions}\n  <n> |           </div>\n  <n> |         )}\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/page.tsx:<n>:<n>\n  <n> |\n  <n> |   /* ─── shared: section header ─── */\n> <n> |   const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (\n      |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |     <div className=\"<value>\">\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       <div className=\"<value>\" />\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       <h<n> className=\"<value>\">{title}</h<n>>\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       {subtitle && <span className=\"<value>\">{subtitle}</span>}\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |     </div>\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |   );\n      | ^^^^ The component is created during render here\n  <n> |\n  <n> |   /* ════════════════════════════════════════\n  <n> |      MANAGEMENT VIEW"
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "react-hooks/static-components",
+      "message": "Error: Cannot create components during render\n\nComponents created during render will reset their state each time they are created. Declare components outside of render.\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/page.tsx:<n>:<n>\n  <n> |       {/* L<n>: My KPI progress */}\n  <n> |       <div>\n> <n> |         <SectionHeader title={t(\"<value>\")} subtitle={month} />\n      |          ^^^^^^^^^^^^^ This component is created during render\n  <n> |         {signingTarget === <n> && collectionTarget === <n> && (\n  <n> |           <div className=\"<value>\">\n  <n> |             {t(\"<value>\")}\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/page.tsx:<n>:<n>\n  <n> |\n  <n> |   /* ─── shared: section header ─── */\n> <n> |   const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (\n      |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |     <div className=\"<value>\">\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       <div className=\"<value>\" />\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       <h<n> className=\"<value>\">{title}</h<n>>\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       {subtitle && <span className=\"<value>\">{subtitle}</span>}\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |     </div>\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |   );\n      | ^^^^ The component is created during render here\n  <n> |\n  <n> |   /* ════════════════════════════════════════\n  <n> |      MANAGEMENT VIEW"
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "react-hooks/static-components",
+      "message": "Error: Cannot create components during render\n\nComponents created during render will reset their state each time they are created. Declare components outside of render.\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/page.tsx:<n>:<n>\n  <n> |       {/* L<n>: Today's Actions — THE hero section for sales */}\n  <n> |       <div>\n> <n> |         <SectionHeader title={t(\"<value>\")} subtitle={t(\"<value>\")} />\n      |          ^^^^^^^^^^^^^ This component is created during render\n  <n> |         {followupLoading ? (\n  <n> |           <div className=\"<value>\">{t(\"<value>\")}</div>\n  <n> |         ) : (\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/page.tsx:<n>:<n>\n  <n> |\n  <n> |   /* ─── shared: section header ─── */\n> <n> |   const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (\n      |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |     <div className=\"<value>\">\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       <div className=\"<value>\" />\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       <h<n> className=\"<value>\">{title}</h<n>>\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       {subtitle && <span className=\"<value>\">{subtitle}</span>}\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |     </div>\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |   );\n      | ^^^^ The component is created during render here\n  <n> |\n  <n> |   /* ════════════════════════════════════════\n  <n> |      MANAGEMENT VIEW"
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "ruleId": "react-hooks/static-components",
+      "message": "Error: Cannot create components during render\n\nComponents created during render will reset their state each time they are created. Declare components outside of render.\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/page.tsx:<n>:<n>\n  <n> |       {sourceBreakdown.length > <n> && (\n  <n> |         <div>\n> <n> |             <SectionHeader title={t(\"<value>\")} subtitle={`(${sourceBreakdown.reduce((a, b) => a + b.total, <n>)} ${t(\"<value>\")})`} />\n      |              ^^^^^^^^^^^^^ This component is created during render\n  <n> |           <div className=\"<value>\">\n  <n> |             {sourceBreakdown.map((s) => {\n  <n> |               const pct = Math.round((s.total / maxSourceTotal) * <n>);\n\n/workspace/newme-platform/src/app/(dashboard)/dashboard/page.tsx:<n>:<n>\n  <n> |\n  <n> |   /* ─── shared: section header ─── */\n> <n> |   const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (\n      |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |     <div className=\"<value>\">\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       <div className=\"<value>\" />\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       <h<n> className=\"<value>\">{title}</h<n>>\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |       {subtitle && <span className=\"<value>\">{subtitle}</span>}\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |     </div>\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n> <n> |   );\n      | ^^^^ The component is created during render here\n  <n> |\n  <n> |   /* ════════════════════════════════════════\n  <n> |      MANAGEMENT VIEW"
+    },
+    {
+      "file": "src/app/(dashboard)/leads/_components/LeadsFilters.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/_hooks/useLeadMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/_hooks/useLeadMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/_hooks/useLeadMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/_hooks/useLeadsData.ts",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/leads/_hooks/useLeadsData.ts:<n>:<n>\n  <n> |   // ── Initial fetch on mount ──\n  <n> |   useEffect(() => {\n> <n> |     const cleanup = fetchLeads();\n      |                     ^^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |     return cleanup;\n  <n> |   }, [fetchLeads]);\n  <n> |"
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/LeadContactQualityPanel.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/LeadCustomerProfile.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/LeadCustomerProfile.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/LeadCustomerProfile.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/LeadCustomerProfile.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx",
+      "ruleId": "react-hooks/purity",
+      "message": "Error: Cannot call impure function during render\n\n`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n/workspace/newme-platform/src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx:<n>:<n>\n  <n> |       : \"<value>\";\n  <n> |\n> <n> |   const nextTaskOverdue = !!nextTask && new Date(nextTask.due_at).getTime() < Date.now();\n      |                                                                               ^^^^^^^^^^ Cannot call impure function\n  <n> |\n  <n> |   // ── Missing required fields, gated by current stage (display only, no block) ──\n  <n> |   const STAGE_ORDER = STAGES; // new … lost"
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx",
+      "ruleId": "react-hooks/purity",
+      "message": "Error: Cannot call impure function during render\n\n`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n/workspace/newme-platform/src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx:<n>:<n>\n  <n> |       lead.final_status === \"<value>\" ||\n  <n> |       [\"<value>\", \"<value>\", \"<value>\"].includes(lead.stage),\n> <n> |     isOverdue: !!nextTask && new Date(nextTask.due_at).getTime() < Date.now(),\n      |                                                                    ^^^^^^^^^^ Cannot call impure function\n  <n> |   });\n  <n> |   const healthLevelLabel =\n  <n> |     health.level === \"<value>\""
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/types.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/types.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/types.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailData.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailData.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailData.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailData.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailData.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailData.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailData.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailData.ts",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/leads/[id]/useLeadDetailData.ts:<n>:<n>\n  <n> |   }, [leadId]); // eslint-disable-line react-hooks/exhaustive-deps\n  <n> |\n> <n> |   useEffect(() => { fetchData(); }, [fetchData]);\n      |                     ^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |\n  <n> |   // Sales users for reassignment dropdown\n  <n> |   useEffect(() => {"
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/[id]/utils.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/new/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/leads/new/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/payments/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/payments/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/payments/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/payments/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/payments/page.tsx:<n>:<n>\n  <n> |\n  <n> |   useEffect(() => {\n> <n> |     fetchData().finally(() => setLoading(false));\n      |     ^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |   }, [fetchData]);\n  <n> |\n  <n> |   if (roleLoading || blocked) return null;"
+    },
+    {
+      "file": "src/app/(dashboard)/pipeline/_components/KanbanBoard.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/pipeline/_components/KanbanBoard.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/pipeline/_components/LeadCard.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/pipeline/_components/LeadCard.tsx",
+      "ruleId": "react-hooks/purity",
+      "message": "Error: Cannot call impure function during render\n\n`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n/workspace/newme-platform/src/app/(dashboard)/pipeline/_components/LeadCard.tsx:<n>:<n>\n  <n> |   const days = daysSince(lead.last_contact_date || lead.updated_at);\n  <n> |   const hoursSinceUpdate = lead.updated_at\n> <n> |     ? Math.floor((Date.now() - new Date(lead.updated_at).getTime()) / <n>_<n>_<n>)\n     |                   ^^^^^^^^^^ Cannot call impure function\n  <n> |     : null;\n  <n> |   const isInactive<n>h = hoursSinceUpdate !== null && hoursSinceUpdate >= <n> && !lead.final_status;\n  <n> |   const isStale = days !== null && days > <n> && !lead.final_status;"
+    },
+    {
+      "file": "src/app/(dashboard)/pipeline/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/pipeline/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/products/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/products/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/products/page.tsx:<n>:<n>\n  <n> |\n  <n> |   useEffect(() => {\n> <n> |     if (!roleLoading) fetchProducts();\n     |                       ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |   }, [roleLoading, fetchProducts]);\n  <n> |\n  <n> |   const products = rawProducts || [];"
+    },
+    {
+      "file": "src/app/(dashboard)/projects/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/projects/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/quotations/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/quotations/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/quotations/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/quotations/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/quotations/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/quotations/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/quotations/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/quotes/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/quotes/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/quotes/quote-detail-dialog.tsx",
+      "ruleId": "@next/next/no-html-link-for-pages",
+      "message": "Do not use an `<a>` element to navigate to `/contracts/`. Use `<Link />` from `next/link` instead. See: https://nextjs.org/docs/messages/no-html-link-for-pages"
+    },
+    {
+      "file": "src/app/(dashboard)/quotes/quote-detail-dialog.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/quotes/quote-detail-dialog.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/quotes/quote-detail-dialog.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/quotes/quote-detail-dialog.tsx:<n>:<n>\n  <n> |   useEffect(() => {\n  <n> |     if (quote) {\n> <n> |       setActiveStatus(quote.status);\n     |       ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |       // Auto-expand all categories\n  <n> |       const cats = new Set<string>();\n  <n> |       if (quote.devices_json) {"
+    },
+    {
+      "file": "src/app/(dashboard)/quotes/quotes-client.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/quotes/quotes-client.tsx",
+      "ruleId": "prefer-const",
+      "message": "'<value>' is never reassigned. Use '<value>' instead."
+    },
+    {
+      "file": "src/app/(dashboard)/settings/kpi-management.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/settings/kpi-management.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/settings/kpi-management.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/settings/kpi-management.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/settings/kpi-management.tsx:<n>:<n>\n  <n> |   }, [period]);\n  <n> |\n> <n> |   useEffect(() => { fetchData(); }, [fetchData]);\n     |                     ^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |\n  <n> |   const handleSave = async () => {\n  <n> |     setSaving(true);"
+    },
+    {
+      "file": "src/app/(dashboard)/settings/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/settings/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/settings/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/settings/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/settings/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/settings/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/settings/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/settings/page.tsx:<n>:<n>\n  <n> |   }, []);\n  <n> |\n> <n> |   useEffect(() => { fetchData(); }, [fetchData]);\n      |                     ^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |\n  <n> |   // Role guard — must be AFTER all hooks\n  <n> |   if (roleLoading || blocked) return <div className=\"<value>\">{t(\"<value>\")}</div>;"
+    },
+    {
+      "file": "src/app/(dashboard)/tasks/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/tasks/[id]/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/tasks/[id]/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/tasks/[id]/page.tsx:<n>:<n>\n  <n> |\n  <n> |   useEffect(() => {\n> <n> |     if (taskId) fetchTask();\n      |                 ^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |   }, [taskId]);\n  <n> |\n  <n> |   /* ─── Save task ─── */"
+    },
+    {
+      "file": "src/app/(dashboard)/tasks/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/tasks/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/tasks/page.tsx:<n>:<n>\n  <n> |\n  <n> |   useEffect(() => {\n> <n> |     fetchTasks();\n      |     ^^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |   }, [fetchTasks]);\n  <n> |\n  <n> |   // Reset page when filters change"
+    },
+    {
+      "file": "src/app/(dashboard)/tasks/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/tasks/page.tsx:<n>:<n>\n  <n> |   // Reset page when filters change\n  <n> |   useEffect(() => {\n> <n> |     setPage(<n>);\n      |     ^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |   }, [statusFilter, assigneeFilter]);\n  <n> |\n  <n> |   const totalPages = Math.max(<n>, Math.ceil(totalCount / PAGE_SIZE));"
+    },
+    {
+      "file": "src/app/(dashboard)/team/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/team/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/team/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/team/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/team/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/team/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/team/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/team/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/(dashboard)/team/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/team/page.tsx:<n>:<n>\n  <n> |\n  <n> |   useEffect(() => {\n> <n> |     fetchUsers();\n      |     ^^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |   }, [fetchUsers]);\n  <n> |\n  <n> |   // Initialize current user info from BFF API"
+    },
+    {
+      "file": "src/app/(dashboard)/team/page.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/app/(dashboard)/team/page.tsx:<n>:<n>\n  <n> |   useEffect(() => {\n  <n> |     if (activeTab === \"<value>\" && canSeeActivity) {\n> <n> |       fetchActivity(activityDate);\n      |       ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |     }\n  <n> |   }, [activeTab, activityDate, canSeeActivity, fetchActivity]);\n  <n> |"
+    },
+    {
+      "file": "src/app/(dashboard)/workbench/page.tsx",
+      "ruleId": "react-hooks/purity",
+      "message": "Error: Cannot call impure function during render\n\n`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).\n\n/workspace/newme-platform/src/app/(dashboard)/workbench/page.tsx:<n>:<n>\n  <n> |                   const overdue =\n  <n> |                     !!item.next_followup_date &&\n> <n> |                     new Date(item.next_followup_date).getTime() < Date.now()\n      |                                                                   ^^^^^^^^^^ Cannot call impure function\n  <n> |                   return (\n  <n> |                     <li key={item.id}>\n  <n> |                       <Link prefetch={false}"
+    },
+    {
+      "file": "src/app/actions/pipeline.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/actions/pipeline.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/actions/tasks.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/actions/tasks.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/actions/team.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/actions/team.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/activity/daily-report/route.ts",
+      "ruleId": "prefer-const",
+      "message": "'<value>' is never reassigned. Use '<value>' instead."
+    },
+    {
+      "file": "src/app/api/alerts/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/alerts/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/alerts/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/analytics/summary/route.ts",
+      "ruleId": "prefer-const",
+      "message": "'<value>' is never reassigned. Use '<value>' instead."
+    },
+    {
+      "file": "src/app/api/auth/change-password/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/[id]/approve/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/[id]/confirm-upload/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/[id]/confirm-upload/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/[id]/remind-payment/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/[id]/revoke/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/[id]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/[id]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/[id]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/[id]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/[id]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/[id]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/[id]/upload-url/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/list/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/contracts/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/cos/download-url/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/cron/daily-reminder/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/ads-roi/import/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/ads-roi/import/route.ts",
+      "ruleId": "prefer-const",
+      "message": "'<value>' is never reassigned. Use '<value>' instead."
+    },
+    {
+      "file": "src/app/api/dashboard/lead-health/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/lead-health/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/lead-health/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/lead-health/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/lead-health/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/lead-health/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/lead-health/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/lead-health/route.ts",
+      "ruleId": "prefer-const",
+      "message": "'<value>' is never reassigned. Use '<value>' instead."
+    },
+    {
+      "file": "src/app/api/dashboard/lead-sources/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/lead-sources/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/lead-sources/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/lead-sources/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/payment-tracker/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/payment-tracker/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/pipeline-funnel/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/pipeline-funnel/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/pipeline-funnel/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/pipeline-funnel/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/rebalance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/rebalance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/rebalance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/rebalance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/sales-load/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/summary/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/team-performance/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-review/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-trends/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-trends/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-trends/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-trends/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dashboard/weekly-trends/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dev/setup/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dev/setup/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/dev/setup/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/health/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/health/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/generate-quote/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/knx-design/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/knx-design/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/knx-design/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/knx-design/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/knx-design/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/knx-design/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/knx-design/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/knx-design/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/knx-design/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/knx-design/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/knx-design/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/hermes/knx-design/status/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/leads/[id]/events/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/leads/archive/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/leads/import/confirm/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/leads/import/confirm/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/leads/import/confirm/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/leads/import/preview/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/leads/import/preview/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/leads/list/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/leads/list/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/leads/meta-capi/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/monitoring/report/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/notifications/[id]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/notifications/read-all/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/notifications/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/notifications/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/notifications/unread-count/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/payments/[id]/allocate/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/payments/[id]/confirm/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/payments/list/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/payments/list/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/payments/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/payments/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/pipeline/list/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/pipeline/list/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/pipeline/list/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/pipeline/list/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/pipeline/list/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/products/import/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/quotations/[id]/convert/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/quotations/calculate/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/quotations/export/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/quotations/export/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/quotations/export/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/quotations/generate/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/quotations/generate/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/quotations/generate/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/settings/data/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/settings/data/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/settings/data/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/tasks/list/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/tasks/list/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/users/[id]/password/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/users/[id]/password/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/users/[id]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/users/[id]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/users/[id]/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/users/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/users/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/users/route.ts",
+      "ruleId": "prefer-const",
+      "message": "'<value>' is never reassigned. Use '<value>' instead."
+    },
+    {
+      "file": "src/app/api/workbench/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/workbench/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/workbench/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/workbench/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/workbench/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/workbench/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/workbench/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/workbench/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/workbench/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/workbench/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/workbench/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/workbench/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/workflow/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/api/workflow/route.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/app/login/page.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/DashboardErrorBoundary.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/error-boundary.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/error-boundary.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/error-boundary.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/error-boundary.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/error-monitor.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/knx-design-panel.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/knx-design-panel.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/knx-design-panel.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/lead-workflow.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/lead-workflow.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/lead-workflow.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/leads/ExcelImportDialog.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/leads/ExcelImportDialog.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/leads/ExcelImportDialog.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/leads/ExcelImportDialog.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/NotificationBell.tsx",
+      "ruleId": "react-hooks/refs",
+      "message": "Error: Cannot access refs during render\n\nReact refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).\n\n/workspace/newme-platform/src/components/NotificationBell.tsx:<n>:<n>\n  <n> |           className=\"<value>\"\n  <n> |           style={{\n> <n> |             top: (dropdownRef.current?.getBoundingClientRect().bottom ?? <n>) + <n>,\n      |                   ^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render\n  <n> |             left: (dropdownRef.current?.getBoundingClientRect().right ?? <n>) - <n>,\n  <n> |           }}\n  <n> |         >"
+    },
+    {
+      "file": "src/components/NotificationBell.tsx",
+      "ruleId": "react-hooks/refs",
+      "message": "Error: Cannot access refs during render\n\nReact refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).\n\n/workspace/newme-platform/src/components/NotificationBell.tsx:<n>:<n>\n  <n> |           className=\"<value>\"\n  <n> |           style={{\n> <n> |             top: (dropdownRef.current?.getBoundingClientRect().bottom ?? <n>) + <n>,\n      |                   ^^^^^^^^^^^^^^^^^^^ Passing a ref to a function may read its value during render\n  <n> |             left: (dropdownRef.current?.getBoundingClientRect().right ?? <n>) - <n>,\n  <n> |           }}\n  <n> |         >"
+    },
+    {
+      "file": "src/components/NotificationBell.tsx",
+      "ruleId": "react-hooks/refs",
+      "message": "Error: Cannot access refs during render\n\nReact refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).\n\n/workspace/newme-platform/src/components/NotificationBell.tsx:<n>:<n>\n  <n> |           className=\"<value>\"\n  <n> |           style={{\n> <n> |             top: (dropdownRef.current?.getBoundingClientRect().bottom ?? <n>) + <n>,\n      |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render\n  <n> |             left: (dropdownRef.current?.getBoundingClientRect().right ?? <n>) - <n>,\n  <n> |           }}\n  <n> |         >"
+    },
+    {
+      "file": "src/components/NotificationBell.tsx",
+      "ruleId": "react-hooks/refs",
+      "message": "Error: Cannot access refs during render\n\nReact refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).\n\n/workspace/newme-platform/src/components/NotificationBell.tsx:<n>:<n>\n  <n> |           className=\"<value>\"\n  <n> |           style={{\n> <n> |             top: (dropdownRef.current?.getBoundingClientRect().bottom ?? <n>) + <n>,\n      |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Passing a ref to a function may read its value during render\n  <n> |             left: (dropdownRef.current?.getBoundingClientRect().right ?? <n>) - <n>,\n  <n> |           }}\n  <n> |         >"
+    },
+    {
+      "file": "src/components/NotificationBell.tsx",
+      "ruleId": "react-hooks/refs",
+      "message": "Error: Cannot access refs during render\n\nReact refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).\n\n/workspace/newme-platform/src/components/NotificationBell.tsx:<n>:<n>\n  <n> |           style={{\n  <n> |             top: (dropdownRef.current?.getBoundingClientRect().bottom ?? <n>) + <n>,\n> <n> |             left: (dropdownRef.current?.getBoundingClientRect().right ?? <n>) - <n>,\n      |                    ^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render\n  <n> |           }}\n  <n> |         >\n  <n> |           {/* Header */}"
+    },
+    {
+      "file": "src/components/NotificationBell.tsx",
+      "ruleId": "react-hooks/refs",
+      "message": "Error: Cannot access refs during render\n\nReact refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).\n\n/workspace/newme-platform/src/components/NotificationBell.tsx:<n>:<n>\n  <n> |           style={{\n  <n> |             top: (dropdownRef.current?.getBoundingClientRect().bottom ?? <n>) + <n>,\n> <n> |             left: (dropdownRef.current?.getBoundingClientRect().right ?? <n>) - <n>,\n      |                    ^^^^^^^^^^^^^^^^^^^ Passing a ref to a function may read its value during render\n  <n> |           }}\n  <n> |         >\n  <n> |           {/* Header */}"
+    },
+    {
+      "file": "src/components/NotificationBell.tsx",
+      "ruleId": "react-hooks/refs",
+      "message": "Error: Cannot access refs during render\n\nReact refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).\n\n/workspace/newme-platform/src/components/NotificationBell.tsx:<n>:<n>\n  <n> |           style={{\n  <n> |             top: (dropdownRef.current?.getBoundingClientRect().bottom ?? <n>) + <n>,\n> <n> |             left: (dropdownRef.current?.getBoundingClientRect().right ?? <n>) - <n>,\n      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render\n  <n> |           }}\n  <n> |         >\n  <n> |           {/* Header */}"
+    },
+    {
+      "file": "src/components/NotificationBell.tsx",
+      "ruleId": "react-hooks/refs",
+      "message": "Error: Cannot access refs during render\n\nReact refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).\n\n/workspace/newme-platform/src/components/NotificationBell.tsx:<n>:<n>\n  <n> |           style={{\n  <n> |             top: (dropdownRef.current?.getBoundingClientRect().bottom ?? <n>) + <n>,\n> <n> |             left: (dropdownRef.current?.getBoundingClientRect().right ?? <n>) - <n>,\n      |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Passing a ref to a function may read its value during render\n  <n> |           }}\n  <n> |         >\n  <n> |           {/* Header */}"
+    },
+    {
+      "file": "src/components/NotificationBell.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/components/NotificationBell.tsx:<n>:<n>\n  <n> |\n  <n> |   useEffect(() => {\n> <n> |     fetchUnreadCount();\n      |     ^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |     // Poll every <n> seconds\n  <n> |     const interval = setInterval(fetchUnreadCount, <n>_<n>);\n  <n> |     return () => clearInterval(interval);"
+    },
+    {
+      "file": "src/components/NotificationBell.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/components/NotificationBell.tsx:<n>:<n>\n  <n> |     if (isOpen) {\n  <n> |       document.addEventListener(\"<value>\", handleClickOutside);\n> <n> |       fetchNotifications();\n      |       ^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |     }\n  <n> |     return () => document.removeEventListener(\"<value>\", handleClickOutside);\n  <n> |   }, [isOpen, fetchNotifications]);"
+    },
+    {
+      "file": "src/components/ProductImportDialog.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/QuickCreateLeadDialog.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/components/QuickCreateLeadDialog.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/lib/hermes.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/lib/i18n/LanguageContext.tsx",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/lib/i18n/LanguageContext.tsx",
+      "ruleId": "react-hooks/set-state-in-effect",
+      "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/workspace/newme-platform/src/lib/i<n>n/LanguageContext.tsx:<n>:<n>\n  <n> |   useEffect(() => {\n  <n> |     const saved = localStorage.getItem(\"<value>\");\n> <n> |     if (saved === \"<value>\" || saved === \"<value>\") setLangState(saved);\n     |                                           ^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  <n> |   }, []);\n  <n> |\n  <n> |   const setLang = useCallback((l: Language) => {"
+    },
+    {
+      "file": "src/lib/knx-task-store.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/lib/notify.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/lib/quotation-engine.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/lib/quotation-engine.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/lib/supabase-middleware.ts",
+      "ruleId": "prefer-const",
+      "message": "'<value>' is never reassigned. Use '<value>' instead."
+    },
+    {
+      "file": "src/lib/supabase-server.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/lib/supabase.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/lib/supabaseQuery.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/lib/supabaseQuery.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/lib/supabaseQuery.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/lib/supabaseQuery.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/lib/supabaseQuery.ts",
+      "ruleId": "react-hooks/immutability",
+      "message": "Error: Cannot access variable before it is declared\n\n`execute` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.\n\n/workspace/newme-platform/src/lib/supabaseQuery.ts:<n>:<n>\n  <n> |           retryCount.current += <n>;\n  <n> |           const backoffDelay = retryDelay * Math.pow(<n>, retryCount.current - <n>);\n> <n> |           setTimeout(execute, backoffDelay);\n     |                      ^^^^^^^ `execute` accessed before it is declared\n  <n> |           return;\n  <n> |         }\n  <n> |\n\n/workspace/newme-platform/src/lib/supabaseQuery.ts:<n>:<n>\n   <n> |   const abortControllerRef = useRef<AbortController | null>(null);\n   <n> |\n>  <n> |   const execute = useCallback(async () => {\n      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n>  <n> |     if (!enabled) {\n      | ^^^^^^^^^^^^^^^^^^^\n>  <n> |       setState({ data: null, loading: false, error: null, status: \"<value>\" });\n      …\n      | ^^^^^^^^^^^^^^^^^^^\n> <n> |     }\n      | ^^^^^^^^^^^^^^^^^^^\n> <n> |   }, [enabled, retry, retryDelay, timeout, ...deps]);\n      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `execute` is declared here\n  <n> |\n  <n> |   useEffect(() => {\n  <n> |     mountedRef.current = true;"
+    },
+    {
+      "file": "src/lib/supabaseQuery.ts",
+      "ruleId": "react-hooks/use-memo",
+      "message": "Error: Expected the dependency list for useCallback to be an array literal\n\nExpected the dependency list for useCallback to be an array literal.\n\n/workspace/newme-platform/src/lib/supabaseQuery.ts:<n>:<n>\n  <n> |       onError?.(errorMessage);\n  <n> |     }\n> <n> |   }, [enabled, retry, retryDelay, timeout, ...deps]);\n      |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Expected the dependency list for useCallback to be an array literal\n  <n> |\n  <n> |   useEffect(() => {\n  <n> |     mountedRef.current = true;"
+    },
+    {
+      "file": "src/shared/hooks/usePipelineDragDrop.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    },
+    {
+      "file": "src/shared/hooks/usePipelineDragDrop.ts",
+      "ruleId": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type."
+    }
+  ]
+}

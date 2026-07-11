@@ -1,0 +1,39 @@
+name: crm-ci
+
+on:
+  workflow_run:
+    workflows:
+      - ci
+    branches:
+      - work
+      - main
+      - production
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: crm-ci-${{ github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  hermes-contract:
+    name: Hermes CI webhook contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record upstream CI result
+        run: |
+          echo "crm-ci is the Hermes workflow_run contract only."
+          echo "Upstream workflow: ${{ github.event.workflow_run.name || 'manual' }}"
+          echo "Conclusion: ${{ github.event.workflow_run.conclusion || 'manual' }}"
+
+      - name: Require upstream ci success
+        if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success' }}
+        run: |
+          echo "Upstream ci did not succeed; Hermes must treat this as blocking."
+          exit 1

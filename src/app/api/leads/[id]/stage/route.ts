@@ -89,7 +89,28 @@ export async function PATCH(
       );
     }
 
-    return NextResponse.json({ success: true, lead: updated });
+    // Preserve the existing analytics/audit contract used by weekly-review.
+    // The previous client updateField path wrote this event after the lead row.
+    const { error: eventError } = await supabase.from("business_events").insert({
+      lead_id: leadId,
+      user_id: profile.userId,
+      event_type: "stage_change",
+      description: `Stage changed from ${lead.stage} to ${stage}`,
+      event_data: { from: lead.stage, to: stage },
+      created_at: new Date().toISOString(),
+    });
+    if (eventError) {
+      console.error("stage_change audit insert failed", eventError);
+    }
+
+    return NextResponse.json({
+      success: true,
+      lead: updated,
+      eventLogged: !eventError,
+      ...(eventError && process.env.NODE_ENV !== "production"
+        ? { eventError: eventError.message }
+        : {}),
+    });
   } catch (error) {
     console.error("stage route error", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { COMPLETABLE_MILESTONES } from "@/lib/milestones";
 import { calculateHealthScore } from "@/lib/health-score";
+import { evaluateFirstContactGate } from "@/lib/first-contact-gate.mjs";
 import { STAGES, STAGE_COLORS } from "./types";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { fmtAED, daysSince } from "./utils";
@@ -150,6 +151,15 @@ export default function LeadSalesProcess({
       : "bg-red-500/10 text-red-400";
 
   const nextTaskOverdue = !!nextTask && new Date(nextTask.due_at).getTime() < Date.now();
+  const completeContactCount = followUpLogs.filter(
+    (log) => log.contact_time != null && !!log.contact_result?.trim(),
+  ).length;
+  const firstContactGate = evaluateFirstContactGate({
+    currentStage: lead.stage,
+    nextStage: "contacted",
+    contactCount: completeContactCount,
+    quality: lead.quality,
+  });
 
   // ── Missing required fields, gated by current stage (display only, no block) ──
   const STAGE_ORDER = STAGES; // new … lost
@@ -288,7 +298,8 @@ export default function LeadSalesProcess({
                     {key === "first_contact" && !completed && isNext && (() => {
                       const contactTimeCount = followUpLogs.filter(l => l.contact_time != null).length;
                       const qAssessed = lead.quality && lead.quality !== "pending";
-                      const contactsNeeded = 3;
+                      const contactsNeeded = 1;
+                      const coachingTarget = 3;
                       const contactsMet = contactTimeCount >= contactsNeeded;
 
                       // Sorted recent contacts
@@ -358,7 +369,7 @@ export default function LeadSalesProcess({
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5 text-[10px]">
                             <span className={contactsMet ? "text-emerald-400" : "text-amber-400"}>
-                              {contactsMet ? "✓" : "○"} {contactTimeCount}/{contactsNeeded} {t("leadDetail.contactsWithTime") || "contacts with time"}
+                              {contactsMet ? "✓" : "○"} {contactTimeCount}/{contactsNeeded} {t("leadDetail.contactsWithTime") || "contact required"} · {contactTimeCount}/{coachingTarget} {t("leadDetail.contactCoachingTarget") || "coaching target"}
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5 text-[10px]">
@@ -688,17 +699,15 @@ export default function LeadSalesProcess({
                 return STAGES.filter((s) => s !== "won" && s !== "lost").map((s) => {
                   const sIdx = stageKeys.indexOf(s);
                   const isBeyondNext = curIdx >= 0 && sIdx > curIdx + 1;
-                  // Gate 6: first_contact — require ≥3 contacts with time + quality before advancing to Contacted
-                  let gateDisabled = false;
-                  let gateTitle: string | undefined;
-                  if (s === "contacted") {
-                    const ctCount = followUpLogs.filter(l => l.contact_time != null).length;
-                    const qOk = lead.quality && lead.quality !== "pending";
-                    if (ctCount < 3 || !qOk) {
-                      gateDisabled = true;
-                      gateTitle = t("leadDetail.firstContactGateHint") || "Need 3 contact records with time and quality assessed";
-                    }
-                  }
+                  // Hard gate: one complete contact + assessed quality before leaving New.
+                  const gate = evaluateFirstContactGate({
+                    currentStage: lead.stage,
+                    nextStage: s,
+                    contactCount: completeContactCount,
+                    quality: lead.quality,
+                  });
+                  const gateDisabled = !gate.allowed;
+                  const gateTitle = gateDisabled ? gate.reasons.join("; ") : undefined;
                   return (
                     <button
                       key={s}
@@ -734,7 +743,8 @@ export default function LeadSalesProcess({
               variant="outline"
               className="flex-1 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
               onClick={onWon}
-              disabled={updating}
+              disabled={updating || !firstContactGate.allowed}
+              title={!firstContactGate.allowed ? firstContactGate.reasons.join("; ") : undefined}
             >
               <CheckCircle className="w-4 h-4 mr-1" />{t("stageLabels.won")}
             </Button>
@@ -743,7 +753,8 @@ export default function LeadSalesProcess({
               variant="outline"
               className="flex-1 border-red-500/30 text-red-400 hover:bg-red-500/10"
               onClick={onLost}
-              disabled={updating}
+              disabled={updating || !firstContactGate.allowed}
+              title={!firstContactGate.allowed ? firstContactGate.reasons.join("; ") : undefined}
             >
               <AlertTriangle className="w-4 h-4 mr-1" />{t("stageLabels.lost")}
             </Button>

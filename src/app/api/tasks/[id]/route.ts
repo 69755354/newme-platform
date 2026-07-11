@@ -28,11 +28,12 @@ export async function GET(
       .from('tasks')
       .select(TASK_DETAIL_SELECT)
       .eq('id', id)
+      .eq('assignee_id', user.id)
       .single()
 
     if (error) {
       if (error.code === 'PGRST116') {
-        return NextResponse.json({ error: 'Task not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Task not found or not assigned to current user' }, { status: 404 })
       }
       return NextResponse.json({ error: error.message }, { status: 500 })
     }

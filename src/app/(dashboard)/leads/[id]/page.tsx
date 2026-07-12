@@ -230,7 +230,7 @@ export default function LeadDetailPage() {
 
     const field = editField;
     const nextValue = editValue.trim();
-    const currentValue = String((lead as any)[field] ?? "");
+    const currentValue = String((lead as unknown as Record<string, unknown>)[field] ?? "");
     if (nextValue === currentValue) {
       setEditField(null);
       return;

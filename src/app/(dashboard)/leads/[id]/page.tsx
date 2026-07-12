@@ -19,7 +19,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, fmtDubai } from "@/lib/utils";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
@@ -225,6 +225,37 @@ export default function LeadDetailPage() {
     }
   }
 
+  const commitInlineEdit = () => {
+    if (!editField || !lead) return;
+
+    const field = editField;
+    const nextValue = editValue.trim();
+    const currentValue = String((lead as unknown as Record<string, unknown>)[field] ?? "");
+    if (nextValue === currentValue) {
+      setEditField(null);
+      return;
+    }
+
+    if (field === "customer_budget") {
+      if (nextValue && !Number.isFinite(Number(nextValue))) {
+        toast.error("Customer Budget must be a number");
+        return;
+      }
+      updateField(field, nextValue ? Number(nextValue) : null, "note_added", "Customer Budget: " + nextValue);
+    } else {
+      updateField(field, nextValue, "note_added", field + ": " + nextValue);
+    }
+    setEditField(null);
+  };
+
+  const commitNextAction = () => {
+    const nextValue = editValue.trim();
+    if (nextValue && nextValue !== (nextTask?.title || "")) {
+      updateNextTask({ title: nextValue });
+    }
+    setEditField(null);
+  };
+
   // ─── Render helpers (page-owned so a single inline edit is active at a time) ───
   const renderInlineEdit: RenderInlineEdit = (field, label, type = "text") => {
     const value = (lead as any)[field];
@@ -245,11 +276,11 @@ export default function LeadDetailPage() {
           autoFocus
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
-          onBlur={() => setEditField(null)}
+          onBlur={commitInlineEdit}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              updateField(field, editValue, "note_added", `${label}: ${editValue}`);
-              setEditField(null);
+              e.preventDefault();
+              e.currentTarget.blur();
             }
             if (e.key === "Escape") setEditField(null);
           }}
@@ -336,7 +367,14 @@ export default function LeadDetailPage() {
     editField === "next_action" ? (
       <div className="flex gap-1 mt-1">
         <input autoFocus value={editValue} onChange={(e) => setEditValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && editValue.trim()) updateNextTask({ title: editValue.trim() }); if (e.key === "Escape") setEditField(null); }}
+          onBlur={commitNextAction}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+            if (e.key === "Escape") setEditField(null);
+          }}
           className="flex-1 h-8 text-xs bg-muted border border-border rounded px-2 text-foreground" />
       </div>
     ) : (

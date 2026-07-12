@@ -29,7 +29,8 @@ test("weekly review API applies sales ownership scope before returning L1 L2 and
 test("Dashboard defaults the review to Today and exposes custom range selection", async () => {
   const page = await read("src/app/(dashboard)/dashboard/page.tsx");
   const review = await read("src/app/(dashboard)/dashboard/_components/WeeklyReview.tsx");
-  assert.ok(page.includes('useState<ReviewRange>("today")'));
+  assert.ok(page.includes('useState<ReviewRange>(() =>'));
+  assert.ok(page.includes(': "today"'));
   assert.ok(page.includes("URLSearchParams"));
   for (const token of ['"today"', '"custom"', 'type="date"', "onCustomRangeChange"]) {
     assert.ok(review.includes(token), `missing review UI: ${token}`);

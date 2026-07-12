@@ -25,3 +25,9 @@ test("import preview and confirmation normalize Instagram, Facebook, and Show ro
     ]) assert.ok(source.includes(token), `${path} missing canonical mapping: ${token}`);
   }
 });
+
+
+test("historical Meta Ads migration changes only the canonical legacy value", async () => {
+  const migration = await read("supabase/migrations/20260712000001_replace_meta_ads_source.sql").catch(() => "");
+  assert.match(migration, /UPDATE public\.leads\s+SET source = 'ins'\s+WHERE source = 'meta_ads';/s);
+});

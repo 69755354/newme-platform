@@ -884,7 +884,9 @@ export const translations = {
     },
     sourceLabels: {
       meta: "Meta Ads",
-      meta_ads: "Meta Ads",
+      ins: "Instagram",
+      fb: "Facebook",
+      show_room: "Show room",
       whatsapp: "WhatsApp",
       website: "Website",
       offline: "Offline",
@@ -2361,7 +2363,9 @@ export const translations = {
     },
     sourceLabels: {
       meta: "Meta 广告",
-      meta_ads: "Meta 广告",
+      ins: "Instagram",
+      fb: "Facebook",
+      show_room: "展厅",
       whatsapp: "WhatsApp",
       website: "官网",
       offline: "线下",

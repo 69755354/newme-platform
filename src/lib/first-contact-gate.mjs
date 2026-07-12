@@ -4,6 +4,14 @@ export function isAssessedQuality(quality) {
   return ASSESSED_QUALITIES.includes(quality);
 }
 
+export function isCompleteContact({ contact_time, contact_result }) {
+  return Boolean(
+    contact_time
+      && typeof contact_result === "string"
+      && contact_result.trim(),
+  );
+}
+
 export function evaluateFirstContactGate({
   currentStage,
   nextStage,

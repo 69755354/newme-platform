@@ -153,20 +153,18 @@ export default function DashboardPage() {
     periodStart: string;
     periodEnd: string;
   } | null>(null);
-  const [weeklyReviewRange, setWeeklyReviewRange] = useState<ReviewRange>("today");
-  const [weeklyReviewStart, setWeeklyReviewStart] = useState("");
-  const [weeklyReviewEnd, setWeeklyReviewEnd] = useState("");
+  const reviewQuery = () => new URLSearchParams(
+    typeof window === "undefined" ? "" : window.location.search,
+  );
+  const [weeklyReviewRange, setWeeklyReviewRange] = useState<ReviewRange>(() => {
+    const range = reviewQuery().get("review_range");
+    return range && ["today", "this_week", "last_week", "this_month", "custom"].includes(range)
+      ? range as ReviewRange
+      : "today";
+  });
+  const [weeklyReviewStart, setWeeklyReviewStart] = useState(() => reviewQuery().get("review_start") ?? "");
+  const [weeklyReviewEnd, setWeeklyReviewEnd] = useState(() => reviewQuery().get("review_end") ?? "");
   const [weeklyReviewLoading, setWeeklyReviewLoading] = useState(false);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const range = params.get("review_range");
-    if (range && ["today", "this_week", "last_week", "this_month", "custom"].includes(range)) {
-      setWeeklyReviewRange(range as ReviewRange);
-    }
-    setWeeklyReviewStart(params.get("review_start") ?? "");
-    setWeeklyReviewEnd(params.get("review_end") ?? "");
-  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

@@ -154,3 +154,11 @@ Before any production release, obtain and record:
 - Revised PR #3 head is `9745b6ab55ac21030a81ed78099354920395f435`. It now has the server-owned contact-create route, a complete-contact milestone migration, shared trimmed contact checks, and the client structured-contact handler uses `POST /api/leads/:id/contacts` with refresh readback.
 - PR #3 CI run `29203458423` is in progress at this checkpoint. Do not merge or deploy until it passes and the First Contact staging matrix is recorded.
 - No production deployment, production migration, rollback, force push, reset, or local/server worktree has been used as release evidence.
+
+
+## Checkpoint — 2026-07-13 CI and Tanya source taxonomy
+
+- Revised PR #3 head `9745b6ab55ac21030a81ed78099354920395f435` passed full CI run `29203458423`, including Taskboard, schema, Supabase boundary, TypeScript, tests, and build. It remains Draft and cannot merge until the documented staging First Contact matrix passes.
+- PR #7 current head `2d891f1d2eef6554c5b9f8de3331abd0e75adb4e` passed retargeted CI run `29160900842`; it remains blocked on staging migration and duplicate-import evidence.
+- New Draft PR #9 (`fix/tanya-lead-source-taxonomy`) head `cf1efec26fda2acdf0c0f3b11df96a4a7bef4734` passed full CI run `29203884136`. It replaces selectable `meta_ads` with `ins`, `fb`, and `show_room`; normalizes these source aliases in both import endpoints; and includes `20260712000001_replace_meta_ads_source.sql` with only `meta_ads → ins`.
+- PR #9 must remain Draft until the controlled merge order and staging source-count evidence are complete. No staging or production mutation was performed by Codex.

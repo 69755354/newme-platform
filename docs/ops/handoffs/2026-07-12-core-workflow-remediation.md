@@ -1,0 +1,123 @@
+# Hermes Handoff — Core Workflow Remediation
+
+**Purpose:** This is the durable GitHub handoff packet for NewMe CRM work. It is the canonical entry point when a Codex session stops, is rate-limited, or is replaced.
+
+**Status at 2026-07-12:** Planning and remote audit complete. No business-code changes, PR merges, production deployments, or production data mutations have been performed by this handoff branch.
+
+## Read Order
+
+1. Read this file completely.
+2. Read [the implementation plan](../plans/2026-07-12-core-workflow-remediation.md).
+3. Inspect the current GitHub state of `main` and PR #3–#7. Do not rely on any local/server worktree for release truth.
+4. Read the newest checkpoint below.
+5. Execute only the stated next action after re-checking its prerequisites.
+
+## Confirmed Business Rules
+
+### First Contact / Lead Detail
+
+- Leaving `new`, including direct `won` or `lost`, requires at least one complete contact record and assessed Quality.
+- Complete contact means `contact_time IS NOT NULL` and `btrim(contact_result) <> ''`.
+- Quality must be `good`, `normal`, or `poor`.
+- Three contacts are a coaching target only; they are never a hard stage gate.
+- Quality becomes selectable after the first complete contact.
+- Timeline contact records must have an authorized edit path, persisted readback, and a visible refreshed result.
+- A complete contact insert or edit must create exactly one `first_contact` milestone. Repeated writes must not duplicate it.
+
+### Tanya Operations
+
+- Historical and future `meta_ads` values become `ins`.
+- Selectable Lead sources: `ins`, `fb`, `show_room`, `whatsapp`, `website`, `offline`, `referral`, `other`, `unknown`.
+- Emirate, Area, Customer Budget, and Next Action must persist on blur or Enter and survive refresh.
+- Do not add a separate Showroom lead field; Show room is a source option.
+
+### L1/L2/L3 Sales Review
+
+- The review defaults to Dubai/GST Today.
+- One shared range drives L1, L2, and L3: Today, This week, Last week, This month, Custom.
+- The existing top finance/KPI cards are not changed by this review range.
+- `boss`, `admin`, and `operator` see the team review; `sales` receive only personal L1/L2/L3 data from the API.
+- Tanya is `boss`; Sam is `admin`. Before release, verify Ayana is `operator`; do not hardcode personal names or UUIDs.
+
+## Remote PR Snapshot
+
+| PR | Purpose | State | Required next condition |
+|---|---|---|---|
+| #5 | Excel headers and Quality/source preservation | Draft, Open, mergeable | Verify current CI then merge first |
+| #7 | Workbook import idempotency | Draft, Open, stacked on #5 | Retarget to new `main`, rerun CI, staging migration/duplicate-import test |
+| #3 | First Contact, contact editing, stage notes | Draft, Open, mergeable | Add missing milestone linkage, complete-contact consistency, behavior tests; rebase/rerun CI |
+| #4 | Weekly review owner attribution / UUID removal | Draft, Open, mergeable | Merge before Today review feature |
+| #6 | Archive preview and rollback safety | Draft, Open, mergeable | Merge last in the requested sequence |
+
+Required existing-PR merge order:
+
+```text
+#5 → #7 → revised #3 → #4 → #6
+```
+
+## Known Findings That Must Not Be Lost
+
+- PR #3 already moves the hard gate from three contacts to one complete contact plus Quality, and adds a Timeline edit endpoint.
+- PR #3 is not ready unchanged: contact creation is client-side/sequential, does not create `first_contact` milestone, and Stage/Quality checks can count whitespace-only `contact_result` differently from the database trigger.
+- Current `main` Lead Detail text fields save only on Enter; blur discards the draft. This explains Tanya's Emirate/Area/Budget and Next Action reports.
+- Current `main` review API uses only `this_week`, `last_week`, and `this_month`; it needs Today/custom GST ranges.
+- Current `main` weekly review hardcodes sales UUIDs. PR #4 removes that behavior and must precede the Today review work.
+- Staging evidence exists historically for migrations but the exact linked database identity must always be recorded; never label an unverified database “staging” or “production.”
+
+## Required Verification Matrix
+
+Before any production release, obtain and record:
+
+- Current `main` SHA and each merged PR SHA.
+- GitHub CI results on each final merge head.
+- Migration names and raw `supabase db push --linked` output, including linked-project identity.
+- Lead counts before/after source migration and duplicate import.
+- First Contact positive and negative UI/API/DB tests.
+- Timeline edit/readback and milestone count.
+- Lead Detail field save/refresh readback.
+- Dashboard Today/Week/Month/Custom totals against GST database counts.
+- Team-view versus sales-view authorization checks.
+- System/app log errors and explicit rollback commit.
+
+## Prohibited Actions
+
+- No `git reset --hard`, `git clean`, force push, or `--no-verify`.
+- No production deploy, migration, or data mutation without explicit release authorization.
+- No hardcoded profile UUID/name authorization in code.
+- No direct client-side bypass of stage/First Contact server and database gates.
+- No claim that Draft PR CI proves staging or production business acceptance.
+
+## Hermes Continuation Protocol
+
+1. Post the exact current GitHub commit/PR/CI facts first.
+2. Update the `## Checkpoints` section in this file in the same commit as any handoff-relevant change.
+3. Use this exact checkpoint template:
+
+```markdown
+### YYYY-MM-DD HH:mm GST — <short task>
+- GitHub main:
+- Branch / PR:
+- Changed files:
+- Tests / CI:
+- Staging evidence:
+- Production action: none | exact action
+- Decision:
+- Next single action:
+- Blocker:
+```
+
+4. If a task changes scope or a business rule, update the implementation plan and this handoff file before coding.
+5. If work stops, leave the branch/PR untouched and append a checkpoint; do not summarize from memory in chat only.
+
+## Checkpoints
+
+### 2026-07-12 — Initial durable handoff
+- GitHub main: remote default branch `main`; inspect latest SHA before any work.
+- Branch / PR: `docs/core-workflow-remediation-plan-20260712`; documentation-only handoff PR pending creation.
+- Changed files: documentation only.
+- Tests / CI: remote CI previously observed green for Draft PR #3–#7; recheck every final head.
+- Staging evidence: no new staging operation performed by this handoff branch.
+- Production action: none.
+- Decision: use the implementation plan and this file as the handoff source of truth.
+- Next single action: inspect PR #5 current CI and its patch against current `main` before making it Ready.
+- Blocker: no implementation authorization or staging credentials are contained in this document.

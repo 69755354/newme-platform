@@ -145,3 +145,12 @@ Before any production release, obtain and record:
 - Decision: do not merge #7 until fresh CI and staging idempotency acceptance are recorded.
 - Next single action: revise PR #3 First Contact milestone linkage and complete-contact consistency while #7 CI runs.
 - Blocker: staging credentials/project identity still unavailable for #7 acceptance.
+
+
+## Checkpoint — 2026-07-13 First Contact continuation
+
+- PR #5 is merged to `main` at `1bc919995bb5ea4696294d64c15eb2c4632d2a77`.
+- PR #7 is retargeted to that `main`; its current head `2d891f1d2eef6554c5b9f8de3331abd0e75adb4e` passed CI run `29160900842`. Do **not** merge it before its staging migration and duplicate-import acceptance evidence exist.
+- Revised PR #3 head is `9745b6ab55ac21030a81ed78099354920395f435`. It now has the server-owned contact-create route, a complete-contact milestone migration, shared trimmed contact checks, and the client structured-contact handler uses `POST /api/leads/:id/contacts` with refresh readback.
+- PR #3 CI run `29203458423` is in progress at this checkpoint. Do not merge or deploy until it passes and the First Contact staging matrix is recorded.
+- No production deployment, production migration, rollback, force push, reset, or local/server worktree has been used as release evidence.

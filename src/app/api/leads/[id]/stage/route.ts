@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
-import { evaluateFirstContactGate } from "@/lib/first-contact-gate.mjs";
+import { evaluateFirstContactGate, isCompleteContact } from "@/lib/first-contact-gate.mjs";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 
 const VALID_STAGES = new Set([
@@ -44,22 +44,19 @@ export async function PATCH(
       return NextResponse.json({ error: "Forbidden: lead not assigned to you" }, { status: 403 });
     }
 
-    const { count, error: countError } = await supabase
+    const { data: contacts, error: contactsError } = await supabase
       .from("follow_up_logs")
-      .select("id", { count: "exact", head: true })
-      .eq("lead_id", leadId)
-      .not("contact_time", "is", null)
-      .not("contact_result", "is", null)
-      .neq("contact_result", "");
+      .select("contact_time, contact_result")
+      .eq("lead_id", leadId);
 
-    if (countError) {
+    if (contactsError) {
       return NextResponse.json({ error: "Unable to verify contact records" }, { status: 500 });
     }
 
     const gate = evaluateFirstContactGate({
       currentStage: lead.stage,
       nextStage: stage,
-      contactCount: count ?? 0,
+      contactCount: (contacts ?? []).filter(isCompleteContact).length,
       quality: lead.quality,
     });
     if (!gate.allowed) {

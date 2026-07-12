@@ -20,7 +20,7 @@ import type { Lead, RenderInlineEdit, RenderDateEdit } from "./types";
 
 // Source dropdown options — keys match translations.sourceLabels and the values
 // persisted on leads.source.
-const SOURCE_OPTIONS = ["meta_ads", "whatsapp", "website", "offline", "referral", "other", "unknown"];
+const SOURCE_OPTIONS = ["ins", "fb", "show_room", "whatsapp", "website", "offline", "referral", "other", "unknown"];
 
 interface Props {
   lead: Lead;

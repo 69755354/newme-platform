@@ -35,10 +35,11 @@ const COLUMN_MAP: Record<string, string> = {
 // ─── Value mapping ───
 function mapSource(raw: string): string {
   const s = raw.toLowerCase().trim();
-  if (s === "instgram") return "instagram";
-  if (s === "instagram") return "instagram";
-  if (!s) return "unknown_import";
-  return "other";
+  if (["instagram", "instgram", "ins"].includes(s)) return "ins";
+  if (["facebook", "fb"].includes(s)) return "fb";
+  if (["show room", "show_room", "showroom"].includes(s)) return "show_room";
+  if (["whatsapp", "website", "offline", "referral", "other", "unknown"].includes(s)) return s;
+  return "unknown";
 }
 
 function mapQuality(raw: string): { quality: string; warning?: string } {
@@ -163,7 +164,7 @@ export async function POST(request: NextRequest) {
       // Map source
       const source = mapSource(norm.source || "");
       if ((norm.source || "").toLowerCase().trim() === "instgram") {
-        rowWarnings.push(`Row ${rowNum}: "instgram" → mapped to "instagram"`);
+        rowWarnings.push(`Row ${rowNum}: "instgram" → mapped to "ins"`);
       }
 
       // Map quality

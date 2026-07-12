@@ -162,3 +162,11 @@ Before any production release, obtain and record:
 - PR #7 current head `2d891f1d2eef6554c5b9f8de3331abd0e75adb4e` passed retargeted CI run `29160900842`; it remains blocked on staging migration and duplicate-import evidence.
 - New Draft PR #9 (`fix/tanya-lead-source-taxonomy`) head `cf1efec26fda2acdf0c0f3b11df96a4a7bef4734` passed full CI run `29203884136`. It replaces selectable `meta_ads` with `ins`, `fb`, and `show_room`; normalizes these source aliases in both import endpoints; and includes `20260712000001_replace_meta_ads_source.sql` with only `meta_ads → ins`.
 - PR #9 must remain Draft until the controlled merge order and staging source-count evidence are complete. No staging or production mutation was performed by Codex.
+
+
+## Checkpoint — 2026-07-13 completed remote code gates
+
+- PR #10 (`3f5c2df5a9be180ddad7497cfeca18f30be9d4d2`) passed full CI: Lead Detail Emirate, Area, Customer Budget, and Next Action now commit on blur or Enter and retain readback safeguards.
+- PR #11 (`60638c3b692e8db8412583d92dc8ebfd8b54ee0a`) passed full CI run `29205761768`: GST Today is the review default; This week, Last week, This month, and valid Custom ranges are available; range state is preserved in the URL; sales receives owner-scoped L1/L2/L3 data from the server.
+- Do not mark any remote PR as deployed or merge migration-bearing PRs until staging evidence is recorded. The remaining controlled order from current main is: #7, revised #3, #4, #6, #9, #10, then #11 after #4.
+- The only remaining delivery gate that cannot be completed from GitHub alone is authenticated staging verification plus migration/role evidence. Required credentials or a configured staging environment are needed; no production operation has been attempted.

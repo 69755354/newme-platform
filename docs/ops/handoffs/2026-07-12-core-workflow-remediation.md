@@ -121,3 +121,15 @@ Before any production release, obtain and record:
 - Decision: use the implementation plan and this file as the handoff source of truth.
 - Next single action: inspect PR #5 current CI and its patch against current `main` before making it Ready.
 - Blocker: no implementation authorization or staging credentials are contained in this document.
+
+
+### 2026-07-12 23:10 GST — PR #5 controlled merge
+- GitHub main: `1bc919995bb5ea4696294d64c15eb2c4632d2a77` (PR #5 merge commit).
+- Branch / PR: PR #5 is merged; PR #7 remains Draft and stacked on the former PR #5 branch.
+- Changed files: `src/app/api/leads/import/confirm/route.ts`, `src/app/api/leads/import/preview/route.ts`, `tests/security/lead-import-contract.test.mjs` via PR #5.
+- Tests / CI: PR #5 head CI run `29160426946` completed with `success` before merge.
+- Staging evidence: no staging migration or import performed in this checkpoint; #5 contains no migration.
+- Production action: no deploy and no production data mutation.
+- Decision: merge #5 first as required; #7 must be retargeted to current `main` and receive a fresh CI result before any merge.
+- Next single action: retarget PR #7 to `main`, inspect its updated head, then wait for fresh CI.
+- Blocker: staging credentials/project identity are still required before #7 migration acceptance.

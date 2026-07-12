@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
+import { isCompleteContact } from '@/lib/first-contact-gate.mjs';
 
 export async function POST(
   req: NextRequest,
@@ -69,13 +70,10 @@ export async function POST(
     }
 
     // Quality may be assessed after the first complete contact, never before.
-    const { count: contactCount, error: contactError } = await supabase
+    const { data: contacts, error: contactError } = await supabase
       .from('follow_up_logs')
-      .select('id', { count: 'exact', head: true })
-      .eq('lead_id', leadId)
-      .not('contact_time', 'is', null)
-      .not('contact_result', 'is', null)
-      .neq('contact_result', '');
+      .select('contact_time, contact_result')
+      .eq('lead_id', leadId);
 
     if (contactError) {
       return NextResponse.json(
@@ -83,7 +81,7 @@ export async function POST(
         { status: 500 }
       );
     }
-    if ((contactCount ?? 0) < 1) {
+    if (!(contacts ?? []).some(isCompleteContact)) {
       return NextResponse.json(
         { error: 'At least one complete contact record is required before setting Lead Quality' },
         { status: 409 }

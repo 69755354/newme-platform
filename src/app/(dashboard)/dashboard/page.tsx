@@ -164,7 +164,6 @@ export default function DashboardPage() {
   });
   const [weeklyReviewStart, setWeeklyReviewStart] = useState(() => reviewQuery().get("review_start") ?? "");
   const [weeklyReviewEnd, setWeeklyReviewEnd] = useState(() => reviewQuery().get("review_end") ?? "");
-  const [weeklyReviewLoading, setWeeklyReviewLoading] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -191,7 +190,6 @@ export default function DashboardPage() {
       return;
     }
     let cancelled = false;
-    setWeeklyReviewLoading(true);
     const params = new URLSearchParams({ range: weeklyReviewRange });
     if (weeklyReviewRange === "custom") {
       params.set("start", weeklyReviewStart);
@@ -211,7 +209,7 @@ export default function DashboardPage() {
         });
       })
       .catch(() => { if (!cancelled) setWeeklyReviewData(null); })
-      .finally(() => { if (!cancelled) setWeeklyReviewLoading(false); });
+      .finally(() => undefined);
     return () => { cancelled = true; };
   }, [userRole, weeklyReviewRange, weeklyReviewStart, weeklyReviewEnd]);
 

@@ -46,6 +46,7 @@ export interface WeeklyReviewResponse {
 }
 
 const WEEK_MS = 7 * 24 * 3600 * 1000;
+const GST_OFFSET_MS = 4 * 3600 * 1000;
 
 function joinedFullName(value: unknown): string | null {
   const profile = Array.isArray(value) ? value[0] : value;

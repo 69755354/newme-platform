@@ -133,3 +133,15 @@ Before any production release, obtain and record:
 - Decision: merge #5 first as required; #7 must be retargeted to current `main` and receive a fresh CI result before any merge.
 - Next single action: retarget PR #7 to `main`, inspect its updated head, then wait for fresh CI.
 - Blocker: staging credentials/project identity are still required before #7 migration acceptance.
+
+
+### 2026-07-12 23:12 GST — PR #7 retargeted
+- GitHub main: `1bc919995bb5ea4696294d64c15eb2c4632d2a77`.
+- Branch / PR: PR #7 base changed from `fix/crm-import-quality-and-headers` to `main`; current head remains `2d891f1d2eef6554c5b9f8de3331abd0e75adb4e`.
+- Changed files: PR metadata only; no business-code change.
+- Tests / CI: old CI is insufficient after retarget; wait for new PR #7 CI.
+- Staging evidence: pending; required because #7 includes `20260712000000_add_lead_import_fingerprint.sql`.
+- Production action: none.
+- Decision: do not merge #7 until fresh CI and staging idempotency acceptance are recorded.
+- Next single action: revise PR #3 First Contact milestone linkage and complete-contact consistency while #7 CI runs.
+- Blocker: staging credentials/project identity still unavailable for #7 acceptance.

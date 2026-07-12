@@ -10,6 +10,7 @@
 // behaviour is preserved); this component only renders. Extracted verbatim from
 // the old TabTimeline() during the three-column refactor.
 
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -21,6 +22,7 @@ import {
   MessageCircle,
   PhoneOutgoing,
   PhoneIncoming,
+  Pencil,
 } from "lucide-react";
 import { MILESTONE_DESCRIPTIONS } from "@/lib/milestones";
 import type {
@@ -31,6 +33,7 @@ import type {
 } from "./types";
 
 interface Props {
+  leadId: string;
   activities: Activity[];
   events: BusinessEvent[];
   followUpLogs: FollowUpLog[];
@@ -38,6 +41,7 @@ interface Props {
   noteText: string;
   onNoteTextChange: (v: string) => void;
   onAddNote: () => void;
+  onContactUpdated: () => Promise<void>;
   t: (key: string) => string;
   lang: "en" | "zh";
 }
@@ -54,6 +58,7 @@ type FeedItem = {
 };
 
 export default function LeadTimeline({
+  leadId,
   activities,
   events,
   followUpLogs,
@@ -61,9 +66,59 @@ export default function LeadTimeline({
   noteText,
   onNoteTextChange,
   onAddNote,
+  onContactUpdated,
   t,
   lang,
 }: Props) {
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [editContact, setEditContact] = useState({
+    contact_method: "",
+    contact_time: "",
+    contact_result: "",
+    summary: "",
+  });
+  const [contactSaving, setContactSaving] = useState(false);
+  const [contactError, setContactError] = useState<string | null>(null);
+
+  const beginContactEdit = (log: FollowUpLog) => {
+    setEditingContactId(log.id);
+    setEditContact({
+      contact_method: log.contact_type || "other",
+      contact_time: new Date(log.contact_time || log.created_at).toISOString().slice(0, 16),
+      contact_result: log.contact_result || "",
+      summary: log.summary || "",
+    });
+    setContactError(null);
+  };
+
+  const saveContactEdit = async () => {
+    if (!editingContactId || contactSaving) return;
+    setContactSaving(true);
+    setContactError(null);
+    try {
+      const response = await fetch(
+        `/api/leads/${leadId}/contacts/${editingContactId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...editContact,
+            contact_time: new Date(editContact.contact_time).toISOString(),
+          }),
+        },
+      );
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setContactError(json?.error || "Failed to update contact record");
+        return;
+      }
+      await onContactUpdated();
+      setEditingContactId(null);
+    } finally {
+      setContactSaving(false);
+    }
+  };
+
   // WhatsApp chat messages rendered as directional chat bubbles (oldest → newest)
   const chatItems = [...chatMessages]
     .map((c) => ({
@@ -183,6 +238,10 @@ export default function LeadTimeline({
         <div className="space-y-3">
           {allItems.map((item) => {
             const type: string = item.type;
+            const contact = item._type === "followup"
+              ? followUpLogs.find((log) => log.id === item.id)
+              : undefined;
+            const editableContact = contact && !["note", "import_note"].includes(contact.contact_type);
             return (
               <div key={`${item._type}-${item.id}`} className="flex gap-3 text-sm">
                 <div
@@ -210,7 +269,63 @@ export default function LeadTimeline({
                   )}
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-foreground whitespace-pre-wrap break-words">{item.content}</p>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-foreground whitespace-pre-wrap break-words">{item.content}</p>
+                    {editableContact && contact && (
+                      <button
+                        type="button"
+                        onClick={() => beginContactEdit(contact)}
+                        className="text-[10px] text-copper-500 hover:text-copper-400 flex items-center gap-1"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        {lang === "zh" ? "编辑联系记录" : "Edit Contact Record"}
+                      </button>
+                    )}
+                  </div>
+                  {editableContact && editingContactId === item.id && (
+                    <div className="mt-2 grid gap-2 rounded border border-copper-500/20 p-2">
+                      <select
+                        value={editContact.contact_method}
+                        onChange={(event) => setEditContact((value) => ({ ...value, contact_method: event.target.value }))}
+                        className="h-8 rounded border border-border bg-muted px-2 text-xs"
+                      >
+                        <option value="whatsapp">WhatsApp</option>
+                        <option value="phone">{lang === "zh" ? "电话" : "Phone"}</option>
+                        <option value="other">{lang === "zh" ? "其他" : "Other"}</option>
+                      </select>
+                      <input
+                        type="datetime-local"
+                        value={editContact.contact_time}
+                        onChange={(event) => setEditContact((value) => ({ ...value, contact_time: event.target.value }))}
+                        className="h-8 rounded border border-border bg-muted px-2 text-xs"
+                      />
+                      <input
+                        value={editContact.contact_result}
+                        onChange={(event) => setEditContact((value) => ({ ...value, contact_result: event.target.value }))}
+                        placeholder={lang === "zh" ? "联系结果" : "Contact result"}
+                        className="h-8 rounded border border-border bg-muted px-2 text-xs"
+                      />
+                      <Textarea
+                        value={editContact.summary}
+                        onChange={(event) => setEditContact((value) => ({ ...value, summary: event.target.value }))}
+                        placeholder={lang === "zh" ? "摘要" : "Summary"}
+                        className="min-h-16 bg-muted text-xs"
+                      />
+                      {contactError && <p className="text-xs text-red-400">{contactError}</p>}
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={saveContactEdit}
+                          disabled={contactSaving || !editContact.contact_result.trim() || !editContact.contact_time}
+                        >
+                          {contactSaving ? "..." : t("common.save") || "Save"}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setEditingContactId(null)} disabled={contactSaving}>
+                          {t("common.cancel") || "Cancel"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   {type === "milestone" && MILESTONE_DESCRIPTIONS[item.content] && (
                     <p className="text-xs text-muted-foreground">
                       {lang === 'zh' ? MILESTONE_DESCRIPTIONS[item.content].zh : MILESTONE_DESCRIPTIONS[item.content].en}

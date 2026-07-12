@@ -89,10 +89,10 @@ export interface UseLeadDetailMutationsReturn {
   updateField: (field: string, value: any, eventType?: string, eventDesc?: string) => Promise<boolean>;
   saveProjectInfo: () => Promise<void>;
   resetProjectInfoDraft: () => void;
-  updateStage: (stage: string) => Promise<boolean>;
+  updateStage: (stage: string, note?: string) => Promise<boolean>;
   updateNextTask: (updates: Partial<Pick<Task, "title" | "due_at">>) => Promise<void>;
-  handleWon: () => Promise<void>;
-  handleLost: () => Promise<void>;
+  handleWon: (note?: string) => Promise<boolean>;
+  handleLost: (note?: string) => Promise<boolean>;
   addNote: (noteText: string) => Promise<void>;
   toggleMilestone: (milestoneKey: string, currentlyCompleted: boolean) => Promise<void>;
   addStructuredContact: (params: {
@@ -382,25 +382,23 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     setProjectInfoStatus("idle");
   }, [lead, params]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── Stage update (final_status for won/lost, stage otherwise) ───
-  const updateStage = useCallback(async (stage: string): Promise<boolean> => {
-    // For terminal stages (won/lost), write to BOTH stage (trigger enforces sequence,
-    // detail page reads it) AND final_status (list page counts it, trg_lead_won fires on it).
-    if (stage === "won" || stage === "lost") {
-      const ok = await updateField("stage", stage, "stage_change", `${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
-      if (!ok) return false;
-      // Silently sync final_status after stage update passes trigger
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      const { error: fsErr } = await supabase.from("leads").update({ 
-        final_status: stage,
-        updated_at: new Date().toISOString() 
-      }).eq("id", leadId);
-      if (fsErr) console.warn("[LeadDetail] final_status sync failed (non-fatal)", fsErr);
-      return true;
+  // ─── Stage update through the owned server route ───
+  const updateStage = useCallback(async (stage: string, note = ""): Promise<boolean> => {
+    const response = await fetch(`/api/leads/${leadId}/stage`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage, note: note.trim() }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const reasons = Array.isArray(json?.reasons) ? json.reasons.join("; ") : "";
+      toast.error(reasons || json?.error || t("common.saveFailed"));
+      return false;
     }
-    return updateField("stage", stage, "stage_change", `${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
-  }, [leadId, updateField, t]);
+    await fetchData();
+    toast.success(`${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
+    return true;
+  }, [leadId, fetchData, t]);
 
   // ─── Next Required Action — updates nextTask (creates a task if none) ───
   const updateNextTask = useCallback(async (updates: Partial<Pick<Task, "title" | "due_at">>) => {
@@ -436,31 +434,35 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }, [nextTask, leadId, lead, t, fetchData, setError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Won / Lost handlers (Stage update + toast, contract via DB trigger) ─
-  const handleWon = useCallback(async () => {
+  const handleWon = useCallback(async (note = ""): Promise<boolean> => {
     setUpdating(true);
     try {
       // Stage update only — contract & installment creation is handled
-      // by the DB trigger trg_lead_won to avoid duplicates
-      const updated = await updateStage("won");
-      if (!updated) return;
+      // by the DB trigger trg_lead_won to avoid duplicates.
+      const updated = await updateStage("won", note);
+      if (!updated) return false;
       toast.success(t("leads.markedWon"));
-    } catch (e: any) {
+      return true;
+    } catch {
       console.error("[LeadDetail] handleWon error");
       toast.error(t("common.operationFailed"));
+      return false;
     } finally {
       setUpdating(false);
     }
   }, [updateStage, t]);
 
-  const handleLost = useCallback(async () => {
+  const handleLost = useCallback(async (note = ""): Promise<boolean> => {
     setUpdating(true);
     try {
-      const updated = await updateStage("lost");
-      if (!updated) return;
+      const updated = await updateStage("lost", note);
+      if (!updated) return false;
       toast.success(t("leads.markedLost"));
-    } catch (e: any) {
+      return true;
+    } catch {
       console.error("[LeadDetail] handleLost error");
       toast.error(t("common.operationFailed"));
+      return false;
     } finally {
       setUpdating(false);
     }
@@ -501,7 +503,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     await fetchData();
   }, [updating, leadId, t, lang, fetchData]);
 
-  // ─── Add a structured contact record (first_contact workspace) ───
+  // ─── Add a structured contact record through the owned server route ───
   const addStructuredContact = useCallback(async (params: {
     contact_method: string;
     contact_time: string;
@@ -509,32 +511,31 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     summary?: string;
   }) => {
     if (updating) return;
-    // Reject contacts without contact_result before hitting the DB trigger
     if (!params.contact_result?.trim()) {
       toast.error(t("leadDetail.contactResultRequired") || "Contact result is required");
       return;
     }
+
     setUpdating(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error: insertError } = await supabase.from("follow_up_logs").insert({
-      lead_id: leadId,
-      user_id: user?.id ?? null,
-      contact_type: params.contact_method,
-      contact_time: params.contact_time,
-      contact_result: params.contact_result,
-      summary: params.summary ?? null,
-      no_answer: false,
-    });
-    if (insertError) {
-      console.error("[LeadDetail] structured contact save failed");
+    try {
+      const response = await fetch("/api/leads/" + leadId + "/contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json?.contact) {
+        toast.error(json?.error || t("common.saveFailed") || "Contact record save failed");
+        return;
+      }
+
+      toast.success(lang === "zh" ? "联系记录已保存" : "Contact record saved");
+      await fetchData();
+    } catch {
+      toast.error(t("common.saveFailed") || "Contact record save failed");
+    } finally {
       setUpdating(false);
-      toast.error(t("common.saveFailed"));
-      return;
     }
-    await supabase.from("leads").update({ last_contact_date: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", leadId);
-    setUpdating(false);
-    toast.success(lang === "zh" ? "联系记录已保存" : "Contact record saved");
-    await fetchData();
   }, [updating, leadId, t, lang, fetchData]);
 
   // ─── Milestone toggle: complete the next pending milestone, or uncomplete a completed one ─

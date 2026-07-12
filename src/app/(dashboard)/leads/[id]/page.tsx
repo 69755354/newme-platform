@@ -532,6 +532,7 @@ export default function LeadDetailPage() {
 
         <aside className="lg:col-span-4 space-y-4">
           <LeadTimeline
+            leadId={id as string}
             activities={activities}
             events={events}
             followUpLogs={followUpLogs}
@@ -539,6 +540,7 @@ export default function LeadDetailPage() {
             noteText={noteText}
             onNoteTextChange={setNoteText}
             onAddNote={handleAddNote}
+            onContactUpdated={fetchData}
             t={t}
             lang={lang}
           />

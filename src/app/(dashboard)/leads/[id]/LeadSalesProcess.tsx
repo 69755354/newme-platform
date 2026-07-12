@@ -8,7 +8,7 @@
 // onToggleMilestone, …). Inline edits reuse the page-owned render closures so the
 // single-edit-at-a-time behaviour is preserved across columns.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { COMPLETABLE_MILESTONES } from "@/lib/milestones";
 import { calculateHealthScore } from "@/lib/health-score";
+import { evaluateFirstContactGate } from "@/lib/first-contact-gate.mjs";
 import { STAGES, STAGE_COLORS } from "./types";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { fmtAED, daysSince } from "./utils";
@@ -58,9 +59,9 @@ interface Props {
   updating: boolean;
   onToggleMilestone: (milestoneKey: string, currentlyCompleted: boolean) => void;
   onUpdateField: (field: string, value: any, eventType?: string, eventDesc?: string) => void;
-  onStageChange: (stage: string) => void;
-  onWon: () => void;
-  onLost: () => void;
+  onStageChange: (stage: string, note?: string) => Promise<boolean>;
+  onWon: (note?: string) => Promise<boolean>;
+  onLost: (note?: string) => Promise<boolean>;
   onOpenQuoteCalculator: () => void;
   onCreateContract: () => void;
   onGenerateKnx: () => void;
@@ -119,9 +120,23 @@ export default function LeadSalesProcess({
   const [showQualityPoorReason, setShowQualityPoorReason] = useState(false);
   const [qualityPoorReason, setQualityPoorReason] = useState("");
   const [qualitySetting, setQualitySetting] = useState<string | null>(null);
+  const [stageNote, setStageNote] = useState("");
+  const [clockNow, setClockNow] = useState(0);
+
+  useEffect(() => {
+    const updateClock = () => setClockNow(Date.now());
+    const initialTimer = window.setTimeout(updateClock, 0);
+    const interval = window.setInterval(updateClock, 60_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+    };
+  }, []);
 
   // Latest trace row carries the quote / contract / payment state for the links.
   const trace = leadTrace[0];
+
+  const nextTaskOverdue = clockNow > 0 && !!nextTask && new Date(nextTask.due_at).getTime() < clockNow;
 
   // ── Health score (Phase B) — shown as a badge in Stage Progress ──
   const health = calculateHealthScore({
@@ -134,7 +149,7 @@ export default function LeadSalesProcess({
     hasQuotation:
       lead.final_status === "won" ||
       ["quotation_submitted", "negotiation", "pending_decision"].includes(lead.stage),
-    isOverdue: !!nextTask && new Date(nextTask.due_at).getTime() < Date.now(),
+    isOverdue: nextTaskOverdue,
   });
   const healthLevelLabel =
     health.level === "healthy"
@@ -149,7 +164,15 @@ export default function LeadSalesProcess({
       ? "bg-amber-500/10 text-amber-400"
       : "bg-red-500/10 text-red-400";
 
-  const nextTaskOverdue = !!nextTask && new Date(nextTask.due_at).getTime() < Date.now();
+  const completeContactCount = followUpLogs.filter(
+    (log) => log.contact_time != null && !!log.contact_result?.trim(),
+  ).length;
+  const firstContactGate = evaluateFirstContactGate({
+    currentStage: lead.stage,
+    nextStage: "contacted",
+    contactCount: completeContactCount,
+    quality: lead.quality,
+  });
 
   // ── Missing required fields, gated by current stage (display only, no block) ──
   const STAGE_ORDER = STAGES; // new … lost
@@ -286,9 +309,10 @@ export default function LeadSalesProcess({
                     {locked && <p className="text-[10px] text-gray-600">{t("leadDetail.milestoneLocked")}</p>}
                     {/* first_contact inline workspace */}
                     {key === "first_contact" && !completed && isNext && (() => {
-                      const contactTimeCount = followUpLogs.filter(l => l.contact_time != null).length;
+                      const contactTimeCount = followUpLogs.filter(l => l.contact_time != null && !!l.contact_result?.trim()).length;
                       const qAssessed = lead.quality && lead.quality !== "pending";
-                      const contactsNeeded = 3;
+                      const contactsNeeded = 1;
+                      const coachingTarget = 3;
                       const contactsMet = contactTimeCount >= contactsNeeded;
 
                       // Sorted recent contacts
@@ -358,7 +382,7 @@ export default function LeadSalesProcess({
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5 text-[10px]">
                             <span className={contactsMet ? "text-emerald-400" : "text-amber-400"}>
-                              {contactsMet ? "✓" : "○"} {contactTimeCount}/{contactsNeeded} {t("leadDetail.contactsWithTime") || "contacts with time"}
+                              {contactsMet ? "✓" : "○"} {contactTimeCount}/{contactsNeeded} {t("leadDetail.contactsWithTime") || "contact required"} · {contactTimeCount}/{coachingTarget} {t("leadDetail.contactCoachingTarget") || "coaching target"}
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5 text-[10px]">
@@ -680,6 +704,20 @@ export default function LeadSalesProcess({
         </CardHeader>
         <CardContent className="space-y-3">
           <div>
+            <label htmlFor="stage-note" className="text-xs text-muted-foreground">
+              {lang === "zh" ? "阶段备注（可选）" : "Stage note (optional)"}
+            </label>
+            <textarea
+              id="stage-note"
+              value={stageNote}
+              maxLength={1000}
+              onChange={(event) => setStageNote(event.target.value)}
+              placeholder={lang === "zh" ? "记录本次阶段推进的原因或客户反馈" : "Reason, customer feedback, or next-step context"}
+              className="mt-1 min-h-16 w-full resize-y rounded border border-border bg-muted px-2 py-1.5 text-xs text-foreground"
+            />
+            <p className="text-right text-[10px] text-muted-foreground">{stageNote.length}/1000</p>
+          </div>
+          <div>
             <p className="text-xs text-muted-foreground mb-1.5">{t("leadDetail.updateStage")}</p>
             <div className="flex flex-wrap gap-1">
               {(() => {
@@ -688,17 +726,15 @@ export default function LeadSalesProcess({
                 return STAGES.filter((s) => s !== "won" && s !== "lost").map((s) => {
                   const sIdx = stageKeys.indexOf(s);
                   const isBeyondNext = curIdx >= 0 && sIdx > curIdx + 1;
-                  // Gate 6: first_contact — require ≥3 contacts with time + quality before advancing to Contacted
-                  let gateDisabled = false;
-                  let gateTitle: string | undefined;
-                  if (s === "contacted") {
-                    const ctCount = followUpLogs.filter(l => l.contact_time != null).length;
-                    const qOk = lead.quality && lead.quality !== "pending";
-                    if (ctCount < 3 || !qOk) {
-                      gateDisabled = true;
-                      gateTitle = t("leadDetail.firstContactGateHint") || "Need 3 contact records with time and quality assessed";
-                    }
-                  }
+                  // Hard gate: one complete contact + assessed quality before leaving New.
+                  const gate = evaluateFirstContactGate({
+                    currentStage: lead.stage,
+                    nextStage: s,
+                    contactCount: completeContactCount,
+                    quality: lead.quality,
+                  });
+                  const gateDisabled = !gate.allowed;
+                  const gateTitle = gateDisabled ? gate.reasons.join("; ") : undefined;
                   return (
                     <button
                       key={s}
@@ -717,8 +753,9 @@ export default function LeadSalesProcess({
                           ? { backgroundColor: STAGE_COLORS[s]?.split(" ")[0]?.replace("/10", "/30") || "#6b7280" }
                           : {}
                       }
-                      onClick={() => {
-                        onStageChange(s);
+                      onClick={async () => {
+                        const changed = await onStageChange(s, stageNote);
+                        if (changed) setStageNote("");
                       }}
                     >
                       {t(`stageLabels.${s}`)}
@@ -733,8 +770,12 @@ export default function LeadSalesProcess({
               size="sm"
               variant="outline"
               className="flex-1 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
-              onClick={onWon}
-              disabled={updating}
+              onClick={async () => {
+                const changed = await onWon(stageNote);
+                if (changed) setStageNote("");
+              }}
+              disabled={updating || !firstContactGate.allowed}
+              title={!firstContactGate.allowed ? firstContactGate.reasons.join("; ") : undefined}
             >
               <CheckCircle className="w-4 h-4 mr-1" />{t("stageLabels.won")}
             </Button>
@@ -742,8 +783,12 @@ export default function LeadSalesProcess({
               size="sm"
               variant="outline"
               className="flex-1 border-red-500/30 text-red-400 hover:bg-red-500/10"
-              onClick={onLost}
-              disabled={updating}
+              onClick={async () => {
+                const changed = await onLost(stageNote);
+                if (changed) setStageNote("");
+              }}
+              disabled={updating || !firstContactGate.allowed}
+              title={!firstContactGate.allowed ? firstContactGate.reasons.join("; ") : undefined}
             >
               <AlertTriangle className="w-4 h-4 mr-1" />{t("stageLabels.lost")}
             </Button>

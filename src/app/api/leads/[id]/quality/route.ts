@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
+import { isCompleteContact } from '@/lib/first-contact-gate.mjs';
 
 export async function POST(
   req: NextRequest,
@@ -65,6 +66,25 @@ export async function POST(
       return NextResponse.json(
         { error: 'Forbidden: lead not assigned to you' },
         { status: 403 }
+      );
+    }
+
+    // Quality may be assessed after the first complete contact, never before.
+    const { data: contacts, error: contactError } = await supabase
+      .from('follow_up_logs')
+      .select('contact_time, contact_result')
+      .eq('lead_id', leadId);
+
+    if (contactError) {
+      return NextResponse.json(
+        { error: 'Unable to verify contact records' },
+        { status: 500 }
+      );
+    }
+    if (!(contacts ?? []).some(isCompleteContact)) {
+      return NextResponse.json(
+        { error: 'At least one complete contact record is required before setting Lead Quality' },
+        { status: 409 }
       );
     }
 

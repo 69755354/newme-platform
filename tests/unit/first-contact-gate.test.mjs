@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evaluateFirstContactGate } from "../../src/lib/first-contact-gate.mjs";
+import {
+  evaluateFirstContactGate,
+  isCompleteContact,
+} from "../../src/lib/first-contact-gate.mjs";
 
 const gate = (overrides = {}) => evaluateFirstContactGate({
   currentStage: "new",
@@ -42,4 +45,19 @@ test("transitions after First Contact are not re-gated", () => {
     allowed: true,
     reasons: [],
   });
+});
+
+test("only timestamped non-whitespace results are complete contacts", () => {
+  assert.equal(isCompleteContact({
+    contact_time: null,
+    contact_result: "Interested",
+  }), false);
+  assert.equal(isCompleteContact({
+    contact_time: "2026-07-12T09:00:00.000Z",
+    contact_result: "   ",
+  }), false);
+  assert.equal(isCompleteContact({
+    contact_time: "2026-07-12T09:00:00.000Z",
+    contact_result: "Interested",
+  }), true);
 });

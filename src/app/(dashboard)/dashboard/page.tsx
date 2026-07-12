@@ -188,7 +188,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!userRole || (weeklyReviewRange === "custom" && (!weeklyReviewStart || !weeklyReviewEnd || weeklyReviewStart >= weeklyReviewEnd))) {
-      setWeeklyReviewData(null);
       return;
     }
     let cancelled = false;

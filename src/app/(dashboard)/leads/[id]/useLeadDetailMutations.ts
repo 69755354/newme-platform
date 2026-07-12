@@ -503,7 +503,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     await fetchData();
   }, [updating, leadId, t, lang, fetchData]);
 
-  // ─── Add a structured contact record (first_contact workspace) ───
+  // ─── Add a structured contact record through the owned server route ───
   const addStructuredContact = useCallback(async (params: {
     contact_method: string;
     contact_time: string;
@@ -511,32 +511,31 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     summary?: string;
   }) => {
     if (updating) return;
-    // Reject contacts without contact_result before hitting the DB trigger
     if (!params.contact_result?.trim()) {
       toast.error(t("leadDetail.contactResultRequired") || "Contact result is required");
       return;
     }
+
     setUpdating(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error: insertError } = await supabase.from("follow_up_logs").insert({
-      lead_id: leadId,
-      user_id: user?.id ?? null,
-      contact_type: params.contact_method,
-      contact_time: params.contact_time,
-      contact_result: params.contact_result,
-      summary: params.summary ?? null,
-      no_answer: false,
-    });
-    if (insertError) {
-      console.error("[LeadDetail] structured contact save failed");
+    try {
+      const response = await fetch("/api/leads/" + leadId + "/contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json?.contact) {
+        toast.error(json?.error || t("common.saveFailed") || "Contact record save failed");
+        return;
+      }
+
+      toast.success(lang === "zh" ? "联系记录已保存" : "Contact record saved");
+      await fetchData();
+    } catch {
+      toast.error(t("common.saveFailed") || "Contact record save failed");
+    } finally {
       setUpdating(false);
-      toast.error(t("common.saveFailed"));
-      return;
     }
-    await supabase.from("leads").update({ last_contact_date: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", leadId);
-    setUpdating(false);
-    toast.success(lang === "zh" ? "联系记录已保存" : "Contact record saved");
-    await fetchData();
   }, [updating, leadId, t, lang, fetchData]);
 
   // ─── Milestone toggle: complete the next pending milestone, or uncomplete a completed one ─

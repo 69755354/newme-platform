@@ -123,7 +123,7 @@ export async function GET(req: NextRequest) {
     const startIso = start.toISOString();
     const endIso = end.toISOString();
 
-    // L1: 6 metrics via parallel queries
+    // L1: every aggregate is scoped in the database for a sales caller.
     const [
       { count: newLeadsCount },
       { data: contactedData },
@@ -132,20 +132,38 @@ export async function GET(req: NextRequest) {
       { count: wonCount },
       { count: lostCount },
     ] = await Promise.all([
-      supabase.from("leads").select("*", { count: "exact", head: true })
+      (isSalesScope
+        ? supabase.from("leads").select("id", { count: "exact", head: true })
+          .eq("assigned_to", user.id)
+        : supabase.from("leads").select("id", { count: "exact", head: true }))
         .gte("created_at", startIso).lt("created_at", endIso),
-      supabase.from("follow_up_logs").select("lead_id")
+      (isSalesScope
+        ? supabase.from("follow_up_logs").select("lead_id, leads!inner(assigned_to)")
+          .eq("leads.assigned_to", user.id)
+        : supabase.from("follow_up_logs").select("lead_id"))
         .gte("created_at", startIso).lt("created_at", endIso),
-      supabase.from("business_events").select("*", { count: "exact", head: true })
+      (isSalesScope
+        ? supabase.from("business_events").select("id, leads!inner(assigned_to)", { count: "exact", head: true })
+          .eq("leads.assigned_to", user.id)
+        : supabase.from("business_events").select("id", { count: "exact", head: true }))
         .eq("event_type", "quality_checked")
         .gte("created_at", startIso).lt("created_at", endIso),
-      supabase.from("business_events").select("*", { count: "exact", head: true })
+      (isSalesScope
+        ? supabase.from("business_events").select("id, leads!inner(assigned_to)", { count: "exact", head: true })
+          .eq("leads.assigned_to", user.id)
+        : supabase.from("business_events").select("id", { count: "exact", head: true }))
         .eq("event_type", "stage_change")
         .gte("created_at", startIso).lt("created_at", endIso),
-      supabase.from("business_events").select("*", { count: "exact", head: true })
+      (isSalesScope
+        ? supabase.from("business_events").select("id, leads!inner(assigned_to)", { count: "exact", head: true })
+          .eq("leads.assigned_to", user.id)
+        : supabase.from("business_events").select("id", { count: "exact", head: true }))
         .eq("event_type", "stage_change").eq("event_data->>to", "won")
         .gte("created_at", startIso).lt("created_at", endIso),
-      supabase.from("business_events").select("*", { count: "exact", head: true })
+      (isSalesScope
+        ? supabase.from("business_events").select("id, leads!inner(assigned_to)", { count: "exact", head: true })
+          .eq("leads.assigned_to", user.id)
+        : supabase.from("business_events").select("id", { count: "exact", head: true }))
         .eq("event_type", "stage_change").eq("event_data->>to", "lost")
         .gte("created_at", startIso).lt("created_at", endIso),
     ]);
@@ -366,7 +384,7 @@ export async function GET(req: NextRequest) {
       l1: {
         new_leads: isSalesScope ? personal?.assigned_leads ?? 0 : newLeadsCount ?? 0,
         contacted_leads: isSalesScope ? personal?.contacted ?? 0 : contactedDistinct,
-        quality_judged: isSalesScope ? 0 : qualityJudgedCount ?? 0,
+        quality_judged: qualityJudgedCount ?? 0,
         stage_advanced: isSalesScope ? personal?.stage_advanced ?? 0 : stageAdvancedCount ?? 0,
         won: isSalesScope ? personal?.won ?? 0 : wonCount ?? 0,
         lost: isSalesScope ? personal?.lost ?? 0 : lostCount ?? 0,

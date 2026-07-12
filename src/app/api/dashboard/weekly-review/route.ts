@@ -161,15 +161,27 @@ export async function GET(req: NextRequest) {
       .lt("due_at", new Date().toISOString()).neq("status", "done").not("assignee_id", "is", null)
       .gte("created_at", startIso).lt("created_at", endIso);
 
+    // Attribute stage outcomes to the lead owner, not the user who happened to
+    // perform the update (for example an admin assisting a salesperson).
+    const stageLeadIds = [...new Set(
+      (stageEvents ?? []).map((event: any) => event.lead_id as string | null).filter(Boolean),
+    )] as string[];
+    const { data: stageEventLeads } = stageLeadIds.length > 0
+      ? await supabase.from("leads").select("id, assigned_to").in("id", stageLeadIds)
+      : { data: [] };
+    const stageOwnerByLead = new Map<string, string>();
+    for (const lead of stageEventLeads ?? []) {
+      if (lead.assigned_to) stageOwnerByLead.set(lead.id, lead.assigned_to);
+    }
+
     const perUser = new Map<string, WeeklyReviewRow>();
-    // Only these 3 sales team members appear in L2
-    const ALLOWED_UIDS = new Set([
-      "3666d8d0-baf4-45cb-8e7f-4243c999b2b1", // Mohamed
-      "28ec618c-1210-4d5d-9c51-702b333e5760", // Assem
-      "5c766c35-fda0-4077-a7b0-478b0bbb85b4", // Tanya
-    ]);
+    // Sales membership comes from profile roles, never hard-coded user IDs.
+    // "user" is the legacy sales-representative role; keep explicit aliases for
+    // newer environments and include boss because the existing report did.
+    const SALES_ROLES = new Set(["user", "sales", "salesperson", "boss"]);
+    const isSalesUser = (uid: string) => SALES_ROLES.has(roleMap.get(uid) ?? "");
     const ensure = (uid: string) => {
-      if (!ALLOWED_UIDS.has(uid)) return null as any;
+      if (!isSalesUser(uid)) return null;
       if (!perUser.has(uid)) {
         perUser.set(uid, {
           user_id: uid, full_name: salesMap.get(uid) ?? null,
@@ -179,8 +191,8 @@ export async function GET(req: NextRequest) {
       }
       return perUser.get(uid)!;
     };
-    // Pre-init all allowed users so they appear even with 0 activity
-    for (const uid of ALLOWED_UIDS) ensure(uid);
+    // Pre-init the active sales roster so zero-activity users remain visible.
+    for (const uid of salesMap.keys()) ensure(uid);
     for (const r of assignedLeads ?? []) { const row = ensure(r.assigned_to); if (row) row.assigned_leads++; }
     const contactedByOwner = new Map<string, Set<string>>();
     for (const log of contactedLogs ?? []) {
@@ -192,10 +204,10 @@ export async function GET(req: NextRequest) {
     for (const [uid, set] of contactedByOwner) { const row = ensure(uid); if (row) row.contacted = set.size; }
     for (const r of pendingQuality ?? []) { if (r.assigned_to) { const row = ensure(r.assigned_to); if (row) row.pending_quality++; } }
     for (const ev of stageEvents ?? []) {
-      const actor = (ev as any).user_id as string | null;
+      const owner = stageOwnerByLead.get((ev as any).lead_id as string);
       const to = (ev as any).event_data?.to;
-      if (!actor) continue;
-      const row = ensure(actor);
+      if (!owner) continue;
+      const row = ensure(owner);
       if (!row) continue;
       row.stage_advanced++;
       if (to === "won") row.won++;
@@ -267,8 +279,8 @@ export async function GET(req: NextRequest) {
       l3_by_user[k].sort((a, b) => (b.contact_count - a.contact_count));
     }
 
-    // Also group leads by stage-change actor so the L3
-    // expansion works for every L2 row.
+    // Also group stage-changed leads by their sales owner so L2 and L3 use
+    // the same attribution model.
     const leadById = new Map<string, any>();
     for (const lead of leadsAssigned ?? []) leadById.set(lead.id, lead);
 
@@ -293,16 +305,16 @@ export async function GET(req: NextRequest) {
     }
 
     for (const ev of stageEvents ?? []) {
-      const actor = (ev as any).user_id as string | null;
       const lid = (ev as any).lead_id as string | null;
-      if (!actor || !lid) continue;
+      if (!lid) continue;
       const lead = leadById.get(lid);
-      if (!lead) continue;
-      if (!l3_by_user[actor]) l3_by_user[actor] = [];
-      // Avoid duplicate: only add if not already under this actor
-      const already = l3_by_user[actor].some((l: any) => l.id === lead.id);
+      const owner = lead?.assigned_to as string | null;
+      if (!lead || !owner || !isSalesUser(owner)) continue;
+      if (!l3_by_user[owner]) l3_by_user[owner] = [];
+      // Avoid duplicate: only add if not already under this owner.
+      const already = l3_by_user[owner].some((l: any) => l.id === lead.id);
       if (already) continue;
-      l3_by_user[actor].push({
+      l3_by_user[owner].push({
         id: lead.id,
         customer_name: lead.customer_name ?? null,
         assigned_to: lead.assigned_to,

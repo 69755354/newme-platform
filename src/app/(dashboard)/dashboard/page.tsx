@@ -698,27 +698,7 @@ export default function DashboardPage() {
             }}
           />
         ) : (
-          {weeklyReviewData ? (
-        <WeeklyReview
-          {...weeklyReviewProps}
-          mode="period"
-          l1={weeklyReviewData.l1}
-          l2={weeklyReviewData.l2}
-          l3_by_user={weeklyReviewData.l3_by_user}
-          periodStart={weeklyReviewData.periodStart}
-          periodEnd={weeklyReviewData.periodEnd}
-          range={weeklyReviewRange}
-          onRangeChange={setWeeklyReviewRange}
-          customStart={weeklyReviewStart}
-          customEnd={weeklyReviewEnd}
-          onCustomRangeChange={(start, end) => {
-            setWeeklyReviewStart(start);
-            setWeeklyReviewEnd(end);
-          }}
-        />
-      ) : (
-        <WeeklyReview {...weeklyReviewProps} />
-      )}
+          <WeeklyReview {...weeklyReviewProps} />
         )}
 
         {/* L3: Sales Leaderboard */}
@@ -884,7 +864,27 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-      <WeeklyReview {...weeklyReviewProps} />
+      {weeklyReviewData ? (
+        <WeeklyReview
+          {...weeklyReviewProps}
+          mode="period"
+          l1={weeklyReviewData.l1}
+          l2={weeklyReviewData.l2}
+          l3_by_user={weeklyReviewData.l3_by_user}
+          periodStart={weeklyReviewData.periodStart}
+          periodEnd={weeklyReviewData.periodEnd}
+          range={weeklyReviewRange}
+          onRangeChange={setWeeklyReviewRange}
+          customStart={weeklyReviewStart}
+          customEnd={weeklyReviewEnd}
+          onCustomRangeChange={(start, end) => {
+            setWeeklyReviewStart(start);
+            setWeeklyReviewEnd(end);
+          }}
+        />
+      ) : (
+        <WeeklyReview {...weeklyReviewProps} />
+      )}
     </DashboardScrollContainer>
   );
 }

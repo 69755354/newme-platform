@@ -23,6 +23,49 @@
 
 ---
 
+## Master Execution Order — All Three User Priorities
+
+### Gate 0: Remote PR and staging baseline
+
+This gate covers the requested remote sequence, not just Tanya requirements.
+
+1. Verify PR #5, #7, #3, #4, and #6 are Draft/Open, their current head CI is green, and their heads are reviewed against current `main`.
+2. Merge #5 first. Retarget #7 to the new `main`, rerun CI, then merge #7.
+3. Do not merge #3 unchanged: Tasks 3 and 4 close the Lead Detail save/readback and First Contact business gaps first. Rebase the revised #3 on the current `main`, rerun CI, then merge it.
+4. Merge #4 before the Today dashboard task because the current `main` still attributes L2/L3 by fixed user IDs/action actor. #4 makes attribution follow the Lead Owner.
+5. Merge #6 last; it is isolated archive-preview/rollback safety and has no dependency on Lead Detail or Dashboard data.
+6. Before each merge run `npm run typecheck`, `npm run lint`, `npm test`, `npm run check:release`, and `npm run build`. No production deploy occurs in this gate.
+
+Required merge order:
+
+```text
+#5 → #7 → revised #3 → #4 → #6
+```
+
+### Gate 1: Lead Detail — First Contact business closure
+
+This gate covers all four reported failures.
+
+| Reported failure | Required behavior | Evidence |
+|---|---|---|
+| a. Can advance without contact or Quality | Leaving `new`, including direct `won/lost`, requires one complete contact plus Quality | UI, stage API, and DB trigger reject all bypasses |
+| b. Timeline record cannot be changed | Owner/admin/boss can edit a contact in Timeline; save and reload show the stored result | Authorized PATCH + UI readback |
+| c. Three contacts but no Quality advances | Contact count never substitutes for Quality | Three complete contacts + no Quality stays blocked |
+| d. Quality disabled for first/second contact | Quality becomes selectable after the first complete contact; `3` is coaching only | One complete contact + each Quality value unlocks Contacted |
+
+The revised #3 must additionally make complete contact creation/editing update `first_contact` milestone exactly once and use the same trimmed `contact_result` predicate everywhere.
+
+### Gate 2: Tanya operations and daily review
+
+This gate covers source taxonomy, Lead Detail save/readback, and the sales review.
+
+- Historical `meta_ads` values migrate to `ins`; new selectable sources are `ins`, `fb`, and `show_room`.
+- Emirate, Area, Customer Budget, and Next Action save on blur/Enter and persist after refresh.
+- L1/L2/L3 default to GST Today; users can choose This week, Last week, This month, or Custom.
+- Tanya (boss), Sam (admin), and Ayana (operator after preflight verification) get all authorized team review data; sales get only their own rows from the API.
+
+---
+
 ## File Structure
 
 | File | Responsibility |

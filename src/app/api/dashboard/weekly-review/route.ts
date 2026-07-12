@@ -160,8 +160,10 @@ export async function GET(req: NextRequest) {
       roleMap.set(p.id, (p as any).role as string);
     }
 
-    const { data: assignedLeads } = await supabase.from("leads").select("id, assigned_to")
+    let assignedLeadsQuery = supabase.from("leads").select("id, assigned_to")
       .gte("created_at", startIso).lt("created_at", endIso).not("assigned_to", "is", null);
+    if (isSalesScope) assignedLeadsQuery = assignedLeadsQuery.eq("assigned_to", user.id);
+    const { data: assignedLeads } = await assignedLeadsQuery;
 
     const { data: contactedLogs } = await supabase.from("follow_up_logs")
       .select("lead_id, leads!inner(assigned_to)")
@@ -238,10 +240,12 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.stage_advanced - a.stage_advanced);
 
     // L3: leads created during the period, grouped by owner.
-    const { data: leadsAssigned, error: leadsAssignedErr } = await supabase.from("leads")
+    let leadsAssignedQuery = supabase.from("leads")
       .select("id, customer_name, assigned_to, stage, last_contact_date, quality")
       .gte("created_at", startIso).lt("created_at", endIso)
       .limit(500);
+    if (isSalesScope) leadsAssignedQuery = leadsAssignedQuery.eq("assigned_to", user.id);
+    const { data: leadsAssigned, error: leadsAssignedErr } = await leadsAssignedQuery;
     if (leadsAssignedErr) {
       console.error("[weekly-review] leads query error:", leadsAssignedErr);
     }

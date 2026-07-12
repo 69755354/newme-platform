@@ -58,6 +58,8 @@ interface TeamOwnership {
   lost_leads: number;
 }
 
+type ReviewRange = "today" | "this_week" | "last_week" | "this_month" | "custom";
+
 /* ─── 9-stage funnel ─── */
 const STAGE_KEYS = ["new","contacted","requirement_confirmed","solution_submitted","quotation_submitted","negotiation","pending_decision","won","lost"] as const;
 const STAGE_COLORS: Record<string,string> = {
@@ -151,8 +153,33 @@ export default function DashboardPage() {
     periodStart: string;
     periodEnd: string;
   } | null>(null);
-  const [weeklyReviewRange, setWeeklyReviewRange] = useState<"this_week" | "last_week" | "this_month">("this_week");
+  const [weeklyReviewRange, setWeeklyReviewRange] = useState<ReviewRange>("today");
+  const [weeklyReviewStart, setWeeklyReviewStart] = useState("");
+  const [weeklyReviewEnd, setWeeklyReviewEnd] = useState("");
   const [weeklyReviewLoading, setWeeklyReviewLoading] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const range = params.get("review_range");
+    if (range && ["today", "this_week", "last_week", "this_month", "custom"].includes(range)) {
+      setWeeklyReviewRange(range as ReviewRange);
+    }
+    setWeeklyReviewStart(params.get("review_start") ?? "");
+    setWeeklyReviewEnd(params.get("review_end") ?? "");
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("review_range", weeklyReviewRange);
+    if (weeklyReviewRange === "custom") {
+      if (weeklyReviewStart) params.set("review_start", weeklyReviewStart);
+      if (weeklyReviewEnd) params.set("review_end", weeklyReviewEnd);
+    } else {
+      params.delete("review_start");
+      params.delete("review_end");
+    }
+    window.history.replaceState(null, "", window.location.pathname + "?" + params.toString());
+  }, [weeklyReviewRange, weeklyReviewStart, weeklyReviewEnd]);
 
   // Fetch team ownership
   useEffect(() => {
@@ -162,10 +189,18 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!userRole || userRole === "sales") return;
+    if (!userRole || (weeklyReviewRange === "custom" && (!weeklyReviewStart || !weeklyReviewEnd || weeklyReviewStart >= weeklyReviewEnd))) {
+      setWeeklyReviewData(null);
+      return;
+    }
     let cancelled = false;
     setWeeklyReviewLoading(true);
-    fetch(`/api/dashboard/weekly-review?range=${weeklyReviewRange}`)
+    const params = new URLSearchParams({ range: weeklyReviewRange });
+    if (weeklyReviewRange === "custom") {
+      params.set("start", weeklyReviewStart);
+      params.set("end", weeklyReviewEnd);
+    }
+    fetch("/api/dashboard/weekly-review?" + params.toString())
       .then(async (r) => {
         if (!r.ok) { if (!cancelled) setWeeklyReviewData(null); return; }
         const json = await r.json();
@@ -181,7 +216,7 @@ export default function DashboardPage() {
       .catch(() => { if (!cancelled) setWeeklyReviewData(null); })
       .finally(() => { if (!cancelled) setWeeklyReviewLoading(false); });
     return () => { cancelled = true; };
-  }, [userRole, weeklyReviewRange]);
+  }, [userRole, weeklyReviewRange, weeklyReviewStart, weeklyReviewEnd]);
 
   // ── Unified dashboard data fetch via server-side API ──
   useEffect(() => {
@@ -655,9 +690,35 @@ export default function DashboardPage() {
             periodEnd={weeklyReviewData.periodEnd}
             range={weeklyReviewRange}
             onRangeChange={setWeeklyReviewRange}
+            customStart={weeklyReviewStart}
+            customEnd={weeklyReviewEnd}
+            onCustomRangeChange={(start, end) => {
+              setWeeklyReviewStart(start);
+              setWeeklyReviewEnd(end);
+            }}
           />
         ) : (
-          <WeeklyReview {...weeklyReviewProps} />
+          {weeklyReviewData ? (
+        <WeeklyReview
+          {...weeklyReviewProps}
+          mode="period"
+          l1={weeklyReviewData.l1}
+          l2={weeklyReviewData.l2}
+          l3_by_user={weeklyReviewData.l3_by_user}
+          periodStart={weeklyReviewData.periodStart}
+          periodEnd={weeklyReviewData.periodEnd}
+          range={weeklyReviewRange}
+          onRangeChange={setWeeklyReviewRange}
+          customStart={weeklyReviewStart}
+          customEnd={weeklyReviewEnd}
+          onCustomRangeChange={(start, end) => {
+            setWeeklyReviewStart(start);
+            setWeeklyReviewEnd(end);
+          }}
+        />
+      ) : (
+        <WeeklyReview {...weeklyReviewProps} />
+      )}
         )}
 
         {/* L3: Sales Leaderboard */}

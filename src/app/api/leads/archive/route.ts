@@ -43,6 +43,19 @@ export async function POST(request: NextRequest) {
   }
 
   const { lead_ids, archive_reason } = body;
+  if (!Array.isArray(lead_ids) || lead_ids.length === 0) {
+    return NextResponse.json(
+      { error: "lead_ids required; preview an owner and explicitly approve the returned IDs" },
+      { status: 400 },
+    );
+  }
+  const approvedLeadIds = [...new Set(
+    lead_ids.filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
+  )];
+  if (approvedLeadIds.length !== lead_ids.length || approvedLeadIds.length > 500) {
+    return NextResponse.json({ error: "lead_ids must contain 1-500 unique IDs" }, { status: 400 });
+  }
+
   const batchId = crypto.randomUUID();
   const now = new Date().toISOString();
   const reason = archive_reason || "Mohamed old leads cleanup";
@@ -54,25 +67,9 @@ export async function POST(request: NextRequest) {
     archive_reason: reason,
   });
 
-  if (lead_ids && Array.isArray(lead_ids) && lead_ids.length > 0) {
-    query = query.in("id", lead_ids);
-  } else {
-    // Find Mohamed's user_id — scope to management roles + limit(1) for a precise,
-    // deterministic match (avoids matching sales reps or erroring on multiple rows).
-    const { data: candidates } = await supabase
-      .from("profiles")
-      .select("id")
-      .ilike("full_name", "%mohamed%")
-      .in("role", ["admin", "boss"])
-      .limit(1);
-    const mohamed = candidates?.[0];
-    if (!mohamed) return NextResponse.json({ error: "Mohamed not found in profiles" }, { status: 404 });
-
-    // Archive all leads assigned to Mohamed that are not already archived.
-    // `archived` is BOOLEAN NOT NULL DEFAULT false — un-archived rows hold false,
-    // never null, so we filter with .eq("archived", false).
-    query = query.eq("assigned_to", mohamed.id).eq("archived", false);
-  }
+  // Archive only the immutable ID set approved from preview. Never resolve a
+  // person by display name and never silently broaden the selection.
+  query = query.in("id", approvedLeadIds).eq("archived", false);
 
   // `.update().select()` returns { data, error } — there is no `count` field.
   // Derive the affected row count from the returned data array.
@@ -108,20 +105,71 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({
+    requested_count: approvedLeadIds.length,
     archived_count: archivedCount,
+    skipped_count: approvedLeadIds.length - archivedCount,
     archive_batch_id: batchId,
   });
 }
 
-// GET /api/leads/archive?batch_id=xxx — Lookup archived leads by batch
+// GET /api/leads/archive?owner_id=xxx — Preview an immutable archive selection
+// GET /api/leads/archive?batch_id=xxx — Lookup a completed archive batch
 export async function GET(request: NextRequest) {
   const supabase = await createServerSupabase();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Role check — batch archive lookups are boss/admin only
+  const forbidden = await requireBoss(supabase, user.id);
+  if (forbidden) return forbidden;
+
+  const batchId = request.nextUrl.searchParams.get("batch_id");
+  if (batchId) {
+    const { data, error } = await supabase
+      .from("leads")
+      .select("id, customer_name, phone, assigned_to, archived_at, archive_reason")
+      .eq("archive_batch_id", batchId);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ mode: "batch", batch_id: batchId, leads: data, count: data.length });
+  }
+
+  const ownerId = request.nextUrl.searchParams.get("owner_id");
+  if (!ownerId) {
+    return NextResponse.json({ error: "owner_id or batch_id required" }, { status: 400 });
+  }
+  const { data: owner, error: ownerError } = await supabase
+    .from("profiles")
+    .select("id, full_name, role")
+    .eq("id", ownerId)
+    .single();
+  if (ownerError || !owner) {
+    return NextResponse.json({ error: "Owner profile not found" }, { status: 404 });
+  }
+
+  const { data: leads, error } = await supabase
+    .from("leads")
+    .select("id, customer_name, phone, assigned_to, stage, created_at")
+    .eq("assigned_to", owner.id)
+    .eq("archived", false)
+    .order("created_at", { ascending: true })
+    .limit(500);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({
+    mode: "preview",
+    owner: { id: owner.id, full_name: owner.full_name, role: owner.role },
+    lead_ids: leads.map((lead) => lead.id),
+    leads,
+    count: leads.length,
+    truncated: leads.length === 500,
+  });
+}
+
+// DELETE /api/leads/archive?batch_id=xxx — Roll back one completed batch
+export async function DELETE(request: NextRequest) {
+  const supabase = await createServerSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const forbidden = await requireBoss(supabase, user.id);
   if (forbidden) return forbidden;
 
@@ -130,10 +178,30 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("leads")
-    .select("id, customer_name, phone, archived_at, archive_reason")
-    .eq("archive_batch_id", batchId);
-
+    .update({
+      archived: false,
+      archived_at: null,
+      archive_batch_id: null,
+      archive_reason: null,
+    })
+    .eq("archive_batch_id", batchId)
+    .eq("archived", true)
+    .select("id");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ leads: data, count: data.length });
+  const restoredCount = data?.length ?? 0;
+  if (restoredCount > 0) {
+    const summary = `Restored ${restoredCount} archived leads (batch: ${batchId})`;
+    const { error: activityError } = await supabaseAdmin.from("activities").insert({
+      lead_id: null,
+      type: "note",
+      content: summary,
+      user_id: user.id,
+    });
+    if (activityError) {
+      console.error("[leads/archive] rollback activity insert failed:", activityError.message);
+    }
+  }
+
+  return NextResponse.json({ archive_batch_id: batchId, restored_count: restoredCount });
 }

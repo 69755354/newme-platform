@@ -27,8 +27,10 @@ export interface WeeklyReviewLeadRow {
   next_follow_up_at: string | null;
 }
 
+type ReviewRange = "today" | "this_week" | "last_week" | "this_month" | "custom";
+
 export interface WeeklyReviewResponse {
-  range: "this_week" | "last_week" | "this_month";
+  range: ReviewRange;
   period_start: string;
   period_end: string;
   l1: {
@@ -44,6 +46,7 @@ export interface WeeklyReviewResponse {
 }
 
 const WEEK_MS = 7 * 24 * 3600 * 1000;
+const GST_OFFSET_MS = 4 * 3600 * 1000;
 
 function joinedFullName(value: unknown): string | null {
   const profile = Array.isArray(value) ? value[0] : value;
@@ -51,33 +54,45 @@ function joinedFullName(value: unknown): string | null {
   return typeof profile.full_name === "string" ? profile.full_name : null;
 }
 
-function periodBounds(range: "this_week" | "last_week" | "this_month"): { start: Date; end: Date } {
+function gstDate(year: number, month: number, day: number): Date {
+  return new Date(Date.UTC(year, month, day) - GST_OFFSET_MS);
+}
+
+function parseGstDate(value: string | null): Date | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = gstDate(year, month - 1, day);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function periodBounds(range: ReviewRange, customStart?: string | null, customEnd?: string | null): { start: Date; end: Date } | null {
   const now = new Date();
+  const gst = new Date(now.getTime() + GST_OFFSET_MS);
+  if (range === "today") {
+    const start = gstDate(gst.getUTCFullYear(), gst.getUTCMonth(), gst.getUTCDate());
+    return { start, end: new Date(start.getTime() + 24 * 3600 * 1000) };
+  }
   if (range === "this_week") {
-    // Dubai Mon-Sat workweek. Compute Monday-based week in UTC+4.
-    const GST_OFFSET_MS = 4 * 3600 * 1000;
-    const gst = new Date(now.getTime() + GST_OFFSET_MS);
-    const dow = gst.getUTCDay(); // 0=Sun..6=Sat
-    const monOffset = (dow + 6) % 7; // days since Monday
+    const dow = gst.getUTCDay();
     const mondayGst = new Date(gst);
-    mondayGst.setUTCDate(gst.getUTCDate() - monOffset);
-    mondayGst.setUTCHours(0, 0, 0, 0);
-    const startGstMs = mondayGst.getTime();
-    const start = new Date(startGstMs - GST_OFFSET_MS);
-    const end = new Date(start.getTime() + WEEK_MS);
-    return { start, end };
+    mondayGst.setUTCDate(gst.getUTCDate() - ((dow + 6) % 7));
+    const start = gstDate(mondayGst.getUTCFullYear(), mondayGst.getUTCMonth(), mondayGst.getUTCDate());
+    return { start, end: new Date(start.getTime() + WEEK_MS) };
   }
   if (range === "last_week") {
-    const { start } = periodBounds("this_week");
-    const last = new Date(start.getTime() - WEEK_MS);
-    const end = new Date(start.getTime());
-    return { start: last, end };
+    const thisWeek = periodBounds("this_week");
+    if (!thisWeek) return null;
+    return { start: new Date(thisWeek.start.getTime() - WEEK_MS), end: thisWeek.start };
   }
-  // this_month
-  const GST_OFFSET_MS = 4 * 3600 * 1000;
-  const gst = new Date(now.getTime() + GST_OFFSET_MS);
-  const start = new Date(Date.UTC(gst.getUTCFullYear(), gst.getUTCMonth(), 1) - GST_OFFSET_MS);
-  const end = new Date(Date.UTC(gst.getUTCFullYear(), gst.getUTCMonth() + 1, 1) - GST_OFFSET_MS);
+  if (range === "this_month") {
+    return {
+      start: gstDate(gst.getUTCFullYear(), gst.getUTCMonth(), 1),
+      end: gstDate(gst.getUTCFullYear(), gst.getUTCMonth() + 1, 1),
+    };
+  }
+  const start = parseGstDate(customStart ?? null);
+  const end = parseGstDate(customEnd ?? null);
+  if (!start || !end || start >= end) return null;
   return { start, end };
 }
 
@@ -90,21 +105,25 @@ export async function GET(req: NextRequest) {
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
     if (!profile) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const role = profile.role as string;
-    if (!["admin", "boss", "operator"].includes(role)) {
-      return NextResponse.json({ error: "Forbidden: management only" }, { status: 403 });
+    if (!["admin", "boss", "operator", "sales"].includes(role) && !["user", "salesperson"].includes(role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    const isSalesScope = role === "sales" || role === "user" || role === "salesperson";
 
     const sp = new URL(req.url).searchParams;
-    const rangeRaw = (sp.get("range") ?? "this_week").toLowerCase();
-    const range: "this_week" | "last_week" | "this_month" =
-      rangeRaw === "last_week" ? "last_week" :
-      rangeRaw === "this_month" ? "this_month" : "this_week";
-
-    const { start, end } = periodBounds(range);
+    const rangeRaw = (sp.get("range") ?? "today").toLowerCase();
+    const range: ReviewRange = ["today", "this_week", "last_week", "this_month", "custom"].includes(rangeRaw)
+      ? rangeRaw as ReviewRange
+      : "today";
+    const bounds = periodBounds(range, sp.get("start"), sp.get("end"));
+    if (!bounds) {
+      return NextResponse.json({ error: "Invalid custom range" }, { status: 400 });
+    }
+    const { start, end } = bounds;
     const startIso = start.toISOString();
     const endIso = end.toISOString();
 
-    // L1: 6 metrics via parallel queries
+    // L1: every aggregate is scoped in the database for a sales caller.
     const [
       { count: newLeadsCount },
       { data: contactedData },
@@ -113,20 +132,38 @@ export async function GET(req: NextRequest) {
       { count: wonCount },
       { count: lostCount },
     ] = await Promise.all([
-      supabase.from("leads").select("*", { count: "exact", head: true })
+      (isSalesScope
+        ? supabase.from("leads").select("id", { count: "exact", head: true })
+          .eq("assigned_to", user.id)
+        : supabase.from("leads").select("id", { count: "exact", head: true }))
         .gte("created_at", startIso).lt("created_at", endIso),
-      supabase.from("follow_up_logs").select("lead_id")
+      (isSalesScope
+        ? supabase.from("follow_up_logs").select("lead_id, leads!inner(assigned_to)")
+          .eq("leads.assigned_to", user.id)
+        : supabase.from("follow_up_logs").select("lead_id"))
         .gte("created_at", startIso).lt("created_at", endIso),
-      supabase.from("business_events").select("*", { count: "exact", head: true })
+      (isSalesScope
+        ? supabase.from("business_events").select("id, leads!inner(assigned_to)", { count: "exact", head: true })
+          .eq("leads.assigned_to", user.id)
+        : supabase.from("business_events").select("id", { count: "exact", head: true }))
         .eq("event_type", "quality_checked")
         .gte("created_at", startIso).lt("created_at", endIso),
-      supabase.from("business_events").select("*", { count: "exact", head: true })
+      (isSalesScope
+        ? supabase.from("business_events").select("id, leads!inner(assigned_to)", { count: "exact", head: true })
+          .eq("leads.assigned_to", user.id)
+        : supabase.from("business_events").select("id", { count: "exact", head: true }))
         .eq("event_type", "stage_change")
         .gte("created_at", startIso).lt("created_at", endIso),
-      supabase.from("business_events").select("*", { count: "exact", head: true })
+      (isSalesScope
+        ? supabase.from("business_events").select("id, leads!inner(assigned_to)", { count: "exact", head: true })
+          .eq("leads.assigned_to", user.id)
+        : supabase.from("business_events").select("id", { count: "exact", head: true }))
         .eq("event_type", "stage_change").eq("event_data->>to", "won")
         .gte("created_at", startIso).lt("created_at", endIso),
-      supabase.from("business_events").select("*", { count: "exact", head: true })
+      (isSalesScope
+        ? supabase.from("business_events").select("id, leads!inner(assigned_to)", { count: "exact", head: true })
+          .eq("leads.assigned_to", user.id)
+        : supabase.from("business_events").select("id", { count: "exact", head: true }))
         .eq("event_type", "stage_change").eq("event_data->>to", "lost")
         .gte("created_at", startIso).lt("created_at", endIso),
     ]);
@@ -142,8 +179,10 @@ export async function GET(req: NextRequest) {
       roleMap.set(p.id, (p as any).role as string);
     }
 
-    const { data: assignedLeads } = await supabase.from("leads").select("id, assigned_to")
+    let assignedLeadsQuery = supabase.from("leads").select("id, assigned_to")
       .gte("created_at", startIso).lt("created_at", endIso).not("assigned_to", "is", null);
+    if (isSalesScope) assignedLeadsQuery = assignedLeadsQuery.eq("assigned_to", user.id);
+    const { data: assignedLeads } = await assignedLeadsQuery;
 
     const { data: contactedLogs } = await supabase.from("follow_up_logs")
       .select("lead_id, leads!inner(assigned_to)")
@@ -220,10 +259,12 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.stage_advanced - a.stage_advanced);
 
     // L3: leads created during the period, grouped by owner.
-    const { data: leadsAssigned, error: leadsAssignedErr } = await supabase.from("leads")
+    let leadsAssignedQuery = supabase.from("leads")
       .select("id, customer_name, assigned_to, stage, last_contact_date, quality")
       .gte("created_at", startIso).lt("created_at", endIso)
       .limit(500);
+    if (isSalesScope) leadsAssignedQuery = leadsAssignedQuery.eq("assigned_to", user.id);
+    const { data: leadsAssigned, error: leadsAssignedErr } = await leadsAssignedQuery;
     if (leadsAssignedErr) {
       console.error("[weekly-review] leads query error:", leadsAssignedErr);
     }
@@ -328,20 +369,28 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const responseL2 = isSalesScope
+      ? l2.filter((row) => row.user_id === user.id)
+      : l2;
+    const responseL3 = isSalesScope
+      ? { [user.id]: l3_by_user[user.id] ?? [] }
+      : l3_by_user;
+    const personal = responseL2[0];
+
     return NextResponse.json({
       range,
       period_start: startIso,
       period_end: endIso,
       l1: {
-        new_leads: newLeadsCount ?? 0,
-        contacted_leads: contactedDistinct,
+        new_leads: isSalesScope ? personal?.assigned_leads ?? 0 : newLeadsCount ?? 0,
+        contacted_leads: isSalesScope ? personal?.contacted ?? 0 : contactedDistinct,
         quality_judged: qualityJudgedCount ?? 0,
-        stage_advanced: stageAdvancedCount ?? 0,
-        won: wonCount ?? 0,
-        lost: lostCount ?? 0,
+        stage_advanced: isSalesScope ? personal?.stage_advanced ?? 0 : stageAdvancedCount ?? 0,
+        won: isSalesScope ? personal?.won ?? 0 : wonCount ?? 0,
+        lost: isSalesScope ? personal?.lost ?? 0 : lostCount ?? 0,
       },
-      l2,
-      l3_by_user,
+      l2: responseL2,
+      l3_by_user: responseL3,
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (e) {
     console.error("[weekly-review] error:", e);

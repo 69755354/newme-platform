@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 
 // ─── API-mode response types (PRD §五.3 / GET /api/dashboard/weekly-review) ───
-type Period = "this_week" | "last_week" | "this_month";
+type Period = "today" | "this_week" | "last_week" | "this_month" | "custom";
 interface WeeklyReviewL1 {
   newLeads: number; contactedLeads: number; qualityChecked: number;
   stageMoved: number; won: number; lost: number;
@@ -70,6 +70,9 @@ interface WeeklyReviewProps {
   periodEnd?: string;
   range?: Period;
   onRangeChange?: (range: Period) => void;
+  customStart?: string;
+  customEnd?: string;
+  onCustomRangeChange?: (start: string, end: string) => void;
   l1?: PeriodL1;
   l2?: PeriodL2Row[];
   l3_by_user?: Record<string, PeriodL3Row[]>;
@@ -87,8 +90,11 @@ export default function WeeklyReview(props: WeeklyReviewProps) {
         language={props.language ?? "en"}
         periodStart={props.periodStart}
         periodEnd={props.periodEnd}
-        range={props.range ?? "this_week"}
+        range={props.range ?? "today"}
         onRangeChange={props.onRangeChange ?? (() => {})}
+        customStart={props.customStart ?? ""}
+        customEnd={props.customEnd ?? ""}
+        onCustomRangeChange={props.onCustomRangeChange ?? (() => {})}
         l1={props.l1}
         l2={props.l2 ?? []}
         l3_by_user={props.l3_by_user ?? {}}
@@ -202,7 +208,8 @@ export default function WeeklyReview(props: WeeklyReviewProps) {
 // Fetches /api/dashboard/weekly-review?period=… and renders L1/L2/L3 with
 // 本周 | 上周 | 本月 selector. Includes loading skeleton, error and empty states.
 // ════════════════════════════════════════════════════════════════════
-const PERIOD_OPTIONS: { value: Period; zh: string; en: string }[] = [
+const PERIOD_OPTIONS: { value: Exclude<Period, "custom">; zh: string; en: string }[] = [
+  { value: "today", zh: "今日", en: "Today" },
   { value: "this_week", zh: "本周", en: "This week" },
   { value: "last_week", zh: "上周", en: "Last week" },
   { value: "this_month", zh: "本月", en: "This month" },
@@ -374,13 +381,16 @@ function WeeklyReviewApi({ language }: { language: string }) {
 // L3 lead list per owner), with empty-state fallbacks. i18n zh/en inline.
 // ════════════════════════════════════════════════════════════════════
 function WeeklyReviewPeriod({
-  language, periodStart, periodEnd, range, onRangeChange, l1, l2, l3_by_user,
+  language, periodStart, periodEnd, range, onRangeChange, customStart, customEnd, onCustomRangeChange, l1, l2, l3_by_user,
 }: {
   language: string;
   periodStart?: string;
   periodEnd?: string;
   range: Period;
   onRangeChange: (range: Period) => void;
+  customStart: string;
+  customEnd: string;
+  onCustomRangeChange: (start: string, end: string) => void;
   l1?: PeriodL1;
   l2: PeriodL2Row[];
   l3_by_user: Record<string, PeriodL3Row[]>;
@@ -459,7 +469,23 @@ function WeeklyReviewPeriod({
                   {locale === "zh" ? opt.zh : opt.en}
                 </button>
               ))}
+              <button type="button" onClick={() => onRangeChange("custom")}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  range === "custom" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}>
+                {t("自定义", "Custom")}
+              </button>
             </div>
+            {range === "custom" && (
+              <div className="flex gap-2">
+                <input type="date" value={customStart}
+                  onChange={(event) => onCustomRangeChange(event.target.value, customEnd)}
+                  className="h-7 rounded border border-border bg-muted px-2 text-xs" />
+                <input type="date" value={customEnd}
+                  onChange={(event) => onCustomRangeChange(customStart, event.target.value)}
+                  className="h-7 rounded border border-border bg-muted px-2 text-xs" />
+              </div>
+            )}
           </div>
         </div>
         {l1Empty ? (

@@ -25,8 +25,8 @@ async function loginAndSaveState(page: any, email: string, password: string, rol
   // Click login button
   await page.click('button[type="submit"]');
 
-  // Wait for redirect to dashboard
-  await page.waitForURL(/\/(dashboard|change-password)/, { timeout: 15000 });
+  // Wait for the role-appropriate post-login destination
+  await page.waitForURL(/\/(dashboard|workbench|change-password)/, { timeout: 15000 });
 
   // If redirected to change-password, handle it
   if (page.url().includes('change-password')) {

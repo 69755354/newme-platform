@@ -66,55 +66,23 @@ export async function PATCH(
       );
     }
 
-    const update: Record<string, unknown> = {
-      stage,
-      stage_changed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    if (stage === "won" || stage === "lost") update.final_status = stage;
-
-    let query = supabase
-      .from("leads")
-      .update(update)
-      .eq("id", leadId)
-      .eq("stage", lead.stage);
-    if (!isAdminOrBoss(profile)) query = query.eq("assigned_to", profile.userId);
-
-    const { data: updated, error: updateError } = await query
-      .select("id, stage, final_status, quality, stage_changed_at, updated_at")
-      .single();
+    const { data: updated, error: updateError } = await supabase.rpc("transition_lead_stage", {
+      p_lead_id: leadId,
+      p_expected_stage: lead.stage,
+      p_next_stage: stage,
+      p_note: note,
+    });
 
     if (updateError || !updated) {
-      return NextResponse.json(
-        { error: updateError?.message ?? "Stage update failed" },
-        { status: updateError?.code === "PGRST116" ? 409 : 400 },
-      );
+      const message = updateError?.message ?? "Stage update failed";
+      const status = message.includes("concurrently") ? 409
+        : message.includes("Forbidden") ? 403
+        : message.includes("not found") ? 404
+        : 400;
+      return NextResponse.json({ error: message }, { status });
     }
 
-    // Preserve the existing analytics/audit contract used by weekly-review.
-    // The previous client updateField path wrote this event after the lead row.
-    const { error: eventError } = await supabase.from("business_events").insert({
-      lead_id: leadId,
-      user_id: profile.userId,
-      event_type: "stage_change",
-      description: note
-        ? `Stage changed from ${lead.stage} to ${stage}: ${note}`
-        : `Stage changed from ${lead.stage} to ${stage}`,
-      event_data: { from: lead.stage, to: stage, ...(note ? { note } : {}) },
-      created_at: new Date().toISOString(),
-    });
-    if (eventError) {
-      console.error("stage_change audit insert failed", eventError);
-    }
-
-    return NextResponse.json({
-      success: true,
-      lead: updated,
-      eventLogged: !eventError,
-      ...(eventError && process.env.NODE_ENV !== "production"
-        ? { eventError: eventError.message }
-        : {}),
-    });
+    return NextResponse.json({ success: true, lead: updated, eventLogged: true });
   } catch (error) {
     console.error("stage route error", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

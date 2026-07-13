@@ -43,3 +43,19 @@ test("source migration expands the constraint before rewriting Meta Ads", async 
     assert.ok(migration.includes(`'${source}'`), `constraint must allow ${source}`);
   }
 });
+
+
+test("new Lead form uses Tanya's canonical source values", async () => {
+  const source = await read("src/app/(dashboard)/leads/new/page.tsx");
+  assert.equal(source.includes('value="meta_ads"'), false);
+  for (const value of ["ins", "fb", "show_room"]) {
+    assert.ok(source.includes(`value="${value}"`), `new Lead form missing source: ${value}`);
+  }
+});
+
+test("all user-facing ins labels stay canonical", async () => {
+  const translations = await read("src/lib/i18n/translations.ts");
+  assert.equal((translations.match(/ins: "ins"/g) ?? []).length, 2);
+  const dashboard = await read("src/app/(dashboard)/dashboard/page.tsx");
+  assert.match(dashboard, /ins: t\("sourceLabels\.ins"\)/);
+});

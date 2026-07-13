@@ -8,6 +8,7 @@ export interface WeeklyReviewRow {
   assigned_leads: number;
   contacted: number;
   pending_quality: number;
+  quality_judged: number;
   stage_advanced: number;
   won: number;
   lost: number;
@@ -129,7 +130,7 @@ export async function GET(req: NextRequest) {
     const [
       { count: newLeadsCount },
       { data: contactedData },
-      { count: qualityJudgedCount },
+      { data: qualityEvents },
       { count: stageAdvancedCount },
       { count: wonCount },
       { count: lostCount },
@@ -145,9 +146,9 @@ export async function GET(req: NextRequest) {
         : supabase.from("follow_up_logs").select("lead_id"))
         .gte("created_at", startIso).lt("created_at", endIso),
       (isSalesScope
-        ? supabase.from("business_events").select("id, leads!inner(assigned_to)", { count: "exact", head: true })
+        ? supabase.from("business_events").select("lead_id, leads!inner(assigned_to)")
           .eq("leads.assigned_to", user.id)
-        : supabase.from("business_events").select("id", { count: "exact", head: true }))
+        : supabase.from("business_events").select("lead_id, leads!inner(assigned_to)"))
         .eq("event_type", "quality_checked")
         .gte("created_at", startIso).lt("created_at", endIso),
       (isSalesScope
@@ -171,6 +172,7 @@ export async function GET(req: NextRequest) {
     ]);
 
     const contactedDistinct = new Set((contactedData ?? []).map((r: any) => r.lead_id)).size;
+    const qualityJudgedDistinct = new Set((qualityEvents ?? []).map((r: any) => r.lead_id)).size;
 
     // L2 per-sales rollup
     const { data: profilesAll } = await supabase.from("profiles").select("id, full_name, role");
@@ -226,7 +228,7 @@ export async function GET(req: NextRequest) {
       if (!perUser.has(uid)) {
         perUser.set(uid, {
           user_id: uid, full_name: salesMap.get(uid) ?? null,
-          assigned_leads: 0, contacted: 0, pending_quality: 0,
+          assigned_leads: 0, contacted: 0, pending_quality: 0, quality_judged: 0,
           stage_advanced: 0, won: 0, lost: 0, overdue_tasks: 0,
         });
       }
@@ -243,6 +245,15 @@ export async function GET(req: NextRequest) {
       contactedByOwner.get(owner)!.add(log.lead_id);
     }
     for (const [uid, set] of contactedByOwner) { const row = ensure(uid); if (row) row.contacted = set.size; }
+    const qualityByOwner = new Map<string, Set<string>>();
+    for (const event of qualityEvents ?? []) {
+      const owner = (event as any).leads?.assigned_to as string | null;
+      const leadId = (event as any).lead_id as string | null;
+      if (!owner || !leadId) continue;
+      if (!qualityByOwner.has(owner)) qualityByOwner.set(owner, new Set());
+      qualityByOwner.get(owner)!.add(leadId);
+    }
+    for (const [uid, set] of qualityByOwner) { const row = ensure(uid); if (row) row.quality_judged = set.size; }
     for (const r of pendingQuality ?? []) { if (r.assigned_to) { const row = ensure(r.assigned_to); if (row) row.pending_quality++; } }
     for (const ev of stageEvents ?? []) {
       const owner = stageOwnerByLead.get((ev as any).lead_id as string);
@@ -274,6 +285,7 @@ export async function GET(req: NextRequest) {
     for (const lead of assignedLeads ?? []) addReason(lead.id, "new");
     for (const log of contactedLogs ?? []) addReason(log.lead_id, "contacted");
     for (const lead of pendingQuality ?? []) addReason(lead.id, "pending_quality");
+    for (const event of qualityEvents ?? []) addReason((event as any).lead_id, "quality_judged");
     for (const event of stageEvents ?? []) {
       const to = (event as any).event_data?.to;
       addReason((event as any).lead_id, to === "won" ? "won" : to === "lost" ? "lost" : "stage_advanced");
@@ -378,7 +390,7 @@ export async function GET(req: NextRequest) {
       l1: {
         new_leads: isSalesScope ? personal?.assigned_leads ?? 0 : newLeadsCount ?? 0,
         contacted_leads: isSalesScope ? personal?.contacted ?? 0 : contactedDistinct,
-        quality_judged: qualityJudgedCount ?? 0,
+        quality_judged: qualityJudgedDistinct,
         stage_advanced: isSalesScope ? personal?.stage_advanced ?? 0 : stageAdvancedCount ?? 0,
         won: isSalesScope ? personal?.won ?? 0 : wonCount ?? 0,
         lost: isSalesScope ? personal?.lost ?? 0 : lostCount ?? 0,

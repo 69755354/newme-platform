@@ -186,7 +186,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!userRole || (weeklyReviewRange === "custom" && (!weeklyReviewStart || !weeklyReviewEnd || weeklyReviewStart >= weeklyReviewEnd))) {
+    if (!userRole || (weeklyReviewRange === "custom" && (!weeklyReviewStart || !weeklyReviewEnd || weeklyReviewStart > weeklyReviewEnd))) {
       return;
     }
     let cancelled = false;

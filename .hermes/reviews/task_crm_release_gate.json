@@ -1,0 +1,11 @@
+{
+  "task_id": "task_crm_release_gate",
+  "result": "PASS",
+  "reviewed_pr": 17,
+  "reviewed_head": "7f230be6e66837b7f793678d773aac1f44fc5c77",
+  "merge_commit": "ddf7a31c71a883eb6a798980258e220070b5c971",
+  "ci_run": 29285890539,
+  "ci_result": "success",
+  "tests": "81/81 passed",
+  "review": "Final database state-machine review passed; no P0/P1 release blockers remain."
+}

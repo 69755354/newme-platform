@@ -1,0 +1,14 @@
+{
+  "task_id": "task_crm_release_gate",
+  "description": "Register the reviewed PR 17 merge for the production deploy gate",
+  "allowed_files": [
+    ".hermes/delegations/task_crm_release_gate.json",
+    ".hermes/reviews/task_crm_release_gate.json"
+  ],
+  "forbidden_files": [
+    ".env",
+    "node_modules/",
+    "scripts/deploy.sh",
+    "package-lock.json"
+  ]
+}

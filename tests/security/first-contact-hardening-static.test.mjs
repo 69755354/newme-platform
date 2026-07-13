@@ -6,6 +6,7 @@ const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8
 
 test("stage endpoint enforces ownership, complete-contact gate, concurrency, and analytics event", async () => {
   const source = await read("src/app/api/leads/[id]/stage/route.ts");
+  const transition = await read("supabase/migrations/20260714000003_atomic_stage_transition.sql");
   for (const token of [
     "getAuthProfile",
     "isAdminOrBoss",
@@ -14,10 +15,11 @@ test("stage endpoint enforces ownership, complete-contact gate, concurrency, and
     '.select("contact_time, contact_result")',
     "isCompleteContact",
     "evaluateFirstContactGate",
-    '.eq("stage", lead.stage)',
-    '.from("business_events")',
-    'event_type: "stage_change"',
+    'p_expected_stage: lead.stage',
+    '.rpc("transition_lead_stage"',
   ]) assert.ok(source.includes(token), `missing stage protection: ${token}`);
+  assert.ok(transition.includes("INSERT INTO public.business_events"));
+  assert.ok(transition.includes("'stage_change'"));
 });
 
 test("quality endpoint accepts assessment only after the first complete contact", async () => {
@@ -44,14 +46,14 @@ test("contact creation and editing are server-authorized and return stored rows"
     ]) assert.ok(source.includes(token), `missing contact ${label} protection: ${token}`);
   }
   assert.ok(create.includes('method: "POST"') === false, "route must not self-fetch");
-  assert.ok(create.includes('.insert({'));
+  assert.ok(create.includes('.upsert({'));
   assert.ok(edit.includes('.eq("id", contactId)'));
   assert.ok(edit.includes('.eq("lead_id", leadId)'));
 });
 
 test("database triggers are the authoritative First Contact backstops", async () => {
   const gate = await read("supabase/migrations/20260711000000_fix_first_contact_gate_business_rule.sql");
-  const milestone = await read("supabase/migrations/20260712000002_complete_contact_milestone.sql");
+  const milestone = await read("supabase/migrations/20260714000000_enforce_first_contact_milestone_gate.sql");
   for (const token of [
     "BEFORE UPDATE OF stage",
     "OLD.stage IS DISTINCT FROM 'new'",
@@ -62,9 +64,10 @@ test("database triggers are the authoritative First Contact backstops", async ()
     "quality NOT IN ('good', 'normal', 'poor')",
   ]) assert.ok(gate.includes(token), `missing database gate: ${token}`);
   for (const token of [
-    "AFTER INSERT OR UPDATE OF contact_time, contact_result",
+    "complete_first_contact_if_ready",
     "btrim(NEW.contact_result) = ''",
-    "ON CONFLICT (lead_id, milestone_key) DO NOTHING",
+    "ON CONFLICT (lead_id, milestone_key) DO UPDATE",
+    "BEFORE DELETE ON public.lead_milestones",
     "'first_contact'",
   ]) assert.ok(milestone.includes(token), `missing milestone protection: ${token}`);
 });

@@ -41,7 +41,7 @@ interface PeriodL3Row {
   stage: string | null; last_contact_date: string | null;
   contact_count: number; quality: string | null;
   last_note: string | null; next_follow_up_at: string | null;
-  period_reasons: string[]; overdue_count: number;
+  period_reasons: string[]; overdue_count: number; stage_advance_count: number;
 }
 
 interface FinanceStats {
@@ -618,7 +618,7 @@ function WeeklyReviewPeriod({
                                     if (reason === "contacted") return t(`联系${lead.contact_count}次`, `${lead.contact_count} contact(s)`);
                                     if (reason === "quality_judged") return t("已评估质量", "Quality assessed");
                                     if (reason === "pending_quality") return t("待评估质量", "Quality pending");
-                                    if (reason === "stage_advanced") return t(`推进至${stageLabel(lead.stage)}`, `Moved to ${stageLabel(lead.stage)}`);
+                                    if (reason === "stage_advanced") return t(`推进${lead.stage_advance_count}次`, `${lead.stage_advance_count} stage move(s)`);
                                     if (reason === "won") return t("赢单", "Won");
                                     if (reason === "lost") return t("输单", "Lost");
                                     if (reason === "overdue") return t(`逾期${lead.overdue_count}项`, `${lead.overdue_count} overdue`);

@@ -24,7 +24,9 @@ interface Props {
 
 const SOURCE_OPTIONS = [
   { value: "whatsapp", labelKey: "leads.sourceWhatsApp" },
-  { value: "meta_ads", labelKey: "leads.sourceMetaAds" },
+  { value: "ins", labelKey: "sourceLabels.ins" },
+  { value: "fb", labelKey: "sourceLabels.fb" },
+  { value: "show_room", labelKey: "sourceLabels.show_room" },
   { value: "website", labelKey: "common.website" },
   { value: "offline", labelKey: "common.offline" },
   { value: "referral", labelKey: "common.referral" },

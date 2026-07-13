@@ -27,6 +27,22 @@ BEGIN
   FROM public.profiles
   WHERE id = actor_id;
 
+  IF actor_role IS NULL
+     OR actor_role NOT IN ('admin', 'boss', 'sales', 'user', 'salesperson') THEN
+    RAISE EXCEPTION 'Forbidden: invalid CRM role';
+  END IF;
+
+  IF p_next_stage NOT IN (
+    'new', 'contacted', 'requirement_confirmed', 'solution_submitted',
+    'quotation_submitted', 'negotiation', 'pending_decision', 'won', 'lost'
+  ) THEN
+    RAISE EXCEPTION 'Invalid stage';
+  END IF;
+
+  IF char_length(clean_note) > 1000 THEN
+    RAISE EXCEPTION 'Stage note must be 1000 characters or fewer';
+  END IF;
+
   SELECT * INTO current_lead
   FROM public.leads
   WHERE id = p_lead_id

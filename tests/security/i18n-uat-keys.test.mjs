@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const translationSource = readFileSync(join(root, "src/lib/i18n/translations.ts"), "utf8");
 const objectSource = translationSource
-  .replace(/^export const translations = /, "")
+  .replace(/^\uFEFF?export const translations = /, "")
   .replace(/\n\} as const;[\s\S]*$/, "\n}");
 const translations = Function(`"use strict"; return (${objectSource});`)();
 

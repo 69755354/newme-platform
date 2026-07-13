@@ -701,3 +701,30 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 - `src/app/api/users/route.ts`
 - `src/app/api/workflow/route.ts`
 - `src/app/layout.tsx`
+
+## 八、Core Workflow Remediation UAT 收口 — 2026-07-14
+
+本节记录 PR #14 与 PR #15 的生产 UAT 修复及当前 release baseline 的路径覆盖。该 docs-only 更新不改变业务逻辑；生产部署与真实 UI 回读仍按 deploy evidence 和 UAT 证据单独验收。
+
+### 本轮行为变更
+
+- `src/app/(dashboard)/leads/[id]/page.tsx` — Lead Detail 页头通过 `sourceLabels` 显示来源，存储值 `ins` 显示为 `Instagram`；创建人使用 `leadDetail.createdBy` 命名空间。
+- `src/lib/i18n/translations.ts` — 补齐 Lead Detail 中英文键，并将 First Contact 文案统一为“至少 1 条完整联系记录 + 已选 Quality；3 次联系仅为建议”。
+- `tests/security/i18n-uat-keys.test.mjs` — 回归检查 Lead Detail 字面量翻译键、中英文 First Contact 规则，以及 `ins` / `fb` / `show_room` 来源标签。
+- `e2e/full-audit.spec.ts` — 销售登录验收目标更新为 `/workbench`，管理角色仍进入 `/dashboard`。
+- `e2e/auth.setup.ts` — 登录 setup 接受角色对应的 `/dashboard`、`/workbench` 或强制改密 `/change-password`。
+
+### Release baseline 路径覆盖索引
+
+以下文件已在本阶段的核心 Lead 工作流变更历史中进入当前 main，登记在此用于 SPEC freshness 和发布审查索引；本 docs-only 更新未再次修改这些文件：
+
+- `scripts/check-workflows-yaml.sh`
+- `src/app/api/leads/[id]/contacts/[contactId]/route.ts`
+- `src/app/api/leads/[id]/contacts/route.ts`
+- `src/app/api/leads/[id]/stage/route.ts`
+- `src/lib/supabase-admin.ts`
+
+### 验证边界
+
+- PR #14 与 PR #15 的 pull request CI 和 main push CI 已通过。
+- 生产发布后仍须绑定新 BUILD_ID 完成 Timeline 编辑回读、First Contact milestone 幂等、Project Info 回读、重复导入、精确归档/恢复、API ownership 及角色矩阵 UAT。

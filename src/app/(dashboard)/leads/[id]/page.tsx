@@ -476,10 +476,10 @@ export default function LeadDetailPage() {
             )}
           </div>
           <p className="text-muted-foreground text-sm">
-            {fmtDubai(lead.created_at, { locale: t("locale.dateLocale") })} · {lead.source}
+            {fmtDubai(lead.created_at, { locale: t("locale.dateLocale") })} · {lead.source ? t(`sourceLabels.${lead.source}`) : t("sourceLabels.unknown")}
             {lead.rep_name && ` · ${lead.rep_name}`}
             {assignedToName && !lead.rep_name && ` · ${assignedToName}`}
-            {creatorName && ` · ${t("createdBy") || "Created by"}: ${creatorName}`}
+            {creatorName && ` · ${t("leadDetail.createdBy")}: ${creatorName}`}
           </p>
         </div>
         {(salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (

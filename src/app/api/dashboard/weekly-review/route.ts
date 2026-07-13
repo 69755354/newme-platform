@@ -172,7 +172,7 @@ export async function GET(req: NextRequest) {
     ]);
 
     const contactedDistinct = new Set((contactedData ?? []).map((r: any) => r.lead_id)).size;
-    const qualityJudgedDistinct = new Set((qualityEvents ?? []).map((r: any) => r.lead_id)).size;
+    const qualityJudgedDistinct = new Set((qualityEvents ?? []).map((r) => r.lead_id)).size;
 
     // L2 per-sales rollup
     const { data: profilesAll } = await supabase.from("profiles").select("id, full_name, role");
@@ -247,8 +247,8 @@ export async function GET(req: NextRequest) {
     for (const [uid, set] of contactedByOwner) { const row = ensure(uid); if (row) row.contacted = set.size; }
     const qualityByOwner = new Map<string, Set<string>>();
     for (const event of qualityEvents ?? []) {
-      const owner = (event as any).leads?.assigned_to as string | null;
-      const leadId = (event as any).lead_id as string | null;
+      const owner = event.leads?.assigned_to as string | null;
+      const leadId = event.lead_id as string | null;
       if (!owner || !leadId) continue;
       if (!qualityByOwner.has(owner)) qualityByOwner.set(owner, new Set());
       qualityByOwner.get(owner)!.add(leadId);
@@ -285,12 +285,12 @@ export async function GET(req: NextRequest) {
     for (const lead of assignedLeads ?? []) addReason(lead.id, "new");
     for (const log of contactedLogs ?? []) addReason(log.lead_id, "contacted");
     for (const lead of pendingQuality ?? []) addReason(lead.id, "pending_quality");
-    for (const event of qualityEvents ?? []) addReason((event as any).lead_id, "quality_judged");
+    for (const event of qualityEvents ?? []) addReason(event.lead_id, "quality_judged");
     for (const event of stageEvents ?? []) {
       const to = (event as any).event_data?.to;
       addReason((event as any).lead_id, to === "won" ? "won" : to === "lost" ? "lost" : "stage_advanced");
     }
-    for (const task of overdueTasks ?? []) addReason((task as any).lead_id, "overdue");
+    for (const task of overdueTasks ?? []) addReason(task.lead_id, "overdue");
 
     const relevantIds = Array.from(relevantLeadIds);
     const relevantResult = relevantIds.length > 0
@@ -304,7 +304,7 @@ export async function GET(req: NextRequest) {
       console.error("[weekly-review] L3 leads query error:", relevantResult.error);
     }
 
-    const assignedIds = [...new Set(relevantLeads.map((row: any) => row.assigned_to).filter(Boolean))];
+    const assignedIds = [...new Set(relevantLeads.map((row) => row.assigned_to).filter(Boolean))];
     const { data: ownerProfiles } = assignedIds.length > 0
       ? await supabase.from("profiles").select("id, full_name").in("id", assignedIds)
       : { data: [] };
@@ -323,17 +323,17 @@ export async function GET(req: NextRequest) {
       .gte("created_at", startIso).lt("created_at", endIso)
       .order("created_at", { ascending: false })).data ?? []) {
       if (!lastNoteByLead.has(log.lead_id)) {
-        lastNoteByLead.set(log.lead_id, (log as any).summary || (log as any).contact_result || "");
+        lastNoteByLead.set(log.lead_id, log.summary || log.contact_result || "");
       }
     }
 
     const overdueCountByLead = new Map<string, number>();
     const nextByLead = new Map<string, string>();
     for (const task of overdueTasks ?? []) {
-      const leadId = (task as any).lead_id as string | null;
+      const leadId = task.lead_id as string | null;
       if (!leadId) continue;
       overdueCountByLead.set(leadId, (overdueCountByLead.get(leadId) ?? 0) + 1);
-      const dueAt = (task as any).due_at as string;
+      const dueAt = task.due_at as string;
       const existing = nextByLead.get(leadId);
       if (!existing || dueAt < existing) nextByLead.set(leadId, dueAt);
     }
@@ -345,9 +345,9 @@ export async function GET(req: NextRequest) {
         .neq("status", "done")
         .order("due_at", { ascending: true });
       for (const task of openTasks ?? []) {
-        const leadId = (task as any).lead_id as string | null;
+        const leadId = task.lead_id as string | null;
         if (!leadId || nextByLead.has(leadId)) continue;
-        nextByLead.set(leadId, (task as any).due_at);
+        nextByLead.set(leadId, task.due_at);
       }
     }
 

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { canCompleteMilestone } from "@/lib/milestones";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
+import { isAssessedQuality, isCompleteContact } from "@/lib/first-contact-gate.mjs";
 
 export async function POST(
   req: NextRequest,
@@ -27,7 +28,7 @@ export async function POST(
   // 3. 校验 lead 存在
   const { data: lead, error: leadError } = await supabase
     .from("leads")
-    .select("id, current_milestone, final_status, assigned_to")
+    .select("id, current_milestone, final_status, assigned_to, quality")
     .eq("id", leadId)
     .single();
 
@@ -46,6 +47,28 @@ export async function POST(
       { error: "已成交/失败的线索不能继续推进里程碑" },
       { status: 400 }
     );
+  }
+
+  if (milestoneKey === "first_contact") {
+    const { data: contacts, error: contactsError } = await supabase
+      .from("follow_up_logs")
+      .select("contact_time, contact_result")
+      .eq("lead_id", leadId);
+
+    if (contactsError) {
+      return NextResponse.json(
+        { error: "查询联系记录失败", detail: contactsError.message },
+        { status: 500 }
+      );
+    }
+
+    const hasCompleteContact = (contacts ?? []).some(isCompleteContact);
+    if (!hasCompleteContact || !isAssessedQuality(lead.quality)) {
+      return NextResponse.json(
+        { error: "请先添加1条完整联系记录并评估线索质量" },
+        { status: 400 }
+      );
+    }
   }
 
   // 5. 查询已有的 milestones

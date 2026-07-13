@@ -49,7 +49,15 @@ BEGIN
     contact_user,
     NOW()
   )
-  ON CONFLICT (lead_id, milestone_key) DO NOTHING;
+  ON CONFLICT (lead_id, milestone_key) DO UPDATE
+  SET completed_at = EXCLUDED.completed_at,
+      completed_by = EXCLUDED.completed_by;
+
+  UPDATE public.leads
+  SET current_milestone = 'first_contact',
+      updated_at = NOW()
+  WHERE id = p_lead_id
+    AND (current_milestone IS NULL OR current_milestone = 'new');
 END;
 $$;
 
@@ -144,6 +152,49 @@ CREATE TRIGGER trg_enforce_first_contact_milestone
   BEFORE INSERT ON public.lead_milestones
   FOR EACH ROW
   EXECUTE FUNCTION public.trg_enforce_first_contact_milestone();
+
+CREATE OR REPLACE FUNCTION public.trg_prevent_first_contact_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $
+BEGIN
+  IF OLD.milestone_key = 'first_contact' THEN
+    RAISE EXCEPTION 'first_contact milestone is fact-driven and cannot be deleted';
+  END IF;
+  RETURN OLD;
+END;
+$;
+
+DROP TRIGGER IF EXISTS trg_prevent_first_contact_delete ON public.lead_milestones;
+CREATE TRIGGER trg_prevent_first_contact_delete
+  BEFORE DELETE ON public.lead_milestones
+  FOR EACH ROW
+  EXECUTE FUNCTION public.trg_prevent_first_contact_delete();
+
+-- Normalize every factually complete Lead and backfill missing First Contact rows.
+DO $
+DECLARE
+  ready_lead record;
+BEGIN
+  FOR ready_lead IN
+    SELECT l.id
+    FROM public.leads l
+    WHERE l.quality IN ('good', 'normal', 'poor')
+      AND EXISTS (
+        SELECT 1
+        FROM public.follow_up_logs f
+        WHERE f.lead_id = l.id
+          AND f.contact_time IS NOT NULL
+          AND f.contact_result IS NOT NULL
+          AND btrim(f.contact_result) <> ''
+      )
+  LOOP
+    PERFORM public.complete_first_contact_if_ready(ready_lead.id);
+  END LOOP;
+END;
+$;
 
 NOTIFY pgrst, 'reload schema';
 COMMIT;

@@ -37,10 +37,9 @@ test("database rejects direct First Contact milestone bypass", async () => {
 });
 
 
-test("legacy quality panel also unlocks after one complete contact", async () => {
-  const source = await read("src/app/(dashboard)/leads/[id]/LeadContactQualityPanel.tsx");
-  assert.match(source, /const contactsNeeded = 1;/);
-  assert.doesNotMatch(source, /appears when ≥3 contacts|contactCount >= 3/);
+test("Lead Detail renders only one First Contact workflow", async () => {
+  const source = await read("src/app/(dashboard)/leads/[id]/page.tsx");
+  assert.doesNotMatch(source, /<LeadContactQualityPanel/);
 });
 
 test("milestone mutation uses the owned server route", async () => {

@@ -223,7 +223,17 @@ export default function LeadSalesProcess({
   })();
 
   // ── Milestone checklist state (7-step, lock/unlock logic) ──
-  const firstContactReady = completeContactCount >= 1 && isAssessedQuality(lead.quality);
+  const historicalFirstContact = milestones.some(
+    (milestone) => milestone.completed && milestone.milestone_key === "first_contact",
+  ) && (
+    lead.stage !== "new"
+    || milestones.some(
+      (milestone) => milestone.completed && milestone.milestone_key !== "first_contact",
+    )
+  );
+  const firstContactReady = (
+    completeContactCount >= 1 && isAssessedQuality(lead.quality)
+  ) || historicalFirstContact;
   const completedKeys = milestones
     .filter((m) => m.completed && (m.milestone_key !== "first_contact" || firstContactReady))
     .map((m) => m.milestone_key);

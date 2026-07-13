@@ -764,6 +764,7 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 - `supabase/migrations/20260714000000_enforce_first_contact_milestone_gate.sql`
 - `supabase/migrations/20260714000001_normalize_lead_sources.sql`
 - `supabase/migrations/20260714000002_add_contact_idempotency.sql`
+- `supabase/migrations/20260714000003_atomic_stage_transition.sql`
 - `tests/security/dashboard-period-drilldown.test.mjs`
 - `tests/security/first-contact-milestone-gate.test.mjs`
 - `tests/security/i18n-uat-keys.test.mjs`

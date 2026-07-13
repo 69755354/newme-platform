@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
       const { data: updated, error: updateErr } = await supabaseAdmin
         .from("leads")
         .update({
-          source,
+          ...(source !== "unknown" ? { source } : {}),
           meta_campaign: leadData.meta_campaign,
           meta_click_id: leadData.meta_click_id,
           meta_ad_id: leadData.meta_ad_id,

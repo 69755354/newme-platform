@@ -149,7 +149,7 @@ export default function DashboardPage() {
   const [weeklyReviewData, setWeeklyReviewData] = useState<{
     l1: { new_leads: number; contacted_leads: number; quality_judged: number; stage_advanced: number; won: number; lost: number };
     l2: Array<{ user_id: string; full_name: string | null; assigned_leads: number; contacted: number; pending_quality: number; quality_judged: number; stage_advanced: number; won: number; lost: number; overdue_tasks: number }>;
-    l3_by_user: Record<string, Array<{ id: string; customer_name: string | null; assigned_to: string | null; owner_name: string | null; stage: string | null; last_contact_date: string | null; contact_count: number; quality: string | null; last_note: string | null; next_follow_up_at: string | null; period_reasons: string[]; overdue_count: number }>>;
+    l3_by_user: Record<string, Array<{ id: string; customer_name: string | null; assigned_to: string | null; owner_name: string | null; stage: string | null; last_contact_date: string | null; contact_count: number; quality: string | null; last_note: string | null; next_follow_up_at: string | null; period_reasons: string[]; overdue_count: number; stage_advance_count: number }>>;
     periodStart: string;
     periodEnd: string;
   } | null>(null);

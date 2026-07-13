@@ -38,7 +38,7 @@ test("L3 uses sales-facing labels instead of raw database enums", async () => {
 
 test("stage advancement drill-down explains every stage event including won and lost", async () => {
   const route = await read("src/app/api/dashboard/weekly-review/route.ts");
-  assert.match(route, /addReason\(event\.lead_id, "stage_advanced"\)/);
+  assert.match(route, /addReason\(leadId, "stage_advanced"\)/);
   assert.match(route, /stageAdvanceCountByLead/);
   assert.match(route, /stage_advance_count:/);
 });

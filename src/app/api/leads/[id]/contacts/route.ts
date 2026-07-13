@@ -1,4 +1,5 @@
 // RBAC: authenticated lead owner, admin, or boss
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
 import { createServerSupabase } from "@/lib/supabase-server";
@@ -45,12 +46,23 @@ export async function POST(
       return NextResponse.json({ error: "Forbidden: lead not assigned to you" }, { status: 403 });
     }
 
+    const contactFingerprint = createHash("sha256")
+      .update(JSON.stringify([
+        leadId,
+        profile.userId,
+        contactMethod,
+        contactTime.toISOString(),
+        contactResult,
+        summary,
+      ]))
+      .digest("hex");
+
     // follow_up_logs is intentionally immutable through client RLS. After the
     // explicit auth/ownership check above, this narrowly scoped server write
     // creates the contact and returns the persisted row for readback.
     const { data: contact, error: insertError } = await supabaseAdmin
       .from("follow_up_logs")
-      .insert({
+      .upsert({
         lead_id: leadId,
         user_id: profile.userId,
         contact_type: contactMethod,
@@ -58,7 +70,8 @@ export async function POST(
         contact_result: contactResult,
         summary: summary || null,
         no_answer: false,
-      })
+        contact_fingerprint: contactFingerprint,
+      }, { onConflict: "contact_fingerprint" })
       .select("id, lead_id, contact_type, contact_time, contact_result, summary, user_id, created_at")
       .single();
 

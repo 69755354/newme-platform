@@ -738,7 +738,7 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 
 - First Contact 只有在至少 1 条完整联系记录且已评估 Quality 后才可完成；3 次联系仅为销售建议。
 - Dashboard L1/L2/L3 使用同一时间范围和同一事件口径，L3 必须能解释 L2 的非零数字，并用管理者可读的业务文案展示。
-- Lead 来源统一使用 `ins`、`fb`、`show_room`；历史 `meta_ads` 和 `instagram` 数据归一为 `ins`，界面不再显示 `Instagram`。
+- Lead 来源存储值统一使用 `ins`、`fb`、`show_room`，界面显示为 `ins`、`FB`、`Show room`；历史 `meta_ads` 和 `instagram` 数据归一为 `ins`，界面不再显示 `Instagram`。
 
 ### 路径覆盖索引
 

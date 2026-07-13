@@ -59,3 +59,30 @@ test("all user-facing ins labels stay canonical", async () => {
   const dashboard = await read("src/app/(dashboard)/dashboard/page.tsx");
   assert.match(dashboard, /ins: t\("sourceLabels\.ins"\)/);
 });
+
+
+test("all source selectors and analytics use canonical source values", async () => {
+  for (const path of [
+    "src/app/(dashboard)/leads/new/page.tsx",
+    "src/components/QuickCreateLeadDialog.tsx",
+    "src/app/(dashboard)/leads/_utils/constants.ts",
+    "src/app/(dashboard)/dashboard/page.tsx",
+  ]) {
+    const source = await read(path);
+    assert.equal(source.includes('"meta_ads"'), false, `legacy source remains in ${path}`);
+  }
+
+  const ads = await read("src/app/api/dashboard/ads-roi/route.ts");
+  assert.match(ads, /\.in\("source", \["ins", "fb"\]\)/);
+  const analytics = await read("src/app/api/analytics/summary/route.ts");
+  assert.match(analytics, /\["ins", "fb"\]\.includes\(l\.source\)/);
+  const webhook = await read("src/app/api/leads/meta-capi/route.ts");
+  assert.doesNotMatch(webhook, /source = "meta_ads"|source = "instagram"/);
+});
+
+test("database rejects new legacy source values after normalization", async () => {
+  const migration = await read("supabase/migrations/20260714000001_normalize_lead_sources.sql");
+  assert.match(migration, /WHERE source IN \('meta_ads', 'instagram'\)/);
+  const constraint = migration.slice(migration.indexOf("ADD CONSTRAINT leads_source_check"));
+  assert.doesNotMatch(constraint, /'meta_ads'|'instagram'/);
+});

@@ -28,3 +28,14 @@ test("stage mutation forwards notes without bypassing the owned stage endpoint",
   assert.ok(source.includes("JSON.stringify({ stage, note: note.trim() })"));
   assert.equal(source.includes('.from("leads").update({ stage'), false);
 });
+
+
+test("stage update and audit note commit atomically", async () => {
+  const route = await read("src/app/api/leads/[id]/stage/route.ts");
+  const migration = await read("supabase/migrations/20260714000003_atomic_stage_transition.sql");
+  assert.match(route, /\.rpc\("transition_lead_stage"/);
+  assert.doesNotMatch(route, /eventLogged: !eventError/);
+  assert.match(migration, /UPDATE public\.leads[\s\S]*INSERT INTO public\.business_events/);
+  assert.match(migration, /FOR UPDATE/);
+  assert.match(migration, /auth\.uid\(\)/);
+});

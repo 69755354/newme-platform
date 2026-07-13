@@ -247,7 +247,13 @@ export async function GET(req: NextRequest) {
     for (const [uid, set] of contactedByOwner) { const row = ensure(uid); if (row) row.contacted = set.size; }
     const qualityByOwner = new Map<string, Set<string>>();
     for (const event of qualityEvents ?? []) {
-      const owner = event.leads?.assigned_to as string | null;
+      const relatedLead = event.leads as unknown as
+        | { assigned_to: string | null }
+        | Array<{ assigned_to: string | null }>
+        | null;
+      const owner = (Array.isArray(relatedLead)
+        ? relatedLead[0]?.assigned_to
+        : relatedLead?.assigned_to) ?? null;
       const leadId = event.lead_id as string | null;
       if (!owner || !leadId) continue;
       if (!qualityByOwner.has(owner)) qualityByOwner.set(owner, new Set());

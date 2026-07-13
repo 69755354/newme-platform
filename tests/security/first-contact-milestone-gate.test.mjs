@@ -52,3 +52,27 @@ test("Timeline falls back to the required contact result when notes are empty", 
   const source = await read("src/app/(dashboard)/leads/[id]/LeadTimeline.tsx");
   assert.match(source, /content: f\.summary \|\| f\.contact_result/);
 });
+
+
+test("database prevents deleting First Contact and synchronizes current milestone", async () => {
+  const migration = await read("supabase/migrations/20260714000000_enforce_first_contact_milestone_gate.sql");
+  assert.match(migration, /BEFORE DELETE ON public\.lead_milestones/);
+  assert.match(migration, /OLD\.milestone_key = 'first_contact'/);
+  assert.match(migration, /current_milestone = 'first_contact'/);
+});
+
+test("contact creation is idempotent across retries", async () => {
+  const route = await read("src/app/api/leads/[id]/contacts/route.ts");
+  const migration = await read("supabase/migrations/20260714000002_add_contact_idempotency.sql");
+  assert.match(route, /createHash\("sha256"\)/);
+  assert.match(route, /contact_fingerprint/);
+  assert.match(route, /onConflict: "contact_fingerprint"/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS contact_fingerprint TEXT/);
+  assert.match(migration, /UNIQUE.*contact_fingerprint/is);
+});
+
+test("milestone POST treats an existing milestone as idempotent success", async () => {
+  const route = await read("src/app/api/leads/[id]/milestone/route.ts");
+  assert.match(route, /duplicate: true/);
+  assert.match(route, /existingMilestone/);
+});

@@ -33,7 +33,8 @@ BEGIN
     RAISE EXCEPTION 'Forbidden: invalid CRM role';
   END IF;
 
-  IF p_next_stage NOT IN (
+  IF p_next_stage IS NULL
+     OR p_next_stage NOT IN (
     'new', 'contacted', 'requirement_confirmed', 'solution_submitted',
     'quotation_submitted', 'negotiation', 'pending_decision', 'won', 'lost'
   ) THEN
@@ -62,7 +63,8 @@ BEGIN
     RAISE EXCEPTION 'Lead stage changed concurrently';
   END IF;
 
-  IF current_lead.stage IN ('won', 'lost') THEN
+  IF current_lead.stage IN ('won', 'lost')
+     OR current_lead.final_status IN ('won', 'lost') THEN
     RAISE EXCEPTION 'Terminal Lead stage cannot be changed';
   END IF;
 

@@ -64,7 +64,7 @@ export async function GET() {
     const { data: metaLeads, error: leadsErr } = await supabase
       .from("leads")
       .select("id, campaign_name, stage, quotation_value, ai_quality, source, final_status")
-      .eq("source", "meta_ads")
+      .in("source", ["ins", "fb"])
       .eq("archived", false);
 
     if (leadsErr) throw leadsErr;

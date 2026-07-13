@@ -56,8 +56,8 @@ test("First Contact copy states one required contact and three recommended conta
 test("Tanya lead sources use one canonical label everywhere", () => {
   for (const lang of ["en", "zh"]) {
     assert.equal(translations[lang].sourceLabels.ins, "ins");
-    assert.equal(translations[lang].sourceLabels.fb, "fb");
-    assert.equal(translations[lang].sourceLabels.show_room, "show_room");
+    assert.equal(translations[lang].sourceLabels.fb, "FB");
+    assert.equal(translations[lang].sourceLabels.show_room, "Show room");
   }
 });
 

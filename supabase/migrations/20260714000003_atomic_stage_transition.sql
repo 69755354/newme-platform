@@ -17,6 +17,7 @@ DECLARE
   actor_role text;
   current_lead public.leads%ROWTYPE;
   updated_lead public.leads%ROWTYPE;
+  allowed_next_stage text;
   clean_note text := btrim(COALESCE(p_note, ''));
 BEGIN
   IF actor_id IS NULL THEN
@@ -61,11 +62,30 @@ BEGIN
     RAISE EXCEPTION 'Lead stage changed concurrently';
   END IF;
 
+  IF current_lead.stage IN ('won', 'lost') THEN
+    RAISE EXCEPTION 'Terminal Lead stage cannot be changed';
+  END IF;
+
+  allowed_next_stage := CASE current_lead.stage
+    WHEN 'new' THEN 'contacted'
+    WHEN 'contacted' THEN 'requirement_confirmed'
+    WHEN 'requirement_confirmed' THEN 'solution_submitted'
+    WHEN 'solution_submitted' THEN 'quotation_submitted'
+    WHEN 'quotation_submitted' THEN 'negotiation'
+    WHEN 'negotiation' THEN 'pending_decision'
+    ELSE NULL
+  END;
+
+  IF p_next_stage NOT IN ('won', 'lost')
+     AND p_next_stage IS DISTINCT FROM allowed_next_stage THEN
+    RAISE EXCEPTION 'Invalid stage transition from % to %', current_lead.stage, p_next_stage;
+  END IF;
+
   UPDATE public.leads
   SET stage = p_next_stage,
       final_status = CASE
         WHEN p_next_stage IN ('won', 'lost') THEN p_next_stage
-        ELSE final_status
+        ELSE NULL
       END,
       stage_changed_at = NOW(),
       updated_at = NOW()

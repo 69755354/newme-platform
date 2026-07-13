@@ -43,3 +43,11 @@ test("stage update and audit note commit atomically", async () => {
   assert.match(migration, /p_next_stage NOT IN/);
   assert.match(migration, /char_length\(clean_note\) > 1000/);
 });
+
+test("database RPC blocks skips, backwards moves, and terminal rollback", async () => {
+  const migration = await read("supabase/migrations/20260714000003_atomic_stage_transition.sql");
+  assert.match(migration, /current_lead\.stage IN \('won', 'lost'\)/);
+  assert.match(migration, /allowed_next_stage := CASE current_lead\.stage/);
+  assert.match(migration, /p_next_stage NOT IN \('won', 'lost'\)[\s\S]*p_next_stage IS DISTINCT FROM allowed_next_stage/);
+  assert.match(migration, /ELSE NULL/);
+});

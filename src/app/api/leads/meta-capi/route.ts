@@ -51,12 +51,14 @@ export async function POST(request: NextRequest) {
     const email = user_data?.em || user_data?.email || null;
     const location = user_data?.ct || user_data?.city || null;
 
-    // 判断来源: meta (Facebook) 或 instagram
+    // Persist only the canonical CRM source values.
     const platform = (custom_data?.platform || "").toLowerCase();
     const formName = (custom_data?.form_name || "").toLowerCase();
-    let source = "meta_ads";
+    let source = "unknown";
     if (platform === "instagram" || formName.includes("instagram")) {
-      source = "instagram";
+      source = "ins";
+    } else if (platform === "facebook" || formName.includes("facebook")) {
+      source = "fb";
     }
 
     const now = new Date().toISOString();

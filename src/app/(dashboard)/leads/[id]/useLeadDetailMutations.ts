@@ -538,12 +538,15 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     }
   }, [updating, leadId, t, lang, fetchData]);
 
-  // ─── Milestone toggle: complete the next pending milestone, or uncomplete a completed one ─
+  // ─── Milestone toggle: complete through the owned server route ─────────────
   const toggleMilestone = useCallback(async (milestoneKey: string, currentlyCompleted: boolean) => {
+    if (milestoneKey === "first_contact" && currentlyCompleted) {
+      toast.error(lang === "zh" ? "初次接触由联系记录和线索质量自动确认" : "First Contact is confirmed by contact and quality");
+      return;
+    }
+
     setUpdating(true);
-    const { data: { user } } = await supabase.auth.getUser();
     if (currentlyCompleted) {
-      // Uncomplete: delete the milestone row
       const { error: delErr } = await supabase
         .from("lead_milestones")
         .delete()
@@ -557,20 +560,19 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       }
       toast.success(lang === "zh" ? "里程碑已撤销" : "Milestone undone");
     } else {
-      // Complete: insert a new milestone row
-      const { error: insErr } = await supabase
-        .from("lead_milestones")
-        .insert({
-          lead_id: leadId,
-          milestone_key: milestoneKey,
-          completed_by: user?.id ?? null,
+      const response = await fetch("/api/leads/" + leadId + "/milestone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          milestoneKey,
           notes: lang === "zh"
-            ? `手动完成里程碑: ${MILESTONE_LABELS[milestoneKey] || milestoneKey} — ${MILESTONE_DESCRIPTIONS[milestoneKey]?.zh || ''}`
-            : `Manually completed milestone: ${MILESTONE_LABELS[milestoneKey] || milestoneKey} — ${MILESTONE_DESCRIPTIONS[milestoneKey]?.en || ''}`,
-        });
-      if (insErr) {
-        console.error("[LeadDetail] milestone complete failed");
-        toast.error(t("common.saveFailed"));
+            ? `手动完成里程碑: ${MILESTONE_LABELS[milestoneKey] || milestoneKey} — ${MILESTONE_DESCRIPTIONS[milestoneKey]?.zh || ""}`
+            : `Manually completed milestone: ${MILESTONE_LABELS[milestoneKey] || milestoneKey} — ${MILESTONE_DESCRIPTIONS[milestoneKey]?.en || ""}`,
+        }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(json?.error || t("common.saveFailed"));
         setUpdating(false);
         return;
       }
@@ -578,7 +580,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     }
     setUpdating(false);
     await fetchData();
-  }, [leadId, t, lang, fetchData]);
+  }, [supabase, leadId, t, lang, fetchData]);
 
   return {
     // Page-render state

@@ -1,0 +1,15 @@
+{
+  "task_id": "task_crm_online_closeout",
+  "description": "Close CRM production workflow gaps and verify the controlled release",
+  "allowed_files": [
+    "^\\.hermes/delegations/task_crm_online_closeout\\.json$",
+    "^supabase/migrations/20260714000003_atomic_stage_transition\\.sql$",
+    "^tests/security/stage-note-contract\\.test\\.mjs$"
+  ],
+  "forbidden_files": [
+    "^\\.env",
+    "^node_modules/",
+    "^scripts/deploy\\.sh$",
+    "^package-lock\\.json$"
+  ]
+}

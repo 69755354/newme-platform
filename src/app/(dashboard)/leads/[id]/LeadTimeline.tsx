@@ -145,7 +145,7 @@ export default function LeadTimeline({
     ...followUpLogs.map((f) => ({
       id: f.id,
       type: f.contact_type || "follow_up",
-      content: f.summary,
+      content: f.summary || f.contact_result || "",
       ai_generated: false,
       created_at: f.contact_time || f.created_at,
       _type: "followup" as const,

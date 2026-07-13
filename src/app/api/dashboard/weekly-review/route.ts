@@ -8,6 +8,7 @@ export interface WeeklyReviewRow {
   assigned_leads: number;
   contacted: number;
   pending_quality: number;
+  quality_judged: number;
   stage_advanced: number;
   won: number;
   lost: number;
@@ -25,6 +26,9 @@ export interface WeeklyReviewLeadRow {
   quality: string | null;
   last_note: string | null;
   next_follow_up_at: string | null;
+  period_reasons: string[];
+  overdue_count: number;
+  stage_advance_count: number;
 }
 
 type ReviewRange = "today" | "this_week" | "last_week" | "this_month" | "custom";
@@ -52,6 +56,12 @@ function joinedFullName(value: unknown): string | null {
   const profile = Array.isArray(value) ? value[0] : value;
   if (!profile || typeof profile !== "object" || !("full_name" in profile)) return null;
   return typeof profile.full_name === "string" ? profile.full_name : null;
+}
+
+function joinedAssignedTo(value: unknown): string | null {
+  const lead = Array.isArray(value) ? value[0] : value;
+  if (!lead || typeof lead !== "object" || !("assigned_to" in lead)) return null;
+  return typeof lead.assigned_to === "string" ? lead.assigned_to : null;
 }
 
 function gstDate(year: number, month: number, day: number): Date {
@@ -92,8 +102,8 @@ function periodBounds(range: ReviewRange, customStart?: string | null, customEnd
   }
   const start = parseGstDate(customStart ?? null);
   const end = parseGstDate(customEnd ?? null);
-  if (!start || !end || start >= end) return null;
-  return { start, end };
+  if (!start || !end || start > end) return null;
+  return { start, end: new Date(end.getTime() + 24 * 3600 * 1000) };
 }
 
 export async function GET(req: NextRequest) {
@@ -127,7 +137,7 @@ export async function GET(req: NextRequest) {
     const [
       { count: newLeadsCount },
       { data: contactedData },
-      { count: qualityJudgedCount },
+      { data: qualityEvents },
       { count: stageAdvancedCount },
       { count: wonCount },
       { count: lostCount },
@@ -143,9 +153,9 @@ export async function GET(req: NextRequest) {
         : supabase.from("follow_up_logs").select("lead_id"))
         .gte("created_at", startIso).lt("created_at", endIso),
       (isSalesScope
-        ? supabase.from("business_events").select("id, leads!inner(assigned_to)", { count: "exact", head: true })
+        ? supabase.from("business_events").select("lead_id, leads!inner(assigned_to)")
           .eq("leads.assigned_to", user.id)
-        : supabase.from("business_events").select("id", { count: "exact", head: true }))
+        : supabase.from("business_events").select("lead_id, leads!inner(assigned_to)"))
         .eq("event_type", "quality_checked")
         .gte("created_at", startIso).lt("created_at", endIso),
       (isSalesScope
@@ -169,9 +179,12 @@ export async function GET(req: NextRequest) {
     ]);
 
     const contactedDistinct = new Set((contactedData ?? []).map((r: any) => r.lead_id)).size;
+    const qualityJudgedDistinct = new Set((qualityEvents ?? []).map((r) => r.lead_id)).size;
 
     // L2 per-sales rollup
-    const { data: profilesAll } = await supabase.from("profiles").select("id, full_name, role");
+    let profilesQuery = supabase.from("profiles").select("id, full_name, role");
+    if (isSalesScope) profilesQuery = profilesQuery.eq("id", user.id);
+    const { data: profilesAll } = await profilesQuery;
     const salesMap = new Map<string, string>();
     const roleMap = new Map<string, string>();
     for (const p of profilesAll ?? []) {
@@ -184,21 +197,32 @@ export async function GET(req: NextRequest) {
     if (isSalesScope) assignedLeadsQuery = assignedLeadsQuery.eq("assigned_to", user.id);
     const { data: assignedLeads } = await assignedLeadsQuery;
 
-    const { data: contactedLogs } = await supabase.from("follow_up_logs")
+    let contactedLogsQuery = supabase.from("follow_up_logs")
       .select("lead_id, leads!inner(assigned_to)")
       .gte("created_at", startIso).lt("created_at", endIso);
+    if (isSalesScope) contactedLogsQuery = contactedLogsQuery.eq("leads.assigned_to", user.id);
+    const { data: contactedLogs } = await contactedLogsQuery;
 
-    const { data: pendingQuality } = await supabase.from("leads").select("assigned_to")
+    let pendingQualityQuery = supabase.from("leads").select("id, assigned_to")
       .eq("quality", "pending").not("assigned_to", "is", null)
       .gte("created_at", startIso).lt("created_at", endIso);
+    if (isSalesScope) pendingQualityQuery = pendingQualityQuery.eq("assigned_to", user.id);
+    const { data: pendingQuality } = await pendingQualityQuery;
 
-    const { data: stageEvents } = await supabase.from("business_events").select("event_data, user_id, lead_id")
-      .in("event_type", ["stage_change", "transfer", "owner_change"])
+    let stageEventsQuery = supabase.from("business_events")
+      .select("event_data, user_id, lead_id, leads!inner(assigned_to)")
+      .eq("event_type", "stage_change")
       .gte("created_at", startIso).lt("created_at", endIso);
+    if (isSalesScope) stageEventsQuery = stageEventsQuery.eq("leads.assigned_to", user.id);
+    const { data: stageEvents } = await stageEventsQuery;
 
-    const { data: overdueTasks } = await supabase.from("tasks").select("assignee_id")
-      .lt("due_at", new Date().toISOString()).neq("status", "done").not("assignee_id", "is", null)
-      .gte("created_at", startIso).lt("created_at", endIso);
+    const overdueEndIso = new Date(Math.min(end.getTime(), Date.now())).toISOString();
+    let overdueTasksQuery = supabase.from("tasks")
+      .select("lead_id, due_at, leads!inner(assigned_to)")
+      .neq("status", "done").not("lead_id", "is", null)
+      .gte("due_at", startIso).lt("due_at", overdueEndIso);
+    if (isSalesScope) overdueTasksQuery = overdueTasksQuery.eq("leads.assigned_to", user.id);
+    const { data: overdueTasks } = await overdueTasksQuery;
 
     // Attribute stage outcomes to the lead owner, not the user who happened to
     // perform the update (for example an admin assisting a salesperson).
@@ -224,7 +248,7 @@ export async function GET(req: NextRequest) {
       if (!perUser.has(uid)) {
         perUser.set(uid, {
           user_id: uid, full_name: salesMap.get(uid) ?? null,
-          assigned_leads: 0, contacted: 0, pending_quality: 0,
+          assigned_leads: 0, contacted: 0, pending_quality: 0, quality_judged: 0,
           stage_advanced: 0, won: 0, lost: 0, overdue_tasks: 0,
         });
       }
@@ -241,6 +265,15 @@ export async function GET(req: NextRequest) {
       contactedByOwner.get(owner)!.add(log.lead_id);
     }
     for (const [uid, set] of contactedByOwner) { const row = ensure(uid); if (row) row.contacted = set.size; }
+    const qualityByOwner = new Map<string, Set<string>>();
+    for (const event of qualityEvents ?? []) {
+      const owner = joinedAssignedTo(event.leads);
+      const leadId = event.lead_id as string | null;
+      if (!owner || !leadId) continue;
+      if (!qualityByOwner.has(owner)) qualityByOwner.set(owner, new Set());
+      qualityByOwner.get(owner)!.add(leadId);
+    }
+    for (const [uid, set] of qualityByOwner) { const row = ensure(uid); if (row) row.quality_judged = set.size; }
     for (const r of pendingQuality ?? []) { if (r.assigned_to) { const row = ensure(r.assigned_to); if (row) row.pending_quality++; } }
     for (const ev of stageEvents ?? []) {
       const owner = stageOwnerByLead.get((ev as any).lead_id as string);
@@ -252,121 +285,129 @@ export async function GET(req: NextRequest) {
       if (to === "won") row.won++;
       else if (to === "lost") row.lost++;
     }
-    for (const t of overdueTasks ?? []) { if (t.assignee_id) { const row = ensure(t.assignee_id); if (row) row.overdue_tasks++; } }
+    const overdueByOwner = new Map<string, number>();
+    for (const task of overdueTasks ?? []) {
+      const owner = joinedAssignedTo(task.leads);
+      if (owner) overdueByOwner.set(owner, (overdueByOwner.get(owner) ?? 0) + 1);
+    }
+    for (const [owner, count] of overdueByOwner) {
+      const row = ensure(owner);
+      if (row) row.overdue_tasks = count;
+    }
 
     const l2 = Array.from(perUser.values())
       .filter(r => true) // Show all sales/boss even with 0 activity
       .sort((a, b) => b.stage_advanced - a.stage_advanced);
 
-    // L3: leads created during the period, grouped by owner.
-    let leadsAssignedQuery = supabase.from("leads")
-      .select("id, customer_name, assigned_to, stage, last_contact_date, quality")
-      .gte("created_at", startIso).lt("created_at", endIso)
-      .limit(500);
-    if (isSalesScope) leadsAssignedQuery = leadsAssignedQuery.eq("assigned_to", user.id);
-    const { data: leadsAssigned, error: leadsAssignedErr } = await leadsAssignedQuery;
-    if (leadsAssignedErr) {
-      console.error("[weekly-review] leads query error:", leadsAssignedErr);
+    // L3 is built from the same period facts as L2 so every non-zero metric
+    // can be explained by the expanded Lead rows.
+    const relevantLeadIds = new Set<string>();
+    const reasonsByLead = new Map<string, Set<string>>();
+    const addReason = (leadId: string | null | undefined, reason: string) => {
+      if (!leadId) return;
+      relevantLeadIds.add(leadId);
+      if (!reasonsByLead.has(leadId)) reasonsByLead.set(leadId, new Set());
+      reasonsByLead.get(leadId)!.add(reason);
+    };
+
+    for (const lead of assignedLeads ?? []) addReason(lead.id, "new");
+    for (const log of contactedLogs ?? []) addReason(log.lead_id, "contacted");
+    for (const lead of pendingQuality ?? []) addReason(lead.id, "pending_quality");
+    for (const event of qualityEvents ?? []) addReason(event.lead_id, "quality_judged");
+    const stageAdvanceCountByLead = new Map<string, number>();
+    for (const event of stageEvents ?? []) {
+      const leadId = event.lead_id as string | null;
+      const to = (event as any).event_data?.to;
+      addReason(leadId, "stage_advanced");
+      if (leadId) {
+        stageAdvanceCountByLead.set(leadId, (stageAdvanceCountByLead.get(leadId) ?? 0) + 1);
+      }
+      if (to === "won" || to === "lost") addReason(leadId, to);
+    }
+    for (const task of overdueTasks ?? []) addReason(task.lead_id, "overdue");
+
+    const relevantIds = Array.from(relevantLeadIds);
+    const relevantResult = relevantIds.length > 0
+      ? await supabase.from("leads")
+          .select("id, customer_name, assigned_to, stage, last_contact_date, quality")
+          .in("id", relevantIds)
+          .limit(500)
+      : { data: [], error: null };
+    const relevantLeads = relevantResult.data ?? [];
+    if (relevantResult.error) {
+      console.error("[weekly-review] L3 leads query error:", relevantResult.error);
     }
 
-    // Resolve owner full_name for each assigned_to via separate profiles query.
-    const assignedIds = [...new Set((leadsAssigned ?? []).map((r: any) => r.assigned_to).filter(Boolean))];
+    const assignedIds = [...new Set(relevantLeads.map((row) => row.assigned_to).filter(Boolean))];
     const { data: ownerProfiles } = assignedIds.length > 0
       ? await supabase.from("profiles").select("id, full_name").in("id", assignedIds)
       : { data: [] };
     const ownerNameMap = new Map<string, string>();
-    for (const p of ownerProfiles ?? []) ownerNameMap.set(p.id, p.full_name ?? "");
+    for (const profile of ownerProfiles ?? []) ownerNameMap.set(profile.id, profile.full_name ?? "");
 
     const contactCountByLead = new Map<string, number>();
     for (const log of contactedLogs ?? []) {
       contactCountByLead.set(log.lead_id, (contactCountByLead.get(log.lead_id) ?? 0) + 1);
     }
+
     const lastNoteByLead = new Map<string, string>();
     for (const log of (await supabase.from("follow_up_logs")
-      .select("lead_id, summary")
+      .select("lead_id, summary, contact_result")
+      .in("lead_id", relevantIds.length > 0 ? relevantIds : ["00000000-0000-0000-0000-000000000000"])
       .gte("created_at", startIso).lt("created_at", endIso)
       .order("created_at", { ascending: false })).data ?? []) {
       if (!lastNoteByLead.has(log.lead_id)) {
-        lastNoteByLead.set(log.lead_id, (log as any).summary ?? "");
+        lastNoteByLead.set(log.lead_id, log.summary || log.contact_result || "");
       }
     }
+
+    const overdueCountByLead = new Map<string, number>();
     const nextByLead = new Map<string, string>();
-    for (const t of (await supabase.from("tasks")
-      .select("lead_id, due_at")
-      .gt("due_at", new Date().toISOString())
-      .neq("status", "done")
-      .order("due_at", { ascending: true })).data ?? []) {
-      if (!nextByLead.has((t as any).lead_id)) nextByLead.set((t as any).lead_id, t.due_at);
+    for (const task of overdueTasks ?? []) {
+      const leadId = task.lead_id as string | null;
+      if (!leadId) continue;
+      overdueCountByLead.set(leadId, (overdueCountByLead.get(leadId) ?? 0) + 1);
+      const dueAt = task.due_at as string;
+      const existing = nextByLead.get(leadId);
+      if (!existing || dueAt < existing) nextByLead.set(leadId, dueAt);
+    }
+
+    if (relevantIds.length > 0) {
+      const { data: openTasks } = await supabase.from("tasks")
+        .select("lead_id, due_at")
+        .in("lead_id", relevantIds)
+        .neq("status", "done")
+        .order("due_at", { ascending: true });
+      for (const task of openTasks ?? []) {
+        const leadId = task.lead_id as string | null;
+        if (!leadId || nextByLead.has(leadId)) continue;
+        nextByLead.set(leadId, task.due_at);
+      }
     }
 
     const l3_by_user: Record<string, WeeklyReviewLeadRow[]> = {};
-    for (const row of leadsAssigned ?? []) {
-      const owner = row.assigned_to ?? "_unassigned";
+    for (const lead of relevantLeads) {
+      const owner = lead.assigned_to as string | null;
+      if (!owner || !isSalesUser(owner)) continue;
       if (!l3_by_user[owner]) l3_by_user[owner] = [];
-      l3_by_user[owner].push({
-        id: row.id,
-        customer_name: row.customer_name ?? null,
-        assigned_to: row.assigned_to,
-        owner_name: ownerNameMap.get(row.assigned_to) ?? null,
-        stage: row.stage ?? null,
-        last_contact_date: row.last_contact_date ?? null,
-        contact_count: contactCountByLead.get(row.id) ?? 0,
-        quality: row.quality ?? null,
-        last_note: lastNoteByLead.get(row.id) ?? null,
-        next_follow_up_at: nextByLead.get(row.id) ?? null,
-      });
-    }
-    for (const k of Object.keys(l3_by_user)) {
-      l3_by_user[k].sort((a, b) => (b.contact_count - a.contact_count));
-    }
-
-    // Also group stage-changed leads by their sales owner so L2 and L3 use
-    // the same attribution model.
-    const leadById = new Map<string, any>();
-    for (const lead of leadsAssigned ?? []) leadById.set(lead.id, lead);
-
-    // Fetch leads involved in stage changes that are NOT in leadsAssigned
-    // (leads created outside the period but with stage changes inside it).
-    const missingLeadIds = [...new Set(
-      (stageEvents ?? [])
-        .map((ev: any) => ev.lead_id as string | null)
-        .filter((lid): lid is string => !!lid && !leadById.has(lid))
-    )];
-    if (missingLeadIds.length > 0) {
-      const { data: missingLeads } = await supabase.from("leads")
-        .select("id, customer_name, assigned_to, stage, last_contact_date, quality")
-        .in("id", missingLeadIds)
-        .limit(100);
-      for (const ml of missingLeads ?? []) {
-        leadById.set(ml.id, ml);
-        if (ml.assigned_to && !ownerNameMap.has(ml.assigned_to)) {
-          ownerNameMap.set(ml.assigned_to, null as any); // placeholder; name lookup will be null
-        }
-      }
-    }
-
-    for (const ev of stageEvents ?? []) {
-      const lid = (ev as any).lead_id as string | null;
-      if (!lid) continue;
-      const lead = leadById.get(lid);
-      const owner = lead?.assigned_to as string | null;
-      if (!lead || !owner || !isSalesUser(owner)) continue;
-      if (!l3_by_user[owner]) l3_by_user[owner] = [];
-      // Avoid duplicate: only add if not already under this owner.
-      const already = l3_by_user[owner].some((l: any) => l.id === lead.id);
-      if (already) continue;
       l3_by_user[owner].push({
         id: lead.id,
         customer_name: lead.customer_name ?? null,
-        assigned_to: lead.assigned_to,
-        owner_name: ownerNameMap.get(lead.assigned_to) ?? null,
+        assigned_to: owner,
+        owner_name: ownerNameMap.get(owner) ?? null,
         stage: lead.stage ?? null,
         last_contact_date: lead.last_contact_date ?? null,
         contact_count: contactCountByLead.get(lead.id) ?? 0,
         quality: lead.quality ?? null,
         last_note: lastNoteByLead.get(lead.id) ?? null,
         next_follow_up_at: nextByLead.get(lead.id) ?? null,
+        period_reasons: Array.from(reasonsByLead.get(lead.id) ?? []),
+        overdue_count: overdueCountByLead.get(lead.id) ?? 0,
+        stage_advance_count: stageAdvanceCountByLead.get(lead.id) ?? 0,
       });
+    }
+    for (const rows of Object.values(l3_by_user)) {
+      rows.sort((a, b) => b.overdue_count - a.overdue_count || b.contact_count - a.contact_count);
     }
 
     const responseL2 = isSalesScope
@@ -384,7 +425,7 @@ export async function GET(req: NextRequest) {
       l1: {
         new_leads: isSalesScope ? personal?.assigned_leads ?? 0 : newLeadsCount ?? 0,
         contacted_leads: isSalesScope ? personal?.contacted ?? 0 : contactedDistinct,
-        quality_judged: qualityJudgedCount ?? 0,
+        quality_judged: qualityJudgedDistinct,
         stage_advanced: isSalesScope ? personal?.stage_advanced ?? 0 : stageAdvancedCount ?? 0,
         won: isSalesScope ? personal?.won ?? 0 : wonCount ?? 0,
         lost: isSalesScope ? personal?.lost ?? 0 : lostCount ?? 0,

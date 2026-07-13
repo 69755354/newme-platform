@@ -9,7 +9,8 @@ test("stage API validates and records optional stage context", async () => {
   assert.ok(source.includes('const note = String(body?.note ?? "").trim()'));
   assert.ok(source.includes("note.length > 1000"));
   assert.ok(source.includes("Stage note must be 1000 characters or fewer"));
-  assert.ok(source.includes("event_data: { from: lead.stage, to: stage, ...(note ? { note } : {}) }"));
+  const migration = await read("supabase/migrations/20260714000003_atomic_stage_transition.sql");
+  assert.ok(migration.includes("jsonb_build_object('from', current_lead.stage, 'to', p_next_stage)"));
 });
 
 test("sales process sends the same note for normal, won, and lost transitions", async () => {
@@ -27,4 +28,28 @@ test("stage mutation forwards notes without bypassing the owned stage endpoint",
   assert.ok(source.includes('updateStage = useCallback(async (stage: string, note = "")'));
   assert.ok(source.includes("JSON.stringify({ stage, note: note.trim() })"));
   assert.equal(source.includes('.from("leads").update({ stage'), false);
+});
+
+
+test("stage update and audit note commit atomically", async () => {
+  const route = await read("src/app/api/leads/[id]/stage/route.ts");
+  const migration = await read("supabase/migrations/20260714000003_atomic_stage_transition.sql");
+  assert.match(route, /\.rpc\("transition_lead_stage"/);
+  assert.doesNotMatch(route, /eventLogged: !eventError/);
+  assert.match(migration, /UPDATE public\.leads[\s\S]*INSERT INTO public\.business_events/);
+  assert.match(migration, /FOR UPDATE/);
+  assert.match(migration, /auth\.uid\(\)/);
+  assert.match(migration, /actor_role IS NULL/);
+  assert.match(migration, /p_next_stage NOT IN/);
+  assert.match(migration, /char_length\(clean_note\) > 1000/);
+});
+
+test("database RPC blocks skips, backwards moves, and terminal rollback", async () => {
+  const migration = await read("supabase/migrations/20260714000003_atomic_stage_transition.sql");
+  assert.match(migration, /p_next_stage IS NULL\s+OR p_next_stage NOT IN/);
+  assert.match(migration, /current_lead\.stage IN \('won', 'lost'\)/);
+  assert.match(migration, /current_lead\.final_status IN \('won', 'lost'\)/);
+  assert.match(migration, /allowed_next_stage := CASE current_lead\.stage/);
+  assert.match(migration, /p_next_stage NOT IN \('won', 'lost'\)[\s\S]*p_next_stage IS DISTINCT FROM allowed_next_stage/);
+  assert.match(migration, /ELSE NULL/);
 });

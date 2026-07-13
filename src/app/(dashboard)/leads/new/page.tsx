@@ -147,7 +147,9 @@ export default function NewLeadPage() {
               >
                 <option value="offline">{t("sourceLabels.offline")}</option>
                 <option value="whatsapp">{t("sourceLabels.whatsapp")}</option>
-                <option value="meta_ads">{t("sourceLabels.meta_ads")}</option>
+                <option value="ins">{t("sourceLabels.ins")}</option>
+                <option value="fb">{t("sourceLabels.fb")}</option>
+                <option value="show_room">{t("sourceLabels.show_room")}</option>
                 <option value="website">{t("sourceLabels.website")}</option>
                 <option value="referral">{t("sourceLabels.referral")}</option>
                 <option value="other">{t("sourceLabels.other")}</option>

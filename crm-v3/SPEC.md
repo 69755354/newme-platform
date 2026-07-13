@@ -708,7 +708,7 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 
 ### 本轮行为变更
 
-- `src/app/(dashboard)/leads/[id]/page.tsx` — Lead Detail 页头通过 `sourceLabels` 显示来源，存储值 `ins` 显示为 `Instagram`；创建人使用 `leadDetail.createdBy` 命名空间。
+- `src/app/(dashboard)/leads/[id]/page.tsx` — Lead Detail 页头通过 `sourceLabels` 显示来源，存储值 `ins` 全站统一显示为 `ins`；创建人使用 `leadDetail.createdBy` 命名空间。
 - `src/lib/i18n/translations.ts` — 补齐 Lead Detail 中英文键，并将 First Contact 文案统一为“至少 1 条完整联系记录 + 已选 Quality；3 次联系仅为建议”。
 - `tests/security/i18n-uat-keys.test.mjs` — 回归检查 Lead Detail 字面量翻译键、中英文 First Contact 规则，以及 `ins` / `fb` / `show_room` 来源标签。
 - `e2e/full-audit.spec.ts` — 销售登录验收目标更新为 `/workbench`，管理角色仍进入 `/dashboard`。
@@ -728,3 +728,45 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 
 - PR #14 与 PR #15 的 pull request CI 和 main push CI 已通过。
 - 生产发布后仍须绑定新 BUILD_ID 完成 Timeline 编辑回读、First Contact milestone 幂等、Project Info 回读、重复导入、精确归档/恢复、API ownership 及角色矩阵 UAT。
+
+
+## 九、线上收口修复 — 2026-07-14
+
+本节覆盖 PR #17 的生产问题修复。完成标准是代码门禁、数据库 migration、生产部署和真实 UI 回读全部通过。
+
+### 业务规则
+
+- First Contact 只有在至少 1 条完整联系记录且已评估 Quality 后才可完成；3 次联系仅为销售建议。
+- Dashboard L1/L2/L3 使用同一时间范围和同一事件口径，L3 必须能解释 L2 的非零数字，并用管理者可读的业务文案展示。
+- Lead 来源存储值统一使用 `ins`、`fb`、`show_room`，界面显示为 `ins`、`FB`、`Show room`；历史 `meta_ads` 和 `instagram` 数据归一为 `ins`，界面不再显示 `Instagram`。
+
+### 路径覆盖索引
+
+- `src/app/(dashboard)/analytics/_components/AdsROI.tsx`
+- `src/app/(dashboard)/analytics/_components/LeadSources.tsx`
+- `src/app/(dashboard)/analytics/_components/TeamPerformance.tsx`
+- `src/app/(dashboard)/dashboard/_components/WeeklyReview.tsx`
+- `src/app/(dashboard)/dashboard/page.tsx`
+- `src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx`
+- `src/app/(dashboard)/leads/[id]/LeadTimeline.tsx`
+- `src/app/(dashboard)/leads/[id]/page.tsx`
+- `src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts`
+- `src/app/(dashboard)/leads/_utils/constants.ts`
+- `src/app/(dashboard)/leads/new/page.tsx`
+- `src/app/api/analytics/summary/route.ts`
+- `src/app/api/dashboard/ads-roi/route.ts`
+- `src/app/api/dashboard/lead-sources/route.ts`
+- `src/app/api/dashboard/weekly-review/route.ts`
+- `src/app/api/leads/[id]/milestone/route.ts`
+- `src/app/api/leads/meta-capi/route.ts`
+- `src/components/QuickCreateLeadDialog.tsx`
+- `src/lib/i18n/translations.ts`
+- `supabase/migrations/20260714000000_enforce_first_contact_milestone_gate.sql`
+- `supabase/migrations/20260714000001_normalize_lead_sources.sql`
+- `supabase/migrations/20260714000002_add_contact_idempotency.sql`
+- `supabase/migrations/20260714000003_atomic_stage_transition.sql`
+- `tests/security/dashboard-period-drilldown.test.mjs`
+- `tests/security/first-contact-milestone-gate.test.mjs`
+- `tests/security/i18n-uat-keys.test.mjs`
+- `tests/security/lead-source-taxonomy.test.mjs`
+- `tests/security/weekly-review-attribution.test.mjs`

@@ -44,6 +44,14 @@ interface CampaignRow {
   roas: number;
 }
 
+const SOURCE_LABEL: Record<string, string> = {
+  ins: "ins",
+  fb: "fb",
+  show_room: "show_room",
+  meta_ads: "ins",
+  instagram: "ins",
+};
+
 interface SourceQualityRow {
   source: string;
   total: number;
@@ -240,7 +248,7 @@ export default function AdsROI() {
             <TableBody>
               {source_quality.map((row) => (
                 <TableRow key={row.source}>
-                  <TableCell className="font-medium">{row.source}</TableCell>
+                  <TableCell className="font-medium">{SOURCE_LABEL[row.source] || row.source}</TableCell>
                   <TableCell className="text-right">{row.total}</TableCell>
                   <TableCell className="text-right text-emerald-400">
                     {row.good}

@@ -6,7 +6,7 @@ import { createServerSupabase } from "@/lib/supabase-server";
  * GET /api/dashboard/lead-sources
  *
  * C4 — Lead source / asset analysis.
- * Aggregates, per lead `source` (meta_ads/whatsapp/website/offline/referral/other):
+ * Aggregates, per lead `source` (ins/fb/show_room/whatsapp/website/offline/referral/other):
  *   - count, won, conversionRate, revenue
  *   - quality distribution via `lead_status` (hot/warm/cold/dormant + unknown)
  *   - sales assignment: how many leads each rep owns, per source
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Per-source aggregation ──
-    const SOURCE_ORDER = ["meta_ads", "whatsapp", "website", "offline", "referral", "other"];
+    const SOURCE_ORDER = ["ins", "fb", "show_room", "whatsapp", "website", "offline", "referral", "other"];
     const srcAgg: Record<string, {
       count: number; won: number; revenue: number;
       quality: Record<string, number>;

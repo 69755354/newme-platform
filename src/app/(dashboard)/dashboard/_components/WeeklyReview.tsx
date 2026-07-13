@@ -32,7 +32,7 @@ interface PeriodL1 {
 }
 interface PeriodL2Row {
   user_id: string; full_name: string | null;
-  assigned_leads: number; contacted: number; pending_quality: number;
+  assigned_leads: number; contacted: number; pending_quality: number; quality_judged: number;
   stage_advanced: number; won: number; lost: number; overdue_tasks: number;
 }
 interface PeriodL3Row {
@@ -41,6 +41,7 @@ interface PeriodL3Row {
   stage: string | null; last_contact_date: string | null;
   contact_count: number; quality: string | null;
   last_note: string | null; next_follow_up_at: string | null;
+  period_reasons: string[]; overdue_count: number; stage_advance_count: number;
 }
 
 interface FinanceStats {
@@ -409,7 +410,7 @@ function WeeklyReviewPeriod({
   const metricToL2Key: Record<MetricKey, keyof PeriodL2Row> = {
     new_leads: "assigned_leads",
     contacted: "contacted",
-    quality: "pending_quality",
+    quality: "quality_judged",
     stage_advanced: "stage_advanced",
     won: "won",
     lost: "lost",
@@ -418,7 +419,45 @@ function WeeklyReviewPeriod({
   const l1Empty = !l1 || (l1.new_leads === 0 && l1.contacted_leads === 0
     && l1.quality_judged === 0 && l1.stage_advanced === 0 && l1.won === 0 && l1.lost === 0);
   const l2Empty = l2.length === 0;
-  const fmtDate = (iso?: string | null) => iso ? iso.slice(0, 10) : "—";
+  const formatDubaiDate = (iso?: string | null) => {
+    if (!iso) return "";
+    const parts = new Intl.DateTimeFormat("en", {
+      timeZone: "Asia/Dubai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date(iso));
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((value) => value.type === type)?.value ?? "";
+    return `${part("year")}-${part("month")}-${part("day")}`;
+  };
+  const endExclusive = periodEnd
+    ? new Date(new Date(periodEnd).getTime() - 1).toISOString()
+    : null;
+  const stageLabel = (stage?: string | null) => {
+    const labels: Record<string, [string, string]> = {
+      new: ["新线索", "New"],
+      contacted: ["已联系", "Contacted"],
+      requirement_confirmed: ["需求已确认", "Requirements confirmed"],
+      solution_submitted: ["方案已提交", "Solution submitted"],
+      quotation_submitted: ["报价已提交", "Quotation submitted"],
+      negotiation: ["谈判中", "Negotiation"],
+      pending_decision: ["待决定", "Pending decision"],
+      won: ["赢单", "Won"],
+      lost: ["输单", "Lost"],
+    };
+    const value = stage ? labels[stage] : null;
+    return value ? value[locale === "zh" ? 0 : 1] : "";
+  };
+  const qualityLabel = (quality?: string | null) => {
+    const labels: Record<string, [string, string]> = {
+      good: ["优质", "Good"],
+      normal: ["一般", "Normal"],
+      poor: ["差", "Poor"],
+      pending: ["待评估", "Not assessed"],
+    };
+    const value = quality ? labels[quality] : labels.pending;
+    return value[locale === "zh" ? 0 : 1];
+  };
 
   const metric = (label: string, value: number | string, mk?: MetricKey) => {
     const isActive = mk != null && metricFilter === mk;
@@ -457,7 +496,7 @@ function WeeklyReviewPeriod({
           <div className="flex flex-wrap items-center gap-2">
             {(periodStart || periodEnd) && (
               <span className="text-xs text-muted-foreground">
-                {periodStart ? fmtDate(periodStart) : "—"} → {periodEnd ? fmtDate(periodEnd) : "—"}
+                {periodStart ? formatDubaiDate(periodStart) : ""} → {endExclusive ? formatDubaiDate(endExclusive) : ""}
               </span>
             )}
             <div className="flex gap-1 rounded-lg border border-border/50 p-1">
@@ -517,7 +556,7 @@ function WeeklyReviewPeriod({
                   <th className="py-2 pr-3 font-medium">{t("销售", "Sales")}</th>
                   <th className="px-3 py-2 font-medium">{t("新线索", "New leads")}</th>
                   <th className="px-3 py-2 font-medium">{t("已联系", "Contacted")}</th>
-                  <th className="px-3 py-2 font-medium">{t("待质检", "Pending QC")}</th>
+                  <th className="px-3 py-2 font-medium">{t("已质检", "Quality assessed")}</th>
                   <th className="px-3 py-2 font-medium">{t("推进", "Advanced")}</th>
                   <th className="px-3 py-2 font-medium">{t("赢单", "Won")}</th>
                   <th className="px-3 py-2 font-medium">{t("输单", "Lost")}</th>
@@ -531,7 +570,18 @@ function WeeklyReviewPeriod({
                   : l2
                 ).map(row => {
                   const isOpen = expanded.has(row.user_id);
-                  const leads = l3_by_user[row.user_id] ?? [];
+                  const metricReason: Record<MetricKey, string> = {
+                    new_leads: "new",
+                    contacted: "contacted",
+                    quality: "quality_judged",
+                    stage_advanced: "stage_advanced",
+                    won: "won",
+                    lost: "lost",
+                  };
+                  const allLeads = l3_by_user[row.user_id] ?? [];
+                  const leads = metricFilter
+                    ? allLeads.filter((lead) => lead.period_reasons.includes(metricReason[metricFilter]))
+                    : allLeads;
                   return (
                     <Fragment key={row.user_id}>
                       <tr
@@ -544,7 +594,7 @@ function WeeklyReviewPeriod({
                         </td>
                         <td className="px-3 py-2">{row.assigned_leads}</td>
                         <td className="px-3 py-2">{row.contacted}</td>
-                        <td className="px-3 py-2">{row.pending_quality}</td>
+                        <td className="px-3 py-2">{row.quality_judged}</td>
                         <td className="px-3 py-2">{row.stage_advanced}</td>
                         <td className="px-3 py-2 text-emerald-400">{row.won}</td>
                         <td className="px-3 py-2 text-muted-foreground">{row.lost}</td>
@@ -563,23 +613,36 @@ function WeeklyReviewPeriod({
                                 {leads.map(lead => {
                                   const noteText = (lead.last_note ?? "").replace(/\s+/g, " ").trim();
                                   const truncated = noteText.length > 80 ? `${noteText.slice(0, 80)}…` : noteText;
+                                  const reasonLabel = (reason: string) => {
+                                    if (reason === "new") return t("新增", "New");
+                                    if (reason === "contacted") return t(`联系${lead.contact_count}次`, `${lead.contact_count} contact(s)`);
+                                    if (reason === "quality_judged") return t("已评估质量", "Quality assessed");
+                                    if (reason === "pending_quality") return t("待评估质量", "Quality pending");
+                                    if (reason === "stage_advanced") return t(`推进${lead.stage_advance_count}次`, `${lead.stage_advance_count} stage move(s)`);
+                                    if (reason === "won") return t("赢单", "Won");
+                                    if (reason === "lost") return t("输单", "Lost");
+                                    if (reason === "overdue") return t(`逾期${lead.overdue_count}项`, `${lead.overdue_count} overdue`);
+                                    return "";
+                                  };
+                                  const periodSummary = lead.period_reasons.map(reasonLabel).filter(Boolean).join(locale === "zh" ? "、" : ", ");
+                                  const nextAction = lead.next_follow_up_at
+                                    ? lead.overdue_count > 0
+                                      ? t(`处理逾期任务（${formatDubaiDate(lead.next_follow_up_at)}）`, `Resolve overdue task (${formatDubaiDate(lead.next_follow_up_at)})`)
+                                      : t(`按计划跟进（${formatDubaiDate(lead.next_follow_up_at)}）`, `Follow up (${formatDubaiDate(lead.next_follow_up_at)})`)
+                                    : "";
                                   return (
-                                    <li key={lead.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                      <Link href={`/leads/${lead.id}`} className="text-copper-400 hover:underline">
+                                    <li key={lead.id} className="rounded-md border border-border/40 px-3 py-2">
+                                      <Link href={`/leads/${lead.id}`} className="font-medium text-copper-400 hover:underline">
                                         {lead.customer_name || (locale === "zh" ? "未命名客户" : "Unnamed")}
                                       </Link>
-                                      <span className="text-muted-foreground">
-                                        · {t("阶段", "stage")}: {lead.stage ?? "—"}
-                                        · {t("联系次数", "contacts")}: {lead.contact_count}
-                                        {lead.quality && ` · ${t("质量", "quality")}: ${lead.quality}`}
-                                        {` · ${t("上次联系", "last contact")}: ${fmtDate(lead.last_contact_date)}`}
-                                        {lead.next_follow_up_at && ` · ${t("下次跟进", "next")}: ${fmtDate(lead.next_follow_up_at)}`}
-                                      </span>
-                                      {truncated && (
-                                        <span className="max-w-[300px] truncate inline-block align-bottom text-muted-foreground">
-                                          {`· ${t("备注", "note")}: ${truncated}`}
-                                        </span>
-                                      )}
+                                      <p className="mt-1 text-muted-foreground">
+                                        {periodSummary && <span>{t("本期", "This period")}：{periodSummary}</span>}
+                                        {stageLabel(lead.stage) && <span> · {t("当前", "Current")}：{stageLabel(lead.stage)}</span>}
+                                        <span> · {t("质量", "Quality")}：{qualityLabel(lead.quality)}</span>
+                                        {lead.last_contact_date && <span> · {t("最后联系", "Last contact")}：{formatDubaiDate(lead.last_contact_date)}</span>}
+                                      </p>
+                                      {nextAction && <p className="mt-1 text-foreground">{t("下一步", "Next action")}：{nextAction}</p>}
+                                      {truncated && <p className="mt-1 text-muted-foreground">{t("备注", "Note")}：{truncated}</p>}
                                     </li>
                                   );
                                 })}

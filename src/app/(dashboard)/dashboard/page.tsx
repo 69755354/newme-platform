@@ -148,8 +148,8 @@ export default function DashboardPage() {
 
   const [weeklyReviewData, setWeeklyReviewData] = useState<{
     l1: { new_leads: number; contacted_leads: number; quality_judged: number; stage_advanced: number; won: number; lost: number };
-    l2: Array<{ user_id: string; full_name: string | null; assigned_leads: number; contacted: number; pending_quality: number; stage_advanced: number; won: number; lost: number; overdue_tasks: number }>;
-    l3_by_user: Record<string, Array<{ id: string; customer_name: string | null; assigned_to: string | null; owner_name: string | null; stage: string | null; last_contact_date: string | null; contact_count: number; quality: string | null; last_note: string | null; next_follow_up_at: string | null }>>;
+    l2: Array<{ user_id: string; full_name: string | null; assigned_leads: number; contacted: number; pending_quality: number; quality_judged: number; stage_advanced: number; won: number; lost: number; overdue_tasks: number }>;
+    l3_by_user: Record<string, Array<{ id: string; customer_name: string | null; assigned_to: string | null; owner_name: string | null; stage: string | null; last_contact_date: string | null; contact_count: number; quality: string | null; last_note: string | null; next_follow_up_at: string | null; period_reasons: string[]; overdue_count: number; stage_advance_count: number }>>;
     periodStart: string;
     periodEnd: string;
   } | null>(null);
@@ -186,7 +186,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!userRole || (weeklyReviewRange === "custom" && (!weeklyReviewStart || !weeklyReviewEnd || weeklyReviewStart >= weeklyReviewEnd))) {
+    if (!userRole || (weeklyReviewRange === "custom" && (!weeklyReviewStart || !weeklyReviewEnd || weeklyReviewStart > weeklyReviewEnd))) {
       return;
     }
     let cancelled = false;
@@ -367,7 +367,16 @@ export default function DashboardPage() {
       if (l.final_status === "won") sources[s].won++;
       if (l.quotation_value) sources[s].value += l.quotation_value;
     });
-    const sourceLabels: Record<string, string> = { meta_ads: t("sourceLabels.meta_ads"), whatsapp: t("sourceLabels.whatsapp"), other: t("sourceLabels.other"), unknown: t("sourceLabels.unknown") };
+    const sourceLabels: Record<string, string> = {
+      ins: t("sourceLabels.ins"),
+      fb: t("sourceLabels.fb"),
+      show_room: t("sourceLabels.show_room"),
+      whatsapp: t("sourceLabels.whatsapp"),
+      website: t("sourceLabels.website"),
+      offline: t("sourceLabels.offline"),
+      other: t("sourceLabels.other"),
+      unknown: t("sourceLabels.unknown"),
+    };
     return Object.entries(sources)
       .map(([k, v]) => ({ source: k, label: sourceLabels[k] || k, ...v }))
       .sort((a, b) => b.total - a.total);

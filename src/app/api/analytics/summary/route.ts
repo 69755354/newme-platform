@@ -413,7 +413,7 @@ export async function GET(request: Request) {
     if (!displayNameMap[c]) displayNameMap[c] = raw;
   }
 
-  const metaLeads = leadsData.filter((l: any) => l.source === "meta_ads");
+  const metaLeads = leadsData.filter((l: any) => ["ins", "fb"].includes(l.source));
   const totalMetaLeads = metaLeads.length;
   const leadsByCampaign: Record<string, number> = {};
   const conversionsByCampaign: Record<string, number> = {};

@@ -228,14 +228,14 @@ RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $
+AS $delete_guard$
 BEGIN
   IF OLD.milestone_key = 'first_contact' THEN
     RAISE EXCEPTION 'first_contact milestone is fact-driven and cannot be deleted';
   END IF;
   RETURN OLD;
 END;
-$;
+$delete_guard$;
 
 DROP TRIGGER IF EXISTS trg_prevent_first_contact_delete ON public.lead_milestones;
 CREATE TRIGGER trg_prevent_first_contact_delete
@@ -244,7 +244,7 @@ CREATE TRIGGER trg_prevent_first_contact_delete
   EXECUTE FUNCTION public.trg_prevent_first_contact_delete();
 
 -- Normalize every factually complete Lead and backfill missing First Contact rows.
-DO $
+DO $backfill$
 DECLARE
   ready_lead record;
 BEGIN
@@ -264,7 +264,7 @@ BEGIN
     PERFORM public.complete_first_contact_if_ready(ready_lead.id);
   END LOOP;
 END;
-$;
+$backfill$;
 
 NOTIFY pgrst, 'reload schema';
 COMMIT;

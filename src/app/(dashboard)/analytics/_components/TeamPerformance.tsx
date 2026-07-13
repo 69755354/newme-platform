@@ -46,7 +46,9 @@ interface TeamPerfData {
 }
 
 const SOURCE_COLORS: Record<string, string> = {
-  meta_ads: "#3B82F6",
+  ins: "#E1306C",
+  fb: "#1877F2",
+  show_room: "#B87333",
   whatsapp: "#22C55E",
   website: "#8B5CF6",
   offline: "#C48A52",
@@ -55,7 +57,9 @@ const SOURCE_COLORS: Record<string, string> = {
 };
 
 const SOURCE_LABEL: Record<string, string> = {
-  meta_ads: "Meta Ads",
+  ins: "ins",
+  fb: "fb",
+  show_room: "show_room",
   whatsapp: "WhatsApp",
   website: "Website",
   offline: "Offline",

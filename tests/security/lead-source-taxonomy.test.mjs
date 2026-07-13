@@ -31,3 +31,15 @@ test("historical Meta Ads migration changes only the canonical legacy value", as
   const migration = await read("supabase/migrations/20260712000001_replace_meta_ads_source.sql").catch(() => "");
   assert.match(migration, /UPDATE public\.leads\s+SET source = 'ins'\s+WHERE source = 'meta_ads';/s);
 });
+
+test("source migration expands the constraint before rewriting Meta Ads", async () => {
+  const migration = await read("supabase/migrations/20260712000001_replace_meta_ads_source.sql");
+  const constraint = migration.indexOf("ADD CONSTRAINT leads_source_check");
+  const rewrite = migration.indexOf("UPDATE public.leads");
+
+  assert.notEqual(constraint, -1, "migration must replace leads_source_check");
+  assert.ok(constraint < rewrite, "constraint must be expanded before the source rewrite");
+  for (const source of ["ins", "fb", "show_room", "unknown"]) {
+    assert.ok(migration.includes(`'${source}'`), `constraint must allow ${source}`);
+  }
+});

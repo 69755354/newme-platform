@@ -314,7 +314,7 @@ function WeeklyReviewApi({ language }: { language: string }) {
                 <th className="py-2 pr-3 font-medium">{t("销售", "Sales")}</th>
                 <th className="px-3 py-2 font-medium">{t("分配", "Assigned")}</th>
                 <th className="px-3 py-2 font-medium">{t("已联系", "Contacted")}</th>
-                <th className="px-3 py-2 font-medium">{t("已质检", "Quality assessed")}</th>
+                <th className="px-3 py-2 font-medium">{t("待质检", "Pending QC")}</th>
                 <th className="px-3 py-2 font-medium">{t("推进", "Moved")}</th>
                 <th className="px-3 py-2 font-medium">{t("赢单", "Won")}</th>
                 <th className="px-3 py-2 font-medium">{t("输单", "Lost")}</th>
@@ -556,7 +556,7 @@ function WeeklyReviewPeriod({
                   <th className="py-2 pr-3 font-medium">{t("销售", "Sales")}</th>
                   <th className="px-3 py-2 font-medium">{t("新线索", "New leads")}</th>
                   <th className="px-3 py-2 font-medium">{t("已联系", "Contacted")}</th>
-                  <th className="px-3 py-2 font-medium">{t("待质检", "Pending QC")}</th>
+                  <th className="px-3 py-2 font-medium">{t("已质检", "Quality assessed")}</th>
                   <th className="px-3 py-2 font-medium">{t("推进", "Advanced")}</th>
                   <th className="px-3 py-2 font-medium">{t("赢单", "Won")}</th>
                   <th className="px-3 py-2 font-medium">{t("输单", "Lost")}</th>

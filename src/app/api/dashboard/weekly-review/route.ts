@@ -25,6 +25,8 @@ export interface WeeklyReviewLeadRow {
   quality: string | null;
   last_note: string | null;
   next_follow_up_at: string | null;
+  period_reasons: string[];
+  overdue_count: number;
 }
 
 type ReviewRange = "today" | "this_week" | "last_week" | "this_month" | "custom";
@@ -188,15 +190,15 @@ export async function GET(req: NextRequest) {
       .select("lead_id, leads!inner(assigned_to)")
       .gte("created_at", startIso).lt("created_at", endIso);
 
-    const { data: pendingQuality } = await supabase.from("leads").select("assigned_to")
+    const { data: pendingQuality } = await supabase.from("leads").select("id, assigned_to")
       .eq("quality", "pending").not("assigned_to", "is", null)
       .gte("created_at", startIso).lt("created_at", endIso);
 
     const { data: stageEvents } = await supabase.from("business_events").select("event_data, user_id, lead_id")
-      .in("event_type", ["stage_change", "transfer", "owner_change"])
+      .eq("event_type", "stage_change")
       .gte("created_at", startIso).lt("created_at", endIso);
 
-    const { data: overdueTasks } = await supabase.from("tasks").select("assignee_id")
+    const { data: overdueTasks } = await supabase.from("tasks").select("lead_id, assignee_id, due_at")
       .lt("due_at", new Date().toISOString()).neq("status", "done").not("assignee_id", "is", null)
       .gte("created_at", startIso).lt("created_at", endIso);
 
@@ -258,115 +260,107 @@ export async function GET(req: NextRequest) {
       .filter(r => true) // Show all sales/boss even with 0 activity
       .sort((a, b) => b.stage_advanced - a.stage_advanced);
 
-    // L3: leads created during the period, grouped by owner.
-    let leadsAssignedQuery = supabase.from("leads")
-      .select("id, customer_name, assigned_to, stage, last_contact_date, quality")
-      .gte("created_at", startIso).lt("created_at", endIso)
-      .limit(500);
-    if (isSalesScope) leadsAssignedQuery = leadsAssignedQuery.eq("assigned_to", user.id);
-    const { data: leadsAssigned, error: leadsAssignedErr } = await leadsAssignedQuery;
-    if (leadsAssignedErr) {
-      console.error("[weekly-review] leads query error:", leadsAssignedErr);
+    // L3 is built from the same period facts as L2 so every non-zero metric
+    // can be explained by the expanded Lead rows.
+    const relevantLeadIds = new Set<string>();
+    const reasonsByLead = new Map<string, Set<string>>();
+    const addReason = (leadId: string | null | undefined, reason: string) => {
+      if (!leadId) return;
+      relevantLeadIds.add(leadId);
+      if (!reasonsByLead.has(leadId)) reasonsByLead.set(leadId, new Set());
+      reasonsByLead.get(leadId)!.add(reason);
+    };
+
+    for (const lead of assignedLeads ?? []) addReason(lead.id, "new");
+    for (const log of contactedLogs ?? []) addReason(log.lead_id, "contacted");
+    for (const lead of pendingQuality ?? []) addReason(lead.id, "pending_quality");
+    for (const event of stageEvents ?? []) {
+      const to = (event as any).event_data?.to;
+      addReason((event as any).lead_id, to === "won" ? "won" : to === "lost" ? "lost" : "stage_advanced");
+    }
+    for (const task of overdueTasks ?? []) addReason((task as any).lead_id, "overdue");
+
+    const relevantIds = Array.from(relevantLeadIds);
+    const relevantResult = relevantIds.length > 0
+      ? await supabase.from("leads")
+          .select("id, customer_name, assigned_to, stage, last_contact_date, quality")
+          .in("id", relevantIds)
+          .limit(500)
+      : { data: [], error: null };
+    const relevantLeads = relevantResult.data ?? [];
+    if (relevantResult.error) {
+      console.error("[weekly-review] L3 leads query error:", relevantResult.error);
     }
 
-    // Resolve owner full_name for each assigned_to via separate profiles query.
-    const assignedIds = [...new Set((leadsAssigned ?? []).map((r: any) => r.assigned_to).filter(Boolean))];
+    const assignedIds = [...new Set(relevantLeads.map((row: any) => row.assigned_to).filter(Boolean))];
     const { data: ownerProfiles } = assignedIds.length > 0
       ? await supabase.from("profiles").select("id, full_name").in("id", assignedIds)
       : { data: [] };
     const ownerNameMap = new Map<string, string>();
-    for (const p of ownerProfiles ?? []) ownerNameMap.set(p.id, p.full_name ?? "");
+    for (const profile of ownerProfiles ?? []) ownerNameMap.set(profile.id, profile.full_name ?? "");
 
     const contactCountByLead = new Map<string, number>();
     for (const log of contactedLogs ?? []) {
       contactCountByLead.set(log.lead_id, (contactCountByLead.get(log.lead_id) ?? 0) + 1);
     }
+
     const lastNoteByLead = new Map<string, string>();
     for (const log of (await supabase.from("follow_up_logs")
-      .select("lead_id, summary")
+      .select("lead_id, summary, contact_result")
+      .in("lead_id", relevantIds.length > 0 ? relevantIds : ["00000000-0000-0000-0000-000000000000"])
       .gte("created_at", startIso).lt("created_at", endIso)
       .order("created_at", { ascending: false })).data ?? []) {
       if (!lastNoteByLead.has(log.lead_id)) {
-        lastNoteByLead.set(log.lead_id, (log as any).summary ?? "");
+        lastNoteByLead.set(log.lead_id, (log as any).summary || (log as any).contact_result || "");
       }
     }
+
+    const overdueCountByLead = new Map<string, number>();
     const nextByLead = new Map<string, string>();
-    for (const t of (await supabase.from("tasks")
-      .select("lead_id, due_at")
-      .gt("due_at", new Date().toISOString())
-      .neq("status", "done")
-      .order("due_at", { ascending: true })).data ?? []) {
-      if (!nextByLead.has((t as any).lead_id)) nextByLead.set((t as any).lead_id, t.due_at);
+    for (const task of overdueTasks ?? []) {
+      const leadId = (task as any).lead_id as string | null;
+      if (!leadId) continue;
+      overdueCountByLead.set(leadId, (overdueCountByLead.get(leadId) ?? 0) + 1);
+      const dueAt = (task as any).due_at as string;
+      const existing = nextByLead.get(leadId);
+      if (!existing || dueAt < existing) nextByLead.set(leadId, dueAt);
+    }
+
+    if (relevantIds.length > 0) {
+      const { data: openTasks } = await supabase.from("tasks")
+        .select("lead_id, due_at")
+        .in("lead_id", relevantIds)
+        .neq("status", "done")
+        .order("due_at", { ascending: true });
+      for (const task of openTasks ?? []) {
+        const leadId = (task as any).lead_id as string | null;
+        if (!leadId || nextByLead.has(leadId)) continue;
+        nextByLead.set(leadId, (task as any).due_at);
+      }
     }
 
     const l3_by_user: Record<string, WeeklyReviewLeadRow[]> = {};
-    for (const row of leadsAssigned ?? []) {
-      const owner = row.assigned_to ?? "_unassigned";
+    for (const lead of relevantLeads) {
+      const owner = lead.assigned_to as string | null;
+      if (!owner || !isSalesUser(owner)) continue;
       if (!l3_by_user[owner]) l3_by_user[owner] = [];
-      l3_by_user[owner].push({
-        id: row.id,
-        customer_name: row.customer_name ?? null,
-        assigned_to: row.assigned_to,
-        owner_name: ownerNameMap.get(row.assigned_to) ?? null,
-        stage: row.stage ?? null,
-        last_contact_date: row.last_contact_date ?? null,
-        contact_count: contactCountByLead.get(row.id) ?? 0,
-        quality: row.quality ?? null,
-        last_note: lastNoteByLead.get(row.id) ?? null,
-        next_follow_up_at: nextByLead.get(row.id) ?? null,
-      });
-    }
-    for (const k of Object.keys(l3_by_user)) {
-      l3_by_user[k].sort((a, b) => (b.contact_count - a.contact_count));
-    }
-
-    // Also group stage-changed leads by their sales owner so L2 and L3 use
-    // the same attribution model.
-    const leadById = new Map<string, any>();
-    for (const lead of leadsAssigned ?? []) leadById.set(lead.id, lead);
-
-    // Fetch leads involved in stage changes that are NOT in leadsAssigned
-    // (leads created outside the period but with stage changes inside it).
-    const missingLeadIds = [...new Set(
-      (stageEvents ?? [])
-        .map((ev: any) => ev.lead_id as string | null)
-        .filter((lid): lid is string => !!lid && !leadById.has(lid))
-    )];
-    if (missingLeadIds.length > 0) {
-      const { data: missingLeads } = await supabase.from("leads")
-        .select("id, customer_name, assigned_to, stage, last_contact_date, quality")
-        .in("id", missingLeadIds)
-        .limit(100);
-      for (const ml of missingLeads ?? []) {
-        leadById.set(ml.id, ml);
-        if (ml.assigned_to && !ownerNameMap.has(ml.assigned_to)) {
-          ownerNameMap.set(ml.assigned_to, null as any); // placeholder; name lookup will be null
-        }
-      }
-    }
-
-    for (const ev of stageEvents ?? []) {
-      const lid = (ev as any).lead_id as string | null;
-      if (!lid) continue;
-      const lead = leadById.get(lid);
-      const owner = lead?.assigned_to as string | null;
-      if (!lead || !owner || !isSalesUser(owner)) continue;
-      if (!l3_by_user[owner]) l3_by_user[owner] = [];
-      // Avoid duplicate: only add if not already under this owner.
-      const already = l3_by_user[owner].some((l: any) => l.id === lead.id);
-      if (already) continue;
       l3_by_user[owner].push({
         id: lead.id,
         customer_name: lead.customer_name ?? null,
-        assigned_to: lead.assigned_to,
-        owner_name: ownerNameMap.get(lead.assigned_to) ?? null,
+        assigned_to: owner,
+        owner_name: ownerNameMap.get(owner) ?? null,
         stage: lead.stage ?? null,
         last_contact_date: lead.last_contact_date ?? null,
         contact_count: contactCountByLead.get(lead.id) ?? 0,
         quality: lead.quality ?? null,
         last_note: lastNoteByLead.get(lead.id) ?? null,
         next_follow_up_at: nextByLead.get(lead.id) ?? null,
+        period_reasons: Array.from(reasonsByLead.get(lead.id) ?? []),
+        overdue_count: overdueCountByLead.get(lead.id) ?? 0,
       });
+    }
+    for (const rows of Object.values(l3_by_user)) {
+      rows.sort((a, b) => b.overdue_count - a.overdue_count || b.contact_count - a.contact_count);
     }
 
     const responseL2 = isSalesScope

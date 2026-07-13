@@ -74,7 +74,7 @@ export async function POST(
   // 5. 查询已有的 milestones
   const { data: existingMilestones, error: milestonesError } = await supabase
     .from("lead_milestones")
-    .select("milestone_key, completed_at")
+    .select("*")
     .eq("lead_id", leadId)
     .order("completed_at", { ascending: true });
 
@@ -83,6 +83,13 @@ export async function POST(
       { error: "查询里程碑失败", detail: milestonesError.message },
       { status: 500 }
     );
+  }
+
+  const existingMilestone = (existingMilestones ?? []).find(
+    (milestone) => milestone.milestone_key === milestoneKey,
+  );
+  if (existingMilestone) {
+    return NextResponse.json({ success: true, milestone: existingMilestone, duplicate: true });
   }
 
   // 6. rule_006: 顺序校验（不能跳级、不能往回）
@@ -112,6 +119,17 @@ export async function POST(
     .select()
     .single();
 
+  if (insertError?.code === "23505") {
+    const { data: racedMilestone } = await supabase
+      .from("lead_milestones")
+      .select("*")
+      .eq("lead_id", leadId)
+      .eq("milestone_key", milestoneKey)
+      .single();
+    if (racedMilestone) {
+      return NextResponse.json({ success: true, milestone: racedMilestone, duplicate: true });
+    }
+  }
   if (insertError) {
     return NextResponse.json(
       { error: "写入里程碑失败", detail: insertError.message },

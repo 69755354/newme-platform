@@ -28,6 +28,7 @@ export interface WeeklyReviewLeadRow {
   next_follow_up_at: string | null;
   period_reasons: string[];
   overdue_count: number;
+  stage_advance_count: number;
 }
 
 type ReviewRange = "today" | "this_week" | "last_week" | "this_month" | "custom";
@@ -55,6 +56,12 @@ function joinedFullName(value: unknown): string | null {
   const profile = Array.isArray(value) ? value[0] : value;
   if (!profile || typeof profile !== "object" || !("full_name" in profile)) return null;
   return typeof profile.full_name === "string" ? profile.full_name : null;
+}
+
+function joinedAssignedTo(value: unknown): string | null {
+  const lead = Array.isArray(value) ? value[0] : value;
+  if (!lead || typeof lead !== "object" || !("assigned_to" in lead)) return null;
+  return typeof lead.assigned_to === "string" ? lead.assigned_to : null;
 }
 
 function gstDate(year: number, month: number, day: number): Date {
@@ -95,8 +102,8 @@ function periodBounds(range: ReviewRange, customStart?: string | null, customEnd
   }
   const start = parseGstDate(customStart ?? null);
   const end = parseGstDate(customEnd ?? null);
-  if (!start || !end || start >= end) return null;
-  return { start, end };
+  if (!start || !end || start > end) return null;
+  return { start, end: new Date(end.getTime() + 24 * 3600 * 1000) };
 }
 
 export async function GET(req: NextRequest) {
@@ -175,7 +182,9 @@ export async function GET(req: NextRequest) {
     const qualityJudgedDistinct = new Set((qualityEvents ?? []).map((r) => r.lead_id)).size;
 
     // L2 per-sales rollup
-    const { data: profilesAll } = await supabase.from("profiles").select("id, full_name, role");
+    let profilesQuery = supabase.from("profiles").select("id, full_name, role");
+    if (isSalesScope) profilesQuery = profilesQuery.eq("id", user.id);
+    const { data: profilesAll } = await profilesQuery;
     const salesMap = new Map<string, string>();
     const roleMap = new Map<string, string>();
     for (const p of profilesAll ?? []) {
@@ -188,21 +197,32 @@ export async function GET(req: NextRequest) {
     if (isSalesScope) assignedLeadsQuery = assignedLeadsQuery.eq("assigned_to", user.id);
     const { data: assignedLeads } = await assignedLeadsQuery;
 
-    const { data: contactedLogs } = await supabase.from("follow_up_logs")
+    let contactedLogsQuery = supabase.from("follow_up_logs")
       .select("lead_id, leads!inner(assigned_to)")
       .gte("created_at", startIso).lt("created_at", endIso);
+    if (isSalesScope) contactedLogsQuery = contactedLogsQuery.eq("leads.assigned_to", user.id);
+    const { data: contactedLogs } = await contactedLogsQuery;
 
-    const { data: pendingQuality } = await supabase.from("leads").select("id, assigned_to")
+    let pendingQualityQuery = supabase.from("leads").select("id, assigned_to")
       .eq("quality", "pending").not("assigned_to", "is", null)
       .gte("created_at", startIso).lt("created_at", endIso);
+    if (isSalesScope) pendingQualityQuery = pendingQualityQuery.eq("assigned_to", user.id);
+    const { data: pendingQuality } = await pendingQualityQuery;
 
-    const { data: stageEvents } = await supabase.from("business_events").select("event_data, user_id, lead_id")
+    let stageEventsQuery = supabase.from("business_events")
+      .select("event_data, user_id, lead_id, leads!inner(assigned_to)")
       .eq("event_type", "stage_change")
       .gte("created_at", startIso).lt("created_at", endIso);
+    if (isSalesScope) stageEventsQuery = stageEventsQuery.eq("leads.assigned_to", user.id);
+    const { data: stageEvents } = await stageEventsQuery;
 
-    const { data: overdueTasks } = await supabase.from("tasks").select("lead_id, assignee_id, due_at")
-      .lt("due_at", new Date().toISOString()).neq("status", "done").not("assignee_id", "is", null)
-      .gte("created_at", startIso).lt("created_at", endIso);
+    const overdueEndIso = new Date(Math.min(end.getTime(), Date.now())).toISOString();
+    let overdueTasksQuery = supabase.from("tasks")
+      .select("lead_id, due_at, leads!inner(assigned_to)")
+      .neq("status", "done").not("lead_id", "is", null)
+      .gte("due_at", startIso).lt("due_at", overdueEndIso);
+    if (isSalesScope) overdueTasksQuery = overdueTasksQuery.eq("leads.assigned_to", user.id);
+    const { data: overdueTasks } = await overdueTasksQuery;
 
     // Attribute stage outcomes to the lead owner, not the user who happened to
     // perform the update (for example an admin assisting a salesperson).
@@ -247,13 +267,7 @@ export async function GET(req: NextRequest) {
     for (const [uid, set] of contactedByOwner) { const row = ensure(uid); if (row) row.contacted = set.size; }
     const qualityByOwner = new Map<string, Set<string>>();
     for (const event of qualityEvents ?? []) {
-      const relatedLead = event.leads as unknown as
-        | { assigned_to: string | null }
-        | Array<{ assigned_to: string | null }>
-        | null;
-      const owner = (Array.isArray(relatedLead)
-        ? relatedLead[0]?.assigned_to
-        : relatedLead?.assigned_to) ?? null;
+      const owner = joinedAssignedTo(event.leads);
       const leadId = event.lead_id as string | null;
       if (!owner || !leadId) continue;
       if (!qualityByOwner.has(owner)) qualityByOwner.set(owner, new Set());
@@ -271,7 +285,15 @@ export async function GET(req: NextRequest) {
       if (to === "won") row.won++;
       else if (to === "lost") row.lost++;
     }
-    for (const t of overdueTasks ?? []) { if (t.assignee_id) { const row = ensure(t.assignee_id); if (row) row.overdue_tasks++; } }
+    const overdueByOwner = new Map<string, number>();
+    for (const task of overdueTasks ?? []) {
+      const owner = joinedAssignedTo(task.leads);
+      if (owner) overdueByOwner.set(owner, (overdueByOwner.get(owner) ?? 0) + 1);
+    }
+    for (const [owner, count] of overdueByOwner) {
+      const row = ensure(owner);
+      if (row) row.overdue_tasks = count;
+    }
 
     const l2 = Array.from(perUser.values())
       .filter(r => true) // Show all sales/boss even with 0 activity
@@ -292,9 +314,15 @@ export async function GET(req: NextRequest) {
     for (const log of contactedLogs ?? []) addReason(log.lead_id, "contacted");
     for (const lead of pendingQuality ?? []) addReason(lead.id, "pending_quality");
     for (const event of qualityEvents ?? []) addReason(event.lead_id, "quality_judged");
+    const stageAdvanceCountByLead = new Map<string, number>();
     for (const event of stageEvents ?? []) {
+      const leadId = event.lead_id as string | null;
       const to = (event as any).event_data?.to;
-      addReason((event as any).lead_id, to === "won" ? "won" : to === "lost" ? "lost" : "stage_advanced");
+      addReason(leadId, "stage_advanced");
+      if (leadId) {
+        stageAdvanceCountByLead.set(leadId, (stageAdvanceCountByLead.get(leadId) ?? 0) + 1);
+      }
+      if (to === "won" || to === "lost") addReason(leadId, to);
     }
     for (const task of overdueTasks ?? []) addReason(task.lead_id, "overdue");
 
@@ -375,6 +403,7 @@ export async function GET(req: NextRequest) {
         next_follow_up_at: nextByLead.get(lead.id) ?? null,
         period_reasons: Array.from(reasonsByLead.get(lead.id) ?? []),
         overdue_count: overdueCountByLead.get(lead.id) ?? 0,
+        stage_advance_count: stageAdvanceCountByLead.get(lead.id) ?? 0,
       });
     }
     for (const rows of Object.values(l3_by_user)) {

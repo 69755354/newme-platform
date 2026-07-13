@@ -27,7 +27,7 @@ test("stage metrics and drill-downs are attributed to the lead owner", async () 
     'select("id, assigned_to").in("id", stageLeadIds)',
     "const owner = stageOwnerByLead.get",
     "const row = ensure(owner)",
-    "if (!lead || !owner || !isSalesUser(owner)) continue",
+    "if (!owner || !isSalesUser(owner)) continue",
     "l3_by_user[owner]",
   ]) {
     assert.ok(source.includes(token), `missing owner attribution evidence: ${token}`);

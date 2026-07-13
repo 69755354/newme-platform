@@ -35,3 +35,21 @@ test("database rejects direct First Contact milestone bypass", async () => {
   assert.match(migration, /public\.follow_up_logs/);
   assert.match(migration, /quality NOT IN \('good', 'normal', 'poor'\)/);
 });
+
+
+test("legacy quality panel also unlocks after one complete contact", async () => {
+  const source = await read("src/app/(dashboard)/leads/[id]/LeadContactQualityPanel.tsx");
+  assert.match(source, /const contactsNeeded = 1;/);
+  assert.doesNotMatch(source, /appears when ≥3 contacts|contactCount >= 3/);
+});
+
+test("milestone mutation uses the owned server route", async () => {
+  const source = await read("src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts");
+  assert.match(source, /fetch\("\/api\/leads\/" \+ leadId \+ "\/milestone"/);
+  assert.doesNotMatch(source, /supabase\s*\.from\("lead_milestones"\)\s*\.insert/);
+});
+
+test("Timeline falls back to the required contact result when notes are empty", async () => {
+  const source = await read("src/app/(dashboard)/leads/[id]/LeadTimeline.tsx");
+  assert.match(source, /content: f\.summary \|\| f\.contact_result/);
+});

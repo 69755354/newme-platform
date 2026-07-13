@@ -37,12 +37,14 @@ test("L3 uses sales-facing labels instead of raw database enums", async () => {
 
 
 test("stage advancement drill-down explains every stage event including won and lost", async () => {
+  const route = await read("src/app/api/dashboard/weekly-review/route.ts");
   assert.match(route, /addReason\(event\.lead_id, "stage_advanced"\)/);
   assert.match(route, /stageAdvanceCountByLead/);
   assert.match(route, /stage_advance_count:/);
 });
 
 test("overdue metrics use due dates and Lead Owner attribution", async () => {
+  const route = await read("src/app/api/dashboard/weekly-review/route.ts");
   assert.match(route, /select\("lead_id, due_at, leads!inner\(assigned_to\)"\)/);
   assert.match(route, /\.gte\("due_at", startIso\)\.lt\("due_at", overdueEndIso\)/);
   assert.match(route, /overdueByOwner/);
@@ -50,6 +52,7 @@ test("overdue metrics use due dates and Lead Owner attribution", async () => {
 });
 
 test("custom range includes its selected end day", async () => {
+  const route = await read("src/app/api/dashboard/weekly-review/route.ts");
   const page = await read("src/app/(dashboard)/dashboard/page.tsx");
   assert.match(route, /start > end/);
   assert.match(route, /new Date\(end\.getTime\(\) \+ 24 \* 3600 \* 1000\)/);
@@ -57,6 +60,7 @@ test("custom range includes its selected end day", async () => {
 });
 
 test("sales Dashboard rows are explicitly scoped to the signed-in profile", async () => {
+  const route = await read("src/app/api/dashboard/weekly-review/route.ts");
   assert.match(route, /profilesQuery = profilesQuery\.eq\("id", user\.id\)/);
   assert.match(route, /contactedLogsQuery = contactedLogsQuery\.eq\("leads\.assigned_to", user\.id\)/);
   assert.match(route, /pendingQualityQuery = pendingQualityQuery\.eq\("assigned_to", user\.id\)/);

@@ -64,5 +64,4 @@ test("Tanya lead sources have explicit bilingual labels", () => {
 test("Lead Detail header translates the stored source value", () => {
   const page = readFileSync(join(root, "src/app/(dashboard)/leads/[id]/page.tsx"), "utf8");
   assert.match(page, /lead\.source\s*\?\s*t\(`sourceLabels\.\$\{lead\.source\}`\)/);
-  assert.doesNotMatch(page, /\{lead\.source\}/);
 });

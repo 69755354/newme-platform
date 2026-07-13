@@ -39,4 +39,7 @@ test("stage update and audit note commit atomically", async () => {
   assert.match(migration, /UPDATE public\.leads[\s\S]*INSERT INTO public\.business_events/);
   assert.match(migration, /FOR UPDATE/);
   assert.match(migration, /auth\.uid\(\)/);
+  assert.match(migration, /actor_role IS NULL/);
+  assert.match(migration, /p_next_stage NOT IN/);
+  assert.match(migration, /char_length\(clean_note\) > 1000/);
 });

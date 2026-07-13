@@ -9,7 +9,8 @@ test("stage API validates and records optional stage context", async () => {
   assert.ok(source.includes('const note = String(body?.note ?? "").trim()'));
   assert.ok(source.includes("note.length > 1000"));
   assert.ok(source.includes("Stage note must be 1000 characters or fewer"));
-  assert.ok(source.includes("event_data: { from: lead.stage, to: stage, ...(note ? { note } : {}) }"));
+  const migration = await read("supabase/migrations/20260714000003_atomic_stage_transition.sql");
+  assert.ok(migration.includes("jsonb_build_object('from', current_lead.stage, 'to', p_next_stage)"));
 });
 
 test("sales process sends the same note for normal, won, and lost transitions", async () => {

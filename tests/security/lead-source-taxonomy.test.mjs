@@ -86,3 +86,28 @@ test("database rejects new legacy source values after normalization", async () =
   const constraint = migration.slice(migration.indexOf("ADD CONSTRAINT leads_source_check"));
   assert.doesNotMatch(constraint, /'meta_ads'|'instagram'/);
 });
+
+
+test("legacy Meta import aliases normalize to ins", async () => {
+  for (const path of [
+    "src/app/api/leads/import/preview/route.ts",
+    "src/app/api/leads/import/confirm/route.ts",
+  ]) {
+    const source = await read(path);
+    for (const alias of ["meta_ads", "meta ads", "meta"]) {
+      assert.ok(source.includes(`"${alias}"`), `${path} missing legacy alias: ${alias}`);
+    }
+  }
+});
+
+test("unknown Meta webhook input preserves an existing Lead source", async () => {
+  const source = await read("src/app/api/leads/meta-capi/route.ts");
+  assert.match(source, /\.\.\.\(source !== "unknown" \? \{ source \} : \{\}\)/);
+});
+
+test("translations contain no visible Meta Ads label", async () => {
+  const translations = await read("src/lib/i18n/translations.ts");
+  assert.equal(translations.includes('sourceMetaAds: "Meta Ads"'), false);
+  assert.equal(translations.includes('meta: "Meta Ads"'), false);
+  assert.equal(translations.includes('meta: "Meta 广告"'), false);
+});

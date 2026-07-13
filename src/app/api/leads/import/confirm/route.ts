@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     // ─── Server-side re-validation helpers ───
     function mapSource(raw: string): string {
       const s = raw.toLowerCase().trim();
-      if (["instagram", "instgram", "ins"].includes(s)) return "ins";
+      if (["instagram", "instgram", "ins", "meta_ads", "meta ads", "meta"].includes(s)) return "ins";
       if (["facebook", "fb"].includes(s)) return "fb";
       if (["show room", "show_room", "showroom"].includes(s)) return "show_room";
       if (["whatsapp", "website", "offline", "referral", "other", "unknown"].includes(s)) return s;

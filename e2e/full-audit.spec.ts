@@ -16,8 +16,8 @@ async function login(page: Page, email: string, password: string) {
   // Submit
   await page.locator('button[type="submit"]').click();
   
-  // Wait for redirect to dashboard or change-password
-  await page.waitForURL(/\/(dashboard|change-password)/, { timeout: 15000 });
+  // Wait for redirect to dashboard, workbench, or change-password
+  await page.waitForURL(/\/(dashboard|workbench|change-password)/, { timeout: 15000 });
   await page.waitForLoadState('networkidle');
 }
 
@@ -71,9 +71,9 @@ test.describe('Login', () => {
     expect(nav).toContain('Settings');
   });
 
-  test('valid login as sales → sales dashboard', async ({ page }) => {
+  test('valid login as sales → sales workbench', async ({ page }) => {
     await login(page, 'mohamed@newme.ae', '123456');
-    expect(page.url()).toContain('/dashboard');
+    expect(page.url()).toContain('/workbench');
     
     const body = await page.locator('body').textContent();
     expect(body).toContain('Sales');

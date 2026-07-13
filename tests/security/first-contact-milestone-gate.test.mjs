@@ -59,7 +59,11 @@ test("database prevents deleting First Contact and synchronizes current mileston
   assert.match(migration, /BEFORE DELETE ON public\.lead_milestones/);
   assert.match(migration, /OLD\.milestone_key = 'first_contact'/);
   assert.match(migration, /current_milestone = 'first_contact'/);
+  assert.match(migration, /legacy_pre_enforcement/);
+  const process = await read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
+  assert.match(process, /historicalFirstContact/);
 });
+
 
 test("contact creation is idempotent across retries", async () => {
   const route = await read("src/app/api/leads/[id]/contacts/route.ts");

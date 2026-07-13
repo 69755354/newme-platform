@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { COMPLETABLE_MILESTONES } from "@/lib/milestones";
 import { calculateHealthScore } from "@/lib/health-score";
-import { evaluateFirstContactGate } from "@/lib/first-contact-gate.mjs";
+import { evaluateFirstContactGate, isAssessedQuality } from "@/lib/first-contact-gate.mjs";
 import { STAGES, STAGE_COLORS } from "./types";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { fmtAED, daysSince } from "./utils";
@@ -223,7 +223,7 @@ export default function LeadSalesProcess({
   })();
 
   // ── Milestone checklist state (7-step, lock/unlock logic) ──
-  const completedKeys = milestones.filter((m) => m.completed).map((m) => m.milestone_key);
+  const firstContactReady = completeContactCount >= 1 && isAssessedQuality(lead.quality);\n  const completedKeys = milestones\n    .filter((m) => m.completed && (m.milestone_key !== "first_contact" || firstContactReady))\n    .map((m) => m.milestone_key);
   const nextPendingKey = COMPLETABLE_MILESTONES.find((k) => !completedKeys.includes(k));
   const isLocked = (key: string): boolean => {
     if (completedKeys.includes(key)) return false;
@@ -271,6 +271,7 @@ export default function LeadSalesProcess({
               const completed = completedKeys.includes(key);
               const locked = isLocked(key);
               const isNext = key === nextPendingKey;
+              const firstContactBlocked = key === "first_contact" && (!firstContactReady || completed);
               return (
                 <div
                   key={key}
@@ -282,10 +283,10 @@ export default function LeadSalesProcess({
                 >
                   <button
                     onClick={() => {
-                      if (locked) return;
+                      if (locked || firstContactBlocked) return;
                       onToggleMilestone(key, completed);
                     }}
-                    disabled={locked}
+                    disabled={locked || firstContactBlocked}
                     className={cn(
                       "w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
                       completed
@@ -308,9 +309,9 @@ export default function LeadSalesProcess({
                     {isNext && !completed && <p className="text-[10px] text-copper-400">{t("leadDetail.milestoneNext")}</p>}
                     {locked && <p className="text-[10px] text-gray-600">{t("leadDetail.milestoneLocked")}</p>}
                     {/* first_contact inline workspace */}
-                    {key === "first_contact" && !completed && isNext && (() => {
+                    {key === "first_contact" && (isNext || completed) && (() => {
                       const contactTimeCount = followUpLogs.filter(l => l.contact_time != null && !!l.contact_result?.trim()).length;
-                      const qAssessed = lead.quality && lead.quality !== "pending";
+                      const qAssessed = isAssessedQuality(lead.quality);
                       const contactsNeeded = 1;
                       const coachingTarget = 3;
                       const contactsMet = contactTimeCount >= contactsNeeded;
@@ -379,17 +380,28 @@ export default function LeadSalesProcess({
                       return (
                       <div className="mt-2 space-y-2 border-t border-border/50 pt-2">
                         {/* ── Status indicators ── */}
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5 text-[10px]">
-                            <span className={contactsMet ? "text-emerald-400" : "text-amber-400"}>
-                              {contactsMet ? "✓" : "○"} {contactTimeCount}/{contactsNeeded} {t("leadDetail.contactsWithTime") || "contact required"} · {contactTimeCount}/{coachingTarget} {t("leadDetail.contactCoachingTarget") || "coaching target"}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-[10px]">
-                            <span className={qAssessed ? "text-emerald-400" : "text-amber-400"}>
-                              {qAssessed ? "✓" : "○"} {t("leadDetail.qualityAssessed") || "Quality assessed"}
-                            </span>
-                          </div>
+                        <div className="space-y-1 text-[11px]">
+                          <p className={contactsMet ? "text-emerald-400" : "text-foreground"}>
+                            {lang === "zh" ? "联系记录" : "Contact record"} {contactsMet ? "✓" : `${contactTimeCount}/${contactsNeeded}`}
+                          </p>
+                          <p className={qAssessed ? "text-emerald-400" : "text-foreground"}>
+                            {lang === "zh" ? "线索质量" : "Lead quality"}{" "}
+                            {qAssessed
+                              ? lead.quality === "good"
+                                ? lang === "zh" ? "优质" : "Good"
+                                : lead.quality === "normal"
+                                ? lang === "zh" ? "一般" : "Normal"
+                                : lang === "zh" ? "差" : "Poor"
+                              : lang === "zh" ? "未评估" : "Not assessed"}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {lang === "zh" ? "建议跟进" : "Recommended follow-ups"} {contactTimeCount}/{coachingTarget}
+                          </p>
+                          {!contactsMet && (
+                            <p className="text-amber-400">
+                              {lang === "zh" ? "添加1条联系记录后可评估" : "Add 1 contact record to assess quality"}
+                            </p>
+                          )}
                         </div>
 
                         {/* ── Add Structured Contact Record ── */}

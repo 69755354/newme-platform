@@ -34,7 +34,7 @@ export const isPlaceholder = (v: string | null | undefined): boolean => {
 };
 
 export const SOURCE_ICONS: Record<string, string> = {
-  meta_ads: "📱", whatsapp: "💬", website: "🌐", offline: "🏢", referral: "🤝", other: "📋",
+  ins: "📱", fb: "📘", show_room: "🏢", whatsapp: "💬", website: "🌐", offline: "🏢", referral: "🤝", other: "📋",
 };
 export const STATUS_LABELS: Record<string, { color: string; bg: string }> = {
   hot: { color: "text-rose-400", bg: "bg-rose-500/10" },

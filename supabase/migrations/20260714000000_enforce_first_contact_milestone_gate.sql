@@ -153,6 +153,76 @@ CREATE TRIGGER trg_enforce_first_contact_milestone
   FOR EACH ROW
   EXECUTE FUNCTION public.trg_enforce_first_contact_milestone();
 
+-- Reconcile legacy rows before making the fact milestone immutable.
+-- Unprogressed New Leads are reset; progressed history is retained and labelled.
+UPDATE public.lead_milestones lm
+SET notes = concat_ws(
+  ' | ',
+  NULLIF(btrim(COALESCE(lm.notes, '')), ''),
+  'legacy_pre_enforcement'
+)
+FROM public.leads l
+WHERE lm.lead_id = l.id
+  AND lm.milestone_key = 'first_contact'
+  AND (
+    l.quality IS NULL
+    OR l.quality NOT IN ('good', 'normal', 'poor')
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.follow_up_logs f
+      WHERE f.lead_id = l.id
+        AND f.contact_time IS NOT NULL
+        AND f.contact_result IS NOT NULL
+        AND btrim(f.contact_result) <> ''
+    )
+  )
+  AND (
+    l.stage IS DISTINCT FROM 'new'
+    OR EXISTS (
+      SELECT 1
+      FROM public.lead_milestones later
+      WHERE later.lead_id = l.id
+        AND later.milestone_key <> 'first_contact'
+    )
+  )
+  AND position('legacy_pre_enforcement' in COALESCE(lm.notes, '')) = 0;
+
+DELETE FROM public.lead_milestones lm
+USING public.leads l
+WHERE lm.lead_id = l.id
+  AND lm.milestone_key = 'first_contact'
+  AND l.stage = 'new'
+  AND (
+    l.quality IS NULL
+    OR l.quality NOT IN ('good', 'normal', 'poor')
+    OR NOT EXISTS (
+      SELECT 1
+      FROM public.follow_up_logs f
+      WHERE f.lead_id = l.id
+        AND f.contact_time IS NOT NULL
+        AND f.contact_result IS NOT NULL
+        AND btrim(f.contact_result) <> ''
+    )
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.lead_milestones later
+    WHERE later.lead_id = l.id
+      AND later.milestone_key <> 'first_contact'
+  );
+
+UPDATE public.leads l
+SET current_milestone = 'new',
+    updated_at = NOW()
+WHERE l.stage = 'new'
+  AND l.current_milestone = 'first_contact'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.lead_milestones lm
+    WHERE lm.lead_id = l.id
+      AND lm.milestone_key = 'first_contact'
+  );
+
 CREATE OR REPLACE FUNCTION public.trg_prevent_first_contact_delete()
 RETURNS trigger
 LANGUAGE plpgsql

@@ -1,0 +1,149 @@
+-- First Contact is complete only when both business facts exist:
+-- at least one complete contact record and an assessed lead quality.
+BEGIN;
+
+CREATE OR REPLACE FUNCTION public.complete_first_contact_if_ready(p_lead_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  lead_quality text;
+  contact_user uuid;
+  contact_at timestamptz;
+BEGIN
+  SELECT quality INTO lead_quality
+  FROM public.leads
+  WHERE id = p_lead_id;
+
+  IF lead_quality IS NULL OR lead_quality NOT IN ('good', 'normal', 'poor') THEN
+    RETURN;
+  END IF;
+
+  SELECT user_id, contact_time
+    INTO contact_user, contact_at
+  FROM public.follow_up_logs
+  WHERE lead_id = p_lead_id
+    AND contact_time IS NOT NULL
+    AND contact_result IS NOT NULL
+    AND btrim(contact_result) <> ''
+  ORDER BY contact_time ASC
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  INSERT INTO public.lead_milestones (
+    lead_id,
+    milestone_key,
+    completed_at,
+    completed_by,
+    created_at
+  )
+  VALUES (
+    p_lead_id,
+    'first_contact',
+    contact_at,
+    contact_user,
+    NOW()
+  )
+  ON CONFLICT (lead_id, milestone_key) DO NOTHING;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.complete_first_contact_if_ready(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.complete_first_contact_if_ready(uuid) FROM anon;
+REVOKE ALL ON FUNCTION public.complete_first_contact_if_ready(uuid) FROM authenticated;
+
+CREATE OR REPLACE FUNCTION public.trg_auto_first_contact()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.contact_time IS NULL
+     OR NEW.contact_result IS NULL
+     OR btrim(NEW.contact_result) = '' THEN
+    RETURN NEW;
+  END IF;
+
+  UPDATE public.leads
+  SET last_contact_date = CASE
+        WHEN last_contact_date IS NULL OR last_contact_date < NEW.contact_time
+          THEN NEW.contact_time
+        ELSE last_contact_date
+      END,
+      updated_at = NOW()
+  WHERE id = NEW.lead_id;
+
+  PERFORM public.complete_first_contact_if_ready(NEW.lead_id);
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.trg_auto_first_contact_from_quality()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.quality IS DISTINCT FROM OLD.quality
+     AND NEW.quality IN ('good', 'normal', 'poor') THEN
+    PERFORM public.complete_first_contact_if_ready(NEW.id);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_first_contact_from_quality ON public.leads;
+CREATE TRIGGER trg_first_contact_from_quality
+  AFTER UPDATE OF quality ON public.leads
+  FOR EACH ROW
+  EXECUTE FUNCTION public.trg_auto_first_contact_from_quality();
+
+CREATE OR REPLACE FUNCTION public.trg_enforce_first_contact_milestone()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  lead_quality text;
+BEGIN
+  IF NEW.milestone_key = 'first_contact' THEN
+    SELECT quality INTO lead_quality
+    FROM public.leads
+    WHERE id = NEW.lead_id;
+
+    IF lead_quality IS NULL OR lead_quality NOT IN ('good', 'normal', 'poor') THEN
+      RAISE EXCEPTION 'first_contact milestone: quality must be assessed';
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1
+      FROM public.follow_up_logs
+      WHERE lead_id = NEW.lead_id
+        AND contact_time IS NOT NULL
+        AND contact_result IS NOT NULL
+        AND btrim(contact_result) <> ''
+    ) THEN
+      RAISE EXCEPTION 'first_contact milestone: complete contact record required';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_enforce_first_contact_milestone ON public.lead_milestones;
+CREATE TRIGGER trg_enforce_first_contact_milestone
+  BEFORE INSERT ON public.lead_milestones
+  FOR EACH ROW
+  EXECUTE FUNCTION public.trg_enforce_first_contact_milestone();
+
+NOTIFY pgrst, 'reload schema';
+COMMIT;

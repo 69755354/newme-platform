@@ -73,6 +73,13 @@ test("contact creation is idempotent across retries", async () => {
   assert.match(route, /onConflict: "contact_fingerprint"/);
   assert.match(migration, /ADD COLUMN IF NOT EXISTS contact_fingerprint TEXT/);
   assert.match(migration, /UNIQUE.*contact_fingerprint/is);
+  assert.doesNotMatch(migration, /WHERE contact_fingerprint IS NOT NULL/);
+});
+
+test("First Contact migration uses valid dollar quoting", async () => {
+  const migration = await read("supabase/migrations/20260714000000_enforce_first_contact_milestone_gate.sql");
+  assert.doesNotMatch(migration, /AS \$\r?\n/);
+  assert.doesNotMatch(migration, /DO \$\r?\n/);
 });
 
 test("milestone POST treats an existing milestone as idempotent success", async () => {

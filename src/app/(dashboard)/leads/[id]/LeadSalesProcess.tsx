@@ -57,7 +57,7 @@ interface Props {
   milestones: LeadMilestone[];
   nextTask: Task | null;
   updating: boolean;
-  onToggleMilestone: (milestoneKey: string, currentlyCompleted: boolean) => void;
+  onToggleMilestone: (milestoneKey: string, currentlyCompleted: boolean, note?: string) => Promise<boolean>;
   onUpdateField: (field: string, value: any, eventType?: string, eventDesc?: string) => void;
   onStageChange: (stage: string, note?: string) => Promise<boolean>;
   onWon: (note?: string) => Promise<boolean>;
@@ -121,6 +121,7 @@ export default function LeadSalesProcess({
   const [qualityPoorReason, setQualityPoorReason] = useState("");
   const [qualitySetting, setQualitySetting] = useState<string | null>(null);
   const [stageNote, setStageNote] = useState("");
+  const [milestoneNote, setMilestoneNote] = useState("");
   const [clockNow, setClockNow] = useState(0);
 
   useEffect(() => {
@@ -296,10 +297,10 @@ export default function LeadSalesProcess({
                 >
                   <button
                     onClick={() => {
-                      if (locked || firstContactBlocked) return;
-                      onToggleMilestone(key, completed);
+                      if (locked || firstContactBlocked || !completed) return;
+                      void onToggleMilestone(key, true);
                     }}
-                    disabled={locked || firstContactBlocked}
+                    disabled={locked || firstContactBlocked || !completed}
                     className={cn(
                       "w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
                       completed
@@ -321,6 +322,35 @@ export default function LeadSalesProcess({
                     {completed && <p className="text-[10px] text-emerald-400">{t("leadDetail.milestoneCompleted")}</p>}
                     {isNext && !completed && <p className="text-[10px] text-copper-400">{t("leadDetail.milestoneNext")}</p>}
                     {locked && <p className="text-[10px] text-gray-600">{t("leadDetail.milestoneLocked")}</p>}
+                    {isNext && !completed && !locked && !firstContactBlocked && (
+                      <div className="mt-3 space-y-2">
+                        <Label className="text-xs text-foreground">
+                          {lang === "zh" ? "里程碑备注（必填）" : "Milestone note (required)"}
+                        </Label>
+                        <textarea
+                          value={milestoneNote}
+                          onChange={(event) => setMilestoneNote(event.target.value)}
+                          maxLength={1000}
+                          rows={3}
+                          placeholder={lang === "zh" ? "记录本次推进的事实、决定或下一步" : "Record the fact, decision, or next step"}
+                          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                        />
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[10px] text-muted-foreground">{milestoneNote.length}/1000</span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={updating || !milestoneNote.trim()}
+                            onClick={async () => {
+                              const changed = await onToggleMilestone(key, false, milestoneNote.trim());
+                              if (changed) setMilestoneNote("");
+                            }}
+                          >
+                            {lang === "zh" ? "完成里程碑" : "Complete milestone"}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                     {/* first_contact inline workspace */}
                     {key === "first_contact" && (isNext || completed) && (() => {
                       const contactTimeCount = followUpLogs.filter(l => l.contact_time != null && !!l.contact_result?.trim()).length;

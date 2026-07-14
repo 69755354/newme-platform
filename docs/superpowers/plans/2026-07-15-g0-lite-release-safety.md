@@ -490,29 +490,124 @@ Expected: all contract assertions and syntax checks pass.
 
 - [ ] **Step 1: Commit the failing finalizer test**
 
-Create `tests/release/g0-lite-finalizer.test.mjs`. The fixture must contain pass statuses for build, smoke, logs, regression, health, and systemd; matching CI/release SHA; verified migration status; nonblank rollback identity; and `release_status=awaiting_uat`.
-
-Test these exact cases:
+Create `tests/release/g0-lite-finalizer.test.mjs`:
 
 ```js
+import test from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+const finalizer = join(repoRoot, "scripts", "finalize-deploy-evidence.sh");
+
+async function evidenceFixture() {
+  const directory = await mkdtemp(join(tmpdir(), "newme-evidence-"));
+  const path = join(directory, "deploy.json");
+  const gitSha = "a".repeat(40);
+  await writeFile(path, JSON.stringify({
+    git_sha: gitSha,
+    build_id: "build-new",
+    ci: {
+      run_id: "29351813434",
+      run_url: "https://github.com/69755354/newme-platform/actions/runs/29351813434",
+      head_sha: gitSha,
+      conclusion: "success",
+    },
+    migration: { status: "not_required", ids: "" },
+    uat: {
+      status: "pending",
+      actor: "",
+      completed_at: "",
+      fixture_ids: "",
+      cleanup_status: "pending",
+    },
+    rollback: {
+      git_sha: "b".repeat(40),
+      build_id: "build-old",
+      backup_dir: ".next.backup.1",
+    },
+    build: { status: "pass" },
+    smoke: { status: "pass" },
+    logs: { status: "pass" },
+    regression: { status: "pass" },
+    health: { status: "pass" },
+    systemd: { status: "pass" },
+    release_status: "awaiting_uat",
+  }, null, 2) + "\n");
+  return path;
+}
+
+function finalize(path, overrides = {}) {
+  return spawnSync("bash", [finalizer, path], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      UAT_STATUS: "pass",
+      UAT_ACTOR: "Codex",
+      UAT_FIXTURE_IDS: "",
+      FIXTURE_CLEANUP_STATUS: "not_required",
+      ...overrides,
+    },
+  });
+}
+
+async function readEvidence(path) {
+  return JSON.parse(await readFile(path, "utf8"));
+}
+
 test("missing authenticated actor cannot complete release", async () => {
-  // UAT_STATUS=pass with empty UAT_ACTOR exits nonzero and remains awaiting_uat.
+  const path = await evidenceFixture();
+  const result = finalize(path, { UAT_ACTOR: "" });
+  assert.notEqual(result.status, 0);
+  assert.equal((await readEvidence(path)).release_status, "awaiting_uat");
 });
 
 test("failed UAT is recorded and leaves release incomplete", async () => {
-  // UAT_STATUS=fail exits nonzero, records uat.status=fail, and sets uat_failed.
+  const path = await evidenceFixture();
+  const result = finalize(path, {
+    UAT_STATUS: "fail",
+    FIXTURE_CLEANUP_STATUS: "not_required",
+  });
+  assert.notEqual(result.status, 0);
+  const evidence = await readEvidence(path);
+  assert.equal(evidence.uat.status, "fail");
+  assert.equal(evidence.release_status, "uat_failed");
 });
 
 test("fixture IDs require archived_verified cleanup", async () => {
-  // A nonempty exact fixture list with cleanup=not_required exits nonzero.
+  const path = await evidenceFixture();
+  const result = finalize(path, {
+    UAT_FIXTURE_IDS: "fixture-1",
+    FIXTURE_CLEANUP_STATUS: "not_required",
+  });
+  assert.notEqual(result.status, 0);
+  assert.equal((await readEvidence(path)).release_status, "awaiting_uat");
 });
 
 test("passing authenticated UAT and exact cleanup complete release", async () => {
-  // UAT_STATUS=pass, actor=Codex, fixture IDs, archived_verified => complete.
+  const path = await evidenceFixture();
+  const result = finalize(path, {
+    UAT_FIXTURE_IDS: "fixture-1,fixture-2",
+    FIXTURE_CLEANUP_STATUS: "archived_verified",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const evidence = await readEvidence(path);
+  assert.deepEqual(evidence.uat.fixture_ids, ["fixture-1", "fixture-2"]);
+  assert.equal(evidence.uat.cleanup_status, "archived_verified");
+  assert.equal(evidence.release_status, "complete");
 });
 
 test("no-fixture UAT accepts not_required cleanup", async () => {
-  // UAT_STATUS=pass, actor=Codex, empty fixture IDs, not_required => complete.
+  const path = await evidenceFixture();
+  const result = finalize(path);
+  assert.equal(result.status, 0, result.stderr);
+  const evidence = await readEvidence(path);
+  assert.deepEqual(evidence.uat.fixture_ids, []);
+  assert.equal(evidence.release_status, "complete");
 });
 ```
 

@@ -52,6 +52,10 @@ G0-Lite does not:
 
 ## Components
 
+### `scripts/verify-release-preflight.sh`
+
+Perform the read-only Git and release-input checks as a small fail-closed unit. It prints only the verified full `RELEASE_SHA` on success and writes all failure reasons to stderr. `deploy.sh` invokes it before any systemd, taskboard, typecheck, backup, or build action. Keeping this boundary separate allows behavioral tests in temporary Git repositories without executing the production deployment pipeline.
+
 ### `scripts/deploy.sh`
 
 Keep the existing deployment pipeline and make a surgical change:
@@ -134,7 +138,7 @@ Before merge:
 - targeted G0-Lite tests pass;
 - full `npm test`, typecheck, lint baseline, workflow validation, and build pass;
 - GitHub Actions run is bound to the reviewed PR head SHA;
-- diff contains only the design/plan, two scripts, and focused tests.
+- diff contains only the design/plan, three focused scripts, and focused tests.
 
 For production proof:
 

@@ -5,8 +5,8 @@
   "status": "READY_FOR_HERMES",
   "current_task": "TASK_0_IMPORT_IDEMPOTENCY",
   "codex_decision": "GO",
-  "hermes_status": "UNCLAIMED",
+  "hermes_status": "CLAIMED",
   "required_handoff_path": ".hermes/handoffs/task_0_import_idempotency.json",
-  "updated_by": "Codex",
-  "updated_at": "2026-07-14T15:22:00Z"
+  "updated_by": "Hermes",
+  "updated_at": "2026-07-14T17:11:39Z"
 }

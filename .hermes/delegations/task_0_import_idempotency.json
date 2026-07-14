@@ -1,0 +1,23 @@
+{
+  "task_id": "task_0_import_idempotency",
+  "description": "Fix import idempotency: partial unique index blocks PostgREST ON CONFLICT",
+  "allowed_files": [
+    "supabase/migrations/20260714000004_fix_import_fingerprint_conflict_target.sql",
+    "tests/security/lead-import-idempotency.test.mjs",
+    ".hermes/delegations/task_0_import_idempotency.json",
+    ".hermes/reviews/task_0_import_idempotency.json",
+    ".hermes/handoffs/task_0_import_idempotency.json",
+    ".hermes/control-plane/crm-core-workflow-closeout.json"
+  ],
+  "forbidden_files": [
+    "src/app/api/leads/import/confirm/route.ts",
+    "src/",
+    "app/",
+    ".env",
+    "node_modules/",
+    "scripts/deploy.sh"
+  ],
+  "worker": "opencode",
+  "model": "zai-coding-plan/glm-5.2",
+  "ttl": "24h"
+}

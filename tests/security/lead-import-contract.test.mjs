@@ -25,3 +25,10 @@ test("confirm revalidates original workbook values instead of normalized labels"
   assert.ok(source.includes("mapQuality(String(rawQuality ??"));
   assert.equal(source.includes("mapQuality(String(row.quality ??"), false);
 });
+
+test("country stays in raw import data until the leads schema supports it", async () => {
+  const preview = await read("src/app/api/leads/import/preview/route.ts");
+  const confirm = await read("src/app/api/leads/import/confirm/route.ts");
+  assert.ok(preview.includes("raw_country: norm.country ||"));
+  assert.equal(confirm.includes("country: row.country"), false);
+});

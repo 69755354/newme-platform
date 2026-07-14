@@ -1,0 +1,7 @@
+{
+  "task_id": "task_crm_import_country_hotfix",
+  "result": "PASS",
+  "finding": "Production import failed because confirm wrote country to a leads schema without that column.",
+  "fix": "Preserve country in raw_import_data.raw_country and omit the unsupported top-level insert field.",
+  "tests": "82/82 passed; targeted import contract 3/3 passed"
+}

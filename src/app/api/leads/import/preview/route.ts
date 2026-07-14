@@ -103,6 +103,7 @@ interface NormalizedRow {
   raw_import_data: {
     row_number: number;
     raw_source: string;
+    raw_country: string;
     raw_quality: string;
     raw_note: string;
     raw_status: string;
@@ -226,6 +227,7 @@ export async function POST(request: NextRequest) {
         raw_import_data: {
           row_number: rowNum,
           raw_source: norm.source || "",
+          raw_country: norm.country || "",
           raw_quality: norm.quality || "",
           raw_note: notes || "",
           raw_status: norm.raw_status || "",

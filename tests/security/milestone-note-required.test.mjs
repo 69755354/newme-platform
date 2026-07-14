@@ -31,7 +31,7 @@ test("milestone mutation sends the user note without a generated template", asyn
 test("database rejects blank manual milestone notes and derives First Contact note from its contact fact", async () => {
   const migration = await read("supabase/migrations/20260715000000_require_milestone_notes.sql");
   assert.match(migration, /BEFORE INSERT OR UPDATE OF notes ON public\.lead_milestones/);
-  assert.match(migration, /NEW\.milestone_key IN \(/);
+  assert.match(migration, /NEW\.milestone_key NOT IN \(/);
   for (const key of ["first_contact", "basic_info", "drawings", "requirements", "solution", "quotation", "meeting"]) {
     assert.ok(migration.includes(`'${key}'`), `missing milestone key ${key}`);
   }

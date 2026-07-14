@@ -1,0 +1,33 @@
+{
+  "task_id": "task_0_import_idempotency",
+  "branch": "hermes/task-0-import-idempotency",
+  "draft_pr_url": "PENDING",
+  "opencode_command": "opencode run --model zai-coding-plan/glm-5.2",
+  "model": "zai-coding-plan/glm-5.2",
+  "commits": [
+    {
+      "sha": "2cfe0753ceba3f2e5384db5948d43d088a570d1c",
+      "message": "[OPENCODE] fix import idempotency: partial \u2192 full unique index",
+      "files": [
+        "supabase/migrations/20260714000004_fix_import_fingerprint_conflict_target.sql",
+        "tests/security/lead-import-idempotency.test.mjs"
+      ]
+    }
+  ],
+  "red_evidence": "Test 'import fingerprint conflict target is a full unique index' failed: ENOENT \u2014 migration file not found",
+  "green_evidence": "All 3 tests pass. Migration: DROP partial \u2192 CREATE full unique index. No WHERE clause.",
+  "full_verification": {
+    "npm_test": "84/84 PASS",
+    "typecheck": "PASS",
+    "lint_baseline": "Pre-existing failures in .next.backup/ only",
+    "git_diff_check": "PASS"
+  },
+  "migration_status": "EXISTS_NOT_EXECUTED \u2014 migration file created but NOT applied to production DB",
+  "uat_status": "NOT_EXECUTED \u2014 awaiting Codex GO, deploy, then production UAT",
+  "known_risks": [
+    "New unique index creation may briefly lock leads table on production",
+    "PostgreSQL allows multiple NULLs \u2014 existing legacy rows (NULL fingerprints) are safe"
+  ],
+  "requested_codex_decision": "AWAITING_CODEX",
+  "created_at": "2026-07-14T17:22:08Z"
+}

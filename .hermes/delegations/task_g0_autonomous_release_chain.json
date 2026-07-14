@@ -1,0 +1,35 @@
+{
+  "task_id": "task_g0_autonomous_release_chain",
+  "description": "Build autonomous release chain: unified markers, Codex GO binding, detached worktree deploy, release envelope, listener lease, evidence SHA binding",
+  "allowed_files": [
+    ".githooks/pre-commit-scope",
+    ".hermes/release-authorization/task_g0_autonomous_release_chain.json",
+    "scripts/verify-release-auth.sh",
+    "scripts/deploy.sh",
+    "scripts/release-envelope.sh",
+    ".hermes/control-plane/release-lease.json",
+    ".github/workflows/ci.yml",
+    "tests/release/test-verify-release-auth.sh",
+    "tests/release/test-release-envelope.sh",
+    "tests/release/test-listener-lease.sh",
+    "tests/release/test-pre-commit-unified.sh",
+    ".hermes/delegations/task_g0_autonomous_release_chain.json",
+    ".hermes/reviews/task_g0_autonomous_release_chain.json",
+    ".hermes/handoffs/task_g0_autonomous_release_chain.json",
+    ".hermes/control-plane/crm-core-workflow-closeout.json"
+  ],
+  "forbidden_files": [
+    "src/",
+    "app/",
+    "supabase/migrations/",
+    ".env",
+    "node_modules/",
+    "TASKBOARD.md",
+    "SPEC.md"
+  ],
+  "worker": "opencode",
+  "model": "zai-coding-plan/glm-5.2",
+  "ttl": "24h",
+  "issued_at": "2026-07-14T17:30:00Z",
+  "expires_at": "2026-07-15T17:30:00Z"
+}

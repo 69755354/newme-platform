@@ -1,0 +1,31 @@
+{
+  "task_id": "handshake-ack",
+  "timestamp": "2026-07-14T16:00:00Z",
+  "dispatched_by": "Hermes (DeepSeek v4-pro)",
+  "model": "zai-coding-plan/glm-5.2",
+  "mode": "read-only dry-run",
+  "acknowledgments": {
+    "listener_enabled": true,
+    "can_read_main": true,
+    "can_read_control_plane": true,
+    "can_read_master_plan": true,
+    "opencode_model": "zai-coding-plan/glm-5.2",
+    "hermes_does_not_write_business_code": true,
+    "opencode_marker_required": "[OPENCODE] for all commits containing source/migration/test",
+    "no_merge_deploy_migration_without_codex_go": true,
+    "this_test_did_not_modify_control_plane": true,
+    "this_test_did_not_modify_production": true
+  },
+  "current_state": {
+    "origin_main_sha": "99a5c8b7625d392aff89e68976169bdb7fb1fc9d",
+    "control_plane_status": "READY_FOR_HERMES",
+    "current_task": "TASK_0_IMPORT_IDEMPOTENCY",
+    "codex_decision": "GO",
+    "hermes_status": "UNCLAIMED"
+  },
+  "files_created": [
+    ".hermes/handoffs/handshake-ack.json",
+    ".hermes/reviews/handshake-opencode-dry-run.md"
+  ],
+  "next_step": "AWAITING_CODEX — Codex must review this Draft PR and return GO before real TASK_0 begins"
+}

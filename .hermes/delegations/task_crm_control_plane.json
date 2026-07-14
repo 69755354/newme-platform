@@ -5,7 +5,14 @@
     ".hermes/control-plane/README.md",
     ".hermes/control-plane/crm-core-workflow-closeout.json",
     ".hermes/delegations/task_crm_control_plane.json",
-    ".hermes/reviews/task_crm_control_plane.json"
+    ".hermes/reviews/task_crm_control_plane.json",
+    "^\\.hermes/handoffs/handshake-ack\\.json$",
+    "^\\.hermes/reviews/handshake-opencode-dry-run\\.md$"
   ],
-  "forbidden_files": [".env", "node_modules/", "scripts/deploy.sh", "package-lock.json"]
+  "forbidden_files": [
+    ".env",
+    "node_modules/",
+    "scripts/deploy.sh",
+    "package-lock.json"
+  ]
 }

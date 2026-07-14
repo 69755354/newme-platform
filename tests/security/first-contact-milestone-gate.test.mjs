@@ -19,7 +19,7 @@ test("First Contact milestone API enforces contact plus quality before insert", 
 test("First Contact checkbox cannot bypass the business gate", async () => {
   const source = await read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
   assert.match(source, /firstContactBlocked/);
-  assert.match(source, /disabled=\{locked \|\| firstContactBlocked\}/);
+  assert.match(source, /disabled=\{locked \|\| firstContactBlocked \|\| !completed\}/);
   assert.match(source, /if \(locked \|\| firstContactBlocked\) return;/);
 });
 

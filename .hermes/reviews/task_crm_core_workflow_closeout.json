@@ -1,0 +1,6 @@
+{
+  "task_id": "task_crm_core_workflow_closeout",
+  "result": "PASS",
+  "review": "Plan covers production import repair, Lead mutation consistency, milestone contract, First Contact A2, dashboard/source/roles, controlled rollout, and Codex-Hermes handshakes.",
+  "production_change": false
+}

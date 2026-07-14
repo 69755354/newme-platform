@@ -6,7 +6,13 @@
     ".hermes/reviews/task_crm_import_first_contact_hotfix.json",
     "src/app/api/leads/import/confirm/route.ts",
     "src/app/api/leads/import/preview/route.ts",
-    "tests/security/lead-import-contract.test.mjs"
+    "tests/security/lead-import-contract.test.mjs",
+    "specs/inbox/*",
+    "specs/active/*",
+    "specs/done/*",
+    "specs/README.md",
+    "scripts/specs-pipeline.sh",
+    ".hermes/delegations/task_specs_pipeline_setup.json"
   ],
   "forbidden_files": [
     ".env",

@@ -32,3 +32,10 @@ test("country stays in raw import data until the leads schema supports it", asyn
   assert.ok(preview.includes("raw_country: norm.country ||"));
   assert.equal(confirm.includes("country: row.country"), false);
 });
+
+test("first contact date stays in raw import data until the leads schema supports it", async () => {
+  const preview = await read("src/app/api/leads/import/preview/route.ts");
+  const confirm = await read("src/app/api/leads/import/confirm/route.ts");
+  assert.ok(preview.includes("raw_first_contact_date: firstContact ||"));
+  assert.equal(confirm.includes("\n        first_contact_date: row.first_contact_date"), false);
+});

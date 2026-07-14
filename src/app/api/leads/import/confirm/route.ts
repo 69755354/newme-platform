@@ -138,7 +138,6 @@ export async function POST(request: NextRequest) {
         stage: "new", // always "new" on import — never trust client-supplied stage
         emirate: row.emirate || null,
         property_type: row.property_type || null,
-        first_contact_date: row.first_contact_date || null,
         quotation_value: row.quotation_value || null,
         raw_import_data: row.raw_import_data ? JSON.stringify(row.raw_import_data) : null,
         import_batch_id: importBatchId,

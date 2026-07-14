@@ -1,0 +1,17 @@
+{
+  "task_id": "task_crm_import_first_contact_hotfix",
+  "description": "Keep workbook first contact dates in raw import metadata without writing a missing leads column",
+  "allowed_files": [
+    ".hermes/delegations/task_crm_import_first_contact_hotfix.json",
+    ".hermes/reviews/task_crm_import_first_contact_hotfix.json",
+    "src/app/api/leads/import/confirm/route.ts",
+    "src/app/api/leads/import/preview/route.ts",
+    "tests/security/lead-import-contract.test.mjs"
+  ],
+  "forbidden_files": [
+    ".env",
+    "node_modules/",
+    "scripts/deploy.sh",
+    "package-lock.json"
+  ]
+}

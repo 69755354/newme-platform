@@ -1,0 +1,36 @@
+{
+  "task_id": "task_0_import_idempotency",
+  "commit_sha": "2cfe0753ceba3f2e5384db5948d43d088a570d1c",
+  "worker": "opencode",
+  "model": "zai-coding-plan/glm-5.2",
+  "result": "PASS",
+  "changed_files": [
+    "supabase/migrations/20260714000004_fix_import_fingerprint_conflict_target.sql",
+    "tests/security/lead-import-idempotency.test.mjs"
+  ],
+  "verification": {
+    "targeted_test": {
+      "result": "PASS",
+      "details": "3/3"
+    },
+    "npm_test": {
+      "result": "PASS",
+      "details": "84/84"
+    },
+    "typecheck": {
+      "result": "PASS"
+    },
+    "lint_baseline": {
+      "result": "PRE_EXISTING_FAILURE",
+      "details": "4413 errors in .next.backup. build artifacts only"
+    },
+    "git_diff_check": {
+      "result": "PASS"
+    }
+  },
+  "red_green": {
+    "red": "Test failed with ENOENT \u2014 migration file didn't exist",
+    "green": "Test passed \u2014 migration contains DROP partial + CREATE full unique index"
+  },
+  "reviewed_at": "2026-07-14T17:22:08Z"
+}

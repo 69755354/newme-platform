@@ -297,7 +297,8 @@ export default function LeadSalesProcess({
                 >
                   <button
                     onClick={() => {
-                      if (locked || firstContactBlocked || !completed) return;
+                      if (locked || firstContactBlocked) return;
+                      if (!completed) return;
                       void onToggleMilestone(key, true);
                     }}
                     disabled={locked || firstContactBlocked || !completed}

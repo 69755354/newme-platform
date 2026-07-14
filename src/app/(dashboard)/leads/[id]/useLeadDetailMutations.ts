@@ -538,11 +538,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }, [updating, leadId, t, lang, fetchData]);
 
   // ─── Milestone toggle: complete through the owned server route ─────────────
-  const toggleMilestone = useCallback(async (
-    milestoneKey: string,
-    currentlyCompleted: boolean,
-    note = "",
-  ): Promise<boolean> => {
+  const toggleMilestone = useCallback(async (milestoneKey: string, currentlyCompleted: boolean, note = ""): Promise<boolean> => {
     if (milestoneKey === "first_contact" && currentlyCompleted) {
       toast.error(lang === "zh" ? "初次接触由联系记录和线索质量自动确认" : "First Contact is confirmed by contact and quality");
       return false;

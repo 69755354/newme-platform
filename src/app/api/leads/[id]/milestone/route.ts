@@ -20,6 +20,7 @@ export async function POST(
   const leadId = (await context.params).id;
   const body = await req.json();
   const { milestoneKey, notes } = body as { milestoneKey: string; notes?: string };
+  const cleanNotes = String(notes ?? "").trim();
 
   if (!milestoneKey) {
     return NextResponse.json({ error: "缺少 milestoneKey" }, { status: 400 });
@@ -107,6 +108,16 @@ export async function POST(
     );
   }
 
+  if (!cleanNotes) {
+    return NextResponse.json({ error: "Milestone note is required" }, { status: 400 });
+  }
+  if (cleanNotes.length > 1000) {
+    return NextResponse.json(
+      { error: "Milestone note must be 1000 characters or fewer" },
+      { status: 400 },
+    );
+  }
+
   // 7. 插入里程碑（leads.current_milestone 由 trigger trg_check_milestone_order 自动维护）
   const { data: inserted, error: insertError } = await supabase
     .from("lead_milestones")
@@ -114,7 +125,7 @@ export async function POST(
       lead_id: leadId,
       milestone_key: milestoneKey,
       completed_by: profile.userId,
-      notes: notes ?? null,
+      notes: cleanNotes,
     })
     .select()
     .single();

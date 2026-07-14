@@ -56,7 +56,7 @@ G0-Lite does not:
 
 Keep the existing deployment pipeline and make a surgical change:
 
-- add strict main/SHA/cleanliness checks before taskboard, typecheck, backup, or build;
+- run strict main/SHA/cleanliness and CI/migration checks as the first operational step, before systemd start, taskboard, typecheck, backup, or build;
 - validate operator-supplied CI and migration evidence;
 - derive `RELEASE_SHA` only from the verified checkout;
 - replace the rsync source copy with `git worktree add --detach "$BUILD_DIR" "$RELEASE_SHA"`;
@@ -121,7 +121,7 @@ It covers:
 
 ## Error handling and rollback
 
-- All guard failures occur before backup or build mutation.
+- All Git/SHA/clean/CI/migration guard failures occur before systemd, backup, or build mutation.
 - Build failure removes only the detached worktree and leaves the live `.next` untouched.
 - Restart, log, smoke, or UAT failure leaves evidence incomplete and identifies the rollback target.
 - Rollback restores the recorded backup BUILD_ID and records the target Git SHA; rollback is never inferred from a branch name.

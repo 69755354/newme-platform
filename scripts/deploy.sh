@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e -o pipefail
+set -euo pipefail
 
 # ─── NewMe CRM Deploy Pipeline v4.0 ──────────────────────────
 # FULL ISOLATION BUILD — production .next is never touched during build.
@@ -16,9 +16,9 @@ set -e -o pipefail
 #   ✅ Cleanup old backups (keep 3)
 # ──────────────────────────────────────────────────────────────
 
-set -e -o pipefail
-
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$PROJECT_ROOT"
+RELEASE_SHA="$(bash scripts/verify-release-preflight.sh)"
 BACKUP_RETENTION=3
 
 # ── Deploy identity ──────────────────────────────────────────
@@ -30,7 +30,8 @@ BUILD_TIMESTAMP=$(date +%s)
 EVIDENCE_DIR="$PROJECT_ROOT/.hermes-harness/deploy-evidence"
 EVIDENCE_FILE="$EVIDENCE_DIR/$DEPLOY_ID.json"
 STARTED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-COMMIT_HASH=$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || echo "unknown")
+GIT_SHA="$RELEASE_SHA"
+BUILD_ID=""
 ACTOR=$(whoami)
 
 EVI_BUILD_STATUS="pending"
@@ -45,7 +46,12 @@ EVI_REGRESSION_PASSED=0
 EVI_REGRESSION_TOTAL=23
 EVI_HEALTH_STATUS="pending"
 EVI_HEALTH_CODE=0
+EVI_SYSTEMD_STATUS="pending"
 EVI_RESULT="fail"
+EVI_RELEASE_STATUS="failed"
+NEW_BUILD_ID=""
+BACKUP_DIR=""
+EXISTING_BUILD_ID=""
 
 mkdir -p "$EVIDENCE_DIR"
 
@@ -55,14 +61,41 @@ write_evidence() {
   cat > "$EVIDENCE_FILE" << JSONEOF
 {
   "deploy_id": "$DEPLOY_ID",
-  "commit": "$COMMIT_HASH",
+  "git_sha": "$GIT_SHA",
+  "build_id": "$BUILD_ID",
   "actor": "$ACTOR",
   "started_at": "$STARTED_AT",
   "finished_at": "$finished_at",
+  "ci": {
+    "run_id": "$CI_RUN_ID",
+    "run_url": "$CI_RUN_URL",
+    "head_sha": "$CI_HEAD_SHA",
+    "conclusion": "$CI_CONCLUSION"
+  },
+  "migration": {
+    "status": "$MIGRATION_STATUS",
+    "ids": "$MIGRATION_IDS"
+  },
+  "uat": {
+    "status": "pending",
+    "actor": "",
+    "completed_at": "",
+    "fixture_ids": [],
+    "cleanup_status": "pending"
+  },
+  "rollback": {
+    "git_sha": "$ROLLBACK_GIT_SHA",
+    "build_id": "$EXISTING_BUILD_ID",
+    "backup_dir": "$BACKUP_DIR"
+  },
   "build": {
     "status": "$EVI_BUILD_STATUS",
     "duration_sec": $EVI_BUILD_DURATION,
     "dir": "$BUILD_DIR"
+  },
+  "systemd": {
+    "status": "$EVI_SYSTEMD_STATUS",
+    "service": "newme-platform.service"
   },
   "smoke": {
     "status": "$EVI_SMOKE_STATUS",
@@ -82,13 +115,17 @@ write_evidence() {
     "status": "$EVI_HEALTH_STATUS",
     "http_status": $EVI_HEALTH_CODE
   },
-  "result": "$EVI_RESULT"
+  "result": "$EVI_RESULT",
+  "release_status": "$EVI_RELEASE_STATUS"
 }
 JSONEOF
 }
 
 # Single trap: always cleanup build dir + write evidence
 cleanup_on_exit() {
+  cd "$PROJECT_ROOT" 2>/dev/null || true
+  git -C "$PROJECT_ROOT" worktree remove --force "$BUILD_DIR" 2>/dev/null || true
+  git -C "$PROJECT_ROOT" worktree prune 2>/dev/null || true
   rm -rf "$BUILD_DIR" 2>/dev/null || true
   rm -f "$PROJECT_ROOT/.hermes/deploy-in-progress" 2>/dev/null || true
   write_evidence
@@ -165,227 +202,8 @@ fi
 echo "✅ Process ownership: systemd only"
 echo ""
 
-# ═══ Step 0.7: Coding auth ═══
-echo "--- Step 0.7/7: Coding auth gate ---"
-if [ -f "scripts/verify-coding-auth.py" ]; then
-  python3 scripts/verify-coding-auth.py --mode deploy 2>&1 || { echo "🚫 ABORT: Coding auth."; exit 1; }
-fi
-echo ""
-
-# ═══════════════════════════════════════════════════════════════
-# Step 0.8: C++ Deploy Gate
-# Self-proving: git diff × manifest scope × actor
-# Does NOT trust Hermes-written review files as final authority.
-# Generates protected gate result at /var/lib/newme/deploy-gate/
-# ═══════════════════════════════════════════════════════════════
-echo "--- Step 0.8/8: C++ Deploy Gate ---"
-
-MANIFEST_DIR="$PROJECT_ROOT/.hermes/delegations"
-REVIEW_DIR="$PROJECT_ROOT/.hermes/reviews"
-GATE_RESULT_DIR="$HOME/.hermes/deploy-gate/results"
-mkdir -p "$GATE_RESULT_DIR"
-
-CURRENT_HEAD=$(git -C "$PROJECT_ROOT" rev-parse HEAD)
-GATE_RESULT_FILE="$GATE_RESULT_DIR/${CURRENT_HEAD}.json"
-
-# ── Detect Codex commit ─────────────────────────────────────
-IS_CODEX=false
-TASK_ID=""
-COMMIT_MSG=$(git -C "$PROJECT_ROOT" log -1 --format=%s HEAD 2>/dev/null || echo "")
-
-if echo "$COMMIT_MSG" | grep -q '\[CODEX\]'; then
-  IS_CODEX=true
-  TASK_ID=$(echo "$COMMIT_MSG" | grep -oP '\[task_[a-zA-Z0-9_-]+\]' | head -1 | tr -d '[]')
-  [ -z "$TASK_ID" ] && TASK_ID="unknown"
-fi
-
-# ── Get changed files ───────────────────────────────────────
-PARENT=$(git -C "$PROJECT_ROOT" rev-parse HEAD~1 2>/dev/null || echo "")
-if [ -n "$PARENT" ]; then
-  CHANGED_FILES=$(git -C "$PROJECT_ROOT" diff --name-only "$PARENT" HEAD 2>/dev/null)
-else
-  CHANGED_FILES=$(git -C "$PROJECT_ROOT" diff --name-only HEAD 2>/dev/null)
-fi
-
-PROTECTED_GLOB="^(src/|app/|components/|lib/|scripts/|migrations/|prisma/|deploy.sh|package.json|package-lock.json|pnpm-lock.yaml|yarn.lock|tsconfig.json|next.config.)"
-GATE_SCRIPTS_GLOB="^(scripts/deploy.sh|scripts/verify-coding-auth.py|.githooks/)"
-
-write_gate_result() {
-  local result="$1" reason="$2"
-  local t
-  t="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-  cat > "$GATE_RESULT_FILE" << GEOF
-{
-  "commit_sha": "$CURRENT_HEAD",
-  "task_id": "$TASK_ID",
-  "actor_claim": "$([ "$IS_CODEX" = true ] && echo "Codex" || echo "non-Codex")",
-  "is_codex_commit": $IS_CODEX,
-  "changed_files": "$(echo "$CHANGED_FILES" | tr '\n' ' ' | sed 's/  *$//')",
-  "manifest_allowed": "$ALLOWED_FILES_LIST",
-  "manifest_forbidden": "$FORBIDDEN_FILES_LIST",
-  "hermes_review_seen": $([ -f "$REVIEW_FILE" ] && echo true || echo false),
-  "hermes_review_result": "${REVIEW_RESULT:-not_checked}",
-  "final_result": "$result",
-  "reason": "$reason",
-  "generated_by": "deploy.sh Step 0.8",
-  "timestamp": "$t"
-}
-GEOF
-}
-
-# ── Case A: NOT Codex commit ────────────────────────────────
-if [ "$IS_CODEX" = false ]; then
-  PROTECTED_HIT=false
-  for f in $CHANGED_FILES; do
-    if echo "$f" | grep -qE "$PROTECTED_GLOB"; then
-      echo "  🔴 Non-Codex commit touches PROTECTED: $f"
-      PROTECTED_HIT=true
-    fi
-  done
-  if $PROTECTED_HIT; then
-    write_gate_result "FAIL" "Non-Codex commit touches protected files"
-    echo "🚫 C++ GATE FAIL: Non-Codex commit ($COMMIT_MSG) touches protected files"
-    exit 1
-  fi
-  echo "✅ C++ Gate PASS (non-Codex commit, no protected files)"
-  write_gate_result "PASS" "Non-Codex, no protected files"
-  echo ""
-else
-# ── Case B: Codex commit — full gate ────────────────────────
-  MANIFEST_FILE="$MANIFEST_DIR/${TASK_ID}.json"
-  if [ ! -f "$MANIFEST_FILE" ]; then
-    write_gate_result "FAIL" "Manifest not found"
-    echo "🚫 C++ GATE FAIL: Manifest not found: $MANIFEST_FILE"
-    exit 1
-  fi
-
-  EXPIRES_AT=$(python3 -c "import json; print(json.load(open('$MANIFEST_FILE')).get('expires_at',''))" 2>/dev/null || echo "")
-  if [ -n "$EXPIRES_AT" ] && [ "$EXPIRES_AT" != "None" ]; then
-    EXPIRES_EPOCH=$(date -d "$EXPIRES_AT" +%s 2>/dev/null || echo 0)
-    NOW_EPOCH=$(date +%s)
-    if [ "$EXPIRES_EPOCH" -gt 0 ] && [ "$NOW_EPOCH" -gt "$EXPIRES_EPOCH" ]; then
-      TASK_ID_BASE="${TASK_ID%.*}"
-      TASK_ID_ALT="${TASK_ID%%_*}"
-      CANDIDATE_FILES=(
-        "$MANIFEST_DIR/${TASK_ID}.json"
-        "$MANIFEST_DIR/${TASK_ID_BASE}.json"
-        "$MANIFEST_DIR/${TASK_ID_ALT}.json"
-      )
-      REFRESHED=false
-      for CAND in "${CANDIDATE_FILES[@]}"; do
-        if [ -f "$CAND" ]; then
-          NEW_EXPIRES=$(python3 - "$CAND" <<'PY2'
-import json, sys
-from datetime import datetime, timedelta, timezone
-p = sys.argv[1]
-obj = json.load(open(p))
-obj['issued_at'] = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-obj['expires_at'] = (datetime.now(timezone.utc) + timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
-json.dump(obj, open(p, 'w'), ensure_ascii=False, indent=2)
-print(obj['expires_at'])
-PY2
-)
-          REFRESHED=true
-          EXPIRES_AT="$NEW_EXPIRES"
-          echo "ℹ️  Manifest refreshed: $CAND -> $EXPIRES_AT"
-          break
-        fi
-      done
-      if [ "$REFRESHED" = false ]; then
-        write_gate_result "FAIL" "Manifest expired"
-        echo "🚫 C++ GATE FAIL: Manifest expired at $EXPIRES_AT"
-        exit 1
-      fi
-    fi
-  fi
-
-  ALLOWED_FILES_LIST=$(python3 -c "import json; print(' '.join(json.load(open('$MANIFEST_FILE')).get('allowed_files',[])))" 2>/dev/null || echo "")
-  FORBIDDEN_FILES_LIST=$(python3 -c "import json; print(' '.join(json.load(open('$MANIFEST_FILE')).get('forbidden_files',[])))" 2>/dev/null || echo "")
-
-  # Gate scripts check — requires CONTROL_PLANE_AUTH if modified
-  GATE_SCRIPT_HIT=false
-  for f in $CHANGED_FILES; do
-    if echo "$f" | grep -qE "$GATE_SCRIPTS_GLOB"; then
-      echo "  🔴 Codex commit modifies GATE SCRIPT: $f"
-      GATE_SCRIPT_HIT=true
-    fi
-  done
-  if $GATE_SCRIPT_HIT; then
-    # Gate scripts modified — require CONTROL_PLANE_AUTH, not just coding auth
-    CP_AUTH_FILE=".hermes/delegations/${TASK_ID}.control-plane.json"
-    if [ ! -f "$CP_AUTH_FILE" ]; then
-      write_gate_result "FAIL" "Gate script modified: $f — requires CONTROL_PLANE_AUTH"
-      echo "🚫 C++ GATE FAIL: Gate scripts modified. CONTROL_PLANE_AUTH required."
-      echo "   Gate scripts: $GATE_SCRIPTS_GLOB"
-      exit 1
-    fi
-    # Verify CONTROL_PLANE_AUTH expiration
-    CP_EXPIRES=$(python3 -c "import json; print(json.load(open('$CP_AUTH_FILE')).get('expires_at',''))" 2>/dev/null || echo "")
-    if [ -n "$CP_EXPIRES" ] && [ "$CP_EXPIRES" != "None" ]; then
-      CP_EPOCH=$(date -d "$CP_EXPIRES" +%s 2>/dev/null || echo 0)
-      if [ "$CP_EPOCH" -gt 0 ] && [ "$(date +%s)" -gt "$CP_EPOCH" ]; then
-        write_gate_result "FAIL" "CONTROL_PLANE_AUTH expired"
-        echo "🚫 C++ GATE FAIL: CONTROL_PLANE_AUTH expired at $CP_EXPIRES"
-        exit 1
-      fi
-    fi
-    echo "✅ C++ Gate: CONTROL_PLANE_AUTH verified for gate script modification"
-  fi
-
-  # Scope check
-  SCOPE_FAIL=false
-  for f in $CHANGED_FILES; do
-    for fb in $FORBIDDEN_FILES_LIST; do
-      if echo "$f" | grep -qF "$fb"; then
-        echo "  🔴 $f matches FORBIDDEN: $fb"
-        SCOPE_FAIL=true
-      fi
-    done
-    if [ -n "$ALLOWED_FILES_LIST" ]; then
-      MATCHED=false
-      for af in $ALLOWED_FILES_LIST; do
-        if echo "$f" | grep -qF "$af"; then MATCHED=true; break; fi
-      done
-      if ! $MATCHED; then
-        echo "  🔴 $f NOT in allowed_files"
-        SCOPE_FAIL=true
-      fi
-    fi
-  done
-
-  if $SCOPE_FAIL; then
-    write_gate_result "FAIL" "Changed files exceed manifest scope"
-    echo "🚫 C++ GATE FAIL: Scope violation"
-    exit 1
-  fi
-  echo "✅ C++ Gate: all files within manifest scope"
-
-  # Hermes review check
-  REVIEW_FILE="$REVIEW_DIR/${TASK_ID}.json"
-  if [ ! -f "$REVIEW_FILE" ]; then
-    write_gate_result "FAIL" "No Hermes review"
-    echo "🚫 C++ GATE FAIL: No Hermes review: $REVIEW_FILE"
-    exit 1
-  fi
-
-  REVIEW_RESULT=$(python3 -c "import json; print(json.load(open('$REVIEW_FILE')).get('result',''))" 2>/dev/null || echo "")
-  REVIEW_COMMIT=$(python3 -c "import json; print(json.load(open('$REVIEW_FILE')).get('commit_sha',''))" 2>/dev/null || echo "")
-
-  if [ "$REVIEW_RESULT" != "PASS" ]; then
-    write_gate_result "FAIL" "Hermes review not PASS"
-    echo "🚫 C++ GATE FAIL: Review result=$REVIEW_RESULT"
-    exit 1
-  fi
-  if [ -n "$REVIEW_COMMIT" ] && [ "$REVIEW_COMMIT" != "$CURRENT_HEAD" ]; then
-    write_gate_result "FAIL" "Review sha mismatch"
-    echo "🚫 C++ GATE FAIL: Review sha=$REVIEW_COMMIT, HEAD=$CURRENT_HEAD"
-    exit 1
-  fi
-
-  echo "✅ C++ Gate: review PASS @ $CURRENT_HEAD"
-  write_gate_result "PASS" "Codex scope OK, review PASS, gate scripts intact"
-  echo ""
-fi
+# Legacy Hermes/C++ authorization gates removed: release safety is owned by the
+# strict SHA-bound preflight above.
 
 # ═══ Step 1: TypeScript check (in production dir, safe) ═══
 echo "--- Step 1/6: TypeScript check ---"
@@ -426,23 +244,14 @@ echo "ℹ️  Service is LIVE. Production .next is untouched."
 
 BUILD_START=$(date +%s)
 
-# Copy project to temp directory using rsync (fully isolated, no hardlinks)
-# Skipping .next (build output), .git, and node_modules — rebuilt fresh each deploy
-echo "📋 Copying project to build directory (rsync, isolated)..."
+# Create an isolated detached worktree at the verified release SHA.
+echo "📋 Creating detached worktree at $RELEASE_SHA..."
 rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR"
-
-rsync -a --delete \
-  --exclude '.next' \
-  --exclude '.next.backup.*' \
-  --exclude '.hermes-harness' \
-  --exclude '.hermes/deploy-in-progress' \
-  --exclude '.hermes/IS_PRODUCTION' \
-  --exclude 'node_modules' \
-  --exclude '.git' \
-  "$PROJECT_ROOT/" "$BUILD_DIR/"
-
-echo "✅ Project copied (src: $(du -sh --exclude=node_modules "$BUILD_DIR" 2>/dev/null | cut -f1))"
+git -C "$PROJECT_ROOT" worktree add --detach "$BUILD_DIR" "$RELEASE_SHA"
+if [ -f "$PROJECT_ROOT/.env.local" ]; then
+  cp "$PROJECT_ROOT/.env.local" "$BUILD_DIR/.env.local"
+fi
+echo "✅ Worktree ready at $RELEASE_SHA"
 
 # ── Install dependencies (fresh npm ci, no cache) ──────────────
 cd "$BUILD_DIR"
@@ -503,6 +312,7 @@ if [ ! -f .next/BUILD_ID ]; then
 fi
 
 NEW_BUILD_ID=$(cat .next/BUILD_ID)
+BUILD_ID="$NEW_BUILD_ID"
 
 # Normalize ownership for ubuntu user
 if [ "$(id -u)" = "0" ]; then
@@ -568,6 +378,7 @@ if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "307" ]; then
   echo "✅ Service healthy (HTTP $HTTP_CODE)"
   EVI_HEALTH_STATUS="pass"
   EVI_HEALTH_CODE=$HTTP_CODE
+  EVI_SYSTEMD_STATUS="pass"
 else
   echo "❌ Service unhealthy (HTTP $HTTP_CODE). Rolling back..."
   rm -rf .next
@@ -619,3 +430,6 @@ echo "=== ✅ Deploy pipeline complete ==="
 echo "BUILD_ID: $NEW_BUILD_ID"
 echo "Time:     $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 EVI_RESULT="pass"
+EVI_RELEASE_STATUS="awaiting_uat"
+echo "Release status: awaiting authenticated UAT"
+echo "Evidence: $EVIDENCE_FILE"

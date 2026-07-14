@@ -26,7 +26,6 @@
 import { useCallback, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
-import { MILESTONE_LABELS, MILESTONE_DESCRIPTIONS } from "@/lib/milestones";
 import { createFollowUpTask } from "@/lib/tasks";
 import { projectDraftFromLead } from "./utils";
 import type { Lead, Task } from "./types";
@@ -94,7 +93,7 @@ export interface UseLeadDetailMutationsReturn {
   handleWon: (note?: string) => Promise<boolean>;
   handleLost: (note?: string) => Promise<boolean>;
   addNote: (noteText: string) => Promise<void>;
-  toggleMilestone: (milestoneKey: string, currentlyCompleted: boolean) => Promise<void>;
+  toggleMilestone: (milestoneKey: string, currentlyCompleted: boolean, note?: string) => Promise<boolean>;
   addStructuredContact: (params: {
     contact_method: string;
     contact_time: string;
@@ -539,47 +538,53 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }, [updating, leadId, t, lang, fetchData]);
 
   // ─── Milestone toggle: complete through the owned server route ─────────────
-  const toggleMilestone = useCallback(async (milestoneKey: string, currentlyCompleted: boolean) => {
+  const toggleMilestone = useCallback(async (milestoneKey: string, currentlyCompleted: boolean, note = ""): Promise<boolean> => {
     if (milestoneKey === "first_contact" && currentlyCompleted) {
       toast.error(lang === "zh" ? "初次接触由联系记录和线索质量自动确认" : "First Contact is confirmed by contact and quality");
-      return;
+      return false;
+    }
+
+    const cleanNote = note.trim();
+    if (!currentlyCompleted && !cleanNote) {
+      toast.error(lang === "zh" ? "请填写里程碑备注" : "Milestone note is required");
+      return false;
     }
 
     setUpdating(true);
-    if (currentlyCompleted) {
-      const { error: delErr } = await supabase
-        .from("lead_milestones")
-        .delete()
-        .eq("lead_id", leadId)
-        .eq("milestone_key", milestoneKey);
-      if (delErr) {
-        console.error("[LeadDetail] milestone uncomplete failed");
-        toast.error(t("common.saveFailed"));
-        setUpdating(false);
-        return;
+    try {
+      if (currentlyCompleted) {
+        const { error: delErr } = await supabase
+          .from("lead_milestones")
+          .delete()
+          .eq("lead_id", leadId)
+          .eq("milestone_key", milestoneKey);
+        if (delErr) {
+          console.error("[LeadDetail] milestone uncomplete failed");
+          toast.error(t("common.saveFailed"));
+          return false;
+        }
+        toast.success(lang === "zh" ? "里程碑已撤销" : "Milestone undone");
+      } else {
+        const response = await fetch("/api/leads/" + leadId + "/milestone", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            milestoneKey,
+            notes: note.trim(),
+          }),
+        });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          toast.error(json?.error || t("common.saveFailed"));
+          return false;
+        }
+        toast.success(lang === "zh" ? "里程碑已完成" : "Milestone completed");
       }
-      toast.success(lang === "zh" ? "里程碑已撤销" : "Milestone undone");
-    } else {
-      const response = await fetch("/api/leads/" + leadId + "/milestone", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          milestoneKey,
-          notes: lang === "zh"
-            ? `手动完成里程碑: ${MILESTONE_LABELS[milestoneKey] || milestoneKey} — ${MILESTONE_DESCRIPTIONS[milestoneKey]?.zh || ""}`
-            : `Manually completed milestone: ${MILESTONE_LABELS[milestoneKey] || milestoneKey} — ${MILESTONE_DESCRIPTIONS[milestoneKey]?.en || ""}`,
-        }),
-      });
-      const json = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        toast.error(json?.error || t("common.saveFailed"));
-        setUpdating(false);
-        return;
-      }
-      toast.success(lang === "zh" ? "里程碑已完成" : "Milestone completed");
+      await fetchData();
+      return true;
+    } finally {
+      setUpdating(false);
     }
-    setUpdating(false);
-    await fetchData();
   }, [supabase, leadId, t, lang, fetchData]);
 
   return {

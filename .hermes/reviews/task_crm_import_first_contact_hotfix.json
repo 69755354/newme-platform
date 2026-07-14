@@ -1,0 +1,7 @@
+{
+  "task_id": "task_crm_import_first_contact_hotfix",
+  "result": "PASS",
+  "finding": "Production import still failed because confirm wrote first_contact_date to a leads schema without that column.",
+  "fix": "Preserve the date in raw_import_data.raw_first_contact_date and omit the unsupported top-level insert field.",
+  "tests": "Production UAT reproduced the failure; 83/83 tests, typecheck, lint baseline, and diff check passed"
+}

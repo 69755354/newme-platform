@@ -1,0 +1,15 @@
+{
+  "task_id": "task_crm_core_workflow_closeout",
+  "description": "Publish the reviewed CRM Core Workflow Production Closeout execution contract",
+  "allowed_files": [
+    ".hermes/delegations/task_crm_core_workflow_closeout.json",
+    ".hermes/reviews/task_crm_core_workflow_closeout.json",
+    "docs/superpowers/plans/2026-07-14-crm-core-workflow-production-closeout.md"
+  ],
+  "forbidden_files": [
+    ".env",
+    "node_modules/",
+    "scripts/deploy.sh",
+    "package-lock.json"
+  ]
+}

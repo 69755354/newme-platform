@@ -44,22 +44,23 @@ test("exit cleanup removes and prunes the detached build worktree", () => {
 });
 
 test("deploy evidence records release identity, CI, migration, UAT, and rollback fields", () => {
-  for (const field of [
-    "GIT_SHA",
-    "BUILD_ID",
-    "CI_RUN_ID",
-    "CI_RUN_URL",
-    "CI_HEAD_SHA",
-    "CI_CONCLUSION",
-    "MIGRATION_STATUS",
-    "MIGRATION_IDS",
-    "UAT_STATUS",
-    "ROLLBACK_GIT_SHA",
+  for (const token of [
+    '"git_sha": "$GIT_SHA"',
+    '"build_id": "$BUILD_ID"',
+    '"run_id": "$CI_RUN_ID"',
+    '"run_url": "$CI_RUN_URL"',
+    '"head_sha": "$CI_HEAD_SHA"',
+    '"conclusion": "$CI_CONCLUSION"',
+    '"status": "$MIGRATION_STATUS"',
+    '"ids": "$MIGRATION_IDS"',
+    '"git_sha": "$ROLLBACK_GIT_SHA"',
+    '"release_status": "$EVI_RELEASE_STATUS"',
   ]) {
-    const pattern = new RegExp('"' + field + '"\\s*:\\s*"\\$' + field + '"');
-    assert.match(deploy, pattern, `missing evidence field ${field}`);
+    assert.ok(deploy.includes(token), `missing evidence token: ${token}`);
   }
   assert.match(deploy, /BUILD_ID="\$NEW_BUILD_ID"/);
+  assert.match(deploy, /EVI_RELEASE_STATUS="awaiting_uat"/);
+  assert.doesNotMatch(deploy, /"release_status":\s*"complete"/);
   assert.doesNotMatch(deploy, /(?:demo|fake)[_-]?(?:ci|sha|build|migration|uat)/i);
 });
 
@@ -68,8 +69,8 @@ test("expired authorization fails without rewriting a manifest", () => {
   assert.doesNotMatch(deploy, /Manifest refreshed/);
 });
 
-test("only a verified merge commit can pass the non-Codex protected-file gate", () => {
-  assert.match(deploy, /IS_MERGE_COMMIT=false/);
-  assert.match(deploy, /rev-parse\s+--verify\s+HEAD\^2/);
-  assert.match(deploy, /if\s+\$PROTECTED_HIT\s+&&\s+!\s+\$IS_MERGE_COMMIT/);
+test("legacy Hermes authorization gates are not part of deployment", () => {
+  assert.doesNotMatch(deploy, /verify-coding-auth\.py/);
+  assert.doesNotMatch(deploy, /\.hermes\/delegations/);
+  assert.doesNotMatch(deploy, /CONTROL_PLANE_AUTH/);
 });

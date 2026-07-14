@@ -56,8 +56,20 @@ test("deploy evidence records release identity, CI, migration, UAT, and rollback
     "UAT_STATUS",
     "ROLLBACK_GIT_SHA",
   ]) {
-    assert.match(deploy, new RegExp(`"${field}"\\s*:\\s*"\\$${${field}}`), `missing evidence field ${field}`);
+    const pattern = new RegExp('"' + field + '"\\s*:\\s*"\\$' + field + '"');
+    assert.match(deploy, pattern, `missing evidence field ${field}`);
   }
   assert.match(deploy, /BUILD_ID="\$NEW_BUILD_ID"/);
   assert.doesNotMatch(deploy, /(?:demo|fake)[_-]?(?:ci|sha|build|migration|uat)/i);
+});
+
+test("expired authorization fails without rewriting a manifest", () => {
+  assert.doesNotMatch(deploy, /json\.dump\(obj,\s*open\(p,\s*['"]w['"]\)/);
+  assert.doesNotMatch(deploy, /Manifest refreshed/);
+});
+
+test("only a verified merge commit can pass the non-Codex protected-file gate", () => {
+  assert.match(deploy, /IS_MERGE_COMMIT=false/);
+  assert.match(deploy, /rev-parse\s+--verify\s+HEAD\^2/);
+  assert.match(deploy, /if\s+\$PROTECTED_HIT\s+&&\s+!\s+\$IS_MERGE_COMMIT/);
 });

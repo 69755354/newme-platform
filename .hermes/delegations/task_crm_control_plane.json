@@ -1,0 +1,11 @@
+{
+  "task_id": "task_crm_control_plane",
+  "description": "Publish the Git-backed Hermes and Codex CRM workflow handshake protocol",
+  "allowed_files": [
+    ".hermes/control-plane/README.md",
+    ".hermes/control-plane/crm-core-workflow-closeout.json",
+    ".hermes/delegations/task_crm_control_plane.json",
+    ".hermes/reviews/task_crm_control_plane.json"
+  ],
+  "forbidden_files": [".env", "node_modules/", "scripts/deploy.sh", "package-lock.json"]
+}

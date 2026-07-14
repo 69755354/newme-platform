@@ -1,0 +1,6 @@
+{
+  "task_id": "task_crm_control_plane",
+  "result": "PASS",
+  "review": "Git-backed state machine defines Hermes claim/handoff and Codex approval gates without production changes.",
+  "production_change": false
+}

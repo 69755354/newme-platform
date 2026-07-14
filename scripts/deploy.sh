@@ -4,7 +4,7 @@ set -e -o pipefail
 # ─── NewMe CRM Deploy Pipeline v4.0 ──────────────────────────
 # FULL ISOLATION BUILD — production .next is never touched during build.
 #
-# Build happens in /tmp/newme-build-$ID (complete copy, no symlinks).
+# Build happens in /tmp/newme-build-$ID (detached git worktree at RELEASE_SHA).
 # Only after .next/BUILD_ID is verified does the swap occur.
 #
 # v4.0 guarantees:
@@ -89,6 +89,8 @@ JSONEOF
 
 # Single trap: always cleanup build dir + write evidence
 cleanup_on_exit() {
+  cd "$PROJECT_ROOT" 2>/dev/null || true
+  git worktree remove "$BUILD_DIR" --force 2>/dev/null || true
   rm -rf "$BUILD_DIR" 2>/dev/null || true
   rm -f "$PROJECT_ROOT/.hermes/deploy-in-progress" 2>/dev/null || true
   write_evidence
@@ -112,6 +114,37 @@ if ! systemctl is-active --quiet newme-platform.service 2>/dev/null; then
     exit 1
   }
 fi
+echo ""
+
+# ═══ Pre-flight: deploy safety checks ═══
+echo "--- Pre-flight checks ---"
+
+# Check 1: must be on main branch
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  echo "🚫 Not on main branch (current: $CURRENT_BRANCH). Deploy only from main."
+  exit 1
+fi
+
+# Check 2: HEAD must equal origin/main
+git fetch origin main --quiet
+ORIGIN_MAIN=$(git rev-parse origin/main)
+if [ "$(git rev-parse HEAD)" != "$ORIGIN_MAIN" ]; then
+  echo "🚫 HEAD != origin/main. Pull latest main first."
+  echo "   HEAD:        $(git rev-parse --short HEAD)"
+  echo "   origin/main: $(git rev-parse --short origin/main)"
+  exit 1
+fi
+
+# Check 3: clean working directory (allow only known safe dirty files)
+DIRTY=$(git status --porcelain | grep -v '^.M .hermes/' | grep -v '^.M AGENTS.md' | grep -v '^.M tsconfig.tsbuildinfo' || true)
+if [ -n "$DIRTY" ]; then
+  echo "🚫 Working directory not clean:"
+  echo "$DIRTY"
+  exit 1
+fi
+
+echo "✅ Pre-flight: main branch, HEAD==origin/main, workspace clean"
 echo ""
 
 # ═══ Step 0: Taskboard gate ═══
@@ -387,6 +420,16 @@ PY2
   echo ""
 fi
 
+# ═══ Step 0.9: Release Authorization Gate ═══
+echo "--- Step 0.9/9: Release Authorization Gate ---"
+RELEASE_AUTH_FILE=".hermes/release-authorization/task_g0_autonomous_release_chain.json"
+if [ -f "$RELEASE_AUTH_FILE" ]; then
+  bash scripts/verify-release-auth.sh "$RELEASE_AUTH_FILE" || { echo "🚫 ABORT: Release not authorized."; exit 1; }
+else
+  echo "⚠️  No release auth file found — skipping (dev mode)"
+fi
+echo ""
+
 # ═══ Step 1: TypeScript check (in production dir, safe) ═══
 echo "--- Step 1/6: TypeScript check ---"
 npx tsc --noEmit 2>&1 || { echo "❌ TypeScript check failed."; exit 1; }
@@ -426,23 +469,28 @@ echo "ℹ️  Service is LIVE. Production .next is untouched."
 
 BUILD_START=$(date +%s)
 
-# Copy project to temp directory using rsync (fully isolated, no hardlinks)
-# Skipping .next (build output), .git, and node_modules — rebuilt fresh each deploy
-echo "📋 Copying project to build directory (rsync, isolated)..."
+# Determine release SHA (from release auth file, fallback to HEAD)
+RELEASE_SHA=$(git rev-parse HEAD)
+if [ -f "$RELEASE_AUTH_FILE" ]; then
+  RELEASE_SHA=$(python3 -c "import json; print(json.load(open('$RELEASE_AUTH_FILE')).get('merged_main_sha',''))" 2>/dev/null || echo "")
+  [ -z "$RELEASE_SHA" ] && RELEASE_SHA=$(git rev-parse HEAD)
+fi
+
+# Verify RELEASE_SHA exists in repo
+if ! git cat-file -e "${RELEASE_SHA}^{commit}" 2>/dev/null; then
+  echo "❌ Release SHA $RELEASE_SHA not found in repo"
+  exit 1
+fi
+
+# Build from detached git worktree (replaces rsync copy)
+echo "📋 Creating detached worktree at $RELEASE_SHA..."
 rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR"
+git worktree add --detach "$BUILD_DIR" "$RELEASE_SHA"
 
-rsync -a --delete \
-  --exclude '.next' \
-  --exclude '.next.backup.*' \
-  --exclude '.hermes-harness' \
-  --exclude '.hermes/deploy-in-progress' \
-  --exclude '.hermes/IS_PRODUCTION' \
-  --exclude 'node_modules' \
-  --exclude '.git' \
-  "$PROJECT_ROOT/" "$BUILD_DIR/"
+# gitignored build inputs are absent from worktree checkout — copy them in
+[ -f "$PROJECT_ROOT/.env.local" ] && cp "$PROJECT_ROOT/.env.local" "$BUILD_DIR/.env.local"
 
-echo "✅ Project copied (src: $(du -sh --exclude=node_modules "$BUILD_DIR" 2>/dev/null | cut -f1))"
+echo "✅ Worktree ready at $RELEASE_SHA"
 
 # ── Install dependencies (fresh npm ci, no cache) ──────────────
 cd "$BUILD_DIR"

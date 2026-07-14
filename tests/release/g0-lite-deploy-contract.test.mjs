@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -73,4 +74,16 @@ test("legacy Hermes authorization gates are not part of deployment", () => {
   assert.doesNotMatch(deploy, /verify-coding-auth\.py/);
   assert.doesNotMatch(deploy, /\.hermes\/delegations/);
   assert.doesNotMatch(deploy, /CONTROL_PLANE_AUTH/);
+});
+
+
+test("release shell scripts have valid Bash syntax", () => {
+  for (const script of [
+    "scripts/verify-release-preflight.sh",
+    "scripts/deploy.sh",
+    "scripts/finalize-deploy-evidence.sh",
+  ]) {
+    const result = spawnSync("bash", ["-n", script], { encoding: "utf8" });
+    assert.equal(result.status, 0, `${script}: ${result.stderr}`);
+  }
 });

@@ -26,3 +26,12 @@ test("database enforces import fingerprint uniqueness without rewriting legacy r
   assert.ok(migration.includes("WHERE import_fingerprint IS NOT NULL"));
   assert.equal(migration.includes("UPDATE public.leads"), false);
 });
+
+test("production conflict target is a full unique index", async () => {
+  const repair = await read(
+    "supabase/migrations/20260716000000_fix_import_fingerprint_conflict.sql",
+  );
+  assert.ok(repair.includes("DROP INDEX IF EXISTS public.leads_import_fingerprint_unique"));
+  assert.ok(repair.includes("CREATE UNIQUE INDEX leads_import_fingerprint_unique"));
+  assert.equal(repair.includes("WHERE import_fingerprint IS NOT NULL"), false);
+});

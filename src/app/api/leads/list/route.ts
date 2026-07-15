@@ -1,5 +1,5 @@
 // RBAC: user (authenticated)
-// GET /api/leads/list — Aggregated leads list data with 30s cache
+// GET /api/leads/list — Aggregated leads list data
 // Server-side auth.getUser() → profile role → leads (500 max) → sales users
 // All 4 queries parallelized with Promise.all
 import { NextResponse } from "next/server";
@@ -29,7 +29,6 @@ export async function GET(request: Request) {
 
   const role: string = profile.role;
   const userId: string = user.id;
-
 
   // ── Parallel batch: leads + salesUsers ──
   let leadsQuery = supabase.from("leads").select(

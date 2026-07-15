@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 // Right column — Timeline. Three stacked blocks:
 //   1. Add Note  (textarea + send button → onAddNote, reusing the page's addNote)

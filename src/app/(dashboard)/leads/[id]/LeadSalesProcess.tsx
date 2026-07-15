@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 // Middle column — Sales Process. Drives the deal forward:
 // milestone checklist → next required action → missing required fields (gated by

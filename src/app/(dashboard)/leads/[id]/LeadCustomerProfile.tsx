@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 // Left column — Customer Profile. All editable identity / contact / project
 // fields live here. Inline edits are driven by render closures owned by

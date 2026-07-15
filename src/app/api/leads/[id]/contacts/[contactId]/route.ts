@@ -1,4 +1,4 @@
-﻿// RBAC: authenticated lead owner, admin, or boss
+// RBAC: authenticated lead owner, admin, or boss
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
 import { createServerSupabase } from "@/lib/supabase-server";

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 /**
  * useLeadDetailMutations — T3-3 step 11 extracted from leads/[id]/page.tsx

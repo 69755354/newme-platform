@@ -4,7 +4,6 @@
 // All 4 queries parallelized with Promise.all
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { getCached, setCache } from "@/lib/api-cache";
 
 export async function GET(request: Request) {
   const supabase = await createServerSupabase();
@@ -31,12 +30,6 @@ export async function GET(request: Request) {
   const role: string = profile.role;
   const userId: string = user.id;
 
-  // ── Cache key ──
-  const cacheKey = `leads-list:${role}:${userId}`;
-  const cached = getCached(cacheKey);
-  if (cached) {
-    return NextResponse.json(cached);
-  }
 
   // ── Parallel batch: leads + salesUsers ──
   let leadsQuery = supabase.from("leads").select(
@@ -67,8 +60,6 @@ export async function GET(request: Request) {
     salesUsers: (salesUsers || []) as any[],
   };
 
-  // ── Cache write (30s) ──
-  setCache(cacheKey, result, 30);
 
   return NextResponse.json(result);
 }

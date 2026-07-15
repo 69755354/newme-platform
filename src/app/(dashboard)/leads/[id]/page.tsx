@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 // Lead Detail — three-column layout (PRD v3.2). After T3-3 step 11, the page
 // is a thin orchestrator: state is owned by useLeadDetailData + useLeadDetailMutations,

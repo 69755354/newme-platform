@@ -58,7 +58,7 @@ export async function GET() {
   try {
     const buildIdPath = path.join(process.cwd(), ".next", "BUILD_ID");
     if (fs.existsSync(buildIdPath)) {
-      version = fs.readFileSync(buildIdPath, "utf-8").trim().slice(0, 12);
+      version = fs.readFileSync(buildIdPath, "utf-8").trim();
     }
   } catch {
     // fallback to npm version

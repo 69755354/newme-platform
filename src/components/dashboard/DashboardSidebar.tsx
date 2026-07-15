@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Menu, X, LogOut, ShieldCheck } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { LanguageToggle } from "@/components/LanguageToggle";
@@ -48,6 +48,16 @@ export function DashboardSidebar({
   role,
 }: DashboardSidebarProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [buildId, setBuildId] = useState("unknown");
+
+  useEffect(() => {
+    fetch("/api/health")
+      .then((response) => response.ok ? response.json() : null)
+      .then((health) => {
+        if (typeof health?.version === "string") setBuildId(health.version);
+      })
+      .catch(() => {});
+  }, []);
   const { t } = useLanguage();
   const nav = isManagement ? MGMT_NAV : SALES_NAV;
 
@@ -154,7 +164,7 @@ export function DashboardSidebar({
           <div className="flex items-center justify-between px-2">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              v{process.env.NEXT_PUBLIC_APP_VERSION || "dev"}
+              v{buildId}
             </div>
             <button
               onClick={handleLogout}

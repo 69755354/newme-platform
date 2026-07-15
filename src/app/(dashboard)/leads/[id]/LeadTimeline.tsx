@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // Right column — Timeline. Three stacked blocks:
 //   1. Add Note  (textarea + send button → onAddNote, reusing the page's addNote)
@@ -23,6 +23,7 @@ import {
   PhoneOutgoing,
   PhoneIncoming,
   Pencil,
+  Trash2,
 } from "lucide-react";
 import { MILESTONE_DESCRIPTIONS } from "@/lib/milestones";
 import type {
@@ -78,6 +79,7 @@ export default function LeadTimeline({
     summary: "",
   });
   const [contactSaving, setContactSaving] = useState(false);
+  const [contactDeleting, setContactDeleting] = useState<string | null>(null);
   const [contactError, setContactError] = useState<string | null>(null);
 
   const beginContactEdit = (log: FollowUpLog) => {
@@ -119,6 +121,26 @@ export default function LeadTimeline({
     }
   };
 
+  const deleteContact = async (contactId: string) => {
+    if (contactDeleting || !window.confirm(lang === "zh" ? "删除这条联系记录？此操作不可撤销。" : "Delete this contact record? This cannot be undone.")) return;
+    setContactDeleting(contactId);
+    setContactError(null);
+    try {
+      const response = await fetch(`/api/leads/${leadId}/contacts/${contactId}`, { method: "DELETE" });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setContactError(json?.error || (lang === "zh" ? "删除联系记录失败" : "Failed to delete contact record"));
+        return;
+      }
+      if (editingContactId === contactId) setEditingContactId(null);
+      await onContactUpdated();
+    } catch {
+      setContactError(lang === "zh" ? "删除联系记录失败" : "Failed to delete contact record");
+    } finally {
+      setContactDeleting(null);
+    }
+  };
+
   // WhatsApp chat messages rendered as directional chat bubbles (oldest → newest)
   const chatItems = [...chatMessages]
     .map((c) => ({
@@ -155,10 +177,10 @@ export default function LeadTimeline({
     .slice(0, 100);
 
   return (
-    <Card className="bg-card border-border">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-          <Clock className="w-4 h-4" /> {t("leadDetail.timeline")}
+    <Card className="border-border bg-card shadow-sm">
+      <CardHeader className="border-b border-border/70 pb-3">
+        <CardTitle className="text-base text-foreground flex items-center gap-2">
+          <Clock className="w-4 h-4 text-copper-400" /> {t("leadDetail.timeline")}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -272,14 +294,26 @@ export default function LeadTimeline({
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-foreground whitespace-pre-wrap break-words">{item.content}</p>
                     {editableContact && contact && (
-                      <button
-                        type="button"
-                        onClick={() => beginContactEdit(contact)}
-                        className="text-[10px] text-copper-500 hover:text-copper-400 flex items-center gap-1"
-                      >
-                        <Pencil className="w-3 h-3" />
-                        {lang === "zh" ? "编辑联系记录" : "Edit Contact Record"}
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => beginContactEdit(contact)}
+                          aria-label={lang === "zh" ? "编辑联系记录" : "Edit Contact Record"}
+                          className="text-[10px] text-copper-500 hover:text-copper-400 flex items-center gap-1"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          {lang === "zh" ? "编辑" : "Edit"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void deleteContact(contact.id)}
+                          disabled={contactDeleting === contact.id}
+                          className="text-[10px] text-rose-400 hover:text-rose-300 disabled:opacity-50 flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          {contactDeleting === contact.id ? "..." : lang === "zh" ? "删除" : "Delete"}
+                        </button>
+                      </div>
                     )}
                   </div>
                   {editableContact && editingContactId === item.id && (
@@ -296,6 +330,7 @@ export default function LeadTimeline({
                       <input
                         type="datetime-local"
                         value={editContact.contact_time}
+                        max={new Date().toISOString().slice(0, 16)}
                         onChange={(event) => setEditContact((value) => ({ ...value, contact_time: event.target.value }))}
                         className="h-8 rounded border border-border bg-muted px-2 text-xs"
                       />

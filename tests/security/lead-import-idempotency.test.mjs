@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const read = (path) => readFile(new URL("../../" + path, import.meta.url), "utf8");
+const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
 test("lead imports generate stable row fingerprints and ignore conflicts", async () => {
   const source = await read("src/app/api/leads/import/confirm/route.ts");
@@ -12,7 +12,7 @@ test("lead imports generate stable row fingerprints and ignore conflicts", async
     'onConflict: "import_fingerprint"',
     "ignoreDuplicates: true",
     "skipped_duplicates: skippedDuplicates",
-  ]) assert.ok(source.includes(token), "missing idempotency evidence: " + token);
+  ]) assert.ok(source.includes(token), `missing idempotency evidence: ${token}`);
   assert.ok(source.includes("row_number: row.row_number"));
   assert.ok(source.includes("raw_import_data: row.raw_import_data"));
 });

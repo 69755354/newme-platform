@@ -87,3 +87,14 @@ test("milestone POST treats an existing milestone as idempotent success", async 
   assert.match(route, /duplicate: true/);
   assert.match(route, /existingMilestone/);
 });
+test("milestone POST rejects blank notes before inserting a new milestone", async () => {
+  const route = await read("src/app/api/leads/[id]/milestone/route.ts");
+  const validation = route.indexOf("if (!normalizedNotes)");
+  const insert = route.indexOf(".insert({");
+
+  assert.match(route, /const normalizedNotes = String\(notes \?\? ""\)\.trim\(\);/);
+  assert.notEqual(validation, -1, "blank milestone notes must be rejected");
+  assert.ok(validation < insert, "note validation must run before milestone insert");
+  assert.match(route, /Milestone note is required/);
+  assert.match(route, /notes: normalizedNotes/);
+});

@@ -1,4 +1,4 @@
-import test from "node:test";
+﻿import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
@@ -16,11 +16,13 @@ test("First Contact milestone API enforces contact plus quality before insert", 
   assert.ok(gate < insert, "First Contact gate must run before milestone insert");
 });
 
-test("First Contact checkbox cannot bypass the business gate", async () => {
+test("First Contact completion explains an unmet business gate", async () => {
   const source = await read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
-  assert.match(source, /firstContactBlocked/);
-  assert.match(source, /disabled=\{locked \|\| firstContactBlocked\}/);
-  assert.match(source, /if \(locked \|\| firstContactBlocked\) return;/);
+  assert.match(source, /setFirstContactBlockReason/);
+  assert.match(source, /completeContactCount < 1/);
+  assert.match(source, /!isAssessedQuality\(lead\.quality\)/);
+  assert.match(source, /请先添加 1 条完整联系记录/);
+  assert.match(source, /请先选择线索质量，再完成初次接触/);
 });
 
 test("First Contact workspace remains available after milestone completion", async () => {

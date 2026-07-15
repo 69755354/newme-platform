@@ -37,7 +37,6 @@ import { COMPLETABLE_MILESTONES } from "@/lib/milestones";
 import { calculateHealthScore } from "@/lib/health-score";
 import { evaluateFirstContactGate, isAssessedQuality } from "@/lib/first-contact-gate.mjs";
 import { STAGES, STAGE_COLORS } from "./types";
-import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { fmtAED, daysSince } from "./utils";
 import type {
   Lead,
@@ -59,7 +58,6 @@ interface Props {
   updating: boolean;
   onToggleMilestone: (milestoneKey: string, currentlyCompleted: boolean, notes?: string) => Promise<boolean>;
   onUpdateField: (field: string, value: any, eventType?: string, eventDesc?: string) => void;
-  onStageChange: (stage: string, note?: string) => Promise<boolean>;
   onWon: (note?: string) => Promise<boolean>;
   onLost: (note?: string) => Promise<boolean>;
   onOpenQuoteCalculator: () => void;
@@ -95,7 +93,6 @@ export default function LeadSalesProcess({
   updating,
   onToggleMilestone,
   onUpdateField,
-  onStageChange,
   onWon,
   onLost,
   onOpenQuoteCalculator,
@@ -251,10 +248,10 @@ export default function LeadSalesProcess({
   const hasQuotation = !!trace?.quotation_id || !!(lead.quotation_value && lead.quotation_value > 0);
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-3 rounded-2xl border border-border/80 bg-card/40 p-3 shadow-sm">
       {/* AI Summary */}
       {lead.ai_summary && (
-        <Card className="bg-card border-border">
+        <Card className="order-5 border-border bg-muted/20 shadow-none">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">{t("leadDetail.aiAnalysis")}</CardTitle>
           </CardHeader>
@@ -274,10 +271,11 @@ export default function LeadSalesProcess({
       )}
 
       {/* Current Milestone — 7-step checklist */}
-      <Card className="border-border bg-card shadow-sm">
+      <Card className="order-2 overflow-hidden border-copper-500/30 bg-card shadow-none">
         <CardHeader className="border-b border-border/70 pb-3">
-          <CardTitle className="text-base text-foreground flex items-center gap-2">
-            <Target className="w-4 h-4 text-copper-400" /> {t("leadDetail.currentMilestone")}
+          <CardTitle className="text-base text-foreground flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2"><Target className="w-4 h-4 text-copper-400" /> {lang === "zh" ? "当前成交阶段" : "Current deal stage"}</span>
+            <span className="text-xs font-normal text-muted-foreground">{completedKeys.length}/7</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -690,11 +688,11 @@ export default function LeadSalesProcess({
       </Card>
 
       {/* Next Required Action */}
-      <Card className="bg-card border-border">
+      <Card className="order-1 border-copper-500/35 bg-copper-500/[0.04] shadow-none">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm text-muted-foreground flex items-center justify-between gap-2">
-            <span className="flex items-center gap-2">
-              <Calendar className="w-4 h-4" /> {t("leadDetail.nextRequiredAction")}
+            <span className="flex items-center gap-2 text-foreground">
+              <Calendar className="w-4 h-4 text-copper-400" /> {t("leadDetail.nextRequiredAction")}
             </span>
             {nextTaskOverdue && (
               <Badge className="bg-red-500/10 text-red-400 text-[10px]">{t("leadDetail.overdue")}</Badge>
@@ -717,7 +715,7 @@ export default function LeadSalesProcess({
 
       {/* Missing Required Fields (gated by stage) */}
       {missingFields.length > 0 && (
-        <Card className="bg-card border-rose-500/30">
+      <Card className="order-3 border-rose-500/30 bg-rose-500/[0.03] shadow-none">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-rose-400 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" /> {t("leadDetail.missingRequiredFields")}
@@ -752,7 +750,7 @@ export default function LeadSalesProcess({
       )}
 
       {/* Stage Progress */}
-      <Card className="bg-card border-border">
+      <Card className="order-4 border-border bg-muted/20 shadow-none">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
             <Target className="w-4 h-4" /> {t("leadDetail.stageProgress")}
@@ -786,54 +784,9 @@ export default function LeadSalesProcess({
             />
             <p className="text-right text-[10px] text-muted-foreground">{stageNote.length}/1000</p>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground mb-1.5">{t("leadDetail.updateStage")}</p>
-            <div className="flex flex-wrap gap-1">
-              {(() => {
-                const stageKeys: string[] = PIPELINE_STAGES.map(s => s.key);
-                const curIdx = stageKeys.indexOf(lead.stage ?? 'new');
-                return STAGES.filter((s) => s !== "won" && s !== "lost").map((s) => {
-                  const sIdx = stageKeys.indexOf(s);
-                  const isBeyondNext = curIdx >= 0 && sIdx > curIdx + 1;
-                  // Hard gate: one complete contact + assessed quality before leaving New.
-                  const gate = evaluateFirstContactGate({
-                    currentStage: lead.stage,
-                    nextStage: s,
-                    contactCount: completeContactCount,
-                    quality: lead.quality,
-                  });
-                  const gateDisabled = !gate.allowed;
-                  const gateTitle = gateDisabled ? gate.reasons.join("; ") : undefined;
-                  return (
-                    <button
-                      key={s}
-                      disabled={isBeyondNext || gateDisabled}
-                      title={gateTitle}
-                      className={cn(
-                        "text-[10px] px-2 py-1 rounded border transition-colors",
-                        lead.stage === s
-                          ? "border-transparent text-foreground"
-                          : isBeyondNext || gateDisabled
-                            ? "border-border text-muted-foreground/30 cursor-not-allowed"
-                            : "border-border text-muted-foreground hover:border-gray-500"
-                      )}
-                      style={
-                        lead.stage === s
-                          ? { backgroundColor: STAGE_COLORS[s]?.split(" ")[0]?.replace("/10", "/30") || "#6b7280" }
-                          : {}
-                      }
-                      onClick={async () => {
-                        const changed = await onStageChange(s, stageNote);
-                        if (changed) setStageNote("");
-                      }}
-                    >
-                      {t(`stageLabels.${s}`)}
-                    </button>
-                  );
-                });
-              })()}
-            </div>
-          </div>
+          <p className="rounded-md border border-border/70 bg-background/50 px-3 py-2 text-xs text-muted-foreground">
+            {lang === "zh" ? "阶段只能通过上方当前里程碑的真实推进备注完成；后续阶段会在满足顺序后解锁。" : "Complete the current milestone above with a real progress note. Future stages unlock in sequence."}
+          </p>
           <div className="flex gap-2">
             <Button
               size="sm"
@@ -883,7 +836,7 @@ export default function LeadSalesProcess({
       </Card>
 
       {/* Quote / Contract / Payment links */}
-      <Card className="bg-card border-border">
+      <Card className="order-6 border-border bg-muted/20 shadow-none">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm text-muted-foreground">{t("leadDetail.traceLinks")}</CardTitle>
         </CardHeader>

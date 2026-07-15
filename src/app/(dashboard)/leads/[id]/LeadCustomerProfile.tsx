@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // Left column — Customer Profile. All editable identity / contact / project
 // fields live here. Inline edits are driven by render closures owned by
@@ -63,10 +63,10 @@ export default function LeadCustomerProfile({
   const whatsappHref = phoneDigits ? `https://wa.me/${phoneDigits}` : null;
 
   return (
-    <Card className="bg-card border-border overflow-visible">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-          <User className="w-4 h-4" /> {t("leadDetail.customerProfile")}
+    <Card className="overflow-visible border-border bg-card shadow-sm">
+      <CardHeader className="border-b border-border/70 pb-3">
+        <CardTitle className="text-base text-foreground flex items-center gap-2">
+          <User className="w-4 h-4 text-copper-400" /> {t("leadDetail.customerProfile")}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">

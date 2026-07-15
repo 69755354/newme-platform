@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // Middle column — Sales Process. Drives the deal forward:
 // milestone checklist → next required action → missing required fields (gated by
@@ -57,7 +57,7 @@ interface Props {
   milestones: LeadMilestone[];
   nextTask: Task | null;
   updating: boolean;
-  onToggleMilestone: (milestoneKey: string, currentlyCompleted: boolean) => void;
+  onToggleMilestone: (milestoneKey: string, currentlyCompleted: boolean, notes?: string) => Promise<boolean>;
   onUpdateField: (field: string, value: any, eventType?: string, eventDesc?: string) => void;
   onStageChange: (stage: string, note?: string) => Promise<boolean>;
   onWon: (note?: string) => Promise<boolean>;
@@ -121,6 +121,8 @@ export default function LeadSalesProcess({
   const [qualityPoorReason, setQualityPoorReason] = useState("");
   const [qualitySetting, setQualitySetting] = useState<string | null>(null);
   const [stageNote, setStageNote] = useState("");
+  const [milestoneNoteError, setMilestoneNoteError] = useState<string | null>(null);
+  const [firstContactBlockReason, setFirstContactBlockReason] = useState<string | null>(null);
   const [clockNow, setClockNow] = useState(0);
 
   useEffect(() => {
@@ -272,47 +274,41 @@ export default function LeadSalesProcess({
       )}
 
       {/* Current Milestone — 7-step checklist */}
-      <Card className="bg-card border-border">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-            <CheckCircle className="w-4 h-4" /> {t("leadDetail.currentMilestone")}
+      <Card className="border-border bg-card shadow-sm">
+        <CardHeader className="border-b border-border/70 pb-3">
+          <CardTitle className="text-base text-foreground flex items-center gap-2">
+            <Target className="w-4 h-4 text-copper-400" /> {t("leadDetail.currentMilestone")}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-0">
+          <div className="space-y-2">
             {COMPLETABLE_MILESTONES.map((key, idx) => {
               const completed = completedKeys.includes(key);
               const locked = isLocked(key);
               const isNext = key === nextPendingKey;
-              const firstContactBlocked = key === "first_contact" && (!firstContactReady || completed);
               return (
                 <div
                   key={key}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors",
+                    "flex items-start gap-3 rounded-lg border px-4 py-3 transition-colors",
                     locked ? "opacity-40" : "",
-                    isNext && !completed ? "bg-copper-500/5 border border-copper-500/15" : ""
+                    isNext && !completed ? "border-copper-500/40 bg-copper-500/5" : "border-transparent bg-muted/20"
                   )}
                 >
-                  <button
-                    onClick={() => {
-                      if (locked || firstContactBlocked) return;
-                      onToggleMilestone(key, completed);
-                    }}
-                    disabled={locked || firstContactBlocked}
+                  <span
                     className={cn(
-                      "w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors",
+                      "mt-0.5 w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0",
                       completed
-                        ? "bg-emerald-500 border-emerald-500 text-white cursor-pointer"
+                        ? "bg-emerald-500 border-emerald-500 text-white"
                         : locked
-                        ? "border-gray-700 bg-transparent cursor-not-allowed"
-                        : "border-copper-500 bg-transparent hover:bg-copper-500/10 cursor-pointer"
+                        ? "border-muted-foreground/30 bg-transparent"
+                        : "border-copper-500 bg-transparent"
                     )}
                   >
                     {completed && <CheckCircle className="w-3.5 h-3.5" />}
-                  </button>
+                  </span>
                   <div className="flex-1 min-w-0">
-                    <p className={cn("text-sm", completed ? "text-foreground line-through opacity-60" : "text-foreground")}>
+                    <p className={cn("text-sm font-medium", completed ? "text-foreground line-through opacity-60" : "text-foreground")}>
                       {t(`leadDetail.milestone_${key}`)}
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
@@ -454,6 +450,7 @@ export default function LeadSalesProcess({
                               <input
                                 type="datetime-local"
                                 value={contactTime}
+                                max={new Date().toISOString().slice(0, 16)}
                                 onChange={(e) => setContactTime(e.target.value)}
                                 disabled={contactSubmitting}
                                 className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground"
@@ -631,6 +628,53 @@ export default function LeadSalesProcess({
                       </div>
                       );
                     })()}
+                    {isNext && !completed && (
+                      <div className="mt-4 rounded-md border border-border bg-background/60 p-3 space-y-2">
+                        <Label htmlFor={`milestone-note-${key}`} className="text-xs font-medium text-foreground">
+                          {lang === "zh" ? "推进备注（必填）" : "Progress note (required)"}
+                        </Label>
+                        <textarea
+                          id={`milestone-note-${key}`}
+                          value={stageNote}
+                          onChange={(event) => {
+                            setStageNote(event.target.value);
+                            setMilestoneNoteError(null);
+                          }}
+                          placeholder={lang === "zh" ? "记录这一步实际完成了什么" : "Record what was actually completed"}
+                          className="min-h-20 w-full rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+                        />
+                        {(milestoneNoteError || (key === "first_contact" && firstContactBlockReason)) && (
+                          <p role="alert" className="text-xs text-amber-400">
+                            {milestoneNoteError || firstContactBlockReason}
+                          </p>
+                        )}
+                        <Button
+                          type="button"
+                          disabled={updating}
+                          className="w-full bg-copper-500 text-black hover:bg-copper-400"
+                          onClick={async () => {
+                            const note = stageNote.trim();
+                            if (key === "first_contact" && completeContactCount < 1) {
+                              setFirstContactBlockReason(lang === "zh" ? "请先添加 1 条完整联系记录（方式、时间和结果）" : "Add one complete contact record first");
+                              return;
+                            }
+                            if (key === "first_contact" && !isAssessedQuality(lead.quality)) {
+                              setFirstContactBlockReason(lang === "zh" ? "请先选择线索质量，再完成初次接触" : "Select lead quality before completing First Contact");
+                              return;
+                            }
+                            if (!note) {
+                              setMilestoneNoteError(lang === "zh" ? "请填写推进备注后再完成此阶段" : "Add a progress note before completing this stage");
+                              return;
+                            }
+                            setFirstContactBlockReason(null);
+                            const completedNow = await onToggleMilestone(key, false, note);
+                            if (completedNow) setStageNote("");
+                          }}
+                        >
+                          {lang === "zh" ? "完成此阶段" : "Complete this stage"}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                   <span className="text-xs text-muted-foreground">{idx + 1}/7</span>
                 </div>

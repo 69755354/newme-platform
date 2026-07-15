@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 // Lead Detail — three-column layout (PRD v3.2). After T3-3 step 11, the page
 // is a thin orchestrator: state is owned by useLeadDetailData + useLeadDetailMutations,
@@ -439,7 +439,7 @@ export default function LeadDetailPage() {
   }
 
   return (
-    <DashboardScrollContainer className="max-w-7xl space-y-6">
+    <DashboardScrollContainer className="mx-auto max-w-[1600px] space-y-5 pb-8">
       {/* T2-4: 锚定 Header — 整页滚动时返回按钮/客户名/状态徽章/delete 永远可见
           注意：leads/[id] 不像 leads/page.tsx 包了 DashboardScrollContainer，
           这里是外层 viewport 滚动。sticky 元素 (page-title z-20) 仍能锚定到 viewport 顶部。
@@ -448,7 +448,7 @@ export default function LeadDetailPage() {
           the top of the lead content when scrolled, hiding the click-action area. */}
       <div
         data-sticky-region="page-title"
-        className="sticky top-0 z-20 bg-background/70 border-b -mx-4 px-4 py-2 flex items-center gap-4"
+        className="sticky top-0 z-20 flex items-center gap-4 rounded-xl border border-border bg-card/95 px-4 py-3 shadow-sm"
       >
         <Button variant="ghost" size="icon" onClick={() => router.push("/leads")} className="text-muted-foreground">
           <ArrowLeft className="w-5 h-5" />
@@ -509,9 +509,9 @@ export default function LeadDetailPage() {
         )}
       </div>
 
-      {/* Three-column grid: CustomerProfile (3) · SalesProcess (5) · Timeline (4) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <aside className="lg:col-span-3 space-y-4">
+      {/* Deal Canvas: facts → focused action workspace → auditable activity ledger. */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(250px,0.8fr)_minmax(520px,1.6fr)_minmax(340px,1fr)]">
+        <aside className="space-y-4">
           <LeadCustomerProfile
             lead={lead}
             users={salesUsers}
@@ -527,7 +527,7 @@ export default function LeadDetailPage() {
           />
         </aside>
 
-        <main className="lg:col-span-5 space-y-4">
+        <main className="space-y-4">
           <LeadSalesProcess
             lead={lead}
             leadTrace={leadTrace}
@@ -557,7 +557,7 @@ export default function LeadDetailPage() {
           <KnxDesignPanel leadId={id as string} />
         </main>
 
-        <aside className="lg:col-span-4 space-y-4">
+        <aside className="space-y-4 xl:sticky xl:top-20 xl:self-start">
           <LeadTimeline
             leadId={id as string}
             activities={activities}

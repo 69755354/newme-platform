@@ -13,11 +13,12 @@ test("stage API validates and records optional stage context", async () => {
   assert.ok(migration.includes("jsonb_build_object('from', current_lead.stage, 'to', p_next_stage)"));
 });
 
-test("sales process sends the same note for normal, won, and lost transitions", async () => {
+test("sales process reserves direct stage actions for terminal outcomes", async () => {
   const source = await read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
   assert.ok(source.includes("Stage note (optional)"));
   assert.ok(source.includes("maxLength={1000}"));
-  assert.ok(source.includes("onStageChange(s, stageNote)"));
+  assert.ok(source.includes("Complete the current milestone above with a real progress note"));
+  assert.equal(source.includes("onStageChange(s, stageNote)"), false);
   assert.ok(source.includes("onWon(stageNote)"));
   assert.ok(source.includes("onLost(stageNote)"));
   assert.ok(source.includes('if (changed) setStageNote("")'));

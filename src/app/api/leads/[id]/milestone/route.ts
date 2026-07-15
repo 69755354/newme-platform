@@ -20,6 +20,7 @@ export async function POST(
   const leadId = (await context.params).id;
   const body = await req.json();
   const { milestoneKey, notes } = body as { milestoneKey: string; notes?: string };
+  const normalizedNotes = String(notes ?? "").trim();
 
   if (!milestoneKey) {
     return NextResponse.json({ error: "缺少 milestoneKey" }, { status: 400 });
@@ -91,6 +92,12 @@ export async function POST(
   if (existingMilestone) {
     return NextResponse.json({ success: true, milestone: existingMilestone, duplicate: true });
   }
+  if (!normalizedNotes) {
+    return NextResponse.json(
+      { error: "Milestone note is required" },
+      { status: 400 },
+    );
+  }
 
   // 6. rule_006: 顺序校验（不能跳级、不能往回）
   const completedKeys = (existingMilestones ?? []).map((m) => m.milestone_key);
@@ -114,7 +121,7 @@ export async function POST(
       lead_id: leadId,
       milestone_key: milestoneKey,
       completed_by: profile.userId,
-      notes: notes ?? null,
+      notes: normalizedNotes,
     })
     .select()
     .single();

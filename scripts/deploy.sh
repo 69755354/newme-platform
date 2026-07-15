@@ -253,16 +253,16 @@ if [ -f "$PROJECT_ROOT/.env.local" ]; then
 fi
 echo "✅ Worktree ready at $RELEASE_SHA"
 
-# ── Install dependencies (fresh npm ci, no cache) ──────────────
+# ── Install dependencies in the isolated build worktree ────────
 cd "$BUILD_DIR"
 
-echo "📦 Installing dependencies (npm ci)..."
-if ! npm ci; then
-  echo "❌ npm ci failed."
+echo "📦 Installing dependencies (npm install)..."
+if ! npm install --ignore-scripts; then
+  echo "❌ npm install failed."
   echo "ℹ️  Production .next was NEVER touched. Service is unaffected."
   exit 1
 fi
-echo "✅ npm ci complete"
+echo "✅ npm install complete"
 
 # ── Verify critical binary exists ────────────────────────────
 if [ ! -x node_modules/.bin/next ]; then

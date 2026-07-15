@@ -17,6 +17,16 @@ test("milestone UI requires a real note instead of a generated template", async 
   assert.equal(mutations.includes("手动完成里程碑:"), false);
 });
 
+test("Guided Deal Canvas keeps one milestone completion path instead of direct stage jumps", async () => {
+  const page = await read("src/app/(dashboard)/leads/[id]/page.tsx");
+  const process = await read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
+
+  assert.ok(page.includes("Deal workspace · next action"));
+  assert.ok(page.includes("Auditable timeline"));
+  assert.ok(process.includes("Complete the current milestone above with a real progress note"));
+  assert.equal(process.includes("onStageChange={"), false);
+});
+
 test("contact deletion is owner-authorized, exact, and excludes audit notes", async () => {
   const timeline = await read("src/app/(dashboard)/leads/[id]/LeadTimeline.tsx");
   const route = await read("src/app/api/leads/[id]/contacts/[contactId]/route.ts");

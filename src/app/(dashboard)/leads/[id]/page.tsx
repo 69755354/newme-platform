@@ -158,7 +158,6 @@ export default function LeadDetailPage() {
     updateField,
     saveProjectInfo,
     resetProjectInfoDraft,
-    updateStage,
     updateNextTask,
     handleWon,
     handleLost,
@@ -511,7 +510,10 @@ export default function LeadDetailPage() {
 
       {/* Deal Canvas: facts → focused action workspace → auditable activity ledger. */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(250px,0.8fr)_minmax(520px,1.6fr)_minmax(340px,1fr)]">
-        <aside className="space-y-4">
+        <aside className="space-y-3">
+          <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            {lang === "zh" ? "客户与项目事实" : "Customer & project facts"}
+          </p>
           <LeadCustomerProfile
             lead={lead}
             users={salesUsers}
@@ -527,7 +529,10 @@ export default function LeadDetailPage() {
           />
         </aside>
 
-        <main className="space-y-4">
+        <main className="space-y-3">
+          <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-copper-400">
+            {lang === "zh" ? "成交工作区 · 下一步行动" : "Deal workspace · next action"}
+          </p>
           <LeadSalesProcess
             lead={lead}
             leadTrace={leadTrace}
@@ -537,7 +542,6 @@ export default function LeadDetailPage() {
             updating={updating}
             onToggleMilestone={toggleMilestone}
             onUpdateField={updateField}
-            onStageChange={updateStage}
             onWon={handleWon}
             onLost={handleLost}
             onOpenQuoteCalculator={openQuoteCalculator}
@@ -557,7 +561,10 @@ export default function LeadDetailPage() {
           <KnxDesignPanel leadId={id as string} />
         </main>
 
-        <aside className="space-y-4 xl:sticky xl:top-20 xl:self-start">
+        <aside className="space-y-3 xl:sticky xl:top-20 xl:self-start">
+          <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            {lang === "zh" ? "可追溯时间线" : "Auditable timeline"}
+          </p>
           <LeadTimeline
             leadId={id as string}
             activities={activities}

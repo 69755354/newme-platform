@@ -71,6 +71,7 @@ export default function LeadCustomerProfile({
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <div className="grid grid-cols-1 gap-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Customer</p>
           <Field label={t("leadDetail.customerName")}>
             {renderInlineEdit("customer_name", t("leadDetail.customerName"))}
           </Field>
@@ -106,6 +107,7 @@ export default function LeadCustomerProfile({
           </Field>
 
           {/* Source — editable dropdown */}
+          <p className="border-t border-border/70 pt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Project facts</p>
           <Field label={t("leadDetail.source")}>
             <Select
               value={lead.source || ""}

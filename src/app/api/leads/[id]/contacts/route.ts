@@ -28,6 +28,9 @@ export async function POST(
     if (Number.isNaN(contactTime.getTime())) {
       return NextResponse.json({ error: "Invalid contact_time" }, { status: 400 });
     }
+    if (contactTime.getTime() > Date.now()) {
+      return NextResponse.json({ error: "contact_time cannot be in the future" }, { status: 400 });
+    }
     if (!contactResult) {
       return NextResponse.json({ error: "contact_result is required" }, { status: 400 });
     }

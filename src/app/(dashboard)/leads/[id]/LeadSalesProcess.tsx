@@ -654,16 +654,16 @@ export default function LeadSalesProcess({
                           className="w-full bg-copper-500 text-black hover:bg-copper-400"
                           onClick={async () => {
                             const note = stageNote.trim();
-                            if (!note) {
-                              setMilestoneNoteError(lang === "zh" ? "请填写推进备注后再完成此阶段" : "Add a progress note before completing this stage");
-                              return;
-                            }
                             if (key === "first_contact" && completeContactCount < 1) {
                               setFirstContactBlockReason(lang === "zh" ? "请先添加 1 条完整联系记录（方式、时间和结果）" : "Add one complete contact record first");
                               return;
                             }
                             if (key === "first_contact" && !isAssessedQuality(lead.quality)) {
                               setFirstContactBlockReason(lang === "zh" ? "请先选择线索质量，再完成初次接触" : "Select lead quality before completing First Contact");
+                              return;
+                            }
+                            if (!note) {
+                              setMilestoneNoteError(lang === "zh" ? "请填写推进备注后再完成此阶段" : "Add a progress note before completing this stage");
                               return;
                             }
                             setFirstContactBlockReason(null);

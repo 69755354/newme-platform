@@ -73,7 +73,7 @@ interface Props {
     contact_time: string;
     contact_result: string;
     summary?: string;
-  }) => Promise<boolean>;
+  }) => Promise<{ success: boolean; error?: string }>;
   t: (key: string) => string;
   lang: "en" | "zh";
 }
@@ -114,6 +114,7 @@ export default function LeadSalesProcess({
   const [contactNotes, setContactNotes] = useState("");
   const [contactFormOpen, setContactFormOpen] = useState(false);
   const [contactSubmitting, setContactSubmitting] = useState(false);
+  const [contactSaveError, setContactSaveError] = useState<string | null>(null);
   const [showQualityPoorReason, setShowQualityPoorReason] = useState(false);
   const [qualityPoorReason, setQualityPoorReason] = useState("");
   const [qualitySetting, setQualitySetting] = useState<string | null>(null);
@@ -340,15 +341,19 @@ export default function LeadSalesProcess({
                       const handleAddStructuredContact = async () => {
                         if (contactSubmitting) return;
                         if (!contactMethod || !contactTime || !contactResult.trim()) return;
+                        setContactSaveError(null);
                         setContactSubmitting(true);
                         try {
-                          const saved = await onAddStructuredContact({
+                          const result = await onAddStructuredContact({
                             contact_method: contactMethod,
                             contact_time: new Date(contactTime).toISOString(),
                             contact_result: contactResult.trim(),
                             summary: contactNotes.trim() || undefined,
                           });
-                          if (!saved) return;
+                          if (!result.success) {
+                            setContactSaveError(result.error || (lang === "zh" ? "联系记录保存失败" : "Contact record save failed"));
+                            return;
+                          }
                           // Reset form
                           setContactMethod("");
                           setContactTime(new Date().toISOString().slice(0, 16));
@@ -488,6 +493,10 @@ export default function LeadSalesProcess({
                                 className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground placeholder:text-muted-foreground/50"
                               />
                             </div>
+
+                            {contactSaveError && (
+                              <p className="col-span-2 text-[10px] text-red-500">{contactSaveError}</p>
+                            )}
 
                             {/* Submit / Cancel row */}
                             <div className="flex gap-1.5 flex-wrap">

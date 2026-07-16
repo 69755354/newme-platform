@@ -99,7 +99,7 @@ export interface UseLeadDetailMutationsReturn {
     contact_time: string;
     contact_result: string;
     summary?: string;
-  }) => Promise<boolean>;
+  }) => Promise<{ success: boolean; error?: string }>;
 }
 
 /* ─── Hook ─── */
@@ -508,11 +508,12 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     contact_time: string;
     contact_result: string;
     summary?: string;
-  }): Promise<boolean> => {
-    if (updating) return false;
+  }): Promise<{ success: boolean; error?: string }> => {
+    if (updating) return { success: false };
     if (!params.contact_result?.trim()) {
-      toast.error(t("leadDetail.contactResultRequired") || "Contact result is required");
-      return false;
+      const error = t("leadDetail.contactResultRequired") || "Contact result is required";
+      toast.error(error);
+      return { success: false, error };
     }
 
     setUpdating(true);
@@ -524,16 +525,18 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       });
       const json = await response.json().catch(() => ({}));
       if (!response.ok || !json?.contact) {
-        toast.error(json?.error || t("common.saveFailed") || "Contact record save failed");
-        return false;
+        const error = json?.error || t("common.saveFailed") || "Contact record save failed";
+        toast.error(error);
+        return { success: false, error };
       }
 
       toast.success(lang === "zh" ? "联系记录已保存" : "Contact record saved");
       await fetchData();
-      return true;
+      return { success: true };
     } catch {
-      toast.error(t("common.saveFailed") || "Contact record save failed");
-      return false;
+      const error = t("common.saveFailed") || "Contact record save failed";
+      toast.error(error);
+      return { success: false, error };
     } finally {
       setUpdating(false);
     }

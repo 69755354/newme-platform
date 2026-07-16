@@ -26,6 +26,9 @@ export async function PATCH(
     if (note.length > 1000) {
       return NextResponse.json({ error: "Stage note must be 1000 characters or fewer" }, { status: 400 });
     }
+    if (!note) {
+      return NextResponse.json({ error: "Stage note is required" }, { status: 400 });
+    }
     if (!VALID_STAGES.has(stage)) {
       return NextResponse.json({ error: "Invalid stage" }, { status: 400 });
     }

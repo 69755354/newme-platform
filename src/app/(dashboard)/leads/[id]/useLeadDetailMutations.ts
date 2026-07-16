@@ -1,25 +1,25 @@
 "use client";
 
 /**
- * useLeadDetailMutations 鈥?T3-3 step 11 extracted from leads/[id]/page.tsx
+ * useLeadDetailMutations — T3-3 step 11 extracted from leads/[id]/page.tsx
  *
  * Encapsulates every mutation (write) handler for the Lead Detail three-column
  * layout: reassignSales, handleDelete, handleMarkPoor, writeEvent, updateField,
  * saveProjectInfo, resetProjectInfoDraft, updateStage, updateNextTask,
- * handleWon, handleLost, addNote, toggleMilestone 鈥?12 handler-shaped entry
+ * handleWon, handleLost, addNote, toggleMilestone — 12 handler-shaped entry
  * points plus the shared updateNextTask (Next Required Action editor).
  *
  * Why a separate hook from useLeadDetailData?
- *   - useLeadDetailData owns the read side (queries 鈫?state).
+ *   - useLeadDetailData owns the read side (queries → state).
  *   - useLeadDetailMutations owns the write side (mutations stay direct
- *     supabase.from() calls 鈥?same pattern as leads/_hooks/useLeadMutations).
+ *     supabase.from() calls — same pattern as leads/_hooks/useLeadMutations).
  *   - Keeps page.tsx closer to a render-only shell.
  *
  * Page-level UI state (openPanel, showQuoteCalculator, noteText) and render
  * helpers (openQuoteCalculator, handleCreateContract, handleGenerateKnx) stay
- * on page.tsx 鈥?they're presentation concerns, not mutations.
+ * on page.tsx — they're presentation concerns, not mutations.
  *
- * Pure 1:1 move from page.tsx 鈥?no business logic changed. The handlers'
+ * Pure 1:1 move from page.tsx — no business logic changed. The handlers'
  * original logging, toast text, and error paths are preserved verbatim.
  */
 
@@ -31,7 +31,7 @@ import { projectDraftFromLead } from "./utils";
 import type { Lead, Task } from "./types";
 import type { ProjectInfoDraft } from "./useLeadDetailData";
 
-/* 鈹€鈹€鈹€ Types 鈹€鈹€鈹€ */
+/* ─── Types ─── */
 export interface SalesUserMini {
   id: string;
   email: string | null;
@@ -43,19 +43,19 @@ export interface UseLeadDetailMutationsParams {
   leadId: string;
   lead: Lead | null;
   nextTask: Task | null;
-  /** Setter from useLeadDetailData 鈥?needed by reassignSales + updateField. */
+  /** Setter from useLeadDetailData — needed by reassignSales + updateField. */
   setLead: React.Dispatch<React.SetStateAction<Lead | null>>;
   /** projectInfoDraft state lives on useLeadDetailData (seeded by fetchData). */
   projectInfoDraft: ProjectInfoDraft;
   setProjectInfoDraft: React.Dispatch<React.SetStateAction<ProjectInfoDraft>>;
-  /** The original fetchData ref 鈥?re-fetch after every successful mutation. */
+  /** The original fetchData ref — re-fetch after every successful mutation. */
   fetchData: () => Promise<void>;
   /** salesRole + currentUserId are needed by handleDelete guard. */
   salesRole: string | null;
   currentUserId: string | null;
-  /** sales users list 鈥?needed by reassignSales for oldName/newUserName lookup. */
+  /** sales users list — needed by reassignSales for oldName/newUserName lookup. */
   salesUsers: SalesUserMini[];
-  /** i18n context 鈥?both t() and lang() are used by toasts. */
+  /** i18n context — both t() and lang() are used by toasts. */
   t: (key: string) => string;
   lang: string;
 }
@@ -102,7 +102,7 @@ export interface UseLeadDetailMutationsReturn {
   }) => Promise<boolean>;
 }
 
-/* 鈹€鈹€鈹€ Hook 鈹€鈹€鈹€ */
+/* ─── Hook ─── */
 export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): UseLeadDetailMutationsReturn {
   const supabase = createClient();
   const {
@@ -119,7 +119,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     lang,
   } = params;
 
-  // 鈹€鈹€鈹€ UI state (12 mutation-driven state vars mirror page.tsx originals) 鈹€
+  // ─── UI state (12 mutation-driven state vars mirror page.tsx originals) ─
   const [updating, setUpdating] = useState(false);
   // Inline field-save status (Saving / Saved / Error) shown for any updateField call.
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -129,14 +129,14 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   const [reassigning, setReassigning] = useState(false);
   const [markingPoor, setMarkingPoor] = useState(false);
   const [poorReasonText, setPoorReasonText] = useState("");
-  // Project Info batch-save form (bottom folding panel) 鈥?local draft + status.
+  // Project Info batch-save form (bottom folding panel) — local draft + status.
   const [projectInfoStatus, setProjectInfoStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  // Hook-local error (setError) 鈥?accept both null and SetStateAction for
+  // Hook-local error (setError) — accept both null and SetStateAction for
   // interop with the page-level setError returned by useLeadDetailData.
   const [_error, _setError] = useState<string | null>(null);
   const setError = _setError as React.Dispatch<React.SetStateAction<string | null>>;
 
-  // 鈹€鈹€鈹€ Sales reassignment 鈹€鈹€鈹€
+  // ─── Sales reassignment ───
   // P3-11: the inline business_events insert at the end of this function
   // previously went through supabase.from('business_events').insert(...)
   // directly. Route via POST /api/leads/[id]/events instead so the canonical
@@ -197,7 +197,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     [leadId, lead, salesUsers, setLead, t] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // 鈹€鈹€鈹€ Delete lead 鈹€鈹€鈹€
+  // ─── Delete lead ───
   const handleDelete = useCallback(async () => {
     if (!lead) return;
     const canDelete = salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId);
@@ -210,16 +210,16 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       toast.error(t("common.saveFailed") || "Delete failed");
       return;
     }
-    toast.success(lang === "zh" ? "宸插垹闄? : "Lead deleted");
+    toast.success(lang === "zh" ? "已删除" : "Lead deleted");
     window.location.href = "/leads";
   }, [lead, salesRole, currentUserId, t, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 鈹€鈹€鈹€ Mark lead as poor quality 鈹€鈹€鈹€
+  // ─── Mark lead as poor quality ───
   // P0 schema-alias fix: route via /api/leads/[id]/quality instead of direct
   // supabase.from('leads').update(). The API owns the leads.quality write AND
   // the business_events audit insert (avoids the client-side column-mismatch
   // trap where business_events column aliases differ between client and PROD
-  // DDL 鈥?the API writes the canonical shape; the client never sees the
+  // DDL — the API writes the canonical shape; the client never sees the
   // mismatch). For 'poor' ratings, a non-empty poor_reason is required
   // (the API 400s otherwise); 'normal' and 'good' may be sent without it.
   const postQuality = useCallback(
@@ -262,12 +262,12 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     await fetchData();
   }, [poorReasonText, lead, postQuality, fetchData]);
 
-  // 鈹€鈹€鈹€ Write a business_events row 鈹€鈹€鈹€
+  // ─── Write a business_events row ───
   // P3-11: route via POST /api/leads/[id]/events instead of the direct
   // supabase.from('business_events').insert(...) that lived here before.
   // Signature is unchanged so every call site (updateField, saveProjectInfo)
   // continues to work. On API failure, surface the same toast pattern that
-  // postQuality uses 鈥?no silent drops.
+  // postQuality uses — no silent drops.
   const writeEvent = useCallback(async (eventType: string, description: string, eventData?: Record<string, any>) => {
     const res = await fetch(`/api/leads/${leadId}/events`, {
       method: "POST",
@@ -290,7 +290,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     }
   }, [leadId, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 鈹€鈹€鈹€ Update a single editable field with optimistic saveStatus + audit 鈹€鈹€鈹€
+  // ─── Update a single editable field with optimistic saveStatus + audit ───
   const updateField = useCallback(async (field: string, value: any, eventType?: string, eventDesc?: string): Promise<boolean> => {
     setUpdating(true);
     setSaveStatus("saving");
@@ -314,7 +314,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       return false;
     }
     setSaveStatus("saved");
-    toast.success(lang === "zh" ? "宸蹭繚瀛? : "Saved");
+    toast.success(lang === "zh" ? "已保存" : "Saved");
     if (eventType && eventDesc) {
       await supabase.from("activities").insert({ lead_id: leadId, type: eventType, content: eventDesc, user_id: (await supabase.auth.getUser()).data.user?.id });
       await writeEvent(eventType, eventDesc, { [field]: value });
@@ -326,7 +326,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     return true;
   }, [leadId, t, lang, writeEvent, fetchData, setError]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 鈹€鈹€鈹€ Project Info batch-save (bottom folding panel) 鈹€鈹€鈹€
+  // ─── Project Info batch-save (bottom folding panel) ───
   const saveProjectInfo = useCallback(async () => {
     setProjectInfoStatus("saving");
     const updates: Record<string, any> = {
@@ -361,7 +361,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     );
     if (changed.length > 0) {
       const { data: { user } } = await supabase.auth.getUser();
-      const prefix = lang === "zh" ? "椤圭洰淇℃伅宸叉洿鏂? : "Project info updated";
+      const prefix = lang === "zh" ? "项目信息已更新" : "Project info updated";
       const desc = `${prefix}: ${changed.join(", ")}`;
       await supabase.from("activities").insert({
         lead_id: leadId, type: "note_added", content: desc, user_id: user?.id ?? null,
@@ -369,19 +369,19 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       await writeEvent("project_info_updated", desc, Object.fromEntries(changed.map((k) => [k, updates[k]])));
     }
     setProjectInfoStatus("saved");
-    toast.success(lang === "zh" ? "椤圭洰淇℃伅宸蹭繚瀛? : "Project info saved");
+    toast.success(lang === "zh" ? "项目信息已保存" : "Project info saved");
     await fetchData();
     setTimeout(() => setProjectInfoStatus("idle"), 2500);
   }, [leadId, lead, projectInfoDraft, t, lang, writeEvent, fetchData]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Undo local Project Info edits 鈥?restore the draft to the last persisted
+  // Undo local Project Info edits — restore the draft to the last persisted
   // lead values (the same values the form was seeded with on fetch).
   const resetProjectInfoDraft = useCallback(() => {
     params.setProjectInfoDraft(projectDraftFromLead(lead));
     setProjectInfoStatus("idle");
   }, [lead, params]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 鈹€鈹€鈹€ Stage update through the owned server route 鈹€鈹€鈹€
+  // ─── Stage update through the owned server route ───
   const updateStage = useCallback(async (stage: string, note = ""): Promise<boolean> => {
     const response = await fetch(`/api/leads/${leadId}/stage`, {
       method: "PATCH",
@@ -395,11 +395,11 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       return false;
     }
     await fetchData();
-    toast.success(`${t("leadDetail.eventTypes.stage_changed")} 鈫?${t(`stageLabels.${stage}`)}`);
+    toast.success(`${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
     return true;
   }, [leadId, fetchData, t]);
 
-  // 鈹€鈹€鈹€ Next Required Action 鈥?updates nextTask (creates a task if none) 鈹€鈹€鈹€
+  // ─── Next Required Action — updates nextTask (creates a task if none) ───
   const updateNextTask = useCallback(async (updates: Partial<Pick<Task, "title" | "due_at">>) => {
     if (nextTask) {
       const { data: updated, error: err } = await supabase
@@ -414,7 +414,8 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         return;
       }
     } else {
-      // P0-7: 杩樻病鏈?task 鏃讹紝璁剧疆 follow-up 蹇呴』鍒涘缓涓€鏉?task 璁板綍锛堜箣鍓嶄細闈欓粯 no-op锛夈€?      const { error: err } = await createFollowUpTask(supabase, {
+      // P0-7: 还没有 task 时，设置 follow-up 必须创建一条 task 记录（之前会静默 no-op）。
+      const { error: err } = await createFollowUpTask(supabase, {
         leadId: leadId,
         dueAt: updates.due_at ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
         title: updates.title,
@@ -431,11 +432,11 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     await fetchData();
   }, [nextTask, leadId, lead, t, fetchData, setError]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 鈹€鈹€鈹€ Won / Lost handlers (Stage update + toast, contract via DB trigger) 鈹€
+  // ─── Won / Lost handlers (Stage update + toast, contract via DB trigger) ─
   const handleWon = useCallback(async (note = ""): Promise<boolean> => {
     setUpdating(true);
     try {
-      // Stage update only 鈥?contract & installment creation is handled
+      // Stage update only — contract & installment creation is handled
       // by the DB trigger trg_lead_won to avoid duplicates.
       const updated = await updateStage("won", note);
       if (!updated) return false;
@@ -466,17 +467,17 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     }
   }, [updateStage, t]);
 
-  // 鈹€鈹€鈹€ Add a follow-up log note (immutable source of truth) 鈹€鈹€鈹€
+  // ─── Add a follow-up log note (immutable source of truth) ───
   // P0-1: notes are written to follow_up_logs (contact_type='note', summary=content,
   // user_id=author). The immutable follow-up log is the source of truth shown in the
   // timeline. Errors surface via toast so a failed insert never silently drops a note.
   //
   // Note: original page.tsx addNote closed over the page-level `noteText` state.
   //       The hook preserves that behavior by accepting noteText as a callback
-  //       param 鈥?LeadTimeline calls onAddNote() which delegates to this fn
+  //       param — LeadTimeline calls onAddNote() which delegates to this fn
   //       (page wraps the hook's noteText closure into a () => void adapter).
   const addNote = useCallback(async (noteTextParam: string) => {
-    if (updating) return false;
+    if (updating) return;
     const text = noteTextParam.trim();
     if (!text) return;
     setUpdating(true);
@@ -493,15 +494,15 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       console.error("[LeadDetail] note save failed");
       setUpdating(false);
       toast.error(t("common.saveFailed"));
-      return false;
+      return;
     }
     await supabase.from("leads").update({ last_contact_date: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", leadId);
     setUpdating(false);
-    toast.success(lang === "zh" ? "澶囨敞宸蹭繚瀛? : "Note saved");
+    toast.success(lang === "zh" ? "备注已保存" : "Note saved");
     await fetchData();
   }, [updating, leadId, t, lang, fetchData]);
 
-  // 鈹€鈹€鈹€ Add a structured contact record through the owned server route 鈹€鈹€鈹€
+  // ─── Add a structured contact record through the owned server route ───
   const addStructuredContact = useCallback(async (params: {
     contact_method: string;
     contact_time: string;
@@ -527,7 +528,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         return false;
       }
 
-      toast.success(lang === "zh" ? "鑱旂郴璁板綍宸蹭繚瀛? : "Contact record saved");
+      toast.success(lang === "zh" ? "联系记录已保存" : "Contact record saved");
       await fetchData();
       return true;
     } catch {
@@ -538,17 +539,17 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     }
   }, [updating, leadId, t, lang, fetchData]);
 
-  // 鈹€鈹€鈹€ Milestone toggle: complete through the owned server route 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+  // ─── Milestone toggle: complete through the owned server route ─────────────
   const toggleMilestone = useCallback(async (milestoneKey: string, currentlyCompleted: boolean, notes = ""): Promise<boolean> => {
     if (updating) return false;
     if (milestoneKey === "first_contact" && currentlyCompleted) {
-      toast.error(lang === "zh" ? "鍒濇鎺ヨЕ鐢辫仈绯昏褰曞拰绾跨储璐ㄩ噺鑷姩纭" : "First Contact is confirmed by contact and quality");
+      toast.error(lang === "zh" ? "初次接触由联系记录和线索质量自动确认" : "First Contact is confirmed by contact and quality");
       return false;
     }
 
     const normalizedNotes = notes.trim();
     if (!currentlyCompleted && !normalizedNotes) {
-      toast.error(lang === "zh" ? "璇峰～鍐欐帹杩涘娉? : "Progress note is required");
+      toast.error(lang === "zh" ? "请填写推进备注" : "Progress note is required");
       return false;
     }
 
@@ -565,7 +566,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         toast.error(t("common.saveFailed"));
         return false;
       }
-      toast.success(lang === "zh" ? "閲岀▼纰戝凡鎾ら攢" : "Milestone undone");
+      toast.success(lang === "zh" ? "里程碑已撤销" : "Milestone undone");
       } else {
       const response = await fetch("/api/leads/" + leadId + "/milestone", {
         method: "POST",
@@ -580,7 +581,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         toast.error(json?.error || t("common.saveFailed"));
         return false;
       }
-      toast.success(lang === "zh" ? "閲岀▼纰戝凡瀹屾垚" : "Milestone completed");
+      toast.success(lang === "zh" ? "里程碑已完成" : "Milestone completed");
     }
       await fetchData();
       return true;
@@ -603,4 +604,3 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
 }
 
 /* (Helper removed; reassignSales uses params.salesUsers.find directly.) */
-

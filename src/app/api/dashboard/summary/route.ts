@@ -174,9 +174,9 @@ export async function GET(request: Request) {
 
   const leadsData = (leads || []) as any[];
   const contractsData = (contracts || []) as any[];
-  const visibleLeadIds = new Set(leadsData.map((lead: any) => lead.id));
+  const visibleLeadIds = new Set(leadsData.map((lead) => lead.id));
   const stageChanges = isSales
-    ? ((stageChangesRaw || []) as any[]).filter((change) => visibleLeadIds.has(change.lead_id))
+    ? ((stageChangesRaw || []) as Array<{ lead_id: string }>).filter((change) => visibleLeadIds.has(change.lead_id))
     : (stageChangesRaw || []);
 
   // ── Compute contract IDs & active contracts ──

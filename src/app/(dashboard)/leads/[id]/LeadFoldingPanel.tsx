@@ -72,7 +72,7 @@ export default function LeadFoldingPanel({
 
   // Gate: first_contact must be completed before bottom tabs are accessible
   const firstContactMilestone = leadMilestones.find(m => m.milestone_key === "first_contact");
-  const firstContactDone = firstContactMilestone?.completed ?? false;
+  const firstContactDone = !!firstContactMilestone?.completed && !!firstContactMilestone.notes?.trim();
 
   return (
     <div className="space-y-2">

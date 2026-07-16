@@ -100,3 +100,17 @@ test("milestone POST rejects blank notes before inserting a new milestone", asyn
   assert.match(route, /Milestone note is required/);
   assert.match(route, /notes: normalizedNotes/);
 });
+
+
+test("First Contact requires explicit manual confirmation after contact and quality", async () => {
+  const route = await read("src/app/api/leads/[id]/milestone/route.ts");
+  const process = await read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
+  const data = await read("src/app/(dashboard)/leads/[id]/useLeadDetailData.ts");
+  const migration = await read("supabase/migrations/20260716000001_disable_auto_first_contact_milestone.sql");
+
+  assert.match(route, /manualConfirmation: true/);
+  assert.match(route, /existingMilestone\.notes/);
+  assert.match(process, /milestone\.notes\?\.trim\(\)/);
+  assert.match(data, /id, milestone_key, completed_at, notes/);
+  assert.match(migration, /DROP TRIGGER IF EXISTS trg_after_followup_insert/);
+});

@@ -231,8 +231,10 @@ export default function LeadSalesProcess({
       (milestone) => milestone.completed && milestone.milestone_key !== "first_contact",
     )
   );
-  const firstContactReady = (
-    completeContactCount >= 1 && isAssessedQuality(lead.quality)
+  const firstContactReady = milestones.some(
+    (milestone) => milestone.completed
+      && milestone.milestone_key === "first_contact"
+      && !!milestone.notes?.trim(),
   ) || historicalFirstContact;
   const completedKeys = milestones
     .filter((m) => m.completed && (m.milestone_key !== "first_contact" || firstContactReady))

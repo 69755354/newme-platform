@@ -71,10 +71,12 @@ export async function GET(request: Request) {
   }
 
   // ── 3. Sales users ──
-  const { data: salesUsers } = await supabase
-    .from("profiles")
-    .select("id,email,role,full_name")
-    .in("role", ["admin", "sales", "operator", "boss"]);
+  const { data: salesUsers } = isManagement
+    ? await supabase
+        .from("profiles")
+        .select("id,email,role,full_name")
+        .in("role", ["admin", "sales", "operator", "boss"])
+    : { data: [] };
 
   // ── 4a. Leads (no dependency) ──
   let leadsQuery = supabase.from("leads").select("*");
@@ -172,6 +174,10 @@ export async function GET(request: Request) {
 
   const leadsData = (leads || []) as any[];
   const contractsData = (contracts || []) as any[];
+  const visibleLeadIds = new Set(leadsData.map((lead) => lead.id));
+  const stageChanges = isSales
+    ? ((stageChangesRaw || []) as Array<{ lead_id: string }>).filter((change) => visibleLeadIds.has(change.lead_id))
+    : (stageChangesRaw || []);
 
   // ── Compute contract IDs & active contracts ──
   const contractIds = contractsData.map((c: any) => c.id);
@@ -235,21 +241,26 @@ export async function GET(request: Request) {
   };
 
   const buildRiskPoolQuery = async (): Promise<number> => {
+    if (isSales && userId) {
+      const { count } = await supabase
+        .from("tasks")
+        .select("id", { count: "exact", head: true })
+        .eq("assignee_id", userId)
+        .is("completed_at", null)
+        .lt("due_at", new Date().toISOString());
+      return count || 0;
+    }
     try {
       const { count } = await supabase
         .from("v_risk_pool")
         .select("*", { count: "exact", head: true });
       return count || 0;
     } catch {
-      let riskQ = supabase
+      const { count } = await supabase
         .from("tasks")
         .select("id", { count: "exact", head: true })
         .is("completed_at", null)
         .lt("due_at", new Date().toISOString());
-      if (isSales && userId) {
-        riskQ = riskQ.eq("assignee_id", userId);
-      }
-      const { count } = await riskQ;
       return count || 0;
     }
   };
@@ -559,7 +570,7 @@ export async function GET(request: Request) {
     ...(month
       ? {
           periodLeads,
-          stageChanges: stageChangesRaw || [],
+          stageChanges,
         }
       : {}),
   };

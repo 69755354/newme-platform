@@ -157,6 +157,7 @@ export interface LeadMilestoneEmbed {
   milestone_key: string;
   completed_at: string | null;
   completed_by?: string | null;
+  notes?: string | null;
 }
 
 /** business_events row shape returned by embed (subset, with operator) */
@@ -237,6 +238,7 @@ export interface LeadMilestone {
   milestone_key: string;
   completed: boolean;
   completed_at: string | null;
+  notes?: string | null;
 }
 
 export interface LeadTrace {

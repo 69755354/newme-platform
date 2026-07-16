@@ -208,6 +208,9 @@ export default function LeadTimeline({
           </Button>
         </div>
         <Separator className="bg-border" />
+        {contactError && !editingContactId && (
+          <p role="alert" className="text-xs text-red-400">{contactError}</p>
+        )}
 
         {/* WhatsApp chat bubbles */}
         {chatItems.length > 0 && (

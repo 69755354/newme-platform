@@ -894,6 +894,8 @@ export const translations = {
     },
     sourceLabels: {
       meta: "ins",
+      meta_ads: "ins",
+      instagram: "ins",
       ins: "ins",
       fb: "FB",
       show_room: "Show room",
@@ -2383,6 +2385,8 @@ export const translations = {
     },
     sourceLabels: {
       meta: "ins",
+      meta_ads: "ins",
+      instagram: "ins",
       ins: "ins",
       fb: "FB",
       show_room: "Show room",

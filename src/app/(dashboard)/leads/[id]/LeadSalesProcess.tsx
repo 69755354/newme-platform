@@ -1,11 +1,11 @@
 "use client";
 
-// Middle column — Sales Process. Drives the deal forward:
-// milestone checklist → next required action → missing required fields (gated by
-// stage) → stage progress / Won-Lost → quote / contract / payment links.
+// Middle column 鈥?Sales Process. Drives the deal forward:
+// milestone checklist 鈫?next required action 鈫?missing required fields (gated by
+// stage) 鈫?stage progress / Won-Lost 鈫?quote / contract / payment links.
 //
 // All mutations call back into page.tsx handlers (onUpdateField, onStageChange,
-// onToggleMilestone, …). Inline edits reuse the page-owned render closures so the
+// onToggleMilestone, 鈥?. Inline edits reuse the page-owned render closures so the
 // single-edit-at-a-time behaviour is preserved across columns.
 
 import { useEffect, useState } from "react";
@@ -73,7 +73,7 @@ interface Props {
     contact_time: string;
     contact_result: string;
     summary?: string;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
   t: (key: string) => string;
   lang: "en" | "zh";
 }
@@ -107,7 +107,7 @@ export default function LeadSalesProcess({
   t,
   lang,
 }: Props) {
-  // ── Inline workspace state for first_contact milestone ──
+  // 鈹€鈹€ Inline workspace state for first_contact milestone 鈹€鈹€
   const [contactMethod, setContactMethod] = useState("");
   const [contactTime, setContactTime] = useState(new Date().toISOString().slice(0, 16));
   const [contactResult, setContactResult] = useState("");
@@ -137,7 +137,7 @@ export default function LeadSalesProcess({
 
   const nextTaskOverdue = clockNow > 0 && !!nextTask && new Date(nextTask.due_at).getTime() < clockNow;
 
-  // ── Health score (Phase B) — shown as a badge in Stage Progress ──
+  // 鈹€鈹€ Health score (Phase B) 鈥?shown as a badge in Stage Progress 鈹€鈹€
   const health = calculateHealthScore({
     hasRecentFollowUp:
       (lead.followup_count ?? 0) > 0 && (daysSince(lead.last_contact_date) ?? Infinity) <= 7,
@@ -173,8 +173,8 @@ export default function LeadSalesProcess({
     quality: lead.quality,
   });
 
-  // ── Missing required fields, gated by current stage (display only, no block) ──
-  const STAGE_ORDER = STAGES; // new … lost
+  // 鈹€鈹€ Missing required fields, gated by current stage (display only, no block) 鈹€鈹€
+  const STAGE_ORDER = STAGES; // new 鈥?lost
   const stageIdx = STAGE_ORDER.indexOf(lead.final_status === "won" ? "won" : lead.stage);
   const missingFields: MissingField[] = (() => {
     const activeStage = lead.final_status === "lost" ? "lost" : lead.final_status === "won" ? "won" : lead.stage;
@@ -221,7 +221,7 @@ export default function LeadSalesProcess({
     return out;
   })();
 
-  // ── Milestone checklist state (7-step, lock/unlock logic) ──
+  // 鈹€鈹€ Milestone checklist state (7-step, lock/unlock logic) 鈹€鈹€
   const historicalFirstContact = milestones.some(
     (milestone) => milestone.completed && milestone.milestone_key === "first_contact",
   ) && (
@@ -270,11 +270,11 @@ export default function LeadSalesProcess({
         </Card>
       )}
 
-      {/* Current Milestone — 7-step checklist */}
+      {/* Current Milestone 鈥?7-step checklist */}
       <Card className="order-2 overflow-hidden border-copper-500/30 bg-card shadow-none">
         <CardHeader className="border-b border-border/70 pb-3">
           <CardTitle className="text-base text-foreground flex items-center justify-between gap-3">
-            <span className="flex items-center gap-2"><Target className="w-4 h-4 text-copper-400" /> {lang === "zh" ? "当前成交阶段" : "Current deal stage"}</span>
+            <span className="flex items-center gap-2"><Target className="w-4 h-4 text-copper-400" /> {lang === "zh" ? "褰撳墠鎴愪氦闃舵" : "Current deal stage"}</span>
             <span className="text-xs font-normal text-muted-foreground">{completedKeys.length}/7</span>
           </CardTitle>
         </CardHeader>
@@ -342,12 +342,13 @@ export default function LeadSalesProcess({
                         if (!contactMethod || !contactTime || !contactResult.trim()) return;
                         setContactSubmitting(true);
                         try {
-                          await onAddStructuredContact({
+                          const saved = await onAddStructuredContact({
                             contact_method: contactMethod,
                             contact_time: new Date(contactTime).toISOString(),
                             contact_result: contactResult.trim(),
                             summary: contactNotes.trim() || undefined,
                           });
+                          if (!saved) return;
                           // Reset form
                           setContactMethod("");
                           setContactTime(new Date().toISOString().slice(0, 16));
@@ -386,32 +387,32 @@ export default function LeadSalesProcess({
 
                       return (
                       <div className="mt-2 space-y-2 border-t border-border/50 pt-2">
-                        {/* ── Status indicators ── */}
+                        {/* 鈹€鈹€ Status indicators 鈹€鈹€ */}
                         <div className="space-y-1 text-[11px]">
                           <p className={contactsMet ? "text-emerald-400" : "text-foreground"}>
-                            {lang === "zh" ? "联系记录" : "Contact record"} {contactsMet ? "✓" : `${contactTimeCount}/${contactsNeeded}`}
+                            {lang === "zh" ? "鑱旂郴璁板綍" : "Contact record"} {contactsMet ? "鉁? : `${contactTimeCount}/${contactsNeeded}`}
                           </p>
                           <p className={qAssessed ? "text-emerald-400" : "text-foreground"}>
-                            {lang === "zh" ? "线索质量" : "Lead quality"}{" "}
+                            {lang === "zh" ? "绾跨储璐ㄩ噺" : "Lead quality"}{" "}
                             {qAssessed
                               ? lead.quality === "good"
-                                ? lang === "zh" ? "优质" : "Good"
+                                ? lang === "zh" ? "浼樿川" : "Good"
                                 : lead.quality === "normal"
-                                ? lang === "zh" ? "一般" : "Normal"
-                                : lang === "zh" ? "差" : "Poor"
-                              : lang === "zh" ? "未评估" : "Not assessed"}
+                                ? lang === "zh" ? "涓€鑸? : "Normal"
+                                : lang === "zh" ? "宸? : "Poor"
+                              : lang === "zh" ? "鏈瘎浼? : "Not assessed"}
                           </p>
                           <p className="text-muted-foreground">
-                            {lang === "zh" ? "建议跟进" : "Recommended follow-ups"} {contactTimeCount}/{coachingTarget}
+                            {lang === "zh" ? "寤鸿璺熻繘" : "Recommended follow-ups"} {contactTimeCount}/{coachingTarget}
                           </p>
                           {!contactsMet && (
                             <p className="text-amber-400">
-                              {lang === "zh" ? "添加1条联系记录后可评估" : "Add 1 contact record to assess quality"}
+                              {lang === "zh" ? "娣诲姞1鏉¤仈绯昏褰曞悗鍙瘎浼? : "Add 1 contact record to assess quality"}
                             </p>
                           )}
                         </div>
 
-                        {/* ── Add Structured Contact Record ── */}
+                        {/* 鈹€鈹€ Add Structured Contact Record 鈹€鈹€ */}
                         {!contactFormOpen ? (
                           <button
                             onClick={() => setContactFormOpen(true)}
@@ -514,13 +515,13 @@ export default function LeadSalesProcess({
                           </div>
                         )}
 
-                        {/* ── Quality selector ── */}
+                        {/* 鈹€鈹€ Quality selector 鈹€鈹€ */}
                         <div className="space-y-1">
                           <p className="text-[10px] text-muted-foreground">
                             {t("leadDetail.setContactQuality") || "Set Contact Quality"}
                             {!contactsMet && (
                               <span className="text-amber-400 ml-1">
-                                ({t("leadDetail.needMoreContacts") || `need ${contactsNeeded - contactTimeCount} more contacts`})
+                                {(t("leadDetail.needMoreContacts") || `need ${contactsNeeded - contactTimeCount} more contacts`).replace("{n}", String(contactsNeeded - contactTimeCount))}
                               </span>
                             )}
                           </p>
@@ -598,7 +599,7 @@ export default function LeadSalesProcess({
                           )}
                         </div>
 
-                        {/* ── Recent contacts list ── */}
+                        {/* 鈹€鈹€ Recent contacts list 鈹€鈹€ */}
                         {recentContacts.length > 0 && (
                           <div className="space-y-0.5">
                             <p className="text-[10px] text-muted-foreground">
@@ -629,7 +630,7 @@ export default function LeadSalesProcess({
                     {isNext && !completed && (
                       <div className="mt-4 rounded-md border border-border bg-background/60 p-3 space-y-2">
                         <Label htmlFor={`milestone-note-${key}`} className="text-xs font-medium text-foreground">
-                          {lang === "zh" ? "推进备注（必填）" : "Progress note (required)"}
+                          {lang === "zh" ? "鎺ㄨ繘澶囨敞锛堝繀濉級" : "Progress note (required)"}
                         </Label>
                         <textarea
                           id={`milestone-note-${key}`}
@@ -638,7 +639,7 @@ export default function LeadSalesProcess({
                             setStageNote(event.target.value);
                             setMilestoneNoteError(null);
                           }}
-                          placeholder={lang === "zh" ? "记录这一步实际完成了什么" : "Record what was actually completed"}
+                          placeholder={lang === "zh" ? "璁板綍杩欎竴姝ュ疄闄呭畬鎴愪簡浠€涔? : "Record what was actually completed"}
                           className="min-h-20 w-full rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
                         />
                         {(milestoneNoteError || (key === "first_contact" && firstContactBlockReason)) && (
@@ -653,15 +654,15 @@ export default function LeadSalesProcess({
                           onClick={async () => {
                             const note = stageNote.trim();
                             if (key === "first_contact" && completeContactCount < 1) {
-                              setFirstContactBlockReason(lang === "zh" ? "请先添加 1 条完整联系记录（方式、时间和结果）" : "Add one complete contact record first");
+                              setFirstContactBlockReason(lang === "zh" ? "璇峰厛娣诲姞 1 鏉″畬鏁磋仈绯昏褰曪紙鏂瑰紡銆佹椂闂村拰缁撴灉锛? : "Add one complete contact record first");
                               return;
                             }
                             if (key === "first_contact" && !isAssessedQuality(lead.quality)) {
-                              setFirstContactBlockReason(lang === "zh" ? "请先选择线索质量，再完成初次接触" : "Select lead quality before completing First Contact");
+                              setFirstContactBlockReason(lang === "zh" ? "璇峰厛閫夋嫨绾跨储璐ㄩ噺锛屽啀瀹屾垚鍒濇鎺ヨЕ" : "Select lead quality before completing First Contact");
                               return;
                             }
                             if (!note) {
-                              setMilestoneNoteError(lang === "zh" ? "请填写推进备注后再完成此阶段" : "Add a progress note before completing this stage");
+                              setMilestoneNoteError(lang === "zh" ? "璇峰～鍐欐帹杩涘娉ㄥ悗鍐嶅畬鎴愭闃舵" : "Add a progress note before completing this stage");
                               return;
                             }
                             setFirstContactBlockReason(null);
@@ -669,7 +670,7 @@ export default function LeadSalesProcess({
                             if (completedNow) setStageNote("");
                           }}
                         >
-                          {lang === "zh" ? "完成此阶段" : "Complete this stage"}
+                          {lang === "zh" ? "瀹屾垚姝ら樁娈? : "Complete this stage"}
                         </Button>
                       </div>
                     )}
@@ -759,7 +760,7 @@ export default function LeadSalesProcess({
             </Badge>
             <Badge className={cn("text-xs", healthColor)} title={t("leadDetail.healthScore")}>
               <ShieldAlert className="w-3 h-3 mr-1" />
-              {healthLevelLabel} · {health.score}
+              {healthLevelLabel} 路 {health.score}
             </Badge>
             {lead.quotation_value != null && lead.quotation_value > 0 && (
               <Badge className="bg-copper-500/10 text-copper-400 text-xs">
@@ -772,20 +773,20 @@ export default function LeadSalesProcess({
         <CardContent className="space-y-3">
           <div>
             <label htmlFor="stage-note" className="text-xs text-muted-foreground">
-              {lang === "zh" ? "阶段备注（可选）" : "Stage note (optional)"}
+              {lang === "zh" ? "闃舵澶囨敞锛堝彲閫夛級" : "Stage note (optional)"}
             </label>
             <textarea
               id="stage-note"
               value={stageNote}
               maxLength={1000}
               onChange={(event) => setStageNote(event.target.value)}
-              placeholder={lang === "zh" ? "记录本次阶段推进的原因或客户反馈" : "Reason, customer feedback, or next-step context"}
+              placeholder={lang === "zh" ? "璁板綍鏈闃舵鎺ㄨ繘鐨勫師鍥犳垨瀹㈡埛鍙嶉" : "Reason, customer feedback, or next-step context"}
               className="mt-1 min-h-16 w-full resize-y rounded border border-border bg-muted px-2 py-1.5 text-xs text-foreground"
             />
             <p className="text-right text-[10px] text-muted-foreground">{stageNote.length}/1000</p>
           </div>
           <p className="rounded-md border border-border/70 bg-background/50 px-3 py-2 text-xs text-muted-foreground">
-            {lang === "zh" ? "阶段只能通过上方当前里程碑的真实推进备注完成；后续阶段会在满足顺序后解锁。" : "Complete the current milestone above with a real progress note. Future stages unlock in sequence."}
+            {lang === "zh" ? "闃舵鍙兘閫氳繃涓婃柟褰撳墠閲岀▼纰戠殑鐪熷疄鎺ㄨ繘澶囨敞瀹屾垚锛涘悗缁樁娈典細鍦ㄦ弧瓒抽『搴忓悗瑙ｉ攣銆? : "Complete the current milestone above with a real progress note. Future stages unlock in sequence."}
           </p>
           <div className="flex gap-2">
             <Button
@@ -846,7 +847,7 @@ export default function LeadSalesProcess({
             <div className="min-w-0">
               <p className="text-muted-foreground text-xs">{t("leadDetail.quoteLink")}</p>
               <p className="text-foreground">
-                {lead.quotation_value != null && lead.quotation_value > 0 ? fmtAED(lead.quotation_value) : "—"}
+                {lead.quotation_value != null && lead.quotation_value > 0 ? fmtAED(lead.quotation_value) : "鈥?}
               </p>
             </div>
             {hasQuotation ? (
@@ -858,7 +859,7 @@ export default function LeadSalesProcess({
             )}
           </div>
 
-          {/* Contract link — only when won */}
+          {/* Contract link 鈥?only when won */}
           {lead.final_status === "won" && (
             <>
               <Separator className="bg-border" />
@@ -867,7 +868,7 @@ export default function LeadSalesProcess({
                   <p className="text-muted-foreground text-xs">{t("leadDetail.contractLink")}</p>
                   {hasContract ? (
                     <p className="text-foreground truncate">
-                      {trace?.contract_no || t("leadDetail.contractLabel")} · {fmtAED(trace?.contract_amount ?? null)}
+                      {trace?.contract_no || t("leadDetail.contractLabel")} 路 {fmtAED(trace?.contract_amount ?? null)}
                     </p>
                   ) : (
                     <p className="text-gray-600 text-xs">{t("leadDetail.contractNotCreated")}</p>
@@ -882,7 +883,7 @@ export default function LeadSalesProcess({
             </>
           )}
 
-          {/* Payment link — only when a payment exists in the trace */}
+          {/* Payment link 鈥?only when a payment exists in the trace */}
           {hasPayment && (
             <>
               <Separator className="bg-border" />
@@ -891,7 +892,7 @@ export default function LeadSalesProcess({
                   <p className="text-muted-foreground text-xs">{t("leadDetail.paymentLink")}</p>
                   <p className="text-foreground">
                     {fmtAED(trace?.payment_amount ?? null)}
-                    {trace?.payment_date ? ` · ${fmtDubai(trace.payment_date)}` : ""}
+                    {trace?.payment_date ? ` 路 ${fmtDubai(trace.payment_date)}` : ""}
                   </p>
                 </div>
                 <Badge className={cn("text-[10px]", trace?.confirmed ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400")}>
@@ -905,3 +906,4 @@ export default function LeadSalesProcess({
     </div>
   );
 }
+

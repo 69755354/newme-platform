@@ -26,12 +26,14 @@ export async function GET() {
     return NextResponse.json(cached);
   }
 
-  // Get all relevant users
-  const { data: profiles } = await supabase
+  // Sales callers receive only their own ownership row; management sees the team.
+  let profilesQuery = supabase
     .from("profiles")
     .select("id, full_name, role")
     .in("role", ["admin", "sales", "boss", "operator"])
     .eq("is_active", true);
+  if (!isManagement) profilesQuery = profilesQuery.eq("id", user.id);
+  const { data: profiles } = await profilesQuery;
 
   if (!profiles) return NextResponse.json({ users: [] });
 

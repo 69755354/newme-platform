@@ -1,6 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { canCompleteMilestone } from "@/lib/milestones";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
 import { isAssessedQuality, isCompleteContact } from "@/lib/first-contact-gate.mjs";
@@ -86,17 +87,40 @@ export async function POST(
     );
   }
 
-  const existingMilestone = (existingMilestones ?? []).find(
-    (milestone) => milestone.milestone_key === milestoneKey,
-  );
-  if (existingMilestone) {
-    return NextResponse.json({ success: true, milestone: existingMilestone, duplicate: true });
-  }
   if (!normalizedNotes) {
     return NextResponse.json(
       { error: "Milestone note is required" },
       { status: 400 },
     );
+  }
+
+  const existingMilestone = (existingMilestones ?? []).find(
+    (milestone) => milestone.milestone_key === milestoneKey,
+  );
+  if (existingMilestone) {
+    // Old trigger-created first_contact rows have no operator note. Turn that
+    // fact row into the required explicit confirmation instead of treating it
+    // as a completed manual milestone.
+    if (milestoneKey === "first_contact" && !String(existingMilestone.notes ?? "").trim()) {
+      const { data: confirmed, error: confirmError } = await supabaseAdmin
+        .from("lead_milestones")
+        .update({
+          notes: normalizedNotes,
+          completed_by: profile.userId,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", existingMilestone.id)
+        .select()
+        .single();
+      if (confirmError || !confirmed) {
+        return NextResponse.json(
+          { error: confirmError?.message ?? "Failed to confirm First Contact" },
+          { status: 500 },
+        );
+      }
+      return NextResponse.json({ success: true, milestone: confirmed, manualConfirmation: true });
+    }
+    return NextResponse.json({ success: true, milestone: existingMilestone, duplicate: true });
   }
 
   // 6. rule_006: 顺序校验（不能跳级、不能往回）

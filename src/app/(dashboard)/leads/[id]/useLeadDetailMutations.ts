@@ -99,7 +99,7 @@ export interface UseLeadDetailMutationsReturn {
     contact_time: string;
     contact_result: string;
     summary?: string;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
 }
 
 /* ─── Hook ─── */
@@ -508,11 +508,11 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     contact_time: string;
     contact_result: string;
     summary?: string;
-  }) => {
-    if (updating) return;
+  }): Promise<boolean> => {
+    if (updating) return false;
     if (!params.contact_result?.trim()) {
       toast.error(t("leadDetail.contactResultRequired") || "Contact result is required");
-      return;
+      return false;
     }
 
     setUpdating(true);
@@ -525,13 +525,15 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       const json = await response.json().catch(() => ({}));
       if (!response.ok || !json?.contact) {
         toast.error(json?.error || t("common.saveFailed") || "Contact record save failed");
-        return;
+        return false;
       }
 
       toast.success(lang === "zh" ? "联系记录已保存" : "Contact record saved");
       await fetchData();
+      return true;
     } catch {
       toast.error(t("common.saveFailed") || "Contact record save failed");
+      return false;
     } finally {
       setUpdating(false);
     }

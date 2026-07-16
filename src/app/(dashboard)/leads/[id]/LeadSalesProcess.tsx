@@ -73,7 +73,7 @@ interface Props {
     contact_time: string;
     contact_result: string;
     summary?: string;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
   t: (key: string) => string;
   lang: "en" | "zh";
 }
@@ -342,12 +342,13 @@ export default function LeadSalesProcess({
                         if (!contactMethod || !contactTime || !contactResult.trim()) return;
                         setContactSubmitting(true);
                         try {
-                          await onAddStructuredContact({
+                          const saved = await onAddStructuredContact({
                             contact_method: contactMethod,
                             contact_time: new Date(contactTime).toISOString(),
                             contact_result: contactResult.trim(),
                             summary: contactNotes.trim() || undefined,
                           });
+                          if (!saved) return;
                           // Reset form
                           setContactMethod("");
                           setContactTime(new Date().toISOString().slice(0, 16));
@@ -520,7 +521,7 @@ export default function LeadSalesProcess({
                             {t("leadDetail.setContactQuality") || "Set Contact Quality"}
                             {!contactsMet && (
                               <span className="text-amber-400 ml-1">
-                                ({t("leadDetail.needMoreContacts") || `need ${contactsNeeded - contactTimeCount} more contacts`})
+                                ({(t("leadDetail.needMoreContacts") || `need ${contactsNeeded - contactTimeCount} more contacts`).replace("{n}", String(contactsNeeded - contactTimeCount))})
                               </span>
                             )}
                           </p>

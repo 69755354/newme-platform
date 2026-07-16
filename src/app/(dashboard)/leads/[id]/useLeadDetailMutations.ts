@@ -428,9 +428,13 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         return;
       }
     }
+    const description = lang === "zh"
+      ? `下一步已更新: ${updates.title ?? nextTask?.title ?? "—"}`
+      : `Next action updated: ${updates.title ?? nextTask?.title ?? "—"}`;
+    await writeEvent("next_action_updated", description, updates);
     setEditField(null);
     await fetchData();
-  }, [nextTask, leadId, lead, t, fetchData, setError]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nextTask, leadId, lead, t, lang, writeEvent, fetchData, setError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Won / Lost handlers (Stage update + toast, contract via DB trigger) ─
   const handleWon = useCallback(async (note = ""): Promise<boolean> => {

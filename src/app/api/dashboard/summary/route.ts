@@ -191,10 +191,9 @@ export async function GET(request: Request) {
 
   // ── 4d–m. Second batch: everything with contract-id or independent ──
   const buildPaymentsQuery = () => {
+    if (isSales && contractIds.length === 0) return Promise.resolve({ data: [], error: null });
     let q = supabase.from("payments").select("amount,confirmed,payment_date");
-    if (isSales && userId && contractIds.length > 0) {
-      q = q.in("contract_id", contractIds);
-    }
+    if (isSales && userId) q = q.in("contract_id", contractIds);
     return q;
   };
 
@@ -213,27 +212,25 @@ export async function GET(request: Request) {
   };
 
   const buildOverdueQuery = () => {
+    if (isSales && contractIds.length === 0) return Promise.resolve({ data: [], error: null });
     let q = supabase
       .from("installment_plans")
       .select("amount,due_date,status,paid_amount")
       .lt("due_date", nowISO)
       .neq("status", "paid");
-    if (isSales && userId && contractIds.length > 0) {
-      q = q.in("contract_id", contractIds);
-    }
+    if (isSales && userId) q = q.in("contract_id", contractIds);
     return q;
   };
 
   const buildDueQuery = () => {
+    if (isSales && contractIds.length === 0) return Promise.resolve({ data: [], error: null });
     let q = supabase
       .from("installment_plans")
       .select("amount,due_date,status,paid_amount")
       .gte("due_date", nowISO)
       .lte("due_date", nextWeekStr)
       .eq("status", "pending");
-    if (isSales && userId && contractIds.length > 0) {
-      q = q.in("contract_id", contractIds);
-    }
+    if (isSales && userId) q = q.in("contract_id", contractIds);
     return q;
   };
 

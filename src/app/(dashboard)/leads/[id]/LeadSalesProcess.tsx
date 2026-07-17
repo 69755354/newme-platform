@@ -288,6 +288,7 @@ export default function LeadSalesProcess({
               const completed = completedKeys.includes(key);
               const locked = isLocked(key);
               const isNext = key === nextPendingKey;
+              const previousMilestoneKey = idx > 0 ? COMPLETABLE_MILESTONES[idx - 1] : null;
               return (
                 <div
                   key={key}
@@ -318,7 +319,15 @@ export default function LeadSalesProcess({
                     </p>
                     {completed && <p className="text-[10px] text-emerald-400">{t("leadDetail.milestoneCompleted")}</p>}
                     {isNext && !completed && <p className="text-[10px] text-copper-400">{t("leadDetail.milestoneNext")}</p>}
-                    {locked && <p className="text-[10px] text-gray-600">{t("leadDetail.milestoneLocked")}</p>}
+                    {locked && (
+                      <p className="text-[10px] text-muted-foreground">
+                        {previousMilestoneKey
+                          ? lang === "zh"
+                            ? `请先完成「${t(`leadDetail.milestone_${previousMilestoneKey}`)}」后解锁`
+                            : `Complete ${t(`leadDetail.milestone_${previousMilestoneKey}`)} to unlock`
+                          : t("leadDetail.milestoneLocked")}
+                      </p>
+                    )}
                     {/* first_contact inline workspace */}
                     {key === "first_contact" && (isNext || completed) && (() => {
                       const contactTimeCount = followUpLogs.filter(l => l.contact_time != null && !!l.contact_result?.trim()).length;

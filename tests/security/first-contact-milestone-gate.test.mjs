@@ -101,6 +101,13 @@ test("milestone POST rejects blank notes before inserting a new milestone", asyn
   assert.match(route, /notes: normalizedNotes/);
 });
 
+test("database orders milestones by pipeline sequence when timestamps tie", async () => {
+  const migration = await read("supabase/migrations/20260718000000_fix_milestone_order_same_timestamp.sql");
+
+  assert.match(migration, /ORDER BY\s+milestone_order\(milestone_key\) DESC/);
+  assert.doesNotMatch(migration, /ORDER BY completed_at DESC LIMIT 1/);
+});
+
 
 test("First Contact requires explicit manual confirmation after contact and quality", async () => {
   const route = await read("src/app/api/leads/[id]/milestone/route.ts");

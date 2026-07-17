@@ -51,3 +51,10 @@ test("quality selection never fails silently", async () => {
   assert.ok(process.includes("setQualitySaveError"));
   assert.ok(process.includes("qualitySaveError &&"));
 });
+
+test("locked milestones explain the immediate prerequisite", async () => {
+  const process = await read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
+
+  assert.ok(process.includes("previousMilestoneKey"));
+  assert.ok(process.includes("Complete ${t(`leadDetail.milestone_${previousMilestoneKey}`)} to unlock"));
+});

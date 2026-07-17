@@ -43,3 +43,11 @@ test("contact deletion is owner-authorized, exact, and excludes audit notes", as
     '["note", "import_note"]',
   ]) assert.ok(route.includes(token), `missing deletion protection: ${token}`);
 });
+
+test("quality selection never fails silently", async () => {
+  const process = await read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
+
+  assert.ok(process.includes("const [qualitySaveError, setQualitySaveError]"));
+  assert.ok(process.includes("setQualitySaveError"));
+  assert.ok(process.includes("qualitySaveError &&"));
+});

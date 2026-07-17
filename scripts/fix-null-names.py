@@ -1,7 +1,11 @@
 import os, sys, json, urllib.request, urllib.error, urllib.parse
 
-SUPABASE_URL = 'https://yzjokdcabjsrwhwwmhqs.supabase.co'
-SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl6am9rZGNhYmpzcndod3dtaHFzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0MTA4MjAwMCwiZXhwIjoyMDU2NjU4MDAwfQ.OjUxkQhRxJ7nUmMzEE2s3Uwr_NZTxQFdi1_T9jWzmEA'
+SUPABASE_URL = os.environ.get('NEXT_PUBLIC_SUPABASE_URL', '')
+SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '')
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY', file=sys.stderr)
+    sys.exit(1)
 
 def api(method, table, params, body):
     url = f'{SUPABASE_URL}/rest/v1/{table}'

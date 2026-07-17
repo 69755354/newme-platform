@@ -118,6 +118,7 @@ export default function LeadSalesProcess({
   const [showQualityPoorReason, setShowQualityPoorReason] = useState(false);
   const [qualityPoorReason, setQualityPoorReason] = useState("");
   const [qualitySetting, setQualitySetting] = useState<string | null>(null);
+  const [qualitySaveError, setQualitySaveError] = useState<string | null>(null);
   const [stageNote, setStageNote] = useState("");
   const [milestoneNoteError, setMilestoneNoteError] = useState<string | null>(null);
   const [firstContactBlockReason, setFirstContactBlockReason] = useState<string | null>(null);
@@ -369,6 +370,7 @@ export default function LeadSalesProcess({
 
                       const handleSetQuality = async (q: "good" | "normal" | "poor", poorReason?: string) => {
                         setQualitySetting(q);
+                        setQualitySaveError(null);
                         try {
                           const body: Record<string, unknown> = { quality: q };
                           if (q === "poor") body.poor_reason = poorReason ?? "";
@@ -379,12 +381,12 @@ export default function LeadSalesProcess({
                           });
                           if (!res.ok) {
                             const err = await res.json().catch(() => ({}));
-                            alert((err as any)?.error || "Failed to set quality");
+                            setQualitySaveError((err as any)?.error || (lang === "zh" ? "保存线索质量失败" : "Failed to set lead quality"));
                           } else {
                             window.location.reload();
                           }
                         } catch {
-                          // reload on any error to stay consistent with LeadContactQualityPanel
+                          setQualitySaveError(lang === "zh" ? "网络异常，未保存线索质量" : "Network error: lead quality was not saved");
                         } finally {
                           setQualitySetting(null);
                         }
@@ -536,6 +538,9 @@ export default function LeadSalesProcess({
                               </span>
                             )}
                           </p>
+                          {qualitySaveError && (
+                            <p role="alert" className="text-[10px] text-red-400">{qualitySaveError}</p>
+                          )}
                           {showQualityPoorReason ? (
                             <div className="space-y-1.5">
                               <input

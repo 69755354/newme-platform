@@ -179,9 +179,6 @@ export function LeadCard({
         draggingLeadId === lead.id && "opacity-40",
         isHot && "ring-1 ring-rose-500/30",
         isCrit ? "ring-2 ring-red-500/40" : isStale ? "ring-1 ring-amber-500/30" : "",
-        lead.recovery_candidate && "ring-1 ring-orange-500/30",
-        lead.transfer_candidate && "ring-1 ring-red-500/20",
-        lead.sales_manager_review && "ring-1 ring-purple-500/30",
         selected && "ring-2 ring-copper-500 bg-copper-500/5",
       )}
       onClick={handleCardClick}
@@ -200,17 +197,7 @@ export function LeadCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               <p className="text-sm font-medium text-foreground truncate max-w-[180px]">{!isPlaceholder(lead.customer_name) ? lead.customer_name : (lead.phone || t("common.unnamed"))}</p>
-              {isHot && <span className="text-[10px]">🔥</span>}
               {statusStyle && <span className={cn("text-[9px] px-1 py-0.5 rounded font-medium", statusStyle.bg, statusStyle.color)}>{STATUS_EMOJIS[lead.lead_status || ""] || ""} {t(`statusLabels.${lead.lead_status || ""}`)}</span>}
-              {lead.win_probability != null && (
-                <span className={cn("text-[10px] font-semibold", lead.win_probability >= 70 ? "text-emerald-400" : lead.win_probability >= 30 ? "text-amber-400" : "text-muted-foreground")}>
-                  {lead.win_probability}%
-                </span>
-              )}
-              {lead.recovery_candidate && <span className="text-[9px] px-1 py-0.5 rounded bg-orange-500/10 text-orange-400">{t("leads.recovery")}</span>}
-              {lead.quality === 'poor' && <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-red-500/10 text-red-400">⚠️ {t("leads.poorLead")}</span>}
-              {lead.transfer_candidate && <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/10 text-red-400">{t("leads.transfer")}</span>}
-              {lead.sales_manager_review && <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/10 text-purple-400">{t("leads.review")}</span>}
             </div>
             {(!isPlaceholder(lead.property_type) || !isPlaceholder(lead.location)) && (
               <div className="flex items-center gap-1 text-[11px] text-muted-foreground mt-0.5">

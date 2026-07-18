@@ -42,8 +42,8 @@ test("SAM-38 removes card-side stage shortcuts and duplicate editors", () => {
 test("SAM-38 renders reassignment outside clipped Kanban columns", () => {
   const card = read("src/app/(dashboard)/leads/_components/LeadCard.tsx");
 
-  assert.match(card, /title="转移销售"/);
-  assert.match(card, /aria-label="转移销售"/);
+  assert.match(card, /title=\{t\("leads\.transfer"\)\}/);
+  assert.match(card, /aria-label=\{t\("leads\.transfer"\)\}/);
   assert.match(card, /inline-flex h-8 w-8/);
   assert.match(card, /createPortal\(/);
   assert.match(card, /document\.body/);
@@ -88,8 +88,10 @@ test("SAM-38 batches prompt fields in the existing leads list request", () => {
 
 test("SAM-38 limits reassignment candidates to active sales-capable profiles", () => {
   const route = read("src/app/api/leads/list/route.ts");
+  const policy = read("src/lib/lead-transfer-candidates.mjs");
 
-  assert.match(route, /\.in\("role", \["sales", "operator", "boss"\]\)/);
-  assert.match(route, /\.eq\("is_active", true\)/);
-  assert.doesNotMatch(route, /\["admin", "sales", "operator"\]/);
+  assert.match(route, /filterLeadTransferCandidateQuery\(/);
+  assert.match(policy, /"sales",\s*"operator",\s*"boss"/);
+  assert.match(policy, /\.eq\("is_active", true\)/);
+  assert.doesNotMatch(policy, /"admin"/);
 });

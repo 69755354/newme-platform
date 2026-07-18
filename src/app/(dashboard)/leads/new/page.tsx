@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { toast } from "sonner";
+import { isLeadTransferCandidate } from "@/lib/lead-transfer-candidates.mjs";
 
 export default function NewLeadPage() {
   const router = useRouter();
@@ -27,7 +28,15 @@ export default function NewLeadPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
+    const authResponse = await fetch("/api/auth/me", { cache: "no-store" });
+    const authContext = authResponse.ok ? await authResponse.json() : null;
+    const userId = typeof authContext?.userId === "string" ? authContext.userId : null;
+    const assigneeId = userId && isLeadTransferCandidate({
+      role: authContext?.role,
+      is_active: authContext?.isActive === true,
+    })
+      ? userId
+      : null;
     const followupDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
     const { data, error } = await supabase.from("leads").insert({
       source: form.source,
@@ -36,8 +45,8 @@ export default function NewLeadPage() {
       email: form.email || null,
       location: form.location || null,
       quality: "pending",
-      assigned_to: user?.id || null,
-      created_by: user?.id || null,
+      assigned_to: assigneeId,
+      created_by: userId,
       next_action: "call",
       next_followup_date: followupDate,
     }).select("id").single();
@@ -52,7 +61,7 @@ export default function NewLeadPage() {
       if (form.notes) {
         const { error: newLeadNoteErr } = await supabase.from("follow_up_logs").insert({
           lead_id: data.id, contact_type: "note", summary: form.notes,
-          user_id: user?.id ?? null,
+          user_id: userId,
           no_answer: false,
         });
         if (newLeadNoteErr) {
@@ -64,7 +73,7 @@ export default function NewLeadPage() {
         leadId: data.id,
         dueAt: followupDate,
         title: "Follow up",
-        assigneeId: user?.id ?? null,
+        assigneeId,
         source: "follow_up",
       });
       if (taskErr) toast.warning("Lead created but follow-up task creation failed");

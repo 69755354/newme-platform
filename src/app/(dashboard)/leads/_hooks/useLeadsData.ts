@@ -44,6 +44,11 @@ interface SalesUser {
   full_name: string | null;
 }
 
+interface OwnerProfile {
+  id: string;
+  full_name: string | null;
+}
+
 export interface UseLeadsDataReturn {
   leads: Lead[];
   setLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
@@ -66,6 +71,7 @@ export function useLeadsData(): UseLeadsDataReturn {
   const [userId, setUserId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [salesUsers, setSalesUsers] = useState<SalesUser[]>([]);
+  const [ownerProfiles, setOwnerProfiles] = useState<OwnerProfile[]>([]);
   const [loading, setLoading] = useState(true);
 
   // ── Single fetch to server-side aggregation endpoint ──
@@ -85,6 +91,7 @@ export function useLeadsData(): UseLeadsDataReturn {
         setRole(json.role);
         setLeads((json.leads ?? []) as Lead[]);
         setSalesUsers((json.salesUsers ?? []) as SalesUser[]);
+        setOwnerProfiles((json.ownerProfiles ?? []) as OwnerProfile[]);
         setLoading(false);
       })
       .catch((err) => {
@@ -107,11 +114,11 @@ export function useLeadsData(): UseLeadsDataReturn {
   // ── Derived: userNameMap (id → full_name) ──
   const userNameMap = useMemo(() => {
     const map: Record<string, string> = {};
-    salesUsers.forEach((u) => {
+    ownerProfiles.forEach((u) => {
       if (u.id && u.full_name) map[u.id] = u.full_name;
     });
     return map;
-  }, [salesUsers]);
+  }, [ownerProfiles]);
 
   return {
     leads,

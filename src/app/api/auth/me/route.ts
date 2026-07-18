@@ -19,7 +19,7 @@ export async function GET() {
 
     const { data: profile, error: profileErr } = await supabase
       .from("profiles")
-      .select("role, force_password_change, full_name, email")
+      .select("role, is_active, force_password_change, full_name, email")
       .eq("id", user.id)
       .single();
 
@@ -29,6 +29,7 @@ export async function GET() {
       userId: user.id,
       email: user.email ?? null,
       role,
+      isActive: profile?.is_active === true,
       forcePasswordChange: profile?.force_password_change ?? false,
       fullName: profile?.full_name ?? null,
     });

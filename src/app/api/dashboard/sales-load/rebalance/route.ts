@@ -1,6 +1,7 @@
 // RBAC: user (admin, boss)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { filterLeadTransferCandidateQuery } from "@/lib/lead-transfer-candidates.mjs";
 
 // ─── POST /api/dashboard/sales-load/rebalance ───
 // Round-robin transfer of transferable leads from overloaded reps to underloaded reps
@@ -27,10 +28,14 @@ export async function POST(request: NextRequest) {
 
   try {
     // ── Fetch all sales reps ──
-    const { data: salesReps } = await supabase
+    const repsQuery = supabase
       .from("profiles")
-      .select("id, full_name, email, role")
-      .in("role", ["sales", "admin"]);
+      .select("id, full_name, email, role, is_active");
+    const eligibleRepsQuery = filterLeadTransferCandidateQuery(
+      repsQuery as never
+    ) as typeof repsQuery;
+    const { data: salesReps, error: salesRepsErr } = await eligibleRepsQuery;
+    if (salesRepsErr) throw salesRepsErr;
 
     const reps = salesReps ?? [];
     const repIds = reps.map((r: any) => r.id);
@@ -108,16 +113,33 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Execute batch update ──
+    let transferred = 0;
+    const failedLeadIds: string[] = [];
     for (const update of updates) {
-      await supabase
+      const { data: updated, error } = await supabase
         .from("leads")
         .update({ assigned_to: update.assigned_to })
-        .eq("id", update.id);
+        .eq("id", update.id)
+        .select("id")
+        .maybeSingle();
+      if (error || !updated) {
+        failedLeadIds.push(update.id);
+        continue;
+      }
+      transferred++;
+    }
+
+    if (failedLeadIds.length > 0) {
+      return NextResponse.json({
+        error: `Rebalance partially failed for ${failedLeadIds.length} lead(s).`,
+        transferred,
+        failed: failedLeadIds.length,
+      }, { status: 500 });
     }
 
     return NextResponse.json({
-      message: `Rebalanced ${updates.length} leads across ${underloaded.length} reps.`,
-      transferred: updates.length,
+      message: `Rebalanced ${transferred} leads across ${underloaded.length} reps.`,
+      transferred,
       from: overloaded.map((r) => r.name),
       to: underloaded.map((r) => r.name),
     });

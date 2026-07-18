@@ -149,9 +149,18 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       try {
         const oldLead = lead!;
         const newUser = salesUsers.find((u) => u.id === newUserId);
+        if (!newUser) {
+          toast.error(t("common.saveFailed"));
+          return;
+        }
         const oldUser = salesUsers.find((u) => u.id === oldLead.assigned_to);
-        const newUserName = newUser?.full_name || newUser?.email || newUserId;
-        const oldName = oldUser?.full_name || oldUser?.email || oldLead.rep_name || "Unknown";
+        const newUserName = newUser.full_name || newUser.email || newUserId;
+        const oldName = oldLead.assignee_profile?.full_name
+          || oldLead.assignee_profile?.email
+          || oldUser?.full_name
+          || oldUser?.email
+          || oldLead.rep_name
+          || "Unknown";
         const transferDesc = `Reassigned from ${oldName} to ${newUserName}`;
         // Log while the current salesperson still owns the lead so the route's
         // ownership check does not race the assigned_to update below.

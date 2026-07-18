@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { resolveActiveLeadReassignmentTarget } from "@/lib/lead-reassignment.mjs";
 
 // DELETE /api/users/[id] — admin/boss only, soft-delete
 export async function DELETE(
@@ -33,22 +34,17 @@ export async function DELETE(
   }
 
   try {
-    // Find an active admin to reassign orphaned data to
-    const { data: adminUser } = await supabaseAdmin
-      .from("profiles")
-      .select("id")
-      .eq("role", "admin")
-      .eq("is_active", true)
-      .limit(1)
-      .single();
-    const reassignTo = adminUser?.id ?? null;
-    const logTarget = reassignTo ? `admin ${reassignTo}` : "null (no admin available)";
+    const reassignTo = await resolveActiveLeadReassignmentTarget(
+      supabaseAdmin.from("profiles").select("id,role,is_active").neq("id", id) as never,
+    );
+    const logTarget = reassignTo ?? "null (no eligible receiver available)";
 
     // Reassign leads assigned to this user
-    const { data: orphanedLeads } = await supabaseAdmin
+    const { data: orphanedLeads, error: orphanedLeadsErr } = await supabaseAdmin
       .from("leads")
       .select("id")
       .eq("assigned_to", id);
+    if (orphanedLeadsErr) throw new Error(`Failed to load leads for reassignment: ${orphanedLeadsErr.message}`);
     if (orphanedLeads && orphanedLeads.length > 0) {
       const leadIds = orphanedLeads.map((l: any) => l.id);
       const { error: leadErr } = await supabaseAdmin
@@ -56,14 +52,15 @@ export async function DELETE(
         .update({ assigned_to: reassignTo })
         .in("id", leadIds);
       if (leadErr) throw new Error(`Failed to reassign leads: ${leadErr.message}`);
-      console.log(`[user-delete] Reassigned ${leadIds.length} lead(s) from user ${id} to ${logTarget}`);
+      console.log(`[user-delete] Reassigned or unassigned ${leadIds.length} lead(s) from user ${id} to ${logTarget}`);
     }
 
     // Reassign contracts where this user is sales_id
-    const { data: orphanedContracts } = await supabaseAdmin
+    const { data: orphanedContracts, error: orphanedContractsErr } = await supabaseAdmin
       .from("contracts")
       .select("id")
       .eq("sales_id", id);
+    if (orphanedContractsErr) throw new Error(`Failed to load contracts for reassignment: ${orphanedContractsErr.message}`);
     if (orphanedContracts && orphanedContracts.length > 0) {
       const contractIds = orphanedContracts.map((c: any) => c.id);
       const { error: contractErr } = await supabaseAdmin

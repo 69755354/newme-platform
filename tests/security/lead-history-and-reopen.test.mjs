@@ -64,3 +64,21 @@ test("a reopened milestone can be completed again in order", async () => {
   assert.match(route, /\.rpc\([\s\S]*"recomplete_lead_milestone"/);
   assert.match(migration, /'action', 'milestone_recompleted'/);
 });
+
+
+test("reopen RPCs use canonical Lead milestone keys", async () => {
+  const migration = await read(
+    "supabase/migrations/20260718020000_fix_reopen_milestone_keys.sql",
+  );
+
+  for (const key of ["requirements", "solution", "quotation"]) {
+    assert.match(migration, new RegExp(`'${key}'`));
+  }
+  for (const stageKey of [
+    "requirement_confirmed",
+    "solution_submitted",
+    "quotation_submitted",
+  ]) {
+    assert.doesNotMatch(migration, new RegExp(`'${stageKey}'`));
+  }
+});

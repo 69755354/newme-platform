@@ -57,6 +57,9 @@ jobs:
       - name: Database static regression gate
         run: npm run check:db-static
 
+      - name: CRM regression contract
+        run: python3 scripts/crm-regression.py --self-test
+
       - name: Lint baseline gate
         run: npm run lint:baseline
 

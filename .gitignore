@@ -32,4 +32,5 @@ tsconfig.tsbuildinfo
 supabase/.temp/
 .hermes/
 .hermes-harness/
+.audit/
 scripts/.ed25519.key.bootstrap

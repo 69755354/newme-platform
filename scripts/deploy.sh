@@ -43,7 +43,7 @@ EVI_LOGS_STATUS="pending"
 EVI_LOGS_ERRORS=0
 EVI_REGRESSION_STATUS="pending"
 EVI_REGRESSION_PASSED=0
-EVI_REGRESSION_TOTAL=23
+EVI_REGRESSION_TOTAL=0
 EVI_HEALTH_STATUS="pending"
 EVI_HEALTH_CODE=0
 EVI_SYSTEMD_STATUS="pending"
@@ -420,9 +420,15 @@ echo ""
 # ═══ Step 5.3: Regression test ═══
 echo "--- Step 5.3/8: Regression test ---"
 if [ -f "scripts/deploy-verify.sh" ]; then
-  bash scripts/deploy-verify.sh --no-git
+  REGRESSION_RESULT_FILE="${CRM_REGRESSION_RESULT_FILE:-$PROJECT_ROOT/.audit/crm-regression-latest.json}"
+  CRM_REGRESSION_RESULT_FILE="$REGRESSION_RESULT_FILE" bash scripts/deploy-verify.sh --no-git
+  if [ ! -r "$REGRESSION_RESULT_FILE" ]; then
+    echo "❌ Regression evidence missing: $REGRESSION_RESULT_FILE"
+    exit 1
+  fi
+  REGRESSION_COUNTS="$(python3 -c 'import json, sys; result = json.load(open(sys.argv[1], encoding="utf-8")); print(result["pass"], result["total"])' "$REGRESSION_RESULT_FILE")"
+  read -r EVI_REGRESSION_PASSED EVI_REGRESSION_TOTAL <<< "$REGRESSION_COUNTS"
   EVI_REGRESSION_STATUS="pass"
-  EVI_REGRESSION_PASSED=23
 fi
 echo ""
 

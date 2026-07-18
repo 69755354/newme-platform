@@ -18,3 +18,11 @@ test("Next Action commits a non-blank changed title on blur", async () => {
   assert.ok(page.includes("onBlur={commitNextAction}"));
   assert.ok(page.includes("updateNextTask({ title: nextValue })"));
 });
+
+test("Smart Requirements never blocks Lead progression", async () => {
+  const process = await read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
+
+  assert.doesNotMatch(process, /key: "smart_requirements"/);
+  assert.doesNotMatch(process, /smart_requirements: reqIdx/);
+  assert.doesNotMatch(process, /smart_requirements: !!/);
+});

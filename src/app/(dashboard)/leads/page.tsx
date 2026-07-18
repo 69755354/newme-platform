@@ -30,16 +30,6 @@ function LeadsContent() {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const handlePipelineStageChange = useCallback((stage: string) => {
-    setStageFilter((current) => (current === stage ? "all" : stage));
-    const stageIndex = PIPELINE_STAGES.findIndex((item) => item.key === stage);
-    if (stageIndex >= 0) {
-      requestAnimationFrame(() => {
-        scrollContainerRef.current?.scrollTo({ left: stageIndex * 316, behavior: "smooth" });
-      });
-    }
-  }, []);
-
   // Keyboard navigation for kanban board
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -68,6 +58,17 @@ function LeadsContent() {
   const [assignedToFilter, setAssignedToFilter] = useState(searchParams.get("assigned_to") || "all");
   const [showPipelineSummary, setShowPipelineSummary] = useState(true);
   const [qualityFilter, setQualityFilter] = useState("all");
+
+  const handlePipelineStageChange = useCallback((stage: string) => {
+    setStageFilter((current) => (current === stage ? "all" : stage));
+    const stageIndex = PIPELINE_STAGES.findIndex((item) => item.key === stage);
+    if (stageIndex >= 0) {
+      requestAnimationFrame(() => {
+        scrollContainerRef.current?.scrollTo({ left: stageIndex * 316, behavior: "smooth" });
+      });
+    }
+  }, []);
+
 
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);

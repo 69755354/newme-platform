@@ -67,6 +67,13 @@ test("database prevents deleting First Contact and synchronizes current mileston
 });
 
 
+test("contact creation supplies a non-null summary when the optional note is blank", async () => {
+  const route = await read("src/app/api/leads/[id]/contacts/route.ts");
+
+  assert.match(route, /summary: summary \|\| contactResult/);
+  assert.doesNotMatch(route, /summary: summary \|\| null/);
+});
+
 test("contact creation is idempotent across retries", async () => {
   const route = await read("src/app/api/leads/[id]/contacts/route.ts");
   const migration = await read("supabase/migrations/20260714000002_add_contact_idempotency.sql");

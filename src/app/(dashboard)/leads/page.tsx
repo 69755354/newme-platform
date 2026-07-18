@@ -109,22 +109,13 @@ function LeadsContent() {
   const setError = hookSetError;
 
   // ─── Mutation handlers (T3-3 step 6: extracted into _hooks/useLeadMutations) ───
-  // Owns all lead-level writes: reassignSales, changeStage (94-line optimistic
-  // lock + 4-table cascade), changeProbability, changeStatus, changeLostReason,
-  // addQuickNote, updateNextAction, updateNextFollowup, handleDelete, writeEvent.
+  // The dashboard only exposes reassignment and delete writes.
+  // Workflow edits stay in the Lead detail page; drag/drop is handled separately.
   // Mutations stay as direct supabase.from() calls (T1-1 freeze rule applies
   // to queries only).
   const {
     reassignSales,
-    writeEvent,
     handleDelete,
-    changeStage,
-    changeProbability,
-    changeStatus,
-    changeLostReason,
-    addQuickNote,
-    updateNextAction,
-    updateNextFollowup,
   } = useLeadMutations({
     leads,
     setLeads,
@@ -138,10 +129,7 @@ function LeadsContent() {
     lang,
     setReassignLeadId,
     setReassigning,
-    // No `ui` bundle anymore (T3-3 step 7): LeadCard owns its own editor
-    // state and resets its own pickers on click before invoking the
-    // mutation handler. The hook no longer needs editor-clear setters —
-    // those were only there because the page owned the state.
+    // Card-side workflow editors were removed; detail is the single edit entry.
   });
 
   // ─── Infrastructure hooks ───
@@ -326,19 +314,11 @@ function LeadsContent() {
           currentUserId={currentUserId}
           userNameMap={userNameMap}
           salesUsers={salesUsers}
-          changeStage={changeStage}
-          changeProbability={changeProbability}
-          changeStatus={changeStatus}
-          changeLostReason={changeLostReason}
-          addQuickNote={addQuickNote}
-          updateNextAction={updateNextAction}
-          updateNextFollowup={updateNextFollowup}
           reassignSales={reassignSales}
           handleDelete={handleDelete}
           reassignLeadId={reassignLeadId}
           reassigning={reassigning}
           setReassignLeadId={setReassignLeadId}
-          setReassigning={setReassigning}
           selectedLeadIds={selectedLeadIds}
           onToggleSelect={toggleSelect}
           onOpen={(id) => router.push(`/leads/${id}`)}

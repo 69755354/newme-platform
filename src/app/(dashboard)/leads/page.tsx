@@ -59,6 +59,16 @@ function LeadsContent() {
   const [showPipelineSummary, setShowPipelineSummary] = useState(true);
   const [qualityFilter, setQualityFilter] = useState("all");
 
+  const selectPipelineStage = useCallback((stage: string) => {
+    setStageFilter(stage);
+    if (stage === "all") return;
+    requestAnimationFrame(() => {
+      scrollContainerRef.current
+        ?.querySelector<HTMLElement>(`[data-kanban-stage="${stage}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    });
+  }, []);
+
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
@@ -254,7 +264,7 @@ function LeadsContent() {
           stages={PIPELINE_STAGES}
           stageTotals={stageTotals}
           stageFilter={stageFilter}
-          onStageFilterChange={setStageFilter}
+          onStageFilterChange={selectPipelineStage}
           t={t}
         />
       )}
@@ -269,7 +279,7 @@ function LeadsContent() {
         search={search}
         setSearch={setSearch}
         stageFilter={stageFilter}
-        onStageChange={(v) => { setStageFilter(v); setAlertFilter("all"); }}
+        onStageChange={(v) => { selectPipelineStage(v); setAlertFilter("all"); }}
         sourceFilter={sourceFilter}
         setSourceFilter={setSourceFilter}
         qualityFilter={qualityFilter}

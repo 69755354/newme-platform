@@ -327,38 +327,40 @@ export function LeadCard({
             <span>{SOURCE_ICONS[lead.source] || "📋"} {t(`sourceLabels.${lead.source}`) || lead.source}</span>
             {lead.assigned_to && (
               <>
-              <span className="inline-flex items-center gap-1">
-              <User className="w-3 h-3" />
-              <span>{userNameMap[lead.assigned_to] || t("leads.unassigned")}</span>
-              <button
-                onClick={(e) => { e.stopPropagation(); setReassignLeadId(reassignLeadId === lead.id ? null : lead.id); }}
-                className="p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors ml-0.5"
-                title="Reassign"
-              >
-                ↔️
-              </button>
-              </span>
-              {reassignLeadId === lead.id && (
-              <div className="w-full mt-1 z-50 bg-muted border border-border rounded-lg shadow-xl py-1 max-h-40 overflow-y-auto"
-                ref={reassignRef}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {reassigning && <div className="px-3 py-2 text-xs text-muted-foreground">正在转移...</div>}
-                {salesUsers.map((u) => (
-                  <button key={u.id}
-                    onClick={() => onReassign(u.id)}
-                    className={cn(
-                      "w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-muted transition-colors",
-                      lead.assigned_to === u.id ? "text-copper-400" : "text-foreground"
-                    )}
+                <span className="inline-flex items-center gap-1 min-w-0">
+                  <User className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{userNameMap[lead.assigned_to] || t("leads.unassigned")}</span>
+                </span>
+                <div className="relative shrink-0" ref={reassignRef}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setReassignLeadId(reassignLeadId === lead.id ? null : lead.id); }}
+                    className="min-h-7 px-2 rounded-md bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 transition-colors"
+                    title="转移销售"
                   >
-                    <span className={cn("w-1.5 h-1.5 rounded-full", lead.assigned_to === u.id ? "bg-copper-400" : "bg-gray-600")} />
-                    <span className="truncate">{u.full_name || u.email}</span>
+                    转移
                   </button>
-                ))}
-                {salesUsers.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">无用户</p>}
-              </div>
-              )}
+                  {reassignLeadId === lead.id && (
+                    <div
+                      className="absolute left-0 top-full mt-1 z-50 w-56 bg-muted border border-border rounded-lg shadow-xl py-1 max-h-48 overflow-y-auto"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {reassigning && <div className="px-3 py-2 text-xs text-muted-foreground">正在转移...</div>}
+                      {salesUsers.map((u) => (
+                        <button key={u.id}
+                          onClick={() => onReassign(u.id)}
+                          className={cn(
+                            "w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-muted transition-colors",
+                            lead.assigned_to === u.id ? "text-copper-400" : "text-foreground"
+                          )}
+                        >
+                          <span className={cn("w-1.5 h-1.5 rounded-full", lead.assigned_to === u.id ? "bg-copper-400" : "bg-gray-600")} />
+                          <span className="truncate">{u.full_name || u.email}</span>
+                        </button>
+                      ))}
+                      {salesUsers.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">无用户</p>}
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>

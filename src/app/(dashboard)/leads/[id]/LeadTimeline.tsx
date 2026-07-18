@@ -31,6 +31,7 @@ import type {
   BusinessEvent,
   ChatMessage,
   FollowUpLog,
+  LeadMilestone,
 } from "./types";
 
 interface Props {
@@ -38,6 +39,7 @@ interface Props {
   activities: Activity[];
   events: BusinessEvent[];
   followUpLogs: FollowUpLog[];
+  milestones: LeadMilestone[];
   chatMessages: ChatMessage[];
   noteText: string;
   onNoteTextChange: (v: string) => void;
@@ -55,7 +57,7 @@ type FeedItem = {
   content: string;
   ai_generated: boolean;
   created_at: string;
-  _type: "activity" | "event" | "followup";
+  _type: "activity" | "event" | "followup" | "milestone";
 };
 
 export default function LeadTimeline({
@@ -63,6 +65,7 @@ export default function LeadTimeline({
   activities,
   events,
   followUpLogs,
+  milestones,
   chatMessages,
   noteText,
   onNoteTextChange,
@@ -172,6 +175,16 @@ export default function LeadTimeline({
       created_at: f.contact_time || f.created_at,
       _type: "followup" as const,
     })),
+    ...milestones
+      .filter((milestone) => milestone.completed_at)
+      .map((milestone) => ({
+        id: milestone.id,
+        type: "milestone",
+        content: `${t(`leadDetail.milestone_${milestone.milestone_key}`)}: ${milestone.notes?.trim() || "—"}${milestone.completer?.full_name ? ` · ${milestone.completer.full_name}` : ""}`,
+        ai_generated: false,
+        created_at: milestone.completed_at!,
+        _type: "milestone" as const,
+      })),
   ]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 100);
@@ -274,6 +287,8 @@ export default function LeadTimeline({
                     "w-1.5 h-1.5 rounded-full mt-1.5 shrink-0",
                     type.includes("stage")
                       ? "bg-amber-500"
+                      : type.includes("milestone")
+                      ? "bg-emerald-500"
                       : type.includes("import")
                       ? "bg-sky-500"
                       : type.includes("note")
@@ -373,6 +388,9 @@ export default function LeadTimeline({
                     {fmtDubai(item.created_at, { locale: t("locale.dateTimeLocale") })}
                     {item.ai_generated && <span className="text-purple-500">🤖 AI</span>}
                     {item._type === "event" && <span className="text-blue-500">{t("leadDetail.event")}</span>}
+                    {item._type === "milestone" && (
+                      <span className="text-emerald-500">{lang === "zh" ? "阶段" : "Milestone"}</span>
+                    )}
                     {item._type === "followup" && (
                       <span className="text-copper-500">
                         {item.type === "note"

@@ -201,7 +201,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   // ─── Delete lead ───
   const handleDelete = useCallback(async () => {
     if (!lead) return;
-    const canDelete = salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId);
+    const canDelete = ["admin", "boss", "operator"].includes(salesRole ?? "") || (salesRole === "sales" && lead.assigned_to === currentUserId);
     if (!canDelete) return;
     const confirmed = confirm(t("leadDetail.confirmDelete") || "Are you sure you want to delete this lead? This action cannot be undone.");
     if (!confirmed) return;

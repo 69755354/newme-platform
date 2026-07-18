@@ -30,6 +30,16 @@ function LeadsContent() {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  const handlePipelineStageChange = useCallback((stage: string) => {
+    setStageFilter((current) => (current === stage ? "all" : stage));
+    const stageIndex = PIPELINE_STAGES.findIndex((item) => item.key === stage);
+    if (stageIndex >= 0) {
+      requestAnimationFrame(() => {
+        scrollContainerRef.current?.scrollTo({ left: stageIndex * 316, behavior: "smooth" });
+      });
+    }
+  }, []);
+
   // Keyboard navigation for kanban board
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -254,7 +264,7 @@ function LeadsContent() {
           stages={PIPELINE_STAGES}
           stageTotals={stageTotals}
           stageFilter={stageFilter}
-          onStageFilterChange={setStageFilter}
+          onStageFilterChange={handlePipelineStageChange}
           t={t}
         />
       )}

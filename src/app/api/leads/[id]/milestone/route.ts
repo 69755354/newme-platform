@@ -141,57 +141,28 @@ export async function POST(
   }
 
   if (existingMilestone && !existingMilestone.completed_at) {
-    const completedAt = new Date().toISOString();
-    const { data: recompleted, error: recompleteError } = await supabaseAdmin
-      .from("lead_milestones")
-      .update({
-        notes: normalizedNotes,
-        completed_by: profile.userId,
-        completed_at: completedAt,
-      })
-      .eq("id", existingMilestone.id)
-      .select()
-      .single();
+    const { data: recompleted, error: recompleteError } = await supabase.rpc(
+      "recomplete_lead_milestone",
+      {
+        p_lead_id: leadId,
+        p_milestone_key: milestoneKey,
+        p_notes: normalizedNotes,
+      },
+    );
 
-    if (recompleteError || !recompleted) {
-      return NextResponse.json(
-        { error: recompleteError?.message ?? "Failed to complete reopened milestone" },
-        { status: 500 },
-      );
+    if (recompleteError) {
+      const message = recompleteError.message || "Failed to complete reopened milestone";
+      const status = message.includes("Forbidden") ? 403
+        : message.includes("not found") ? 404
+        : 400;
+      return NextResponse.json({ error: message }, { status });
     }
 
-    const { error: leadSyncError } = await supabaseAdmin
-      .from("leads")
-      .update({ current_milestone: milestoneKey, updated_at: completedAt })
-      .eq("id", leadId);
-    if (leadSyncError) {
-      return NextResponse.json(
-        { error: "Failed to synchronize current milestone", detail: leadSyncError.message },
-        { status: 500 },
-      );
-    }
-
-    const { error: eventError } = await supabaseAdmin
-      .from("business_events")
-      .insert({
-        lead_id: leadId,
-        user_id: profile.userId,
-        event_type: "note_added",
-        description: `Milestone ${milestoneKey} completed again: ${normalizedNotes}`,
-        event_data: {
-          action: "milestone_recompleted",
-          milestone_key: milestoneKey,
-          notes: normalizedNotes,
-        },
-      });
-    if (eventError) {
-      return NextResponse.json(
-        { error: "Failed to write milestone audit event", detail: eventError.message },
-        { status: 500 },
-      );
-    }
-
-    return NextResponse.json({ success: true, milestone: recompleted, recompleted: true });
+    return NextResponse.json({
+      success: true,
+      result: recompleted,
+      recompleted: true,
+    });
   }
 
   // 7. 插入里程碑（leads.current_milestone 由 trigger trg_check_milestone_order 自动维护）

@@ -192,7 +192,6 @@ export default function LeadSalesProcess({
       { key: "project_type", label: t("leadDetail.projectType"), kind: "text" },
       { key: "project_status", label: t("leadDetail.projectStatus"), kind: "text" },
       { key: "location", label: t("leadDetail.address"), kind: "text" },
-      { key: "smart_requirements", label: t("leadDetail.smartRequirements"), kind: "json" },
       { key: "quotation_value", label: t("leadDetail.quotationValue"), kind: "text" },
     ];
     // stage threshold at which each candidate becomes required (cumulative)
@@ -202,7 +201,6 @@ export default function LeadSalesProcess({
       project_type: reqIdx("requirement_confirmed"),
       project_status: reqIdx("requirement_confirmed"),
       location: reqIdx("requirement_confirmed"),
-      smart_requirements: reqIdx("solution_submitted"),
       quotation_value: reqIdx("quotation_submitted"),
     };
     const filled: Record<string, boolean> = {
@@ -211,7 +209,6 @@ export default function LeadSalesProcess({
       project_type: !!lead.project_type,
       project_status: !!lead.project_status,
       location: !!lead.location,
-      smart_requirements: !!(lead.ai_summary || lead.smart_requirements),
       quotation_value: !!(lead.quotation_value && lead.quotation_value > 0),
     };
     const out = candidates.filter(

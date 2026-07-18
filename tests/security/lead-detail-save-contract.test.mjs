@@ -18,3 +18,11 @@ test("Next Action commits a non-blank changed title on blur", async () => {
   assert.ok(page.includes("onBlur={commitNextAction}"));
   assert.ok(page.includes("updateNextTask({ title: nextValue })"));
 });
+
+test("Smart Requirements has an explicit save path and preserves plain-text input", async () => {
+  const page = await read("src/app/(dashboard)/leads/[id]/page.tsx");
+
+  assert.ok(page.includes("const commitJsonEdit"));
+  assert.ok(page.includes("parsed = { notes: editValue.trim() }"));
+  assert.ok(page.includes("onClick={() => commitJsonEdit(field, label)}"));
+});

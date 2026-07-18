@@ -82,3 +82,12 @@ test("reopen RPCs use canonical Lead milestone keys", async () => {
     assert.doesNotMatch(migration, new RegExp(`'${stageKey}'`));
   }
 });
+
+
+test("reopen can mark a milestone as open without violating its timestamp constraint", async () => {
+  const migration = await read(
+    "supabase/migrations/20260718030000_allow_open_lead_milestones.sql",
+  );
+
+  assert.match(migration, /ALTER COLUMN completed_at DROP NOT NULL/);
+});

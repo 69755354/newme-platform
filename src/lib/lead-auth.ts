@@ -19,7 +19,9 @@ export async function getAuthProfile(): Promise<AuthProfile | null> {
 }
 
 export function isAdminOrBoss(profile: AuthProfile): boolean {
-  return profile.role === "admin" || profile.role === "boss";
+  return profile.role === "admin"
+    || profile.role === "boss"
+    || profile.role === "operator";
 }
 
 export async function canAccessLead(leadId: string, profile: AuthProfile): Promise<boolean> {

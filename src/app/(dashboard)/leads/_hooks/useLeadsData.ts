@@ -20,6 +20,7 @@ export interface Lead {
   id: string; customer_name: string | null; phone: string | null;
   source: string; stage: string; final_status?: string | null; quotation_value: number | null;
   location: string | null; property_type: string | null;
+  project_type: string | null; project_status: string | null;
   property_size_sqm: number | null;
   ai_quality: string | null; lead_status: string | null;
   assigned_to: string | null; win_probability: number | null;

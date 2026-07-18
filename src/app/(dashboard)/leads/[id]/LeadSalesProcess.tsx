@@ -57,6 +57,7 @@ interface Props {
   nextTask: Task | null;
   updating: boolean;
   onToggleMilestone: (milestoneKey: string, currentlyCompleted: boolean, notes?: string) => Promise<boolean>;
+  onReopenMilestone: (milestoneKey: string, reason: string) => Promise<boolean>;
   onUpdateField: (field: string, value: any, eventType?: string, eventDesc?: string) => void;
   onWon: (note?: string) => Promise<boolean>;
   onLost: (note?: string) => Promise<boolean>;
@@ -92,6 +93,7 @@ export default function LeadSalesProcess({
   nextTask,
   updating,
   onToggleMilestone,
+  onReopenMilestone,
   onUpdateField,
   onWon,
   onLost,
@@ -122,6 +124,9 @@ export default function LeadSalesProcess({
   const [stageNote, setStageNote] = useState("");
   const [milestoneNoteError, setMilestoneNoteError] = useState<string | null>(null);
   const [firstContactBlockReason, setFirstContactBlockReason] = useState<string | null>(null);
+  const [reopenMilestoneKey, setReopenMilestoneKey] = useState<string | null>(null);
+  const [reopenReason, setReopenReason] = useState("");
+  const [reopenError, setReopenError] = useState<string | null>(null);
   const [clockNow, setClockNow] = useState(0);
 
   useEffect(() => {
@@ -283,6 +288,7 @@ export default function LeadSalesProcess({
           <div className="space-y-2">
             {COMPLETABLE_MILESTONES.map((key, idx) => {
               const completed = completedKeys.includes(key);
+              const milestone = milestones.find((item) => item.milestone_key === key);
               const locked = isLocked(key);
               const isNext = key === nextPendingKey;
               const previousMilestoneKey = idx > 0 ? COMPLETABLE_MILESTONES[idx - 1] : null;
@@ -314,7 +320,85 @@ export default function LeadSalesProcess({
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {t(`leadDetail.milestone_desc_${key}`)}
                     </p>
-                    {completed && <p className="text-[10px] text-emerald-400">{t("leadDetail.milestoneCompleted")}</p>}
+                    {completed && milestone && (
+                      <div className="mt-2 space-y-1.5 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-2">
+                        <p className="text-[10px] text-emerald-400">{t("leadDetail.milestoneCompleted")}</p>
+                        <p className="whitespace-pre-wrap break-words text-xs text-foreground">
+                          {milestone.notes?.trim() || "—"}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {milestone.completed_at ? fmtDubai(milestone.completed_at) : "—"}
+                          {milestone.completer?.full_name ? ` · ${milestone.completer.full_name}` : ""}
+                        </p>
+                        {reopenMilestoneKey === key ? (
+                          <div className="space-y-1.5 pt-1">
+                            <Label htmlFor={`reopen-reason-${key}`} className="text-[10px] text-foreground">
+                              {lang === "zh" ? "重开原因（必填）" : "Reopen reason (required)"}
+                            </Label>
+                            <textarea
+                              id={`reopen-reason-${key}`}
+                              value={reopenReason}
+                              onChange={(event) => {
+                                setReopenReason(event.target.value);
+                                setReopenError(null);
+                              }}
+                              placeholder={lang === "zh" ? "说明误操作或需要更新的内容" : "Explain the correction"}
+                              className="min-h-16 w-full rounded border border-border bg-muted px-2 py-1.5 text-xs text-foreground"
+                            />
+                            {reopenError && <p role="alert" className="text-[10px] text-rose-400">{reopenError}</p>}
+                            <div className="flex gap-1.5">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={updating}
+                                onClick={async () => {
+                                  const reason = reopenReason.trim();
+                                  if (!reason) {
+                                    setReopenError(lang === "zh" ? "请填写重开原因" : "Reopen reason is required");
+                                    return;
+                                  }
+                                  const reopened = await onReopenMilestone(key, reason);
+                                  if (reopened) {
+                                    setReopenMilestoneKey(null);
+                                    setReopenReason("");
+                                  }
+                                }}
+                                className="h-7 border-amber-500/30 text-[10px] text-amber-400"
+                              >
+                                {lang === "zh" ? "确认重开" : "Confirm reopen"}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={updating}
+                                onClick={() => {
+                                  setReopenMilestoneKey(null);
+                                  setReopenReason("");
+                                  setReopenError(null);
+                                }}
+                                className="h-7 text-[10px]"
+                              >
+                                {t("common.cancel") || "Cancel"}
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReopenMilestoneKey(key);
+                              setReopenReason("");
+                              setReopenError(null);
+                            }}
+                            className="text-[10px] text-amber-400 hover:text-amber-300"
+                          >
+                            {lang === "zh" ? "重开此阶段" : "Reopen milestone"}
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {isNext && !completed && <p className="text-[10px] text-copper-400">{t("leadDetail.milestoneNext")}</p>}
                     {locked && (
                       <p className="text-[10px] text-muted-foreground">

@@ -33,6 +33,25 @@ test("SAM-43 chooses a deterministic eligible receiver or safely unassigns", asy
   }
 });
 
+test("SAM-43 team deletion only deactivates after reassignment succeeds", () => {
+  const sources = [
+    read("src/app/api/users/[id]/route.ts"),
+    read("src/app/actions/team.ts"),
+  ];
+
+  for (const source of sources) {
+    assert.doesNotMatch(source, /deleted_at/);
+    assert.match(source, /\.update\(\{ is_active: false \}\)/);
+    assert.match(source, /if \(leadErr\) throw new Error/);
+    assert.match(source, /if \(contractErr\) throw new Error/);
+    assert.match(source, /if \(profileErr\) throw new Error/);
+
+    const profileUpdate = source.indexOf(".update({ is_active: false })");
+    assert.ok(profileUpdate > source.indexOf("if (leadErr) throw new Error"));
+    assert.ok(profileUpdate > source.indexOf("if (contractErr) throw new Error"));
+  }
+});
+
 test("SAM-43 preserves detail history without restoring inactive owners as candidates", () => {
   const mutations = read("src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts");
   const data = read("src/app/(dashboard)/leads/[id]/useLeadDetailData.ts");

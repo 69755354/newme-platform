@@ -170,7 +170,7 @@ export async function removeTeamMember(userId: string) {
   // Soft-delete: mark as inactive
   const { error: profileErr } = await supabaseAdmin
     .from('profiles')
-    .update({ is_active: false, deleted_at: new Date().toISOString() })
+    .update({ is_active: false })
     .eq('id', userId)
 
   if (profileErr) throw new Error(profileErr.message)

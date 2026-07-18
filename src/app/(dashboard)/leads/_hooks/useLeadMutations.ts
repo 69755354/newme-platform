@@ -125,6 +125,7 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
     role: salesRole,
     userId: currentUserId,
     salesUsers,
+    userNameMap,
     fetchLeads,
     setError,
     t,
@@ -170,9 +171,15 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
       const oldLead = leads.find(l => l.id === leadId);
       if (!oldLead) return;
       const newUser = salesUsers.find(u => u.id === newUserId);
-      const oldUser = salesUsers.find(u => u.id === oldLead.assigned_to);
-      const newUserName = newUser?.full_name || newUser?.email || newUserId;
-      const oldName = oldUser?.full_name || oldUser?.email || "Unknown";
+      if (!newUser) {
+        setReassigning(false);
+        setError(t("common.saveFailed"));
+        return;
+      }
+      const newUserName = newUser.full_name || newUser.email || newUserId;
+      const oldName = oldLead.assigned_to
+        ? userNameMap[oldLead.assigned_to] || "Unknown"
+        : "Unassigned";
 
       await writeEvent(leadId, "transfer", `Reassigned from ${oldName} to ${newUserName}`);
 
@@ -197,7 +204,7 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
       setReassigning(false);
       fetchLeads();
     },
-    [leads, salesUsers, writeEvent, fetchLeads] // eslint-disable-line react-hooks/exhaustive-deps
+    [leads, salesUsers, userNameMap, writeEvent, fetchLeads] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // ─── Delete lead ───

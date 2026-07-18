@@ -77,30 +77,35 @@ export function LeadCard({
     if (lead.final_status || ["won", "lost"].includes(lead.stage)) return null;
 
     if (lead.next_followup_date && lead.next_followup_date < new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dubai" })) {
-      return { label: "跟进已逾期", urgent: true };
+      return { label: t("leads.actionOverdue"), urgent: true };
     }
 
     if (lead.stage === "new") {
-      if (!lead.last_contact_date) return { label: "待记录首次联系", urgent: true };
-      if (!lead.quality) return { label: "待评估线索质量", urgent: true };
+      if (!lead.last_contact_date) return { label: t("leads.actionFirstContact"), urgent: true };
+      if (!lead.quality || lead.quality === "pending") {
+        return { label: t("leads.actionQuality"), urgent: true };
+      }
     }
 
     if (stageAtLeast("contacted") && !lead.phone) {
-      return { label: "待完善：联系电话", urgent: true };
+      return { label: t("leads.actionPhone"), urgent: true };
     }
 
     if (stageAtLeast("requirement_confirmed")) {
       const missingRequirements = [
-        isPlaceholder(lead.project_type) ? "项目类型" : null,
-        isPlaceholder(lead.project_status) ? "项目状态" : null,
-        isPlaceholder(lead.location) ? "地址" : null,
+        isPlaceholder(lead.project_type) ? t("leads.actionProjectType") : null,
+        isPlaceholder(lead.project_status) ? t("leads.actionProjectStatus") : null,
+        isPlaceholder(lead.location) ? t("leads.actionLocation") : null,
       ].filter((item): item is string => item !== null);
       if (missingRequirements.length > 0) {
         const suffix = missingRequirements.length > 1
-          ? `等${missingRequirements.length}项`
+          ? t("leads.actionMissingMore").replace(
+              "{count}",
+              String(missingRequirements.length - 1),
+            )
           : "";
         return {
-          label: `待完善：${missingRequirements[0]}${suffix}`,
+          label: `${missingRequirements[0]}${suffix}`,
           urgent: true,
         };
       }
@@ -110,14 +115,19 @@ export function LeadCard({
       stageAtLeast("quotation_submitted")
       && !(lead.quotation_value && lead.quotation_value > 0)
     ) {
-      return { label: "待完善：报价金额", urgent: true };
+      return { label: t("leads.actionQuotationValue"), urgent: true };
     }
 
-    if (!lead.next_action) return { label: "待填写下一步行动", urgent: true };
-    if (!lead.next_followup_date) return { label: "待安排跟进日期", urgent: true };
+    if (!lead.next_action) return { label: t("leads.actionNextAction"), urgent: true };
+    if (!lead.next_followup_date) return { label: t("leads.actionFollowupDate"), urgent: true };
 
+    const nextActionKey = `leads.nextActionLabels.${lead.next_action}`;
+    const translatedNextAction = t(nextActionKey);
     return {
-      label: `下一步：${t(`leads.nextActionLabels.${lead.next_action}`) || lead.next_action}`,
+      label: t("leads.actionNext").replace(
+        "{action}",
+        translatedNextAction === nextActionKey ? lead.next_action : translatedNextAction,
+      ),
       urgent: false,
     };
   })();
@@ -220,7 +230,7 @@ export function LeadCard({
                 ? "bg-amber-500/10 text-amber-600"
                 : "bg-muted/60 text-muted-foreground"
             )}
-            title="打开详情完善"
+            title={t("leads.actionOpenDetail")}
           >
             {actionPrompt.urgent
               ? <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -243,8 +253,8 @@ export function LeadCard({
                   ref={reassignButtonRef}
                   onClick={toggleReassign}
                   className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-500/10 text-blue-500 transition-colors hover:bg-blue-500/20"
-                  title="转移销售"
-                  aria-label="转移销售"
+                  title={t("leads.transfer")}
+                  aria-label={t("leads.transfer")}
                   aria-expanded={isReassigning}
                 >
                   <Users className="h-4 w-4" />
@@ -277,7 +287,7 @@ export function LeadCard({
             style={{ left: reassignPosition.left, top: reassignPosition.top }}
             onClick={(event) => event.stopPropagation()}
           >
-            {reassigning && <div className="px-3 py-2 text-xs text-muted-foreground">正在转移...</div>}
+            {reassigning && <div className="px-3 py-2 text-xs text-muted-foreground">{t("leadDetail.reassigning")}</div>}
             {salesUsers.map((user) => (
               <button
                 key={user.id}
@@ -294,7 +304,7 @@ export function LeadCard({
                 <span className="truncate">{user.full_name || user.email}</span>
               </button>
             ))}
-            {salesUsers.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">无用户</p>}
+            {salesUsers.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">{t("leads.noUsers")}</p>}
           </div>,
           document.body
         )}

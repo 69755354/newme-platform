@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
 import { getCached, setCache } from "@/lib/api-cache"
+import { filterLeadTransferCandidateQuery } from "@/lib/lead-transfer-candidates.mjs"
 
 export async function GET(request: Request) {
   const supabase = await createServerSupabase()
@@ -38,13 +39,20 @@ export async function GET(request: Request) {
     ? supabase.from("kpi_targets").select("*, profiles(full_name)").eq("period", period)
     : Promise.resolve({ data: [], error: null })
 
+  const profilesQuery = supabase
+    .from("profiles")
+    .select("id,email,full_name,role,is_active")
+  const eligibleProfilesQuery = filterLeadTransferCandidateQuery(
+    profilesQuery as never
+  ) as typeof profilesQuery
+
   const [leadsResult, profilesResult, kpiResult] = await Promise.all([
     supabase
       .from("leads")
       .select("id,customer_name,phone,stage,final_status,assigned_to,owner,sales_manager,location,source,quotation_value")
       .order("updated_at", { ascending: false })
       .limit(1000),
-    supabase.from("profiles").select("id,email,full_name,role"),
+    eligibleProfilesQuery,
     kpiPromise,
   ])
 

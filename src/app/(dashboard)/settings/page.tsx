@@ -456,14 +456,14 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3">
             <select id="from-user" className="bg-muted/50 border border-border/50 rounded-lg px-3 py-2 text-sm min-w-[180px]">
               <option value="">{t("settings.source")}</option>
-              {profiles.filter(p => p.role === 'sales').map(p => (
+              {profiles.map(p => (
                 <option key={p.id} value={p.id}>{p.full_name || p.email || p.id.slice(0,8)}</option>
               ))}
             </select>
             <ArrowRight className="w-4 h-4 text-muted-foreground" />
             <select id="to-user" className="bg-muted/50 border border-border/50 rounded-lg px-3 py-2 text-sm min-w-[180px]">
               <option value="">{t("settings.target")}</option>
-              {profiles.filter(p => p.role === 'sales').map(p => (
+              {profiles.map(p => (
                 <option key={p.id} value={p.id}>{p.full_name || p.email || p.id.slice(0,8)}</option>
               ))}
             </select>

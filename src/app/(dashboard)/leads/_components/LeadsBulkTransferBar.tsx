@@ -15,7 +15,7 @@
  *   - data-sticky-region="bulk-transfer-bar" preserved on the wrapping div
  *   - same sticky bottom-0 z-10 + 95% backdrop-blur-sm + -mx-4 px-4 py-2.5
  *   - same visibility gate (selectedCount > 0 AND role admin/boss)
- *   - same options filter (salesUsers where role === "sales")
+ *   - options are the already-filtered shared transfer candidate list
  *   - same button labels, same disabled state, same cancel behaviour
  *
  * Why no supabase calls in this component?
@@ -47,7 +47,7 @@ export interface LeadsBulkTransferBarProps {
   /** Currently chosen target user id, or "" for "Select user...". */
   bulkTransferTargetId: string;
   setBulkTransferTargetId: (v: string | ((prev: string) => string)) => void;
-  /** All sales users from the data layer (filtered to role === "sales" here). */
+  /** Active sales-capable users from the shared candidate policy. */
   salesUsers: SalesUser[];
   /** Shared reassigning flag — also used by single-card reassign UI. */
   reassigning: boolean;
@@ -103,7 +103,7 @@ export function LeadsBulkTransferBar({
                 <select value={bulkTransferTargetId} onChange={e => setBulkTransferTargetId(e.target.value)}
                   className="text-xs bg-card border border-border/50 rounded px-2 py-1 text-foreground">
                   <option value="">Select user...</option>
-                  {salesUsers.filter((u: SalesUser) => u.role === "sales").map((u: SalesUser) => (
+                  {salesUsers.map((u: SalesUser) => (
                     <option key={u.id} value={u.id}>{u.full_name || u.email}</option>
                   ))}
                 </select>

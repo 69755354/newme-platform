@@ -31,6 +31,7 @@ import type {
   LeadTrace,
 } from "./types";
 import { projectDraftFromLead } from "./utils";
+import { filterLeadTransferCandidateQuery } from "@/lib/lead-transfer-candidates.mjs";
 
 /* ─── Types ─── */
 export interface ProjectInfoDraft {
@@ -308,7 +309,13 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
 
   // Sales users for reassignment dropdown
   useEffect(() => {
-    supabase.from("profiles").select("id,email,role,full_name").in("role", ["sales", "boss"]).then(({ data }) => {
+    const candidateQuery = supabase
+      .from("profiles")
+      .select("id,email,role,full_name,is_active");
+    const filteredCandidateQuery = filterLeadTransferCandidateQuery(
+      candidateQuery as never
+    ) as typeof candidateQuery;
+    filteredCandidateQuery.then(({ data }) => {
       if (data) setSalesUsers(data);
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

@@ -1,42 +1,12 @@
 "use client";
 
 /**
- * LeadCard — T3-3 step 7 extracted from leads/page.tsx (was L440-723, ~284 lines)
- *
- * One draggable card per Lead with 7 inline editors (stage / probability /
- * status / lost_reason / next_action / next_followup / note) and the
- * sales-reassignment dropdown. All editor state (7 editing flags +
- * noteLeadId + 3 editor text fields) is owned internally via useState —
- * it never had cross-lead coupling so it was a perfect candidate to
- * sink into this component.
- *
- * 100% behavioural equivalence with the inline JSX that lived in page.tsx:
- *   - Same DOM structure (Card > CardContent > header / action row /
- *     footer / 7 inline editor panels / reassign dropdown)
- *   - Same click guard on the outer Card (suppressed during any editor open)
- *   - Same keyboard shortcuts (Enter to commit, Escape to cancel) on the
- *     3 text editors
- *   - Same drag/drop wiring (parent passes draggingLeadId + onDragStart)
- *
- * Why this extraction matters (vs the previous stays-on-page approach):
- *   - 7 useState calls + 10 setter props + matching isEditingXxx derivations
- *     were repeated on every render of leads/page.tsx for every lead
- *     (now N cards × M renders is bounded inside this component only)
- *   - Mutation handlers in useLeadMutations previously had to accept a
- *     giant `ui` object with 13 setters so it could clear editor state
- *     on success; with editors local, the hook just needs a single
- *     `clearEditor()` callback (or none — LeadCard handles its own
- *     close-on-commit when the call site knows the result).
- *
- * Page-level state still used here (passed in as props):
- *   - reassignLeadId / reassigning (page owns — also feeds the bulk
- *     transfer bar on the page)
- *
- * Props are kept narrow on purpose: ~14 props total vs the 28+ that would
- * exist if everything were funneled through.
+ * Compact pipeline card: identity, one next-action signal, and necessary controls.
+ * Complete workflow edits remain in the Lead detail page.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
@@ -64,7 +34,6 @@ export interface LeadCardProps {
   reassignLeadId: string | null;
   reassigning: boolean;
   setReassignLeadId: (v: string | null) => void;
-  setReassigning: (v: boolean) => void;
   // Selection / navigation / drag (page-level state)
   selected: boolean;
   onToggleSelect: () => void;
@@ -87,7 +56,6 @@ export function LeadCard({
   reassignLeadId,
   reassigning,
   setReassignLeadId,
-  setReassigning,
   selected,
   onToggleSelect,
   onOpen,
@@ -95,24 +63,11 @@ export function LeadCard({
   onDragStart,
   t,
 }: LeadCardProps) {
-  /* ─── Derive flags (same logic page.tsx L445-456) ─── */
   const days = daysSince(lead.last_contact_date || lead.updated_at);
   const isHot = lead.lead_status === "hot";
   const isStale = days !== null && days > 7 && !lead.final_status;
   const isCrit = days !== null && days >= 14 && !lead.final_status;
-  const isEditing = editingStage === lead.id;
-  const isEditingProb = editingProbability === lead.id;
-  const isEditingSt = editingStatus === lead.id;
-  const isEditingLost = editingLostReason === lead.id;
-  const isEditingAction = editingNextAction === lead.id;
-  const isEditingFollowup = editingNextFollowup === lead.id;
-  const isNoting = noteLeadId === lead.id;
-  const statusStyle = STATUS_LABELS[lead.lead_status || ""];
-  const stageIdx = PIPELINE_STAGES.findIndex(s => s.key === lead.s  /* ─── One action signal per card ─── */
-  const days = daysSince(lead.last_contact_date || lead.updated_at);
-  const isHot = lead.lead_status === "hot";
-  const isStale = days !== null && days > 7 && !lead.final_status;
-  const isCrit = days !== null && days >= 14 && !lead.final_status;
+  const isReassigning = reassignLeadId === lead.id;
   const statusStyle = STATUS_LABELS[lead.lead_status || ""];
   const stageIdx = PIPELINE_STAGES.findIndex((stage) => stage.key === lead.stage);
   const stageAtLeast = (stage: string) =>
@@ -121,11 +76,13 @@ export function LeadCard({
   const actionPrompt = (() => {
     if (lead.final_status || ["won", "lost"].includes(lead.stage)) return null;
 
+    if (lead.next_followup_date && lead.next_followup_date < new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dubai" })) {
+      return { label: "跟进已逾期", urgent: true };
+    }
+
     if (lead.stage === "new") {
-      if (!lead.last_contact_date || (lead.followup_count ?? 0) < 1) {
-        return { label: "待完成：联系记录", urgent: true };
-      }
-      if (!lead.quality) return { label: "待评估：线索质量", urgent: true };
+      if (!lead.last_contact_date) return { label: "待记录首次联系", urgent: true };
+      if (!lead.quality) return { label: "待评估线索质量", urgent: true };
     }
 
     if (stageAtLeast("contacted") && !lead.phone) {
@@ -149,11 +106,8 @@ export function LeadCard({
       return { label: "待完善：报价金额", urgent: true };
     }
 
-    if (lead.next_followup_date && new Date(lead.next_followup_date) < new Date()) {
-      return { label: "跟进已逾期", urgent: true };
-    }
-
-    if (!lead.next_action) return { label: "待设置：下一步行动", urgent: true };
+    if (!lead.next_action) return { label: "待填写下一步行动", urgent: true };
+    if (!lead.next_followup_date) return { label: "待安排跟进日期", urgent: true };
 
     return {
       label: `下一步：${t(`leads.nextActionLabels.${lead.next_action}`) || lead.next_action}`,
@@ -161,12 +115,18 @@ export function LeadCard({
     };
   })();
 
-  /* ─── Click-outside handler for reassign dropdown ─── */
-  const reassignRef = useRef<HTMLDivElement>(null);
+  const reassignButtonRef = useRef<HTMLButtonElement>(null);
+  const reassignMenuRef = useRef<HTMLDivElement>(null);
+  const [reassignPosition, setReassignPosition] = useState({ left: 8, top: 8 });
+
   useEffect(() => {
     if (!isReassigning) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (reassignRef.current && !reassignRef.current.contains(e.target as Node)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        !reassignButtonRef.current?.contains(target)
+        && !reassignMenuRef.current?.contains(target)
+      ) {
         setReassignLeadId(null);
       }
     };
@@ -176,6 +136,25 @@ export function LeadCard({
 
   const handleCardClick = () => {
     if (!isReassigning) onOpen(lead.id);
+  };
+
+  const toggleReassign = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (isReassigning) {
+      setReassignLeadId(null);
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const menuWidth = 224;
+    const menuHeight = 192;
+    setReassignPosition({
+      left: Math.min(Math.max(8, rect.left), window.innerWidth - menuWidth - 8),
+      top: rect.bottom + menuHeight < window.innerHeight
+        ? rect.bottom + 4
+        : Math.max(8, rect.top - menuHeight - 4),
+    });
+    setReassignLeadId(lead.id);
   };
 
   const onReassign = (newUserId: string) => {
@@ -237,9 +216,10 @@ export function LeadCard({
           )}
         </div>
 
-        {/* One action-oriented signal; clicking the card opens the complete workflow. */}
+        {/* One action-oriented signal; open detail for the complete workflow. */}
         {actionPrompt && (
           <div
+            data-testid="lead-card-action-prompt"
             className={cn(
               "flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px]",
               actionPrompt.urgent
@@ -265,37 +245,16 @@ export function LeadCard({
                   <User className="w-3 h-3 shrink-0" />
                   <span className="truncate">{userNameMap[lead.assigned_to] || t("leads.unassigned")}</span>
                 </span>
-                <div className="relative shrink-0" ref={reassignRef}>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setReassignLeadId(reassignLeadId === lead.id ? null : lead.id); }}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 transition-colors"
-                    title="转移销售"
-                    aria-label="转移销售"
-                  >
-                    <Users className="h-4 w-4" />
-                  </button>
-                  {reassignLeadId === lead.id && (
-                    <div
-                      className="absolute left-0 top-full mt-1 z-50 w-56 bg-muted border border-border rounded-lg shadow-xl py-1 max-h-48 overflow-y-auto"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {reassigning && <div className="px-3 py-2 text-xs text-muted-foreground">正在转移...</div>}
-                      {salesUsers.map((u) => (
-                        <button key={u.id}
-                          onClick={() => onReassign(u.id)}
-                          className={cn(
-                            "w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-muted transition-colors",
-                            lead.assigned_to === u.id ? "text-copper-400" : "text-foreground"
-                          )}
-                        >
-                          <span className={cn("w-1.5 h-1.5 rounded-full", lead.assigned_to === u.id ? "bg-copper-400" : "bg-gray-600")} />
-                          <span className="truncate">{u.full_name || u.email}</span>
-                        </button>
-                      ))}
-                      {salesUsers.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">无用户</p>}
-                    </div>
-                  )}
-                </div>
+                <button
+                  ref={reassignButtonRef}
+                  onClick={toggleReassign}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-500/10 text-blue-500 transition-colors hover:bg-blue-500/20"
+                  title="转移销售"
+                  aria-label="转移销售"
+                  aria-expanded={isReassigning}
+                >
+                  <Users className="h-4 w-4" />
+                </button>
               </>
             )}
           </div>
@@ -309,14 +268,42 @@ export function LeadCard({
             )}
             {(salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
               <button title={t("common.delete") || "Delete"}
-                className="hidden h-8 w-8 items-center justify-center rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors shrink-0 group-hover:inline-flex"
-                onClick={(e) => { e.stopPropagation(); void handleDelete(lead.id, lead.assigned_to); }}>
+                className="hidden h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400 group-hover:inline-flex"
+                onClick={(event) => { event.stopPropagation(); void handleDelete(lead.id, lead.assigned_to); }}>
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
         </div>
 
+        {isReassigning && createPortal(
+          <div
+            ref={reassignMenuRef}
+            className="fixed z-[1000] max-h-48 w-56 overflow-y-auto rounded-lg border border-border bg-popover py-1 text-popover-foreground shadow-xl"
+            style={{ left: reassignPosition.left, top: reassignPosition.top }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {reassigning && <div className="px-3 py-2 text-xs text-muted-foreground">正在转移...</div>}
+            {salesUsers.map((user) => (
+              <button
+                key={user.id}
+                onClick={() => onReassign(user.id)}
+                className={cn(
+                  "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
+                  lead.assigned_to === user.id ? "text-copper-400" : "text-foreground"
+                )}
+              >
+                <span className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  lead.assigned_to === user.id ? "bg-copper-400" : "bg-gray-600"
+                )} />
+                <span className="truncate">{user.full_name || user.email}</span>
+              </button>
+            ))}
+            {salesUsers.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">无用户</p>}
+          </div>,
+          document.body
+        )}
       </CardContent>
     </Card>
   );

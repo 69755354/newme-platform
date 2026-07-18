@@ -94,6 +94,7 @@ export interface UseLeadDetailMutationsReturn {
   handleLost: (note?: string) => Promise<boolean>;
   addNote: (noteText: string) => Promise<void>;
   toggleMilestone: (milestoneKey: string, currentlyCompleted: boolean, notes?: string) => Promise<boolean>;
+  reopenMilestone: (milestoneKey: string, reason: string) => Promise<boolean>;
   addStructuredContact: (params: {
     contact_method: string;
     contact_time: string;
@@ -431,7 +432,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     const description = lang === "zh"
       ? `下一步已更新: ${updates.title ?? nextTask?.title ?? "—"}`
       : `Next action updated: ${updates.title ?? nextTask?.title ?? "—"}`;
-    await writeEvent("next_action_updated", description, updates);
+    await writeEvent("followup_scheduled", description, updates);
     setEditField(null);
     await fetchData();
   }, [nextTask, leadId, lead, t, lang, writeEvent, fetchData, setError]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -546,35 +547,22 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     }
   }, [updating, leadId, t, lang, fetchData]);
 
-  // ─── Milestone toggle: complete through the owned server route ─────────────
+  // ─── Milestone completion through the owned server route ──────────────────
   const toggleMilestone = useCallback(async (milestoneKey: string, currentlyCompleted: boolean, notes = ""): Promise<boolean> => {
     if (updating) return false;
-    if (milestoneKey === "first_contact" && currentlyCompleted) {
-      toast.error(lang === "zh" ? "初次接触由联系记录和线索质量自动确认" : "First Contact is confirmed by contact and quality");
+    if (currentlyCompleted) {
+      toast.error(lang === "zh" ? "请使用“重开此阶段”进行更正" : "Use Reopen milestone to make a correction");
       return false;
     }
 
     const normalizedNotes = notes.trim();
-    if (!currentlyCompleted && !normalizedNotes) {
+    if (!normalizedNotes) {
       toast.error(lang === "zh" ? "请填写推进备注" : "Progress note is required");
       return false;
     }
 
     setUpdating(true);
     try {
-      if (currentlyCompleted) {
-      const { error: delErr } = await supabase
-        .from("lead_milestones")
-        .delete()
-        .eq("lead_id", leadId)
-        .eq("milestone_key", milestoneKey);
-      if (delErr) {
-        console.error("[LeadDetail] milestone uncomplete failed");
-        toast.error(t("common.saveFailed"));
-        return false;
-      }
-      toast.success(lang === "zh" ? "里程碑已撤销" : "Milestone undone");
-      } else {
       const response = await fetch("/api/leads/" + leadId + "/milestone", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -589,7 +577,6 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         return false;
       }
       toast.success(lang === "zh" ? "里程碑已完成" : "Milestone completed");
-    }
       await fetchData();
       return true;
     } catch {
@@ -598,7 +585,41 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     } finally {
       setUpdating(false);
     }
-  }, [updating, supabase, leadId, t, lang, fetchData]);
+  }, [updating, leadId, t, lang, fetchData]);
+
+  const reopenMilestone = useCallback(async (milestoneKey: string, reason: string): Promise<boolean> => {
+    if (updating) return false;
+    const normalizedReason = reason.trim();
+    if (!normalizedReason) {
+      toast.error(lang === "zh" ? "请填写重开原因" : "Reopen reason is required");
+      return false;
+    }
+
+    setUpdating(true);
+    try {
+      const response = await fetch("/api/leads/" + leadId + "/milestone", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          milestoneKey,
+          reason: normalizedReason,
+        }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(json?.error || t("common.saveFailed"));
+        return false;
+      }
+      toast.success(lang === "zh" ? "阶段已重开" : "Milestone reopened");
+      await fetchData();
+      return true;
+    } catch {
+      toast.error(t("common.saveFailed"));
+      return false;
+    } finally {
+      setUpdating(false);
+    }
+  }, [updating, leadId, t, lang, fetchData]);
 
   return {
     // Page-render state
@@ -606,7 +627,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     // Setters
     setUpdating, setEditField, setEditValue, setShowSalesDropdown, setMarkingPoor, setPoorReasonText, setProjectInfoStatus, setError,
     // Handlers
-    reassignSales, handleDelete, handleMarkPoor, writeEvent, updateField, saveProjectInfo, resetProjectInfoDraft, updateStage, updateNextTask, handleWon, handleLost, addNote, toggleMilestone, addStructuredContact,
+    reassignSales, handleDelete, handleMarkPoor, writeEvent, updateField, saveProjectInfo, resetProjectInfoDraft, updateStage, updateNextTask, handleWon, handleLost, addNote, toggleMilestone, reopenMilestone, addStructuredContact,
   };
 }
 

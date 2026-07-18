@@ -22,7 +22,7 @@
  *   - ErrorState / loading branch (this component is the success branch only)
  *   - selection set + toggle/selectAll/clear callbacks
  *   - navigation (router.push for /leads/:id)
- *   - mutation handlers that LeadCard invokes
+ *   - reassignment and delete handlers that LeadCard invokes
  *   - keyboard navigation (ArrowLeft/Right → scrollBy on the forwarded ref)
  *
  * Props are deliberately verbose (every LeadCard binding is passed through)
@@ -66,19 +66,11 @@ type Props = {
   currentUserId: string | null;
   userNameMap: Record<string, string>;
   salesUsers: SalesUser[];
-  changeStage: UseLeadMutationsReturn["changeStage"];
-  changeProbability: UseLeadMutationsReturn["changeProbability"];
-  changeStatus: UseLeadMutationsReturn["changeStatus"];
-  changeLostReason: UseLeadMutationsReturn["changeLostReason"];
-  addQuickNote: UseLeadMutationsReturn["addQuickNote"];
-  updateNextAction: UseLeadMutationsReturn["updateNextAction"];
-  updateNextFollowup: UseLeadMutationsReturn["updateNextFollowup"];
   reassignSales: UseLeadMutationsReturn["reassignSales"];
   handleDelete: UseLeadMutationsReturn["handleDelete"];
   reassignLeadId: string | null;
   reassigning: boolean;
   setReassignLeadId: (id: string | null) => void;
-  setReassigning: (v: boolean) => void;
   selectedLeadIds: Set<string>;
   onToggleSelect: (id: string) => void;
   onOpen: (id: string) => void;
@@ -100,19 +92,11 @@ export const LeadsKanbanBoard = forwardRef<HTMLDivElement, Props>(function Leads
     currentUserId,
     userNameMap,
     salesUsers,
-    changeStage,
-    changeProbability,
-    changeStatus,
-    changeLostReason,
-    addQuickNote,
-    updateNextAction,
-    updateNextFollowup,
     reassignSales,
     handleDelete,
     reassignLeadId,
     reassigning,
     setReassignLeadId,
-    setReassigning,
     selectedLeadIds,
     onToggleSelect,
     onOpen,
@@ -176,7 +160,6 @@ export const LeadsKanbanBoard = forwardRef<HTMLDivElement, Props>(function Leads
               (sum, l) => sum + (l.quotation_value || 0),
               0
             );
-            const isLost = stage.key === "lost";
             return (
               <div
                 key={stage.key}
@@ -226,25 +209,16 @@ export const LeadsKanbanBoard = forwardRef<HTMLDivElement, Props>(function Leads
                       currentUserId={currentUserId}
                       userNameMap={userNameMap}
                       salesUsers={salesUsers}
-                      changeStage={changeStage}
-                      changeProbability={changeProbability}
-                      changeStatus={changeStatus}
-                      changeLostReason={changeLostReason}
-                      addQuickNote={addQuickNote}
-                      updateNextAction={updateNextAction}
-                      updateNextFollowup={updateNextFollowup}
                       reassignSales={reassignSales}
                       handleDelete={handleDelete}
                       reassignLeadId={reassignLeadId}
                       reassigning={reassigning}
                       setReassignLeadId={setReassignLeadId}
-                      setReassigning={setReassigning}
                       selected={selectedLeadIds.has(lead.id)}
                       onToggleSelect={() => onToggleSelect(lead.id)}
                       onOpen={(id) => onOpen(id)}
                       draggingLeadId={draggingLeadId}
                       onDragStart={onDragStart}
-                      isLostColumn={isLost}
                       t={t}
                     />
                   ))}

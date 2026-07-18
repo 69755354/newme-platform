@@ -97,7 +97,7 @@ export async function POST(
   const existingMilestone = (existingMilestones ?? []).find(
     (milestone) => milestone.milestone_key === milestoneKey,
   );
-  if (existingMilestone) {
+  if (existingMilestone?.completed_at) {
     // Old trigger-created first_contact rows have no operator note. Turn that
     // fact row into the required explicit confirmation instead of treating it
     // as a completed manual milestone.
@@ -123,8 +123,10 @@ export async function POST(
     return NextResponse.json({ success: true, milestone: existingMilestone, duplicate: true });
   }
 
-  // 6. rule_006: 顺序校验（不能跳级、不能往回）
-  const completedKeys = (existingMilestones ?? []).map((m) => m.milestone_key);
+  // 6. rule_006: only completed milestones participate in sequence checks.
+  const completedKeys = (existingMilestones ?? [])
+    .filter((milestone) => milestone.completed_at)
+    .map((milestone) => milestone.milestone_key);
   const check = canCompleteMilestone(completedKeys, milestoneKey);
 
   if (!check.allowed) {
@@ -136,6 +138,31 @@ export async function POST(
       },
       { status: 400 }
     );
+  }
+
+  if (existingMilestone && !existingMilestone.completed_at) {
+    const { data: recompleted, error: recompleteError } = await supabase.rpc(
+      "recomplete_lead_milestone",
+      {
+        p_lead_id: leadId,
+        p_milestone_key: milestoneKey,
+        p_notes: normalizedNotes,
+      },
+    );
+
+    if (recompleteError) {
+      const message = recompleteError.message || "Failed to complete reopened milestone";
+      const status = message.includes("Forbidden") ? 403
+        : message.includes("not found") ? 404
+        : 400;
+      return NextResponse.json({ error: message }, { status });
+    }
+
+    return NextResponse.json({
+      success: true,
+      result: recompleted,
+      recompleted: true,
+    });
   }
 
   // 7. 插入里程碑（leads.current_milestone 由 trigger trg_check_milestone_order 自动维护）
@@ -185,4 +212,62 @@ export async function POST(
   }
 
   return NextResponse.json({ success: true, milestone: inserted });
+}
+
+export async function PATCH(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  const profile = await getAuthProfile();
+  if (!profile) {
+    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  }
+
+  const leadId = (await context.params).id;
+  const body = await req.json().catch(() => ({}));
+  const milestoneKey = String(body?.milestoneKey ?? "").trim();
+  const reason = String(body?.reason ?? "").trim();
+
+  if (!milestoneKey) {
+    return NextResponse.json({ error: "缺少 milestoneKey" }, { status: 400 });
+  }
+  if (!reason) {
+    return NextResponse.json({ error: "Reopen reason is required" }, { status: 400 });
+  }
+  if (reason.length > 1000) {
+    return NextResponse.json(
+      { error: "Reopen reason must be 1000 characters or fewer" },
+      { status: 400 },
+    );
+  }
+
+  const supabase = await createServerSupabase();
+  const { data: lead, error: leadError } = await supabase
+    .from("leads")
+    .select("id, assigned_to")
+    .eq("id", leadId)
+    .single();
+
+  if (leadError || !lead) {
+    return NextResponse.json({ error: "线索不存在" }, { status: 404 });
+  }
+  if (!isAdminOrBoss(profile) && lead.assigned_to !== profile.userId) {
+    return NextResponse.json({ error: "无权操作此线索" }, { status: 403 });
+  }
+
+  const { data, error } = await supabase.rpc("reopen_lead_milestone", {
+    p_lead_id: leadId,
+    p_milestone_key: milestoneKey,
+    p_reason: reason,
+  });
+
+  if (error) {
+    const message = error.message || "Failed to reopen milestone";
+    const status = message.includes("Forbidden") ? 403
+      : message.includes("not found") ? 404
+      : 400;
+    return NextResponse.json({ error: message }, { status });
+  }
+
+  return NextResponse.json({ success: true, result: data });
 }

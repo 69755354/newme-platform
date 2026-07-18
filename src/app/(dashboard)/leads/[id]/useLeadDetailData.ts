@@ -126,7 +126,8 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
              id, contact_type, summary, user_id, contact_time, contact_result, created_at
            ),
            milestones:lead_milestones!lead_milestones_lead_id_fkey(
-             id, milestone_key, completed_at, notes
+             id, milestone_key, completed_at, notes, completed_by,
+             completer:profiles!fk_lead_milestones_completed_by(id, full_name)
            ),
            business_events:business_events!business_events_lead_id_fkey(
              id, event_type, event_data, description, created_at, user_id,

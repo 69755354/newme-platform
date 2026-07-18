@@ -163,6 +163,7 @@ export default function LeadDetailPage() {
     handleLost,
     addNote,
     toggleMilestone,
+    reopenMilestone,
     addStructuredContact,
   } = useLeadDetailMutations({
     leadId: id as string,
@@ -480,7 +481,7 @@ export default function LeadDetailPage() {
             {creatorName && ` · ${t("leadDetail.createdBy")}: ${creatorName}`}
           </p>
         </div>
-        {(salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
+        {(["admin", "boss", "operator"].includes(salesRole ?? "") || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
           <>
           <Button variant="ghost" size="icon"
             className="text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
@@ -488,7 +489,7 @@ export default function LeadDetailPage() {
             title={t("common.delete") || "Delete"}>
             <Trash2 className="w-5 h-5" />
           </Button>
-          {(salesRole === "admin" || salesRole === "boss") && (
+          {(["admin", "boss", "operator"].includes(salesRole ?? "")) && (
             <Button variant="ghost" size="sm"
               className="text-amber-400 hover:bg-amber-500/10"
               onClick={() => { setMarkingPoor(true); }}
@@ -541,6 +542,7 @@ export default function LeadDetailPage() {
             nextTask={nextTask}
             updating={updating}
             onToggleMilestone={toggleMilestone}
+            onReopenMilestone={reopenMilestone}
             onUpdateField={updateField}
             onWon={handleWon}
             onLost={handleLost}
@@ -570,6 +572,7 @@ export default function LeadDetailPage() {
             activities={activities}
             events={events}
             followUpLogs={followUpLogs}
+            milestones={leadMilestones}
             chatMessages={chatMessages}
             noteText={noteText}
             onNoteTextChange={setNoteText}

@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
       .from('leads')
       .select('current_milestone')
       .is('final_status', null)
+      .eq('archived', false)
 
     if (fetchError) {
       return NextResponse.json({ error: fetchError.message }, { status: 500 })
@@ -33,8 +34,7 @@ export async function GET(req: NextRequest) {
 
     const grouped: Record<string, { count: number; total_value: number }> = {}
     for (const lead of activeLeads ?? []) {
-      if (!lead.current_milestone) continue
-      const milestone = normalizeMilestone(lead.current_milestone)
+      const milestone = normalizeMilestone(lead.current_milestone || 'new')
       if (!grouped[milestone]) grouped[milestone] = { count: 0, total_value: 0 }
       grouped[milestone].count += 1
     }

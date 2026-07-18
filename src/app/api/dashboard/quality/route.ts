@@ -9,6 +9,8 @@ type CountResult = {
   error: { message: string } | null;
 };
 
+const asCountQuery = (query: unknown) => query as PromiseLike<CountResult>;
+
 export async function GET(request: NextRequest) {
   const supabase = await createServerSupabase();
   const {
@@ -65,6 +67,7 @@ export async function GET(request: NextRequest) {
     .from("lead_milestones")
     .select("lead_id,leads!inner(id)", { count: "exact", head: true })
     .eq("milestone_key", "first_contact")
+    .not("completed_at", "is", null)
     .eq("leads.archived", false);
   let missingFirstContactQuery = supabase
     .from("leads")
@@ -72,6 +75,7 @@ export async function GET(request: NextRequest) {
     .eq("archived", false)
     .is("final_status", null)
     .eq("lead_milestones.milestone_key", "first_contact")
+    .not("lead_milestones.completed_at", "is", null)
     .is("lead_milestones", null);
   let noAnswerQuery = supabase
     .from("follow_up_logs")
@@ -120,18 +124,18 @@ export async function GET(request: NextRequest) {
       .lt("created_at", period.end);
   }
 
-  const results = (await Promise.all([
-    totalQuery,
-    contactedQuery,
-    firstContactQuery,
-    missingFirstContactQuery,
-    noAnswerQuery,
-    followUpMissingQuery,
-    overdueFollowUpQuery,
-    qualityQuery("pending"),
-    qualityQuery("good"),
-    qualityQuery("normal"),
-  ])) as CountResult[];
+  const results = await Promise.all([
+    asCountQuery(totalQuery),
+    asCountQuery(contactedQuery),
+    asCountQuery(firstContactQuery),
+    asCountQuery(missingFirstContactQuery),
+    asCountQuery(noAnswerQuery),
+    asCountQuery(followUpMissingQuery),
+    asCountQuery(overdueFollowUpQuery),
+    asCountQuery(qualityQuery("pending")),
+    asCountQuery(qualityQuery("good")),
+    asCountQuery(qualityQuery("normal")),
+  ]);
 
   const queryError = results.find((result) => result.error)?.error;
   if (queryError) {
@@ -175,3 +179,4 @@ export async function GET(request: NextRequest) {
     period,
   });
 }
+

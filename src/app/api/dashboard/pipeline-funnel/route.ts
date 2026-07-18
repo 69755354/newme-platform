@@ -87,8 +87,7 @@ export async function GET(request: NextRequest) {
     }
 
     for (const l of leads || []) {
-      const s = l.final_status || normalizeMilestone(l.current_milestone || "");
-      if (!s) continue; // skip leads with no milestone
+      const s = l.final_status || normalizeMilestone(l.current_milestone || "new");
       if (stageCountMap[s] !== undefined) {
         stageCountMap[s]++;
         stageLeads[s].push(l);

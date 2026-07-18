@@ -77,7 +77,8 @@ export async function GET() {
       // Q6: All Milestones
       supabase
         .from('lead_milestones')
-        .select('id, lead_id'),
+        .select('id, lead_id')
+        .not('completed_at', 'is', null),
       // Q7: Overdue Follow-ups
       supabase
         .from('tasks')

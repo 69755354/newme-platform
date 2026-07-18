@@ -48,7 +48,7 @@ export async function GET(
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)))
 
     const [milestonesRes, followUpsRes, tasksRes, documentsRes, chatRes, activitiesRes, businessEventsRes] = await Promise.all([
-      supabase.from("lead_milestones").select("*").eq("lead_id", leadId),
+      supabase.from("lead_milestones").select("*").eq("lead_id", leadId).not("completed_at", "is", null),
       supabase.from("follow_up_logs").select("*").eq("lead_id", leadId),
       supabase.from("tasks").select("*").eq("lead_id", leadId),
       supabase.from("lead_documents").select("*").eq("lead_id", leadId),

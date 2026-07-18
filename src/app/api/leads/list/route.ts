@@ -42,7 +42,8 @@ export async function GET(request: Request) {
   const salesUsersPromise = supabase
     .from("profiles")
     .select("id,email,role,full_name")
-    .in("role", ["admin", "sales", "operator"]);
+    .in("role", ["sales", "operator", "boss"])
+    .eq("is_active", true);
 
   const [
     { data: leads, error: leadsErr },

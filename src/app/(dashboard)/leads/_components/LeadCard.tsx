@@ -90,13 +90,20 @@ export function LeadCard({
     }
 
     if (stageAtLeast("requirement_confirmed")) {
-      const missingProjectType = isPlaceholder(lead.property_type);
-      const missingLocation = isPlaceholder(lead.location);
-      if (missingProjectType && missingLocation) {
-        return { label: "待完善：项目类型与地址", urgent: true };
+      const missingRequirements = [
+        isPlaceholder(lead.project_type) ? "项目类型" : null,
+        isPlaceholder(lead.project_status) ? "项目状态" : null,
+        isPlaceholder(lead.location) ? "地址" : null,
+      ].filter((item): item is string => item !== null);
+      if (missingRequirements.length > 0) {
+        const suffix = missingRequirements.length > 1
+          ? `等${missingRequirements.length}项`
+          : "";
+        return {
+          label: `待完善：${missingRequirements[0]}${suffix}`,
+          urgent: true,
+        };
       }
-      if (missingProjectType) return { label: "待完善：项目类型", urgent: true };
-      if (missingLocation) return { label: "待完善：项目地址", urgent: true };
     }
 
     if (

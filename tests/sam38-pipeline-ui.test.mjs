@@ -84,3 +84,12 @@ test("SAM-38 batches prompt fields in the existing leads list request", () => {
   assert.match(hook, /project_type: string \| null; project_status: string \| null;/);
   assert.doesNotMatch(route, /lead_milestones|follow_up_logs|contracts/);
 });
+
+
+test("SAM-38 limits reassignment candidates to active sales-capable profiles", () => {
+  const route = read("src/app/api/leads/list/route.ts");
+
+  assert.match(route, /\.in\("role", \["sales", "operator", "boss"\]\)/);
+  assert.match(route, /\.eq\("is_active", true\)/);
+  assert.doesNotMatch(route, /\["admin", "sales", "operator"\]/);
+});

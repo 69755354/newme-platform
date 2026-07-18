@@ -143,8 +143,7 @@ class Regression:
     def request(self, request: urllib.request.Request, timeout: int = 10) -> Any:
         request.add_header("apikey", self.service_key)
         request.add_header("Authorization", f"Bearer {self.service_key}")
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response
+        return urllib.request.urlopen(request, timeout=timeout)
 
     def http_get(
         self, path: str, expected_statuses: tuple[int, ...] = (200,)

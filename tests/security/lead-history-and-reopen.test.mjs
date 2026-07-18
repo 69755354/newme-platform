@@ -42,8 +42,8 @@ test("milestone reopen is owner-scoped for sales and global for management", asy
   assert.match(route, /export async function PATCH/);
   assert.match(route, /lead\.assigned_to !== profile\.userId/);
   assert.match(route, /Reopen reason is required/);
-  assert.match(route, /action: "milestone_reopened"/);
-  assert.match(route, /completed_at: null/);
+  assert.match(migration, /\'action\', \'milestone_reopened\'/);
+  assert.match(migration, /SET completed_at = NULL/);
 });
 
 test("a reopened milestone can be completed again in order", async () => {

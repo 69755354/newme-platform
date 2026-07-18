@@ -163,6 +163,7 @@ export default function LeadDetailPage() {
     handleLost,
     addNote,
     toggleMilestone,
+    reopenMilestone,
     addStructuredContact,
   } = useLeadDetailMutations({
     leadId: id as string,
@@ -541,6 +542,7 @@ export default function LeadDetailPage() {
             nextTask={nextTask}
             updating={updating}
             onToggleMilestone={toggleMilestone}
+            onReopenMilestone={reopenMilestone}
             onUpdateField={updateField}
             onWon={handleWon}
             onLost={handleLost}
@@ -570,6 +572,7 @@ export default function LeadDetailPage() {
             activities={activities}
             events={events}
             followUpLogs={followUpLogs}
+            milestones={leadMilestones}
             chatMessages={chatMessages}
             noteText={noteText}
             onNoteTextChange={setNoteText}

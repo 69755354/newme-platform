@@ -71,7 +71,9 @@ export async function POST(
         contact_type: contactMethod,
         contact_time: contactTime.toISOString(),
         contact_result: contactResult,
-        summary: summary || null,
+        // The UI intentionally makes the note optional while the database requires
+        // a non-null summary. The contact result is the meaningful fallback.
+        summary: summary || contactResult,
         no_answer: false,
         contact_fingerprint: contactFingerprint,
       }, { onConflict: "contact_fingerprint" })

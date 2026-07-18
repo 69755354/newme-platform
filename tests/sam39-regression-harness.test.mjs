@@ -47,5 +47,8 @@ test("SAM-39 keeps candidate eligibility separate from historical identity", () 
   assert.match(harness, /profile\.get\("is_active"\) is True/);
   assert.match(harness, /profiles_by_id = \{profile\["id"\]: profile for profile in profiles\}/);
   assert.match(harness, /historical_owner_name\(lead, profiles_by_id\)/);
+  assert.match(harness, /src\/app\/api\/leads\/list\/route\.ts/);
+  assert.match(harness, /\.in\("role", \["sales", "operator", "boss"\]\)/);
+  assert.match(harness, /\.eq\("is_active", true\)/);
   assert.doesNotMatch(harness, /all users active|所有用户活跃/);
 });

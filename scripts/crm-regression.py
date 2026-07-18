@@ -322,6 +322,7 @@ class Regression:
             PROJECT_ROOT
             / "src/app/api/notifications/unread-count/route.ts"
         )
+        leads_list_route = PROJECT_ROOT / "src/app/api/leads/list/route.ts"
 
         self.check("proxy.ts 存在", proxy_file.is_file())
         if proxy_file.is_file():
@@ -332,6 +333,17 @@ class Regression:
                 "PAGE_VISIT" in content or "audit_logs" in content,
             )
         self.check("unread-count route.ts 存在", unread_route.is_file())
+        self.check("leads list route.ts 存在", leads_list_route.is_file())
+        if leads_list_route.is_file():
+            content = leads_list_route.read_text(encoding="utf-8")
+            self.check(
+                "转移候选源码限定 sales/operator/boss",
+                '.in("role", ["sales", "operator", "boss"])' in content,
+            )
+            self.check(
+                "转移候选源码限定启用人员",
+                '.eq("is_active", true)' in content,
+            )
 
     def write_result(self) -> None:
         result = {

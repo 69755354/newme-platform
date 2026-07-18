@@ -180,6 +180,7 @@ export const LeadsKanbanBoard = forwardRef<HTMLDivElement, Props>(function Leads
             return (
               <div
                 key={stage.key}
+                data-kanban-stage={stage.key}
                 onDragEnter={() => onDragEnter(stage.key)}
                 onDragOver={(e) => onDragOver(e, stage.key)}
                 onDragLeave={() => onDragLeave(stage.key)}

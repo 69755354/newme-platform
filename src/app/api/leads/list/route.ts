@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 
   // ── Parallel batch: leads + salesUsers ──
   let leadsQuery = supabase.from("leads").select(
-    "id,customer_name,phone,source,stage,final_status,quotation_value,location,property_type,property_size_sqm,ai_quality,lead_status,assigned_to,win_probability,last_contact_date,next_followup_date,next_action,followup_count,created_at,updated_at,recovery_candidate,transfer_candidate,sales_manager_review,hold_since,lost_reason,decision_maker,decision_date,competitor,campaign_name,source_platform,quality,poor_reason"
+    "id,customer_name,phone,source,stage,final_status,quotation_value,location,property_type,project_type,project_status,property_size_sqm,ai_quality,lead_status,assigned_to,win_probability,last_contact_date,next_followup_date,next_action,followup_count,created_at,updated_at,recovery_candidate,transfer_candidate,sales_manager_review,hold_since,lost_reason,decision_maker,decision_date,competitor,campaign_name,source_platform,quality,poor_reason"
   );
   if (role === "sales") {
     leadsQuery = leadsQuery.eq("assigned_to", userId);

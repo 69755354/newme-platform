@@ -59,6 +59,17 @@ function LeadsContent() {
   const [showPipelineSummary, setShowPipelineSummary] = useState(true);
   const [qualityFilter, setQualityFilter] = useState("all");
 
+  const handlePipelineStageChange = useCallback((stage: string) => {
+    setStageFilter((current) => (current === stage ? "all" : stage));
+    const stageIndex = PIPELINE_STAGES.findIndex((item) => item.key === stage);
+    if (stageIndex >= 0) {
+      requestAnimationFrame(() => {
+        scrollContainerRef.current?.scrollTo({ left: stageIndex * 316, behavior: "smooth" });
+      });
+    }
+  }, []);
+
+
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
@@ -254,7 +265,7 @@ function LeadsContent() {
           stages={PIPELINE_STAGES}
           stageTotals={stageTotals}
           stageFilter={stageFilter}
-          onStageFilterChange={setStageFilter}
+          onStageFilterChange={handlePipelineStageChange}
           t={t}
         />
       )}

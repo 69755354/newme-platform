@@ -54,9 +54,6 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 ---
 
-
----
-
 ## M1 当前版本发布项 — 2026-07-19（SAM-6）
 > 事实源：Linear milestone `M1 当前版本生产交付` 与 GitHub `main@43ec83432588909db1a064da4de2b4b029ff8f76`。STATUS 遵循本文件 Frozen v2：`REVIEW` 对应 Linear `In Review`，`TODO` 对应 Linear `Todo`。候选基线不等于最终生产放行；没有完整证据不得写成 `DONE`。
 

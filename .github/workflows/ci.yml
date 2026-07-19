@@ -74,3 +74,26 @@ jobs:
 
       - name: Build
         run: npm run build
+  windows-checkout:
+    name: Windows checkout and SPEC gate
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: sam16-checkout
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify clean checkout and SPEC
+        shell: pwsh
+        working-directory: sam16-checkout
+        run: |
+          $status = git status --porcelain --untracked-files=all
+          if ($LASTEXITCODE -ne 0) { throw "git status failed" }
+          if ($status) { throw "worktree is not clean: $status" }
+          bash scripts/check-spec.sh
+          if ($LASTEXITCODE -ne 0) { throw "check-spec failed" }

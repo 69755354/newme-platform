@@ -291,3 +291,4 @@ Note: All four are independent of P3 PRD G1/G2/G3 (quality API, weekly-review, w
 - `62cf163` proxy.ts 加 pathname==="/" 307 → /dashboard
 - `c6afe98` page.tsx force-dynamic + force-no-store 防止 prerender 缓存
 - `d085078` proxy.ts config.matcher 加 "/"（**根因**：matcher 缺 / 导致 proxy 完全没注册到 middleware-manifest.json）
+HOTFIX-2 | DEPLOYED | hermes | 2026-07-20 | SAM-45+SAM-46 closed; ca4cfdc(删quotes fallback+导入原始数据面板)+fd2b35e(insert schema对齐); BUILD_ID odB7DlnFp-Er6a5NbVmv0; CI 29705110814 green; K3审计 PASS_WITH_WARNINGS(Ship); 生产API验收通过+基线零漂移; SAM-49登记(hermes路由静默零总价姊妹项+K3 P2)

@@ -16,3 +16,18 @@ test("SAM-13 denies every current RLS business-table operation to an inactive JW
   assert.match(migration, /USING \(public\.current_user_is_active\(\)\) WITH CHECK \(public\.current_user_is_active\(\)\)/);
   assert.doesNotMatch(migration, /WITH CHECK \(true\)/);
 });
+
+test("SAM-13 does not let an inactive JWT reactivate its own profile", () => {
+  assert.match(
+    migration,
+    /CREATE POLICY policy_profiles_update_self[\s\S]*USING \(id = auth\.uid\(\) AND is_active IS TRUE\)/,
+  );
+  assert.match(
+    migration,
+    /CREATE POLICY policy_profiles_update_self[\s\S]*WITH CHECK \([\s\S]*AND is_active IS TRUE/,
+  );
+  assert.match(
+    migration,
+    /CREATE POLICY policy_profiles_update_admin[\s\S]*role IN \('admin', 'boss'\)[\s\S]*AND is_active IS TRUE/,
+  );
+});

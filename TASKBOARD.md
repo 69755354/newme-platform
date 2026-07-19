@@ -1,5 +1,5 @@
 # TASKBOARD.md — Machine-Verifiable Task Tracking (本地工具脚本真相源)
-# Last updated: 2026-07-06
+# Last updated: 2026-07-19
 # Format: Frozen v2 (MoA签发版) — 4状态模型
 
 ## ⚠️ STATE MACHINE (唯一状态流)
@@ -51,6 +51,24 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | task_kanban_unify | DONE | Codex (GPT-5.5) | 2026-07-06 |
 
 > `task_P0_hotfix_audit_trail`: `20260706000005_add_leads_archived.sql` adds `leads_archived` as the 20th allowed event type, closing the archive audit gap.
+
+---
+
+## M1 当前版本发布项 — 2026-07-19（SAM-6）
+> 事实源：Linear milestone `M1 当前版本生产交付` 与 GitHub `main@43ec83432588909db1a064da4de2b4b029ff8f76`。STATUS 遵循本文件 Frozen v2：`REVIEW` 对应 Linear `In Review`，`TODO` 对应 Linear `Todo`。候选基线不等于最终生产放行；没有完整证据不得写成 `DONE`。
+
+| TASK_ID | STATUS | M1 发布门禁 / 当前事实 |
+|---|---|---|
+| SAM-6 | REVIEW | 候选基线 `main@43ec83432588909db1a064da4de2b4b029ff8f76`；CI run `29664871138` 为同 SHA `success`；文档一致性由 SAM-41 收口；合并后的 main 仍待总控复核。 |
+| SAM-7 | TODO | 部署前只读检查。 |
+| SAM-8 | TODO | 部署冻结版本并验证健康状态。 |
+| SAM-9 | TODO | 生产 P0 Smoke。 |
+| SAM-11 | TODO | 导入、归档、Dashboard 与角色矩阵 UAT。 |
+| SAM-12 | TODO | 形成发布证据并给出唯一结论。 |
+| SAM-24 | TODO | 验证数据库迁移兼容、备份与回滚点。 |
+| SAM-43 | REVIEW | Linear 仍为 `In Review`；登录态视觉/交互 UAT 未完成，卡片、列表、详情、批量、Settings 及中英文可读性未通过，不得以 API/CI 证据替代。 |
+
+> SAM-41 只补文档事实，不改变发布、部署或 UAT 工作流；合并后仍需总控复核 `main`，再决定 SAM-6 是否推进。
 
 ---
 

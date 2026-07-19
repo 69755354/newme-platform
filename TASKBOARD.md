@@ -59,7 +59,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | M1 发布门禁 / 当前事实 |
 |---|---|---|
-| SAM-6 | REVIEW | 候选基线 `main@43ec83432588909db1a064da4de2b4b029ff8f76`；CI run `29664871138` 为同 SHA `success`；文档一致性由 SAM-41 PR 收口，仍待合并后复核。 |
+| SAM-6 | REVIEW | 候选基线 `main@43ec83432588909db1a064da4de2b4b029ff8f76`；CI run `29664871138` 为同 SHA `success`；文档一致性由 SAM-41 收口；合并后的 main 仍待总控复核。 |
 | SAM-7 | TODO | 部署前只读检查。 |
 | SAM-8 | TODO | 部署冻结版本并验证健康状态。 |
 | SAM-9 | TODO | 生产 P0 Smoke。 |

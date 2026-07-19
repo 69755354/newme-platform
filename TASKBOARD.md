@@ -55,7 +55,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 || task_M1_sam9_smoke | DONE | Hermes | 2026-07-19 |
 || task_M1_sam43_api_uat | DONE | Hermes | 2026-07-19 |
 
-> M1 发布链（Linear 为真源）：已发布冻结 SHA `49bbb26` → 生产 BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（2026-07-19 19:40 UTC，evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6/7/8/9 Done；SAM-43 六项机器标准全 PASS、留人工视觉项。链序 SAM-6→7→24(✅)→8→9→10(✅)→11→25→26→27→28→12。
+> M1 发布链（Linear 为真源）：已发布冻结 SHA `49bbb26` → 生产 BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（2026-07-19 19:40 UTC，evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6/7/8/9 Done；SAM-43 六项机器标准全 PASS、留人工视觉项。SAM-11 In Review（差异→SAM-45 country 可观测缺陷）；SAM-25/26 In Progress（正向链路/视觉挂起，差异→SAM-46 报价双入口）；SAM-27 In Review（P4 观察→SAM-47 health 内存暴露）；SAM-28 In Review（对账✓，签收待人工）。链序 SAM-6→7→24(✅)→8→9→10(✅)→11→25→26→27→28→12。
 
 > `task_P0_hotfix_audit_trail`: `20260706000005_add_leads_archived.sql` adds `leads_archived` as the 20th allowed event type, closing the archive audit gap.
 
@@ -70,9 +70,13 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | SAM-7 | TODO | 部署前只读检查。 |
 | SAM-8 | TODO | 部署冻结版本并验证健康状态。 |
 | SAM-9 | TODO | 生产 P0 Smoke。 |
-| SAM-11 | TODO | 导入、归档、Dashboard 与角色矩阵 UAT。 |
+| SAM-11 | REVIEW | 机器项已验：导入 dedup（import_fingerprint）✓、归档/恢复保字段✓、角色范围（RLS 实测 52/52）✓；差异→SAM-45（country 仅 jsonb 留存、UI/导出不可验证）；工作簿写入导入测试挂起。 |
 | SAM-12 | TODO | 形成发布证据并给出唯一结论。 |
 | SAM-24 | TODO | 验证数据库迁移兼容、备份与回滚点。 |
+| SAM-25 | IN_PROGRESS | 生产 quotes/quotations/contracts/payments/projects 全 0 行——正向链路本质是写入测试，挂起待授权/人工；差异→SAM-46（hermes/generate-quote 写 quotes vs 主链路 quotations 双入口）。 |
+| SAM-26 | IN_PROGRESS | 角色权限矩阵机器验✓（sales 无越权管理用户；改/删用户 admin\|boss）；finance/designer 生产无用户空转；移动端/视觉挂起。 |
+| SAM-27 | REVIEW | 集成/cron/可观测性全只读验收✓：4 项 cron 调度正常（2 项代码内有意禁用并注明原因）、Meta watchdog 42/0/0、cron 鉴权 403✓；P4 观察→SAM-47（health 暴露内存数值）。 |
+| SAM-28 | REVIEW | 观察基线✓ + 只读对账✓（52 leads、0 孤儿、fixture 非新增）；业务/技术签收挂起人工，未签收不出 RELEASED。 |
 | SAM-43 | REVIEW | Linear 仍为 `In Review`；登录态视觉/交互 UAT 未完成，卡片、列表、详情、批量、Settings 及中英文可读性未通过，不得以 API/CI 证据替代。 |
 
 > SAM-41 只补文档事实，不改变发布、部署或 UAT 工作流；合并后仍需总控复核 `main`，再决定 SAM-6 是否推进。

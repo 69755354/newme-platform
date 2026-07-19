@@ -20,6 +20,42 @@ $$;
 REVOKE ALL ON FUNCTION public.current_user_is_active() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.current_user_is_active() TO authenticated;
 
+-- profiles is the source of the active-state lookup, so it cannot use the
+-- restrictive policy below. Keep self-service updates, but require that the
+-- old and new self profile are active. Management updates still use service
+-- role, and browser-side management requires an active management profile.
+DROP POLICY IF EXISTS policy_profiles_update_self ON public.profiles;
+CREATE POLICY policy_profiles_update_self
+  ON public.profiles FOR UPDATE TO authenticated
+  USING (id = auth.uid() AND is_active IS TRUE)
+  WITH CHECK (
+    id = auth.uid()
+    AND is_active IS TRUE
+    AND (
+      EXISTS (
+        SELECT 1
+        FROM public.profiles p
+        WHERE p.id = auth.uid()
+          AND p.role IN ('admin', 'boss')
+          AND p.is_active IS TRUE
+      )
+      OR role = (SELECT role FROM public.profiles WHERE id = auth.uid())
+    )
+  );
+
+DROP POLICY IF EXISTS policy_profiles_update_admin ON public.profiles;
+CREATE POLICY policy_profiles_update_admin
+  ON public.profiles FOR UPDATE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.profiles
+      WHERE id = auth.uid()
+        AND role IN ('admin', 'boss')
+        AND is_active IS TRUE
+    )
+  );
+
 -- Restrictive policies are ANDed with every existing permissive policy. This
 -- covers all current public RLS business tables without changing role/ownership
 -- rules or service-role server operations. profiles is intentionally excluded:

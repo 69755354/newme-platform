@@ -74,3 +74,27 @@ jobs:
 
       - name: Build
         run: npm run build
+  windows-checkout:
+    name: Windows checkout and SPEC gate
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Clone and checkout exact PR head
+        shell: pwsh
+        run: |
+          $clonePath = Join-Path $env:RUNNER_TEMP "sam16-checkout"
+          git -c "http.extraheader=AUTHORIZATION: bearer $env:GITHUB_TOKEN" clone --no-checkout "$($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY)" $clonePath
+          if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
+          git -C $clonePath -c "http.extraheader=AUTHORIZATION: bearer $env:GITHUB_TOKEN" fetch --no-tags origin $env:TARGET_SHA
+          if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
+          git -C $clonePath checkout --detach $env:TARGET_SHA
+          if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
+          $status = git -C $clonePath status --porcelain --untracked-files=all
+          if ($LASTEXITCODE -ne 0) { throw "git status failed" }
+          if ($status) { throw "worktree is not clean: $status" }
+          bash "$clonePath/scripts/check-spec.sh"
+          if ($LASTEXITCODE -ne 0) { throw "check-spec failed" }

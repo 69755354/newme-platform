@@ -55,7 +55,9 @@ TODO → IN_PROGRESS → REVIEW → DONE
 || task_M1_sam9_smoke | DONE | Hermes | 2026-07-19 |
 || task_M1_sam43_api_uat | DONE | Hermes | 2026-07-19 |
 
-> M1 发布链（Linear 为真源）：已发布冻结 SHA `49bbb26` → 生产 BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（2026-07-19 19:40 UTC，evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6/7/8/9 Done；SAM-43 六项机器标准全 PASS、留人工视觉项。SAM-11 In Review（含工作簿导入写测试✓，差异→SAM-45 country 可观测缺陷）；SAM-25 In Review（正向链路 fixture 实测✓，差异→SAM-46 报价双入口、SAM-48 报价引擎校验缺口）；SAM-26 In Progress（视觉/移动端挂起人工）；SAM-27 In Review（P4 观察→SAM-47 health 内存暴露）；SAM-28 In Review（对账✓，签收待人工）。链序 SAM-6→7→24(✅)→8→9→10(✅)→11→25→26→27→28→12。
+> M1 发布链（Linear 为真源）：**RELEASED 2026-07-20**。发布 SHA `49bbb26` → BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6~12 全链 Done：SAM-28 业务签收（森哥 2026-07-20）+ 技术签收（机器全量验收），SAM-12 发布记录出具。SAM-26 视觉/移动端留人工不拦发布；SAM-45/46 进 M2 backlog。
+>
+> 热修 #1（2026-07-20）：SAM-48+SAM-47 → SHA `ac416ba` → BUILD_ID `opQHvVVbt_cF_G80h-7is`（CI 29703674152/crm-ci 29703752341 双绿，smoke 14/14，生产 API 验收 8/8：未知设备 400、零总价双端 400、正常链回归 4536 AED 全通、health 无 memory；fixture 清理基线零漂移）。两票 Done。
 
 > `task_P0_hotfix_audit_trail`: `20260706000005_add_leads_archived.sql` adds `leads_archived` as the 20th allowed event type, closing the archive audit gap.
 
@@ -67,17 +69,19 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | TASK_ID | STATUS | M1 发布门禁 / 当前事实 |
 |---|---|---|
 | SAM-6 | REVIEW | 候选基线 `main@43ec83432588909db1a064da4de2b4b029ff8f76`；CI run `29664871138` 为同 SHA `success`；文档一致性由 SAM-41 收口；合并后的 main 仍待总控复核。 |
-| SAM-7 | TODO | 部署前只读检查。 |
-| SAM-8 | TODO | 部署冻结版本并验证健康状态。 |
-| SAM-9 | TODO | 生产 P0 Smoke。 |
-| SAM-11 | REVIEW | 机器项全验：导入 dedup（import_fingerprint）✓、归档/恢复保字段✓、角色范围（RLS 实测 52/52）✓、工作簿导入写测试✓（3行 preview/confirm/幂等去重/字段保真全 PASS，哈希校验电话原文保留，fixture 已清理基线 52✓）；差异→SAM-45（country 仅 jsonb 留存、UI/导出不可验证）。 |
-| SAM-12 | TODO | 形成发布证据并给出唯一结论。 |
-| SAM-24 | TODO | 验证数据库迁移兼容、备份与回滚点。 |
-| SAM-25 | REVIEW | 正向链路 fixture 实测✓（lead→报价NM-2026-0002(10395AED)→accepted→convert→合同NEW-20260719-001+项目自动创建→回款1000，全链互链回读✓）；负向 6/6 PASS（重复convert 400、零额回款 400、stage guard 409、operator 越权 403 等）；fixture 全量清理基线零漂移✓；差异→SAM-46（报价双入口）、SAM-48（报价引擎静默跳过未知设备→零总价可验收→convert 500）。 |
-| SAM-26 | IN_PROGRESS | 角色权限矩阵机器验✓（sales 无越权管理用户；改/删用户 admin\|boss）；finance/designer 生产无用户空转；移动端/视觉挂起。 |
-| SAM-27 | REVIEW | 集成/cron/可观测性全只读验收✓：4 项 cron 调度正常（2 项代码内有意禁用并注明原因）、Meta watchdog 42/0/0、cron 鉴权 403✓；P4 观察→SAM-47（health 暴露内存数值）。 |
-| SAM-28 | REVIEW | 观察基线✓ + 只读对账✓（52 leads、0 孤儿、fixture 非新增）；业务/技术签收挂起人工，未签收不出 RELEASED。 |
-| SAM-43 | REVIEW | Linear 仍为 `In Review`；登录态视觉/交互 UAT 未完成，卡片、列表、详情、批量、Settings 及中英文可读性未通过，不得以 API/CI 证据替代。 |
+| SAM-7 | DONE | 部署前只读检查通过（M1 链）。 |
+| SAM-8 | DONE | 冻结版本部署 + 健康验证（evidence 20260719-193837.json）。 |
+| SAM-9 | DONE | 生产 P0 Smoke 14/14 + regression 22/22。 |
+| SAM-11 | DONE | 机器项全验 + 工作簿导入写测试全 PASS（M1 RELEASED 2026-07-20）；差异 SAM-45 进 M2。 |
+| SAM-12 | DONE | **RELEASED**：全链证据汇总 + 唯一结论出具（2026-07-20，森哥签收生效）。 |
+| SAM-24 | DONE | DB 兼容/备份/回滚点验证通过（M1 链）。 |
+| SAM-25 | DONE | 正向链路 + 负向 6/6 全 PASS，fixture 清理基线零漂移；差异 SAM-46 进 M2、SAM-48 热修已上线。 |
+| SAM-26 | IN_PROGRESS | 角色权限矩阵机器验✓；移动端/视觉挂起人工（不拦发布，留 M2 观察）。 |
+| SAM-27 | DONE | 集成/cron/可观测性验收✓；SAM-47 随热修 #1 关闭。 |
+| SAM-28 | DONE | 业务签收（森哥 2026-07-20）+ 技术签收（机器全量验收）→ Done。 |
+| SAM-43 | REVIEW | Linear 仍为 `In Review`；登录态视觉/交互 UAT 未完成，不得以 API/CI 证据替代。 |
+| SAM-47 | DONE | 热修 #1：health 响应 memory 字段删除，生产实测无 memory（BUILD_ID `opQHvVVbt_cF_G80h-7is`）。 |
+| SAM-48 | DONE | 热修 #1：报价引擎校验（未知设备 400 + 零总价双端 400），生产 API 验收 8/8（BUILD_ID `opQHvVVbt_cF_G80h-7is`）。 |
 
 > SAM-41 只补文档事实，不改变发布、部署或 UAT 工作流；合并后仍需总控复核 `main`，再决定 SAM-6 是否推进。
 

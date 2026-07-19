@@ -105,3 +105,25 @@ test("SAM-43 enforces eligible assignment on both Lead inserts and reassignment 
   assert.match(newLead, /assigned_to: assigneeId/);
   assert.doesNotMatch(newLead, /from\("profiles"\)/);
 });
+
+
+test("SAM-43 deactivation revokes Auth access before reporting success", () => {
+  const sources = [
+    read("src/app/api/users/[id]/route.ts"),
+    read("src/app/actions/team.ts"),
+  ];
+
+  for (const source of sources) {
+    const profileUpdate = source.indexOf(".update({ is_active: false })");
+    const authRevoke = source.indexOf("supabaseAdmin.auth.admin.updateUserById");
+
+    assert.ok(profileUpdate >= 0);
+    assert.ok(authRevoke > profileUpdate);
+    assert.match(
+      source,
+      /supabaseAdmin\.auth\.admin\.updateUserById\(\s*(?:userId|id),\s*\{\s*ban_duration:\s*["']876000h["'],?\s*\}\s*\)/s,
+    );
+    assert.match(source, /if \(authErr\) throw new Error/);
+    assert.match(source, /Failed to revoke auth access/);
+  }
+});

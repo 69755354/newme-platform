@@ -98,6 +98,7 @@ export interface Lead {
   area: string | null;
   customer_budget: number | null;
   smart_requirements: any | null;
+  raw_import_data?: Record<string, unknown> | null;
   expected_sign_date: string | null;
   visit_status: string | null;
   rejection_detail: string | null;

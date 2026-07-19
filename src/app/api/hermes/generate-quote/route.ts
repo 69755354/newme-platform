@@ -205,69 +205,7 @@ export async function POST(request: NextRequest) {
 
     if (quoteErr) {
       console.error("[Hermes API] Failed to insert quotation:", quoteErr);
-      // Try legacy quotes table as fallback
-      const { data: legacyQuote, error: legacyErr } = await (supabaseAdmin as any)
-        .from("quotes")
-        .insert({
-          lead_id,
-          devices: devices,
-          device_details: calculation.devices_json,
-          total_amount: calculation.total,
-          status: "draft",
-          generated_by: "hermes",
-        })
-        .select("id")
-        .single();
-
-      if (legacyErr || !legacyQuote) {
-        return NextResponse.json({ error: "Failed to save quotation" }, { status: 500 });
-      }
-
-      // 6. Record activity
-      const { error: activityErr } = await (supabaseAdmin as any).from("activities").insert({
-        lead_id,
-        type: "quote_sent",
-        content: `报价已生成 (AED ${calculation.total.toLocaleString()})`,
-        ai_generated: true,
-        user_id: profile.userId,
-      });
-      if (activityErr) {
-        console.error("[Hermes API] Failed to insert activity:", activityErr);
-      }
-
-      // 7. Record business event
-      const { error: eventErr } = await (supabaseAdmin as any).from("business_events").insert({
-        lead_id,
-        event_type: "quotation_sent",
-        description: `报价已生成，金额 AED ${calculation.total.toLocaleString()}`,
-        event_data: {
-          quote_id: legacyQuote.id,
-          total: calculation.total,
-          currency: calculation.currency,
-        },
-        user_id: profile.userId,
-      });
-      if (eventErr) {
-        console.error("[Hermes API] Failed to insert business event:", eventErr);
-      }
-
-      // 8. Update lead stage
-      const { error: updateErr } = await (supabaseAdmin as any)
-        .from("leads")
-        .update({ stage: "quotation_submitted", updated_at: new Date().toISOString() })
-        .eq("id", lead_id);
-      if (updateErr) {
-        console.error("[Hermes API] Failed to update lead stage:", updateErr);
-      }
-
-      return NextResponse.json({
-        status: "ok",
-        quote_id: legacyQuote.id,
-        total_aed: calculation.total,
-        quote_url: null,
-        ppt_url: null,
-        note: "saved to legacy quotes table",
-      });
+      return NextResponse.json({ error: "Failed to save quotation" }, { status: 500 });
     }
 
     // 6. Record activity

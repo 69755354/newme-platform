@@ -68,6 +68,7 @@ export default function LeadFoldingPanel({
     { key: "drawings", icon: "📄", title: t("leadDetail.drawingsTitle") },
     { key: "contract", icon: "📎", title: t("leadDetail.contractTitle") },
     { key: "project_exec", icon: "🏗️", title: t("leadDetail.projectTitle") },
+    { key: "import_raw", icon: "🗂️", title: t("leadDetail.importRawTitle") },
   ];
 
   // Gate: first_contact must be completed before bottom tabs are accessible
@@ -78,7 +79,7 @@ export default function LeadFoldingPanel({
     <div className="space-y-2">
       {PANELS.map(({ key, icon, title }) => {
         const isOpen = openPanel === key;
-        const isGated = !firstContactDone && key !== "project_info";
+        const isGated = !firstContactDone && key !== "project_info" && key !== "import_raw";
         return (
           <Card key={key} className={cn("bg-card border-border overflow-visible", isGated && "opacity-50")}>
             <button
@@ -203,6 +204,17 @@ export default function LeadFoldingPanel({
                           : "—"}
                       </p>
                     </div>
+                  </div>
+                )}
+                {key === "import_raw" && (
+                  <div className="text-sm">
+                    {lead.raw_import_data && Object.keys(lead.raw_import_data).length > 0 ? (
+                      <pre className="text-xs bg-muted/50 border border-border rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-all text-foreground">
+                        {JSON.stringify(lead.raw_import_data, null, 2)}
+                      </pre>
+                    ) : (
+                      <p className="text-muted-foreground text-xs">{t("leadDetail.noImportData")}</p>
+                    )}
                   </div>
                 )}
                 {key === "contract" && <LeadContractsPanel leadId={lead.id} />}

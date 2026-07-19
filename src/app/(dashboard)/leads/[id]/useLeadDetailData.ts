@@ -120,7 +120,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
            decision_maker, decision_date, competitor, campaign_name,
            source_platform, source_channel, rep_name, quality, poor_reason,
            quotation_sent_date, circuit_diagrams, contact_result,
-           smart_requirements, project_status,
+           smart_requirements, project_status, raw_import_data,
            creator:profiles!fk_leads_created_by(id, full_name, email, role),
            assignee:profiles!fk_leads_assigned_to(id, full_name, email, role),
            follow_ups:follow_up_logs!follow_up_logs_lead_id_fkey(

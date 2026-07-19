@@ -32,6 +32,28 @@ BEGIN
 END;
 $$;
 
+-- RLS policies already depend on get_my_role() to avoid profiles recursion.
+-- Preserve its execution grant, while making an inactive JWT resolve no role.
+CREATE OR REPLACE FUNCTION public.get_my_role()
+RETURNS text
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN NULL;
+  END IF;
+  RETURN (
+    SELECT role
+    FROM public.profiles
+    WHERE id = auth.uid()
+      AND is_active IS TRUE
+  );
+END;
+$$;
+
 -- profiles is the source of the active-state lookup, so it cannot use the
 -- restrictive policies below. Keep self-service updates, but require that the
 -- old and new self profile are active. Management updates still use service
@@ -167,7 +189,10 @@ BEGIN
 END
 $$;
 
+-- Explicit allowlist: one RLS helper and four RPC wrappers. get_my_role()
+-- returns NULL for inactive users, so policy decisions remain deny-by-default.
 GRANT EXECUTE ON FUNCTION public.current_user_is_active() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_my_role() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.transition_lead_stage(uuid, text, text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.reopen_lead_milestone(uuid, text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.recomplete_lead_milestone(uuid, text, text) TO authenticated;

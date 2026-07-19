@@ -175,6 +175,12 @@ export async function removeTeamMember(userId: string) {
 
   if (profileErr) throw new Error(profileErr.message)
 
+  const { error: authErr } = await supabaseAdmin.auth.admin.updateUserById(
+    userId,
+    { ban_duration: '876000h' },
+  )
+  if (authErr) throw new Error(`Failed to revoke auth access: ${authErr.message}`)
+
   return { success: true }
 }
 

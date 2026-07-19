@@ -79,6 +79,12 @@ export async function DELETE(
 
     if (profileErr) throw new Error(profileErr.message);
 
+    const { error: authErr } = await supabaseAdmin.auth.admin.updateUserById(
+      id,
+      { ban_duration: "876000h" },
+    );
+    if (authErr) throw new Error(`Failed to revoke auth access: ${authErr.message}`);
+
     return NextResponse.json({ success: true });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

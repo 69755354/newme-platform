@@ -72,8 +72,23 @@ jobs:
       - name: Repository tests
         run: npm test
 
+      - name: Release hygiene regression
+        run: node --test tests/release/*.test.mjs
+
       - name: Build
         run: npm run build
+
+      - name: Build worktree hygiene
+        run: |
+          if test -n "$(git status --porcelain --untracked-files=all)"; then
+            echo "Build left tracked or untracked worktree changes:"
+            git status --short --untracked-files=all
+            exit 1
+          fi
+          if test -e tsconfig.tsbuildinfo; then
+            echo "Build recreated the forbidden root tsconfig.tsbuildinfo"
+            exit 1
+          fi
   windows-checkout:
     name: Windows checkout and SPEC gate
     if: ${{ github.event_name == 'pull_request' }}

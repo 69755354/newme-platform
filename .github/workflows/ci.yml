@@ -86,10 +86,14 @@ jobs:
       - name: Clone and checkout exact PR head
         shell: pwsh
         run: |
+          $env:GIT_CONFIG_COUNT = "1"
+          $env:GIT_CONFIG_KEY_0 = "http.extraheader"
+          $env:GIT_CONFIG_VALUE_0 = "AUTHORIZATION: bearer $env:GITHUB_TOKEN"
+          $env:GIT_TERMINAL_PROMPT = "0"
           $clonePath = Join-Path $env:RUNNER_TEMP "sam16-checkout"
-          git -c "http.extraheader=AUTHORIZATION: bearer $env:GITHUB_TOKEN" clone --no-checkout "$($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY)" $clonePath
+          git clone --no-checkout "$($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY)" $clonePath
           if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
-          git -C $clonePath -c "http.extraheader=AUTHORIZATION: bearer $env:GITHUB_TOKEN" fetch --no-tags origin $env:TARGET_SHA
+          git -C $clonePath fetch --no-tags origin $env:TARGET_SHA
           if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
           git -C $clonePath checkout --detach $env:TARGET_SHA
           if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }

@@ -79,32 +79,21 @@ jobs:
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: windows-latest
     timeout-minutes: 10
-    env:
-      GITHUB_TOKEN: ${{ github.token }}
-      TARGET_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
-      - name: Clone and checkout exact PR head
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: sam16-checkout
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify clean checkout and SPEC
         shell: pwsh
+        working-directory: sam16-checkout
         run: |
-          $clonePath = Join-Path $env:RUNNER_TEMP "sam16-checkout"
-          $cloneUrl = "$($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY).git"
-          try {
-            $authCloneUrl = $cloneUrl -replace '^https://', "https://x-access-token:$($env:GITHUB_TOKEN)@"
-            $env:GIT_TERMINAL_PROMPT = "0"
-            git clone --no-checkout $authCloneUrl $clonePath
-            if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
-            git -C $clonePath fetch --no-tags origin $env:TARGET_SHA
-            if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
-            git -C $clonePath checkout --detach $env:TARGET_SHA
-            if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
-            $status = git -C $clonePath status --porcelain --untracked-files=all
-            if ($LASTEXITCODE -ne 0) { throw "git status failed" }
-            if ($status) { throw "worktree is not clean: $status" }
-            git -C $clonePath remote set-url origin $cloneUrl
-            bash "$clonePath/scripts/check-spec.sh"
-            if ($LASTEXITCODE -ne 0) { throw "check-spec failed" }
-          } finally {
-            if (Test-Path -LiteralPath $clonePath) {
-              Remove-Item -LiteralPath $clonePath -Recurse -Force
-            }
-          }
+          $status = git status --porcelain --untracked-files=all
+          if ($LASTEXITCODE -ne 0) { throw "git status failed" }
+          if ($status) { throw "worktree is not clean: $status" }
+          bash scripts/check-spec.sh
+          if ($LASTEXITCODE -ne 0) { throw "check-spec failed" }

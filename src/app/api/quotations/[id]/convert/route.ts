@@ -45,6 +45,16 @@ export async function POST(
       );
     }
 
+    // Zero-total quotations cannot be converted: contract_amount would violate
+    // the DB CHECK (contracts_contract_amount_check). Pre-check as 400 instead
+    // of letting the insert below fail with a 500.
+    if (!(quote.total_amount > 0)) {
+      return NextResponse.json(
+        { error: "Quotation total must be greater than zero to convert" },
+        { status: 400 }
+      );
+    }
+
     // Check if contract already created from this quotation
     if (quote.contract_id) {
       return NextResponse.json(

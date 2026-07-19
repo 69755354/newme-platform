@@ -5,6 +5,11 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
 import { calculateQuotation, CalculateResult } from "../../../../lib/quotation-engine";
+import { DEVICE_CATALOG } from "@/lib/device-catalog";
+
+const VALID_DEVICE_IDS = new Set<string>(
+  DEVICE_CATALOG.flatMap((cat) => cat.devices.map((d) => d.id)),
+);
 
 /**
  * POST /api/quotations/generate
@@ -93,6 +98,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Reject unknown device_ids (DEVICE_CATALOG is the single source of truth,
+    // matching quotation-engine.ts lookup). Prevents silent skip → zero-total.
+    const unknownDevices = Object.keys(devices).filter((id) => !VALID_DEVICE_IDS.has(id));
+    if (unknownDevices.length > 0) {
+      return NextResponse.json(
+        { error: "Unknown device_ids", unknown_devices: unknownDevices },
+        { status: 400 },
+      );
+    }
+
     // 1. Calculate quotation
     const calculation: CalculateResult = calculateQuotation({
       lead_id,
@@ -100,6 +115,16 @@ export async function POST(request: NextRequest) {
       discount_rate: typeof discount_rate === "number" ? discount_rate : 0,
       notes,
     });
+
+    // Guard: calculation.total maps to the DB total_amount column which has a
+    // CHECK > 0. Reject here (400) instead of letting convert hit a 500 later.
+    // Catches all-qty-zero, all-skipped, and zero-price paths.
+    if (calculation.total <= 0) {
+      return NextResponse.json(
+        { error: "Quotation total must be greater than zero" },
+        { status: 400 },
+      );
+    }
 
     const supabaseAdmin = getSupabaseAdmin();
 

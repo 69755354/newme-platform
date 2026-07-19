@@ -34,15 +34,6 @@ export async function GET() {
     checks.supabase_api = `DOWN: ${e.message}`;
   }
 
-  // Memory usage
-  try {
-    const mem = process.memoryUsage();
-    const rssMB = Math.round(mem.rss / 1024 / 1024);
-    checks.memory = `${rssMB}MB`;
-  } catch {
-    checks.memory = "unknown";
-  }
-
   // Disk (check /tmp writable)
   try {
     const testFile = path.join("/tmp", `health-${Date.now()}.test`);

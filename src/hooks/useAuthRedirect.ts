@@ -7,6 +7,7 @@ interface SessionInfo {
   userId: string | null;
   email: string | null;
   role: string;
+  isActive: boolean;
   forcePasswordChange: boolean;
   fullName: string | null;
 }
@@ -81,6 +82,10 @@ export function useAuthRedirect() {
       })
       .then((data: SessionInfo | undefined) => {
         if (cancelled || !data) return;
+        if (data.isActive !== true) {
+          router.push("/login");
+          return;
+        }
         setUserId(data.userId);
         setUserEmail(data.email);
         const r = data.role || "sales";

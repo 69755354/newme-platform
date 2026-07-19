@@ -1,12 +1,17 @@
 import { NextResponse, NextRequest } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase-middleware";
 import { reportServerError } from "@/lib/report-server-error";
+import { isActiveProfile } from "@/lib/auth-profile.mjs";
 
 const PROTECTED_ROUTES: Record<string, string[]> = {
   "/settings": ["admin", "boss", "operator"],
   "/team": ["admin", "boss", "operator"],
   "/pipeline": ["admin", "boss", "operator"],
 };
+
+const PUBLIC_API_PATHS = new Set([
+  "/api/auth/logout",
+]);
 
 // Track user activity — update last_active_at, but throttle to once per 5 min per user
 const activityThrottle = new Map<string, number>();
@@ -59,6 +64,31 @@ export async function proxy(request: NextRequest) {
         // fallback failed, user stays null
       }
     }
+  }
+
+  const isApiRequest = pathname.startsWith("/api/");
+  const isPublicApiRequest = isApiRequest && PUBLIC_API_PATHS.has(pathname);
+  let activeProfile: { role?: string | null; is_active?: boolean | null } | null = null;
+
+  // Server-side session revocation boundary. Auth access tokens are not assumed
+  // to become invalid when a profile is deactivated; every protected request
+  // must still prove that its profile is active.
+  if (user && !isPublicApiRequest) {
+    const { data: profile, error: profileErr } = await supabase
+      .from("profiles")
+      .select("role, is_active")
+      .eq("id", user.id)
+      .single();
+
+    if (profileErr || !isActiveProfile(profile)) {
+      if (isApiRequest) {
+        return NextResponse.json({ error: "inactive_account" }, { status: 401 });
+      }
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("reason", "inactive_account");
+      return NextResponse.redirect(loginUrl);
+    }
+    activeProfile = profile;
   }
 
   // Q6: Password reset session invalidation — if password was changed after the
@@ -161,14 +191,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Fetch role from profiles using user's own session (no service_role needed)
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const userRole = profile?.role;
+  const userRole = activeProfile?.role;
 
   if (!userRole || !requiredRoles.includes(userRole)) {
     return NextResponse.redirect(new URL("/dashboard", request.url));

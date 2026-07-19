@@ -49,13 +49,13 @@ TODO → IN_PROGRESS → REVIEW → DONE
 || task_P0_schema_alias_fix_combo | DONE | Codex (GPT-5.5) via codex exec → Hermes review | 2026-07-06 |
 | task_P0_hotfix_audit_trail | DONE | Codex→Hermes | 2026-07-06 |
 || task_kanban_unify | DONE | Codex (GPT-5.5) | 2026-07-06 |
-|| task_M1_freeze_sam6 | IN_PROGRESS | Hermes (K3 总控) | 2026-07-19 |
-|| task_M1_sam7_preflight | TODO | Hermes | 2026-07-19 |
-|| task_M1_sam8_deploy | TODO | Hermes | 2026-07-19 |
-|| task_M1_sam9_smoke | TODO | Hermes | 2026-07-19 |
-|| task_M1_sam43_api_uat | IN_PROGRESS | Hermes | 2026-07-19 |
+|| task_M1_freeze_sam6 | DONE | Hermes (K3 总控) | 2026-07-19 |
+|| task_M1_sam7_preflight | DONE | Hermes | 2026-07-19 |
+|| task_M1_sam8_deploy | DONE | Hermes | 2026-07-19 |
+|| task_M1_sam9_smoke | DONE | Hermes | 2026-07-19 |
+|| task_M1_sam43_api_uat | DONE | Hermes | 2026-07-19 |
 
-> M1 发布链（Linear 为真源）：冻结候选基线 `c71dacb`（auth-ban + session 边界 + hono/xlsx 安全修复，无 migration 变更）。链序 SAM-6→7→24(✅)→8→9→10(✅)→11→25→26→27→28→12。部署/migration/UAT/发布证据全部绑定最终冻结 SHA；任何新 hotfix 混入必须重新冻结。
+> M1 发布链（Linear 为真源）：已发布冻结 SHA `49bbb26` → 生产 BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（2026-07-19 19:40 UTC，evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6/7/8/9 Done；SAM-43 六项机器标准全 PASS、留人工视觉项。链序 SAM-6→7→24(✅)→8→9→10(✅)→11→25→26→27→28→12。
 
 > `task_P0_hotfix_audit_trail`: `20260706000005_add_leads_archived.sql` adds `leads_archived` as the 20th allowed event type, closing the archive audit gap.
 

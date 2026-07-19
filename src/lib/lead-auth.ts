@@ -1,4 +1,5 @@
 import { createServerSupabase } from "@/lib/supabase-server";
+import { isActiveProfile } from "@/lib/auth-profile.mjs";
 
 export interface AuthProfile {
   userId: string;
@@ -11,10 +12,10 @@ export async function getAuthProfile(): Promise<AuthProfile | null> {
   if (!user) return null;
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, is_active")
     .eq("id", user.id)
     .single();
-  if (!profile) return null;
+  if (!profile || !isActiveProfile(profile)) return null;
   return { userId: user.id, role: profile.role };
 }
 

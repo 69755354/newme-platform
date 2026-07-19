@@ -11,6 +11,33 @@ import { LanguageProvider, useLanguage } from "@/lib/i18n/LanguageContext";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
+function clearBrowserSession() {
+  localStorage.removeItem("sb-vfopmpxlhwzpxqegayew-auth-token");
+  for (const name of [
+    "sb-vfopmpxlhwzpxqegayew-auth-token",
+    "sb-vfopmpxlhwzpxqegayew-refresh-token",
+    "sb-access-token",
+    "sb-refresh-token",
+  ]) {
+    document.cookie = `${name}=; path=/; max-age=0; SameSite=Strict; Secure`;
+  }
+}
+
+async function revokeRejectedSession(accessToken: string) {
+  try {
+    await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+      method: "POST",
+      headers: {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${accessToken}`,
+      },
+    });
+  } catch {
+    // The server-side profile gate still rejects the token if Auth logout fails.
+  }
+  clearBrowserSession();
+}
+
 function LoginPageInner() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -43,6 +70,26 @@ function LoginPageInner() {
 
       if (!res.ok || data.error) {
         setError(data.error_description || data.msg || t("login.failed"));
+        setLoading(false);
+        return;
+      }
+
+      // Supabase Auth may still issue a token for a profile deactivated in the
+      // application database. Validate the token at the server boundary before
+      // persisting it in browser storage or cookies.
+      let activeCheck: Response;
+      try {
+        activeCheck = await fetch("/api/auth/me", {
+          headers: { "Authorization": `Bearer ${data.access_token}` },
+        });
+      } catch (error) {
+        await revokeRejectedSession(data.access_token);
+        throw error;
+      }
+      const activeData = await activeCheck.json().catch(() => null);
+      if (!activeCheck.ok || activeData?.isActive !== true) {
+        await revokeRejectedSession(data.access_token);
+        setError(t("login.failed"));
         setLoading(false);
         return;
       }

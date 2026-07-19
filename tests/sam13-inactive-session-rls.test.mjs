@@ -56,3 +56,12 @@ test("SAM-13 closes every authenticated SECURITY DEFINER RPC behind one active g
   assert.match(migration, /AND p\.prosecdef[\s\S]*REVOKE ALL ON FUNCTION %s FROM authenticated/s);
   assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.transition_lead_stage\(uuid, text, text, text\) TO authenticated/);
 });
+
+test("SAM-13 preserves the active-aware helper required by existing RLS policies", () => {
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.get_my_role\(\)/);
+  assert.match(
+    migration,
+    /FROM public\.profiles\s+WHERE id = auth\.uid\(\)\s+AND is_active IS TRUE/s,
+  );
+  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.get_my_role\(\) TO authenticated/);
+});

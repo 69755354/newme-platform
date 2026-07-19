@@ -800,9 +800,9 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 | \`scripts/verify-release-preflight.sh\` | 发布前 fail-closed 检查：要求符号分支为 \`main\`、\`HEAD == origin/main\`、工作区干净、CI 对应 SHA 成功、迁移已声明、rollback SHA 可解析。 | 仅读取/获取 Git 与 CI 元数据；不连接或写入生产业务数据。它将部署证据绑定到准备发布的精确 SHA。 | 任一条件不满足即阻断。解析得到的 rollback SHA 是部署失败时恢复服务的必要前提。 |
 | \`src/lib/lead-auth.ts\` | 服务端 lead 授权 helper：\`admin\`、\`boss\`、\`operator\` 具备全 Case 访问；其他已认证角色仅能访问 \`assigned_to\` 为自身 user id 的 lead。 | 使用服务端 Supabase 会话和 \`auth.getUser()\`/profiles 角色；该 helper 不写数据，且不得削弱 owner 约束或把客户端输入当作授权依据。 | 授权回归必须阻断发布；恢复路径是回滚到上一已验证 release commit，不以放宽权限换取可用性。 |
 
-### SAM-39 重新放行与 UAT 收口条件
+### 本轮 M1 候选基线（SAM-6）发布与 UAT 收口条件
 
-SAM-41 本身只补齐文档与 SPEC 门禁事实，不发布服务。SAM-39 仅可在以下条件全部满足后进入或恢复生产步骤：
+SAM-41 只补文档事实；SAM-6 候选基线只有在以下条件全部满足后，才可推进为最终发布结论。
 
 1. 本节经 PR、CI 和合并后，发布源为合并后的精确、干净 `main` SHA，且 `scripts/check-spec.sh` 通过。
 2. SHA 绑定的 CI 成功；\`scripts/verify-release-preflight.sh\` 通过；迁移声明正确，rollback SHA 可解析。

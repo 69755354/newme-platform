@@ -772,13 +772,19 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 - `tests/security/weekly-review-attribution.test.mjs`
 
 
-## 发布基线 — 2026-07-18（SAM-44）
+## 发布基线 — 2026-07-19（SAM-41 / SAM-6 候选）
 
 ### 目的、范围与事实源
 
 本节是发布门禁的事实化基线，而非新的业务流程。它把会影响 CRM 安全交付的当前实现、权限边界和回滚边界写入 SPEC，避免发布时只因文档未覆盖已变更的关键路径而误判。
 
-- 代码基线：GitHub \`main@82e6de3877a45aaedda9128f18bcd5094463dbc4\`（SAM-39 合并后的基线）。
+- 候选代码基线：GitHub `main@43ec83432588909db1a064da4de2b4b029ff8f76`（PR #64，提交 `fix(team): deactivate members without deleted_at`）。它是 SAM-6 冻结的候选，不等于最终生产放行。
+- 与上一已部署版本的可复核差异：`524b59ab5d8cad40d4ed9c312dbdfea80ec5549f` → `43ec83432588909db1a064da4de2b4b029ff8f76`，ahead 1 / behind 0 / total 1；仅 3 个文件变更，无 migration，`migration.status = not_required`。
+- 同 SHA CI 证据：GitHub Actions run `29664871138`（push / `main`，head SHA 为候选 SHA）结论 `success`；以该 Actions run/job/step 结果为准，不以空的 legacy combined-status 代替。
+- 生产证据：候选 `main@43ec83432588909db1a064da4de2b4b029ff8f76` 已有 `BUILD_ID nig9fx4CzE7FTwtjDMw5e`、systemd active、health 200、smoke 14/14、CRM regression 22/22 的记录。
+- 回滚点：Git `524b59ab5d8cad40d4ed9c312dbdfea80ec5549f`，`BUILD_ID AH57090mxWs_2ye51FSJk`，build backup retained。
+- UAT 门禁：SAM-43 仍为 Linear `In Review`；登录态视觉/交互 UAT 尚未完成，卡片、列表、详情、批量、Settings 一致性及中英文可读性未形成通过证据。不得用 API、CI 或部署健康证据替代该门禁。
+- TASKBOARD 对齐：本节候选发布项须与 TASKBOARD 的 M1 当前版本发布项及 Linear M1 活跃事项一致；合并后由总控复核最终 `main` SHA，再推进 SAM-6。
 - 门禁行为：\`scripts/check-spec.sh\` 以最近一次 SPEC 修改为起点，检查此后变动的 \`.ts\`、\`.tsx\`、\`.py\`、\`.sh\` 是否在 SPEC 中被完整路径覆盖；超过 hard limit（5）时阻断发布。
 - 业务关系：这些路径不定义销售阶段规则；它们保证已批准的销售推进能力能以可追溯、可回滚的方式进入生产，从而服务于 Case 的真实收敛和下一阶段推进。
 - 密钥原则：本节不记录任何密钥、主机或生产数据。运行时凭据仅由部署环境提供。
@@ -794,13 +800,14 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 | \`scripts/verify-release-preflight.sh\` | 发布前 fail-closed 检查：要求符号分支为 \`main\`、\`HEAD == origin/main\`、工作区干净、CI 对应 SHA 成功、迁移已声明、rollback SHA 可解析。 | 仅读取/获取 Git 与 CI 元数据；不连接或写入生产业务数据。它将部署证据绑定到准备发布的精确 SHA。 | 任一条件不满足即阻断。解析得到的 rollback SHA 是部署失败时恢复服务的必要前提。 |
 | \`src/lib/lead-auth.ts\` | 服务端 lead 授权 helper：\`admin\`、\`boss\`、\`operator\` 具备全 Case 访问；其他已认证角色仅能访问 \`assigned_to\` 为自身 user id 的 lead。 | 使用服务端 Supabase 会话和 \`auth.getUser()\`/profiles 角色；该 helper 不写数据，且不得削弱 owner 约束或把客户端输入当作授权依据。 | 授权回归必须阻断发布；恢复路径是回滚到上一已验证 release commit，不以放宽权限换取可用性。 |
 
-### SAM-39 重新放行条件
+### SAM-39 重新放行与 UAT 收口条件
 
-SAM-44 本身只恢复文档与 SPEC 门禁的可验证性，不发布服务。SAM-39 仅可在以下条件全部满足后重新进入生产步骤：
+SAM-41 本身只补齐文档与 SPEC 门禁事实，不发布服务。SAM-39 仅可在以下条件全部满足后进入或恢复生产步骤：
 
-1. 本节经 PR、CI 和合并后，发布源为精确的、干净的 \`main\` SHA，且 \`scripts/check-spec.sh\` 通过。
+1. 本节经 PR、CI 和合并后，发布源为合并后的精确、干净 `main` SHA，且 `scripts/check-spec.sh` 通过。
 2. SHA 绑定的 CI 成功；\`scripts/verify-release-preflight.sh\` 通过；迁移声明正确，rollback SHA 可解析。
 3. 正常部署链默认使用仓库内 \`scripts/crm-regression.py\`，不存在默认 \`.hermes\` 路径依赖；保留现有私有 fallback 以便回滚。
 4. 部署后 evidence JSON 含真实的回归 pass/total 数值与全部通过状态；服务、健康入口和相关日志正常。
 5. 仅在生产只读验证确认三项人员契约（可停用离职人员、候选人只包含启用的 sales/operator/boss、停用历史负责人仍可解析）后，才可认定发布对销售 Case 推进可靠；上述代码或 CI 的局部通过不等同于业务收敛。
+6. SAM-43 的登录态视觉/交互 UAT 必须完成并留存通过证据后，才能关闭本轮 M1 发布门禁；登录超时、断言失败或证据缺失均保持 In Review，不得宣称完成。
 

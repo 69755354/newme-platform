@@ -11,11 +11,25 @@ Systemd unit files in `/etc/systemd/system/` are not tracked by git. To make cha
 3. Restarted (if needed): `sudo systemctl restart <unit>`
 4. Committed to git with the change details
 
+Applying a unit is an operator action. A pull request only updates this
+versioned mirror; it does not modify `/etc/systemd/system/`, reload systemd,
+restart the service, or change the production worktree.
+
+## Release boundary
+
+Before applying a unit or application release, the release owner must record
+the exact `main` SHA, matching PR-head CI run and conclusion, migration status
+(`not_required` for this release-hygiene change), and a verified rollback SHA
+and build. The unit change is independently reversible by restoring the
+previous unit file and reloading systemd; the application rollback remains the
+previous verified Git SHA/build backup. Production application and unit changes
+remain subject to total-control approval.
+
 ## Files
 
 | Unit | Purpose | Last modified |
 |------|---------|---------------|
-| `newme-platform.service` | Next.js app (port 3001) | 2026-07-02 |
+| `newme-platform.service` | Next.js app (port 3001) | 2026-07-19 |
 
 ## Health Check Rationale (newme-platform.service ExecStartPost)
 

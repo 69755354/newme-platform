@@ -86,19 +86,25 @@ jobs:
       - name: Clone and checkout exact PR head
         shell: pwsh
         run: |
-          $env:GIT_CONFIG_COUNT = "1"
-          $env:GIT_CONFIG_KEY_0 = "http.extraheader"
-          $env:GIT_CONFIG_VALUE_0 = "AUTHORIZATION: bearer $env:GITHUB_TOKEN"
-          $env:GIT_TERMINAL_PROMPT = "0"
           $clonePath = Join-Path $env:RUNNER_TEMP "sam16-checkout"
-          git clone --no-checkout "$($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY)" $clonePath
-          if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
-          git -C $clonePath fetch --no-tags origin $env:TARGET_SHA
-          if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
-          git -C $clonePath checkout --detach $env:TARGET_SHA
-          if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
-          $status = git -C $clonePath status --porcelain --untracked-files=all
-          if ($LASTEXITCODE -ne 0) { throw "git status failed" }
-          if ($status) { throw "worktree is not clean: $status" }
-          bash "$clonePath/scripts/check-spec.sh"
-          if ($LASTEXITCODE -ne 0) { throw "check-spec failed" }
+          $cloneUrl = "$($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY).git"
+          try {
+            $authCloneUrl = $cloneUrl -replace '^https://', "https://x-access-token:$($env:GITHUB_TOKEN)@"
+            $env:GIT_TERMINAL_PROMPT = "0"
+            git clone --no-checkout $authCloneUrl $clonePath
+            if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
+            git -C $clonePath fetch --no-tags origin $env:TARGET_SHA
+            if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
+            git -C $clonePath checkout --detach $env:TARGET_SHA
+            if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
+            $status = git -C $clonePath status --porcelain --untracked-files=all
+            if ($LASTEXITCODE -ne 0) { throw "git status failed" }
+            if ($status) { throw "worktree is not clean: $status" }
+            git -C $clonePath remote set-url origin $cloneUrl
+            bash "$clonePath/scripts/check-spec.sh"
+            if ($LASTEXITCODE -ne 0) { throw "check-spec failed" }
+          } finally {
+            if (Test-Path -LiteralPath $clonePath) {
+              Remove-Item -LiteralPath $clonePath -Recurse -Force
+            }
+          }

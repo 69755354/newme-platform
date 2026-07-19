@@ -188,6 +188,7 @@ export async function POST(request: NextRequest) {
         lead_id,
         quote_no: quoteNo,
         version: 1,
+        created_by: profile.userId,
         subtotal: calculation.subtotal,
         discount_rate: calculation.discount_rate,
         discount_amount: calculation.discount_amount,
@@ -198,7 +199,6 @@ export async function POST(request: NextRequest) {
         valid_until: calculation.valid_until,
         status: "draft",
         devices_json: calculation.devices_json,
-        generated_by: "hermes",
       })
       .select("id, quote_no")
       .single();

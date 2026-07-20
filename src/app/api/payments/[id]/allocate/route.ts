@@ -1,6 +1,7 @@
 // RBAC: user (admin, boss, finance)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { logger, genReqId } from "@/lib/logger";
 
 interface AllocationItem {
   plan_id: string;
@@ -16,9 +17,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const request_id = genReqId();
+  const { id: paymentId } = await params;
   try {
-    const { id: paymentId } = await params;
-
     const supabase = await createServerSupabase();
     const {
       data: { user },
@@ -96,7 +97,16 @@ export async function POST(
     });
 
     if (rpcErr) {
-      console.error("[API Payments Allocate] RPC failed:", rpcErr);
+      logger.error(
+        {
+          err: rpcErr,
+          request_id,
+          operation: "payment_allocate",
+          user_id: user.id,
+          payment_id: paymentId,
+        },
+        "[API Payments Allocate] RPC failed",
+      );
       return NextResponse.json(
         { error: rpcErr.message || "Failed to allocate payment" },
         { status: 500 }
@@ -106,7 +116,15 @@ export async function POST(
     return NextResponse.json({ data: result });
   } catch (err: any) {
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
-    console.error("[API Payments Allocate] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "payment_allocate",
+        payment_id: paymentId,
+      },
+      "[API Payments Allocate] Error",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

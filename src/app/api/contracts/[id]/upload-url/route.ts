@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { logger, genReqId } from "@/lib/logger";
 
 /**
  * POST /api/contracts/[id]/upload-url
@@ -12,9 +13,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const request_id = genReqId();
+  const { id: contractId } = await params;
   try {
-    const { id: contractId } = await params;
-
     const supabase = await createServerSupabase();
     const {
       data: { user },
@@ -102,7 +103,16 @@ export async function POST(
         },
         (err, stdout, stderr) => {
           if (err) {
-            console.error("[Upload URL] cos-presign.py error:", stderr || err.message);
+            logger.error(
+              {
+                err,
+                request_id,
+                operation: "contract_upload_url",
+                contract_id: contractId,
+                stderr,
+              },
+              "[Upload URL] cos-presign.py error",
+            );
             reject(err);
           } else {
             resolve(stdout);
@@ -113,7 +123,15 @@ export async function POST(
 
     const data = JSON.parse(presignResult);
     if (data.error) {
-      console.error("[Upload URL] Pre-sign error:", data.error);
+      logger.error(
+        {
+          err: data.error,
+          request_id,
+          operation: "contract_upload_url",
+          contract_id: contractId,
+        },
+        "[Upload URL] Pre-sign error",
+      );
       return NextResponse.json(
         { error: "Failed to generate upload URL" },
         { status: 500 }
@@ -130,7 +148,15 @@ export async function POST(
       process.env.NODE_ENV === "production"
         ? "Internal server error"
         : err.message;
-    console.error("[Upload URL] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "contract_upload_url",
+        contract_id: contractId,
+      },
+      "[Upload URL] Error",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -5,6 +5,7 @@ import {
   createNotification,
   getAdminUserIds,
 } from "@/lib/notifications";
+import { logger, genReqId } from "@/lib/logger";
 
 /**
  * POST /api/contracts/[id]/revoke
@@ -15,9 +16,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const request_id = genReqId();
+  const { id: contractId } = await params;
   try {
-    const { id: contractId } = await params;
-
     const supabase = await createServerSupabase();
     const {
       data: { user },
@@ -93,7 +94,16 @@ export async function POST(
       .eq("id", contractId);
 
     if (updateErr) {
-      console.error("[Revoke Contract] DB update failed:", updateErr);
+      logger.error(
+        {
+          err: updateErr,
+          request_id,
+          operation: "contract_revoke",
+          user_id: user.id,
+          contract_id: contractId,
+        },
+        "[Revoke Contract] DB update failed",
+      );
       return NextResponse.json(
         { error: "Failed to update contract status" },
         { status: 500 }
@@ -131,7 +141,16 @@ export async function POST(
         await createNotification(notif);
       }
     } catch (notifyErr) {
-      console.warn("[Revoke Contract] Notification failed:", notifyErr);
+      logger.warn(
+        {
+          err: notifyErr,
+          request_id,
+          operation: "contract_revoke",
+          user_id: user.id,
+          contract_id: contractId,
+        },
+        "[Revoke Contract] Notification failed",
+      );
     }
 
     return NextResponse.json({
@@ -144,7 +163,15 @@ export async function POST(
       process.env.NODE_ENV === "production"
         ? "Internal server error"
         : err.message;
-    console.error("[Revoke Contract] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "contract_revoke",
+        contract_id: contractId,
+      },
+      "[Revoke Contract] Error",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

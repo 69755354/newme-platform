@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { logger, genReqId } from "@/lib/logger";
 
 /**
  * POST /api/payments/[id]/confirm
@@ -12,9 +13,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const request_id = genReqId();
+  const { id: paymentId } = await params;
   try {
-    const { id: paymentId } = await params;
-
     const supabase = await createServerSupabase();
     const {
       data: { user },
@@ -65,7 +66,16 @@ export async function POST(
     });
 
     if (rpcErr) {
-      console.error("[API Payments Confirm] RPC failed:", rpcErr);
+      logger.error(
+        {
+          err: rpcErr,
+          request_id,
+          operation: "payment_confirm",
+          user_id: user.id,
+          payment_id: paymentId,
+        },
+        "[API Payments Confirm] RPC failed",
+      );
       return NextResponse.json(
         { error: rpcErr.message || "Failed to confirm payment" },
         { status: 500 }
@@ -78,7 +88,15 @@ export async function POST(
     return NextResponse.json({ data: result });
   } catch (err: any) {
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
-    console.error("[API Payments Confirm] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "payment_confirm",
+        payment_id: paymentId,
+      },
+      "[API Payments Confirm] Error",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

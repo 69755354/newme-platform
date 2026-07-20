@@ -6,6 +6,7 @@ import { createServerSupabase } from "@/lib/supabase-server";
 import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
 import { calculateQuotation, CalculateResult } from "../../../../lib/quotation-engine";
 import { DEVICE_CATALOG } from "@/lib/device-catalog";
+import { logger, genReqId } from "@/lib/logger";
 
 const VALID_DEVICE_IDS = new Set<string>(
   DEVICE_CATALOG.flatMap((cat) => cat.devices.map((d) => d.id)),
@@ -57,6 +58,7 @@ async function generateQuoteNo(supabase: any): Promise<string> {
 }
 
 export async function POST(request: NextRequest) {
+  const request_id = genReqId();
   try {
     const supabase = await createServerSupabase();
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
@@ -136,7 +138,16 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (leadErr || !lead) {
-      console.error("[Quotation Generate] Lead not found:", leadErr);
+      logger.error(
+        {
+          err: leadErr,
+          request_id,
+          operation: "quotation_generate",
+          user_id: user.id,
+          lead_id,
+        },
+        "[Quotation Generate] Lead not found",
+      );
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
 
@@ -167,7 +178,16 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (quoteErr) {
-      console.error("[Quotation Generate] Failed to insert quotation:", quoteErr);
+      logger.error(
+        {
+          err: quoteErr,
+          request_id,
+          operation: "quotation_generate",
+          user_id: user.id,
+          lead_id,
+        },
+        "[Quotation Generate] Failed to insert quotation",
+      );
       return NextResponse.json({ error: "Failed to save quotation" }, { status: 500 });
     }
 
@@ -180,7 +200,17 @@ export async function POST(request: NextRequest) {
       user_id: user.id,
     });
     if (activityErr) {
-      console.error("[Quotation Generate] Failed to insert activity:", activityErr);
+      logger.error(
+        {
+          err: activityErr,
+          request_id,
+          operation: "quotation_generate",
+          user_id: user.id,
+          lead_id,
+          quote_id: quote.id,
+        },
+        "[Quotation Generate] Failed to insert activity",
+      );
     }
 
     // 6. Create business event
@@ -197,7 +227,17 @@ export async function POST(request: NextRequest) {
       user_id: user.id,
     });
     if (eventErr) {
-      console.error("[Quotation Generate] Failed to insert business event:", eventErr);
+      logger.error(
+        {
+          err: eventErr,
+          request_id,
+          operation: "quotation_generate",
+          user_id: user.id,
+          lead_id,
+          quote_id: quote.id,
+        },
+        "[Quotation Generate] Failed to insert business event",
+      );
     }
 
     // 7. Update lead stage
@@ -209,7 +249,17 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", lead_id);
     if (updateErr) {
-      console.error("[Quotation Generate] Failed to update lead stage:", updateErr);
+      logger.error(
+        {
+          err: updateErr,
+          request_id,
+          operation: "quotation_generate",
+          user_id: user.id,
+          lead_id,
+          quote_id: quote.id,
+        },
+        "[Quotation Generate] Failed to update lead stage",
+      );
     }
 
     // Revalidate cached pages to reflect new quotation
@@ -225,7 +275,14 @@ export async function POST(request: NextRequest) {
       valid_until: calculation.valid_until,
     });
   } catch (err: any) {
-    console.error("[Quotation Generate] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "quotation_generate",
+      },
+      "[Quotation Generate] Error",
+    );
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
     return NextResponse.json(
       { error: message || "Internal error" },

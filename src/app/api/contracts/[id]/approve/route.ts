@@ -1,6 +1,7 @@
 // RBAC: user (admin, operator, boss)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { logger, genReqId } from "@/lib/logger";
 
 /**
  * POST /api/contracts/[id]/approve
@@ -18,9 +19,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const request_id = genReqId();
+  const { id: contractId } = await params;
   try {
-    const { id: contractId } = await params;
-
     // ── Auth ───────────────────────────────────────────────────────────
     const supabase = await createServerSupabase();
     const {
@@ -75,9 +76,15 @@ export async function POST(
         .maybeSingle();
 
     if (approvalFetchErr) {
-      console.error(
-        "[API Approve] Failed to fetch pending approval:",
-        approvalFetchErr
+      logger.error(
+        {
+          err: approvalFetchErr,
+          request_id,
+          operation: "contract_approve",
+          user_id: user.id,
+          contract_id: contractId,
+        },
+        "[API Approve] Failed to fetch pending approval",
       );
       return NextResponse.json(
         { error: "Failed to determine approval step" },
@@ -128,7 +135,16 @@ export async function POST(
     );
 
     if (rpcErr) {
-      console.error("[API Approve] RPC failed:", rpcErr);
+      logger.error(
+        {
+          err: rpcErr,
+          request_id,
+          operation: "contract_approve",
+          user_id: user.id,
+          contract_id: contractId,
+        },
+        "[API Approve] RPC failed",
+      );
       return NextResponse.json(
         { error: rpcErr.message || "Approval RPC failed" },
         { status: 500 }
@@ -163,7 +179,16 @@ export async function POST(
         }),
       });
     } catch (notifyErr) {
-      console.warn("[API Approve] Notification failed:", notifyErr);
+      logger.warn(
+        {
+          err: notifyErr,
+          request_id,
+          operation: "contract_approve",
+          user_id: user.id,
+          contract_id: contractId,
+        },
+        "[API Approve] Notification failed",
+      );
     }
 
     return NextResponse.json(rpcResult);
@@ -172,7 +197,15 @@ export async function POST(
       process.env.NODE_ENV === "production"
         ? "Internal server error"
         : err.message;
-    console.error("[API Approve] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "contract_approve",
+        contract_id: contractId,
+      },
+      "[API Approve] Error",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { createNotification } from "@/lib/notifications";
+import { logger, genReqId } from "@/lib/logger";
 
 /**
  * POST /api/contracts/[id]/remind-payment
@@ -12,9 +13,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const { id } = await params;
-    const supabase = await createServerSupabase();
+  const request_id = genReqId();
+  const { id } = await params;
+  try {    const supabase = await createServerSupabase();
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -97,7 +98,15 @@ export async function POST(
       process.env.NODE_ENV === "production"
         ? "Internal server error"
         : err.message;
-    console.error("[API Remind-payment] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "contract_remind_payment",
+        contract_id: id,
+      },
+      "[API Remind-payment] Error",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -2,8 +2,10 @@
 import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
 import { getCached, setCache } from "@/lib/api-cache"
+import { logger, genReqId } from "@/lib/logger"
 
 export async function GET(request: Request) {
+  const request_id = genReqId()
   const supabase = await createServerSupabase()
 
   const {
@@ -57,7 +59,15 @@ export async function GET(request: Request) {
   const { data, error: err, count } = await q
 
   if (err) {
-    console.error("contracts fetch failed:", err)
+    logger.error(
+      {
+        err: err,
+        request_id,
+        operation: "contract_list",
+        user_id: userId,
+      },
+      "[API Contracts List] contracts fetch failed",
+    )
     return NextResponse.json({ error: "Failed to fetch contracts" }, { status: 500 })
   }
 

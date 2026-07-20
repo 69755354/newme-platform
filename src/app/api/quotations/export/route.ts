@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { logger, genReqId } from "@/lib/logger";
 
 /**
  * GET /api/quotations/export?id=<quote_id>
@@ -36,6 +37,7 @@ function buildCsv(rows: string[][]): string {
 }
 
 export async function GET(request: NextRequest) {
+  const request_id = genReqId();
   try {
     const supabase = await createServerSupabase();
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
@@ -154,7 +156,14 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (err: any) {
-    console.error("[Quotation Export] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "quotation_export",
+      },
+      "[Quotation Export] Error",
+    );
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
     return NextResponse.json(
       { error: message || "Internal error" },

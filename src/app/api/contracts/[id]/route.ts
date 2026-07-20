@@ -1,6 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { logger, genReqId } from "@/lib/logger";
 
 /**
  * GET /api/contracts/[id]
@@ -23,9 +24,9 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const request_id = genReqId();
+  const { id: contractId } = await params;
   try {
-    const { id: contractId } = await params;
-
     const supabase = await createServerSupabase();
     const {
       data: { user },
@@ -119,7 +120,15 @@ export async function GET(
   } catch (err: any) {
     const message =
       process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
-    console.error("[API Contracts Detail] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "contract_detail",
+        contract_id: contractId,
+      },
+      "[API Contracts Detail] Error",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

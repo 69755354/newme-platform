@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
 import { calculateQuotation } from "../../../../lib/quotation-engine";
+import { logger, genReqId } from "@/lib/logger";
 
 /**
  * POST /api/hermes/generate-quote
@@ -135,6 +136,7 @@ function deriveDevices(lead: Record<string, any>): Record<string, number> {
 }
 
 export async function POST(request: NextRequest) {
+  const request_id = genReqId();
   try {
     const profile = await getAuthProfile();
     if (!profile) {
@@ -161,7 +163,16 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (leadErr) {
-      console.error("[Hermes API] Failed to fetch lead:", leadErr);
+      logger.error(
+        {
+          err: leadErr,
+          request_id,
+          operation: "quotation_generate",
+          user_id: profile.userId,
+          lead_id,
+        },
+        "[Hermes API] Failed to fetch lead",
+      );
       return NextResponse.json({ error: "Failed to fetch lead data" }, { status: 500 });
     }
     if (!lead) {
@@ -204,7 +215,16 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (quoteErr) {
-      console.error("[Hermes API] Failed to insert quotation:", quoteErr);
+      logger.error(
+        {
+          err: quoteErr,
+          request_id,
+          operation: "quotation_generate",
+          user_id: profile.userId,
+          lead_id,
+        },
+        "[Hermes API] Failed to insert quotation",
+      );
       return NextResponse.json({ error: "Failed to save quotation" }, { status: 500 });
     }
 
@@ -217,7 +237,17 @@ export async function POST(request: NextRequest) {
       user_id: profile.userId,
     });
     if (activityErr) {
-      console.error("[Hermes API] Failed to insert activity:", activityErr);
+      logger.error(
+        {
+          err: activityErr,
+          request_id,
+          operation: "quotation_generate",
+          user_id: profile.userId,
+          lead_id,
+          quote_id: quote.id,
+        },
+        "[Hermes API] Failed to insert activity",
+      );
     }
 
     // 7. Record business event
@@ -234,7 +264,17 @@ export async function POST(request: NextRequest) {
       user_id: profile.userId,
     });
     if (eventErr) {
-      console.error("[Hermes API] Failed to insert business event:", eventErr);
+      logger.error(
+        {
+          err: eventErr,
+          request_id,
+          operation: "quotation_generate",
+          user_id: profile.userId,
+          lead_id,
+          quote_id: quote.id,
+        },
+        "[Hermes API] Failed to insert business event",
+      );
     }
 
     // 8. Update lead stage to 'quotation_submitted'
@@ -243,7 +283,17 @@ export async function POST(request: NextRequest) {
       .update({ stage: "quotation_submitted", updated_at: new Date().toISOString() })
       .eq("id", lead_id);
     if (updateErr) {
-      console.error("[Hermes API] Failed to update lead stage:", updateErr);
+      logger.error(
+        {
+          err: updateErr,
+          request_id,
+          operation: "quotation_generate",
+          user_id: profile.userId,
+          lead_id,
+          quote_id: quote.id,
+        },
+        "[Hermes API] Failed to update lead stage",
+      );
     }
 
     return NextResponse.json({
@@ -256,7 +306,14 @@ export async function POST(request: NextRequest) {
       ppt_url: null,
     });
   } catch (err: any) {
-    console.error("[Hermes API] Quote generation failed:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "quotation_generate",
+      },
+      "[Hermes API] Quote generation failed",
+    );
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
     return NextResponse.json(
       { error: message || "Internal error" },

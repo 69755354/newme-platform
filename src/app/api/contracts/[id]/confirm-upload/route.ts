@@ -1,6 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { logger, genReqId } from "@/lib/logger";
 
 /**
  * POST /api/contracts/[id]/confirm-upload
@@ -11,9 +12,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const request_id = genReqId();
+  const { id: contractId } = await params;
   try {
-    const { id: contractId } = await params;
-
     const supabase = await createServerSupabase();
     const {
       data: { user },
@@ -103,7 +104,16 @@ export async function POST(
       .eq("id", contractId);
 
     if (updateErr) {
-      console.error("[Confirm Upload] DB update failed:", updateErr);
+      logger.error(
+        {
+          err: updateErr,
+          request_id,
+          operation: "contract_confirm_upload",
+          user_id: user.id,
+          contract_id: contractId,
+        },
+        "[Confirm Upload] DB update failed",
+      );
       return NextResponse.json(
         { error: "Failed to update contract file info" },
         { status: 500 }
@@ -116,7 +126,15 @@ export async function POST(
       process.env.NODE_ENV === "production"
         ? "Internal server error"
         : err.message;
-    console.error("[Confirm Upload] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "contract_confirm_upload",
+        contract_id: contractId,
+      },
+      "[Confirm Upload] Error",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

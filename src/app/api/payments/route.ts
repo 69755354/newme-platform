@@ -1,12 +1,14 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { logger, genReqId } from "@/lib/logger";
 
 /**
  * POST /api/payments
  * Records a new payment against a contract.
  */
 export async function POST(request: NextRequest) {
+  const request_id = genReqId();
   try {
     const supabase = await createServerSupabase();
     const {
@@ -75,14 +77,30 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (insertErr) {
-      console.error("[API Payments] Insert failed:", insertErr);
+      logger.error(
+        {
+          err: insertErr,
+          request_id,
+          operation: "payment_create",
+          user_id: user.id,
+          contract_id,
+        },
+        "[API Payments] Insert failed",
+      );
       return NextResponse.json({ error: "Failed to record payment" }, { status: 500 });
     }
 
     return NextResponse.json({ id: payment.id, amount: payment.amount }, { status: 201 });
   } catch (err: any) {
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
-    console.error("[API Payments] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "payment_create",
+      },
+      "[API Payments] POST Error",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -93,6 +111,7 @@ export async function POST(request: NextRequest) {
  * Query params: contract_id, confirmed
  */
 export async function GET(request: NextRequest) {
+  const request_id = genReqId();
   try {
     const supabase = await createServerSupabase();
     const {
@@ -145,7 +164,15 @@ export async function GET(request: NextRequest) {
         .eq("sales_id", user.id);
 
       if (contractsErr) {
-        console.error("[API Payments] Failed to fetch sales contracts:", contractsErr);
+        logger.error(
+          {
+            err: contractsErr,
+            request_id,
+            operation: "payment_list",
+            user_id: user.id,
+          },
+          "[API Payments] Failed to fetch sales contracts",
+        );
         return NextResponse.json({ error: "Failed to fetch payments" }, { status: 500 });
       }
 
@@ -161,14 +188,29 @@ export async function GET(request: NextRequest) {
     const { data, error } = await query;
 
     if (error) {
-      console.error("[API Payments] Fetch failed:", error);
+      logger.error(
+        {
+          err: error,
+          request_id,
+          operation: "payment_list",
+          user_id: user.id,
+        },
+        "[API Payments] Fetch failed",
+      );
       return NextResponse.json({ error: "Failed to fetch payments" }, { status: 500 });
     }
 
     return NextResponse.json({ data });
   } catch (err: any) {
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
-    console.error("[API Payments] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "payment_list",
+      },
+      "[API Payments] GET Error",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

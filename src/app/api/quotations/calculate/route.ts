@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { calculateQuotation } from "../../../../lib/quotation-engine";
+import { logger, genReqId } from "@/lib/logger";
 
 /**
  * POST /api/quotations/calculate
@@ -11,6 +12,7 @@ import { calculateQuotation } from "../../../../lib/quotation-engine";
  * Output: { subtotal, discount_amount, after_discount, install_labor, commissioning, ... }
  */
 export async function POST(request: NextRequest) {
+  const request_id = genReqId();
   try {
     // Simple auth check: just verify user is logged in
     const supabase = await createServerSupabase();
@@ -48,7 +50,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (err: any) {
-    console.error("[Quotation Calculate] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "quotation_calculate",
+      },
+      "[Quotation Calculate] Error",
+    );
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
     return NextResponse.json(
       { error: message || "Internal error" },

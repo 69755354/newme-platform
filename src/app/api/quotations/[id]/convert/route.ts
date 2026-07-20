@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { logger, genReqId } from "@/lib/logger";
 
 /**
  * POST /api/quotations/[id]/convert
@@ -12,9 +13,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const { id: quotationId } = await params;
-    const supabase = await createServerSupabase();
+  const request_id = genReqId();
+  const { id: quotationId } = await params;
+  try {    const supabase = await createServerSupabase();
     const {
       data: { user },
       error: authErr,
@@ -113,7 +114,16 @@ export async function POST(
       .single();
 
     if (contractErr) {
-      console.error("[Quotation Convert] Contract insert failed:", contractErr);
+      logger.error(
+        {
+          err: contractErr,
+          request_id,
+          operation: "quotation_convert",
+          user_id: user.id,
+          quotation_id: quotationId,
+        },
+        "[Quotation Convert] Contract insert failed",
+      );
       return NextResponse.json(
         { error: "Failed to create contract" },
         { status: 500 }
@@ -134,7 +144,17 @@ export async function POST(
         .from("installment_plans")
         .insert(rows);
       if (instErr) {
-        console.error("[Quotation Convert] Installment insert failed:", instErr);
+        logger.error(
+          {
+            err: instErr,
+            request_id,
+            operation: "quotation_convert",
+            user_id: user.id,
+            quotation_id: quotationId,
+            contract_id: contract.id,
+          },
+          "[Quotation Convert] Installment insert failed",
+        );
       }
     }
 
@@ -225,7 +245,15 @@ export async function POST(
       process.env.NODE_ENV === "production"
         ? "Internal server error"
         : (err as Error).message;
-    console.error("[Quotation Convert] Error:", err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "quotation_convert",
+        quotation_id: quotationId,
+      },
+      "[Quotation Convert] Error",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

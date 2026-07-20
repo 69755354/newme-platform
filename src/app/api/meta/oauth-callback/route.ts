@@ -1,6 +1,7 @@
 // RBAC: public
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { logger, genReqId } from "@/lib/logger";
 
 const APP_ID = process.env.META_APP_ID || "1612447067166445";
 const APP_SECRET = process.env.META_APP_SECRET!;
@@ -15,7 +16,11 @@ async function getSupabaseAdmin() {
   });
 }
 
-async function saveTokenToSupabase(accessToken: string, expiresIn: number) {
+async function saveTokenToSupabase(
+  accessToken: string,
+  expiresIn: number,
+  request_id: string,
+) {
   const supabase = await getSupabaseAdmin();
   const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
@@ -32,25 +37,53 @@ async function saveTokenToSupabase(accessToken: string, expiresIn: number) {
   if (error) {
     // If table doesn't exist, try to create it
     if (error.message?.includes("relation") && error.message?.includes("does not exist")) {
-      console.warn("[OAuth] meta_tokens table missing. Token not saved to DB.");
+      logger.warn(
+        {
+          err: error,
+          request_id,
+          operation: "oauth_callback",
+        },
+        "[OAuth] meta_tokens table missing. Token not saved to DB.",
+      );
     } else {
-      console.error("[OAuth] Failed to save token to Supabase:", error);
+      logger.error(
+        {
+          err: error,
+          request_id,
+          operation: "oauth_callback",
+        },
+        "[OAuth] Failed to save token to Supabase",
+      );
     }
   } else {
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`[OAuth] Token saved to Supabase meta_tokens, expires_at=${expiresAt}`);
-    }
+    logger.info(
+      {
+        request_id,
+        operation: "oauth_callback",
+        expires_at: expiresAt,
+      },
+      "[OAuth] Token saved to Supabase meta_tokens",
+    );
   }
 }
 
 export async function GET(request: NextRequest) {
+  const request_id = genReqId();
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const error = searchParams.get("error");
 
   if (error) {
     const desc = searchParams.get("error_description") || "";
-    console.error(`[OAuth] Authorization failed: ${error} - ${desc}`);
+    logger.error(
+      {
+        request_id,
+        operation: "oauth_callback",
+        oauth_error: error,
+        oauth_error_description: desc,
+      },
+      "[OAuth] Authorization failed",
+    );
     return new NextResponse(
       `<html><body><h2>Authorization Failed</h2><p>${error}: ${desc}</p><p>Close this tab.</p></body></html>`,
       { headers: { "content-type": "text/html; charset=utf-8" } }
@@ -62,29 +95,46 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const tokenData = await exchangeCode(code);
+    const tokenData = await exchangeCode(code, request_id);
     if (tokenData?.access_token) {
       // Save to Supabase meta_tokens table instead of filesystem
-      await saveTokenToSupabase(tokenData.access_token, tokenData.expires_in || 0);
-      
-      // Also log for immediate use
-      if (process.env.NODE_ENV !== "production") {
-        console.log(`[OAuth] SUCCESS — token saved, expires_in=${tokenData.expires_in}`);
-      }
-      
+      await saveTokenToSupabase(tokenData.access_token, tokenData.expires_in || 0, request_id);
+
+      logger.info(
+        {
+          request_id,
+          operation: "oauth_callback",
+          expires_in: tokenData.expires_in,
+        },
+        "[OAuth] SUCCESS — token saved",
+      );
+
       return new NextResponse(
         `<html><body><h2>Authorization Successful!</h2><p>Token saved. Close this tab.</p></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } }
       );
     }
-    
-    console.error("[OAuth] Token exchange returned no access_token:", tokenData);
+
+    logger.error(
+      {
+        request_id,
+        operation: "oauth_callback",
+      },
+      "[OAuth] Token exchange returned no access_token",
+    );
     return new NextResponse(
       `<html><body><h2>Token Exchange Failed</h2><p>Check server logs.</p></body></html>`,
       { headers: { "content-type": "text/html; charset=utf-8" } }
     );
   } catch (e) {
-    console.error("[OAuth] Exchange error:", e);
+    logger.error(
+      {
+        err: e,
+        request_id,
+        operation: "oauth_callback",
+      },
+      "[OAuth] Exchange error",
+    );
     return new NextResponse(
       `<html><body><h2>Error</h2><p>${String(e)}</p></body></html>`,
       { headers: { "content-type": "text/html; charset=utf-8" } }
@@ -92,7 +142,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function exchangeCode(code: string) {
+async function exchangeCode(code: string, request_id: string) {
   const params = new URLSearchParams({
     client_id: APP_ID,
     redirect_uri: REDIRECT_URI,
@@ -100,37 +150,64 @@ async function exchangeCode(code: string) {
     code,
   });
 
-  if (process.env.NODE_ENV !== "production") {
-    console.log(`[OAuth] Exchanging code with redirect_uri=${REDIRECT_URI}`);
-  }
-  
+  logger.info(
+    {
+      request_id,
+      operation: "oauth_callback",
+      redirect_uri: REDIRECT_URI,
+    },
+    "[OAuth] Exchanging code",
+  );
+
   const resp = await fetch(
     `https://graph.facebook.com/v22.0/oauth/access_token?${params}`,
     { cache: "no-store" }
   );
-  
+
   if (!resp.ok) {
-    const errorText = await resp.text();
-    console.error(`[OAuth] Token exchange HTTP ${resp.status}: ${errorText}`);
+    logger.error(
+      {
+        request_id,
+        operation: "oauth_callback",
+        http_status: resp.status,
+      },
+      "[OAuth] Token exchange HTTP error",
+    );
     return null;
   }
-  
+
   const data = await resp.json();
 
   if (data.access_token) {
     // Exchange for long-lived token
-    return exchangeLongLived(data.access_token);
+    return exchangeLongLived(data.access_token, request_id);
   }
 
-  console.error("[OAuth] Short token exchange failed:", JSON.stringify(data));
+  logger.error(
+    {
+      request_id,
+      operation: "oauth_callback",
+    },
+    "[OAuth] Short token exchange failed",
+  );
   if (data.error) {
-    console.error(`[OAuth] Facebook error: ${data.error.type || data.error.code} - ${data.error.message}`);
-    console.error(`[OAuth] Facebook error subcode: ${data.error.error_subcode}, fbtrace_id: ${data.error.fbtrace_id}`);
+    logger.error(
+      {
+        err: data.error,
+        request_id,
+        operation: "oauth_callback",
+        fb_error_type: data.error?.type,
+        fb_error_code: data.error?.code,
+        fb_error_subcode: data.error?.error_subcode,
+        fb_fbtrace_id: data.error?.fbtrace_id,
+      },
+      "[OAuth] Facebook error",
+    );
   }
   return null;
 }
 
-async function exchangeLongLived(shortToken: string) {
+async function exchangeLongLived(shortToken: string, request_id: string) {
   const params = new URLSearchParams({
     grant_type: "fb_exchange_token",
     client_id: APP_ID,
@@ -143,23 +220,52 @@ async function exchangeLongLived(shortToken: string) {
       `https://graph.facebook.com/v22.0/oauth/access_token?${params}`,
       { cache: "no-store" }
     );
-    
+
     if (!resp.ok) {
-      const errorText = await resp.text();
-      console.error(`[OAuth] Long-lived exchange HTTP ${resp.status}: ${errorText}`);
+      logger.error(
+        {
+          request_id,
+          operation: "oauth_callback",
+          http_status: resp.status,
+        },
+        "[OAuth] Long-lived exchange HTTP error",
+      );
       return { access_token: shortToken, expires_in: 3600 };
     }
-    
+
     const data = await resp.json();
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`[OAuth] Long-lived token: expires_in=${data.expires_in}`);
-    }
+    logger.info(
+      {
+        request_id,
+        operation: "oauth_callback",
+        expires_in: data.expires_in,
+      },
+      "[OAuth] Long-lived token",
+    );
     if (data.error) {
-      console.error(`[OAuth] Long-lived token error: ${JSON.stringify(data.error)}`);
+      logger.error(
+        {
+          err: data.error,
+          request_id,
+          operation: "oauth_callback",
+          fb_error_type: data.error?.type,
+          fb_error_code: data.error?.code,
+          fb_error_subcode: data.error?.error_subcode,
+          fb_fbtrace_id: data.error?.fbtrace_id,
+        },
+        "[OAuth] Long-lived token error",
+      );
     }
     return data;
   } catch (e) {
-    console.error("[OAuth] Long-lived exchange failed, using short token:", e);
+    logger.error(
+      {
+        err: e,
+        request_id,
+        operation: "oauth_callback",
+      },
+      "[OAuth] Long-lived exchange failed, using short token",
+    );
     return { access_token: shortToken, expires_in: 3600 };
   }
 }

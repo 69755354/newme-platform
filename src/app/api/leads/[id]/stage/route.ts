@@ -1,5 +1,6 @@
 // RBAC: authenticated lead owner, admin, or boss
 import { NextRequest, NextResponse } from "next/server";
+import { logger, genReqId } from "@/lib/logger";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
 import { evaluateFirstContactGate, isCompleteContact } from "@/lib/first-contact-gate.mjs";
@@ -15,11 +16,12 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const request_id = genReqId();
+  const { id: leadId } = await params;
   try {
     const profile = await getAuthProfile();
     if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id: leadId } = await params;
     const body = await req.json();
     const stage = String(body?.stage ?? "").trim();
     const note = String(body?.note ?? "").trim();
@@ -87,7 +89,15 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, lead: updated, eventLogged: true });
   } catch (error) {
-    console.error("stage route error", error);
+    logger.error(
+      {
+        err: error,
+        request_id,
+        operation: "stage_transition",
+        lead_id: leadId,
+      },
+      "stage route error",
+    );
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -2,12 +2,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
+import { logger, genReqId } from '@/lib/logger';
 import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const request_id = genReqId();
+  const { id: leadId } = await params;
   try {
     const cookieStore = await cookies();
 
@@ -38,8 +41,6 @@ export async function POST(
     if (!profile) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    const { id: leadId } = await params;
 
     // Parse + validate body
     const body = await req.json();
@@ -104,7 +105,15 @@ export async function POST(
       .single();
 
     if (insertError) {
-      console.error('[follow-up] insert error:', insertError);
+      logger.error(
+        {
+          err: insertError,
+          request_id,
+          operation: 'follow_up',
+          lead_id: leadId,
+        },
+        '[follow-up] insert error',
+      );
       return NextResponse.json(
         { error: 'Failed to record follow-up', detail: insertError.message },
         { status: 500 }
@@ -122,7 +131,15 @@ export async function POST(
       taskCreated,
     });
   } catch (err) {
-    console.error('[follow-up] unexpected error:', err);
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: 'follow_up',
+        lead_id: leadId,
+      },
+      '[follow-up] unexpected error',
+    );
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 // RBAC: authenticated lead owner, admin, or boss
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { logger, genReqId } from "@/lib/logger";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -11,11 +12,12 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const request_id = genReqId();
+  const { id: leadId } = await params;
   try {
     const profile = await getAuthProfile();
     if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id: leadId } = await params;
     const body = await req.json();
     const contactMethod = String(body?.contact_method ?? "").trim().toLowerCase();
     const contactResult = String(body?.contact_result ?? "").trim();
@@ -89,7 +91,15 @@ export async function POST(
 
     return NextResponse.json({ success: true, contact });
   } catch (error) {
-    console.error("contact create route error", error);
+    logger.error(
+      {
+        err: error,
+        request_id,
+        operation: "contact_create",
+        lead_id: leadId,
+      },
+      "contact create route error",
+    );
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

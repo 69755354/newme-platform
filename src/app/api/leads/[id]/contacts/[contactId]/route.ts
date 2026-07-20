@@ -1,5 +1,6 @@
 // RBAC: authenticated lead owner, admin, or boss
 import { NextRequest, NextResponse } from "next/server";
+import { logger, genReqId } from "@/lib/logger";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -10,11 +11,12 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; contactId: string }> },
 ) {
+  const request_id = genReqId();
+  const { id: leadId, contactId } = await params;
   try {
     const profile = await getAuthProfile();
     if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id: leadId, contactId } = await params;
     const body = await req.json();
     const contactMethod = String(body?.contact_method ?? "").trim().toLowerCase();
     const contactResult = String(body?.contact_result ?? "").trim();
@@ -73,7 +75,16 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, contact: updated });
   } catch (error) {
-    console.error("contact update route error", error);
+    logger.error(
+      {
+        err: error,
+        request_id,
+        operation: "contact_update",
+        lead_id: leadId,
+        contact_id: contactId,
+      },
+      "contact update route error",
+    );
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -82,11 +93,12 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; contactId: string }> },
 ) {
+  const request_id = genReqId();
+  const { id: leadId, contactId } = await params;
   try {
     const profile = await getAuthProfile();
     if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id: leadId, contactId } = await params;
     const supabase = await createServerSupabase();
     const { data: lead, error: leadError } = await supabase
       .from("leads")
@@ -119,7 +131,16 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, id: contactId });
   } catch (error) {
-    console.error("contact delete route error", error);
+    logger.error(
+      {
+        err: error,
+        request_id,
+        operation: "contact_delete",
+        lead_id: leadId,
+        contact_id: contactId,
+      },
+      "contact delete route error",
+    );
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

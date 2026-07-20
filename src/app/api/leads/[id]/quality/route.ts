@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
+import { logger, genReqId } from '@/lib/logger';
 import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
 import { isCompleteContact } from '@/lib/first-contact-gate.mjs';
 
@@ -9,6 +10,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const request_id = genReqId();
+  const { id: leadId } = await params;
   try {
     const cookieStore = await cookies();
     const supabase = createServerClient(
@@ -33,7 +36,6 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { id: leadId } = await params;
     const body = await req.json();
     const rawQuality = (body?.quality ?? '').toString().toLowerCase().trim();
     const ALLOWED = ['poor', 'normal', 'good'] as const;
@@ -115,7 +117,15 @@ export async function POST(
       });
       if (eventErr) {
         eventError = eventErr.message;
-        console.error('business_events insert failed (best-effort)', eventErr);
+        logger.error(
+          {
+            err: eventErr,
+            request_id,
+            operation: 'quality_update',
+            lead_id: leadId,
+          },
+          'business_events insert failed (best-effort)',
+        );
       } else {
         eventLogged = true;
       }
@@ -133,7 +143,15 @@ export async function POST(
       ...(eventError && process.env.NODE_ENV !== 'production' ? { eventError } : {}),
     });
   } catch (e) {
-    console.error('quality route error:', e);
+    logger.error(
+      {
+        err: e,
+        request_id,
+        operation: 'quality_update',
+        lead_id: leadId,
+      },
+      'quality route error',
+    );
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

@@ -54,6 +54,7 @@ export async function proxy(request: NextRequest) {
 
   // Fallback: also check Authorization Bearer header (for localhost/dev testing,
   // where SSR cookies may fail to parse correctly)
+  let usedBearerFallback = false;
   if (!user) {
     const authHeader = request.headers.get("authorization");
     if (authHeader?.startsWith("Bearer ")) {
@@ -61,6 +62,9 @@ export async function proxy(request: NextRequest) {
       try {
         const { data: authUser } = await supabase.auth.getUser(token);
         user = authUser?.user ?? null;
+        if (user) {
+          usedBearerFallback = true;
+        }
       } catch {
         // fallback failed, user stays null
       }
@@ -75,11 +79,52 @@ export async function proxy(request: NextRequest) {
   // to become invalid when a profile is deactivated; every protected request
   // must still prove that its profile is active.
   if (user && !isPublicApiRequest) {
-    const { data: profile, error: profileErr } = await supabase
-      .from("profiles")
-      .select("role, is_active")
-      .eq("id", user.id)
-      .single();
+    // SAM-51: When the user was resolved via the Bearer fallback above, the
+    // cookie-driven middleware client has no auth context for them, so a
+    // profiles query through it runs as anon and gets RLS-rejected (returning
+    // empty/inactive). Query profiles via the Supabase REST API with the
+    // service_role key to bypass RLS. createClient(url, service_role_key) is
+    // intentionally avoided — it 500s under the Edge Runtime.
+    let profile: { role?: string | null; is_active?: boolean | null } | null = null;
+    let profileErr: unknown = null;
+
+    if (usedBearerFallback) {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!supabaseUrl || !serviceRoleKey) {
+        profileErr = new Error("missing_service_role_env");
+      } else {
+        try {
+          const res = await fetch(
+            `${supabaseUrl}/rest/v1/profiles?select=id,is_active,role&id=eq.${user.id}`,
+            {
+              headers: {
+                apikey: serviceRoleKey,
+                Authorization: `Bearer ${serviceRoleKey}`,
+              },
+            },
+          );
+          if (!res.ok) {
+            profileErr = new Error(`profiles_rest_${res.status}`);
+          } else {
+            const profiles = await res.json();
+            profile = Array.isArray(profiles) && profiles.length > 0
+              ? profiles[0]
+              : null;
+          }
+        } catch (err) {
+          profileErr = err;
+        }
+      }
+    } else {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("role, is_active")
+        .eq("id", user.id)
+        .single();
+      profile = data;
+      profileErr = error;
+    }
 
     if (profileErr || !isActiveProfile(profile)) {
       if (isApiRequest) {

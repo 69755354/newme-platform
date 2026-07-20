@@ -121,7 +121,7 @@ test("the server proxy denies inactive sessions before protected APIs or pages",
   assert.match(proxy, /pathname\.startsWith\(["']\/api\//);
   assert.match(proxy, /status: 401/);
   assert.match(proxy, /reason["']?, ["']inactive_account["']/);
-  assert.match(proxy, /const PUBLIC_API_PATHS = new Set\(\[\s*["']\/api\/auth\/logout["']\s*,?\s*\]\)/);
+  assert.match(proxy, /const PUBLIC_API_PATHS = new Set\(\[\s*["']\/api\/auth\/logout["']\s*,\s*["']\/api\/auth\/me["']\s*,?\s*\]\)/);
   assert.doesNotMatch(proxy, /\/api\/(?:health|meta\/oauth-callback|monitoring\/report|leads\/meta-capi|auth\/dev-login|dev\/setup)/);
   assert.ok(proxy.indexOf("isActiveProfile(profile)") < proxy.indexOf("Track activity"));
 });
@@ -181,7 +181,20 @@ test("real lead stage handler rejects an inactive old session before business ac
   assert.deepEqual(await activeResponse.json(), { error: "Invalid stage" });
 });
 
-test("real auth-me handler rejects an inactive old token and accepts an active profile", async () => {
+test("real auth-me handler rejects an inactive old token and accepts an active profile", async (t) => {
+  // route.ts:29-33 reads these at request time and returns 500 if absent.
+  // Save/restore to avoid polluting other tests in the suite.
+  const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const prevKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "http://test.supabase.local";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
+  t.after(() => {
+    if (prevUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl;
+    if (prevKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = prevKey;
+  });
+
   let active = false;
   const supabase = createSupabaseMock(() => active);
   const nextServer = createNextServerMock();

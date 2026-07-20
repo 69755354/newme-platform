@@ -1,10 +1,12 @@
 #!/bin/bash
 # health-check.sh — NewMe 基础设施监控
 # 路径: /opt/hermes-scripts/observability/health-check.sh
-# crontab: */3 * * * * /bin/bash /opt/hermes-scripts/observability/health-check.sh
+# crontab: */5 * * * * /bin/bash /opt/hermes-scripts/observability/health-check.sh
 # 依赖: curl, bc (apt-get install -y bc)
 
 set -euo pipefail
+source /opt/hermes-scripts/observability/sentry-cron-checkin.sh
+sentry_checkin_start "health-check"
 
 HOSTNAME=$(hostname)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -62,4 +64,5 @@ else
   /opt/hermes-scripts/observability/incident-capture.sh "health-check" "$(echo -e "$ALERTS" | head -1)" &
 fi
 
+sentry_checkin_finish "health-check" $?
 exit 0

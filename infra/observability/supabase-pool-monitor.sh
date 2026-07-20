@@ -5,6 +5,8 @@
 # 依赖: curl
 
 set -euo pipefail
+source /opt/hermes-scripts/observability/sentry-cron-checkin.sh
+sentry_checkin_start "supabase-monitor"
 
 SUPABASE_URL="https://vfopmpxlhwzpxqegayew.supabase.co"
 ANON_KEY="sb_publishable_0UiLli4lUNE_pwhZ13bRfw_xH4TduY_"
@@ -21,15 +23,18 @@ case "$HTTP_CODE" in
   000)
     echo "[$TIMESTAMP] 🔔 SUPABASE_UNREACHABLE: $SUPABASE_URL 连接超时"
     /opt/hermes-scripts/observability/incident-capture.sh "supabase-monitor" "Supabase不可达" &
+    sentry_checkin_finish "supabase-monitor" 1
     exit 1
     ;;
   5??)
     echo "[$TIMESTAMP] 🔔 SUPABASE_5XX: 返回 HTTP $HTTP_CODE"
     /opt/hermes-scripts/observability/incident-capture.sh "supabase-monitor" "Supabase返回HTTP ${HTTP_CODE}" &
+    sentry_checkin_finish "supabase-monitor" 1
     exit 1
     ;;
   *)
-    echo "[$TIMESTAMP] 💓 Supabase OK (HTTP $HTTP_CODE)"
+    sentry_checkin_finish "supabase-monitor" 0
+echo "[$TIMESTAMP] 💓 Supabase OK (HTTP $HTTP_CODE)"
     exit 0
     ;;
 esac

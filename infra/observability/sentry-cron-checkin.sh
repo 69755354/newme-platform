@@ -10,8 +10,8 @@
 # 如果无法获取，降级为 no-op（不阻塞监控脚本）
 
 SENTRY_DSN="${SENTRY_DSN:-}"
-if [ -z "$SENTRY_DSN" ] && [ -f /home/ubuntu/newme-platform/.env.local ]; then
-  SENTRY_DSN=$(grep '^NEXT_PUBLIC_SENTRY_DSN=' /home/ubuntu/newme-platform/.env.local | cut -d'=' -f2-)
+if [ -z "$SENTRY_DSN" ] && [ -f /home/ubuntu/.hermes/credentials/sentry-dsn.txt ]; then
+  SENTRY_DSN=$(cat /home/ubuntu/.hermes/credentials/sentry-dsn.txt)
 fi
 
 # 从 DSN 提取 org ingest URL 和 project ID 和 key

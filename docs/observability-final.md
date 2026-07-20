@@ -749,3 +749,144 @@ Hermes 收到告警 → 诊断剧本:
 | 自动诊断 | ✅ 只读诊断（journalctl/curl/du） | ✅ 可加写操作 |
 
 **结论：80% 的能力不需要 instrumentation.ts。先建外部系统，服务端 Sentry 是最后一块拼图。**
+
+
+---
+
+## 十三、Sentry 能力激活清单（零代码，本周可完成）
+
+### 当前用量 vs 可用量
+
+| Sentry 能力 | 当前状态 | 激活方式 | 工作量 |
+|------------|---------|---------|--------|
+| 客户端 Crash | ✅ 运行中 | 已有 | 0 |
+| Web Vitals | ✅ 运行中 | 已有 | 0 |
+| Session Replay | ✅ 0.1 采样 | 已有 | 0 |
+| **Alert Rules** | ❌ 未配置 | Sentry UI → Alerts → Create Rule | 30min |
+| **Webhook → Hermes** | ❌ 未接通 | Sentry UI → Integrations → Webhook | 30min |
+| **Release Tracking** | ❌ 未关联 deploy | deploy.sh 加一行 sentry-cli | 15min |
+| **Cron Monitoring** | ❌ 未配置 | Sentry UI → Crons → Add Monitor | 15min |
+| **Issue Workflow** | ❌ 未用 | Sentry UI → Issues → Resolve/Assign | 5min |
+| **Custom Metrics** | ❌ 未埋点 | SDK 已有，加 tag | 1h |
+| **Performance Alert** | ❌ 未设 | Alert Rule: LCP > 4s 或 FID > 300ms | 10min |
+
+### 本周待激活（SAM-52 范围内）
+
+#### 1. Alert Rules (Sentry UI)
+
+```
+条件 1: 前端 error 事件 > 5 次/10 分钟
+条件 2: LCP (最大内容绘制) > 4 秒持续 5 分钟
+条件 3: HTTP 5xx 错误率 > 1% 持续 5 分钟
+动作: Webhook → Hermes → 微信
+```
+
+配置路径: Sentry → Alerts → Create Alert → 选项目 `javascript-nextjs`
+
+#### 2. Webhook → Hermes
+
+```bash
+# Hermes 侧: 接收 Sentry Webhook POST
+# Sentry 侧: Settings → Developer Settings → Internal Integrations → Webhook
+# URL: https://hermes.newme.ae/webhook/sentry (待部署)
+# Events: error, issue, metric_alert
+```
+
+#### 3. Release Tracking (deploy.sh 追加一行)
+
+```bash
+# 在 deploy.sh 构建成功后、重启服务前:
+npx @sentry/cli releases new $BUILD_ID
+npx @sentry/cli releases set-commits $BUILD_ID --auto
+npx @sentry/cli releases finalize $BUILD_ID
+```
+
+效果: Sentry 自动关联每个版本的错误，一眼看出"这次部署引入了多少新错误"
+
+#### 4. Cron Monitoring
+
+```bash
+# 为每个监控脚本注册 Sentry Cron Monitor
+# Sentry → Crons → Add Monitor
+# Monitor 1: health-check (schedule: */5 * * * *)
+# Monitor 2: login-probe (schedule: */5 * * * *)
+# Monitor 3: supabase-monitor (schedule: */10 * * * *)
+# 在脚本中加: curl -s "https://o4508404510294016.ingest.us.sentry.io/api/.../cron/MONITOR_ID/check-in" 
+```
+
+**效果: 脚本静默失败（跑完了但exit 0）也会被检测——比 cron 日志更可靠**
+
+### 不激活的能力（等 instrumentation.ts 修复后）
+
+| 能力 | 阻塞原因 | 预计时间 |
+|------|---------|---------|
+| 服务端 Crash 自动上报 | instrumentation.ts no-op | SAM-55 解决 |
+| Distributed Tracing | 同上 | SAM-55 解决 |
+| 服务端 Breadcrumbs | 同上 | SAM-55 解决 |
+
+### 激活后的完整能力矩阵
+
+```
+                    ┌──────────────────────────┐
+                    │     Sentry (免费 Plan)     │
+                    ├──────────────────────────┤
+                    │ ✅ 客户端 Crash            │
+                    │ ✅ Web Vitals             │
+                    │ ✅ Session Replay         │
+                    │ ✅ Alert Rules ← 本周新增  │
+                    │ ✅ Webhook → Hermes ← 本周 │
+                    │ ✅ Release Tracking ← 本周 │
+                    │ ✅ Cron Monitors ← 本周    │
+                    │ ✅ Issue Workflow          │
+                    │ ⏳ 服务端 Crash (SAM-55)    │
+                    │ ⏳ Tracing (SAM-55)         │
+                    └──────────────────────────┘
+```
+
+**结论: Sentry 12 项能力中 8 项可零代码激活。本周 4 项做完后，Sentry 使用率从 20% 提升到 67%。**
+
+---
+
+## 十四、MoA 审计决策日志
+
+### 评审流程
+
+| 轮次 | 日期 | 模型 | 输入 | 产出 | 关键发现 |
+|------|------|------|------|------|----------|
+| R1-a | 07-20 | DS-R1/GLM-5.2/Kimi-K2.5 | 原始方案 v1.0 | 三模型独立审计 | 风险识别严重不足(5.3/10)，缺基础设施监控 |
+| R2-a | 07-20 | Kimi-K2.5 聚合 | R1 结果 | 策略修订 v1.1 | 5条启动条件+5条冻结规则 |
+| R1-b | 07-20 | DS-R1/GLM-5.2/Kimi-K2.5 | "要可落地方案" | 三份代码级方案 | GLM/Kimi 首次超时(180s)，重试成功 |
+| R2-b | 07-20 | Kimi-K2.5 聚合 | 三份代码 | 实施方案 719行 | 路径全部错误(/opt/newme/ 不存在) |
+| R3 | 07-20 | DS-R1/GLM-5.2/Kimi-K2.5 | 方案+生产代码 | 安全审计 | 🔴致命: next.config.ts不能全量替换 |
+| R4 | 07-21 | DS-R1/GLM-5.2/Kimi-K2.5 | 生产5文件全量代码 | 代码级审计 | instrumentation.ts 6次失败记录 |
+| 终审 | 07-21 | DS-R1/GLM-5.2 | 当前部署+长期架构 | 4周路线图 | 80%能力不依赖instrumentation.ts |
+
+### 核心决策
+
+1. **instrumentation.ts 禁用是正确的** — git 记录今天 6 次尝试全失败
+2. **服务端 crash 上报可绕过** — `uncaughtException` + 手动 `captureException`
+3. **脚本路径用 /opt/hermes-scripts/** — 与现有 hermes-bridge 一致
+4. **监控频率 5/5/10 分钟** — 实测 < 5s CPU/小时，匹配 10-20 人规模
+5. **Sentry 12 项能力中 8 项可零代码激活** — 本周做 4 项
+
+### 已知局限
+
+- 全链路 Tracing 依赖 instrumentation.ts 或 OpenTelemetry 替代方案
+- 故障现场存在 /tmp (tmpfs)，重启丢失
+- Hermes 中枢自身无高可用（W2 加自监控）
+- 告警阈值硬编码在脚本中，改阈值需改代码
+
+### Git 提交记录
+
+```
+81c12a3 feat(observability): MoA-audited monitoring system — Phase 1 deployed
+```
+
+### Linear 工单
+
+| ID | 任务 | 链接 |
+|----|------|------|
+| SAM-52 | Phase 2: Sentry Webhook → Hermes | linear.app/samnewme/issue/SAM-52 |
+| SAM-53 | Phase 3: 统一告警聚合器 | linear.app/samnewme/issue/SAM-53 |
+| SAM-54 | Phase 4: Hermes 只读诊断引擎 | linear.app/samnewme/issue/SAM-54 |
+| SAM-55 | Phase 5: 绕过 instrumentation.ts | linear.app/samnewme/issue/SAM-55 |

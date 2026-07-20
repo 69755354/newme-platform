@@ -159,6 +159,10 @@ test("real lead stage handler rejects an inactive old session before business ac
       isCompleteContact: () => true,
     },
     "@/lib/lead-auth": leadAuth,
+    "@/lib/logger": {
+      logger: { error: () => {}, info: () => {}, warn: () => {}, debug: () => {} },
+      genReqId: () => "test-rid",
+    },
     "@/lib/supabase-server": supabaseServer,
     "@/shared/kanban/types": { PIPELINE_STAGES: [{ key: "new" }] },
     "next/server": nextServer,

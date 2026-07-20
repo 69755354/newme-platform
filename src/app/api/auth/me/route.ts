@@ -20,15 +20,36 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    const { data: profile, error: profileErr } = await supabase
-      .from("profiles")
-      .select("role, is_active, force_password_change, full_name, email")
-      .eq("id", user.id)
-      .single();
-
-    if (profileErr) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseAnonKey) {
       return NextResponse.json({ error: "internal_error" }, { status: 500 });
     }
+
+    const profileUrl = `${supabaseUrl}/rest/v1/profiles?select=role,is_active,force_password_change,full_name,email&id=eq.${encodeURIComponent(user.id)}`;
+    let profile: {
+      role?: string | null;
+      is_active?: boolean | null;
+      force_password_change?: boolean | null;
+      full_name?: string | null;
+      email?: string | null;
+    } | null = null;
+    try {
+      const profileRes = await fetch(profileUrl, {
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${bearerToken ?? supabaseAnonKey}`,
+          Accept: "application/vnd.pgrst.object+json",
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (profileRes.status === 200) {
+        profile = await profileRes.json();
+      }
+    } catch {
+      profile = null;
+    }
+
     if (!profile || profile.is_active !== true) {
       return NextResponse.json({ error: "inactive_account" }, { status: 401 });
     }

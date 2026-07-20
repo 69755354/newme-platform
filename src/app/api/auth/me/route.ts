@@ -1,10 +1,16 @@
 // RBAC: user (authenticated)
+import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { NextResponse } from "next/server";
 
 /**
  * GET /api/auth/me — returns current user info from session cookie.
  * Used by dashboard layout to avoid client-side Supabase dependency.
+ *
+ * Profile lookup uses a service_role admin client to bypass RLS and any
+ * cookie/header pollution from the request context. Prior hotfixes tried
+ * routing through anon-key REST + the user's bearer; both failed in
+ * production (stale cookie RLS rejection and blocked egress respectively).
  */
 export async function GET(request: Request) {
   try {
@@ -21,34 +27,20 @@ export async function GET(request: Request) {
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!supabaseUrl || !supabaseAnonKey) {
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceRoleKey) {
       return NextResponse.json({ error: "internal_error" }, { status: 500 });
     }
 
-    const profileUrl = `${supabaseUrl}/rest/v1/profiles?select=role,is_active,force_password_change,full_name,email&id=eq.${encodeURIComponent(user.id)}`;
-    let profile: {
-      role?: string | null;
-      is_active?: boolean | null;
-      force_password_change?: boolean | null;
-      full_name?: string | null;
-      email?: string | null;
-    } | null = null;
-    try {
-      const profileRes = await fetch(profileUrl, {
-        headers: {
-          apikey: supabaseAnonKey,
-          Authorization: `Bearer ${bearerToken ?? supabaseAnonKey}`,
-          Accept: "application/vnd.pgrst.object+json",
-        },
-        signal: AbortSignal.timeout(5000),
-      });
-      if (profileRes.status === 200) {
-        profile = await profileRes.json();
-      }
-    } catch {
-      profile = null;
-    }
+    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { data: profile } = await adminClient
+      .from("profiles")
+      .select("role, is_active, force_password_change, full_name, email")
+      .eq("id", user.id)
+      .single();
 
     if (!profile || profile.is_active !== true) {
       return NextResponse.json({ error: "inactive_account" }, { status: 401 });

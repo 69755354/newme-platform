@@ -38,6 +38,7 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_APP_VERSION: gitHash,
   },
   poweredByHeader: false,
+  serverExternalPackages: ["require-in-the-middle"],
   async headers() {
     return [
       {

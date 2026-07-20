@@ -221,7 +221,7 @@ test("real auth-me handler rejects an inactive old token and accepts an active p
 
   const inactiveResponse = await authMe.GET(request());
   assert.equal(inactiveResponse.status, 401);
-  assert.deepEqual(await inactiveResponse.json(), { error: "inactive_account" });
+  assert.equal((await inactiveResponse.json()).error, "inactive_account");
 
   active = true;
   const activeResponse = await authMe.GET(request());

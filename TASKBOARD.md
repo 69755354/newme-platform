@@ -54,12 +54,15 @@ TODO → IN_PROGRESS → REVIEW → DONE
 || task_M1_sam8_deploy | DONE | Hermes | 2026-07-19 |
 || task_M1_sam9_smoke | DONE | Hermes | 2026-07-19 |
 || task_M1_sam43_api_uat | DONE | Hermes | 2026-07-19 |
+| task_L0_auth_me_proxy_fix | DONE | Hermes (OC) | 2026-07-20 |
 
 > M1 发布链（Linear 为真源）：**RELEASED 2026-07-20**。发布 SHA `49bbb26` → BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6~12 全链 Done：SAM-28 业务签收（森哥 2026-07-20）+ 技术签收（机器全量验收），SAM-12 发布记录出具。SAM-26 视觉/移动端留人工不拦发布；SAM-45/46 进 M2 backlog。
 >
 > 热修 #1（2026-07-20）：SAM-48+SAM-47 → SHA `ac416ba` → BUILD_ID `opQHvVVbt_cF_G80h-7is`（CI 29703674152/crm-ci 29703752341 双绿，smoke 14/14，生产 API 验收 8/8：未知设备 400、零总价双端 400、正常链回归 4536 AED 全通、health 无 memory；fixture 清理基线零漂移）。两票 Done。
 
 > `task_P0_hotfix_audit_trail`: `20260706000005_add_leads_archived.sql` adds `leads_archived` as the 20th allowed event type, closing the archive audit gap.
+>
+> `task_L0_auth_me_proxy_fix` (热修 #2, 2026-07-20): CRM 全员无法登录。根因：`login/page.tsx:82-84` 用 Bearer 头调 `/api/auth/me`（cookies 尚未写入）；`proxy.ts` 的 Bearer fallback 鉴权了 user 但未传播给 supabase client，导致下游 profiles RLS（proxy.ts:77）以未鉴权 client 跑 → 返回 `inactive_account` → 登录页撤销刚创建的 session。修复：把 `/api/auth/me` 加入 `PUBLIC_API_PATHS`（一行）。安全性已复核：route handler `src/app/api/auth/me/route.ts` 用 service_role admin client 自查 profiles（L35-37）+ 主动拒绝未鉴权（L25-26）+ 主动拒绝 inactive（L45-47），proxy 的 RLS 复核对本端点冗余。tsc + eslint 双绿。待部署后用 Bearer curl 验收 200 + isActive:true。
 
 ---
 

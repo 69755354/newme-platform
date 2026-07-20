@@ -185,43 +185,46 @@ test("real auth-me handler rejects an inactive old token and accepts an active p
   let active = false;
   const supabase = createSupabaseMock(() => active);
   const nextServer = createNextServerMock();
-  const originalFetch = globalThis.fetch;
 
-  // After 2026-07-20 hotfix, /api/auth/me uses direct fetch for profiles
-  // (bypasses supabase client to avoid stale cookie RLS poison).
-  // The test must mock fetch to simulate profile responses.
-  globalThis.fetch = async (url, opts) => {
-    const urlStr = String(url);
-    if (urlStr.includes("/rest/v1/profiles")) {
-      if (active) {
-        return new Response(JSON.stringify({
-          role: "admin", is_active: true, force_password_change: false,
-          full_name: "Test User", email: "test@example.com",
-        }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      return new Response("{}", { status: 404 });
-    }
-    return originalFetch(url, opts);
-  };
+  // After 2026-07-20 3rd hotfix, /api/auth/me uses service_role admin client
+  // (createClient from @supabase/supabase-js) for profiles lookup.
+  // The test must mock createClient to simulate admin profile responses.
+  const mockCreateClient = () => ({
+    from(table) {
+      assert.equal(table, "profiles");
+      return {
+        select() {
+          return {
+            eq() {
+              return {
+                async single() {
+                  return active
+                    ? { data: { role: "admin", is_active: true, force_password_change: false, full_name: "Test User", email: "test@example.com" }, error: null }
+                    : { data: null, error: { code: "PGRST116" } };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  });
 
-  try {
-    const authMe = loadTypeScriptModule("src/app/api/auth/me/route.ts", {
-      "@/lib/supabase-server": { createServerSupabase: async () => supabase },
-      "next/server": nextServer,
-    });
-    const request = () => new Request("http://localhost/api/auth/me", {
-      headers: { Authorization: "Bearer old-access-token" },
-    });
+  const authMe = loadTypeScriptModule("src/app/api/auth/me/route.ts", {
+    "@/lib/supabase-server": { createServerSupabase: async () => supabase },
+    "next/server": nextServer,
+    "@supabase/supabase-js": { createClient: mockCreateClient },
+  });
+  const request = () => new Request("http://localhost/api/auth/me", {
+    headers: { Authorization: "Bearer old-access-token" },
+  });
 
-    const inactiveResponse = await authMe.GET(request());
-    assert.equal(inactiveResponse.status, 401);
-    assert.deepEqual(await inactiveResponse.json(), { error: "inactive_account" });
+  const inactiveResponse = await authMe.GET(request());
+  assert.equal(inactiveResponse.status, 401);
+  assert.deepEqual(await inactiveResponse.json(), { error: "inactive_account" });
 
-    active = true;
-    const activeResponse = await authMe.GET(request());
-    assert.equal(activeResponse.status, 200);
-    assert.equal((await activeResponse.json()).isActive, true);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  active = true;
+  const activeResponse = await authMe.GET(request());
+  assert.equal(activeResponse.status, 200);
+  assert.equal((await activeResponse.json()).isActive, true);
 });

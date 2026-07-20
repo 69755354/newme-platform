@@ -43,7 +43,10 @@ export async function GET(request: Request) {
       .single();
 
     if (!profile || profile.is_active !== true) {
-      return NextResponse.json({ error: "inactive_account" }, { status: 401 });
+      return NextResponse.json({
+        error: "inactive_account",
+        _dbg_key: serviceRoleKey ? serviceRoleKey.substring(0, 8) + "..." : "MISSING",
+      }, { status: 401 });
     }
 
     const role = profile.role ?? "sales";

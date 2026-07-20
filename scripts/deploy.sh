@@ -257,7 +257,7 @@ echo "✅ Worktree ready at $RELEASE_SHA"
 cd "$BUILD_DIR"
 
 echo "📦 Installing dependencies (npm install)..."
-if ! npm install; then
+if ! npm install --ignore-scripts; then
   echo "❌ npm install failed."
   echo "ℹ️  Production .next was NEVER touched. Service is unaffected."
   exit 1

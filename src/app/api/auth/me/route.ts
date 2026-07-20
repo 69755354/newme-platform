@@ -8,8 +8,8 @@ import { NextResponse } from "next/server";
  */
 export async function GET(request: Request) {
   try {
-    const supabase = await createServerSupabase();
     const bearerToken = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+    const supabase = await createServerSupabase(bearerToken);
     const {
       data: { user },
     } = bearerToken

@@ -72,7 +72,7 @@ function tryRefreshTokenLocked(
   return promise;
 }
 
-export async function createServerSupabase() {
+export async function createServerSupabase(bearerToken?: string) {
   const cookieStore = await cookies();
   const allCookies = cookieStore.getAll();
 
@@ -135,11 +135,15 @@ export async function createServerSupabase() {
   }
 
   // ── 3. Create client with or without auth ──
+  // bearerToken (from Authorization header) takes highest priority — a stale
+  // cookie session must never pollute the global Authorization used by
+  // subsequent .from() queries, or RLS policies (auth.uid() = id) reject them.
   const headers: Record<string, string> = {
     apikey: anonKey,
   };
-  if (accessToken) {
-    headers.Authorization = `Bearer ${accessToken}`;
+  const effectiveToken = bearerToken ?? accessToken;
+  if (effectiveToken) {
+    headers.Authorization = `Bearer ${effectiveToken}`;
   }
 
   return createClient(supabaseUrl, anonKey, {

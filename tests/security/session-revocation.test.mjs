@@ -185,20 +185,43 @@ test("real auth-me handler rejects an inactive old token and accepts an active p
   let active = false;
   const supabase = createSupabaseMock(() => active);
   const nextServer = createNextServerMock();
-  const authMe = loadTypeScriptModule("src/app/api/auth/me/route.ts", {
-    "@/lib/supabase-server": { createServerSupabase: async () => supabase },
-    "next/server": nextServer,
-  });
-  const request = () => new Request("http://localhost/api/auth/me", {
-    headers: { Authorization: "Bearer old-access-token" },
-  });
+  const originalFetch = globalThis.fetch;
 
-  const inactiveResponse = await authMe.GET(request());
-  assert.equal(inactiveResponse.status, 401);
-  assert.deepEqual(await inactiveResponse.json(), { error: "inactive_account" });
+  // After 2026-07-20 hotfix, /api/auth/me uses direct fetch for profiles
+  // (bypasses supabase client to avoid stale cookie RLS poison).
+  // The test must mock fetch to simulate profile responses.
+  globalThis.fetch = async (url, opts) => {
+    const urlStr = String(url);
+    if (urlStr.includes("/rest/v1/profiles")) {
+      if (active) {
+        return new Response(JSON.stringify({
+          role: "admin", is_active: true, force_password_change: false,
+          full_name: "Test User", email: "test@example.com",
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response("{}", { status: 404 });
+    }
+    return originalFetch(url, opts);
+  };
 
-  active = true;
-  const activeResponse = await authMe.GET(request());
-  assert.equal(activeResponse.status, 200);
-  assert.equal((await activeResponse.json()).isActive, true);
+  try {
+    const authMe = loadTypeScriptModule("src/app/api/auth/me/route.ts", {
+      "@/lib/supabase-server": { createServerSupabase: async () => supabase },
+      "next/server": nextServer,
+    });
+    const request = () => new Request("http://localhost/api/auth/me", {
+      headers: { Authorization: "Bearer old-access-token" },
+    });
+
+    const inactiveResponse = await authMe.GET(request());
+    assert.equal(inactiveResponse.status, 401);
+    assert.deepEqual(await inactiveResponse.json(), { error: "inactive_account" });
+
+    active = true;
+    const activeResponse = await authMe.GET(request());
+    assert.equal(activeResponse.status, 200);
+    assert.equal((await activeResponse.json()).isActive, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

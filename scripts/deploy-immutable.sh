@@ -161,8 +161,10 @@ fi
 
 # Build
 cd "$BUILD_WORKTREE"
+# Use source repo's proven node_modules — npm ci produces different output that
+# can break Next.js request context (e.g., cookies() outside request scope → auth/me 500)
 if [ ! -d node_modules ]; then
-  npm install --ignore-scripts 2>&1 | tail -3
+  ln -sfn "$PROJECT_ROOT/node_modules" node_modules
 fi
 
 if ! NODE_OPTIONS="--max_old_space_size=2048" npm run build 2>&1 | tail -10; then
@@ -200,28 +202,12 @@ with open(rf, 'w') as f: json.dump(data, f)
 "
 echo '✅ appDir patched to release directory'
 
-# --- Step 3: Dependency hash ---
-LOCK_HASH=$(sha256sum "$RELEASE_DIR/package-lock.json" 2>/dev/null | awk '{print $1}' || echo "none")
-DEP_DIR="${SHARED_ROOT}/node_modules/${LOCK_HASH}"
-
-if [ -d "$DEP_DIR" ]; then
-  echo "✅ Dependencies cached: $LOCK_HASH"
-else
-  echo "📦 Installing dependencies..."
-  TEMP_DIR=$(mktemp -d)
-  cp "$RELEASE_DIR/package.json" "$RELEASE_DIR/package-lock.json" "$TEMP_DIR/"
-  (cd "$TEMP_DIR" && npm ci --ignore-scripts 2>&1 | tail -3) || {
-    echo "❌ npm ci failed"
-    rm -rf "$TEMP_DIR" "$RELEASE_DIR" "$LOCKFILE"
-    exit 1
-  }
-  mkdir -p "$(dirname "$DEP_DIR")"
-  mv "$TEMP_DIR/node_modules" "$DEP_DIR"
-  rm -rf "$TEMP_DIR"
-  echo "✅ Dependencies installed: $LOCK_HASH"
-fi
-
-ln -sfn "$DEP_DIR" "$RELEASE_DIR/node_modules"
+# --- Step 3: Dependencies ---
+# Use source repo's proven node_modules. Fresh npm ci output differs from the
+# installed tree and can break Next.js request context (e.g., cookies() outside
+# request scope → auth/me 500). The source repo's node_modules is the known-good
+# baseline that production release 0bcf1a8 was built with.
+ln -sfn "../../shared/node_modules" "$RELEASE_DIR/node_modules"
 
 # --- Step 3.5: Repair Turbopack external module symlinks ---
 echo "--- Symlink Repair ---"
@@ -248,8 +234,7 @@ cat > "$RELEASE_DIR/manifest.json" << MANIFESTEOF
   "git_sha": "$GIT_SHA",
   "build_id": "$BUILD_ID",
   "created_at": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
-  "package_lock_hash": "$LOCK_HASH",
-  "dependency_path": "$DEP_DIR",
+  "dependencies": "source-repo (shared/node_modules)",
   "symlink_repair": {
     "scan": $SYMLINK_SCAN,
     "valid": $SYMLINK_VALID,
@@ -327,6 +312,12 @@ echo "✅ Current → $RELEASE_ID"
 
 # --- Step 7: Restart service ---
 echo "--- Restart ---"
+# git safe.directory: release dir owned by deploy (sudo → root) but run by systemd (root);
+# next.config.ts calls `git rev-parse` at startup
+sudo /usr/bin/git config --system --add safe.directory "$RELEASE_DIR" 2>/dev/null || true
+sudo /usr/bin/git config --system --add safe.directory /opt/newme/current 2>/dev/null || true
+# Reset StartLimitBurst counter — earlier restart loops may have exhausted it
+sudo /usr/bin/systemctl reset-failed newme-platform.service 2>/dev/null || true
 sudo /usr/bin/systemctl restart newme-platform.service
 sleep 5
 
@@ -386,16 +377,9 @@ NR > keep && $1 != current"/" && $1 != prev"/" { print $1 }
   rm -rf "${RELEASES_ROOT}/${dir}"
 done
 
-# GC orphan dependency hashes
-echo "  Checking orphan dependencies..."
-find "$SHARED_ROOT/node_modules" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | while read -r dep; do
-  HASH=$(basename "$dep")
-  # Check if any manifest references this hash
-  if ! grep -rql "\"package_lock_hash\": \"$HASH\"" "$RELEASES_ROOT"/*/manifest.json 2>/dev/null; then
-    echo "  Removing orphan dep: $HASH"
-    rm -rf "$dep"
-  fi
-done
+# GC orphan dependency hashes — deprecated. Dependencies now come from source repo.
+# The shared/node_modules symlink points to the project's node_modules.
+echo "  Dependency GC: skipped (using source repo node_modules)"
 
 # --- Evidence ---
 EVIDENCE_DIR="$PROJECT_ROOT/.hermes-harness/deploy-evidence"
@@ -410,7 +394,7 @@ cat > "$EVIDENCE_FILE" << EVIEOF
   "release_dir": "$RELEASE_DIR",
   "previous_release": "${PREVIOUS_RELEASE:-none}",
   "bootstrap": $BOOTSTRAP_MODE,
-  "package_lock_hash": "$LOCK_HASH",
+  "dependencies": "source-repo (shared/node_modules)",
   "symlink_repair": $SYMLINK_REPAIR_JSON,
   "result": "pass",
   "finished_at": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"

@@ -1,7 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
+import { parseCookieHeader } from '@/lib/supabase-server';
 import { logger, genReqId } from '@/lib/logger';
 import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
 import { isCompleteContact } from '@/lib/first-contact-gate.mjs';
@@ -13,20 +13,14 @@ export async function POST(
   const request_id = genReqId();
   const { id: leadId } = await params;
   try {
-    const cookieStore = await cookies();
+    const cookieHeader = req.headers.get("cookie") ?? "";
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          getAll() { return cookieStore.getAll(); },
-          setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) =>
-                cookieStore.set(name, value, options)
-              );
-            } catch {}
-          },
+          getAll() { return parseCookieHeader(cookieHeader); },
+          setAll() {},
         },
       }
     );

@@ -4,8 +4,10 @@ import { createServerSupabase } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 // ─── Auth check ───
-async function checkRole(): Promise<NextResponse | string> {
-  const supabase = await createServerSupabase();
+async function checkRole(request: NextRequest): Promise<NextResponse | string> {
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const {
     data: { user },
     error: authErr,
@@ -38,8 +40,8 @@ async function checkRole(): Promise<NextResponse | string> {
 }
 
 // ─── GET /api/users — list all users ───
-export async function GET() {
-  const role = await checkRole();
+export async function GET(request: NextRequest) {
+  const role = await checkRole(request);
   if (role instanceof NextResponse) return role;
 
   const selectFields = role === "sales"
@@ -86,7 +88,7 @@ export async function GET() {
 
 // ─── POST /api/users — create new user ───
 export async function POST(request: NextRequest) {
-  const callerRole = await checkRole();
+  const callerRole = await checkRole(request);
   if (callerRole instanceof NextResponse) return callerRole;
 
   try {

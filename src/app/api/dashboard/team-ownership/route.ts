@@ -4,8 +4,10 @@ import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { getCached, setCache } from "@/lib/api-cache";
 
-export async function GET() {
-  const supabase = await createServerSupabase();
+export async function GET(request: Request) {
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

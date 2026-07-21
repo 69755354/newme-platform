@@ -4,7 +4,9 @@ import { createServerSupabase } from "@/lib/supabase-server";
 
 // ─── GET /api/dashboard/lead-health ───
 export async function GET(request: NextRequest) {
-  const supabase = await createServerSupabase();
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
 
   // 1. Authenticate
   const { data: { user }, error: authErr } = await supabase.auth.getUser();

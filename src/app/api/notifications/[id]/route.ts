@@ -9,7 +9,9 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const supabase = await createServerSupabase();
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

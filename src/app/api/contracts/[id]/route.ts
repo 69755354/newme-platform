@@ -27,7 +27,9 @@ export async function GET(
   const request_id = genReqId();
   const { id: contractId } = await params;
   try {
-    const supabase = await createServerSupabase();
+    const bearerToken = _request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = _request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const {
       data: { user },
       error: authErr,

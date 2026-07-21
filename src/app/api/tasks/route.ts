@@ -23,7 +23,9 @@ const TASK_SELECT = `
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createServerSupabase()
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader)
     const {
       data: { user },
       error: authError,
@@ -76,7 +78,9 @@ interface BatchUpdateBody {
 
 export async function PATCH(request: Request) {
   try {
-    const supabase = await createServerSupabase()
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader)
     const {
       data: { user },
       error: authError,

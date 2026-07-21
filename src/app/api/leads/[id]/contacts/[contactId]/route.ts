@@ -36,7 +36,9 @@ export async function PATCH(
       return NextResponse.json({ error: "contact_result is required" }, { status: 400 });
     }
 
-    const supabase = await createServerSupabase();
+    const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = req.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: lead, error: leadError } = await supabase
       .from("leads")
       .select("id, assigned_to")
@@ -99,7 +101,9 @@ export async function DELETE(
     const profile = await getAuthProfile();
     if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const supabase = await createServerSupabase();
+    const bearerToken = _req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = _req.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: lead, error: leadError } = await supabase
       .from("leads")
       .select("id, assigned_to")

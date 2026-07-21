@@ -1,7 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
+import { parseCookieHeader } from '@/lib/supabase-server';
 import { logger, genReqId } from '@/lib/logger';
 import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
 
@@ -12,7 +12,7 @@ export async function POST(
   const request_id = genReqId();
   const { id: leadId } = await params;
   try {
-    const cookieStore = await cookies();
+    const cookieHeader = req.headers.get("cookie") ?? "";
 
     // rule_102: use auth.getUser() via SSR client, NOT service_role
     const supabase = createServerClient(
@@ -21,17 +21,9 @@ export async function POST(
       {
         cookies: {
           getAll() {
-            return cookieStore.getAll();
+            return parseCookieHeader(cookieHeader);
           },
-          setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) =>
-                cookieStore.set(name, value, options)
-              );
-            } catch {
-              // read-only in some contexts
-            }
-          },
+          setAll() {},
         },
       }
     );

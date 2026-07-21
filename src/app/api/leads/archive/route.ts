@@ -25,7 +25,9 @@ async function requireBoss(
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createServerSupabase();
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -115,7 +117,9 @@ export async function POST(request: NextRequest) {
 // GET /api/leads/archive?owner_id=xxx — Preview an immutable archive selection
 // GET /api/leads/archive?batch_id=xxx — Lookup a completed archive batch
 export async function GET(request: NextRequest) {
-  const supabase = await createServerSupabase();
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -166,7 +170,9 @@ export async function GET(request: NextRequest) {
 
 // DELETE /api/leads/archive?batch_id=xxx — Roll back one completed batch
 export async function DELETE(request: NextRequest) {
-  const supabase = await createServerSupabase();
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

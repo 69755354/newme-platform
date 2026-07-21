@@ -1,0 +1,29 @@
+{
+  "node": {
+    "60dfc58f7be7f055ebc8105c0dacf22c5e971b6301": {
+      "workers": {
+        "app/(dashboard)/tasks/[id]/page": {
+          "moduleId": 16764,
+          "async": false,
+          "exportedName": "updateTask",
+          "filename": "newme-platform/src/app/actions/tasks.ts"
+        }
+      },
+      "exportedName": "updateTask",
+      "filename": "newme-platform/src/app/actions/tasks.ts"
+    },
+    "601aa1fa04028b48d9c9c55ef22b0bae2a31905f6e": {
+      "workers": {
+        "app/(dashboard)/tasks/[id]/page": {
+          "moduleId": 16764,
+          "async": false,
+          "exportedName": "updateTaskStatus",
+          "filename": "newme-platform/src/app/actions/tasks.ts"
+        }
+      },
+      "exportedName": "updateTaskStatus",
+      "filename": "newme-platform/src/app/actions/tasks.ts"
+    }
+  },
+  "edge": {}
+}

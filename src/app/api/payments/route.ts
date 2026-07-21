@@ -10,7 +10,9 @@ import { logger, genReqId } from "@/lib/logger";
 export async function POST(request: NextRequest) {
   const request_id = genReqId();
   try {
-    const supabase = await createServerSupabase();
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const {
       data: { user },
       error: authErr,
@@ -113,7 +115,9 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const request_id = genReqId();
   try {
-    const supabase = await createServerSupabase();
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const {
       data: { user },
       error: authErr,

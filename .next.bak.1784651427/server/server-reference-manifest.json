@@ -1,0 +1,252 @@
+{
+  "node": {
+    "00eb9120ae7f2b4d3db42532c478d4f36b300fdb88": {
+      "workers": {
+        "app/(dashboard)/ads/page": {
+          "moduleId": 90341,
+          "async": false,
+          "exportedName": "getCurrentUser",
+          "filename": "newme-platform/src/app/actions/auth.ts"
+        },
+        "app/(dashboard)/analytics/page": {
+          "moduleId": 28872,
+          "async": false,
+          "exportedName": "getCurrentUser",
+          "filename": "newme-platform/src/app/actions/auth.ts"
+        },
+        "app/(dashboard)/contracts/[id]/page": {
+          "moduleId": 8185,
+          "async": false,
+          "exportedName": "getCurrentUser",
+          "filename": "newme-platform/src/app/actions/auth.ts"
+        },
+        "app/(dashboard)/contracts/new/page": {
+          "moduleId": 82633,
+          "async": false,
+          "exportedName": "getCurrentUser",
+          "filename": "newme-platform/src/app/actions/auth.ts"
+        },
+        "app/(dashboard)/contracts/page": {
+          "moduleId": 73073,
+          "async": false,
+          "exportedName": "getCurrentUser",
+          "filename": "newme-platform/src/app/actions/auth.ts"
+        },
+        "app/(dashboard)/payments/page": {
+          "moduleId": 12211,
+          "async": false,
+          "exportedName": "getCurrentUser",
+          "filename": "newme-platform/src/app/actions/auth.ts"
+        },
+        "app/(dashboard)/products/page": {
+          "moduleId": 82976,
+          "async": false,
+          "exportedName": "getCurrentUser",
+          "filename": "newme-platform/src/app/actions/auth.ts"
+        },
+        "app/(dashboard)/quotations/[id]/page": {
+          "moduleId": 95910,
+          "async": false,
+          "exportedName": "getCurrentUser",
+          "filename": "newme-platform/src/app/actions/auth.ts"
+        },
+        "app/(dashboard)/settings/page": {
+          "moduleId": 85521,
+          "async": false,
+          "exportedName": "getCurrentUser",
+          "filename": "newme-platform/src/app/actions/auth.ts"
+        },
+        "app/(dashboard)/team/page": {
+          "moduleId": 5967,
+          "async": false,
+          "exportedName": "getCurrentUser",
+          "filename": "newme-platform/src/app/actions/auth.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/auth.ts",
+      "exportedName": "getCurrentUser"
+    },
+    "60399597b83d52f4d828c4683f0f027d5e8f0cbcc6": {
+      "workers": {
+        "app/(dashboard)/analytics/page": {
+          "moduleId": 28872,
+          "async": false,
+          "exportedName": "addLeadNote",
+          "filename": "newme-platform/src/app/actions/lead.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/lead.ts",
+      "exportedName": "addLeadNote"
+    },
+    "7077202ad2ab529206e68837d0a1c511542995d732": {
+      "workers": {
+        "app/(dashboard)/contracts/page": {
+          "moduleId": 73073,
+          "async": false,
+          "exportedName": "approveContract",
+          "filename": "newme-platform/src/app/actions/contracts.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/contracts.ts",
+      "exportedName": "approveContract"
+    },
+    "60d393d24f379f148b7aeb245b61b1b563d4876217": {
+      "workers": {
+        "app/(dashboard)/contracts/page": {
+          "moduleId": 73073,
+          "async": false,
+          "exportedName": "revokeContract",
+          "filename": "newme-platform/src/app/actions/contracts.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/contracts.ts",
+      "exportedName": "revokeContract"
+    },
+    "40bfd2138e5d62639ff31ef67ba2b19b27b419420a": {
+      "workers": {
+        "app/(dashboard)/payments/page": {
+          "moduleId": 12211,
+          "async": false,
+          "exportedName": "createPayment",
+          "filename": "newme-platform/src/app/actions/payments.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/payments.ts",
+      "exportedName": "createPayment"
+    },
+    "402f0a98b042d083d9234804ea2965cd1c453d63db": {
+      "workers": {
+        "app/(dashboard)/payments/page": {
+          "moduleId": 12211,
+          "async": false,
+          "exportedName": "confirmPayment",
+          "filename": "newme-platform/src/app/actions/payments.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/payments.ts",
+      "exportedName": "confirmPayment"
+    },
+    "60be3815229cd85545e619d5c4af1ec90f6972c472": {
+      "workers": {
+        "app/(dashboard)/payments/page": {
+          "moduleId": 12211,
+          "async": false,
+          "exportedName": "allocatePayment",
+          "filename": "newme-platform/src/app/actions/payments.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/payments.ts",
+      "exportedName": "allocatePayment"
+    },
+    "607f37b93ab42b02f00f3dcf46156867ef01f12746": {
+      "workers": {
+        "app/(dashboard)/settings/page": {
+          "moduleId": 85521,
+          "async": false,
+          "exportedName": "assignLead",
+          "filename": "newme-platform/src/app/actions/settings.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/settings.ts",
+      "exportedName": "assignLead"
+    },
+    "601b0ed82b5ea6d93fa06c6096afbfa9c159634ff4": {
+      "workers": {
+        "app/(dashboard)/settings/page": {
+          "moduleId": 85521,
+          "async": false,
+          "exportedName": "bulkAssignLeads",
+          "filename": "newme-platform/src/app/actions/settings.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/settings.ts",
+      "exportedName": "bulkAssignLeads"
+    },
+    "40ba81c476bca29f0afd96aa2f37eeea3c533e7ee8": {
+      "workers": {
+        "app/(dashboard)/settings/page": {
+          "moduleId": 85521,
+          "async": false,
+          "exportedName": "bulkUnassignLeads",
+          "filename": "newme-platform/src/app/actions/settings.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/settings.ts",
+      "exportedName": "bulkUnassignLeads"
+    },
+    "6075b14a2d52ad6bed45be5a2e5fdd4460e4f61112": {
+      "workers": {
+        "app/(dashboard)/settings/page": {
+          "moduleId": 85521,
+          "async": false,
+          "exportedName": "transferAllLeads",
+          "filename": "newme-platform/src/app/actions/settings.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/settings.ts",
+      "exportedName": "transferAllLeads"
+    },
+    "60dfc58f7be7f055ebc8105c0dacf22c5e971b6301": {
+      "workers": {
+        "app/(dashboard)/tasks/[id]/page": {
+          "moduleId": 16764,
+          "async": false,
+          "exportedName": "updateTask",
+          "filename": "newme-platform/src/app/actions/tasks.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/tasks.ts",
+      "exportedName": "updateTask"
+    },
+    "601aa1fa04028b48d9c9c55ef22b0bae2a31905f6e": {
+      "workers": {
+        "app/(dashboard)/tasks/[id]/page": {
+          "moduleId": 16764,
+          "async": false,
+          "exportedName": "updateTaskStatus",
+          "filename": "newme-platform/src/app/actions/tasks.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/tasks.ts",
+      "exportedName": "updateTaskStatus"
+    },
+    "405b42ae23b1e042d09022359d721fa6ba57428ef9": {
+      "workers": {
+        "app/(dashboard)/team/page": {
+          "moduleId": 5967,
+          "async": false,
+          "exportedName": "addTeamMember",
+          "filename": "newme-platform/src/app/actions/team.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/team.ts",
+      "exportedName": "addTeamMember"
+    },
+    "40dc773ddfc9c25a8d25ff1bc55c5770039cbcaea1": {
+      "workers": {
+        "app/(dashboard)/team/page": {
+          "moduleId": 5967,
+          "async": false,
+          "exportedName": "removeTeamMember",
+          "filename": "newme-platform/src/app/actions/team.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/team.ts",
+      "exportedName": "removeTeamMember"
+    },
+    "60e2a73f3d0f625531be23aec5dd0bc508e13c2249": {
+      "workers": {
+        "app/(dashboard)/team/page": {
+          "moduleId": 5967,
+          "async": false,
+          "exportedName": "resetUserPassword",
+          "filename": "newme-platform/src/app/actions/team.ts"
+        }
+      },
+      "filename": "newme-platform/src/app/actions/team.ts",
+      "exportedName": "resetUserPassword"
+    }
+  },
+  "edge": {},
+  "encryptionKey": "/6+n8CDOHckkwOCdbLY1Jd4VUPCW83Z5ZjMDHusHUdw="
+}

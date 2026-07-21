@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": [],
+  "debugId": "0b2f2df5-0a77-8db1-2211-2656c09e0022",
+  "sections": [
+    {"offset": {"line": 1, "column": 0}, "map": {"version":3,"sources":["../../../../../newme-platform/src/app/%28dashboard%29/loading.tsx"],"sourcesContent":["\"use client\";\n\nimport { useLanguage } from \"@/lib/i18n/LanguageContext\";\n\nexport default function DashboardLoading() {\n  const { t } = useLanguage();\n  return (\n    <div className=\"flex items-center justify-center min-h-[50vh]\">\n      <div className=\"flex items-center gap-3 text-muted-foreground\">\n        <div className=\"w-4 h-4 rounded-full border-2 border-slate-600 border-t-transparent animate-spin\" />\n        <span className=\"text-sm\">{t(\"common.loading\")}</span>\n      </div>\n    </div>\n  );\n}\n"],"names":["DashboardLoading","t","className"],"mappings":"wDAEA,EAAA,EAAA,CAAA,CAAA,wBAEe,SAASA,EACtB,GAAM,CAAEC,GAAC,CAAE,CAAG,CAAA,EAAA,EAAA,WAAA,AAAW,IACzB,MACE,CAAA,EAAA,EAAA,GAAA,EAAC,MAAA,CAAIC,UAAU,yDACb,CAAA,EAAA,EAAA,IAAA,EAAC,MAAA,CAAIA,UAAU,0DACb,CAAA,EAAA,EAAA,GAAA,EAAC,MAAA,CAAIA,UAAU,qFACf,CAAA,EAAA,EAAA,GAAA,EAAC,OAAA,CAAKA,UAAU,mBAAWD,EAAE,wBAIrC"}}]
+}

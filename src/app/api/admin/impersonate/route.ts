@@ -6,7 +6,9 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 // POST /api/admin/impersonate
 // Admin generates a magic link to sign in as another user
 export async function POST(request: NextRequest) {
-  const supabase = await createServerSupabase();
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
 
   if (authErr || !user) {

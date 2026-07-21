@@ -18,9 +18,11 @@ function normalizeCampaign(name: string | null): string {
  * Returns ad ROI data for CEO/Admin view.
  * Query params: none (uses all available ad_spend data)
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const supabase = await createServerSupabase();
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

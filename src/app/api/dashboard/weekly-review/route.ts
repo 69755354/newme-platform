@@ -108,7 +108,9 @@ function periodBounds(range: ReviewRange, customStart?: string | null, customEnd
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase = await createServerSupabase();
+    const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = req.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

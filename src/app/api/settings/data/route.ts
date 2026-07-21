@@ -5,7 +5,9 @@ import { getCached, setCache } from "@/lib/api-cache"
 import { filterLeadTransferCandidateQuery } from "@/lib/lead-transfer-candidates.mjs"
 
 export async function GET(request: Request) {
-  const supabase = await createServerSupabase()
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader)
 
   const {
     data: { user },

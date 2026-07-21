@@ -1,0 +1,29 @@
+{
+  "node": {
+    "00937983b762341a9358559868a448d3c21b163fa3": {
+      "workers": {
+        "app/(dashboard)/analytics/page": {
+          "moduleId": 28872,
+          "async": false,
+          "exportedName": "getCurrentUser",
+          "filename": "newme-platform/src/app/actions/auth.ts"
+        }
+      },
+      "exportedName": "getCurrentUser",
+      "filename": "newme-platform/src/app/actions/auth.ts"
+    },
+    "60e87f8f91281e11afbaa89161fb4d162f9020fe2d": {
+      "workers": {
+        "app/(dashboard)/analytics/page": {
+          "moduleId": 28872,
+          "async": false,
+          "exportedName": "addLeadNote",
+          "filename": "newme-platform/src/app/actions/lead.ts"
+        }
+      },
+      "exportedName": "addLeadNote",
+      "filename": "newme-platform/src/app/actions/lead.ts"
+    }
+  },
+  "edge": {}
+}

@@ -1,0 +1,3 @@
+{
+  "/api/cron/check-overdue-installments/route": "app/api/cron/check-overdue-installments/route.js"
+}

@@ -16,7 +16,9 @@ export async function GET(
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    const supabase = await createServerSupabase();
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -68,7 +70,9 @@ export async function PATCH(
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    const supabase = await createServerSupabase();
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });

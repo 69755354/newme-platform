@@ -1,0 +1,3 @@
+{
+  "/api/cron/check-no-answer/route": "app/api/cron/check-no-answer/route.js"
+}

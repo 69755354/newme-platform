@@ -60,7 +60,9 @@ async function generateQuoteNo(supabase: any): Promise<string> {
 export async function POST(request: NextRequest) {
   const request_id = genReqId();
   try {
-    const supabase = await createServerSupabase();
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

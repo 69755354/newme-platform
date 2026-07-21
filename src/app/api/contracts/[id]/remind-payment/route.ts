@@ -15,7 +15,9 @@ export async function POST(
 ) {
   const request_id = genReqId();
   const { id } = await params;
-  try {    const supabase = await createServerSupabase();
+  try {    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const {
       data: { user },
     } = await supabase.auth.getUser();

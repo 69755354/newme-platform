@@ -8,8 +8,10 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const dynamic = "force-dynamic";
 
 // ─── Auth check — only boss/admin ───
-async function checkAdminOrBoss(): Promise<NextResponse | null> {
-  const supabase = await createServerSupabase();
+async function checkAdminOrBoss(request: NextRequest): Promise<NextResponse | null> {
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const {
     data: { user },
     error: authErr,
@@ -41,7 +43,7 @@ async function checkAdminOrBoss(): Promise<NextResponse | null> {
 
 // ─── GET /api/activity/daily-report?date=YYYY-MM-DD ───
 export async function GET(request: NextRequest) {
-  const forbidden = await checkAdminOrBoss();
+  const forbidden = await checkAdminOrBoss(request);
   if (forbidden) return forbidden;
 
   const { searchParams } = new URL(request.url);

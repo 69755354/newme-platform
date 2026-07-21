@@ -1,0 +1,65 @@
+{
+  "node": {
+    "607f37b93ab42b02f00f3dcf46156867ef01f12746": {
+      "workers": {
+        "app/(dashboard)/settings/page": {
+          "moduleId": 85521,
+          "async": false,
+          "exportedName": "assignLead",
+          "filename": "newme-platform/src/app/actions/settings.ts"
+        }
+      },
+      "exportedName": "assignLead",
+      "filename": "newme-platform/src/app/actions/settings.ts"
+    },
+    "601b0ed82b5ea6d93fa06c6096afbfa9c159634ff4": {
+      "workers": {
+        "app/(dashboard)/settings/page": {
+          "moduleId": 85521,
+          "async": false,
+          "exportedName": "bulkAssignLeads",
+          "filename": "newme-platform/src/app/actions/settings.ts"
+        }
+      },
+      "exportedName": "bulkAssignLeads",
+      "filename": "newme-platform/src/app/actions/settings.ts"
+    },
+    "40ba81c476bca29f0afd96aa2f37eeea3c533e7ee8": {
+      "workers": {
+        "app/(dashboard)/settings/page": {
+          "moduleId": 85521,
+          "async": false,
+          "exportedName": "bulkUnassignLeads",
+          "filename": "newme-platform/src/app/actions/settings.ts"
+        }
+      },
+      "exportedName": "bulkUnassignLeads",
+      "filename": "newme-platform/src/app/actions/settings.ts"
+    },
+    "6075b14a2d52ad6bed45be5a2e5fdd4460e4f61112": {
+      "workers": {
+        "app/(dashboard)/settings/page": {
+          "moduleId": 85521,
+          "async": false,
+          "exportedName": "transferAllLeads",
+          "filename": "newme-platform/src/app/actions/settings.ts"
+        }
+      },
+      "exportedName": "transferAllLeads",
+      "filename": "newme-platform/src/app/actions/settings.ts"
+    },
+    "00eb9120ae7f2b4d3db42532c478d4f36b300fdb88": {
+      "workers": {
+        "app/(dashboard)/settings/page": {
+          "moduleId": 85521,
+          "async": false,
+          "exportedName": "getCurrentUser",
+          "filename": "newme-platform/src/app/actions/auth.ts"
+        }
+      },
+      "exportedName": "getCurrentUser",
+      "filename": "newme-platform/src/app/actions/auth.ts"
+    }
+  },
+  "edge": {}
+}

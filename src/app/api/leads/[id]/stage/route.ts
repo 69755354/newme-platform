@@ -35,7 +35,9 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid stage" }, { status: 400 });
     }
 
-    const supabase = await createServerSupabase();
+    const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = req.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: lead, error: leadError } = await supabase
       .from("leads")
       .select("id, assigned_to, stage, quality")

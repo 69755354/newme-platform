@@ -27,7 +27,7 @@ function parseSsrCookie(value: string): Record<string, any> | null {
 /**
  * Parse a raw Cookie header string into name-value pairs.
  */
-function parseCookieHeader(cookieHeader: string): Array<{ name: string; value: string }> {
+export function parseCookieHeader(cookieHeader: string): Array<{ name: string; value: string }> {
   return cookieHeader
     .split(";")
     .map((c) => {

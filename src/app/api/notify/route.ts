@@ -16,7 +16,9 @@ import type { NotificationType } from "@/lib/notifications";
  * Validates auth + ownership before writing.
  */
 export async function POST(request: NextRequest) {
-  const supabase = await createServerSupabase();
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const {
     data: { user },
   } = await supabase.auth.getUser();

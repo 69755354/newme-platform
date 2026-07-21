@@ -6,7 +6,9 @@ import { logger, genReqId } from "@/lib/logger"
 
 export async function GET(request: Request) {
   const request_id = genReqId()
-  const supabase = await createServerSupabase()
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader)
 
   const {
     data: { user },

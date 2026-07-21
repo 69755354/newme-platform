@@ -19,8 +19,10 @@ interface NeedsAttentionLead {
   reason: string;
 }
 
-export async function GET() {
-  const supabase = await createServerSupabase();
+export async function GET(request: Request) {
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

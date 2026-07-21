@@ -1,0 +1,17 @@
+{
+  "node": {
+    "00937983b762341a9358559868a448d3c21b163fa3": {
+      "workers": {
+        "app/(dashboard)/contracts/new/page": {
+          "moduleId": 82633,
+          "async": false,
+          "exportedName": "getCurrentUser",
+          "filename": "newme-platform/src/app/actions/auth.ts"
+        }
+      },
+      "exportedName": "getCurrentUser",
+      "filename": "newme-platform/src/app/actions/auth.ts"
+    }
+  },
+  "edge": {}
+}

@@ -35,8 +35,10 @@ function dubaiWeekBounds(): { startIso: string; endIso: string } {
   return { startIso: new Date(startMs).toISOString(), endIso: new Date(endMs).toISOString() }
 }
 
-export async function GET() {
-  const supabase = await createServerSupabase()
+export async function GET(request: Request) {
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader)
 
   const {
     data: { user },

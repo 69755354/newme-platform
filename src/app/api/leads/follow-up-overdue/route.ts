@@ -7,8 +7,10 @@ import { createServerSupabase } from "@/lib/supabase-server";
  * Returns leads where next_followup_date <= today AND stage is active (not won/lost).
  * Used by the notification cron and the "Needs Follow-up" filter.
  */
-export async function GET() {
-  const supabase = await createServerSupabase();
+export async function GET(request: Request) {
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
 
   const {
     data: { user },

@@ -23,7 +23,9 @@ export async function POST(
   const { id: contractId } = await params;
   try {
     // ── Auth ───────────────────────────────────────────────────────────
-    const supabase = await createServerSupabase();
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const {
       data: { user },
       error: authErr,

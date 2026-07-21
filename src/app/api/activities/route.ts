@@ -9,7 +9,9 @@ import { createServerSupabase } from "@/lib/supabase-server";
  */
 export async function GET(request: NextRequest) {
   // Auth check — must be authenticated
-  const supabase = await createServerSupabase();
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

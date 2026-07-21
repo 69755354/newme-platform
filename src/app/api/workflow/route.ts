@@ -5,7 +5,9 @@ import { createServerSupabase } from "@/lib/supabase-server";
 /** POST /api/workflow/start-stage — mark a stage as in_progress, set deadline */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerSupabase();
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -78,7 +80,9 @@ export async function POST(request: NextRequest) {
 /** PUT /api/workflow/complete-stage — mark a stage as completed */
 export async function PUT(request: NextRequest) {
   try {
-    const supabase = await createServerSupabase();
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

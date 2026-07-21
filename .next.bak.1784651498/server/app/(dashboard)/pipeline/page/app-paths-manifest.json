@@ -1,0 +1,3 @@
+{
+  "/(dashboard)/pipeline/page": "app/(dashboard)/pipeline/page.js"
+}

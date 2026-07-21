@@ -144,34 +144,23 @@ if [ "${AVAIL_KB:-0}" -lt 8388608 ]; then
 fi
 echo "✅ Disk: $(( AVAIL_KB / 1024 / 1024 ))GB available"
 
-# --- Step 1: Build in isolated worktree ---
+# --- Step 1: Build in source repo (not isolated worktree) ---
+# Building in /tmp worktree requires npm install which produces different
+# node_modules, breaking Next.js request context (cookies() → auth/me 500).
+# Build in source repo where proven node_modules already exist.
 echo "--- Build ---"
-BUILD_WORKTREE="/tmp/newme-build-${RELEASE_ID}"
-git -C "$PROJECT_ROOT" worktree add --detach "$BUILD_WORKTREE" "$GIT_SHA" 2>/dev/null || {
-  # Retry: remove stale worktree
-  git -C "$PROJECT_ROOT" worktree remove --force "$BUILD_WORKTREE" 2>/dev/null || true
-  git -C "$PROJECT_ROOT" worktree prune 2>/dev/null || true
-  git -C "$PROJECT_ROOT" worktree add --detach "$BUILD_WORKTREE" "$GIT_SHA"
-}
+cd "$PROJECT_ROOT"
 
-# Copy env
-if [ -f "$PROJECT_ROOT/.env.local" ]; then
-  cp "$PROJECT_ROOT/.env.local" "$BUILD_WORKTREE/.env.local"
+# Preserve existing .next if any
+if [ -d .next ]; then
+  mv .next .next.bak.$(date +%s) 2>/dev/null || true
 fi
 
-# Build
-cd "$BUILD_WORKTREE"
-# Use source repo's proven node_modules — npm ci produces different output that
-# can break Next.js request context (e.g., cookies() outside request scope → auth/me 500)
-if [ ! -d node_modules ]; then
-  ln -sfn "$PROJECT_ROOT/node_modules" node_modules
-fi
-
-if ! NODE_OPTIONS="--max_old_space_size=2048" npm run build 2>&1 | tail -10; then
+if ! NEWME_ISOLATED_BUILD=1 NODE_OPTIONS="--max_old_space_size=2048" npm run build 2>&1 | tail -10; then
   echo "❌ Build failed"
-  cd "$PROJECT_ROOT"
-  rm -rf "$BUILD_WORKTREE" 2>/dev/null
-  git -C "$PROJECT_ROOT" worktree prune 2>/dev/null
+  # Restore backup
+  LATEST_BAK=$(ls -td .next.bak.* 2>/dev/null | head -1)
+  [ -n "$LATEST_BAK" ] && mv "$LATEST_BAK" .next 2>/dev/null
   rm -f "$LOCKFILE"
   exit 1
 fi
@@ -185,12 +174,16 @@ mkdir -p "$RELEASE_DIR"
 cp -a .next "$RELEASE_DIR/"
 cp package.json package-lock.json next.config.ts "$RELEASE_DIR/" 2>/dev/null || true
 cp -a public "$RELEASE_DIR/" 2>/dev/null || true
-cp "$BUILD_WORKTREE/.env.local" "$RELEASE_DIR/.env.local" 2>/dev/null || true
+if [ -f "$PROJECT_ROOT/.env.local" ]; then
+  cp "$PROJECT_ROOT/.env.local" "$RELEASE_DIR/.env.local"
+fi
 
-# Cleanup worktree
-cd "$PROJECT_ROOT"
-rm -rf "$BUILD_WORKTREE"
-git -C "$PROJECT_ROOT" worktree prune 2>/dev/null || true
+# Restore original .next if it existed
+LATEST_BAK=$(ls -td .next.bak.* 2>/dev/null | head -1)
+if [ -n "$LATEST_BAK" ]; then
+  rm -rf .next 2>/dev/null
+  mv "$LATEST_BAK" .next 2>/dev/null
+fi
 
 # Fix appDir in required-server-files.json (worktree path → release path)
 python3 -c "

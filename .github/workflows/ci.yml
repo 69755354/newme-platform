@@ -92,18 +92,6 @@ jobs:
             echo "Build recreated the forbidden root tsconfig.tsbuildinfo"
             exit 1
           fi
-
-      - name: Sentry — create release
-        if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production') }}
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-        run: |
-          curl -sL https://github.com/getsentry/sentry-cli/releases/download/2.42.4/sentry-cli-Linux-x86_64 -o /usr/local/bin/sentry-cli
-          chmod +x /usr/local/bin/sentry-cli
-          VERSION="${GITHUB_SHA:0:7}"
-          sentry-cli releases new "$VERSION"
-          sentry-cli releases set-commits --auto "$VERSION"
-          echo "✅ Sentry release $VERSION created + commits linked"
   windows-checkout:
     name: Windows checkout and SPEC gate
     if: ${{ github.event_name == 'pull_request' }}

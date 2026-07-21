@@ -181,8 +181,9 @@ fi
 # Restore original .next if it existed
 LATEST_BAK=$(ls -td .next.bak.* 2>/dev/null | head -1)
 if [ -n "$LATEST_BAK" ]; then
-  rm -rf .next 2>/dev/null
+  mv .next .next.prev 2>/dev/null || true
   mv "$LATEST_BAK" .next 2>/dev/null
+  mv .next.prev .next.bak.$(date +%s) 2>/dev/null || true
 fi
 
 # Fix appDir in required-server-files.json (worktree path → release path)

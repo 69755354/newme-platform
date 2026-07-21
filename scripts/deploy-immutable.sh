@@ -25,6 +25,103 @@ echo "=== Deploy: $RELEASE_ID ==="
 echo "Bootstrap: $BOOTSTRAP_MODE"
 echo "Previous:  ${PREVIOUS_RELEASE:-none}"
 
+# ==== Symlink Repair ====
+
+verify_and_repair_next_external_symlinks() {
+  local release_dir="$1"
+  local ext_dir="${release_dir}/.next/node_modules"
+  local scan_count=0 valid_count=0 repaired_count=0 failed_count=0
+  local repaired_links=() failed_links=()
+
+  if [ ! -d "$ext_dir" ]; then
+    echo "  ℹ️  No .next/node_modules — nothing to repair"
+    echo '{"scan":0,"valid":0,"repaired":0,"failed":0,"repaired_links":[],"failed_links":[]}' > /tmp/symlink-repair.json
+    return 0
+  fi
+
+  for link in "$ext_dir"/*; do
+    [ -L "$link" ] || continue
+    scan_count=$((scan_count + 1))
+    local link_name
+    link_name=$(basename "$link")
+
+    # Already valid — keep
+    if realpath -e "$link" > /dev/null 2>&1; then
+      valid_count=$((valid_count + 1))
+      continue
+    fi
+
+    # === Broken symlink — repair ===
+    local old_target pkg_name
+    old_target=$(readlink "$link")
+
+    # Strategy 1: extract package name from original target (most reliable)
+    if [[ "$old_target" =~ /node_modules/([^/]+)$ ]]; then
+      pkg_name="${BASH_REMATCH[1]}"
+    # Strategy 2: strip 16-char hex hash suffix from symlink name
+    elif [[ "$link_name" =~ ^(.+)-[a-f0-9]{16}$ ]]; then
+      pkg_name="${BASH_REMATCH[1]}"
+    else
+      failed_count=$((failed_count + 1))
+      failed_links+=("${link_name} (cannot parse package name from '${old_target}')")
+      continue
+    fi
+
+    # Verify package exists in release node_modules
+    local new_target="${release_dir}/node_modules/${pkg_name}"
+    if [ ! -e "$new_target" ]; then
+      failed_count=$((failed_count + 1))
+      failed_links+=("${link_name} -> ${pkg_name} (not found in node_modules)")
+      continue
+    fi
+
+    # Rebuild relative symlink
+    rm -f "$link"
+    ln -sfn "../../node_modules/${pkg_name}" "$link"
+
+    # Verify repair
+    if realpath -e "$link" > /dev/null 2>&1; then
+      repaired_count=$((repaired_count + 1))
+      repaired_links+=("${link_name} -> ${pkg_name}")
+    else
+      failed_count=$((failed_count + 1))
+      failed_links+=("${link_name} -> ${pkg_name} (repair symlink still broken)")
+    fi
+  done
+
+  # Write structured result
+  python3 -c "
+import json
+data = {
+    'scan': $scan_count,
+    'valid': $valid_count,
+    'repaired': $repaired_count,
+    'failed': $failed_count,
+    'repaired_links': $(python3 -c "import json; print(json.dumps([x for x in '''${repaired_links[*]}'''.split('\n') if x]))" 2>/dev/null || echo '[]'),
+    'failed_links': $(python3 -c "import json; print(json.dumps([x for x in '''${failed_links[*]}'''.split('\n') if x]))" 2>/dev/null || echo '[]')
+}
+json.dump(data, open('/tmp/symlink-repair.json','w'), indent=2)
+" 2>/dev/null || {
+    printf '{"scan":%d,"valid":%d,"repaired":%d,"failed":%d,"repaired_links":[],"failed_links":[]}' \
+      "$scan_count" "$valid_count" "$repaired_count" "$failed_count" > /tmp/symlink-repair.json
+  }
+
+  # Echo summary
+  echo "  Scanned:  $scan_count"
+  echo "  Valid:    $valid_count"
+  echo "  Repaired: $repaired_count"
+  echo "  Failed:   $failed_count"
+
+  if [ "$repaired_count" -gt 0 ]; then
+    for r in "${repaired_links[@]}"; do echo "  ✅ $r"; done
+  fi
+  if [ "$failed_count" -gt 0 ]; then
+    for f in "${failed_links[@]}"; do echo "  ❌ $f"; done
+  fi
+
+  return "$failed_count"
+}
+
 # --- Step 0: Deploy lock ---
 LOCKFILE="$PROJECT_ROOT/.hermes/deploy-in-progress"
 if [ -f "$LOCKFILE" ]; then
@@ -93,6 +190,16 @@ cd "$PROJECT_ROOT"
 rm -rf "$BUILD_WORKTREE"
 git -C "$PROJECT_ROOT" worktree prune 2>/dev/null || true
 
+# Fix appDir in required-server-files.json (worktree path → release path)
+python3 -c "
+import json
+rf = '$RELEASE_DIR/.next/required-server-files.json'
+with open(rf) as f: data = json.load(f)
+data['appDir'] = '$RELEASE_DIR'
+with open(rf, 'w') as f: json.dump(data, f)
+"
+echo '✅ appDir patched to release directory'
+
 # --- Step 3: Dependency hash ---
 LOCK_HASH=$(sha256sum "$RELEASE_DIR/package-lock.json" 2>/dev/null | awk '{print $1}' || echo "none")
 DEP_DIR="${SHARED_ROOT}/node_modules/${LOCK_HASH}"
@@ -116,6 +223,24 @@ fi
 
 ln -sfn "$DEP_DIR" "$RELEASE_DIR/node_modules"
 
+# --- Step 3.5: Repair Turbopack external module symlinks ---
+echo "--- Symlink Repair ---"
+verify_and_repair_next_external_symlinks "$RELEASE_DIR"
+SYMLINK_FAILED=$?
+
+# Load repair results
+SYMLINK_REPAIR_JSON=$(cat /tmp/symlink-repair.json 2>/dev/null || echo '{"scan":0,"valid":0,"repaired":0,"failed":0}')
+SYMLINK_SCAN=$(echo "$SYMLINK_REPAIR_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('scan',0))" 2>/dev/null || echo 0)
+SYMLINK_VALID=$(echo "$SYMLINK_REPAIR_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('valid',0))" 2>/dev/null || echo 0)
+SYMLINK_REPAIRED=$(echo "$SYMLINK_REPAIR_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('repaired',0))" 2>/dev/null || echo 0)
+SYMLINK_FAILED_COUNT=$(echo "$SYMLINK_REPAIR_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('failed',0))" 2>/dev/null || echo 0)
+
+if [ "$SYMLINK_FAILED_COUNT" -gt 0 ]; then
+  echo "❌ symlink repair failures ($SYMLINK_FAILED_COUNT) — BLOCKED"
+  rm -f "$LOCKFILE"
+  exit 1
+fi
+
 # --- Step 4: Write manifest ---
 cat > "$RELEASE_DIR/manifest.json" << MANIFESTEOF
 {
@@ -125,6 +250,12 @@ cat > "$RELEASE_DIR/manifest.json" << MANIFESTEOF
   "created_at": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
   "package_lock_hash": "$LOCK_HASH",
   "dependency_path": "$DEP_DIR",
+  "symlink_repair": {
+    "scan": $SYMLINK_SCAN,
+    "valid": $SYMLINK_VALID,
+    "repaired": $SYMLINK_REPAIRED,
+    "failed": $SYMLINK_FAILED_COUNT
+  },
   "status": "built",
   "source": "deploy-immutable.sh"
 }
@@ -132,15 +263,29 @@ MANIFESTEOF
 
 # --- Step 5: Pre-switch smoke on 3002 ---
 echo "--- 3002 Smoke ---"
+
+# Clean any stale 3002 process
+STALE_3002=$(fuser 3002/tcp 2>/dev/null || true)
+if [ -n "$STALE_3002" ]; then
+  echo "⚠️  Killing stale 3002 process: $STALE_3002"
+  fuser -k 3002/tcp 2>/dev/null || true
+  sleep 1
+fi
+
 cd "$RELEASE_DIR"
 PORT=3002 npm run start &
 PID_3002=$!
+
+# Ensure 3002 is always killed on exit
+cleanup_3002() { kill $PID_3002 2>/dev/null; wait $PID_3002 2>/dev/null; }
+trap cleanup_3002 EXIT
+
 sleep 1
 
 # Wait for readiness
 READY=false
 for i in $(seq 1 15); do
-  if curl -s -o /dev/null -w "%{http_code}" http://localhost:3002/api/health 2>/dev/null | grep -q "200"; then
+  if curl -s -o /dev/null -w "%{http_code}" http://localhost:3002/api/ready 2>/dev/null | grep -q "200"; then
     READY=true
     break
   fi
@@ -150,7 +295,7 @@ done
 SMOKE_PASS=true
 if [ "$READY" = true ]; then
   # Smoke key routes
-  for route in "/" "/api/health" "/dashboard" "/leads" "/contracts" "/quotations" "/payments"; do
+  for route in "/" "/api/ready" "/dashboard" "/leads" "/contracts" "/quotations" "/payments"; do
     CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3002${route}" 2>/dev/null || echo "000")
     if [ "$CODE" = "000" ]; then
       SMOKE_PASS=false
@@ -188,10 +333,10 @@ sleep 5
 # --- Step 8: Production validation ---
 echo "--- Production Smoke ---"
 HEALTH=$(curl -s http://localhost:3001/api/health 2>/dev/null || echo '{"status":"down"}')
-HEALTH_BUILD=$(echo "$HEALTH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('version','unknown'))" 2>/dev/null || echo "unknown")
+HEALTH_BUILD=$(echo "$HEALTH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('release','unknown'))" 2>/dev/null || echo "unknown")
 HEALTH_STATUS=$(echo "$HEALTH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','down'))" 2>/dev/null || echo "down")
 
-if [ "$HEALTH_STATUS" != "healthy" ]; then
+if [ "$HEALTH_STATUS" != "ok" ]; then
   echo "❌ Production health check failed: $HEALTH_STATUS"
   PROD_PASS=false
 elif [ "$HEALTH_BUILD" != "$BUILD_ID" ]; then
@@ -266,6 +411,7 @@ cat > "$EVIDENCE_FILE" << EVIEOF
   "previous_release": "${PREVIOUS_RELEASE:-none}",
   "bootstrap": $BOOTSTRAP_MODE,
   "package_lock_hash": "$LOCK_HASH",
+  "symlink_repair": $SYMLINK_REPAIR_JSON,
   "result": "pass",
   "finished_at": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 }

@@ -1,8 +1,5 @@
 import { createClient as _createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
 let _client: SupabaseClient | null = null;
 let _sessionToken: string | null = null;
 let _initPromise: Promise<void> | null = null;
@@ -57,7 +54,30 @@ export function createClient(): SupabaseClient {
   }
 
   if (!_client) {
-    _client = _createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) {
+      // SSR / isolated build guard: return a stub that defers all operations.
+      // The real client will be created client-side where NEXT_PUBLIC_* vars exist.
+      if (typeof window === "undefined") {
+        return new Proxy({} as SupabaseClient, {
+          get(_t, prop) {
+            if (prop === "auth") {
+              return { getSession: () => Promise.resolve({ data: { session: null }, error: null }) };
+            }
+            if (prop === "from") {
+              return () => ({
+                select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: null, error: null }) }) }),
+                insert: () => ({ select: () => ({ single: () => Promise.resolve({ data: null, error: null }) }) }),
+              });
+            }
+            return () => Promise.resolve({ data: null, error: null });
+          },
+        });
+      }
+      throw new Error("supabase client: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY required");
+    }
+    _client = _createSupabaseClient(url, key, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,

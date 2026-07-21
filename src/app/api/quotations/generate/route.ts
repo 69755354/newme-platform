@@ -77,11 +77,11 @@ export async function POST(request: NextRequest) {
 
     // Ownership check: caller must have access to this lead (admin/boss bypass).
     // Verified before any service_role write.
-    const profile = await getAuthProfile();
+    const profile = await getAuthProfile(bearerToken, cookieHeader);
     if (!profile) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    if (!(await canAccessLead(lead_id, profile))) {
+    if (!(await canAccessLead(lead_id, profile, bearerToken, cookieHeader))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

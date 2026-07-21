@@ -15,7 +15,7 @@ export async function POST(
   const supabase = await createServerSupabase(bearerToken, cookieHeader);
 
   // 1. 鉴权 + 角色
-  const profile = await getAuthProfile();
+  const profile = await getAuthProfile(bearerToken, cookieHeader);
   if (!profile) {
     return NextResponse.json({ error: "未登录" }, { status: 401 });
   }
@@ -220,7 +220,9 @@ export async function PATCH(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const profile = await getAuthProfile();
+  const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+  const cookieHeader = req.headers.get("cookie") ?? "";
+  const profile = await getAuthProfile(bearerToken, cookieHeader);
   if (!profile) {
     return NextResponse.json({ error: "未登录" }, { status: 401 });
   }
@@ -243,8 +245,6 @@ export async function PATCH(
     );
   }
 
-  const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-  const cookieHeader = req.headers.get("cookie") ?? "";
   const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const { data: lead, error: leadError } = await supabase
     .from("leads")

@@ -101,7 +101,9 @@ async function resolveLeadIdFromKey(
  */
 export async function POST(request: NextRequest) {
   try {
-    const profile = await getAuthProfile();
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const profile = await getAuthProfile(bearerToken, cookieHeader);
     if (!profile) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -132,7 +134,7 @@ export async function POST(request: NextRequest) {
       if (!isAdminOrBoss(profile)) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
-    } else if (!(await canAccessLead(ownerLeadId, profile))) {
+    } else if (!(await canAccessLead(ownerLeadId, profile, bearerToken, cookieHeader))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

@@ -29,7 +29,8 @@ export async function POST(
     );
 
     // 1. Auth + role check
-    const profile = await getAuthProfile();
+    const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const profile = await getAuthProfile(bearerToken, cookieHeader);
     if (!profile) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

@@ -14,7 +14,9 @@ export async function PATCH(
   const request_id = genReqId();
   const { id: leadId, contactId } = await params;
   try {
-    const profile = await getAuthProfile();
+    const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = req.headers.get("cookie") ?? "";
+    const profile = await getAuthProfile(bearerToken, cookieHeader);
     if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
@@ -36,8 +38,6 @@ export async function PATCH(
       return NextResponse.json({ error: "contact_result is required" }, { status: 400 });
     }
 
-    const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const cookieHeader = req.headers.get("cookie") ?? "";
     const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: lead, error: leadError } = await supabase
       .from("leads")
@@ -98,11 +98,11 @@ export async function DELETE(
   const request_id = genReqId();
   const { id: leadId, contactId } = await params;
   try {
-    const profile = await getAuthProfile();
-    if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
     const bearerToken = _req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
     const cookieHeader = _req.headers.get("cookie") ?? "";
+    const profile = await getAuthProfile(bearerToken, cookieHeader);
+    if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: lead, error: leadError } = await supabase
       .from("leads")

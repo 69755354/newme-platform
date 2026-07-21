@@ -6,8 +6,8 @@ export interface AuthProfile {
   role: string;
 }
 
-export async function getAuthProfile(): Promise<AuthProfile | null> {
-  const supabase = await createServerSupabase();
+export async function getAuthProfile(bearerToken?: string, cookieHeader?: string): Promise<AuthProfile | null> {
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
   const { data: profile } = await supabase
@@ -25,9 +25,9 @@ export function isAdminOrBoss(profile: AuthProfile): boolean {
     || profile.role === "operator";
 }
 
-export async function canAccessLead(leadId: string, profile: AuthProfile): Promise<boolean> {
+export async function canAccessLead(leadId: string, profile: AuthProfile, bearerToken?: string, cookieHeader?: string): Promise<boolean> {
   if (isAdminOrBoss(profile)) return true;
-  const supabase = await createServerSupabase();
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const { data: lead } = await supabase
     .from("leads")
     .select("assigned_to")

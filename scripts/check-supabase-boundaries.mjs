@@ -1,6 +1,39 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+
+// ─── Self-test mode ───
+if (process.argv.includes("--self-test")) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "boundary-test-"));
+  const backupDir = path.join(tmp, ".next.backup.1784546503");
+  fs.mkdirSync(backupDir, { recursive: true });
+  // File that would trigger a violation if scanned
+  fs.writeFileSync(path.join(backupDir, "fake.js"),
+    'import { supabaseAdmin } from "@/lib/supabase-admin";\n' +
+    'process.env.SUPABASE_SERVICE_ROLE_KEY;\n' +
+    'supabaseAdmin.from("t").insert({});\n'
+  );
+  // Run the checker from tmp dir
+  const { execSync } = await import("node:child_process");
+  const script = process.argv[1];
+  try {
+    const out = execSync(`node "${script}"`, { cwd: tmp, timeout: 10000, encoding: "utf8" });
+    if (out.includes("passed")) {
+      console.log("SELF-TEST PASS: .next.backup.<timestamp> correctly ignored");
+      fs.rmSync(tmp, { recursive: true, force: true });
+      process.exit(0);
+    }
+    console.error("SELF-TEST FAIL: checker did not pass (unexpected)");
+    console.error(out.slice(0, 500));
+    fs.rmSync(tmp, { recursive: true, force: true });
+    process.exit(1);
+  } catch (e) {
+    console.error("SELF-TEST FAIL:", e.message?.slice(0, 200));
+    fs.rmSync(tmp, { recursive: true, force: true });
+    process.exit(1);
+  }
+}
 
 const root = process.cwd();
 const allowlistPath = path.join(root, "scripts/supabase-boundary-allowlist.json");
@@ -9,11 +42,18 @@ const allowlist = fs.existsSync(allowlistPath)
   : {};
 const allowedCounts = new Map(Object.entries(allowlist.max_findings ?? {}));
 const exts = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
-const ignored = new Set(["node_modules", ".next", ".next.backup", ".git", "coverage"]);
+const ignored = new Set(["node_modules", ".next", ".git", "coverage"]);
+
+function isIgnoredDir(name) {
+  if (ignored.has(name)) return true;
+  // Catch .next.backup.<timestamp> / .next.backup-* variants created by deploy scripts
+  if (name.startsWith(".next.backup")) return true;
+  return false;
+}
 
 function walk(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (ignored.has(entry.name)) continue;
+    if (entry.isDirectory() && isIgnoredDir(entry.name)) continue;
     const file = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(file, out);
     else if (exts.includes(path.extname(entry.name))) out.push(file);

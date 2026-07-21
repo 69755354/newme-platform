@@ -1,6 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
+export interface RefreshedCookie {
+  name: string;
+  value: string;
+  options: Record<string, unknown>;
+}
+
 /**
  * Parse the @supabase/ssr-format auth token cookie.
  * Returns the session object or null.
@@ -16,6 +22,49 @@ function parseSsrCookie(value: string): Record<string, any> | null {
       return null;
     }
   }
+}
+
+/**
+ * Parse a raw Cookie header string into name-value pairs.
+ */
+function parseCookieHeader(cookieHeader: string): Array<{ name: string; value: string }> {
+  return cookieHeader
+    .split(";")
+    .map((c) => {
+      const idx = c.indexOf("=");
+      if (idx === -1) return { name: c.trim(), value: "" };
+      return { name: c.substring(0, idx).trim(), value: c.substring(idx + 1).trim() };
+    })
+    .filter((c) => c.name.length > 0);
+}
+
+/**
+ * Extract access_token and refresh_token from cookies.
+ */
+function extractTokens(
+  allCookies: Array<{ name: string; value: string }>,
+): { accessToken?: string; refreshToken?: string } {
+  let a: string | undefined;
+  let r: string | undefined;
+  const c = allCookies.find((x) => x.name === "sb-vfopmpxlhwzpxqegayew-auth-token");
+  if (c) {
+    const s = parseSsrCookie(c.value);
+    if (s?.access_token) {
+      a = s.access_token;
+      if (s.expires_at && s.expires_at * 1000 < Date.now()) {
+        const x = allCookies.find((y) => y.name === "sb-vfopmpxlhwzpxqegayew-refresh-token");
+        r = x?.value || s.refresh_token;
+        a = undefined;
+      }
+    }
+  }
+  if (!a && !r) {
+    const lt = allCookies.find((x) => x.name === "sb-access-token");
+    if (lt) a = lt.value;
+    const lr = allCookies.find((x) => x.name === "sb-refresh-token");
+    if (lr) r = lr.value;
+  }
+  return { accessToken: a, refreshToken: r };
 }
 
 /**
@@ -72,42 +121,34 @@ function tryRefreshTokenLocked(
   return promise;
 }
 
-export async function createServerSupabase(bearerToken?: string) {
-  const cookieStore = await cookies();
-  const allCookies = cookieStore.getAll();
-
+export async function createServerSupabase(
+  bearerToken?: string,
+  cookieString?: string,
+) {
+  let refreshedCookies: RefreshedCookie[] = [];
+  let refreshAttempted = false;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-  // ── 1. Extract access_token + refresh_token from cookies ──
-  let accessToken: string | undefined;
-  let refreshToken: string | undefined;
+  // ── 1. Obtain cookies ──
+  let allCookies: Array<{ name: string; value: string }>;
+  let _cookieStore: Awaited<ReturnType<typeof cookies>> | null = null;
 
-  // Format A: @supabase/ssr plain JSON cookie
-  const ssrCookie = allCookies.find(c => c.name === "sb-vfopmpxlhwzpxqegayew-auth-token");
-  if (ssrCookie) {
-    const session = parseSsrCookie(ssrCookie.value);
-    if (session?.access_token) {
-      accessToken = session.access_token;
-      // Check if expired — if so, try refresh
-      if (session.expires_at && session.expires_at * 1000 < Date.now()) {
-        const refreshCookie = allCookies.find(c => c.name === "sb-vfopmpxlhwzpxqegayew-refresh-token");
-        refreshToken = refreshCookie?.value || session.refresh_token;
-        accessToken = undefined; // will try refresh below
-      }
-    }
+  if (cookieString !== undefined) {
+    // Explicit path: parse from raw Cookie header (no next/headers dependency)
+    allCookies = parseCookieHeader(cookieString);
+  } else {
+    // Legacy path: use next/headers cookies() API
+    _cookieStore = await cookies();
+    allCookies = _cookieStore.getAll();
   }
 
-  // Format B: legacy raw tokens
-  if (!accessToken && !refreshToken) {
-    const legacyToken = allCookies.find(c => c.name === "sb-access-token");
-    if (legacyToken) accessToken = legacyToken.value;
-    const legacyRefresh = allCookies.find(c => c.name === "sb-refresh-token");
-    if (legacyRefresh) refreshToken = legacyRefresh.value;
-  }
+  // ── 2. Extract tokens ──
+  let { accessToken, refreshToken } = extractTokens(allCookies);
 
   // ── 2. If token is expired, try to refresh ──
   if (!accessToken && refreshToken) {
+    refreshAttempted = true;
     const refreshed = await tryRefreshTokenLocked(supabaseUrl, anonKey, refreshToken);
     if (refreshed) {
       accessToken = refreshed.accessToken;
@@ -117,20 +158,27 @@ export async function createServerSupabase(bearerToken?: string) {
         refresh_token: refreshed.refreshToken,
         expires_at: refreshed.expiresAt,
       });
-      cookieStore.set("sb-vfopmpxlhwzpxqegayew-auth-token", newPayload, {
+      // Only set cookies when using the legacy cookies() API (not explicit header)
+      refreshedCookies = [
+        { name: "sb-vfopmpxlhwzpxqegayew-auth-token", value: newPayload, options: { path: "/", maxAge: refreshed.expiresAt - Math.floor(Date.now() / 1000), sameSite: "strict", secure: true, httpOnly: false } },
+        { name: "sb-vfopmpxlhwzpxqegayew-refresh-token", value: refreshed.refreshToken, options: { path: "/", maxAge: 2592000, sameSite: "strict", secure: true, httpOnly: false } },
+      ];
+      if (_cookieStore) {
+        _cookieStore.set("sb-vfopmpxlhwzpxqegayew-auth-token", newPayload, {
         path: "/",
         maxAge: refreshed.expiresAt - Math.floor(Date.now() / 1000),
         sameSite: "strict",
         secure: true,
         httpOnly: false,
       });
-      cookieStore.set("sb-vfopmpxlhwzpxqegayew-refresh-token", refreshed.refreshToken, {
+      _cookieStore.set("sb-vfopmpxlhwzpxqegayew-refresh-token", refreshed.refreshToken, {
         path: "/",
         maxAge: 2592000,
         sameSite: "strict",
         secure: true,
         httpOnly: false,
       });
+      }
     }
   }
 
@@ -146,7 +194,7 @@ export async function createServerSupabase(bearerToken?: string) {
     headers.Authorization = `Bearer ${effectiveToken}`;
   }
 
-  return createClient(supabaseUrl, anonKey, {
+  const client = createClient(supabaseUrl, anonKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -154,4 +202,22 @@ export async function createServerSupabase(bearerToken?: string) {
     },
     global: { headers },
   });
+  (client as any).__refreshedCookies = refreshedCookies;
+  (client as any).__refreshAttempted = refreshAttempted;
+  return client;
+}
+
+/**
+ * Get cookies that were refreshed during createServerSupabase.
+ * Returns empty array if no refresh occurred.
+ */
+export function getRefreshedCookies(client: unknown): RefreshedCookie[] {
+  return (client as any).__refreshedCookies || [];
+}
+
+/**
+ * Whether a token refresh was attempted during createServerSupabase.
+ */
+export function getRefreshAttempted(client: unknown): boolean {
+  return (client as any).__refreshAttempted === true;
 }

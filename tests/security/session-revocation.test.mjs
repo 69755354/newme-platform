@@ -45,6 +45,7 @@ function createNextServerMock() {
     constructor(body, init = {}) {
       this.body = body;
       this.status = init.status ?? 200;
+      this.cookies = { set: () => {} };
     }
 
     async json() {
@@ -217,7 +218,7 @@ test("real auth-me handler rejects an inactive old token and accepts an active p
                 async single() {
                   return active
                     ? { data: { role: "admin", is_active: true, force_password_change: false, full_name: "Test User", email: "test@example.com" }, error: null }
-                    : { data: null, error: { code: "PGRST116" } };
+                    : { data: { role: "sales", is_active: false, force_password_change: false, full_name: "Inactive User", email: "test@example.com" }, error: null };
                 },
               };
             },
@@ -228,7 +229,8 @@ test("real auth-me handler rejects an inactive old token and accepts an active p
   });
 
   const authMe = loadTypeScriptModule("src/app/api/auth/me/route.ts", {
-    "@/lib/supabase-server": { createServerSupabase: async () => supabase },
+    "@/lib/supabase-server": { createServerSupabase: async () => supabase, getRefreshedCookies: () => [], getRefreshAttempted: () => false },
+    "@/lib/logger": { logger: { error: () => {}, info: () => {}, warn: () => {} } },
     "next/server": nextServer,
     "@supabase/supabase-js": { createClient: mockCreateClient },
   });

@@ -1,34 +1,54 @@
 // RBAC: user (authenticated)
 import { createClient } from "@supabase/supabase-js";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { createServerSupabase, getRefreshedCookies, getRefreshAttempted } from "@/lib/supabase-server";
+import { logger } from "@/lib/logger";
 import { NextResponse } from "next/server";
 
 /**
  * GET /api/auth/me — returns current user info from session cookie.
  * Used by dashboard layout to avoid client-side Supabase dependency.
  *
- * Profile lookup uses a service_role admin client to bypass RLS and any
- * cookie/header pollution from the request context. Prior hotfixes tried
- * routing through anon-key REST + the user's bearer; both failed in
- * production (stale cookie RLS rejection and blocked egress respectively).
+ * Cookies are extracted from the Request object explicitly and passed to
+ * createServerSupabase via cookieString, avoiding the implicit next/headers
+ * cookies() API. This ensures the route works regardless of how node_modules
+ * is resolved (source repo, frozen copy, or any other path).
  */
 export async function GET(request: Request) {
+  const requestId = crypto.randomUUID();
   try {
     const bearerToken = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
-    const supabase = await createServerSupabase(bearerToken);
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
+    const refreshedCookies = getRefreshedCookies(supabase);
+    const refreshAttempted = getRefreshAttempted(supabase);
+
     const {
       data: { user },
+      error: authError,
     } = bearerToken
       ? await supabase.auth.getUser(bearerToken)
       : await supabase.auth.getUser();
 
-    if (!user) {
+    // Invalid or missing session → 401
+    if (!user || authError) {
+      // Only use "Token refresh failed" when a refresh was actually attempted and failed.
+      if (refreshAttempted && refreshedCookies.length === 0) {
+        return NextResponse.json(
+          { success: false, error: { code: "UNAUTHORIZED", message: "Token refresh failed" } },
+          { status: 401 },
+        );
+      }
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!supabaseUrl || !serviceRoleKey) {
+      logger.error({
+        request_id: requestId,
+        operation: "auth_me",
+        err: new Error("missing environment: SUPABASE_URL or SERVICE_ROLE_KEY"),
+      });
       return NextResponse.json({ error: "internal_error" }, { status: 500 });
     }
 
@@ -36,22 +56,24 @@ export async function GET(request: Request) {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { data: profile } = await adminClient
+    const { data: profile, error: profileError } = await adminClient
       .from("profiles")
       .select("role, is_active, force_password_change, full_name, email")
       .eq("id", user.id)
       .single();
 
+    if (profileError) {
+      logger.error({ request_id: requestId, operation: "auth_me", err: profileError });
+      return NextResponse.json({ error: "internal_error" }, { status: 500 });
+    }
+
     if (!profile || profile.is_active !== true) {
-      return NextResponse.json({
-        error: "inactive_account",
-        _dbg_key: serviceRoleKey ? serviceRoleKey.substring(0, 8) + "..." : "MISSING",
-      }, { status: 401 });
+      return NextResponse.json({ error: "inactive_account" }, { status: 401 });
     }
 
     const role = profile.role ?? "sales";
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       userId: user.id,
       email: user.email ?? null,
       role,
@@ -59,7 +81,12 @@ export async function GET(request: Request) {
       forcePasswordChange: profile.force_password_change ?? false,
       fullName: profile.full_name ?? null,
     });
-  } catch {
+    for (const c of refreshedCookies) {
+      response.cookies.set(c.name, c.value, c.options as any);
+    }
+    return response;
+  } catch (err) {
+    logger.error({ request_id: requestId, operation: "auth_me", err });
     return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }

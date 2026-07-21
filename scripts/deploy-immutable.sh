@@ -132,9 +132,23 @@ MANIFESTEOF
 
 # --- Step 5: Pre-switch smoke on 3002 ---
 echo "--- 3002 Smoke ---"
+
+# Clean any stale 3002 process
+STALE_3002=$(fuser 3002/tcp 2>/dev/null || true)
+if [ -n "$STALE_3002" ]; then
+  echo "⚠️  Killing stale 3002 process: $STALE_3002"
+  fuser -k 3002/tcp 2>/dev/null || true
+  sleep 1
+fi
+
 cd "$RELEASE_DIR"
 PORT=3002 npm run start &
 PID_3002=$!
+
+# Ensure 3002 is always killed on exit
+cleanup_3002() { kill $PID_3002 2>/dev/null; wait $PID_3002 2>/dev/null; }
+trap cleanup_3002 EXIT
+
 sleep 1
 
 # Wait for readiness

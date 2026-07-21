@@ -34,3 +34,4 @@ supabase/.temp/
 .hermes-harness/
 .audit/
 scripts/.ed25519.key.bootstrap
+.next.bak.*

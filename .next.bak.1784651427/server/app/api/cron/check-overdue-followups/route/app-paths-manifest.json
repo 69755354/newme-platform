@@ -1,3 +1,0 @@
-{
-  "/api/cron/check-overdue-followups/route": "app/api/cron/check-overdue-followups/route.js"
-}

@@ -1,5 +1,0 @@
-;!function(){try { var e="undefined"!=typeof globalThis?globalThis:"undefined"!=typeof global?global:"undefined"!=typeof window?window:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&((e._debugIds|| (e._debugIds={}))[n]="c2678535-fa3e-09ef-fcb4-6e6a6e9ffb87")}catch(e){}}();
-module.exports=[65805,a=>{"use strict";var b=a.i(33905);async function c(a){let c=a.map(a=>({user_id:a.userId,type:a.type,title:a.title,body:a.body||null,related_id:a.relatedId||null,related_type:a.relatedType||null})),{error:d}=await b.supabaseAdmin.from("notifications").insert(c);d&&console.error("[Notifications] Bulk insert failed:",d)}async function d(){let{data:a,error:c}=await b.supabaseAdmin.from("profiles").select("id").in("role",["admin","boss"]);return c||!a?(console.error("[Notifications] Failed to fetch admin user IDs:",c),[]):a.map(a=>a.id)}a.s(["createNotificationsBulk",0,c,"getAdminUserIds",0,d])}];
-
-//# debugId=c2678535-fa3e-09ef-fcb4-6e6a6e9ffb87
-//# sourceMappingURL=newme-platform_src_lib_notifications_ts_0hkfes.._.js.map

@@ -1,6 +1,6 @@
 // RBAC: public
 import { NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import fs from "fs";
 import path from "path";
 
@@ -13,8 +13,7 @@ export async function GET() {
   const checks: Record<string, string> = {};
 
   try {
-    const supabase = await createServerSupabase();
-    const { error } = await supabase.from("profiles").select("id").limit(1);
+    const { error } = await supabaseAdmin.from("profiles").select("id").limit(1);
     checks.database = error ? `DOWN: ${error.message}` : "UP";
   } catch (e) {
     checks.database = `DOWN: ${errMsg(e)}`;

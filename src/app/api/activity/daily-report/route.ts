@@ -1,7 +1,11 @@
 // RBAC: user (boss, admin)
+// force-dynamic: Supabase clients require runtime env vars (NEXT_PUBLIC_SUPABASE_URL,
+// SUPABASE_SERVICE_ROLE_KEY). Build-time static analysis triggers "supabaseUrl is required".
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+
+export const dynamic = "force-dynamic";
 
 // ─── Auth check — only boss/admin ───
 async function checkAdminOrBoss(): Promise<NextResponse | null> {

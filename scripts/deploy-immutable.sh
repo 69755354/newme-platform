@@ -190,6 +190,16 @@ cd "$PROJECT_ROOT"
 rm -rf "$BUILD_WORKTREE"
 git -C "$PROJECT_ROOT" worktree prune 2>/dev/null || true
 
+# Fix appDir in required-server-files.json (worktree path → release path)
+python3 -c "
+import json
+rf = '$RELEASE_DIR/.next/required-server-files.json'
+with open(rf) as f: data = json.load(f)
+data['appDir'] = '$RELEASE_DIR'
+with open(rf, 'w') as f: json.dump(data, f)
+"
+echo '✅ appDir patched to release directory'
+
 # --- Step 3: Dependency hash ---
 LOCK_HASH=$(sha256sum "$RELEASE_DIR/package-lock.json" 2>/dev/null | awk '{print $1}' || echo "none")
 DEP_DIR="${SHARED_ROOT}/node_modules/${LOCK_HASH}"
@@ -275,7 +285,7 @@ sleep 1
 # Wait for readiness
 READY=false
 for i in $(seq 1 15); do
-  if curl -s -o /dev/null -w "%{http_code}" http://localhost:3002/api/health 2>/dev/null | grep -q "200"; then
+  if curl -s -o /dev/null -w "%{http_code}" http://localhost:3002/api/ready 2>/dev/null | grep -q "200"; then
     READY=true
     break
   fi
@@ -285,7 +295,7 @@ done
 SMOKE_PASS=true
 if [ "$READY" = true ]; then
   # Smoke key routes
-  for route in "/" "/api/health" "/dashboard" "/leads" "/contracts" "/quotations" "/payments"; do
+  for route in "/" "/api/ready" "/dashboard" "/leads" "/contracts" "/quotations" "/payments"; do
     CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3002${route}" 2>/dev/null || echo "000")
     if [ "$CODE" = "000" ]; then
       SMOKE_PASS=false
@@ -323,10 +333,10 @@ sleep 5
 # --- Step 8: Production validation ---
 echo "--- Production Smoke ---"
 HEALTH=$(curl -s http://localhost:3001/api/health 2>/dev/null || echo '{"status":"down"}')
-HEALTH_BUILD=$(echo "$HEALTH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('version','unknown'))" 2>/dev/null || echo "unknown")
+HEALTH_BUILD=$(echo "$HEALTH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('release','unknown'))" 2>/dev/null || echo "unknown")
 HEALTH_STATUS=$(echo "$HEALTH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','down'))" 2>/dev/null || echo "down")
 
-if [ "$HEALTH_STATUS" != "healthy" ]; then
+if [ "$HEALTH_STATUS" != "ok" ]; then
   echo "❌ Production health check failed: $HEALTH_STATUS"
   PROD_PASS=false
 elif [ "$HEALTH_BUILD" != "$BUILD_ID" ]; then

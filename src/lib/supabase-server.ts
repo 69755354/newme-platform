@@ -1,6 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
+export interface RefreshedCookie {
+  name: string;
+  value: string;
+  options: Record<string, unknown>;
+}
+
 /**
  * Parse the @supabase/ssr-format auth token cookie.
  * Returns the session object or null.
@@ -119,6 +125,7 @@ export async function createServerSupabase(
   bearerToken?: string,
   cookieString?: string,
 ) {
+  let refreshedCookies: RefreshedCookie[] = [];
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
@@ -150,6 +157,10 @@ export async function createServerSupabase(
         expires_at: refreshed.expiresAt,
       });
       // Only set cookies when using the legacy cookies() API (not explicit header)
+      refreshedCookies = [
+        { name: "sb-vfopmpxlhwzpxqegayew-auth-token", value: newPayload, options: { path: "/", maxAge: refreshed.expiresAt - Math.floor(Date.now() / 1000), sameSite: "strict", secure: true, httpOnly: false } },
+        { name: "sb-vfopmpxlhwzpxqegayew-refresh-token", value: refreshed.refreshToken, options: { path: "/", maxAge: 2592000, sameSite: "strict", secure: true, httpOnly: false } },
+      ];
       if (_cookieStore) {
         _cookieStore.set("sb-vfopmpxlhwzpxqegayew-auth-token", newPayload, {
         path: "/",
@@ -181,7 +192,7 @@ export async function createServerSupabase(
     headers.Authorization = `Bearer ${effectiveToken}`;
   }
 
-  return createClient(supabaseUrl, anonKey, {
+  const client = createClient(supabaseUrl, anonKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -189,4 +200,14 @@ export async function createServerSupabase(
     },
     global: { headers },
   });
+  (client as any).__refreshedCookies = refreshedCookies;
+  return client;
+}
+
+/**
+ * Get cookies that were refreshed during createServerSupabase.
+ * Returns empty array if no refresh occurred.
+ */
+export function getRefreshedCookies(client: unknown): RefreshedCookie[] {
+  return (client as any).__refreshedCookies || [];
 }

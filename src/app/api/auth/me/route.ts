@@ -1,6 +1,7 @@
 // RBAC: user (authenticated)
 import { createClient } from "@supabase/supabase-js";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { createServerSupabase, getRefreshedCookies } from "@/lib/supabase-server";
+import { logger } from "@/lib/logger";
 import { NextResponse } from "next/server";
 
 /**
@@ -13,10 +14,12 @@ import { NextResponse } from "next/server";
  * is resolved (source repo, frozen copy, or any other path).
  */
 export async function GET(request: Request) {
+  const requestId = crypto.randomUUID();
   try {
     const bearerToken = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
     const cookieHeader = request.headers.get("cookie") ?? "";
     const supabase = await createServerSupabase(bearerToken, cookieHeader);
+    const refreshedCookies = getRefreshedCookies(supabase);
 
     const {
       data: { user },
@@ -27,13 +30,30 @@ export async function GET(request: Request) {
 
     // Invalid or missing session → 401
     if (!user || authError) {
+      // Distinguish a failed token refresh (session cookie present, no bearer,
+      // and createServerSupabase could not refresh) from a generic unauthorized.
+      const hasSessionCookie =
+        cookieHeader.includes("sb-vfopmpxlhwzpxqegayew-auth-token") ||
+        cookieHeader.includes("sb-access-token") ||
+        cookieHeader.includes("sb-vfopmpxlhwzpxqegayew-refresh-token") ||
+        cookieHeader.includes("sb-refresh-token");
+      if (!bearerToken && hasSessionCookie && refreshedCookies.length === 0) {
+        return NextResponse.json(
+          { success: false, error: { code: "UNAUTHORIZED", message: "Token refresh failed" } },
+          { status: 401 },
+        );
+      }
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!supabaseUrl || !serviceRoleKey) {
-      console.error("[auth/me] missing environment: SUPABASE_URL or SERVICE_ROLE_KEY");
+      logger.error({
+        request_id: requestId,
+        operation: "auth_me",
+        err: new Error("missing environment: SUPABASE_URL or SERVICE_ROLE_KEY"),
+      });
       return NextResponse.json({ error: "internal_error" }, { status: 500 });
     }
 
@@ -48,7 +68,7 @@ export async function GET(request: Request) {
       .single();
 
     if (profileError) {
-      console.error("[auth/me] profile lookup failed", { code: profileError.code });
+      logger.error({ request_id: requestId, operation: "auth_me", err: profileError });
       return NextResponse.json({ error: "internal_error" }, { status: 500 });
     }
 
@@ -58,7 +78,7 @@ export async function GET(request: Request) {
 
     const role = profile.role ?? "sales";
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       userId: user.id,
       email: user.email ?? null,
       role,
@@ -66,11 +86,12 @@ export async function GET(request: Request) {
       forcePasswordChange: profile.force_password_change ?? false,
       fullName: profile.full_name ?? null,
     });
+    for (const c of refreshedCookies) {
+      response.cookies.set(c.name, c.value, c.options as any);
+    }
+    return response;
   } catch (err) {
-    console.error("[auth/me] unhandled error", {
-      name: (err as Error).name,
-      message: (err as Error).message?.slice(0, 200),
-    });
+    logger.error({ request_id: requestId, operation: "auth_me", err });
     return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }

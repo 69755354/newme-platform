@@ -126,6 +126,7 @@ export async function createServerSupabase(
   cookieString?: string,
 ) {
   let refreshedCookies: RefreshedCookie[] = [];
+  let refreshAttempted = false;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
@@ -147,6 +148,7 @@ export async function createServerSupabase(
 
   // ── 2. If token is expired, try to refresh ──
   if (!accessToken && refreshToken) {
+    refreshAttempted = true;
     const refreshed = await tryRefreshTokenLocked(supabaseUrl, anonKey, refreshToken);
     if (refreshed) {
       accessToken = refreshed.accessToken;
@@ -201,6 +203,7 @@ export async function createServerSupabase(
     global: { headers },
   });
   (client as any).__refreshedCookies = refreshedCookies;
+  (client as any).__refreshAttempted = refreshAttempted;
   return client;
 }
 
@@ -210,4 +213,11 @@ export async function createServerSupabase(
  */
 export function getRefreshedCookies(client: unknown): RefreshedCookie[] {
   return (client as any).__refreshedCookies || [];
+}
+
+/**
+ * Whether a token refresh was attempted during createServerSupabase.
+ */
+export function getRefreshAttempted(client: unknown): boolean {
+  return (client as any).__refreshAttempted === true;
 }

@@ -1,6 +1,6 @@
 // RBAC: user (authenticated)
 import { createClient } from "@supabase/supabase-js";
-import { createServerSupabase, getRefreshedCookies } from "@/lib/supabase-server";
+import { createServerSupabase, getRefreshedCookies, getRefreshAttempted } from "@/lib/supabase-server";
 import { logger } from "@/lib/logger";
 import { NextResponse } from "next/server";
 
@@ -20,6 +20,7 @@ export async function GET(request: Request) {
     const cookieHeader = request.headers.get("cookie") ?? "";
     const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const refreshedCookies = getRefreshedCookies(supabase);
+    const refreshAttempted = getRefreshAttempted(supabase);
 
     const {
       data: { user },
@@ -30,14 +31,8 @@ export async function GET(request: Request) {
 
     // Invalid or missing session → 401
     if (!user || authError) {
-      // Distinguish a failed token refresh (session cookie present, no bearer,
-      // and createServerSupabase could not refresh) from a generic unauthorized.
-      const hasSessionCookie =
-        cookieHeader.includes("sb-vfopmpxlhwzpxqegayew-auth-token") ||
-        cookieHeader.includes("sb-access-token") ||
-        cookieHeader.includes("sb-vfopmpxlhwzpxqegayew-refresh-token") ||
-        cookieHeader.includes("sb-refresh-token");
-      if (!bearerToken && hasSessionCookie && refreshedCookies.length === 0) {
+      // Only use "Token refresh failed" when a refresh was actually attempted and failed.
+      if (refreshAttempted && refreshedCookies.length === 0) {
         return NextResponse.json(
           { success: false, error: { code: "UNAUTHORIZED", message: "Token refresh failed" } },
           { status: 401 },

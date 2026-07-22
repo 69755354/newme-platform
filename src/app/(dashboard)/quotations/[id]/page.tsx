@@ -415,7 +415,7 @@ export default function QuotationDetailPage() {
 
       if (updateErr) throw updateErr;
 
-      setQuotation({ ...quotation, ...updateData });
+      setQuotation({\n        ...quotation,\n        status: newStatus,\n        sent_at: updateData.sent_at ?? quotation.sent_at,\n        accepted_at: updateData.accepted_at ?? quotation.accepted_at,\n        rejected_at: updateData.rejected_at ?? quotation.rejected_at,\n        updated_at: updateData.updated_at ?? quotation.updated_at,\n      });
       toast.success(
         t("quotations.statusUpdated") || `Status updated to ${STATUS_LABELS[newStatus]}`
       );

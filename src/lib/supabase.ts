@@ -1,72 +1,43 @@
 import { createClient as _createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-
-let _client: SupabaseClient<Database> | null = null;
-let _sessionToken: string | null = null;
-let _initPromise: Promise<void> | null = null;
+import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
+import { parseAuthSessionCookie } from "@/lib/auth-cookie.mjs";
 
 interface AuthSession {
   access_token: string;
-  refresh_token: string;
+  refresh_token?: string;
   expires_at?: number;
 }
 
+let _client: SupabaseClient<Database> | null = null;
+let _sessionToken: string | null = null;
+
 function getAuthSession(): AuthSession | null {
-  if (typeof window !== "undefined") {
-    // Try localStorage first (ssr format — full JSON session)
-    try {
-      const raw = localStorage.getItem("sb-vfopmpxlhwzpxqegayew-auth-token");
-      if (raw) {
-        const session = JSON.parse(raw);
-        if (session.access_token && session.refresh_token) {
-          return { access_token: session.access_token, refresh_token: session.refresh_token, expires_at: session.expires_at };
-        }
-      }
-    } catch {}
-  }
-  if (typeof document !== "undefined") {
-    // Try @supabase/ssr cookie format (base64-encoded JSON session)
-    const ssrCookie = document.cookie.match(/sb-vfopmpxlhwzpxqegayew-auth-token=([^;]+)/);
-    if (ssrCookie) {
-      try {
-        const decoded = atob(ssrCookie[1]);
-        const session = JSON.parse(decoded);
-        if (session.access_token && session.refresh_token) {
-          return { access_token: session.access_token, refresh_token: session.refresh_token, expires_at: session.expires_at };
-        }
-      } catch {}
-    }
-    // Fallback: legacy raw access_token + refresh_token cookies
-    const legacyAccess = document.cookie.match(/sb-access-token=([^;]+)/);
-    const legacyRefresh = document.cookie.match(/sb-refresh-token=([^;]+)/);
-    if (legacyAccess && legacyAccess[1]) {
-      return { access_token: legacyAccess[1], refresh_token: legacyRefresh?.[1] ?? "" };
-    }
-  }
-  return null;
+  if (typeof document === "undefined") return null;
+  const names = getSupabaseCookieNames();
+  return parseAuthSessionCookie(document.cookie, names.authToken);
 }
 
 export function createClient(): SupabaseClient<Database> {
   const session = getAuthSession();
-  const tokenChanged = session && session.access_token !== _sessionToken;
+  const nextToken = session?.access_token ?? null;
+  const tokenChanged = nextToken !== _sessionToken;
 
   if (_client && !tokenChanged) {
     return _client;
   }
 
-  if (!_client) {
+  if (!_client || tokenChanged) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url || !key) {
-      // SSR / isolated build guard: return a stub that defers all operations.
-      // The real client will be created client-side where NEXT_PUBLIC_* vars exist.
       if (typeof window === "undefined") {
         return new Proxy({} as SupabaseClient<Database>, {
-          get(_t, prop) {
-            if (prop === "auth") {
+          get(_target, property) {
+            if (property === "auth") {
               return { getSession: () => Promise.resolve({ data: { session: null }, error: null }) };
             }
-            if (prop === "from") {
+            if (property === "from") {
               return () => ({
                 select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: null, error: null }) }) }),
                 insert: () => ({ select: () => ({ single: () => Promise.resolve({ data: null, error: null }) }) }),
@@ -78,36 +49,27 @@ export function createClient(): SupabaseClient<Database> {
       }
       throw new Error("supabase client: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY required");
     }
+
     _client = _createSupabaseClient<Database>(url, key, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
         detectSessionInUrl: false,
-        storage: undefined as any,
       },
+      global: nextToken
+        ? { headers: { Authorization: `Bearer ${nextToken}` } }
+        : undefined,
     });
-  }
-
-  if (session && tokenChanged) {
-    _sessionToken = session.access_token;
-    _initPromise = (async () => {
-      await _client!.auth.setSession({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
-      });
-    })();
+    _sessionToken = nextToken;
   }
 
   return _client;
 }
 
 /**
- * Must be called before using the client if you need authenticated requests.
- * Waits for setSession to complete so getUser() uses the fresh token.
+ * Client requests use the access token from the readable auth cookie.
+ * Refresh tokens remain HttpOnly; refresh is performed by the server boundary.
  */
 export async function ensureSession(): Promise<void> {
-  if (_initPromise) {
-    await _initPromise;
-    _initPromise = null;
-  }
+  return Promise.resolve();
 }

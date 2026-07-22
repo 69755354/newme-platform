@@ -7,7 +7,7 @@ set -euo pipefail
 source /opt/hermes-scripts/observability/sentry-cron-checkin.sh
 sentry_checkin_start "health-check"
 
-ALERT_SCRIPT="${HERMES_ALERT_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert.sh}"
+ALERT_SCRIPT="${HERMES_ALERT_STATE_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert-state-v1.sh}"
 HOSTNAME=$(hostname)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 ALERTS=""
@@ -54,15 +54,22 @@ for svc in hermes-bridge hermes-dashboard hermes-worker; do
   fi
 done
 
+record_alert() {
+  local event="$1"
+  local summary="$2"
+  if ! bash "$ALERT_SCRIPT" "health-check" "$event" "$summary"; then
+    echo "[$TIMESTAMP] ALERT_STATE_FAILED: retry will occur on the next run" >&2
+  fi
+}
+
 # ─── 输出 ───
 if [ -z "$ALERTS" ]; then
-  bash "$ALERT_SCRIPT" "health-check" recovery "health checks recovered" || true
+  record_alert recovery "health checks recovered"
   echo "[$TIMESTAMP] 💓 $HOSTNAME OK | disk=${DISK_PCT}% mem=${MEM_PCT}% cpu=${CPU_PCT}% proc=${PROC_COUNT}"
 else
   echo "[$TIMESTAMP] 🔔 $HOSTNAME ALERTS:"
   echo -e "$ALERTS"
-  bash "$ALERT_SCRIPT" "health-check" failure "$(echo -e "$ALERTS" | head -1)" || true
-  # 抓故障现场
+  record_alert failure "$(echo -e "$ALERTS" | head -1)"
   /opt/hermes-scripts/observability/incident-capture.sh "health-check" "$(echo -e "$ALERTS" | head -1)" &
 fi
 

@@ -27,12 +27,11 @@ interface Task {
   title: string;
   description: string | null;
   status: string;
-  priority: string;
-  assigned_to: string | null;
-  due_at: string | null;
+  priority: string | null;
+  assignee_id: string | null;
+  due_at: string;
   completed_at: string | null;
   created_at: string;
-  updated_at: string;
 }
 
 interface ProfileInfo {
@@ -125,8 +124,8 @@ export default function TaskDetailPage() {
       setTask(t);
       setEditTitle(t.title);
       setEditDescription(t.description || "");
-      setEditPriority(t.priority);
-      setEditAssignedTo(t.assigned_to || "");
+      setEditPriority(t.priority ?? "");
+      setEditAssignedTo(t.assignee_id || "");
       setEditDueAt(formatDateForInput(t.due_at));
     } catch (err) {
       console.error("Failed to fetch task:", err);
@@ -143,14 +142,21 @@ export default function TaskDetailPage() {
   const handleSave = async () => {
     if (!task) return;
 
+    if (!editDueAt) {
+      setSaveState("error");
+      toast.error("Due date is required");
+      return;
+    }
+
     setSaveState("saving");
 
     try {
       await updateTask(task.id, {
         title: editTitle.trim(),
-        priority: editPriority,
-        assigned_to: editAssignedTo || null,
-        due_at: editDueAt ? new Date(editDueAt).toISOString() : null,
+        description: editDescription.trim() || null,
+        priority: editPriority || null,
+        assignee_id: editAssignedTo || null,
+        due_at: new Date(editDueAt).toISOString(),
       });
 
       setSaveState("saved");
@@ -263,10 +269,6 @@ export default function TaskDetailPage() {
             <div>
               <span className="text-muted-foreground">Created:</span>
               <span className="ml-2">{formatDateTime(task.created_at)}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Updated:</span>
-              <span className="ml-2">{formatDateTime(task.updated_at)}</span>
             </div>
             <div>
               <span className="text-muted-foreground">Due:</span>

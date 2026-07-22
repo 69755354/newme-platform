@@ -4,6 +4,7 @@
 // so this is a plain .ts module importable by every column component.
 
 import type { ReactNode } from "react";
+import type { Database, Json } from "@/types/database";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 
 // ─── Stage data ───
@@ -97,7 +98,7 @@ export interface Lead {
   emirate: string | null;
   area: string | null;
   customer_budget: number | null;
-  smart_requirements: any | null;
+  smart_requirements: Json | null;
   raw_import_data?: Record<string, unknown> | null;
   expected_sign_date: string | null;
   visit_status: string | null;
@@ -166,7 +167,7 @@ export interface LeadMilestoneEmbed {
 export interface BusinessEventEmbed {
   id: string;
   event_type: string;
-  event_data: any;
+  event_data: Json | null;
   description: string | null;
   created_at: string;
   user_id: string | null;
@@ -203,7 +204,7 @@ export interface BusinessEvent {
   id: string;
   event_type: string;
   description: string;
-  event_data: any;
+  event_data: Json | null;
   created_at: string;
 }
 
@@ -277,6 +278,20 @@ export interface LeadTrace {
 // updateNextTask handlers. To preserve the exact single-edit-at-a-time behavior
 // across all three columns, it passes these render closures down as props instead
 // of duplicating edit state into each child.
-export type RenderInlineEdit = (field: string, label: string, type?: string) => ReactNode;
-export type RenderDateEdit = (field: string, label: string) => ReactNode;
-export type RenderJsonEdit = (field: string, label: string) => ReactNode;
+type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
+export type LeadField = Extract<keyof Lead, keyof LeadUpdate>;
+export type LeadTextField = {
+  [K in LeadField]: Exclude<LeadUpdate[K], null | undefined> extends string ? K : never;
+}[LeadField];
+export type LeadDateField = Extract<LeadField, "expected_sign_date" | "decision_date" | "last_contact_date">;
+export type LeadJsonField = Extract<LeadField, "smart_requirements" | "raw_import_data" | "devices_json">;
+export type LeadFieldUpdater = <K extends keyof LeadUpdate>(
+  field: K,
+  value: LeadUpdate[K],
+  eventType?: string,
+  eventDesc?: string
+) => Promise<boolean> | void;
+
+export type RenderInlineEdit = (field: LeadTextField | "customer_budget", label: string, type?: string) => ReactNode;
+export type RenderDateEdit = (field: LeadDateField, label: string) => ReactNode;
+export type RenderJsonEdit = (field: LeadJsonField, label: string) => ReactNode;

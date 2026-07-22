@@ -207,7 +207,7 @@ export async function POST(
   if (milestoneKey === "won" || milestoneKey === "lost") {
     const { error: statusError } = await supabase
       .from("leads")
-      .update({ final_status: milestoneKey, stage: milestoneKey, contact_time: new Date().toISOString() })
+      .update({ final_status: milestoneKey, stage: milestoneKey })
       .eq("id", leadId);
 
     if (statusError) {

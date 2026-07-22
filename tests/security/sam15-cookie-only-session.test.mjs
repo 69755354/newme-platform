@@ -227,6 +227,6 @@ test("cookie-only browser session does not use localStorage or client persistenc
   assert.match(logout, /getSupabaseCookieNames/);
   assert.match(session, /httpOnly: true/);
   assert.match(server, /decodeURIComponent/);
-  assert.match(login, /fetch\(["']\\/api\\/auth\\/logout/);
-  assert.match(login, /auth\\/v1\\/logout/);
+  assert.match(login, /fetch\(["']\/api\/auth\/logout/);
+  assert.match(login, /auth\/v1\/logout/);
 });

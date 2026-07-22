@@ -5,7 +5,15 @@ Sentry.init({
 
   tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
 
-  // Server-side specific: don't send health check data
+  beforeSend(event) {
+    const url = event.request?.url || "";
+    if (url.includes("/api/health")) {
+      return null;
+    }
+    return event;
+  },
+
+  // Server-side specific: don't send health check transactions
   beforeSendTransaction(event) {
     if (event.transaction?.includes("/api/health")) {
       return null;

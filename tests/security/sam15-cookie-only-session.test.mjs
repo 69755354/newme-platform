@@ -230,3 +230,21 @@ test("cookie-only browser session does not use localStorage or client persistenc
   assert.match(login, /fetch\(["']\/api\/auth\/logout/);
   assert.match(login, /auth\/v1\/logout/);
 });
+
+test("same-origin logout clears dynamic and legacy cookies", async () => {
+  const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
+  const logout = loadTypeScriptModule("src/app/api/auth/logout/route.ts", {
+    "@/lib/supabase-server": {
+      createServerSupabase: async () => ({ auth: { signOut: async () => ({ error: null }) } }),
+    },
+    "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
+    "next/server": createCookieResponseMock(),
+  });
+  const response = await logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    response.cookiesSet.map((cookie) => cookie.name),
+    [names.authToken, names.refreshToken, "sb-access-token", "sb-refresh-token"],
+  );
+  assert.ok(response.cookiesSet.every((cookie) => cookie.value === "" && cookie.options.maxAge === 0));
+});

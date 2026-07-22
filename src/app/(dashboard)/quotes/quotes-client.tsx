@@ -237,7 +237,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
         tax_rate: taxRate, tax_amount: taxAmount,
         total_amount: totalAmount,
         currency: createForm.currency,
-        valid_until: createForm.validUntil || null,
+        valid_until: createForm.validUntil || undefined,
         payment_terms: createForm.paymentTerms || null,
         delivery_terms: createForm.deliveryTerms || null,
         notes: createForm.notes || null,

@@ -22,13 +22,14 @@ test("unexpected refresh responses remain upstream failures", () => {
 });
 
 test("auth route cleans expected refresh failures and logs only upstream refresh failures", async () => {
-  const [server, authMe] = await Promise.all([
+  const [refreshClassifier, server, authMe] = await Promise.all([
+    readFile(new URL("src/lib/auth-refresh.mjs", root), "utf8"),
     readFile(new URL("src/lib/supabase-server.ts", root), "utf8"),
     readFile(new URL("src/app/api/auth/me/route.ts", root), "utf8"),
   ]);
 
   assert.match(server, /getRefreshFailure/);
-  assert.match(server, /refresh_token_not_found/);
+  assert.match(refreshClassifier, /refresh_token_not_found/);
   assert.match(authMe, /clearSessionCookies\(response\)/);
   assert.match(authMe, /refreshFailure === "invalid_refresh_token"/);
   assert.match(authMe, /refreshFailure === "missing_refresh_token"/);

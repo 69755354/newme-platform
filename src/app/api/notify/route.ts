@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     .select("id, role, full_name")
     .eq("id", user.id)
     .single();
-  if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 403 });
+  if (!profile?.role) return NextResponse.json({ error: "Profile not found" }, { status: 403 });
 
   const isAdmin = ["admin", "boss"].includes(profile.role);
 

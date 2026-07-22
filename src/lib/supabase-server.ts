@@ -213,7 +213,6 @@ export async function createServerSupabase(
       // Update the auth token cookie so subsequent requests don't need to refresh again
       const newPayload = JSON.stringify({
         access_token: refreshed.accessToken,
-        refresh_token: refreshed.refreshToken,
         expires_at: refreshed.expiresAt,
       });
       // Only set cookies when using the legacy cookies() API (not explicit header)

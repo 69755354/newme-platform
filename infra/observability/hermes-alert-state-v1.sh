@@ -79,9 +79,10 @@ case "$EVENT:$STATUS" in
       printf 'hermes-alert-state-v1 transition=below-threshold key=%s failure_count=%s\n' "$ALERT_KEY" "$FAILURES"
     elif notify "alert"; then
       write_state "firing" "$FAILURES"
-      printf 'hermes-alert-state-v1 transition=alert key=%s failure_count=%s\n' "$ALERT_KEY" "$FAILURES"
+      printf 'hermes-alert-state-v1 transition=alert key=%s failure_count=%s capture=1\n' "$ALERT_KEY" "$FAILURES"
     else
       write_state "pending_failure" "$FAILURES"
+      printf 'hermes-alert-state-v1 transition=alert-pending key=%s failure_count=%s capture=1\n' "$ALERT_KEY" "$FAILURES"
       echo "hermes-alert-state-v1: alert transport failed; retry pending" >&2
       exit 1
     fi

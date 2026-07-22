@@ -26,7 +26,6 @@ export async function POST(request: Request) {
     const { authToken, refreshToken: refreshCookie } = getSupabaseCookieNames();
     const cookiePayload = JSON.stringify({
       access_token: accessToken,
-      refresh_token: refreshToken,
       expires_at: Math.floor(Date.now() / 1000) + expiresIn,
     });
     const response = NextResponse.json({ ok: true });

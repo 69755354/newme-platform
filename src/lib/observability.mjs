@@ -1,4 +1,5 @@
-const MAX_DEPTH = 6;
+const LOGGER_MAX_DEPTH = 6;
+const SENTRY_MAX_DEPTH = 16;
 const REDACTED = "[REDACTED]";
 const CIRCULAR = "[Circular]";
 const TRUNCATED = "[Truncated]";
@@ -16,25 +17,25 @@ function scrubText(value) {
     .replace(/(?<!\w)\+?\d[\d ().-]{7,}\d(?!\w)/g, "[REDACTED_PHONE]");
 }
 
-export function sanitizeValue(value, depth = 0, seen = new WeakSet()) {
+export function sanitizeValue(value, depth = 0, seen = new WeakSet(), maxDepth = LOGGER_MAX_DEPTH) {
   if (typeof value === "string") return scrubText(value);
   if (value === null || value === undefined || typeof value === "number" || typeof value === "boolean") {
     return value;
   }
-  if (depth >= MAX_DEPTH) return TRUNCATED;
+  if (depth >= maxDepth) return TRUNCATED;
   if (typeof value === "object") {
     if (seen.has(value)) return CIRCULAR;
     seen.add(value);
 
     if (Array.isArray(value)) {
-      return value.map((item) => sanitizeValue(item, depth + 1, seen));
+      return value.map((item) => sanitizeValue(item, depth + 1, seen, maxDepth));
     }
 
     const output = {};
     for (const [key, item] of Object.entries(value)) {
       output[key] = SENSITIVE_KEY.test(key)
         ? REDACTED
-        : sanitizeValue(item, depth + 1, seen);
+        : sanitizeValue(item, depth + 1, seen, maxDepth);
     }
     return output;
   }
@@ -42,7 +43,7 @@ export function sanitizeValue(value, depth = 0, seen = new WeakSet()) {
 }
 
 function serializeErrorFields(error, seen, depth) {
-  if (depth >= MAX_DEPTH) return TRUNCATED;
+  if (depth >= maxDepth) return TRUNCATED;
   if (seen.has(error)) return CIRCULAR;
   seen.add(error);
 
@@ -63,7 +64,7 @@ function serializeErrorFields(error, seen, depth) {
 
 export function serializeErr(error, seen = new WeakSet(), depth = 0) {
   if (error === null || error === undefined) return error;
-  if (depth >= MAX_DEPTH) return TRUNCATED;
+  if (depth >= maxDepth) return TRUNCATED;
   if (error instanceof Error || (typeof error === "object" && typeof error.message === "string")) {
     return serializeErrorFields(error, seen, depth);
   }

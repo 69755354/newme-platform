@@ -17,9 +17,16 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 record_alert() {
   local event="$1"
   local summary="$2"
-  if ! bash "$ALERT_SCRIPT" "login-probe" "$event" "$summary"; then
+  local transition=""
+  local status=0
+  transition="$(bash "$ALERT_SCRIPT" "login-probe" "$event" "$summary" 2>&1)" || status=$?
+  printf '%s\n' "$transition"
+  if printf '%s' "$transition" | grep -q 'capture=1'; then
+  fi
+  if [ "$status" -ne 0 ]; then
     echo "[$TIMESTAMP] ALERT_STATE_FAILED: retry will occur on the next run" >&2
   fi
+  return "$status"
 }
 
 # ─── 1. Health endpoint ───
@@ -28,7 +35,6 @@ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "${SITE
 if [ "$HTTP_CODE" = "000" ]; then
   echo "[$TIMESTAMP] 🔔 HEALTH_DOWN: ${SITE_URL} 不可达 (连接超时)"
   record_alert failure "health endpoint unavailable"
-  /opt/hermes-scripts/observability/incident-capture.sh "login-probe" "health端点不可达" &
   sentry_checkin_finish "login-probe" 1
   exit 1
 fi
@@ -36,7 +42,6 @@ fi
 if [ "$HTTP_CODE" -ge 500 ]; then
   echo "[$TIMESTAMP] 🔔 HEALTH_5XX: ${SITE_URL}/api/health 返回 HTTP $HTTP_CODE"
   record_alert failure "health endpoint returned HTTP $HTTP_CODE"
-  /opt/hermes-scripts/observability/incident-capture.sh "login-probe" "health返回HTTP ${HTTP_CODE}" &
   sentry_checkin_finish "login-probe" 1
   exit 1
 fi
@@ -67,5 +72,4 @@ done
 sentry_checkin_finish "login-probe" 1
 echo "[$TIMESTAMP] 🔔 LOGIN_PROBE_FAIL: ${SITE_URL}/api/auth/me $last_error (重试${MAX_RETRIES}次后仍失败)"
 record_alert failure "auth probe failed: $last_error"
-/opt/hermes-scripts/observability/incident-capture.sh "login-probe" "auth/me返回${last_error}" &
 exit 1

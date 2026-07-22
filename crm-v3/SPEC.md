@@ -841,3 +841,14 @@ SAM-41 只补文档事实；SAM-6 候选基线只有在以下条件全部满足�
 - 上述路径来自 Windows job `29931715552` 的 `check-spec.sh` 输出；该 job 因 16 个未覆盖路径失败。
 - 该次 Linux `Repository validation` 另在 `npm run lint:baseline` 失败并因此跳过后续 typecheck、tests 与 build；该失败属于与本 docs-only 变更分离的既有 lint 债务，不能写成 SAM-44 已修复的业务/发布结论。
 - 本节合并前，SAM-44 保持 In Progress；合并后仍须记录实际 main SHA、对应 CI run 和部署证据。没有新的、受控的部署证据，不得关闭事项或宣称生产已恢复。
+
+
+## SAM-73 integration typed-contract paths (2026-07-23)
+
+The integration draft carries the completed typed-contract fixes from PRs #80, #82, #83, #84, and #86. The following affected paths are part of this release-train scope:
+- `src/app/(dashboard)/leads/[id]/utils.ts`: typed lead-detail project draft helper.
+- `src/app/(dashboard)/projects/page.tsx`: role guard narrowed against nullable profile roles.
+- `src/app/(dashboard)/quotes/page.tsx`: role guard narrowed against nullable profile roles.
+- `src/app/(dashboard)/settings/ads/page.tsx`: nullable stage guard in quotation funnel aggregation.
+- `src/app/(dashboard)/tasks/[id]/page.tsx`: task detail contract fields and required due date.
+- `src/types/database.ts`: generated database type source, including task and quotation contract fields.

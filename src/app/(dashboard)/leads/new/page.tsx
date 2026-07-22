@@ -29,7 +29,9 @@ export default function NewLeadPage() {
     e.preventDefault();
     setSaving(true);
     const authResponse = await fetch("/api/auth/me", { cache: "no-store" });
-    const authContext = authResponse.ok ? await authResponse.json() : null;
+    const authContext: { userId?: string; role?: string; isActive?: boolean } | null = authResponse.ok
+      ? await authResponse.json()
+      : null;
     const userId = typeof authContext?.userId === "string" ? authContext.userId : null;
     const assigneeId = userId && isLeadTransferCandidate({
       role: authContext?.role,

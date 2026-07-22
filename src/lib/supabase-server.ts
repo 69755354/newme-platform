@@ -1,5 +1,11 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 import { cookies } from "next/headers";
+
+type ServerSupabaseClient = SupabaseClient<Database> & {
+  __refreshedCookies?: RefreshedCookie[];
+  __refreshAttempted?: boolean;
+};
 
 export interface RefreshedCookie {
   name: string;
@@ -194,7 +200,7 @@ export async function createServerSupabase(
     headers.Authorization = `Bearer ${effectiveToken}`;
   }
 
-  const client = createClient(supabaseUrl, anonKey, {
+  const client = createClient<Database>(supabaseUrl, anonKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -202,9 +208,10 @@ export async function createServerSupabase(
     },
     global: { headers },
   });
-  (client as any).__refreshedCookies = refreshedCookies;
-  (client as any).__refreshAttempted = refreshAttempted;
-  return client;
+  const typedClient = client as ServerSupabaseClient;
+  typedClient.__refreshedCookies = refreshedCookies;
+  typedClient.__refreshAttempted = refreshAttempted;
+  return typedClient;
 }
 
 /**
@@ -212,12 +219,12 @@ export async function createServerSupabase(
  * Returns empty array if no refresh occurred.
  */
 export function getRefreshedCookies(client: unknown): RefreshedCookie[] {
-  return (client as any).__refreshedCookies || [];
+  return (client as ServerSupabaseClient).__refreshedCookies || [];
 }
 
 /**
  * Whether a token refresh was attempted during createServerSupabase.
  */
 export function getRefreshAttempted(client: unknown): boolean {
-  return (client as any).__refreshAttempted === true;
+  return (client as ServerSupabaseClient).__refreshAttempted === true;
 }

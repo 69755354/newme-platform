@@ -22,7 +22,7 @@ export function sanitizeValue(value, depth = 0, seen = new WeakSet(), maxDepth =
   if (value === null || value === undefined || typeof value === "number" || typeof value === "boolean") {
     return value;
   }
-  if (depth >= maxDepth) return TRUNCATED;
+  if (depth >= LOGGER_MAX_DEPTH) return TRUNCATED;
   if (typeof value === "object") {
     if (seen.has(value)) return CIRCULAR;
     seen.add(value);
@@ -43,7 +43,7 @@ export function sanitizeValue(value, depth = 0, seen = new WeakSet(), maxDepth =
 }
 
 function serializeErrorFields(error, seen, depth) {
-  if (depth >= maxDepth) return TRUNCATED;
+  if (depth >= LOGGER_MAX_DEPTH) return TRUNCATED;
   if (seen.has(error)) return CIRCULAR;
   seen.add(error);
 
@@ -64,7 +64,7 @@ function serializeErrorFields(error, seen, depth) {
 
 export function serializeErr(error, seen = new WeakSet(), depth = 0) {
   if (error === null || error === undefined) return error;
-  if (depth >= maxDepth) return TRUNCATED;
+  if (depth >= LOGGER_MAX_DEPTH) return TRUNCATED;
   if (error instanceof Error || (typeof error === "object" && typeof error.message === "string")) {
     return serializeErrorFields(error, seen, depth);
   }
@@ -95,7 +95,7 @@ export function sanitizeSentryEvent(event) {
     .filter((value) => typeof value === "string")
     .join(" ");
   if (HEALTH_PATH.test(route)) return null;
-  return sanitizeValue(event);
+  return sanitizeValue(event, 0, new WeakSet(), SENTRY_MAX_DEPTH);
 }
 
 export function sanitizeSentryTransaction(event) {

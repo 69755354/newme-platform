@@ -1,6 +1,7 @@
 import { createClient as _createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 
-let _client: SupabaseClient | null = null;
+let _client: SupabaseClient<Database> | null = null;
 let _sessionToken: string | null = null;
 let _initPromise: Promise<void> | null = null;
 
@@ -45,7 +46,7 @@ function getAuthSession(): AuthSession | null {
   return null;
 }
 
-export function createClient(): SupabaseClient {
+export function createClient(): SupabaseClient<Database> {
   const session = getAuthSession();
   const tokenChanged = session && session.access_token !== _sessionToken;
 
@@ -60,7 +61,7 @@ export function createClient(): SupabaseClient {
       // SSR / isolated build guard: return a stub that defers all operations.
       // The real client will be created client-side where NEXT_PUBLIC_* vars exist.
       if (typeof window === "undefined") {
-        return new Proxy({} as SupabaseClient, {
+        return new Proxy({} as SupabaseClient<Database>, {
           get(_t, prop) {
             if (prop === "auth") {
               return { getSession: () => Promise.resolve({ data: { session: null }, error: null }) };
@@ -77,7 +78,7 @@ export function createClient(): SupabaseClient {
       }
       throw new Error("supabase client: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY required");
     }
-    _client = _createSupabaseClient(url, key, {
+    _client = _createSupabaseClient<Database>(url, key, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,

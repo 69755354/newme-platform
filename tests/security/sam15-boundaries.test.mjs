@@ -26,7 +26,7 @@ test("session cookies use dynamic names and secure server refresh attributes", a
   assert.match(cookieNames, /new URL\(supabaseUrl/);
   assert.doesNotMatch(cookieNames + server + session, /vfopmpxlhwzpxqegayew/);
   assert.match(server, /httpOnly: true/);
-  assert.match(session, /JSON\.stringify\(\{[\\s\\S]*access_token: accessToken/);
+  assert.match(session, /JSON\.stringify\(\{[\s\S]*access_token: accessToken/);
   assert.doesNotMatch(session, /set\(authToken, accessToken/);
   assert.match(server, /_cookieStore\.set\(names\.refreshToken/);
   assert.match(session, /httpOnly: true/);

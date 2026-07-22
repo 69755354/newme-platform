@@ -24,7 +24,7 @@ export async function GET(
       .eq("id", user.id)
       .single()
 
-    if (profileError || !profile) {
+    if (profileError || !profile?.role) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 

@@ -197,8 +197,8 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
           return;
         }
         const { data: { user: currentUser } } = await supabase.auth.getUser();
-        if (oldLead.assigned_to) {
-          await supabase.from("transfer_history").insert({ lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId, reason: "manual_reassign", transferred_by: currentUser?.id });
+        if (oldLead.assigned_to && currentUser?.id) {
+          await supabase.from("transfer_history").insert({ lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId, reason: "manual_reassign", transferred_by: currentUser.id });
         }
         await supabase.from("activities").insert({ lead_id: leadId, type: "transfer", content: transferDesc, user_id: currentUser?.id });
         import("@/lib/notify").then(({ notify }) => {

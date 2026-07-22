@@ -44,6 +44,7 @@ const INLINE_EDIT_FIELDS = new Set<string>([
   "expected_sign_date", "customer_budget",
 ]);
 const JSON_EDIT_FIELDS = new Set<string>(["smart_requirements", "raw_import_data", "devices_json"]);
+const DATE_EDIT_FIELDS = new Set<string>(["expected_sign_date", "decision_date", "last_contact_date"]);
 
 function isInlineEditField(field: string): field is LeadTextField | "customer_budget" {
   return INLINE_EDIT_FIELDS.has(field);
@@ -51,6 +52,10 @@ function isInlineEditField(field: string): field is LeadTextField | "customer_bu
 
 function isJsonEditField(field: string): field is LeadJsonField {
   return JSON_EDIT_FIELDS.has(field);
+}
+
+function isDateEditField(field: string): field is import("./types").LeadDateField {
+  return DATE_EDIT_FIELDS.has(field);
 }
 
 function isJsonValue(value: unknown): value is Json {
@@ -298,6 +303,7 @@ export default function LeadDetailPage() {
 
   // ─── Render helpers (page-owned so a single inline edit is active at a time) ───
   const renderInlineEdit: RenderInlineEdit = (field, label, type = "text") => {
+    if (!isInlineEditField(field)) return null;
     const value = lead[field];
     return editField === field ? (
       // BUG-LD-3 (2026-07-06): wrap the input in a click-eating span so a click
@@ -336,6 +342,7 @@ export default function LeadDetailPage() {
   };
 
   const renderDateEdit: RenderDateEdit = (field, label) => {
+    if (!isDateEditField(field)) return null;
     const value = lead[field];
     return editField === field ? (
       <input type="date" autoFocus value={editValue} onChange={(e) => setEditValue(e.target.value)}
@@ -350,6 +357,7 @@ export default function LeadDetailPage() {
   };
 
   const renderJsonEdit: RenderJsonEdit = (field, label) => {
+    if (!isJsonEditField(field)) return null;
     const value = lead[field];
     let display: string | null = null;
     if (value != null) {

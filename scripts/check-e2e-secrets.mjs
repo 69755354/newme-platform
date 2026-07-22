@@ -10,6 +10,7 @@ const artifactPath = /(^|\/)(e2e\/\.auth\/|playwright-report\/|test-results\/|bl
 const e2eSourcePath = /(^|\/)(e2e\/|playwright\.config\.[cm]?[jt]s$)/i;
 const textSourcePath = /\.(?:[cm]?[jt]sx?|json|ya?ml|env)$/i;
 const passwordLiteral = /\b(?:password|passwd|pwd)\b\s*[:=]\s*(['"`])(?=.{6,}\1)/i;
+const directLoginPasswordLiteral = /\blogin(?:AndSaveState)?\s*\(\s*[^,\n]+,\s*[^,\n]+,\s*(['"`])(?=.{6,}\1)/i;
 const jwtLikeToken = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/;
 const privateKey = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/;
 
@@ -27,6 +28,9 @@ function scanFile(filePath, displayPath = filePath) {
   const content = readFileSync(filePath, 'utf8');
   if (e2eSourcePath.test(relativePath) && passwordLiteral.test(content)) {
     violations.push('literal E2E password assignment');
+  }
+  if (e2eSourcePath.test(relativePath) && directLoginPasswordLiteral.test(content)) {
+    violations.push('literal E2E login password');
   }
   if (jwtLikeToken.test(content)) violations.push('JWT-like session token');
   if (privateKey.test(content)) violations.push('private key material');
@@ -49,6 +53,11 @@ function main() {
       const violations = scanFile(fixturePath, 'e2e/credential.fixture.ts');
       if (!violations.includes('literal E2E password assignment')) {
         throw new Error('negative credential fixture was not rejected');
+      }
+      writeFileSync(fixturePath, "login(page, 'e2e@example.test', 'example-credential');\\n");
+      const loginViolations = scanFile(fixturePath, 'e2e/credential.fixture.ts');
+      if (!loginViolations.includes('literal E2E login password')) {
+        throw new Error('negative direct-login credential fixture was not rejected');
       }
       console.log('E2E secret gate self-test passed');
       return;

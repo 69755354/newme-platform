@@ -198,6 +198,15 @@ export interface Activity {
   content: string;
   ai_generated: boolean;
   created_at: string;
+  user_id: string | null;
+  metadata: Json | null;
+}
+
+export interface SalesUser {
+  id: string;
+  email: string | null;
+  role: string | null;
+  full_name: string | null;
 }
 
 export interface BusinessEvent {
@@ -206,6 +215,7 @@ export interface BusinessEvent {
   description: string;
   event_data: Json | null;
   created_at: string;
+  user_id: string | null;
 }
 
 export interface ChatMessage {

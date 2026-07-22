@@ -1,8 +1,13 @@
-// SAM-51: Sentry instrumentation hook disabled — require-in-the-middle
-// Turbopack bundling issue prevents @sentry/nextjs from loading at runtime.
-// Client-side Sentry (via withSentryConfig webpack plugin) still works.
-// Re-enable when Sentry/Next.js 16 compatibility is resolved.
+import * as Sentry from "@sentry/nextjs";
 
 export async function register() {
-  // no-op: Sentry server instrumentation skipped
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    await import("./sentry.server.config");
+  }
+
+  if (process.env.NEXT_RUNTIME === "edge") {
+    await import("./sentry.edge.config");
+  }
 }
+
+export const onRequestError = Sentry.captureRequestError;

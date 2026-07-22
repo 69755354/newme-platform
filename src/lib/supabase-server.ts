@@ -26,7 +26,6 @@ type ServerSupabaseClient = SupabaseClient<Database> & {
  */
 type SsrCookie = {
   access_token?: string;
-  refresh_token?: string;
   expires_at?: number;
 };
 
@@ -40,16 +39,27 @@ function parseSsrCookieValue(value: string): SsrCookie | null {
 }
 
 function parseSsrCookie(value: string): SsrCookie | null {
+  const candidates = [value];
   try {
-    // The login page stores it as a plain JSON string (not base64)
-    return parseSsrCookieValue(value);
+    candidates.unshift(decodeURIComponent(value));
   } catch {
+    // Keep the raw candidate when the cookie is not URI encoded.
+  }
+
+  for (const candidate of candidates) {
     try {
-      return parseSsrCookieValue(atob(value));
+      // The login page stores it as a plain JSON string (not base64).
+      return parseSsrCookieValue(candidate);
     } catch {
-      return null;
+      try {
+        return parseSsrCookieValue(atob(candidate));
+      } catch {
+        // Continue with the next supported cookie encoding.
+      }
     }
   }
+
+  return null;
 }
 
 /**
@@ -81,12 +91,16 @@ function extractTokens(
     if (s?.access_token) {
       a = s.access_token;
       if (s.expires_at && s.expires_at * 1000 < Date.now()) {
-        const x = allCookies.find((y) => y.name === names.refreshToken);
-        r = x?.value || s.refresh_token;
         a = undefined;
       }
     }
   }
+
+  const dynamicRefreshCookie = allCookies.find((x) => x.name === names.refreshToken);
+  if (dynamicRefreshCookie?.value) {
+    r = dynamicRefreshCookie.value;
+  }
+
   if (!a && !r) {
     const lt = allCookies.find((x) => x.name === "sb-access-token");
     if (lt) a = lt.value;

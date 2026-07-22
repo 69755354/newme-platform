@@ -289,7 +289,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
             id: activity.id,
             type: activity.type,
             content: activity.content ?? "",
-            ai_generated: activity.ai_generated ?? false,
+            ai_generated: false,
             created_at: activity.created_at ?? "",
             user_id: activity.user_id ?? null,
             metadata: activity.metadata ?? null,

@@ -14,6 +14,7 @@ test("both versioned units directly supervise the immutable Next.js release", as
   ]);
   assert.equal(units[0], units[1], "duplicate unit sources must not drift");
   for (const unit of units) {
+    assert.match(unit, /^User=ubuntu$/m);
     assert.match(unit, /^WorkingDirectory=\/opt\/newme\/current$/m);
     assert.match(unit, /^ExecStart=\/usr\/bin\/node \/opt\/newme\/current\/node_modules\/next\/dist\/bin\/next start -p 3001$/m);
     assert.doesNotMatch(unit, /ExecStart=.*\b(?:npm|sh|bash)\b.*\bstart\b/);
@@ -21,7 +22,7 @@ test("both versioned units directly supervise the immutable Next.js release", as
     assert.match(unit, /^Restart=always$/m);
     assert.match(unit, /^StartLimitIntervalSec=60$/m);
     assert.match(unit, /^StartLimitBurst=5$/m);
-    assert.match(unit, /^ExecStartPost=\/usr\/local\/libexec\/newme\/newme-readiness\.sh$/m);
+    assert.match(unit, /^ExecStartPost=\+\/usr\/local\/libexec\/newme\/newme-readiness\.sh$/m);
     assert.match(unit, /^ExecStopPost=\+\/usr\/local\/libexec\/newme\/newme-forensic\.sh$/m);
   }
 });

@@ -35,4 +35,4 @@ remain subject to total-control approval.
 
 The health check validates 4 critical routes (login / root / dashboard / leads) all return non-000 HTTP status. Previous version only checked `/login` and broke on first 200, missing cold-start races where dashboard/leads would 502 while login happened to be cached.
 
-10 retries × 2s = up to 20s grace period for Next.js cold start. Failed health check exits 1, which systemd logs as ExecStartPost failure but does NOT abort the service (it's informational).
+10 retries × 2s = up to 20s grace period for Next.js cold start. The readiness helper runs with root privileges so it can read the root-owned runtime token, while the main process remains under `User=ubuntu`. A failed health check exits 1 and systemd treats the `ExecStartPost` failure as a service-start failure.

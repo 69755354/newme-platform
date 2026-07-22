@@ -13,7 +13,7 @@ Environment=NODE_ENV=production
 Environment=PORT=3001
 EnvironmentFile=/etc/newme/newme-runtime.env
 ExecStart=/usr/bin/node /opt/newme/current/node_modules/next/dist/bin/next start -p 3001
-ExecStartPost=/usr/local/libexec/newme/newme-readiness.sh
+ExecStartPost=+/usr/local/libexec/newme/newme-readiness.sh
 ExecStopPost=+/usr/local/libexec/newme/newme-forensic.sh
 Restart=always
 RestartSec=5

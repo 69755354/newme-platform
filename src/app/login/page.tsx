@@ -7,15 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LanguageProvider, useLanguage } from "@/lib/i18n/LanguageContext";
+import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const COOKIE_NAMES = getSupabaseCookieNames(SUPABASE_URL);
 
 function clearBrowserSession() {
-  localStorage.removeItem("sb-vfopmpxlhwzpxqegayew-auth-token");
+  localStorage.removeItem(COOKIE_NAMES.authToken);
   for (const name of [
-    "sb-vfopmpxlhwzpxqegayew-auth-token",
-    "sb-vfopmpxlhwzpxqegayew-refresh-token",
+    COOKIE_NAMES.authToken,
+    COOKIE_NAMES.refreshToken,
     "sb-access-token",
     "sb-refresh-token",
   ]) {
@@ -102,20 +104,21 @@ function LoginPageInner() {
         user: data.user,
       }));
 
-      // @supabase/ssr middleware uses default cookieEncoding="raw"
-      // Must be plain JSON string — base64 encoded values cause SSR auth to fail
-      const cookiePayload = JSON.stringify({
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-        expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
+      // Let the same-origin server set the session cookies. The refresh token
+      // is HttpOnly and is never written with document.cookie.
+      const sessionRes = await fetch("/api/auth/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+          expires_in: data.expires_in,
+        }),
       });
-
-      // Primary format for @supabase/ssr (createServerClient / middleware)
-      document.cookie = `sb-vfopmpxlhwzpxqegayew-auth-token=${cookiePayload}; path=/; max-age=${data.expires_in}; SameSite=Strict; Secure`;
-      document.cookie = `sb-vfopmpxlhwzpxqegayew-refresh-token=${data.refresh_token}; path=/; max-age=2592000; SameSite=Strict; Secure`;
-      // Legacy format for backward compat (middleware fallback)
-      document.cookie = `sb-access-token=${data.access_token}; path=/; max-age=${data.expires_in}; SameSite=Strict; Secure`;
-      document.cookie = `sb-refresh-token=${data.refresh_token}; path=/; max-age=2592000; SameSite=Strict; Secure`;
+      if (!sessionRes.ok) {
+        await revokeRejectedSession(data.access_token);
+        throw new Error(t("login.failed"));
+      }
 
       const redirectTo = searchParams.get("redirect") || "/dashboard";
       router.push(redirectTo);

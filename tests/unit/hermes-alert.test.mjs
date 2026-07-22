@@ -5,17 +5,19 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
 
-const script = new URL("../../infra/observability/hermes-alert.sh", import.meta.url);
+const script = new URL("../../infra/observability/hermes-alert-state-v1.sh", import.meta.url);
 
-async function runAlert(stateDir, command, event, summary, threshold = "2") {
+async function runAlert({ stateDir, notifier, event, summary, expectCode = 0, threshold }) {
+  const env = {
+    ...process.env,
+    HERMES_ALERT_STATE_DIR: stateDir,
+  };
+  if (notifier !== undefined) env.HERMES_ALERT_NOTIFIER = notifier;
+  if (threshold !== undefined) env.HERMES_ALERT_THRESHOLD = threshold;
+
   const result = await new Promise((resolve) => {
     const child = spawn("bash", [script.pathname, "login-probe", event, summary], {
-      env: {
-        ...process.env,
-        HERMES_ALERT_STATE_DIR: stateDir,
-        HERMES_ALERT_THRESHOLD: threshold,
-        HERMES_ALERT_COMMAND: command,
-      },
+      env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -24,47 +26,78 @@ async function runAlert(stateDir, command, event, summary, threshold = "2") {
     child.stderr.on("data", (chunk) => { stderr += chunk; });
     child.on("close", (code) => resolve({ code, stdout, stderr }));
   });
-  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.code, expectCode, result.stderr);
   return result.stdout;
 }
 
-test("persists threshold state and suppresses a continuing failure", async () => {
-  const stateDir = await mkdtemp(join(tmpdir(), "hermes-alert-state-"));
-  const eventsFile = join(stateDir, "events.log");
-  const notifier = join(stateDir, "notifier.sh");
-  await writeFile(notifier, "#!/usr/bin/env bash\ncat >> \"$HERMES_ALERT_EVENTS\"\n", { mode: 0o700 });
+async function makeNotifier(dir, body) {
+  const notifier = join(dir, "notifier.sh");
+  await writeFile(notifier, body, { mode: 0o700 });
+  return notifier;
+}
 
-  const env = { HERMES_ALERT_EVENTS: eventsFile };
-  process.env.HERMES_ALERT_EVENTS = eventsFile;
-  await runAlert(stateDir, notifier, "failure", "first failure");
-  const first = await readFile(eventsFile, "utf8").catch(() => "");
-  assert.equal(first, "");
-  await runAlert(stateDir, notifier, "failure", "threshold failure");
-  const alerted = await readFile(eventsFile, "utf8");
-  assert.match(alerted, /event=alert/);
-  assert.match(alerted, /key=login-probe/);
-  await runAlert(stateDir, notifier, "failure", "same failure again");
-  assert.equal((await readFile(eventsFile, "utf8")).match(/event=alert/g)?.length, 1);
-  assert.equal((await readFile(join(stateDir, "login-probe.state"), "utf8")).includes("status=firing"), true);
+async function events(stateDir) {
+  return readFile(join(stateDir, "events.log"), "utf8").catch(() => "");
+}
+
+test("default threshold is two, suppresses duplicates, recovers once, and re-alerts later", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "hermes-alert-default-"));
+  const notifier = await makeNotifier(
+    stateDir,
+    "#!/usr/bin/env bash\nprintf '%s %s %s\\n' "$1" "$2" "$3" >> "$HERMES_ALERT_EVENTS"\n",
+  );
+  process.env.HERMES_ALERT_EVENTS = join(stateDir, "events.log");
+
+  await runAlert({ stateDir, notifier, event: "failure", summary: "first failure" });
+  assert.equal((await events(stateDir)).length, 0);
+  assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=ok/);
+  assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /failure_count=1/);
+
+  await runAlert({ stateDir, notifier, event: "failure", summary: "threshold failure" });
+  await runAlert({ stateDir, notifier, event: "failure", summary: "same failure again" });
+  await runAlert({ stateDir, notifier, event: "recovery", summary: "recovered" });
+  await runAlert({ stateDir, notifier, event: "recovery", summary: "still recovered" });
+  await runAlert({ stateDir, notifier, event: "failure", summary: "new failure one" });
+  await runAlert({ stateDir, notifier, event: "failure", summary: "new failure two" });
+
+  const log = await events(stateDir);
+  assert.equal((log.match(/^alert /gm) || []).length, 2);
+  assert.equal((log.match(/^recovery /gm) || []).length, 1);
   delete process.env.HERMES_ALERT_EVENTS;
 });
 
-test("sends one recovery and allows a later independent incident", async () => {
-  const stateDir = await mkdtemp(join(tmpdir(), "hermes-alert-recovery-"));
-  const eventsFile = join(stateDir, "events.log");
-  const notifier = join(stateDir, "notifier.sh");
-  await writeFile(notifier, "#!/usr/bin/env bash\ncat >> \"$HERMES_ALERT_EVENTS\"\n", { mode: 0o700 });
-  process.env.HERMES_ALERT_EVENTS = eventsFile;
+test("failed alert and recovery transport remain retryable", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "hermes-alert-retry-"));
+  const failing = await makeNotifier(stateDir, "#!/usr/bin/env bash\nexit 1\n");
+  const working = await makeNotifier(
+    stateDir,
+    "#!/usr/bin/env bash\nprintf '%s %s %s\\n' "$1" "$2" "$3" >> "$HERMES_ALERT_EVENTS"\n",
+  );
+  process.env.HERMES_ALERT_EVENTS = join(stateDir, "events.log");
 
-  await runAlert(stateDir, notifier, "failure", "failure one");
-  await runAlert(stateDir, notifier, "failure", "failure two");
-  await runAlert(stateDir, notifier, "recovery", "recovered");
-  await runAlert(stateDir, notifier, "recovery", "still recovered");
-  await runAlert(stateDir, notifier, "failure", "new failure one");
-  await runAlert(stateDir, notifier, "failure", "new failure two");
+  await runAlert({ stateDir, notifier: failing, event: "failure", summary: "failure one" });
+  await runAlert({ stateDir, notifier: failing, event: "failure", summary: "failure two", expectCode: 1 });
+  assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=pending_failure/);
+  await runAlert({ stateDir, notifier: working, event: "failure", summary: "retry alert" });
+  assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=firing/);
 
-  const events = await readFile(eventsFile, "utf8");
-  assert.equal((events.match(/event=alert/g) || []).length, 2);
-  assert.equal((events.match(/event=recovery/g) || []).length, 1);
+  await runAlert({ stateDir, notifier: failing, event: "recovery", summary: "recovery fails", expectCode: 1 });
+  assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=pending_recovery/);
+  await runAlert({ stateDir, notifier: working, event: "recovery", summary: "retry recovery" });
+  assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=ok/);
+  assert.equal((await events(stateDir)).match(/^recovery /gm)?.length, 1);
   delete process.env.HERMES_ALERT_EVENTS;
+});
+
+test("initializes a persistent user directory and exposes missing notifier or path errors", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hermes-alert-init-"));
+  const stateDir = join(root, "nested", "state");
+  const missing = join(root, "missing-notifier");
+  await runAlert({ stateDir, notifier: missing, event: "failure", summary: "first failure" });
+  await runAlert({ stateDir, notifier: missing, event: "failure", summary: "threshold failure", expectCode: 1 });
+  assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=pending_failure/);
+
+  const notDirectory = join(root, "not-a-directory");
+  await writeFile(notDirectory, "occupied");
+  await runAlert({ stateDir: notDirectory, notifier: missing, event: "failure", summary: "bad directory", expectCode: 1 });
 });

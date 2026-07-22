@@ -27,7 +27,7 @@ test("session cookies use dynamic names and secure server refresh attributes", a
   assert.doesNotMatch(cookieNames + server + session, /vfopmpxlhwzpxqegayew/);
   assert.match(server, /httpOnly: true/);
   assert.match(session, /JSON\.stringify\(\{[\s\S]*access_token: accessToken/);
-  assert.doesNotMatch(session, /set\(authToken, accessToken/);
+  assert.doesNotMatch(session, /const cookiePayload = JSON\.stringify\(\{[\s\S]*refresh_token: refreshToken/);
   assert.match(server, /_cookieStore\.set\(names\.refreshToken/);
   assert.match(session, /httpOnly: true/);
   assert.match(session, /sameSite: "strict"/);
@@ -53,8 +53,8 @@ test("session cookie payload is consumable by the SSR token parser contract", as
   const parsed = JSON.parse(payload);
   assert.equal(parsed.access_token, "access-token");
   assert.equal(parsed.refresh_token, "refresh-token");
-  assert.match(session, /const cookiePayload = JSON\\.stringify\\(\\{[\\s\\S]*access_token: accessToken,\\s*expires_at:/);
+  assert.match(session, /const cookiePayload = JSON\.stringify\(\{[\s\S]*access_token: accessToken,\s*expires_at:/);
   assert.doesNotMatch(session, /const cookiePayload = JSON\\.stringify\\(\\{[\\s\\S]*refresh_token: refreshToken/);
-  assert.match(session, /response\\.cookies\\.set\\(refreshCookie, refreshToken/);
+  assert.match(session, /response\.cookies\.set\(refreshCookie, refreshToken/);
   assert.match(server, /parseSsrCookie/);
 });

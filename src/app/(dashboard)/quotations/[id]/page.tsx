@@ -38,6 +38,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { fmtAED } from "@/shared/utils/format";
+import type { Database } from "@/types/database";
 
 /* ─── Types ─── */
 interface QuotationLineItem {
@@ -67,7 +68,7 @@ interface Quotation {
   status: string;
   pdf_url: string | null;
   ppt_url: string | null;
-  devices_json: any;
+  devices_json: QuotationLineItem[];
   notes: string | null;
   internal_notes: string | null;
   sent_at: string | null;
@@ -83,11 +84,32 @@ interface Quotation {
   } | null;
 }
 
+type QuotationUpdate = Database["public"]["Tables"]["quotations"]["Update"];
+
 interface Product {
   id: string;
   name: string;
   unit_price: number;
   description: string | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseLineItems(value: unknown): QuotationLineItem[] {
+  if (value === null || value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error("Quotation line items must be a JSON array");
+  return value.map((item, index) => {
+    if (!isRecord(item) || typeof item.product_id !== "string" || typeof item.product_name !== "string" || typeof item.description !== "string" || typeof item.quantity !== "number" || !Number.isFinite(item.quantity) || typeof item.unit_price !== "number" || !Number.isFinite(item.unit_price) || typeof item.total_price !== "number" || !Number.isFinite(item.total_price)) {
+      throw new Error(`Invalid quotation line item at index ${index}`);
+    }
+    return { product_id: item.product_id, product_name: item.product_name, description: item.description, quantity: item.quantity, unit_price: item.unit_price, total_price: item.total_price };
+  });
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /* ─── Status config ─── */
@@ -177,15 +199,12 @@ export default function QuotationDetailPage() {
         if (err) throw err;
         if (!data) throw new Error("Quotation not found");
 
-        setQuotation(data as Quotation);
-
-        // Parse devices_json into line items
-        if (data.devices_json && Array.isArray(data.devices_json)) {
-          setLineItems(data.devices_json as QuotationLineItem[]);
-        }
-      } catch (err: any) {
+        const parsedItems = parseLineItems(data.devices_json);
+        setQuotation({ ...data, devices_json: parsedItems, leads: data.leads ?? null });
+        setLineItems(parsedItems);
+      } catch (err: unknown) {
         console.error("Failed to fetch quotation:", err);
-        setError(err.message || t("common.loadFailedRetry"));
+        setError(getErrorMessage(err) || t("common.loadFailedRetry"));
       } finally {
         setLoading(false);
       }
@@ -204,7 +223,7 @@ export default function QuotationDetailPage() {
         .order("name");
 
       if (!error && data) {
-        setProducts(data as Product[]);
+        setProducts(data);
       }
     }
 
@@ -267,9 +286,9 @@ export default function QuotationDetailPage() {
 
       toast.success(t("quotations.itemAdded") || "Item added");
       setSelectedProduct("");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to add item:", err);
-      toast.error(err.message || t("common.saveFailedRetry"));
+      toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
     } finally {
       setAddingItem(false);
     }
@@ -315,9 +334,9 @@ export default function QuotationDetailPage() {
       });
 
       toast.success(t("quotations.itemRemoved") || "Item removed");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to remove item:", err);
-      toast.error(err.message || t("common.saveFailedRetry"));
+      toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
     }
   };
 
@@ -362,9 +381,9 @@ export default function QuotationDetailPage() {
         tax_amount: taxAmount,
         total_amount: totalAmount,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to update quantity:", err);
-      toast.error(err.message || t("common.saveFailedRetry"));
+      toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
     }
   };
 
@@ -375,7 +394,7 @@ export default function QuotationDetailPage() {
     setChangingStatus(true);
 
     try {
-      const updateData: any = {
+      const updateData: QuotationUpdate = {
         status: newStatus,
         updated_at: new Date().toISOString(),
       };
@@ -400,9 +419,9 @@ export default function QuotationDetailPage() {
       toast.success(
         t("quotations.statusUpdated") || `Status updated to ${STATUS_LABELS[newStatus]}`
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to update status:", err);
-      toast.error(err.message || t("common.saveFailedRetry"));
+      toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
     } finally {
       setChangingStatus(false);
     }

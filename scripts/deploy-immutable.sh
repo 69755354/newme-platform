@@ -243,21 +243,51 @@ MANIFESTEOF
 # --- Step 5: Pre-switch smoke on 3002 ---
 echo "--- 3002 Smoke ---"
 
-# Clean any stale 3002 process
+# cleanup_candidate: kills candidate process group, verifies port release
+# MUST be called on every exit path (trap EXIT). Kill by process group, not PID.
+cleanup_candidate() {
+  if [ -n "${CANDIDATE_PGID:-}" ]; then
+    # Kill entire process group (leader + all children)
+    kill -TERM -- -"$CANDIDATE_PGID" 2>/dev/null || true
+    wait $CANDIDATE_PID 2>/dev/null || true
+    sleep 0.5
+    # Force-kill survivors
+    kill -KILL -- -"$CANDIDATE_PGID" 2>/dev/null || true
+    wait $CANDIDATE_PID 2>/dev/null || true
+    # Verify port released
+    for i in $(seq 1 10); do
+      if ! fuser 3002/tcp 2>/dev/null; then
+        echo "✅ 3002 port released (cleanup)"
+        break
+      fi
+      sleep 0.5
+    done
+    if fuser 3002/tcp 2>/dev/null; then
+      echo "❌ FATAL: 3002 port still occupied after cleanup"
+      fuser -v 3002/tcp 2>/dev/null
+      return 1
+    fi
+  fi
+}
+trap 'cleanup_candidate || true' EXIT
+
+# Clean any stale 3002 process (before starting new candidate)
 STALE_3002=$(fuser 3002/tcp 2>/dev/null || true)
 if [ -n "$STALE_3002" ]; then
   echo "⚠️  Killing stale 3002 process: $STALE_3002"
   fuser -k 3002/tcp 2>/dev/null || true
-  sleep 1
+  sleep 2
 fi
 
 cd "$RELEASE_DIR"
-PORT=3002 npm run start &
-PID_3002=$!
 
-# Ensure 3002 is always killed on exit
-cleanup_3002() { kill $PID_3002 2>/dev/null; wait $PID_3002 2>/dev/null; }
-trap cleanup_3002 EXIT
+# Start candidate in independent process group via setsid
+# setsid ensures the process group survives the parent shell, and
+# kill -- -PGID can target the entire tree regardless of re-parenting
+setsid -w bash -c "PORT=3002 npm run start" </dev/null >/dev/null 2>&1 &
+CANDIDATE_PID=$!
+# PGID = PID for setsid leader
+CANDIDATE_PGID=$CANDIDATE_PID
 
 sleep 1
 
@@ -288,8 +318,8 @@ else
   echo "❌ 3002 never became ready"
 fi
 
-kill $PID_3002 2>/dev/null || true
-wait $PID_3002 2>/dev/null || true
+# Trigger cleanup via trap (kills candidate group + verifies port)
+cleanup_candidate
 
 if [ "$SMOKE_PASS" = false ]; then
   echo "❌ Pre-switch smoke failed. Release NOT deployed. Current unchanged."
@@ -400,3 +430,30 @@ echo "✅ Evidence: $EVIDENCE_FILE"
 # --- Cleanup ---
 rm -f "$LOCKFILE"
 echo "=== Deploy Complete: $RELEASE_ID ==="
+
+# ────────────────────────────────────────────
+# Self-test: verify candidate cleanup works
+# Runs ONLY when this script is sourced with --selftest
+if [ "${1:-}" = "--selftest" ]; then
+  echo ""
+  echo "=== SELFTEST: candidate cleanup ==="
+  # Start a dummy process on 3002 (simulates stuck candidate)
+  python3 -c "import http.server; http.server.HTTPServer(('', 3002), http.server.SimpleHTTPRequestHandler).serve_forever()" &
+  TEST_PID=$!
+  sleep 1
+  CANDIDATE_PID=$TEST_PID
+  CANDIDATE_PGID=$(ps -o pgid= -p $TEST_PID 2>/dev/null | tr -d ' ')
+  echo "Started dummy candidate PID=$CANDIDATE_PID PGID=$CANDIDATE_PGID"
+  if ! fuser 3002/tcp 2>/dev/null; then
+    echo "❌ SELFTEST FAIL: dummy didn't bind 3002"
+    exit 1
+  fi
+  cleanup_candidate
+  if fuser 3002/tcp 2>/dev/null; then
+    echo "❌ SELFTEST FAIL: 3002 still occupied after cleanup"
+    fuser -k 3002/tcp 2>/dev/null || true
+    exit 1
+  fi
+  echo "✅ SELFTEST PASS: cleanup released port 3002"
+  exit 0
+fi

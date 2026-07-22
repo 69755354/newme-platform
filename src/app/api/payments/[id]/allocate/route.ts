@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import type { Json } from "@/types/database";
 
 interface AllocationItem {
   plan_id: string;
@@ -38,7 +39,7 @@ export async function POST(
       .eq("id", user.id)
       .single();
 
-    if (!profile) {
+    if (!profile?.role) {
       return NextResponse.json({ error: "Profile not found" }, { status: 403 });
     }
 
@@ -91,10 +92,11 @@ export async function POST(
       );
     }
 
-    // Call the RPC function to allocate the payment
+    // Preserve the atomic allocation RPC and serialize only its generated JSON argument.
+    const allocationPayload: Json = allocations.map(({ plan_id, amount }) => ({ plan_id, amount }));
     const { data: result, error: rpcErr } = await supabase.rpc("allocate_payment", {
       p_payment_id: paymentId,
-      p_allocations: allocations,
+      p_allocations: allocationPayload,
       p_allocated_by: user.id,
     });
 

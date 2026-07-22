@@ -29,6 +29,7 @@ import type {
   FollowUpLog,
   LeadMilestone,
   LeadTrace,
+  SalesUser,
 } from "./types";
 import { projectDraftFromLead } from "./utils";
 import { filterLeadTransferCandidateQuery } from "@/lib/lead-transfer-candidates.mjs";
@@ -50,10 +51,10 @@ export interface UseLeadDetailDataReturn {
   chatMessages: ChatMessage[];
   nextTask: Task | null;
   leadTrace: LeadTrace[];
-  transferHistory: any[];
+  transferHistory: BusinessEvent[];
   followUpLogs: FollowUpLog[];
   leadMilestones: LeadMilestone[];
-  salesUsers: any[];
+  salesUsers: SalesUser[];
   projectInfoDraft: ProjectInfoDraft;
   setProjectInfoDraft: React.Dispatch<React.SetStateAction<ProjectInfoDraft>>;
   loading: boolean;
@@ -73,10 +74,10 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [nextTask, setNextTask] = useState<Task | null>(null);
   const [leadTrace, setLeadTrace] = useState<LeadTrace[]>([]);
-  const [transferHistory, setTransferHistory] = useState<any[]>([]);
+  const [transferHistory, setTransferHistory] = useState<BusinessEvent[]>([]);
   const [followUpLogs, setFollowUpLogs] = useState<FollowUpLog[]>([]);
   const [leadMilestones, setLeadMilestones] = useState<LeadMilestone[]>([]);
-  const [salesUsers, setSalesUsers] = useState<any[]>([]);
+  const [salesUsers, setSalesUsers] = useState<SalesUser[]>([]);
   const [projectInfoDraft, setProjectInfoDraft] = useState<ProjectInfoDraft>({
     project_type: "", emirate: "", area: "", ac_brand: "", customer_budget: "",
   });
@@ -209,7 +210,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         return;
       }
 
-      const l = leadPayload.data as any;
+      const l = leadPayload.data;
       if (l) {
         const creatorProfile = l.creator || null;
         const assigneeProfile = l.assignee || null;
@@ -225,12 +226,13 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         //   populated (FK fk_leads_customer_id now exists per migration
         //   B.1). Currently all 49 leads have customer_id=NULL so this
         //   branch never fires; kept for T1-8 maybeSingle=3 + future-proof.
-        if (l.customer_id) {
+        const customerId = l.customer_id;
+        if (customerId) {
           (async () => {
             const r = await supabase
               .from("customers")
               .select("id, name, email, phone")
-              .eq("id", l.customer_id)
+              .eq("id", customerId)
               .maybeSingle();
             if (r.data) {
               setLead((prev) =>
@@ -245,40 +247,77 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
       if (l?.follow_ups) setFollowUpLogs(l.follow_ups as FollowUpLog[]);
       if (l?.milestones) {
         setLeadMilestones(
-          (l.milestones).map((m: any) => ({
+          (l.milestones).map((m) => ({
             ...m,
             completed: !!m.completed_at,
           })) as LeadMilestone[]
         );
       }
       if (l?.business_events) {
-        setEvents(l.business_events as BusinessEvent[]);
-        const transfers = (l.business_events).filter(
-          (ev: any) => ev.event_type === "transfer"
+        setEvents(l.business_events.map((event) => ({
+          id: event.id,
+          event_type: event.event_type,
+          description: event.description ?? "",
+          event_data: event.event_data ?? null,
+          created_at: event.created_at ?? "",
+          user_id: event.user_id ?? null,
+          operator: event.operator ?? null,
+        })));
+        const transfers = l.business_events.filter(
+          (ev) => ev.event_type === "transfer"
         );
-        if (transfers.length > 0) setTransferHistory(transfers);
+        if (transfers.length > 0) setTransferHistory(transfers.map((event) => ({
+          id: event.id,
+          event_type: event.event_type,
+          description: event.description ?? "",
+          event_data: event.event_data ?? null,
+          created_at: event.created_at ?? "",
+          user_id: event.user_id ?? null,
+          operator: event.operator ?? null,
+        })));
       }
       // ─── Independent queries from Batch 2 — soft-error handling ──────
       // Per design §6.4: original code wrapped each independent query in
       //   console.warn (non-fatal). allSettled + per-result check keeps
       //   the same semantics without blocking setError.
-      const batches2 = [
-        ["activities", activitiesRes],
-        ["chat_messages", chatRes],
-        ["v_lead_trace", traceRes],
-      ] as const;
-      for (const [name, r] of batches2) {
-        if (r.status === "fulfilled") {
-          const payload = r.value;
-          if (payload.error) {
-            console.warn(`[LeadDetail] non-fatal fetch (${name}):`, payload.error);
-          } else if (payload.data) {
-            if (name === "activities") setActivities(payload.data as Activity[]);
-            else if (name === "chat_messages") setChatMessages(payload.data as ChatMessage[]);
-            else if (name === "v_lead_trace") setLeadTrace(payload.data as LeadTrace[]);
-          }
+      if (activitiesRes.status === "fulfilled") {
+        const payload = activitiesRes.value;
+        if (payload.error) {
+          console.warn("[LeadDetail] non-fatal fetch (activities):", payload.error);
+        } else if (payload.data) {
+          setActivities(payload.data.map((activity) => ({
+            id: activity.id,
+            type: activity.type,
+            content: activity.content ?? "",
+            ai_generated: false,
+            created_at: activity.created_at ?? "",
+            user_id: activity.user_id ?? null,
+            metadata: activity.metadata ?? null,
+          })));
         }
-        // rejected cases already logged above
+      }
+
+      if (chatRes.status === "fulfilled") {
+        const payload = chatRes.value;
+        if (payload.error) {
+          console.warn("[LeadDetail] non-fatal fetch (chat_messages):", payload.error);
+        } else if (payload.data) {
+          setChatMessages(payload.data.map((message) => ({
+            id: message.id,
+            content: message.content,
+            direction: message.direction,
+            created_at: message.created_at ?? "",
+          })));
+        }
+      }
+
+      if (traceRes.status === "fulfilled") {
+        const payload = traceRes.value;
+        if (payload.error) {
+          console.warn("[LeadDetail] non-fatal fetch (v_lead_trace):", payload.error);
+        } else if (payload.data) {
+          setLeadTrace(payload.data as LeadTrace[]);
+        }
       }
 
       if (nextTaskRes.status === "fulfilled") {
@@ -286,7 +325,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         if (payload.error) {
           console.warn("[LeadDetail] non-fatal fetch (tasks):", payload.error);
         } else {
-          setNextTask((payload.data as Task | null) ?? null);
+          setNextTask(payload.data ?? null);
         }
       } else {
         setNextTask(null);
@@ -316,7 +355,12 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
       candidateQuery as never
     ) as typeof candidateQuery;
     filteredCandidateQuery.then(({ data }) => {
-      if (data) setSalesUsers(data);
+      if (data) setSalesUsers(data.map((user) => ({
+        id: user.id,
+        email: user.email ?? null,
+        role: user.role ?? null,
+        full_name: user.full_name ?? null,
+      })));
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

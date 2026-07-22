@@ -1,6 +1,9 @@
 'use server'
 
 import { createServerSupabase } from '@/lib/supabase-server'
+import type { Database, Json } from '@/types/database'
+
+type LeadUpdate = Database['public']['Tables']['leads']['Update']
 
 type ServerSupabaseClient = Awaited<ReturnType<typeof createServerSupabase>>
 
@@ -15,7 +18,7 @@ async function assertCanOperateOnLead(
     .eq('id', userId)
     .single()
 
-  if (profile && ['admin', 'boss', 'operator'].includes(profile.role)) return
+  if (profile?.role && ['admin', 'boss', 'operator'].includes(profile.role)) return
 
   if (profile?.role === 'sales') {
     const { data: lead } = await supabase
@@ -37,7 +40,7 @@ export async function writeBusinessEvent(
   leadId: string,
   eventType: string,
   description: string,
-  eventData?: Record<string, any>
+  eventData?: Record<string, Json>
 ) {
   const supabase = await createServerSupabase()
   const { data: { user } } = await supabase.auth.getUser()
@@ -68,14 +71,14 @@ export async function updateLeadStage(
 
   // Role + ownership gate
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  const isPrivileged = profile?.role && ['admin', 'boss', 'operator'].includes(profile.role)
+  const isPrivileged = profile?.role ? ['admin', 'boss', 'operator'].includes(profile.role) : false
   if (!isPrivileged) {
     const { data: lead } = await supabase.from('leads').select('assigned_to').eq('id', leadId).single()
     if (!lead || lead.assigned_to !== user.id) throw new Error('Forbidden')
   }
 
   const now = new Date().toISOString()
-  const data: Record<string, any> = {
+  const data: LeadUpdate = {
     ...updates,
     updated_at: now,
     last_contact_date: now,

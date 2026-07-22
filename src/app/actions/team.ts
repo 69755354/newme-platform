@@ -29,7 +29,7 @@ export async function addTeamMember(data: AddTeamMemberInput) {
     .eq('id', user.id)
     .single()
 
-  if (!profile || !['admin', 'boss', 'sales'].includes(profile.role)) {
+  if (!profile?.role || !['admin', 'boss', 'sales'].includes(profile.role)) {
     throw new Error('Forbidden')
   }
 
@@ -121,7 +121,7 @@ export async function removeTeamMember(userId: string) {
     .eq('id', user.id)
     .single()
 
-  if (!caller || !['admin', 'boss'].includes(caller.role)) {
+  if (!caller?.role || !['admin', 'boss'].includes(caller.role)) {
     throw new Error('Forbidden')
   }
 

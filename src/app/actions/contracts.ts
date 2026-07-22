@@ -28,6 +28,7 @@ export async function approveContract(
   if (profileErr || !profile) throw new Error('Profile not found')
 
   const userRole = profile.role
+  if (!userRole) throw new Error('Profile role not found')
 
   if (!action || !['approve', 'reject'].includes(action)) {
     throw new Error("action must be 'approve' or 'reject'")
@@ -66,7 +67,7 @@ export async function approveContract(
     p_contract_id: contractId,
     p_approver_id: user.id,
     p_action: action,
-    p_notes: notes || null,
+    p_notes: notes || undefined,
   })
 
   if (rpcErr) throw new Error(rpcErr.message || 'Approval RPC failed')

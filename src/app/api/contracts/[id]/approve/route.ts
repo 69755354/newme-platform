@@ -42,7 +42,7 @@ export async function POST(
       .eq("id", user.id)
       .single();
 
-    if (profileErr || !profile) {
+    if (profileErr || !profile?.role) {
       return NextResponse.json(
         { error: "Profile not found" },
         { status: 403 }
@@ -132,7 +132,7 @@ export async function POST(
         p_contract_id: contractId,
         p_approver_id: user.id,
         p_action: action,
-        p_notes: notes || null,
+        p_notes: notes?.trim() || undefined,
       }
     );
 

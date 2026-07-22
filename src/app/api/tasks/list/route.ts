@@ -53,7 +53,7 @@ export async function GET(request: Request) {
         q = q.eq("status", statusFilter)
       }
       if (assigneeFilter !== "all") {
-        q = q.eq("assigned_to", assigneeFilter)
+        q = q.eq("assignee_id", assigneeFilter)
       }
 
       return q

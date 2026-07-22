@@ -811,3 +811,44 @@ SAM-41 只补文档事实；SAM-6 候选基线只有在以下条件全部满足�
 5. 仅在生产只读验证确认三项人员契约（可停用离职人员、候选人只包含启用的 sales/operator/boss、停用历史负责人仍可解析）后，才可认定发布对销售 Case 推进可靠；上述代码或 CI 的局部通过不等同于业务收敛。
 6. SAM-43 的登录态视觉/交互 UAT 必须完成并留存通过证据后，才能关闭本轮 M1 发布门禁；登录超时、断言失败或证据缺失均保持 In Review，不得宣称完成。
 
+
+
+## SPEC freshness correction — SAM-44（2026-07-23）
+
+本节以 GitHub `main@49054606284a6f36d467899d4db8670f4fb455f5` 和 `scripts/check-spec.sh` 的逐路径匹配为准，覆盖该脚本在 Windows CI 中报告的当前 16 项未覆盖路径。它只记录实现事实与操作边界；不代表这些内容已部署，也不授权生产变更。
+
+| 路径 | 实际职责 | 权限、安全与部署/回滚边界 |
+| --- | --- | --- |
+| `e2e/playwright.config.ts` | 根 E2E 配置：运行 `./e2e`、使用 boss/sales storage state、失败时保留 trace，并以生产域名为默认 base URL。 | E2E 运行会使用已有登录态；不得把认证状态或凭据提交到仓库。此文件本身不部署或写入业务数据。 |
+| `playwright.config.ts` | 另一套 Playwright 配置：运行仓库根测试目录、默认生产域名、失败截图，并使用 JSON 结果文件。 | 生产目标意味着运行前须有显式授权和受控凭据；配置变更不等同于发布或 UAT 通过。 |
+| `infra/observability/health-check.sh` | 定时采集磁盘、内存、CPU、进程、CRM health 与 Hermes 服务状态；异常时触发 incident capture，并发送 Sentry cron check-in。 | 在部署主机运行，读取系统状态并可启动后台证据采集；不应作为业务数据写入或发布脚本。失败监控不应掩盖发布门禁。 |
+| `infra/observability/incident-capture.sh` | 将近期 systemd 日志、系统/网络状态、监控日志和最近 Git 记录快照到临时 incident 目录，并清理超过保留期的旧快照。 | 有主机日志与临时文件访问面；只用于取证。清理范围限于其 incident 临时目录，不能当作生产回滚。 |
+| `infra/observability/incident-review.sh` | 列出或读取已采集 incident 的摘要和指定文件。 | 只读查看本地 incident 证据；输出可能含运行环境信息，访问应限于获授权操作者。 |
+| `infra/observability/login-probe.sh` | 定时探测 health 与未认证 `/api/auth/me` 链路，有限重试；异常时采集 incident 并更新 Sentry cron 状态。 | 不保存测试凭据；对认证接口只验证可用性。探测失败是告警/取证输入，不是自动部署或权限绕过信号。 |
+| `infra/observability/sentry-cron-checkin.sh` | 为监控脚本发送 Sentry Cron 开始/结束 check-in；未取得 DSN 时降级为不阻塞的 no-op。 | DSN 只可由运行环境或受限凭据文件提供；不得写入 SPEC、源码日志或仓库。 |
+| `infra/observability/sentry-release.sh` | 在有运行时 Sentry token 时创建 release 与 production deploy 关联；缺少 token 时明确跳过。 | 对 Sentry API 有外部写入能力，须由部署环境授权；它不替代 GitHub CI、发布审批或应用回滚。 |
+| `infra/observability/supabase-pool-monitor.sh` | 定时检查 Supabase REST 可达性并在连接/5xx 异常时采集 incident 与报告 Sentry cron 状态。 | 凭据必须来自受控运行环境，不能被硬编码或记录；监控是只读可用性探测，不得用于业务修复写入。 |
+| `instrumentation.ts` | Next.js instrumentation 注册点；当前实现明确保持 server-side Sentry instrumentation 为 no-op。 | 这会限制服务端观测能力，但不改变应用授权或数据；恢复初始化应由独立改动、测试和发布审查处理。 |
+| `scripts/deploy-immutable.sh` | 不可变 release 部署编排：创建 release 标识、管理 current/previous release、处理构建产物外部 symlink，并含候选清理 self-test。 | 会操作 release、锁和进程/端口，属于受控部署脚本；只能在批准窗口运行。失败应保留 previous release 用于回滚，禁止把 self-test 当作生产操作。 |
+| `src/app/api/ready/route.ts` | 公开 readiness 端点：检查数据库、Supabase REST 与临时磁盘读写，读取 BUILD_ID，并以 200/503 返回 ready/degraded。 | 虽为 public，内部检查细节不应用作认证替代；临时磁盘探测仅服务 readiness，部署失败应由发布流程回滚而非伪造健康。 |
+| `src/app/login/page.tsx` | 浏览器登录页：请求 Supabase token 后先调用服务端 `/api/auth/me` 验证 active profile；被拒绝时尝试注销并清除本地 token/cookie，再写入兼容的会话格式并跳转。 | 密码与 token 不得被记录；profile active gate 是登录边界，客户端清理失败也不能放宽服务端拒绝。 |
+| `src/lib/logger.ts` | Pino 结构化日志与错误序列化：注入 service/environment/release/build 元数据，并遮蔽密码、token、cookie、授权头及常见 PII 字段。 | 日志仍可能暴露上下文，调用方不得放入敏感业务数据；日志不是审计授权或回滚机制。 |
+| `src/lib/supabase-server.ts` | 服务端 Supabase client：解析 cookie/header token、以 refresh token 为键合并并发刷新、返回刷新 cookie 元数据，并优先使用显式 bearer token。 | 令牌刷新与 cookie 设置必须保持服务端会话边界；不得把 token 写入日志或客户端输入当作高权限凭据。认证回归应阻断发布并回滚到已验证 release。 |
+| `tests/unit/auth-me.test.ts` | `/api/auth/me` 的 Node 单元测试：覆盖无效/有效 bearer 与 cookie、刷新成功/失败、inactive profile、异常处理，以及响应/日志不泄露调试键或 token/cookie 值。 | 测试只使用 mock 值；它验证认证边界但不提供生产登录或部署证据。 |
+
+### 验证与残余 CI 边界
+
+- 上述路径来自 Windows job `29931715552` 的 `check-spec.sh` 输出；该 job 因 16 个未覆盖路径失败。
+- 该次 Linux `Repository validation` 另在 `npm run lint:baseline` 失败并因此跳过后续 typecheck、tests 与 build；该失败属于与本 docs-only 变更分离的既有 lint 债务，不能写成 SAM-44 已修复的业务/发布结论。
+- 本节合并前，SAM-44 保持 In Progress；合并后仍须记录实际 main SHA、对应 CI run 和部署证据。没有新的、受控的部署证据，不得关闭事项或宣称生产已恢复。
+
+
+## SAM-73 integration typed-contract paths (2026-07-23)
+
+The integration draft carries the completed typed-contract fixes from PRs #80, #82, #83, #84, and #86. The following affected paths are part of this release-train scope:
+- `src/app/(dashboard)/leads/[id]/utils.ts`: typed lead-detail project draft helper.
+- `src/app/(dashboard)/projects/page.tsx`: role guard narrowed against nullable profile roles.
+- `src/app/(dashboard)/quotes/page.tsx`: role guard narrowed against nullable profile roles.
+- `src/app/(dashboard)/settings/ads/page.tsx`: nullable stage guard in quotation funnel aggregation.
+- `src/app/(dashboard)/tasks/[id]/page.tsx`: task detail contract fields and required due date.
+- `src/types/database.ts`: generated database type source, including task and quotation contract fields.

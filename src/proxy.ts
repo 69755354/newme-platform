@@ -13,6 +13,7 @@ const PUBLIC_API_PATHS = new Set([
   "/api/auth/logout",
   "/api/auth/me",
 ]);
+const SESSION_BOOTSTRAP_PATH = "/api/auth/session";
 
 // Track user activity — update last_active_at, but throttle to once per 5 min per user
 const activityThrottle = new Map<string, number>();
@@ -72,7 +73,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const isApiRequest = pathname.startsWith("/api/");
-  const isPublicApiRequest = isApiRequest && PUBLIC_API_PATHS.has(pathname);
+  const isPublicApiRequest = isApiRequest && (PUBLIC_API_PATHS.has(pathname) || pathname === SESSION_BOOTSTRAP_PATH);
   let activeProfile: { role?: string | null; is_active?: boolean | null } | null = null;
 
   // Server-side session revocation boundary. Auth access tokens are not assumed

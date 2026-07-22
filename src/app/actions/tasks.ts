@@ -7,8 +7,10 @@ type TaskUpdate = Database['public']['Tables']['tasks']['Update']
 
 interface UpdateTaskInput {
   title: string
+  description: string | null
+  priority: string | null
   assignee_id: string | null
-  due_at: string | null
+  due_at: string
 }
 
 interface UpdateTaskStatusInput {
@@ -16,7 +18,7 @@ interface UpdateTaskStatusInput {
 }
 
 /**
- * Update the task fields that exist in the production tasks contract.
+ * Update the task fields supported by the production tasks contract.
  */
 export async function updateTask(taskId: string, updates: UpdateTaskInput) {
   const supabase = await createServerSupabase()
@@ -33,8 +35,10 @@ export async function updateTask(taskId: string, updates: UpdateTaskInput) {
 
   const updateData: TaskUpdate = {
     title: updates.title.trim(),
+    description: updates.description,
+    priority: updates.priority,
     assignee_id: updates.assignee_id,
-    due_at: updates.due_at ?? undefined,
+    due_at: updates.due_at,
   }
 
   const { error: err } = await supabase

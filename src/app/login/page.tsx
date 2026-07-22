@@ -14,7 +14,6 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const COOKIE_NAMES = getSupabaseCookieNames(SUPABASE_URL);
 
 function clearBrowserSession() {
-  localStorage.removeItem(COOKIE_NAMES.authToken);
   for (const name of [
     COOKIE_NAMES.authToken,
     COOKIE_NAMES.refreshToken,
@@ -76,36 +75,7 @@ function LoginPageInner() {
         return;
       }
 
-      // Supabase Auth may still issue a token for a profile deactivated in the
-      // application database. Validate the token at the server boundary before
-      // persisting it in browser storage or cookies.
-      let activeCheck: Response;
-      try {
-        activeCheck = await fetch("/api/auth/me", {
-          headers: { "Authorization": `Bearer ${data.access_token}` },
-        });
-      } catch (error) {
-        await revokeRejectedSession(data.access_token);
-        throw error;
-      }
-      const activeData = await activeCheck.json().catch(() => null);
-      if (!activeCheck.ok || activeData?.isActive !== true) {
-        await revokeRejectedSession(data.access_token);
-        setError(t("login.failed"));
-        setLoading(false);
-        return;
-      }
-
-      // Store session in localStorage for client-side createClient()
-      localStorage.setItem("sb-vfopmpxlhwzpxqegayew-auth-token", JSON.stringify({
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-        expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
-        user: data.user,
-      }));
-
-      // Let the same-origin server set the session cookies. The refresh token
-      // is HttpOnly and is never written with document.cookie.
+      // Let the same-origin server establish the controlled cookie session first.
       const sessionRes = await fetch("/api/auth/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -120,11 +90,28 @@ function LoginPageInner() {
         throw new Error(t("login.failed"));
       }
 
+      // Validate the cookie-backed session at the server boundary. Inactive
+      // profiles are rejected before the user is allowed into the app.
+      let activeCheck: Response;
+      try {
+        activeCheck = await fetch("/api/auth/me");
+      } catch (error) {
+        await revokeRejectedSession(data.access_token);
+        throw error;
+      }
+      const activeData = await activeCheck.json().catch(() => null);
+      if (!activeCheck.ok || activeData?.isActive !== true) {
+        await revokeRejectedSession(data.access_token);
+        setError(t("login.failed"));
+        setLoading(false);
+        return;
+      }
+
       const redirectTo = searchParams.get("redirect") || "/dashboard";
       router.push(redirectTo);
       router.refresh();
-    } catch (err: any) {
-      setError(err.message || t("login.networkError"));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t("login.networkError"));
       setLoading(false);
     }
   }

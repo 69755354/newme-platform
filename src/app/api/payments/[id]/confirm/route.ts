@@ -34,7 +34,7 @@ export async function POST(
       .eq("id", user.id)
       .single();
 
-    if (!profile) {
+    if (!profile?.role) {
       return NextResponse.json({ error: "Profile not found" }, { status: 403 });
     }
 

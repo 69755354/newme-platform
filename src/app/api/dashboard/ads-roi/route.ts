@@ -2,6 +2,10 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 
+function numericAmount(value: number | null): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function normalizeCampaign(name: string | null): string {
   if (!name) return "Uncategorized";
   return name
@@ -35,7 +39,7 @@ export async function GET(request: Request) {
       .eq("id", user.id)
       .single();
 
-    if (!profile || !["boss", "admin"].includes(profile.role)) {
+    if (!profile?.role || !["boss", "admin"].includes(profile.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -46,10 +50,12 @@ export async function GET(request: Request) {
 
     if (adErr) throw adErr;
 
-    const totalSpend = (adSpend || []).reduce(
-      (sum, row) => sum + (parseFloat(row.amount) || 0),
-      0
-    );
+    const knownSpend = (adSpend || [])
+      .map((row) => numericAmount(row.amount))
+      .filter((amount): amount is number => amount !== null);
+    const totalSpend = knownSpend.length > 0
+      ? knownSpend.reduce((sum, amount) => sum + amount, 0)
+      : null;
 
     // Spend per campaign (normalized keys)
     const spendByCampaign: Record<string, number> = {};
@@ -57,8 +63,10 @@ export async function GET(request: Request) {
     for (const row of adSpend || []) {
       const raw = row.campaign_name || "Uncategorized";
       const campaign = normalizeCampaign(raw);
-      spendByCampaign[campaign] =
-        (spendByCampaign[campaign] || 0) + (parseFloat(row.amount) || 0);
+      const amount = numericAmount(row.amount);
+      if (amount !== null) {
+        spendByCampaign[campaign] = (spendByCampaign[campaign] || 0) + amount;
+      }
       if (!displayNameMap[campaign]) displayNameMap[campaign] = raw;
     }
 
@@ -105,16 +113,16 @@ export async function GET(request: Request) {
 
     const campaignBreakdown = Array.from(allCampaigns)
       .map((campaign) => {
-        const spend = spendByCampaign[campaign] || 0;
+        const spend = spendByCampaign[campaign] ?? null;
         const leads = leadsByCampaign[campaign] || 0;
         const conversions = conversionsByCampaign[campaign] || 0;
         const signedAmount = signedAmountByCampaign[campaign] || 0;
-        const cpl = leads > 0 ? Math.round((spend / leads) * 100) / 100 : 0;
-        const roas = spend > 0 ? Math.round((signedAmount / spend) * 100) / 100 : 0;
+        const cpl = spend !== null && leads > 0 ? Math.round((spend / leads) * 100) / 100 : null;
+        const roas = spend !== null && spend > 0 ? Math.round((signedAmount / spend) * 100) / 100 : null;
         return {
           campaign: displayNameMap[campaign] || campaign,
           campaign_key: campaign,
-          spend: Math.round(spend * 100) / 100,
+          spend: spend === null ? null : Math.round(spend * 100) / 100,
           leads,
           cpl,
           conversions,
@@ -122,7 +130,7 @@ export async function GET(request: Request) {
           roas,
         };
       })
-      .sort((a, b) => b.spend - a.spend);
+      .sort((a, b) => (b.spend ?? -Infinity) - (a.spend ?? -Infinity));
 
     // ─── 4. Source vs Quality ───
     const { data: allLeads, error: allLeadsErr } = await supabase
@@ -191,13 +199,13 @@ export async function GET(request: Request) {
         : null;
 
     const overall_cpl =
-      totalMetaLeads > 0
+      totalSpend !== null && totalMetaLeads > 0
         ? Math.round((totalSpend / totalMetaLeads) * 100) / 100
-        : 0;
+        : null;
     const overall_roas =
-      totalSpend > 0
+      totalSpend !== null && totalSpend > 0
         ? Math.round((totalSignedAmount / totalSpend) * 100) / 100
-        : 0;
+        : null;
 
     const unmatched_spend = Object.entries(spendByCampaign)
       .filter(([k]) => k === 'uncategorized')
@@ -209,7 +217,7 @@ export async function GET(request: Request) {
         end_date: endDate,
       },
       summary: {
-        total_spend: Math.round(totalSpend * 100) / 100,
+        total_spend: totalSpend === null ? null : Math.round(totalSpend * 100) / 100,
         total_leads: totalMetaLeads,
         cpl: overall_cpl,
         conversions: totalConversions,

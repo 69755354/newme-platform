@@ -1,8 +1,18 @@
 // RBAC: user (authenticated)
 import { createClient } from "@supabase/supabase-js";
-import { createServerSupabase, getRefreshedCookies, getRefreshAttempted } from "@/lib/supabase-server";
+import { createServerSupabase, getRefreshedCookies, getRefreshAttempted, getRefreshFailure } from "@/lib/supabase-server";
+import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
 import { logger } from "@/lib/logger";
 import { NextResponse } from "next/server";
+
+const LEGACY_COOKIE_NAMES = ["sb-access-token", "sb-refresh-token"];
+
+function clearSessionCookies(response: NextResponse) {
+  const names = getSupabaseCookieNames();
+  for (const name of [names.authToken, names.refreshToken, ...LEGACY_COOKIE_NAMES]) {
+    response.cookies.set(name, "", { path: "/", maxAge: 0 });
+  }
+}
 
 /**
  * GET /api/auth/me — returns current user info from session cookie.
@@ -21,6 +31,7 @@ export async function GET(request: Request) {
     const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const refreshedCookies = getRefreshedCookies(supabase);
     const refreshAttempted = getRefreshAttempted(supabase);
+    const refreshFailure = getRefreshFailure(supabase);
 
     const {
       data: { user },
@@ -31,14 +42,24 @@ export async function GET(request: Request) {
 
     // Invalid or missing session → 401
     if (!user || authError) {
-      // Only use "Token refresh failed" when a refresh was actually attempted and failed.
-      if (refreshAttempted && refreshedCookies.length === 0) {
-        return NextResponse.json(
-          { success: false, error: { code: "UNAUTHORIZED", message: "Token refresh failed" } },
-          { status: 401 },
+      if (refreshFailure === "upstream_error") {
+        logger.error(
+          { request_id: requestId, operation: "auth_refresh", code: "refresh_upstream_failure" },
+          "Refresh token upstream failure",
         );
+        return NextResponse.json({ error: "auth_unavailable" }, { status: 503 });
       }
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+      const response = NextResponse.json(
+        refreshFailure || (refreshAttempted && refreshedCookies.length === 0)
+          ? { success: false, error: { code: "UNAUTHORIZED", message: "Token refresh failed" } }
+          : { error: "unauthorized" },
+        { status: 401 },
+      );
+      if (refreshFailure === "invalid_refresh_token" || refreshFailure === "missing_refresh_token") {
+        clearSessionCookies(response);
+      }
+      return response;
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -82,7 +103,7 @@ export async function GET(request: Request) {
       fullName: profile.full_name ?? null,
     });
     for (const c of refreshedCookies) {
-      response.cookies.set(c.name, c.value, c.options as any);
+      response.cookies.set(c.name, c.value, c.options as Parameters<typeof response.cookies.set>[2]);
     }
     return response;
   } catch (err) {

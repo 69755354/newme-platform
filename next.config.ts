@@ -30,7 +30,7 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 
 // Get git hash at build time
-const gitHash = process.env.NEXT_PUBLIC_APP_VERSION || 
+const gitHash = process.env.NEXT_PUBLIC_APP_VERSION ||
   execSync("git rev-parse --short HEAD").toString().trim();
 
 const nextConfig: NextConfig = {
@@ -40,6 +40,16 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   async headers() {
     return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.supabase.co https://*.sentry.io https://*.posthog.com; connect-src 'self' https://*.supabase.co https://*.sentry.io https://*.posthog.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data: https:; frame-src 'self' https://*.supabase.co; upgrade-insecure-requests",
+          },
+          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+        ],
+      },
       {
         source: "/api/:path*",
         headers: [

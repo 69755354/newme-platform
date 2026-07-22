@@ -1,6 +1,7 @@
 'use server'
 
 import { createServerSupabase } from '@/lib/supabase-server'
+import type { Json } from '@/types/database'
 
 interface CreatePaymentInput {
   contract_id: string
@@ -49,7 +50,7 @@ export async function createPayment(data: CreatePaymentInput) {
     .single()
 
   const userRole = profile?.role
-  const isPrivileged = userRole && ['admin', 'boss', 'finance', 'operator'].includes(userRole)
+  const isPrivileged = userRole ? ['admin', 'boss', 'finance', 'operator'].includes(userRole) : false
 
   // Sales can only record payments against their own contracts
   if (!isPrivileged && contract.sales_id !== user.id) {
@@ -94,7 +95,7 @@ export async function confirmPayment(paymentId: string) {
   if (!profile) throw new Error('Profile not found')
 
   const allowedRoles = ['admin', 'boss', 'finance']
-  if (!allowedRoles.includes(profile.role)) throw new Error('Forbidden')
+  if (!profile.role || !allowedRoles.includes(profile.role)) throw new Error('Forbidden')
 
   // Verify the payment exists and is not already confirmed
   const { data: payment, error: paymentErr } = await supabase
@@ -135,7 +136,7 @@ export async function allocatePayment(paymentId: string, allocations: Allocation
   if (!profile) throw new Error('Profile not found')
 
   const allowedRoles = ['admin', 'boss', 'finance']
-  if (!allowedRoles.includes(profile.role)) throw new Error('Forbidden')
+  if (!profile?.role || !allowedRoles.includes(profile.role)) throw new Error('Forbidden')
 
   // Validate allocations
   if (!allocations || !Array.isArray(allocations) || allocations.length === 0) {
@@ -175,10 +176,11 @@ export async function allocatePayment(paymentId: string, allocations: Allocation
     throw new Error('All allocation plans must belong to the payment contract')
   }
 
-  // Call the RPC function to allocate the payment
+  // RPC payload must match the generated JSON contract.
+  const allocationPayload: Json = allocations.map(({ plan_id, amount }) => ({ plan_id, amount }));
   const { data: result, error: rpcErr } = await supabase.rpc('allocate_payment', {
     p_payment_id: paymentId,
-    p_allocations: allocations,
+    p_allocations: allocationPayload,
     p_allocated_by: user.id,
   })
 

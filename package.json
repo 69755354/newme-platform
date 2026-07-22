@@ -21,7 +21,9 @@
     "check:security": "npm run check:supabase-boundaries && npm run check:db-static",
     "check:workflows": "bash scripts/check-workflows-yaml.sh",
     "lint:baseline": "node scripts/check-lint-baseline.mjs",
-    "lint:baseline:negative": "node tests/lint-baseline-negative.test.mjs"
+    "lint:baseline:negative": "node tests/lint-baseline-negative.test.mjs",
+    "generate:database-types": "supabase gen types typescript --project-id \"$SUPABASE_PROJECT_REF\" > src/types/database.ts",
+    "check:database-types": "node scripts/check-database-types.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

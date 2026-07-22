@@ -1,5 +1,8 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 import { cookies } from "next/headers";
+import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
+import { classifyRefreshFailure } from "@/lib/auth-refresh.mjs";
 
 export interface RefreshedCookie {
   name: string;
@@ -7,21 +10,56 @@ export interface RefreshedCookie {
   options: Record<string, unknown>;
 }
 
+type RefreshFailure = "missing_refresh_token" | "invalid_refresh_token" | "upstream_error";
+type RefreshSession = { accessToken: string; refreshToken: string; expiresAt: number };
+type RefreshResult = { session: RefreshSession | null; failure?: Exclude<RefreshFailure, "missing_refresh_token"> };
+
+type ServerSupabaseClient = SupabaseClient<Database> & {
+  __refreshedCookies?: RefreshedCookie[];
+  __refreshAttempted?: boolean;
+  __refreshFailure?: RefreshFailure;
+};
+
 /**
  * Parse the @supabase/ssr-format auth token cookie.
  * Returns the session object or null.
  */
-function parseSsrCookie(value: string): Record<string, any> | null {
+type SsrCookie = {
+  access_token?: string;
+  expires_at?: number;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parseSsrCookieValue(value: string): SsrCookie | null {
+  const parsed: unknown = JSON.parse(value);
+  return typeof parsed === "object" && parsed !== null ? (parsed as SsrCookie) : null;
+}
+
+function parseSsrCookie(value: string): SsrCookie | null {
+  const candidates = [value];
   try {
-    // The login page stores it as a plain JSON string (not base64)
-    return JSON.parse(value);
+    candidates.unshift(decodeURIComponent(value));
   } catch {
+    // Keep the raw candidate when the cookie is not URI encoded.
+  }
+
+  for (const candidate of candidates) {
     try {
-      return JSON.parse(atob(value));
+      // The login page stores it as a plain JSON string (not base64).
+      return parseSsrCookieValue(candidate);
     } catch {
-      return null;
+      try {
+        return parseSsrCookieValue(atob(candidate));
+      } catch {
+        // Continue with the next supported cookie encoding.
+      }
     }
   }
+
+  return null;
 }
 
 /**
@@ -43,21 +81,26 @@ export function parseCookieHeader(cookieHeader: string): Array<{ name: string; v
  */
 function extractTokens(
   allCookies: Array<{ name: string; value: string }>,
+  names: ReturnType<typeof getSupabaseCookieNames>,
 ): { accessToken?: string; refreshToken?: string } {
   let a: string | undefined;
   let r: string | undefined;
-  const c = allCookies.find((x) => x.name === "sb-vfopmpxlhwzpxqegayew-auth-token");
+  const c = allCookies.find((x) => x.name === names.authToken);
   if (c) {
     const s = parseSsrCookie(c.value);
     if (s?.access_token) {
       a = s.access_token;
       if (s.expires_at && s.expires_at * 1000 < Date.now()) {
-        const x = allCookies.find((y) => y.name === "sb-vfopmpxlhwzpxqegayew-refresh-token");
-        r = x?.value || s.refresh_token;
         a = undefined;
       }
     }
   }
+
+  const dynamicRefreshCookie = allCookies.find((x) => x.name === names.refreshToken);
+  if (dynamicRefreshCookie?.value) {
+    r = dynamicRefreshCookie.value;
+  }
+
   if (!a && !r) {
     const lt = allCookies.find((x) => x.name === "sb-access-token");
     if (lt) a = lt.value;
@@ -75,23 +118,39 @@ async function tryRefreshToken(
   supabaseUrl: string,
   anonKey: string,
   refreshToken: string,
-): Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null> {
+): Promise<RefreshResult> {
   try {
     const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
       method: "POST",
       headers: { apikey: anonKey, "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.access_token) return null;
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      return { session: null, failure: "upstream_error" };
+    }
+    if (!res.ok) {
+      return { session: null, failure: classifyRefreshFailure(res.status, data) };
+    }
+    if (
+      !isRecord(data) ||
+      typeof data.access_token !== "string" ||
+      typeof data.refresh_token !== "string" ||
+      typeof data.expires_in !== "number"
+    ) {
+      return { session: null, failure: "upstream_error" };
+    }
     return {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      expiresAt: Math.floor(Date.now() / 1000) + data.expires_in,
+      session: {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        expiresAt: Math.floor(Date.now() / 1000) + data.expires_in,
+      },
     };
   } catch {
-    return null;
+    return { session: null, failure: "upstream_error" };
   }
 }
 
@@ -104,14 +163,14 @@ async function tryRefreshToken(
  */
 const refreshInFlight = new Map<
   string,
-  Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null>
+  Promise<RefreshResult>
 >();
 
 function tryRefreshTokenLocked(
   supabaseUrl: string,
   anonKey: string,
   refreshToken: string,
-): Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null> {
+): Promise<RefreshResult> {
   const existing = refreshInFlight.get(refreshToken);
   if (existing) return existing;
   const promise = tryRefreshToken(supabaseUrl, anonKey, refreshToken).finally(() => {
@@ -127,59 +186,59 @@ export async function createServerSupabase(
 ) {
   let refreshedCookies: RefreshedCookie[] = [];
   let refreshAttempted = false;
+  let refreshFailure: RefreshFailure | undefined;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const names = getSupabaseCookieNames(supabaseUrl);
 
   // ── 1. Obtain cookies ──
-  let allCookies: Array<{ name: string; value: string }>;
-  let _cookieStore: Awaited<ReturnType<typeof cookies>> | null = null;
-
-  if (cookieString !== undefined) {
-    // Explicit path: parse from raw Cookie header (no next/headers dependency)
-    allCookies = parseCookieHeader(cookieString);
-  } else {
-    // Legacy path: use next/headers cookies() API
-    _cookieStore = await cookies();
-    allCookies = _cookieStore.getAll();
-  }
+  const _cookieStore = cookieString === undefined ? await cookies() : null;
+  const allCookies = cookieString !== undefined
+    ? parseCookieHeader(cookieString)
+    : _cookieStore!.getAll();
 
   // ── 2. Extract tokens ──
-  let { accessToken, refreshToken } = extractTokens(allCookies);
+  const { accessToken: initialAccessToken, refreshToken } = extractTokens(allCookies, names);
+  let accessToken = initialAccessToken;
+  const hasAuthCookie = allCookies.some((cookie) => cookie.name === names.authToken || cookie.name === "sb-access-token");
 
   // ── 2. If token is expired, try to refresh ──
   if (!accessToken && refreshToken) {
     refreshAttempted = true;
-    const refreshed = await tryRefreshTokenLocked(supabaseUrl, anonKey, refreshToken);
+    const refreshResult = await tryRefreshTokenLocked(supabaseUrl, anonKey, refreshToken);
+    refreshFailure = refreshResult.failure;
+    const refreshed = refreshResult.session;
     if (refreshed) {
       accessToken = refreshed.accessToken;
       // Update the auth token cookie so subsequent requests don't need to refresh again
       const newPayload = JSON.stringify({
         access_token: refreshed.accessToken,
-        refresh_token: refreshed.refreshToken,
         expires_at: refreshed.expiresAt,
       });
       // Only set cookies when using the legacy cookies() API (not explicit header)
       refreshedCookies = [
-        { name: "sb-vfopmpxlhwzpxqegayew-auth-token", value: newPayload, options: { path: "/", maxAge: refreshed.expiresAt - Math.floor(Date.now() / 1000), sameSite: "strict", secure: true, httpOnly: false } },
-        { name: "sb-vfopmpxlhwzpxqegayew-refresh-token", value: refreshed.refreshToken, options: { path: "/", maxAge: 2592000, sameSite: "strict", secure: true, httpOnly: false } },
+        { name: names.authToken, value: newPayload, options: { path: "/", maxAge: refreshed.expiresAt - Math.floor(Date.now() / 1000), sameSite: "strict", secure: true, httpOnly: false } },
+        { name: names.refreshToken, value: refreshed.refreshToken, options: { path: "/", maxAge: 2592000, sameSite: "strict", secure: true, httpOnly: true } },
       ];
       if (_cookieStore) {
-        _cookieStore.set("sb-vfopmpxlhwzpxqegayew-auth-token", newPayload, {
+        _cookieStore.set(names.authToken, newPayload, {
         path: "/",
         maxAge: refreshed.expiresAt - Math.floor(Date.now() / 1000),
         sameSite: "strict",
         secure: true,
         httpOnly: false,
       });
-      _cookieStore.set("sb-vfopmpxlhwzpxqegayew-refresh-token", refreshed.refreshToken, {
+      _cookieStore.set(names.refreshToken, refreshed.refreshToken, {
         path: "/",
         maxAge: 2592000,
         sameSite: "strict",
         secure: true,
-        httpOnly: false,
+        httpOnly: true,
       });
       }
     }
+  } else if (!accessToken && hasAuthCookie) {
+    refreshFailure = "missing_refresh_token";
   }
 
   // ── 3. Create client with or without auth ──
@@ -194,16 +253,17 @@ export async function createServerSupabase(
     headers.Authorization = `Bearer ${effectiveToken}`;
   }
 
-  const client = createClient(supabaseUrl, anonKey, {
+  const client = createClient<Database>(supabaseUrl, anonKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
       detectSessionInUrl: false,
     },
     global: { headers },
-  });
-  (client as any).__refreshedCookies = refreshedCookies;
-  (client as any).__refreshAttempted = refreshAttempted;
+  }) as ServerSupabaseClient;
+  client.__refreshedCookies = refreshedCookies;
+  client.__refreshAttempted = refreshAttempted;
+  client.__refreshFailure = refreshFailure;
   return client;
 }
 
@@ -212,12 +272,18 @@ export async function createServerSupabase(
  * Returns empty array if no refresh occurred.
  */
 export function getRefreshedCookies(client: unknown): RefreshedCookie[] {
-  return (client as any).__refreshedCookies || [];
+  return (client as ServerSupabaseClient).__refreshedCookies || [];
 }
 
 /**
  * Whether a token refresh was attempted during createServerSupabase.
  */
 export function getRefreshAttempted(client: unknown): boolean {
-  return (client as any).__refreshAttempted === true;
+  return (client as ServerSupabaseClient).__refreshAttempted === true;
+}
+/**
+ * Whether refresh failed because the session is invalid, missing, or upstream-unavailable.
+ */
+export function getRefreshFailure(client: unknown): RefreshFailure | undefined {
+  return (client as ServerSupabaseClient).__refreshFailure;
 }

@@ -58,11 +58,11 @@ export async function GET(request: Request) {
     .eq("id", user.id)
     .single();
 
-  if (!profile) {
+  if (!profile?.role) {
     return NextResponse.json({ error: "Profile not found" }, { status: 403 });
   }
 
-  const role: string = profile.role;
+  const role = profile.role;
   const userId: string = user.id;
   const isManagement = ["admin", "boss", "operator"].includes(role);
   const isCEO = isManagement;

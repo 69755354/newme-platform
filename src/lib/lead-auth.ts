@@ -15,7 +15,7 @@ export async function getAuthProfile(bearerToken?: string, cookieHeader?: string
     .select("role, is_active")
     .eq("id", user.id)
     .single();
-  if (!profile || !isActiveProfile(profile)) return null;
+  if (!profile || !profile.role || !isActiveProfile(profile)) return null;
   return { userId: user.id, role: profile.role };
 }
 

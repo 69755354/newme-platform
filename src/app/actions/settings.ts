@@ -16,7 +16,7 @@ export async function assignLead(leadId: string, userId: string) {
     .eq('id', user.id)
     .single()
 
-  if (!profile || !['admin', 'boss', 'operator'].includes(profile.role)) {
+  if (!profile?.role || !['admin', 'boss', 'operator'].includes(profile.role)) {
     throw new Error('Forbidden')
   }
 
@@ -42,7 +42,7 @@ export async function bulkAssignLeads(leadIds: string[], targetUserId: string) {
     .eq('id', user.id)
     .single()
 
-  if (!profile || !['admin', 'boss', 'operator'].includes(profile.role)) {
+  if (!profile?.role || !['admin', 'boss', 'operator'].includes(profile.role)) {
     throw new Error('Forbidden')
   }
 
@@ -72,7 +72,7 @@ export async function bulkUnassignLeads(leadIds: string[]) {
     .eq('id', user.id)
     .single()
 
-  if (!profile || !['admin', 'boss', 'operator'].includes(profile.role)) {
+  if (!profile?.role || !['admin', 'boss', 'operator'].includes(profile.role)) {
     throw new Error('Forbidden')
   }
 
@@ -102,7 +102,7 @@ export async function transferAllLeads(fromUserId: string, toUserId: string) {
     .eq('id', user.id)
     .single()
 
-  if (!profile || !['admin', 'boss', 'operator'].includes(profile.role)) {
+  if (!profile?.role || !['admin', 'boss', 'operator'].includes(profile.role)) {
     throw new Error('Forbidden')
   }
 

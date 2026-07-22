@@ -2,6 +2,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 
+function dateInRange(value: string | null, start: string, end: string): boolean {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date >= new Date(start) && date <= new Date(end);
+}
+
+function finiteAmount(value: number | null): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 /**
  * GET /api/dashboard/weekly-trends
  *
@@ -132,39 +142,33 @@ export async function GET(request: NextRequest) {
     // ─── Build weekly data ───
     const weeklyData = weeks.map((week) => {
       // New leads in this week
-      const newLeads = (leads || []).filter((l) => {
-        const created = new Date(l.created_at);
-        return created >= new Date(week.start) && created <= new Date(week.end);
-      });
+      const newLeads = (leads || []).filter((lead) =>
+        dateInRange(lead.created_at, week.start, week.end)
+      );
 
       // Won leads in this week (using leads table)
       const wonLeads = newLeads.filter((l) => l.final_status === "won");
 
       // Signed amount from contracts created this week
-      const weekContracts = (contracts || []).filter((c) => {
-        const created = new Date(c.created_at);
-        return (
-          created >= new Date(week.start) &&
-          created <= new Date(week.end) &&
-          c.status !== "terminated"
-        );
-      });
-
-      const signedAmount = weekContracts.reduce(
-        (sum, c) => sum + (parseFloat(c.contract_amount as any) || 0),
-        0
+      const weekContracts = (contracts || []).filter((contract) =>
+        contract.status !== "terminated" &&
+        dateInRange(contract.created_at, week.start, week.end)
       );
+
+      const signedAmount = weekContracts.reduce((sum, contract) => {
+        const amount = finiteAmount(contract.contract_amount);
+        return amount === null ? sum : sum + amount;
+      }, 0);
 
       // Collection amount from payments confirmed this week
-      const weekPayments = (payments || []).filter((p) => {
-        const paid = new Date(p.payment_date);
-        return paid >= new Date(week.start) && paid <= new Date(week.end);
-      });
-
-      const collectedAmount = weekPayments.reduce(
-        (sum, p) => sum + (parseFloat(p.amount as any) || 0),
-        0
+      const weekPayments = (payments || []).filter((payment) =>
+        dateInRange(payment.payment_date, week.start, week.end)
       );
+
+      const collectedAmount = weekPayments.reduce((sum, payment) => {
+        const amount = finiteAmount(payment.amount);
+        return amount === null ? sum : sum + amount;
+      }, 0);
 
       const newCount = newLeads.length;
       const wonCount = wonLeads.length;

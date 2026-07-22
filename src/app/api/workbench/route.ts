@@ -155,7 +155,7 @@ export async function GET(request: Request) {
         .filter(Boolean),
     ),
   )
-  const leadNameById: Record<string, string> = {}
+  const leadNameById: Record<string, string | null> = {}
   if (taskLeadIds.length > 0) {
     const { data: leadRows } = await supabase
       .from("leads")
@@ -226,7 +226,7 @@ export async function GET(request: Request) {
         .filter((v): v is string => Boolean(v)),
     ),
   )
-  const tomorrowLeadNameById: Record<string, string> = {}
+  const tomorrowLeadNameById: Record<string, string | null> = {}
   if (tomorrowLeadIds.length > 0) {
     const { data: tomorrowLeadRows } = await supabase
       .from("leads")

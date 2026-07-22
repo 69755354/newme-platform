@@ -340,7 +340,9 @@ export async function GET(req: NextRequest) {
       console.error("[weekly-review] L3 leads query error:", relevantResult.error);
     }
 
-    const assignedIds = [...new Set(relevantLeads.map((row) => row.assigned_to).filter(Boolean))];
+    const assignedIds = [...new Set(relevantLeads
+      .map((row) => row.assigned_to)
+      .filter((ownerId): ownerId is string => typeof ownerId === "string"))];
     const { data: ownerProfiles } = assignedIds.length > 0
       ? await supabase.from("profiles").select("id, full_name").in("id", assignedIds)
       : { data: [] };

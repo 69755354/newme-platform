@@ -242,7 +242,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
         delivery_terms: createForm.deliveryTerms || null,
         notes: createForm.notes || null,
         status: "draft",
-        created_by: user?.id || null,
+        created_by: user?.id || undefined,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });

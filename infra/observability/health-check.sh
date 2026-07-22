@@ -3,11 +3,11 @@
 # 路径: /opt/hermes-scripts/observability/health-check.sh
 # crontab: */5 * * * * /bin/bash /opt/hermes-scripts/observability/health-check.sh
 # 依赖: curl, bc (apt-get install -y bc)
-
 set -euo pipefail
 source /opt/hermes-scripts/observability/sentry-cron-checkin.sh
 sentry_checkin_start "health-check"
 
+ALERT_SCRIPT="${HERMES_ALERT_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert.sh}"
 HOSTNAME=$(hostname)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 ALERTS=""
@@ -56,10 +56,12 @@ done
 
 # ─── 输出 ───
 if [ -z "$ALERTS" ]; then
+  bash "$ALERT_SCRIPT" "health-check" recovery "health checks recovered" || true
   echo "[$TIMESTAMP] 💓 $HOSTNAME OK | disk=${DISK_PCT}% mem=${MEM_PCT}% cpu=${CPU_PCT}% proc=${PROC_COUNT}"
 else
   echo "[$TIMESTAMP] 🔔 $HOSTNAME ALERTS:"
   echo -e "$ALERTS"
+  bash "$ALERT_SCRIPT" "health-check" failure "$(echo -e "$ALERTS" | head -1)" || true
   # 抓故障现场
   /opt/hermes-scripts/observability/incident-capture.sh "health-check" "$(echo -e "$ALERTS" | head -1)" &
 fi

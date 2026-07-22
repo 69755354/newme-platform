@@ -21,7 +21,7 @@ async function authorize() {
     .eq("id", user.id)
     .single();
 
-  if (!profile || !["admin", "boss"].includes(profile.role)) {
+  if (!profile?.role || !["admin", "boss"].includes(profile.role)) {
     redirect("/dashboard");
   }
 
@@ -54,7 +54,7 @@ export default async function SettingsAdsPage() {
     if (l.quality === "valid") groups[key].valid++;
     if (
       l.final_status === "won" ||
-      ["quotation_submitted", "negotiation", "pending_decision"].includes(l.stage)
+      l.stage !== null && ["quotation_submitted", "negotiation", "pending_decision"].includes(l.stage)
     )
       groups[key].quoted++;
     if (l.final_status === "won") groups[key].won++;

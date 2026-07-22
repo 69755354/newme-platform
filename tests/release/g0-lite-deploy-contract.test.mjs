@@ -6,84 +6,52 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-const deployPath = join(repoRoot, "scripts", "deploy.sh");
-const deploy = await readFile(deployPath, "utf8");
+const deploy = await readFile(join(repoRoot, "scripts", "deploy-immutable.sh"), "utf8");
 
 function executableIndex(pattern) {
-  return deploy
-    .split("\n")
-    .findIndex((line) => !line.trimStart().startsWith("#") && pattern.test(line));
+  return deploy.split("\n").findIndex((line) => !line.trimStart().startsWith("#") && pattern.test(line));
 }
 
-test("release preflight runs before service, migration, typecheck, or build mutations", () => {
-  const preflight = executableIndex(/bash scripts\/verify-release-preflight\.sh/);
+test("release preflight runs before build or service mutations", () => {
+  const preflight = executableIndex(/verify-release-preflight\.sh/);
   assert.notEqual(preflight, -1, "deploy must invoke verify-release-preflight.sh");
-
-  for (const [name, pattern] of [
-    ["systemctl", /systemctl/],
-    ["migration", /\bmigrat(?:e|ion)\b/i],
-    ["typecheck", /npx tsc/],
-    ["dependency install", /npm ci/],
-    ["build", /npm run build/],
-  ]) {
-    const gate = executableIndex(pattern);
-    if (gate !== -1) {
-      assert.ok(preflight < gate, `preflight must run before ${name}`);
-    }
+  for (const [name, pattern] of [["dependency install", /npm ci/], ["build", /npm run build/], ["service", /\$CONTROL.*restart/]]) {
+    const mutation = executableIndex(pattern);
+    assert.notEqual(mutation, -1, `deploy must contain ${name}`);
+    assert.ok(preflight < mutation, `preflight must run before ${name}`);
   }
 });
 
-test("build is sourced from a detached worktree pinned to the verified release SHA", () => {
-  assert.match(deploy, /RELEASE_SHA=.*verify-release-preflight\.sh/);
-  assert.match(deploy, /git\s+-C\s+"\$PROJECT_ROOT"\s+worktree\s+add\s+--detach\s+"\$BUILD_DIR"\s+"\$RELEASE_SHA"/);
+test("build is sourced from the exact verified release SHA", () => {
+  assert.match(deploy, /\[\[ "\$SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/);
+  assert.match(deploy, /git -C "\$ROOT" archive "\$SHA"/);
+  assert.match(deploy, /npm ci --no-audit --no-fund/);
   assert.doesNotMatch(deploy, /^\s*rsync\b/m);
 });
 
-test("exit cleanup removes and prunes the detached build worktree", () => {
-  assert.match(deploy, /git\s+-C\s+"\$PROJECT_ROOT"\s+worktree\s+remove\s+--force\s+"\$BUILD_DIR"/);
-  assert.match(deploy, /git\s+-C\s+"\$PROJECT_ROOT"\s+worktree\s+prune/);
+test("exit cleanup contains the candidate and incomplete release", () => {
+  assert.match(deploy, /kill -TERM -- "-\$PGID"/);
+  assert.match(deploy, /rm -rf -- "\$STAGE"/);
+  assert.match(deploy, /CREATED_RELEASE/);
+  assert.doesNotMatch(deploy, /(?:fuser\s+-k|pkill)/);
 });
 
-test("deploy evidence records release identity, CI, migration, UAT, and rollback fields", () => {
-  for (const token of [
-    '"git_sha": "$GIT_SHA"',
-    '"build_id": "$BUILD_ID"',
-    '"run_id": "$CI_RUN_ID"',
-    '"run_url": "$CI_RUN_URL"',
-    '"head_sha": "$CI_HEAD_SHA"',
-    '"conclusion": "$CI_CONCLUSION"',
-    '"status": "$MIGRATION_STATUS"',
-    '"ids": "$MIGRATION_IDS"',
-    '"git_sha": "$ROLLBACK_GIT_SHA"',
-    '"release_status": "$EVI_RELEASE_STATUS"',
-  ]) {
+test("deploy evidence remains bound to CI, migration, UAT, and rollback", () => {
+  for (const token of ["CI_RUN_ID", "CI_RUN_URL", "CI_HEAD_SHA", "CI_CONCLUSION", "MIGRATION_STATUS", "MIGRATION_IDS", "ROLLBACK_GIT_SHA", '"release_status": "awaiting_uat"']) {
     assert.ok(deploy.includes(token), `missing evidence token: ${token}`);
   }
-  assert.match(deploy, /BUILD_ID="\$NEW_BUILD_ID"/);
-  assert.match(deploy, /EVI_RELEASE_STATUS="awaiting_uat"/);
+  assert.match(deploy, /finalize-deploy-evidence|status=awaiting_uat/);
   assert.doesNotMatch(deploy, /"release_status":\s*"complete"/);
   assert.doesNotMatch(deploy, /(?:demo|fake)[_-]?(?:ci|sha|build|migration|uat)/i);
 });
 
-test("expired authorization fails without rewriting a manifest", () => {
-  assert.doesNotMatch(deploy, /json\.dump\(obj,\s*open\(p,\s*['"]w['"]\)/);
-  assert.doesNotMatch(deploy, /Manifest refreshed/);
-});
-
 test("legacy Hermes authorization gates are not part of deployment", () => {
-  assert.doesNotMatch(deploy, /verify-coding-auth\.py/);
-  assert.doesNotMatch(deploy, /\.hermes\/delegations/);
-  assert.doesNotMatch(deploy, /CONTROL_PLANE_AUTH/);
+  assert.doesNotMatch(deploy, /verify-coding-auth\.py|\.hermes\/delegations|CONTROL_PLANE_AUTH/);
 });
-
 
 test("release shell scripts have valid Bash syntax", () => {
-  for (const script of [
-    "scripts/verify-release-preflight.sh",
-    "scripts/deploy.sh",
-    "scripts/finalize-deploy-evidence.sh",
-  ]) {
-    const result = spawnSync("bash", ["-n", script], { encoding: "utf8" });
+  for (const script of ["scripts/verify-release-preflight.sh", "scripts/deploy.sh", "scripts/deploy-immutable.sh", "scripts/install-systemd-assets.sh", "scripts/rollback-systemd-assets.sh", "scripts/finalize-deploy-evidence.sh"]) {
+    const result = spawnSync("bash", ["-n", script], { cwd: repoRoot, encoding: "utf8" });
     assert.equal(result.status, 0, `${script}: ${result.stderr}`);
   }
 });

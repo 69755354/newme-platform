@@ -40,6 +40,8 @@ import { STAGES, STAGE_COLORS } from "./types";
 import { fmtAED, daysSince } from "./utils";
 import type {
   Lead,
+  LeadField,
+  LeadFieldUpdater,
   LeadTrace,
   LeadMilestone,
   FollowUpLog,
@@ -58,7 +60,7 @@ interface Props {
   updating: boolean;
   onToggleMilestone: (milestoneKey: string, currentlyCompleted: boolean, notes?: string) => Promise<boolean>;
   onReopenMilestone: (milestoneKey: string, reason: string) => Promise<boolean>;
-  onUpdateField: (field: string, value: any, eventType?: string, eventDesc?: string) => void;
+  onUpdateField: LeadFieldUpdater;
   onWon: (note?: string) => Promise<boolean>;
   onLost: (note?: string) => Promise<boolean>;
   onOpenQuoteCalculator: () => void;
@@ -79,11 +81,9 @@ interface Props {
   lang: "en" | "zh";
 }
 
-type MissingField = {
-  key: string;
-  label: string;
-  kind: "text" | "json" | "contract";
-};
+type MissingField =
+  | { key: LeadField; label: string; kind: "text" | "json" }
+  | { key: "contract"; label: string; kind: "contract" };
 
 export default function LeadSalesProcess({
   lead,

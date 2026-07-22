@@ -55,8 +55,11 @@ export async function POST(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    const userRole = profile?.role;
-    const isPrivileged = userRole && ["admin", "boss", "finance", "operator"].includes(userRole);
+    if (!profile?.role) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const userRole = profile.role;
+    const isPrivileged = ["admin", "boss", "finance", "operator"].includes(userRole);
 
     // Sales can only record payments against their own contracts
     if (!isPrivileged && contract.sales_id !== user.id) {
@@ -133,7 +136,7 @@ export async function GET(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    if (!profile) {
+    if (!profile?.role) {
       return NextResponse.json({ error: "Profile not found" }, { status: 403 });
     }
 

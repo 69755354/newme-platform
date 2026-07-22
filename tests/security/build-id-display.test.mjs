@@ -9,7 +9,8 @@ test("sidebar displays the full runtime BUILD_ID", async () => {
     read("src/app/api/health/route.ts"),
     read("src/components/dashboard/DashboardSidebar.tsx"),
   ]);
-  assert.ok(health.includes('fs.readFileSync(p, "utf-8").trim()') || health.includes('fs.readFileSync(buildIdPath, "utf-8").trim()'));
+  assert.ok(health.includes("process.env.NEXT_PUBLIC_APP_VERSION"));
+  assert.equal(health.includes("readFileSync"), false);
   assert.equal(health.includes(".slice(0, 12)"), false);
   assert.ok(sidebar.includes('fetch("/api/health")'));
   assert.ok(sidebar.includes("v{buildId}"));

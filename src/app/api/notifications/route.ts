@@ -27,7 +27,10 @@ export async function GET(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    const isAdmin = profile && ["admin", "boss"].includes(profile.role);
+    if (!profile?.role) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const isAdmin = ["admin", "boss"].includes(profile.role);
 
     let query = supabase
       .from("notifications")
@@ -82,7 +85,7 @@ export async function POST(request: NextRequest) {
       .select("role")
       .eq("id", user.id)
       .single();
-    if (!profile || !["admin", "boss"].includes(profile.role)) {
+    if (!profile?.role || !["admin", "boss"].includes(profile.role)) {
       return NextResponse.json({ error: "Forbidden: admin/boss only" }, { status: 403 });
     }
 

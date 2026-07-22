@@ -30,6 +30,10 @@ import { createFollowUpTask } from "@/lib/tasks";
 import { projectDraftFromLead } from "./utils";
 import type { Lead, Task } from "./types";
 import type { ProjectInfoDraft } from "./useLeadDetailData";
+import type { Database, Json } from "@/types/database";
+
+type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
+type EventData = Record<string, Json | undefined>;
 
 /* ─── Types ─── */
 export interface SalesUserMini {
@@ -84,8 +88,8 @@ export interface UseLeadDetailMutationsReturn {
   reassignSales: (newUserId: string) => Promise<void>;
   handleDelete: () => Promise<void>;
   handleMarkPoor: () => Promise<void>;
-  writeEvent: (eventType: string, description: string, eventData?: Record<string, any>) => Promise<void>;
-  updateField: (field: string, value: any, eventType?: string, eventDesc?: string) => Promise<boolean>;
+  writeEvent: (eventType: string, description: string, eventData?: EventData) => Promise<void>;
+  updateField: <K extends keyof LeadUpdate>(field: K, value: LeadUpdate[K], eventType?: string, eventDesc?: string) => Promise<boolean>;
   saveProjectInfo: () => Promise<void>;
   resetProjectInfoDraft: () => void;
   updateStage: (stage: string, note?: string) => Promise<boolean>;
@@ -135,7 +139,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   // Hook-local error (setError) — accept both null and SetStateAction for
   // interop with the page-level setError returned by useLeadDetailData.
   const [_error, _setError] = useState<string | null>(null);
-  const setError = _setError as React.Dispatch<React.SetStateAction<string | null>>;
+  const setError = _setError;
 
   // ─── Sales reassignment ───
   // P3-11: the inline business_events insert at the end of this function
@@ -171,9 +175,9 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
             body: JSON.stringify({ eventType: "transfer", description: transferDesc }),
           });
           if (!res.ok) {
-            const json = await res.json().catch(() => ({}));
+            const json: { error?: string; eventError?: string } = await res.json().catch(() => ({}));
             const msg =
-              (json as any)?.error ||
+              json.error ||
               (res.status === 401
                 ? t("common.unauthorized") || "Unauthorized"
                 : res.status === 403
@@ -193,7 +197,9 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
           return;
         }
         const { data: { user: currentUser } } = await supabase.auth.getUser();
-        await supabase.from("transfer_history").insert({ lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId, reason: "manual_reassign", transferred_by: currentUser?.id });
+        if (oldLead.assigned_to && currentUser?.id) {
+          await supabase.from("transfer_history").insert({ lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId, reason: "manual_reassign", transferred_by: currentUser.id });
+        }
         await supabase.from("activities").insert({ lead_id: leadId, type: "transfer", content: transferDesc, user_id: currentUser?.id });
         import("@/lib/notify").then(({ notify }) => {
           notify({ type: "lead_assigned", lead_id: leadId, assigned_to: newUserId });
@@ -241,10 +247,10 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const json = await res.json().catch(() => ({}));
+      const json: { error?: string; eventError?: string } = await res.json().catch(() => ({}));
       if (!res.ok) {
         const msg =
-          (json as any)?.error ||
+          json.error ||
           (res.status === 401
             ? t("common.unauthorized") || "Unauthorized"
             : res.status === 403
@@ -254,8 +260,8 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         return false;
       }
       // Surface the API-reported audit status in non-prod only.
-      if (process.env.NODE_ENV !== "production" && (json as any)?.eventError) {
-        console.warn("quality event log failed:", (json as any).eventError);
+      if (process.env.NODE_ENV !== "production" && json.eventError) {
+        console.warn("quality event log failed:", json.eventError);
       }
       return true;
     },
@@ -278,22 +284,22 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   // Signature is unchanged so every call site (updateField, saveProjectInfo)
   // continues to work. On API failure, surface the same toast pattern that
   // postQuality uses — no silent drops.
-  const writeEvent = useCallback(async (eventType: string, description: string, eventData?: Record<string, any>) => {
+  const writeEvent = useCallback(async (eventType: string, description: string, eventData?: EventData) => {
     const res = await fetch(`/api/leads/${leadId}/events`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ eventType, description, eventData: eventData ?? {} }),
     });
     if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
+      const json: { error?: string; eventError?: string } = await res.json().catch(() => ({}));
       const msg =
-        (json as any)?.error ||
+        json.error ||
         (res.status === 401
           ? t("common.unauthorized") || "Unauthorized"
           : res.status === 403
             ? t("common.forbidden") || "Forbidden"
             : res.status === 400
-              ? (json as any)?.error || t("common.saveFailed") || "Invalid event"
+              ? json.error || t("common.saveFailed") || "Invalid event"
               : t("common.saveFailed") || "Failed to write event");
       toast.error(msg);
       console.warn("[LeadDetail] business_events writeEvent failed", res.status, msg);
@@ -301,10 +307,10 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }, [leadId, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Update a single editable field with optimistic saveStatus + audit ───
-  const updateField = useCallback(async (field: string, value: any, eventType?: string, eventDesc?: string): Promise<boolean> => {
+  const updateField = useCallback(async <K extends keyof LeadUpdate>(field: K, value: LeadUpdate[K], eventType?: string, eventDesc?: string): Promise<boolean> => {
     setUpdating(true);
     setSaveStatus("saving");
-    const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+    const updates: LeadUpdate = { updated_at: new Date().toISOString() };
     updates[field] = value;
     const { data: updated, error: err } = await supabase
       .from("leads")
@@ -339,7 +345,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   // ─── Project Info batch-save (bottom folding panel) ───
   const saveProjectInfo = useCallback(async () => {
     setProjectInfoStatus("saving");
-    const updates: Record<string, any> = {
+    const updates: LeadUpdate = {
       project_type: projectInfoDraft.project_type || null,
       emirate: projectInfoDraft.emirate.trim() || null,
       area: projectInfoDraft.area.trim() || null,
@@ -376,7 +382,9 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       await supabase.from("activities").insert({
         lead_id: leadId, type: "note_added", content: desc, user_id: user?.id ?? null,
       });
-      await writeEvent("project_info_updated", desc, Object.fromEntries(changed.map((k) => [k, updates[k]])));
+      const eventData: EventData = {};
+      for (const key of changed) eventData[key] = updates[key] ?? null;
+      await writeEvent("project_info_updated", desc, eventData);
     }
     setProjectInfoStatus("saved");
     toast.success(lang === "zh" ? "项目信息已保存" : "Project info saved");

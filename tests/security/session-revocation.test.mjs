@@ -229,7 +229,10 @@ test("real auth-me handler rejects an inactive old token and accepts an active p
   });
 
   const authMe = loadTypeScriptModule("src/app/api/auth/me/route.ts", {
-    "@/lib/supabase-server": { createServerSupabase: async () => supabase, getRefreshedCookies: () => [], getRefreshAttempted: () => false },
+    "@/lib/supabase-server": { createServerSupabase: async () => supabase, getRefreshedCookies: () => [], getRefreshAttempted: () => false, getRefreshFailure: () => undefined },
+    "@/lib/supabase-cookie-names": {
+      getSupabaseCookieNames: () => ({ authToken: "sb-test-auth-token", refreshToken: "sb-test-refresh-token" }),
+    },
     "@/lib/logger": { logger: { error: () => {}, info: () => {}, warn: () => {} } },
     "next/server": nextServer,
     "@supabase/supabase-js": { createClient: mockCreateClient },

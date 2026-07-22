@@ -1,6 +1,21 @@
+import { randomUUID } from 'node:crypto';
 import { test, expect, Page } from '@playwright/test';
 
-const BASE = 'https://app.newme.ae';
+function requiredE2ESecret(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`Missing required E2E secret: ${name}`);
+  return value;
+}
+
+const BOSS = {
+  email: requiredE2ESecret('E2E_BOSS_EMAIL'),
+  password: requiredE2ESecret('E2E_BOSS_PASSWORD'),
+};
+const SALES = {
+  email: requiredE2ESecret('E2E_SALES_EMAIL'),
+  password: requiredE2ESecret('E2E_SALES_PASSWORD'),
+};
+const INVALID_PASSWORD = randomUUID();
 
 // ─── Helper: Login via Supabase REST API and set cookies ───
 async function login(page: Page, email: string, password: string) {
@@ -56,7 +71,7 @@ async function hasRawI18nKeys(page: Page): Promise<string[]> {
 // ═══════════════════════════════════════
 test.describe('Login', () => {
   test('valid login as boss → management dashboard', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     expect(page.url()).toContain('/dashboard');
     
     // Should show "Management" role label
@@ -72,7 +87,7 @@ test.describe('Login', () => {
   });
 
   test('valid login as sales → sales workbench', async ({ page }) => {
-    await login(page, 'mohamed@newme.ae', '123456');
+    await login(page, SALES.email, SALES.password);
     expect(page.url()).toContain('/workbench');
     
     const body = await page.locator('body').textContent();
@@ -88,8 +103,8 @@ test.describe('Login', () => {
 
   test('invalid password shows error', async ({ page }) => {
     await page.goto('/login');
-    await page.locator('input[type="email"]').first().fill('admin@newme.ae');
-    await page.locator('input[type="password"]').first().fill('wrongpassword');
+    await page.locator('input[type="email"]').first().fill(BOSS.email);
+    await page.locator('input[type="password"]').first().fill(INVALID_PASSWORD);
     await page.locator('button[type="submit"]').click();
     
     // Should show error message
@@ -121,7 +136,7 @@ test.describe('Login', () => {
 // ═══════════════════════════════════════
 test.describe('Dashboard - Boss', () => {
   test.beforeEach(async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
   });
 
   test('loads with company stats', async ({ page }) => {
@@ -186,7 +201,7 @@ test.describe('Dashboard - Boss', () => {
 // ═══════════════════════════════════════
 test.describe('Dashboard - Sales', () => {
   test.beforeEach(async ({ page }) => {
-    await login(page, 'mohamed@newme.ae', '123456');
+    await login(page, SALES.email, SALES.password);
   });
 
   test('loads with personal stats only', async ({ page }) => {
@@ -221,7 +236,7 @@ test.describe('Dashboard - Sales', () => {
 // ═══════════════════════════════════════
 test.describe('Leads List', () => {
   test('boss sees all leads', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/leads');
     await page.waitForLoadState('networkidle');
     
@@ -234,7 +249,7 @@ test.describe('Leads List', () => {
   });
 
   test('sales sees only assigned leads', async ({ page }) => {
-    await login(page, 'mohamed@newme.ae', '123456');
+    await login(page, SALES.email, SALES.password);
     await page.goto('/leads');
     await page.waitForLoadState('networkidle');
     
@@ -245,7 +260,7 @@ test.describe('Leads List', () => {
   });
 
   test('quick create lead dialog opens', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/leads');
     await page.waitForLoadState('networkidle');
     
@@ -261,7 +276,7 @@ test.describe('Leads List', () => {
   });
 
   test('search filters leads', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/leads');
     await page.waitForLoadState('networkidle');
     
@@ -276,7 +291,7 @@ test.describe('Leads List', () => {
   });
 
   test('clicking lead navigates to detail', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/leads');
     await page.waitForLoadState('networkidle');
     
@@ -295,7 +310,7 @@ test.describe('Leads List', () => {
 // ═══════════════════════════════════════
 test.describe('New Lead Form', () => {
   test.beforeEach(async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/leads/new');
     await page.waitForLoadState('networkidle');
   });
@@ -331,7 +346,7 @@ test.describe('New Lead Form', () => {
 // ═══════════════════════════════════════
 test.describe('Pipeline', () => {
   test('boss sees kanban with all leads', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/pipeline');
     await page.waitForLoadState('networkidle');
     
@@ -343,7 +358,7 @@ test.describe('Pipeline', () => {
   });
 
   test('sales sees only assigned leads in pipeline', async ({ page }) => {
-    await login(page, 'mohamed@newme.ae', '123456');
+    await login(page, SALES.email, SALES.password);
     await page.goto('/pipeline');
     await page.waitForLoadState('networkidle');
     
@@ -353,7 +368,7 @@ test.describe('Pipeline', () => {
   });
 
   test('percentages do not overflow 100%', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/pipeline');
     await page.waitForLoadState('networkidle');
     
@@ -367,7 +382,7 @@ test.describe('Pipeline', () => {
   });
 
   test('add lead button navigates to /leads/new', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/pipeline');
     await page.waitForLoadState('networkidle');
     
@@ -385,7 +400,7 @@ test.describe('Pipeline', () => {
 // ═══════════════════════════════════════
 test.describe('Ads - Boss', () => {
   test('boss can view ads page', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/ads');
     await page.waitForLoadState('networkidle');
     
@@ -398,7 +413,7 @@ test.describe('Ads - Boss', () => {
 
 test.describe('Ads - Sales Blocked', () => {
   test('sales cannot access ads page data', async ({ page }) => {
-    await login(page, 'mohamed@newme.ae', '123456');
+    await login(page, SALES.email, SALES.password);
     await page.goto('/ads');
     await page.waitForLoadState('networkidle');
     
@@ -415,7 +430,7 @@ test.describe('Ads - Sales Blocked', () => {
 // ═══════════════════════════════════════
 test.describe('Products', () => {
   test('product list renders for any role', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/products');
     await page.waitForLoadState('networkidle');
     
@@ -425,7 +440,7 @@ test.describe('Products', () => {
   });
 
   test('import dialog opens for boss', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/products');
     await page.waitForLoadState('networkidle');
     
@@ -439,7 +454,7 @@ test.describe('Products', () => {
   });
 
   test('category filter works', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/products');
     await page.waitForLoadState('networkidle');
     
@@ -458,7 +473,7 @@ test.describe('Products', () => {
 // ═══════════════════════════════════════
 test.describe('Team - Boss', () => {
   test('team list shows all users', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/team');
     await page.waitForLoadState('networkidle');
     
@@ -468,7 +483,7 @@ test.describe('Team - Boss', () => {
   });
 
   test('add user dialog opens', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/team');
     await page.waitForLoadState('networkidle');
     
@@ -487,7 +502,7 @@ test.describe('Team - Boss', () => {
 // ═══════════════════════════════════════
 test.describe('Quotes', () => {
   test('quotes page loads for boss', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/quotes');
     await page.waitForLoadState('networkidle');
     
@@ -495,7 +510,7 @@ test.describe('Quotes', () => {
   });
 
   test('quotes page loads for sales', async ({ page }) => {
-    await login(page, 'mohamed@newme.ae', '123456');
+    await login(page, SALES.email, SALES.password);
     await page.goto('/quotes');
     await page.waitForLoadState('networkidle');
     
@@ -508,7 +523,7 @@ test.describe('Quotes', () => {
 // ═══════════════════════════════════════
 test.describe('Contracts', () => {
   test('contracts page loads for boss', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/contracts');
     await page.waitForLoadState('networkidle');
     
@@ -516,7 +531,7 @@ test.describe('Contracts', () => {
   });
 
   test('new contract form loads', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/contracts/new');
     await page.waitForLoadState('networkidle');
     
@@ -529,7 +544,7 @@ test.describe('Contracts', () => {
 // ═══════════════════════════════════════
 test.describe('Payments - Sales', () => {
   test('payments page loads for sales', async ({ page }) => {
-    await login(page, 'mohamed@newme.ae', '123456');
+    await login(page, SALES.email, SALES.password);
     await page.goto('/payments');
     await page.waitForLoadState('networkidle');
     
@@ -537,7 +552,7 @@ test.describe('Payments - Sales', () => {
   });
 
   test('record payment dialog opens', async ({ page }) => {
-    await login(page, 'mohamed@newme.ae', '123456');
+    await login(page, SALES.email, SALES.password);
     await page.goto('/payments');
     await page.waitForLoadState('networkidle');
     
@@ -557,7 +572,7 @@ test.describe('Payments - Sales', () => {
 // ═══════════════════════════════════════
 test.describe('Analytics', () => {
   test('analytics page loads for boss', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/analytics');
     await page.waitForLoadState('networkidle');
     
@@ -565,7 +580,7 @@ test.describe('Analytics', () => {
   });
 
   test('analytics page loads for sales', async ({ page }) => {
-    await login(page, 'mohamed@newme.ae', '123456');
+    await login(page, SALES.email, SALES.password);
     await page.goto('/analytics');
     await page.waitForLoadState('networkidle');
     
@@ -578,7 +593,7 @@ test.describe('Analytics', () => {
 // ═══════════════════════════════════════
 test.describe('Settings', () => {
   test('settings page loads for boss', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/settings');
     await page.waitForLoadState('networkidle');
     
@@ -586,7 +601,7 @@ test.describe('Settings', () => {
   });
 
   test('language toggle works', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.waitForLoadState('networkidle');
     
     const langBtn = page.locator('button', { hasText: /中文|English/i }).first();
@@ -606,7 +621,7 @@ test.describe('Settings', () => {
 // ═══════════════════════════════════════
 test.describe('Projects - Boss', () => {
   test('projects page loads for boss', async ({ page }) => {
-    await login(page, 'admin@newme.ae', '123456');
+    await login(page, BOSS.email, BOSS.password);
     await page.goto('/projects');
     await page.waitForLoadState('networkidle');
     
@@ -625,7 +640,7 @@ test.describe('i18n - No Raw Keys', () => {
 
   for (const path of pages) {
     test(`${path} has no raw i18n keys`, async ({ page }) => {
-      await login(page, 'admin@newme.ae', '123456');
+      await login(page, BOSS.email, BOSS.password);
       await page.goto(path);
       await page.waitForLoadState('networkidle');
       
@@ -665,7 +680,7 @@ test.describe('Console Errors', () => {
         }
       });
 
-      await login(page, 'admin@newme.ae', '123456');
+      await login(page, BOSS.email, BOSS.password);
       await page.goto(path);
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(3000); // Wait for async errors

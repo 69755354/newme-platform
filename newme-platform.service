@@ -1,18 +1,32 @@
 [Unit]
 Description=NewMe Business Platform (Next.js)
-After=network.target
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/newme-platform
+WorkingDirectory=/opt/newme/current
 Environment=NODE_ENV=production
 Environment=PORT=3001
-ExecStart=/usr/bin/npm run start
+EnvironmentFile=/etc/newme/newme-runtime.env
+ExecStart=/usr/bin/node /opt/newme/current/node_modules/next/dist/bin/next start -p 3001
+ExecStartPost=/usr/local/libexec/newme/newme-readiness.sh
+ExecStopPost=+/usr/local/libexec/newme/newme-forensic.sh
 Restart=always
 RestartSec=5
+KillMode=control-group
+KillSignal=SIGTERM
+FinalKillSignal=SIGKILL
+SendSIGKILL=yes
+TimeoutStopSec=30
+MemoryHigh=768M
+MemoryMax=1G
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=newme-platform
 
 [Install]
 WantedBy=multi-user.target

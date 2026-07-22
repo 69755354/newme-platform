@@ -3,6 +3,11 @@
 // Server-side auth.getUser() → profile role → leads (500 max) → profile data
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import type { Database } from "@/types/database";
+
+type LeadListRow = Pick<Database["public"]["Tables"]["leads"]["Row"], "id" | "customer_name" | "phone" | "source" | "stage" | "final_status" | "quotation_value" | "location" | "property_type" | "project_type" | "project_status" | "property_size_sqm" | "ai_quality" | "lead_status" | "assigned_to" | "win_probability" | "last_contact_date" | "next_followup_date" | "next_action" | "followup_count" | "created_at" | "updated_at" | "recovery_candidate" | "transfer_candidate" | "sales_manager_review" | "hold_since" | "lost_reason" | "decision_maker" | "decision_date" | "competitor" | "campaign_name" | "source_platform" | "quality" | "poor_reason">;
+type SalesUserRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "email" | "role" | "full_name" | "is_active">;
+type OwnerProfileRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "full_name">;
 import {
   filterLeadTransferCandidateQuery,
   getVisibleLeadOwnerIds,
@@ -32,7 +37,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Profile not found" }, { status: 403 });
   }
 
-  const role: string = profile.role;
+  if (!profile.role) {
+    return NextResponse.json({ error: "Profile role not found" }, { status: 403 });
+  }
+
+  const role = profile.role;
   const userId: string = user.id;
 
   // ── Parallel batch: leads + transfer candidates + owner directory ──
@@ -61,7 +70,7 @@ export async function GET(request: Request) {
   // Historical names are only needed for Cases the caller can already see.
   // Do not return an organization-wide personnel directory to a sales caller.
   const ownerIds = getVisibleLeadOwnerIds(leads || []);
-  let ownerProfiles: { id: string; full_name: string | null }[] = [];
+  let ownerProfiles: OwnerProfileRow[] = [];
   if (ownerIds.length > 0) {
     const { data, error } = await supabase
       .from("profiles")
@@ -71,12 +80,14 @@ export async function GET(request: Request) {
     ownerProfiles = data || [];
   }
 
+  const visibleLeads: LeadListRow[] = leads ?? [];
+  const visibleSalesUsers: SalesUserRow[] = salesUsers ?? [];
   const result = {
     userId,
     role,
-    leads: (leads || []) as any[],
-    salesUsers: (salesUsers || []) as any[],
-    ownerProfiles: ownerProfiles || [],
+    leads: visibleLeads,
+    salesUsers: visibleSalesUsers,
+    ownerProfiles,
   };
 
 

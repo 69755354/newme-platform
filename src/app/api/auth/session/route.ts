@@ -1,0 +1,37 @@
+import { NextResponse } from "next/server";
+import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
+
+const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const accessToken = typeof body.access_token === "string" ? body.access_token : "";
+    const refreshToken = typeof body.refresh_token === "string" ? body.refresh_token : "";
+    const expiresIn = Number.isFinite(body.expires_in) ? Math.max(60, Math.floor(body.expires_in)) : 3600;
+
+    if (!accessToken || !refreshToken) {
+      return NextResponse.json({ error: "invalid_session" }, { status: 400 });
+    }
+
+    const { authToken, refreshToken: refreshCookie } = getSupabaseCookieNames();
+    const response = NextResponse.json({ ok: true });
+    response.cookies.set(authToken, accessToken, {
+      httpOnly: false,
+      maxAge: expiresIn,
+      path: "/",
+      sameSite: "strict",
+      secure: true,
+    });
+    response.cookies.set(refreshCookie, refreshToken, {
+      httpOnly: true,
+      maxAge: SESSION_MAX_AGE,
+      path: "/",
+      sameSite: "strict",
+      secure: true,
+    });
+    return response;
+  } catch {
+    return NextResponse.json({ error: "invalid_session" }, { status: 400 });
+  }
+}

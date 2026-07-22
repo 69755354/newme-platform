@@ -188,7 +188,7 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
 
       await supabase.from("leads").update({ assigned_to: newUserId, updated_at: new Date().toISOString() }).eq("id", leadId);
 
-      if (oldLead.assigned_to) {
+      if (oldLead.assigned_to && currentUserId) {
         await supabase.from("transfer_history").insert({
           lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId,
           reason: "manual_reassign", transferred_by: currentUserId,

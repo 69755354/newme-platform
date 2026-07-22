@@ -72,8 +72,8 @@ test("default threshold is two, suppresses duplicates, recovers once, and re-ale
 test("failed alert and recovery transport remain retryable", async () => {
   const stateDir = await mkdtemp(join(tmpdir(), "hermes-alert-retry-"));
   const eventsFile = join(stateDir, "events.log");
-  const failing = await makeNotifier(stateDir, "#!/usr/bin/env bash\nexit 1\n");
-  const working = await makeNotifier(stateDir, recordingNotifier);
+  const failing = await makeNotifier(stateDir, "#!/usr/bin/env bash\nexit 1\n", "failing.sh");
+  const working = await makeNotifier(stateDir, recordingNotifier, "working.sh");
 
   await runAlert({ stateDir, notifier: failing, eventsFile, event: "failure", summary: "failure one" });
   await runAlert({ stateDir, notifier: failing, eventsFile, event: "failure", summary: "failure two", expectCode: 1 });

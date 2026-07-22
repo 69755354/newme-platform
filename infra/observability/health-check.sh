@@ -57,9 +57,16 @@ done
 record_alert() {
   local event="$1"
   local summary="$2"
-  if ! bash "$ALERT_SCRIPT" "health-check" "$event" "$summary"; then
+  local transition=""
+  local status=0
+  transition="$(bash "$ALERT_SCRIPT" "health-check" "$event" "$summary" 2>&1)" || status=$?
+  printf '%s\n' "$transition"
+  if printf '%s' "$transition" | grep -q 'capture=1'; then
+  fi
+  if [ "$status" -ne 0 ]; then
     echo "[$TIMESTAMP] ALERT_STATE_FAILED: retry will occur on the next run" >&2
   fi
+  return "$status"
 }
 
 # ─── 输出 ───
@@ -70,7 +77,6 @@ else
   echo "[$TIMESTAMP] 🔔 $HOSTNAME ALERTS:"
   echo -e "$ALERTS"
   record_alert failure "$(echo -e "$ALERTS" | head -1)"
-  /opt/hermes-scripts/observability/incident-capture.sh "health-check" "$(echo -e "$ALERTS" | head -1)" &
 fi
 
 sentry_checkin_finish "health-check" $?

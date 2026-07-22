@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { cookies } from "next/headers";
 import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
+import { classifyRefreshFailure } from "@/lib/auth-refresh.mjs";
 
 export interface RefreshedCookie {
   name: string;
@@ -9,9 +10,14 @@ export interface RefreshedCookie {
   options: Record<string, unknown>;
 }
 
+type RefreshFailure = "missing_refresh_token" | "invalid_refresh_token" | "upstream_error";
+type RefreshSession = { accessToken: string; refreshToken: string; expiresAt: number };
+type RefreshResult = { session: RefreshSession | null; failure?: Exclude<RefreshFailure, "missing_refresh_token"> };
+
 type ServerSupabaseClient = SupabaseClient<Database> & {
   __refreshedCookies?: RefreshedCookie[];
   __refreshAttempted?: boolean;
+  __refreshFailure?: RefreshFailure;
 };
 
 /**
@@ -94,23 +100,40 @@ async function tryRefreshToken(
   supabaseUrl: string,
   anonKey: string,
   refreshToken: string,
-): Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null> {
+): Promise<RefreshResult> {
   try {
     const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
       method: "POST",
       headers: { apikey: anonKey, "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.access_token) return null;
+    let data: unknown = null;
+    try {
+      data = await res.json();
+    } catch {
+      return { session: null, failure: "upstream_error" };
+    }
+    if (!res.ok) {
+      return { session: null, failure: classifyRefreshFailure(res.status, data) };
+    }
+    if (
+      typeof data !== "object" ||
+      data === null ||
+      typeof data.access_token !== "string" ||
+      typeof data.refresh_token !== "string" ||
+      typeof data.expires_in !== "number"
+    ) {
+      return { session: null, failure: "upstream_error" };
+    }
     return {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      expiresAt: Math.floor(Date.now() / 1000) + data.expires_in,
+      session: {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        expiresAt: Math.floor(Date.now() / 1000) + data.expires_in,
+      },
     };
   } catch {
-    return null;
+    return { session: null, failure: "upstream_error" };
   }
 }
 
@@ -123,14 +146,14 @@ async function tryRefreshToken(
  */
 const refreshInFlight = new Map<
   string,
-  Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null>
+  Promise<RefreshResult>
 >();
 
 function tryRefreshTokenLocked(
   supabaseUrl: string,
   anonKey: string,
   refreshToken: string,
-): Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null> {
+): Promise<RefreshResult> {
   const existing = refreshInFlight.get(refreshToken);
   if (existing) return existing;
   const promise = tryRefreshToken(supabaseUrl, anonKey, refreshToken).finally(() => {
@@ -146,6 +169,7 @@ export async function createServerSupabase(
 ) {
   let refreshedCookies: RefreshedCookie[] = [];
   let refreshAttempted = false;
+  let refreshFailure: RefreshFailure | undefined;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
   const names = getSupabaseCookieNames(supabaseUrl);
@@ -159,11 +183,14 @@ export async function createServerSupabase(
   // ── 2. Extract tokens ──
   const { accessToken: initialAccessToken, refreshToken } = extractTokens(allCookies, names);
   let accessToken = initialAccessToken;
+  const hasAuthCookie = allCookies.some((cookie) => cookie.name === names.authToken || cookie.name === "sb-access-token");
 
   // ── 2. If token is expired, try to refresh ──
   if (!accessToken && refreshToken) {
     refreshAttempted = true;
-    const refreshed = await tryRefreshTokenLocked(supabaseUrl, anonKey, refreshToken);
+    const refreshResult = await tryRefreshTokenLocked(supabaseUrl, anonKey, refreshToken);
+    refreshFailure = refreshResult.failure;
+    const refreshed = refreshResult.session;
     if (refreshed) {
       accessToken = refreshed.accessToken;
       // Update the auth token cookie so subsequent requests don't need to refresh again
@@ -190,10 +217,12 @@ export async function createServerSupabase(
         maxAge: 2592000,
         sameSite: "strict",
         secure: true,
-        httpOnly: false,
+        httpOnly: true,
       });
       }
     }
+  } else if (!accessToken && hasAuthCookie) {
+    refreshFailure = "missing_refresh_token";
   }
 
   // ── 3. Create client with or without auth ──
@@ -218,6 +247,7 @@ export async function createServerSupabase(
   }) as ServerSupabaseClient;
   client.__refreshedCookies = refreshedCookies;
   client.__refreshAttempted = refreshAttempted;
+  client.__refreshFailure = refreshFailure;
   return client;
 }
 
@@ -234,4 +264,10 @@ export function getRefreshedCookies(client: unknown): RefreshedCookie[] {
  */
 export function getRefreshAttempted(client: unknown): boolean {
   return (client as ServerSupabaseClient).__refreshAttempted === true;
+}
+/**
+ * Whether refresh failed because the session is invalid, missing, or upstream-unavailable.
+ */
+export function getRefreshFailure(client: unknown): RefreshFailure | undefined {
+  return (client as ServerSupabaseClient).__refreshFailure;
 }

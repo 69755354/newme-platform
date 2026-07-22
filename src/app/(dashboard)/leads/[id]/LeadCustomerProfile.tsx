@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { cn, fmtDubai } from "@/lib/utils";
 import { User, MessageCircle, ExternalLink } from "lucide-react";
-import type { Lead, RenderInlineEdit, RenderDateEdit } from "./types";
+import type { Lead, LeadFieldUpdater, RenderInlineEdit, RenderDateEdit } from "./types";
 
 // Source dropdown options — keys match translations.sourceLabels and the values
 // persisted on leads.source.
@@ -24,8 +24,8 @@ const SOURCE_OPTIONS = ["ins", "fb", "show_room", "whatsapp", "website", "offlin
 
 interface Props {
   lead: Lead;
-  users: any[];
-  onUpdateField: (field: string, value: any, eventType?: string, eventDesc?: string) => void;
+  users: Array<{ id: string; email: string | null; role: string | null; full_name: string | null }>;
+  onUpdateField: LeadFieldUpdater;
   onReassign: (userId: string) => void;
   renderInlineEdit: RenderInlineEdit;
   renderDateEdit: RenderDateEdit;
@@ -33,7 +33,7 @@ interface Props {
   showSalesDropdown: boolean;
   setShowSalesDropdown: (v: boolean) => void;
   reassigning: boolean;
-  transferHistory: any[];
+  transferHistory: Array<{ id: string; event_type: string; event_data: import("@/types/database").Json | null; description: string | null; created_at: string | null; user_id: string | null }>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -207,7 +207,7 @@ export default function LeadCustomerProfile({
         {transferHistory.length > 0 && (
           <div className="border-t border-border pt-3 space-y-2">
             <span className="text-muted-foreground text-xs font-medium">{t("leadDetail.transferHistory") || "Transfer History"}</span>
-            {transferHistory.slice(0, 5).map((tr: any, i: number) => (
+            {transferHistory.slice(0, 5).map((tr, i) => (
               <div key={tr.id || i} className="text-xs text-muted-foreground flex items-start gap-1.5">
                 <span className="text-[10px] mt-0.5 shrink-0">→</span>
                 <div>

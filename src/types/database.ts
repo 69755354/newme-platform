@@ -2923,6 +2923,9 @@ export type Database = {
           currency: string | null
           customer_id: string | null
           delivery_terms: string | null
+          sent_at: string | null
+          accepted_at: string | null
+          rejected_at: string | null
           devices_json: Json | null
           discount_amount: number | null
           discount_rate: number | null
@@ -2951,6 +2954,9 @@ export type Database = {
           currency?: string | null
           customer_id?: string | null
           delivery_terms?: string | null
+          sent_at?: string | null
+          accepted_at?: string | null
+          rejected_at?: string | null
           devices_json?: Json | null
           discount_amount?: number | null
           discount_rate?: number | null
@@ -2979,6 +2985,9 @@ export type Database = {
           currency?: string | null
           customer_id?: string | null
           delivery_terms?: string | null
+          sent_at?: string | null
+          accepted_at?: string | null
+          rejected_at?: string | null
           devices_json?: Json | null
           discount_amount?: number | null
           discount_rate?: number | null

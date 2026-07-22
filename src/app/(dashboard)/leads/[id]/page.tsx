@@ -303,7 +303,7 @@ export default function LeadDetailPage() {
 
   // ─── Render helpers (page-owned so a single inline edit is active at a time) ───
   const renderInlineEdit: RenderInlineEdit = (field, label, type = "text") => {
-    if (!isInlineEditField(field)) return null;
+    if (!lead || !isInlineEditField(field)) return null;
     const value = lead[field];
     return editField === field ? (
       // BUG-LD-3 (2026-07-06): wrap the input in a click-eating span so a click
@@ -342,7 +342,7 @@ export default function LeadDetailPage() {
   };
 
   const renderDateEdit: RenderDateEdit = (field, label) => {
-    if (!isDateEditField(field)) return null;
+    if (!lead || !isDateEditField(field)) return null;
     const value = lead[field];
     return editField === field ? (
       <input type="date" autoFocus value={editValue} onChange={(e) => setEditValue(e.target.value)}
@@ -357,7 +357,7 @@ export default function LeadDetailPage() {
   };
 
   const renderJsonEdit: RenderJsonEdit = (field, label) => {
-    if (!isJsonEditField(field)) return null;
+    if (!lead || !isJsonEditField(field)) return null;
     const value = lead[field];
     let display: string | null = null;
     if (value != null) {

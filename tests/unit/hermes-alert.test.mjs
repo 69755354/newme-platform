@@ -162,3 +162,23 @@ test("initializes a persistent user directory and exposes missing notifier or pa
   await writeFile(notDirectory, "occupied");
   await runAlert({ stateDir: notDirectory, notifier: missing, eventsFile, event: "failure", summary: "bad directory", expectCode: 1 });
 });
+
+
+test("emits capture marker only on the first threshold crossing", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "hermes-alert-capture-"));
+  const first = await runAlert({ stateDir, event: "failure", summary: "first", threshold: 2 });
+  const second = await runAlert({ stateDir, event: "failure", summary: "threshold", threshold: 2 });
+  const duplicate = await runAlert({ stateDir, event: "failure", summary: "duplicate", threshold: 2 });
+  assert.doesNotMatch(first, /capture=1/);
+  assert.match(second, /capture=1/);
+  assert.doesNotMatch(duplicate, /capture=1/);
+});
+
+test("probes delegate incident capture to the state transition marker", async () => {
+  const health = await readFile(new URL("../../infra/observability/health-check.sh", import.meta.url), "utf8");
+  const login = await readFile(new URL("../../infra/observability/login-probe.sh", import.meta.url), "utf8");
+  for (const source of [health, login]) {
+    assert.match(source, /capture=1/);
+    assert.doesNotMatch(source, /record_alert[\\s\\S]*\\n\\s*\\/opt\\/hermes-scripts\\/observability\\/incident-capture\\.sh[^\\n]*&\\n/);
+  }
+});

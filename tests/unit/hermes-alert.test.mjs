@@ -179,6 +179,6 @@ test("probes delegate incident capture to the state transition marker", async ()
   const login = await readFile(new URL("../../infra/observability/login-probe.sh", import.meta.url), "utf8");
   for (const source of [health, login]) {
     assert.match(source, /capture=1/);
-    assert.doesNotMatch(source, /record_alert[\\s\\S]*\\n\\s*\\/opt\\/hermes-scripts\\/observability\\/incident-capture\\.sh[^\\n]*&\\n/);
+    assert.equal((source.match(/incident-capture\\.sh/g) || []).length, 1);
   }
 });

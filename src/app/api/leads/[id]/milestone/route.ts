@@ -1,10 +1,14 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { canCompleteMilestone } from "@/lib/milestones";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
 import { isAssessedQuality, isCompleteContact } from "@/lib/first-contact-gate.mjs";
+
+type AdminSupabaseClient = SupabaseClient<Database>;
 
 export async function POST(
   req: NextRequest,
@@ -104,7 +108,8 @@ export async function POST(
     // fact row into the required explicit confirmation instead of treating it
     // as a completed manual milestone.
     if (milestoneKey === "first_contact" && !String(existingMilestone.notes ?? "").trim()) {
-      const { data: confirmed, error: confirmError } = await supabaseAdmin
+      const typedSupabaseAdmin = supabaseAdmin as AdminSupabaseClient;
+      const { data: confirmed, error: confirmError } = await typedSupabaseAdmin
         .from("lead_milestones")
         .update({
           notes: normalizedNotes,

@@ -31,8 +31,8 @@ async function runAlert({ stateDir, notifier, eventsFile, event, summary, expect
   return result.stdout;
 }
 
-async function makeNotifier(dir, body) {
-  const notifier = join(dir, "notifier.sh");
+async function makeNotifier(dir, body, name = "notifier.sh") {
+  const notifier = join(dir, name);
   await writeFile(notifier, body, { mode: 0o700 });
   return notifier;
 }

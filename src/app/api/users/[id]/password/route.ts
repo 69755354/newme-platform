@@ -31,7 +31,6 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Fetch target user's full_name (no longer store plaintext passwords)
     const { data: target, error } = await adminClient
       .from("profiles")
       .select("full_name")
@@ -57,8 +56,7 @@ export async function PATCH(
 ) {
   try {
     const { id: targetId } = await params;
-    const body = await request.json();
-    const { password } = body;
+    const { password } = await request.json();
 
     if (!password || password.length < 6) {
       return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
@@ -78,32 +76,24 @@ export async function PATCH(
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    // Self-change
     if (targetId === "change-password") {
-      try {
-        const { error } = await supabase.auth.updateUser({ password });
-        if (error) {
-          return NextResponse.json({ error: error.message || "Update failed" }, { status: 400 });
-        }
-        // Invalidate existing sessions by marking password change time
-        const { error: profileErr } = await adminClient
-          .from("profiles")
-          .update({ password_changed_at: new Date().toISOString() })
-          .eq("id", user.id);
+      const { error } = await adminClient.auth.admin.updateUserById(user.id, { password });
+      if (error) return NextResponse.json({ error: error.message || "Update failed" }, { status: 400 });
 
-        if (profileErr) {
-          return NextResponse.json(
-            { error: "Password changed but session invalidation failed. Please contact admin." },
-            { status: 500 }
-          );
-        }
-        return NextResponse.json({ success: true });
-      } catch {
-        return NextResponse.json({ error: "Session invalid" }, { status: 401 });
+      const { error: profileErr } = await adminClient
+        .from("profiles")
+        .update({ password_changed_at: new Date().toISOString() })
+        .eq("id", user.id);
+
+      if (profileErr) {
+        return NextResponse.json(
+          { error: "Password changed but audit timestamp could not be recorded. Please contact admin." },
+          { status: 500 }
+        );
       }
+      return NextResponse.json({ success: true });
     }
 
-    // Admin/boss reset: verify current user role
     const { data: profile } = await adminClient
       .from("profiles").select("role").eq("id", user.id).single();
 
@@ -111,11 +101,9 @@ export async function PATCH(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Reset target user's password
     const { error } = await adminClient.auth.admin.updateUserById(targetId, { password });
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-    // Invalidate existing sessions by marking password change time
     const { error: profileErr } = await adminClient
       .from("profiles")
       .update({ password_changed_at: new Date().toISOString() })
@@ -123,7 +111,7 @@ export async function PATCH(
 
     if (profileErr) {
       return NextResponse.json(
-        { error: "Password changed but session invalidation failed. Please contact admin." },
+        { error: "Password changed but audit timestamp could not be recorded. Please contact admin." },
         { status: 500 }
       );
     }

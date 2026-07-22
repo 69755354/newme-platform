@@ -112,7 +112,7 @@ export default function LeadCustomerProfile({
             <Select
               value={lead.source || ""}
               onValueChange={(v) =>
-                onUpdateField("source", v, "note_added", `${t("leadDetail.source")}: ${t(`sourceLabels.${v}`)}`)
+                onUpdateField("source", v ?? "", "note_added", `${t("leadDetail.source")}: ${t(`sourceLabels.${v ?? ""}`)}`)
               }
             >
               <SelectTrigger className="h-8 text-xs">

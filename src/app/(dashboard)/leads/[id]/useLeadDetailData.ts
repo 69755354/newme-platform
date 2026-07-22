@@ -262,7 +262,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
           created_at: event.created_at ?? "",
           user_id: event.user_id ?? null,
           operator: event.operator ?? null,
-        }));
+        })));
         const transfers = l.business_events.filter(
           (ev) => ev.event_type === "transfer"
         );

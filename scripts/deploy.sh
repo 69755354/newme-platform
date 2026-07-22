@@ -142,7 +142,7 @@ echo ""
 cd "$PROJECT_ROOT"
 if ! systemctl is-active --quiet newme-platform.service 2>/dev/null; then
   echo "⚠️  Service not running. Starting..."
-  sudo systemctl start newme-platform.service
+  sudo /usr/local/sbin/newme-service-control start "deploy:$DEPLOY_ID:ensure-running"
   sleep 3
   systemctl is-active --quiet newme-platform.service 2>/dev/null || {
     echo "❌ Cannot start service. Abort."
@@ -342,7 +342,7 @@ cd "$PROJECT_ROOT"
 
 # Stop service (downtime begins — ~3-5 seconds)
 echo "🛑 Stopping service..."
-sudo systemctl stop newme-platform.service
+sudo /usr/local/sbin/newme-service-control stop "deploy:$DEPLOY_ID:swap"
 sleep 1
 
 # Wait for port 3001 to be fully released (avoid EADDRINUSE)
@@ -354,11 +354,22 @@ for i in 1 2 3 4 5; do
   sleep 1
 done
 
-# Hard kill any remaining process on port 3001 (defense against zombie children)
+# A residual listener means systemd did not contain the full process tree.
+# Fail closed and preserve evidence; never hide the ownership failure with a broad port kill.
 if ss -tlnp | grep -q ':3001 '; then
-  echo "⚠️  Port 3001 still held — force killing..."
-  sudo fuser -k 3001/tcp 2>/dev/null || true
-  sleep 1
+  echo "❌ Port 3001 still held after systemd stop; refusing broad kill."
+  systemctl show newme-platform.service \
+    -p ActiveState -p SubState -p MainPID -p ControlGroup -p Result \
+    -p ExecMainCode -p ExecMainStatus -p NRestarts 2>&1 || true
+  control_group=$(systemctl show newme-platform.service -p ControlGroup --value 2>/dev/null || true)
+  if [ -n "$control_group" ] && [ -r "/sys/fs/cgroup$control_group/cgroup.procs" ]; then
+    echo "--- residual cgroup.procs ---"
+    cat "/sys/fs/cgroup$control_group/cgroup.procs" || true
+  fi
+  echo "--- residual port owner ---"
+  ss -ltnp '( sport = :3001 )' || true
+  echo "Deployment aborted before build swap. Preserve journal and forensic evidence."
+  exit 1
 fi
 
 # Swap: move old .next aside, bring new .next in
@@ -368,7 +379,7 @@ cp -a "$BUILD_DIR/.next" .next
 
 # Start service
 echo "▶️  Starting service..."
-sudo systemctl start newme-platform.service
+sudo /usr/local/sbin/newme-service-control start "deploy:$DEPLOY_ID:swap"
 sleep 3
 
 # Health check
@@ -386,7 +397,7 @@ else
     cp -a "$BACKUP_DIR" .next
     echo "✅ Restored previous build ($EXISTING_BUILD_ID)"
   fi
-  sudo systemctl restart newme-platform.service
+  sudo /usr/local/sbin/newme-service-control restart "deploy:$DEPLOY_ID:rollback"
   sleep 3
   HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/ 2>/dev/null || echo "000")
   if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "307" ]; then
@@ -439,3 +450,4 @@ EVI_RESULT="pass"
 EVI_RELEASE_STATUS="awaiting_uat"
 echo "Release status: awaiting authenticated UAT"
 echo "Evidence: $EVIDENCE_FILE"
+

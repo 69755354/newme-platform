@@ -26,6 +26,15 @@ function clearBrowserSession() {
 
 async function revokeRejectedSession(accessToken: string) {
   try {
+    await fetch("/api/auth/logout", {
+      credentials: "same-origin",
+      method: "POST",
+    });
+  } catch {
+    // External revoke remains the fallback when same-origin cleanup fails.
+  }
+
+  try {
     await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
       method: "POST",
       headers: {
@@ -36,6 +45,7 @@ async function revokeRejectedSession(accessToken: string) {
   } catch {
     // The server-side profile gate still rejects the token if Auth logout fails.
   }
+
   clearBrowserSession();
 }
 

@@ -6,6 +6,7 @@ import type { Database } from '@/types/database'
 type TaskUpdate = Database['public']['Tables']['tasks']['Update']
 
 const VALID_STATUSES = ['pending', 'completed', 'cancelled'] as const
+const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
 type TaskStatus = (typeof VALID_STATUSES)[number]
 
 const TASK_DETAIL_SELECT = `*`
@@ -52,6 +53,8 @@ export async function GET(
 interface UpdateTaskBody {
   status?: TaskStatus
   title?: string
+  description?: string | null
+  priority?: string | null
   due_at?: string
 }
 
@@ -84,6 +87,20 @@ export async function PATCH(
       updateData.title = body.title.trim()
     }
 
+    if (body.description !== undefined) {
+      if (body.description !== null && typeof body.description !== 'string') {
+        return NextResponse.json({ error: 'description must be a string or null' }, { status: 400 })
+      }
+      updateData.description = body.description
+    }
+
+    if (body.priority !== undefined) {
+      if (body.priority !== null && !VALID_PRIORITIES.includes(body.priority as (typeof VALID_PRIORITIES)[number])) {
+        return NextResponse.json({ error: `priority must be one of: ${VALID_PRIORITIES.join(', ')}` }, { status: 400 })
+      }
+      updateData.priority = body.priority
+    }
+
     if (body.status !== undefined) {
       if (!VALID_STATUSES.includes(body.status as TaskStatus)) {
         return NextResponse.json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` }, { status: 400 })
@@ -104,7 +121,7 @@ export async function PATCH(
     }
 
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json({ error: 'No updatable fields provided. Allowed: status, title, due_at' }, { status: 400 })
+      return NextResponse.json({ error: 'No updatable fields provided. Allowed: status, title, description, priority, due_at' }, { status: 400 })
     }
 
     const { data, error } = await supabase

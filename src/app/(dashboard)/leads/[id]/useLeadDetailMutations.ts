@@ -261,7 +261,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       }
       // Surface the API-reported audit status in non-prod only.
       if (process.env.NODE_ENV !== "production" && json.eventError) {
-        console.warn("quality event log failed:", (json as any).eventError);
+        console.warn("quality event log failed:", json.eventError);
       }
       return true;
     },

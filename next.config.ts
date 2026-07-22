@@ -5,7 +5,7 @@ import { execSync } from "child_process";
 import { existsSync } from "fs";
 
 // 🔴 PRODUCTION BUILD GUARD — prevents npx next build from overwriting live .next
-const PROD_DIR = "/home/ubuntu/newme-platform";
+const PROD_DIR = "/opt/newme/current";
 const IS_PROD = process.cwd() === PROD_DIR;
 const IS_ISOLATED = process.cwd().startsWith("/tmp/newme-build-");
 // Only guard during build, not start

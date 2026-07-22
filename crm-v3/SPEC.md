@@ -852,3 +852,15 @@ The integration draft carries the completed typed-contract fixes from PRs #80, #
 - `src/app/(dashboard)/settings/ads/page.tsx`: nullable stage guard in quotation funnel aggregation.
 - `src/app/(dashboard)/tasks/[id]/page.tsx`: task detail contract fields and required due date.
 - `src/types/database.ts`: generated database type source, including task and quotation contract fields.
+
+
+## SAM-60/SAM-68 release and readiness contract
+
+The stacked release uses one immutable deployment authority with SHA-bound npm ci, private release node_modules, atomic lock/symlink switch, isolated candidate cleanup, exact manifest SHA and BUILD_ID checks, audited rollback, and fail-closed FragmentPath/DropInPaths ownership checks. The installer creates timestamped manifest backups, removes legacy forensic.conf and restart-always.conf after backup, preserves observability transport and secret configuration, installs versioned observability scripts and cron targets, and provides rollback. Public health is liveness-only; internal readiness requires a root-owned runtime token, one bounded Supabase probe, generic responses, and no synchronous disk I/O. Forensic logs are root:adm 0640. Sentry sanitization honors caller maxDepth.
+
+Changed paths: scripts/deploy.sh, scripts/deploy-immutable.sh, scripts/install-systemd-assets.sh, scripts/rollback-systemd-assets.sh, infra/observability/newme-observability.cron, infra/systemd/newme-platform.service, infra/systemd/newme-readiness.sh, infra/systemd/newme-forensic.sh, newme-platform.service, src/app/api/health/route.ts, src/app/api/ready/route.ts, src/lib/observability.mjs, tests/unit/observability.test.mjs, tests/release/sam60-deployment-contract.test.mjs.
+
+
+Path consistency: systemd, next.config.ts, installer, deploy preflight and release tests all require /opt/newme/current to be an atomic symlink into /opt/newme/releases/<sha>; the historical /home/ubuntu/newme-platform mutable root is not a release target.
+
+Unified main integration coverage: infra/observability/hermes-alert-notifier-v1.sh, infra/observability/hermes-alert-state-v1.sh, infra/observability/newme-service-health.py, infra/systemd/newme-forensic.sh, infra/systemd/newme-readiness.sh, infra/systemd/newme-service-control.sh, scripts/install-systemd-assets.sh, scripts/rollback-systemd-assets.sh, scripts/systemd-recovery-drill.sh, sentry.client.config.ts, sentry.edge.config.ts, sentry.server.config.ts, src/app/api/auth/session/route.ts, src/lib/supabase-cookie-names.ts.

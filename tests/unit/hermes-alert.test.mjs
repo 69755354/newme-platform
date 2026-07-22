@@ -166,9 +166,10 @@ test("initializes a persistent user directory and exposes missing notifier or pa
 
 test("emits capture marker only on the first threshold crossing", async () => {
   const stateDir = await mkdtemp(join(tmpdir(), "hermes-alert-capture-"));
-  const first = await runAlert({ stateDir, event: "failure", summary: "first", threshold: 2 });
-  const second = await runAlert({ stateDir, event: "failure", summary: "threshold", threshold: 2 });
-  const duplicate = await runAlert({ stateDir, event: "failure", summary: "duplicate", threshold: 2 });
+  const notifier = await makeNotifier(stateDir, "#!/usr/bin/env bash\nexit 0\n");
+  const first = await runAlert({ stateDir, notifier, event: "failure", summary: "first", threshold: 2 });
+  const second = await runAlert({ stateDir, notifier, event: "failure", summary: "threshold", threshold: 2 });
+  const duplicate = await runAlert({ stateDir, notifier, event: "failure", summary: "duplicate", threshold: 2 });
   assert.doesNotMatch(first, /capture=1/);
   assert.match(second, /capture=1/);
   assert.doesNotMatch(duplicate, /capture=1/);
@@ -179,6 +180,6 @@ test("probes delegate incident capture to the state transition marker", async ()
   const login = await readFile(new URL("../../infra/observability/login-probe.sh", import.meta.url), "utf8");
   for (const source of [health, login]) {
     assert.match(source, /capture=1/);
-    assert.equal((source.match(/incident-capture\\.sh/g) || []).length, 1);
+    assert.equal((source.match(/incident-capture\.sh/g) || []).length, 1);
   }
 });

@@ -17,10 +17,10 @@ test("SAM-39 deploy verification defaults to the versioned regression harness", 
   assert.doesNotMatch(deployVerify, /\/home\/ubuntu\/\.hermes/);
   assert.match(deployVerify, /test -r "\$REGRESSION_SCRIPT"/);
 
-  const deploy = read("scripts/deploy.sh");
+  const deploy = read("scripts/deploy-immutable.sh");
   const gitignore = read(".gitignore");
   assert.match(deploy, /CRM_REGRESSION_RESULT_FILE/);
-  assert.match(deploy, /json\.load/);
+  assert.match(deploy, /deploy-verify\.sh/);
   assert.doesNotMatch(deploy, /EVI_REGRESSION_PASSED=23/);
   assert.match(gitignore, /^\.audit\/$/m);
 });

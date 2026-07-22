@@ -9,6 +9,7 @@ chown root:adm "$LOG_DIR" 2>/dev/null || true
 chmod 0750 "$LOG_DIR" 2>/dev/null || true
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
+chown root:adm "$LOG_FILE" 2>/dev/null || true
 chmod 0640 "$LOG_FILE"
 exec >>"$LOG_FILE" 2>&1
 

@@ -124,6 +124,7 @@ test("Sentry preserves bounded stack frames while redacting exception messages",
   const output = sanitizeSentryEvent(event);
   const serialized = JSON.stringify(output);
   assert.doesNotMatch(serialized, /secret-password|person@example\\.com/);
+  assert.equal(output.exception.values[0].stacktrace.frames.length, 10);
   assert.equal(output.exception.values[0].stacktrace.frames[9].function, "handler9");
   assert.equal(output.exception.values[0].stacktrace.frames[9].filename, "/app/src/file-9.mjs");
 });

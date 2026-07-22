@@ -11,6 +11,7 @@ User=ubuntu
 WorkingDirectory=/opt/newme/current
 Environment=NODE_ENV=production
 Environment=PORT=3001
+EnvironmentFile=/etc/newme/newme-runtime.env
 ExecStart=/usr/bin/node /opt/newme/current/node_modules/next/dist/bin/next start -p 3001
 ExecStartPost=/usr/local/libexec/newme/newme-readiness.sh
 ExecStopPost=+/usr/local/libexec/newme/newme-forensic.sh
@@ -21,8 +22,8 @@ KillSignal=SIGTERM
 FinalKillSignal=SIGKILL
 SendSIGKILL=yes
 TimeoutStopSec=30
-MemoryMax=1G
 MemoryHigh=768M
+MemoryMax=1G
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=newme-platform

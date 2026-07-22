@@ -22,7 +22,7 @@ export function sanitizeValue(value, depth = 0, seen = new WeakSet(), maxDepth =
   if (value === null || value === undefined || typeof value === "number" || typeof value === "boolean") {
     return value;
   }
-  if (depth >= LOGGER_MAX_DEPTH) return TRUNCATED;
+  if (depth >= maxDepth) return TRUNCATED;
   if (typeof value === "object") {
     if (seen.has(value)) return CIRCULAR;
     seen.add(value);

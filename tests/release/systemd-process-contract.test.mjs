@@ -44,12 +44,12 @@ test("maintenance drill defaults to plan/read-only and covers every required pat
   }
 });
 
-test("deploy uses audited service control and fails closed on residual port ownership", async () => {
-  const deploy = await read("scripts/deploy.sh");
+test("deploy uses audited service control and an atomic release switch", async () => {
+  const deploy = await read("scripts/deploy-immutable.sh");
   assert.doesNotMatch(deploy, /fuser\s+-k\s+3001\/tcp/);
-  assert.match(deploy, /newme-service-control stop "deploy:\$DEPLOY_ID:swap"/);
-  assert.match(deploy, /newme-service-control start "deploy:\$DEPLOY_ID:swap"/);
-  assert.match(deploy, /Port 3001 still held after systemd stop; refusing broad kill/);
+  assert.match(deploy, /\$CONTROL" restart "deploy:\$ID:switch"/);
+  assert.match(deploy, /\$CONTROL" restart "deploy:\$ID:rollback"/);
+  assert.match(deploy, /mv -Tf "\$CURRENT_NEXT" "\$CURRENT"/);
 });
 
 test("versioned health probe accepts the deployed status and never mutates processes", async () => {
@@ -65,17 +65,17 @@ test("forensic log path, installer, and logrotate contract are aligned", async (
     read("scripts/install-systemd-assets.sh"),
     read("infra/logrotate/newme-forensic"),
   ]);
-  assert.match(hook, /LOG_FILE="\\$LOG_DIR\\/newme-forensic\\.log"/);
-  assert.match(installer, /infra\\/logrotate\\/newme-forensic/);
-  assert.match(installer, /var\\/log\\/newme-forensic\\.log/);
-  assert.match(rotate, /var\\/log\\/newme-forensic\\/newme-forensic\\.log/);
+  assert.match(hook, /LOG_FILE="\$LOG_DIR\/newme-forensic\.log"/);
+  assert.match(installer, /infra\/logrotate\/newme-forensic/);
+  assert.match(installer, /var\/log\/newme-forensic\/newme-forensic\.log/);
+  assert.match(rotate, /var\/log\/newme-forensic\/newme-forensic\.log/);
   assert.match(rotate, /create 0640 root adm/);
   assert.match(rotate, /maxsize 10M/);
 });
 
 test("deploy refuses to build before versioned service assets are installed", async () => {
-  const deploy = await read("scripts/deploy.sh");
-  assert.match(deploy, /Missing versioned release asset/);
-  assert.match(deploy, /install-systemd-assets\\.sh/);
-  assert.match(deploy, /Deploy aborted before service checks or build/);
+  const deploy = await read("scripts/deploy-immutable.sh");
+  assert.match(deploy, /missing versioned release asset/);
+  assert.match(deploy, /unexpected FragmentPath/);
+  assert.match(deploy, /legacy drop-in ownership remains/);
 });

@@ -174,7 +174,7 @@ export async function createServerSupabase(
         secure: true,
         httpOnly: false,
       });
-      _cookieStore.set("sb-vfopmpxlhwzpxqegayew-refresh-token", refreshed.refreshToken, {
+      _cookieStore.set(names.refreshToken, refreshed.refreshToken, {
         path: "/",
         maxAge: 2592000,
         sameSite: "strict",

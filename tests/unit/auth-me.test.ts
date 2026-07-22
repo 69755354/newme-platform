@@ -10,16 +10,17 @@ import { describe, it, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 // ── Mock state (module-level so tests can configure per-case) ──
-const mockGetUser: any = mock.fn();
-const mockProfileSingle: any = mock.fn();
-const mockLoggerError: any = mock.fn();
-const mockCookieSet: any = mock.fn();
-let mockRefreshedCookies: any[] = [];
+const mockGetUser = mock.fn<() => Promise<unknown>>();
+const mockProfileSingle = mock.fn<() => Promise<unknown>>();
+type LoggedError = { operation?: string; request_id?: string };
+const mockLoggerError = mock.fn<(payload: LoggedError) => void>();
+const mockCookieSet = mock.fn<(name: string, value: string, options?: unknown) => void>();
+let mockRefreshedCookies: Array<{ name: string; value: string; options: Record<string, unknown> }> = [];
 let mockRefreshAttempted = false;
 
 // ── Mock NextResponse ──
 const mockNextResponse = {
-  json: (body: any, init?: any) => ({
+  json: (body: unknown, init?: { status?: number }) => ({
     status: init?.status || 200,
     body,
     cookies: { set: mockCookieSet },
@@ -65,6 +66,20 @@ mock.module("@supabase/supabase-js", {
 // ── Import route AFTER mocks ──
 const { GET } = await import("../../src/app/api/auth/me/route.js");
 
+type TestResponse = {
+  status: number;
+  body: {
+    error: { message?: string };
+    userId?: string;
+    email?: string;
+    isActive?: boolean;
+    role?: string;
+  };
+};
+
+async function getResponse(request: Request): Promise<TestResponse> {
+  return (await GET(request)) as unknown as TestResponse;
+}
 // ── Helpers ──
 function makeRequest(headers = {}) {
   return new Request("http://localhost:3001/api/auth/me", { headers });
@@ -97,7 +112,7 @@ describe("auth/me", () => {
       data: { user: null },
       error: null,
     }));
-    const res: any = await GET(makeRequest());
+    const res = await getResponse(makeRequest());
     assert.equal(res.status, 401);
     assert.equal(res.body.error, "unauthorized");
   });
@@ -107,7 +122,7 @@ describe("auth/me", () => {
       data: { user: null },
       error: new Error("invalid token"),
     }));
-    const res: any = await GET(makeRequest({ authorization: "Bearer bad-token" }));
+    const res = await getResponse(makeRequest({ authorization: "Bearer bad-token" }));
     assert.equal(res.status, 401);
   });
 
@@ -120,7 +135,7 @@ describe("auth/me", () => {
       data: VALID_PROFILE,
       error: null,
     }));
-    const res: any = await GET(makeRequest({ authorization: "Bearer valid-token" }));
+    const res = await getResponse(makeRequest({ authorization: "Bearer valid-token" }));
     assert.equal(res.status, 200);
     assert.equal(res.body.userId, "user-1");
     assert.equal(res.body.email, "test@newme.ae");
@@ -137,7 +152,7 @@ describe("auth/me", () => {
       data: VALID_PROFILE,
       error: null,
     }));
-    const res: any = await GET(makeRequest({ cookie: "sb-access-token=tok" }));
+    const res = await getResponse(makeRequest({ cookie: "sb-access-token=tok" }));
     assert.equal(res.status, 200);
     assert.equal(res.body.userId, "user-1");
   });
@@ -155,7 +170,7 @@ describe("auth/me", () => {
       data: VALID_PROFILE,
       error: null,
     }));
-    const res: any = await GET(makeRequest({ cookie: "sb-access-token=expired" }));
+    const res = await getResponse(makeRequest({ cookie: "sb-access-token=expired" }));
     assert.equal(res.status, 200);
     assert.equal(mockCookieSet.mock.calls.length, 2);
     assert.equal(mockCookieSet.mock.calls[0].arguments[0], "sb-auth-token");
@@ -169,7 +184,7 @@ describe("auth/me", () => {
       data: { user: null },
       error: null,
     }));
-    const res: any = await GET(makeRequest({ cookie: "sb-access-token=expired" }));
+    const res = await getResponse(makeRequest({ cookie: "sb-access-token=expired" }));
     assert.equal(res.status, 401);
     assert.equal(res.body.error.message, "Token refresh failed");
   });
@@ -180,7 +195,7 @@ describe("auth/me", () => {
       data: { user: null },
       error: null,
     }));
-    const res: any = await GET(makeRequest({ cookie: "sb-access-token=tok" }));
+    const res = await getResponse(makeRequest({ cookie: "sb-access-token=tok" }));
     assert.equal(res.status, 401);
     assert.equal(res.body.error, "unauthorized");
   });
@@ -194,7 +209,7 @@ describe("auth/me", () => {
       data: { ...VALID_PROFILE, is_active: false },
       error: null,
     }));
-    const res: any = await GET(makeRequest({ authorization: "Bearer valid-token" }));
+    const res = await getResponse(makeRequest({ authorization: "Bearer valid-token" }));
     assert.equal(res.status, 401);
     assert.equal(res.body.error, "inactive_account");
   });
@@ -206,7 +221,7 @@ describe("auth/me", () => {
       data: { user: VALID_USER },
       error: null,
     }));
-    const res: any = await GET(makeRequest({ authorization: "Bearer valid-token" }));
+    const res = await getResponse(makeRequest({ authorization: "Bearer valid-token" }));
     assert.equal(res.status, 500);
     assert.equal(res.body.error, "internal_error");
   });
@@ -220,7 +235,7 @@ describe("auth/me", () => {
       data: null,
       error: { code: "PGRST116", message: "not found" },
     }));
-    const res: any = await GET(makeRequest({ authorization: "Bearer valid-token" }));
+    const res = await getResponse(makeRequest({ authorization: "Bearer valid-token" }));
     assert.equal(res.status, 500);
     assert.equal(res.body.error, "internal_error");
   });
@@ -229,7 +244,7 @@ describe("auth/me", () => {
     mockGetUser.mock.mockImplementation(async () => {
       throw new Error("unexpected crash");
     });
-    const res: any = await GET(makeRequest({ authorization: "Bearer valid-token" }));
+    const res = await getResponse(makeRequest({ authorization: "Bearer valid-token" }));
     assert.equal(res.status, 500);
     assert.equal(res.body.error, "internal_error");
     assert.equal(mockLoggerError.mock.calls.length, 1);
@@ -243,7 +258,7 @@ describe("auth/me", () => {
       data: { user: null },
       error: null,
     }));
-    const res: any = await GET(makeRequest());
+    const res = await getResponse(makeRequest());
     const body = JSON.stringify(res.body);
     assert.ok(!body.includes("_dbg_key"), "response must not contain _dbg_key");
   });

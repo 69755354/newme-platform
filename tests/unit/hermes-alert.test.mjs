@@ -6,12 +6,14 @@ import { spawn } from "node:child_process";
 import test from "node:test";
 
 const script = new URL("../../infra/observability/hermes-alert-state-v1.sh", import.meta.url);
+const adapter = new URL("../../infra/observability/hermes-alert-notifier-v1.sh", import.meta.url);
 
-async function runAlert({ stateDir, notifier, eventsFile, event, summary, expectCode = 0, threshold }) {
+async function runAlert({ stateDir, notifier, eventsFile, event, summary, expectCode = 0, threshold, extraEnv = {} }) {
   const env = {
     ...process.env,
     HERMES_ALERT_STATE_DIR: stateDir,
     HERMES_ALERT_EVENTS: eventsFile || "",
+    ...extraEnv,
   };
   if (notifier !== undefined) env.HERMES_ALERT_NOTIFIER = notifier;
   if (threshold !== undefined) env.HERMES_ALERT_THRESHOLD = threshold;
@@ -41,6 +43,42 @@ async function events(eventsFile) {
   return readFile(eventsFile, "utf8").catch(() => "");
 }
 
+async function runCommand(command, args, env, expectCode = 0) {
+  const result = await new Promise((resolve) => {
+    const child = spawn("bash", [command.pathname, ...args], {
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("close", (code) => resolve({ code, stderr }));
+  });
+  assert.equal(result.code, expectCode, result.stderr);
+}
+
+test("adapter calls source-only production functions and direct execution is inert", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hermes-alert-adapter-"));
+  const library = join(root, "hermes-alert.sh");
+  const eventsFile = join(root, "events.log");
+  await writeFile(library, [
+    "#!/usr/bin/env bash",
+    'hermes_alert() { printf "alert %s %s %s\\n" "$1" "$2" "$3" >> "$HERMES_ALERT_EVENTS"; }',
+    'hermes_ok() { printf "recovery %s\\n" "$1" >> "$HERMES_ALERT_EVENTS"; }',
+    "",
+  ].join("\n"), { mode: 0o700 });
+
+  await runCommand(new URL("file://" + library), [], { HERMES_ALERT_EVENTS: eventsFile });
+  assert.equal(await events(eventsFile), "");
+
+  const env = { HERMES_ALERT_LIBRARY: library, HERMES_ALERT_EVENTS: eventsFile };
+  await runCommand(adapter, ["alert", "login-probe", "threshold reached"], env);
+  await runCommand(adapter, ["recovery", "login-probe", "probe recovered"], env);
+  const log = await events(eventsFile);
+  assert.equal((log.match(/^alert /gm) || []).length, 1);
+  assert.equal((log.match(/^recovery /gm) || []).length, 1);
+});
+
+
 const recordingNotifier = [
   "#!/usr/bin/env bash",
   'printf "%s %s %s\\n" "$1" "$2" "$3" >> "$HERMES_ALERT_EVENTS"',
@@ -69,23 +107,45 @@ test("default threshold is two, suppresses duplicates, recovers once, and re-ale
   assert.equal((log.match(/^recovery /gm) || []).length, 1);
 });
 
-test("failed alert and recovery transport remain retryable", async () => {
-  const stateDir = await mkdtemp(join(tmpdir(), "hermes-alert-retry-"));
-  const eventsFile = join(stateDir, "events.log");
-  const failing = await makeNotifier(stateDir, "#!/usr/bin/env bash\nexit 1\n", "failing.sh");
-  const working = await makeNotifier(stateDir, recordingNotifier, "working.sh");
+test("adapter transport failures remain retryable for alert and recovery", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hermes-alert-retry-"));
+  const stateDir = join(root, "state");
+  const eventsFile = join(root, "events.log");
+  const library = join(root, "hermes-alert.sh");
+  await writeFile(library, [
+    "#!/usr/bin/env bash",
+    'hermes_alert() { printf "alert %s %s %s\\n" "$1" "$2" "$3" >> "$HERMES_ALERT_EVENTS"; return "${HERMES_FIXTURE_ALERT_RC:-0}"; }',
+    'hermes_ok() { printf "recovery %s\\n" "$1" >> "$HERMES_ALERT_EVENTS"; return "${HERMES_FIXTURE_OK_RC:-0}"; }',
+    "",
+  ].join("\n"), { mode: 0o700 });
 
-  await runAlert({ stateDir, notifier: failing, eventsFile, event: "failure", summary: "failure one" });
-  await runAlert({ stateDir, notifier: failing, eventsFile, event: "failure", summary: "failure two", expectCode: 1 });
+  const adapterEnv = {
+    HERMES_ALERT_LIBRARY: library,
+    HERMES_ALERT_EVENTS: eventsFile,
+    HERMES_FIXTURE_ALERT_RC: "1",
+  };
+  await runAlert({ stateDir, notifier: adapter.pathname, eventsFile, event: "failure", summary: "failure one", extraEnv: adapterEnv });
+  await runAlert({ stateDir, notifier: adapter.pathname, eventsFile, event: "failure", summary: "failure two", expectCode: 1, extraEnv: adapterEnv });
   assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=pending_failure/);
-  await runAlert({ stateDir, notifier: working, eventsFile, event: "failure", summary: "retry alert" });
+
+  await runAlert({
+    stateDir, notifier: adapter.pathname, eventsFile, event: "failure", summary: "retry alert",
+    extraEnv: { ...adapterEnv, HERMES_FIXTURE_ALERT_RC: "0" },
+  });
   assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=firing/);
 
-  await runAlert({ stateDir, notifier: failing, eventsFile, event: "recovery", summary: "recovery fails", expectCode: 1 });
+  await runAlert({
+    stateDir, notifier: adapter.pathname, eventsFile, event: "recovery", summary: "recovery fails",
+    expectCode: 1, extraEnv: { ...adapterEnv, HERMES_FIXTURE_ALERT_RC: "0", HERMES_FIXTURE_OK_RC: "1" },
+  });
   assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=pending_recovery/);
-  await runAlert({ stateDir, notifier: working, eventsFile, event: "recovery", summary: "retry recovery" });
+
+  await runAlert({
+    stateDir, notifier: adapter.pathname, eventsFile, event: "recovery", summary: "retry recovery",
+    extraEnv: { ...adapterEnv, HERMES_FIXTURE_ALERT_RC: "0", HERMES_FIXTURE_OK_RC: "0" },
+  });
   assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=ok/);
-  assert.equal((await events(eventsFile)).match(/^recovery /gm)?.length, 1);
+  assert.equal((await events(eventsFile)).match(/^recovery /gm)?.length, 2);
 });
 
 test("initializes a persistent user directory and exposes missing notifier or path errors", async () => {

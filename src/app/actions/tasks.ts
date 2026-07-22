@@ -34,7 +34,7 @@ export async function updateTask(taskId: string, updates: UpdateTaskInput) {
   const updateData: TaskUpdate = {
     title: updates.title.trim(),
     assignee_id: updates.assignee_id,
-    due_at: updates.due_at,
+    due_at: updates.due_at ?? undefined,
   }
 
   const { error: err } = await supabase

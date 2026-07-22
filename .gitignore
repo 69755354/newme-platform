@@ -7,6 +7,15 @@ node_modules/
 logs/
 *.log
 
+# Playwright / E2E artifacts
+e2e/.auth/
+e2e-results.json
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+*.trace.zip
+
 # Python cache
 __pycache__/
 *.pyc

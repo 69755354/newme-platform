@@ -33,7 +33,7 @@ interface Props {
   showSalesDropdown: boolean;
   setShowSalesDropdown: (v: boolean) => void;
   reassigning: boolean;
-  transferHistory: Array<{ id: string; event_type: string; event_data: import("@/types/database").Json | null; description: string | null; created_at: string | null; user_id: string | null }>;
+  transferHistory: Array<{ id: string; event_type: string; event_data: import("@/types/database").Json | null; description: string | null; created_at: string | null; user_id: string | null; operator?: { full_name: string | null } | null }>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -196,7 +196,7 @@ export default function LeadCustomerProfile({
             {lead.created_at && (
               <Field label={t("leadDetail.createdAt") || "Created"}>
                 <span className="text-xs text-muted-foreground">
-                  {fmtDubai(lead.created_at, { locale: "zh-CN", hour: "2-digit", minute: "2-digit" })}
+                  {fmtDubai(lead.created_at ?? undefined, { locale: "zh-CN", hour: "2-digit", minute: "2-digit" })}
                 </span>
               </Field>
             )}

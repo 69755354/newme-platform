@@ -58,7 +58,7 @@ interface Props {
   updating: boolean;
   onToggleMilestone: (milestoneKey: string, currentlyCompleted: boolean, notes?: string) => Promise<boolean>;
   onReopenMilestone: (milestoneKey: string, reason: string) => Promise<boolean>;
-  onUpdateField: (field: string, value: any, eventType?: string, eventDesc?: string) => void;
+  onUpdateField: LeadFieldUpdater;
   onWon: (note?: string) => Promise<boolean>;
   onLost: (note?: string) => Promise<boolean>;
   onOpenQuoteCalculator: () => void;

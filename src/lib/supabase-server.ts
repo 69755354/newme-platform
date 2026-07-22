@@ -30,6 +30,10 @@ type SsrCookie = {
   expires_at?: number;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function parseSsrCookieValue(value: string): SsrCookie | null {
   const parsed: unknown = JSON.parse(value);
   return typeof parsed === "object" && parsed !== null ? (parsed as SsrCookie) : null;
@@ -117,8 +121,7 @@ async function tryRefreshToken(
       return { session: null, failure: classifyRefreshFailure(res.status, data) };
     }
     if (
-      typeof data !== "object" ||
-      data === null ||
+      !isRecord(data) ||
       typeof data.access_token !== "string" ||
       typeof data.refresh_token !== "string" ||
       typeof data.expires_in !== "number"

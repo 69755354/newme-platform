@@ -24,7 +24,7 @@ if [ "$THRESHOLD" -lt 1 ]; then
 fi
 
 mkdir -p "$STATE_DIR"
-SAFE_KEY=$(printf '%s' "$ALERT_KEY" | tr -c 'A-Za-z0-9_.-' '_')
+SAFE_KEY=$(printf '%s' "$ALERT_KEY" | sed 's/[^A-Za-z0-9_.-]/_/g')
 STATE_FILE="$STATE_DIR/$SAFE_KEY.state"
 LOCK_FILE="$STATE_FILE.lock"
 exec 9>"$LOCK_FILE"

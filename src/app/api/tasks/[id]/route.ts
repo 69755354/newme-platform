@@ -1,6 +1,9 @@
 // RBAC: user (authenticated)
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase-server'
+import type { Database } from '@/types/database'
+
+type TaskUpdate = Database['public']['Tables']['tasks']['Update']
 
 const VALID_STATUSES = ['pending', 'completed', 'cancelled'] as const
 type TaskStatus = (typeof VALID_STATUSES)[number]
@@ -72,7 +75,7 @@ export async function PATCH(
     const { id } = await params
     const body: UpdateTaskBody = await request.json()
 
-    const updateData: Record<string, unknown> = {}
+    const updateData: TaskUpdate = {}
 
     if (body.title !== undefined) {
       if (typeof body.title !== 'string' || body.title.trim().length === 0) {

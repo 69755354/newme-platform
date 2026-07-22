@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import type { Database } from "@/types/database";
 
 /**
  * POST /api/contracts
@@ -250,7 +251,7 @@ export async function GET(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    if (!profile) {
+    if (!profile?.role) {
       return NextResponse.json({ error: "Profile not found" }, { status: 403 });
     }
 
@@ -332,7 +333,7 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    const updates: Record<string, any> = {};
+    const updates: Database["public"]["Tables"]["contracts"]["Update"] = {};
     if (first_payment_status !== undefined) {
       if (!["unpaid", "partial", "paid"].includes(first_payment_status)) {
         return NextResponse.json({ error: "Invalid first_payment_status" }, { status: 400 });

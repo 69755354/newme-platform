@@ -1,6 +1,18 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import type { Database, Json } from "@/types/database";
+
+type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
+type StageEventData = { from_stage?: string; to_stage?: string };
+
+function parseStageEventData(value: Json | null): StageEventData | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return {
+    from_stage: typeof value.from_stage === "string" ? value.from_stage : undefined,
+    to_stage: typeof value.to_stage === "string" ? value.to_stage : undefined,
+  };
+}
 
 /**
  * GET /api/dashboard/pipeline-funnel
@@ -52,7 +64,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const userIdParam = searchParams.get("user_id");
     // Security: sales can only see their own data, ignore user_id param
-    const targetUserId = isManagement ? (userIdParam || user.id) : user.id;
+    const targetUserId = isManagement ? userIdParam : user.id;
 
     // ─── Pipeline stage definitions (ordered) ───
     const STAGE_DEFS = [
@@ -69,7 +81,7 @@ export async function GET(request: NextRequest) {
 
     // ─── Step 1: Query leads count per stage ───
     let leadsQuery = supabase.from("leads").select("id,stage,created_at,updated_at,last_contact_date,assigned_to,customer_name,current_milestone,final_status").eq("archived", false);
-    if (!isManagement) {
+    if (targetUserId) {
       leadsQuery = leadsQuery.eq("assigned_to", targetUserId);
     }
     const { data: leads, error: leadsErr } = await leadsQuery;
@@ -82,7 +94,7 @@ export async function GET(request: NextRequest) {
 
     // ─── Step 2: Build stage counts ───
     const stageCountMap: Record<string, number> = {};
-    const stageLeads: Record<string, any[]> = {};
+    const stageLeads: Record<string, LeadRow[]> = {};
     for (const def of STAGE_DEFS) {
       stageCountMap[def.key] = 0;
       stageLeads[def.key] = [];
@@ -100,7 +112,7 @@ export async function GET(request: NextRequest) {
     // For each stage, we look at leads CURRENTLY in that stage and calculate
     // how long they've been there (days since updated_at or created_at).
     // For "won"/"lost" we look at leads that reached that outcome.
-    function calcAvgDaysInStage(stageKey: string, leadsInStage: any[]): number {
+    function calcAvgDaysInStage(stageKey: string, leadsInStage: LeadRow[]): number {
       if (leadsInStage.length === 0) return 0;
       const now = new Date().getTime();
       let totalDays = 0;
@@ -178,19 +190,20 @@ export async function GET(request: NextRequest) {
     const lostCount = lostStage?.count || 0;
     const lostFromStage: Record<string, number> = {};
     // Look at business_events for stage_change events that ended in lost
-    let eventsQuery = supabase
-      .from("business_events")
-      .select("event_data")
-      .eq("event_type", "stage_change");
-    if (!isManagement) {
-      eventsQuery = eventsQuery.eq("lead_id", supabase.rpc("get_user_leads_ids", { p_user_id: targetUserId }));
-    }
-    const { data: events } = await eventsQuery.limit(500);
-    if (events) {
-      for (const evt of events) {
-        const data = evt.event_data as any;
-        if (data?.to_stage === "lost" && data?.from_stage) {
-          lostFromStage[data.from_stage] = (lostFromStage[data.from_stage] || 0) + 1;
+    const visibleLeadIds = (leads ?? []).map((lead) => lead.id);
+    if (visibleLeadIds.length > 0) {
+      const { data: events } = await supabase
+        .from("business_events")
+        .select("event_data")
+        .eq("event_type", "stage_change")
+        .in("lead_id", visibleLeadIds)
+        .limit(500);
+      if (events) {
+        for (const event of events) {
+          const data = parseStageEventData(event.event_data);
+          if (data?.to_stage === "lost" && data.from_stage) {
+            lostFromStage[data.from_stage] = (lostFromStage[data.from_stage] || 0) + 1;
+          }
         }
       }
     }
@@ -201,8 +214,10 @@ export async function GET(request: NextRequest) {
       totalLeads,
       lostFromStage,
     });
-  } catch (err: any) {
-    const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
+  } catch (err) {
+    const message = process.env.NODE_ENV === "production"
+      ? "Internal server error"
+      : err instanceof Error ? err.message : "Unknown error";
     console.error("[pipeline-funnel] Error:", err);
     return NextResponse.json({ error: message }, { status: 500 });
   }

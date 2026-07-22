@@ -43,6 +43,9 @@
 
 import { useCallback } from "react";
 import { createClient } from "@/lib/supabase";
+import type { Database } from "@/types/database";
+
+type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
 import { toast } from "sonner";
 import type { Lead } from "./useLeadsData";
 import { PIPELINE_STAGES } from "../_utils/constants";
@@ -185,10 +188,12 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
 
       await supabase.from("leads").update({ assigned_to: newUserId, updated_at: new Date().toISOString() }).eq("id", leadId);
 
-      await supabase.from("transfer_history").insert({
-        lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId,
-        reason: "manual_reassign", transferred_by: currentUserId,
-      });
+      if (oldLead.assigned_to) {
+        await supabase.from("transfer_history").insert({
+          lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId,
+          reason: "manual_reassign", transferred_by: currentUserId,
+        });
+      }
 
       await supabase.from("activities").insert({
         lead_id: leadId, type: "transfer", content: `Reassigned from ${oldName} to ${newUserName}`,
@@ -286,7 +291,7 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
       const now = new Date().toISOString();
       const auto = STAGE_AUTO[newStage];
       // won/lost are terminal → persist to final_status, not stage
-      const updates: Record<string, any> = { updated_at: now, last_contact_date: now };
+      const updates: LeadUpdate = { updated_at: now, last_contact_date: now };
       if (newStage === "won" || newStage === "lost") {
         updates.final_status = newStage;
       } else {

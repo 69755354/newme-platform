@@ -38,10 +38,10 @@ import {
   Loader2,
 } from "lucide-react";
 import { fmtAED } from "@/shared/utils/format";
-import type { Database } from "@/types/database";
+import type { Database, Json } from "@/types/database";
 
 /* ─── Types ─── */
-interface QuotationLineItem {
+interface QuotationLineItem extends Record<string, Json> {
   product_id: string;
   product_name: string;
   description: string;
@@ -74,8 +74,8 @@ interface Quotation {
   sent_at: string | null;
   accepted_at: string | null;
   rejected_at: string | null;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
   leads?: {
     id: string;
     customer_name: string | null;

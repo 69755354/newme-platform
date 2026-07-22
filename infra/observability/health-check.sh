@@ -62,6 +62,7 @@ record_alert() {
   transition="$(bash "$ALERT_SCRIPT" "health-check" "$event" "$summary" 2>&1)" || status=$?
   printf '%s\n' "$transition"
   if printf '%s' "$transition" | grep -q 'capture=1'; then
+    /opt/hermes-scripts/observability/incident-capture.sh "health-check" "$summary" &
   fi
   if [ "$status" -ne 0 ]; then
     echo "[$TIMESTAMP] ALERT_STATE_FAILED: retry will occur on the next run" >&2

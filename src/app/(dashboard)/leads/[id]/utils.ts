@@ -1,4 +1,6 @@
 // Pure utility helpers for the Lead Detail three-column layout.
+
+import type { Lead } from "./types";
 // Extracted verbatim from page.tsx (logic unchanged) so every column component
 // can share them without duplication. Plain .ts — no JSX, no React.
 
@@ -17,7 +19,7 @@ export function daysSince(d: string | null): number | null {
 // Build the Project Info batch-save draft from a lead row. Used both on initial
 // fetch (keep form in sync with persisted values) and by resetProjectInfoDraft
 // (undo local edits back to the last saved values).
-export function projectDraftFromLead(l: any) {
+export function projectDraftFromLead(l: Pick<Lead, "project_type" | "emirate" | "area" | "ac_brand" | "customer_budget"> | null | undefined) {
   return {
     project_type: l?.project_type || "",
     emirate: l?.emirate || "",

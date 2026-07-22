@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { cookies } from "next/headers";
+import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
 
 export interface RefreshedCookie {
   name: string;
@@ -60,16 +61,17 @@ export function parseCookieHeader(cookieHeader: string): Array<{ name: string; v
  */
 function extractTokens(
   allCookies: Array<{ name: string; value: string }>,
+  names: ReturnType<typeof getSupabaseCookieNames>,
 ): { accessToken?: string; refreshToken?: string } {
   let a: string | undefined;
   let r: string | undefined;
-  const c = allCookies.find((x) => x.name === "sb-vfopmpxlhwzpxqegayew-auth-token");
+  const c = allCookies.find((x) => x.name === names.authToken);
   if (c) {
     const s = parseSsrCookie(c.value);
     if (s?.access_token) {
       a = s.access_token;
       if (s.expires_at && s.expires_at * 1000 < Date.now()) {
-        const x = allCookies.find((y) => y.name === "sb-vfopmpxlhwzpxqegayew-refresh-token");
+        const x = allCookies.find((y) => y.name === names.refreshToken);
         r = x?.value || s.refresh_token;
         a = undefined;
       }
@@ -146,6 +148,7 @@ export async function createServerSupabase(
   let refreshAttempted = false;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const names = getSupabaseCookieNames(supabaseUrl);
 
   // ── 1. Obtain cookies ──
   const _cookieStore = cookieString === undefined ? await cookies() : null;
@@ -154,7 +157,7 @@ export async function createServerSupabase(
     : _cookieStore!.getAll();
 
   // ── 2. Extract tokens ──
-  const { accessToken: initialAccessToken, refreshToken } = extractTokens(allCookies);
+  const { accessToken: initialAccessToken, refreshToken } = extractTokens(allCookies, names);
   let accessToken = initialAccessToken;
 
   // ── 2. If token is expired, try to refresh ──
@@ -171,18 +174,18 @@ export async function createServerSupabase(
       });
       // Only set cookies when using the legacy cookies() API (not explicit header)
       refreshedCookies = [
-        { name: "sb-vfopmpxlhwzpxqegayew-auth-token", value: newPayload, options: { path: "/", maxAge: refreshed.expiresAt - Math.floor(Date.now() / 1000), sameSite: "strict", secure: true, httpOnly: false } },
-        { name: "sb-vfopmpxlhwzpxqegayew-refresh-token", value: refreshed.refreshToken, options: { path: "/", maxAge: 2592000, sameSite: "strict", secure: true, httpOnly: false } },
+        { name: names.authToken, value: newPayload, options: { path: "/", maxAge: refreshed.expiresAt - Math.floor(Date.now() / 1000), sameSite: "strict", secure: true, httpOnly: false } },
+        { name: names.refreshToken, value: refreshed.refreshToken, options: { path: "/", maxAge: 2592000, sameSite: "strict", secure: true, httpOnly: true } },
       ];
       if (_cookieStore) {
-        _cookieStore.set("sb-vfopmpxlhwzpxqegayew-auth-token", newPayload, {
+        _cookieStore.set(names.authToken, newPayload, {
         path: "/",
         maxAge: refreshed.expiresAt - Math.floor(Date.now() / 1000),
         sameSite: "strict",
         secure: true,
         httpOnly: false,
       });
-      _cookieStore.set("sb-vfopmpxlhwzpxqegayew-refresh-token", refreshed.refreshToken, {
+      _cookieStore.set(names.refreshToken, refreshed.refreshToken, {
         path: "/",
         maxAge: 2592000,
         sameSite: "strict",

@@ -52,13 +52,13 @@ function createCookieResponseMock() {
           this.cookiesSet.push({ name, value, options });
           const serialized = this.cookiesSet.map((cookie) => {
             const attributes = [
-              \`Path=\${cookie.options.path ?? "/"}\`,
-              \`Max-Age=\${cookie.options.maxAge ?? 0}\`,
+              `Path=${cookie.options.path ?? "/"}`,
+              `Max-Age=${cookie.options.maxAge ?? 0}`,
               cookie.options.httpOnly ? "HttpOnly" : "",
-              cookie.options.sameSite ? \`SameSite=\${cookie.options.sameSite}\` : "",
+              cookie.options.sameSite ? `SameSite=${cookie.options.sameSite}` : "",
               cookie.options.secure ? "Secure" : "",
             ].filter(Boolean);
-            return \`\${cookie.name}=\${encodeURIComponent(cookie.value)}; \${attributes.join("; ")}\`;
+            return `${cookie.name}=${encodeURIComponent(cookie.value)}; ${attributes.join("; ")}`;
           }).join(", ");
           this.headers.set("set-cookie", serialized);
         },
@@ -82,7 +82,7 @@ function createCookieResponseMock() {
 function cookieHeaderFromSetCookie(response) {
   return response.headers
     .get("set-cookie")
-    .split(/,\\s*(?=[^;]+=)/)
+    .split(/,\s*(?=[^;]+=)/)
     .map((cookie) => cookie.split(";", 1)[0])
     .join("; ");
 }
@@ -105,13 +105,13 @@ test("browser-readable session cookie contains no refresh token", async () => {
 
   const readable = response.cookiesSet
     .filter((cookie) => cookie.options.httpOnly !== true)
-    .map((cookie) => \`\${cookie.name}=\${encodeURIComponent(cookie.value)}\`)
+    .map((cookie) => `${cookie.name}=${encodeURIComponent(cookie.value)}`)
     .join("; ");
   assert.doesNotMatch(readable, /refresh-token|refresh_token/);
-  assert.deepEqual(parseAuthSessionCookie(readable, names.authToken), {
-    access_token: "access-token",
-    expires_at: assert.any(Number),
-  });
+  const parsed = parseAuthSessionCookie(readable, names.authToken);
+  assert.equal(parsed?.access_token, "access-token");
+  assert.equal(typeof parsed?.expires_at, "number");
+  assert.equal(Object.hasOwn(parsed ?? {}, "refresh_token"), false);
   assert.equal(response.cookiesSet.find((cookie) => cookie.name === names.refreshToken).options.httpOnly, true);
 });
 
@@ -201,11 +201,11 @@ test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives au
   });
 
   for (const authCookie of [
-    \`\${names.authToken}=\${encodeURIComponent(JSON.stringify({ access_token: "expired-access", expires_at: 1 }))}\`,
+    `${names.authToken}=${encodeURIComponent(JSON.stringify({ access_token: "expired-access", expires_at: 1 }))}`,
     "",
   ]) {
     capturedHeaders = undefined;
-    const refreshOnlyHeader = [authCookie, \`\${names.refreshToken}=refresh-token\`].filter(Boolean).join("; ");
+    const refreshOnlyHeader = [authCookie, `${names.refreshToken}=refresh-token`].filter(Boolean).join("; ");
     await server.createServerSupabase(undefined, refreshOnlyHeader);
     assert.equal(capturedHeaders.Authorization, "Bearer refreshed-access");
   }

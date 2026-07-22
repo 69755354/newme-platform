@@ -26,7 +26,7 @@ test("session cookies use dynamic names and secure server refresh attributes", a
   assert.match(cookieNames, /new URL\(supabaseUrl/);
   assert.doesNotMatch(cookieNames + server + session, /vfopmpxlhwzpxqegayew/);
   assert.match(server, /httpOnly: true/);
-  assert.match(session, /httpOnly: true/);
+  assert.match(session, /JSON\.stringify\(\{[\\s\\S]*access_token: accessToken/);\n  assert.doesNotMatch(session, /set\(authToken, accessToken/);\n  assert.match(server, /_cookieStore\.set\(names\.refreshToken/);\n  assert.match(session, /httpOnly: true/);
   assert.match(session, /sameSite: "strict"/);
   assert.match(session, /secure: true/);
 });
@@ -37,4 +37,20 @@ test("login delegates cookie creation to the same-origin server endpoint", async
   assert.match(login, /\/api\/auth\/session/);
   assert.doesNotMatch(login, /document\.cookie\s*=.*refresh/);
   assert.match(proxy, /"\/api\/auth\/session"/);
+});
+
+test("session cookie payload is consumable by the SSR token parser contract", async () => {
+  const session = await read("src/app/api/auth/session/route.ts");
+  const server = await read("src/lib/supabase-server.ts");
+  const payload = JSON.stringify({
+    access_token: "access-token",
+    refresh_token: "refresh-token",
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+  });
+  const parsed = JSON.parse(payload);
+  assert.equal(parsed.access_token, "access-token");
+  assert.equal(parsed.refresh_token, "refresh-token");
+  assert.match(session, /access_token: accessToken/);
+  assert.match(session, /refresh_token: refreshToken/);
+  assert.match(server, /parseSsrCookie/);
 });

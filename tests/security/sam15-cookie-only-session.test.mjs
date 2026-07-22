@@ -206,8 +206,21 @@ test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives au
   ]) {
     capturedHeaders = undefined;
     const refreshOnlyHeader = [authCookie, `${names.refreshToken}=refresh-token`].filter(Boolean).join("; ");
-    await server.createServerSupabase(undefined, refreshOnlyHeader);
+    const refreshedClient = await server.createServerSupabase(undefined, refreshOnlyHeader);
     assert.equal(capturedHeaders.Authorization, "Bearer refreshed-access");
+
+    const refreshedCookies = server.getRefreshedCookies(refreshedClient);
+    const authCookieResult = refreshedCookies.find((cookie) => cookie.name === names.authToken);
+    const refreshCookieResult = refreshedCookies.find((cookie) => cookie.name === names.refreshToken);
+    assert.equal(authCookieResult?.options.httpOnly, false);
+    assert.equal(refreshCookieResult?.options.httpOnly, true);
+    assert.equal(refreshCookieResult?.value, "refreshed-refresh");
+    const parsedRefresh = parseAuthSessionCookie(
+      names.authToken + "=" + encodeURIComponent(authCookieResult?.value ?? ""),
+      names.authToken,
+    );
+    assert.equal(parsedRefresh?.access_token, "refreshed-access");
+    assert.equal(Object.hasOwn(parsedRefresh ?? {}, "refresh_token"), false);
   }
 });
 

@@ -1,12 +1,13 @@
 'use server'
 
 import { createServerSupabase } from '@/lib/supabase-server'
+import type { Database } from '@/types/database'
+
+type TaskUpdate = Database['public']['Tables']['tasks']['Update']
 
 interface UpdateTaskInput {
   title: string
-  description: string | null
-  priority: string
-  assigned_to: string | null
+  assignee_id: string | null
   due_at: string | null
 }
 
@@ -15,7 +16,7 @@ interface UpdateTaskStatusInput {
 }
 
 /**
- * Update task details (title, description, priority, assigned_to, due_at).
+ * Update the task fields that exist in the production tasks contract.
  */
 export async function updateTask(taskId: string, updates: UpdateTaskInput) {
   const supabase = await createServerSupabase()
@@ -24,19 +25,16 @@ export async function updateTask(taskId: string, updates: UpdateTaskInput) {
 
   // Role + ownership gate
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  const isPrivileged = profile?.role && ['admin', 'boss', 'operator'].includes(profile.role)
+  const isPrivileged = profile?.role ? ['admin', 'boss', 'operator'].includes(profile.role) : false
   if (!isPrivileged) {
     const { data: task } = await supabase.from('tasks').select('assignee_id').eq('id', taskId).single()
     if (!task || task.assignee_id !== user.id) throw new Error('Forbidden')
   }
 
-  const updateData: Record<string, any> = {
+  const updateData: TaskUpdate = {
     title: updates.title.trim(),
-    description: updates.description?.trim() || null,
-    priority: updates.priority,
-    assigned_to: updates.assigned_to || null,
+    assignee_id: updates.assignee_id,
     due_at: updates.due_at,
-    updated_at: new Date().toISOString(),
   }
 
   const { error: err } = await supabase
@@ -65,10 +63,7 @@ export async function updateTaskStatus(taskId: string, status: string) {
     if (!task || task.assignee_id !== user.id) throw new Error('Forbidden')
   }
 
-  const updateData: Record<string, any> = {
-    status,
-    updated_at: new Date().toISOString(),
-  }
+  const updateData: TaskUpdate = { status }
 
   if (status === 'done') {
     updateData.completed_at = new Date().toISOString()

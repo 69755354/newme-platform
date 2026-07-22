@@ -1,11 +1,5 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/types/database";
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
-
-type ServerSupabaseClient = SupabaseClient<Database> & {
-  __refreshedCookies?: RefreshedCookie[];
-  __refreshAttempted?: boolean;
-};
 
 export interface RefreshedCookie {
   name: string;
@@ -13,17 +7,33 @@ export interface RefreshedCookie {
   options: Record<string, unknown>;
 }
 
+type ServerSupabaseClient = ReturnType<typeof createClient> & {
+  __refreshedCookies?: RefreshedCookie[];
+  __refreshAttempted?: boolean;
+};
+
 /**
  * Parse the @supabase/ssr-format auth token cookie.
  * Returns the session object or null.
  */
-function parseSsrCookie(value: string): Record<string, any> | null {
+type SsrCookie = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_at?: number;
+};
+
+function parseSsrCookieValue(value: string): SsrCookie | null {
+  const parsed: unknown = JSON.parse(value);
+  return typeof parsed === "object" && parsed !== null ? (parsed as SsrCookie) : null;
+}
+
+function parseSsrCookie(value: string): SsrCookie | null {
   try {
     // The login page stores it as a plain JSON string (not base64)
-    return JSON.parse(value);
+    return parseSsrCookieValue(value);
   } catch {
     try {
-      return JSON.parse(atob(value));
+      return parseSsrCookieValue(atob(value));
     } catch {
       return null;
     }
@@ -137,20 +147,14 @@ export async function createServerSupabase(
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
   // ── 1. Obtain cookies ──
-  let allCookies: Array<{ name: string; value: string }>;
-  let _cookieStore: Awaited<ReturnType<typeof cookies>> | null = null;
-
-  if (cookieString !== undefined) {
-    // Explicit path: parse from raw Cookie header (no next/headers dependency)
-    allCookies = parseCookieHeader(cookieString);
-  } else {
-    // Legacy path: use next/headers cookies() API
-    _cookieStore = await cookies();
-    allCookies = _cookieStore.getAll();
-  }
+  const _cookieStore = cookieString === undefined ? await cookies() : null;
+  const allCookies = cookieString !== undefined
+    ? parseCookieHeader(cookieString)
+    : _cookieStore!.getAll();
 
   // ── 2. Extract tokens ──
-  let { accessToken, refreshToken } = extractTokens(allCookies);
+  const { accessToken: initialAccessToken, refreshToken } = extractTokens(allCookies);
+  let accessToken = initialAccessToken;
 
   // ── 2. If token is expired, try to refresh ──
   if (!accessToken && refreshToken) {
@@ -200,18 +204,17 @@ export async function createServerSupabase(
     headers.Authorization = `Bearer ${effectiveToken}`;
   }
 
-  const client = createClient<Database>(supabaseUrl, anonKey, {
+  const client = createClient(supabaseUrl, anonKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
       detectSessionInUrl: false,
     },
     global: { headers },
-  });
-  const typedClient = client as ServerSupabaseClient;
-  typedClient.__refreshedCookies = refreshedCookies;
-  typedClient.__refreshAttempted = refreshAttempted;
-  return typedClient;
+  }) as ServerSupabaseClient;
+  client.__refreshedCookies = refreshedCookies;
+  client.__refreshAttempted = refreshAttempted;
+  return client;
 }
 
 /**

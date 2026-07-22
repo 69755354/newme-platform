@@ -23,8 +23,6 @@ export function parseAuthSessionCookie(cookieHeader, cookieName) {
       ) {
         return {
           access_token: parsed.access_token,
-          refresh_token:
-            typeof parsed.refresh_token === "string" ? parsed.refresh_token : undefined,
           expires_at:
             typeof parsed.expires_at === "number" ? parsed.expires_at : undefined,
         };

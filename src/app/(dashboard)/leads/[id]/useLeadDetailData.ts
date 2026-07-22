@@ -226,12 +226,13 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         //   populated (FK fk_leads_customer_id now exists per migration
         //   B.1). Currently all 49 leads have customer_id=NULL so this
         //   branch never fires; kept for T1-8 maybeSingle=3 + future-proof.
-        if (l.customer_id) {
+        const customerId = l.customer_id;
+        if (customerId) {
           (async () => {
             const r = await supabase
               .from("customers")
               .select("id, name, email, phone")
-              .eq("id", l.customer_id)
+              .eq("id", customerId)
               .maybeSingle();
             if (r.data) {
               setLead((prev) =>
@@ -260,7 +261,8 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
           event_data: event.event_data ?? null,
           created_at: event.created_at ?? "",
           user_id: event.user_id ?? null,
-        })));
+          operator: event.operator ?? null,
+        }));
         const transfers = l.business_events.filter(
           (ev) => ev.event_type === "transfer"
         );
@@ -271,46 +273,51 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
           event_data: event.event_data ?? null,
           created_at: event.created_at ?? "",
           user_id: event.user_id ?? null,
+          operator: event.operator ?? null,
         })));
       }
       // ─── Independent queries from Batch 2 — soft-error handling ──────
       // Per design §6.4: original code wrapped each independent query in
       //   console.warn (non-fatal). allSettled + per-result check keeps
       //   the same semantics without blocking setError.
-      const batches2 = [
-        ["activities", activitiesRes],
-        ["chat_messages", chatRes],
-        ["v_lead_trace", traceRes],
-      ] as const;
-      for (const [name, r] of batches2) {
-        if (r.status === "fulfilled") {
-          const payload = r.value;
-          if (payload.error) {
-            console.warn(`[LeadDetail] non-fatal fetch (${name}):`, payload.error);
-          } else if (payload.data) {
-            if (name === "activities") {
-              setActivities(payload.data.map((activity) => ({
-                id: activity.id,
-                type: activity.type,
-                content: activity.content ?? "",
-                ai_generated: activity.ai_generated ?? false,
-                created_at: activity.created_at ?? "",
-                user_id: activity.user_id ?? null,
-                metadata: activity.metadata ?? null,
-              })));
-            } else if (name === "chat_messages") {
-              setChatMessages(payload.data.map((message) => ({
-                id: message.id,
-                content: message.content,
-                direction: message.direction,
-                created_at: message.created_at ?? "",
-              })));
-            } else if (name === "v_lead_trace") {
-              setLeadTrace(payload.data as LeadTrace[]);
-            }
-          }
+      if (activitiesRes.status === "fulfilled") {
+        const payload = activitiesRes.value;
+        if (payload.error) {
+          console.warn("[LeadDetail] non-fatal fetch (activities):", payload.error);
+        } else if (payload.data) {
+          setActivities(payload.data.map((activity) => ({
+            id: activity.id,
+            type: activity.type,
+            content: activity.content ?? "",
+            ai_generated: activity.ai_generated ?? false,
+            created_at: activity.created_at ?? "",
+            user_id: activity.user_id ?? null,
+            metadata: activity.metadata ?? null,
+          })));
         }
-        // rejected cases already logged above
+      }
+
+      if (chatRes.status === "fulfilled") {
+        const payload = chatRes.value;
+        if (payload.error) {
+          console.warn("[LeadDetail] non-fatal fetch (chat_messages):", payload.error);
+        } else if (payload.data) {
+          setChatMessages(payload.data.map((message) => ({
+            id: message.id,
+            content: message.content,
+            direction: message.direction,
+            created_at: message.created_at ?? "",
+          })));
+        }
+      }
+
+      if (traceRes.status === "fulfilled") {
+        const payload = traceRes.value;
+        if (payload.error) {
+          console.warn("[LeadDetail] non-fatal fetch (v_lead_trace):", payload.error);
+        } else if (payload.data) {
+          setLeadTrace(payload.data as LeadTrace[]);
+        }
       }
 
       if (nextTaskRes.status === "fulfilled") {

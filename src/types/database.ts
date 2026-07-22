@@ -3180,7 +3180,9 @@ export type Database = {
           assignee_id: string | null
           completed_at: string | null
           created_at: string
+          description: string | null
           due_at: string
+          priority: string | null
           id: string
           lead_id: string
           source: string | null
@@ -3191,7 +3193,9 @@ export type Database = {
           assignee_id?: string | null
           completed_at?: string | null
           created_at?: string
+          description?: string | null
           due_at: string
+          priority?: string | null
           id?: string
           lead_id: string
           source?: string | null
@@ -3202,7 +3206,9 @@ export type Database = {
           assignee_id?: string | null
           completed_at?: string | null
           created_at?: string
+          description?: string | null
           due_at?: string
+          priority?: string | null
           id?: string
           lead_id?: string
           source?: string | null

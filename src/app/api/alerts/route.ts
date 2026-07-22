@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     .eq("id", user.id)
     .single();
 
-  if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 403 });
+  if (!profile?.role) return NextResponse.json({ error: "Profile not found" }, { status: 403 });
 
   const isManagement = ["admin", "boss", "operator"].includes(profile.role);
   const cacheKey = `alerts:${isManagement ? profile.role : "sales"}:${isManagement ? "all" : user.id}`;

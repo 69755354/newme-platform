@@ -1,4 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 import { cookies } from "next/headers";
 
 export interface RefreshedCookie {
@@ -7,7 +8,7 @@ export interface RefreshedCookie {
   options: Record<string, unknown>;
 }
 
-type ServerSupabaseClient = ReturnType<typeof createClient> & {
+type ServerSupabaseClient = SupabaseClient<Database> & {
   __refreshedCookies?: RefreshedCookie[];
   __refreshAttempted?: boolean;
 };
@@ -204,7 +205,7 @@ export async function createServerSupabase(
     headers.Authorization = `Bearer ${effectiveToken}`;
   }
 
-  const client = createClient(supabaseUrl, anonKey, {
+  const client = createClient<Database>(supabaseUrl, anonKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,

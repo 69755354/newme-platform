@@ -148,6 +148,7 @@ export default function TaskDetailPage() {
     try {
       await updateTask(task.id, {
         title: editTitle.trim(),
+        priority: editPriority,
         assigned_to: editAssignedTo || null,
         due_at: editDueAt ? new Date(editDueAt).toISOString() : null,
       });

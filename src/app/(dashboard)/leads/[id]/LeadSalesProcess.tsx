@@ -40,6 +40,8 @@ import { STAGES, STAGE_COLORS } from "./types";
 import { fmtAED, daysSince } from "./utils";
 import type {
   Lead,
+  LeadField,
+  LeadFieldUpdater,
   LeadTrace,
   LeadMilestone,
   FollowUpLog,
@@ -79,11 +81,9 @@ interface Props {
   lang: "en" | "zh";
 }
 
-type MissingField = {
-  key: string;
-  label: string;
-  kind: "text" | "json" | "contract";
-};
+type MissingField =
+  | { key: LeadField; label: string; kind: "text" | "json" }
+  | { key: "contract"; label: string; kind: "contract" };
 
 export default function LeadSalesProcess({
   lead,

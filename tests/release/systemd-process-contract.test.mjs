@@ -51,3 +51,9 @@ test("deploy uses audited service control and fails closed on residual port owne
   assert.match(deploy, /newme-service-control start "deploy:\$DEPLOY_ID:swap"/);
   assert.match(deploy, /Port 3001 still held after systemd stop; refusing broad kill/);
 });
+
+test("versioned health probe accepts the deployed status and never mutates processes", async () => {
+  const probe = await read("infra/observability/newme-service-health.py");
+  assert.match(probe, /ACCEPTED_STATUSES = \{"ok", "healthy"\}/);
+  assert.doesNotMatch(probe, /\b(?:pkill|kill|systemctl|fuser)\b/);
+});

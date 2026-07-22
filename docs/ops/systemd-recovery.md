@@ -11,6 +11,7 @@ It does not identify the sender of the 2026-07-22 13:00 stop; the available hist
 - `Restart=always`, `RestartSec=5`, and `StartLimitBurst=5` per 60 seconds bound recovery loops.
 - Approved service mutations use `/usr/local/sbin/newme-service-control` with a reason. The wrapper writes actor, action, release, build, and manifest identity to the journal.
 - `ExecStopPost` records exit/signal/result, cgroup, port, release, build, invocation, and recent invocation journal. It cannot by itself recover the original sender of an arbitrary D-Bus/systemd stop request.
+- Health monitoring uses `infra/observability/newme-service-health.py`. It accepts the deployed API statuses `ok` and `healthy`, reports failure, and never kills or restarts a process.
 
 ## Install and rollback plan
 
@@ -18,8 +19,9 @@ Do not run these steps outside an approved maintenance window. Before changes, s
 
 1. Validate the reviewed files with `systemd-analyze verify infra/systemd/newme-platform.service` and the release tests.
 2. Install the unit as root-owned mode `0644`, the readiness and forensic helpers under `/usr/local/libexec/newme/` as root-owned mode `0755`, and the control wrapper under `/usr/local/sbin/` as root-owned mode `0755`.
-3. Run `systemctl daemon-reload`, verify the loaded fragment and drop-ins, then restart only after rollback artifacts are confirmed.
-4. Roll back by restoring the saved unit and helpers, running `systemctl daemon-reload`, resetting the failed counter if required, and restarting the prior `/opt/newme/current` release.
+3. Disable the unversioned `/home/ubuntu/.hermes/scripts/health-check.py` as a NewMe process restarter and repoint its scheduler to the versioned read-only probe. Preserve its checksum and scheduler configuration as evidence. It currently treats only `healthy` as success and uses `pkill -f "next start -p 3001"`; leaving it active will continue to terminate healthy releases whose API reports `ok`.
+4. Run `systemctl daemon-reload`, verify the loaded fragment and drop-ins, then restart only after rollback artifacts are confirmed.
+5. Roll back by restoring the saved unit and helpers, restoring the prior scheduler configuration, running `systemctl daemon-reload`, resetting the failed counter if required, and restarting the prior `/opt/newme/current` release.
 
 The existing accident-era `forensic.conf` and `restart-always.conf` drop-ins must be removed only after the reviewed base unit contains their intended settings and their backups are recorded. Conflicting drop-ins make the effective unit, not the versioned unit, authoritative.
 

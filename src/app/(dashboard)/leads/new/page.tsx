@@ -60,15 +60,18 @@ export default function NewLeadPage() {
     }
 
     if (data) {
-      if (form.notes) {
+      if (form.notes && userId) {
         const { error: newLeadNoteErr } = await supabase.from("follow_up_logs").insert({
           lead_id: data.id, contact_type: "note", summary: form.notes,
+          contact_time: new Date().toISOString(),
           user_id: userId,
           no_answer: false,
         });
         if (newLeadNoteErr) {
           toast.error("Note save failed");
         }
+      } else if (form.notes) {
+        toast.warning("Lead created but note requires a signed-in user");
       }
       // P0-7: 建 lead 时同步写一条跟进 task，确保 Workbench 今日待办立即可见
       const { error: taskErr } = await createFollowUpTask(supabase, {

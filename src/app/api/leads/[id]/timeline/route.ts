@@ -68,7 +68,7 @@ export async function GET(
       id: string
       event_type: string
       description: string | null
-      created_at: string
+      created_at: string | null
       metadata: Record<string, unknown>
     }> = []
 
@@ -143,7 +143,7 @@ export async function GET(
     }
 
     events.sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      (a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
     )
 
     const total = events.length

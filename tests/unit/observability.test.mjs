@@ -1,43 +1,41 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import pino from "pino";
+import { readFile } from "node:fs/promises";
 import {
+  createPinoHooks,
   sanitizeSentryEvent,
   sanitizeValue,
   serializeErr,
 } from "../../src/lib/observability.mjs";
 
-test("recursively redacts nested headers, cookies, tokens and PII", () => {
-  const input = {
-    request: {
-      headers: {
-        authorization: "Bearer secret-token",
-        cookie: "session=secret-cookie",
-        nested: [{ email: "person@example.com", phone: "+971 50 123 4567" }],
-      },
-    },
-    details: {
-      access_token: "access-token",
-      profile: { phone: "+1 555 123 4567" },
-    },
-  };
-
-  const output = sanitizeValue(input);
-  assert.equal(output.request.headers.authorization, "[REDACTED]");
-  assert.equal(output.request.headers.cookie, "[REDACTED]");
-  assert.equal(output.request.headers.nested[0].email, "[REDACTED]");
-  assert.equal(output.request.headers.nested[0].phone, "[REDACTED]");
-  assert.equal(output.details.access_token, "[REDACTED]");
-  assert.equal(output.details.profile.phone, "[REDACTED]");
+test("real pino output recursively redacts nested context and preserves safe fields", () => {
+  let output = "";
+  const stream = { write: (chunk) => { output += chunk; } };
+  const logger = pino({ base: null, hooks: createPinoHooks() }, stream);
+  logger.info({
+    code: "PGRST116",
+    request_id: "req-1",
+    headers: { authorization: "Bearer secret-token", cookie: "session=secret-cookie" },
+    values: [{ email: "person@example.com", phone: "+971 50 123 4567", token: "nested-token" }],
+  }, "tracked");
+  const parsed = JSON.parse(output);
+  assert.equal(parsed.code, "PGRST116");
+  assert.equal(parsed.request_id, "req-1");
+  assert.equal(parsed.headers.authorization, "[REDACTED]");
+  assert.equal(parsed.headers.cookie, "[REDACTED]");
+  assert.equal(parsed.values[0].email, "[REDACTED]");
+  assert.equal(parsed.values[0].phone, "[REDACTED]");
+  assert.equal(parsed.values[0].token, "[REDACTED]");
 });
 
-test("serializes Error causes and database fields without leaking sensitive text", () => {
+test("serializes database Error causes without leaking sensitive text", () => {
   const cause = new Error("query failed for person@example.com");
   cause.code = "PGRST116";
   cause.details = "Key (email)=(person@example.com) violates policy";
   cause.hint = "token=secret-token";
   const error = new Error("database password=secret-password phone=+971501234567", { cause });
   error.code = "23505";
-
   const output = serializeErr(error);
   const json = JSON.stringify(output);
   assert.equal(output.code, "23505");
@@ -47,7 +45,22 @@ test("serializes Error causes and database fields without leaking sensitive text
   assert.doesNotMatch(json, /person@example\.com|secret-password|secret-token|971501234567/);
 });
 
-test("handles arrays, circular references and bounded depth", () => {
+test("bounds Error cause cycles and depth", () => {
+  const self = new Error("self");
+  self.cause = self;
+  assert.equal(serializeErr(self).cause, "[Circular]");
+
+  let current = new Error("root");
+  const root = current;
+  for (let index = 0; index < 12; index += 1) {
+    current.cause = new Error(`cause-${index}`);
+    current = current.cause;
+  }
+  const serialized = JSON.stringify(serializeErr(root));
+  assert.match(serialized, /\[Truncated\]/);
+});
+
+test("handles arrays, circular references and bounded values", () => {
   const circular = { safe: "keep", list: ["Bearer array-token", { email: "a@example.com" }] };
   circular.self = circular;
   let nested = { value: "keep" };
@@ -59,7 +72,7 @@ test("handles arrays, circular references and bounded depth", () => {
   assert.equal(output.nested.nested.nested.nested.nested.nested, "[Truncated]");
 });
 
-test("preserves safe tracking fields and drops health/readiness noise", () => {
+test("preserves safe tracking fields and filters health/readiness noise", () => {
   const event = {
     transaction: "/api/leads/123",
     request: { headers: { authorization: "Bearer token" } },
@@ -72,4 +85,22 @@ test("preserves safe tracking fields and drops health/readiness noise", () => {
   assert.equal(output.tags.code, "PGRST116");
   assert.equal(output.request.headers.authorization, "[REDACTED]");
   assert.equal(sanitizeSentryEvent({ transaction: "/api/ready" }), null);
+});
+
+test("Sentry configs declare release, environment, build tag and PII policy", async () => {
+  const [client, server, edge] = await Promise.all([
+    readFile(new URL("../../sentry.client.config.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../sentry.server.config.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../sentry.edge.config.ts", import.meta.url), "utf8"),
+  ]);
+  for (const source of [client, server, edge]) {
+    assert.match(source, /sendDefaultPii: false/);
+    assert.match(source, /environment:/);
+    assert.match(source, /initialScope:/);
+    assert.match(source, /build:/);
+    assert.match(source, /beforeSend:/);
+    assert.match(source, /beforeSendTransaction:/);
+  }
+  assert.match(client, /NEXT_PUBLIC_APP_VERSION/);
+  assert.match(server, /SENTRY_RELEASE/);
 });

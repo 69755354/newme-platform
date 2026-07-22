@@ -41,7 +41,11 @@ export function sanitizeValue(value, depth = 0, seen = new WeakSet()) {
   return String(value);
 }
 
-function serializeErrorFields(error, seen) {
+function serializeErrorFields(error, seen, depth) {
+  if (depth >= MAX_DEPTH) return TRUNCATED;
+  if (seen.has(error)) return CIRCULAR;
+  seen.add(error);
+
   const output = {
     kind: error instanceof Error ? "Error" : "ObjectError",
   };
@@ -49,26 +53,38 @@ function serializeErrorFields(error, seen) {
   if (typeof error.message === "string") output.message = scrubText(error.message);
   if (typeof error.stack === "string") output.stack = scrubText(error.stack);
   for (const key of ["code", "details", "hint"]) {
-    if (error[key] !== undefined) {
-      output[key] = SENSITIVE_KEY.test(key)
-        ? REDACTED
-        : sanitizeValue(error[key], 1, seen);
-    }
+    if (error[key] !== undefined) output[key] = sanitizeValue(error[key], depth + 1, seen);
   }
   if (error.cause !== undefined) {
-    output.cause = serializeErr(error.cause, seen);
+    output.cause = serializeErr(error.cause, seen, depth + 1);
   }
   return output;
 }
 
-export function serializeErr(error, seen = new WeakSet()) {
+export function serializeErr(error, seen = new WeakSet(), depth = 0) {
   if (error === null || error === undefined) return error;
+  if (depth >= MAX_DEPTH) return TRUNCATED;
   if (error instanceof Error || (typeof error === "object" && typeof error.message === "string")) {
-    return serializeErrorFields(error, seen);
+    return serializeErrorFields(error, seen, depth);
   }
   if (typeof error === "string") return { kind: "StringError", message: scrubText(error) };
-  if (typeof error === "object") return { kind: "UnknownObject", value: sanitizeValue(error, 0, seen) };
+  if (typeof error === "object") return { kind: "UnknownObject", value: sanitizeValue(error, depth, seen) };
   return { kind: "Unknown", value: sanitizeValue(error) };
+}
+
+export function createPinoHooks() {
+  return {
+    logMethod(inputArgs, method) {
+      for (let index = 0; index < inputArgs.length; index += 1) {
+        const value = inputArgs[index];
+        if (!value || typeof value !== "object") continue;
+        const sanitized = sanitizeValue(value);
+        if (value.err !== undefined) sanitized.err = serializeErr(value.err);
+        inputArgs[index] = sanitized;
+      }
+      method.apply(this, inputArgs);
+    },
+  };
 }
 
 export function sanitizeSentryEvent(event) {

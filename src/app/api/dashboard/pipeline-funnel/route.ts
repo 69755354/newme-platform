@@ -4,6 +4,7 @@ import { createServerSupabase } from "@/lib/supabase-server";
 import type { Database, Json } from "@/types/database";
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
+type PipelineLead = Pick<LeadRow, "id" | "stage" | "created_at" | "updated_at" | "last_contact_date" | "assigned_to" | "customer_name" | "current_milestone" | "final_status">;
 type StageEventData = { from_stage?: string; to_stage?: string };
 
 function parseStageEventData(value: Json | null): StageEventData | null {
@@ -94,7 +95,7 @@ export async function GET(request: NextRequest) {
 
     // ─── Step 2: Build stage counts ───
     const stageCountMap: Record<string, number> = {};
-    const stageLeads: Record<string, LeadRow[]> = {};
+    const stageLeads: Record<string, PipelineLead[]> = {};
     for (const def of STAGE_DEFS) {
       stageCountMap[def.key] = 0;
       stageLeads[def.key] = [];
@@ -112,7 +113,7 @@ export async function GET(request: NextRequest) {
     // For each stage, we look at leads CURRENTLY in that stage and calculate
     // how long they've been there (days since updated_at or created_at).
     // For "won"/"lost" we look at leads that reached that outcome.
-    function calcAvgDaysInStage(stageKey: string, leadsInStage: LeadRow[]): number {
+    function calcAvgDaysInStage(stageKey: string, leadsInStage: PipelineLead[]): number {
       if (leadsInStage.length === 0) return 0;
       const now = new Date().getTime();
       let totalDays = 0;
@@ -174,7 +175,7 @@ export async function GET(request: NextRequest) {
           stuckLeads.push({
             id: l.id,
             customer_name: l.customer_name,
-            stage: l.stage,
+            stage: l.stage ?? def.key,
             days_in_stage: Math.round(daysInStage),
             stage_label: def.label,
           });

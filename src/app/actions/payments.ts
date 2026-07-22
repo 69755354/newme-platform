@@ -136,7 +136,7 @@ export async function allocatePayment(paymentId: string, allocations: Allocation
   if (!profile) throw new Error('Profile not found')
 
   const allowedRoles = ['admin', 'boss', 'finance']
-  if (!allowedRoles.includes(profile.role)) throw new Error('Forbidden')
+  if (!profile?.role || !allowedRoles.includes(profile.role)) throw new Error('Forbidden')
 
   // Validate allocations
   if (!allocations || !Array.isArray(allocations) || allocations.length === 0) {

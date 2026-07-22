@@ -34,7 +34,52 @@ import type {
   RenderInlineEdit,
   RenderDateEdit,
   RenderJsonEdit,
+  LeadJsonField,
+  LeadTextField,
 } from "./types";
+import type { Json } from "@/types/database";
+
+const INLINE_EDIT_FIELDS = new Set<string>([
+  "customer_name", "phone", "email", "location", "emirate", "area",
+  "expected_sign_date", "customer_budget",
+]);
+const JSON_EDIT_FIELDS = new Set<string>(["smart_requirements", "raw_import_data", "devices_json"]);
+const DATE_EDIT_FIELDS = new Set<string>(["expected_sign_date", "decision_date", "last_contact_date"]);
+
+function isInlineEditField(field: string): field is LeadTextField | "customer_budget" {
+  return INLINE_EDIT_FIELDS.has(field);
+}
+
+function isJsonEditField(field: string): field is LeadJsonField {
+  return JSON_EDIT_FIELDS.has(field);
+}
+
+function isDateEditField(field: string): field is import("./types").LeadDateField {
+  return DATE_EDIT_FIELDS.has(field);
+}
+
+function isJsonValue(value: unknown): value is Json {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return true;
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  if (typeof value === "object") return Object.values(value).every(isJsonValue);
+  return false;
+}
+
+function parseJsonInput(value: string): Json | null {
+  if (!value.trim()) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isJsonValue(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+declare global {
+  interface Window {
+    fbq?: (...args: unknown[]) => void;
+  }
+}
 
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -192,9 +237,9 @@ export default function LeadDetailPage() {
 
   // ─── Meta Pixel: track ViewContent when lead data loads ─────────────────
   useEffect(() => {
-    if (lead && typeof window !== "undefined" && (window as any).fbq) {
+    if (lead && typeof window !== "undefined" && window.fbq) {
       // Privacy-safe: only non-PII fields (no customer_name, no quotation_value)
-      (window as any).fbq("track", "ViewContent", {
+      window.fbq("track", "ViewContent", {
         content_ids: [id],
         content_type: "smart_home_lead",
         content_category: lead.stage || undefined,
@@ -227,9 +272,10 @@ export default function LeadDetailPage() {
   const commitInlineEdit = () => {
     if (!editField || !lead) return;
 
+    if (!isInlineEditField(editField)) return;
     const field = editField;
     const nextValue = editValue.trim();
-    const currentValue = String((lead as unknown as Record<string, unknown>)[field] ?? "");
+    const currentValue = String(lead[field] ?? "");
     if (nextValue === currentValue) {
       setEditField(null);
       return;
@@ -257,7 +303,8 @@ export default function LeadDetailPage() {
 
   // ─── Render helpers (page-owned so a single inline edit is active at a time) ───
   const renderInlineEdit: RenderInlineEdit = (field, label, type = "text") => {
-    const value = (lead as any)[field];
+    if (!lead || !isInlineEditField(field)) return null;
+    const value = lead[field];
     return editField === field ? (
       // BUG-LD-3 (2026-07-06): wrap the input in a click-eating span so a click
       // outside the input (or on the span's padding) first clears editField via
@@ -295,7 +342,8 @@ export default function LeadDetailPage() {
   };
 
   const renderDateEdit: RenderDateEdit = (field, label) => {
-    const value = (lead as any)[field];
+    if (!lead || !isDateEditField(field)) return null;
+    const value = lead[field];
     return editField === field ? (
       <input type="date" autoFocus value={editValue} onChange={(e) => setEditValue(e.target.value)}
         onBlur={() => { updateField(field, editValue || null, "note_added", `${label}: ${editValue || t("leadDetail.cleared")}`); }}
@@ -309,7 +357,8 @@ export default function LeadDetailPage() {
   };
 
   const renderJsonEdit: RenderJsonEdit = (field, label) => {
-    const value = (lead as any)[field];
+    if (!lead || !isJsonEditField(field)) return null;
+    const value = lead[field];
     let display: string | null = null;
     if (value != null) {
       try { display = typeof value === "string" ? value : JSON.stringify(value); }
@@ -321,17 +370,10 @@ export default function LeadDetailPage() {
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              let parsed: any;
-              if (!editValue) {
-                parsed = null; // field cleared
-              } else {
-                try {
-                  parsed = JSON.parse(editValue);
-                } catch {
-                  // Invalid JSON — fall back to the original value instead of
-                  // saving the raw (garbled) string into the JSONB column.
-                  parsed = value;
-                }
+              const parsed = parseJsonInput(editValue);
+              if (parsed === null && editValue.trim()) {
+                toast.error("Enter valid JSON");
+                return;
               }
               updateField(field, parsed, "note_added", `${label}: ${editValue}`);
               setEditField(null);

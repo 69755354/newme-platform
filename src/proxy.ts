@@ -12,6 +12,7 @@ const PROTECTED_ROUTES: Record<string, string[]> = {
 const PUBLIC_API_PATHS = new Set([
   "/api/auth/logout",
   "/api/auth/me",
+  "/api/auth/session",
 ]);
 
 // Track user activity — update last_active_at, but throttle to once per 5 min per user

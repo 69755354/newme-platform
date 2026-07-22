@@ -104,3 +104,26 @@ test("Sentry configs declare release, environment, build tag and PII policy", as
   assert.match(client, /NEXT_PUBLIC_APP_VERSION/);
   assert.match(server, /SENTRY_RELEASE/);
 });
+
+
+test("Sentry preserves bounded stack frames while redacting exception messages", () => {
+  const event = {
+    exception: {
+      values: [{
+        value: "password=secret-password email=person@example.com",
+        stacktrace: {
+          frames: Array.from({ length: 10 }, (_, index) => ({
+            filename: `/app/src/file-${index}.mjs`,
+            function: `handler${index}`,
+            lineno: index + 1,
+          })),
+        },
+      }],
+    },
+  };
+  const output = sanitizeSentryEvent(event);
+  const serialized = JSON.stringify(output);
+  assert.doesNotMatch(serialized, /secret-password|person@example\\.com/);
+  assert.equal(output.exception.values[0].stacktrace.frames[9].function, "handler9");
+  assert.equal(output.exception.values[0].stacktrace.frames[9].filename, "/app/src/file-9.mjs");
+});

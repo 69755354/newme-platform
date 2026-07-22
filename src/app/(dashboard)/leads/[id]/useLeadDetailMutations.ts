@@ -30,6 +30,9 @@ import { createFollowUpTask } from "@/lib/tasks";
 import { projectDraftFromLead } from "./utils";
 import type { Lead, Task } from "./types";
 import type { ProjectInfoDraft } from "./useLeadDetailData";
+import type { Database } from "@/types/database";
+
+type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
 
 /* ─── Types ─── */
 export interface SalesUserMini {
@@ -85,7 +88,7 @@ export interface UseLeadDetailMutationsReturn {
   handleDelete: () => Promise<void>;
   handleMarkPoor: () => Promise<void>;
   writeEvent: (eventType: string, description: string, eventData?: Record<string, any>) => Promise<void>;
-  updateField: (field: string, value: any, eventType?: string, eventDesc?: string) => Promise<boolean>;
+  updateField: <K extends keyof LeadUpdate>(field: K, value: LeadUpdate[K], eventType?: string, eventDesc?: string) => Promise<boolean>;
   saveProjectInfo: () => Promise<void>;
   resetProjectInfoDraft: () => void;
   updateStage: (stage: string, note?: string) => Promise<boolean>;
@@ -193,7 +196,9 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
           return;
         }
         const { data: { user: currentUser } } = await supabase.auth.getUser();
-        await supabase.from("transfer_history").insert({ lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId, reason: "manual_reassign", transferred_by: currentUser?.id });
+        if (oldLead.assigned_to) {
+          await supabase.from("transfer_history").insert({ lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId, reason: "manual_reassign", transferred_by: currentUser?.id });
+        }
         await supabase.from("activities").insert({ lead_id: leadId, type: "transfer", content: transferDesc, user_id: currentUser?.id });
         import("@/lib/notify").then(({ notify }) => {
           notify({ type: "lead_assigned", lead_id: leadId, assigned_to: newUserId });
@@ -301,11 +306,10 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }, [leadId, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Update a single editable field with optimistic saveStatus + audit ───
-  const updateField = useCallback(async (field: string, value: any, eventType?: string, eventDesc?: string): Promise<boolean> => {
+  const updateField = useCallback(async <K extends keyof LeadUpdate>(field: K, value: LeadUpdate[K], eventType?: string, eventDesc?: string): Promise<boolean> => {
     setUpdating(true);
     setSaveStatus("saving");
-    const updates: Record<string, any> = { updated_at: new Date().toISOString() };
-    updates[field] = value;
+    const updates = { updated_at: new Date().toISOString(), [field]: value };
     const { data: updated, error: err } = await supabase
       .from("leads")
       .update(updates)
@@ -339,7 +343,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   // ─── Project Info batch-save (bottom folding panel) ───
   const saveProjectInfo = useCallback(async () => {
     setProjectInfoStatus("saving");
-    const updates: Record<string, any> = {
+    const updates: LeadUpdate = {
       project_type: projectInfoDraft.project_type || null,
       emirate: projectInfoDraft.emirate.trim() || null,
       area: projectInfoDraft.area.trim() || null,

@@ -82,7 +82,7 @@ export async function GET(request: Request) {
       fullName: profile.full_name ?? null,
     });
     for (const c of refreshedCookies) {
-      response.cookies.set(c.name, c.value, c.options as any);
+      response.cookies.set(c.name, c.value, c.options as Parameters<typeof response.cookies.set>[2]);
     }
     return response;
   } catch (err) {

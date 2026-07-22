@@ -47,6 +47,9 @@ export async function PATCH(
     if (leadError || !lead) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
+    if (!lead.stage) {
+      return NextResponse.json({ error: "Lead stage is missing" }, { status: 409 });
+    }
     if (!isAdminOrBoss(profile) && lead.assigned_to !== profile.userId) {
       return NextResponse.json({ error: "Forbidden: lead not assigned to you" }, { status: 403 });
     }

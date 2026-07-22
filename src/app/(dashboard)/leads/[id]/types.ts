@@ -292,6 +292,6 @@ export type LeadFieldUpdater = <K extends keyof LeadUpdate>(
   eventDesc?: string
 ) => Promise<boolean> | void;
 
-export type RenderInlineEdit = (field: LeadTextField | "customer_budget", label: string, type?: string) => ReactNode;
-export type RenderDateEdit = (field: LeadDateField, label: string) => ReactNode;
-export type RenderJsonEdit = (field: LeadJsonField, label: string) => ReactNode;
+export type RenderInlineEdit = (field: LeadField, label: string, type?: string) => ReactNode;
+export type RenderDateEdit = (field: LeadField, label: string) => ReactNode;
+export type RenderJsonEdit = (field: LeadField, label: string) => ReactNode;

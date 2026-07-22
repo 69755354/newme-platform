@@ -1,6 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ────────────────────────────────────────────
+# Self-test: --selftest runs ONLY the cleanup test, no deploy.
+# Must appear BEFORE any deploy logic.
+if [ "${1:-}" = "--selftest" ]; then
+  echo "=== SELFTEST: candidate cleanup ==="
+  cleanup_candidate() {
+    if [ -n "${CANDIDATE_PGID:-}" ]; then
+      kill -TERM -- -"$CANDIDATE_PGID" 2>/dev/null || true
+      wait $CANDIDATE_PID 2>/dev/null || true
+      sleep 0.5
+      kill -KILL -- -"$CANDIDATE_PGID" 2>/dev/null || true
+      wait $CANDIDATE_PID 2>/dev/null || true
+      for i in $(seq 1 10); do
+        if ! fuser 3002/tcp 2>/dev/null; then break; fi
+        sleep 0.5
+      done
+      if fuser 3002/tcp 2>/dev/null; then
+        echo "❌ FATAL: 3002 still occupied"
+        return 1
+      fi
+      echo "✅ 3002 port released"
+    fi
+  }
+  python3 -c "import http.server; http.server.HTTPServer(('',3002),http.server.SimpleHTTPRequestHandler).serve_forever()" &
+  CANDIDATE_PID=$!
+  CANDIDATE_PGID=$CANDIDATE_PID
+  sleep 1
+  if ! fuser 3002/tcp 2>/dev/null; then
+    echo "❌ SELFTEST FAIL: dummy didn't bind 3002"
+    exit 1
+  fi
+  echo "Started dummy PID=$CANDIDATE_PID PGID=$CANDIDATE_PGID"
+  cleanup_candidate
+  if fuser 3002/tcp 2>/dev/null; then
+    echo "❌ SELFTEST FAIL: 3002 still occupied"
+    fuser -k 3002/tcp 2>/dev/null || true
+    exit 1
+  fi
+  echo "✅ SELFTEST PASS"
+  exit 0
+fi
+
 # --- Init ---
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -430,30 +472,3 @@ echo "✅ Evidence: $EVIDENCE_FILE"
 # --- Cleanup ---
 rm -f "$LOCKFILE"
 echo "=== Deploy Complete: $RELEASE_ID ==="
-
-# ────────────────────────────────────────────
-# Self-test: verify candidate cleanup works
-# Runs ONLY when this script is sourced with --selftest
-if [ "${1:-}" = "--selftest" ]; then
-  echo ""
-  echo "=== SELFTEST: candidate cleanup ==="
-  # Start a dummy process on 3002 (simulates stuck candidate)
-  python3 -c "import http.server; http.server.HTTPServer(('', 3002), http.server.SimpleHTTPRequestHandler).serve_forever()" &
-  TEST_PID=$!
-  sleep 1
-  CANDIDATE_PID=$TEST_PID
-  CANDIDATE_PGID=$(ps -o pgid= -p $TEST_PID 2>/dev/null | tr -d ' ')
-  echo "Started dummy candidate PID=$CANDIDATE_PID PGID=$CANDIDATE_PGID"
-  if ! fuser 3002/tcp 2>/dev/null; then
-    echo "❌ SELFTEST FAIL: dummy didn't bind 3002"
-    exit 1
-  fi
-  cleanup_candidate
-  if fuser 3002/tcp 2>/dev/null; then
-    echo "❌ SELFTEST FAIL: 3002 still occupied after cleanup"
-    fuser -k 3002/tcp 2>/dev/null || true
-    exit 1
-  fi
-  echo "✅ SELFTEST PASS: cleanup released port 3002"
-  exit 0
-fi

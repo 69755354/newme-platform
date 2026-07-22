@@ -54,7 +54,7 @@ test("session cookie payload is consumable by the SSR token parser contract", as
   assert.equal(parsed.access_token, "access-token");
   assert.equal(parsed.refresh_token, "refresh-token");
   assert.match(session, /const cookiePayload = JSON\.stringify\(\{[\s\S]*access_token: accessToken,\s*expires_at:/);
-  assert.doesNotMatch(session, /const cookiePayload = JSON\\.stringify\\(\\{[\\s\\S]*refresh_token: refreshToken/);
+  assert.doesNotMatch(session, /const cookiePayload = JSON\.stringify\(\{[\s\S]*refresh_token: refreshToken/);
   assert.match(session, /response\.cookies\.set\(refreshCookie, refreshToken/);
   assert.match(server, /parseSsrCookie/);
 });

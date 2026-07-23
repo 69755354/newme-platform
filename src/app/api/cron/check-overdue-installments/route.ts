@@ -1,6 +1,7 @@
 // RBAC: cron (x-cron-secret)
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { deliverOverdueNotification } from "@/lib/cron-overdue-notification";
 
 /**
  * GET /api/cron/check-overdue-installments
@@ -31,44 +32,33 @@ export async function GET(request: NextRequest) {
 
     // Notify about newly overdue installments
     const notified: string[] = [];
+    const notificationFailures: Array<{ installment_id: string; reason: string }> = [];
     if (overdue && overdue.length > 0) {
       for (const plan of overdue) {
-        try {
-          // Fetch contract info for context
-          const { data: contract } = await supabaseAdmin
-            .from("contracts")
-            .select("contract_no, sales_id, lead_id")
-            .eq("id", plan.contract_id)
-            .single();
-
-          if (contract) {
-            await fetch(
-              `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/notify`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  type: "payment_overdue",
-                  contract_id: plan.contract_id,
-                  lead_id: contract.lead_id,
-                  installment_seq: plan.seq,
-                  amount: plan.amount,
-                  due_date: plan.due_date,
-                }),
-              }
-            );
-            notified.push(plan.id);
-          }
-        } catch {
-          // non-blocking
+        const delivery = await deliverOverdueNotification(plan);
+        if (delivery.ok) {
+          notified.push(plan.id);
+        } else {
+          notificationFailures.push({ installment_id: plan.id, reason: delivery.reason });
+          console.error("[Cron Overdue] Notification delivery failed", {
+            installment_id: plan.id,
+            contract_id: plan.contract_id,
+            reason: delivery.reason,
+          });
         }
       }
     }
 
-    return NextResponse.json({
+    const result = {
       overdue_count: overdue?.length ?? 0,
       notified: notified.length,
-    });
+      notification_failures: notificationFailures.length,
+      failures: notificationFailures,
+    };
+    if (notificationFailures.length > 0) {
+      return NextResponse.json(result, { status: 502 });
+    }
+    return NextResponse.json(result);
   } catch (err: unknown) {
     console.error("[Cron Overdue] Error:", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

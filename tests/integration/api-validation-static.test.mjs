@@ -15,4 +15,3 @@ test('quality route validates allowed quality values and poor reason', () => {
   assert.match(text, /createServerSupabase\(bearerToken, cookieHeader\)/);
   assert.doesNotMatch(text, /createServerClient/);
 });
-

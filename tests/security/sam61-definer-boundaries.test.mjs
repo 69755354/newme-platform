@@ -21,21 +21,29 @@ test("SAM-61 fixes the search path of every current public function", async () =
     "reopen_lead_milestone(uuid, text, text)", "set_lost_reasons()", "set_updated_at()",
     "sync_lead_next_followup()", "sync_task_from_lead()",
     "sync_user_email_to_profile()", "transition_lead_stage(uuid, text, text, text)",
+    "transition_lead_stage(uuid, text, text, text, uuid)",
     "trg_check_first_contact_gate()", "trg_check_stage_sequence()",
     "trg_enforce_first_contact_milestone()", "trg_prevent_first_contact_delete()",
     "trg_set_won_at()", "update_installment_status()", "update_lead_metrics()",
   ];
 
   for (const fn of functions) {
-    assert.match(sql, new RegExp(`ALTER FUNCTION public\\.${fn.replace(/[()]/g, "\\$&").replace(/ /g, "\\s+")} SET search_path = pg_catalog, public, pg_temp;`));
+    const escaped = fn.replace(/[()]/g, "\\$&").replace(/ /g, "\\s+");
+    if (fn.startsWith("transition_lead_stage")) {
+      assert.ok(sql.includes(`to_regprocedure('public.${fn.replace(/ /g, "")}')`));
+      assert.match(sql, new RegExp(`ALTER FUNCTION public\\.${escaped} SET search_path = pg_catalog, public, pg_temp`));
+    } else {
+      assert.match(sql, new RegExp(`ALTER FUNCTION public\\.${escaped} SET search_path = pg_catalog, public, pg_temp;`));
+    }
   }
 });
 
 test("SAM-61 preserves only authenticated sales workflow RPCs", async () => {
   const sql = await readFile(migration, "utf8");
-  for (const fn of ["get_my_role()", "next_quote_no()", "recomplete_lead_milestone(uuid, text, text)", "reopen_lead_milestone(uuid, text, text)", "transition_lead_stage(uuid, text, text, text)"]) {
-    assert.match(sql, new RegExp(`REVOKE EXECUTE ON FUNCTION public\\.${fn.replace(/[()]/g, "\\$&").replace(/ /g, "\\s+")} FROM PUBLIC, anon;`));
-    assert.match(sql, new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn.replace(/[()]/g, "\\$&").replace(/ /g, "\\s+")} TO authenticated;`));
+  for (const fn of ["get_my_role()", "next_quote_no()", "recomplete_lead_milestone(uuid, text, text)", "reopen_lead_milestone(uuid, text, text)", "transition_lead_stage(uuid, text, text, text)", "transition_lead_stage(uuid, text, text, text, uuid)"]) {
+    const escaped = fn.replace(/[()]/g, "\\$&").replace(/ /g, "\\s+");
+    assert.match(sql, new RegExp(`REVOKE EXECUTE ON FUNCTION public\\.${escaped} FROM PUBLIC, anon`));
+    assert.match(sql, new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${escaped} TO authenticated`));
   }
   assert.match(sql, /ALTER VIEW public\.lead_alerts SET \(security_invoker = true\);/);
   assert.match(sql, /FOR INSERT TO authenticated WITH CHECK \(false\);/);

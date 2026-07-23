@@ -34,7 +34,18 @@ ALTER FUNCTION public.set_updated_at() SET search_path = pg_catalog, public, pg_
 ALTER FUNCTION public.sync_lead_next_followup() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.sync_task_from_lead() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.sync_user_email_to_profile() SET search_path = pg_catalog, public, pg_temp;
-ALTER FUNCTION public.transition_lead_stage(uuid, text, text, text) SET search_path = pg_catalog, public, pg_temp;
+-- SAM-62 replaces the legacy RPC. These guards make SAM-61 deployable either
+-- before or after that migration, without leaving either signature exposed.
+DO $$
+BEGIN
+  IF to_regprocedure('public.transition_lead_stage(uuid,text,text,text)') IS NOT NULL THEN
+    EXECUTE 'ALTER FUNCTION public.transition_lead_stage(uuid, text, text, text) SET search_path = pg_catalog, public, pg_temp';
+  END IF;
+  IF to_regprocedure('public.transition_lead_stage(uuid,text,text,text,uuid)') IS NOT NULL THEN
+    EXECUTE 'ALTER FUNCTION public.transition_lead_stage(uuid, text, text, text, uuid) SET search_path = pg_catalog, public, pg_temp';
+  END IF;
+END;
+$$;
 ALTER FUNCTION public.trg_enforce_first_contact_milestone() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.trg_check_first_contact_gate() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.trg_check_stage_sequence() SET search_path = pg_catalog, public, pg_temp;
@@ -72,12 +83,30 @@ REVOKE EXECUTE ON FUNCTION public.get_my_role() FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.next_quote_no() FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.recomplete_lead_milestone(uuid, text, text) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.reopen_lead_milestone(uuid, text, text) FROM PUBLIC, anon;
-REVOKE EXECUTE ON FUNCTION public.transition_lead_stage(uuid, text, text, text) FROM PUBLIC, anon;
+DO $$
+BEGIN
+  IF to_regprocedure('public.transition_lead_stage(uuid,text,text,text)') IS NOT NULL THEN
+    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.transition_lead_stage(uuid, text, text, text) FROM PUBLIC, anon';
+  END IF;
+  IF to_regprocedure('public.transition_lead_stage(uuid,text,text,text,uuid)') IS NOT NULL THEN
+    EXECUTE 'REVOKE EXECUTE ON FUNCTION public.transition_lead_stage(uuid, text, text, text, uuid) FROM PUBLIC, anon';
+  END IF;
+END;
+$$;
 GRANT EXECUTE ON FUNCTION public.get_my_role() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.next_quote_no() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.recomplete_lead_milestone(uuid, text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.reopen_lead_milestone(uuid, text, text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.transition_lead_stage(uuid, text, text, text) TO authenticated;
+DO $$
+BEGIN
+  IF to_regprocedure('public.transition_lead_stage(uuid,text,text,text)') IS NOT NULL THEN
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public.transition_lead_stage(uuid, text, text, text) TO authenticated';
+  END IF;
+  IF to_regprocedure('public.transition_lead_stage(uuid,text,text,text,uuid)') IS NOT NULL THEN
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public.transition_lead_stage(uuid, text, text, text, uuid) TO authenticated';
+  END IF;
+END;
+$$;
 
 -- The alerts view must obey the caller's RLS on leads; its route already scopes sales to self.
 ALTER VIEW public.lead_alerts SET (security_invoker = true);

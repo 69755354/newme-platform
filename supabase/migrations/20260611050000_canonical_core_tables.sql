@@ -99,6 +99,16 @@ CREATE TABLE IF NOT EXISTS public.transfer_history (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.crm_daily_funnel_snapshot (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  current_milestone TEXT NOT NULL,
+  lead_count INTEGER NOT NULL DEFAULT 0,
+  total_value NUMERIC DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.crm_daily_funnel_snapshot ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.marketing_campaigns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.follow_up_logs ENABLE ROW LEVEL SECURITY;

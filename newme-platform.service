@@ -17,6 +17,7 @@ ExecStartPost=+/usr/local/libexec/newme/newme-readiness.sh
 ExecStopPost=+/usr/local/libexec/newme/newme-forensic.sh
 Restart=always
 RestartSec=5
+SuccessExitStatus=143 SIGTERM
 KillMode=control-group
 KillSignal=SIGTERM
 FinalKillSignal=SIGKILL

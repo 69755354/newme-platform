@@ -99,6 +99,7 @@ test("installer replaces direct service sudo with the audited control boundary",
   assert.match(deploy, /actions\/runs\/\$RUN_ID/);
   assert.match(deploy, /\[ \"\$RUN_ID\" = \"manual\" \]/);
   assert.match(deploy, /worktree add --force/);
+  assert.match(deploy, /bash \"\$WORKTREE\/scripts\/install-systemd-assets\.sh\"/);
   assert.doesNotMatch(deploy, /\/home\/ubuntu\/newme-platform/);
 });
 

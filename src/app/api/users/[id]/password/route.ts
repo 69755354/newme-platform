@@ -1,7 +1,7 @@
 // RBAC: user (admin, boss)
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 // GET /api/users/[id]/password — Admin/boss view password hint
 export async function GET(
@@ -10,12 +10,6 @@ export async function GET(
 ) {
   try {
     const { id: targetId } = await params;
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    const adminClient = createClient(supabaseUrl, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false }
-    });
-
     const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
     const cookieHeader = request.headers.get("cookie") ?? "";
     const supabase = await createServerSupabase(bearerToken, cookieHeader);
@@ -24,14 +18,14 @@ export async function GET(
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const { data: profile } = await adminClient
+    const { data: profile } = await supabaseAdmin
       .from("profiles").select("role").eq("id", user.id).single();
 
     if (!profile || !["admin", "boss"].includes(profile.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const { data: target, error } = await adminClient
+    const { data: target, error } = await supabaseAdmin
       .from("profiles")
       .select("full_name")
       .eq("id", targetId)
@@ -62,12 +56,6 @@ export async function PATCH(
       return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    const adminClient = createClient(supabaseUrl, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false }
-    });
-
     const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
     const cookieHeader = request.headers.get("cookie") ?? "";
     const supabase = await createServerSupabase(bearerToken, cookieHeader);
@@ -77,10 +65,10 @@ export async function PATCH(
     }
 
     if (targetId === "change-password") {
-      const { error } = await adminClient.auth.admin.updateUserById(user.id, { password });
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(user.id, { password });
       if (error) return NextResponse.json({ error: error.message || "Update failed" }, { status: 400 });
 
-      const { error: profileErr } = await adminClient
+      const { error: profileErr } = await supabaseAdmin
         .from("profiles")
         .update({ password_changed_at: new Date().toISOString() })
         .eq("id", user.id);
@@ -94,17 +82,17 @@ export async function PATCH(
       return NextResponse.json({ success: true });
     }
 
-    const { data: profile } = await adminClient
+    const { data: profile } = await supabaseAdmin
       .from("profiles").select("role").eq("id", user.id).single();
 
     if (!profile || !["admin", "boss"].includes(profile.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const { error } = await adminClient.auth.admin.updateUserById(targetId, { password });
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(targetId, { password });
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-    const { error: profileErr } = await adminClient
+    const { error: profileErr } = await supabaseAdmin
       .from("profiles")
       .update({ password_changed_at: new Date().toISOString() })
       .eq("id", targetId);

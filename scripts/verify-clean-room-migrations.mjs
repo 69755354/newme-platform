@@ -37,6 +37,12 @@ else {
   const create = atomic.indexOf('CREATE FUNCTION public.transition_lead_stage');
   if (drop < 0 || create < 0 || drop > create) fail('SAM-62 does not replace the legacy RPC before creating the active RPC');
   else pass('SAM-62 legacy-to-active RPC replacement is ordered');
+  const mvpPath = path.join(migrationDir, '20260602010000_crm_mvp_final.sql');
+  const mvp = fs.existsSync(mvpPath) ? fs.readFileSync(mvpPath, 'utf8') : '';
+  const repNameDefinition = mvp.indexOf('ADD COLUMN IF NOT EXISTS rep_name');
+  const repNameReference = mvp.indexOf('l.rep_name');
+  if (repNameDefinition < 0 || repNameReference < 0 || repNameDefinition > repNameReference) fail('crm_mvp_final references leads.rep_name before defining it');
+  else pass('crm_mvp_final defines leads.rep_name before the alert view reference');
   const rollbackFiles = fs.existsSync(rollbackDir) ? fs.readdirSync(rollbackDir).filter((file) => file.endsWith('.sql')).sort() : [];
   if (rollbackFiles.length === 0) fail('no manual rollback SQL exists under supabase/rollback');
   else pass(`manual rollback SQL is outside the forward chain: ${rollbackFiles.length} file(s)`);

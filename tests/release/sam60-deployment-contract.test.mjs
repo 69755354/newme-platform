@@ -28,6 +28,9 @@ test("SAM-60/SAM-68 contracts", async () => {
   assert.match(ready, /401|AbortController/);
   assert.doesNotMatch(ready, /error\.message|responseTime|writeFileSync|readFileSync/);
   assert.match(helper, /x-newme-readiness-token/);
+  assert.match(helper, /mktemp|chmod 600|--config/);
+  assert.doesNotMatch(helper, /curl[^\n]*-H[^\n]*x-newme-readiness-token/);
+  assert.doesNotMatch(deploy, /curl[^\n]*-H[^\n]*x-newme-readiness-token/);
   assert.match(unit, /EnvironmentFile=\/etc\/newme\/newme-runtime\.env/);
   assert.equal((unit.match(/^ExecStopPost=/gm) || []).length, 1);
   assert.match(unit, /WorkingDirectory=\/opt\/newme\/current/);

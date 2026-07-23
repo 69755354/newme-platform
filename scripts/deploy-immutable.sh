@@ -25,6 +25,7 @@ EVIDENCE_FILE="$EVIDENCE_DIR/deploy-$ID.json"
 REGRESSION_FILE="$EVIDENCE_DIR/crm-regression-$ID.json"
 PID=""
 PGID=""
+READINESS_CONFIG=""
 SWITCHED=0
 CREATED_RELEASE=0
 
@@ -62,6 +63,7 @@ cleanup() {
   local rc=$?
   trap - EXIT INT TERM
   stop_candidate || rc=1
+  [ -n "$READINESS_CONFIG" ] && rm -f -- "$READINESS_CONFIG" 2>/dev/null || true
   rm -f -- "$CURRENT_NEXT" 2>/dev/null || true
   [ -n "$STAGE" ] && [ -d "$STAGE" ] && rm -rf -- "$STAGE" || true
   if [ "$rc" -ne 0 ] && [ "$SWITCHED" -eq 1 ]; then
@@ -110,12 +112,15 @@ set -a
 . "$RUNTIME_ENV"
 set +a
 [ -n "${NEWME_READINESS_TOKEN:-}" ] || { fail "readiness token missing"; exit 1; }
+READINESS_CONFIG="$(mktemp "${TMPDIR:-/tmp}/newme-readiness.XXXXXX")"
+chmod 600 "$READINESS_CONFIG"
+printf 'header = "x-newme-readiness-token: %s"\n' "$NEWME_READINESS_TOKEN" >"$READINESS_CONFIG"
 setsid node node_modules/next/dist/bin/next start -p 3002 >"/tmp/newme-candidate-$ID.log" 2>&1 &
 PID=$!
 PGID=$PID
 ready=0
 for _ in $(seq 1 30); do
-  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 -H "x-newme-readiness-token: $NEWME_READINESS_TOKEN" http://127.0.0.1:3002/api/ready || true)"
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 --config "$READINESS_CONFIG" http://127.0.0.1:3002/api/ready || true)"
   if [ "$code" = 200 ]; then ready=1; break; fi
   sleep 1
 done

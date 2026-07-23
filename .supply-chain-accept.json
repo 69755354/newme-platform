@@ -1,20 +1,47 @@
 {
-  "_note": "已知高危漏洞豁免清单。每个条目必须引用审计文档中的缓解依据。",
+  "_note": "已知高危漏洞豁免清单。每项必须有漏洞ID、风险理由、责任人、到期日。CI 对未列入清单的 high/critical 会失败。",
   "_audit_doc": "docs/SAM-32-33-dependency-audit.md",
   "_updated": "2026-07-23",
+  "_owner": "Hermes (v4-pro) / 总控复审",
+  "_ci_behavior": "未列入 accepted 的 HIGH/CRITICAL → exit 1，阻断 CI",
   "accepted": [
     {
       "package": "postcss",
+      "vuln_id": "GHSA-qx2v-qp2m-jg93",
       "severity": "high",
-      "reason": "Next.js 16.2.11 内嵌 postcss 8.4.31。漏洞为构建时 CSS 处理，无用户输入路径。CSP 阻止外部样式注入。next 16.3 将修复。",
-      "cve": ["GHSA-qx2v-qp2m-jg93", "GHSA-6g55-p6wh-862q"],
+      "cwe": "CWE-79",
+      "cvss": 6.1,
+      "risk_reason": "Next.js 16.2.11 内嵌 postcss 8.4.31。XSS 需要攻击者控制 CSS 输入 — 我们的 CSS 全部来自 Tailwind 编译源码，无用户提交路径。构建时产物为静态 CSS 文件。CSP header 已限制 style-src。",
+      "mitigation": "CSP + 构建时静态 CSS + 无用户 CSS 输入",
+      "fix_target": "next 16.3.0+ 升级内嵌 postcss 至安全版本",
+      "owner": "总控",
+      "expires": "2026-09-01",
+      "audit_ref": "docs/SAM-32-33-dependency-audit.md §2.3"
+    },
+    {
+      "package": "postcss",
+      "vuln_id": "GHSA-6g55-p6wh-862q",
+      "severity": "high",
+      "cwe": "CWE-22,CWE-200",
+      "cvss": 7.5,
+      "risk_reason": "Next.js 16.2.11 内嵌 postcss 8.4.31。sourceMappingURL 文件读取需要攻击者向 CSS 注释注入恶意 URL — CSS 由 Tailwind 在构建时生成，无用户修改路径。",
+      "mitigation": "构建时静态 CSS + 无用户 CSS 修改路径",
+      "fix_target": "next 16.3.0+ 升级内嵌 postcss 至安全版本",
+      "owner": "总控",
+      "expires": "2026-09-01",
       "audit_ref": "docs/SAM-32-33-dependency-audit.md §2.3"
     },
     {
       "package": "sharp",
+      "vuln_id": "GHSA-f88m-g3jw-g9cj",
       "severity": "high",
-      "reason": "Next.js 16.2.11 内嵌 sharp 0.34.5。libvips 继承漏洞。图片输入受控（仅 JPEG/PNG/WebP，<5MB）。next 16.3 将修复。",
-      "cve": ["GHSA-f88m-g3jw-g9cj"],
+      "cwe": "CWE-1395",
+      "cvss": 0.0,
+      "risk_reason": "Next.js 16.2.11 内嵌 sharp 0.34.5。libvips 继承漏洞（CVE-2026-33327/33328/35590/35591）。利用需要 next/image 处理攻击者上传的恶意图像。CRM 中上传限制：仅 JPEG/PNG/WebP，<5MB。",
+      "mitigation": "上传文件类型/大小限制 + 受控图片来源",
+      "fix_target": "next 16.3.0+ 升级内嵌 sharp 至 0.35.0+",
+      "owner": "总控",
+      "expires": "2026-09-01",
       "audit_ref": "docs/SAM-32-33-dependency-audit.md §2.4"
     }
   ]

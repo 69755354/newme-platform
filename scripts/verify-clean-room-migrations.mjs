@@ -21,6 +21,9 @@ else {
     const [, timestamp] = match;
     if (timestamps.has(timestamp)) fail(`duplicate migration timestamp: ${timestamp}`);
     timestamps.add(timestamp); ordered.push(file);
+    const sql = fs.readFileSync(path.join(migrationDir, file), 'utf8');
+    const executableSql = sql.replace(/--[^\r\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    if (/ALTER\s+TABLE\s+TABLE\b/i.test(executableSql)) fail(`duplicate TABLE keyword in migration: ${file}`);
   }
   const required = ['20260723130000_lock_definer_boundaries.sql', '20260723140000_atomic_lead_reassignment.sql', '20260724100000_fix_transition_lead_stage_definer_search_path.sql'];
   const positions = required.map((file) => ordered.indexOf(file));

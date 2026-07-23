@@ -27,7 +27,7 @@ ALTER TABLE leads ADD COLUMN IF NOT EXISTS days_since_last_contact INTEGER DEFAU
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason TEXT;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_price BOOLEAN DEFAULT false;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_competitor BOOLEAN DEFAULT false;
-ALTER TABLE TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_no_budget BOOLEAN DEFAULT false;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_no_budget BOOLEAN DEFAULT false;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_project_cancelled BOOLEAN DEFAULT false;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_project_delayed BOOLEAN DEFAULT false;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_no_response BOOLEAN DEFAULT false;

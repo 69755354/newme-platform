@@ -7,7 +7,7 @@
 
 -- ── Part 1: 4 条 public 策略缩窄为 authenticated ──
 
-DO $
+DO $body$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='lead_files' AND policyname='lead_files_select_assigned') THEN
     ALTER POLICY "lead_files_select_assigned" ON public.lead_files TO authenticated;
@@ -22,7 +22,7 @@ BEGIN
     ALTER POLICY "Users insert own audit events" ON public.audit_log_archived_20260615 TO authenticated;
   END IF;
 END;
-$;
+$body$;
 
 -- ── Part 2: log_activity() 表引用加 public. 前缀 ──
 

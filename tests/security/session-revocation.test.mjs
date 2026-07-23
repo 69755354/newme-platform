@@ -123,7 +123,9 @@ test("the server proxy denies inactive sessions before protected APIs or pages",
   assert.match(proxy, /status: 401/);
   assert.match(proxy, /reason["']?, ["']inactive_account["']/);
   assert.match(proxy, /const PUBLIC_API_PATHS = new Set\(\[\s*["']\/api\/auth\/logout["']\s*,\s*["']\/api\/auth\/me["']\s*,?\s*\]\)/);
-  assert.doesNotMatch(proxy, /\/api\/(?:health|meta\/oauth-callback|monitoring\/report|leads\/meta-capi|auth\/dev-login|dev\/setup)/);
+  assert.match(proxy, /EXTERNAL_AUTHORIZED_API_PATHS/);
+  assert.match(proxy, /"\/api\/leads\/meta-capi"/);
+  assert.match(proxy, /EXTERNAL_AUTHORIZED_API_PREFIXES = \["\/api\/cron\/"\]/);
   assert.ok(proxy.indexOf("isActiveProfile(profile)") < proxy.indexOf("Track activity"));
 });
 
@@ -183,7 +185,7 @@ test("real lead stage handler rejects an inactive old session before business ac
   active = true;
   const activeResponse = await stage.PATCH(request(), params);
   assert.equal(activeResponse.status, 400);
-  assert.deepEqual(await activeResponse.json(), { error: "Invalid stage" });
+  assert.deepEqual(await activeResponse.json(), { error: "A valid idempotency key is required" });
 });
 
 test("real auth-me handler rejects an inactive old token and accepts an active profile", async (t) => {

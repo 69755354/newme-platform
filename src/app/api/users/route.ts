@@ -28,10 +28,9 @@ async function checkRole(request: NextRequest): Promise<NextResponse | string> {
     return NextResponse.json({ error: "Profile not found" }, { status: 403 });
   }
 
-  // admin, boss, or sales can manage users
-  if (profile.role !== "admin" && profile.role !== "boss" && profile.role !== "sales") {
+  if (profile.role !== "admin" && profile.role !== "boss") {
     return NextResponse.json(
-      { error: "Insufficient permissions. Admin, Boss, or Sales Manager role required." },
+      { error: "Insufficient permissions. Admin or Boss role required." },
       { status: 403 },
     );
   }
@@ -44,13 +43,9 @@ export async function GET(request: NextRequest) {
   const role = await checkRole(request);
   if (role instanceof NextResponse) return role;
 
-  const selectFields = role === "sales"
-    ? "id, full_name, role, is_active, last_active_at"
-    : "id, email, full_name, role, is_active, last_active_at, force_password_change";
-
   const { data, error } = await supabaseAdmin
     .from("profiles")
-    .select(selectFields)
+    .select("id, email, full_name, role, is_active, last_active_at, force_password_change")
     .order("full_name", { ascending: true });
 
   if (error) {
@@ -117,14 +112,6 @@ export async function POST(request: NextRequest) {
           error: `Invalid role. Must be one of: ${validRoles.join(", ")}`,
         },
         { status: 400 },
-      );
-    }
-
-    // Sales role can only create sales users
-    if (callerRole === "sales" && role !== "sales") {
-      return NextResponse.json(
-        { error: "Sales managers can only create users with 'sales' role." },
-        { status: 403 },
       );
     }
 

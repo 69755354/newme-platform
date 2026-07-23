@@ -29,7 +29,7 @@ export async function addTeamMember(data: AddTeamMemberInput) {
     .eq('id', user.id)
     .single()
 
-  if (!profile?.role || !['admin', 'boss', 'sales'].includes(profile.role)) {
+  if (!profile?.role || !['admin', 'boss'].includes(profile.role)) {
     throw new Error('Forbidden')
   }
 
@@ -40,10 +40,6 @@ export async function addTeamMember(data: AddTeamMemberInput) {
   if (!VALID_ROLES.includes(data.role)) {
     throw new Error(`Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`)
   }
-  if (profile.role === 'sales' && data.role !== 'sales') {
-    throw new Error('Sales managers can only create users with sales role.')
-  }
-
   // Create auth user via admin API
   const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
     email: data.email,

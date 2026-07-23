@@ -16,7 +16,7 @@ else {
   const ordered = [];
   for (const file of files) {
     if (file.startsWith('rollback_')) { fail(`rollback SQL must not be in migration directory: ${file}`); continue; }
-    const match = file.match(/^(\d{14})_[a-z0-9_]+\.sql$/);
+    const match = file.match(/^(\d{10}|\d{14})_[a-z0-9_]+\.sql$/);
     if (!match) { fail(`migration filename is not timestamped: ${file}`); continue; }
     const [, timestamp] = match;
     if (timestamps.has(timestamp)) fail(`duplicate migration timestamp: ${timestamp}`);

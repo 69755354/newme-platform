@@ -36,7 +36,7 @@ async function saveTokenToSupabase(
   const supabase = await getSupabaseAdmin();
   const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
-  // Upsert — id=1 ensures a single row (singleton pattern)
+  // Upsert ? id=1 ensures a single row (singleton pattern)
   const { error } = await supabase.from("meta_tokens").upsert(
     {
       id: 1,
@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
           operation: "oauth_callback",
           expires_in: tokenData.expires_in,
         },
-        "[OAuth] SUCCESS — token saved",
+        "[OAuth] SUCCESS ? token saved",
       );
 
       return clearStateCookie(new NextResponse(

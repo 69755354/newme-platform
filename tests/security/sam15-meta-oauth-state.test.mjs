@@ -105,7 +105,13 @@ test("OAuth callback rejects missing/mismatched state, succeeds once, and clears
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://supabase.example";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
   t.after(() => {
-    for (const [key, value] of Object.entries({ META_APP_ID: oldAppId, META_APP_SECRET: oldSecret, META_REDIRECT_URI: oldRedirect, NEXT_PUBLIC_SUPABASE_URL: oldSupabaseUrl, SUPABASE_SERVICE_ROLE_KEY: oldSupabaseKey })) {
+    for (const [key, value] of Object.entries({
+      META_APP_ID: oldAppId,
+      META_APP_SECRET: oldSecret,
+      META_REDIRECT_URI: oldRedirect,
+      NEXT_PUBLIC_SUPABASE_URL: oldSupabaseUrl,
+      SUPABASE_SERVICE_ROLE_KEY: oldSupabaseKey,
+    })) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }
   });

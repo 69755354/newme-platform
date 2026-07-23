@@ -25,6 +25,11 @@ export function createMiddlewareClient(request: NextRequest) {
           cookiesToSet: { name: string; value: string; options: CookieOptions }[],
           headers: Record<string, string>,
         ) {
+          // Keep the refreshed cookies in the request passed downstream. Without
+          // this, a later server component sees the stale request cookie and can
+          // race the refresh that just completed in this proxy invocation.
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options),
           );

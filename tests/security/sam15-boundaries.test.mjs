@@ -28,10 +28,17 @@ test("session cookies use dynamic names and secure server refresh attributes", a
   assert.match(server, /httpOnly: true/);
   assert.match(session, /JSON\.stringify\(\{[\s\S]*access_token: accessToken/);
   assert.doesNotMatch(session, /const cookiePayload = JSON\.stringify\(\{[\s\S]*refresh_token: refreshToken/);
-  assert.match(server, /_cookieStore\.set\(names\.refreshToken/);
+  assert.doesNotMatch(server, /_cookieStore\.set/);
   assert.match(session, /httpOnly: true/);
   assert.match(session, /sameSite: "strict"/);
   assert.match(session, /secure: true/);
+});
+
+test("middleware forwards refreshed cookies to both downstream request and browser response", async () => {
+  const middleware = await read("src/lib/supabase-middleware.ts");
+  assert.match(middleware, /request\.cookies\.set\(name, value\)/);
+  assert.match(middleware, /response\.cookies\.set\(name, value, options\)/);
+  assert.match(middleware, /response = NextResponse\.next\(\{ request \}\)/);
 });
 
 test("login delegates cookie creation to the same-origin server endpoint", async () => {

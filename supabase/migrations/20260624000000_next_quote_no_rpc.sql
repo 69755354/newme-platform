@@ -31,4 +31,5 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.next_quote_no() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.next_quote_no() FROM anon;
 GRANT EXECUTE ON FUNCTION public.next_quote_no() TO authenticated;

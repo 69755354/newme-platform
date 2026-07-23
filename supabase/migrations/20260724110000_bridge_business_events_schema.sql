@@ -25,7 +25,7 @@ BEGIN
       ON public.business_events(created_by);
   END IF;
 END;
-$$;
+$;
 
 -- Correct the existing event-trigger function for all future public tables.
 CREATE OR REPLACE FUNCTION auto_enable_rls()
@@ -36,7 +36,14 @@ BEGIN
   LOOP
     IF obj.object_type = 'table' AND obj.schema_name = 'public' THEN
       EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY', obj.object_identity);
-      EXECUTE format('CREATE POLICY "auto_deny_all" ON %s FOR ALL USING (false) WITH CHECK (false)', obj.object_identity);
+      BEGIN
+        EXECUTE format(
+          'CREATE POLICY "auto_deny_all" ON %s FOR ALL USING (false) WITH CHECK (false)',
+          obj.object_identity
+        );
+      EXCEPTION WHEN duplicate_object THEN
+        NULL;
+      END;
     END IF;
   END LOOP;
 END;

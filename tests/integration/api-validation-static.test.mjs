@@ -12,4 +12,7 @@ test('quality route validates allowed quality values and poor reason', () => {
   const text = fs.readFileSync('src/app/api/leads/[id]/quality/route.ts', 'utf8');
   assert.match(text, /poor.+normal.+good/s);
   assert.match(text, /poor_reason is required/);
+  assert.match(text, /createServerSupabase\(bearerToken, cookieHeader\)/);
+  assert.doesNotMatch(text, /createServerClient/);
 });
+

@@ -1,7 +1,9 @@
+Exit code: 0
+Wall time: 1.2 seconds
+Output:
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { parseCookieHeader } from '@/lib/supabase-server';
+import { createServerSupabase } from '@/lib/supabase-server';
 import { logger, genReqId } from '@/lib/logger';
 import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
 import { isCompleteContact } from '@/lib/first-contact-gate.mjs';
@@ -14,18 +16,8 @@ export async function POST(
   const { id: leadId } = await params;
   try {
     const cookieHeader = req.headers.get("cookie") ?? "";
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() { return parseCookieHeader(cookieHeader); },
-          setAll() {},
-        },
-      }
-    );
-
     const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const profile = await getAuthProfile(bearerToken, cookieHeader);
     if (!profile) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

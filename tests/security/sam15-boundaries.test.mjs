@@ -34,11 +34,18 @@ test("session cookies use dynamic names and secure server refresh attributes", a
   assert.match(session, /secure: true/);
 });
 
-test("middleware forwards refreshed cookies to both downstream request and browser response", async () => {
+test("middleware uses the custom split-session refresh boundary", async () => {
   const middleware = await read("src/lib/supabase-middleware.ts");
+  assert.match(middleware, /createServerSupabase\(undefined, request\.headers\.get\("cookie"\)/);
+  assert.match(middleware, /getRefreshedCookies\(supabase\)/);
   assert.match(middleware, /request\.cookies\.set\(name, value\)/);
-  assert.match(middleware, /response\.cookies\.set\(name, value, options\)/);
-  assert.match(middleware, /response = NextResponse\.next\(\{ request \}\)/);
+  assert.match(middleware, /response\.cookies\.set\(name, value, options/);
+  assert.doesNotMatch(middleware, /@supabase\/ssr|CookieOptions|setAll/);
+  assert.match(middleware, /getResponse: \(\) => response/);
+  const proxy = await read("src/proxy.ts");
+  assert.doesNotMatch(proxy, /const \{ supabase, response \}/);
+  assert.match(proxy, /const \{ supabase, getResponse \} = await createMiddlewareClient\(request\)/);
+  assert.match(proxy, /return getResponse\(\)/);
 });
 
 test("login delegates cookie creation to the same-origin server endpoint", async () => {

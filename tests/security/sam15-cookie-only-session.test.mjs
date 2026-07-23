@@ -309,6 +309,54 @@ test("server component refresh path never writes through the read-only cookies s
   assert.equal(server.getRefreshedCookies(client).length, 2);
 });
 
+test("middleware passes the explicit Cookie header and writes custom refresh cookies both ways", async () => {
+  const requestCookies = [];
+  let receivedCookieHeader;
+  class MockResponse {
+    constructor(request) {
+      this.request = request;
+      this.cookiesSet = [];
+      this.headers = new Headers();
+      this.cookies = {
+        set: (name, value, options = {}) => this.cookiesSet.push({ name, value, options }),
+      };
+    }
+  }
+  const refreshedCookies = [
+    { name: "sb-auth", value: "new-access", options: { httpOnly: false } },
+    { name: "sb-refresh", value: "new-refresh", options: { httpOnly: true } },
+  ];
+  const middleware = loadTypeScriptModule("src/lib/supabase-middleware.ts", {
+    "@/lib/supabase-server": {
+      createServerSupabase: async (_bearerToken, cookieHeader) => {
+        receivedCookieHeader = cookieHeader;
+        return { refreshedCookies };
+      },
+      getRefreshedCookies: (client) => client.refreshedCookies,
+    },
+    "next/server": {
+      NextResponse: {
+        next: ({ request }) => new MockResponse(request),
+      },
+    },
+  });
+  const request = {
+    headers: new Headers({ cookie: "sb-auth=old-access; sb-refresh=old-refresh" }),
+    cookies: {
+      getAll: () => requestCookies,
+      set: (name, value) => requestCookies.push({ name, value }),
+    },
+  };
+  const { getResponse } = await middleware.createMiddlewareClient(request);
+
+  assert.equal(receivedCookieHeader, "sb-auth=old-access; sb-refresh=old-refresh");
+  assert.deepEqual(requestCookies, [
+    { name: "sb-auth", value: "new-access" },
+    { name: "sb-refresh", value: "new-refresh" },
+  ]);
+  assert.deepEqual(getResponse().cookiesSet, refreshedCookies);
+});
+
 test("same-origin logout clears dynamic and legacy cookies", async () => {
   const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
   const logout = loadTypeScriptModule("src/app/api/auth/logout/route.ts", {

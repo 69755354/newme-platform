@@ -49,7 +49,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Use createMiddlewareClient to validate session (no service_role needed)
-  const { supabase, response } = createMiddlewareClient(request);
+  const { supabase, getResponse } = await createMiddlewareClient(request);
 
   let { data: { user } } = await supabase.auth.getUser();
 
@@ -228,7 +228,7 @@ export async function proxy(request: NextRequest) {
 
   // No role check needed — pass through
   if (!requiredRoles) {
-    return response;
+    return getResponse();
   }
 
   // Not logged in — redirect to login
@@ -244,7 +244,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  return response;
+  return getResponse();
 }
 
 export const config = {

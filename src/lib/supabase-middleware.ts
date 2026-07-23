@@ -1,5 +1,5 @@
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
+import { createServerSupabase, getRefreshedCookies } from "@/lib/supabase-server";
 
 /**
  * Creates a Supabase SSR client for use in Next.js 16 middleware (proxy.ts).
@@ -9,38 +9,17 @@ import { type NextRequest, NextResponse } from "next/server";
  * session (access/refresh tokens) is available in the middleware and the
  * response's `Set-Cookie` headers are properly forwarded to the client.
  */
-export function createMiddlewareClient(request: NextRequest) {
-  // Create a mutable response so we can attach Set-Cookie headers
-  let response = NextResponse.next({ request });
+export async function createMiddlewareClient(request: NextRequest) {
+  const supabase = await createServerSupabase(undefined, request.headers.get("cookie") ?? "");
+  const refreshedCookies = getRefreshedCookies(supabase);
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(
-          cookiesToSet: { name: string; value: string; options: CookieOptions }[],
-          headers: Record<string, string>,
-        ) {
-          // Keep the refreshed cookies in the request passed downstream. Without
-          // this, a later server component sees the stale request cookie and can
-          // race the refresh that just completed in this proxy invocation.
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
-          // Apply anti-caching headers when auth cookies are set
-          Object.entries(headers).forEach(([key, value]) => {
-            response.headers.set(key, value);
-          });
-        },
-      },
-    },
+  // Keep custom split-session refreshes in the request passed downstream and
+  // in the browser response so the same request cannot refresh the old token.
+  refreshedCookies.forEach(({ name, value }) => request.cookies.set(name, value));
+  const response = NextResponse.next({ request });
+  refreshedCookies.forEach(({ name, value, options }) =>
+    response.cookies.set(name, value, options as Parameters<typeof response.cookies.set>[2]),
   );
 
-  return { supabase, response };
+  return { supabase, getResponse: () => response };
 }

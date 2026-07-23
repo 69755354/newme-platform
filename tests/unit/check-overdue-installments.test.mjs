@@ -12,14 +12,20 @@ test("creates payment-overdue notifications for admins and the contract salesper
   assert.match(source, /type: "payment_overdue"/);
 });
 
-test("reports insert failure in a structured 502 response", async () => {
+test("a notification failure leaves the installment eligible for the next cron run", async () => {
   const source = await readFile(route, "utf8");
   assert.match(source, /reason: "notification_insert_failed"/);
+  const notificationCall = source.indexOf("createOverdueNotifications(plan)");
+  const statusUpdate = source.indexOf(".update({ status: \"overdue\"");
+  assert.ok(notificationCall >= 0 && statusUpdate > notificationCall);
   assert.match(source, /notification_failures: notificationFailures\.length/);
   assert.match(source, /NextResponse\.json\(result, \{ status: 502 \}\)/);
 });
 
-test("does not retry inserts without a uniqueness contract", async () => {
+test("existing recipient notifications are not inserted again before status update", async () => {
   const source = await readFile(route, "utf8");
+  assert.match(source, /existingNotifications/);
+  assert.match(source, /missingRecipientIds/);
+  assert.match(source, /if \(missingRecipientIds\.length === 0\) return \{ ok: true \}/);
   assert.match(source, /do not retry[\s\S]*duplicate payment alerts/);
 });

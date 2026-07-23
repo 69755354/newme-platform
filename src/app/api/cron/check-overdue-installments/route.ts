@@ -17,8 +17,20 @@ async function createOverdueNotifications(plan: OverduePlan): Promise<{ ok: true
   if (contract.sales_id) recipientIds.add(contract.sales_id);
   if (recipientIds.size === 0) return { ok: false, reason: "no_recipients" };
 
+  const { data: existingNotifications, error: existingError } = await supabaseAdmin
+    .from("notifications")
+    .select("user_id")
+    .eq("type", "payment_overdue")
+    .eq("related_id", plan.id)
+    .eq("related_type", "payment");
+  if (existingError) return { ok: false, reason: "notification_lookup_failed" };
+
+  const existingRecipientIds = new Set((existingNotifications ?? []).map((notification: { user_id: string }) => notification.user_id));
+  const missingRecipientIds = [...recipientIds].filter((userId) => !existingRecipientIds.has(userId));
+  if (missingRecipientIds.length === 0) return { ok: true };
+
   const { error: insertError } = await supabaseAdmin.from("notifications").insert(
-    [...recipientIds].map((userId) => ({
+    missingRecipientIds.map((userId) => ({
       user_id: userId,
       type: "payment_overdue",
       title: `Overdue installment: AED ${plan.amount}`,
@@ -45,17 +57,17 @@ export async function GET(request: NextRequest) {
   try {
     const today = new Date().toISOString().slice(0, 10);
 
-    // Mark pending installments past due_date as overdue
-    const { data: overdue, error: updateErr } = await supabaseAdmin
+    // Read first. A plan becomes overdue only after its notification write succeeds,
+    // which keeps a failed notification eligible for the next cron run.
+    const { data: overdue, error: overdueQueryError } = await supabaseAdmin
       .from("installment_plans")
-      .update({ status: "overdue", updated_at: new Date().toISOString() })
+      .select("id, contract_id, seq, amount, due_date")
       .in("status", ["pending", "partial"])
-      .lt("due_date", today)
-      .select("id, contract_id, seq, amount, due_date");
+      .lt("due_date", today);
 
-    if (updateErr) {
-      console.error("[Cron Overdue] Update failed:", updateErr);
-      return NextResponse.json({ error: "Update failed" }, { status: 500 });
+    if (overdueQueryError) {
+      console.error("[Cron Overdue] Query failed:", overdueQueryError);
+      return NextResponse.json({ error: "Overdue query failed" }, { status: 500 });
     }
 
     // Notify about newly overdue installments
@@ -67,7 +79,19 @@ export async function GET(request: NextRequest) {
         // an ambiguous insert failure or it may duplicate payment alerts.
         const delivery = await createOverdueNotifications(plan);
         if (delivery.ok) {
-          notified.push(plan.id);
+          const { data: updatedPlan, error: statusUpdateError } = await supabaseAdmin
+            .from("installment_plans")
+            .update({ status: "overdue", updated_at: new Date().toISOString() })
+            .eq("id", plan.id)
+            .in("status", ["pending", "partial"])
+            .select("id")
+            .maybeSingle();
+          if (statusUpdateError || !updatedPlan) {
+            notificationFailures.push({ installment_id: plan.id, reason: "status_update_failed" });
+            console.error("[Cron Overdue] Status update failed", { installment_id: plan.id, statusUpdateError });
+          } else {
+            notified.push(plan.id);
+          }
         } else {
           notificationFailures.push({ installment_id: plan.id, reason: delivery.reason });
           console.error("[Cron Overdue] Notification delivery failed", {

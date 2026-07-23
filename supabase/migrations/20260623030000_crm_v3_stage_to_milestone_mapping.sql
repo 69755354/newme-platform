@@ -1,4 +1,5 @@
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS final_status TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS current_milestone TEXT DEFAULT 'new';
 
 CREATE TABLE IF NOT EXISTS lead_milestones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -100,6 +100,7 @@ CREATE POLICY "business_events_sales_create" ON business_events FOR INSERT
 
 -- ═══════════════ 更新 views ═══════════════
 -- 更新销售绩效视图，包含新字段
+DROP VIEW IF EXISTS sales_performance;
 CREATE OR REPLACE VIEW sales_performance AS
 SELECT 
   p.id,

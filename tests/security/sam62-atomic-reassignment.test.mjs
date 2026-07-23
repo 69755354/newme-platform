@@ -36,6 +36,12 @@ test("SAM-62 removes dashboard and detail reassignment direct writes", async () 
   assert.match(api, /CONCURRENT/);
 });
 
+test("SAM-62 has no dashboard shortcut around the controlled stage transition", async () => {
+  const dashboard = await readFile(dashboardMutation, "utf8");
+  assert.doesNotMatch(dashboard, /const changeStage\s*=/);
+  assert.doesNotMatch(dashboard, /from\("quotations"\)/);
+});
+
 test("SAM-62 records a note and its contact timestamp in one idempotent mutation", async () => {
   const [sql, detail, api] = await Promise.all([
     readFile(migration, "utf8"),

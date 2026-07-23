@@ -16,17 +16,9 @@
  *   - Keeps the page-level orchestrator (page.tsx) focused on UI state
  *     + composition, with one mutation surface to mock in tests.
  *
- * Notable risk: changeStage (the largest handler at ~94 lines)
- *   - Optimistic lock via count:"exact" + eq("updated_at", oldLead.updated_at).
- *     Stale writes short-circuit with a user-visible error and refetch.
- *   - 4-table cascade: leads (with STAGE_AUTO auto-fields), quotations
- *     (terminal stage closes open quotes), activities (audit), and
- *     business_events (analytics). The business_events insert is no longer
- *     direct — see P3-11/P3-12: changeStage's lead/quotation/activity inserts
- *     stay direct, but the audit row is written via POST /api/leads/[id]/events.
- *   - Backwards / skip-stage guards are admin/boss-aware.
- *   - DO NOT edit the block body when refactoring — it's covered by
- *     CRM v3.1 P1P1 plan risk register at line 5191.
+ * Stage transitions are deliberately absent from this dashboard hook. They
+ * require the Lead detail page's controlled API path, which records the
+ * required stage note and enforces the current-stage completion gates.
  *
  * T3-3 step 7 — ui interface slim-down
  *   - The original `ui` parameter was a 13-setter bundle used by handlers
@@ -43,12 +35,8 @@
 
 import { useCallback } from "react";
 import { createClient } from "@/lib/supabase";
-import type { Database } from "@/types/database";
-
-type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
 import { toast } from "sonner";
 import type { Lead } from "./useLeadsData";
-import { PIPELINE_STAGES } from "../_utils/constants";
 
 /* ─── Types ─── */
 export interface SalesUser {
@@ -88,7 +76,6 @@ export interface UseLeadMutationsReturn {
     eventData?: Record<string, any>
   ) => Promise<void>;
   handleDelete: (leadId: string, leadAssignedTo: string | null) => Promise<void>;
-  changeStage: (leadId: string, newStage: string) => Promise<void>;
   changeProbability: (leadId: string, prob: number) => Promise<void>;
   changeStatus: (leadId: string, status: string) => Promise<void>;
   changeLostReason: (leadId: string, reason: string) => Promise<void>;
@@ -102,22 +89,6 @@ export interface UseLeadMutationsReturn {
   updateNextAction: (leadId: string, text: string, onSuccess?: () => void) => Promise<void>;
   updateNextFollowup: (leadId: string, date: string, onSuccess?: () => void) => Promise<void>;
 }
-
-/* ─── Stage auto-properties (preserved verbatim) ─── */
-const STAGE_AUTO: Record<string, { win_probability: number; lead_status?: string; next_action?: string }> = {
-  new: { win_probability: 10, next_action: "Contact lead" },
-  contacted: { win_probability: 10, next_action: "Confirm requirements" },
-  requirement_confirmed: { win_probability: 30, next_action: "Prepare solution" },
-  solution_submitted: { win_probability: 30, next_action: "Prepare quotation" },
-  quotation_submitted: { win_probability: 50, next_action: "Follow up on quotation" },
-  negotiation: { win_probability: 70, next_action: "Negotiate terms" },
-  pending_decision: { win_probability: 90, next_action: "Close deal" },
-  won: { win_probability: 100, lead_status: "hot", next_action: "Send contract" },
-  lost: { win_probability: 0, lead_status: "dormant", next_action: undefined },
-};
-const STAGE_INDEX: Record<string, number> = {};
-PIPELINE_STAGES.forEach((s, i) => { STAGE_INDEX[s.key] = i; });
-const TERMINAL_STAGES = new Set(["won", "lost"]);
 
 /* ─── Hook ─── */
 export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutationsReturn {
@@ -143,8 +114,8 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
   // by design — the list page has no critical UI for missing audit rows,
   // so a console.error is enough and we deliberately do NOT toast.
   // Signature is unchanged: (leadId, eventType, description, eventData?)
-  // → Promise<void>, so all 7 call sites (reassignSales, changeStage,
-  // changeProbability, changeStatus, changeLostReason, addQuickNote,
+  // → Promise<void>, so all remaining dashboard mutation call sites
+  // (reassignSales, changeProbability, changeStatus, changeLostReason, addQuickNote,
   // updateNextAction, updateNextFollowup) keep working as-is.
   const writeEvent = useCallback(
     async (leadId: string, eventType: string, description: string, eventData?: Record<string, any>) => {
@@ -220,124 +191,6 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
       fetchLeads();
     },
     [salesRole, currentUserId, fetchLeads, t, lang]
-  );
-
-  // ─── Change stage (the big one) ───
-  const changeStage = useCallback(
-    async (leadId: string, newStage: string) => {
-      const oldLead = leads.find(l => l.id === leadId);
-      if (!oldLead) return;
-
-      // Guard 1: no-op
-      if (oldLead.stage === newStage) return;
-
-      // Guard 2: valid stage
-      if (!(newStage in STAGE_INDEX)) {
-        setError(t("common.invalidStage") + `: "${newStage}"`);
-        return;
-      }
-
-      // Guard 3: can't move from terminal (won/lost now live in final_status, not stage)
-      if (oldLead.final_status) {
-        setError(t("common.cannotChangeClosedLead"));
-        return;
-      }
-
-      // Guard 4: enforce forward-only for non-admin (admin/boss can revert)
-      const oldIdx = STAGE_INDEX[oldLead.stage];
-      const newIdx = STAGE_INDEX[newStage];
-      const canRevert = salesRole === "admin" || salesRole === "boss";
-      if (!canRevert && newIdx < oldIdx) {
-        setError(t("common.cannotMoveBackward"));
-        return;
-      }
-
-      // Guard 5: max 1 step forward for sales (admin/boss can skip)
-      if (!canRevert && newIdx - oldIdx > 1) {
-        setError(t("common.cannotSkipStages"));
-        return;
-      }
-
-      // Guard 6: first_contact gate — new → contacted requires 3 contacts + quality filled + contact_time
-      if (oldLead.stage === "new" && newStage === "contacted" && !canRevert) {
-        const { count: contactCount } = await supabase
-          .from("follow_up_logs")
-          .select("*", { count: "exact", head: true })
-          .eq("lead_id", leadId)
-          .not("contact_time", "is", null);
-        if ((contactCount ?? 0) < 3) {
-          setError(lang === "zh"
-            ? `需要 3 次联系记录且每次都要有 contact_time（当前 ${contactCount ?? 0}/3）`
-            : `Need 3 contact records with contact_time (current ${contactCount ?? 0}/3)`);
-          return;
-        }
-        if (!oldLead.quality || oldLead.quality === "pending") {
-          setError(lang === "zh"
-            ? "请先完成质量判断（Poor/Normal/Good）"
-            : "Please complete quality assessment first (Poor/Normal/Good)");
-          return;
-        }
-      }
-
-      const now = new Date().toISOString();
-      const auto = STAGE_AUTO[newStage];
-      // won/lost are terminal → persist to final_status, not stage
-      const updates: LeadUpdate = { updated_at: now, last_contact_date: now };
-      if (newStage === "won" || newStage === "lost") {
-        updates.final_status = newStage;
-      } else {
-        updates.stage = newStage;
-      }
-      if (auto) {
-        updates.win_probability = auto.win_probability;
-        if (auto.lead_status) updates.lead_status = auto.lead_status;
-        if (auto.next_action) updates.next_action = auto.next_action;
-      }
-      if (TERMINAL_STAGES.has(newStage)) {
-        updates.decision_date = now;
-
-        // Cascade: close related open quotes
-        await supabase.from("quotations")
-          .update({ status: newStage === "lost" ? "draft" : undefined, updated_at: now })
-          .eq("lead_id", leadId)
-          .neq("status", "accepted");
-      }
-
-      // Optimistic lock: only write if the row hasn't changed since we read it into
-      // React state. Prevents two reps clobbering each other's stage transition.
-      // count:"exact" lets us detect a stale-write (0 rows matched = someone else moved it).
-      const { error: changeStageErr, count } = await supabase
-        .from("leads")
-        .update(updates, { count: "exact" })
-        .eq("id", leadId)
-        .eq("updated_at", oldLead.updated_at);
-      if (changeStageErr) {
-        console.error("Failed to update lead stage:", changeStageErr);
-        setError(t("common.saveFailed") || "Save failed");
-        return;
-      }
-      if (count === 0) {
-        // Stale write: the lead was modified by another user between read and write.
-        setError(t("common.staleWrite") || "This lead was just updated by someone else. Refreshing…");
-        fetchLeads();
-        return;
-      }
-      const { error: changeStageActErr } = await supabase.from("activities").insert({
-        lead_id: leadId, type: "stage_change",
-        content: t("leads.eventStageChange").replace("{stage}", t(`stageLabels.${newStage}`)),
-        user_id: currentUserId,
-      });
-      if (changeStageActErr) console.error("Failed to insert activity:", changeStageActErr);
-      await writeEvent(leadId, "stage_change", t("leads.eventStageChanged").replace("{from}", t(`stageLabels.${oldLead?.stage || "?"}`)).replace("{to}", t(`stageLabels.${newStage}`)), {
-        from: oldLead?.stage, to: newStage, auto_updates: Object.keys(updates).filter(k => k !== "stage" && k !== "updated_at"),
-      });
-      // Notify admins about important stage changes
-      import("@/lib/notify").then(({ notify }) => {
-        notify({ type: "lead_stage_change", lead_id: leadId, from_stage: oldLead?.stage, to_stage: newStage });
-      });
-      fetchLeads();
-    },
-    [leads, salesRole, writeEvent, fetchLeads, setError, t] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // ─── Change probability ───
@@ -472,7 +325,6 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
     reassignSales,
     writeEvent,
     handleDelete,
-    changeStage,
     changeProbability,
     changeStatus,
     changeLostReason,

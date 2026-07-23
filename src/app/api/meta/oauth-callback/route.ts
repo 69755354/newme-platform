@@ -6,6 +6,18 @@ import { logger, genReqId } from "@/lib/logger";
 const APP_ID = process.env.META_APP_ID || "1612447067166445";
 const APP_SECRET = process.env.META_APP_SECRET!;
 const REDIRECT_URI = process.env.META_REDIRECT_URI || "https://app.newme.ae/api/meta/oauth-callback";
+const STATE_COOKIE = "meta_oauth_state";
+
+function clearStateCookie(response: NextResponse) {
+  response.cookies.set(STATE_COOKIE, "", {
+    httpOnly: true,
+    maxAge: 0,
+    path: "/api/meta",
+    sameSite: "lax",
+    secure: true,
+  });
+  return response;
+}
 
 async function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -70,8 +82,14 @@ async function saveTokenToSupabase(
 export async function GET(request: NextRequest) {
   const request_id = genReqId();
   const { searchParams } = new URL(request.url);
+  const state = searchParams.get("state");
+  const stateCookie = request.cookies.get(STATE_COOKIE)?.value;
   const code = searchParams.get("code");
   const error = searchParams.get("error");
+
+  if (!state || !stateCookie || state !== stateCookie) {
+    return clearStateCookie(NextResponse.json({ error: "invalid_oauth_state" }, { status: 400 }));
+  }
 
   if (error) {
     const desc = searchParams.get("error_description") || "";
@@ -84,14 +102,14 @@ export async function GET(request: NextRequest) {
       },
       "[OAuth] Authorization failed",
     );
-    return new NextResponse(
-      `<html><body><h2>Authorization Failed</h2><p>${error}: ${desc}</p><p>Close this tab.</p></body></html>`,
+    return clearStateCookie(new NextResponse(
+      "<html><body><h2>Authorization Failed</h2><p>Meta authorization was not completed. Close this tab.</p></body></html>",
       { headers: { "content-type": "text/html; charset=utf-8" } }
-    );
+    ));
   }
 
   if (!code) {
-    return new NextResponse("No code parameter", { status: 400 });
+    return clearStateCookie(new NextResponse("No code parameter", { status: 400 }));
   }
 
   try {
@@ -109,10 +127,10 @@ export async function GET(request: NextRequest) {
         "[OAuth] SUCCESS — token saved",
       );
 
-      return new NextResponse(
+      return clearStateCookie(new NextResponse(
         `<html><body><h2>Authorization Successful!</h2><p>Token saved. Close this tab.</p></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } }
-      );
+      ));
     }
 
     logger.error(
@@ -122,10 +140,10 @@ export async function GET(request: NextRequest) {
       },
       "[OAuth] Token exchange returned no access_token",
     );
-    return new NextResponse(
+    return clearStateCookie(new NextResponse(
       `<html><body><h2>Token Exchange Failed</h2><p>Check server logs.</p></body></html>`,
       { headers: { "content-type": "text/html; charset=utf-8" } }
-    );
+    ));
   } catch (e) {
     logger.error(
       {
@@ -135,10 +153,10 @@ export async function GET(request: NextRequest) {
       },
       "[OAuth] Exchange error",
     );
-    return new NextResponse(
-      `<html><body><h2>Error</h2><p>${String(e)}</p></body></html>`,
+    return clearStateCookie(new NextResponse(
+      "<html><body><h2>Error</h2><p>Authorization could not be completed. Close this tab.</p></body></html>",
       { headers: { "content-type": "text/html; charset=utf-8" } }
-    );
+    ));
   }
 }
 

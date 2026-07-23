@@ -33,8 +33,8 @@ test("main success stays quiet; main failure or cancellation has one non-fatal n
   assert.match(workflow, /curl --fail-with-body --silent --show-error/);
   const notifyStep = workflow.slice(workflow.indexOf("      - name: Notify Telegram"));
   const notifyRun = notifyStep.slice(notifyStep.indexOf("        run: |"));
-  assert.match(notifyStep, /UPSTREAM_MESSAGE:\\s*\\$\\{\\{ github\\.event\\.workflow_run\\.head_commit\\.message \\}\\}/);
-  assert.doesNotMatch(notifyRun, /\\$\\{\\{ github\\.event\\.workflow_run\\.head_commit\\.message \\}\\}/);
+  assert.match(notifyStep, /UPSTREAM_MESSAGE:\s*\$\{\{ github\.event\.workflow_run\.head_commit\.message \}\}/);
+  assert.doesNotMatch(notifyRun, /\$\{\{ github\.event\.workflow_run\.head_commit\.message \}\}/);
   assert.doesNotMatch(workflow, /--retry/);
   assert.match(workflow, /::error::Telegram notification delivery failed/);
   assert.equal(shouldNotify({ eventName: "workflow_run", upstreamEvent: "push", branch: "main", conclusion: "failure" }), true);

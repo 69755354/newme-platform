@@ -4,6 +4,8 @@ on:
   workflow_run:
     workflows:
       - ci
+    branches:
+      - main
     types:
       - completed
   workflow_dispatch:
@@ -13,6 +15,11 @@ permissions: {}
 jobs:
   hermes-contract:
     name: Hermes CI webhook contract
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -22,23 +29,25 @@ jobs:
           echo "Upstream workflow: ${{ github.event.workflow_run.name }}"
           echo "Conclusion: ${{ github.event.workflow_run.conclusion }}"
 
-      - name: Require upstream ci success
-        if: ${{ github.event_name == 'workflow_run' }}
-        run: |
-          if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
-            echo "FAIL: upstream ci did not succeed"
-            exit 1
-          fi
-          echo "PASS: upstream ci succeeded — Hermes OK"
-
       - name: Notify Telegram
-        if: ${{ github.event_name == 'workflow_run' }}
+        if: >-
+          ${{ github.event_name == 'workflow_run' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          (github.event.workflow_run.conclusion == 'failure' ||
+          github.event.workflow_run.conclusion == 'cancelled') }}
+        continue-on-error: true
         env:
           TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
+          set -euo pipefail
           MSG="ci ${{ github.event.workflow_run.conclusion }} — ${{ github.event.workflow_run.head_commit.message }}"
-          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+          if ! curl --fail-with-body --silent --show-error \
+            -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             -d chat_id=8459729760 \
             --data-urlencode "text=${MSG}" \
             -d disable_notification=true \
-            -o /dev/null -w "TG: %{http_code}\n"
+            -o /dev/null -w "TG: %{http_code}\n"; then
+            echo "::error::Telegram notification delivery failed for main push CI"
+            exit 1
+          fi

@@ -1,3 +1,5 @@
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS final_status TEXT;
+
 CREATE TABLE IF NOT EXISTS lead_milestones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,

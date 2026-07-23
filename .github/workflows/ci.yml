@@ -1,12 +1,6 @@
 name: ci
 
 on:
-  pull_request:
-  push:
-    branches:
-      - work
-      - main
-      - production
   workflow_dispatch:
 
 permissions:

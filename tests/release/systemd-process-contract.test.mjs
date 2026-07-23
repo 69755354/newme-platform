@@ -95,6 +95,7 @@ test("installer replaces direct service sudo with the audited control boundary",
   assert.match(installer, /infra\/systemd\/newme-deploy\.sh/);
   assert.match(installer, /git clone --bare https:\/\/github\.com\/69755354\/newme-platform\.git/);
   assert.match(deploy, /release SHA must equal canonical main/);
+  assert.match(deploy, /git@github\.com:69755354\/newme-platform\.git/);
   assert.match(deploy, /actions\/runs\/\$RUN_ID/);
   assert.match(deploy, /\[ \"\$RUN_ID\" = \"manual\" \]/);
   assert.match(deploy, /worktree add --force/);

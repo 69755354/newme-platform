@@ -21,12 +21,16 @@ case "$MIGRATION_STATUS" in
   *) exit 64 ;;
 esac
 
-readonly ORIGIN="https://github.com/69755354/newme-platform.git"
+readonly ORIGIN_HTTPS="https://github.com/69755354/newme-platform.git"
+readonly ORIGIN_SSH="git@github.com:69755354/newme-platform.git"
 readonly MIRROR="/opt/newme/repository.git"
 readonly WORKTREE_ROOT="/var/lib/newme/deploy-worktrees"
 [ -d "$MIRROR" ] || { echo "root-owned release mirror is missing" >&2; exit 65; }
 [ "$(stat -c '%U:%G' "$MIRROR")" = "root:root" ] || { echo "release mirror ownership is invalid" >&2; exit 65; }
-[ "$(git --git-dir="$MIRROR" remote get-url origin)" = "$ORIGIN" ] || { echo "release mirror origin is invalid" >&2; exit 65; }
+case "$(git --git-dir="$MIRROR" remote get-url origin)" in
+  "$ORIGIN_HTTPS"|"$ORIGIN_SSH") ;;
+  *) echo "release mirror origin is invalid" >&2; exit 65 ;;
+esac
 
 git --git-dir="$MIRROR" fetch --quiet --prune origin '+refs/heads/main:refs/remotes/origin/main'
 MAIN_SHA="$(git --git-dir="$MIRROR" rev-parse refs/remotes/origin/main)"

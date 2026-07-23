@@ -103,5 +103,8 @@ grep -Fqx '/var/log/newme-forensic/newme-forensic.log {' /etc/logrotate.d/newme-
 grep -Fq /opt/hermes-scripts/observability/health-check.sh /etc/cron.d/newme-observability
 grep -Fq /opt/hermes-scripts/observability/login-probe.sh /etc/cron.d/newme-observability
 test -x /usr/local/sbin/newme-deploy
-test "$(git --git-dir=/opt/newme/repository.git remote get-url origin)" = https://github.com/69755354/newme-platform.git
+case "$(git --git-dir=/opt/newme/repository.git remote get-url origin)" in
+  https://github.com/69755354/newme-platform.git|git@github.com:69755354/newme-platform.git) ;;
+  *) exit 65 ;;
+esac
 echo "backup=$BACKUP rollback=sudo bash $ROOT/scripts/rollback-systemd-assets.sh $BACKUP"

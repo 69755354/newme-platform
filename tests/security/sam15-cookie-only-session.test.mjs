@@ -249,12 +249,14 @@ test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives au
 });
 
 test("cookie-only browser session does not use localStorage or client persistence", async () => {
-  const [login, client, logout, session, server] = await Promise.all([
+  const [login, client, logout, session, server, redirect, posthog] = await Promise.all([
     readFile(new URL("src/app/login/page.tsx", root), "utf8"),
     readFile(new URL("src/lib/supabase.ts", root), "utf8"),
     readFile(new URL("src/app/api/auth/logout/route.ts", root), "utf8"),
     readFile(new URL("src/app/api/auth/session/route.ts", root), "utf8"),
     readFile(new URL("src/lib/supabase-server.ts", root), "utf8"),
+    readFile(new URL("src/hooks/useAuthRedirect.ts", root), "utf8"),
+    readFile(new URL("src/components/PostHogProviderInner.tsx", root), "utf8"),
   ]);
 
   assert.doesNotMatch(login, /localStorage/);
@@ -266,6 +268,9 @@ test("cookie-only browser session does not use localStorage or client persistenc
   assert.match(server, /decodeURIComponent/);
   assert.match(login, /fetch\(["']\/api\/auth\/logout/);
   assert.match(login, /auth\/v1\/logout/);
+  assert.doesNotMatch(redirect, /localStorage|auth-token/);
+  assert.doesNotMatch(posthog, /localStorage|access_token|atob\(/);
+  assert.match(posthog, /fetch\(["']\/api\/auth\/me/);
 });
 
 test("server component refresh path never writes through the read-only cookies store", async (t) => {

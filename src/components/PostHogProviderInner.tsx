@@ -4,22 +4,21 @@ import posthog from "posthog-js";
 import { PostHogProvider } from "posthog-js/react";
 import { useEffect, useState } from "react";
 
-function identifyUser() {
+async function identifyUser() {
   if (typeof window === "undefined") return;
   try {
-    const raw = localStorage.getItem("sb-vfopmpxlhwzpxqegayew-auth-token");
-    if (!raw) return;
-    const session = JSON.parse(raw);
-    if (!session?.access_token) return;
-
-    const payload = JSON.parse(atob(session.access_token.split(".")[1]));
-    if (payload?.sub) {
-      posthog.identify(payload.sub, {
-        email: payload.email || "",
-        role: payload.role || "",
+    const response = await fetch("/api/auth/me", { credentials: "same-origin" });
+    if (!response.ok) return;
+    const session = await response.json();
+    if (session?.userId) {
+      posthog.identify(session.userId, {
+        email: session.email || "",
+        role: session.role || "",
       });
     }
-  } catch {}
+  } catch {
+    // Analytics identification is optional; authenticated app flow remains server-owned.
+  }
 }
 
 export default function PostHogProviderInner({
@@ -45,14 +44,8 @@ export default function PostHogProviderInner({
       },
       loaded: () => {
         setReady(true);
-        identifyUser();
+        void identifyUser();
       },
-    });
-
-    window.addEventListener("storage", (e) => {
-      if (e.key === "sb-vfopmpxlhwzpxqegayew-auth-token") {
-        identifyUser();
-      }
     });
   }, []);
 

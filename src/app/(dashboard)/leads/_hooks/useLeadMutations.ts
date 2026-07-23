@@ -128,7 +128,6 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
     role: salesRole,
     userId: currentUserId,
     salesUsers,
-    userNameMap,
     fetchLeads,
     setError,
     t,
@@ -179,37 +178,29 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
         setError(t("common.saveFailed"));
         return;
       }
-      const newUserName = newUser.full_name || newUser.email || newUserId;
-      const oldName = oldLead.assigned_to
-        ? userNameMap[oldLead.assigned_to] || "Unknown"
-        : "Unassigned";
-
-      await writeEvent(leadId, "transfer", `Reassigned from ${oldName} to ${newUserName}`);
-
-      await supabase.from("leads").update({ assigned_to: newUserId, updated_at: new Date().toISOString() }).eq("id", leadId);
-
-      if (oldLead.assigned_to && currentUserId) {
-        await supabase.from("transfer_history").insert({
-          lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId,
-          reason: "manual_reassign", transferred_by: currentUserId,
+      try {
+        const response = await fetch(`/api/leads/${leadId}/assignment`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            assignedTo: newUserId,
+            expectedUpdatedAt: oldLead.updated_at,
+            idempotencyKey: crypto.randomUUID(),
+            reason: "manual_reassign",
+          }),
         });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          setError(payload.error || t("common.saveFailed"));
+          return;
+        }
+        setReassignLeadId(null);
+        fetchLeads();
+      } finally {
+        setReassigning(false);
       }
-
-      await supabase.from("activities").insert({
-        lead_id: leadId, type: "transfer", content: `Reassigned from ${oldName} to ${newUserName}`,
-        user_id: currentUserId,
-      });
-
-      // Notify the newly assigned salesperson
-      import("@/lib/notify").then(({ notify }) => {
-        notify({ type: "lead_assigned", lead_id: leadId, assigned_to: newUserId });
-      });
-
-      setReassignLeadId(null);
-      setReassigning(false);
-      fetchLeads();
     },
-    [leads, salesUsers, userNameMap, writeEvent, fetchLeads] // eslint-disable-line react-hooks/exhaustive-deps
+    [leads, salesUsers, fetchLeads, setError, setReassignLeadId, setReassigning, t]
   );
 
   // ─── Delete lead ───

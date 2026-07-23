@@ -36,7 +36,7 @@ if (process.argv.includes("--stamp")) {
     ? source.replace(/^\/\/ Migration fingerprint: sha256=[a-f0-9]+\r?\n/, `${provenance}\n`)
     : `${provenance}\n${source}`;
   await writeFile(typesPath, stamped);
-} else if (!source.startsWith(provenance)) {
+} else if (source.split(/\\r?\\n/, 1)[0] !== provenance) {
   console.error(`Database type source migration fingerprint mismatch: expected ${fingerprint}`);
   process.exit(1);
 }

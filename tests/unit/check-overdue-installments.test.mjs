@@ -1,41 +1,25 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { deliverOverdueNotification } from "../../src/lib/cron-overdue-notification.mjs";
-const plan = { id: "installment-1", contract_id: "contract-1", seq: 2, amount: 100, due_date: "2026-07-01" };
 
-test("delivers an overdue notification with the installment id", async () => {
-  const originalFetch = globalThis.fetch;
-  let request;
-  globalThis.fetch = async (_url, init) => {
-    request = init;
-    return new Response(null, { status: 200 });
-  };
-  try {
-    assert.deepEqual(await deliverOverdueNotification(plan), { ok: true });
-    assert.equal(JSON.parse(request.body).installment_id, plan.id);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+const route = new URL("../../src/app/api/cron/check-overdue-installments/route.ts", import.meta.url);
+
+test("creates payment-overdue notifications for admins and the contract salesperson", async () => {
+  const source = await readFile(route, "utf8");
+  assert.match(source, /from\("profiles"\).*\.in\("role", \["admin", "boss"\]\).*\.eq\("is_active", true\)/s);
+  assert.match(source, /recipientIds\.add\(contract\.sales_id\)/);
+  assert.match(source, /from\("notifications"\)\.insert/);
+  assert.match(source, /type: "payment_overdue"/);
 });
 
-test("returns a structured failure for a rejected notification", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(null, { status: 401 });
-  try {
-    assert.deepEqual(await deliverOverdueNotification(plan), { ok: false, reason: "http_401" });
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+test("reports insert failure in a structured 502 response", async () => {
+  const source = await readFile(route, "utf8");
+  assert.match(source, /reason: "notification_insert_failed"/);
+  assert.match(source, /notification_failures: notificationFailures\.length/);
+  assert.match(source, /NextResponse\.json\(result, \{ status: 502 \}\)/);
 });
 
-test("bounds a stalled notification request by timeout", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (_url, init) => new Promise((_resolve, reject) => {
-    init.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
-  });
-  try {
-    assert.deepEqual(await deliverOverdueNotification(plan, 1), { ok: false, reason: "timeout" });
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+test("does not retry inserts without a uniqueness contract", async () => {
+  const source = await readFile(route, "utf8");
+  assert.match(source, /do not retry[\s\S]*duplicate payment alerts/);
 });

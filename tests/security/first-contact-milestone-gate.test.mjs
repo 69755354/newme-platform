@@ -79,7 +79,7 @@ test("contact creation is idempotent across retries", async () => {
   const migration = await read("supabase/migrations/20260714000002_add_contact_idempotency.sql");
   assert.match(route, /createHash\("sha256"\)/);
   assert.match(route, /contact_fingerprint/);
-  assert.match(route, /onConflict: "contact_fingerprint"/);
+  assert.match(route, /supabase\.rpc\("record_lead_contact_atomic"/);
   assert.match(migration, /ADD COLUMN IF NOT EXISTS contact_fingerprint TEXT/);
   assert.match(migration, /UNIQUE.*contact_fingerprint/is);
   assert.doesNotMatch(migration, /WHERE contact_fingerprint IS NOT NULL/);

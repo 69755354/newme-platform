@@ -115,6 +115,30 @@ test("browser-readable session cookie contains no refresh token", async () => {
   assert.equal(response.cookiesSet.find((cookie) => cookie.name === names.refreshToken).options.httpOnly, true);
 });
 
+test("configured public origin is accepted behind a reverse proxy and other origins are rejected", async (t) => {
+  const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
+  const session = loadTypeScriptModule("src/app/api/auth/session/route.ts", {
+    "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
+    "next/server": createCookieResponseMock(),
+  });
+  const previousSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  process.env.NEXT_PUBLIC_SITE_URL = "https://app.newme.ae";
+  t.after(() => {
+    if (previousSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = previousSiteUrl;
+  });
+
+  const request = (origin) => new Request("http://127.0.0.1/api/auth/session", {
+    body: JSON.stringify({ access_token: "access-token", refresh_token: "refresh-token", expires_in: 3600 }),
+    headers: { "content-type": "application/json", origin },
+    method: "POST",
+  });
+  const accepted = await session.POST(request("https://app.newme.ae"));
+  assert.equal(accepted.status, 200);
+  const rejected = await session.POST(request("https://evil.example"));
+  assert.equal(rejected.status, 403);
+});
+
 test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives auth-cookie loss", async (t) => {
   const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
   const nextServer = createCookieResponseMock();

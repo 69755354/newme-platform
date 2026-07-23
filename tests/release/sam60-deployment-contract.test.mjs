@@ -20,7 +20,7 @@ test("SAM-60/SAM-68 contracts", async () => {
     assert.match(deploy, pattern);
   }
   assert.doesNotMatch(deploy, /shared\/node_modules|fuser\s+-k|pkill/);
-  for (const token of ["BACKUP", "manifest.sha256", "present.list", "forensic.conf", "restart-always.conf", "newme-runtime.env", "hermes-alert-v1.env", "newme-forensic", "daemon-reload"]) {
+  for (const token of ["BACKUP", "manifest.sha256", "present.list", "forensic.conf", "restart-always.conf", "newme-runtime.env", "hermes-alert-v1.env", "newme-forensic", "daemon-reload", "EXPECTED_MIRROR_ORIGIN", "repository.git.invalid"]) {
     assert.match(installer, new RegExp(token));
   }
   assert.match(rollback, /manifest\.sha256/);

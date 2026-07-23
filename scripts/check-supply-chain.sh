@@ -7,9 +7,9 @@ set -euo pipefail
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 PASS=0; FAIL=0
 
-report()  { echo -e "${GREEN}[PASS]${NC} $*"; ((PASS+=1)); }
+report()  { echo -e "${GREEN}[PASS]${NC} $*"; PASS=$((PASS + 1)); }
 warn()   { echo -e "${YELLOW}[WARN]${NC} $*"; }
-fail()   { echo -e "${RED}[FAIL]${NC} $*"; ((FAIL+=1)); }
+fail()   { echo -e "${RED}[FAIL]${NC} $*"; FAIL=$((FAIL + 1)); }
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

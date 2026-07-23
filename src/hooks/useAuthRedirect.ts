@@ -24,7 +24,7 @@ interface SessionInfo {
  *   3. 5s timeout: /api/auth/me 5s 仍未返回 → push /login
  *   4. Sales user on /dashboard → replace to /workbench
  *
- * handleLogout: POST /api/auth/logout + clear localStorage + push /login
+ * handleLogout: POST /api/auth/logout clears the server-owned session cookies, then pushes /login
  */
 export function useAuthRedirect() {
   const pathname = usePathname();
@@ -125,14 +125,6 @@ export function useAuthRedirect() {
     } catch {
       // proceed to clear local state even if server call fails
     }
-    localStorage.removeItem("sb-vfopmpxlhwzpxqegayew-auth-token");
-    const clearCookie = (name: string) => {
-      document.cookie = `${name}=; path=/; max-age=0; SameSite=Lax`;
-    };
-    clearCookie("sb-vfopmpxlhwzpxqegayew-auth-token");
-    clearCookie("sb-vfopmpxlhwzpxqegayew-refresh-token");
-    clearCookie("sb-access-token");
-    clearCookie("sb-refresh-token");
     router.push("/login");
   };
 

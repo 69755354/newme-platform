@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS business_events (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Preserve compatibility with the earlier business_events shape created by
+-- 20260602010000_crm_mvp_final.sql. Existing rows remain valid.
+ALTER TABLE business_events ADD COLUMN IF NOT EXISTS entity_type TEXT;
+ALTER TABLE business_events ADD COLUMN IF NOT EXISTS entity_id UUID;
+ALTER TABLE business_events ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES profiles(id);
+
 -- 添加索引
 CREATE INDEX IF NOT EXISTS idx_business_events_lead_id ON business_events(lead_id);
 CREATE INDEX IF NOT EXISTS idx_business_events_entity_type ON business_events(entity_type);

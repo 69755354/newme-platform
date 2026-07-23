@@ -8,9 +8,11 @@ BEGIN
     LOOP
         IF obj.object_type = 'table' AND obj.schema_name = 'public' THEN
             EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY', obj.object_identity);
-            IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = obj.schema_name AND tablename = obj.object_name AND policyname = 'auto_deny_all') THEN
+            BEGIN
                 EXECUTE format('CREATE POLICY "auto_deny_all" ON %s FOR ALL USING (false) WITH CHECK (false)', obj.object_identity);
-            END IF;
+            EXCEPTION WHEN duplicate_object THEN
+                NULL;
+            END;
         END IF;
     END LOOP;
 END;

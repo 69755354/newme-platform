@@ -24,7 +24,7 @@ for (const name of migrationNames) {
   const path = resolve(migrationsPath, name);
   fingerprintHash.update(relative(root, path).replaceAll("\\", "/"));
   fingerprintHash.update("\0");
-  fingerprintHash.update(await readFile(path));
+  fingerprintHash.update((await readFile(path, "utf8")).replaceAll("\r\n", "\n"));
   fingerprintHash.update("\0");
 }
 const fingerprint = fingerprintHash.digest("hex");

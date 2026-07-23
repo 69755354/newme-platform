@@ -7,6 +7,7 @@ const dashboardMutation = new URL("../../src/app/(dashboard)/leads/_hooks/useLea
 const detailMutation = new URL("../../src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts", import.meta.url);
 const route = new URL("../../src/app/api/leads/[id]/assignment/route.ts", import.meta.url);
 const noteRoute = new URL("../../src/app/api/leads/[id]/notes/route.ts", import.meta.url);
+const deleteRoute = new URL("../../src/app/api/leads/[id]/delete/route.ts", import.meta.url);
 
 test("SAM-62 reassignment has one atomic, idempotent server boundary", async () => {
   const sql = await readFile(migration, "utf8");
@@ -67,4 +68,18 @@ test("SAM-62 records structured contact and the lead contact fact atomically", a
   assert.match(sql, /operation = 'lead_contact'/);
   assert.match(api, /record_lead_contact_atomic/);
   assert.doesNotMatch(api, /supabaseAdmin/);
+});
+
+test("SAM-62 deletes a Lead through an audited, idempotent server boundary", async () => {
+  const [sql, dashboard, api] = await Promise.all([
+    readFile(migration, "utf8"), readFile(dashboardMutation, "utf8"), readFile(deleteRoute, "utf8"),
+  ]);
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS public\.lead_deletion_requests/);
+  assert.match(sql, /FUNCTION public\.delete_lead_atomic/);
+  assert.match(sql, /FOR UPDATE/);
+  assert.match(sql, /LEAD_DELETE_BLOCKED/);
+  assert.match(sql, /INSERT INTO public\.audit_logs/);
+  assert.match(dashboard, /\/api\/leads\/\$\{leadId\}\/delete/);
+  assert.doesNotMatch(dashboard, /\.from\("leads"\)\.delete/);
+  assert.match(api, /delete_lead_atomic/);
 });

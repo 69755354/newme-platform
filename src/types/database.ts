@@ -4057,6 +4057,10 @@ export type Database = {
         }
         Returns: Json
       }
+      delete_lead_atomic: {
+        Args: { p_idempotency_key: string; p_lead_id: string }
+        Returns: Json
+      }
       record_lead_note_atomic: {
         Args: { p_idempotency_key: string; p_lead_id: string; p_note: string }
         Returns: Json

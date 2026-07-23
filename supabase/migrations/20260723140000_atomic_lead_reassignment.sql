@@ -14,6 +14,76 @@ CREATE TABLE IF NOT EXISTS public.lead_mutation_requests (
 ALTER TABLE public.lead_mutation_requests ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.lead_mutation_requests FROM PUBLIC, anon, authenticated;
 
+-- Deletion cannot reuse lead_mutation_requests: a surviving FK would block the
+-- delete, while idempotency evidence must outlive the deleted Lead.
+CREATE TABLE IF NOT EXISTS public.lead_deletion_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id uuid NOT NULL REFERENCES public.profiles(id),
+  idempotency_key uuid NOT NULL,
+  deleted_lead_id uuid NOT NULL,
+  response jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (actor_id, idempotency_key)
+);
+
+ALTER TABLE public.lead_deletion_requests ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.lead_deletion_requests FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.delete_lead_atomic(
+  p_lead_id uuid,
+  p_idempotency_key uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+DECLARE
+  v_actor_id uuid := auth.uid();
+  v_actor_role text;
+  v_lead public.leads%ROWTYPE;
+  v_response jsonb;
+BEGIN
+  IF v_actor_id IS NULL THEN RAISE EXCEPTION 'UNAUTHORIZED'; END IF;
+  IF p_idempotency_key IS NULL THEN RAISE EXCEPTION 'INVALID_IDEMPOTENCY_KEY'; END IF;
+
+  SELECT role INTO v_actor_role FROM public.profiles WHERE id = v_actor_id;
+  IF coalesce(v_actor_role, '') NOT IN ('admin', 'boss', 'sales') THEN
+    RAISE EXCEPTION 'FORBIDDEN_LEAD_DELETE';
+  END IF;
+
+  SELECT response INTO v_response
+  FROM public.lead_deletion_requests
+  WHERE actor_id = v_actor_id AND idempotency_key = p_idempotency_key;
+  IF FOUND THEN RETURN v_response || jsonb_build_object('idempotent_replay', true); END IF;
+
+  SELECT * INTO v_lead FROM public.leads WHERE id = p_lead_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'LEAD_NOT_FOUND'; END IF;
+  IF v_actor_role = 'sales' AND v_lead.assigned_to IS DISTINCT FROM v_actor_id THEN
+    RAISE EXCEPTION 'FORBIDDEN_LEAD_DELETE';
+  END IF;
+
+  BEGIN
+    DELETE FROM public.leads WHERE id = p_lead_id;
+  EXCEPTION WHEN foreign_key_violation THEN
+    RAISE EXCEPTION 'LEAD_DELETE_BLOCKED';
+  END;
+
+  v_response := jsonb_build_object('lead_id', p_lead_id, 'deleted', true);
+  INSERT INTO public.audit_logs (actor_id, action, target_type, target_id, details)
+  VALUES (
+    v_actor_id, 'lead_deleted', 'lead', p_lead_id,
+    jsonb_build_object('customer_name', v_lead.customer_name, 'assigned_to', v_lead.assigned_to, 'stage', v_lead.stage)
+  );
+  INSERT INTO public.lead_deletion_requests (actor_id, idempotency_key, deleted_lead_id, response)
+  VALUES (v_actor_id, p_idempotency_key, p_lead_id, v_response);
+  RETURN v_response;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.delete_lead_atomic(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.delete_lead_atomic(uuid, uuid) TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.reassign_lead_atomic(
   p_lead_id uuid,
   p_new_assignee uuid,

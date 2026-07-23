@@ -168,9 +168,14 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
       if (!canDelete) return;
       const confirmed = confirm(t("leadDetail.confirmDelete") || "Are you sure you want to delete this lead? This action cannot be undone.");
       if (!confirmed) return;
-      const { error: delErr } = await supabase.from("leads").delete().eq("id", leadId);
-      if (delErr) {
-        console.error("Failed to delete lead:", delErr);
+      const response = await fetch(`/api/leads/${leadId}/delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        console.error("Failed to delete lead:", payload.error || response.status);
         toast.error(t("common.saveFailed") || "Delete failed");
         return;
       }

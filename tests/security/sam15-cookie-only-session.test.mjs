@@ -268,6 +268,95 @@ test("cookie-only browser session does not use localStorage or client persistenc
   assert.match(login, /auth\/v1\/logout/);
 });
 
+test("server component refresh path never writes through the read-only cookies store", async (t) => {
+  const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
+  const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const previousKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const previousFetch = globalThis.fetch;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "http://test.supabase.local";
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
+  t.after(() => {
+    if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    else process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = previousKey;
+    globalThis.fetch = previousFetch;
+  });
+
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ access_token: "refreshed-access", refresh_token: "refreshed-refresh", expires_in: 3600 }),
+  });
+
+  const cookieStore = {
+    getAll: () => [
+      { name: names.authToken, value: JSON.stringify({ access_token: "expired-access", expires_at: 1 }) },
+      { name: names.refreshToken, value: "refresh-token" },
+    ],
+    set: () => {
+      throw new Error("Server Component cookie store must remain read-only");
+    },
+  };
+  const server = loadTypeScriptModule("src/lib/supabase-server.ts", {
+    "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
+    "@/lib/auth-refresh.mjs": { classifyRefreshFailure: () => "upstream_error" },
+    "@supabase/supabase-js": { createClient: (_url, _key, options) => ({ options }) },
+    "next/headers": { cookies: async () => cookieStore },
+  });
+
+  const client = await server.createServerSupabase();
+  assert.equal(client.options.global.headers.Authorization, "Bearer refreshed-access");
+  assert.equal(server.getRefreshedCookies(client).length, 2);
+});
+
+test("middleware passes the explicit Cookie header and writes custom refresh cookies both ways", async () => {
+  const requestCookies = [];
+  let receivedCookieHeader;
+  class MockResponse {
+    constructor(request) {
+      this.request = request;
+      this.cookiesSet = [];
+      this.headers = new Headers();
+      this.cookies = {
+        set: (name, value, options = {}) => this.cookiesSet.push({ name, value, options }),
+      };
+    }
+  }
+  const refreshedCookies = [
+    { name: "sb-auth", value: "new-access", options: { httpOnly: false } },
+    { name: "sb-refresh", value: "new-refresh", options: { httpOnly: true } },
+  ];
+  const middleware = loadTypeScriptModule("src/lib/supabase-middleware.ts", {
+    "@/lib/supabase-server": {
+      createServerSupabase: async (_bearerToken, cookieHeader) => {
+        receivedCookieHeader = cookieHeader;
+        return { refreshedCookies };
+      },
+      getRefreshedCookies: (client) => client.refreshedCookies,
+    },
+    "next/server": {
+      NextResponse: {
+        next: ({ request }) => new MockResponse(request),
+      },
+    },
+  });
+  const request = {
+    headers: new Headers({ cookie: "sb-auth=old-access; sb-refresh=old-refresh" }),
+    cookies: {
+      getAll: () => requestCookies,
+      set: (name, value) => requestCookies.push({ name, value }),
+    },
+  };
+  const { getResponse } = await middleware.createMiddlewareClient(request);
+
+  assert.equal(receivedCookieHeader, "sb-auth=old-access; sb-refresh=old-refresh");
+  assert.deepEqual(requestCookies, [
+    { name: "sb-auth", value: "new-access" },
+    { name: "sb-refresh", value: "new-refresh" },
+  ]);
+  assert.deepEqual(getResponse().cookiesSet, refreshedCookies);
+});
+
 test("same-origin logout clears dynamic and legacy cookies", async () => {
   const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
   const logout = loadTypeScriptModule("src/app/api/auth/logout/route.ts", {

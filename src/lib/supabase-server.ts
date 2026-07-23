@@ -220,22 +220,6 @@ export async function createServerSupabase(
         { name: names.authToken, value: newPayload, options: { path: "/", maxAge: refreshed.expiresAt - Math.floor(Date.now() / 1000), sameSite: "strict", secure: true, httpOnly: false } },
         { name: names.refreshToken, value: refreshed.refreshToken, options: { path: "/", maxAge: 2592000, sameSite: "strict", secure: true, httpOnly: true } },
       ];
-      if (_cookieStore) {
-        _cookieStore.set(names.authToken, newPayload, {
-        path: "/",
-        maxAge: refreshed.expiresAt - Math.floor(Date.now() / 1000),
-        sameSite: "strict",
-        secure: true,
-        httpOnly: false,
-      });
-      _cookieStore.set(names.refreshToken, refreshed.refreshToken, {
-        path: "/",
-        maxAge: 2592000,
-        sameSite: "strict",
-        secure: true,
-        httpOnly: true,
-      });
-      }
     }
   } else if (!accessToken && hasAuthCookie) {
     refreshFailure = "missing_refresh_token";

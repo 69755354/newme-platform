@@ -28,10 +28,24 @@ test("session cookies use dynamic names and secure server refresh attributes", a
   assert.match(server, /httpOnly: true/);
   assert.match(session, /JSON\.stringify\(\{[\s\S]*access_token: accessToken/);
   assert.doesNotMatch(session, /const cookiePayload = JSON\.stringify\(\{[\s\S]*refresh_token: refreshToken/);
-  assert.match(server, /_cookieStore\.set\(names\.refreshToken/);
+  assert.doesNotMatch(server, /_cookieStore\.set/);
   assert.match(session, /httpOnly: true/);
   assert.match(session, /sameSite: "strict"/);
   assert.match(session, /secure: true/);
+});
+
+test("middleware uses the custom split-session refresh boundary", async () => {
+  const middleware = await read("src/lib/supabase-middleware.ts");
+  assert.match(middleware, /createServerSupabase\(undefined, request\.headers\.get\("cookie"\)/);
+  assert.match(middleware, /getRefreshedCookies\(supabase\)/);
+  assert.match(middleware, /request\.cookies\.set\(name, value\)/);
+  assert.match(middleware, /response\.cookies\.set\(name, value, options/);
+  assert.doesNotMatch(middleware, /@supabase\/ssr|CookieOptions|setAll/);
+  assert.match(middleware, /getResponse: \(\) => response/);
+  const proxy = await read("src/proxy.ts");
+  assert.doesNotMatch(proxy, /const \{ supabase, response \}/);
+  assert.match(proxy, /const \{ supabase, getResponse \} = await createMiddlewareClient\(request\)/);
+  assert.match(proxy, /return getResponse\(\)/);
 });
 
 test("login delegates cookie creation to the same-origin server endpoint", async () => {

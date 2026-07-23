@@ -116,6 +116,19 @@ CREATE TABLE IF NOT EXISTS public.user_features (
   PRIMARY KEY (user_id, feature_key)
 );
 
+CREATE TABLE IF NOT EXISTS public.knx_designs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id UUID NOT NULL REFERENCES public.leads(id) ON DELETE CASCADE,
+  devices_json JSONB DEFAULT '{}'::jsonb,
+  total_aed NUMERIC DEFAULT 0,
+  device_count INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'draft',
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.knx_designs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_features ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crm_daily_funnel_snapshot ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.marketing_campaigns ENABLE ROW LEVEL SECURITY;

@@ -2,6 +2,22 @@
 -- These tables already exist in production but were never captured in migrations.
 -- Keep policy definitions in their dedicated later migrations; RLS starts deny-by-default.
 
+CREATE OR REPLACE FUNCTION public.milestone_order(milestone TEXT)
+RETURNS INTEGER
+LANGUAGE plpgsql
+IMMUTABLE
+AS $function$
+BEGIN
+  RETURN CASE milestone
+    WHEN 'new' THEN 0 WHEN 'first_contact' THEN 1
+    WHEN 'basic_info' THEN 2 WHEN 'drawings' THEN 3
+    WHEN 'requirements' THEN 4 WHEN 'solution' THEN 5
+    WHEN 'quotation' THEN 6 WHEN 'meeting' THEN 7
+    WHEN 'negotiation' THEN 8 ELSE 99
+  END;
+END;
+$function$;
+
 CREATE TABLE IF NOT EXISTS public.marketing_campaigns (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   campaign_name TEXT NOT NULL,

@@ -63,11 +63,20 @@ install -D -o root -g root -m 0644 "$ROOT/infra/observability/newme-observabilit
 
 install -d -o root -g root -m 0750 /etc/newme /etc/hermes/observability
 install -d -o root -g root -m 0755 /opt/newme/releases /opt/hermes-scripts/observability
-if [ ! -d /opt/newme/repository.git ]; then
-  git clone --bare https://github.com/69755354/newme-platform.git /opt/newme/repository.git
+
+MIRROR=/opt/newme/repository.git
+EXPECTED_MIRROR_ORIGIN=https://github.com/69755354/newme-platform.git
+if [ -e "$MIRROR" ] || [ -L "$MIRROR" ]; then
+  mirror_origin="$(git --git-dir="$MIRROR" remote get-url origin 2>/dev/null || true)"
+  if [ "$mirror_origin" != "$EXPECTED_MIRROR_ORIGIN" ] && [ "$mirror_origin" != git@github.com:69755354/newme-platform.git ]; then
+    mv -- "$MIRROR" "$BACKUP/repository.git.invalid"
+  fi
 fi
-chown -R root:root /opt/newme/repository.git
-chmod 0700 /opt/newme/repository.git
+if [ ! -d "$MIRROR" ]; then
+  git clone --bare "$EXPECTED_MIRROR_ORIGIN" "$MIRROR"
+fi
+chown -R root:root "$MIRROR"
+chmod 0700 "$MIRROR"
 if [ ! -e /opt/newme/current ]; then
   mkdir -p /opt/newme/releases/.bootstrap
   ln -s /opt/newme/releases/.bootstrap /opt/newme/current

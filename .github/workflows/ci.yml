@@ -69,6 +69,9 @@ jobs:
       - name: Workflow YAML validation
         run: npm run check:workflows
 
+      - name: Supply chain gate
+        run: npm run check:supply-chain -- --accept-known
+
       - name: Database type source gate
         run: npm run check:database-types
 

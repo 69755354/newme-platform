@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# check-supply-chain.sh — 供应链门禁 (SAM-70)
-# 在 prebuild / pre-commit hook 中调用，拦截未经验证的依赖漂移
+# check-supply-chain.sh — 供应链门禁 (SAM-67/SAM-70)
+# fail-closed: 网络失败、解析失败、审计失败、任何 HIGH/CRITICAL 漏洞均阻断
+# 已知且已文档化的漏洞可通过 --accept-known 或 ACCEPT_KNOWN=1 豁免
 set -euo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -13,7 +14,30 @@ fail()   { echo -e "${RED}[FAIL]${NC} $*"; ((FAIL+=1)); }
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+ACCEPT_KNOWN="${ACCEPT_KNOWN:-}"
+if [[ "${1:-}" == "--accept-known" ]]; then
+    ACCEPT_KNOWN=1
+fi
+
+# ─── 0. 环境自检 ───────────────────────────────────────────────
+echo "=== 0. 环境自检 ==="
+if ! command -v npm &>/dev/null; then
+    fail "npm 不可用"
+fi
+if ! command -v node &>/dev/null; then
+    fail "node 不可用"
+fi
+if ! command -v sha256sum &>/dev/null; then
+    fail "sha256sum 不可用"
+fi
+if [[ "$FAIL" -gt 0 ]]; then
+    echo "基础环境不完整，阻断。"
+    exit 1
+fi
+report "npm $(npm --version), node $(node --version)"
+
 # ─── 1. 关键依赖精确版本 ──────────────────────────────────────
+echo ""
 echo "=== 1. 关键依赖精确版本 ==="
 CRITICAL_DEPS=("next" "react" "react-dom")
 for dep in "${CRITICAL_DEPS[@]}"; do
@@ -42,52 +66,103 @@ else
     fail "xlsx 未安装 (node_modules/xlsx 不存在)"
 fi
 
-# ─── 3. lockfile 存在性 ────────────────────────────────────────
+# ─── 3. lockfile 存在性与完整性 ────────────────────────────────
 echo ""
 echo "=== 3. lockfile ==="
 if [[ -f package-lock.json ]]; then
     report "package-lock.json 存在"
+    # Verify lockfile is in sync with package.json
+    if npm ls --package-lock-only 2>&1 | grep -qE 'UNMET|INVALID|ERR!'; then
+        fail "package-lock.json 与 package.json 不同步，请运行 npm install"
+    else
+        report "package-lock.json 同步"
+    fi
 else
     fail "package-lock.json 缺失 — 依赖未锁定"
 fi
 
-# ─── 4. npm audit 高危检查 ─────────────────────────────────────
+# ─── 4. npm audit 高危检查 (fail-closed) ────────────────────────
 echo ""
 echo "=== 4. npm audit (HIGH/CRITICAL) ==="
-AUDIT_OUT=$(npm audit --json 2>/dev/null || true)
-if [[ -z "$AUDIT_OUT" ]]; then
-    warn "npm audit 返回空 (可能网络问题)，跳过"
-else
-    HIGH_COUNT=$(echo "$AUDIT_OUT" | node -e "
-        const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-        const vulns = d.vulnerabilities || {};
-        // 只看直接依赖 且 via 包含实际 advisory 对象（非字符串引用）
-        const direct_high = Object.values(vulns).filter(v => {
-            if (v.severity !== 'high' && v.severity !== 'critical') return false;
-            if (!v.isDirect) return false;
-            // via 全为字符串 = 继承自子依赖，非包自身问题
-            const hasOwnAdvisory = v.via.some(x => typeof x === 'object' && x.source);
-            return hasOwnAdvisory;
-        });
-        console.log(direct_high.length);
-    " 2>/dev/null || echo "0")
 
-    if [[ "$HIGH_COUNT" -gt 0 ]]; then
-        echo "$AUDIT_OUT" | node -e "
-            const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-            const vulns = d.vulnerabilities || {};
-            Object.values(vulns)
-                .filter(v => {
-                    if (v.severity !== 'high' && v.severity !== 'critical') return false;
-                    if (!v.isDirect) return false;
-                    return v.via.some(x => typeof x === 'object' && x.source);
-                })
-                .forEach(v => console.log('  ' + v.name + ': ' + v.severity.toUpperCase() + ' — ' + (v.via[0]?.title || v.via[0])));
-        " 2>/dev/null
-        fail "${HIGH_COUNT} 个直接依赖存在 HIGH/CRITICAL 漏洞"
+AUDIT_TMP=$(mktemp)
+AUDIT_RC=0
+npm audit --json > "$AUDIT_TMP" 2>/dev/null || AUDIT_RC=$?
+
+if [[ "$AUDIT_RC" -ne 0 ]] && [[ ! -s "$AUDIT_TMP" ]]; then
+    fail "npm audit 执行失败 (exit=$AUDIT_RC) — 可能网络不通或 registry 不可达"
+    rm -f "$AUDIT_TMP"
+fi
+
+if [[ -s "$AUDIT_TMP" ]]; then
+    # Parse audit output
+    AUDIT_PARSE_OK=true
+    HIGH_TOTAL=0
+    HIGH_ACCEPTED=0
+
+    # Check if JSON is valid
+    if ! python3 -c "import json; json.load(open('$AUDIT_TMP'))" 2>/dev/null; then
+        fail "npm audit 返回非 JSON — 解析失败"
+        rm -f "$AUDIT_TMP"
     else
-        report "无直接依赖高危漏洞"
+        # Count ALL HIGH/CRITICAL vulns
+        ALL_HIGH=$(python3 -c "
+import json
+d = json.load(open('$AUDIT_TMP'))
+vulns = d.get('vulnerabilities', {})
+high = {k:v for k,v in vulns.items() if v.get('severity') in ('high','critical')}
+for name, v in sorted(high.items()):
+    via_str = []
+    for x in v.get('via',[]):
+        if isinstance(x, dict):
+            via_str.append(f'{x.get(\"title\",\"?\")[:60]}')
+        else:
+            via_str.append(str(x))
+    is_direct = 'DIRECT' if v.get('isDirect') else 'transitive'
+    print(f'  [{v[\"severity\"].upper():8s}] [{is_direct:10s}] {name}: {\" | \".join(via_str[:2])}')
+print(f'TOTAL_HIGH={len(high)}')
+" 2>/dev/null)
+
+        HIGH_COUNT=$(echo "$ALL_HIGH" | grep 'TOTAL_HIGH=' | cut -d= -f2 || echo "0")
+        echo "$ALL_HIGH" | { grep -v 'TOTAL_HIGH=' || true; }
+
+        # Load accept list if --accept-known
+        ACCEPT_LIST=""
+        ACCEPT_FILE="$ROOT/.supply-chain-accept.json"
+        if [[ -n "$ACCEPT_KNOWN" ]] && [[ -f "$ACCEPT_FILE" ]]; then
+            ACCEPT_COUNT=$(python3 -c "
+import json
+d = json.load(open('$ACCEPT_FILE'))
+print(len(d.get('accepted',[])))
+" 2>/dev/null || echo "0")
+            report "已知豁免清单加载: ${ACCEPT_COUNT} 项"
+        fi
+
+        if [[ "$HIGH_COUNT" -gt 0 ]]; then
+            if [[ -n "$ACCEPT_KNOWN" ]] && [[ -f "$ACCEPT_FILE" ]]; then
+                UNACCEPTED=$(python3 "$ROOT/scripts/_supply_chain_xref.py" "$AUDIT_TMP" "$ACCEPT_FILE" 2>&1) || {
+                    fail "供应链交叉引用脚本执行失败"
+                    rm -f "$AUDIT_TMP"
+                }
+                UNACCEPTED_COUNT=$(echo "$UNACCEPTED" | grep 'COUNT=' | cut -d= -f2 || echo "0")
+                echo "$UNACCEPTED" | { grep -v 'COUNT=' || true; }
+                ACCEPTED_COUNT=$((HIGH_COUNT - UNACCEPTED_COUNT))
+                if [[ "$ACCEPTED_COUNT" -gt 0 ]]; then
+                    warn "${ACCEPTED_COUNT} 个高危漏洞已文档化豁免"
+                fi
+                if [[ "$UNACCEPTED_COUNT" -gt 0 ]]; then
+                    fail "${UNACCEPTED_COUNT} 个未豁免 HIGH/CRITICAL 漏洞"
+                else
+                    report "全部 ${HIGH_COUNT} 个高危漏洞已处理（${ACCEPTED_COUNT} 豁免）"
+                fi
+            else
+                fail "${HIGH_COUNT} 个 HIGH/CRITICAL 漏洞（使用 --accept-known 或设置 ACCEPT_KNOWN=1 以应用豁免清单）"
+            fi
+        else
+            report "无 HIGH/CRITICAL 漏洞"
+        fi
     fi
+    rm -f "$AUDIT_TMP"
 fi
 
 # ─── 5. Node 版本校验 ──────────────────────────────────────────
@@ -102,7 +177,7 @@ if [[ -f .nvmrc ]]; then
         fail "Node 版本不匹配: 实际 v${NODE_ACTUAL}, .nvmrc 要求 ${NVM_EXPECTED}"
     fi
 else
-    warn ".nvmrc 不存在，跳过 Node 版本检查"
+    fail ".nvmrc 不存在"
 fi
 
 # ─── 结果 ──────────────────────────────────────────────────────
@@ -110,9 +185,9 @@ echo ""
 echo "──────────────────────────────────────────"
 echo -e "通过: ${GREEN}${PASS}${NC}  失败: ${RED}${FAIL}${NC}"
 if [[ "$FAIL" -gt 0 ]]; then
-    echo -e "${RED}供应链门禁未通过 — 修复后重试${NC}"
+    echo -e "${RED}⛔ 供应链门禁未通过 — ${FAIL} 项失败${NC}"
     exit 1
 else
-    echo -e "${GREEN}供应链门禁通过${NC}"
+    echo -e "${GREEN}✅ 供应链门禁通过${NC}"
     exit 0
 fi

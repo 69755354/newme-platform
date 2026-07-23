@@ -42,7 +42,7 @@ fi
 # ─── 2. 供应链门禁 ──────────────────────────────────────────
 echo ""
 echo "── 2. 供应链 ──"
-if bash scripts/check-supply-chain.sh; then
+if bash scripts/check-supply-chain.sh --accept-known; then
     _pass "supply-chain"
 else
     _fail "supply-chain"

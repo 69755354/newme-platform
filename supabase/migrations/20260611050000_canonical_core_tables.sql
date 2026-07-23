@@ -108,6 +108,15 @@ CREATE TABLE IF NOT EXISTS public.crm_daily_funnel_snapshot (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.user_features (
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  feature_key TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, feature_key)
+);
+
+ALTER TABLE public.user_features ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crm_daily_funnel_snapshot ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.marketing_campaigns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;

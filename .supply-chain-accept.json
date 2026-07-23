@@ -1,0 +1,21 @@
+{
+  "_note": "已知高危漏洞豁免清单。每个条目必须引用审计文档中的缓解依据。",
+  "_audit_doc": "docs/SAM-32-33-dependency-audit.md",
+  "_updated": "2026-07-23",
+  "accepted": [
+    {
+      "package": "postcss",
+      "severity": "high",
+      "reason": "Next.js 16.2.11 内嵌 postcss 8.4.31。漏洞为构建时 CSS 处理，无用户输入路径。CSP 阻止外部样式注入。next 16.3 将修复。",
+      "cve": ["GHSA-qx2v-qp2m-jg93", "GHSA-6g55-p6wh-862q"],
+      "audit_ref": "docs/SAM-32-33-dependency-audit.md §2.3"
+    },
+    {
+      "package": "sharp",
+      "severity": "high",
+      "reason": "Next.js 16.2.11 内嵌 sharp 0.34.5。libvips 继承漏洞。图片输入受控（仅 JPEG/PNG/WebP，<5MB）。next 16.3 将修复。",
+      "cve": ["GHSA-f88m-g3jw-g9cj"],
+      "audit_ref": "docs/SAM-32-33-dependency-audit.md §2.4"
+    }
+  ]
+}

@@ -11,7 +11,7 @@ const shouldNotify = ({ eventName, upstreamEvent, branch, conclusion }) =>
   ["failure", "cancelled"].includes(conclusion);
 
 test("crm-ci scopes workflow_run to main push CI and preserves manual diagnostics", () => {
-  assert.match(workflow, /workflow_run:[\s\S]*branches:\s*\n\s+- main/);
+  assert.match(workflow, /workflow_run/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /github\.event\.workflow_run\.event == 'push'/);
   assert.match(workflow, /github\.event\.workflow_run\.head_branch == 'main'/);

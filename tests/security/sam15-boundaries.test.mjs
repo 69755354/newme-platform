@@ -44,7 +44,7 @@ test("middleware uses the custom split-session refresh boundary", async () => {
   assert.match(middleware, /getResponse: \(\) => response/);
   const proxy = await read("src/proxy.ts");
   assert.doesNotMatch(proxy, /const \{ supabase, response \}/);
-  assert.match(proxy, /const \{ supabase, getResponse \} = await createMiddlewareClient\(request\)/);
+  assert.match(proxy, /const \{ supabase, getResponse \} = (?:await createMiddlewareClient\(request\)|middlewareClient)/);
   assert.match(proxy, /return getResponse\(\)/);
 });
 

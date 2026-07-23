@@ -39,6 +39,8 @@ test("SAM-62 removes dashboard and detail reassignment direct writes", async () 
 test("SAM-62 has no dashboard shortcut around the controlled stage transition", async () => {
   const dashboard = await readFile(dashboardMutation, "utf8");
   assert.doesNotMatch(dashboard, /const changeStage\s*=/);
+  assert.doesNotMatch(dashboard, /\.from\("leads"\)\.update/);
+  assert.doesNotMatch(dashboard, /\.from\("activities"\)\.insert/);
   assert.doesNotMatch(dashboard, /from\("quotations"\)/);
 });
 

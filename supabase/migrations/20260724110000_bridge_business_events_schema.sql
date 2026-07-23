@@ -1,6 +1,8 @@
 -- Converge already-deployed databases that recorded the legacy business_events shape.
 -- This is additive and preserves all historical rows.
-DO $$
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+DO $
 BEGIN
   IF to_regclass('public.business_events') IS NOT NULL THEN
     ALTER TABLE public.business_events ADD COLUMN IF NOT EXISTS entity_type TEXT;

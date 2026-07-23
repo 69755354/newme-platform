@@ -7,8 +7,8 @@ BEGIN
     FOR obj IN SELECT * FROM pg_event_trigger_ddl_commands()
     LOOP
         IF obj.object_type = 'table' AND obj.schema_name = 'public' THEN
-            EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', obj.schema_name, obj.object_identity::text);
-            EXECUTE format('CREATE POLICY "auto_deny_all" ON %I.%I FOR ALL USING (false) WITH CHECK (false)', obj.schema_name, obj.object_identity::text);
+            EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY', obj.object_identity);
+            EXECUTE format('CREATE POLICY "auto_deny_all" ON %s FOR ALL USING (false) WITH CHECK (false)', obj.object_identity);
         END IF;
     END LOOP;
 END;

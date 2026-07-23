@@ -31,6 +31,9 @@ MANAGED=(
   /usr/local/libexec/newme/newme-forensic.sh
   /usr/local/libexec/newme/newme-readiness.sh
   /usr/local/sbin/newme-service-control
+  /usr/local/sbin/newme-deploy
+  /etc/sudoers.d/newme-platform
+  /etc/sudoers.d/ubuntu-nopasswd
   /etc/logrotate.d/newme-forensic
   /etc/cron.d/newme-observability
   /etc/hermes/observability/hermes-alert-v1.env
@@ -51,11 +54,20 @@ install -D -o root -g root -m 0644 "$UNIT" /etc/systemd/system/newme-platform.se
 install -D -o root -g root -m 0755 "$ROOT/infra/systemd/newme-forensic.sh" /usr/local/libexec/newme/newme-forensic.sh
 install -D -o root -g root -m 0755 "$ROOT/infra/systemd/newme-readiness.sh" /usr/local/libexec/newme/newme-readiness.sh
 install -D -o root -g root -m 0755 "$ROOT/infra/systemd/newme-service-control.sh" /usr/local/sbin/newme-service-control
+install -D -o root -g root -m 0755 "$ROOT/infra/systemd/newme-deploy.sh" /usr/local/sbin/newme-deploy
+install -D -o root -g root -m 0440 "$ROOT/infra/sudoers/newme-platform" /etc/sudoers.d/newme-platform
+visudo -cf /etc/sudoers.d/newme-platform
+rm -f /etc/sudoers.d/ubuntu-nopasswd
 install -D -o root -g root -m 0644 "$ROOT/infra/logrotate/newme-forensic" /etc/logrotate.d/newme-forensic
 install -D -o root -g root -m 0644 "$ROOT/infra/observability/newme-observability.cron" /etc/cron.d/newme-observability
 
 install -d -o root -g root -m 0750 /etc/newme /etc/hermes/observability
 install -d -o root -g root -m 0755 /opt/newme/releases /opt/hermes-scripts/observability
+if [ ! -d /opt/newme/repository.git ]; then
+  git clone --bare https://github.com/69755354/newme-platform.git /opt/newme/repository.git
+fi
+chown -R root:root /opt/newme/repository.git
+chmod 0700 /opt/newme/repository.git
 if [ ! -e /opt/newme/current ]; then
   mkdir -p /opt/newme/releases/.bootstrap
   ln -s /opt/newme/releases/.bootstrap /opt/newme/current
@@ -90,4 +102,6 @@ DROP_INS="$(systemctl show newme-platform.service -p DropInPaths --value)"
 grep -Fqx '/var/log/newme-forensic/newme-forensic.log {' /etc/logrotate.d/newme-forensic
 grep -Fq /opt/hermes-scripts/observability/health-check.sh /etc/cron.d/newme-observability
 grep -Fq /opt/hermes-scripts/observability/login-probe.sh /etc/cron.d/newme-observability
+test -x /usr/local/sbin/newme-deploy
+test "$(git --git-dir=/opt/newme/repository.git remote get-url origin)" = https://github.com/69755354/newme-platform.git
 echo "backup=$BACKUP rollback=sudo bash $ROOT/scripts/rollback-systemd-assets.sh $BACKUP"

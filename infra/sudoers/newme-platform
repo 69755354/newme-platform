@@ -1,0 +1,16 @@
+# Managed by NewMe OS. Service mutation must pass the provenance wrapper.
+Cmnd_Alias NEWME_SERVICE_CONTROL = \
+  /usr/local/sbin/newme-service-control start *, \
+  /usr/local/sbin/newme-service-control stop *, \
+  /usr/local/sbin/newme-service-control restart *, \
+  /usr/local/sbin/newme-service-control try-restart *, \
+  /usr/local/sbin/newme-service-control reset-failed *
+Cmnd_Alias NEWME_SERVICE_READ = \
+  /usr/bin/systemctl --no-pager status newme-platform.service, \
+  /usr/bin/systemctl show newme-platform.service *, \
+  /usr/bin/systemctl cat newme-platform.service, \
+  /usr/bin/journalctl -u newme-platform.service *, \
+  /usr/bin/journalctl -t newme-service-control *, \
+  /usr/bin/tail -n * /var/log/newme-forensic/newme-forensic.log
+
+ubuntu ALL=(root) NOPASSWD: NEWME_SERVICE_CONTROL, NEWME_SERVICE_READ, /usr/local/sbin/newme-deploy *

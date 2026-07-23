@@ -75,6 +75,32 @@ test("forensic log path, installer, and logrotate contract are aligned", async (
   assert.match(rotate, /maxsize 10M/);
 });
 
+test("installer replaces direct service sudo with the audited control boundary", async () => {
+  const [installer, sudoers, deploy] = await Promise.all([
+    read("scripts/install-systemd-assets.sh"),
+    read("infra/sudoers/newme-platform"),
+    read("infra/systemd/newme-deploy.sh"),
+  ]);
+  assert.match(installer, /infra\/sudoers\/newme-platform/);
+  assert.match(installer, /visudo -cf \/etc\/sudoers\.d\/newme-platform/);
+  assert.match(installer, /\/etc\/sudoers\.d\/newme-platform/);
+  assert.match(installer, /\/etc\/sudoers\.d\/ubuntu-nopasswd/);
+  assert.match(installer, /rm -f \/etc\/sudoers\.d\/ubuntu-nopasswd/);
+  assert.match(sudoers, /NEWME_SERVICE_CONTROL/);
+  assert.match(sudoers, /newme-service-control restart \*/);
+  assert.match(sudoers, /\/usr\/local\/sbin\/newme-deploy \*/);
+  assert.doesNotMatch(sudoers, /\/opt\/newme\/deploy\/deploy\.sh/);
+  assert.doesNotMatch(sudoers, /NOPASSWD:\s*ALL/);
+  assert.doesNotMatch(sudoers, /\/usr\/bin\/systemctl (?:start|stop|restart)/);
+  assert.match(installer, /infra\/systemd\/newme-deploy\.sh/);
+  assert.match(installer, /git clone --bare https:\/\/github\.com\/69755354\/newme-platform\.git/);
+  assert.match(deploy, /release SHA must equal canonical main/);
+  assert.match(deploy, /actions\/runs\/\$RUN_ID/);
+  assert.match(deploy, /\[ \"\$RUN_ID\" = \"manual\" \]/);
+  assert.match(deploy, /worktree add --force/);
+  assert.doesNotMatch(deploy, /\/home\/ubuntu\/newme-platform/);
+});
+
 test("deploy refuses to build before versioned service assets are installed", async () => {
   const deploy = await read("scripts/deploy-immutable.sh");
   assert.match(deploy, /missing versioned release asset/);

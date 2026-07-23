@@ -30,12 +30,20 @@ for name in CI_RUN_ID CI_RUN_URL CI_HEAD_SHA CI_CONCLUSION MIGRATION_STATUS ROLL
 done
 [[ -n "${MIGRATION_IDS+x}" ]] || fail "MIGRATION_IDS must be present"
 
-[[ "$CI_RUN_ID" =~ ^[0-9]+$ ]] || fail "CI_RUN_ID must be numeric"
-expected_run_url="https://github.com/69755354/newme-platform/actions/runs/$CI_RUN_ID"
-[[ "$CI_RUN_URL" == "$expected_run_url" ]] ||
-  fail "CI_RUN_URL must equal expected GitHub Actions run URL"
-[[ "$CI_CONCLUSION" == "success" ]] ||
-  fail "CI_CONCLUSION must be success"
+if [[ "${NEWME_MANUAL_VERIFICATION:-0}" == "1" ]]; then
+  [[ "$(id -u)" -eq 0 ]] || fail "manual verification requires the root deployment executor"
+  [[ "$CI_RUN_ID" == "manual" && "$CI_RUN_URL" == "manual" ]] ||
+    fail "manual verification requires explicit manual evidence"
+  [[ "$CI_CONCLUSION" == "manual_verified" ]] ||
+    fail "manual verification must be marked manual_verified"
+else
+  [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]] || fail "CI_RUN_ID must be numeric"
+  expected_run_url="https://github.com/69755354/newme-platform/actions/runs/$CI_RUN_ID"
+  [[ "$CI_RUN_URL" == "$expected_run_url" ]] ||
+    fail "CI_RUN_URL must equal expected GitHub Actions run URL"
+  [[ "$CI_CONCLUSION" == "success" ]] ||
+    fail "CI_CONCLUSION must be success"
+fi
 [[ "$CI_HEAD_SHA" == "$release_sha" ]] ||
   fail "CI_HEAD_SHA must equal release SHA"
 

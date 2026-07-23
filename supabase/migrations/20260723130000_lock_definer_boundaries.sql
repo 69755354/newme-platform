@@ -2,11 +2,18 @@
 -- This is intentionally explicit: do not grant/revoke the whole public schema.
 
 -- A fixed search path prevents caller-controlled object shadowing.
+ALTER FUNCTION public.allocate_payment(uuid, jsonb, uuid) SET search_path = pg_catalog, public, pg_temp;
+ALTER FUNCTION public.apply_standard_rls(text) SET search_path = pg_catalog, public, pg_temp;
+ALTER FUNCTION public.approve_contract(uuid, uuid, text, text) SET search_path = pg_catalog, public, pg_temp;
+ALTER FUNCTION public.auto_create_task_from_followup() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.auto_enable_rls() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.check_milestone_order() SET search_path = pg_catalog, public, pg_temp;
+ALTER FUNCTION public.confirm_payment(uuid, uuid) SET search_path = pg_catalog, public, pg_temp;
+ALTER FUNCTION public.days_since_last_contact(uuid) SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.derive_lead_status() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.detect_stale_leads(integer) SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.enforce_active_lead_transfer_candidate() SET search_path = pg_catalog, public, pg_temp;
+ALTER FUNCTION public.enforce_followup_required() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.generate_quote_no(integer) SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.get_my_role() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.get_team_activity(date) SET search_path = pg_catalog, public, pg_temp;
@@ -16,15 +23,21 @@ ALTER FUNCTION public.handle_user_login() SET search_path = pg_catalog, public, 
 ALTER FUNCTION public.log_activity(text, text, uuid, jsonb, text, integer) SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.log_activity(uuid, text, text, uuid) SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.log_auth_event() SET search_path = pg_catalog, public, pg_temp;
+ALTER FUNCTION public.milestone_order(text) SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.next_quote_no() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.on_lead_won() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.reassign_lead(uuid, uuid, text) SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.recomplete_lead_milestone(uuid, text, text) SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.reopen_lead_milestone(uuid, text, text) SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.set_lost_reasons() SET search_path = pg_catalog, public, pg_temp;
+ALTER FUNCTION public.set_updated_at() SET search_path = pg_catalog, public, pg_temp;
+ALTER FUNCTION public.sync_lead_next_followup() SET search_path = pg_catalog, public, pg_temp;
+ALTER FUNCTION public.sync_task_from_lead() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.sync_user_email_to_profile() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.transition_lead_stage(uuid, text, text, text) SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.trg_enforce_first_contact_milestone() SET search_path = pg_catalog, public, pg_temp;
+ALTER FUNCTION public.trg_check_first_contact_gate() SET search_path = pg_catalog, public, pg_temp;
+ALTER FUNCTION public.trg_check_stage_sequence() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.trg_prevent_first_contact_delete() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.trg_set_won_at() SET search_path = pg_catalog, public, pg_temp;
 ALTER FUNCTION public.update_installment_status() SET search_path = pg_catalog, public, pg_temp;

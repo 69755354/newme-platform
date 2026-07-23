@@ -4,19 +4,24 @@ import test from "node:test";
 
 const migration = new URL("../../supabase/migrations/20260723130000_lock_definer_boundaries.sql", import.meta.url);
 
-test("SAM-61 explicitly hardens every inventoried SECURITY DEFINER function", async () => {
+test("SAM-61 fixes the search path of every current public function", async () => {
   const sql = await readFile(migration, "utf8");
   const functions = [
+    "allocate_payment(uuid, jsonb, uuid)", "apply_standard_rls(text)",
+    "approve_contract(uuid, uuid, text, text)", "auto_create_task_from_followup()",
     "auto_enable_rls()", "check_milestone_order()", "derive_lead_status()",
-    "detect_stale_leads(integer)", "enforce_active_lead_transfer_candidate()",
+    "confirm_payment(uuid, uuid)", "days_since_last_contact(uuid)",
+    "detect_stale_leads(integer)", "enforce_active_lead_transfer_candidate()", "enforce_followup_required()",
     "generate_quote_no(integer)", "get_my_role()", "get_team_activity(date)",
     "handle_auth_login()", "handle_new_user()", "handle_user_login()",
     "log_activity(text, text, uuid, jsonb, text, integer)",
-    "log_activity(uuid, text, text, uuid)", "log_auth_event()", "next_quote_no()",
+    "log_activity(uuid, text, text, uuid)", "log_auth_event()", "milestone_order(text)", "next_quote_no()",
     "on_lead_won()", "reassign_lead(uuid, uuid, text)",
     "recomplete_lead_milestone(uuid, text, text)",
-    "reopen_lead_milestone(uuid, text, text)", "set_lost_reasons()",
+    "reopen_lead_milestone(uuid, text, text)", "set_lost_reasons()", "set_updated_at()",
+    "sync_lead_next_followup()", "sync_task_from_lead()",
     "sync_user_email_to_profile()", "transition_lead_stage(uuid, text, text, text)",
+    "trg_check_first_contact_gate()", "trg_check_stage_sequence()",
     "trg_enforce_first_contact_milestone()", "trg_prevent_first_contact_delete()",
     "trg_set_won_at()", "update_installment_status()", "update_lead_metrics()",
   ];

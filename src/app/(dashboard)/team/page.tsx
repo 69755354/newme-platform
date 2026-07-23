@@ -123,7 +123,7 @@ function formatTime(iso: string): string {
 
 export default function TeamPage() {
   const { t, lang } = useLanguage();
-  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss", "operator"]);
+  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss"]);
 
   // ─── Tab state ───
   const [activeTab, setActiveTab] = useState<string>("members");

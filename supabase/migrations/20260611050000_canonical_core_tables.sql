@@ -128,6 +128,16 @@ CREATE TABLE IF NOT EXISTS public.knx_designs (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.audit_log_archived_20260615 (
+  id BIGINT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  ip_address TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.audit_log_archived_20260615 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.knx_designs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_features ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crm_daily_funnel_snapshot ENABLE ROW LEVEL SECURITY;

@@ -83,3 +83,18 @@ test("SAM-62 deletes a Lead through an audited, idempotent server boundary", asy
   assert.doesNotMatch(dashboard, /\.from\("leads"\)\.delete/);
   assert.match(api, /delete_lead_atomic/);
 });
+
+test("SAM-62 puts stage gates and replay protection in the database transaction", async () => {
+  const [sql, detail, api] = await Promise.all([
+    readFile(migration, "utf8"), readFile(detailMutation, "utf8"),
+    readFile(new URL("../../src/app/api/leads/[id]/stage/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(sql, /DROP FUNCTION IF EXISTS public\.transition_lead_stage\(uuid, text, text, text\)/);
+  assert.match(sql, /FUNCTION public\.transition_lead_stage\([\s\S]*p_idempotency_key uuid/);
+  assert.match(sql, /operation = 'stage_transition'/);
+  assert.match(sql, /FROM public\.follow_up_logs/);
+  assert.match(sql, /First Contact requirements are incomplete/);
+  assert.match(sql, /FOR UPDATE/);
+  assert.match(detail, /idempotencyKey: crypto\.randomUUID\(\)/);
+  assert.match(api, /p_idempotency_key: idempotencyKey/);
+});

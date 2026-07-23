@@ -29,7 +29,7 @@ test("sales process reserves direct stage actions for terminal outcomes", async 
 test("stage mutation forwards notes without bypassing the owned stage endpoint", async () => {
   const source = await read("src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts");
   assert.ok(source.includes('updateStage = useCallback(async (stage: string, note = "")'));
-  assert.ok(source.includes("JSON.stringify({ stage, note: note.trim() })"));
+  assert.match(source, /JSON\.stringify\(\{ stage, note: note\.trim\(\), idempotencyKey: crypto\.randomUUID\(\) \}\)/);
   assert.equal(source.includes('.from("leads").update({ stage'), false);
 });
 

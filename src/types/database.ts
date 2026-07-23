@@ -4090,7 +4090,8 @@ export type Database = {
           p_expected_stage: string
           p_lead_id: string
           p_next_stage: string
-          p_note?: string
+          p_note: string
+          p_idempotency_key: string
         }
         Returns: Json
       }

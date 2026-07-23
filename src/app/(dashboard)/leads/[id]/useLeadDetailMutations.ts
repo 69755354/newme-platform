@@ -373,7 +373,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     const response = await fetch(`/api/leads/${leadId}/stage`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stage, note: note.trim() }),
+      body: JSON.stringify({ stage, note: note.trim(), idempotencyKey: crypto.randomUUID() }),
     });
     const json = await response.json().catch(() => ({}));
     if (!response.ok) {

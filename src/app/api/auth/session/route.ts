@@ -10,8 +10,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "invalid_content_type" }, { status: 415 });
     }
     const origin = request.headers.get("origin");
-    if (origin && new URL(origin).origin !== new URL(request.url).origin) {
-      return NextResponse.json({ error: "invalid_origin" }, { status: 403 });
+    if (origin) {
+      try {
+        const expectedOrigin = process.env.NEXT_PUBLIC_SITE_URL
+          ? new URL(process.env.NEXT_PUBLIC_SITE_URL).origin
+          : new URL(request.url).origin;
+        if (new URL(origin).origin !== expectedOrigin) {
+          return NextResponse.json({ error: "invalid_origin" }, { status: 403 });
+        }
+      } catch {
+        return NextResponse.json({ error: "invalid_origin" }, { status: 403 });
+      }
     }
 
     const body = await request.json();

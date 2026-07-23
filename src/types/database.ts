@@ -4047,6 +4047,36 @@ export type Database = {
         Args: { p_lead_id: string; p_new_sales: string; p_reason?: string }
         Returns: boolean
       }
+      reassign_lead_atomic: {
+        Args: {
+          p_expected_updated_at: string | null
+          p_idempotency_key: string
+          p_lead_id: string
+          p_new_assignee: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      delete_lead_atomic: {
+        Args: { p_idempotency_key: string; p_lead_id: string }
+        Returns: Json
+      }
+      record_lead_note_atomic: {
+        Args: { p_idempotency_key: string; p_lead_id: string; p_note: string }
+        Returns: Json
+      }
+      record_lead_contact_atomic: {
+        Args: {
+          p_contact_fingerprint: string
+          p_contact_method: string
+          p_contact_result: string
+          p_contact_time: string
+          p_idempotency_key: string
+          p_lead_id: string
+          p_summary: string
+        }
+        Returns: Json
+      }
       recomplete_lead_milestone: {
         Args: { p_lead_id: string; p_milestone_key: string; p_notes: string }
         Returns: Json
@@ -4060,7 +4090,8 @@ export type Database = {
           p_expected_stage: string
           p_lead_id: string
           p_next_stage: string
-          p_note?: string
+          p_note: string
+          p_idempotency_key: string
         }
         Returns: Json
       }

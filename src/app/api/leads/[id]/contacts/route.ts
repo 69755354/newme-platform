@@ -1,10 +1,9 @@
 // RBAC: authenticated lead owner, admin, or boss
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { logger, genReqId } from "@/lib/logger";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const METHODS = new Set(["phone", "whatsapp", "other"]);
 
@@ -65,26 +64,15 @@ export async function POST(
       ]))
       .digest("hex");
 
-    // follow_up_logs is intentionally immutable through client RLS. After the
-    // explicit auth/ownership check above, this narrowly scoped server write
-    // creates the contact and returns the persisted row for readback.
-    const { data: contact, error: insertError } = await supabaseAdmin
-      .from("follow_up_logs")
-      .upsert({
-        lead_id: leadId,
-        user_id: profile.userId,
-        contact_type: contactMethod,
-        contact_time: contactTime.toISOString(),
-        contact_result: contactResult,
-        // The UI intentionally makes the note optional while the database requires
-        // a non-null summary. The contact result is the meaningful fallback.
-        summary: summary || contactResult,
-        no_answer: false,
-        contact_fingerprint: contactFingerprint,
-      }, { onConflict: "contact_fingerprint" })
-      .select("id, lead_id, contact_type, contact_time, contact_result, summary, user_id, created_at")
-      .single();
-
+    const { data: contact, error: insertError } = await supabase.rpc("record_lead_contact_atomic", {
+      p_lead_id: leadId,
+      p_contact_method: contactMethod,
+      p_contact_time: contactTime.toISOString(),
+      p_contact_result: contactResult,
+      p_summary: summary || contactResult,
+      p_contact_fingerprint: contactFingerprint,
+      p_idempotency_key: randomUUID(),
+    });
     if (insertError || !contact) {
       return NextResponse.json(
         { error: insertError?.message ?? "Contact record could not be created" },

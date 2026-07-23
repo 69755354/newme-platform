@@ -27,6 +27,10 @@ export async function PATCH(
     const body = await req.json();
     const stage = String(body?.stage ?? "").trim();
     const note = String(body?.note ?? "").trim();
+    const idempotencyKey = String(body?.idempotencyKey ?? "").trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
+      return NextResponse.json({ error: "A valid idempotency key is required" }, { status: 400 });
+    }
     if (note.length > 1000) {
       return NextResponse.json({ error: "Stage note must be 1000 characters or fewer" }, { status: 400 });
     }
@@ -81,11 +85,13 @@ export async function PATCH(
       p_expected_stage: lead.stage,
       p_next_stage: stage,
       p_note: note,
+      p_idempotency_key: idempotencyKey,
     });
 
     if (updateError || !updated) {
       const message = updateError?.message ?? "Stage update failed";
       const status = message.includes("concurrently") ? 409
+        : message.includes("First Contact requirements") ? 409
         : message.includes("Forbidden") ? 403
         : message.includes("not found") ? 404
         : 400;

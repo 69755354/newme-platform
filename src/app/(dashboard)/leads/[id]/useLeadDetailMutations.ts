@@ -157,53 +157,22 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
           toast.error(t("common.saveFailed"));
           return;
         }
-        const oldUser = salesUsers.find((u) => u.id === oldLead.assigned_to);
         const newUserName = newUser.full_name || newUser.email || newUserId;
-        const oldName = oldLead.assignee_profile?.full_name
-          || oldLead.assignee_profile?.email
-          || oldUser?.full_name
-          || oldUser?.email
-          || oldLead.rep_name
-          || "Unknown";
-        const transferDesc = `Reassigned from ${oldName} to ${newUserName}`;
-        // Log while the current salesperson still owns the lead so the route's
-        // ownership check does not race the assigned_to update below.
-        try {
-          const res = await fetch(`/api/leads/${leadId}/events`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ eventType: "transfer", description: transferDesc }),
-          });
-          if (!res.ok) {
-            const json: { error?: string; eventError?: string } = await res.json().catch(() => ({}));
-            const msg =
-              json.error ||
-              (res.status === 401
-                ? t("common.unauthorized") || "Unauthorized"
-                : res.status === 403
-                  ? t("common.forbidden") || "Forbidden"
-                  : t("common.saveFailed") || "Failed to log transfer event");
-            toast.error(msg);
-          }
-        } catch (e) {
-          console.warn("[LeadDetail] business_events transfer log failed", e);
-          toast.error(t("common.saveFailed") || "Failed to log transfer event");
-        }
-        // Apply ownership change only after the best-effort audit attempt.
-        const { error: updateErr } = await supabase.from("leads").update({ assigned_to: newUserId, updated_at: new Date().toISOString() }).eq("id", leadId);
-        if (updateErr) {
-          console.error("[LeadDetail] reassign failed");
-          toast.error(t("common.saveFailed"));
+        const response = await fetch(`/api/leads/${leadId}/assignment`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            assignedTo: newUserId,
+            expectedUpdatedAt: oldLead.updated_at,
+            idempotencyKey: crypto.randomUUID(),
+            reason: "manual_reassign",
+          }),
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          toast.error(payload.error || t("common.saveFailed"));
           return;
         }
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
-        if (oldLead.assigned_to && currentUser?.id) {
-          await supabase.from("transfer_history").insert({ lead_id: leadId, from_user_id: oldLead.assigned_to, to_user_id: newUserId, reason: "manual_reassign", transferred_by: currentUser.id });
-        }
-        await supabase.from("activities").insert({ lead_id: leadId, type: "transfer", content: transferDesc, user_id: currentUser?.id });
-        import("@/lib/notify").then(({ notify }) => {
-          notify({ type: "lead_assigned", lead_id: leadId, assigned_to: newUserId });
-        });
         setLead({ ...oldLead, assigned_to: newUserId, rep_name: newUserName });
         setShowSalesDropdown(false);
       } finally {
@@ -404,7 +373,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     const response = await fetch(`/api/leads/${leadId}/stage`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stage, note: note.trim() }),
+      body: JSON.stringify({ stage, note: note.trim(), idempotencyKey: crypto.randomUUID() }),
     });
     const json = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -503,22 +472,18 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     const text = noteTextParam.trim();
     if (!text) return;
     setUpdating(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error: insertError } = await supabase.from("follow_up_logs").insert({
-      lead_id: leadId,
-      user_id: user?.id ?? null,
-      contact_type: "note",
-      summary: text,
-      contact_time: new Date().toISOString(),
-      no_answer: false,
+    const response = await fetch(`/api/leads/${leadId}/notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: text, idempotencyKey: crypto.randomUUID() }),
     });
-    if (insertError) {
-      console.error("[LeadDetail] note save failed");
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      console.error("[LeadDetail] note save failed", payload.error);
       setUpdating(false);
-      toast.error(t("common.saveFailed"));
+      toast.error(payload.error || t("common.saveFailed"));
       return;
     }
-    await supabase.from("leads").update({ last_contact_date: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", leadId);
     setUpdating(false);
     toast.success(lang === "zh" ? "备注已保存" : "Note saved");
     await fetchData();

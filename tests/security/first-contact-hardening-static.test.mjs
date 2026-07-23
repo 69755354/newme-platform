@@ -39,14 +39,14 @@ test("contact creation and editing are server-authorized and return stored rows"
     for (const token of [
       "getAuthProfile",
       "isAdminOrBoss",
-      "supabaseAdmin",
+      "createServerSupabase",
       "lead.assigned_to !== profile.userId",
       ".select(",
       ".single()",
     ]) assert.ok(source.includes(token), `missing contact ${label} protection: ${token}`);
   }
   assert.ok(create.includes('method: "POST"') === false, "route must not self-fetch");
-  assert.ok(create.includes('.upsert({'));
+  assert.ok(create.includes('record_lead_contact_atomic'));
   assert.ok(create.includes("contactTime.getTime() > Date.now()"));
   assert.ok(create.includes("contact_time cannot be in the future"));
   assert.ok(edit.includes('.eq("id", contactId)'));

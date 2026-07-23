@@ -34,7 +34,7 @@ DROP POLICY IF EXISTS policy_pipeline_stages_delete_admin ON pipeline_stages;
 -- SELECT: admin, boss, operator, finance and sales can read pipeline stage definitions
 CREATE POLICY policy_pipeline_stages_select_admin
   ON pipeline_stages FOR SELECT TO authenticated
-  USING (get_my_role() = ANY (ARRAY['admin','boss','operator','finance']));
+  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss','operator','finance')));
 
 CREATE POLICY policy_pipeline_stages_select_sales
   ON pipeline_stages FOR SELECT

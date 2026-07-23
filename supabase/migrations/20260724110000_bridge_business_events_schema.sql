@@ -1,6 +1,7 @@
 -- Converge already-deployed databases that recorded the legacy business_events shape.
 -- This is additive and preserves all historical rows.
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS quotation_sent_date DATE;
 
 DO $
 BEGIN

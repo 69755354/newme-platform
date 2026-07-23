@@ -67,6 +67,10 @@ rmdir "$WORKTREE"
 git --git-dir="$MIRROR" worktree add --force "$WORKTREE" main >/dev/null
 chown -R root:root "$WORKTREE"
 
+# Systemd, sudo and observability assets are part of the immutable release
+# boundary. Refresh them only from the verified root-owned main worktree.
+bash "$WORKTREE/scripts/install-systemd-assets.sh"
+
 /usr/bin/logger --journald <<EOF
 MESSAGE=newme canonical deployment request
 PRIORITY=5

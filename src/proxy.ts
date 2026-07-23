@@ -14,12 +14,66 @@ const PUBLIC_API_PATHS = new Set([
   "/api/auth/me",
 ]);
 const SESSION_BOOTSTRAP_PATH = "/api/auth/session";
+const EXTERNAL_AUTHORIZED_API_PATHS = new Set([
+  "/api/health",
+  "/api/ready",
+  "/api/monitoring/report",
+  "/api/leads/meta-capi",
+  "/api/meta/oauth-callback",
+]);
+const EXTERNAL_AUTHORIZED_API_PREFIXES = ["/api/cron/"];
+const AUTH_TIMEOUT_MS = 3_000;
+
+type ActiveProfile = {
+  role?: string | null;
+  is_active?: boolean | null;
+  password_changed_at?: string | null;
+};
+
+function isExternalAuthorizedApi(pathname: string): boolean {
+  return EXTERNAL_AUTHORIZED_API_PATHS.has(pathname)
+    || EXTERNAL_AUTHORIZED_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+function isProtectedApiMutation(request: NextRequest, pathname: string): boolean {
+  return pathname.startsWith("/api/")
+    && !["GET", "HEAD", "OPTIONS"].includes(request.method)
+    && !PUBLIC_API_PATHS.has(pathname)
+    && pathname !== SESSION_BOOTSTRAP_PATH
+    && !isExternalAuthorizedApi(pathname);
+}
+
+async function withAuthTimeout<T>(operation: PromiseLike<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("auth_timeout")), AUTH_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function authUnavailable(request: NextRequest, isApiRequest: boolean) {
+  if (isApiRequest) {
+    return NextResponse.json({ error: "auth_unavailable" }, { status: 503 });
+  }
+  const loginUrl = new URL("/login", request.url);
+  loginUrl.searchParams.set("reason", "auth_unavailable");
+  return NextResponse.redirect(loginUrl);
+}
 
 // Track user activity — update last_active_at, but throttle to once per 5 min per user
 const activityThrottle = new Map<string, number>();
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const isApiRequest = pathname.startsWith("/api/");
+  const isPublicApiRequest = isApiRequest && (PUBLIC_API_PATHS.has(pathname) || pathname === SESSION_BOOTSTRAP_PATH);
+  const protectedApiMutation = isProtectedApiMutation(request, pathname);
 
   // P3_6 (PRD §六 6.5): legacy URL redirects — return early so we don't run auth.
   // /command-center → /dashboard
@@ -39,6 +93,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url), 307);
   }
 
+  // Session bootstrap and introspection own their authentication behavior;
+  // never make them unavailable because proxy-side session refresh is slow.
+  if (isPublicApiRequest) {
+    return NextResponse.next();
+  }
+
   // Check if this path requires specific roles
   let requiredRoles: string[] | null = null;
   for (const [prefix, roles] of Object.entries(PROTECTED_ROUTES)) {
@@ -49,32 +109,51 @@ export async function proxy(request: NextRequest) {
   }
 
   // Use createMiddlewareClient to validate session (no service_role needed)
-  const { supabase, getResponse } = await createMiddlewareClient(request);
+  let middlewareClient: Awaited<ReturnType<typeof createMiddlewareClient>>;
+  try {
+    middlewareClient = await withAuthTimeout(createMiddlewareClient(request));
+  } catch {
+    return authUnavailable(request, isApiRequest);
+  }
+  const { supabase, getResponse } = middlewareClient;
 
-  let { data: { user } } = await supabase.auth.getUser();
+  let user: { id: string } | null = null;
+  let authInfrastructureFailed = false;
+  try {
+    const { data } = await withAuthTimeout(supabase.auth.getUser());
+    user = data.user;
+  } catch {
+    authInfrastructureFailed = true;
+  }
 
   // Fallback: also check Authorization Bearer header (for localhost/dev testing,
   // where SSR cookies may fail to parse correctly)
   let usedBearerFallback = false;
+  let bearerToken: string | undefined;
   if (!user) {
     const authHeader = request.headers.get("authorization");
     if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.slice(7);
+      bearerToken = token;
       try {
-        const { data: authUser } = await supabase.auth.getUser(token);
+        const { data: authUser } = await withAuthTimeout(supabase.auth.getUser(token));
         user = authUser?.user ?? null;
         if (user) {
           usedBearerFallback = true;
         }
       } catch {
-        // fallback failed, user stays null
+        authInfrastructureFailed = true;
       }
     }
   }
 
-  const isApiRequest = pathname.startsWith("/api/");
-  const isPublicApiRequest = isApiRequest && (PUBLIC_API_PATHS.has(pathname) || pathname === SESSION_BOOTSTRAP_PATH);
-  let activeProfile: { role?: string | null; is_active?: boolean | null } | null = null;
+  if (!user && protectedApiMutation) {
+    return authInfrastructureFailed
+      ? authUnavailable(request, true)
+      : NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  let activeProfile: ActiveProfile | null = null;
 
   // Server-side session revocation boundary. Auth access tokens are not assumed
   // to become invalid when a profile is deactivated; every protected request
@@ -86,7 +165,7 @@ export async function proxy(request: NextRequest) {
     // empty/inactive). Query profiles via the Supabase REST API with the
     // service_role key to bypass RLS. createClient(url, service_role_key) is
     // intentionally avoided — it 500s under the Edge Runtime.
-    let profile: { role?: string | null; is_active?: boolean | null } | null = null;
+    let profile: ActiveProfile | null = null;
     let profileErr: unknown = null;
 
     if (usedBearerFallback) {
@@ -96,15 +175,15 @@ export async function proxy(request: NextRequest) {
         profileErr = new Error("missing_service_role_env");
       } else {
         try {
-          const res = await fetch(
-            `${supabaseUrl}/rest/v1/profiles?select=id,is_active,role&id=eq.${user.id}`,
+          const res = await withAuthTimeout(fetch(
+            `${supabaseUrl}/rest/v1/profiles?select=id,is_active,role,password_changed_at&id=eq.${user.id}`,
             {
               headers: {
                 apikey: serviceRoleKey,
                 Authorization: `Bearer ${serviceRoleKey}`,
               },
             },
-          );
+          ));
           if (!res.ok) {
             profileErr = new Error(`profiles_rest_${res.status}`);
           } else {
@@ -118,16 +197,19 @@ export async function proxy(request: NextRequest) {
         }
       }
     } else {
-      const { data, error } = await supabase
+      const { data, error } = await withAuthTimeout(supabase
         .from("profiles")
-        .select("role, is_active")
+        .select("role, is_active, password_changed_at")
         .eq("id", user.id)
-        .single();
+        .single());
       profile = data;
       profileErr = error;
     }
 
-    if (profileErr || !isActiveProfile(profile)) {
+    if (profileErr) {
+      return authUnavailable(request, isApiRequest);
+    }
+    if (!isActiveProfile(profile)) {
       if (isApiRequest) {
         return NextResponse.json({ error: "inactive_account" }, { status: 401 });
       }
@@ -143,24 +225,16 @@ export async function proxy(request: NextRequest) {
   if (user) {
     try {
       // Decode JWT iat claim from session
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const accessToken = session?.access_token;
+      const accessToken = bearerToken ?? (await withAuthTimeout(supabase.auth.getSession())).data.session?.access_token;
       if (accessToken) {
         const payload = JSON.parse(
           Buffer.from(accessToken.split(".")[1], "base64url").toString(),
         );
         const jwtIat = payload.iat;
         if (jwtIat) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("password_changed_at")
-            .eq("id", user.id)
-            .single();
-          if (profile?.password_changed_at) {
+          if (activeProfile?.password_changed_at) {
             const changedAt = Math.floor(
-              new Date(profile.password_changed_at).getTime() / 1000,
+              new Date(activeProfile.password_changed_at).getTime() / 1000,
             );
             if (changedAt > jwtIat) {
               const loginUrl = new URL("/login", request.url);
@@ -174,7 +248,7 @@ export async function proxy(request: NextRequest) {
         }
       }
     } catch {
-      // If decoding fails, allow the request — don't block on parse errors
+      if (protectedApiMutation) return authUnavailable(request, true);
     }
   }
 

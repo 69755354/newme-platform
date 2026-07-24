@@ -17,7 +17,7 @@
     "client-side-supabase-mutation:src/app/actions/pipeline.ts": 8,
     "client-side-supabase-mutation:src/app/actions/settings.ts": 6,
     "client-side-supabase-mutation:src/app/actions/tasks.ts": 6,
-    "client-side-supabase-mutation:src/app/actions/team.ts": 10,
+    "client-side-supabase-mutation:src/app/actions/team.ts": 11,
     "client-side-supabase-mutation:src/components/QuickCreateLeadDialog.tsx": 2,
     "client-side-supabase-mutation:src/lib/tasks.ts": 1,
     "client-side-supabase-mutation:src/shared/hooks/usePipelineDragDrop.ts": 4,

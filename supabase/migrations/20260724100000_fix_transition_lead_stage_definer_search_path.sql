@@ -1,5 +1,4 @@
 -- SAM-62: harden the active idempotent stage-transition RPC only.
-BEGIN;
 
 ALTER FUNCTION public.transition_lead_stage(uuid, text, text, text, uuid)
   SET search_path = pg_catalog, public, pg_temp;
@@ -11,4 +10,3 @@ GRANT EXECUTE ON FUNCTION public.transition_lead_stage(uuid, text, text, text, u
   TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
-COMMIT;

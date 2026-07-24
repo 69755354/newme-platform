@@ -177,7 +177,7 @@ BEGIN
     INSERT INTO public.notifications (user_id, type, title, body, related_id, related_type)
     VALUES (
       p_new_assignee, 'lead_assigned', 'Lead assigned',
-      coalesce(v_lead.customer_name, 'Lead') || ' was assigned to you.', p_lead_id::text, 'lead'
+      coalesce(v_lead.customer_name, 'Lead') || ' was assigned to you.', p_lead_id, 'lead'
     );
 
     v_response := jsonb_build_object(

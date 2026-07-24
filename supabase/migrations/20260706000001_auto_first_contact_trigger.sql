@@ -2,7 +2,6 @@
 -- The current schema has no source or source_creator column; historical source
 -- differentiation may require a future migration.
 
-BEGIN;
 
 CREATE OR REPLACE FUNCTION public.trg_auto_first_contact()
 RETURNS trigger
@@ -37,5 +36,3 @@ CREATE TRIGGER trg_after_followup_insert
   AFTER INSERT ON public.follow_up_logs
   FOR EACH ROW
   EXECUTE FUNCTION public.trg_auto_first_contact();
-
-COMMIT;

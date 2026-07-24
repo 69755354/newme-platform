@@ -3,7 +3,6 @@
 -- 补历史数据：won/lost 的 final_status + 里程碑 + current_milestone
 -- 幂等：NOT EXISTS + WHERE final_status IS NULL
 
-BEGIN;
 
 -- ═══════════════════════════════════════════════
 -- 1. final_status
@@ -154,5 +153,3 @@ BEGIN
   END IF;
 END;
 $$;
-
-COMMIT;

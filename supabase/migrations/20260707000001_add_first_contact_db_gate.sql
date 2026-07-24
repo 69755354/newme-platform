@@ -10,7 +10,6 @@
 -- layer — the gate is universal. Bypass requires direct SQL or
 -- Supabase Dashboard (RLS still applies).
 
-BEGIN;
 
 CREATE OR REPLACE FUNCTION public.trg_check_first_contact_gate()
 RETURNS trigger
@@ -52,5 +51,3 @@ CREATE TRIGGER trg_first_contact_gate
   BEFORE UPDATE ON public.leads
   FOR EACH ROW
   EXECUTE FUNCTION public.trg_check_first_contact_gate();
-
-COMMIT;

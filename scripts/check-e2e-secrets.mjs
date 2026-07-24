@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -69,6 +69,7 @@ function main() {
   const violations = [];
   for (const relativePath of trackedFiles()) {
     const filePath = path.join(repoRoot, relativePath);
+    if (!existsSync(filePath)) continue;
     for (const reason of scanFile(filePath, relativePath)) {
       violations.push(`${relativePath}: ${reason}`);
     }

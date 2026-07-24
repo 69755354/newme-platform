@@ -5,7 +5,68 @@
 --        transaction safety, IF EXISTS/IF NOT EXISTS guards
 -- =============================================================================
 
-BEGIN;
+
+-- Historical baseline: later migrations extend this table, but the original
+-- migration chain referenced its policies before creating it.
+CREATE TABLE IF NOT EXISTS follow_up_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES profiles(id),
+  contact_type TEXT NOT NULL DEFAULT 'phone',
+  summary TEXT NOT NULL DEFAULT '',
+  result TEXT,
+  no_answer BOOLEAN NOT NULL DEFAULT false,
+  next_action TEXT,
+  next_followup_date TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS lead_documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  document_type TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  file_url TEXT NOT NULL,
+  file_size BIGINT,
+  uploaded_by UUID REFERENCES profiles(id),
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS lead_files (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  file_name TEXT,
+  file_path TEXT NOT NULL,
+  file_type TEXT,
+  file_size BIGINT,
+  mime_type TEXT,
+  uploaded_by UUID REFERENCES auth.users(id),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS knx_designs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  devices_json JSONB DEFAULT '{}'::jsonb,
+  total_aed NUMERIC DEFAULT 0,
+  device_count INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'draft',
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS transfer_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  from_user_id UUID REFERENCES profiles(id),
+  to_user_id UUID NOT NULL REFERENCES profiles(id),
+  transferred_by UUID NOT NULL REFERENCES profiles(id),
+  reason TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
 
 -- =============================================================================
 -- PHASE 1: Drop ALL old policies (including 18 blanket policies)
@@ -832,7 +893,6 @@ CREATE POLICY policy_lead_documents_delete_admin
   ON lead_documents FOR DELETE TO authenticated
   USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
 
-COMMIT;
 
 -- =============================================================================
 -- Refresh PostgREST schema cache

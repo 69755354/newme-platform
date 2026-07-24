@@ -1,7 +1,6 @@
 -- Correct the first-contact business rule.
 -- One complete contact + assessed quality is the hard stage gate.
 -- Three contacts remain a UI coaching target only.
-BEGIN;
 
 CREATE OR REPLACE FUNCTION public.trg_check_first_contact_gate()
 RETURNS trigger
@@ -46,4 +45,3 @@ CREATE TRIGGER trg_first_contact_gate
   EXECUTE FUNCTION public.trg_check_first_contact_gate();
 
 NOTIFY pgrst, 'reload schema';
-COMMIT;

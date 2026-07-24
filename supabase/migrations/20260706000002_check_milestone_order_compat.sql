@@ -1,6 +1,5 @@
 -- DRAFT: pending Hermes controlled transaction test v2 + GPT approval. Do not apply yet.
 
-BEGIN;
 
 DROP TRIGGER IF EXISTS trg_check_milestone_order ON public.lead_milestones;
 
@@ -46,5 +45,3 @@ CREATE TRIGGER trg_check_milestone_order
   BEFORE INSERT ON public.lead_milestones
   FOR EACH ROW
   EXECUTE FUNCTION public.check_milestone_order();
-
-COMMIT;

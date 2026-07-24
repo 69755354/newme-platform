@@ -5,7 +5,6 @@
 --        RLS recursion. Replace all subqueries with SECURITY DEFINER get_my_role().
 -- =============================================================================
 
-BEGIN;
 
 -- =============================================================================
 -- Ensure get_my_role() exists and is robust (handles NULL auth.uid())
@@ -86,7 +85,6 @@ CREATE POLICY policy_profiles_delete_admin
   ON profiles FOR DELETE TO authenticated
   USING (get_my_role() = ANY (ARRAY['admin','boss']));
 
-COMMIT;
 
 -- Refresh PostgREST schema cache
 NOTIFY pgrst, 'reload schema';

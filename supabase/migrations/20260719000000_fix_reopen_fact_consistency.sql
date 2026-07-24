@@ -1,5 +1,4 @@
 -- A reopened milestone is an open fact until it is explicitly recompleted.
-BEGIN;
 
 CREATE OR REPLACE FUNCTION public.reopen_lead_milestone(
   p_lead_id uuid,
@@ -173,4 +172,3 @@ DROP FUNCTION IF EXISTS public.trg_auto_first_contact_from_quality();
 DROP FUNCTION IF EXISTS public.complete_first_contact_if_ready(uuid);
 
 NOTIFY pgrst, 'reload schema';
-COMMIT;

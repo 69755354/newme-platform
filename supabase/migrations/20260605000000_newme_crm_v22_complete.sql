@@ -8,7 +8,7 @@
 -- PHASE 1: 新建5表（依赖顺序：products → quotations → contracts → installment_plans → payments）
 -- ═══════════════════════════════════════════════════
 
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sku TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,

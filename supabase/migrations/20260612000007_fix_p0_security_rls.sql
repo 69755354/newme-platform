@@ -8,7 +8,11 @@
 -- ============================================================
 ALTER TABLE contract_approvals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_allocations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE marketing_campaigns ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF to_regclass('public.marketing_campaigns') IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE public.marketing_campaigns ENABLE ROW LEVEL SECURITY';
+  END IF;
+END $$;
 
 -- contract_approvals policies
 CREATE POLICY ca_admin_all ON contract_approvals
@@ -38,9 +42,13 @@ CREATE POLICY pa_sales_select ON payment_allocations
   ));
 
 -- marketing_campaigns policies (admin/boss only)
-CREATE POLICY mc_admin_all ON marketing_campaigns
-  FOR ALL TO authenticated
-  USING (get_my_role() = ANY (ARRAY['admin','boss']));
+DO $$ BEGIN
+  IF to_regclass('public.marketing_campaigns') IS NOT NULL THEN
+    EXECUTE 'CREATE POLICY mc_admin_all ON public.marketing_campaigns
+      FOR ALL TO authenticated
+      USING (get_my_role() = ANY (ARRAY[''admin'',''boss'']))';
+  END IF;
+END $$;
 
 -- ============================================================
 -- P0-2: Fix notifications_service_insert - restrict to authenticated

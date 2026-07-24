@@ -10,6 +10,20 @@
 --   - 明确的历史日期（昨天及更早）仍被拒绝，保留 "不可严重回填" 的语义
 -- 幂等：DROP IF EXISTS + 守卫 ADD（标准 Postgres 无 ADD CONSTRAINT IF NOT EXISTS）。
 
+CREATE TABLE IF NOT EXISTS tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  assignee_id UUID REFERENCES profiles(id),
+  due_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'completed', 'cancelled')),
+  source TEXT DEFAULT 'manual'
+    CHECK (source IN ('manual', 'follow_up', 'cron', 'system')),
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 DO $$
 BEGIN
   IF EXISTS (

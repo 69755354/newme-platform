@@ -1,6 +1,5 @@
 -- First Contact is complete only when both business facts exist:
 -- at least one complete contact record and an assessed lead quality.
-BEGIN;
 
 CREATE OR REPLACE FUNCTION public.complete_first_contact_if_ready(p_lead_id uuid)
 RETURNS void
@@ -267,4 +266,3 @@ END;
 $backfill$;
 
 NOTIFY pgrst, 'reload schema';
-COMMIT;

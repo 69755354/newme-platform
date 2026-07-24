@@ -9,7 +9,25 @@
 --          quotes, 以及其他历史遗留策略表
 -- ============================================================================
 
-BEGIN;
+
+-- Historical baselines: the policy remediation originally referenced these
+-- tables before any migration created them.
+CREATE TABLE IF NOT EXISTS crm_daily_funnel_snapshot (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  current_milestone TEXT NOT NULL,
+  lead_count INTEGER NOT NULL DEFAULT 0,
+  total_value NUMERIC DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS user_features (
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  feature_key TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, feature_key)
+);
 
 -- ============================================================================
 -- 1. business_events (业务事件日志)
@@ -345,36 +363,42 @@ CREATE POLICY policy_lead_workflow_stages_delete_admin
 -- 8. marketing_campaigns (营销活动)
 -- 用途：营销活动管理
 -- 权限：admin/boss 全局 CRUD，operator 只读
+-- 注意：marketing_campaigns 表在生产/cleanroom 均不存在，条件化处理
 -- ============================================================================
 
-DROP POLICY IF EXISTS mc_admin_all ON marketing_campaigns;
+DO $$ BEGIN
+  IF to_regclass('public.marketing_campaigns') IS NOT NULL THEN
 
-DO $$ DECLARE _pol record; BEGIN FOR _pol IN SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND tablename = 'marketing_campaigns' LOOP EXECUTE format('DROP POLICY IF EXISTS %I ON marketing_campaigns', _pol.policyname); END LOOP; END $$;
+    DROP POLICY IF EXISTS mc_admin_all ON marketing_campaigns;
 
--- SELECT: admin/boss/operator 可看所有营销活动
-CREATE POLICY policy_marketing_campaigns_select_admin
-  ON marketing_campaigns FOR SELECT TO authenticated
-  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss','operator')));
+    EXECUTE (
+      SELECT string_agg(format('DROP POLICY IF EXISTS %I ON marketing_campaigns', policyname), '; ')
+      FROM pg_policies
+      WHERE schemaname = 'public' AND tablename = 'marketing_campaigns'
+    );
 
--- SELECT: designer 可看营销活动
-CREATE POLICY policy_marketing_campaigns_select_designer
-  ON marketing_campaigns FOR SELECT TO authenticated
-  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'designer'));
+    EXECUTE 'CREATE POLICY policy_marketing_campaigns_select_admin
+      ON marketing_campaigns FOR SELECT TO authenticated
+      USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'',''operator'')))';
 
--- INSERT: admin/boss 可创建营销活动
-CREATE POLICY policy_marketing_campaigns_insert_admin
-  ON marketing_campaigns FOR INSERT TO authenticated
-  WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss')));
+    EXECUTE 'CREATE POLICY policy_marketing_campaigns_select_designer
+      ON marketing_campaigns FOR SELECT TO authenticated
+      USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = ''designer''))';
 
--- UPDATE: admin/boss 可更新营销活动
-CREATE POLICY policy_marketing_campaigns_update_admin
-  ON marketing_campaigns FOR UPDATE TO authenticated
-  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss')));
+    EXECUTE 'CREATE POLICY policy_marketing_campaigns_insert_admin
+      ON marketing_campaigns FOR INSERT TO authenticated
+      WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'')))';
 
--- DELETE: admin/boss 可删除营销活动
-CREATE POLICY policy_marketing_campaigns_delete_admin
-  ON marketing_campaigns FOR DELETE TO authenticated
-  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss')));
+    EXECUTE 'CREATE POLICY policy_marketing_campaigns_update_admin
+      ON marketing_campaigns FOR UPDATE TO authenticated
+      USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'')))';
+
+    EXECUTE 'CREATE POLICY policy_marketing_campaigns_delete_admin
+      ON marketing_campaigns FOR DELETE TO authenticated
+      USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'')))';
+
+  END IF;
+END $$;
 
 -- ============================================================================
 -- 9. payment_allocations (付款分配)
@@ -700,7 +724,6 @@ END $$;
 -- CREATE POLICY policy_<table_name>_update_admin ...
 -- CREATE POLICY policy_<table_name>_delete_admin ...
 
-COMMIT;
 
 -- ============================================================================
 -- Refresh PostgREST schema cache

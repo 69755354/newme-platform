@@ -1,5 +1,4 @@
 -- Keep Lead source values canonical across UI, imports, webhooks, and analytics.
-BEGIN;
 
 UPDATE public.leads
 SET source = 'ins'
@@ -14,4 +13,3 @@ ALTER TABLE public.leads ADD CONSTRAINT leads_source_check CHECK (
 );
 
 NOTIFY pgrst, 'reload schema';
-COMMIT;

@@ -3,6 +3,8 @@
 -- 5 alert rules: overdue_followup, stale_lead, over_contacted, high_value_stuck, no_contact, due_today
 -- Date: 2026-06-13
 
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS quotation_sent_date DATE;
+
 DROP VIEW IF EXISTS lead_alerts;
 
 CREATE VIEW lead_alerts AS

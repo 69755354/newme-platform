@@ -1,7 +1,6 @@
 -- Add created_by column and foreign keys on leads table
 -- Enables native PostgREST joins for creator and assignee profiles
 
-BEGIN;
 
 -- 1. Add created_by column
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS created_by UUID;
@@ -19,5 +18,3 @@ ALTER TABLE leads ADD CONSTRAINT fk_leads_assigned_to FOREIGN KEY (assigned_to) 
 
 -- 5. Notify PostgREST to refresh schema cache
 NOTIFY pgrst, 'reload schema';
-
-COMMIT;

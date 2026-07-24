@@ -40,7 +40,6 @@
 -- allowed list. Until then, removing the rows with the new event_types is
 -- the only safe undo path.
 
-BEGIN;
 
 ALTER TABLE business_events DROP CONSTRAINT IF EXISTS chk_event_type;
 
@@ -60,5 +59,3 @@ ALTER TABLE business_events ADD CONSTRAINT chk_event_type
 
 -- Reload PostgREST schema cache so the next request sees the new CHECK.
 NOTIFY pgrst, 'reload schema';
-
-COMMIT;

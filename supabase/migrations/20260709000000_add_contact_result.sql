@@ -1,7 +1,6 @@
 -- P3: Add contact_result column to follow_up_logs and update first_contact gate trigger.
 -- contact_result stores the outcome of each contact attempt (e.g. "客户有兴趣",
 -- "无人接听", "scheduled meeting"). Required for structured contact records.
-BEGIN;
 
 ALTER TABLE public.follow_up_logs
   ADD COLUMN IF NOT EXISTS contact_result TEXT;
@@ -62,4 +61,3 @@ CREATE TRIGGER trg_first_contact_gate
   EXECUTE FUNCTION public.trg_check_first_contact_gate();
 
 NOTIFY pgrst, 'reload schema';
-COMMIT;

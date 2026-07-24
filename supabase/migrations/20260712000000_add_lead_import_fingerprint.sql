@@ -1,5 +1,4 @@
 -- Make CRM workbook imports idempotent without changing legacy rows.
-BEGIN;
 
 ALTER TABLE public.leads
   ADD COLUMN IF NOT EXISTS import_fingerprint text;
@@ -12,4 +11,3 @@ COMMENT ON COLUMN public.leads.import_fingerprint IS
   'SHA-256 fingerprint of a normalized source workbook row; prevents repeat-upload duplicates.';
 
 NOTIFY pgrst, 'reload schema';
-COMMIT;

@@ -7,10 +7,29 @@
 
 -- ── Part 1: 4 条 public 策略缩窄为 authenticated ──
 
-ALTER POLICY "lead_files_select_assigned" ON lead_files TO authenticated;
-ALTER POLICY "lead_files_insert_staff" ON lead_files TO authenticated;
-ALTER POLICY "knx_designs_select_assigned" ON knx_designs TO authenticated;
-ALTER POLICY "Users insert own audit events" ON audit_log_archived_20260615 TO authenticated;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'lead_files_select_assigned' AND tablename = 'lead_files') THEN
+    ALTER POLICY "lead_files_select_assigned" ON lead_files TO authenticated;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'lead_files_insert_staff' AND tablename = 'lead_files') THEN
+    ALTER POLICY "lead_files_insert_staff" ON lead_files TO authenticated;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'knx_designs_select_assigned' AND tablename = 'knx_designs') THEN
+    ALTER POLICY "knx_designs_select_assigned" ON knx_designs TO authenticated;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF to_regclass('public.audit_log_archived_20260615') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users insert own audit events' AND tablename = 'audit_log_archived_20260615') THEN
+    ALTER POLICY "Users insert own audit events" ON audit_log_archived_20260615 TO authenticated;
+  END IF;
+END $$;
 
 -- ── Part 2: log_activity() 表引用加 public. 前缀 ──
 

@@ -1,5 +1,4 @@
 -- Reopen a completed Lead milestone without deleting its audit history.
-BEGIN;
 
 CREATE OR REPLACE FUNCTION public.reopen_lead_milestone(
   p_lead_id uuid,
@@ -274,4 +273,3 @@ REVOKE ALL ON FUNCTION public.recomplete_lead_milestone(uuid, text, text) FROM a
 GRANT EXECUTE ON FUNCTION public.recomplete_lead_milestone(uuid, text, text) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
-COMMIT;

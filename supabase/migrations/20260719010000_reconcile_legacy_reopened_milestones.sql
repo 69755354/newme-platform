@@ -1,7 +1,6 @@
 -- Reconcile only rows whose latest explicit milestone action remains a reopen.
 -- Legacy quality-trigger writes can repopulate completed_at without creating an
 -- explicit recompletion audit event, so the business-event ordering is authoritative.
-BEGIN;
 
 WITH relevant_actions AS (
   SELECT
@@ -75,4 +74,3 @@ FROM remaining
 WHERE l.id = remaining.lead_id;
 
 NOTIFY pgrst, 'reload schema';
-COMMIT;

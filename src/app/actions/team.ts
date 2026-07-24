@@ -188,19 +188,12 @@ export async function resetUserPassword(userId: string, password: string) {
     throw new Error('Password must be at least 6 characters')
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const { createClient } = await import('@supabase/supabase-js')
-  const adminClient = createClient(supabaseUrl, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
-
   const supabase = await createServerSupabase()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Unauthorized')
 
   // Role check: only admin/boss
-  const { data: profile } = await adminClient
+  const { data: profile } = await supabaseAdmin
     .from('profiles')
     .select('role')
     .eq('id', user.id)
@@ -211,11 +204,11 @@ export async function resetUserPassword(userId: string, password: string) {
   }
 
   // Reset target user's password
-  const { error } = await adminClient.auth.admin.updateUserById(userId, { password })
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { password })
   if (error) throw new Error(error.message)
 
   // Invalidate sessions by marking password change time
-  await adminClient
+  await supabaseAdmin
     .from('profiles')
     .update({ password_changed_at: new Date().toISOString() })
     .eq('id', userId)

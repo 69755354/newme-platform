@@ -184,7 +184,7 @@ export async function GET(req: NextRequest) {
     const qualityJudgedDistinct = new Set((qualityEvents ?? []).map((r) => r.lead_id)).size;
 
     // L2 per-sales rollup
-    let profilesQuery = supabase.from("profiles").select("id, full_name, role");
+    let profilesQuery = supabase.from("profiles").select("id, full_name, role").eq("is_active", true);
     if (isSalesScope) profilesQuery = profilesQuery.eq("id", user.id);
     const { data: profilesAll } = await profilesQuery;
     const salesMap = new Map<string, string>();

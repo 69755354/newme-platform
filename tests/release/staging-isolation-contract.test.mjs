@@ -9,6 +9,8 @@ test("standalone output is opt-in and production builds remain unchanged", async
   const config = await read("next.config.ts");
   assert.match(config, /NEWME_STANDALONE_BUILD/);
   assert.match(config, /output:\s*isStandaloneBuild \? "standalone" : undefined/);
+  assert.match(config, /NEWME_STAGING_LOW_MEMORY/);
+  assert.match(config, /webpackMemoryOptimizations:\s*true/);
 });
 
 test("staging refuses unsafe Supabase credentials and target drift", async () => {
@@ -33,7 +35,9 @@ test("staging deploy is isolated, low-peak, canonical, and production-aware", as
     /refs\/remotes\/origin\/\$BRANCH/,
     /NPM_CONFIG_CACHE="\$ROOT\/cache\/npm"/,
     /NEWME_STANDALONE_BUILD=1/,
+    /NEWME_STAGING_LOW_MEMORY=1/,
     /NODE_OPTIONS=--max_old_space_size=1152/,
+    /npm run build -- --webpack/,
     /127\.0\.0\.1:3001\/api\/health/,
     /PORT=3102/,
     /127\.0\.0\.1:3101\/api\/health/,

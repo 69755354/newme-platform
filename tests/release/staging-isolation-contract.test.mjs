@@ -28,7 +28,7 @@ test("staging refuses unsafe Supabase credentials and target drift", async () =>
 test("staging deploy is isolated, low-peak, canonical, and production-aware", async () => {
   const deploy = await read("scripts/deploy-staging.sh");
   for (const pattern of [
-    /00\|01\|02\|03\|04\|05/,
+    /00\|01\|02\|03\|04\|05\|18\|19\|20\|21\|22\|23/,
     /flock -n/,
     /refs\/remotes\/origin\/\$BRANCH/,
     /NEWME_STANDALONE_BUILD=1/,

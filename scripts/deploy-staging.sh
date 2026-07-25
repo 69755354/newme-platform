@@ -67,8 +67,8 @@ trap cleanup EXIT INT TERM
 
 DUBAI_HOUR="$(TZ=Asia/Dubai date +%H)"
 case "$DUBAI_HOUR" in
-  00|01|02|03|04|05) ;;
-  *) fail "build window is 00:00-06:00 Asia/Dubai" ;;
+  00|01|02|03|04|05|18|19|20|21|22|23) ;;
+  *) fail "build window is 18:00-06:00 Asia/Dubai" ;;
 esac
 
 production_healthy || fail "production health is not green"

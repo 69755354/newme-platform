@@ -77,6 +77,7 @@ export async function GET(request: Request) {
     ? await supabase
         .from("profiles")
         .select("id,email,role,full_name")
+        .eq("is_active", true)
         .in("role", ["admin", "sales", "operator", "boss"])
     : { data: [] };
 

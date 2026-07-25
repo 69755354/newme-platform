@@ -55,7 +55,9 @@ test("staging systemd units enforce separate identity, ports, and resource ceili
   assert.match(runtime, /^MemoryMax=512M$/m);
   assert.match(runtime, /^MemorySwapMax=0$/m);
   assert.match(runtime, /^CPUQuota=50%$/m);
+  assert.match(deploy, /^TimeoutStartSec=90min$/m);
+  assert.match(deploy, /^MemoryHigh=1408M$/m);
   assert.match(deploy, /^MemoryMax=1536M$/m);
   assert.match(deploy, /^MemorySwapMax=0$/m);
-  assert.match(deploy, /^CPUQuota=75%$/m);
+  assert.match(deploy, /^CPUQuota=150%$/m);
 });

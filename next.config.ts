@@ -76,7 +76,7 @@ const nextConfig: NextConfig = {
   // Source maps handled by Sentry wrapper below
 };
 
-const sentryConfig = withSentryConfig(nextConfig, {
+const configuredNext = isLowMemoryWebpackBuild ? nextConfig : withSentryConfig(nextConfig, {
   org: process.env.SENTRY_ORG || "newme-o4",
   project: process.env.SENTRY_PROJECT || "javascript-nextjs",
   authToken: process.env.SENTRY_AUTH_TOKEN,
@@ -95,4 +95,4 @@ const sentryConfig = withSentryConfig(nextConfig, {
   widenClientFileUpload: true,
 });
 
-export default withBundleAnalyzer(sentryConfig);
+export default withBundleAnalyzer(configuredNext);

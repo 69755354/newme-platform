@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -9,6 +10,7 @@ import { promisify } from "node:util";
 
 const root = new URL("../../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
+const readBinary = (path) => readFile(new URL(path, root));
 const run = promisify(execFile);
 const bash = process.platform === "win32"
   ? "C:\\Program Files\\Git\\bin\\bash.exe"
@@ -20,6 +22,34 @@ test("standalone output is opt-in and production builds remain unchanged", async
   assert.match(config, /output:\s*isStandaloneBuild \? "standalone" : undefined/);
   assert.match(config, /NEWME_STAGING_LOW_MEMORY/);
   assert.match(config, /webpackMemoryOptimizations:\s*true/);
+  assert.match(
+    config,
+    /configuredNext = isLowMemoryWebpackBuild \? nextConfig : withSentryConfig/,
+  );
+});
+
+test("application fonts are pinned locally so builds never depend on Google Fonts", async () => {
+  const [layout, styles, sans, mono, license] = await Promise.all([
+    read("src/app/layout.tsx"),
+    read("src/app/globals.css"),
+    readBinary("src/app/fonts/Geist-Variable.woff2"),
+    readBinary("src/app/fonts/GeistMono-Variable.woff2"),
+    read("src/app/fonts/LICENSE.txt"),
+  ]);
+  assert.match(layout, /from "next\/font\/local"/);
+  assert.doesNotMatch(layout, /next\/font\/google/);
+  assert.match(layout, /\.\/fonts\/Geist-Variable\.woff2/);
+  assert.match(layout, /\.\/fonts\/GeistMono-Variable\.woff2/);
+  assert.match(styles, /--font-sans:\s*var\(--font-geist-sans\)/);
+  assert.equal(
+    createHash("sha256").update(sans).digest("hex"),
+    "2ffebe993e969069a9789d15164b7715d42491b5835516c5e3b935d5f81b05f1",
+  );
+  assert.equal(
+    createHash("sha256").update(mono).digest("hex"),
+    "afaacc4c5fbba89d2ebf7a02dc4070208540874592a5504d57175782fe893101",
+  );
+  assert.match(license, /SIL OPEN FONT LICENSE Version 1\.1/);
 });
 
 test("staging refuses unsafe Supabase credentials and target drift", async () => {
@@ -92,10 +122,13 @@ test("external staging builder emits an immutable standalone artifact without ru
   const build = await read("scripts/build-staging-artifact.sh");
   for (const pattern of [
     /NEWME_STAGING_BOUNDARY_MODE=build/,
+    /NEWME_STAGING_PROJECT_REF="\$EXPECTED_REF"/,
     /NEWME_STANDALONE_BUILD=1/,
     /NEWME_STAGING_LOW_MEMORY=1/,
     /NEXT_PUBLIC_APP_VERSION="\$SHA"/,
-    /NODE_OPTIONS=.*max_old_space_size=832/,
+    /NEWME_STAGING_BUILD_HEAP_MB:-960/,
+    /build heap must stay between 768 and 1152 MiB/,
+    /NODE_OPTIONS="--max_old_space_size=\$HEAP_MB"/,
     /npm ci --no-audit --no-fund/,
     /\. "\$ENV_FILE"/,
     /npm run build -- --webpack/,

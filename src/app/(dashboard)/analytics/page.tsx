@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, createContext, useContext } from "react";
+import { useEffect, useState, createContext } from "react";
 import dynamic from "next/dynamic";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useLanguage } from "@/lib/i18n/context";
@@ -32,9 +32,6 @@ interface AnalyticsSummary {
 }
 
 const AnalyticsContext = createContext<AnalyticsSummary | null>(null);
-export function useAnalyticsData() {
-  return useContext(AnalyticsContext);
-}
 
 export default function AnalyticsPage() {
   const { loading: roleLoading, blocked, role } = useRequireRole(["admin", "boss", "sales"]);

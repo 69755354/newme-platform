@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 027
 
 SHA="${1:-}"
 ENV_FILE="${2:-}"
 OUTPUT_DIR="${3:-/output}"
+EXPECTED_REF="${4:-${NEWME_STAGING_PROJECT_REF:-}}"
+HEAP_MB="${NEWME_STAGING_BUILD_HEAP_MB:-960}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 fail() {
@@ -12,9 +15,14 @@ fail() {
 }
 
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || fail "a full 40-character staging SHA is required"
+[[ "$EXPECTED_REF" =~ ^[a-z]{20}$ ]] || fail "an explicit 20-character staging project ref is required"
+[[ "$HEAP_MB" =~ ^[0-9]+$ ]] || fail "build heap must be an integer number of MiB"
+[ "$HEAP_MB" -ge 768 ] && [ "$HEAP_MB" -le 1152 ] ||
+  fail "build heap must stay between 768 and 1152 MiB"
 [ -r "$ENV_FILE" ] || fail "a readable public-only staging build environment is required"
-install -d -m 0750 "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR"
 
+export NEWME_STAGING_PROJECT_REF="$EXPECTED_REF"
 export NEWME_STAGING_BOUNDARY_MODE=build
 export NEWME_STAGING_ENV_FILE="$ENV_FILE"
 
@@ -31,7 +39,7 @@ export NEWME_ISOLATED_BUILD=1
 export NEWME_STANDALONE_BUILD=1
 export NEWME_STAGING_LOW_MEMORY=1
 export NEXT_PUBLIC_APP_VERSION="$SHA"
-export NODE_OPTIONS=--max_old_space_size=832
+export NODE_OPTIONS="--max_old_space_size=$HEAP_MB"
 npm run build -- --webpack
 
 STANDALONE="$ROOT/.next/standalone"

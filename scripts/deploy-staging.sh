@@ -98,10 +98,11 @@ runuser -u newme-staging -- env \
   NPM_CONFIG_CACHE="$ROOT/cache/npm" \
   NEWME_ISOLATED_BUILD=1 \
   NEWME_STANDALONE_BUILD=1 \
+  NEWME_STAGING_LOW_MEMORY=1 \
   NEXT_PUBLIC_APP_VERSION="$SHA" \
   NEWME_STAGING_ENV_FILE="$STAGE/.env.local" \
   NODE_OPTIONS=--max_old_space_size=1152 \
-  bash -lc "cd '$STAGE' && npm ci --no-audit --no-fund && npm run check:staging-boundaries && npm run build"
+  bash -lc "cd '$STAGE' && npm ci --no-audit --no-fund && npm run check:staging-boundaries && npm run build -- --webpack"
 
 STANDALONE="$STAGE/.next/standalone"
 [ -f "$STANDALONE/server.js" ] || fail "standalone server is missing"

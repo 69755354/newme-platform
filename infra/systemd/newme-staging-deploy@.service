@@ -1,5 +1,5 @@
 [Unit]
-Description=Build and deploy NewMe staging commit %i
+Description=Verify and deploy prebuilt NewMe staging commit %i
 Wants=network-online.target
 After=network-online.target
 ConditionPathExists=/etc/newme-staging/staging.env
@@ -9,11 +9,11 @@ Type=oneshot
 User=root
 EnvironmentFile=/etc/newme-staging/staging.env
 ExecStart=/opt/newme-staging/control/deploy-staging.sh %i
-TimeoutStartSec=90min
-MemoryHigh=1408M
-MemoryMax=1536M
+TimeoutStartSec=15min
+MemoryHigh=384M
+MemoryMax=512M
 MemorySwapMax=0
-CPUQuota=150%
+CPUQuota=50%
 IOWeight=25
 Nice=10
 StandardOutput=journal

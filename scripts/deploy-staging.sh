@@ -7,15 +7,19 @@ SHA="${1:-}"
 
 ROOT="/opt/newme-staging"
 RELEASES="$ROOT/releases"
+INCOMING="$ROOT/incoming"
 CURRENT="$ROOT/current"
 BARE_REPO="/opt/newme/repository.git"
 ENV_FILE="/etc/newme-staging/staging.env"
+BOUNDARY_CHECK="$ROOT/control/check-staging-boundaries.sh"
 BRANCH="${NEWME_STAGING_BRANCH:-staging}"
 LOCK="/run/lock/newme-staging-deploy.lock"
 DEPLOY_KEY="/home/ubuntu/.ssh/newme_github_deploy_key"
 ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 STAGE="$RELEASES/.staging-$ID"
 RELEASE="$RELEASES/$SHA"
+ARTIFACT="$INCOMING/$SHA.tar.gz"
+CHECKSUM="$ARTIFACT.sha256"
 CURRENT_NEXT="$CURRENT.next-$ID"
 PREVIOUS="$(readlink -f "$CURRENT" 2>/dev/null || true)"
 CANDIDATE_PID=""
@@ -68,17 +72,20 @@ trap cleanup EXIT INT TERM
 DUBAI_HOUR="$(TZ=Asia/Dubai date +%H)"
 case "$DUBAI_HOUR" in
   00|01|02|03|04|05|18|19|20|21|22|23) ;;
-  *) fail "build window is 18:00-06:00 Asia/Dubai" ;;
+  *) fail "deploy window is 18:00-06:00 Asia/Dubai" ;;
 esac
 
 production_healthy || fail "production health is not green"
 [ -r "$ENV_FILE" ] || fail "staging environment is missing"
+[ -x "$BOUNDARY_CHECK" ] || fail "staging boundary check is missing"
 [ -d "$BARE_REPO" ] || fail "canonical bare repository is missing"
 [ -r "$DEPLOY_KEY" ] || fail "GitHub deploy key is missing"
+[ -f "$ARTIFACT" ] || fail "prebuilt staging artifact is missing"
+[ -f "$CHECKSUM" ] || fail "prebuilt staging artifact checksum is missing"
 [ ! -e "$RELEASE" ] || fail "release already exists"
 [[ "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] || fail "invalid staging branch"
 
-mkdir -p "$RELEASES"
+mkdir -p "$RELEASES" "$INCOMING"
 exec 9>"$LOCK"
 flock -n 9 || exit 75
 
@@ -87,37 +94,52 @@ git --git-dir="$BARE_REPO" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin
 REMOTE_SHA="$(git --git-dir="$BARE_REPO" rev-parse "refs/remotes/origin/$BRANCH")"
 [ "$SHA" = "$REMOTE_SHA" ] || fail "release SHA must equal canonical remote staging branch"
 
+EXPECTED_CHECKSUM="$(tr -d '\r\n' < "$CHECKSUM")"
+[[ "$EXPECTED_CHECKSUM" =~ ^[0-9a-f]{64}$ ]] || fail "artifact checksum must be lowercase SHA-256"
+ACTUAL_CHECKSUM="$(sha256sum "$ARTIFACT" | awk '{print $1}')"
+[ "$ACTUAL_CHECKSUM" = "$EXPECTED_CHECKSUM" ] || fail "artifact checksum mismatch"
+
+ARCHIVE_LIST="$(tar -tzf "$ARTIFACT")"
+if printf '%s\n' "$ARCHIVE_LIST" |
+  grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+  fail "artifact contains an unsafe path"
+fi
+tar -tvzf "$ARTIFACT" |
+  awk '$1 !~ /^[-d]/ { unsafe=1 } END { exit unsafe }' ||
+  fail "artifact contains links or special files"
+
 mkdir "$STAGE"
-git --git-dir="$BARE_REPO" archive "$SHA" | tar -x -C "$STAGE"
-install -m 0600 -o newme-staging -g newme-staging "$ENV_FILE" "$STAGE/.env.local"
+tar --no-same-owner --no-same-permissions -xzf "$ARTIFACT" -C "$STAGE"
+[ -f "$STAGE/server.js" ] || fail "standalone server is missing"
+[ -f "$STAGE/manifest.json" ] || fail "release manifest is missing"
+[ -d "$STAGE/.next/static" ] || fail "standalone static assets are missing"
+if find "$STAGE" -type f -name '.env*' -print -quit | grep -q .; then
+  fail "artifact must not contain environment files"
+fi
+
+MANIFEST_SHA="$(
+  node -e '
+    const fs = require("fs");
+    const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    if (!/^[0-9a-f]{40}$/.test(value.git_sha)) process.exit(1);
+    process.stdout.write(value.git_sha);
+  ' "$STAGE/manifest.json"
+)" || fail "release manifest is invalid"
+[ "$MANIFEST_SHA" = "$SHA" ] || fail "release manifest SHA does not match requested SHA"
+
+env \
+  NEWME_STAGING_PROJECT_REF="${NEWME_STAGING_PROJECT_REF:-}" \
+  NEWME_STAGING_ENV_FILE="$ENV_FILE" \
+  NEWME_STAGING_BOUNDARY_MODE=runtime \
+  "$BOUNDARY_CHECK"
 chown -R newme-staging:newme-staging "$STAGE"
 
-runuser -u newme-staging -- env \
-  HOME="$ROOT" \
-  XDG_CACHE_HOME="$ROOT/cache" \
-  NPM_CONFIG_CACHE="$ROOT/cache/npm" \
-  NEWME_ISOLATED_BUILD=1 \
-  NEWME_STANDALONE_BUILD=1 \
-  NEWME_STAGING_LOW_MEMORY=1 \
-  NEXT_PUBLIC_APP_VERSION="$SHA" \
-  NEWME_STAGING_ENV_FILE="$STAGE/.env.local" \
-  NODE_OPTIONS=--max_old_space_size=1152 \
-  bash -lc "cd '$STAGE' && npm ci --no-audit --no-fund && npm run check:staging-boundaries && npm run build -- --webpack"
-
-STANDALONE="$STAGE/.next/standalone"
-[ -f "$STANDALONE/server.js" ] || fail "standalone server is missing"
-cp -a "$STAGE/public" "$STANDALONE/public"
-mkdir -p "$STANDALONE/.next"
-cp -a "$STAGE/.next/static" "$STANDALONE/.next/static"
-printf '{"git_sha":"%s","created_at":"%s"}\n' "$SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$STANDALONE/manifest.json"
-rm -f -- "$STAGE/.env.local"
-
-production_healthy || fail "production health changed during staging build"
+production_healthy || fail "production health changed before candidate validation"
 setsid runuser -u newme-staging -- env \
   NODE_ENV=production \
   PORT=3102 \
   HOSTNAME=127.0.0.1 \
-  bash -lc "set -a; . '$ENV_FILE'; set +a; exec /usr/bin/node '$STANDALONE/server.js'" \
+  bash -lc "set -a; . '$ENV_FILE'; set +a; exec /usr/bin/node '$STAGE/server.js'" \
   >"/tmp/newme-staging-candidate-$ID.log" 2>&1 &
 CANDIDATE_PID=$!
 CANDIDATE_PGID=$CANDIDATE_PID
@@ -134,12 +156,8 @@ done
 [ "$ready" -eq 1 ] || fail "candidate health check failed"
 stop_candidate
 
-RELEASE_STAGE="$RELEASES/.release-$ID"
-mv "$STANDALONE" "$RELEASE_STAGE"
-rm -rf -- "$STAGE"
+mv "$STAGE" "$RELEASE"
 STAGE=""
-mv "$RELEASE_STAGE" "$RELEASE"
-chown -R newme-staging:newme-staging "$RELEASE"
 
 ln -s "$RELEASE" "$CURRENT_NEXT"
 mv -Tf "$CURRENT_NEXT" "$CURRENT"
@@ -151,4 +169,5 @@ curl -fsS --max-time 10 http://127.0.0.1:3101/api/health |
 production_healthy || fail "production health changed after staging switch"
 
 SWITCHED=0
+rm -f -- "$ARTIFACT" "$CHECKSUM"
 echo "staging deployed SHA=$SHA"

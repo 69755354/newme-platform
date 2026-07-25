@@ -29,6 +29,7 @@ const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === "true",
 });
 const isStandaloneBuild = process.env.NEWME_STANDALONE_BUILD === "1";
+const isLowMemoryWebpackBuild = process.env.NEWME_STAGING_LOW_MEMORY === "1";
 
 // Get git hash at build time
 const gitHash = process.env.NEXT_PUBLIC_APP_VERSION ||
@@ -36,6 +37,9 @@ const gitHash = process.env.NEXT_PUBLIC_APP_VERSION ||
 
 const nextConfig: NextConfig = {
   output: isStandaloneBuild ? "standalone" : undefined,
+  experimental: isLowMemoryWebpackBuild
+    ? { webpackMemoryOptimizations: true }
+    : undefined,
   env: {
     NEXT_PUBLIC_APP_VERSION: gitHash,
   },

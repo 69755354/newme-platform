@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ENV_FILE="${NEWME_STAGING_ENV_FILE:-$ROOT/.env.local}"
+EXPECTED_REF="${NEWME_STAGING_PROJECT_REF:-}"
+
+fail() {
+  echo "staging boundary check failed: $*" >&2
+  exit 1
+}
+
+[[ "$EXPECTED_REF" =~ ^[a-z]{20}$ ]] || fail "NEWME_STAGING_PROJECT_REF must be an explicit 20-character project ref"
+[ -r "$ENV_FILE" ] || fail "staging environment file is not readable"
+[ ! -e "$ROOT/supabase/.temp/project-ref" ] || fail "tracked Supabase link state is forbidden"
+
+set -a
+# shellcheck disable=SC1090
+. "$ENV_FILE"
+set +a
+
+[ "${SUPABASE_PROJECT_REF:-}" = "$EXPECTED_REF" ] || fail "SUPABASE_PROJECT_REF does not match the approved staging ref"
+[ "${NEXT_PUBLIC_SUPABASE_URL:-}" = "https://${EXPECTED_REF}.supabase.co" ] || fail "NEXT_PUBLIC_SUPABASE_URL does not match the approved staging ref"
+[ "${NEXT_PUBLIC_SITE_URL:-}" = "https://staging.newme.ae" ] || fail "NEXT_PUBLIC_SITE_URL must be the staging hostname"
+[[ "${SUPABASE_SERVICE_ROLE_KEY:-}" == sb_secret_* ]] || fail "a dedicated modern Supabase secret key is required"
+[ -z "${SUPABASE_PAT:-}" ] || fail "SUPABASE_PAT is forbidden in staging runtime"
+[ -z "${SUPABASE_DB_PASSWORD:-}" ] || fail "SUPABASE_DB_PASSWORD is forbidden in staging runtime"
+[ -z "${SENTRY_AUTH_TOKEN:-}" ] || fail "SENTRY_AUTH_TOKEN is forbidden in staging runtime"
+[ -z "${NEXT_PUBLIC_SENTRY_DSN:-}" ] || fail "production Sentry must be disabled in staging"
+[ -z "${SENTRY_DSN:-}" ] || fail "production Sentry must be disabled in staging"
+
+echo "staging boundaries verified for project ref ${EXPECTED_REF}"

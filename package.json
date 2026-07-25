@@ -26,7 +26,8 @@
     "check:database-types": "node scripts/check-database-types.mjs",
     "check:e2e-secrets": "node scripts/check-e2e-secrets.mjs",
     "check:supply-chain": "bash scripts/check-supply-chain.sh",
-    "check:pre-release": "bash scripts/check-pre-release.sh"
+    "check:pre-release": "bash scripts/check-pre-release.sh",
+    "check:staging-boundaries": "bash scripts/check-staging-boundaries.sh"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

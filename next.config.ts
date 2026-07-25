@@ -28,12 +28,14 @@ if (IS_PROD && !IS_ISOLATED && !IS_START && process.env.NEWME_ISOLATED_BUILD !==
 const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === "true",
 });
+const isStandaloneBuild = process.env.NEWME_STANDALONE_BUILD === "1";
 
 // Get git hash at build time
 const gitHash = process.env.NEXT_PUBLIC_APP_VERSION ||
   execSync("git rev-parse --short HEAD").toString().trim();
 
 const nextConfig: NextConfig = {
+  output: isStandaloneBuild ? "standalone" : undefined,
   env: {
     NEXT_PUBLIC_APP_VERSION: gitHash,
   },

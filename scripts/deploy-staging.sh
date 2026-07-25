@@ -93,6 +93,9 @@ install -m 0600 -o newme-staging -g newme-staging "$ENV_FILE" "$STAGE/.env.local
 chown -R newme-staging:newme-staging "$STAGE"
 
 runuser -u newme-staging -- env \
+  HOME="$ROOT" \
+  XDG_CACHE_HOME="$ROOT/cache" \
+  NPM_CONFIG_CACHE="$ROOT/cache/npm" \
   NEWME_ISOLATED_BUILD=1 \
   NEWME_STANDALONE_BUILD=1 \
   NEXT_PUBLIC_APP_VERSION="$SHA" \

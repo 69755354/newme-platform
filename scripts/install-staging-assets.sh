@@ -10,6 +10,7 @@ id newme-staging >/dev/null 2>&1 ||
 install -d -m 0750 -o root -g newme-staging /etc/newme-staging
 install -d -m 0755 -o root -g root /opt/newme-staging /opt/newme-staging/control
 install -d -m 0750 -o newme-staging -g newme-staging /opt/newme-staging/releases
+install -d -m 0750 -o newme-staging -g newme-staging /opt/newme-staging/cache /opt/newme-staging/cache/npm
 install -m 0755 "$ROOT/scripts/deploy-staging.sh" /opt/newme-staging/control/deploy-staging.sh
 install -m 0644 "$ROOT/infra/systemd/newme-staging.service" /etc/systemd/system/newme-staging.service
 install -m 0644 "$ROOT/infra/systemd/newme-staging-deploy@.service" /etc/systemd/system/newme-staging-deploy@.service

@@ -31,6 +31,7 @@ test("staging deploy is isolated, low-peak, canonical, and production-aware", as
     /00\|01\|02\|03\|04\|05\|18\|19\|20\|21\|22\|23/,
     /flock -n/,
     /refs\/remotes\/origin\/\$BRANCH/,
+    /NPM_CONFIG_CACHE="\$ROOT\/cache\/npm"/,
     /NEWME_STANDALONE_BUILD=1/,
     /NODE_OPTIONS=--max_old_space_size=1152/,
     /127\.0\.0\.1:3001\/api\/health/,

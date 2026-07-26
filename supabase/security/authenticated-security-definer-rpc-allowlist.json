@@ -23,10 +23,11 @@
     },
     {
       "regprocedure": "next_quote_no()",
-      "purpose": "Allocates a globally visible quotation number when quotation rows are hidden from the caller by RLS.",
-      "authorization_boundary": "The function returns only the next identifier and exposes no quotation row data.",
+      "purpose": "Calculates a globally consistent quotation number when quotation rows are hidden from the caller by RLS.",
+      "authorization_boundary": "Requires an active profile and permits only the admin, boss and sales roles used by the quotation workflow.",
       "test_evidence": [
-        "tests/security/sam61-definer-boundaries.test.mjs"
+        "tests/security/sam61-definer-boundaries.test.mjs",
+        "tests/security/sam61-next-quote-authorization.test.mjs"
       ]
     },
     {

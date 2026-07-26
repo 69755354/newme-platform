@@ -10,6 +10,7 @@ ConditionPathExists=/etc/newme-staging/github_known_hosts
 Type=oneshot
 User=root
 EnvironmentFile=/etc/newme-staging/build.env
+Environment=NODE_OPTIONS=--max-old-space-size=768
 ExecStart=/opt/newme-staging/control/run-staging-build.sh %i
 TimeoutStartSec=30min
 MemoryHigh=1G

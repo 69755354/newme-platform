@@ -118,7 +118,7 @@ test("external builders cannot receive the staging runtime secret", async () => 
   }
 });
 
-test("external staging builder emits an immutable standalone artifact without runtime secrets", async () => {
+test("staging builder emits an immutable standalone artifact without runtime secrets", async () => {
   const build = await read("scripts/build-staging-artifact.sh");
   for (const pattern of [
     /NEWME_STAGING_BOUNDARY_MODE=build/,
@@ -146,6 +146,10 @@ test("staging deploy only verifies prebuilt artifacts and atomically switches", 
     /flock -n/,
     /refs\/remotes\/origin\/\$BRANCH/,
     /INCOMING="\$ROOT\/incoming"/,
+    /BARE_REPO="\$ROOT\/repository\.git"/,
+    /BRANCH="\$\{NEWME_STAGING_BRANCH:-agent\/saas-staging-isolation\}"/,
+    /DEPLOY_KEY="\/etc\/newme-staging\/github_deploy_key"/,
+    /UserKnownHostsFile=\$KNOWN_HOSTS/,
     /sha256sum "\$ARTIFACT"/,
     /artifact contains an unsafe path/,
     /artifact contains links or special files/,
@@ -161,12 +165,53 @@ test("staging deploy only verifies prebuilt artifacts and atomically switches", 
   assert.doesNotMatch(deploy, /npm run build/);
   assert.doesNotMatch(deploy, /supabase\s+(?:link|db|migration)/);
   assert.doesNotMatch(deploy, /vfopmpxlhwzpxqegayew/);
+  assert.doesNotMatch(deploy, /\/opt\/newme\/repository\.git/);
   assert.doesNotMatch(deploy, /SWitched/);
 });
 
+test("server build continuously protects production and only accepts the exact remote staging SHA", async () => {
+  const build = await read("scripts/run-staging-build.sh");
+  for (const pattern of [
+    /REPOSITORY="\$ROOT\/repository\.git"/,
+    /PUBLIC_ENV="\/etc\/newme-staging\/build\.env"/,
+    /DEPLOY_KEY="\/etc\/newme-staging\/github_deploy_key"/,
+    /BRANCH="\$\{NEWME_STAGING_BRANCH:-agent\/saas-staging-isolation\}"/,
+    /build SHA must equal the canonical remote staging branch/,
+    /git --git-dir="\$REPOSITORY" archive "\$SHA"/,
+    /env -i/,
+    /NEWME_STAGING_BUILD_HEAP_MB/,
+    /production health changed before staging build/,
+    /production health changed during staging build/,
+    /production health changed after staging build/,
+  ]) assert.match(build, pattern);
+  assert.doesNotMatch(build, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.doesNotMatch(build, /vfopmpxlhwzpxqegayew/);
+  assert.doesNotMatch(build, /\/opt\/newme\/repository\.git/);
+});
+
+test("staging installer derives a public-only build environment and isolated repository", async () => {
+  const install = await read("scripts/install-staging-assets.sh");
+  for (const pattern of [
+    /BUILD_ENV="\/etc\/newme-staging\/build\.env"/,
+    /\$1 == "SUPABASE_PROJECT_REF"/,
+    /\$1 == "NEXT_PUBLIC_SUPABASE_URL"/,
+    /\$1 == "NEXT_PUBLIC_SUPABASE_ANON_KEY"/,
+    /\$1 == "NEXT_PUBLIC_SITE_URL"/,
+    /install -m 0640 -o root -g newme-staging "\$public_env" "\$BUILD_ENV"/,
+    /\/opt\/newme-staging\/repository\.git/,
+    /git@github\.com:69755354\/newme-platform\.git/,
+    /newme-staging-build@\.service/,
+  ]) assert.match(install, pattern);
+  assert.doesNotMatch(install, /\$1 == "SUPABASE_SERVICE_ROLE_KEY"/);
+  assert.doesNotMatch(install, /\$1 == "SUPABASE_PAT"/);
+  assert.doesNotMatch(install, /\$1 == "SUPABASE_DB_PASSWORD"/);
+  assert.doesNotMatch(install, /\/opt\/newme\/repository\.git/);
+});
+
 test("staging systemd units enforce separate identity, ports, and resource ceilings", async () => {
-  const [runtime, deploy] = await Promise.all([
+  const [runtime, build, deploy] = await Promise.all([
     read("infra/systemd/newme-staging.service"),
+    read("infra/systemd/newme-staging-build@.service"),
     read("infra/systemd/newme-staging-deploy@.service"),
   ]);
   assert.match(runtime, /^User=newme-staging$/m);
@@ -174,6 +219,13 @@ test("staging systemd units enforce separate identity, ports, and resource ceili
   assert.match(runtime, /^MemoryMax=512M$/m);
   assert.match(runtime, /^MemorySwapMax=0$/m);
   assert.match(runtime, /^CPUQuota=50%$/m);
+  assert.match(build, /^EnvironmentFile=\/etc\/newme-staging\/build\.env$/m);
+  assert.match(build, /^TimeoutStartSec=30min$/m);
+  assert.match(build, /^MemoryHigh=1G$/m);
+  assert.match(build, /^MemoryMax=1536M$/m);
+  assert.match(build, /^MemorySwapMax=256M$/m);
+  assert.match(build, /^CPUQuota=100%$/m);
+  assert.match(build, /^OOMPolicy=stop$/m);
   assert.match(deploy, /^TimeoutStartSec=15min$/m);
   assert.match(deploy, /^MemoryHigh=384M$/m);
   assert.match(deploy, /^MemoryMax=512M$/m);

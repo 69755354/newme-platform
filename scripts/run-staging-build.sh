@@ -108,7 +108,7 @@ setsid runuser -u newme-staging -- env -i \
   XDG_CACHE_HOME="$ROOT/cache" \
   npm_config_cache="$ROOT/cache/npm" \
   NEWME_STAGING_PROJECT_REF="$EXPECTED_REF" \
-  NEWME_STAGING_BUILD_HEAP_MB="${NEWME_STAGING_BUILD_HEAP_MB:-960}" \
+  NEWME_STAGING_BUILD_HEAP_MB="${NEWME_STAGING_BUILD_HEAP_MB:-768}" \
   bash "$WORK/scripts/build-staging-artifact.sh" \
     "$SHA" "$PUBLIC_ENV" "$INCOMING" "$EXPECTED_REF" &
 BUILD_PID=$!

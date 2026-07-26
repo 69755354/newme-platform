@@ -22,7 +22,7 @@ const command = fileURLToPath(
 );
 const projectRef = "bfsiibofuzoglziltgyd";
 const passingBody = JSON.stringify({
-  gate_version: "sam61-allowlist-v1",
+  gate_version: "sam61-allowlist-v2",
   violations: [],
 });
 
@@ -104,7 +104,7 @@ test("live gate accepts the exact version with zero violations", async () => {
     const result = await runGate(directory);
     assert.match(
       result.stdout,
-      /staging live security gate passed.*sam61-allowlist-v1/,
+      /staging live security gate passed.*sam61-allowlist-v2/,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -115,7 +115,7 @@ test("live gate fails closed on HTTP errors, stale versions, and violations", as
   const cases = [
     {
       body: JSON.stringify({
-        gate_version: "sam61-allowlist-v1",
+        gate_version: "sam61-allowlist-v2",
         violations: [],
       }),
       code: "403",
@@ -128,7 +128,7 @@ test("live gate fails closed on HTTP errors, stale versions, and violations", as
     },
     {
       body: JSON.stringify({
-        gate_version: "sam61-allowlist-v1",
+        gate_version: "sam61-allowlist-v2",
         violations: [{ violation: "anon_execute", regprocedure: "unsafe()" }],
       }),
       code: "200",
@@ -210,9 +210,17 @@ test("live gate rejects target drift and administrative runtime credentials", as
 });
 
 test("staging deploy binds and runs the live gate before promotion", async () => {
-  const [deploy, install] = await Promise.all([
+  const [deploy, install, runner, migration] = await Promise.all([
     readFile(new URL("scripts/deploy-staging.sh", root), "utf8"),
     readFile(new URL("scripts/install-staging-assets.sh", root), "utf8"),
+    readFile(new URL("scripts/run-staging-live-security-gate.sh", root), "utf8"),
+    readFile(
+      new URL(
+        "supabase/migrations/20260726215500_harden_security_definer_allowlist_gate_rpc.sql",
+        root,
+      ),
+      "utf8",
+    ),
   ]);
 
   const orderedPatterns = [
@@ -252,4 +260,23 @@ test("staging deploy binds and runs the live gate before promotion", async () =>
     assert.doesNotMatch(deploy, obsolete);
     assert.doesNotMatch(install, obsolete);
   }
+
+  assert.match(runner, /GATE_VERSION="sam61-allowlist-v2"/);
+  assert.match(runner, /printf 'header = "apikey: %s"/);
+  assert.match(runner, /curl \\\r?\n\s+--config -/);
+  assert.doesNotMatch(runner, /Authorization: Bearer/);
+  assert.doesNotMatch(runner, /--header "apikey:/);
+
+  assert.match(migration, /'gate_version', 'sam61-allowlist-v2'/);
+  assert.match(migration, /SECURITY INVOKER/);
+  assert.match(migration, /FROM actual AS a\r?\n\s+WHERE NOT \(/);
+  assert.doesNotMatch(
+    migration,
+    /FROM actual AS a\r?\n\s+JOIN expected AS e USING \(regprocedure\)\r?\n\s+WHERE NOT \(/,
+  );
+  assert.match(
+    migration,
+    /REVOKE ALL ON FUNCTION public\.security_definer_rpc_allowlist_gate\(\)\r?\nFROM PUBLIC, anon, authenticated;/,
+  );
 });
+

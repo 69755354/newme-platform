@@ -103,3 +103,98 @@ test("activity and audit evidence use the server-only writer without a secret Be
   assert.doesNotMatch(proxySource, /supabase\.from\("(?:profiles|audit_logs)"\)/);
 });
 
+test("server evidence writes survive the response and fail without blocking the page", async (t) => {
+  const previousFetch = globalThis.fetch;
+  const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const requests = [];
+  const reports = [];
+  let background;
+
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://cleanroom.example";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "sb_secret_test_only";
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), init });
+    return new Response(null, { status: 403 });
+  };
+  t.after(() => {
+    globalThis.fetch = previousFetch;
+    if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+  });
+
+  const supabase = {
+    auth: {
+      getUser: async () => ({ data: { user: { id: "user-1" } } }),
+      getSession: async () => ({ data: { session: null } }),
+    },
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          single: async () => ({
+            data: {
+              role: "admin",
+              is_active: true,
+              password_changed_at: null,
+            },
+            error: null,
+          }),
+        }),
+      }),
+    }),
+  };
+  const proxy = loadProxy({
+    "next/server": nextServer(),
+    "@/lib/supabase-middleware": {
+      createMiddlewareClient: async () => ({
+        supabase,
+        getResponse: () => ({ status: 200 }),
+      }),
+    },
+    "@/lib/report-server-error": {
+      reportServerError: async (report) => {
+        reports.push(report);
+      },
+    },
+    "@/lib/auth-profile.mjs": { isActiveProfile: () => true },
+  });
+
+  const response = await proxy.proxy(
+    request("/dashboard", "GET"),
+    { waitUntil: (promise) => { background = promise; } },
+  );
+  assert.deepEqual(response, { status: 200 });
+  assert.ok(background, "proxy must register evidence writes with waitUntil");
+  await background;
+
+  assert.equal(requests.length, 2);
+  assert.deepEqual(
+    requests.map(({ url, init }) => ({
+      url,
+      method: init.method,
+      apikey: init.headers.apikey,
+      authorization: init.headers.Authorization,
+    })),
+    [
+      {
+        url: "https://cleanroom.example/rest/v1/profiles?id=eq.user-1",
+        method: "PATCH",
+        apikey: "sb_secret_test_only",
+        authorization: undefined,
+      },
+      {
+        url: "https://cleanroom.example/rest/v1/audit_logs",
+        method: "POST",
+        apikey: "sb_secret_test_only",
+        authorization: undefined,
+      },
+    ],
+  );
+  assert.deepEqual(
+    reports.map(({ type }) => type).sort(),
+    ["activity_tracking_error", "audit_log_error"],
+  );
+});
+

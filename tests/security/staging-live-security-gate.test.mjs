@@ -35,7 +35,9 @@ const writeFixture = async (
   const sqlPath = join(directory, "gate.sql");
   const runtimeEnvPath = join(directory, "staging.env");
   const gateEnvPath = join(directory, "live-gate.env");
+  const caPath = join(directory, "supabase-ca.crt");
   await writeFile(sqlPath, "select 1 where false;\n", "utf8");
+  await writeFile(caPath, "test-only-ca\n", "utf8");
   await writeFile(
     runtimeEnvPath,
     [
@@ -52,6 +54,7 @@ const writeFixture = async (
     gateEnvPath,
     [
       `SUPABASE_DB_PASSWORD=${password}`,
+      `SUPABASE_DB_SSLROOTCERT=${caPath.replaceAll("\\", "/")}`,
       ...gateLines,
       "",
     ].join("\n"),

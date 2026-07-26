@@ -26,6 +26,24 @@ production_healthy() {
     grep -Eq '"status"[[:space:]]*:[[:space:]]*"(ok|healthy)"'
 }
 
+staging_tls_healthy() {
+  curl --noproxy "*" -fsS --max-time 5 \
+    --resolve staging.newme.ae:443:127.0.0.1 \
+    https://staging.newme.ae/api/health 2>/dev/null |
+    grep -Eq '"status"[[:space:]]*:[[:space:]]*"(ok|healthy)"'
+}
+
+wait_for_staging_tls() {
+  local attempt
+  for attempt in $(seq 1 30); do
+    if staging_tls_healthy; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 rollback() {
   local rc=$?
   trap - EXIT
@@ -66,10 +84,7 @@ nginx -t
 systemctl reload nginx
 
 if [ "$MODE" = "final" ]; then
-  curl --noproxy "*" -fsS --max-time 10 \
-    --resolve staging.newme.ae:443:127.0.0.1 \
-    https://staging.newme.ae/api/health |
-    grep -Eq '"status"[[:space:]]*:[[:space:]]*"(ok|healthy)"' ||
+  wait_for_staging_tls ||
     { echo "local staging TLS health check failed" >&2; exit 1; }
 fi
 production_healthy || { echo "production health changed after nginx reload" >&2; exit 1; }

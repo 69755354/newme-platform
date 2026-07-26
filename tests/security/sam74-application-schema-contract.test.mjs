@@ -18,7 +18,7 @@ const circuitMigration = await readFile(
 );
 const authProfileMigration = await readFile(
   new URL(
-    "../../supabase/migrations/20260726080402_add_profile_force_password_change.sql",
+    "../../supabase/migrations/20260726080621_add_profile_force_password_change.sql",
     import.meta.url,
   ),
   "utf8",

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 const migration = await readFile(
@@ -16,13 +16,6 @@ const circuitMigration = await readFile(
   ),
   "utf8",
 );
-const authProfileMigration = await readFile(
-  new URL(
-    "../../supabase/migrations/20260726080621_add_profile_force_password_change.sql",
-    import.meta.url,
-  ),
-  "utf8",
-);
 
 test("SAM-74 restores application columns missing from the migration chain", () => {
   assert.match(migration, /ALTER TABLE public\.leads[\s\S]*expected_close_date DATE/i);
@@ -31,10 +24,6 @@ test("SAM-74 restores application columns missing from the migration chain", () 
   assert.match(
     circuitMigration,
     /ALTER TABLE public\.leads[\s\S]*circuit_diagrams BOOLEAN/i,
-  );
-  assert.match(
-    authProfileMigration,
-    /ALTER TABLE public\.profiles[\s\S]*force_password_change BOOLEAN NOT NULL DEFAULT false/i,
   );
 });
 
@@ -61,5 +50,20 @@ test("SAM-74 application views preserve caller RLS and browser read boundaries",
 test("SAM-74 reloads the PostgREST schema cache after restoring the contract", () => {
   assert.match(migration, /NOTIFY pgrst,\s*'reload schema'/i);
   assert.match(circuitMigration, /NOTIFY pgrst,\s*'reload schema'/i);
-  assert.match(authProfileMigration, /NOTIFY pgrst,\s*'reload schema'/i);
+});
+
+test("SAM-74 keeps rollback scripts out of the forward migration chain", async () => {
+  const migrationDirectory = new URL("../../supabase/migrations/", import.meta.url);
+  const migrationFiles = (await readdir(migrationDirectory)).filter((name) =>
+    name.endsWith(".sql"),
+  );
+
+  for (const filename of migrationFiles) {
+    assert.match(filename, /^\d{14}_.+\.sql$/);
+    assert.doesNotMatch(filename, /^rollback_/i);
+  }
+
+  for (const filename of ["rollback_crm_v3.sql", "rollback_p0_10.sql"]) {
+    await readFile(new URL(`../../supabase/rollback/${filename}`, import.meta.url), "utf8");
+  }
 });

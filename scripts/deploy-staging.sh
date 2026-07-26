@@ -11,10 +11,8 @@ INCOMING="$ROOT/incoming"
 CURRENT="$ROOT/current"
 BARE_REPO="$ROOT/repository.git"
 ENV_FILE="/etc/newme-staging/staging.env"
-LIVE_GATE_ENV_FILE="/etc/newme-staging/live-gate.env"
 BOUNDARY_CHECK="$ROOT/control/check-staging-boundaries.sh"
 LIVE_GATE_RUNNER="$ROOT/control/run-staging-live-security-gate.sh"
-LIVE_GATE_SQL="$ROOT/control/check-authenticated-security-definer-rpc-allowlist.sql"
 BRANCH="${NEWME_STAGING_BRANCH:-agent/saas-staging-isolation}"
 LOCK="/run/lock/newme-staging-deploy.lock"
 WINDOW_OVERRIDE="/run/newme-staging-window-override"
@@ -96,10 +94,8 @@ esac
 
 production_healthy || fail "production health is not green"
 [ -r "$ENV_FILE" ] || fail "staging environment is missing"
-[ -r "$LIVE_GATE_ENV_FILE" ] || fail "staging live gate environment is missing"
 [ -x "$BOUNDARY_CHECK" ] || fail "staging boundary check is missing"
 [ -x "$LIVE_GATE_RUNNER" ] || fail "staging live security gate runner is missing"
-[ -r "$LIVE_GATE_SQL" ] || fail "staging live gate SQL is missing"
 [ -d "$BARE_REPO" ] || fail "canonical bare repository is missing"
 [ -r "$DEPLOY_KEY" ] || fail "dedicated staging GitHub deploy key is missing"
 [ -r "$KNOWN_HOSTS" ] || fail "dedicated GitHub known-hosts file is missing"
@@ -119,13 +115,10 @@ REMOTE_SHA="$(git --git-dir="$BARE_REPO" rev-parse "refs/remotes/origin/$BRANCH"
 
 DEPLOY_BLOB="$(git hash-object "$0")"
 RUNNER_BLOB="$(git hash-object "$LIVE_GATE_RUNNER")"
-SQL_BLOB="$(git hash-object "$LIVE_GATE_SQL")"
 EXPECTED_DEPLOY_BLOB="$(git --git-dir="$BARE_REPO" rev-parse "$SHA:scripts/deploy-staging.sh")"
 EXPECTED_RUNNER_BLOB="$(git --git-dir="$BARE_REPO" rev-parse "$SHA:scripts/run-staging-live-security-gate.sh")"
-EXPECTED_SQL_BLOB="$(git --git-dir="$BARE_REPO" rev-parse "$SHA:supabase/security/check-authenticated-security-definer-rpc-allowlist.sql")"
 [ "$DEPLOY_BLOB" = "$EXPECTED_DEPLOY_BLOB" ] &&
-  [ "$RUNNER_BLOB" = "$EXPECTED_RUNNER_BLOB" ] &&
-  [ "$SQL_BLOB" = "$EXPECTED_SQL_BLOB" ] ||
+  [ "$RUNNER_BLOB" = "$EXPECTED_RUNNER_BLOB" ] ||
   fail "installed live security gate assets do not match release SHA"
 
 EXPECTED_PROJECT_REF="$(
@@ -134,10 +127,8 @@ EXPECTED_PROJECT_REF="$(
 [[ "$EXPECTED_PROJECT_REF" =~ ^[a-z]{20}$ ]] ||
   fail "staging project ref is missing or invalid"
 "$LIVE_GATE_RUNNER" \
-  "$LIVE_GATE_SQL" \
   "$EXPECTED_PROJECT_REF" \
-  "$ENV_FILE" \
-  "$LIVE_GATE_ENV_FILE" ||
+  "$ENV_FILE" ||
   fail "cleanroom live security gate did not pass"
 
 EXPECTED_CHECKSUM="$(tr -d '\r\n' < "$CHECKSUM")"

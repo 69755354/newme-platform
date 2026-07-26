@@ -36,7 +36,7 @@ test("sales workspace APIs fail closed for finance and designer", async () => {
   assertFailClosedBeforeCache(workbench, {
     rolesName: "WORKBENCH_ROLES",
     roles: ["sales"],
-    roleExpression: "profile.role",
+    roleExpression: "role",
   });
   assertFailClosedBeforeCache(pipeline, {
     rolesName: "PIPELINE_ROLES",

@@ -12,7 +12,7 @@ CURRENT="$ROOT/current"
 BARE_REPO="$ROOT/repository.git"
 ENV_FILE="/etc/newme-staging/staging.env"
 BOUNDARY_CHECK="$ROOT/control/check-staging-boundaries.sh"
-LIVE_GATE_CHECK="$ROOT/control/check-staging-live-gate-evidence.mjs"
+LIVE_GATE_RUNNER="$ROOT/control/run-staging-live-security-gate.sh"
 LIVE_GATE_SQL="$ROOT/control/check-authenticated-security-definer-rpc-allowlist.sql"
 BRANCH="${NEWME_STAGING_BRANCH:-agent/saas-staging-isolation}"
 LOCK="/run/lock/newme-staging-deploy.lock"
@@ -96,7 +96,7 @@ esac
 production_healthy || fail "production health is not green"
 [ -r "$ENV_FILE" ] || fail "staging environment is missing"
 [ -x "$BOUNDARY_CHECK" ] || fail "staging boundary check is missing"
-[ -r "$LIVE_GATE_CHECK" ] || fail "staging live gate evidence checker is missing"
+[ -x "$LIVE_GATE_RUNNER" ] || fail "staging live security gate runner is missing"
 [ -r "$LIVE_GATE_SQL" ] || fail "staging live gate SQL is missing"
 [ -d "$BARE_REPO" ] || fail "canonical bare repository is missing"
 [ -r "$DEPLOY_KEY" ] || fail "dedicated staging GitHub deploy key is missing"
@@ -115,19 +115,24 @@ git --git-dir="$BARE_REPO" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin
 REMOTE_SHA="$(git --git-dir="$BARE_REPO" rev-parse "refs/remotes/origin/$BRANCH")"
 [ "$SHA" = "$REMOTE_SHA" ] || fail "release SHA must equal canonical remote staging branch"
 
+DEPLOY_BLOB="$(git hash-object "$0")"
+RUNNER_BLOB="$(git hash-object "$LIVE_GATE_RUNNER")"
+SQL_BLOB="$(git hash-object "$LIVE_GATE_SQL")"
+EXPECTED_DEPLOY_BLOB="$(git --git-dir="$BARE_REPO" rev-parse "$SHA:scripts/deploy-staging.sh")"
+EXPECTED_RUNNER_BLOB="$(git --git-dir="$BARE_REPO" rev-parse "$SHA:scripts/run-staging-live-security-gate.sh")"
+EXPECTED_SQL_BLOB="$(git --git-dir="$BARE_REPO" rev-parse "$SHA:supabase/security/check-authenticated-security-definer-rpc-allowlist.sql")"
+[ "$DEPLOY_BLOB" = "$EXPECTED_DEPLOY_BLOB" ] &&
+  [ "$RUNNER_BLOB" = "$EXPECTED_RUNNER_BLOB" ] &&
+  [ "$SQL_BLOB" = "$EXPECTED_SQL_BLOB" ] ||
+  fail "installed live security gate assets do not match release SHA"
+
 EXPECTED_PROJECT_REF="$(
   sed -n 's/^NEWME_STAGING_PROJECT_REF=//p' "$ENV_FILE" | tail -n 1
 )"
 [[ "$EXPECTED_PROJECT_REF" =~ ^[a-z]{20}$ ]] ||
   fail "staging project ref is missing or invalid"
-LIVE_GATE_QUERY_SHA256="$(sha256sum "$LIVE_GATE_SQL" | awk '{print $1}')"
-LIVE_GATE_EVIDENCE="$ROOT/validation/$SHA/security-definer-live-gate.json"
-node "$LIVE_GATE_CHECK" \
-  "$LIVE_GATE_EVIDENCE" \
-  "$SHA" \
-  "$EXPECTED_PROJECT_REF" \
-  "$LIVE_GATE_QUERY_SHA256" ||
-  fail "cleanroom live security gate evidence is missing or invalid"
+"$LIVE_GATE_RUNNER" "$LIVE_GATE_SQL" "$EXPECTED_PROJECT_REF" "$ENV_FILE" ||
+  fail "cleanroom live security gate did not pass"
 
 EXPECTED_CHECKSUM="$(tr -d '\r\n' < "$CHECKSUM")"
 [[ "$EXPECTED_CHECKSUM" =~ ^[0-9a-f]{64}$ ]] || fail "artifact checksum must be lowercase SHA-256"

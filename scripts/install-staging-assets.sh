@@ -50,7 +50,6 @@ install -m 0755 "$ROOT/scripts/deploy-staging.sh" /opt/newme-staging/control/dep
 install -m 0755 "$ROOT/scripts/run-staging-build.sh" /opt/newme-staging/control/run-staging-build.sh
 install -m 0755 "$ROOT/scripts/check-staging-boundaries.sh" /opt/newme-staging/control/check-staging-boundaries.sh
 install -m 0755 "$ROOT/scripts/run-staging-live-security-gate.sh" /opt/newme-staging/control/run-staging-live-security-gate.sh
-install -m 0644 "$ROOT/supabase/security/check-authenticated-security-definer-rpc-allowlist.sql" /opt/newme-staging/control/check-authenticated-security-definer-rpc-allowlist.sql
 rm -f -- /opt/newme-staging/control/check-staging-live-gate-evidence.mjs
 install -m 0644 "$ROOT/infra/systemd/newme-staging.service" /etc/systemd/system/newme-staging.service
 install -m 0644 "$ROOT/infra/systemd/newme-staging-build@.service" /etc/systemd/system/newme-staging-build@.service

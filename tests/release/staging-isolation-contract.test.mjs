@@ -126,7 +126,7 @@ test("staging builder emits an immutable standalone artifact without runtime sec
     /NEWME_STANDALONE_BUILD=1/,
     /NEWME_STAGING_LOW_MEMORY=1/,
     /NEXT_PUBLIC_APP_VERSION="\$SHA"/,
-    /NEWME_STAGING_BUILD_HEAP_MB:-960/,
+    /NEWME_STAGING_BUILD_HEAP_MB:-768/,
     /build heap must stay between 768 and 1152 MiB/,
     /NODE_OPTIONS="--max_old_space_size=\$HEAP_MB"/,
     /npm ci --no-audit --no-fund/,

@@ -48,10 +48,14 @@ stop_candidate() {
 
 rollback() {
   [ "$SWITCHED" -eq 1 ] || return 0
-  [ -n "$PREVIOUS" ] && [ -d "$PREVIOUS" ] || return 1
-  ln -s "$PREVIOUS" "$CURRENT_NEXT"
-  mv -Tf "$CURRENT_NEXT" "$CURRENT"
-  systemctl restart newme-staging.service
+  if [ -n "$PREVIOUS" ] && [ -d "$PREVIOUS" ]; then
+    ln -s "$PREVIOUS" "$CURRENT_NEXT"
+    mv -Tf "$CURRENT_NEXT" "$CURRENT"
+    systemctl restart newme-staging.service
+  else
+    rm -f -- "$CURRENT"
+    systemctl stop newme-staging.service
+  fi
   SWITCHED=0
 }
 

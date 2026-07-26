@@ -160,6 +160,9 @@ test("staging deploy only verifies prebuilt artifacts and atomically switches", 
     /127\.0\.0\.1:3101\/api\/health/,
     /mv -Tf "\$CURRENT_NEXT" "\$CURRENT"/,
     /rollback/,
+    /\[ -n "\$PREVIOUS" \] && \[ -d "\$PREVIOUS" \]/,
+    /rm -f -- "\$CURRENT"/,
+    /systemctl stop newme-staging\.service/,
   ]) assert.match(deploy, pattern);
   assert.doesNotMatch(deploy, /npm ci/);
   assert.doesNotMatch(deploy, /npm run build/);

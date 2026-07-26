@@ -11,6 +11,7 @@ INCOMING="$ROOT/incoming"
 CURRENT="$ROOT/current"
 BARE_REPO="$ROOT/repository.git"
 ENV_FILE="/etc/newme-staging/staging.env"
+LIVE_GATE_ENV_FILE="/etc/newme-staging/live-gate.env"
 BOUNDARY_CHECK="$ROOT/control/check-staging-boundaries.sh"
 LIVE_GATE_RUNNER="$ROOT/control/run-staging-live-security-gate.sh"
 LIVE_GATE_SQL="$ROOT/control/check-authenticated-security-definer-rpc-allowlist.sql"
@@ -95,6 +96,7 @@ esac
 
 production_healthy || fail "production health is not green"
 [ -r "$ENV_FILE" ] || fail "staging environment is missing"
+[ -r "$LIVE_GATE_ENV_FILE" ] || fail "staging live gate environment is missing"
 [ -x "$BOUNDARY_CHECK" ] || fail "staging boundary check is missing"
 [ -x "$LIVE_GATE_RUNNER" ] || fail "staging live security gate runner is missing"
 [ -r "$LIVE_GATE_SQL" ] || fail "staging live gate SQL is missing"
@@ -131,7 +133,11 @@ EXPECTED_PROJECT_REF="$(
 )"
 [[ "$EXPECTED_PROJECT_REF" =~ ^[a-z]{20}$ ]] ||
   fail "staging project ref is missing or invalid"
-"$LIVE_GATE_RUNNER" "$LIVE_GATE_SQL" "$EXPECTED_PROJECT_REF" "$ENV_FILE" ||
+"$LIVE_GATE_RUNNER" \
+  "$LIVE_GATE_SQL" \
+  "$EXPECTED_PROJECT_REF" \
+  "$ENV_FILE" \
+  "$LIVE_GATE_ENV_FILE" ||
   fail "cleanroom live security gate did not pass"
 
 EXPECTED_CHECKSUM="$(tr -d '\r\n' < "$CHECKSUM")"

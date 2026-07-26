@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migration = new URL(
-  "../../supabase/migrations/20260725234600_restrict_legacy_unassigned_leads_policy.sql",
+  "../../supabase/migrations/20260725235642_restrict_legacy_unassigned_leads_policy.sql",
   import.meta.url,
 );
 

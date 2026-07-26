@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const Module = require("node:module");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const proxySource = fs.readFileSync(path.join(root, "src/proxy.ts"), "utf8");
 
 function loadProxy(mocks) {
   const ts = require("typescript");
@@ -88,3 +89,17 @@ test("a stalled auth dependency returns a bounded unavailable response for a bus
 
   assert.deepEqual(await proxy.proxy(request("/api/leads/a/stage")), { body: { error: "auth_unavailable" }, status: 503 });
 });
+
+test("activity and audit evidence use the server-only writer without a secret Bearer header", () => {
+  assert.match(
+    proxySource,
+    /writeServerEvidence\(\s*"profiles"[\s\S]*writeServerEvidence\("audit_logs"/,
+  );
+  assert.match(proxySource, /headers:\s*\{[\s\S]*apikey: secretKey/);
+  assert.doesNotMatch(
+    proxySource,
+    /Authorization:\s*`Bearer \$\{(?:secretKey|serviceRoleKey)\}`/,
+  );
+  assert.doesNotMatch(proxySource, /supabase\.from\("(?:profiles|audit_logs)"\)/);
+});
+

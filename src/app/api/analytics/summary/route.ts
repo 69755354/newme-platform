@@ -6,6 +6,8 @@ import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { getCached, setCache } from "@/lib/api-cache";
 
+const ANALYTICS_ROLES = new Set(["admin", "boss", "operator", "sales"]);
+
 /* ─── Helpers ─── */
 function normalizeCampaign(name: string | null): string {
   if (!name) return "Uncategorized";
@@ -66,6 +68,9 @@ export async function GET(request: Request) {
   const userId: string = user.id;
   const isManagement = ["admin", "boss", "operator"].includes(role);
   const isCEO = isManagement;
+  if (!ANALYTICS_ROLES.has(role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   // ── Cache key ──
   const cacheKey = `analytics-summary:${role}:${userId}`;

@@ -11,6 +11,7 @@ id newme-staging >/dev/null 2>&1 ||
 
 install -d -m 0750 -o root -g newme-staging /etc/newme-staging
 install -d -m 0755 -o root -g root /opt/newme-staging /opt/newme-staging/control
+install -d -m 0750 -o root -g newme-staging /opt/newme-staging/validation
 install -d -m 0750 -o root -g newme-staging /opt/newme-staging/repository.git
 install -d -m 0770 -o newme-staging -g newme-staging /opt/newme-staging/incoming
 install -d -m 0750 -o newme-staging -g newme-staging /opt/newme-staging/releases
@@ -49,6 +50,8 @@ chmod -R g+rX,o-rwx /opt/newme-staging/repository.git
 install -m 0755 "$ROOT/scripts/deploy-staging.sh" /opt/newme-staging/control/deploy-staging.sh
 install -m 0755 "$ROOT/scripts/run-staging-build.sh" /opt/newme-staging/control/run-staging-build.sh
 install -m 0755 "$ROOT/scripts/check-staging-boundaries.sh" /opt/newme-staging/control/check-staging-boundaries.sh
+install -m 0755 "$ROOT/scripts/check-staging-live-gate-evidence.mjs" /opt/newme-staging/control/check-staging-live-gate-evidence.mjs
+install -m 0644 "$ROOT/supabase/security/check-authenticated-security-definer-rpc-allowlist.sql" /opt/newme-staging/control/check-authenticated-security-definer-rpc-allowlist.sql
 install -m 0644 "$ROOT/infra/systemd/newme-staging.service" /etc/systemd/system/newme-staging.service
 install -m 0644 "$ROOT/infra/systemd/newme-staging-build@.service" /etc/systemd/system/newme-staging-build@.service
 install -m 0644 "$ROOT/infra/systemd/newme-staging-deploy@.service" /etc/systemd/system/newme-staging-deploy@.service

@@ -3,7 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migration = new URL(
-  "../../supabase/migrations/20260726083458_harden_lead_mutation_idempotency_and_transfer_audit.sql",
+  "../../supabase/migrations/20260726092618_harden_lead_mutation_idempotency_and_transfer_audit.sql",
+  import.meta.url,
+);
+const privilegeMigration = new URL(
+  "../../supabase/migrations/20260726092851_revoke_remaining_transfer_history_write_privileges.sql",
   import.meta.url,
 );
 
@@ -40,6 +44,7 @@ test("SAM-62 serializes each replay key before reading its request row", async (
 
 test("SAM-62 makes transfer history read-only to authenticated clients", async () => {
   const sql = await readFile(migration, "utf8");
+  const privilegeSql = await readFile(privilegeMigration, "utf8");
   for (const operation of ["insert", "update", "delete"]) {
     assert.match(
       sql,
@@ -48,9 +53,17 @@ test("SAM-62 makes transfer history read-only to authenticated clients", async (
   }
   assert.match(
     sql,
-    /REVOKE INSERT, UPDATE, DELETE ON TABLE public\.transfer_history FROM authenticated/,
+    /REVOKE ALL PRIVILEGES ON TABLE public\.transfer_history FROM authenticated/,
   );
   assert.match(sql, /GRANT SELECT ON TABLE public\.transfer_history TO authenticated/);
+  assert.match(
+    privilegeSql,
+    /REVOKE ALL PRIVILEGES ON TABLE public\.transfer_history FROM authenticated/,
+  );
+  assert.match(
+    privilegeSql,
+    /GRANT SELECT ON TABLE public\.transfer_history TO authenticated/,
+  );
   assert.doesNotMatch(
     sql,
     /CREATE POLICY[\s\S]+ON public\.transfer_history FOR (INSERT|UPDATE|DELETE)/i,

@@ -14,6 +14,7 @@ ENV_FILE="/etc/newme-staging/staging.env"
 BOUNDARY_CHECK="$ROOT/control/check-staging-boundaries.sh"
 BRANCH="${NEWME_STAGING_BRANCH:-agent/saas-staging-isolation}"
 LOCK="/run/lock/newme-staging-deploy.lock"
+WINDOW_OVERRIDE="/run/newme-staging-window-override"
 DEPLOY_KEY="/etc/newme-staging/github_deploy_key"
 KNOWN_HOSTS="/etc/newme-staging/github_known_hosts"
 ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
@@ -75,9 +76,14 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 DUBAI_HOUR="$(TZ=Asia/Dubai date +%H)"
+TODAY_UTC="$(date -u +%F)"
 case "$DUBAI_HOUR" in
   00|01|02|03|04|05|18|19|20|21|22|23) ;;
-  *) fail "deploy window is 18:00-06:00 Asia/Dubai" ;;
+  *)
+    [ "$(cat "$WINDOW_OVERRIDE" 2>/dev/null || true)" = "$TODAY_UTC" ] ||
+      fail "deploy window is 18:00-06:00 Asia/Dubai"
+    echo "staging deploy running outside the normal Dubai window under date-bound no-active-users approval: $TODAY_UTC"
+    ;;
 esac
 
 production_healthy || fail "production health is not green"

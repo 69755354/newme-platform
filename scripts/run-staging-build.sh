@@ -22,6 +22,7 @@ KNOWN_HOSTS="/etc/newme-staging/github_known_hosts"
 BRANCH="${NEWME_STAGING_BRANCH:-agent/saas-staging-isolation}"
 EXPECTED_REF="${NEWME_STAGING_PROJECT_REF:-${SUPABASE_PROJECT_REF:-}}"
 LOCK="/run/lock/newme-staging-build.lock"
+WINDOW_OVERRIDE="/run/newme-staging-window-override"
 WORK="$BUILD_ROOT/$SHA"
 ARTIFACT="$INCOMING/$SHA.tar.gz"
 CHECKSUM="$ARTIFACT.sha256"
@@ -61,9 +62,14 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 DUBAI_HOUR="$(TZ=Asia/Dubai date +%H)"
+TODAY_UTC="$(date -u +%F)"
 case "$DUBAI_HOUR" in
   00|01|02|03|04|05|18|19|20|21|22|23) ;;
-  *) fail "build window is 18:00-06:00 Asia/Dubai" ;;
+  *)
+    [ "$(cat "$WINDOW_OVERRIDE" 2>/dev/null || true)" = "$TODAY_UTC" ] ||
+      fail "build window is 18:00-06:00 Asia/Dubai"
+    echo "staging build running outside the normal Dubai window under date-bound no-active-users approval: $TODAY_UTC"
+    ;;
 esac
 
 [[ "$EXPECTED_REF" =~ ^[a-z]{20}$ ]] ||

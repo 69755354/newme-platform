@@ -175,6 +175,9 @@ test("staging deploy only verifies prebuilt artifacts and atomically switches", 
 test("server build continuously protects production and only accepts the exact remote staging SHA", async () => {
   const build = await read("scripts/run-staging-build.sh");
   for (const pattern of [
+    /\/run\/newme-staging-window-override/,
+    /date -u \+%F/,
+    /outside the normal Dubai window/,
     /REPOSITORY="\$ROOT\/repository\.git"/,
     /PUBLIC_ENV="\/etc\/newme-staging\/build\.env"/,
     /DEPLOY_KEY="\/etc\/newme-staging\/github_deploy_key"/,
@@ -190,6 +193,19 @@ test("server build continuously protects production and only accepts the exact r
   assert.doesNotMatch(build, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(build, /vfopmpxlhwzpxqegayew/);
   assert.doesNotMatch(build, /\/opt\/newme\/repository\.git/);
+});
+
+test("staging window override is explicit, date-bound, and shared by build and deploy", async () => {
+  const [build, deploy] = await Promise.all([
+    read("scripts/run-staging-build.sh"),
+    read("scripts/deploy-staging.sh"),
+  ]);
+  for (const script of [build, deploy]) {
+    assert.match(script, /WINDOW_OVERRIDE="\/run\/newme-staging-window-override"/);
+    assert.match(script, /TODAY_UTC="\$\(date -u \+%F\)"/);
+    assert.match(script, /\[ "\$\(cat "\$WINDOW_OVERRIDE" 2>\/dev\/null \|\| true\)" = "\$TODAY_UTC" \]/);
+    assert.match(script, /outside the normal Dubai window/);
+  }
 });
 
 test("staging installer derives a public-only build environment and isolated repository", async () => {

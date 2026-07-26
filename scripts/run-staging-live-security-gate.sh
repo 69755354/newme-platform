@@ -50,6 +50,7 @@ DB_HOST="${SUPABASE_DB_HOST:-$POOLER_HOST}"
 DB_PORT="${SUPABASE_DB_PORT:-5432}"
 DB_USER="${SUPABASE_DB_USER:-postgres.$EXPECTED_REF}"
 DB_NAME="${SUPABASE_DB_NAME:-postgres}"
+DB_SSLROOTCERT="${SUPABASE_DB_SSLROOTCERT:-/etc/newme-staging/supabase-prod-ca-2021.crt}"
 
 [ "$DB_HOST" = "$POOLER_HOST" ] ||
   [ "$DB_HOST" = "db.$EXPECTED_REF.supabase.co" ] ||
@@ -58,6 +59,7 @@ DB_NAME="${SUPABASE_DB_NAME:-postgres}"
 [ "$DB_USER" = "postgres.$EXPECTED_REF" ] ||
   fail "database user must be scoped to the staging project"
 [[ "$DB_NAME" =~ ^[a-zA-Z0-9_]+$ ]] || fail "database name is invalid"
+[ -r "$DB_SSLROOTCERT" ] || fail "Supabase database CA certificate is missing"
 
 OUTPUT="$(mktemp)"
 trap 'rm -f -- "$OUTPUT"' EXIT
@@ -65,6 +67,7 @@ trap 'rm -f -- "$OUTPUT"' EXIT
 PGPASSWORD="$SUPABASE_DB_PASSWORD" \
 PGCONNECT_TIMEOUT=10 \
 PGSSLMODE=verify-full \
+PGSSLROOTCERT="$DB_SSLROOTCERT" \
 psql \
   --host="$DB_HOST" \
   --port="$DB_PORT" \

@@ -1,4 +1,4 @@
--- Emergency rollback for 20260726130000_harden_audit_session_table_grants.sql.
+-- Emergency rollback for 20260726130911_harden_audit_session_table_grants.sql.
 -- This intentionally restores the previous broad Supabase table grants and
 -- admin session-mutation policies. Use only after an explicit security review.
 

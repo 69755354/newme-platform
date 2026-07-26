@@ -4,14 +4,14 @@ import test from "node:test";
 
 const migration = await readFile(
   new URL(
-    "../../supabase/migrations/20260726130000_harden_audit_session_table_grants.sql",
+    "../../supabase/migrations/20260726130911_harden_audit_session_table_grants.sql",
     import.meta.url,
   ),
   "utf8",
 );
 const rollback = await readFile(
   new URL(
-    "../../supabase/rollback/20260726130000_harden_audit_session_table_grants_rollback.sql",
+    "../../supabase/rollback/20260726130911_harden_audit_session_table_grants_rollback.sql",
     import.meta.url,
   ),
   "utf8",

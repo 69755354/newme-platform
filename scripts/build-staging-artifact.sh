@@ -6,7 +6,7 @@ SHA="${1:-}"
 ENV_FILE="${2:-}"
 OUTPUT_DIR="${3:-/output}"
 EXPECTED_REF="${4:-${NEWME_STAGING_PROJECT_REF:-}}"
-HEAP_MB="${NEWME_STAGING_BUILD_HEAP_MB:-960}"
+HEAP_MB="${NEWME_STAGING_BUILD_HEAP_MB:-768}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 fail() {

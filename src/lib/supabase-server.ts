@@ -110,6 +110,13 @@ function extractTokens(
   return { accessToken: a, refreshToken: r };
 }
 
+export function extractSessionTokensFromCookieHeader(
+  cookieHeader: string,
+  supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL,
+): { accessToken?: string; refreshToken?: string } {
+  return extractTokens(parseCookieHeader(cookieHeader), getSupabaseCookieNames(supabaseUrl));
+}
+
 /**
  * Attempt to refresh the access token using the refresh_token cookie.
  * Returns { accessToken, refreshToken, expiresAt } or null.

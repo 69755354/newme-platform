@@ -62,3 +62,22 @@ test("aggregate APIs never treat an unknown non-sales role as management", async
     roleExpression: "role",
   });
 });
+
+test("sidebar and proxy keep sales navigation limited to sales", async () => {
+  const [layout, sidebar, proxy] = await Promise.all([
+    read("src/app/(dashboard)/layout.tsx"),
+    read("src/components/dashboard/DashboardSidebar.tsx"),
+    read("src/proxy.ts"),
+  ]);
+
+  assert.match(
+    sidebar,
+    /const nav = isManagement \? MGMT_NAV : role === "sales" \? SALES_NAV : \[\];/,
+  );
+  assert.match(layout, /role === "finance"[\s\S]*t\("team\.roleFinance"\)/);
+  assert.match(layout, /role === "designer"[\s\S]*t\("team\.roleDesigner"\)/);
+  assert.match(
+    proxy,
+    /"\/pipeline": \["admin", "boss", "operator", "sales"\]/,
+  );
+});

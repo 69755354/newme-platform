@@ -6,7 +6,7 @@ import { isActiveProfile } from "@/lib/auth-profile.mjs";
 const PROTECTED_ROUTES: Record<string, string[]> = {
   "/settings": ["admin", "boss", "operator"],
   "/team": ["admin", "boss", "operator"],
-  "/pipeline": ["admin", "boss", "operator"],
+  "/pipeline": ["admin", "boss", "operator", "sales"],
 };
 
 const PUBLIC_API_PATHS = new Set([

@@ -3,7 +3,6 @@ Description=Verify and deploy prebuilt NewMe staging commit %i
 Wants=network-online.target
 After=network-online.target
 ConditionPathExists=/etc/newme-staging/staging.env
-ConditionPathExists=/etc/newme-staging/live-gate.env
 
 [Service]
 Type=oneshot

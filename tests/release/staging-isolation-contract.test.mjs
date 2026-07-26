@@ -208,6 +208,32 @@ test("staging installer derives a public-only build environment and isolated rep
   assert.doesNotMatch(install, /\/opt\/newme\/repository\.git/);
 });
 
+test("staging edge stays closed during certificate bootstrap and rejects direct origin traffic", async () => {
+  const [bootstrap, finalConfig, installer] = await Promise.all([
+    read("infra/nginx/staging.newme.ae.bootstrap.conf"),
+    read("infra/nginx/staging.newme.ae.conf"),
+    read("scripts/install-staging-edge.sh"),
+  ]);
+  assert.match(bootstrap, /location \^~ \/\.well-known\/acme-challenge\//);
+  assert.match(bootstrap, /location \/\s*\{\s*return 404;/s);
+  assert.doesNotMatch(bootstrap, /proxy_pass/);
+  assert.match(finalConfig, /proxy_pass http:\/\/127\.0\.0\.1:3101/);
+  assert.match(finalConfig, /ssl_certificate \/etc\/letsencrypt\/live\/staging\.newme\.ae\/fullchain\.pem/);
+  assert.match(finalConfig, /allow 173\.245\.48\.0\/20/);
+  assert.match(finalConfig, /allow 2400:cb00::\/32/);
+  assert.match(finalConfig, /deny all/);
+  assert.doesNotMatch(finalConfig, /app\.newme\.ae/);
+  for (const pattern of [
+    /bootstrap\|final/,
+    /127\.0\.0\.1:3001\/api\/health/,
+    /127\.0\.0\.1:3101\/api\/health/,
+    /nginx -t/,
+    /systemctl reload nginx/,
+    /--resolve staging\.newme\.ae:443:127\.0\.0\.1/,
+    /rollback/,
+  ]) assert.match(installer, pattern);
+});
+
 test("staging systemd units enforce separate identity, ports, and resource ceilings", async () => {
   const [runtime, build, deploy] = await Promise.all([
     read("infra/systemd/newme-staging.service"),

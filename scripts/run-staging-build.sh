@@ -97,6 +97,8 @@ REMOTE_SHA="$(git --git-dir="$REPOSITORY" rev-parse "refs/remotes/origin/$BRANCH
 
 mkdir "$WORK"
 git --git-dir="$REPOSITORY" archive "$SHA" | tar -x -C "$WORK"
+git -C "$WORK" init --quiet
+git -C "$WORK" add --force --all
 chown -R newme-staging:newme-staging "$WORK" "$INCOMING"
 
 production_healthy || fail "production health changed before staging build"

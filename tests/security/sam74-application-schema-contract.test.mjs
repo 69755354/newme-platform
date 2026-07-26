@@ -16,6 +16,13 @@ const circuitMigration = await readFile(
   ),
   "utf8",
 );
+const authProfileMigration = await readFile(
+  new URL(
+    "../../supabase/migrations/20260726080402_add_profile_force_password_change.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 test("SAM-74 restores application columns missing from the migration chain", () => {
   assert.match(migration, /ALTER TABLE public\.leads[\s\S]*expected_close_date DATE/i);
@@ -24,6 +31,10 @@ test("SAM-74 restores application columns missing from the migration chain", () 
   assert.match(
     circuitMigration,
     /ALTER TABLE public\.leads[\s\S]*circuit_diagrams BOOLEAN/i,
+  );
+  assert.match(
+    authProfileMigration,
+    /ALTER TABLE public\.profiles[\s\S]*force_password_change BOOLEAN NOT NULL DEFAULT false/i,
   );
 });
 
@@ -50,4 +61,5 @@ test("SAM-74 application views preserve caller RLS and browser read boundaries",
 test("SAM-74 reloads the PostgREST schema cache after restoring the contract", () => {
   assert.match(migration, /NOTIFY pgrst,\s*'reload schema'/i);
   assert.match(circuitMigration, /NOTIFY pgrst,\s*'reload schema'/i);
+  assert.match(authProfileMigration, /NOTIFY pgrst,\s*'reload schema'/i);
 });

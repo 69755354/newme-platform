@@ -29,6 +29,9 @@ export async function GET(request: Request) {
   }
 
   const role = profile.role
+  if (!role) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
   if (!PIPELINE_ROLES.has(role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }

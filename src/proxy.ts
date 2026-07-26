@@ -1,4 +1,4 @@
-import { NextResponse, NextRequest } from "next/server";
+import { NextResponse, NextRequest, type NextFetchEvent } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase-middleware";
 import { reportServerError } from "@/lib/report-server-error";
 import { isActiveProfile } from "@/lib/auth-profile.mjs";
@@ -78,7 +78,7 @@ async function writeServerEvidence(
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const secretKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !secretKey) {
-    return { error: new Error("staging server evidence client is not configured") };
+    return { error: new Error("server evidence client is not configured") };
   }
 
   try {
@@ -106,7 +106,7 @@ async function writeServerEvidence(
   }
 }
 
-export async function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest, event: NextFetchEvent) {
   const { pathname } = request.nextUrl;
   const isApiRequest = pathname.startsWith("/api/");
   const isPublicApiRequest = isApiRequest && (PUBLIC_API_PATHS.has(pathname) || pathname === SESSION_BOOTSTRAP_PATH);
@@ -299,7 +299,7 @@ export async function proxy(request: NextRequest) {
         || request.headers.get("x-real-ip")
         || "unknown";
       // Fire-and-forget: update profile activity + log IP audit
-      writeServerEvidence(
+      const profileWrite = writeServerEvidence(
         "profiles",
         `id=eq.${encodeURIComponent(user.id)}`,
         "PATCH",
@@ -317,7 +317,7 @@ export async function proxy(request: NextRequest) {
           console.error("Activity tracking error:", error.message);
         }
       });
-      writeServerEvidence("audit_logs", "", "POST", {
+      const auditWrite = writeServerEvidence("audit_logs", "", "POST", {
         // NOTE: audit_logs.actor_id is the genuine column (NOT a business_events alias).
         // Migration 20260613000000_audit_logs.sql:6 declares it. Unlike business_events
         // (where actor_id was the wrong alias), audit_logs always used actor_id. Do NOT rename.
@@ -338,6 +338,9 @@ export async function proxy(request: NextRequest) {
           console.error("Audit log error:", error.message);
         }
       });
+      event.waitUntil(
+        Promise.allSettled([profileWrite, auditWrite]).then(() => undefined),
+      );
     }
   }
 

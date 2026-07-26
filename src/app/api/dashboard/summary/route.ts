@@ -4,6 +4,8 @@ import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { getCached, setCache } from "@/lib/api-cache";
 
+const DASHBOARD_ROLES = new Set(["admin", "boss", "operator", "sales"]);
+
 /* ─── Types ─── */
 interface TopAction {
   type: string;
@@ -46,6 +48,9 @@ export async function GET(request: Request) {
   const userId: string = user.id;
   const isManagement = ["admin", "boss", "operator"].includes(role);
   const isSales = role === "sales";
+  if (!DASHBOARD_ROLES.has(role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   // Month from query param (?period= legacy support removed in P3_9)
   const { searchParams } = new URL(request.url);

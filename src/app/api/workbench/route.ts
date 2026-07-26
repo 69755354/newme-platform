@@ -59,7 +59,11 @@ export async function GET(request: Request) {
   if (profileError || !profile) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
-  if (!WORKBENCH_ROLES.has(profile.role)) {
+  const role = profile.role
+  if (!role) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+  if (!WORKBENCH_ROLES.has(role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 

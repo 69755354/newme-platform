@@ -3,6 +3,8 @@ import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
 import { getCached, setCache } from "@/lib/api-cache"
 
+const WORKBENCH_ROLES = new Set(["sales"])
+
 // Dubai GST = UTC+4. All "day"/"week" math below is done in GST, then
 // converted back to UTC ISO strings for DB queries.
 const GST_OFFSET_MS = 4 * 3600 * 1000
@@ -55,6 +57,9 @@ export async function GET(request: Request) {
     .single()
 
   if (profileError || !profile) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+  if (!WORKBENCH_ROLES.has(profile.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 

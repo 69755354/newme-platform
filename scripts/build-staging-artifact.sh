@@ -29,6 +29,11 @@ export NEWME_STAGING_ENV_FILE="$ENV_FILE"
 cd "$ROOT"
 npm ci --no-audit --no-fund
 npm run check:staging-boundaries
+npm run typecheck
+npm run check:security
+npm run lint:baseline
+npm test
+npm run check:supply-chain -- --accept-known
 # The checked file contains only public build-time values; runtime secrets stay on
 # the staging host and are loaded by systemd after the artifact is transferred.
 set -a

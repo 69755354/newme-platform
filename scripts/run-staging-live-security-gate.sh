@@ -4,7 +4,7 @@ set -Eeuo pipefail
 EXPECTED_REF="${1:-}"
 RUNTIME_ENV_FILE="${2:-/etc/newme-staging/staging.env}"
 PRODUCTION_REF="vfopmpxlhwzpxqegayew"
-GATE_VERSION="sam61-allowlist-v1"
+GATE_VERSION="sam61-allowlist-v2"
 
 fail() {
   echo "staging live security gate failed: $*" >&2
@@ -19,10 +19,8 @@ fail() {
 command -v curl >/dev/null 2>&1 || fail "curl is required"
 command -v node >/dev/null 2>&1 || fail "node is required"
 
-set -a
 # shellcheck disable=SC1090
 . "$RUNTIME_ENV_FILE"
-set +a
 
 [ "${NEWME_STAGING_PROJECT_REF:-}" = "$EXPECTED_REF" ] ||
   fail "NEWME_STAGING_PROJECT_REF does not match"
@@ -30,7 +28,7 @@ set +a
   fail "SUPABASE_PROJECT_REF does not match"
 [ "${NEXT_PUBLIC_SUPABASE_URL:-}" = "https://$EXPECTED_REF.supabase.co" ] ||
   fail "staging Supabase URL does not match"
-[[ "${SUPABASE_SERVICE_ROLE_KEY:-}" == sb_secret_* ]] ||
+[[ "${SUPABASE_SERVICE_ROLE_KEY:-}" =~ ^sb_secret_[A-Za-z0-9_-]+$ ]] ||
   fail "dedicated staging Supabase secret key is missing"
 [ -z "${SUPABASE_DB_PASSWORD:-}" ] ||
   fail "database password is forbidden in staging runtime"
@@ -41,7 +39,9 @@ OUTPUT="$(mktemp)"
 trap 'rm -f -- "$OUTPUT"' EXIT
 
 HTTP_CODE="$(
+  printf 'header = "apikey: %s"\n' "$SUPABASE_SERVICE_ROLE_KEY" |
   curl \
+    --config - \
     --silent \
     --show-error \
     --output "$OUTPUT" \
@@ -50,8 +50,6 @@ HTTP_CODE="$(
     --proto '=https' \
     --tlsv1.2 \
     --max-time 15 \
-    --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
-    --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
     --header 'Content-Type: application/json' \
     --data '{}' \
     "https://$EXPECTED_REF.supabase.co/rest/v1/rpc/security_definer_rpc_allowlist_gate"
@@ -75,3 +73,4 @@ node -e '
   fail "cleanroom returned a stale gate or SECURITY DEFINER violations"
 
 echo "staging live security gate passed project=$EXPECTED_REF version=$GATE_VERSION"
+

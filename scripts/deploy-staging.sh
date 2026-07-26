@@ -27,6 +27,7 @@ PREVIOUS="$(readlink -f "$CURRENT" 2>/dev/null || true)"
 CANDIDATE_PID=""
 CANDIDATE_PGID=""
 SWITCHED=0
+PROMOTED=0
 
 fail() {
   echo "staging deploy failed: $*" >&2
@@ -70,6 +71,10 @@ cleanup() {
   fi
   if [ "$rc" -ne 0 ] && [ "$SWITCHED" -eq 1 ]; then
     rollback || rc=2
+  fi
+  if [ "$rc" -ne 0 ] && [ "$PROMOTED" -eq 1 ] && [ "$SWITCHED" -eq 0 ] &&
+    [ -d "$RELEASE" ]; then
+    rm -rf -- "$RELEASE"
   fi
   exit "$rc"
 }
@@ -170,14 +175,24 @@ stop_candidate
 
 mv "$STAGE" "$RELEASE"
 STAGE=""
+PROMOTED=1
 
 ln -s "$RELEASE" "$CURRENT_NEXT"
 mv -Tf "$CURRENT_NEXT" "$CURRENT"
 SWITCHED=1
+[ "$(readlink -f "$CURRENT")" = "$RELEASE" ] ||
+  fail "current staging symlink does not resolve to the promoted release"
 systemctl restart newme-staging.service
-curl -fsS --max-time 10 http://127.0.0.1:3101/api/health |
-  grep -Eq '"status"[[:space:]]*:[[:space:]]*"(ok|healthy)"' ||
-  fail "post-switch staging health check failed"
+ready=0
+for _ in $(seq 1 30); do
+  if curl -fs --max-time 5 http://127.0.0.1:3101/api/health |
+    grep -Eq '"status"[[:space:]]*:[[:space:]]*"(ok|healthy)"'; then
+    ready=1
+    break
+  fi
+  sleep 1
+done
+[ "$ready" -eq 1 ] || fail "post-switch staging health check failed"
 production_healthy || fail "production health changed after staging switch"
 
 SWITCHED=0

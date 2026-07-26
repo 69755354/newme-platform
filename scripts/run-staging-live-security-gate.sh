@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SQL_FILE="${1:-}"
-EXPECTED_REF="${2:-}"
-RUNTIME_ENV_FILE="${3:-/etc/newme-staging/staging.env}"
-GATE_ENV_FILE="${4:-/etc/newme-staging/live-gate.env}"
+EXPECTED_REF="${1:-}"
+RUNTIME_ENV_FILE="${2:-/etc/newme-staging/staging.env}"
 PRODUCTION_REF="vfopmpxlhwzpxqegayew"
-POOLER_HOST="aws-0-ap-southeast-1.pooler.supabase.com"
+GATE_VERSION="sam61-allowlist-v1"
 
 fail() {
   echo "staging live security gate failed: $*" >&2
@@ -17,10 +15,9 @@ fail() {
   fail "expected project ref must be 20 lowercase letters"
 [ "$EXPECTED_REF" != "$PRODUCTION_REF" ] ||
   fail "production Supabase ref is forbidden"
-[ -r "$SQL_FILE" ] || fail "reviewed live gate SQL is missing"
 [ -r "$RUNTIME_ENV_FILE" ] || fail "staging runtime environment is missing"
-[ -r "$GATE_ENV_FILE" ] || fail "staging live gate environment is missing"
-command -v psql >/dev/null 2>&1 || fail "psql is required"
+command -v curl >/dev/null 2>&1 || fail "curl is required"
+command -v node >/dev/null 2>&1 || fail "node is required"
 
 set -a
 # shellcheck disable=SC1090
@@ -31,57 +28,50 @@ set +a
   fail "NEWME_STAGING_PROJECT_REF does not match"
 [ "${SUPABASE_PROJECT_REF:-}" = "$EXPECTED_REF" ] ||
   fail "SUPABASE_PROJECT_REF does not match"
+[ "${NEXT_PUBLIC_SUPABASE_URL:-}" = "https://$EXPECTED_REF.supabase.co" ] ||
+  fail "staging Supabase URL does not match"
+[[ "${SUPABASE_SERVICE_ROLE_KEY:-}" == sb_secret_* ]] ||
+  fail "dedicated staging Supabase secret key is missing"
 [ -z "${SUPABASE_DB_PASSWORD:-}" ] ||
   fail "database password is forbidden in staging runtime"
-
-if grep -Eq '^(NEWME_STAGING_PROJECT_REF|SUPABASE_PROJECT_REF)=' "$GATE_ENV_FILE"; then
-  fail "live gate environment must not redefine project refs"
-fi
-
-set -a
-# shellcheck disable=SC1090
-. "$GATE_ENV_FILE"
-set +a
-
-[ -n "${SUPABASE_DB_PASSWORD:-}" ] ||
-  fail "cleanroom database password is not configured"
-
-DB_HOST="${SUPABASE_DB_HOST:-$POOLER_HOST}"
-DB_PORT="${SUPABASE_DB_PORT:-5432}"
-DB_USER="${SUPABASE_DB_USER:-postgres.$EXPECTED_REF}"
-DB_NAME="${SUPABASE_DB_NAME:-postgres}"
-DB_SSLROOTCERT="${SUPABASE_DB_SSLROOTCERT:-/etc/newme-staging/supabase-prod-ca-2021.crt}"
-
-[ "$DB_HOST" = "$POOLER_HOST" ] ||
-  [ "$DB_HOST" = "db.$EXPECTED_REF.supabase.co" ] ||
-  fail "database host is not the reviewed staging endpoint"
-[[ "$DB_PORT" =~ ^[0-9]{1,5}$ ]] || fail "database port is invalid"
-[ "$DB_USER" = "postgres.$EXPECTED_REF" ] ||
-  fail "database user must be scoped to the staging project"
-[[ "$DB_NAME" =~ ^[a-zA-Z0-9_]+$ ]] || fail "database name is invalid"
-[ -r "$DB_SSLROOTCERT" ] || fail "Supabase database CA certificate is missing"
+[ -z "${SUPABASE_PAT:-}" ] ||
+  fail "Supabase PAT is forbidden in staging runtime"
 
 OUTPUT="$(mktemp)"
 trap 'rm -f -- "$OUTPUT"' EXIT
 
-PGPASSWORD="$SUPABASE_DB_PASSWORD" \
-PGCONNECT_TIMEOUT=10 \
-PGSSLMODE=verify-full \
-PGSSLROOTCERT="$DB_SSLROOTCERT" \
-psql \
-  --host="$DB_HOST" \
-  --port="$DB_PORT" \
-  --username="$DB_USER" \
-  --dbname="$DB_NAME" \
-  --no-psqlrc \
-  --set=ON_ERROR_STOP=1 \
-  --tuples-only \
-  --no-align \
-  --quiet \
-  --file="$SQL_FILE" >"$OUTPUT"
+HTTP_CODE="$(
+  curl \
+    --silent \
+    --show-error \
+    --output "$OUTPUT" \
+    --write-out '%{http_code}' \
+    --request POST \
+    --proto '=https' \
+    --tlsv1.2 \
+    --max-time 15 \
+    --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+    --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    --header 'Content-Type: application/json' \
+    --data '{}' \
+    "https://$EXPECTED_REF.supabase.co/rest/v1/rpc/security_definer_rpc_allowlist_gate"
+)" || fail "cleanroom live gate request failed"
 
-if grep -q '[^[:space:]]' "$OUTPUT"; then
-  fail "cleanroom returned SECURITY DEFINER allowlist violations"
-fi
+[ "$HTTP_CODE" = "200" ] ||
+  fail "cleanroom live gate returned HTTP $HTTP_CODE"
 
-echo "staging live security gate passed project=$EXPECTED_REF"
+node -e '
+  const fs = require("fs");
+  const expectedVersion = process.argv[2];
+  const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  if (
+    body === null ||
+    typeof body !== "object" ||
+    body.gate_version !== expectedVersion ||
+    !Array.isArray(body.violations) ||
+    body.violations.length !== 0
+  ) process.exit(1);
+' "$OUTPUT" "$GATE_VERSION" ||
+  fail "cleanroom returned a stale gate or SECURITY DEFINER violations"
+
+echo "staging live security gate passed project=$EXPECTED_REF version=$GATE_VERSION"

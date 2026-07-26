@@ -3,11 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const migration = new URL(
-  "../../supabase/migrations/20260726154633_harden_next_quote_no_authorization.sql",
+  "../../supabase/migrations/20260726160522_harden_next_quote_no_authorization.sql",
   import.meta.url,
 );
 const rollback = new URL(
-  "../../supabase/rollback/20260726154633_harden_next_quote_no_authorization_rollback.sql",
+  "../../supabase/rollback/20260726160522_harden_next_quote_no_authorization_rollback.sql",
   import.meta.url,
 );
 

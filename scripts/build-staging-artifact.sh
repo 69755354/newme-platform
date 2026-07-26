@@ -25,6 +25,7 @@ mkdir -p "$OUTPUT_DIR"
 export NEWME_STAGING_PROJECT_REF="$EXPECTED_REF"
 export NEWME_STAGING_BOUNDARY_MODE=build
 export NEWME_STAGING_ENV_FILE="$ENV_FILE"
+export NODE_OPTIONS="--max_old_space_size=$HEAP_MB"
 
 cd "$ROOT"
 npm ci --no-audit --no-fund
@@ -44,7 +45,6 @@ export NEWME_ISOLATED_BUILD=1
 export NEWME_STANDALONE_BUILD=1
 export NEWME_STAGING_LOW_MEMORY=1
 export NEXT_PUBLIC_APP_VERSION="$SHA"
-export NODE_OPTIONS="--max_old_space_size=$HEAP_MB"
 npm run build -- --webpack
 
 STANDALONE="$ROOT/.next/standalone"

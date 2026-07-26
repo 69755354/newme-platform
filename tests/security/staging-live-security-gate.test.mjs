@@ -1,15 +1,13 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import {
-  chmod,
   mkdtemp,
-  mkdir,
   readFile,
   rm,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
@@ -23,183 +21,195 @@ const command = fileURLToPath(
   new URL("scripts/run-staging-live-security-gate.sh", root),
 );
 const projectRef = "bfsiibofuzoglziltgyd";
+const passingBody = JSON.stringify({
+  gate_version: "sam61-allowlist-v1",
+  violations: [],
+});
 
 const writeFixture = async (
   directory,
   {
-    password = "test-only",
-    runtimePassword = "",
-    gateLines = [],
+    project = projectRef,
+    urlProject = projectRef,
+    secret = "sb_secret_test_only",
+    password = "",
+    pat = "",
   } = {},
 ) => {
-  const sqlPath = join(directory, "gate.sql");
-  const runtimeEnvPath = join(directory, "staging.env");
-  const gateEnvPath = join(directory, "live-gate.env");
-  const caPath = join(directory, "supabase-ca.crt");
-  await writeFile(sqlPath, "select 1 where false;\n", "utf8");
-  await writeFile(caPath, "test-only-ca\n", "utf8");
+  const envPath = join(directory, "staging.env");
   await writeFile(
-    runtimeEnvPath,
+    envPath,
     [
-      `NEWME_STAGING_PROJECT_REF=${projectRef}`,
-      `SUPABASE_PROJECT_REF=${projectRef}`,
-      ...(runtimePassword === ""
-        ? []
-        : [`SUPABASE_DB_PASSWORD=${runtimePassword}`]),
-      "",
-    ].join("\n"),
-    "utf8",
-  );
-  await writeFile(
-    gateEnvPath,
-    [
+      `NEWME_STAGING_PROJECT_REF=${project}`,
+      `SUPABASE_PROJECT_REF=${project}`,
+      `NEXT_PUBLIC_SUPABASE_URL=https://${urlProject}.supabase.co`,
+      `SUPABASE_SERVICE_ROLE_KEY=${secret}`,
       `SUPABASE_DB_PASSWORD=${password}`,
-      `SUPABASE_DB_SSLROOTCERT=${caPath.replaceAll("\\", "/")}`,
-      ...gateLines,
+      `SUPABASE_PAT=${pat}`,
       "",
     ].join("\n"),
     "utf8",
   );
-  return { sqlPath, runtimeEnvPath, gateEnvPath };
+  return envPath;
 };
 
-const writePsql = async (directory, output = "") => {
-  const bin = join(directory, "bin");
-  const path = join(bin, "psql");
-  await mkdir(bin);
+const writeCurl = async (directory) => {
+  const path = join(directory, "bash-env");
   await writeFile(
     path,
-    `#!/usr/bin/env bash\nprintf '%s' '${output}'\n`,
+    `curl() {
+  local output=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --output) output="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  [ -n "$output" ]
+  local body="\${FAKE_CURL_BODY-}"
+  [ -n "$body" ] || body='{}'
+  printf '%s' "$body" > "$output"
+  printf '%s' "\${FAKE_CURL_CODE:-200}"
+}
+`,
     "utf8",
   );
-  await chmod(path, 0o755);
-  return bin;
+  return path;
 };
 
-test("live gate executes psql and accepts a zero-row result", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "newme-live-db-pass-"));
+const runGate = async (
+  directory,
+  fixtureOptions = {},
+  { body = passingBody, code = "200", expectedRef = projectRef } = {},
+) => {
+  const envPath = await writeFixture(directory, fixtureOptions);
+  const bashEnv = await writeCurl(directory);
+  return run(
+    bash,
+    [command, expectedRef, envPath],
+    {
+      env: {
+        ...process.env,
+        BASH_ENV: bashEnv,
+        FAKE_CURL_BODY: body,
+        FAKE_CURL_CODE: code,
+      },
+    },
+  );
+};
+
+test("live gate accepts the exact version with zero violations", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "newme-live-gate-pass-"));
   try {
-    const fixture = await writeFixture(directory);
-    const bin = await writePsql(directory);
-    const result = await run(bash, [
-      command,
-      fixture.sqlPath,
-      projectRef,
-      fixture.runtimeEnvPath,
-      fixture.gateEnvPath,
-    ], { env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` } });
-    assert.match(result.stdout, /staging live security gate passed/);
+    const result = await runGate(directory);
+    assert.match(
+      result.stdout,
+      /staging live security gate passed.*sam61-allowlist-v1/,
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
-test("live gate fails closed on missing credentials and database violations", async () => {
-  const missingDirectory = await mkdtemp(join(tmpdir(), "newme-live-db-empty-"));
-  const violationDirectory = await mkdtemp(
-    join(tmpdir(), "newme-live-db-violation-"),
-  );
-  try {
-    const missing = await writeFixture(missingDirectory, { password: "" });
-    const missingBin = await writePsql(missingDirectory);
-    await assert.rejects(
-      run(bash, [
-        command,
-        missing.sqlPath,
-        projectRef,
-        missing.runtimeEnvPath,
-        missing.gateEnvPath,
-      ], {
-        env: {
-          ...process.env,
-          PATH: `${missingBin}${delimiter}${process.env.PATH}`,
-        },
+test("live gate fails closed on HTTP errors, stale versions, and violations", async () => {
+  const cases = [
+    {
+      body: JSON.stringify({
+        gate_version: "sam61-allowlist-v1",
+        violations: [],
       }),
-      /cleanroom database password is not configured/,
-    );
-
-    const violation = await writeFixture(violationDirectory);
-    const violationBin = await writePsql(
-      violationDirectory,
-      "unsafe_search_path|get_my_role()\n",
-    );
-    await assert.rejects(
-      run(bash, [
-        command,
-        violation.sqlPath,
-        projectRef,
-        violation.runtimeEnvPath,
-        violation.gateEnvPath,
-      ], {
-        env: {
-          ...process.env,
-          PATH: `${violationBin}${delimiter}${process.env.PATH}`,
-        },
+      code: "403",
+      expected: /returned HTTP 403/,
+    },
+    {
+      body: JSON.stringify({ gate_version: "stale", violations: [] }),
+      code: "200",
+      expected: /stale gate or SECURITY DEFINER violations/,
+    },
+    {
+      body: JSON.stringify({
+        gate_version: "sam61-allowlist-v1",
+        violations: [{ violation: "anon_execute", regprocedure: "unsafe()" }],
       }),
-      /cleanroom returned SECURITY DEFINER allowlist violations/,
-    );
-  } finally {
-    await rm(missingDirectory, { recursive: true, force: true });
-    await rm(violationDirectory, { recursive: true, force: true });
-  }
-});
+      code: "200",
+      expected: /stale gate or SECURITY DEFINER violations/,
+    },
+  ];
 
-test("live gate rejects runtime credentials, wrong refs, and unreviewed hosts", async () => {
-  const runtimeSecretDirectory = await mkdtemp(
-    join(tmpdir(), "newme-live-db-runtime-secret-"),
-  );
-  const wrongRefDirectory = await mkdtemp(
-    join(tmpdir(), "newme-live-db-wrong-ref-"),
-  );
-  const wrongHostDirectory = await mkdtemp(
-    join(tmpdir(), "newme-live-db-wrong-host-"),
-  );
-  try {
-    for (const [directory, fixtureOptions, expectedError] of [
-      [
-        runtimeSecretDirectory,
-        { runtimePassword: "must-not-reach-runtime" },
-        /database password is forbidden in staging runtime/,
-      ],
-      [
-        wrongRefDirectory,
-        { gateLines: ["SUPABASE_PROJECT_REF=aaaaaaaaaaaaaaaaaaaa"] },
-        /must not redefine project refs/,
-      ],
-      [
-        wrongHostDirectory,
-        { gateLines: ["SUPABASE_DB_HOST=attacker.example.com"] },
-        /database host is not the reviewed staging endpoint/,
-      ],
-    ]) {
-      const fixture = await writeFixture(directory, fixtureOptions);
-      const bin = await writePsql(directory);
+  for (const [index, item] of cases.entries()) {
+    const directory = await mkdtemp(
+      join(tmpdir(), `newme-live-gate-fail-${index}-`),
+    );
+    try {
       await assert.rejects(
-        run(bash, [
-          command,
-          fixture.sqlPath,
-          projectRef,
-          fixture.runtimeEnvPath,
-          fixture.gateEnvPath,
-        ], {
-          env: {
-            ...process.env,
-            PATH: `${bin}${delimiter}${process.env.PATH}`,
-          },
-        }),
-        expectedError,
+        runGate(directory, {}, item),
+        item.expected,
       );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
     }
-  } finally {
-    await Promise.all([
-      rm(runtimeSecretDirectory, { recursive: true, force: true }),
-      rm(wrongRefDirectory, { recursive: true, force: true }),
-      rm(wrongHostDirectory, { recursive: true, force: true }),
-    ]);
   }
 });
 
-test("staging deploy binds trusted gate assets to the exact release SHA", async () => {
+test("live gate rejects target drift and administrative runtime credentials", async () => {
+  const cases = [
+    {
+      fixture: { project: "aaaaaaaaaaaaaaaaaaaa" },
+      expected: /NEWME_STAGING_PROJECT_REF does not match/,
+    },
+    {
+      fixture: { urlProject: "aaaaaaaaaaaaaaaaaaaa" },
+      expected: /staging Supabase URL does not match/,
+    },
+    {
+      fixture: { secret: "" },
+      expected: /dedicated staging Supabase secret key is missing/,
+    },
+    {
+      fixture: { password: "must-not-reach-runtime" },
+      expected: /database password is forbidden in staging runtime/,
+    },
+    {
+      fixture: { pat: "must-not-reach-runtime" },
+      expected: /Supabase PAT is forbidden in staging runtime/,
+    },
+  ];
+
+  for (const [index, item] of cases.entries()) {
+    const directory = await mkdtemp(
+      join(tmpdir(), `newme-live-gate-boundary-${index}-`),
+    );
+    try {
+      await assert.rejects(
+        runGate(directory, item.fixture),
+        item.expected,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+
+  const productionDirectory = await mkdtemp(
+    join(tmpdir(), "newme-live-gate-production-"),
+  );
+  try {
+    await assert.rejects(
+      runGate(
+        productionDirectory,
+        {
+          project: "vfopmpxlhwzpxqegayew",
+          urlProject: "vfopmpxlhwzpxqegayew",
+        },
+        { expectedRef: "vfopmpxlhwzpxqegayew" },
+      ),
+      /production Supabase ref is forbidden/,
+    );
+  } finally {
+    await rm(productionDirectory, { recursive: true, force: true });
+  }
+});
+
+test("staging deploy binds and runs the live gate before promotion", async () => {
   const [deploy, install] = await Promise.all([
     readFile(new URL("scripts/deploy-staging.sh", root), "utf8"),
     readFile(new URL("scripts/install-staging-assets.sh", root), "utf8"),
@@ -225,20 +235,19 @@ test("staging deploy binds trusted gate assets to the exact release SHA", async 
   for (const pattern of [
     /\$SHA:scripts\/deploy-staging\.sh/,
     /\$SHA:scripts\/run-staging-live-security-gate\.sh/,
-    /\$SHA:supabase\/security\/check-authenticated-security-definer-rpc-allowlist\.sql/,
     /installed live security gate assets do not match release SHA/,
-    /live-gate\.env/,
   ]) assert.match(deploy, pattern);
 
   for (const pattern of [
     /run-staging-live-security-gate\.sh/,
-    /check-authenticated-security-definer-rpc-allowlist\.sql/,
     /rm -f -- \/opt\/newme-staging\/control\/check-staging-live-gate-evidence\.mjs/,
   ]) assert.match(install, pattern);
 
   for (const obsolete of [
     /security-definer-live-gate\.json/,
     /validation\/\$SHA/,
+    /SUPABASE_DB_PASSWORD/,
+    /live-gate\.env/,
   ]) {
     assert.doesNotMatch(deploy, obsolete);
     assert.doesNotMatch(install, obsolete);

@@ -64,11 +64,12 @@ test("aggregate APIs never treat an unknown non-sales role as management", async
 });
 
 test("sidebar, default landing, top bar, and proxy keep role boundaries intact", async () => {
-  const [layout, sidebar, topBar, authRedirect, proxy] = await Promise.all([
+  const [layout, sidebar, topBar, authRedirect, accessNotConfigured, proxy] = await Promise.all([
     read("src/app/(dashboard)/layout.tsx"),
     read("src/components/dashboard/DashboardSidebar.tsx"),
     read("src/components/dashboard/DashboardTopBar.tsx"),
     read("src/hooks/useAuthRedirect.ts"),
+    read("src/app/(dashboard)/access-not-configured/page.tsx"),
     read("src/proxy.ts"),
   ]);
 
@@ -86,9 +87,16 @@ test("sidebar, default landing, top bar, and proxy keep role boundaries intact",
     authRedirect,
     /if \(role === "finance" && pathname === "\/dashboard"\) \{\s*router\.replace\("\/payments"\);/,
   );
+  assert.match(
+    authRedirect,
+    /if \(role === "designer" && pathname === "\/dashboard"\) \{\s*router\.replace\("\/access-not-configured"\);/,
+  );
   assert.doesNotMatch(authRedirect, /if \(!isMgmt && pathname === "\/dashboard"\)/);
   assert.match(topBar, /role === "finance"[\s\S]*t\("team\.roleFinance"\)/);
   assert.match(topBar, /role === "designer"[\s\S]*t\("team\.roleDesigner"\)/);
+  assert.match(accessNotConfigured, /accessNotConfiguredTitle/);
+  assert.match(accessNotConfigured, /accessNotConfiguredContactAdmin/);
+  assert.doesNotMatch(accessNotConfigured, /fetch\(|\/api\//);
   assert.match(
     proxy,
     /"\/pipeline": \["admin", "boss", "operator", "sales"\]/,

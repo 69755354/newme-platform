@@ -201,7 +201,7 @@ test("documented postcss and sharp mitigations remain unreachable at runtime", a
   assert.doesNotMatch(nextConfig, /\bimages\s*:/, "Next Image configuration requires a sharp risk review");
 });
 
-test("repository and CI use one Node major and exact critical dependency versions", async () => {
+test("repository and CI use exact Node, npm, and critical dependency versions", async () => {
   const nvmrc = (await import("node:fs/promises")).readFile(path.join(ROOT, ".nvmrc"), "utf8");
   const workflow = (await import("node:fs/promises")).readFile(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
   const packageJson = JSON.parse(await (await import("node:fs/promises")).readFile(path.join(ROOT, "package.json"), "utf8"));

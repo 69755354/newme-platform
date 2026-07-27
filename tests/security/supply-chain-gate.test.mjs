@@ -9,8 +9,6 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const XREF = path.join(ROOT, "scripts/_supply_chain_xref.py");
 const GATE = path.join(ROOT, "scripts/check-supply-chain.sh");
-const EXPECTED_XLSX_HASH = "7385d8ea33c4feaa85e0f27430f7631c142d07c0a052f9f5e73b5fddb88acbe8";
-
 const advisory = (id = "GHSA-qx2v-qp2m-jg93") => ({
   source: 123456,
   name: "postcss",
@@ -96,16 +94,16 @@ async function makeGateFixture(dir, auditPayload, acceptPayload) {
   await writeFile(path.join(dir, "package-lock.json"), "{}\n");
   await writeFile(path.join(dir, ".nvmrc"), `${process.versions.node.split(".")[0]}\n`);
   await writeFile(path.join(dir, ".supply-chain-accept.json"), JSON.stringify(acceptPayload));
-  await writeFile(path.join(dir, "node_modules/xlsx/package.json"), "{}\n");
+  await cp(
+    path.join(ROOT, "node_modules/xlsx/package.json"),
+    path.join(dir, "node_modules/xlsx/package.json"),
+  );
   await writeFile(path.join(dir, "audit.json"), typeof auditPayload === "string" ? auditPayload : JSON.stringify(auditPayload));
 
   const fakeNpm = path.join(dir, "fake-bin/npm");
   await writeFile(fakeNpm, `#!/usr/bin/env bash\nset -euo pipefail\ncase "\${1:-}" in\n  --version) echo 10.0.0 ;;\n  ls) exit 0 ;;\n  audit) cat "\${FAKE_AUDIT_FILE}"; exit "\${FAKE_AUDIT_RC:-1}" ;;\n  *) exit 2 ;;\nesac\n`);
   await chmod(fakeNpm, 0o755);
 
-  const fakeSha = path.join(dir, "fake-bin/sha256sum");
-  await writeFile(fakeSha, `#!/usr/bin/env bash\nif [[ "\${1:-}" == "node_modules/xlsx/package.json" ]]; then\n  echo "${EXPECTED_XLSX_HASH}  \$1"\nelse\n  exec /usr/bin/sha256sum "\$@"\nfi\n`);
-  await chmod(fakeSha, 0o755);
 }
 
 async function runGate({ auditPayload, acceptPayload = accepted(), acceptKnown = true }) {
@@ -150,6 +148,12 @@ test("supply-chain gate fails closed for unaccepted, malformed, or registry-erro
 
   const noException = await runGate({ auditPayload: audit(), acceptKnown: false });
   assert.notEqual(noException.status, 0);
+
+  const expiredException = await runGate({
+    auditPayload: audit(),
+    acceptPayload: accepted({ expires: "2000-01-01" }),
+  });
+  assert.notEqual(expiredException.status, 0);
 
   const malformed = await runGate({ auditPayload: "not-json" });
   assert.notEqual(malformed.status, 0);

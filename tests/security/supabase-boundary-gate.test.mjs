@@ -72,3 +72,43 @@ void createTask;
   assert.notEqual(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout + result.stderr, /src\/lib\/tasks.ts/);
 });
+
+test("gate stops browser reachability at a use server boundary", () => {
+  const result = runFixture({
+    "src/components/Example.tsx": `"use client";
+import { createTask } from "@/app/actions/tasks";
+void createTask;
+`,
+    "src/app/actions/tasks.ts": `"use server";
+import { createTaskRecord } from "@/lib/task-records";
+export async function createTask() {
+  return createTaskRecord();
+}
+`,
+    "src/lib/task-records.ts": `export function createTaskRecord() {
+  return supabase.from("tasks").insert({ title: "server mutation" });
+}
+`,
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("gate stops browser reachability at an explicit server-only module", () => {
+  const result = runFixture({
+    "src/components/Example.tsx": `"use client";
+import { createTask } from "@/lib/tasks";
+void createTask;
+`,
+    "src/lib/tasks.ts": `import { createTaskRecord } from "@/lib/task-records";
+export function createTask() {
+  return createTaskRecord();
+}
+`,
+    "src/lib/task-records.ts": `import "server-only";
+export function createTaskRecord() {
+  return supabase.from("tasks").insert({ title: "server mutation" });
+}
+`,
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});

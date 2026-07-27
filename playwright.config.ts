@@ -38,13 +38,19 @@ export default defineConfig({
   },
   projects: [
     {
+      name: 'auth-setup',
+      testMatch: /.*\.setup\.ts/,
+    },
+    {
       name: 'boss',
       testMatch: /.*\.spec\.ts/,
+      dependencies: ['auth-setup'],
       use: { storageState: 'e2e/.auth/boss.json' },
     },
     {
       name: 'sales',
       testMatch: /.*\.spec\.ts/,
+      dependencies: ['auth-setup'],
       use: { storageState: 'e2e/.auth/sales.json' },
     },
   ],

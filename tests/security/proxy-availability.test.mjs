@@ -245,9 +245,8 @@ test("a stalled Bearer profile response body fails closed for a business mutatio
     else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
   });
 
-  const result = await Promise.race([
-    proxy.proxy(request("/api/leads/a/stage", "PATCH")),
-    new Promise((resolve) => queueMicrotask(() => resolve("still_pending"))),
-  ]);
+  const resultPromise = proxy.proxy(request("/api/leads/a/stage", "PATCH"));
+  await new Promise((resolve) => setImmediate(resolve));
+  const result = await Promise.race([resultPromise, Promise.resolve("still_pending")]);
   assert.deepEqual(result, { body: { error: "auth_unavailable" }, status: 503 });
 });

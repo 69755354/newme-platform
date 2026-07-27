@@ -111,27 +111,31 @@ function skipLeadingTrivia(text, start) {
   }
   return index;
 }
-function hasModuleDirective(text, expected) {
+function readModulePrologue(text) {
   let index = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  const directives = [];
   while (index < text.length) {
     index = skipLeadingTrivia(text, index);
     const quote = text[index];
-    if (quote !== '"' && quote !== "'") return false;
+    if (quote !== '"' && quote !== "'") break;
     const end = text.indexOf(quote, index + 1);
-    if (end < 0) return false;
+    if (end < 0) break;
     const value = text.slice(index + 1, end);
     let statementEnd = end + 1;
     while (text[statementEnd] === " " || text[statementEnd] === "\t") statementEnd += 1;
     if (text[statementEnd] === ";") statementEnd += 1;
-    else if (statementEnd < text.length && text[statementEnd] !== "\r" && text[statementEnd] !== "\n") return false;
-    if (value === expected) return true;
+    else if (statementEnd < text.length && text[statementEnd] !== "\r" && text[statementEnd] !== "\n") break;
+    directives.push(value);
     index = statementEnd;
   }
-  return false;
+  return { directives, index };
 }
 function hasServerOnlyBoundary(text) {
-  return /(?:^|\r?\n)\s*import\s+["']server-only["']\s*;?/.test(text) ||
-    hasModuleDirective(text, "use server");
+  const { directives, index } = readModulePrologue(text);
+  if (directives.includes("use client")) return false;
+  if (directives.includes("use server")) return true;
+  const importStart = skipLeadingTrivia(text, index);
+  return /^import\s+["']server-only["']\s*;?/.test(text.slice(importStart));
 }
 function isServerOnlyPath(name) {
   return name.startsWith("src/app/api/") ||

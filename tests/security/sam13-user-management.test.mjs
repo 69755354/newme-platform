@@ -25,6 +25,15 @@ test("SAM-13 password reset reuses the server-only admin client", () => {
   assert.doesNotMatch(resetAction, /SUPABASE_SERVICE_ROLE_KEY/);
 });
 
+test("SAM-13 updates the profile created by the auth trigger", () => {
+  const usersRoute = read("src/app/api/users/route.ts");
+  const createAction = usersRoute.slice(usersRoute.indexOf("export async function POST"));
+
+  assert.match(createAction, /\.from\("profiles"\)\s*\.update\(/);
+  assert.match(createAction, /\.eq\("id", authData\.user\.id\)/);
+  assert.doesNotMatch(createAction, /\.from\("profiles"\)\s*\.insert\(/);
+});
+
 test("SAM-13 removes temporary scripts with embedded production account operations", () => {
   for (const path of [
     "revert_passwords.py",

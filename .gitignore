@@ -9,12 +9,25 @@ logs/
 
 # Playwright / E2E artifacts
 e2e/.auth/
+# Sensitive E2E session state
+e2e/**/auth-state*.json
+e2e/**/auth-state*.zip
+e2e/**/auth_state*.json
+e2e/**/auth_state*.zip
+e2e/**/storage-state*.json
+e2e/**/storage-state*.zip
+e2e/**/storage_state*.json
+e2e/**/storage_state*.zip
+e2e/**/session*.json
+e2e/**/session*.zip
+e2e/screenshots/
 e2e-results.json
 playwright-report/
 test-results/
 blob-report/
 .playwright/
 *.trace.zip
+trace.zip
 
 # Python cache
 __pycache__/

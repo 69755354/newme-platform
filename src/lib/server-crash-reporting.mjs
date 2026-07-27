@@ -2,9 +2,12 @@ const INSTALL_KEY = Symbol.for("newme.serverCrashReporting.installed");
 const DEFAULT_FLUSH_TIMEOUT_MS = 2_000;
 
 /**
- * Adds one Node.js uncaught-exception handler for a process. The handler never
- * resumes normal execution: it makes one best-effort report, then exits 1.
- * Error redaction remains centralized in the Sentry beforeSend hooks.
+ * @param {{
+ *   runtime?: NodeJS.Process;
+ *   captureException?: (error: unknown, context: { tags: Record<string, string> }) => void;
+ *   flush?: (timeout: number) => unknown;
+ *   flushTimeoutMs?: number;
+ * }} options
  */
 export function installServerCrashReporting({
   runtime = process,

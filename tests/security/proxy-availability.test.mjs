@@ -198,3 +198,56 @@ test("server evidence writes survive the response and fail without blocking the 
   );
 });
 
+
+
+test("a stalled Bearer profile response body fails closed for a business mutation", async (t) => {
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (callback) => {
+    queueMicrotask(callback);
+    return undefined;
+  };
+  t.after(() => {
+    globalThis.setTimeout = originalSetTimeout;
+  });
+
+  const proxy = loadProxy({
+    "next/server": nextServer(),
+    "@/lib/supabase-middleware": {
+      createMiddlewareClient: async () => ({
+        supabase: {
+          auth: {
+            getUser: async (token) => ({
+              data: { user: token ? { id: "user-1" } : null },
+            }),
+          },
+        },
+        getResponse: () => ({ status: 200 }),
+      }),
+    },
+    "@/lib/report-server-error": { reportServerError: async () => {} },
+    "@/lib/auth-profile.mjs": { isActiveProfile: () => false },
+  });
+
+  const originalFetch = globalThis.fetch;
+  const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://staging.example";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "staging-test-key";
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: () => new Promise(() => {}),
+  });
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+  });
+
+  const result = await Promise.race([
+    proxy.proxy(request("/api/leads/a/stage", "PATCH")),
+    new Promise((resolve) => queueMicrotask(() => resolve("still_pending"))),
+  ]);
+  assert.deepEqual(result, { body: { error: "auth_unavailable" }, status: 503 });
+});

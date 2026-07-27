@@ -216,7 +216,7 @@ test("staging deploy binds and runs the live gate before promotion", async () =>
     readFile(new URL("scripts/run-staging-live-security-gate.sh", root), "utf8"),
     readFile(
       new URL(
-        "supabase/migrations/20260726215500_harden_security_definer_allowlist_gate_rpc.sql",
+        "supabase/migrations/20260726213846_harden_security_definer_allowlist_gate_rpc.sql",
         root,
       ),
       "utf8",

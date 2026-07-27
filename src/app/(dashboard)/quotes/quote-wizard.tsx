@@ -242,7 +242,7 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
 
   const handleExp = () => {
     if (!s.savedQuoteId) { toast.error(t("quotes.saveFirst")); return; }
-    window.open(`/api/quotations/export?quote_id=${s.savedQuoteId}`, "_blank");
+    window.open(`/api/quotations/export?id=${s.savedQuoteId}`, "_blank");
   };
   const handleSend = () => {
     if (!s.savedQuoteId) { toast.error(t("quotes.saveFirst")); return; }

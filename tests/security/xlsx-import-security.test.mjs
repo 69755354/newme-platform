@@ -2,6 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
+import {
+  MAX_XLSX_FILE_BYTES,
+  MAX_XLSX_ROWS,
+  validateXlsxImportLimits,
+} from "../../src/lib/xlsx-import-limits.mjs";
 
 const require = createRequire(import.meta.url);
 const XLSX = require("xlsx");
@@ -78,4 +83,31 @@ test("xlsx bytes are parsed only in the guarded client import entrypoint", async
   assert.equal(confirm.includes('from "xlsx"'), false);
   assert.ok(preview.includes('["admin", "boss"].includes(profile.role)'));
   assert.ok(confirm.includes('["admin", "boss"].includes(profile.role)'));
+});
+
+
+test("xlsx resource limits reject oversized files and row sets", () => {
+  assert.doesNotThrow(() => validateXlsxImportLimits({
+    fileBytes: MAX_XLSX_FILE_BYTES,
+    rowCount: MAX_XLSX_ROWS,
+  }));
+  assert.throws(
+    () => validateXlsxImportLimits({ fileBytes: MAX_XLSX_FILE_BYTES + 1 }),
+    /file is too large/i,
+  );
+  assert.throws(
+    () => validateXlsxImportLimits({ rowCount: MAX_XLSX_ROWS + 1 }),
+    /too many rows/i,
+  );
+});
+
+test("client and server enforce the shared xlsx limits before work is accepted", async () => {
+  const dialog = await read("src/components/leads/ExcelImportDialog.tsx");
+  const preview = await read("src/app/api/leads/import/preview/route.ts");
+  const confirm = await read("src/app/api/leads/import/confirm/route.ts");
+
+  assert.ok(dialog.indexOf("validateXlsxImportLimits({ fileBytes: file.size })") < dialog.indexOf("file.arrayBuffer()"));
+  assert.match(dialog, /validateXlsxImportLimits\(\{ rowCount: rows\.length \}\)/);
+  assert.match(preview, /validateXlsxImportLimits\(\{ rowCount: rawRows\.length \}\)/);
+  assert.match(confirm, /validateXlsxImportLimits\(\{ rowCount: rows\.length \}\)/);
 });

@@ -51,6 +51,12 @@ jobs:
       - name: E2E secret gate negative regression
         run: node --test tests/security/e2e-secret-gate.test.mjs
 
+      - name: E2E artifact isolation gate
+        run: npm run check:e2e-artifacts
+
+      - name: E2E artifact isolation gate negative regression
+        run: node --test tests/security/e2e-artifact-isolation.test.mjs
+
       - name: Taskboard gate
         run: bash scripts/check-taskboard.sh
 

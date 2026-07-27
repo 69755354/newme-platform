@@ -130,3 +130,34 @@ export function unsafeTask() {
   assert.notEqual(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout + result.stderr, /client-side-supabase-mutation/);
 });
+
+test("gate does not treat a commented server-only import as a boundary", () => {
+  const result = runFixture({
+    "src/components/Example.tsx": `"use client";
+import { unsafeTask } from "@/lib/tasks";
+void unsafeTask;
+`,
+    "src/lib/tasks.ts": `/*
+import "server-only";
+*/
+export function unsafeTask() {
+  return supabase.from("tasks").insert({ title: "client-reachable mutation" });
+}
+`,
+  });
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /client-side-supabase-mutation/);
+});
+
+test("gate does not allow conflicting client and server module directives", () => {
+  const result = runFixture({
+    "src/components/Example.tsx": `"use client";
+"use server";
+export function unsafeTask() {
+  return supabase.from("tasks").insert({ title: "client mutation" });
+}
+`,
+  });
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /client-side-supabase-mutation/);
+});

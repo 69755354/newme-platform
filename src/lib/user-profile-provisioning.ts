@@ -32,20 +32,20 @@ export async function finalizeTriggerCreatedUserProfile(
     .select("id")
     .maybeSingle();
 
-  if (!profileError && profile?.id === userId) {
-    return { ok: true, cleanupVerified: true };
+  if (profileError || profile?.id !== userId) {
+    if (profileError) {
+      console.error("[user-profile-provisioning] profile finalization failed:", profileError.message);
+    } else {
+      console.error("[user-profile-provisioning] profile finalization matched no user");
+    }
+
+    const { error: cleanupError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    if (cleanupError) {
+      console.error("[user-profile-provisioning] auth rollback failed:", cleanupError.message);
+    }
+
+    return { ok: false, cleanupVerified: !cleanupError };
   }
 
-  if (profileError) {
-    console.error("[user-profile-provisioning] profile finalization failed:", profileError.message);
-  } else {
-    console.error("[user-profile-provisioning] profile finalization matched no user");
-  }
-
-  const { error: cleanupError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-  if (cleanupError) {
-    console.error("[user-profile-provisioning] auth rollback failed:", cleanupError.message);
-  }
-
-  return { ok: false, cleanupVerified: !cleanupError };
+  return { ok: true, cleanupVerified: true };
 }

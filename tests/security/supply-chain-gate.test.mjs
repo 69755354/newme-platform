@@ -89,6 +89,8 @@ async function makeGateFixture(dir, auditPayload, acceptPayload) {
   await cp(GATE, path.join(dir, "scripts/check-supply-chain.sh"));
   await cp(XREF, path.join(dir, "scripts/_supply_chain_xref.py"));
   await writeFile(path.join(dir, "package.json"), JSON.stringify({
+    packageManager: "npm@10.0.0",
+    engines: { node: process.versions.node, npm: "10.0.0" },
     dependencies: { next: "16.2.12", react: "19.2.4", "react-dom": "19.2.4" },
   }));
   await writeFile(path.join(dir, "package-lock.json"), "{}\n");
@@ -206,6 +208,10 @@ test("repository and CI use one Node major and exact critical dependency version
   const major = (await nvmrc).trim();
 
   assert.match(await workflow, new RegExp(`node-version: ['\"]${major}['\"]`));
+  assert.equal(packageJson.engines.node, major);
+  const npmVersion = packageJson.packageManager?.match(/^npm@(\d+\.\d+\.\d+)$/)?.[1];
+  assert.ok(npmVersion, "packageManager must pin an exact npm version");
+  assert.equal(packageJson.engines.npm, npmVersion);
   for (const name of ["next", "react", "react-dom"]) {
     assert.match(packageJson.dependencies[name], /^\d+\.\d+\.\d+$/);
   }

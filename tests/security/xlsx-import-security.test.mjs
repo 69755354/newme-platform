@@ -12,6 +12,7 @@ const require = createRequire(import.meta.url);
 const XLSX = require("xlsx");
 const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 const SHEETJS_CDN = "https://cdn.sheetjs.com/xlsx-0.20.2/xlsx-0.20.2.tgz";
+const SHEETJS_INTEGRITY = "sha512-+nKZ39+nvK7Qq6i0PvWWRA4j/EkfWOtkP/YhMtupm+lJIiHxUrgTr1CcKv1nBk1rHtkRRQ3O2+Ih/q/sA+FXZA==";
 
 test("production xlsx dependency is pinned to the patched official release", async () => {
   const packageJson = JSON.parse(await read("package.json"));
@@ -22,6 +23,8 @@ test("production xlsx dependency is pinned to the patched official release", asy
   assert.equal(packageJson.dependencies.xlsx, SHEETJS_CDN);
   assert.equal(lockedXlsx.version, "0.20.2");
   assert.equal(lockedXlsx.resolved, SHEETJS_CDN);
+  assert.equal(lockedXlsx.integrity, SHEETJS_INTEGRITY);
+  assert.equal(pnpmLock.includes(`integrity: ${SHEETJS_INTEGRITY}`), true);
   assert.equal(
     pnpmLock.includes(`xlsx@${SHEETJS_CDN}`),
     true,

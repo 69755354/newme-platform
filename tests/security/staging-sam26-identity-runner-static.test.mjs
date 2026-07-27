@@ -13,10 +13,11 @@ const cleanup = source('../../scripts/cleanup-staging-sam26-identities.mjs');
 
 const roles = ['boss', 'admin', 'operator', 'sales', 'finance', 'designer'];
 
-test('SAM-26 identity runners are hard-pinned to the approved staging project', () => {
-  for (const code of [library, runner, cleanup]) {
-    assert.match(code, /bfsiibofuzoglziltgyd/);
-  }
+test('SAM-26 entries delegate to the shared hard-pinned staging implementation', () => {
+  assert.match(runner, /from '\.\/lib\/staging-sam26-fixture-identity\.mjs'/);
+  assert.match(cleanup, /from '\.\/lib\/staging-sam26-fixture-identity\.mjs'/);
+
+  assert.match(library, /bfsiibofuzoglziltgyd/);
   assert.match(library, /NEWME_STAGING_SUPABASE_REF/);
   assert.match(library, /NEXT_PUBLIC_SUPABASE_URL/);
   assert.match(library, /STAGING_DATABASE_URL/);

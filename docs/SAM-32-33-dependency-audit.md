@@ -58,38 +58,41 @@
 | 版本 | 8.4.31（next 16.2.12 内嵌；社区版需 8.5.18+） |
 | 直接依赖 | ❌（next 内嵌副本，不可独立升级） |
 | 修复版本 | postcss 8.5.18+ / next 16.3.0+ |
-| 运行时路径 | Next.js SSR/SSG CSS 处理管线；每次页面渲染时处理 Tailwind CSS |
+| 运行时路径 | Next.js 构建阶段的 CSS 处理管线；运行时提供已编译的静态 CSS |
 
 **可利用性: 低**
 - GHSA-qx2v: XSS via `</style>` — 需要攻击者控制 CSS 输入。我们的 CSS 全部来自源码（Tailwind），非用户提交。
 - GHSA-6g55 / GHSA-r28c: Arbitrary file read/path traversal via `sourceMappingURL` — 需要攻击者向 CSS 注释注入恶意 source map URL。CSS 由 Tailwind 编译生成，无用户输入路径。
 
 **处理**: 缓解而非修复。
-1. **WAF 层**: CSP `style-src 'self' 'unsafe-inline'` 阻止外部样式注入
-2. **部署模型**: CSS 在构建时编译为静态文件（`.next/static/css/*.css`），运行时无动态 CSS 生成
-3. **升级路径**: next 16.3.0+ 将内嵌 postcss 升级到安全版本。待 16.3 稳定后升级。
+1. **输入边界**: 应用不接收用户 CSS、source map 或 `sourceMappingURL`
+2. **部署模型**: CSS 在构建时编译为静态文件（`.next/static/css/*.css`），运行时无动态 PostCSS 输入
+3. **自动门禁**: 测试持续禁止应用代码直接引入 PostCSS 运行时处理路径
+4. **升级路径**: next 16.3.0+ 将内嵌 postcss 升级到安全版本。待 16.3 稳定后升级。
 
 ### 2.4 sharp (in next) — libvips CVEs (HIGH)
 
 | 属性 | 值 |
 |------|-----|
 | CVE | GHSA-f88m-g3jw-g9cj |
-| CWE | — |
-| CVSS | — |
-| 版本 | 0.34.5（next 16.2.12 内嵌；需 0.35.0+） |
-| 直接依赖 | ❌（next 内嵌副本，不可独立升级） |
+| CWE | CWE-1395 |
+| CVSS | 0.0（上游记录） |
+| 版本 | 0.34.5（next 16.2.12 传递依赖；需 0.35.0+） |
+| 直接依赖 | ❌（由 next 带入） |
 | 修复版本 | sharp 0.35.0+ / next 16.3.0+ |
-| 运行时路径 | Next.js Image Optimization API (`next/image`)；用户上传图片时触发 sharp 处理 |
+| 潜在运行时路径 | Next.js Image Optimization API（`next/image`） |
 
-**可利用性: 低-中**
-- libvips 继承漏洞包括 CVE-2026-33327/33328/35590/35591，涉及图像解析中的内存安全问题
-- 触发条件：next/image 处理用户上传的恶意构造图片
-- 我们的 CRM 中 `next/image` 使用场景有限（头像、logo），且图片来源受控
+**当前可利用性: 无已发现的可达路径**
+- `src/` 没有导入 `next/image`，也没有使用 Next Image 组件。
+- `next.config.ts` 没有 `images`、`remotePatterns` 或远程图片域名配置。
+- 合同文件使用预签名 URL 直接上传 COS，不进入 Next Image Optimization 或 sharp。
+- 自动测试持续验证以上边界；如未来引入 `next/image` 或图片优化配置，门禁将失败并要求重新审查该豁免。
 
-**处理**: 缓解而非修复。
-1. **输入限制**: 上传接口限制文件类型（仅 JPEG/PNG/WebP）、文件大小（<5MB）
-2. **独立服务**: 考虑将图片处理移至独立 CDN/服务（如 Cloudflare Images），减少 next/image 的攻击面
-3. **升级路径**: next 16.3.0+ 将内嵌 sharp 升级到 0.35.0+
+**处理**: 有条件、限期豁免。
+1. **可达性门禁**: 禁止未复审即引入 `next/image` 或 `images` 配置
+2. **上传隔离**: 业务文件继续直传 COS，不交给应用服务器图像解析
+3. **升级路径**: next 16.3.0+ 将传递 sharp 升级到 0.35.0+
+
 
 ---
 
@@ -136,6 +139,6 @@
 | 5 | @hono/node-server | MODERATE | ⬜ 缓解 | Windows only, Linux 不受影响 |
 | 6 | @modelcontextprotocol/sdk | MODERATE | ⬜ 缓解 | 继承 hono，同上 |
 | 7 | postcss (via next) | HIGH | ⬜ 缓解 | 构建时 CSS，无用户输入路径。next 16.3 修复 |
-| 8 | sharp (via next) | HIGH | ⬜ 缓解 | 图片优化，受控输入。next 16.3 修复 |
+| 8 | sharp (via next) | HIGH | ⬜ 限期豁免 | 当前无 `next/image`/Image Optimization 可达路径，自动测试防回归；next 16.3 修复 |
 
 **残余 4 项均有可验证缓解，无不接受风险。**

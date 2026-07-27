@@ -1,6 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { validateXlsxImportLimits } from "@/lib/xlsx-import-limits.mjs";
 
 // ─── Column mapping ───
 // Excel header text → snake_case field name
@@ -141,6 +142,11 @@ export async function POST(request: NextRequest) {
 
     if (!Array.isArray(rawRows) || rawRows.length === 0) {
       return NextResponse.json({ error: "No rows provided" }, { status: 400 });
+    }
+    try {
+      validateXlsxImportLimits({ rowCount: rawRows.length });
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 413 });
     }
 
     const previews: PreviewRow[] = [];

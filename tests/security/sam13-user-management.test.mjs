@@ -56,3 +56,11 @@ test("SAM-13 removes temporary scripts with embedded production account operatio
     assert.equal(existsSync(path), false, `${path} must not remain in the repository`);
   }
 });
+
+test("SAM-13 secret gate rejects a tracked file missing from the worktree", () => {
+  const gate = read("scripts/check-e2e-secrets.mjs");
+
+  assert.match(gate, /tracked file missing from working tree/);
+  assert.doesNotMatch(gate, /if \(!existsSync\(filePath\)\) continue;/);
+});
+

@@ -139,21 +139,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Insert into public.profiles
+    // 2. Update the profile created by the auth.users trigger
     const { error: profileError } = await supabaseAdmin
       .from("profiles")
-      .insert({
-        id: authData.user.id,
+      .update({
         email,
         full_name,
         role,
         phone: phone || null,
         is_active: true,
         force_password_change: true, // Force password change on first login
-      });
+      })
+      .eq("id", authData.user.id);
 
     if (profileError) {
-      // Attempt cleanup: delete the auth user if profile insert fails
+      // Attempt cleanup: delete the auth user if profile update fails
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
       return NextResponse.json(
         { error: "Failed to create profile" },

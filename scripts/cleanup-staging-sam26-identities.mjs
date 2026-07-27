@@ -14,22 +14,18 @@ const cleanupPath = fileURLToPath(new URL('./cleanup-staging-sam26-fixtures.sql'
 const zeroCounts = { leads: 0, activities: 0, tasks: 0, business_events: 0, notifications: 0 };
 
 async function main() {
-  const { admin, database } = await openStagingClients();
-  try {
-    const fixtures = await listFixtureUsers(admin);
-    const identityIds = [...fixtures.values()].map((user) => user.id);
+  const { admin, psqlEnv } = await openStagingClients();
+  const fixtures = await listFixtureUsers(admin);
+  const identityIds = [...fixtures.values()].map((user) => user.id);
 
-    // Identity cleanup is prohibited until the independently marker-guarded
-    // core-fixture cleanup has completed and its counts are exactly zero.
-    await runFixtureSql(database, cleanupPath);
-    assertCounts(await fixtureCounts(database), zeroCounts);
-    await assertFixtureProfilesDeleted(database, identityIds);
-    await deleteFixtureIdentities(admin);
+  // Identity cleanup is prohibited until independently marker-guarded core
+  // cleanup has completed and its fixed fixture counts are exactly zero.
+  runFixtureSql(psqlEnv, cleanupPath);
+  assertCounts(await fixtureCounts(admin), zeroCounts);
+  await deleteFixtureIdentities(admin);
+  await assertFixtureProfilesDeleted(admin, identityIds);
 
-    console.log('SAM-26 staging fixture cleanup completed with verified zero counts.');
-  } finally {
-    await database.end();
-  }
+  console.log('SAM-26 staging fixture cleanup completed with verified zero counts.');
 }
 
 main().catch((error) => {

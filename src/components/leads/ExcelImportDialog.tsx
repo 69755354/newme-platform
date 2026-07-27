@@ -142,8 +142,8 @@ export default function ExcelImportDialog({ open, onOpenChange, onImported }: Pr
     }
     try {
       validateXlsxImportLimits({ fileBytes: file.size });
-    } catch (e: any) {
-      setError(e?.message || t("leads.importError"));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : t("leads.importError"));
       return;
     }
     setError(null);

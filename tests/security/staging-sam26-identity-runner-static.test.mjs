@@ -16,12 +16,14 @@ const roles = ['boss', 'admin', 'operator', 'sales', 'finance', 'designer'];
 test('SAM-26 entries delegate to the shared hard-pinned staging implementation', () => {
   assert.match(runner, /from '\.\/lib\/staging-sam26-fixture-identity\.mjs'/);
   assert.match(cleanup, /from '\.\/lib\/staging-sam26-fixture-identity\.mjs'/);
-
   assert.match(library, /bfsiibofuzoglziltgyd/);
-  assert.match(library, /NEWME_STAGING_SUPABASE_REF/);
+  assert.match(library, /NEWME_STAGING_PROJECT_REF/);
+  assert.match(library, /SUPABASE_PROJECT_REF/);
   assert.match(library, /NEXT_PUBLIC_SUPABASE_URL/);
-  assert.match(library, /STAGING_DATABASE_URL/);
+  assert.match(library, /SUPABASE_DB_PASSWORD/);
   assert.match(library, /SAM26_FAIL_CLOSED/);
+  assert.match(library, /spawnSync\('psql'/);
+  assert.doesNotMatch(library, /import\('pg'\)/);
 });
 
 test('SAM-26 identity creation has double app-metadata markers and never logs credentials', () => {
@@ -42,15 +44,15 @@ test('SAM-26 identity creation has double app-metadata markers and never logs cr
 test('SAM-26 runner verifies trigger-backed profiles then proves seed idempotency', () => {
   assert.match(library, /auth-user creation did not produce a profile through the expected trigger/);
   assert.match(library, /profile-trigger verification failed/);
-  assert.equal((runner.match(/await runFixtureSql\(database, seedPath\)/g) || []).length, 2);
+  assert.equal((runner.match(/runFixtureSql\(psqlEnv, seedPath\)/g) || []).length, 2);
   assert.match(runner, /leads: 6, activities: 2, tasks: 2, business_events: 2, notifications: 6/);
 });
 
-test('SAM-26 cleanup removes core fixtures before identities and fails on references', () => {
-  const coreCleanupIndex = cleanup.indexOf('await runFixtureSql(database, cleanupPath)');
+test('SAM-26 cleanup removes core fixtures before marked identities then verifies profile cascade', () => {
+  const coreCleanupIndex = cleanup.indexOf('runFixtureSql(psqlEnv, cleanupPath)');
   const identityCleanupIndex = cleanup.indexOf('await deleteFixtureIdentities(admin)');
-  assert.ok(coreCleanupIndex >= 0 && identityCleanupIndex > coreCleanupIndex);
-  assert.match(cleanup, /assertFixtureProfilesDeleted/);
-  assert.match(library, /fixture identities still have public foreign-key references/);
+  const profileCascadeIndex = cleanup.indexOf('await assertFixtureProfilesDeleted(admin, identityIds)');
+  assert.ok(coreCleanupIndex >= 0 && identityCleanupIndex > coreCleanupIndex && profileCascadeIndex > identityCleanupIndex);
+  assert.match(cleanup, /assertCounts\(await fixtureCounts\(admin\), zeroCounts\)/);
   assert.doesNotMatch(cleanup, /\bTRUNCATE\b/i);
 });

@@ -112,3 +112,21 @@ export function createTaskRecord() {
   });
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
+
+test("gate does not treat an inline use server directive as a module boundary", () => {
+  const result = runFixture({
+    "src/components/Example.tsx": `"use client";
+import { unsafeTask } from "@/lib/tasks";
+void unsafeTask;
+`,
+    "src/lib/tasks.ts": `export async function serverAction() {
+  "use server";
+}
+export function unsafeTask() {
+  return supabase.from("tasks").insert({ title: "client-reachable mutation" });
+}
+`,
+  });
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /client-side-supabase-mutation/);
+});

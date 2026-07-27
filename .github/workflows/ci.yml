@@ -1,6 +1,9 @@
 name: ci
 
 on:
+  pull_request:
+    branches:
+      - agent/saas-staging-isolation
   workflow_dispatch:
     inputs:
       validation_level:

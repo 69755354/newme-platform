@@ -118,6 +118,9 @@ export function useAuthRedirect() {
     if (role === "finance" && pathname === "/dashboard") {
       router.replace("/payments");
     }
+    if (role === "designer" && pathname === "/dashboard") {
+      router.replace("/access-not-configured");
+    }
   }, [role, pathname, router]);
 
   const handleLogout = async () => {

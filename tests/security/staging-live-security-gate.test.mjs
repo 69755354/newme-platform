@@ -66,6 +66,7 @@ const writeCurl = async (directory) => {
     esac
   done
   [ -n "$output" ]
+  cat >/dev/null
   local body="\${FAKE_CURL_BODY-}"
   [ -n "$body" ] || body='{}'
   printf '%s' "$body" > "$output"

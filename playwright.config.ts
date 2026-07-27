@@ -7,6 +7,15 @@ if (parsedBaseURL.hostname === 'app.newme.ae' && process.env.E2E_ALLOW_PRODUCTIO
   throw new Error('Refusing to run E2E against production without E2E_ALLOW_PRODUCTION=1');
 }
 
+if (process.env.E2E_STAGING_ONLY === '1') {
+  if (parsedBaseURL.hostname !== 'staging.newme.ae') {
+    throw new Error('Staging authenticated E2E requires https://staging.newme.ae');
+  }
+  if (!/^[0-9a-f]{40}$/i.test(process.env.E2E_EXPECTED_SHA ?? '')) {
+    throw new Error('Staging authenticated E2E requires E2E_EXPECTED_SHA');
+  }
+}
+
 if (process.env.CI && !process.env.E2E_BASE_URL) {
   throw new Error('CI E2E requires an explicit E2E_BASE_URL');
 }

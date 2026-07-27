@@ -223,7 +223,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
           if (!res.ok) {
             profileErr = new Error(`profiles_rest_${res.status}`);
           } else {
-            const profiles = await res.json();
+            const profiles = await withAuthTimeout(res.json());
             profile = Array.isArray(profiles) && profiles.length > 0
               ? profiles[0]
               : null;

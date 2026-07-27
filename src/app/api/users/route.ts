@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { finalizeTriggerCreatedUserProfile } from "@/lib/user-profile-provisioning";
 
 // ─── Auth check ───
 async function checkRole(request: NextRequest): Promise<NextResponse | string> {
@@ -139,22 +140,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Update the profile created by the auth.users trigger
-    const { error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .update({
-        email,
-        full_name,
-        role,
-        phone: phone || null,
-        is_active: true,
-        force_password_change: true, // Force password change on first login
-      })
-      .eq("id", authData.user.id);
+    const profileResult = await finalizeTriggerCreatedUserProfile(authData.user.id, {
+      email,
+      fullName: full_name,
+      role,
+      phone,
+    });
 
-    if (profileError) {
-      // Attempt cleanup: delete the auth user if profile update fails
-      await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+    if (!profileResult.ok) {
       return NextResponse.json(
         { error: "Failed to create profile" },
         { status: 500 },

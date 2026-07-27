@@ -162,6 +162,18 @@ else
     fail ".nvmrc 不存在"
 fi
 
+EXPECTED_PACKAGE_MANAGER=$(node -e "const p=require('./package.json'); process.stdout.write(p.packageManager || '')")
+if [[ ! "$EXPECTED_PACKAGE_MANAGER" =~ ^npm@([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+    fail "packageManager 必须精确锁定为 npm@x.y.z"
+else
+    NPM_EXPECTED="${BASH_REMATCH[1]}"
+    NPM_ACTUAL=$(npm --version)
+    if [[ "$NPM_ACTUAL" == "$NPM_EXPECTED" ]]; then
+        report "npm $NPM_ACTUAL 匹配 packageManager"
+    else
+        fail "npm 版本不匹配: 实际 $NPM_ACTUAL, packageManager 要求 $NPM_EXPECTED"
+    fi
+fi
 # ─── 结果 ──────────────────────────────────────────────────────
 echo ""
 echo "──────────────────────────────────────────"

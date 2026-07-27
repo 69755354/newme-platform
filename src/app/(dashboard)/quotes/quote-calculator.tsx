@@ -149,7 +149,7 @@ notes: `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.cal
 
   const handleExport = () => {
     if (!savedQuoteId) { toast.error(t("quotes.saveFirst")); return; }
-    window.open(`/api/quotations/export?quote_id=${savedQuoteId}`, "_blank");
+    window.open(`/api/quotations/export?id=${savedQuoteId}`, "_blank");
   };
 
   const handleSend = () => {

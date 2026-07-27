@@ -106,15 +106,15 @@ export async function POST(request: NextRequest) {
     let body: unknown;
     try {
       body = await readXlsxImportJson(request);
-    } catch (err: any) {
+    } catch (err: unknown) {
       return NextResponse.json(
-        { error: err.message },
+        { error: err instanceof Error ? err.message : "Invalid import request" },
         { status: err instanceof RangeError ? 413 : 400 },
       );
     }
     const allRows: any[] =
       body && typeof body === "object" && !Array.isArray(body)
-        ? (body as { rows?: any[] }).rows || []
+        ? (body as { rows?: unknown[] }).rows || []
         : [];
 
     if (!Array.isArray(allRows) || allRows.length === 0) {
@@ -122,8 +122,8 @@ export async function POST(request: NextRequest) {
     }
     try {
       validateXlsxImportLimits({ rowCount: allRows.length });
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 413 });
+    } catch (err: unknown) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : "Import limit exceeded" }, { status: 413 });
     }
 
     const importBatchId = crypto.randomUUID();

@@ -92,6 +92,10 @@ function isBrowserRoot(file, text) {
     name.includes("/shared/hooks/")
   );
 }
+function hasServerOnlyBoundary(text) {
+  return /(?:^|\r?\n)\s*import\s+["']server-only["']\s*;?/.test(text) ||
+    text.split(/\r?\n/, 8).some((line) => /^\s*["']use server["']\s*;?\s*$/.test(line));
+}
 function isServerOnlyPath(name) {
   return name.startsWith("src/app/api/") ||
     name.startsWith("src/app/actions/") ||
@@ -120,6 +124,7 @@ for (const file of fileList) {
 while (queue.length) {
   const file = queue.shift();
   for (const dependency of importsOf(file, contents.get(file), fileSet)) {
+    if (hasServerOnlyBoundary(contents.get(dependency))) continue;
     if (!browserReachable.has(dependency)) {
       browserReachable.add(dependency);
       queue.push(dependency);

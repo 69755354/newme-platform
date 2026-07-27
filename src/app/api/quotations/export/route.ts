@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import { buildCsv, sanitizeDownloadFilenamePart } from "@/lib/csv-export.mjs";
 
 /**
  * GET /api/quotations/export?id=<quote_id>
@@ -20,22 +21,6 @@ function getSupabaseAdmin() {
   return createClient(url, key);
 }
 
-/** Escape a CSV field value */
-function csvEscape(val: unknown): string {
-  const str = val == null ? "" : String(val);
-  // If contains comma, quote, or newline — wrap in double quotes
-  if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
-
-/** Build CSV content from a 2D array of rows */
-function buildCsv(rows: string[][]): string {
-  // BOM for Excel compatibility with Arabic/Chinese
-  return "\uFEFF" + rows.map((row) => row.map(csvEscape).join(",")).join("\n");
-}
-
 export async function GET(request: NextRequest) {
   const request_id = genReqId();
   try {
@@ -48,7 +33,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const quoteId = searchParams.get("id");
+    const quoteId = searchParams.get("id") ?? searchParams.get("quote_id");
 
     if (!quoteId) {
       return NextResponse.json(
@@ -148,7 +133,8 @@ export async function GET(request: NextRequest) {
     }
 
     const csvContent = buildCsv(rows);
-    const filename = `quotation_${quote.quote_no || quoteId}.csv`;
+    const filenamePart = sanitizeDownloadFilenamePart(quote.quote_no || quoteId);
+    const filename = `quotation_${filenamePart}.csv`;
 
     return new NextResponse(csvContent, {
       status: 200,

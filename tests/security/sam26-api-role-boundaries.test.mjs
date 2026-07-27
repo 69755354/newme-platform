@@ -63,10 +63,11 @@ test("aggregate APIs never treat an unknown non-sales role as management", async
   });
 });
 
-test("sidebar and proxy keep sales navigation limited to sales", async () => {
-  const [layout, sidebar, proxy] = await Promise.all([
+test("sidebar, default landing, and proxy keep sales navigation limited to sales", async () => {
+  const [layout, sidebar, authRedirect, proxy] = await Promise.all([
     read("src/app/(dashboard)/layout.tsx"),
     read("src/components/dashboard/DashboardSidebar.tsx"),
+    read("src/hooks/useAuthRedirect.ts"),
     read("src/proxy.ts"),
   ]);
 
@@ -76,6 +77,11 @@ test("sidebar and proxy keep sales navigation limited to sales", async () => {
   );
   assert.match(layout, /role === "finance"[\s\S]*t\("team\.roleFinance"\)/);
   assert.match(layout, /role === "designer"[\s\S]*t\("team\.roleDesigner"\)/);
+  assert.match(
+    authRedirect,
+    /if \(role === "sales" && pathname === "\/dashboard"\) \{\s*router\.replace\("\/workbench"\);/,
+  );
+  assert.doesNotMatch(authRedirect, /if \(!isMgmt && pathname === "\/dashboard"\)/);
   assert.match(
     proxy,
     /"\/pipeline": \["admin", "boss", "operator", "sales"\]/,

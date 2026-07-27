@@ -89,82 +89,64 @@ AUDIT_TMP=$(mktemp)
 AUDIT_RC=0
 npm audit --json > "$AUDIT_TMP" 2>/dev/null || AUDIT_RC=$?
 
-if [[ "$AUDIT_RC" -ne 0 ]] && [[ ! -s "$AUDIT_TMP" ]]; then
-    fail "npm audit 执行失败 (exit=$AUDIT_RC) — 可能网络不通或 registry 不可达"
-    rm -f "$AUDIT_TMP"
-fi
+if [[ ! -s "$AUDIT_TMP" ]]; then
+    fail "npm audit 未返回可审计数据 (exit=$AUDIT_RC) — registry 或网络不可用"
+else
+    AUDIT_SUMMARY_RC=0
+    AUDIT_SUMMARY=$(python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+vulns = d.get('vulnerabilities')
+metadata = d.get('metadata')
+counts = metadata.get('vulnerabilities') if isinstance(metadata, dict) else None
+if not isinstance(vulns, dict) or not isinstance(counts, dict):
+    raise ValueError('npm audit response is missing vulnerability data')
+high = {k:v for k,v in vulns.items() if isinstance(v, dict) and v.get('severity') in ('high', 'critical')}
+print('TOTAL_HIGH=' + str(len(high)))
+" "$AUDIT_TMP" 2>/dev/null) || AUDIT_SUMMARY_RC=$?
 
-if [[ -s "$AUDIT_TMP" ]]; then
-    # Parse audit output
-    AUDIT_PARSE_OK=true
-    HIGH_TOTAL=0
-    HIGH_ACCEPTED=0
-
-    # Check if JSON is valid
-    if ! python3 -c "import json; json.load(open('$AUDIT_TMP'))" 2>/dev/null; then
-        fail "npm audit 返回非 JSON — 解析失败"
-        rm -f "$AUDIT_TMP"
+    if [[ "$AUDIT_SUMMARY_RC" -ne 0 ]]; then
+        fail "npm audit 返回无效或不完整 JSON — 拒绝按零漏洞处理"
     else
-        # Count ALL HIGH/CRITICAL vulns
-        ALL_HIGH=$(python3 -c "
-import json
-d = json.load(open('$AUDIT_TMP'))
-vulns = d.get('vulnerabilities', {})
-high = {k:v for k,v in vulns.items() if v.get('severity') in ('high','critical')}
-for name, v in sorted(high.items()):
-    via_str = []
-    for x in v.get('via',[]):
-        if isinstance(x, dict):
-            via_str.append(f'{x.get(\"title\",\"?\")[:60]}')
-        else:
-            via_str.append(str(x))
-    is_direct = 'DIRECT' if v.get('isDirect') else 'transitive'
-    print(f'  [{v[\"severity\"].upper():8s}] [{is_direct:10s}] {name}: {\" | \".join(via_str[:2])}')
-print(f'TOTAL_HIGH={len(high)}')
-" 2>/dev/null)
-
-        HIGH_COUNT=$(echo "$ALL_HIGH" | grep 'TOTAL_HIGH=' | cut -d= -f2 || echo "0")
-        echo "$ALL_HIGH" | { grep -v 'TOTAL_HIGH=' || true; }
-
-        # Load accept list if --accept-known
-        ACCEPT_LIST=""
-        ACCEPT_FILE="$ROOT/.supply-chain-accept.json"
-        if [[ -n "$ACCEPT_KNOWN" ]] && [[ -f "$ACCEPT_FILE" ]]; then
-            ACCEPT_COUNT=$(python3 -c "
-import json
-d = json.load(open('$ACCEPT_FILE'))
-print(len(d.get('accepted',[])))
-" 2>/dev/null || echo "0")
-            report "已知豁免清单加载: ${ACCEPT_COUNT} 项"
-        fi
-
-        if [[ "$HIGH_COUNT" -gt 0 ]]; then
-            if [[ -n "$ACCEPT_KNOWN" ]] && [[ -f "$ACCEPT_FILE" ]]; then
-                UNACCEPTED=$(python3 "$ROOT/scripts/_supply_chain_xref.py" "$AUDIT_TMP" "$ACCEPT_FILE" 2>&1) || {
-                    fail "供应链交叉引用脚本执行失败"
-                    rm -f "$AUDIT_TMP"
-                }
-                UNACCEPTED_COUNT=$(echo "$UNACCEPTED" | grep 'COUNT=' | cut -d= -f2 || echo "0")
-                echo "$UNACCEPTED" | { grep -v 'COUNT=' || true; }
-                ACCEPTED_COUNT=$((HIGH_COUNT - UNACCEPTED_COUNT))
-                if [[ "$ACCEPTED_COUNT" -gt 0 ]]; then
-                    warn "${ACCEPTED_COUNT} 个高危漏洞已文档化豁免"
-                fi
-                if [[ "$UNACCEPTED_COUNT" -gt 0 ]]; then
-                    fail "${UNACCEPTED_COUNT} 个未豁免 HIGH/CRITICAL 漏洞"
-                else
-                    report "全部 ${HIGH_COUNT} 个高危漏洞已处理（${ACCEPTED_COUNT} 豁免）"
-                fi
+        HIGH_COUNT=$(echo "$AUDIT_SUMMARY" | grep '^TOTAL_HIGH=' | cut -d= -f2 || true)
+        if [[ ! "$HIGH_COUNT" =~ ^[0-9]+$ ]]; then
+            fail "npm audit 高危计数无效"
+        elif [[ -n "$ACCEPT_KNOWN" ]]; then
+            ACCEPT_FILE="$ROOT/.supply-chain-accept.json"
+            if [[ ! -f "$ACCEPT_FILE" ]]; then
+                fail "--accept-known 已启用但豁免清单不存在"
             else
-                fail "${HIGH_COUNT} 个 HIGH/CRITICAL 漏洞（使用 --accept-known 或设置 ACCEPT_KNOWN=1 以应用豁免清单）"
+                XREF_OUTPUT=""
+                XREF_RC=0
+                XREF_OUTPUT=$(python3 "$ROOT/scripts/_supply_chain_xref.py" "$AUDIT_TMP" "$ACCEPT_FILE" 2>&1) || XREF_RC=$?
+                echo "$XREF_OUTPUT" | { grep -v '^COUNT=' || true; }
+                if [[ "$XREF_RC" -ne 0 ]]; then
+                    fail "供应链豁免清单或交叉引用无效"
+                else
+                    UNACCEPTED_COUNT=$(echo "$XREF_OUTPUT" | grep '^COUNT=' | cut -d= -f2 || true)
+                    if [[ ! "$UNACCEPTED_COUNT" =~ ^[0-9]+$ ]] || [[ "$UNACCEPTED_COUNT" -gt "$HIGH_COUNT" ]]; then
+                        fail "供应链交叉引用计数无效"
+                    else
+                        ACCEPTED_COUNT=$((HIGH_COUNT - UNACCEPTED_COUNT))
+                        if [[ "$ACCEPTED_COUNT" -gt 0 ]]; then
+                            warn "$ACCEPTED_COUNT 个高危漏洞已按精确 advisory 和有效期文档化豁免"
+                        fi
+                        if [[ "$UNACCEPTED_COUNT" -gt 0 ]]; then
+                            fail "$UNACCEPTED_COUNT 个未豁免 HIGH/CRITICAL 漏洞"
+                        else
+                            report "全部 $HIGH_COUNT 个高危漏洞已处理（$ACCEPTED_COUNT 豁免）"
+                        fi
+                    fi
+                fi
             fi
+        elif [[ "$HIGH_COUNT" -gt 0 ]]; then
+            fail "$HIGH_COUNT 个 HIGH/CRITICAL 漏洞（未启用经过审查的豁免清单）"
         else
             report "无 HIGH/CRITICAL 漏洞"
         fi
     fi
-    rm -f "$AUDIT_TMP"
 fi
-
+rm -f "$AUDIT_TMP"
 # ─── 5. Node 版本校验 ──────────────────────────────────────────
 echo ""
 echo "=== 5. Node 版本 ==="
@@ -180,6 +162,18 @@ else
     fail ".nvmrc 不存在"
 fi
 
+EXPECTED_PACKAGE_MANAGER=$(node -e "const p=require('./package.json'); process.stdout.write(p.packageManager || '')")
+if [[ ! "$EXPECTED_PACKAGE_MANAGER" =~ ^npm@([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+    fail "packageManager 必须精确锁定为 npm@x.y.z"
+else
+    NPM_EXPECTED="${BASH_REMATCH[1]}"
+    NPM_ACTUAL=$(npm --version)
+    if [[ "$NPM_ACTUAL" == "$NPM_EXPECTED" ]]; then
+        report "npm $NPM_ACTUAL 匹配 packageManager"
+    else
+        fail "npm 版本不匹配: 实际 $NPM_ACTUAL, packageManager 要求 $NPM_EXPECTED"
+    fi
+fi
 # ─── 结果 ──────────────────────────────────────────────────────
 echo ""
 echo "──────────────────────────────────────────"

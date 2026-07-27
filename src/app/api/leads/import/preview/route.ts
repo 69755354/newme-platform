@@ -143,15 +143,15 @@ export async function POST(request: NextRequest) {
     let body: unknown;
     try {
       body = await readXlsxImportJson(request);
-    } catch (err: any) {
+    } catch (err: unknown) {
       return NextResponse.json(
-        { error: err.message },
+        { error: err instanceof Error ? err.message : "Invalid import request" },
         { status: err instanceof RangeError ? 413 : 400 },
       );
     }
-    const rawRows: Record<string, any>[] =
+    const rawRows: Record<string, unknown>[] =
       body && typeof body === "object" && !Array.isArray(body)
-        ? (body as { rows?: Record<string, any>[] }).rows || []
+        ? (body as { rows?: Record<string, unknown>[] }).rows || []
         : [];
 
     if (!Array.isArray(rawRows) || rawRows.length === 0) {
@@ -159,8 +159,8 @@ export async function POST(request: NextRequest) {
     }
     try {
       validateXlsxImportLimits({ rowCount: rawRows.length });
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 413 });
+    } catch (err: unknown) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : "Import limit exceeded" }, { status: 413 });
     }
 
     const previews: PreviewRow[] = [];

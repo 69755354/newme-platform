@@ -110,11 +110,10 @@ export function useAuthRedirect() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Redirect sales users from /dashboard to /workbench
+  // Only sales has access to the workbench. Other roles must remain on their
+  // current route rather than being sent to its sales-only API.
   useEffect(() => {
-    if (!role) return;
-    const isMgmt = role === "admin" || role === "boss" || role === "operator";
-    if (!isMgmt && pathname === "/dashboard") {
+    if (role === "sales" && pathname === "/dashboard") {
       router.replace("/workbench");
     }
   }, [role, pathname, router]);

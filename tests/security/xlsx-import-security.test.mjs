@@ -112,5 +112,5 @@ test("client and server enforce the shared xlsx limits before work is accepted",
   assert.ok(dialog.indexOf("validateXlsxImportLimits({ fileBytes: file.size })") < dialog.indexOf("file.arrayBuffer()"));
   assert.match(dialog, /validateXlsxImportLimits\(\{ rowCount: rows\.length \}\)/);
   assert.match(preview, /validateXlsxImportLimits\(\{ rowCount: rawRows\.length \}\)/);
-  assert.match(confirm, /validateXlsxImportLimits\(\{ rowCount: rows\.length \}\)/);
+  assert.match(confirm, /validateXlsxImportLimits\(\{ rowCount: allRows\.length \}\)/);
 });

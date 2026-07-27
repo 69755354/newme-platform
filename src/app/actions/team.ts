@@ -2,6 +2,7 @@
 
 import { createServerSupabase } from '@/lib/supabase-server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { finalizeTriggerCreatedUserProfile } from '@/lib/user-profile-provisioning'
 import { resolveActiveLeadReassignmentTarget } from '@/lib/lead-reassignment.mjs'
 
 const VALID_ROLES = ['admin', 'boss', 'sales', 'designer', 'operator', 'finance']
@@ -55,21 +56,14 @@ export async function addTeamMember(data: AddTeamMemberInput) {
     throw new Error('Failed to create user')
   }
 
-  // Insert into public.profiles
-  const { error: profileError } = await supabaseAdmin
-    .from('profiles')
-    .insert({
-      id: authData.user.id,
-      email: data.email,
-      full_name: data.full_name,
-      role: data.role,
-      phone: data.phone || null,
-      is_active: true,
-      force_password_change: true,
-    })
+  const profileResult = await finalizeTriggerCreatedUserProfile(authData.user.id, {
+    email: data.email,
+    fullName: data.full_name,
+    role: data.role,
+    phone: data.phone,
+  })
 
-  if (profileError) {
-    await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+  if (!profileResult.ok) {
     throw new Error('Failed to create profile')
   }
 

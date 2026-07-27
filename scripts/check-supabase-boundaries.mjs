@@ -92,9 +92,46 @@ function isBrowserRoot(file, text) {
     name.includes("/shared/hooks/")
   );
 }
+function skipLeadingTrivia(text, start) {
+  let index = start;
+  while (index < text.length) {
+    if (/\s/.test(text[index])) {
+      index += 1;
+      continue;
+    }
+    if (text.startsWith("//", index)) {
+      const newline = text.indexOf("\n", index + 2);
+      return newline < 0 ? text.length : skipLeadingTrivia(text, newline + 1);
+    }
+    if (text.startsWith("/*", index)) {
+      const end = text.indexOf("*/", index + 2);
+      return end < 0 ? text.length : skipLeadingTrivia(text, end + 2);
+    }
+    break;
+  }
+  return index;
+}
+function hasModuleDirective(text, expected) {
+  let index = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  while (index < text.length) {
+    index = skipLeadingTrivia(text, index);
+    const quote = text[index];
+    if (quote !== '"' && quote !== "'") return false;
+    const end = text.indexOf(quote, index + 1);
+    if (end < 0) return false;
+    const value = text.slice(index + 1, end);
+    let statementEnd = end + 1;
+    while (text[statementEnd] === " " || text[statementEnd] === "\t") statementEnd += 1;
+    if (text[statementEnd] === ";") statementEnd += 1;
+    else if (statementEnd < text.length && text[statementEnd] !== "\r" && text[statementEnd] !== "\n") return false;
+    if (value === expected) return true;
+    index = statementEnd;
+  }
+  return false;
+}
 function hasServerOnlyBoundary(text) {
   return /(?:^|\r?\n)\s*import\s+["']server-only["']\s*;?/.test(text) ||
-    text.split(/\r?\n/, 8).some((line) => /^\s*["']use server["']\s*;?\s*$/.test(line));
+    hasModuleDirective(text, "use server");
 }
 function isServerOnlyPath(name) {
   return name.startsWith("src/app/api/") ||

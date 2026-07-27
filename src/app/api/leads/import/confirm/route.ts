@@ -3,7 +3,10 @@ import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { validateXlsxImportLimits } from "@/lib/xlsx-import-limits.mjs";
+import {
+  readXlsxImportJson,
+  validateXlsxImportLimits,
+} from "@/lib/xlsx-import-limits.mjs";
 
 function importFingerprint(row: Record<string, unknown>): string {
   // Includes the source row number so intentional identical rows in one workbook
@@ -100,18 +103,28 @@ export async function POST(request: NextRequest) {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const body = await request.json();
-    const rows: any[] = body.rows || [];
+    let body: unknown;
+    try {
+      body = await readXlsxImportJson(request);
+    } catch (err: any) {
+      return NextResponse.json(
+        { error: err.message },
+        { status: err instanceof RangeError ? 413 : 400 },
+      );
+    }
+    const allRows: any[] =
+      body && typeof body === "object" && !Array.isArray(body)
+        ? (body as { rows?: any[] }).rows || []
+        : [];
 
-    if (!Array.isArray(rows) || rows.length === 0) {
+    if (!Array.isArray(allRows) || allRows.length === 0) {
       return NextResponse.json({ error: "No rows provided" }, { status: 400 });
     }
     try {
-      validateXlsxImportLimits({ rowCount: rows.length });
+      validateXlsxImportLimits({ rowCount: allRows.length });
     } catch (err: any) {
       return NextResponse.json({ error: err.message }, { status: 413 });
     }
-    const allRows = rows;
 
     const importBatchId = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -264,3 +277,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

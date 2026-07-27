@@ -116,7 +116,7 @@ async function runGate({ auditPayload, acceptPayload = accepted(), acceptKnown =
       encoding: "utf8",
       env: {
         ...process.env,
-        PATH: `${path.join(dir, "fake-bin")}:${process.env.PATH}`,
+        PATH: `${path.join(dir, "fake-bin")}${path.delimiter}${process.env.PATH}`,
         FAKE_AUDIT_FILE: path.join(dir, "audit.json"),
         FAKE_AUDIT_RC: "1",
       },

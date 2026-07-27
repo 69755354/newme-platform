@@ -25,13 +25,26 @@ test("SAM-13 password reset reuses the server-only admin client", () => {
   assert.doesNotMatch(resetAction, /SUPABASE_SERVICE_ROLE_KEY/);
 });
 
-test("SAM-13 updates the profile created by the auth trigger", () => {
+test("SAM-13 uses one fail-closed finalizer for trigger-created profiles", () => {
   const usersRoute = read("src/app/api/users/route.ts");
+  const teamActions = read("src/app/actions/team.ts");
+  const finalizer = read("src/lib/user-profile-provisioning.ts");
   const createAction = usersRoute.slice(usersRoute.indexOf("export async function POST"));
+  const addTeamMember = teamActions.slice(
+    teamActions.indexOf("export async function addTeamMember"),
+    teamActions.indexOf("export async function removeTeamMember"),
+  );
 
-  assert.match(createAction, /\.from\("profiles"\)\s*\.update\(/);
-  assert.match(createAction, /\.eq\("id", authData\.user\.id\)/);
+  assert.match(createAction, /finalizeTriggerCreatedUserProfile/);
+  assert.match(addTeamMember, /finalizeTriggerCreatedUserProfile/);
   assert.doesNotMatch(createAction, /\.from\("profiles"\)\s*\.insert\(/);
+  assert.doesNotMatch(addTeamMember, /\.from\('profiles'\)\s*\.insert\(/);
+
+  assert.match(finalizer, /\.from\("profiles"\)\s*\.update\(/);
+  assert.match(finalizer, /\.eq\("id", userId\)\s*\.select\("id"\)\s*\.maybeSingle\(\)/);
+  assert.match(finalizer, /profile\?\.id !== userId/);
+  assert.match(finalizer, /deleteUser\(userId\)/);
+  assert.match(finalizer, /cleanupError/);
 });
 
 test("SAM-13 removes temporary scripts with embedded production account operations", () => {

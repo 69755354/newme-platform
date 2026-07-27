@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -162,6 +162,41 @@ test("supply-chain gate fails closed for unaccepted, malformed, or registry-erro
     auditPayload: { error: { code: "EAI_AGAIN", summary: "registry unavailable" } },
   });
   assert.notEqual(registryError.status, 0);
+});
+
+async function listCodeFiles(dir) {
+  const files = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await listCodeFiles(fullPath));
+    } else if (/\.(?:[cm]?[jt]sx?)$/.test(entry.name)) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+test("documented postcss and sharp mitigations remain unreachable at runtime", async () => {
+  const sourceFiles = await listCodeFiles(path.join(ROOT, "src"));
+  const nextImageImports = [];
+  const postcssImports = [];
+
+  for (const file of sourceFiles) {
+    const source = await readFile(file, "utf8");
+    if (/(?:from\s*|import\s*\()\s*["']next\/image["']/.test(source)) {
+      nextImageImports.push(path.relative(ROOT, file));
+    }
+    if (/(?:from\s*|import\s*\()\s*["']postcss["']/.test(source)) {
+      postcssImports.push(path.relative(ROOT, file));
+    }
+  }
+
+  assert.deepEqual(nextImageImports, [], "next/image requires a new sharp risk review");
+  assert.deepEqual(postcssImports, [], "runtime postcss requires a new input-boundary review");
+
+  const nextConfig = await readFile(path.join(ROOT, "next.config.ts"), "utf8");
+  assert.doesNotMatch(nextConfig, /\bimages\s*:/, "Next Image configuration requires a sharp risk review");
 });
 
 test("repository and CI use one Node major and exact critical dependency versions", async () => {

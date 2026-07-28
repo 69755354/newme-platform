@@ -8,6 +8,6 @@ const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 
 export function GET() {
   return NextResponse.json({
-    status: "ok",
+    status: "ok",`n    version: process.env.NEXT_PUBLIC_APP_VERSION ?? null,
   }, { headers: noStoreHeaders });
 }

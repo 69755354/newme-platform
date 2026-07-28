@@ -2,9 +2,8 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = process.cwd();
-const baselinePath = path.join(root, 'scripts/lint-baseline.json');
 const ignoreArgs = [
   '--ignore-pattern', '.next/**',
   '--ignore-pattern', '.next.backup/**',
@@ -14,25 +13,33 @@ const ignoreArgs = [
   '--ignore-pattern', 'coverage/**',
 ];
 
-function runEslintJson() {
-  const res = spawnSync('npx', ['eslint', '.', '--format', 'json', ...ignoreArgs], {
+function runEslintJson(root, run) {
+  const eslintBin = path.join(root, 'node_modules', 'eslint', 'bin', 'eslint.js');
+  const res = run(process.execPath, [eslintBin, '.', '--format', 'json', ...ignoreArgs], {
     cwd: root,
     encoding: 'utf8',
     maxBuffer: 1024 * 1024 * 80,
   });
-  if (!res.stdout.trim()) {
-    console.error(res.stderr || 'eslint produced no JSON output');
-    process.exit(res.status || 1);
+  if (res.error) {
+    throw new Error(`eslint could not start: ${res.error.message}`);
   }
-  return JSON.parse(res.stdout);
+  const stdout = res.stdout ?? '';
+  if (!stdout.trim()) {
+    throw new Error((res.stderr ?? 'eslint produced no JSON output').trim());
+  }
+  try {
+    return JSON.parse(stdout);
+  } catch (error) {
+    throw new Error(`eslint produced invalid JSON: ${error.message}`);
+  }
 }
-function rel(filePath) {
+function rel(root, filePath) {
   return path.relative(root, filePath).replaceAll(path.sep, '/');
 }
-function fingerprint(message) {
-  const normalizedRoot = root.replace(/\\\\/g, '/');
+function fingerprint(root, message) {
+  const normalizedRoot = root.replace(/\\/g, '/');
   return message
-    .replace(/\\\\/g, '/')
+    .replace(/\\/g, '/')
     .replaceAll(normalizedRoot, '<root>')
     .replace(/\/home\/runner\/work\/[^/]+\/[^/]+/g, '<root>')
     .replace(/\/workspace\/[^/]+/g, '<root>')
@@ -40,51 +47,75 @@ function fingerprint(message) {
     .replace(/'[^']*'/g, "'<value>'")
     .replace(/"[^"]*"/g, '"<value>"');
 }
-function collect(results) {
+function collect(root, results) {
   const entries = [];
   for (const file of results) {
     for (const msg of file.messages ?? []) {
       if (msg.severity !== 2) continue;
       entries.push({
-        file: rel(file.filePath),
+        file: rel(root, file.filePath),
         ruleId: msg.ruleId ?? 'unknown',
-        message: fingerprint(msg.message),
+        message: fingerprint(root, msg.message),
       });
     }
   }
   entries.sort((a, b) => `${a.file}\0${a.ruleId}\0${a.message}`.localeCompare(`${b.file}\0${b.ruleId}\0${b.message}`));
   return entries;
 }
-function counts(entries) {
+function counts(root, entries) {
   const out = new Map();
   for (const e of entries) {
-    const k = `${e.file}\0${e.ruleId}\0${fingerprint(e.message)}`;
+    const k = `${e.file}\0${e.ruleId}\0${fingerprint(root, e.message)}`;
     out.set(k, (out.get(k) ?? 0) + 1);
   }
   return out;
 }
 
-if (!fs.existsSync(baselinePath)) {
-  console.error(`Missing lint baseline: ${path.relative(root, baselinePath)}`);
-  process.exit(1);
+export function checkLintBaseline({ root = process.cwd(), run = spawnSync, log = console.log, error = console.error } = {}) {
+  const baselinePath = path.join(root, 'scripts/lint-baseline.json');
+  if (!fs.existsSync(baselinePath)) {
+    throw new Error(`Missing lint baseline: ${path.relative(root, baselinePath)}`);
+  }
+  let baseline;
+  try {
+    baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+  } catch (parseError) {
+    throw new Error(`invalid lint baseline JSON: ${parseError.message}`);
+  }
+  if (!Array.isArray(baseline.entries)) {
+    throw new Error('invalid lint baseline: entries must be an array');
+  }
+
+  const current = collect(root, runEslintJson(root, run));
+  const baseCounts = counts(root, baseline.entries);
+  const currentCounts = counts(root, current);
+  const newFindings = [];
+  for (const [key, count] of currentCounts) {
+    const base = baseCounts.get(key) ?? 0;
+    if (count > base) {
+      const [file, ruleId, message] = key.split('\0');
+      newFindings.push({ file, ruleId, message, added: count - base });
+    }
+  }
+  if (newFindings.length) {
+    error(`Lint baseline check failed: ${newFindings.reduce((n, f) => n + f.added, 0)} new error(s).`);
+    for (const finding of newFindings.slice(0, 50)) {
+      error(`NEW ${finding.file} ${finding.ruleId} x${finding.added}: ${finding.message}`);
+    }
+    return { exitCode: 1, baselineErrors: baseline.entries.length, currentErrors: current.length };
+  }
+
+  log(`Lint baseline check passed: ${current.length} current error(s), no new errors over baseline ${baseline.generated_at}.`);
+  const reduction = baseline.entries.length - current.length;
+  if (reduction > 0) log(`Lint debt reduced by ${reduction} error(s).`);
+  return { exitCode: 0, baselineErrors: baseline.entries.length, currentErrors: current.length };
 }
-const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
-const current = collect(runEslintJson());
-const baseCounts = counts(baseline.entries ?? []);
-const currentCounts = counts(current);
-const newFindings = [];
-for (const [key, count] of currentCounts) {
-  const base = baseCounts.get(key) ?? 0;
-  if (count > base) {
-    const [file, ruleId, message] = key.split('\0');
-    newFindings.push({ file, ruleId, message, added: count - base });
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    process.exitCode = checkLintBaseline().exitCode;
+  } catch (checkError) {
+    console.error(`Lint baseline check failed: ${checkError.message}`);
+    process.exitCode = 1;
   }
 }
-if (newFindings.length) {
-  console.error(`Lint baseline check failed: ${newFindings.reduce((n, f) => n + f.added, 0)} new error(s).`);
-  for (const f of newFindings.slice(0, 50)) {
-    console.error(`NEW ${f.file} ${f.ruleId} x${f.added}: ${f.message}`);
-  }
-  process.exit(1);
-}
-console.log(`Lint baseline check passed: ${current.length} current error(s), no new errors over baseline ${baseline.generated_at}.`);

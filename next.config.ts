@@ -30,6 +30,8 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 const isStandaloneBuild = process.env.NEWME_STANDALONE_BUILD === "1";
 const isLowMemoryWebpackBuild = process.env.NEWME_STAGING_LOW_MEMORY === "1";
+const shouldUploadSentrySourceMaps = process.env.SENTRY_UPLOAD_SOURCEMAPS === "1"
+  && Boolean(process.env.SENTRY_AUTH_TOKEN);
 
 // Get git hash at build time
 const gitHash = process.env.NEXT_PUBLIC_APP_VERSION ||
@@ -51,7 +53,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Content-Security-Policy",
-            value: "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.supabase.co https://*.sentry.io https://*.posthog.com; connect-src 'self' https://*.supabase.co https://*.sentry.io https://*.posthog.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data: https:; frame-src 'self' https://*.supabase.co; upgrade-insecure-requests",
+            value: "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.supabase.co https://*.sentry.io https://*.posthog.com https://eu-assets.i.posthog.com; connect-src 'self' https://*.supabase.co https://*.sentry.io https://*.posthog.com https://eu-assets.i.posthog.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data: https:; frame-src 'self' https://*.supabase.co; upgrade-insecure-requests",
           },
           { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
         ],
@@ -76,7 +78,7 @@ const nextConfig: NextConfig = {
   // Source maps handled by Sentry wrapper below
 };
 
-const configuredNext = isLowMemoryWebpackBuild ? nextConfig : withSentryConfig(nextConfig, {
+const configuredNext = isLowMemoryWebpackBuild || !shouldUploadSentrySourceMaps ? nextConfig : withSentryConfig(nextConfig, {
   org: process.env.SENTRY_ORG || "newme-o4",
   project: process.env.SENTRY_PROJECT || "javascript-nextjs",
   authToken: process.env.SENTRY_AUTH_TOKEN,

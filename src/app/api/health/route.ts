@@ -9,7 +9,5 @@ const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 export function GET() {
   return NextResponse.json({
     status: "ok",
-    service: "newme-crm",
-    version: process.env.NEXT_PUBLIC_APP_VERSION ?? "unknown",
   }, { headers: noStoreHeaders });
 }

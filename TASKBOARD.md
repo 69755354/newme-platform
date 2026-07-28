@@ -59,6 +59,9 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | SAAS-STAGING-ISOLATION | IN_PROGRESS | Codex | 2026-07-26 |
 | SAM-61 | IN_PROGRESS | Codex | 2026-07-26 |
 | SAM-13 | REVIEW | Codex | 2026-07-28 |
+| SAM-15 | REVIEW | Codex | 2026-07-28 |
+
+> `SAM-15` (2026-07-28): staging-local evidence: 23/23 focused execution tests plus taskboard, typecheck, security, lint-ratchet, and direct `npx next build` passed. Public liveness now returns only `{ status: "ok" }`; readiness authentication and bounded timeout are executed. CSP/HSTS, OAuth state replay rejection, and dynamic split-session cookies are covered. Status remains `REVIEW` pending live staging header and OAuth UAT; no production claim.
 
 > M1 发布链（Linear 为真源）：**RELEASED 2026-07-20**。发布 SHA `49bbb26` → BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6~12 全链 Done：SAM-28 业务签收（森哥 2026-07-20）+ 技术签收（机器全量验收），SAM-12 发布记录出具。SAM-26 视觉/移动端留人工不拦发布；SAM-45/46 进 M2 backlog。
 >

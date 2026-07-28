@@ -6,7 +6,7 @@
     "dev": "next dev",
     "typecheck": "tsc --noEmit",
     "check:taskboard": "node scripts/check-taskboard.mjs",
-    "prebuild": "bash scripts/guard-prod-build.sh",
+    "prebuild": "node scripts/guard-prod-build.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

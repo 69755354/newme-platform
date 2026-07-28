@@ -2,6 +2,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 // ─── Self-test mode ───
 if (process.argv.includes("--self-test")) {
@@ -35,7 +37,25 @@ if (process.argv.includes("--self-test")) {
   }
 }
 
-const root = process.cwd();
+let root;
+export function checkSupabaseBoundaries({ root: targetRoot = process.cwd(), log = console.log, error = console.error } = {}) {
+  const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
+    cwd: targetRoot,
+    encoding: "utf8",
+  });
+  const stdout = typeof result.stdout === "string" ? result.stdout : "";
+  const stderr = typeof result.stderr === "string" ? result.stderr : "";
+  if (stdout) log(stdout.trim());
+  if (stderr) error(stderr.trim());
+  return {
+    exitCode: typeof result.status === "number" ? result.status : 1,
+    output: `${stdout}${stderr}`,
+  };
+}
+
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+root = process.cwd();
 const allowlistPath = path.join(root, "scripts/supabase-boundary-allowlist.json");
 const allowlist = fs.existsSync(allowlistPath)
   ? JSON.parse(fs.readFileSync(allowlistPath, "utf8"))
@@ -233,3 +253,4 @@ if (failures) {
   process.exit(1);
 }
 console.log(`Supabase boundary check passed with ${findings.length} finding(s); no rule/file count exceeded the reviewed baseline.`);
+}

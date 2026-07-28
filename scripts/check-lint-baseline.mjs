@@ -23,14 +23,23 @@ function runEslintJson(root, run) {
   if (res.error) {
     throw new Error(`eslint could not start: ${res.error.message}`);
   }
-  const stdout = res.stdout ?? '';
+  if (res.status === null || res.status === undefined || res.signal) {
+    throw new Error(`eslint terminated unexpectedly: ${res.signal ?? "unknown status"}`);
+  }
+  const stdout = typeof res.stdout === "string" ? res.stdout : "";
+  const stderr = typeof res.stderr === "string" ? res.stderr : "";
   if (!stdout.trim()) {
-    throw new Error((res.stderr ?? 'eslint produced no JSON output').trim());
+    throw new Error(`eslint produced no JSON output (exit ${res.status}): ${stderr.trim() || "no stderr"}`);
+  }
+  if (res.status !== 0 && res.status !== 1) {
+    throw new Error(`eslint failed before linting (exit ${res.status}): ${stderr.trim() || "no stderr"}`);
   }
   try {
-    return JSON.parse(stdout);
+    const parsed = JSON.parse(stdout);
+    if (!Array.isArray(parsed)) throw new Error("root value must be an array");
+    return parsed;
   } catch (error) {
-    throw new Error(`eslint produced invalid JSON: ${error.message}`);
+    throw new Error(`eslint produced invalid JSON (exit ${res.status}): ${error.message}; stderr: ${stderr.trim() || "no stderr"}`);
   }
 }
 function rel(root, filePath) {

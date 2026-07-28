@@ -7,6 +7,7 @@ set -euo pipefail
 : "${NEXT_PUBLIC_SUPABASE_ANON_KEY:?missing staging publishable key}"
 : "${SUPABASE_SERVICE_ROLE_KEY:?missing staging service key}"
 : "${SAM26_BASE_URL:?missing staging app URL}"
+: "${SAM26_RELEASE_MANIFEST:?missing read-only release manifest}"
 
 readonly STAGING_REF="bfsiibofuzoglziltgyd"
 readonly PRODUCTION_REF="vfopmpxlhwzpxqegayew"
@@ -25,6 +26,10 @@ readonly PRODUCTION_REF="vfopmpxlhwzpxqegayew"
 }
 [[ "$SAM26_BASE_URL" == "https://staging.newme.ae" ]] || {
   echo "refusing non-staging application URL" >&2
+  exit 65
+}
+[[ "$SAM26_RELEASE_MANIFEST" == "/runner/release/manifest.json" && -r "$SAM26_RELEASE_MANIFEST" ]] || {
+  echo "refusing missing or non-fixed release manifest" >&2
   exit 65
 }
 for value in "$NEXT_PUBLIC_SUPABASE_URL" "$NEXT_PUBLIC_SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" "$SAM26_BASE_URL"; do

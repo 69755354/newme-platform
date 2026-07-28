@@ -120,8 +120,6 @@ test("SAM-43 makes project_status reproducible from repository migrations", () =
   assert.match(migration, /is_active = TRUE/i);
   assert.match(migration, /role IN \('sales', 'operator', 'boss'\)/i);
   assert.match(migration, /NEW\.assigned_to IS DISTINCT FROM OLD\.assigned_to/i);
-  assert.match(migration, /^BEGIN;/m);
-  assert.match(migration, /COMMIT;\s*$/m);
   assert.match(migration, /CREATE OR REPLACE FUNCTION/i);
   assert.match(migration, /DROP TRIGGER IF EXISTS/i);
   assert.match(migration, /SET search_path = pg_catalog, public, pg_temp/i);

@@ -6,8 +6,8 @@ set -o pipefail
 
 echo "=== 🔒 Pre-push: Taskboard gate ==="
 
-if [ -f "scripts/check-taskboard.sh" ]; then
-  bash scripts/check-taskboard.sh
+if [ -f "scripts/check-taskboard.mjs" ]; then
+  npm run check:taskboard
   if [ $? -ne 0 ]; then
     echo ""
     echo "🚫 PUSH BLOCKED: Taskboard verification failed."
@@ -16,7 +16,7 @@ if [ -f "scripts/check-taskboard.sh" ]; then
     exit 1
   fi
 else
-  echo "⚠️  scripts/check-taskboard.sh not found"
+  echo "⚠️  scripts/check-taskboard.mjs not found"
 fi
 
 echo "✅ Taskboard gate passed"

@@ -70,9 +70,8 @@ test("deactivated user is blocked at proxy level for all protected routes", asyn
 
 test("proxy selects is_active when querying profiles", async () => {
   const proxy = await read("src/proxy.ts");
-  // Profile queries include is_active field
-  assert.match(proxy, /select\("role, is_active/);
-  assert.match(proxy, /select=id,is_active,role/);
+  // Profile query includes active-state and password-revocation evidence.
+  assert.match(proxy, /select\("role, is_active, password_changed_at"\)/);
 });
 
 // ─── UI gating ──────────────────────────────────────────────

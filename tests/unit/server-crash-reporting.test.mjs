@@ -1,6 +1,42 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { installServerCrashReporting } from "../../src/lib/server-crash-reporting.mjs";
+
+const require = createRequire(import.meta.url);
+const Module = require("node:module");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+function loadInstrumentation(mocks) {
+  const ts = require("typescript");
+  const filename = path.join(root, "instrumentation.ts");
+  const { outputText } = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
+    fileName: filename,
+    compilerOptions: { esModuleInterop: true, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  });
+  const loaded = new Module(filename);
+  const previousLoad = Module._load;
+  Module._load = (request, parent, isMain) => {
+    if (!Object.hasOwn(mocks, request)) return previousLoad.call(Module, request, parent, isMain);
+    const mock = mocks[request];
+    return typeof mock === "function" ? mock() : mock;
+  };
+  try {
+    loaded._compile(outputText, filename);
+    return {
+      instrumentation: loaded.exports,
+      restore() {
+        Module._load = previousLoad;
+      },
+    };
+  } catch (error) {
+    Module._load = previousLoad;
+    throw error;
+  }
+}
 
 function fakeProcess() {
   const handlers = new Map();
@@ -19,6 +55,38 @@ function fakeProcess() {
     },
   };
 }
+
+test("Node instrumentation loads existing Sentry server config before registering the crash reporter once", async (t) => {
+  const previousRuntime = process.env.NEXT_RUNTIME;
+  const events = [];
+  const captureException = () => { throw new Error("must not capture during registration"); };
+  const flush = () => { throw new Error("must not flush during registration"); };
+  t.after(() => {
+    if (previousRuntime === undefined) delete process.env.NEXT_RUNTIME;
+    else process.env.NEXT_RUNTIME = previousRuntime;
+  });
+  process.env.NEXT_RUNTIME = "nodejs";
+
+  const { instrumentation, restore } = loadInstrumentation({
+    "@sentry/nextjs": { captureException, flush, captureRequestError: () => {} },
+    "./sentry.server.config": () => { events.push("server-config"); return {}; },
+    "./src/lib/server-crash-reporting.mjs": {
+      installServerCrashReporting(options) {
+        events.push("register");
+        assert.equal(options.captureException, captureException);
+        assert.equal(options.flush, flush);
+        return true;
+      },
+    },
+  });
+
+  try {
+    await instrumentation.register();
+    assert.deepEqual(events, ["server-config", "register"]);
+  } finally {
+    restore();
+  }
+});
 
 test("installs one fatal handler, reports through injected Sentry functions, and exits non-zero without logging secrets", async () => {
   const runtime = fakeProcess();

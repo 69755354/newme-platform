@@ -24,7 +24,7 @@ test("standalone output is opt-in and production builds remain unchanged", async
   assert.match(config, /webpackMemoryOptimizations:\s*true/);
   assert.match(
     config,
-    /configuredNext = isLowMemoryWebpackBuild \? nextConfig : withSentryConfig/,
+    /configuredNext = isLowMemoryWebpackBuild \|\| !shouldUploadSentrySourceMaps \? nextConfig : withSentryConfig/,
   );
 });
 

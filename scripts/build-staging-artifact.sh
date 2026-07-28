@@ -54,6 +54,7 @@ mkdir -p "$STANDALONE/.next"
 cp -a "$ROOT/.next/static" "$STANDALONE/.next/static"
 printf '{"git_sha":"%s","created_at":"%s"}\n' \
   "$SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$STANDALONE/manifest.json"
+chmod 0644 "$STANDALONE/manifest.json"
 
 ARTIFACT="$OUTPUT_DIR/$SHA.tar.gz"
 CHECKSUM="$ARTIFACT.sha256"

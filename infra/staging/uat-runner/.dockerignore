@@ -1,6 +1,0 @@
-**
-!infra/staging/uat-runner/Dockerfile
-!infra/staging/uat-runner/package.json
-!infra/staging/uat-runner/package-lock.json
-!infra/staging/uat-runner/run.sh
-!scripts/verify-staging-sam26-roles.mjs

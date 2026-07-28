@@ -63,11 +63,10 @@ async function evaluateCheck(root, check) {
   for (const pattern of check.patterns ?? []) {
     if (!combined.includes(pattern)) missing.push(pattern);
   }
-  for (const pattern of check.anyOfPatterns ?? []) {
-    if (!sources.every((source) => source?.includes(pattern) || source?.includes("DISABLED"))) {
-      missing.push("per-route-guard");
-      break;
-    }
+  if ((check.anyOfPatterns ?? []).length > 0 && !sources.every((source) =>
+    typeof source === "string" && check.anyOfPatterns.some((pattern) => source.includes(pattern)),
+  )) {
+    missing.push("per-route-guard");
   }
   for (const pattern of check.forbidden ?? []) {
     if (combined.includes(pattern)) missing.push("forbidden-surface");

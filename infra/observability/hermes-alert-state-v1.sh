@@ -9,12 +9,10 @@ CONFIG_FILE="${HERMES_ALERT_CONFIG:-/etc/hermes/observability/hermes-alert-v1.en
 # Explicit process values are test/runtime overrides. Preserve them across the
 # host configuration source so a host-only config cannot redirect a staging
 # invocation or make its test fixture non-hermetic.
+declare -A saved_overrides=()
 for override_name in HERMES_ALERT_STATE_DIR HERMES_ALERT_THRESHOLD HERMES_ALERT_NOTIFIER HERMES_ALERT_EVENTS; do
   if [[ -v "$override_name" ]]; then
-    printf -v "saved_${override_name}" '%s' "${!override_name}"
-    printf -v "has_${override_name}" '%s' 1
-  else
-    printf -v "has_${override_name}" '%s' 0
+    saved_overrides["$override_name"]="${!override_name}"
   fi
 done
 
@@ -23,11 +21,8 @@ if [ -r "$CONFIG_FILE" ]; then
   . "$CONFIG_FILE"
 fi
 
-for override_name in HERMES_ALERT_STATE_DIR HERMES_ALERT_THRESHOLD HERMES_ALERT_NOTIFIER HERMES_ALERT_EVENTS; do
-  if [[ "${!has_${override_name}}" == "1" ]]; then
-    printf -v "$override_name" '%s' "${!saved_${override_name}}"
-    export "$override_name"
-  fi
+for override_name in "${!saved_overrides[@]}"; do
+  export "$override_name=${saved_overrides[$override_name]}"
 done
 
 ALERT_KEY="${1:?alert key is required}"

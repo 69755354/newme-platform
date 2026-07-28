@@ -16,9 +16,10 @@ const DEFAULT_CHECKS = [
     patterns: ["NEWME_READINESS_TOKEN", "AbortController", "controller.abort()", "status: \"degraded\""],
   },
   {
-    id: "monitoring-shared-secret",
+    id: "monitoring-endpoint-retired",
     file: "src/app/api/monitoring/report/route.ts",
-    patterns: ["x-monitoring-secret", "MONITORING_SECRET", "status: 401"],
+    patterns: ["Monitoring endpoint retired", "status: 410", "Cache-Control", "no-store"],
+    forbidden: ["MONITORING_SECRET", "request.json", "writeFile", "/tmp"],
   },
   {
     id: "meta-oauth-state",

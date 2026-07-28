@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { register } from "node:module";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+
+register("./sam68-next-route-loader.mjs", import.meta.url);
 
 const monitoring = await import("../../src/app/api/monitoring/report/route.ts");
 const readiness = await import("../../src/app/api/ready/route.ts");

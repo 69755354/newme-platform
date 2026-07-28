@@ -14,7 +14,7 @@ test("offline audit inventories guarded integration and observability entrypoint
     [
       "health-minimal-response",
       "readiness-token-and-timeout",
-      "monitoring-shared-secret",
+      "monitoring-endpoint-retired",
       "meta-oauth-state",
       "authenticated-notification-trigger",
       "cron-route-guards",

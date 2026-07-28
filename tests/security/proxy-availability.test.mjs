@@ -50,6 +50,41 @@ function nextServer() {
   };
 }
 
+function sessionToken(iat) {
+  return `header.${Buffer.from(JSON.stringify({ iat })).toString("base64url")}.signature`;
+}
+
+function event() {
+  return { waitUntil: () => {} };
+}
+
+function proxyForProfile({ profile, profileError = null, user = { id: "user-1" }, token = null }) {
+  const supabase = {
+    auth: {
+      getUser: async () => ({ data: { user } }),
+      getSession: async () => ({ data: { session: token ? { access_token: token } : null } }),
+    },
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          single: async () => ({ data: profile, error: profileError }),
+        }),
+      }),
+    }),
+  };
+  return loadProxy({
+    "next/server": nextServer(),
+    "@/lib/supabase-middleware": {
+      createMiddlewareClient: async () => ({
+        supabase,
+        getResponse: () => ({ status: 200 }),
+      }),
+    },
+    "@/lib/report-server-error": { reportServerError: async () => {} },
+    "@/lib/auth-profile.mjs": { isActiveProfile: (candidate) => candidate?.is_active === true },
+  });
+}
+
 test("unauthenticated business mutations fail closed while secret-authorized ingress stays reachable", async () => {
   const proxy = loadProxy({
     "next/server": nextServer(),
@@ -88,6 +123,68 @@ test("a stalled auth dependency returns a bounded unavailable response for a bus
   });
 
   assert.deepEqual(await proxy.proxy(request("/api/leads/a/stage")), { body: { error: "auth_unavailable" }, status: 503 });
+});
+
+test("executed proxy authorization matrix keeps route policy and rejection types consistent", async () => {
+  for (const role of ["boss", "admin", "operator"]) {
+    const proxy = proxyForProfile({ profile: { role, is_active: true, password_changed_at: null } });
+    assert.deepEqual(await proxy.proxy(request("/settings", "GET"), event()), { status: 200 }, `${role} may use settings`);
+  }
+
+  const sales = proxyForProfile({ profile: { role: "sales", is_active: true, password_changed_at: null } });
+  assert.deepEqual(await sales.proxy(request("/settings", "GET"), event()), {
+    location: "https://app.newme.ae/dashboard",
+    status: 307,
+  });
+  assert.deepEqual(await sales.proxy(request("/pipeline", "GET"), event()), { status: 200 });
+  assert.deepEqual(await sales.proxy(request("/api/leads", "GET"), event()), { status: 200 });
+
+  const unauthenticated = proxyForProfile({ profile: null, user: null });
+  assert.deepEqual(await unauthenticated.proxy(request("/settings", "GET"), event()), {
+    location: "https://app.newme.ae/login?redirect=%2Fsettings",
+    status: 307,
+  });
+  assert.deepEqual(await unauthenticated.proxy(request("/api/leads/a/stage"), event()), {
+    body: { error: "unauthorized" },
+    status: 401,
+  });
+
+  const inactive = proxyForProfile({ profile: { role: "admin", is_active: false, password_changed_at: null } });
+  assert.deepEqual(await inactive.proxy(request("/settings", "GET"), event()), {
+    location: "https://app.newme.ae/login?reason=inactive_account",
+    status: 307,
+  });
+  assert.deepEqual(await inactive.proxy(request("/api/leads/a/stage"), event()), {
+    body: { error: "inactive_account" },
+    status: 401,
+  });
+
+  const profileFailure = proxyForProfile({ profile: null, profileError: new Error("profiles down") });
+  assert.deepEqual(await profileFailure.proxy(request("/api/leads/a/stage"), event()), {
+    body: { error: "auth_unavailable" },
+    status: 503,
+  });
+
+  const passwordInvalidated = proxyForProfile({
+    profile: { role: "admin", is_active: true, password_changed_at: "2026-07-28T00:00:01.000Z" },
+    token: sessionToken(1),
+  });
+  assert.deepEqual(await passwordInvalidated.proxy(request("/settings", "GET"), event()), {
+    location: "https://app.newme.ae/login?reason=password_changed",
+    status: 307,
+  });
+  assert.deepEqual(await passwordInvalidated.proxy(request("/api/leads/a/stage"), event()), {
+    body: { error: "password_changed" },
+    status: 401,
+  });
+
+  const publicRoute = loadProxy({
+    "next/server": nextServer(),
+    "@/lib/supabase-middleware": { createMiddlewareClient: () => { throw new Error("must not run"); } },
+    "@/lib/report-server-error": { reportServerError: async () => {} },
+    "@/lib/auth-profile.mjs": { isActiveProfile: () => false },
+  });
+  assert.deepEqual(await publicRoute.proxy(request("/api/auth/me", "GET"), event()), { status: 200 });
 });
 
 test("activity and audit evidence use the server-only writer without a secret Bearer header", () => {

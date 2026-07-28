@@ -66,6 +66,15 @@ function authUnavailable(request: NextRequest, isApiRequest: boolean) {
   return NextResponse.redirect(loginUrl);
 }
 
+function passwordChanged(request: NextRequest, isApiRequest: boolean) {
+  if (isApiRequest) {
+    return NextResponse.json({ error: "password_changed" }, { status: 401 });
+  }
+  const loginUrl = new URL("/login", request.url);
+  loginUrl.searchParams.set("reason", "password_changed");
+  return NextResponse.redirect(loginUrl);
+}
+
 // Track user activity 鈥?update last_active_at, but throttle to once per 5 min per user
 const activityThrottle = new Map<string, number>();
 
@@ -273,12 +282,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
               new Date(activeProfile.password_changed_at).getTime() / 1000,
             );
             if (changedAt > jwtIat) {
-              const loginUrl = new URL("/login", request.url);
-              loginUrl.searchParams.set(
-                "reason",
-                "password_changed",
-              );
-              return NextResponse.redirect(loginUrl);
+              return passwordChanged(request, isApiRequest);
             }
           }
         }

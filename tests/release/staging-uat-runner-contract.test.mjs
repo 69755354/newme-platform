@@ -8,11 +8,12 @@ const runnerRoot = resolve(root, "infra/staging/uat-runner");
 const productionRef = "vfopmpxlhwzpxqegayew";
 const stagingRef = "bfsiibofuzoglziltgyd";
 
-test("staging UAT runner uses a pinned browser image and pinned package", async () => {
-  const [dockerfile, manifestRaw, lockRaw, uatScript] = await Promise.all([
+test("staging UAT runner uses pinned and fail-closed browser dependencies", async () => {
+  const [dockerfile, manifestRaw, lockRaw, runner, uatScript] = await Promise.all([
     readFile(resolve(runnerRoot, "Dockerfile"), "utf8"),
     readFile(resolve(runnerRoot, "package.json"), "utf8"),
     readFile(resolve(runnerRoot, "package-lock.json"), "utf8"),
+    readFile(resolve(runnerRoot, "run.sh"), "utf8"),
     readFile(resolve(root, "scripts/verify-staging-sam26-roles.mjs"), "utf8"),
   ]);
   const manifest = JSON.parse(manifestRaw);
@@ -24,8 +25,13 @@ test("staging UAT runner uses a pinned browser image and pinned package", async 
   assert.match(dockerfile, /^FROM mcr\.microsoft\.com\/playwright:v1\.60\.0-noble$/m);
   assert.match(dockerfile, /npm ci --omit=dev --ignore-scripts/);
   assert.match(dockerfile, /USER pwuser/);
-  assert.match(dockerfile, /ENTRYPOINT \["node", "\/runner\/verify-staging-sam26-roles\.mjs"\]/);
+  assert.match(dockerfile, /ENTRYPOINT \["\/runner\/run\.sh"\]/);
   assert.doesNotMatch(dockerfile, new RegExp(productionRef));
+  assert.match(runner, new RegExp(`readonly STAGING_REF="${stagingRef}"`));
+  assert.match(runner, new RegExp(`readonly PRODUCTION_REF="${productionRef}"`));
+  assert.match(runner, /refusing non-staging project/);
+  assert.match(runner, /refusing non-staging Supabase URL/);
+  assert.match(runner, /refusing non-staging application URL/);
   assert.match(uatScript, new RegExp(`const CLEANROOM_REF = "${stagingRef}"`));
   assert.match(uatScript, new RegExp(`const PRODUCTION_REF = "${productionRef}"`));
 });

@@ -4,7 +4,7 @@
 -- one active, pre-provisioned non-production profile exists for each required
 -- role. Run only with:
 --   PGOPTIONS='-c app.newme.staging_fixture_target=bfsiibofuzoglziltgyd' \
---   psql "$STAGING_DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/seed-staging-sam26-fixtures.sql
+--   psql $STAGING_DATABASE_URL -v ON_ERROR_STOP=1 -f scripts/seed-staging-sam26-fixtures.sql
 --
 -- It is idempotent: every fixture uses a fixed UUID and conflicts are no-ops.
 
@@ -60,13 +60,13 @@ WITH role_profiles AS (
 ), fixture_rows AS (
   SELECT *
   FROM (VALUES
-    ('boss',     '8a260001-2c66-4d00-8000-000000000001'::uuid, 'new',                    'SAM-26 Synthetic boss'),
-    ('admin',    '8a260001-2c66-4d00-8000-000000000002'::uuid, 'contacted',              'SAM-26 Synthetic admin'),
-    ('operator', '8a260001-2c66-4d00-8000-000000000003'::uuid, 'requirement_confirmed', 'SAM-26 Synthetic operator'),
-    ('sales',    '8a260001-2c66-4d00-8000-000000000004'::uuid, 'solution_submitted',    'SAM-26 Synthetic sales'),
-    ('finance',  '8a260001-2c66-4d00-8000-000000000005'::uuid, 'quotation_submitted',   'SAM-26 Synthetic finance'),
-    ('designer', '8a260001-2c66-4d00-8000-000000000006'::uuid, 'negotiation',            'SAM-26 Synthetic designer')
-  ) AS fixture_rows(role, id, stage, customer_name)
+    ('boss',     'boss',     '8a260001-2c66-4d00-8000-000000000001'::uuid, 'new',                    'SAM-26 Synthetic boss'),
+    ('admin',    'admin',    '8a260001-2c66-4d00-8000-000000000002'::uuid, 'contacted',              'SAM-26 Synthetic admin'),
+    ('operator', 'operator', '8a260001-2c66-4d00-8000-000000000003'::uuid, 'requirement_confirmed', 'SAM-26 Synthetic operator'),
+    ('sales',    'sales',    '8a260001-2c66-4d00-8000-000000000004'::uuid, 'solution_submitted',    'SAM-26 Synthetic sales'),
+    ('finance',  'sales',    '8a260001-2c66-4d00-8000-000000000005'::uuid, 'quotation_submitted',   'SAM-26 Synthetic finance'),
+    ('designer', 'operator', '8a260001-2c66-4d00-8000-000000000006'::uuid, 'negotiation',            'SAM-26 Synthetic designer')
+  ) AS fixture_rows(role, assignee_role, id, stage, customer_name)
 )
 INSERT INTO public.leads (
   id, source, customer_name, email, property_type, location, budget_range,
@@ -84,17 +84,18 @@ SELECT
   ARRAY['automation']::text[],
   'good',
   fixture_rows.stage,
-  role_profiles.id,
-  role_profiles.id,
-  role_profiles.id,
-  role_profiles.id,
+  assignee_profiles.id,
+  assignee_profiles.id,
+  fixture_profiles.id,
+  fixture_profiles.id,
   'interested',
   'villa',
   'Dubai',
   jsonb_build_object('fixture_scope', 'staging-sam26', 'synthetic', true, 'role', fixture_rows.role),
   false
 FROM fixture_rows
-JOIN role_profiles USING (role)
+JOIN role_profiles AS fixture_profiles ON fixture_profiles.role = fixture_rows.role
+JOIN role_profiles AS assignee_profiles ON assignee_profiles.role = fixture_rows.assignee_role
 ON CONFLICT (id) DO NOTHING;
 
 WITH role_profiles AS (

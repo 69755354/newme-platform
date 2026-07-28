@@ -56,7 +56,9 @@ test("SAM-43 preserves detail history without restoring inactive owners as candi
   const mutations = read("src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts");
   const data = read("src/app/(dashboard)/leads/[id]/useLeadDetailData.ts");
 
-  assert.match(mutations, /oldLead\.assignee_profile\?\.full_name/);
+  assert.match(data, /assignee:profiles!fk_leads_assigned_to\(id, full_name, email, role\)/);
+  assert.match(data, /assignee_profile: assigneeProfile/);
+  assert.match(mutations, /salesUsers\.find\(\(u\) => u\.id === newUserId\)/);
   assert.match(mutations, /if \(!newUser\)/);
   assert.match(data, /filterLeadTransferCandidateQuery\(/);
 });
@@ -121,7 +123,7 @@ test("SAM-43 deactivation revokes Auth access before reporting success", () => {
     assert.ok(authRevoke > profileUpdate);
     assert.match(
       source,
-      /supabaseAdmin\.auth\.admin\.updateUserById\(\s*(?:userId|id),\s*\{\s*ban_duration:\s*["']876000h["'],?\s*\}\s*\)/s,
+      /supabaseAdmin\.auth\.admin\.updateUserById\(\s*(?:userId|id),\s*\{\s*ban_duration:\s*["']876000h["'],?\s*\}\s*,?\s*\)/s,
     );
     assert.match(source, /if \(authErr\) throw new Error/);
     assert.match(source, /Failed to revoke auth access/);

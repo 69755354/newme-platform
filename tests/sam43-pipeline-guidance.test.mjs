@@ -67,7 +67,7 @@ test("SAM-43 applies the same active-role query policy everywhere", async () => 
 test("SAM-43 returns historical owner names only for visible Leads", () => {
   const route = read("src/app/api/leads/list/route.ts");
   const hook = read("src/app/(dashboard)/leads/_hooks/useLeadsData.ts");
-  const mutations = read("src/app/(dashboard)/leads/_hooks/useLeadMutations.ts");
+  const card = read("src/app/(dashboard)/leads/_components/LeadCard.tsx");
 
   assert.match(route, /const ownerIds = getVisibleLeadOwnerIds\(leads \|\| \[\]\)/);
   assert.match(route, /\.select\("id,full_name"\)\s*\.in\("id", ownerIds\)/);
@@ -75,7 +75,7 @@ test("SAM-43 returns historical owner names only for visible Leads", () => {
   assert.match(route, /ownerProfiles:/);
   assert.match(hook, /setOwnerProfiles/);
   assert.match(hook, /ownerProfiles\.forEach/);
-  assert.match(mutations, /userNameMap\[oldLead\.assigned_to/);
+  assert.match(card, /userNameMap\[lead\.assigned_to\]/);
 });
 
 test("SAM-43 localizes one prompt and treats pending quality as incomplete", () => {

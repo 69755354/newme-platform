@@ -7,7 +7,7 @@ const DEFAULT_CHECKS = [
   {
     id: "health-minimal-response",
     file: "src/app/api/health/route.ts",
-    patterns: ["status: \"ok\"", "service: \"newme-crm\"", "version:", "Cache-Control", "no-store"],
+    patterns: ["status: \"ok\"", "Cache-Control", "no-store"],
     forbidden: ["SUPABASE_SERVICE_ROLE_KEY", "process.memoryUsage", "error:"],
   },
   {

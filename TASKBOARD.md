@@ -58,6 +58,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | task_SAM51_proxy_service_role_hardening | DONE | Hermes (OC) | 2026-07-20 |
 | SAAS-STAGING-ISOLATION | IN_PROGRESS | Codex | 2026-07-26 |
 | SAM-61 | IN_PROGRESS | Codex | 2026-07-26 |
+| SAM-66 | IN_PROGRESS | Codex | 2026-07-28 |
 
 > M1 发布链（Linear 为真源）：**RELEASED 2026-07-20**。发布 SHA `49bbb26` → BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6~12 全链 Done：SAM-28 业务签收（森哥 2026-07-20）+ 技术签收（机器全量验收），SAM-12 发布记录出具。SAM-26 视觉/移动端留人工不拦发布；SAM-45/46 进 M2 backlog。
 >

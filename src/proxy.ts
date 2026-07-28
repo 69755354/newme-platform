@@ -226,6 +226,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
             {
               headers: {
                 apikey: serviceRoleKey,
+                Authorization: `Bearer ${serviceRoleKey}`,
               },
             },
           ));

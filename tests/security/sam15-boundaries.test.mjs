@@ -122,7 +122,7 @@ test("session cookies use dynamic names and secure server refresh attributes", a
 
 test("middleware uses the custom split-session refresh boundary", async () => {
   const middleware = await read("src/lib/supabase-middleware.ts");
-  assert.match(middleware, /createServerSupabase\(undefined, request\.headers\.get\("cookie"\)/);
+  assert.match(middleware, /createServerSupabase\(bearerToken, request\.headers\.get\("cookie"\)/);
   assert.match(middleware, /getRefreshedCookies\(supabase\)/);
   assert.match(middleware, /request\.cookies\.set\(name, value\)/);
   assert.match(middleware, /response\.cookies\.set\(name, value, options/);
@@ -130,7 +130,8 @@ test("middleware uses the custom split-session refresh boundary", async () => {
   assert.match(middleware, /getResponse: \(\) => response/);
   const proxy = await read("src/proxy.ts");
   assert.doesNotMatch(proxy, /const \{ supabase, response \}/);
-  assert.match(proxy, /const \{ supabase, getResponse \} = (?:await createMiddlewareClient\(request\)|middlewareClient)/);
+  assert.match(proxy, /createMiddlewareClient\(request, bearerToken\)/);
+  assert.match(proxy, /const \{ supabase, getResponse \} = middlewareClient/);
   assert.match(proxy, /return getResponse\(\)/);
 });
 

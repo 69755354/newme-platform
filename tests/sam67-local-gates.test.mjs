@@ -53,6 +53,15 @@ test("SAM-67 production guard allows only existing isolated-build authorizations
   assert.equal(unknown.exitCode, 1);
 });
 
+test("SAM-67 routes npm and POSIX compatibility through the same Node guard", () => {
+  const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
+  const wrapper = fs.readFileSync("scripts/guard-prod-build.sh", "utf8");
+
+  assert.equal(packageJson.scripts.prebuild, "node scripts/guard-prod-build.mjs");
+  assert.match(wrapper, /^#!\/bin\/sh/m);
+  assert.match(wrapper, /exec node .*guard-prod-build\.mjs/);
+});
+
 test("SAM-67 lint ratchet fails closed when Windows leaves stdout undefined", () => {
   withFixture("sam67-lint-", (root) => {
     fs.mkdirSync(path.join(root, "scripts"), { recursive: true });

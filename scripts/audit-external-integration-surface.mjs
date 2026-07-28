@@ -19,7 +19,7 @@ const DEFAULT_CHECKS = [
     id: "monitoring-endpoint-retired",
     file: "src/app/api/monitoring/report/route.ts",
     patterns: ["Monitoring endpoint retired", "status: 410", "Cache-Control", "no-store"],
-    forbidden: ["MONITORING_SECRET", "request.json", "writeFile", "/tmp"],
+    forbidden: ["MONITORING_SECRET", "request.json", "writeFile", 'from "node:fs"', 'from "node:fs/promises"'],
   },
   {
     id: "meta-oauth-state",

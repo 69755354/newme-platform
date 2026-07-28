@@ -32,6 +32,9 @@ test("staging UAT runner uses pinned and fail-closed browser dependencies", asyn
   assert.match(runner, /refusing non-staging project/);
   assert.match(runner, /refusing non-staging Supabase URL/);
   assert.match(runner, /refusing non-staging application URL/);
+  assert.match(runner, /SAM26_RELEASE_MANIFEST/);
+  assert.match(runner, /\/runner\/release\/manifest\.json/);
+  assert.match(uatScript, /releaseManifest\?\.git_sha/);
   assert.match(uatScript, new RegExp(`const CLEANROOM_REF = "${stagingRef}"`));
   assert.match(uatScript, new RegExp(`const PRODUCTION_REF = "${productionRef}"`));
 });

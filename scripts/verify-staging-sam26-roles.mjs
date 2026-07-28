@@ -15,6 +15,7 @@ const baseUrl = (
   process.env.SAM26_BASE_URL || "http://127.0.0.1:3101"
 ).replace(/\/+$/, "");
 const chromiumExecutable = process.env.SAM26_CHROMIUM_EXECUTABLE?.trim();
+const releaseManifestPath = process.env.SAM26_RELEASE_MANIFEST?.trim();
 const resolveStagingLocally = process.env.SAM26_RESOLVE_STAGING_LOCALLY === "1";
 
 const ROLES = ["admin", "boss", "operator", "sales", "finance", "designer"];
@@ -75,6 +76,11 @@ function validateBoundaries() {
     expectedSha ?? "",
     /^[0-9a-f]{40}$/,
     "SAM26_EXPECTED_RELEASE_SHA must be an exact 40-character commit SHA",
+  );
+  assert.equal(
+    releaseManifestPath,
+    "/runner/release/manifest.json",
+    "SAM26_RELEASE_MANIFEST must use the fixed read-only container path",
   );
 
   assert.ok(supabaseUrl, "NEXT_PUBLIC_SUPABASE_URL is required");
@@ -631,21 +637,20 @@ async function main() {
   let primaryError = null;
   let cleanupError = null;
   let healthBody = null;
+  let releaseManifest = null;
   try {
     validateBoundaries();
     const health = await fetch(`${baseUrl}/api/health`);
     assert.equal(health.status, 200, "staging health endpoint must return HTTP 200");
     healthBody = await health.json();
     assert.equal(healthBody?.status, "ok", "staging health must report ok");
-    assert.match(
-      healthBody?.version ?? "",
-      /^[0-9a-f]{40}$/,
-      "staging health must expose an exact 40-character commit SHA",
+    releaseManifest = JSON.parse(
+      await readFile(releaseManifestPath, "utf8"),
     );
     assert.equal(
-      healthBody.version,
+      releaseManifest?.git_sha,
       expectedSha,
-      "staging runtime version does not match SAM26_EXPECTED_RELEASE_SHA",
+      "staging release manifest does not match SAM26_EXPECTED_RELEASE_SHA",
     );
 
     baseline = await snapshotBaseline();
@@ -699,7 +704,7 @@ async function main() {
     ok: failures.length === 0 && !primaryError && !cleanupError,
     project_ref: CLEANROOM_REF,
     expected_release_sha: expectedSha,
-    runtime_version: healthBody?.version ?? null,
+    runtime_version: releaseManifest?.git_sha ?? null,
     run_id: runId,
     checks,
     cleanup: cleanupError ? "failed" : "verified",

@@ -30,13 +30,46 @@ function loadProxy(mocks) {
   }
 }
 
-function request(pathname, method = "POST") {
+function request(pathname, method = "POST", headers = {}) {
   return {
-    headers: new Headers(),
+    headers: new Headers(headers),
     method,
     nextUrl: { pathname },
     url: `https://app.newme.ae${pathname}`,
   };
+}
+
+function proxyForBearer({ profile, profileError = null, user = { id: "user-1" }, token = null }) {
+  let receivedBearer;
+  let profileReads = 0;
+  const supabase = {
+    auth: {
+      getUser: async () => ({ data: { user: receivedBearer?.startsWith("header.") ? user : null } }),
+      getSession: async () => ({ data: { session: token ? { access_token: token } : null } }),
+    },
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          single: async () => {
+            profileReads += 1;
+            return { data: profile, error: profileError };
+          },
+        }),
+      }),
+    }),
+  };
+  const proxy = loadProxy({
+    "next/server": nextServer(),
+    "@/lib/supabase-middleware": {
+      createMiddlewareClient: async (_request, bearerToken) => {
+        receivedBearer = bearerToken;
+        return { supabase, getResponse: () => ({ status: 200 }) };
+      },
+    },
+    "@/lib/report-server-error": { reportServerError: async () => {} },
+    "@/lib/auth-profile.mjs": { isActiveProfile: (candidate) => candidate?.is_active === true },
+  });
+  return { proxy, getReceivedBearer: () => receivedBearer, getProfileReads: () => profileReads };
 }
 
 function nextServer() {
@@ -53,6 +86,8 @@ function nextServer() {
 function sessionToken(iat) {
   return `header.${Buffer.from(JSON.stringify({ iat })).toString("base64url")}.signature`;
 }
+
+const validBearerToken = sessionToken(2);
 
 function event() {
   return { waitUntil: () => {} };
@@ -123,6 +158,49 @@ test("a stalled auth dependency returns a bounded unavailable response for a bus
   });
 
   assert.deepEqual(await proxy.proxy(request("/api/leads/a/stage")), { body: { error: "auth_unavailable" }, status: 503 });
+});
+
+test("Bearer authentication reaches the middleware client before the profile RLS check", async () => {
+  const fixture = proxyForBearer({
+    profile: { role: "admin", is_active: true, password_changed_at: null },
+  });
+  const response = await fixture.proxy.proxy(request("/api/leads/a/stage", "POST", {
+    authorization: `Bearer ${validBearerToken}`,
+    // A split same-origin session must not override the explicitly supplied bearer.
+    cookie: "sb-demo-auth-token.0=stale; sb-demo-auth-token.1=session",
+  }), event());
+
+  assert.deepEqual(response, { status: 200 });
+  assert.equal(fixture.getReceivedBearer(), validBearerToken);
+  assert.equal(fixture.getProfileReads(), 1);
+});
+
+test("Bearer authentication preserves typed failure responses", async () => {
+  const invalid = proxyForBearer({ profile: null });
+  assert.deepEqual(await invalid.proxy.proxy(request("/api/leads/a/stage", "POST", {
+    authorization: "Bearer invalid-token",
+  }), event()), { body: { error: "unauthorized" }, status: 401 });
+  assert.equal(invalid.getProfileReads(), 0);
+
+  const inactive = proxyForBearer({
+    profile: { role: "admin", is_active: false, password_changed_at: null },
+  });
+  assert.deepEqual(await inactive.proxy.proxy(request("/api/leads/a/stage", "POST", {
+    authorization: `Bearer ${validBearerToken}`,
+  }), event()), { body: { error: "inactive_account" }, status: 401 });
+
+  const passwordInvalidated = proxyForBearer({
+    profile: { role: "admin", is_active: true, password_changed_at: "2026-07-28T00:00:01.000Z" },
+    token: sessionToken(1),
+  });
+  assert.deepEqual(await passwordInvalidated.proxy.proxy(request("/api/leads/a/stage", "POST", {
+    authorization: `Bearer ${sessionToken(1)}`,
+  }), event()), { body: { error: "password_changed" }, status: 401 });
+
+  const profileFailure = proxyForBearer({ profile: null, profileError: new Error("profiles transport down") });
+  assert.deepEqual(await profileFailure.proxy.proxy(request("/api/leads/a/stage", "POST", {
+    authorization: `Bearer ${validBearerToken}`,
+  }), event()), { body: { error: "auth_unavailable" }, status: 503 });
 });
 
 test("executed proxy authorization matrix keeps route policy and rejection types consistent", async () => {

@@ -155,9 +155,13 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   }
 
   // Use createMiddlewareClient to validate session (no service_role needed)
+  const authHeader = request.headers.get("authorization");
+  const bearerToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : undefined;
   let middlewareClient: Awaited<ReturnType<typeof createMiddlewareClient>>;
   try {
-    middlewareClient = await withAuthTimeout(createMiddlewareClient(request));
+    middlewareClient = await withAuthTimeout(createMiddlewareClient(request, bearerToken));
   } catch {
     return authUnavailable(request, isApiRequest);
   }
@@ -172,27 +176,6 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
     authInfrastructureFailed = true;
   }
 
-  // Fallback: also check Authorization Bearer header (for localhost/dev testing,
-  // where SSR cookies may fail to parse correctly)
-  let usedBearerFallback = false;
-  let bearerToken: string | undefined;
-  if (!user) {
-    const authHeader = request.headers.get("authorization");
-    if (authHeader?.startsWith("Bearer ")) {
-      const token = authHeader.slice(7);
-      bearerToken = token;
-      try {
-        const { data: authUser } = await withAuthTimeout(supabase.auth.getUser(token));
-        user = authUser?.user ?? null;
-        if (user) {
-          usedBearerFallback = true;
-        }
-      } catch {
-        authInfrastructureFailed = true;
-      }
-    }
-  }
-
   if (!user && protectedApiMutation) {
     return authInfrastructureFailed
       ? authUnavailable(request, true)
@@ -205,51 +188,14 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   // to become invalid when a profile is deactivated; every protected request
   // must still prove that its profile is active.
   if (user && !isPublicApiRequest) {
-    // SAM-51: When the user was resolved via the Bearer fallback above, the
-    // cookie-driven middleware client has no auth context for them, so a
-    // profiles query through it runs as anon and gets RLS-rejected (returning
-    // empty/inactive). Query profiles via the Supabase REST API with the
-    // service_role key to bypass RLS. createClient(url, service_role_key) is
-    // intentionally avoided 鈥?it 500s under the Edge Runtime.
-    let profile: ActiveProfile | null = null;
-    let profileErr: unknown = null;
-
-    if (usedBearerFallback) {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (!supabaseUrl || !serviceRoleKey) {
-        profileErr = new Error("missing_service_role_env");
-      } else {
-        try {
-          const res = await withAuthTimeout(fetch(
-            `${supabaseUrl}/rest/v1/profiles?select=id,is_active,role,password_changed_at&id=eq.${user.id}`,
-            {
-              headers: {
-                apikey: serviceRoleKey,
-              },
-            },
-          ));
-          if (!res.ok) {
-            profileErr = new Error(`profiles_rest_${res.status}`);
-          } else {
-            const profiles = await res.json();
-            profile = Array.isArray(profiles) && profiles.length > 0
-              ? profiles[0]
-              : null;
-          }
-        } catch (err) {
-          profileErr = err;
-        }
-      }
-    } else {
-      const { data, error } = await withAuthTimeout(supabase
-        .from("profiles")
-        .select("role, is_active, password_changed_at")
-        .eq("id", user.id)
-        .single());
-      profile = data;
-      profileErr = error;
-    }
+    // `createMiddlewareClient` receives the bearer token above, so its
+    // authenticated Supabase client carries the same auth context into this
+    // RLS-protected query. Service-role credentials must never be used here.
+    const { data: profile, error: profileErr } = await withAuthTimeout(supabase
+      .from("profiles")
+      .select("role, is_active, password_changed_at")
+      .eq("id", user.id)
+      .single());
 
     if (profileErr) {
       return authUnavailable(request, isApiRequest);

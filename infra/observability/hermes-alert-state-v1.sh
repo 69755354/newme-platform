@@ -5,10 +5,30 @@
 set -euo pipefail
 
 CONFIG_FILE="${HERMES_ALERT_CONFIG:-/etc/hermes/observability/hermes-alert-v1.env}"
+
+# Explicit process values are test/runtime overrides. Preserve them across the
+# host configuration source so a host-only config cannot redirect a staging
+# invocation or make its test fixture non-hermetic.
+for override_name in HERMES_ALERT_STATE_DIR HERMES_ALERT_THRESHOLD HERMES_ALERT_NOTIFIER HERMES_ALERT_EVENTS; do
+  if [[ -v "$override_name" ]]; then
+    printf -v "saved_${override_name}" '%s' "${!override_name}"
+    printf -v "has_${override_name}" '%s' 1
+  else
+    printf -v "has_${override_name}" '%s' 0
+  fi
+done
+
 if [ -r "$CONFIG_FILE" ]; then
   # shellcheck disable=SC1090
   . "$CONFIG_FILE"
 fi
+
+for override_name in HERMES_ALERT_STATE_DIR HERMES_ALERT_THRESHOLD HERMES_ALERT_NOTIFIER HERMES_ALERT_EVENTS; do
+  if [[ "${!has_${override_name}}" == "1" ]]; then
+    printf -v "$override_name" '%s' "${!saved_${override_name}}"
+    export "$override_name"
+  fi
+done
 
 ALERT_KEY="${1:?alert key is required}"
 EVENT="${2:?event must be failure or recovery}"

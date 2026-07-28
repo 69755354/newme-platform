@@ -29,6 +29,15 @@ test('SAM-26 seed never creates or rewrites identities', () => {
   }
 });
 
+test('SAM-26 uses only transfer-candidate roles as lead assignees', () => {
+  assert.match(seed, /\('finance',\s*'sales',\s*'8a260001-/);
+  assert.match(seed, /\('designer',\s*'operator',\s*'8a260001-/);
+  assert.match(seed, /JOIN role_profiles AS fixture_profiles ON fixture_profiles\.role = fixture_rows\.role/);
+  assert.match(seed, /JOIN role_profiles AS assignee_profiles ON assignee_profiles\.role = fixture_rows\.assignee_role/);
+  assert.match(seed, /assignee_profiles\.id,\s*assignee_profiles\.id,\s*fixture_profiles\.id,\s*fixture_profiles\.id/s);
+  assert.doesNotMatch(seed, /\('(?:finance|designer)',\s*'(?:finance|designer)',\s*'8a260001-/);
+});
+
 test('SAM-26 cleanup has the same staging guard and only deletes scoped fixtures', () => {
   assert.match(cleanup, /app\.newme\.staging_fixture_target/);
   assert.match(cleanup, /bfsiibofuzoglziltgyd/);

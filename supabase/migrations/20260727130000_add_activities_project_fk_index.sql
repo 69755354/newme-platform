@@ -4,6 +4,6 @@
 -- covering index. This additive index improves reverse lookups and avoids
 -- full scans when a referenced project is updated or deleted.
 --
--- Rollback: DROP INDEX IF EXISTS public.idx_activities_project;
+-- Rollback is documented in the PR; this forward migration is additive only.
 CREATE INDEX IF NOT EXISTS idx_activities_project
   ON public.activities (project_id);

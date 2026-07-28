@@ -16,6 +16,25 @@ test("SAM-13 limits every user-management entry point to admin and boss", () => 
   assert.match(teamPage, /useRequireRole\(\["admin", "boss"\]\)/);
 });
 
+test("SAM-13 API authorization is fail-closed while preserving both manager roles", () => {
+  const usersRoute = read("src/app/api/users/route.ts");
+  const checkRole = usersRoute.slice(
+    usersRoute.indexOf("async function checkRole"),
+    usersRoute.indexOf("// ─── GET /api/users"),
+  );
+
+  // A missing identity or profile must never reach the privileged admin client.
+  assert.match(checkRole, /authErr \|\| !user/);
+  assert.match(checkRole, /profileErr \|\| !profile/);
+  assert.match(checkRole, /status: 401/);
+  assert.match(checkRole, /status: 403/);
+
+  // Both intended manager roles pass; every other role is rejected before return.
+  assert.match(checkRole, /profile\.role !== "admin" && profile\.role !== "boss"/);
+  assert.match(checkRole, /return profile\.role/);
+  assert.doesNotMatch(checkRole, /return profile\?\.role/);
+});
+
 test("SAM-13 password reset reuses the server-only admin client", () => {
   const teamActions = read("src/app/actions/team.ts");
   const resetAction = teamActions.slice(teamActions.indexOf("export async function resetUserPassword"));

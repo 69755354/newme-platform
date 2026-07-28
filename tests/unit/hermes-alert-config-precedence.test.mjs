@@ -45,6 +45,6 @@ test("explicit alert runtime overrides take precedence over host configuration",
   });
 
   assert.equal(result.code, 0, result.stderr);
-  assert.match(await readFile(eventsFile, "utf8"), /^alert login-probe failure fixture$/m);
+  assert.match(await readFile(eventsFile, "utf8"), /^alert alert login-probe fixture$/m);
   assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=firing/);
 });

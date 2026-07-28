@@ -11,6 +11,7 @@ const adapter = new URL("../../infra/observability/hermes-alert-notifier-v1.sh",
 async function runAlert({ stateDir, notifier, eventsFile, event, summary, expectCode = 0, threshold, extraEnv = {} }) {
   const env = {
     ...process.env,
+    HERMES_ALERT_CONFIG: join(stateDir, "fixture.env"),
     HERMES_ALERT_STATE_DIR: stateDir,
     HERMES_ALERT_EVENTS: eventsFile || "",
     ...extraEnv,

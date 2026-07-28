@@ -1,6 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { validateXlsxImportRows } from "@/lib/xlsx-import-rows.mjs";
 
 // ─── Column mapping ───
 // Excel header text → snake_case field name
@@ -136,12 +137,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const body = await request.json();
-    const rawRows: Record<string, any>[] = body.rows || [];
+    const body: unknown = await request.json();
+    const untrustedRows =
+      body && typeof body === "object" && !Array.isArray(body)
+        ? (body as { rows?: unknown }).rows
+        : undefined;
 
-    if (!Array.isArray(rawRows) || rawRows.length === 0) {
+    if (!Array.isArray(untrustedRows) || untrustedRows.length === 0) {
       return NextResponse.json({ error: "No rows provided" }, { status: 400 });
     }
+    try {
+      validateXlsxImportRows(untrustedRows);
+    } catch (err: unknown) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Invalid import rows" },
+        { status: 400 },
+      );
+    }
+    const rawRows = untrustedRows as Record<string, any>[];
 
     const previews: PreviewRow[] = [];
     const warnings: string[] = [];

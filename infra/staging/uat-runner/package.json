@@ -1,0 +1,9 @@
+{
+  "name": "newme-staging-uat-runner",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright": "1.60.0"
+  }
+}

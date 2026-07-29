@@ -16,10 +16,12 @@ readonly SELF_SOURCE="scripts/newme-staging-control.sh"
 readonly LOCK="/run/lock/newme-staging-control.lock"
 readonly STATE_DIR="/var/lib/newme-staging-control"
 readonly STATE_FILE="$STATE_DIR/last-deploy.state"
+readonly SAM68_EVIDENCE="$STATE_DIR/last-uat-sam68.json"
 readonly STAGING_REF="bfsiibofuzoglziltgyd"
 readonly PRODUCTION_REF="vfopmpxlhwzpxqegayew"
 readonly SAM20_RUNNER="scripts/uat/sam20-lead-organization-isolation.mjs"
 readonly SAM20_MIGRATION="supabase/migrations/20260730100000_sam20_lead_organization_isolation.sql"
+readonly SAM68_RUNNER="scripts/verify-staging-sam68-observability.mjs"
 readonly UAT_IMAGE_PREFIX="newme-staging-uat"
 TEMPORARY_PATHS=()
 
@@ -44,7 +46,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam70|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam68|uat-sam70|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -52,7 +54,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|uat-sam70|rollback) ;;
+  build|deploy|uat|uat-sam20|uat-sam68|uat-sam70|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -403,6 +405,70 @@ run_uat_sam20() {
   echo "staging control SAM-20 UAT passed SHA=$SHA cleanup=verified"
 }
 
+run_uat_sam68() {
+  verify_current_release "$SHA"
+  [ -r "$ENV_FILE" ] || fail "staging environment is missing"
+  local run_dir runner output rc
+  run_dir="$(mktemp -d "/run/newme-staging-sam68-$SHA.XXXXXX")"
+  runner="$run_dir/verify-staging-sam68-observability.mjs"
+  output="$(mktemp "$STATE_DIR/.uat-sam68.XXXXXX")"
+  register_temporary_path "$run_dir"
+  register_temporary_path "$output"
+  copy_commit_blob "$SHA" "$SAM68_RUNNER" "$runner"
+  chown root:root "$run_dir" "$runner"
+  chmod 0700 "$run_dir"
+  chmod 0500 "$runner"
+  rc=0
+  /usr/bin/env -i \
+    HOME="/root" \
+    PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    SAM68_EXPECTED_RELEASE_SHA="$SHA" \
+    /usr/bin/node "$runner" >"$output" 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "SAM-68 staging UAT failed with status $rc"
+  node -e '
+    const fs = require("fs");
+    const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const readinessElapsed = body.readiness?.elapsedMs;
+    const journalEntries = body.observability?.journald?.entries;
+    if (
+      body.schemaVersion !== 1 ||
+      body.linearId !== "SAM-68" ||
+      body.releaseSha !== process.argv[2] ||
+      body.target !== "staging-loopback" ||
+      body.monitoring?.status !== "passed" ||
+      body.monitoring?.httpStatus !== 410 ||
+      body.monitoring?.cacheControl !== "no-store, max-age=0" ||
+      body.monitoring?.hostileBodyPersisted !== false ||
+      body.readiness?.status !== "passed" ||
+      body.readiness?.httpStatus !== 200 ||
+      body.readiness?.cacheControl !== "no-store, max-age=0" ||
+      body.readiness?.timeoutMs !== 3000 ||
+      !Number.isInteger(readinessElapsed) ||
+      readinessElapsed < 0 ||
+      readinessElapsed > 3000 ||
+      body.observability?.journald?.status !== "observed" ||
+      body.observability?.journald?.unit !== "newme-staging.service" ||
+      !Number.isInteger(journalEntries) ||
+      journalEntries < 0 ||
+      body.observability?.journald?.hostileMarkerMatches !== 0 ||
+      body.observability?.journald?.errorMatches !== 0 ||
+      body.observability?.sentry?.status !== "not_applicable" ||
+      body.observability?.sentry?.reason !==
+        "staging_sentry_disabled_by_isolation_contract" ||
+      body.cleanup?.status !== "not_applicable" ||
+      body.cleanup?.reason !== "read_only_http_and_journal_observation" ||
+      !Array.isArray(body.cleanup?.fixtureIds) ||
+      body.cleanup.fixtureIds.length !== 0
+    ) process.exit(1);
+  ' "$output" "$SHA" ||
+    fail "SAM-68 UAT evidence is incomplete"
+  chown root:root "$output"
+  chmod 0600 "$output"
+  mv -f "$output" "$SAM68_EVIDENCE"
+  rm -rf -- "$run_dir"
+  echo "staging control SAM-68 UAT passed SHA=$SHA evidence=$SAM68_EVIDENCE cleanup=not_applicable sentry=not_applicable"
+}
+
 run_uat_sam70() {
   verify_current_release "$SHA"
   command -v docker >/dev/null 2>&1 || fail "docker is required for staging UAT"
@@ -532,6 +598,7 @@ case "$ACTION" in
   deploy) run_deploy ;;
   uat) run_uat ;;
   uat-sam20) run_uat_sam20 ;;
+  uat-sam68) run_uat_sam68 ;;
   uat-sam70) run_uat_sam70 ;;
   rollback) run_rollback ;;
 esac

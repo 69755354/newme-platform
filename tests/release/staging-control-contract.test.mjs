@@ -21,7 +21,7 @@ test("staging controller has one fixed command surface and strict SHA arity", as
   assert.match(control, /\[\[ "\$SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\] \|\| usage/);
   assert.match(
     control,
-    /build\|deploy\|uat\|uat-sam20\|uat-sam70\|rollback\) ;;/,
+    /build\|deploy\|uat\|uat-sam20\|uat-sam68\|uat-sam70\|rollback\) ;;/,
   );
   assert.doesNotMatch(control, /\beval\b/);
 });
@@ -120,6 +120,37 @@ test("SAM-20 UAT uses the current release, fixed runner, local manifest, and zer
   ]) assert.ok(control.includes(`"${fixture}"`));
   assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
   assert.doesNotMatch(control, /cat "\$output"/);
+});
+
+test("SAM-68 UAT is SHA-bound, secret-free, auditable, and N/A-explicit", async () => {
+  const control = await read("scripts/newme-staging-control.sh");
+  for (const pattern of [
+    /SAM68_RUNNER="scripts\/verify-staging-sam68-observability\.mjs"/,
+    /copy_commit_blob "\$SHA" "\$SAM68_RUNNER" "\$runner"/,
+    /verify_current_release "\$SHA"/,
+    /\/usr\/bin\/env -i/,
+    /SAM68_EXPECTED_RELEASE_SHA="\$SHA"/,
+    /body\.linearId !== "SAM-68"/,
+    /body\.releaseSha !== process\.argv\[2\]/,
+    /body\.monitoring\?\.httpStatus !== 410/,
+    /body\.monitoring\?\.hostileBodyPersisted !== false/,
+    /body\.readiness\?\.timeoutMs !== 3000/,
+    /readinessElapsed > 3000/,
+    /body\.observability\?\.journald\?\.hostileMarkerMatches !== 0/,
+    /body\.observability\?\.journald\?\.errorMatches !== 0/,
+    /body\.observability\?\.sentry\?\.status !== "not_applicable"/,
+    /body\.cleanup\?\.status !== "not_applicable"/,
+    /body\.cleanup\.fixtureIds\.length !== 0/,
+    /SAM68_EVIDENCE="\$STATE_DIR\/last-uat-sam68\.json"/,
+    /chmod 0600 "\$output"/,
+    /mv -f "\$output" "\$SAM68_EVIDENCE"/,
+  ]) assert.match(control, pattern);
+  assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
+  assert.doesNotMatch(control, /cat "\$output"/);
+  assert.doesNotMatch(
+    control,
+    /SAM68_EXPECTED_RELEASE_SHA[^\n]*(?:SENTRY|READINESS|SUPABASE)/,
+  );
 });
 
 test("SAM-70 UAT is SHA-bound, staging-only, fail-closed, and residue verified", async () => {

@@ -37,6 +37,48 @@ const shouldUploadSentrySourceMaps = process.env.SENTRY_UPLOAD_SOURCEMAPS === "1
 const gitHash = process.env.NEXT_PUBLIC_APP_VERSION ||
   execSync("git rev-parse --short HEAD").toString().trim();
 
+export function getLocalSupabaseConnectOrigin(
+  nodeEnv = process.env.NODE_ENV,
+  rawSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL,
+): string | undefined {
+  if (nodeEnv === "production" || !rawSupabaseUrl) return undefined;
+  try {
+    const url = new URL(rawSupabaseUrl);
+    const isLoopback = url.hostname === "127.0.0.1" || url.hostname === "localhost";
+    if (
+      url.protocol !== "http:"
+      || !isLoopback
+      || !url.port
+      || url.username
+      || url.password
+      || url.pathname !== "/"
+      || url.search
+      || url.hash
+    ) {
+      return undefined;
+    }
+    return url.origin;
+  } catch {
+    return undefined;
+  }
+}
+
+export function buildContentSecurityPolicy(
+  nodeEnv = process.env.NODE_ENV,
+  rawSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL,
+): string {
+  const localSupabaseOrigin = getLocalSupabaseConnectOrigin(nodeEnv, rawSupabaseUrl);
+  const connectSources = [
+    "'self'",
+    "https://*.supabase.co",
+    "https://*.sentry.io",
+    "https://*.posthog.com",
+    "https://eu-assets.i.posthog.com",
+    ...(localSupabaseOrigin ? [localSupabaseOrigin] : []),
+  ];
+  return `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.supabase.co https://*.sentry.io https://*.posthog.com https://eu-assets.i.posthog.com; connect-src ${connectSources.join(" ")}; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data: https:; frame-src 'self' https://*.supabase.co; upgrade-insecure-requests`;
+}
+
 const nextConfig: NextConfig = {
   output: isStandaloneBuild ? "standalone" : undefined,
   experimental: isLowMemoryWebpackBuild
@@ -53,7 +95,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Content-Security-Policy",
-            value: "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.supabase.co https://*.sentry.io https://*.posthog.com https://eu-assets.i.posthog.com; connect-src 'self' https://*.supabase.co https://*.sentry.io https://*.posthog.com https://eu-assets.i.posthog.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data: https:; frame-src 'self' https://*.supabase.co; upgrade-insecure-requests",
+            value: buildContentSecurityPolicy(),
           },
           { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
         ],

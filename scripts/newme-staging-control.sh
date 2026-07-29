@@ -44,7 +44,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam70|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -52,7 +52,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|rollback) ;;
+  build|deploy|uat|uat-sam20|uat-sam70|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -273,6 +273,8 @@ build_uat_image() {
   copy_commit_blob "$SHA" "infra/staging/uat-runner/run.sh" "$context/run.sh"
   copy_commit_blob "$SHA" "scripts/verify-staging-sam26-roles.mjs" \
     "$context/verify-staging-sam26-roles.mjs"
+  copy_commit_blob "$SHA" "scripts/verify-staging-sam70-xlsx.mjs" \
+    "$context/verify-staging-sam70-xlsx.mjs"
   docker build \
     --label "org.opencontainers.image.revision=$SHA" \
     --tag "$UAT_IMAGE_PREFIX:$SHA" \
@@ -333,6 +335,7 @@ run_uat() {
     --tmpfs /tmp:rw,nosuid,nodev,noexec,size=128m \
     --tmpfs /runner/home:rw,nosuid,nodev,size=64m \
     --env-file "$ENV_FILE" \
+    --env "SAM_UAT_SUITE=sam26" \
     --env "SAM26_EXPECTED_RELEASE_SHA=$SHA" \
     --env "SAM26_BASE_URL=https://staging.newme.ae" \
     --env "SAM26_RELEASE_MANIFEST=/runner/release/manifest.json" \
@@ -400,6 +403,92 @@ run_uat_sam20() {
   echo "staging control SAM-20 UAT passed SHA=$SHA cleanup=verified"
 }
 
+run_uat_sam70() {
+  verify_current_release "$SHA"
+  command -v docker >/dev/null 2>&1 || fail "docker is required for staging UAT"
+  [ -r "$ENV_FILE" ] || fail "staging environment is missing"
+  [ "$(
+    docker image inspect "$UAT_IMAGE_PREFIX:$SHA" \
+      --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+  )" = "$SHA" ] || fail "staging UAT image provenance does not match"
+  local output rc evidence
+  output="$(mktemp "$STATE_DIR/.uat-sam70.XXXXXX")"
+  register_temporary_path "$output"
+  rc=0
+  docker run \
+    --rm \
+    --init \
+    --ipc=host \
+    --read-only \
+    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=128m \
+    --tmpfs /runner/home:rw,nosuid,nodev,size=64m \
+    --env-file "$ENV_FILE" \
+    --env "SAM_UAT_SUITE=sam70" \
+    --env "SAM70_EXPECTED_RELEASE_SHA=$SHA" \
+    --env "SAM70_BASE_URL=https://staging.newme.ae" \
+    --env "SAM70_RELEASE_MANIFEST=/runner/release/manifest.json" \
+    --env "SAM70_UAT_CONFIRM=SAM70_STAGING_ONLY" \
+    --mount "type=bind,src=$RELEASES/$SHA/manifest.json,dst=/runner/release/manifest.json,readonly" \
+    "$UAT_IMAGE_PREFIX:$SHA" >"$output" 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "SAM-70 staging UAT failed with status $rc"
+  evidence="$(
+    node -e '
+      const fs = require("fs");
+      const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const requiredCases = [
+        "unauthenticated import endpoints return 401",
+        "non-management import endpoints return 403",
+        "admin import succeeds with exact IDs and batch",
+        "boss idempotent replay creates no duplicate",
+        "requests over 5 MiB fail closed",
+        "2,001 rows fail closed",
+        "prototype-pollution keys fail closed",
+        "normal workbook reaches authenticated preview",
+        "corrupt workbook is rejected before preview",
+        "workbook over 5 MiB is rejected before preview",
+        "quotation export enforces ownership and management access",
+      ];
+      const zeroResidue = [
+        "leads",
+        "follow_up_logs",
+        "quotations",
+        "profiles",
+        "auth_fixtures",
+      ];
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const marker = /^SAM70-UAT-[0-9a-f]{16}-[0-9a-f]{8}$/;
+      const passed = new Set(
+        Array.isArray(body.cases)
+          ? body.cases
+            .filter((item) => item?.status === "pass")
+            .map((item) => item.name)
+          : [],
+      );
+      if (
+        body.ok !== true ||
+        body.linearId !== "SAM-70" ||
+        body.releaseSha !== process.argv[2] ||
+        body.projectRef !== process.argv[3] ||
+        body.cleanup !== "verified" ||
+        !marker.test(body.marker ?? "") ||
+        !uuid.test(body.initialBatchId ?? "") ||
+        !uuid.test(body.idempotentBatchId ?? "") ||
+        !Array.isArray(body.importedIds) ||
+        body.importedIds.length !== 1 ||
+        !uuid.test(body.importedIds[0] ?? "") ||
+        requiredCases.some((name) => !passed.has(name)) ||
+        zeroResidue.some((key) => body.cleanupCounts?.[key] !== 0)
+      ) process.exit(1);
+      process.stdout.write(
+        `marker=${body.marker} initial_batch=${body.initialBatchId} `
+        + `idempotent_batch=${body.idempotentBatchId} imported_id=${body.importedIds[0]}`,
+      );
+    ' "$output" "$SHA" "$STAGING_REF"
+  )" || fail "SAM-70 UAT evidence or cleanup verification is incomplete"
+  rm -f -- "$output"
+  echo "staging control SAM-70 UAT passed SHA=$SHA $evidence cleanup=verified"
+}
+
 run_rollback() {
   load_state
   [ "$SHA" = "$STATE_OLD_SHA" ] ||
@@ -443,5 +532,6 @@ case "$ACTION" in
   deploy) run_deploy ;;
   uat) run_uat ;;
   uat-sam20) run_uat_sam20 ;;
+  uat-sam70) run_uat_sam70 ;;
   rollback) run_rollback ;;
 esac

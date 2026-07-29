@@ -21,7 +21,7 @@ test("staging controller has one fixed command surface and strict SHA arity", as
   assert.match(control, /\[\[ "\$SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\] \|\| usage/);
   assert.match(
     control,
-    /build\|deploy\|uat\|uat-sam20\|rollback\) ;;/,
+    /build\|deploy\|uat\|uat-sam20\|uat-sam70\|rollback\) ;;/,
   );
   assert.doesNotMatch(control, /\beval\b/);
 });
@@ -87,6 +87,7 @@ test("SAM-26 UAT image and runtime remain SHA-bound and disposable", async () =>
     /--ipc=host/,
     /--read-only/,
     /--env-file "\$ENV_FILE"/,
+    /SAM_UAT_SUITE=sam26/,
     /SAM26_EXPECTED_RELEASE_SHA=\$SHA/,
     /SAM26_RELEASE_MANIFEST=\/runner\/release\/manifest\.json/,
   ]) assert.match(control, pattern);
@@ -117,6 +118,47 @@ test("SAM-20 UAT uses the current release, fixed runner, local manifest, and zer
     "profiles",
     "auth_fixtures",
   ]) assert.ok(control.includes(`"${fixture}"`));
+  assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
+  assert.doesNotMatch(control, /cat "\$output"/);
+});
+
+test("SAM-70 UAT is SHA-bound, staging-only, fail-closed, and residue verified", async () => {
+  const control = await read("scripts/newme-staging-control.sh");
+  for (const pattern of [
+    /copy_commit_blob "\$SHA" "scripts\/verify-staging-sam70-xlsx\.mjs"/,
+    /verify_current_release "\$SHA"/,
+    /SAM_UAT_SUITE=sam70/,
+    /SAM70_EXPECTED_RELEASE_SHA=\$SHA/,
+    /SAM70_BASE_URL=https:\/\/staging\.newme\.ae/,
+    /SAM70_RELEASE_MANIFEST=\/runner\/release\/manifest\.json/,
+    /SAM70_UAT_CONFIRM=SAM70_STAGING_ONLY/,
+    /body\.linearId !== "SAM-70"/,
+    /body\.releaseSha !== process\.argv\[2\]/,
+    /body\.projectRef !== process\.argv\[3\]/,
+    /body\.cleanup !== "verified"/,
+    /body\.importedIds\.length !== 1/,
+    /body\.cleanupCounts\?\.\[key\] !== 0/,
+  ]) assert.match(control, pattern);
+  for (const fixture of [
+    "leads",
+    "follow_up_logs",
+    "quotations",
+    "profiles",
+    "auth_fixtures",
+  ]) assert.ok(control.includes(`"${fixture}"`));
+  for (const requiredCase of [
+    "unauthenticated import endpoints return 401",
+    "non-management import endpoints return 403",
+    "admin import succeeds with exact IDs and batch",
+    "boss idempotent replay creates no duplicate",
+    "requests over 5 MiB fail closed",
+    "2,001 rows fail closed",
+    "prototype-pollution keys fail closed",
+    "normal workbook reaches authenticated preview",
+    "corrupt workbook is rejected before preview",
+    "workbook over 5 MiB is rejected before preview",
+    "quotation export enforces ownership and management access",
+  ]) assert.ok(control.includes(`"${requiredCase}"`));
   assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
   assert.doesNotMatch(control, /cat "\$output"/);
 });

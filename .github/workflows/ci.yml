@@ -42,8 +42,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           cache: npm
+
+      - name: Toolchain reproducibility gate
+        run: node scripts/check-toolchain.mjs
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund

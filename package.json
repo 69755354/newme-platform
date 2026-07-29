@@ -30,7 +30,7 @@
     "check:database-types": "node scripts/check-database-types.mjs",
     "check:e2e-secrets": "node scripts/check-e2e-secrets.mjs",
     "check:e2e-artifacts": "node scripts/check-e2e-artifact-isolation.mjs",
-    "check:supply-chain": "bash scripts/check-supply-chain.sh",
+    "check:supply-chain": "node scripts/check-supply-chain.mjs",
     "check:pre-release": "bash scripts/check-pre-release.sh",
     "check:staging-boundaries": "bash scripts/check-staging-boundaries.sh",
     "verify:sam66:local": "node scripts/verify-local-sam66-auth-regression.mjs"

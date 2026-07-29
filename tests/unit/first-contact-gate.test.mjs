@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   evaluateFirstContactGate,
   isCompleteContact,
-} from "../../src/lib/first-contact-gate.mjs";
+} from "../../src/modules/leads/first-contact-gate.mjs";
 
 const gate = (overrides = {}) => evaluateFirstContactGate({
   currentStage: "new",

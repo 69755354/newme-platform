@@ -1,3 +1,9 @@
+/**
+ * Lead-domain First Contact rule.
+ *
+ * Route handlers and UI may collect their own inputs, but this module owns the
+ * decision for whether a lead can leave the `new` pipeline stage.
+ */
 export const ASSESSED_QUALITIES = Object.freeze(["good", "normal", "poor"]);
 
 export function isAssessedQuality(quality) {

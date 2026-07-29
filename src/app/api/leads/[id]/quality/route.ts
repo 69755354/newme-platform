@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase-server';
 import { logger, genReqId } from '@/lib/logger';
 import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
-import { isCompleteContact } from '@/lib/first-contact-gate.mjs';
+import { isCompleteContact } from '@/modules/leads/first-contact-gate.mjs';
 
 export async function POST(
   req: NextRequest,

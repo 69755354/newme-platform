@@ -6,7 +6,7 @@ import type { Database } from "@/types/database";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { canCompleteMilestone } from "@/lib/milestones";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
-import { isAssessedQuality, isCompleteContact } from "@/lib/first-contact-gate.mjs";
+import { isAssessedQuality, isCompleteContact } from "@/modules/leads/first-contact-gate.mjs";
 
 type AdminSupabaseClient = SupabaseClient<Database>;
 

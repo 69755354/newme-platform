@@ -227,7 +227,7 @@ test("staging deploy binds and runs the live gate before promotion", async () =>
   const orderedPatterns = [
     /release SHA must equal canonical remote staging branch/,
     /git hash-object "\$0"/,
-    /"\$LIVE_GATE_RUNNER" \\\n/,
+    /"\$LIVE_GATE_RUNNER" \\\r?\n/,
     /artifact checksum mismatch/,
     /tar --no-same-owner/,
     /PROMOTED=1\r?\n\r?\nln -s "\$RELEASE" "\$CURRENT_NEXT"\r?\nmv -Tf "\$CURRENT_NEXT" "\$CURRENT"/,

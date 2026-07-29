@@ -30,7 +30,8 @@
     "check:e2e-artifacts": "node scripts/check-e2e-artifact-isolation.mjs",
     "check:supply-chain": "bash scripts/check-supply-chain.sh",
     "check:pre-release": "bash scripts/check-pre-release.sh",
-    "check:staging-boundaries": "bash scripts/check-staging-boundaries.sh"
+    "check:staging-boundaries": "bash scripts/check-staging-boundaries.sh",
+    "verify:sam66:local": "node scripts/verify-local-sam66-auth-regression.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

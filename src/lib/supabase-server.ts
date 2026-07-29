@@ -3,6 +3,11 @@ import type { Database } from "@/types/database";
 import { cookies } from "next/headers";
 import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
 import { classifyRefreshFailure } from "@/lib/auth-refresh.mjs";
+import {
+  ORGANIZATION_CONTEXT_COOKIE,
+  ORGANIZATION_CONTEXT_HEADER,
+  parseOrganizationId,
+} from "@/lib/organization-context";
 
 export interface RefreshedCookie {
   name: string;
@@ -190,6 +195,7 @@ function tryRefreshTokenLocked(
 export async function createServerSupabase(
   bearerToken?: string,
   cookieString?: string,
+  organizationIdOverride?: string,
 ) {
   let refreshedCookies: RefreshedCookie[] = [];
   let refreshAttempted = false;
@@ -206,6 +212,10 @@ export async function createServerSupabase(
 
   // ── 2. Extract tokens ──
   const { accessToken: initialAccessToken, refreshToken } = extractTokens(allCookies, names);
+  const organizationId = parseOrganizationId(organizationIdOverride)
+    ?? parseOrganizationId(
+      allCookies.find((cookie) => cookie.name === ORGANIZATION_CONTEXT_COOKIE)?.value,
+    );
   let accessToken = initialAccessToken;
   const hasAuthCookie = allCookies.some((cookie) => cookie.name === names.authToken || cookie.name === "sb-access-token");
 
@@ -242,6 +252,9 @@ export async function createServerSupabase(
   const effectiveToken = bearerToken ?? accessToken;
   if (effectiveToken) {
     headers.Authorization = `Bearer ${effectiveToken}`;
+  }
+  if (organizationId) {
+    headers[ORGANIZATION_CONTEXT_HEADER] = organizationId;
   }
 
   const client = createClient<Database>(supabaseUrl, anonKey, {

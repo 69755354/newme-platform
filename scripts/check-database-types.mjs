@@ -9,10 +9,16 @@ const migrationsPath = resolve(root, "supabase/migrations");
 const provenancePrefix = "// Migration fingerprint: sha256=";
 const required = [
   "export type Database =",
+  "audit_events:",
+  "memberships:",
+  "organizations:",
+  "platform_staff:",
   "profiles:",
   "leads:",
+  "support_sessions:",
   "allocate_payment:",
   "confirm_payment:",
+  'requested_organization_id: { Args: never; Returns: string }',
   "transition_lead_stage:",
 ];
 

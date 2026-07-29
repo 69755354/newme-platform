@@ -14,10 +14,12 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { toast } from "sonner";
 import { isLeadTransferCandidate } from "@/lib/lead-transfer-candidates.mjs";
+import { useLeadOrganization } from "../LeadOrganizationProvider";
 
 export default function NewLeadPage() {
   const router = useRouter();
   const supabase = createClient();
+  const { organizationId } = useLeadOrganization();
   const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -41,6 +43,7 @@ export default function NewLeadPage() {
       : null;
     const followupDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
     const { data, error } = await supabase.from("leads").insert({
+      organization_id: organizationId,
       source: form.source,
       customer_name: form.customer_name || null,
       phone: form.phone || null,

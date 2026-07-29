@@ -162,6 +162,14 @@ test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives au
   const server = loadTypeScriptModule("src/lib/supabase-server.ts", {
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
     "@/lib/auth-refresh.mjs": { classifyRefreshFailure: () => "upstream_error" },
+    "@/lib/organization-context": {
+      ORGANIZATION_CONTEXT_COOKIE: "newme-organization-id",
+      ORGANIZATION_CONTEXT_HEADER: "x-newme-organization-id",
+      parseOrganizationId: (value) =>
+        typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value)
+          ? value
+          : null,
+    },
     "@supabase/supabase-js": {
       createClient: (_url, _key, options) => {
         capturedHeaders = options.global.headers;
@@ -305,6 +313,14 @@ test("server component refresh path never writes through the read-only cookies s
   const server = loadTypeScriptModule("src/lib/supabase-server.ts", {
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
     "@/lib/auth-refresh.mjs": { classifyRefreshFailure: () => "upstream_error" },
+    "@/lib/organization-context": {
+      ORGANIZATION_CONTEXT_COOKIE: "newme-organization-id",
+      ORGANIZATION_CONTEXT_HEADER: "x-newme-organization-id",
+      parseOrganizationId: (value) =>
+        typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value)
+          ? value
+          : null,
+    },
     "@supabase/supabase-js": { createClient: (_url, _key, options) => ({ options }) },
     "next/headers": { cookies: async () => cookieStore },
   });

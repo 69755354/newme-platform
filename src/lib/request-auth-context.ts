@@ -8,6 +8,7 @@ import {
   getRefreshedCookies,
   type RefreshedCookie,
 } from "@/lib/supabase-server";
+import { getRequestedOrganizationId } from "@/lib/organization-context";
 
 const AUTH_TIMEOUT_MS = 3_000;
 
@@ -82,6 +83,7 @@ export async function getRequestAuthContext(request: Request): Promise<RequestAu
   const supabase = await createServerSupabase(
     extractBearerToken(request),
     request.headers.get("cookie") ?? "",
+    getRequestedOrganizationId(request) ?? undefined,
   );
   const refreshedCookies = getRefreshedCookies(supabase);
 

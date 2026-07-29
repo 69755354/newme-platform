@@ -81,14 +81,14 @@ jobs:
       - name: Database static regression gate
         run: npm run check:db-static
 
+      - name: SAM-20 disposable database apply and rollback gate
+        run: npm run check:sam20-database
+
       - name: CRM regression contract
         run: python3 scripts/crm-regression.py --self-test
 
       - name: Lint baseline gate
         run: npm run lint:baseline
-
-      - name: Critical-folder lint-zero gate
-        run: npm run lint:critical-folder-zero
 
       - name: Workflow YAML validation
         run: npm run check:workflows

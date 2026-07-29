@@ -1,74 +1,135 @@
-// RBAC: user (authenticated)
-// GET /api/leads/list — Aggregated leads list data
-// Server-side auth.getUser() → profile role → leads (500 max) → profile data
+// RBAC: authenticated organization member, or audited platform support session.
 import { NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
 import type { Database } from "@/types/database";
-
-type LeadListRow = Pick<Database["public"]["Tables"]["leads"]["Row"], "id" | "customer_name" | "phone" | "source" | "stage" | "final_status" | "quotation_value" | "location" | "property_type" | "project_type" | "project_status" | "property_size_sqm" | "ai_quality" | "lead_status" | "assigned_to" | "win_probability" | "last_contact_date" | "next_followup_date" | "next_action" | "followup_count" | "created_at" | "updated_at" | "recovery_candidate" | "transfer_candidate" | "sales_manager_review" | "hold_since" | "lost_reason" | "decision_maker" | "decision_date" | "competitor" | "campaign_name" | "source_platform" | "quality" | "poor_reason">;
-type SalesUserRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "email" | "role" | "full_name" | "is_active">;
-type OwnerProfileRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "full_name">;
 import {
   filterLeadTransferCandidateQuery,
   getVisibleLeadOwnerIds,
 } from "@/lib/lead-transfer-candidates.mjs";
+import {
+  LeadOrganizationAccessError,
+  resolveLeadOrganizationAccess,
+} from "@/lib/lead-organization-access";
+import { RequestAuthError } from "@/lib/request-auth-context";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+
+type LeadListRow = Pick<
+  Database["public"]["Tables"]["leads"]["Row"],
+  "id" | "customer_name" | "phone" | "source" | "stage" | "final_status"
+  | "quotation_value" | "location" | "property_type" | "project_type"
+  | "project_status" | "property_size_sqm" | "ai_quality" | "lead_status"
+  | "assigned_to" | "win_probability" | "last_contact_date"
+  | "next_followup_date" | "next_action" | "followup_count" | "created_at"
+  | "updated_at" | "recovery_candidate" | "transfer_candidate"
+  | "sales_manager_review" | "hold_since" | "lost_reason"
+  | "decision_maker" | "decision_date" | "competitor" | "campaign_name"
+  | "source_platform" | "quality" | "poor_reason"
+>;
+type SalesUserRow = Pick<
+  Database["public"]["Tables"]["profiles"]["Row"],
+  "id" | "email" | "role" | "full_name" | "is_active"
+>;
+type OwnerProfileRow = Pick<
+  Database["public"]["Tables"]["profiles"]["Row"],
+  "id" | "full_name"
+>;
 
 export async function GET(request: Request) {
-  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-  const cookieHeader = request.headers.get("cookie") ?? "";
-  const supabase = await createServerSupabase(bearerToken, cookieHeader);
+  let access;
+  try {
+    access = await resolveLeadOrganizationAccess(
+      request,
+      "lead:read",
+      "lead_list",
+      null,
+    );
+  } catch (error) {
+    if (error instanceof LeadOrganizationAccessError) {
+      return NextResponse.json({ error: error.code }, { status: error.status });
+    }
+    if (error instanceof RequestAuthError) {
+      return NextResponse.json({ error: error.code }, { status: error.status });
+    }
+    return NextResponse.json(
+      { error: "lead_organization_access_unavailable" },
+      { status: 503 },
+    );
+  }
 
-  // 1. Auth
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const supabase = access.client;
+  const user = access.context.user;
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  const role = access.context.role;
+  const userId = user.id;
 
-  // 2. Profile → role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile) {
-    return NextResponse.json({ error: "Profile not found" }, { status: 403 });
-  }
-
-  if (!profile.role) {
-    return NextResponse.json({ error: "Profile role not found" }, { status: 403 });
-  }
-
-  const role = profile.role;
-  const userId: string = user.id;
-
-  // ── Parallel batch: leads + transfer candidates + owner directory ──
-  let leadsQuery = supabase.from("leads").select(
-    "id,customer_name,phone,source,stage,final_status,quotation_value,location,property_type,project_type,project_status,property_size_sqm,ai_quality,lead_status,assigned_to,win_probability,last_contact_date,next_followup_date,next_action,followup_count,created_at,updated_at,recovery_candidate,transfer_candidate,sales_manager_review,hold_since,lost_reason,decision_maker,decision_date,competitor,campaign_name,source_platform,quality,poor_reason"
-  );
+  let leadsQuery = supabase
+    .from("leads")
+    .select(
+      "id,customer_name,phone,source,stage,final_status,quotation_value,location,property_type,project_type,project_status,property_size_sqm,ai_quality,lead_status,assigned_to,win_probability,last_contact_date,next_followup_date,next_action,followup_count,created_at,updated_at,recovery_candidate,transfer_candidate,sales_manager_review,hold_since,lost_reason,decision_maker,decision_date,competitor,campaign_name,source_platform,quality,poor_reason",
+    )
+    .eq("organization_id", access.organizationId);
   if (role === "sales") {
     leadsQuery = leadsQuery.eq("assigned_to", userId);
   }
-  const leadsPromise = leadsQuery.order("updated_at", { ascending: false }).limit(500);
+  const leadsPromise = leadsQuery
+    .order("updated_at", { ascending: false })
+    .limit(500);
 
-  const candidateQuery = supabase
-    .from("profiles")
-    .select("id,email,role,full_name,is_active");
-  const salesUsersPromise = filterLeadTransferCandidateQuery(
-    candidateQuery as never
-  ) as typeof candidateQuery;
+  let salesUsersPromise;
+  if (access.supportSessionId) {
+    salesUsersPromise = Promise.resolve({
+      data: [] as SalesUserRow[],
+      error: null,
+    });
+  } else {
+    const { data: organizationMemberships, error: membershipError } =
+      await supabaseAdmin
+        .from("memberships")
+        .select("user_id")
+        .eq("organization_id", access.organizationId)
+        .eq("status", "active");
+    if (membershipError) {
+      return NextResponse.json(
+        { error: "organization_memberships_fetch_failed" },
+        { status: 503 },
+      );
+    }
+
+    const organizationMemberUserIds = [
+      ...new Set((organizationMemberships ?? []).map(({ user_id }) => user_id)),
+    ];
+    if (organizationMemberUserIds.length === 0) {
+      salesUsersPromise = Promise.resolve({
+        data: [] as SalesUserRow[],
+        error: null,
+      });
+    } else {
+      const candidateQuery = supabase
+        .from("profiles")
+        .select("id,email,role,full_name,is_active")
+        .in("id", organizationMemberUserIds);
+      salesUsersPromise = filterLeadTransferCandidateQuery(
+        candidateQuery as never,
+      ) as typeof candidateQuery;
+    }
+  }
+
   const [
-    { data: leads, error: leadsErr },
-    { data: salesUsers, error: salesErr },
+    { data: leads, error: leadsError },
+    { data: salesUsers, error: salesUsersError },
   ] = await Promise.all([leadsPromise, salesUsersPromise]);
 
-  if (leadsErr) console.error("leads fetch failed:", leadsErr);
-  if (salesErr) console.error("salesUsers fetch failed:", salesErr);
+  if (leadsError) {
+    return NextResponse.json({ error: "leads_fetch_failed" }, { status: 503 });
+  }
+  if (salesUsersError) {
+    return NextResponse.json(
+      { error: "lead_transfer_candidates_fetch_failed" },
+      { status: 503 },
+    );
+  }
 
-  // Historical names are only needed for Cases the caller can already see.
-  // Do not return an organization-wide personnel directory to a sales caller.
   const ownerIds = getVisibleLeadOwnerIds(leads || []);
   let ownerProfiles: OwnerProfileRow[] = [];
   if (ownerIds.length > 0) {
@@ -76,20 +137,21 @@ export async function GET(request: Request) {
       .from("profiles")
       .select("id,full_name")
       .in("id", ownerIds);
-    if (error) console.error("ownerProfiles fetch failed:", error);
-    ownerProfiles = data || [];
+    if (error) {
+      return NextResponse.json(
+        { error: "lead_owner_profiles_fetch_failed" },
+        { status: 503 },
+      );
+    }
+    ownerProfiles = data ?? [];
   }
 
-  const visibleLeads: LeadListRow[] = leads ?? [];
-  const visibleSalesUsers: SalesUserRow[] = salesUsers ?? [];
-  const result = {
+  return NextResponse.json({
     userId,
     role,
-    leads: visibleLeads,
-    salesUsers: visibleSalesUsers,
+    organizationId: access.organizationId,
+    leads: (leads ?? []) as LeadListRow[],
+    salesUsers: (salesUsers ?? []) as SalesUserRow[],
     ownerProfiles,
-  };
-
-
-  return NextResponse.json(result);
+  });
 }

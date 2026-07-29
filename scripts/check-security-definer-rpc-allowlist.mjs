@@ -36,8 +36,8 @@ try {
   process.exit(1);
 }
 
-if (manifest.schema_version !== 1) {
-  fail("schema_version must be 1");
+if (manifest.schema_version !== 2) {
+  fail("schema_version must be 2");
 }
 if (manifest.required_search_path !== "pg_catalog, public, pg_temp") {
   fail("required_search_path must be the reviewed fixed search path");
@@ -47,6 +47,20 @@ if (!Array.isArray(manifest.entries) || manifest.entries.length === 0) {
 }
 
 const manifestSignatures = [];
+const today = new Date().toISOString().slice(0, 10);
+const exactDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+const linkedIssuePattern = /^SAM-[1-9]\d*$/;
+const ownerPattern = /^[a-z][a-z0-9-]{2,63}$/;
+
+function isExactCalendarDate(value) {
+  if (typeof value !== "string" || !exactDatePattern.test(value)) {
+    return false;
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.valueOf())
+    && parsed.toISOString().slice(0, 10) === value;
+}
+
 for (const [index, entry] of (manifest.entries ?? []).entries()) {
   const label = `entries[${index}]`;
   if (typeof entry.regprocedure !== "string" || !entry.regprocedure) {
@@ -54,10 +68,24 @@ for (const [index, entry] of (manifest.entries ?? []).entries()) {
     continue;
   }
   manifestSignatures.push(entry.regprocedure);
-  for (const field of ["purpose", "authorization_boundary"]) {
+  if (typeof entry.owner !== "string" || !ownerPattern.test(entry.owner)) {
+    fail(`${label}.owner must be a stable lowercase owner slug`);
+  }
+  for (const field of ["justification", "authorization_boundary"]) {
     if (typeof entry[field] !== "string" || entry[field].trim().length < 20) {
       fail(`${label}.${field} must contain a substantive review`);
     }
+  }
+  if (!isExactCalendarDate(entry.expiry)) {
+    fail(`${label}.expiry must be an exact YYYY-MM-DD calendar date`);
+  } else if (entry.expiry <= today) {
+    fail(`${label}.expiry ${entry.expiry} is expired as of ${today}`);
+  }
+  if (
+    typeof entry.linked_issue !== "string"
+    || !linkedIssuePattern.test(entry.linked_issue)
+  ) {
+    fail(`${label}.linked_issue must be a valid SAM-N Linear issue key`);
   }
   if (!Array.isArray(entry.test_evidence) || entry.test_evidence.length === 0) {
     fail(`${label}.test_evidence must name at least one test`);

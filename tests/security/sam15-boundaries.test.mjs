@@ -46,6 +46,15 @@ function nextResponseMock() {
   };
 }
 
+function loadNextConfig() {
+  return loadTypeScriptModule("next.config.ts", {
+    "@next/bundle-analyzer": () => (config) => config,
+    "@sentry/nextjs": { withSentryConfig: (config) => config },
+    child_process: { execSync: () => Buffer.from("7f3e2fa") },
+    fs: { existsSync: () => false },
+  });
+}
+
 test("health endpoint exposes only a minimal public status", async () => {
   const source = await read("src/app/api/health/route.ts");
   assert.match(source, /status: "ok"/);
@@ -97,6 +106,48 @@ test("production headers include CSP and HSTS", async () => {
   assert.match(source, /frame-ancestors 'none'/);
   assert.match(source, /upgrade-insecure-requests/);
   assert.match(source, /eu-assets\.i\.posthog\.com/);
+});
+
+test("non-production CSP allows only the exact configured loopback Supabase origin", async (t) => {
+  const oldNodeEnv = process.env.NODE_ENV;
+  const oldSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  t.after(() => {
+    if (oldNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = oldNodeEnv;
+    if (oldSupabaseUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = oldSupabaseUrl;
+  });
+  process.env.NODE_ENV = "development";
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
+
+  const config = loadNextConfig();
+  assert.equal(
+    config.getLocalSupabaseConnectOrigin("test", "http://localhost:54321/"),
+    "http://localhost:54321",
+  );
+  const headers = await config.default.headers();
+  const csp = headers[0].headers.find(({ key }) => key === "Content-Security-Policy").value;
+  assert.match(csp, /connect-src [^;]*http:\/\/127\.0\.0\.1:54321(?:;| )/);
+  assert.doesNotMatch(csp, /http:\/\/127\.0\.0\.1:\*|http:\/\/localhost:\*/);
+});
+
+test("production and invalid Supabase URLs never relax CSP connect-src", () => {
+  const config = loadNextConfig();
+  const rejected = [
+    ["production", "http://127.0.0.1:54321"],
+    ["development", "https://127.0.0.1:54321"],
+    ["development", "http://127.0.0.1.evil.example:54321"],
+    ["development", "http://user:password@127.0.0.1:54321"],
+    ["development", "http://localhost"],
+    ["development", "http://localhost:54321/path"],
+    ["development", "http://localhost:54321/?query=1"],
+    ["development", "http://192.168.1.20:54321"],
+    ["development", "not a url"],
+  ];
+  for (const [nodeEnv, url] of rejected) {
+    assert.equal(config.getLocalSupabaseConnectOrigin(nodeEnv, url), undefined, `${nodeEnv}: ${url}`);
+    const csp = config.buildContentSecurityPolicy(nodeEnv, url);
+    assert.doesNotMatch(csp, /127\.0\.0\.1|localhost|192\.168\.1\.20/);
+  }
 });
 
 test("Sentry source-map upload is disabled without explicit release credentials", async () => {

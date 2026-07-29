@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=86cc5ce15ecb7b884c75336d19ca0a0e9ac54401beaa8b7034aabe89903436ce
+// Migration fingerprint: sha256=880ed679c56db08e8c5adffbd7d62852d669692e8c3f65d2b6a57b9686403e18
 export type Json =
   | string
   | number
@@ -15,6 +15,76 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_events: {
+        Row: {
+          action: string
+          actor_platform_staff_id: string | null
+          actor_user_id: string | null
+          id: string
+          metadata: Json
+          occurred_at: string
+          organization_id: string | null
+          outcome: string
+          reason: string | null
+          request_id: string
+          support_session_id: string | null
+          target_id: string | null
+          target_type: string
+        }
+        Insert: {
+          action: string
+          actor_platform_staff_id?: string | null
+          actor_user_id?: string | null
+          id?: string
+          metadata?: Json
+          occurred_at?: string
+          organization_id?: string | null
+          outcome: string
+          reason?: string | null
+          request_id: string
+          support_session_id?: string | null
+          target_id?: string | null
+          target_type: string
+        }
+        Update: {
+          action?: string
+          actor_platform_staff_id?: string | null
+          actor_user_id?: string | null
+          id?: string
+          metadata?: Json
+          occurred_at?: string
+          organization_id?: string | null
+          outcome?: string
+          reason?: string | null
+          request_id?: string
+          support_session_id?: string | null
+          target_id?: string | null
+          target_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_events_actor_platform_staff_id_fkey"
+            columns: ["actor_platform_staff_id"]
+            isOneToOne: false
+            referencedRelation: "platform_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_events_support_session_id_fkey"
+            columns: ["support_session_id"]
+            isOneToOne: false
+            referencedRelation: "support_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       activities: {
         Row: {
           ai_generated: boolean | null
@@ -1962,6 +2032,7 @@ export type Database = {
           no_answer_flag: boolean
           not_interested_reason: string | null
           notes: string | null
+          organization_id: string
           owner: string | null
           owner_uuid: string | null
           phone: string | null
@@ -2076,6 +2147,7 @@ export type Database = {
           no_answer_flag?: boolean
           not_interested_reason?: string | null
           notes?: string | null
+          organization_id: string
           owner?: string | null
           owner_uuid?: string | null
           phone?: string | null
@@ -2190,6 +2262,7 @@ export type Database = {
           no_answer_flag?: boolean
           not_interested_reason?: string | null
           notes?: string | null
+          organization_id?: string
           owner?: string | null
           owner_uuid?: string | null
           phone?: string | null
@@ -2380,7 +2453,116 @@ export type Database = {
             referencedRelation: "v_sales_personal_stats"
             referencedColumns: ["user_id"]
           },
+          {
+            foreignKeyName: "leads_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      memberships: {
+        Row: {
+          accepted_at: string | null
+          created_at: string
+          deactivated_at: string | null
+          id: string
+          invited_at: string
+          invited_by_membership_id: string | null
+          organization_id: string
+          recovery_deadline: string | null
+          status: string
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          accepted_at?: string | null
+          created_at?: string
+          deactivated_at?: string | null
+          id?: string
+          invited_at?: string
+          invited_by_membership_id?: string | null
+          organization_id: string
+          recovery_deadline?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          accepted_at?: string | null
+          created_at?: string
+          deactivated_at?: string | null
+          id?: string
+          invited_at?: string
+          invited_by_membership_id?: string | null
+          organization_id?: string
+          recovery_deadline?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memberships_invited_by_membership_id_fkey"
+            columns: ["invited_by_membership_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memberships_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          closed_at: string | null
+          created_at: string
+          created_by: string | null
+          data_region: string
+          id: string
+          industry_key: string
+          name: string
+          slug: string
+          status: string
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          closed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          data_region?: string
+          id?: string
+          industry_key: string
+          name: string
+          slug: string
+          status?: string
+          timezone?: string
+          updated_at?: string
+        }
+        Update: {
+          closed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          data_region?: string
+          id?: string
+          industry_key?: string
+          name?: string
+          slug?: string
+          status?: string
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       notifications: {
         Row: {
@@ -2724,6 +2906,36 @@ export type Database = {
           unit?: string | null
           unit_price?: number
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      platform_staff: {
+        Row: {
+          created_at: string
+          id: string
+          offboarded_at: string | null
+          staff_ref: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          offboarded_at?: string | null
+          staff_ref: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          offboarded_at?: string | null
+          staff_ref?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -3265,6 +3477,76 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_lead_trace"
             referencedColumns: ["project_id"]
+          },
+        ]
+      }
+      support_sessions: {
+        Row: {
+          approved_at: string | null
+          approved_by_platform_staff_id: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          organization_id: string
+          platform_staff_id: string
+          reason: string
+          requested_at: string
+          revoked_at: string | null
+          scope: Json
+          status: string
+          ticket_ref: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by_platform_staff_id?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          organization_id: string
+          platform_staff_id: string
+          reason: string
+          requested_at?: string
+          revoked_at?: string | null
+          scope: Json
+          status?: string
+          ticket_ref: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by_platform_staff_id?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          organization_id?: string
+          platform_staff_id?: string
+          reason?: string
+          requested_at?: string
+          revoked_at?: string | null
+          scope?: Json
+          status?: string
+          ticket_ref?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_sessions_approved_by_platform_staff_id_fkey"
+            columns: ["approved_by_platform_staff_id"]
+            isOneToOne: false
+            referencedRelation: "platform_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_sessions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_sessions_platform_staff_id_fkey"
+            columns: ["platform_staff_id"]
+            isOneToOne: false
+            referencedRelation: "platform_staff"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4055,6 +4337,7 @@ export type Database = {
       detect_stale_leads: { Args: { stale_days?: number }; Returns: number }
       generate_quote_no: { Args: { year_param: number }; Returns: string }
       get_my_role: { Args: never; Returns: string }
+      requested_organization_id: { Args: never; Returns: string }
       get_team_activity: {
         Args: { p_date?: string }
         Returns: {

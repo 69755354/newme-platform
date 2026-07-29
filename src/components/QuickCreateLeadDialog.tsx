@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { getBrowserOrganizationId } from "@/lib/organization-context";
 
 interface Props {
   open: boolean;
@@ -60,12 +61,20 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
     setSaving(true);
     setError(null);
 
+    const organizationId = getBrowserOrganizationId();
+    if (!organizationId) {
+      setError("Choose an organization before creating a lead");
+      setSaving(false);
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
 
     const followupDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
     const { data, error: insertErr } = await supabase
       .from("leads")
       .insert({
+        organization_id: organizationId,
         source: form.source,
         customer_name: form.customer_name.trim() || null,
         phone: form.phone.trim() || null,

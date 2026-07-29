@@ -4,7 +4,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const CRITICAL_LINT_ZERO_SCOPE = "src/app/api/cos/download-url";
+export const CRITICAL_LINT_ZERO_SCOPES = [
+  "src/app/api/cos/download-url",
+  "src/app/api/cron/check-alerts",
+];
 
 export function checkCriticalFolderLintZero({
   root = process.cwd(),
@@ -13,11 +16,13 @@ export function checkCriticalFolderLintZero({
   log = console.log,
   error = console.error,
 } = {}) {
-  const scopePath = path.join(root, ...CRITICAL_LINT_ZERO_SCOPE.split("/"));
   const eslintBin = path.join(root, "node_modules", "eslint", "bin", "eslint.js");
 
-  if (!exists(scopePath)) {
-    throw new Error(`locked lint-zero scope is missing: ${CRITICAL_LINT_ZERO_SCOPE}`);
+  for (const scope of CRITICAL_LINT_ZERO_SCOPES) {
+    const scopePath = path.join(root, ...scope.split("/"));
+    if (!exists(scopePath)) {
+      throw new Error(`locked lint-zero scope is missing: ${scope}`);
+    }
   }
   if (!exists(eslintBin)) {
     throw new Error(`project-local ESLint is missing: ${path.relative(root, eslintBin)}`);
@@ -25,7 +30,7 @@ export function checkCriticalFolderLintZero({
 
   const result = run(
     process.execPath,
-    [eslintBin, CRITICAL_LINT_ZERO_SCOPE, "--format", "json", "--max-warnings", "0"],
+    [eslintBin, ...CRITICAL_LINT_ZERO_SCOPES, "--format", "json", "--max-warnings", "0"],
     {
       cwd: root,
       encoding: "utf8",
@@ -60,7 +65,18 @@ export function checkCriticalFolderLintZero({
     throw new Error(`ESLint produced invalid JSON: ${parseError.message}`);
   }
   if (!Array.isArray(reports) || reports.length === 0) {
-    throw new Error("ESLint JSON must contain at least one report for the locked scope");
+    throw new Error("ESLint JSON must contain reports for the locked scopes");
+  }
+  for (const scope of CRITICAL_LINT_ZERO_SCOPES) {
+    const scopePath = path.resolve(root, ...scope.split("/"));
+    const hasReport = reports.some((report) => {
+      if (typeof report?.filePath !== "string") return false;
+      const reportPath = path.resolve(root, report.filePath);
+      return reportPath === scopePath || reportPath.startsWith(`${scopePath}${path.sep}`);
+    });
+    if (!hasReport) {
+      throw new Error(`ESLint returned no report for locked scope: ${scope}`);
+    }
   }
 
   const errors = reports.reduce((total, report) => total + Number(report.errorCount ?? 0), 0);
@@ -71,7 +87,7 @@ export function checkCriticalFolderLintZero({
 
   if (errors !== 0 || warnings !== 0) {
     error(
-      `Critical-folder lint-zero gate failed: ${CRITICAL_LINT_ZERO_SCOPE} has ${errors} error(s) and ${warnings} warning(s).`,
+      `Critical-folder lint-zero gate failed: locked scopes have ${errors} error(s) and ${warnings} warning(s).`,
     );
     return { exitCode: 1, errors, warnings };
   }
@@ -79,7 +95,9 @@ export function checkCriticalFolderLintZero({
     throw new Error(`ESLint exited ${result.status} despite reporting zero findings`);
   }
 
-  log(`Critical-folder lint-zero gate passed: ${CRITICAL_LINT_ZERO_SCOPE} has 0 errors and 0 warnings.`);
+  log(
+    `Critical-folder lint-zero gate passed: ${CRITICAL_LINT_ZERO_SCOPES.length} scopes have 0 errors and 0 warnings.`,
+  );
   return { exitCode: 0, errors: 0, warnings: 0 };
 }
 

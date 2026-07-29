@@ -75,11 +75,12 @@ test("forensic log path, installer, and logrotate contract are aligned", async (
   assert.match(rotate, /maxsize 10M/);
 });
 
-test("installer replaces direct service sudo with the audited control boundary", async () => {
-  const [installer, sudoers, deploy] = await Promise.all([
+test("installer replaces direct service sudo with guarded restart, rollback, and deploy boundaries", async () => {
+  const [installer, sudoers, deploy, rollback] = await Promise.all([
     read("scripts/install-systemd-assets.sh"),
     read("infra/sudoers/newme-platform"),
     read("infra/systemd/newme-deploy.sh"),
+    read("infra/systemd/newme-release-rollback.sh"),
   ]);
   assert.match(installer, /infra\/sudoers\/newme-platform/);
   assert.match(installer, /visudo -cf \/etc\/sudoers\.d\/newme-platform/);
@@ -88,16 +89,24 @@ test("installer replaces direct service sudo with the audited control boundary",
   assert.match(installer, /rm -f \/etc\/sudoers\.d\/ubuntu-nopasswd/);
   assert.match(sudoers, /NEWME_SERVICE_CONTROL/);
   assert.match(sudoers, /newme-service-control restart \*/);
+  assert.match(sudoers, /newme-service-control reset-failed \*/);
+  assert.match(sudoers, /newme-release-rollback \*/);
   assert.match(sudoers, /\/usr\/local\/sbin\/newme-deploy \*/);
+  assert.doesNotMatch(sudoers, /newme-service-control (?:start|stop|try-restart) \*/);
   assert.doesNotMatch(sudoers, /\/opt\/newme\/deploy\/deploy\.sh/);
   assert.doesNotMatch(sudoers, /NOPASSWD:\s*ALL/);
   assert.doesNotMatch(sudoers, /\/usr\/bin\/systemctl (?:start|stop|restart)/);
   assert.match(installer, /infra\/systemd\/newme-deploy\.sh/);
+  assert.match(installer, /infra\/systemd\/newme-release-rollback\.sh/);
   assert.match(installer, /git clone --bare/);
   assert.match(deploy, /release SHA must equal canonical main/);
   assert.match(deploy, /git@github\.com:69755354\/newme-platform\.git/);
   assert.match(deploy, /actions\/runs\/\$RUN_ID/);
-  assert.match(deploy, /\[ \"\$RUN_ID\" = \"manual\" \]/);
+  assert.doesNotMatch(deploy, /manual_verified|CI_RUN_URL="manual"|RUN_ID" = "manual"/);
+  assert.match(deploy, /run\.get\("head_branch"\) != "main"/);
+  assert.match(deploy, /run\.get\("event"\) != "workflow_dispatch"/);
+  assert.match(deploy, /INCIDENT_ASSETS/);
+  assert.match(rollback, /RENAME_EXCHANGE = 2/);
   assert.match(deploy, /worktree add --force/);
   assert.match(deploy, /bash \"\$WORKTREE\/scripts\/install-systemd-assets\.sh\"/);
   assert.doesNotMatch(deploy, /\/home\/ubuntu\/newme-platform/);

@@ -3,7 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
 import { calculateQuotation } from "../../../../lib/quotation-engine";
+import { DEVICE_CATALOG } from "@/lib/device-catalog";
 import { logger, genReqId } from "@/lib/logger";
+
+const VALID_DEVICE_IDS = new Set<string>(
+  DEVICE_CATALOG.flatMap((category) => category.devices.map((device) => device.id)),
+);
 
 /**
  * POST /api/hermes/generate-quote
@@ -184,12 +189,29 @@ export async function POST(request: NextRequest) {
     // 2. Derive device quantities from lead data
     const devices = deriveDevices(lead);
 
+    // Reject invalid stored device keys instead of letting the calculation
+    // engine silently ignore them and persist a zero-total quotation.
+    const unknownDevices = Object.keys(devices).filter((id) => !VALID_DEVICE_IDS.has(id));
+    if (unknownDevices.length > 0) {
+      return NextResponse.json(
+        { error: "Unknown device_ids", unknown_devices: unknownDevices },
+        { status: 400 },
+      );
+    }
+
     // 3. Calculate quotation using internal engine
     const calculation = calculateQuotation({
       lead_id,
       devices,
       discount_rate: 0,
     });
+
+    if (calculation.total <= 0) {
+      return NextResponse.json(
+        { error: "Quotation total must be greater than zero" },
+        { status: 400 },
+      );
+    }
 
     // 4. Generate quote number
     const quoteNo = await generateQuoteNo(supabaseAdmin);

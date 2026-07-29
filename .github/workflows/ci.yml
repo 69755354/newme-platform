@@ -1,6 +1,9 @@
 name: ci
 
 on:
+  pull_request:
+    branches:
+      - agent/saas-staging-isolation
   workflow_dispatch:
     inputs:
       validation_level:
@@ -29,8 +32,8 @@ env:
 
 jobs:
   validate:
-    name: Repository validation (${{ inputs.validation_level }})
-    runs-on: ubuntu-latest
+    name: Repository validation
+    runs-on: [self-hosted, staging-ci]
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -39,7 +42,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies

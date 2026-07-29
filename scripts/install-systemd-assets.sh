@@ -31,6 +31,7 @@ MANAGED=(
   /usr/local/libexec/newme/newme-forensic.sh
   /usr/local/libexec/newme/newme-readiness.sh
   /usr/local/sbin/newme-service-control
+  /usr/local/sbin/newme-release-rollback
   /usr/local/sbin/newme-deploy
   /etc/sudoers.d/newme-platform
   /etc/sudoers.d/ubuntu-nopasswd
@@ -54,6 +55,7 @@ install -D -o root -g root -m 0644 "$UNIT" /etc/systemd/system/newme-platform.se
 install -D -o root -g root -m 0755 "$ROOT/infra/systemd/newme-forensic.sh" /usr/local/libexec/newme/newme-forensic.sh
 install -D -o root -g root -m 0755 "$ROOT/infra/systemd/newme-readiness.sh" /usr/local/libexec/newme/newme-readiness.sh
 install -D -o root -g root -m 0755 "$ROOT/infra/systemd/newme-service-control.sh" /usr/local/sbin/newme-service-control
+install -D -o root -g root -m 0755 "$ROOT/infra/systemd/newme-release-rollback.sh" /usr/local/sbin/newme-release-rollback
 install -D -o root -g root -m 0755 "$ROOT/infra/systemd/newme-deploy.sh" /usr/local/sbin/newme-deploy
 install -D -o root -g root -m 0440 "$ROOT/infra/sudoers/newme-platform" /etc/sudoers.d/newme-platform
 visudo -cf /etc/sudoers.d/newme-platform
@@ -83,6 +85,13 @@ if [ ! -e /opt/newme/current ]; then
 fi
 [ -L /opt/newme/current ] || { echo "current must be a symlink" >&2; exit 66; }
 case "$(readlink -f /opt/newme/current)" in /opt/newme/releases/*) ;; *) echo "current must target /opt/newme/releases" >&2; exit 66;; esac
+if [ -e /opt/newme/current.rollback ] || [ -L /opt/newme/current.rollback ]; then
+  [ -L /opt/newme/current.rollback ] || { echo "current.rollback must be a symlink" >&2; exit 66; }
+  case "$(readlink -f /opt/newme/current.rollback)" in
+    /opt/newme/releases/*) ;;
+    *) echo "current.rollback must target /opt/newme/releases" >&2; exit 66 ;;
+  esac
+fi
 if [ ! -e /etc/newme/newme-runtime.env ]; then
   umask 077
   printf 'NEWME_READINESS_TOKEN=%s\n' "$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')" > /etc/newme/newme-runtime.env
@@ -112,6 +121,7 @@ grep -Fqx '/var/log/newme-forensic/newme-forensic.log {' /etc/logrotate.d/newme-
 grep -Fq /opt/hermes-scripts/observability/health-check.sh /etc/cron.d/newme-observability
 grep -Fq /opt/hermes-scripts/observability/login-probe.sh /etc/cron.d/newme-observability
 test -x /usr/local/sbin/newme-deploy
+test -x /usr/local/sbin/newme-release-rollback
 case "$(git --git-dir=/opt/newme/repository.git remote get-url origin)" in
   https://github.com/69755354/newme-platform.git|git@github.com:69755354/newme-platform.git) ;;
   *) exit 65 ;;

@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const deploy = await readFile(join(repoRoot, "scripts", "deploy-immutable.sh"), "utf8");
+const bash = process.platform === "win32"
+  ? "C:\\Program Files\\Git\\bin\\bash.exe"
+  : "bash";
 
 function executableIndex(pattern) {
   return deploy.split("\n").findIndex((line) => !line.trimStart().startsWith("#") && pattern.test(line));
@@ -50,8 +53,8 @@ test("legacy Hermes authorization gates are not part of deployment", () => {
 });
 
 test("release shell scripts have valid Bash syntax", () => {
-  for (const script of ["scripts/verify-release-preflight.sh", "scripts/deploy.sh", "scripts/deploy-immutable.sh", "scripts/install-systemd-assets.sh", "scripts/rollback-systemd-assets.sh", "scripts/finalize-deploy-evidence.sh"]) {
-    const result = spawnSync("bash", ["-n", script], { cwd: repoRoot, encoding: "utf8" });
+  for (const script of ["scripts/verify-release-preflight.sh", "scripts/deploy.sh", "scripts/deploy-immutable.sh", "scripts/install-systemd-assets.sh", "scripts/rollback-systemd-assets.sh", "scripts/finalize-deploy-evidence.sh", "infra/systemd/newme-service-control.sh", "infra/systemd/newme-release-rollback.sh", "infra/systemd/newme-deploy.sh"]) {
+    const result = spawnSync(bash, ["-n", script], { cwd: repoRoot, encoding: "utf8" });
     assert.equal(result.status, 0, `${script}: ${result.stderr}`);
   }
 });

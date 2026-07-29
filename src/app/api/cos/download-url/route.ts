@@ -162,9 +162,14 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(data);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[COS Download] Error:", err);
-    const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
+    const message =
+      process.env.NODE_ENV === "production"
+        ? "Internal server error"
+        : err instanceof Error
+          ? err.message
+          : "Failed to generate download URL";
     return NextResponse.json(
       { error: message || "Failed to generate download URL" },
       { status: 500 }

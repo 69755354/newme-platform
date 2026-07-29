@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { chromium } from "playwright";
 
 const CLEANROOM_REF = "bfsiibofuzoglziltgyd";

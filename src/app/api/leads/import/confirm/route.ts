@@ -3,6 +3,11 @@ import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
+import {
+  readXlsxImportJson,
+  validateXlsxImportLimits,
+} from "@/lib/xlsx-import-limits.mjs";
+import { validateXlsxImportRows } from "@/lib/xlsx-import-rows.mjs";
 
 function importFingerprint(row: Record<string, unknown>): string {
   // Includes the source row number so intentional identical rows in one workbook
@@ -99,11 +104,39 @@ export async function POST(request: NextRequest) {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const body = await request.json();
-    const allRows: any[] = body.rows || [];
+    let body: unknown;
+    try {
+      body = await readXlsxImportJson(request);
+    } catch (err: unknown) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Invalid import request" },
+        { status: err instanceof RangeError ? 413 : 400 },
+      );
+    }
+    const untrustedRows =
+      body && typeof body === "object" && !Array.isArray(body)
+        ? (body as { rows?: unknown }).rows
+        : undefined;
 
-    if (!Array.isArray(allRows) || allRows.length === 0) {
+    if (!Array.isArray(untrustedRows) || untrustedRows.length === 0) {
       return NextResponse.json({ error: "No rows provided" }, { status: 400 });
+    }
+    try {
+      validateXlsxImportRows(untrustedRows);
+    } catch (err: unknown) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Import limit exceeded" },
+        { status: 413 },
+      );
+    }
+    const allRows = untrustedRows as Record<string, any>[];
+    try {
+      validateXlsxImportLimits({ rowCount: allRows.length });
+    } catch (err: unknown) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Import limit exceeded" },
+        { status: 413 },
+      );
     }
 
     const importBatchId = crypto.randomUUID();

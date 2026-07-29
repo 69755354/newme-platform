@@ -62,6 +62,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | SAM-15 | REVIEW | Codex | 2026-07-28 |
 | SAM-66 | IN_PROGRESS | Codex | 2026-07-28 |
 | SAM-20 | REVIEW | Codex | 2026-07-30 |
+| SAM-70 | IN_PROGRESS | Codex | 2026-07-30 |
 
 > `SAM-15` (2026-07-28): staging-local evidence: 23/23 focused execution tests plus taskboard, typecheck, security, lint-ratchet, and direct `npx next build` passed. Public liveness now returns only `{ status: "ok" }`; readiness authentication and bounded timeout are executed. CSP/HSTS, OAuth state replay rejection, and dynamic split-session cookies are covered. Status remains `REVIEW` pending live staging header and OAuth UAT; no production claim.
 

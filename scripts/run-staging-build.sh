@@ -102,7 +102,7 @@ git -C "$WORK" add --force --all
 chown -R newme-staging:newme-staging "$WORK" "$INCOMING"
 
 production_healthy || fail "production health changed before staging build"
-setsid runuser -u newme-staging -- env -i \
+setsid runuser -u newme-staging --supp-group docker -- env -i \
   HOME="$ROOT" \
   PATH="/usr/local/bin:/usr/bin:/bin" \
   XDG_CACHE_HOME="$ROOT/cache" \

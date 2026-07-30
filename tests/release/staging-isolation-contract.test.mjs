@@ -260,7 +260,12 @@ test("staging deploy only verifies prebuilt artifacts and atomically switches", 
 });
 
 test("server build continuously protects production and only accepts the exact remote staging SHA", async () => {
-  const build = await read("scripts/run-staging-build.sh");
+  const [build, buildUnit, installer, runtimeUnit] = await Promise.all([
+    read("scripts/run-staging-build.sh"),
+    read("infra/systemd/newme-staging-build@.service"),
+    read("scripts/install-staging-assets.sh"),
+    read("infra/systemd/newme-staging.service"),
+  ]);
   for (const pattern of [
     /\/run\/newme-staging-window-override/,
     /date -u \+%F/,
@@ -280,6 +285,19 @@ test("server build continuously protects production and only accepts the exact r
   assert.doesNotMatch(build, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(build, /vfopmpxlhwzpxqegayew/);
   assert.doesNotMatch(build, /\/opt\/newme\/repository\.git/);
+  assert.match(
+    build,
+    /setsid runuser -u newme-staging --supp-group docker -- env -i/,
+  );
+  assert.equal((build.match(/--supp-group docker/g) ?? []).length, 1);
+  for (const source of [build, installer]) {
+    assert.doesNotMatch(source, /\b(?:usermod|gpasswd)\b/);
+  }
+  assert.match(runtimeUnit, /^User=newme-staging$/m);
+  assert.match(runtimeUnit, /^Group=newme-staging$/m);
+  assert.doesNotMatch(runtimeUnit, /^(?:SupplementaryGroups=.*|\S*=.*\bdocker\b.*)$/m);
+  assert.match(buildUnit, /^User=root$/m);
+  assert.doesNotMatch(buildUnit, /^(?:SupplementaryGroups=.*|\S*=.*\bdocker\b.*)$/m);
 });
 
 test("staging window override is explicit, date-bound, and shared by build and deploy", async () => {

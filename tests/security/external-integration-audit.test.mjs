@@ -16,7 +16,10 @@ test("offline audit inventories guarded integration and observability entrypoint
       "readiness-token-and-timeout",
       "monitoring-endpoint-retired",
       "meta-oauth-state",
+      "meta-oauth-bounded-delivery",
+      "enabled-integration-runtime-policies",
       "authenticated-notification-trigger",
+      "webhook-cron-audit-alert-contract",
       "cron-route-guards",
     ],
   );

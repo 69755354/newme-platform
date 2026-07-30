@@ -1,6 +1,8 @@
 // RBAC: cron (x-cron-secret)
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createIntegrationLogSinks } from "@/lib/integration-execution.mjs";
+import { genReqId, logger } from "@/lib/logger";
 
 type OverduePlan = { id: string; contract_id: string; seq: number; amount: number; due_date: string };
 type NotificationFailure = { installment_id: string; reason: string };
@@ -53,6 +55,22 @@ export async function GET(request: NextRequest) {
   if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  const sinks = createIntegrationLogSinks({
+    logger,
+    requestId: genReqId(),
+    route: "/api/cron/check-overdue-installments",
+  });
+  const reportFailure = async (reason: string, attempts = 1) => {
+    const event = {
+      integration: "cron_overdue_installments",
+      operation: "scheduled_overdue_delivery",
+      outcome: "failure",
+      attempts,
+      reason,
+    };
+    await sinks.audit(event);
+    await sinks.alert(event);
+  };
 
   try {
     const today = new Date().toISOString().slice(0, 10);
@@ -66,7 +84,7 @@ export async function GET(request: NextRequest) {
       .lt("due_date", today);
 
     if (overdueQueryError) {
-      console.error("[Cron Overdue] Query failed:", overdueQueryError);
+      await reportFailure("overdue_query_failed");
       return NextResponse.json({ error: "Overdue query failed" }, { status: 500 });
     }
 
@@ -110,11 +128,19 @@ export async function GET(request: NextRequest) {
       failures: notificationFailures,
     };
     if (notificationFailures.length > 0) {
+      await reportFailure("notification_delivery_failed");
       return NextResponse.json(result, { status: 502 });
     }
+    await sinks.audit({
+      integration: "cron_overdue_installments",
+      operation: "scheduled_overdue_delivery",
+      outcome: "success",
+      attempts: 1,
+      reason: null,
+    });
     return NextResponse.json(result);
-  } catch (err: unknown) {
-    console.error("[Cron Overdue] Error:", err);
+  } catch {
+    await reportFailure("unexpected_cron_failure");
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

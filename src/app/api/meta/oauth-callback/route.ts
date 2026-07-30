@@ -2,11 +2,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logger, genReqId } from "@/lib/logger";
+import {
+  IntegrationExecutionError,
+  createIntegrationLogSinks,
+  integrationFetch,
+} from "@/lib/integration-execution.mjs";
 
-const APP_ID = process.env.META_APP_ID || "1612447067166445";
-const APP_SECRET = process.env.META_APP_SECRET!;
-const REDIRECT_URI = process.env.META_REDIRECT_URI || "https://app.newme.ae/api/meta/oauth-callback";
 const STATE_COOKIE = "meta_oauth_state";
+
+function metaOAuthConfiguration() {
+  const appId = process.env.META_APP_ID?.trim() ?? "";
+  const appSecret = process.env.META_APP_SECRET?.trim() ?? "";
+  const redirectUri = process.env.META_REDIRECT_URI?.trim() ?? "";
+  if (!appId || !appSecret || !redirectUri) return null;
+  try {
+    const parsed = new URL(redirectUri);
+    if (parsed.protocol !== "https:" || parsed.pathname !== "/api/meta/oauth-callback") {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  return { appId, appSecret, redirectUri };
+}
 
 function clearStateCookie(response: NextResponse) {
   response.cookies.set(STATE_COOKIE, "", {
@@ -17,6 +35,22 @@ function clearStateCookie(response: NextResponse) {
     secure: true,
   });
   return response;
+}
+
+async function reportOAuthFailure(
+  sinks: ReturnType<typeof createIntegrationLogSinks>,
+  operation: string,
+  reason: string,
+) {
+  const event = {
+    integration: "meta_oauth",
+    operation,
+    outcome: "failure",
+    attempts: 1,
+    reason,
+  };
+  await sinks.audit(event);
+  await sinks.alert(event);
 }
 
 async function getSupabaseAdmin() {
@@ -47,40 +81,42 @@ async function saveTokenToSupabase(
   );
 
   if (error) {
-    // If table doesn't exist, try to create it
-    if (error.message?.includes("relation") && error.message?.includes("does not exist")) {
-      logger.warn(
-        {
-          err: error,
-          request_id,
-          operation: "oauth_callback",
-        },
-        "[OAuth] meta_tokens table missing. Token not saved to DB.",
-      );
-    } else {
-      logger.error(
-        {
-          err: error,
-          request_id,
-          operation: "oauth_callback",
-        },
-        "[OAuth] Failed to save token to Supabase",
-      );
-    }
-  } else {
-    logger.info(
-      {
-        request_id,
-        operation: "oauth_callback",
-        expires_at: expiresAt,
-      },
-      "[OAuth] Token saved to Supabase meta_tokens",
-    );
+    throw new Error("meta_token_persistence_failed", { cause: error });
   }
+  logger.info(
+    {
+      integration_audit: true,
+      integration: "meta_oauth",
+      request_id,
+      operation: "token_persistence",
+      outcome: "success",
+      expires_at: expiresAt,
+    },
+    "[OAuth] Token saved to Supabase meta_tokens",
+  );
 }
 
 export async function GET(request: NextRequest) {
   const request_id = genReqId();
+  const config = metaOAuthConfiguration();
+  if (!config) {
+    return clearStateCookie(NextResponse.json(
+      {
+        status: "disabled",
+        integration: "meta_oauth",
+        reason: "not_configured",
+      },
+      {
+        status: 503,
+        headers: { "Cache-Control": "no-store, max-age=0" },
+      },
+    ));
+  }
+  const sinks = createIntegrationLogSinks({
+    logger,
+    requestId: request_id,
+    route: "/api/meta/oauth-callback",
+  });
   const { searchParams } = new URL(request.url);
   const state = searchParams.get("state");
   const stateCookie = request.cookies.get(STATE_COOKIE)?.value;
@@ -102,6 +138,13 @@ export async function GET(request: NextRequest) {
       },
       "[OAuth] Authorization failed",
     );
+    await sinks.audit({
+      integration: "meta_oauth",
+      operation: "authorization",
+      outcome: "failure",
+      attempts: 1,
+      reason: "authorization_denied",
+    });
     return clearStateCookie(new NextResponse(
       "<html><body><h2>Authorization Failed</h2><p>Meta authorization was not completed. Close this tab.</p></body></html>",
       { headers: { "content-type": "text/html; charset=utf-8" } }
@@ -113,7 +156,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const tokenData = await exchangeCode(code, request_id);
+    const tokenData = await exchangeCode(code, request_id, config, sinks);
     if (tokenData?.access_token) {
       // Save to Supabase meta_tokens table instead of filesystem
       await saveTokenToSupabase(tokenData.access_token, tokenData.expires_in || 0, request_id);
@@ -145,6 +188,14 @@ export async function GET(request: NextRequest) {
       { headers: { "content-type": "text/html; charset=utf-8" } }
     ));
   } catch (e) {
+    const executionAlreadyAlerted = (
+      e instanceof Error
+      && "code" in e
+      && e.code === "integration_operation_failed"
+    );
+    if (!executionAlreadyAlerted) {
+      await reportOAuthFailure(sinks, "oauth_callback", "callback_failed");
+    }
     logger.error(
       {
         err: e,
@@ -160,11 +211,16 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function exchangeCode(code: string, request_id: string) {
+async function exchangeCode(
+  code: string,
+  request_id: string,
+  config: { appId: string; appSecret: string; redirectUri: string },
+  sinks: ReturnType<typeof createIntegrationLogSinks>,
+) {
   const params = new URLSearchParams({
-    client_id: APP_ID,
-    redirect_uri: REDIRECT_URI,
-    client_secret: APP_SECRET,
+    client_id: config.appId,
+    redirect_uri: config.redirectUri,
+    client_secret: config.appSecret,
     code,
   });
 
@@ -172,33 +228,23 @@ async function exchangeCode(code: string, request_id: string) {
     {
       request_id,
       operation: "oauth_callback",
-      redirect_uri: REDIRECT_URI,
     },
     "[OAuth] Exchanging code",
   );
 
-  const resp = await fetch(
-    `https://graph.facebook.com/v22.0/oauth/access_token?${params}`,
-    { cache: "no-store" }
-  );
-
-  if (!resp.ok) {
-    logger.error(
-      {
-        request_id,
-        operation: "oauth_callback",
-        http_status: resp.status,
-      },
-      "[OAuth] Token exchange HTTP error",
-    );
-    return null;
-  }
+  const { response: resp } = await integrationFetch({
+    integration: "meta_oauth",
+    operation: "short_token_exchange",
+    url: `https://graph.facebook.com/v22.0/oauth/access_token?${params}`,
+    audit: sinks.audit,
+    alert: sinks.alert,
+  });
 
   const data = await resp.json();
 
   if (data.access_token) {
     // Exchange for long-lived token
-    return exchangeLongLived(data.access_token, request_id);
+    return exchangeLongLived(data.access_token, request_id, config, sinks);
   }
 
   logger.error(
@@ -222,68 +268,42 @@ async function exchangeCode(code: string, request_id: string) {
       "[OAuth] Facebook error",
     );
   }
-  return null;
+  await reportOAuthFailure(sinks, "short_token_payload", "access_token_missing");
+  throw new IntegrationExecutionError("integration_operation_failed");
 }
 
-async function exchangeLongLived(shortToken: string, request_id: string) {
+async function exchangeLongLived(
+  shortToken: string,
+  request_id: string,
+  config: { appId: string; appSecret: string; redirectUri: string },
+  sinks: ReturnType<typeof createIntegrationLogSinks>,
+) {
   const params = new URLSearchParams({
     grant_type: "fb_exchange_token",
-    client_id: APP_ID,
-    client_secret: APP_SECRET,
+    client_id: config.appId,
+    client_secret: config.appSecret,
     fb_exchange_token: shortToken,
   });
 
-  try {
-    const resp = await fetch(
-      `https://graph.facebook.com/v22.0/oauth/access_token?${params}`,
-      { cache: "no-store" }
-    );
-
-    if (!resp.ok) {
-      logger.error(
-        {
-          request_id,
-          operation: "oauth_callback",
-          http_status: resp.status,
-        },
-        "[OAuth] Long-lived exchange HTTP error",
-      );
-      return { access_token: shortToken, expires_in: 3600 };
-    }
-
-    const data = await resp.json();
-    logger.info(
-      {
-        request_id,
-        operation: "oauth_callback",
-        expires_in: data.expires_in,
-      },
-      "[OAuth] Long-lived token",
-    );
-    if (data.error) {
-      logger.error(
-        {
-          err: data.error,
-          request_id,
-          operation: "oauth_callback",
-          fb_error_type: data.error?.type,
-          fb_error_code: data.error?.code,
-          fb_error_subcode: data.error?.error_subcode,
-          fb_fbtrace_id: data.error?.fbtrace_id,
-        },
-        "[OAuth] Long-lived token error",
-      );
-    }
-    return data;
-  } catch (e) {
-    logger.error(
-      {
-        err: e,
-        request_id,
-        operation: "oauth_callback",
-      },
-      "[OAuth] Long-lived exchange failed, using short token",
-    );
-    return { access_token: shortToken, expires_in: 3600 };
+  const { response: resp } = await integrationFetch({
+    integration: "meta_oauth",
+    operation: "long_token_exchange",
+    url: `https://graph.facebook.com/v22.0/oauth/access_token?${params}`,
+    audit: sinks.audit,
+    alert: sinks.alert,
+  });
+  const data = await resp.json();
+  logger.info(
+    {
+      request_id,
+      operation: "oauth_callback",
+      expires_in: data.expires_in,
+    },
+    "[OAuth] Long-lived token",
+  );
+  if (!data.access_token) {
+    await reportOAuthFailure(sinks, "long_token_payload", "access_token_missing");
+    throw new IntegrationExecutionError("integration_operation_failed");
   }
+  return data;
 }

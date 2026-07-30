@@ -38,6 +38,11 @@ of these actions plus one full 40-character SHA:
   current release SHA. It accepts only complete list/search/detail/export,
   import, webhook, cron, Dashboard and member-admin isolation evidence plus
   verified zero residue for every synthetic fixture class.
+- `uat-sam27 <SHA>` runs the exact SAM-27 runner and integration-execution
+  library blobs from the same current release SHA. It accepts only minimal
+  health, explicitly disabled staging Meta routes, bounded synthetic retry,
+  final-failure alert and audit evidence, and explicit N/A cleanup. It contacts
+  loopback only and never calls the production Meta callback.
 - `uat-sam68 <SHA>` runs the fixed SAM-68 observability runner blob from the
   same current release SHA. It accepts only a retired monitoring endpoint with
   no hostile-body persistence, authenticated readiness within three seconds,

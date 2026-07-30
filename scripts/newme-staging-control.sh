@@ -16,12 +16,15 @@ readonly SELF_SOURCE="scripts/newme-staging-control.sh"
 readonly LOCK="/run/lock/newme-staging-control.lock"
 readonly STATE_DIR="/var/lib/newme-staging-control"
 readonly STATE_FILE="$STATE_DIR/last-deploy.state"
+readonly SAM27_EVIDENCE="$STATE_DIR/last-uat-sam27.json"
 readonly SAM68_EVIDENCE="$STATE_DIR/last-uat-sam68.json"
 readonly STAGING_REF="bfsiibofuzoglziltgyd"
 readonly PRODUCTION_REF="vfopmpxlhwzpxqegayew"
 readonly SAM20_RUNNER="scripts/uat/sam20-lead-organization-isolation.mjs"
 readonly SAM20_MIGRATION="supabase/migrations/20260730100000_sam20_lead_organization_isolation.sql"
 readonly SAM22_RUNNER="scripts/uat/sam22-two-organization-isolation.mjs"
+readonly SAM27_RUNNER="scripts/verify-staging-sam27-integrations.mjs"
+readonly SAM27_LIBRARY="src/lib/integration-execution.mjs"
 readonly SAM68_RUNNER="scripts/verify-staging-sam68-observability.mjs"
 readonly PRODUCT_SAAS_RUNNER="scripts/uat/product-saas-final.mjs"
 readonly UAT_IMAGE_PREFIX="newme-staging-uat"
@@ -48,7 +51,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam22|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam22|uat-sam27|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -56,7 +59,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|uat-sam22|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
+  build|deploy|uat|uat-sam20|uat-sam22|uat-sam27|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -506,6 +509,85 @@ run_uat_sam22() {
   echo "staging control SAM-22 UAT passed SHA=$SHA cleanup=verified"
 }
 
+run_uat_sam27() {
+  verify_current_release "$SHA"
+  [ -r "$ENV_FILE" ] || fail "staging environment is missing"
+  local run_dir runner library output rc
+  run_dir="$(mktemp -d "/run/newme-staging-sam27-$SHA.XXXXXX")"
+  runner="$run_dir/scripts/verify-staging-sam27-integrations.mjs"
+  library="$run_dir/src/lib/integration-execution.mjs"
+  output="$(mktemp "$STATE_DIR/.uat-sam27.XXXXXX")"
+  register_temporary_path "$run_dir"
+  register_temporary_path "$output"
+  mkdir -p "$run_dir/scripts" "$run_dir/src/lib"
+  copy_commit_blob "$SHA" "$SAM27_RUNNER" "$runner"
+  copy_commit_blob "$SHA" "$SAM27_LIBRARY" "$library"
+  chown -R root:root "$run_dir"
+  chmod 0700 "$run_dir" "$run_dir/scripts" "$run_dir/src" "$run_dir/src/lib"
+  chmod 0500 "$runner"
+  chmod 0400 "$library"
+  rc=0
+  /usr/bin/env -i \
+    HOME="/root" \
+    PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    SAM27_EXPECTED_RELEASE_SHA="$SHA" \
+    /usr/bin/node "$runner" >"$output" 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "SAM-27 staging UAT failed with status $rc"
+  node -e '
+    const fs = require("fs");
+    const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const disabled = body.disabledIntegrations;
+    const synthetic = body.syntheticExecution;
+    const exactOutcomes = (actual, expected) =>
+      Array.isArray(actual) &&
+      actual.length === expected.length &&
+      actual.every((value, index) => value === expected[index]);
+    if (
+      body.schemaVersion !== 1 ||
+      body.linearId !== "SAM-27" ||
+      body.releaseSha !== process.argv[2] ||
+      body.target !== "staging-loopback" ||
+      body.health?.status !== "passed" ||
+      body.health?.httpStatus !== 200 ||
+      !exactOutcomes(body.health?.responseFields, ["status"]) ||
+      disabled?.metaOAuthStart?.status !== "disabled" ||
+      disabled?.metaOAuthStart?.httpStatus !== 503 ||
+      disabled?.metaOAuthCallback?.status !== "disabled" ||
+      disabled?.metaOAuthCallback?.httpStatus !== 503 ||
+      disabled?.metaCapi?.status !== "disabled" ||
+      disabled?.metaCapi?.httpStatus !== 503 ||
+      disabled?.productionCallbackContacted !== false ||
+      synthetic?.mode !== "versioned_in_process_contract" ||
+      synthetic?.recovered?.status !== "passed" ||
+      synthetic?.recovered?.attempts !== 2 ||
+      !exactOutcomes(synthetic?.recovered?.auditOutcomes, ["retry", "success"]) ||
+      synthetic?.recovered?.finalAlerts !== 0 ||
+      synthetic?.terminal?.status !== "passed" ||
+      synthetic?.terminal?.attempts !== 1 ||
+      !exactOutcomes(synthetic?.terminal?.auditOutcomes, ["failure"]) ||
+      synthetic?.terminal?.finalAlerts !== 1 ||
+      synthetic?.exhausted?.status !== "passed" ||
+      synthetic?.exhausted?.attempts !== 3 ||
+      !exactOutcomes(
+        synthetic?.exhausted?.auditOutcomes,
+        ["retry", "retry", "failure"],
+      ) ||
+      synthetic?.exhausted?.finalAlerts !== 1 ||
+      body.cleanup?.status !== "not_applicable" ||
+      body.cleanup?.reason !==
+        "read_only_disabled_routes_and_in_process_synthetic_contract" ||
+      !Array.isArray(body.cleanup?.fixtureIds) ||
+      body.cleanup.fixtureIds.length !== 0
+    ) process.exit(1);
+  ' "$output" "$SHA" ||
+    fail "SAM-27 UAT evidence is incomplete"
+  chown root:root "$output"
+  chmod 0600 "$output"
+  mv -f "$output" "$SAM27_EVIDENCE"
+  rm -rf -- "$run_dir"
+  echo "staging control SAM-27 UAT passed SHA=$SHA evidence=$SAM27_EVIDENCE cleanup=not_applicable meta=disabled"
+}
+
 run_uat_sam68() {
   verify_current_release "$SHA"
   [ -r "$ENV_FILE" ] || fail "staging environment is missing"
@@ -823,6 +905,7 @@ case "$ACTION" in
   uat) run_uat ;;
   uat-sam20) run_uat_sam20 ;;
   uat-sam22) run_uat_sam22 ;;
+  uat-sam27) run_uat_sam27 ;;
   uat-sam68) run_uat_sam68 ;;
   uat-sam70) run_uat_sam70 ;;
   uat-product-saas) run_uat_product_saas ;;

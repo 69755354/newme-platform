@@ -25,6 +25,7 @@ test("staging controller has one fixed command surface and strict SHA arity", as
     "uat",
     "uat-sam20",
     "uat-sam22",
+    "uat-sam27",
     "uat-sam68",
     "uat-sam70",
     "uat-product-saas",
@@ -226,6 +227,42 @@ test("SAM-68 UAT is SHA-bound, secret-free, auditable, and N/A-explicit", async 
     control,
     /SAM68_EXPECTED_RELEASE_SHA[^\n]*(?:SENTRY|READINESS|SUPABASE)/,
   );
+});
+
+test("SAM-27 UAT is SHA-bound, loopback-only, and preserves fail-closed evidence", async () => {
+  const [control, readme] = await Promise.all([
+    read("scripts/newme-staging-control.sh"),
+    read("infra/staging/uat-runner/README.md"),
+  ]);
+  for (const pattern of [
+    /SAM27_RUNNER="scripts\/verify-staging-sam27-integrations\.mjs"/,
+    /SAM27_LIBRARY="src\/lib\/integration-execution\.mjs"/,
+    /copy_commit_blob "\$SHA" "\$SAM27_RUNNER" "\$runner"/,
+    /copy_commit_blob "\$SHA" "\$SAM27_LIBRARY" "\$library"/,
+    /verify_current_release "\$SHA"/,
+    /\/usr\/bin\/env -i/,
+    /SAM27_EXPECTED_RELEASE_SHA="\$SHA"/,
+    /body\.linearId !== "SAM-27"/,
+    /body\.releaseSha !== process\.argv\[2\]/,
+    /body\.target !== "staging-loopback"/,
+    /body\.health\?\.responseFields, \["status"\]/,
+    /disabled\?\.metaOAuthStart\?\.status !== "disabled"/,
+    /disabled\?\.metaOAuthCallback\?\.status !== "disabled"/,
+    /disabled\?\.metaCapi\?\.status !== "disabled"/,
+    /disabled\?\.productionCallbackContacted !== false/,
+    /synthetic\?\.recovered\?\.attempts !== 2/,
+    /synthetic\?\.terminal\?\.finalAlerts !== 1/,
+    /synthetic\?\.exhausted\?\.attempts !== 3/,
+    /body\.cleanup\?\.status !== "not_applicable"/,
+    /SAM27_EVIDENCE="\$STATE_DIR\/last-uat-sam27\.json"/,
+    /chmod 0600 "\$output"/,
+    /mv -f "\$output" "\$SAM27_EVIDENCE"/,
+  ]) assert.match(control, pattern);
+  assert.match(readme, /uat-sam27 <SHA>/);
+  assert.match(readme, /never calls the production Meta callback/);
+  assert.doesNotMatch(control, /SAM27_EXPECTED_RELEASE_SHA[^\n]*(?:META|SUPABASE)/);
+  assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
+  assert.doesNotMatch(control, /cat "\$output"/);
 });
 
 test("SAM-70 UAT is SHA-bound, staging-only, fail-closed, and residue verified", async () => {

@@ -5,7 +5,10 @@ import {
   CONFIRMATION,
   FIXED_MANIFEST_PATH,
   LINEAR_IDS,
+  NON_MANAGEMENT_ROLES,
   PRODUCTION_PROJECT_REF,
+  SAM13_CONTRACT_VERSION,
+  SAM13_DANGEROUS_PATHS,
   STAGING_PROJECT_REF,
   validateEnvironment,
   verifyReleaseBoundary,
@@ -141,4 +144,44 @@ test("runner source pins required issue paths, markers, guards, and cleanup evid
   assert.ok(source.includes("run_id: state.runId"), "fixture app_metadata must include run_id");
   assert.ok(source.includes("redirect: \"manual\""), "release checks must not follow redirects");
   assert.ok(!source.includes("console.log("), "runner must not log credential-bearing state");
+});
+
+test("SAM-13 staging contract dynamically covers A-D without a new controller action", async () => {
+  assert.equal(SAM13_CONTRACT_VERSION, 1);
+  assert.deepEqual(NON_MANAGEMENT_ROLES, ["operator", "sales", "finance", "designer"]);
+  assert.deepEqual(SAM13_DANGEROUS_PATHS, [
+    "/revert_passwords.py",
+    "/scripts/fix-lead-customer-name.ts",
+    "/scripts/seed-products.ts",
+  ]);
+  assert.deepEqual(LINEAR_IDS, ["SAM-11", "SAM-13", "SAM-35", "SAM-49", "SAM-61"]);
+
+  const [source, controller] = await Promise.all([
+    readFile(new URL("../../scripts/uat/product-saas-final.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../../scripts/newme-staging-control.sh", import.meta.url), "utf8"),
+  ]);
+  for (const contract of [
+    'await recordIssue(report, "SAM-13", () => runSam13(state))',
+    'for (const role of NON_MANAGEMENT_ROLES)',
+    '"/api/users"',
+    '`/api/users/${adminCreated.id}`',
+    '`/api/users/${bossCreated.id}/password`',
+    '"/api/auth/me"',
+    '"/team"',
+    '"inactive_account"',
+    '"organization_admin_required"',
+    "discoverSam13FixtureUsers",
+    'state.sam13FixtureEmails.add(email)',
+    '.from("audit_events")',
+    'dangerous_release_paths: dangerousPaths',
+    'audit_events: await exactCount(',
+    'report.cleanup = "verified"',
+  ]) {
+    assert.ok(source.includes(contract), `SAM-13 runner is missing contract: ${contract}`);
+  }
+  assert.match(source, /inactive_profile:\s*\{[\s\S]*writes:\s*0/);
+  assert.match(source, /non_management:\s*denied/);
+  assert.match(source, /admin_boss:\s*\{[\s\S]*create:\s*2[\s\S]*password_reset:\s*2[\s\S]*deactivate:\s*2/);
+  assert.match(controller, /uat-product-saas\)\s+run_uat_product_saas/);
+  assert.doesNotMatch(controller, /uat-sam13|run_uat_sam13/);
 });

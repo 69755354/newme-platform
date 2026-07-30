@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Final staging-only Product/SaaS UAT for SAM-11, SAM-35, SAM-49, and SAM-61.
+ * Final staging-only Product/SaaS UAT for SAM-11, SAM-13, SAM-35, SAM-49,
+ * and SAM-61.
  *
- * The runner is intentionally not wired into a package script or controller.
- * An operator must provide the approved release SHA, the fixed local release
- * manifest, and staging-only Supabase credentials. No secret or credential is
- * included in the JSON report.
+ * The versioned staging controller invokes this runner with the approved
+ * release SHA, fixed local release manifest, and staging-only Supabase
+ * credentials. No secret or credential is included in the JSON report.
  */
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -20,7 +20,14 @@ export const FIXED_MANIFEST_PATH = "/runner/release/manifest.json";
 export const CONFIRMATION = "PRODUCT_SAAS_STAGING_ONLY";
 export const FIXTURE_SCOPE = "product-saas-final";
 export const REQUIRED_ROLES = ["boss", "admin", "operator", "sales", "finance", "designer"];
-export const LINEAR_IDS = ["SAM-11", "SAM-35", "SAM-49", "SAM-61"];
+export const NON_MANAGEMENT_ROLES = ["operator", "sales", "finance", "designer"];
+export const LINEAR_IDS = ["SAM-11", "SAM-13", "SAM-35", "SAM-49", "SAM-61"];
+export const SAM13_CONTRACT_VERSION = 1;
+export const SAM13_DANGEROUS_PATHS = [
+  "/revert_passwords.py",
+  "/scripts/fix-lead-customer-name.ts",
+  "/scripts/seed-products.ts",
+];
 
 const ALLOWED_BASE_URLS = new Set([
   "https://staging.newme.ae",
@@ -202,8 +209,8 @@ async function listAllAuthUsers(admin) {
   fail("auth user enumeration exceeded the safe pagination limit");
 }
 
-async function createActor(state, role) {
-  const email = `${state.marker}-${role}@invalid.test`;
+async function createActor(state, role, actorKey = role) {
+  const email = `${state.marker}-${actorKey}@invalid.test`;
   const password = `${randomBytes(32).toString("base64url")}Aa1!`;
   const { data, error } = await state.admin.auth.admin.createUser({
     email,
@@ -214,8 +221,9 @@ async function createActor(state, role) {
       fixture_kind: "final-product-uat",
       run_id: state.runId,
       role,
+      actor_key: actorKey,
     },
-    user_metadata: { full_name: `[PRODUCT-UAT ${state.runId}] ${role}` },
+    user_metadata: { full_name: `[PRODUCT-UAT ${state.runId}] ${actorKey}` },
   });
   if (error || !data.user || !exactIdentityMarker(data.user, state.runId)) {
     fail(`could not create exact marked ${role} identity`);
@@ -224,7 +232,7 @@ async function createActor(state, role) {
 
   const { error: profileError } = await state.admin.from("profiles").update({
     role,
-    full_name: `[PRODUCT-UAT ${state.runId}] ${role}`,
+    full_name: `[PRODUCT-UAT ${state.runId}] ${actorKey}`,
     email,
     is_active: true,
     force_password_change: false,
@@ -250,8 +258,10 @@ async function createActor(state, role) {
   if (signInError || !signedIn.session || signedIn.user?.id !== data.user.id) {
     fail(`could not authenticate exact marked ${role} identity`);
   }
-  state.actors.set(role, {
+  state.actors.set(actorKey, {
     id: data.user.id,
+    email,
+    password,
     token: signedIn.session.access_token,
     client: state.userClient(signedIn.session.access_token),
   });
@@ -273,6 +283,7 @@ function initializeState(config, runId) {
     leadIds: new Set(),
     importBatchIds: new Set(),
     archiveBatchIds: new Set(),
+    sam13FixtureEmails: new Set(),
   };
 }
 
@@ -304,7 +315,11 @@ async function appRequest(state, role, path, { method = "GET", body } = {}) {
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: response.status, payload: await responsePayload(response) };
+  return {
+    status: response.status,
+    location: response.headers.get("location"),
+    payload: await responsePayload(response),
+  };
 }
 
 async function createLead(state, suffix, overrides = {}) {
@@ -619,6 +634,302 @@ async function runSam61(state) {
   };
 }
 
+function exactSam13FixtureIdentity(user, state) {
+  const email = typeof user?.email === "string" ? user.email.toLowerCase() : "";
+  const metadata = user?.user_metadata ?? {};
+  return state.sam13FixtureEmails.has(email)
+    && typeof metadata.full_name === "string"
+    && metadata.full_name.startsWith(`${state.markerText} SAM-13 `)
+    && REQUIRED_ROLES.includes(metadata.role);
+}
+
+async function discoverSam13FixtureUsers(state) {
+  const users = await listAllAuthUsers(state.admin);
+  const discovered = users.filter((user) => exactSam13FixtureIdentity(user, state));
+  for (const user of discovered) state.userIds.add(user.id);
+  return discovered;
+}
+
+function sam13UserInput(state, suffix) {
+  const email = `${state.marker}-sam13-${suffix}@invalid.test`.toLowerCase();
+  const input = {
+    email,
+    password: `${randomBytes(32).toString("base64url")}Aa1!`,
+    full_name: `${state.markerText} SAM-13 ${suffix}`,
+    role: "sales",
+  };
+  state.sam13FixtureEmails.add(email);
+  return input;
+}
+
+async function createSam13User(state, actorRole, suffix) {
+  const input = sam13UserInput(state, suffix);
+  const response = await appRequest(state, actorRole, "/api/users", {
+    method: "POST",
+    body: input,
+  });
+  expectStatus(`${actorRole} user create`, response, 201);
+  assert.equal(
+    response.payload?.organization_id,
+    state.organizationId,
+    `${actorRole} user create escaped the marked organization`,
+  );
+  assertUuid(response.payload?.user?.id, `${actorRole} created user id`);
+  assert.equal(response.payload?.user?.email, input.email, `${actorRole} created wrong email`);
+  state.userIds.add(response.payload.user.id);
+  return { ...input, id: response.payload.user.id };
+}
+
+async function membershipSnapshot(state, userId) {
+  const { data, error } = await state.admin
+    .from("memberships")
+    .select("id,status,version,deactivated_at,recovery_deadline")
+    .eq("organization_id", state.organizationId)
+    .eq("user_id", userId)
+    .single();
+  if (error || !data) fail("could not read exact SAM-13 membership");
+  return data;
+}
+
+async function profileSnapshot(state, userId) {
+  const { data, error } = await state.admin
+    .from("profiles")
+    .select("id,is_active,password_changed_at")
+    .eq("id", userId)
+    .single();
+  if (error || !data) fail("could not read exact SAM-13 profile");
+  return data;
+}
+
+async function signInSam13User(state, user, label) {
+  const client = createClient(state.config.supabaseUrl, state.config.anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { headers: { "x-newme-organization-id": state.organizationId } },
+  });
+  const { data, error } = await client.auth.signInWithPassword({
+    email: user.email,
+    password: user.password,
+  });
+  if (error || !data.session || data.user?.id !== user.id) {
+    fail(`${label} credentials were not accepted`);
+  }
+  return data.session;
+}
+
+function expectAccessError(label, response, status, code) {
+  expectStatus(label, response, status);
+  assert.equal(response.payload?.error, code, `${label}: unexpected error code`);
+}
+
+async function runSam13(state) {
+  const adminCreated = await createSam13User(state, "admin", "admin-created");
+  const bossCreated = await createSam13User(state, "boss", "boss-created");
+
+  for (const role of ["admin", "boss"]) {
+    const listed = await appRequest(state, role, "/api/users");
+    expectStatus(`${role} user list`, listed, 200);
+    assert.equal(listed.payload?.organization_id, state.organizationId);
+    for (const user of [adminCreated, bossCreated]) {
+      assert.ok(
+        listed.payload?.users?.some((entry) => entry.id === user.id),
+        `${role} user list omitted ${user.id}`,
+      );
+    }
+  }
+
+  const originalMembership = await membershipSnapshot(state, adminCreated.id);
+  const originalPasswordProfile = await profileSnapshot(state, bossCreated.id);
+  const deniedEmails = new Set();
+  const denied = {};
+  for (const role of NON_MANAGEMENT_ROLES) {
+    const deniedInput = sam13UserInput(state, `denied-${role}`);
+    deniedEmails.add(deniedInput.email);
+    const createResponse = await appRequest(state, role, "/api/users", {
+      method: "POST",
+      body: deniedInput,
+    });
+    expectAccessError(
+      `${role} user create denial`,
+      createResponse,
+      403,
+      "organization_admin_required",
+    );
+
+    const deleteResponse = await appRequest(
+      state,
+      role,
+      `/api/users/${adminCreated.id}`,
+      { method: "DELETE" },
+    );
+    expectAccessError(
+      `${role} user deactivate denial`,
+      deleteResponse,
+      403,
+      "organization_admin_required",
+    );
+
+    const passwordResponse = await appRequest(
+      state,
+      role,
+      `/api/users/${bossCreated.id}/password`,
+      {
+        method: "PATCH",
+        body: { password: `${randomBytes(32).toString("base64url")}Aa1!` },
+      },
+    );
+    expectAccessError(
+      `${role} password reset denial`,
+      passwordResponse,
+      403,
+      "organization_admin_required",
+    );
+    denied[role] = { create: 403, deactivate: 403, password_reset: 403 };
+  }
+
+  const afterDeniedMembership = await membershipSnapshot(state, adminCreated.id);
+  const afterDeniedPasswordProfile = await profileSnapshot(state, bossCreated.id);
+  assert.deepEqual(
+    afterDeniedMembership,
+    originalMembership,
+    "non-management deactivate attempts changed membership state",
+  );
+  assert.deepEqual(
+    afterDeniedPasswordProfile,
+    originalPasswordProfile,
+    "non-management password attempts changed profile state",
+  );
+  await signInSam13User(state, bossCreated, "original password after denied resets");
+  const afterDeniedUsers = await discoverSam13FixtureUsers(state);
+  assert.equal(
+    afterDeniedUsers.filter((user) => deniedEmails.has(user.email?.toLowerCase())).length,
+    0,
+    "non-management create attempt left an auth identity",
+  );
+
+  const adminResetPassword = `${randomBytes(32).toString("base64url")}Aa1!`;
+  const bossReset = await appRequest(
+    state,
+    "boss",
+    `/api/users/${adminCreated.id}/password`,
+    { method: "PATCH", body: { password: adminResetPassword } },
+  );
+  expectStatus("boss password reset", bossReset, 200);
+  assert.equal(bossReset.payload?.success, true);
+  adminCreated.password = adminResetPassword;
+  await signInSam13User(state, adminCreated, "boss-reset password");
+
+  const bossResetPassword = `${randomBytes(32).toString("base64url")}Aa1!`;
+  const adminReset = await appRequest(
+    state,
+    "admin",
+    `/api/users/${bossCreated.id}/password`,
+    { method: "PATCH", body: { password: bossResetPassword } },
+  );
+  expectStatus("admin password reset", adminReset, 200);
+  assert.equal(adminReset.payload?.success, true);
+  bossCreated.password = bossResetPassword;
+  await signInSam13User(state, bossCreated, "admin-reset password");
+
+  const bossDeactivate = await appRequest(
+    state,
+    "boss",
+    `/api/users/${adminCreated.id}`,
+    { method: "DELETE" },
+  );
+  expectStatus("boss user deactivate", bossDeactivate, 200);
+  assert.equal(bossDeactivate.payload?.success, true);
+  const adminDeactivate = await appRequest(
+    state,
+    "admin",
+    `/api/users/${bossCreated.id}`,
+    { method: "DELETE" },
+  );
+  expectStatus("admin user deactivate", adminDeactivate, 200);
+  assert.equal(adminDeactivate.payload?.success, true);
+  assert.equal((await membershipSnapshot(state, adminCreated.id)).status, "inactive");
+  assert.equal((await membershipSnapshot(state, bossCreated.id)).status, "inactive");
+
+  const { data: auditEvents, error: auditEventsError } = await state.admin
+    .from("audit_events")
+    .select("action,metadata")
+    .eq("organization_id", state.organizationId)
+    .eq("action", "organization.member.deactivate");
+  if (auditEventsError) fail("could not verify SAM-13 deactivation audit events");
+  assert.equal(auditEvents?.length, 2, "SAM-13 deactivation audit event count mismatch");
+  assert.deepEqual(
+    new Set((auditEvents ?? []).map((event) => event.metadata?.target_user_id)),
+    new Set([adminCreated.id, bossCreated.id]),
+    "deactivation audit events did not match exact SAM-13 target users",
+  );
+
+  await createActor(state, "admin", "inactive-admin");
+  const inactiveActor = state.actors.get("inactive-admin");
+  const { error: inactiveError } = await state.admin
+    .from("profiles")
+    .update({ is_active: false })
+    .eq("id", inactiveActor.id);
+  if (inactiveError) fail("could not deactivate the exact SAM-13 profile");
+  const inactiveSession = await signInSam13User(
+    state,
+    inactiveActor,
+    "inactive Supabase identity",
+  );
+  inactiveActor.token = inactiveSession.access_token;
+  inactiveActor.client = state.userClient(inactiveSession.access_token);
+
+  const inactiveMe = await appRequest(state, "inactive-admin", "/api/auth/me");
+  expectAccessError("inactive auth/me", inactiveMe, 401, "inactive_account");
+  const inactiveUsers = await appRequest(state, "inactive-admin", "/api/users");
+  expectAccessError("inactive users API", inactiveUsers, 401, "inactive_account");
+  const inactiveInput = sam13UserInput(state, "denied-inactive-admin");
+  const inactiveCreate = await appRequest(state, "inactive-admin", "/api/users", {
+    method: "POST",
+    body: inactiveInput,
+  });
+  expectAccessError("inactive user create denial", inactiveCreate, 401, "inactive_account");
+  const inactiveTeam = await appRequest(state, "inactive-admin", "/team");
+  expectStatus("inactive protected team route", inactiveTeam, 307);
+  const inactiveLocation = new URL(inactiveTeam.location);
+  assert.equal(inactiveLocation.pathname, "/login");
+  assert.equal(inactiveLocation.searchParams.get("reason"), "inactive_account");
+  assert.equal((await profileSnapshot(state, inactiveActor.id)).is_active, false);
+  assert.equal((await membershipSnapshot(state, inactiveActor.id)).status, "active");
+  const afterInactiveUsers = await discoverSam13FixtureUsers(state);
+  assert.equal(
+    afterInactiveUsers.filter((user) => user.email?.toLowerCase() === inactiveInput.email).length,
+    0,
+    "inactive user create attempt left an auth identity",
+  );
+
+  const dangerousPaths = {};
+  for (const path of SAM13_DANGEROUS_PATHS) {
+    const response = await appRequest(state, "admin", path);
+    expectStatus(`dangerous release path ${path}`, response, 404);
+    dangerousPaths[path] = 404;
+  }
+
+  return {
+    contract_version: SAM13_CONTRACT_VERSION,
+    admin_boss: {
+      list: 2,
+      create: 2,
+      password_reset: 2,
+      deactivate: 2,
+      audit_events: 2,
+    },
+    non_management: denied,
+    inactive_profile: {
+      supabase_session_obtained: true,
+      auth_me: 401,
+      users_api: 401,
+      create: 401,
+      protected_team: 307,
+      writes: 0,
+    },
+    dangerous_release_paths: dangerousPaths,
+  };
+}
+
 async function deleteByLeadIds(state, table, column = "lead_id") {
   if (state.leadIds.size === 0) return;
   const { error } = await state.admin.from(table).delete().in(column, [...state.leadIds]);
@@ -700,6 +1011,15 @@ async function cleanup(state) {
     if (error) fail("could not delete discovered marked leads");
   });
 
+  const discovered = await listAllAuthUsers(state.admin).catch((error) => {
+    errors.push(`discover marked auth users: ${safeMessage(error)}`);
+    return [];
+  });
+  for (const user of discovered) {
+    if (exactIdentityMarker(user, state.runId) || exactSam13FixtureIdentity(user, state)) {
+      state.userIds.add(user.id);
+    }
+  }
   for (const id of state.userIds) {
     await capture("user_session_daily", async () => {
       const { error } = await state.admin.from("user_session_daily").delete().eq("user_id", id);
@@ -710,18 +1030,18 @@ async function cleanup(state) {
       if (error) fail("could not delete marked audit logs");
     });
   }
+  await capture("audit_events", async () => {
+    const { error } = await state.admin
+      .from("audit_events")
+      .delete()
+      .eq("organization_id", state.organizationId);
+    if (error) fail("could not delete marked audit events");
+  });
   await capture("memberships", async () => {
     const { error } = await state.admin.from("memberships").delete().eq("organization_id", state.organizationId);
     if (error) fail("could not delete marked memberships");
   });
 
-  const discovered = await listAllAuthUsers(state.admin).catch((error) => {
-    errors.push(`discover marked auth users: ${safeMessage(error)}`);
-    return [];
-  });
-  for (const user of discovered.filter((candidate) => exactIdentityMarker(candidate, state.runId))) {
-    state.userIds.add(user.id);
-  }
   for (const id of state.userIds) {
     await capture("auth identity", async () => {
       const { error } = await state.admin.auth.admin.deleteUser(id, false);
@@ -738,7 +1058,10 @@ async function cleanup(state) {
   });
 
   const remainingAuth = (await listAllAuthUsers(state.admin))
-    .filter((candidate) => exactIdentityMarker(candidate, state.runId)).length;
+    .filter((candidate) => (
+      exactIdentityMarker(candidate, state.runId)
+      || exactSam13FixtureIdentity(candidate, state)
+    )).length;
   const counts = {
     auth_users: remainingAuth,
     profiles: await exactCount(state.admin, "profiles", "id", [...state.userIds]),
@@ -746,6 +1069,12 @@ async function cleanup(state) {
     memberships: await exactCount(state.admin, "memberships", "organization_id", [state.organizationId]),
     leads: await exactLikeCount(state.admin, "leads", "customer_name", `${state.markerText}%`),
     audit_logs: await exactCount(state.admin, "audit_logs", "actor_id", [...state.userIds]),
+    audit_events: await exactCount(
+      state.admin,
+      "audit_events",
+      "organization_id",
+      [state.organizationId],
+    ),
     user_session_daily: await exactCount(state.admin, "user_session_daily", "user_id", [...state.userIds]),
     lead_children: 0,
   };
@@ -808,6 +1137,7 @@ export async function runProductSaasFinalUat(env = process.env, dependencies = {
     await recordIssue(report, "SAM-35", () => runSam35(state));
     await recordIssue(report, "SAM-49", () => runSam49(state));
     await recordIssue(report, "SAM-61", () => runSam61(state));
+    await recordIssue(report, "SAM-13", () => runSam13(state));
   } finally {
     try {
       report.cleanupCounts = await cleanup(state);

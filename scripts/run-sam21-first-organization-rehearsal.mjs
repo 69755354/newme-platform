@@ -32,7 +32,7 @@ const CANONICAL_ASSET_BLOBS = new Map([
   ],
   [
     "scripts/run-sam20-database-gate.mjs",
-    "f4fec3b4bfee446e8e36cf7aff7571b9c2d8c5ac",
+    "75eb5e0d2fcb7a8fbbdddf2f9b6219ba50cca66d",
   ],
   [
     "scripts/run-sam22-database-gate.mjs",
@@ -40,7 +40,7 @@ const CANONICAL_ASSET_BLOBS = new Map([
   ],
   [
     "scripts/uat/sam20-lead-organization-isolation.mjs",
-    "75ef69f052fd294ac9e005809a9bdf20323c2207",
+    "603767020a5ed2114a5359f67778832e36c2da56",
   ],
   [
     "scripts/uat/sam22-two-organization-isolation.mjs",

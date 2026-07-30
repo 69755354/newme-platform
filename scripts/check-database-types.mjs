@@ -18,7 +18,9 @@ const required = [
   "support_sessions:",
   "allocate_payment:",
   "confirm_payment:",
+  "end_support_session_atomic:",
   'requested_organization_id: { Args: never; Returns: string }',
+  "start_support_session_atomic:",
   "transition_lead_stage:",
 ];
 

@@ -251,7 +251,7 @@ test("Product/SaaS UAT is image-bound, staging-only, and verifies every issue an
     /body\.results\?\.\[id\]\?\.status !== "pass"/,
     /body\.cleanupCounts\?\.\[key\] !== 0/,
   ]) assert.match(control, pattern);
-  for (const issue of ["SAM-11", "SAM-35", "SAM-49", "SAM-61"]) {
+  for (const issue of ["SAM-11", "SAM-13", "SAM-35", "SAM-49", "SAM-61"]) {
     assert.ok(control.includes(`"${issue}"`));
   }
   for (const fixture of [
@@ -261,6 +261,8 @@ test("Product/SaaS UAT is image-bound, staging-only, and verifies every issue an
     "memberships",
     "leads",
     "audit_logs",
+    "activity_logs",
+    "activities",
     "user_session_daily",
     "lead_children",
   ]) assert.ok(control.includes(`"${fixture}"`));

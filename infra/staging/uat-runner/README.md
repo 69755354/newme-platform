@@ -1,11 +1,12 @@
 # Staging UAT runner
 
-This directory builds the browser runtime for the versioned SAM-26 role and
-SAM-70 XLSX abuse runners without adding Playwright, Chromium, or SheetJS to
-the Next.js standalone release.
+This directory builds the isolated runtime for the versioned SAM-26 role,
+SAM-70 XLSX abuse, and final Product/SaaS runners without adding Playwright,
+Chromium, SheetJS, or runner-only dependencies to the Next.js standalone
+release.
 
 The staging-only build service must create a fresh temporary Docker build
-context containing exactly these six files from the exact checked-out SHA:
+context containing exactly these seven files from the exact checked-out SHA:
 
 - `infra/staging/uat-runner/Dockerfile`
 - `infra/staging/uat-runner/package.json`
@@ -13,6 +14,7 @@ context containing exactly these six files from the exact checked-out SHA:
 - `infra/staging/uat-runner/run.sh`
 - `scripts/verify-staging-sam26-roles.mjs`
 - `scripts/verify-staging-sam70-xlsx.mjs`
+- `scripts/uat/product-saas-final.mjs`
 
 It then builds:
 
@@ -40,6 +42,9 @@ of these actions plus one full 40-character SHA:
   read-only release manifest. It accepts only exact IDs/batches, the unique
   marker, all required abuse/ownership cases, and zero marker-scoped cleanup
   residue.
+- `uat-product-saas <SHA>` runs the exact final Product/SaaS runner from the
+  same image and read-only manifest. It accepts only passing SAM-11, SAM-35,
+  SAM-49, and SAM-61 evidence plus zero residue for all eight fixture classes.
 - `rollback <oldSHA>` accepts only the recorded direct predecessor. It refuses
   an application-only rollback when the new release contains the SAM-20
   database contract and the predecessor does not; it never changes database
@@ -58,5 +63,6 @@ production environment files, source worktrees, or the Docker socket.
 Use `--rm --init --ipc=host --read-only` plus writable tmpfs mounts for `/tmp` and `/runner/home`. The runner image is disposable: a failed build or failed UAT must not replace the live staging release.
 
 The image tag, `package.json`, and lockfile deliberately pin Playwright
-`1.60.0` together. SheetJS is pinned to the same immutable
+`1.60.0` together. Supabase JS is pinned to `2.106.2`, matching the application
+lockfile version used by the final Product/SaaS runner. SheetJS is pinned to the same immutable
 `xlsx-0.20.2.tgz` URL and integrity used by the application lockfile.

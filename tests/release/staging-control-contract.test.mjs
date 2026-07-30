@@ -19,10 +19,16 @@ test("staging controller has one fixed command surface and strict SHA arity", as
   const control = await read("scripts/newme-staging-control.sh");
   assert.match(control, /\[ "\$#" -eq 2 \] \|\| usage/);
   assert.match(control, /\[\[ "\$SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\] \|\| usage/);
-  assert.match(
-    control,
-    /build\|deploy\|uat\|uat-sam20\|uat-sam68\|uat-sam70\|rollback\) ;;/,
-  );
+  for (const action of [
+    "build",
+    "deploy",
+    "uat",
+    "uat-sam20",
+    "uat-sam68",
+    "uat-sam70",
+    "uat-product-saas",
+    "rollback",
+  ]) assert.ok(control.includes(action), `missing fixed controller action ${action}`);
   assert.doesNotMatch(control, /\beval\b/);
 });
 
@@ -190,6 +196,88 @@ test("SAM-70 UAT is SHA-bound, staging-only, fail-closed, and residue verified",
     "workbook over 5 MiB is rejected before preview",
     "quotation export enforces ownership and management access",
   ]) assert.ok(control.includes(`"${requiredCase}"`));
+  assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
+  assert.doesNotMatch(control, /cat "\$output"/);
+});
+
+test("Product/SaaS UAT is image-bound, staging-only, and verifies every issue and cleanup class", async () => {
+  const [control, dockerfile, runScript, packageJson, lockfile, rootLockfile, readme] = await Promise.all([
+    read("scripts/newme-staging-control.sh"),
+    read("infra/staging/uat-runner/Dockerfile"),
+    read("infra/staging/uat-runner/run.sh"),
+    read("infra/staging/uat-runner/package.json"),
+    read("infra/staging/uat-runner/package-lock.json"),
+    read("package-lock.json"),
+    read("infra/staging/uat-runner/README.md"),
+  ]);
+  for (const pattern of [
+    /PRODUCT_SAAS_RUNNER="scripts\/uat\/product-saas-final\.mjs"/,
+    /copy_commit_blob "\$SHA" "\$PRODUCT_SAAS_RUNNER"/,
+    /verify_current_release "\$SHA"/,
+    /SAM_UAT_SUITE=product-saas-final/,
+    /PRODUCT_UAT_RELEASE_SHA=\$SHA/,
+    /PRODUCT_UAT_BASE_URL=https:\/\/staging\.newme\.ae/,
+    /PRODUCT_UAT_RELEASE_MANIFEST=\/runner\/release\/manifest\.json/,
+    /PRODUCT_UAT_CONFIRM=PRODUCT_SAAS_STAGING_ONLY/,
+    /body\.scope !== "product-saas-final"/,
+    /body\.release\?\.project !== process\.argv\[3\]/,
+    /body\.release\?\.release_sha !== process\.argv\[2\]/,
+    /body\.cleanup !== "verified"/,
+    /body\.results\?\.\[id\]\?\.status !== "pass"/,
+    /body\.cleanupCounts\?\.\[key\] !== 0/,
+  ]) assert.match(control, pattern);
+  for (const issue of ["SAM-11", "SAM-35", "SAM-49", "SAM-61"]) {
+    assert.ok(control.includes(`"${issue}"`));
+  }
+  for (const fixture of [
+    "auth_users",
+    "profiles",
+    "organizations",
+    "memberships",
+    "leads",
+    "audit_logs",
+    "user_session_daily",
+    "lead_children",
+  ]) assert.ok(control.includes(`"${fixture}"`));
+
+  assert.match(dockerfile, /COPY product-saas-final\.mjs \/runner\/product-saas-final\.mjs/);
+  assert.match(runScript, /product-saas-final\)/);
+  assert.match(runScript, /exec node \/runner\/product-saas-final\.mjs/);
+  assert.match(runScript, /PRODUCT_SAAS_STAGING_ONLY/);
+  assert.doesNotMatch(runScript, /uat-sam68/);
+
+  const packageBody = JSON.parse(packageJson);
+  const lockBody = JSON.parse(lockfile);
+  const rootLockBody = JSON.parse(rootLockfile);
+  assert.equal(packageBody.dependencies["@supabase/supabase-js"], "2.106.2");
+  assert.equal(
+    lockBody.packages[""].dependencies["@supabase/supabase-js"],
+    "2.106.2",
+  );
+  assert.ok(lockBody.packages["node_modules/@supabase/supabase-js"]);
+  for (const dependency of [
+    "@supabase/auth-js",
+    "@supabase/functions-js",
+    "@supabase/phoenix",
+    "@supabase/postgrest-js",
+    "@supabase/realtime-js",
+    "@supabase/storage-js",
+    "@supabase/supabase-js",
+    "iceberg-js",
+    "tslib",
+  ]) {
+    assert.deepEqual(
+      lockBody.packages[`node_modules/${dependency}`],
+      rootLockBody.packages[`node_modules/${dependency}`],
+      `${dependency} must match the application lockfile`,
+    );
+  }
+
+  assert.match(readme, /uat-product-saas <SHA>/);
+  assert.match(readme, /uat-sam68 <SHA>/);
+  assert.match(control, /uat-sam20/);
+  assert.match(control, /uat-sam68/);
+  assert.match(control, /uat-sam70/);
   assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
   assert.doesNotMatch(control, /cat "\$output"/);
 });

@@ -84,6 +84,9 @@ jobs:
       - name: SAM-20 disposable database apply and rollback gate
         run: npm run check:sam20-database
 
+      - name: SAM-61 active-profile milestone guard
+        run: npm run check:sam61-active-profile-database
+
       - name: CRM regression contract
         run: python3 scripts/crm-regression.py --self-test
 

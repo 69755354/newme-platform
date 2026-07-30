@@ -41,7 +41,7 @@ function eslintResult({
   };
 }
 
-test("SAM-67 locks both critical API boundaries to zero lint findings", () => {
+test("SAM-67 locks all critical API boundaries to zero lint findings", () => {
   withFixture((root) => {
     const calls = [];
     const result = checkCriticalFolderLintZero({
@@ -80,25 +80,27 @@ test("SAM-67 lint-zero gate fails closed on a reintroduced error or warning", ()
 
 test("SAM-67 lint-zero gate fails closed when the locked directory disappears", () => {
   withFixture((root) => {
-    fs.rmSync(path.join(root, ...CRITICAL_LINT_ZERO_SCOPES[1].split("/")), {
+    const newestScope = CRITICAL_LINT_ZERO_SCOPES.at(-1);
+    fs.rmSync(path.join(root, ...newestScope.split("/")), {
       recursive: true,
       force: true,
     });
     assert.throws(
       () => checkCriticalFolderLintZero({ root, run: () => eslintResult() }),
-      new RegExp(`locked lint-zero scope is missing: ${CRITICAL_LINT_ZERO_SCOPES[1]}`),
+      { message: `locked lint-zero scope is missing: ${newestScope}` },
     );
   });
 });
 
 test("SAM-67 lint-zero gate fails closed when ESLint omits a locked scope", () => {
   withFixture((root) => {
+    const newestScope = CRITICAL_LINT_ZERO_SCOPES.at(-1);
     assert.throws(
       () => checkCriticalFolderLintZero({
         root,
-        run: () => eslintResult({ scopes: [CRITICAL_LINT_ZERO_SCOPES[0]] }),
+        run: () => eslintResult({ scopes: CRITICAL_LINT_ZERO_SCOPES.slice(0, -1) }),
       }),
-      new RegExp(`ESLint returned no report for locked scope: ${CRITICAL_LINT_ZERO_SCOPES[1]}`),
+      { message: `ESLint returned no report for locked scope: ${newestScope}` },
     );
   });
 });

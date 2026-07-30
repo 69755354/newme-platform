@@ -7,6 +7,11 @@ import { fileURLToPath } from "node:url";
 export const CRITICAL_LINT_ZERO_SCOPES = [
   "src/app/api/cos/download-url",
   "src/app/api/cron/check-alerts",
+  "src/app/api/contracts/list",
+  "src/app/api/notifications/unread-count",
+  "src/app/api/notifications/read-all",
+  "src/app/api/notifications/[id]",
+  "src/app/api/cron/daily-reminder",
 ];
 
 export function checkCriticalFolderLintZero({

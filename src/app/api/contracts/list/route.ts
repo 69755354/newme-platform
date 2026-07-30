@@ -74,7 +74,7 @@ export async function GET(request: Request) {
   }
 
   const responseData = {
-    contracts: (data ?? []) as any[],
+    contracts: data ?? [],
     role,
     totalCount: count ?? 0,
   }

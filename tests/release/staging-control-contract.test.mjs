@@ -26,6 +26,7 @@ test("staging controller has one fixed command surface and strict SHA arity", as
     "uat-sam20",
     "uat-sam22",
     "uat-sam27",
+    "uat-sam54",
     "uat-sam68",
     "uat-sam70",
     "uat-product-saas",
@@ -265,6 +266,43 @@ test("SAM-27 UAT is SHA-bound, loopback-only, and preserves fail-closed evidence
   assert.doesNotMatch(control, /cat "\$output"/);
 });
 
+test("SAM-54 UAT crosses the versioned alert state and captures read-only diagnostics", async () => {
+  const control = await read("scripts/newme-staging-control.sh");
+  for (const pattern of [
+    /SAM54_RUNNER="scripts\/verify-staging-sam54-diagnostics\.mjs"/,
+    /SAM54_ALERT_STATE="infra\/observability\/hermes-alert-state-v1\.sh"/,
+    /copy_commit_blob "\$SHA" "\$SAM54_RUNNER" "\$runner"/,
+    /copy_commit_blob "\$SHA" "\$SAM54_ALERT_STATE" "\$alert_state"/,
+    /verify_current_release "\$SHA"/,
+    /HERMES_ALERT_THRESHOLD="2"/,
+    /HERMES_ALERT_NOTIFIER="\/usr\/bin\/true"/,
+    /HERMES_ALERT_DIAGNOSTIC="\$runner"/,
+    /"sam54-staging-uat" "failure" "synthetic_acceptance"/,
+    /transition=below-threshold .*failure_count=1/,
+    /transition=alert .*diagnostic=complete capture=1/,
+    /body\.linearId !== "SAM-54"/,
+    /body\.releaseSha !== process\.argv\[2\]/,
+    /body\.automaticDispatch !== true/,
+    /body\.trigger\?\.alertKey !== "sam54-staging-uat"/,
+    /body\.checks\?\.health\?\.httpStatus !== 200/,
+    /body\.checks\?\.authMe\?\.httpStatus !== 401/,
+    /journal\?\.windowMinutes !== 15/,
+    /disk\?\.alertThresholdPercent !== 90/,
+    /disk\?\.overThreshold !== \(disk\.usedPercent >= 90\)/,
+    /body\.safety\?\.mode !== "read_only"/,
+    /body\.safety\?\.secretsRead !== false/,
+    /body\.safety\?\.mutationAttempted !== false/,
+    /SAM54_EVIDENCE="\$STATE_DIR\/last-uat-sam54\.json"/,
+    /chmod 0600 "\$output"/,
+    /mv -f "\$output" "\$SAM54_EVIDENCE"/,
+  ]) assert.match(control, pattern);
+  assert.doesNotMatch(control, /cat "\$output"/);
+  assert.doesNotMatch(
+    control,
+    /SAM54_EXPECTED_RELEASE_SHA[^\n]*(?:SUPABASE|SENTRY|READINESS)/,
+  );
+});
+
 test("SAM-70 UAT is SHA-bound, staging-only, fail-closed, and residue verified", async () => {
   const control = await read("scripts/newme-staging-control.sh");
   for (const pattern of [
@@ -415,8 +453,10 @@ test("Product/SaaS UAT is image-bound, staging-only, and verifies every issue an
   }
 
   assert.match(readme, /uat-product-saas <SHA>/);
+  assert.match(readme, /uat-sam54 <SHA>/);
   assert.match(readme, /uat-sam68 <SHA>/);
   assert.match(control, /uat-sam20/);
+  assert.match(control, /uat-sam54/);
   assert.match(control, /uat-sam68/);
   assert.match(control, /uat-sam70/);
   assert.doesNotMatch(control, /cat "\$ENV_FILE"/);

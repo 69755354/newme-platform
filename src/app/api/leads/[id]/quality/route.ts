@@ -14,7 +14,8 @@ export async function POST(
   try {
     const cookieHeader = req.headers.get("cookie") ?? "";
     const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const supabase = await createServerSupabase(bearerToken, cookieHeader);
+    const organizationId = req.headers.get("x-newme-organization-id") ?? undefined;
+    const supabase = await createServerSupabase(bearerToken, cookieHeader, organizationId);
     const profile = await getAuthProfile(bearerToken, cookieHeader);
     if (!profile) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

@@ -29,3 +29,15 @@ test("archive batches can be rolled back without deleting leads", async () => {
   assert.ok(source.includes("restored_count: restoredCount"));
   assert.equal(source.includes('.delete()'), false);
 });
+
+test("archive requests propagate the explicit organization context to RLS", async () => {
+  const source = await readFile(routeUrl, "utf8");
+  assert.equal(
+    (source.match(/headers\.get\("x-newme-organization-id"\)/g) ?? []).length,
+    3,
+  );
+  assert.equal(
+    (source.match(/createServerSupabase\(bearerToken, cookieHeader, organizationId\)/g) ?? []).length,
+    3,
+  );
+});

@@ -30,6 +30,8 @@ test("quality endpoint accepts assessment only after the first complete contact"
     "isCompleteContact",
     ".some(isCompleteContact)",
   ]) assert.ok(source.includes(token), `missing quality protection: ${token}`);
+  assert.match(source, /headers\.get\("x-newme-organization-id"\)/);
+  assert.match(source, /createServerSupabase\(bearerToken, cookieHeader, organizationId\)/);
 });
 
 test("contact creation and editing are server-authorized and return stored rows", async () => {
@@ -49,6 +51,8 @@ test("contact creation and editing are server-authorized and return stored rows"
   assert.ok(create.includes('record_lead_contact_atomic'));
   assert.ok(create.includes("contactTime.getTime() > Date.now()"));
   assert.ok(create.includes("contact_time cannot be in the future"));
+  assert.match(create, /headers\.get\("x-newme-organization-id"\)/);
+  assert.match(create, /createServerSupabase\(bearerToken, cookieHeader, organizationId\)/);
   assert.ok(edit.includes('.eq("id", contactId)'));
   assert.ok(edit.includes('.eq("lead_id", leadId)'));
 });

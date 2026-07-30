@@ -355,9 +355,12 @@ run_uat() {
 
 run_uat_sam20() {
   verify_current_release "$SHA"
+  command -v docker >/dev/null 2>&1 || fail "docker is required for staging UAT"
   [ -r "$ENV_FILE" ] || fail "staging environment is missing"
-  [ -d "$RELEASES/$SHA/node_modules/@supabase/supabase-js" ] ||
-    fail "current release lacks the fixed SAM-20 runner dependency"
+  [ "$(
+    docker image inspect "$UAT_IMAGE_PREFIX:$SHA" \
+      --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+  )" = "$SHA" ] || fail "staging UAT image provenance does not match"
   local run_dir runner output rc
   run_dir="$(mktemp -d "/run/newme-staging-sam20-$SHA.XXXXXX")"
   runner="$run_dir/sam20-lead-organization-isolation.mjs"
@@ -365,22 +368,28 @@ run_uat_sam20() {
   register_temporary_path "$run_dir"
   register_temporary_path "$output"
   copy_commit_blob "$SHA" "$SAM20_RUNNER" "$runner"
-  chown root:newme-staging "$run_dir" "$runner"
-  chmod 0750 "$run_dir"
-  chmod 0550 "$runner"
-  ln -s "$RELEASES/$SHA/node_modules" "$run_dir/node_modules"
+  chown root:root "$run_dir" "$runner"
+  chmod 0755 "$run_dir"
+  chmod 0555 "$runner"
   rc=0
-  runuser -u newme-staging -- env -i \
-    HOME="$ROOT" \
-    PATH="/usr/local/bin:/usr/bin:/bin" \
-    NEWME_STAGING_ENV_FILE="$ENV_FILE" \
-    SAM20_RUNNER_PATH="$runner" \
-    SAM20_UAT_BASE_URL="http://127.0.0.1:3101" \
-    SAM20_RELEASE_SHA="$SHA" \
-    SAM20_RELEASE_MANIFEST="$RELEASES/$SHA/manifest.json" \
-    SAM20_UAT_CONFIRM="SAM20_STAGING_ONLY" \
-    /bin/bash -c \
-      'set -a; . "$NEWME_STAGING_ENV_FILE"; set +a; exec /usr/bin/node "$SAM20_RUNNER_PATH"' \
+  docker run \
+    --rm \
+    --init \
+    --network host \
+    --read-only \
+    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m \
+    --tmpfs /runner/home:rw,nosuid,nodev,size=64m \
+    --env-file "$ENV_FILE" \
+    --env "HOME=/runner/home" \
+    --env "SAM20_UAT_BASE_URL=http://127.0.0.1:3101" \
+    --env "SAM20_RELEASE_SHA=$SHA" \
+    --env "SAM20_RELEASE_MANIFEST=/runner/release/manifest.json" \
+    --env "SAM20_UAT_CONFIRM=SAM20_STAGING_ONLY" \
+    --mount "type=bind,src=$runner,dst=/runner/sam20-lead-organization-isolation.mjs,readonly" \
+    --mount "type=bind,src=$RELEASES/$SHA/manifest.json,dst=/runner/release/manifest.json,readonly" \
+    --entrypoint /usr/bin/node \
+    "$UAT_IMAGE_PREFIX:$SHA" \
+    /runner/sam20-lead-organization-isolation.mjs \
     >"$output" 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || fail "SAM-20 staging UAT failed with status $rc"
   node -e '
@@ -527,6 +536,10 @@ run_uat_sam70() {
         "quotations",
         "profiles",
         "auth_fixtures",
+        "organizations",
+        "memberships",
+        "user_session_daily",
+        "audit_logs",
       ];
       const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       const marker = /^SAM70-UAT-[0-9a-f]{16}-[0-9a-f]{8}$/;

@@ -33,6 +33,10 @@ test("SAM-70 runner covers auth, normal import, idempotency, and exact evidence"
   assert.match(source, /await createUser\("admin"\)/);
   assert.match(source, /await createUser\("boss"\)/);
   assert.match(source, /await createUser\("sales"\)/);
+  assert.match(source, /await createOrganization\(\)/);
+  assert.match(source, /"x-newme-organization-id": organizationId/);
+  assert.match(source, /organization_id: organizationId/);
+  assert.match(source, /newme-organization-id/);
   assert.match(source, /expectStatus\(result, 401/);
   assert.match(source, /expectStatus\(forbidden, 403/);
 });
@@ -74,7 +78,14 @@ test("SAM-70 runner verifies export ownership and removes exact marker residue",
     "quotations",
     "profiles",
     "auth_fixtures",
+    "organizations",
+    "memberships",
+    "user_session_daily",
+    "audit_logs",
   ]) assert.ok(source.includes(`${name}:`));
+  assert.match(source, /delete organization memberships/);
+  assert.match(source, /delete user_session_daily/);
+  assert.match(source, /delete audit_logs/);
 });
 
 test("SAM-70 report contains no credential fields", async () => {

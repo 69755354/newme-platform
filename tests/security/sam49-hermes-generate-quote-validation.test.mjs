@@ -14,6 +14,11 @@ test("SAM-49 Hermes quote generation rejects unknown stored device keys before p
   assert.match(source, /const VALID_DEVICE_IDS = new Set<string>\(/);
   assert.match(source, /const unknownDevices = Object\.keys\(devices\)\.filter\(\(id\) => !VALID_DEVICE_IDS\.has\(id\)\)/);
   assert.match(source, /error: "Unknown device_ids", unknown_devices: unknownDevices/);
+  assert.match(source, /const \{ lead_id, devices_json \} = await request\.json\(\)/);
+  assert.match(source, /devices_json must be an object/);
+  assert.match(source, /resolveLeadOrganizationAccess\(/);
+  assert.match(source, /\.eq\("organization_id", organizationAccess\.organizationId\)/);
+  assert.match(source, /\.\.\.\(devices_json === undefined \? \{\} : \{ devices_json \}\)/);
 });
 
 test("SAM-49 Hermes quote generation rejects a non-positive calculated total before persistence", async () => {

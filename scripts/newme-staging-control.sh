@@ -610,7 +610,7 @@ run_uat_product_saas() {
   node -e '
     const fs = require("fs");
     const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const requiredIssues = ["SAM-11", "SAM-35", "SAM-49", "SAM-61"];
+    const requiredIssues = ["SAM-11", "SAM-13", "SAM-35", "SAM-49", "SAM-61"];
     const zeroResidue = [
       "auth_users",
       "profiles",
@@ -618,6 +618,8 @@ run_uat_product_saas() {
       "memberships",
       "leads",
       "audit_logs",
+      "activity_logs",
+      "activities",
       "user_session_daily",
       "lead_children",
     ];

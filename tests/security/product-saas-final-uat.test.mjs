@@ -135,6 +135,8 @@ test("runner source pins required issue paths, markers, guards, and cleanup evid
     "devices_json: { knx_ip_router: 0 }",
     "next_quote_no",
     "audit_logs",
+    "activity_logs",
+    "activities by user",
     "user_session_daily",
     "x-newme-organization-id",
     "tenant_id: state.organizationId",
@@ -149,6 +151,12 @@ test("runner source pins required issue paths, markers, guards, and cleanup evid
   assert.ok(source.includes("run_id: state.runId"), "fixture app_metadata must include run_id");
   assert.ok(source.includes("redirect: \"manual\""), "release checks must not follow redirects");
   assert.ok(!source.includes("console.log("), "runner must not log credential-bearing state");
+  assert.match(
+    source,
+    /directlyDeletedLeadTables = leadTables\.filter\([\s\S]*table !== "lead_milestones"/,
+  );
+  assert.match(source, /from\("activity_logs"\)\.delete\(\)\.eq\("user_id", id\)/);
+  assert.match(source, /from\("activities"\)\.delete\(\)\.eq\("user_id", id\)/);
 });
 
 test("SAM-13 staging contract dynamically covers A-D without a new controller action", async () => {

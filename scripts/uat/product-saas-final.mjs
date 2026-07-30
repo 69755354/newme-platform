@@ -1009,7 +1009,10 @@ async function cleanup(state) {
     ["lead_documents", "lead_id"],
     ["quotations", "lead_id"],
   ];
-  for (const [table, column] of leadTables) {
+  const directlyDeletedLeadTables = leadTables.filter(
+    ([table]) => table !== "lead_milestones",
+  );
+  for (const [table, column] of directlyDeletedLeadTables) {
     await capture(`${table}.${column}`, () => deleteByLeadIds(state, table, column));
   }
   await capture("archive activity marker", async () => {
@@ -1043,6 +1046,14 @@ async function cleanup(state) {
     await capture("audit_logs", async () => {
       const { error } = await state.admin.from("audit_logs").delete().eq("actor_id", id);
       if (error) fail("could not delete marked audit logs");
+    });
+    await capture("activity_logs", async () => {
+      const { error } = await state.admin.from("activity_logs").delete().eq("user_id", id);
+      if (error) fail("could not delete marked activity logs");
+    });
+    await capture("activities by user", async () => {
+      const { error } = await state.admin.from("activities").delete().eq("user_id", id);
+      if (error) fail("could not delete marked user activities");
     });
   }
   await capture("audit_events", async () => {
@@ -1084,6 +1095,8 @@ async function cleanup(state) {
     memberships: await exactCount(state.admin, "memberships", "organization_id", [state.organizationId]),
     leads: await exactLikeCount(state.admin, "leads", "customer_name", `${state.markerText}%`),
     audit_logs: await exactCount(state.admin, "audit_logs", "actor_id", [...state.userIds]),
+    activity_logs: await exactCount(state.admin, "activity_logs", "user_id", [...state.userIds]),
+    activities: await exactCount(state.admin, "activities", "user_id", [...state.userIds]),
     audit_events: await exactCount(
       state.admin,
       "audit_events",

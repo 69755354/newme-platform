@@ -62,6 +62,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | SAM-15 | REVIEW | Codex | 2026-07-28 |
 | SAM-66 | IN_PROGRESS | Codex | 2026-07-28 |
 | SAM-20 | REVIEW | Codex | 2026-07-30 |
+| SAM-21 | REVIEW | Codex | 2026-07-30 |
 | SAM-22 | REVIEW | Codex | 2026-07-30 |
 | SAM-70 | IN_PROGRESS | Codex | 2026-07-30 |
 
@@ -70,6 +71,8 @@ TODO → IN_PROGRESS → REVIEW → DONE
 > `SAM-20` (2026-07-30): additive organization/membership/support-audit model, Lead/Timeline organization boundary, shared API/UI context, and fail-closed write triggers are implemented. PostgreSQL 17 synthetic org A/B read/write denial and missing-context write denial passed locally; staging migration/deploy/UAT remain explicitly unexecuted pending the authorized staging window.
 >
 > `SAM-22` (2026-07-30): implemented and locally verified the second synthetic organization isolation matrix across Lead reads/writes, async ingestion, Dashboard, organization-member administration, versioned migration/rollback, negative CI, and a marker-clean UAT runner. Disposable PostgreSQL apply/RLS/rollback passed; staging UAT remains intentionally unexecuted pending a separate authorization.
+>
+> `SAM-21` (2026-07-30): implemented and locally verified a disposable first-organization migration rehearsal over the exact SAM-20/22 assets. Before/after aggregate counts, quotation value, Lead owners, history relationships, and document ownership remained identical; environment and fixture rollback guards, full rollback, old Lead read/write restoration, harness cleanup, and a PII-free read-only reconciliation contract passed. No staging or production database was accessed.
 
 > M1 发布链（Linear 为真源）：**RELEASED 2026-07-20**。发布 SHA `49bbb26` → BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6~12 全链 Done：SAM-28 业务签收（森哥 2026-07-20）+ 技术签收（机器全量验收），SAM-12 发布记录出具。SAM-26 视觉/移动端留人工不拦发布；SAM-45/46 进 M2 backlog。
 >

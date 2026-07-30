@@ -524,12 +524,8 @@ async function countForLead(state, table, leadId) {
 }
 
 async function runSam49(state) {
-  const unknown = await createLead(state, "hermes-unknown", {
-    devices_json: { product_saas_unknown_device: 1 },
-  });
-  const nonPositive = await createLead(state, "hermes-non-positive", {
-    devices_json: { knx_ip_router: 0 },
-  });
+  const unknown = await createLead(state, "hermes-unknown");
+  const nonPositive = await createLead(state, "hermes-non-positive");
 
   const before = {};
   for (const lead of [unknown, nonPositive]) {
@@ -541,7 +537,10 @@ async function runSam49(state) {
 
   const unknownResponse = await appRequest(state, "sales", "/api/hermes/generate-quote", {
     method: "POST",
-    body: { lead_id: unknown.id },
+    body: {
+      lead_id: unknown.id,
+      devices_json: { product_saas_unknown_device: 1 },
+    },
   });
   expectStatus("Hermes unknown device guard", unknownResponse, 400);
   assert.equal(unknownResponse.payload?.error, "Unknown device_ids", "unknown device error mismatch");
@@ -553,7 +552,10 @@ async function runSam49(state) {
 
   const nonPositiveResponse = await appRequest(state, "sales", "/api/hermes/generate-quote", {
     method: "POST",
-    body: { lead_id: nonPositive.id },
+    body: {
+      lead_id: nonPositive.id,
+      devices_json: { knx_ip_router: 0 },
+    },
   });
   expectStatus("Hermes non-positive guard", nonPositiveResponse, 400);
   assert.equal(
@@ -600,6 +602,16 @@ async function runSam61(state) {
   }
 
   const sales = state.actors.get("sales");
+  const sessionDate = "2099-12-31";
+  const { count: sessionBefore, error: sessionBeforeError } = await state.admin
+    .from("user_session_daily")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", sales.id)
+    .eq("tenant_id", state.organizationId)
+    .eq("session_date", sessionDate);
+  if (sessionBeforeError || sessionBefore !== 0) {
+    fail("SAM-61 session denial fixture was not initially empty");
+  }
   const auditAttempt = await sales.client.from("audit_logs").insert({
     action: `${state.marker}:denied-write`,
     actor_id: sales.id,
@@ -610,8 +622,8 @@ async function runSam61(state) {
 
   const sessionAttempt = await sales.client.from("user_session_daily").insert({
     user_id: sales.id,
-    session_date: new Date().toISOString().slice(0, 10),
-    tenant_id: state.marker,
+    session_date: sessionDate,
+    tenant_id: state.organizationId,
   });
   if (!sessionAttempt.error) fail("authenticated browser role could write user_session_daily");
 
@@ -622,7 +634,9 @@ async function runSam61(state) {
   const { count: sessionCount, error: sessionCountError } = await state.admin
     .from("user_session_daily")
     .select("id", { count: "exact", head: true })
-    .eq("tenant_id", state.marker);
+    .eq("user_id", sales.id)
+    .eq("tenant_id", state.organizationId)
+    .eq("session_date", sessionDate);
   if (auditCountError || sessionCountError || auditCount !== 0 || sessionCount !== 0) {
     fail("denied audit/session writes left rows behind");
   }
@@ -889,7 +903,8 @@ async function runSam13(state) {
   expectAccessError("inactive user create denial", inactiveCreate, 401, "inactive_account");
   const inactiveTeam = await appRequest(state, "inactive-admin", "/team");
   expectStatus("inactive protected team route", inactiveTeam, 307);
-  const inactiveLocation = new URL(inactiveTeam.location);
+  assert.ok(inactiveTeam.location, "inactive protected team route omitted Location");
+  const inactiveLocation = new URL(inactiveTeam.location, state.config.baseUrl);
   assert.equal(inactiveLocation.pathname, "/login");
   assert.equal(inactiveLocation.searchParams.get("reason"), "inactive_account");
   assert.equal((await profileSnapshot(state, inactiveActor.id)).is_active, false);

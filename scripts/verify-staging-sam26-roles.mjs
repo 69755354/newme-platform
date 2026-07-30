@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { chromium } from "playwright";
 
@@ -133,6 +133,8 @@ function validateBoundaries() {
 
 const runId = `${Date.now()}-${randomBytes(4).toString("hex")}`;
 const emailPrefix = `sam26-${runId}-`;
+const organizationId = randomUUID();
+const organizationSlug = `sam26-${runId}`.toLowerCase();
 const createdUserIds = [];
 const createdEmails = new Set();
 const testUsers = new Map();
@@ -225,16 +227,41 @@ async function listAuthUsers() {
 }
 
 async function snapshotBaseline() {
-  const [authUsers, profiles, leads] = await Promise.all([
+  const [authUsers, profiles, leads, organizations, memberships] = await Promise.all([
     authUserCount(),
     restRows("profiles", "select=id"),
     restRows("leads", "select=id"),
+    restRows("organizations", "select=id"),
+    restRows("memberships", "select=id"),
   ]);
   return {
     auth_users: authUsers,
     profiles: profiles.length,
     leads: leads.length,
+    organizations: organizations.length,
+    memberships: memberships.length,
   };
+}
+
+async function createOrganization() {
+  await apiRequest("/rest/v1/organizations", {
+    method: "POST",
+    service: true,
+    body: {
+      id: organizationId,
+      slug: organizationSlug,
+      name: `[SAM-26] ${runId}`,
+      industry_key: "real_estate",
+      status: "active",
+    },
+  });
+  const organizations = await restRows(
+    "organizations",
+    `select=id,slug,status&id=eq.${encodeURIComponent(organizationId)}`,
+  );
+  assert.equal(organizations.length, 1, "SAM-26 organization must exist");
+  assert.equal(organizations[0].slug, organizationSlug);
+  assert.equal(organizations[0].status, "active");
 }
 
 async function createUser(role) {
@@ -281,7 +308,24 @@ async function createUser(role) {
     false,
     `${role} profile must not require a password reset`,
   );
-  testUsers.set(role, { email, password });
+  await apiRequest("/rest/v1/memberships", {
+    method: "POST",
+    service: true,
+    body: {
+      organization_id: organizationId,
+      user_id: createdId,
+      status: "active",
+      accepted_at: new Date().toISOString(),
+    },
+  });
+  const memberships = await restRows(
+    "memberships",
+    `select=id,status&organization_id=eq.${encodeURIComponent(organizationId)}`
+      + `&user_id=eq.${encodeURIComponent(createdId)}`,
+  );
+  assert.equal(memberships.length, 1, `${role} membership must exist`);
+  assert.equal(memberships[0].status, "active", `${role} membership must be active`);
+  testUsers.set(role, { id: createdId, email, password });
 }
 
 async function deleteWhere(table, column, value) {
@@ -339,6 +383,10 @@ async function cleanup() {
       );
     }
   }
+  await capture(
+    "delete organization memberships",
+    () => deleteWhere("memberships", "organization_id", organizationId),
+  );
   for (const id of [...cleanupIds].reverse()) {
     await capture(
       "delete auth user",
@@ -362,6 +410,10 @@ async function cleanup() {
       cleanupErrors.push(new Error("auth user residue remains for this SAM-26 run"));
     }
   }
+  await capture(
+    "delete organization",
+    () => deleteWhere("organizations", "id", organizationId),
+  );
 
   const remainingProfiles = await capture(
     "verify prefixed profiles",
@@ -396,6 +448,26 @@ async function cleanup() {
     if (profiles && profiles.length > 0) {
       cleanupErrors.push(new Error("profile id residue remains for this SAM-26 run"));
     }
+  }
+  const organizationResidue = await capture(
+    "verify organization",
+    () => restRows(
+      "organizations",
+      `select=id&id=eq.${encodeURIComponent(organizationId)}`,
+    ),
+  );
+  if (organizationResidue && organizationResidue.length > 0) {
+    cleanupErrors.push(new Error("organization residue remains for this SAM-26 run"));
+  }
+  const membershipResidue = await capture(
+    "verify memberships",
+    () => restRows(
+      "memberships",
+      `select=id&organization_id=eq.${encodeURIComponent(organizationId)}`,
+    ),
+  );
+  if (membershipResidue && membershipResidue.length > 0) {
+    cleanupErrors.push(new Error("membership residue remains for this SAM-26 run"));
   }
 
   if (cleanupErrors.length > 0) {
@@ -582,6 +654,13 @@ async function checkProtectedRedirects(page, role, viewport) {
 
 async function runRole(browser, role) {
   const context = await browser.newContext({ viewport: VIEWPORTS.desktop });
+  await context.addCookies([{
+    name: "newme-organization-id",
+    value: organizationId,
+    url: baseUrl,
+    sameSite: "Strict",
+    secure: baseUrl.startsWith("https://"),
+  }]);
   const page = await context.newPage();
   try {
     await login(page, role);
@@ -655,6 +734,7 @@ async function main() {
     );
 
     baseline = await snapshotBaseline();
+    await createOrganization();
     for (const role of ROLES) await createUser(role);
 
     browser = await chromium.launch({
@@ -678,7 +758,7 @@ async function main() {
         ),
       );
     }
-    if (createdEmails.size > 0 || createdUserIds.length > 0) {
+    if (createdEmails.size > 0 || createdUserIds.length > 0 || baseline) {
       try {
         await cleanup();
       } catch (error) {

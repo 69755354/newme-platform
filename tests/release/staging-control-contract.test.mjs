@@ -99,7 +99,7 @@ test("SAM-26 UAT image and runtime remain SHA-bound and disposable", async () =>
     /SAM26_EXPECTED_RELEASE_SHA=\$SHA/,
     /SAM26_RELEASE_MANIFEST=\/runner\/release\/manifest\.json/,
   ]) assert.match(control, pattern);
-  assert.equal((control.match(/--network host/g) ?? []).length, 3);
+  assert.equal((control.match(/--network host/g) ?? []).length, 4);
   assert.equal(
     (control.match(/--add-host staging\.newme\.ae:127\.0\.0\.1/g) ?? []).length,
     3,
@@ -114,9 +114,14 @@ test("SAM-20 UAT uses the current release, fixed runner, local manifest, and zer
     /verify_current_release "\$SHA"/,
     /SAM20_RUNNER="scripts\/uat\/sam20-lead-organization-isolation\.mjs"/,
     /copy_commit_blob "\$SHA" "\$SAM20_RUNNER" "\$runner"/,
-    /SAM20_UAT_BASE_URL="http:\/\/127\.0\.0\.1:3101"/,
-    /SAM20_RELEASE_MANIFEST="\$RELEASES\/\$SHA\/manifest\.json"/,
-    /SAM20_UAT_CONFIRM="SAM20_STAGING_ONLY"/,
+    /docker image inspect "\$UAT_IMAGE_PREFIX:\$SHA"/,
+    /--env "SAM20_UAT_BASE_URL=http:\/\/127\.0\.0\.1:3101"/,
+    /--env "SAM20_RELEASE_MANIFEST=\/runner\/release\/manifest\.json"/,
+    /--env "SAM20_UAT_CONFIRM=SAM20_STAGING_ONLY"/,
+    /--mount "type=bind,src=\$runner,dst=\/runner\/sam20-lead-organization-isolation\.mjs,readonly"/,
+    /--mount "type=bind,src=\$RELEASES\/\$SHA\/manifest\.json,dst=\/runner\/release\/manifest\.json,readonly"/,
+    /--entrypoint \/usr\/bin\/node/,
+    /"\$UAT_IMAGE_PREFIX:\$SHA"/,
     /body\.linearId !== "SAM-20"/,
     /body\.releaseSha !== process\.argv\[2\]/,
     /body\.cleanup !== "verified"/,
@@ -132,6 +137,8 @@ test("SAM-20 UAT uses the current release, fixed runner, local manifest, and zer
     "profiles",
     "auth_fixtures",
   ]) assert.ok(control.includes(`"${fixture}"`));
+  assert.doesNotMatch(control, /RELEASES\/\$SHA\/node_modules/);
+  assert.doesNotMatch(control, /ln -s .*node_modules/);
   assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
   assert.doesNotMatch(control, /cat "\$output"/);
 });
@@ -192,6 +199,10 @@ test("SAM-70 UAT is SHA-bound, staging-only, fail-closed, and residue verified",
     "quotations",
     "profiles",
     "auth_fixtures",
+    "organizations",
+    "memberships",
+    "user_session_daily",
+    "audit_logs",
   ]) assert.ok(control.includes(`"${fixture}"`));
   for (const requiredCase of [
     "unauthenticated import endpoints return 401",

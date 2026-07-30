@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { chromium } from "playwright";
 import * as XLSX from "xlsx";
@@ -22,6 +22,8 @@ const confirmation = process.env.SAM70_UAT_CONFIRM?.trim();
 const runId = randomBytes(8).toString("hex");
 const marker = `SAM70-UAT-${runId}-${expectedSha?.slice(0, 8) ?? "unknown"}`;
 const emailPrefix = `sam70-${runId}-`;
+const organizationId = randomUUID();
+const organizationSlug = `sam70-${runId}`;
 const createdUsers = new Map();
 const createdUserIds = new Set();
 const importedLeadIds = new Set();
@@ -37,6 +39,10 @@ let cleanupCounts = {
   quotations: null,
   profiles: null,
   auth_fixtures: null,
+  organizations: null,
+  memberships: null,
+  user_session_daily: null,
+  audit_logs: null,
 };
 
 class HttpStatusError extends Error {
@@ -172,6 +178,24 @@ async function createUser(role, suffix = role) {
   assert.equal(profiles[0].is_active, true);
   assert.equal(profiles[0].force_password_change, false);
 
+  await supabaseRequest("/rest/v1/memberships", {
+    method: "POST",
+    service: true,
+    body: {
+      organization_id: organizationId,
+      user_id: id,
+      status: "active",
+      accepted_at: new Date().toISOString(),
+    },
+  });
+  const memberships = await restRows(
+    "memberships",
+    `select=id,status&organization_id=eq.${encodeURIComponent(organizationId)}`
+      + `&user_id=eq.${encodeURIComponent(id)}`,
+  );
+  assert.equal(memberships.length, 1);
+  assert.equal(memberships[0].status, "active");
+
   const session = await supabaseRequest("/auth/v1/token?grant_type=password", {
     method: "POST",
     body: { email, password },
@@ -198,6 +222,7 @@ async function appRequest(path, {
     signal: AbortSignal.timeout(20_000),
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "x-newme-organization-id": organizationId,
       ...(json !== undefined || rawBody !== undefined
         ? { "Content-Type": "application/json" }
         : {}),
@@ -235,6 +260,19 @@ async function serviceInsert(table, body) {
   );
   assert.ok(Array.isArray(payload) && payload.length === 1);
   return payload[0];
+}
+
+async function createOrganization() {
+  const organization = await serviceInsert("organizations", {
+    id: organizationId,
+    slug: organizationSlug,
+    name: `[SAM-70] ${runId}`,
+    industry_key: "real_estate",
+    status: "active",
+  });
+  assert.equal(organization.id, organizationId);
+  assert.equal(organization.slug, organizationSlug);
+  assert.equal(organization.status, "active");
 }
 
 async function testAuthenticationAndImports() {
@@ -433,6 +471,13 @@ async function testBrowserXlsxGuards() {
   const browser = await chromium.launch({ headless: true });
   try {
     const context = await browser.newContext();
+    await context.addCookies([{
+      name: "newme-organization-id",
+      value: organizationId,
+      url: baseUrl,
+      sameSite: "Strict",
+      secure: true,
+    }]);
     const page = await context.newPage();
     await loginBrowser(page, admin);
 
@@ -511,6 +556,7 @@ async function testExportOwnership() {
   assert.ok(admin && boss && owner && outsider);
 
   const lead = await serviceInsert("leads", {
+    organization_id: organizationId,
     customer_name: marker,
     source: "other",
     assigned_to: owner.id,
@@ -673,6 +719,22 @@ async function cleanupFixtures() {
       createdUserIds.add(user.id);
     }
   }
+  for (const id of createdUserIds) {
+    await capture(
+      `delete user_session_daily ${id}`,
+      () => deleteRows(`/rest/v1/user_session_daily?user_id=eq.${encodeURIComponent(id)}`),
+    );
+    await capture(
+      `delete audit_logs ${id}`,
+      () => deleteRows(`/rest/v1/audit_logs?actor_id=eq.${encodeURIComponent(id)}`),
+    );
+  }
+  await capture(
+    "delete organization memberships",
+    () => deleteRows(
+      `/rest/v1/memberships?organization_id=eq.${encodeURIComponent(organizationId)}`,
+    ),
+  );
   for (const id of [...createdUserIds].reverse()) {
     await capture(
       `delete auth fixture ${id}`,
@@ -686,6 +748,10 @@ async function cleanupFixtures() {
       () => deleteRows(`/rest/v1/profiles?id=eq.${encodeURIComponent(id)}`),
     );
   }
+  await capture(
+    "delete organization",
+    () => deleteRows(`/rest/v1/organizations?id=eq.${encodeURIComponent(organizationId)}`),
+  );
 
   const allLeadIdFilter = [...allLeadIds].join(",");
   const profileIdFilter = [...createdUserIds].join(",");
@@ -695,6 +761,10 @@ async function cleanupFixtures() {
     quotationResidue,
     profileResidue,
     remainingAuthUsers,
+    organizationResidue,
+    membershipResidue,
+    sessionResidue,
+    auditResidue,
   ] = await Promise.all([
     restRows(
       "leads",
@@ -711,6 +781,20 @@ async function cleanupFixtures() {
       ? restRows("profiles", `select=id&id=in.(${profileIdFilter})`)
       : [],
     listAuthUsers(),
+    restRows(
+      "organizations",
+      `select=id&id=eq.${encodeURIComponent(organizationId)}`,
+    ),
+    restRows(
+      "memberships",
+      `select=id&organization_id=eq.${encodeURIComponent(organizationId)}`,
+    ),
+    profileIdFilter
+      ? restRows("user_session_daily", `select=id&user_id=in.(${profileIdFilter})`)
+      : [],
+    profileIdFilter
+      ? restRows("audit_logs", `select=id&actor_id=in.(${profileIdFilter})`)
+      : [],
   ]);
   cleanupCounts = {
     leads: leadResidue.length,
@@ -720,8 +804,12 @@ async function cleanupFixtures() {
     auth_fixtures: remainingAuthUsers.filter(
       (user) =>
         typeof user?.email === "string"
-        && user.email.startsWith(emailPrefix),
+      && user.email.startsWith(emailPrefix),
     ).length,
+    organizations: organizationResidue.length,
+    memberships: membershipResidue.length,
+    user_session_daily: sessionResidue.length,
+    audit_logs: auditResidue.length,
   };
   for (const [name, count] of Object.entries(cleanupCounts)) {
     if (count !== 0) errors.push(new Error(`${name} cleanup residue=${count}`));
@@ -747,6 +835,7 @@ async function main() {
     assert.equal(health.status, 200);
     assert.equal((await health.json())?.status, "ok");
 
+    await createOrganization();
     await createUser("admin");
     await createUser("boss");
     await createUser("sales");

@@ -16,7 +16,8 @@ export async function POST(
 ) {
   const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
   const cookieHeader = req.headers.get("cookie") ?? "";
-  const supabase = await createServerSupabase(bearerToken, cookieHeader);
+  const organizationId = req.headers.get("x-newme-organization-id") ?? undefined;
+  const supabase = await createServerSupabase(bearerToken, cookieHeader, organizationId);
 
   // 1. 鉴权 + 角色
   const profile = await getAuthProfile(bearerToken, cookieHeader);
@@ -250,7 +251,8 @@ export async function PATCH(
     );
   }
 
-  const supabase = await createServerSupabase(bearerToken, cookieHeader);
+  const organizationId = req.headers.get("x-newme-organization-id") ?? undefined;
+  const supabase = await createServerSupabase(bearerToken, cookieHeader, organizationId);
   const { data: lead, error: leadError } = await supabase
     .from("leads")
     .select("id, assigned_to")

@@ -59,8 +59,14 @@ test("staging UAT runner uses pinned and fail-closed browser dependencies", asyn
   assert.match(sam26Script, /releaseManifest\?\.git_sha/);
   assert.match(sam26Script, new RegExp(`const CLEANROOM_REF = "${stagingRef}"`));
   assert.match(sam26Script, new RegExp(`const PRODUCTION_REF = "${productionRef}"`));
+  assert.match(sam26Script, /await createOrganization\(\)/);
+  assert.match(sam26Script, /organization_id: organizationId/);
+  assert.match(sam26Script, /name: "newme-organization-id"/);
   assert.match(sam70Script, new RegExp(`const STAGING_REF = "${stagingRef}"`));
   assert.match(sam70Script, new RegExp(`const PRODUCTION_REF = "${productionRef}"`));
   assert.match(sam70Script, /SAM70_UAT_CONFIRM/);
   assert.match(sam70Script, /\/runner\/release\/manifest\.json/);
+  assert.match(sam70Script, /await createOrganization\(\)/);
+  assert.match(sam70Script, /organization_id: organizationId/);
+  assert.match(sam70Script, /"x-newme-organization-id": organizationId/);
 });

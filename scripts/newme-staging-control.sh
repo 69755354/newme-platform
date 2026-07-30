@@ -22,6 +22,7 @@ readonly PRODUCTION_REF="vfopmpxlhwzpxqegayew"
 readonly SAM20_RUNNER="scripts/uat/sam20-lead-organization-isolation.mjs"
 readonly SAM20_MIGRATION="supabase/migrations/20260730100000_sam20_lead_organization_isolation.sql"
 readonly SAM68_RUNNER="scripts/verify-staging-sam68-observability.mjs"
+readonly PRODUCT_SAAS_RUNNER="scripts/uat/product-saas-final.mjs"
 readonly UAT_IMAGE_PREFIX="newme-staging-uat"
 TEMPORARY_PATHS=()
 
@@ -46,7 +47,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam68|uat-sam70|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -54,7 +55,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|uat-sam68|uat-sam70|rollback) ;;
+  build|deploy|uat|uat-sam20|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -277,6 +278,8 @@ build_uat_image() {
     "$context/verify-staging-sam26-roles.mjs"
   copy_commit_blob "$SHA" "scripts/verify-staging-sam70-xlsx.mjs" \
     "$context/verify-staging-sam70-xlsx.mjs"
+  copy_commit_blob "$SHA" "$PRODUCT_SAAS_RUNNER" \
+    "$context/product-saas-final.mjs"
   docker build \
     --label "org.opencontainers.image.revision=$SHA" \
     --tag "$UAT_IMAGE_PREFIX:$SHA" \
@@ -555,6 +558,66 @@ run_uat_sam70() {
   echo "staging control SAM-70 UAT passed SHA=$SHA $evidence cleanup=verified"
 }
 
+run_uat_product_saas() {
+  verify_current_release "$SHA"
+  command -v docker >/dev/null 2>&1 || fail "docker is required for staging UAT"
+  [ -r "$ENV_FILE" ] || fail "staging environment is missing"
+  [ "$(
+    docker image inspect "$UAT_IMAGE_PREFIX:$SHA" \
+      --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+  )" = "$SHA" ] || fail "staging UAT image provenance does not match"
+  local output rc
+  output="$(mktemp "$STATE_DIR/.uat-product-saas.XXXXXX")"
+  register_temporary_path "$output"
+  rc=0
+  docker run \
+    --rm \
+    --init \
+    --ipc=host \
+    --read-only \
+    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=128m \
+    --tmpfs /runner/home:rw,nosuid,nodev,size=64m \
+    --env-file "$ENV_FILE" \
+    --env "SAM_UAT_SUITE=product-saas-final" \
+    --env "PRODUCT_UAT_RELEASE_SHA=$SHA" \
+    --env "PRODUCT_UAT_BASE_URL=https://staging.newme.ae" \
+    --env "PRODUCT_UAT_RELEASE_MANIFEST=/runner/release/manifest.json" \
+    --env "PRODUCT_UAT_CONFIRM=PRODUCT_SAAS_STAGING_ONLY" \
+    --mount "type=bind,src=$RELEASES/$SHA/manifest.json,dst=/runner/release/manifest.json,readonly" \
+    "$UAT_IMAGE_PREFIX:$SHA" >"$output" 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "Product/SaaS staging UAT failed with status $rc"
+  node -e '
+    const fs = require("fs");
+    const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const requiredIssues = ["SAM-11", "SAM-35", "SAM-49", "SAM-61"];
+    const zeroResidue = [
+      "auth_users",
+      "profiles",
+      "organizations",
+      "memberships",
+      "leads",
+      "audit_logs",
+      "user_session_daily",
+      "lead_children",
+    ];
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (
+      body.ok !== true ||
+      body.scope !== "product-saas-final" ||
+      !uuid.test(body.run_id ?? "") ||
+      body.release?.project !== process.argv[3] ||
+      body.release?.release_sha !== process.argv[2] ||
+      body.release?.health !== 200 ||
+      body.cleanup !== "verified" ||
+      requiredIssues.some((id) => body.results?.[id]?.status !== "pass") ||
+      zeroResidue.some((key) => body.cleanupCounts?.[key] !== 0)
+    ) process.exit(1);
+  ' "$output" "$SHA" "$STAGING_REF" ||
+    fail "Product/SaaS UAT evidence or cleanup verification is incomplete"
+  rm -f -- "$output"
+  echo "staging control Product/SaaS UAT passed SHA=$SHA cleanup=verified"
+}
+
 run_rollback() {
   load_state
   [ "$SHA" = "$STATE_OLD_SHA" ] ||
@@ -600,5 +663,6 @@ case "$ACTION" in
   uat-sam20) run_uat_sam20 ;;
   uat-sam68) run_uat_sam68 ;;
   uat-sam70) run_uat_sam70 ;;
+  uat-product-saas) run_uat_product_saas ;;
   rollback) run_rollback ;;
 esac

@@ -69,6 +69,30 @@ case "$SAM_UAT_SUITE" in
     [[ "$SAM70_BASE_URL" != *"$PRODUCTION_REF"* ]] || exit 65
     exec node /runner/verify-staging-sam70-xlsx.mjs
     ;;
+  product-saas-final)
+    : "${PRODUCT_UAT_RELEASE_SHA:?missing expected release SHA}"
+    : "${PRODUCT_UAT_BASE_URL:?missing staging app URL}"
+    : "${PRODUCT_UAT_RELEASE_MANIFEST:?missing read-only release manifest}"
+    : "${PRODUCT_UAT_CONFIRM:?missing staging-only confirmation}"
+    [[ "$PRODUCT_UAT_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+      echo "invalid expected release SHA" >&2
+      exit 64
+    }
+    [[ "$PRODUCT_UAT_BASE_URL" == "https://staging.newme.ae" ]] || {
+      echo "refusing non-staging application URL" >&2
+      exit 65
+    }
+    [[ "$PRODUCT_UAT_RELEASE_MANIFEST" == "/runner/release/manifest.json" && -r "$PRODUCT_UAT_RELEASE_MANIFEST" ]] || {
+      echo "refusing missing or non-fixed release manifest" >&2
+      exit 65
+    }
+    [[ "$PRODUCT_UAT_CONFIRM" == "PRODUCT_SAAS_STAGING_ONLY" ]] || {
+      echo "refusing missing staging-only confirmation" >&2
+      exit 65
+    }
+    [[ "$PRODUCT_UAT_BASE_URL" != *"$PRODUCTION_REF"* ]] || exit 65
+    exec node /runner/product-saas-final.mjs
+    ;;
   *)
     echo "refusing unknown staging UAT suite" >&2
     exit 64

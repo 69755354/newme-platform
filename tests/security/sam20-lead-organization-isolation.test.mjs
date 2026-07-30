@@ -139,10 +139,10 @@ test("Lead directory candidates are constrained to active members of the request
   assert.match(listRoute, /\.in\("id", organizationMemberUserIds\)/);
   assert.match(listRoute, /access\.supportSessionId[\s\S]*data: \[\] as SalesUserRow\[\]/);
 
-  assert.match(uat, /listAEmails\.includes\(userA\.email\)/);
-  assert.match(uat, /!listAEmails\.includes\(userB\.email\)/);
-  assert.match(uat, /listBEmails\.includes\(userB\.email\)/);
-  assert.match(uat, /!listBEmails\.includes\(userA\.email\)/);
+  assert.match(uat, /listAProfileIds\.includes\(userA\.id\)/);
+  assert.match(uat, /!listAProfileIds\.includes\(userB\.id\)/);
+  assert.match(uat, /listBProfileIds\.includes\(userB\.id\)/);
+  assert.match(uat, /!listBProfileIds\.includes\(userA\.id\)/);
 });
 
 test("SAM-20 UAT uses the canonical release manifest and verifies every fixture class is removed", async () => {
@@ -160,6 +160,8 @@ test("SAM-20 UAT uses the canonical release manifest and verifies every fixture 
     "platform_staff",
     "support_sessions",
     "audit_events",
+    "user_session_daily",
+    "audit_logs",
     "profiles",
     "auth_fixtures",
   ]) {
@@ -167,6 +169,8 @@ test("SAM-20 UAT uses the canonical release manifest and verifies every fixture 
   }
   assert.match(uat, /cleanup: "verified"/);
   assert.match(uat, /cleanupCounts,/);
+  assert.match(uat, /from\("user_session_daily"\)\.delete\(\)\.in\("user_id", users\)/);
+  assert.match(uat, /from\("audit_logs"\)\.delete\(\)\.in\("actor_id", users\)/);
   assert.doesNotMatch(uat, /cleanup: 0/);
 });
 

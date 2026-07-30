@@ -134,6 +134,8 @@ test("SAM-20 UAT uses the current release, fixed runner, local manifest, and zer
     "platform_staff",
     "support_sessions",
     "audit_events",
+    "user_session_daily",
+    "audit_logs",
     "profiles",
     "auth_fixtures",
   ]) assert.ok(control.includes(`"${fixture}"`));

@@ -287,8 +287,9 @@ test("server build continuously protects production and only accepts the exact r
   assert.doesNotMatch(build, /\/opt\/newme\/repository\.git/);
   assert.match(
     build,
-    /setsid runuser -u newme-staging --supp-group docker -- env -i/,
+    /setsid runuser -u newme-staging --group newme-staging --supp-group docker -- env -i/,
   );
+  assert.equal((build.match(/--group newme-staging/g) ?? []).length, 1);
   assert.equal((build.match(/--supp-group docker/g) ?? []).length, 1);
   for (const source of [build, installer]) {
     assert.doesNotMatch(source, /\b(?:usermod|gpasswd)\b/);

@@ -16,6 +16,85 @@ const bash = process.platform === "win32"
   ? "C:\\Program Files\\Git\\bin\\bash.exe"
   : "bash";
 
+function assertPinnedStagingBuildToolchain(build) {
+  const checksum = "55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742";
+  const checksumIndex = build.indexOf('sha256sum --check --status');
+  const extractionIndex = build.indexOf('tar -xJf "$NODE_ARCHIVE_PATH"');
+  const nodeVerificationIndex = build.indexOf('actual_node="$(node --version)"');
+  const npmVerificationIndex = build.indexOf('actual_npm="$(npm --version)"');
+  const installIndex = build.indexOf("npm ci --no-audit --no-fund");
+
+  for (const token of [
+    'readonly NODE_VERSION="24.18.0"',
+    'readonly NPM_VERSION="11.16.0"',
+    'readonly NODE_DIST="node-v${NODE_VERSION}-linux-x64"',
+    'readonly NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/${NODE_ARCHIVE}"',
+    `readonly NODE_SHA256="${checksum}"`,
+    'readonly TOOLCHAIN_CACHE="/opt/newme-staging/cache"',
+    'mktemp "${TOOLCHAIN_CACHE}/.${NODE_ARCHIVE}.download.XXXXXX"',
+    "curl --fail --silent --show-error --location",
+    "--proto '=https' --tlsv1.2",
+    'mv -f -- "$TOOLCHAIN_TEMP" "$NODE_ARCHIVE_PATH"',
+    'flock -n 8 || fail "toolchain cache is locked"',
+    'export PATH="$NODE_DIR/bin:/usr/bin:/bin"',
+    '[ "$actual_node" = "v$NODE_VERSION" ]',
+    '[ "$actual_npm" = "$NPM_VERSION" ]',
+    "node scripts/check-toolchain.mjs",
+  ]) assert.ok(build.includes(token), `missing pinned toolchain contract: ${token}`);
+
+  assert.ok(checksumIndex >= 0 && checksumIndex < extractionIndex,
+    "the archive must be checksum-verified before extraction");
+  assert.ok(extractionIndex < nodeVerificationIndex,
+    "the pinned toolchain must be extracted before Node verification");
+  assert.ok(nodeVerificationIndex < installIndex && npmVerificationIndex < installIndex,
+    "Node and npm must be verified before npm ci");
+  assert.doesNotMatch(build, /NODE_VERSION="\$\{/);
+  assert.doesNotMatch(build, /NPM_VERSION="\$\{/);
+  assert.doesNotMatch(build, /TOOLCHAIN_CACHE="\$\{/);
+  assert.doesNotMatch(build, /\/usr\/local/);
+  assert.doesNotMatch(build, /sha256sum --check --status\s*\|\|\s*true/);
+}
+
+test("staging build bootstraps one pinned official Node/npm toolchain fail-closed", async () => {
+  assertPinnedStagingBuildToolchain(await read("scripts/build-staging-artifact.sh"));
+});
+
+test("staging build toolchain contract rejects digest, cache, and ordering drift", async (t) => {
+  const build = await read("scripts/build-staging-artifact.sh");
+
+  await t.test("rejects a changed official digest", () => {
+    assert.throws(
+      () => assertPinnedStagingBuildToolchain(build.replace(
+        "55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742",
+        "05aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742",
+      )),
+      /missing pinned toolchain contract/,
+    );
+  });
+
+  await t.test("rejects a configurable cache root", () => {
+    assert.throws(
+      () => assertPinnedStagingBuildToolchain(build.replace(
+        'readonly TOOLCHAIN_CACHE="/opt/newme-staging/cache"',
+        'readonly TOOLCHAIN_CACHE="${NEWME_TOOLCHAIN_CACHE:-/opt/newme-staging/cache}"',
+      )),
+      /missing pinned toolchain contract/,
+    );
+  });
+
+  await t.test("rejects version checks after dependency installation", () => {
+    const nodeCheck = 'actual_node="$(node --version)"';
+    const drifted = build.replace(nodeCheck, "# node check moved").replace(
+      "npm ci --no-audit --no-fund",
+      `npm ci --no-audit --no-fund\n${nodeCheck}`,
+    );
+    assert.throws(
+      () => assertPinnedStagingBuildToolchain(drifted),
+      /Node and npm must be verified before npm ci/,
+    );
+  });
+});
+
 test("standalone output is opt-in and production builds remain unchanged", async () => {
   const config = await read("next.config.ts");
   assert.match(config, /NEWME_STANDALONE_BUILD/);
@@ -225,6 +304,7 @@ test("staging installer derives a public-only build environment and isolated rep
     /\$1 == "NEXT_PUBLIC_SUPABASE_ANON_KEY"/,
     /\$1 == "NEXT_PUBLIC_SITE_URL"/,
     /install -m 0640 -o root -g newme-staging "\$public_env" "\$BUILD_ENV"/,
+    /install -d -m 0750 -o newme-staging -g newme-staging \/opt\/newme-staging\/cache \/opt\/newme-staging\/cache\/npm/,
     /\/opt\/newme-staging\/repository\.git/,
     /git@github\.com:69755354\/newme-platform\.git/,
     /newme-staging-build@\.service/,

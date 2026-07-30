@@ -1,6 +1,8 @@
 // RBAC: cron (x-cron-secret)
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createIntegrationLogSinks } from "@/lib/integration-execution.mjs";
+import { genReqId, logger } from "@/lib/logger";
 
 /**
  * GET /api/cron/cleanup-notifications
@@ -14,6 +16,22 @@ export async function GET(request: NextRequest) {
   if (!process.env.CRON_SECRET || cronSecret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  const sinks = createIntegrationLogSinks({
+    logger,
+    requestId: genReqId(),
+    route: "/api/cron/cleanup-notifications",
+  });
+  const reportFailure = async (reason: string) => {
+    const event = {
+      integration: "cron_notification_cleanup",
+      operation: "scheduled_notification_cleanup",
+      outcome: "failure",
+      attempts: 1,
+      reason,
+    };
+    await sinks.audit(event);
+    await sinks.alert(event);
+  };
 
   // Calculate cutoff date (90 days ago)
   const cutoffDate = new Date();
@@ -27,11 +45,18 @@ export async function GET(request: NextRequest) {
     .lt("created_at", cutoffISO);
 
   if (countErr) {
-    console.error("[cron/cleanup-notifications] Count error:", countErr);
+    await reportFailure("cleanup_count_failed");
     return NextResponse.json({ error: "Count query failed" }, { status: 500 });
   }
 
   if (!count || count === 0) {
+    await sinks.audit({
+      integration: "cron_notification_cleanup",
+      operation: "scheduled_notification_cleanup",
+      outcome: "success",
+      attempts: 1,
+      reason: null,
+    });
     return NextResponse.json({
       message: "No notifications to clean up",
       deleted: 0,
@@ -51,8 +76,11 @@ export async function GET(request: NextRequest) {
       .limit(batchSize);
 
     if (selectErr) {
-      console.error("[cron/cleanup-notifications] Select batch error:", selectErr);
-      break;
+      await reportFailure("cleanup_select_failed");
+      return NextResponse.json(
+        { error: "Cleanup select failed", deleted, expectedCount: count },
+        { status: 502 },
+      );
     }
 
     if (!batch || batch.length === 0) break;
@@ -64,13 +92,23 @@ export async function GET(request: NextRequest) {
       .in("id", ids);
 
     if (deleteErr) {
-      console.error("[cron/cleanup-notifications] Delete batch error:", deleteErr);
-      break;
+      await reportFailure("cleanup_delete_failed");
+      return NextResponse.json(
+        { error: "Cleanup delete failed", deleted, expectedCount: count },
+        { status: 502 },
+      );
     }
 
     deleted += ids.length;
   }
 
+  await sinks.audit({
+    integration: "cron_notification_cleanup",
+    operation: "scheduled_notification_cleanup",
+    outcome: "success",
+    attempts: 1,
+    reason: null,
+  });
   return NextResponse.json({
     message: "Cleanup complete",
     deleted,

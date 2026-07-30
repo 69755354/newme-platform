@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRequestedOrganizationId } from "@/lib/organization-context";
+import { createIntegrationLogSinks } from "@/lib/integration-execution.mjs";
+import { genReqId, logger } from "@/lib/logger";
 
 /**
  * Meta CAPI (Conversions API) — 接收 Meta 转化的 lead 事件
@@ -23,12 +25,43 @@ function getSupabaseAdmin() {
 }
 
 export async function POST(request: NextRequest) {
+  const requestId = genReqId();
+  const sinks = createIntegrationLogSinks({
+    logger,
+    requestId,
+    route: "/api/leads/meta-capi",
+  });
+  const webhookSecret = process.env.META_CAPI_WEBHOOK_SECRET?.trim() ?? "";
+  if (!webhookSecret) {
+    return NextResponse.json(
+      {
+        status: "disabled",
+        integration: "meta_capi",
+        reason: "not_configured",
+      },
+      {
+        status: 503,
+        headers: { "Cache-Control": "no-store, max-age=0" },
+      },
+    );
+  }
+  const failOperational = async (reason: string, status = 500) => {
+    const event = {
+      integration: "meta_capi",
+      operation: "lead_ingress",
+      outcome: "failure",
+      attempts: 1,
+      reason,
+    };
+    await sinks.audit(event);
+    await sinks.alert(event);
+    return NextResponse.json(
+      { status: "error", message: reason },
+      { status },
+    );
+  };
   try {
     // Webhook secret verification
-    const webhookSecret = process.env.META_CAPI_WEBHOOK_SECRET;
-    if (!webhookSecret) {
-      return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
-    }
     const authHeader = request.headers.get("authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
     if (token !== webhookSecret) {
@@ -50,10 +83,7 @@ export async function POST(request: NextRequest) {
       .eq("status", "active")
       .maybeSingle();
     if (organizationError) {
-      return NextResponse.json(
-        { error: "organization_lookup_failed" },
-        { status: 503 },
-      );
+      return await failOperational("organization_lookup_failed", 503);
     }
     if (!organization) {
       return NextResponse.json(
@@ -173,11 +203,7 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (updateErr) {
-        console.error("[Meta CAPI] Failed to update lead:", updateErr);
-        return NextResponse.json(
-          { status: "error", message: "Failed to update lead" },
-          { status: 500 },
-        );
+        return await failOperational("lead_update_failed");
       }
 
       result = { id: updated.id, duplicate: true };
@@ -190,16 +216,19 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (insertErr) {
-        console.error("[Meta CAPI] Failed to insert lead:", insertErr);
-        return NextResponse.json(
-          { status: "error", message: "Failed to insert lead" },
-          { status: 500 },
-        );
+        return await failOperational("lead_insert_failed");
       }
 
       result = { id: inserted.id, duplicate: false };
     }
 
+    await sinks.audit({
+      integration: "meta_capi",
+      operation: "lead_ingress",
+      outcome: "success",
+      attempts: 1,
+      reason: null,
+    });
     return NextResponse.json({
       status: "received",
       lead_id: result.id,
@@ -207,12 +236,7 @@ export async function POST(request: NextRequest) {
       source,
       organization_id: organizationId,
     });
-  } catch (err: any) {
-    console.error("[Meta CAPI] Error:", err);
-    const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
-    return NextResponse.json(
-      { status: "error", message: message || "Internal error" },
-      { status: 500 },
-    );
+  } catch {
+    return await failOperational("unexpected_ingress_failure");
   }
 }

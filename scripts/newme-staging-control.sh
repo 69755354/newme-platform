@@ -21,6 +21,7 @@ readonly STAGING_REF="bfsiibofuzoglziltgyd"
 readonly PRODUCTION_REF="vfopmpxlhwzpxqegayew"
 readonly SAM20_RUNNER="scripts/uat/sam20-lead-organization-isolation.mjs"
 readonly SAM20_MIGRATION="supabase/migrations/20260730100000_sam20_lead_organization_isolation.sql"
+readonly SAM22_RUNNER="scripts/uat/sam22-two-organization-isolation.mjs"
 readonly SAM68_RUNNER="scripts/verify-staging-sam68-observability.mjs"
 readonly PRODUCT_SAAS_RUNNER="scripts/uat/product-saas-final.mjs"
 readonly UAT_IMAGE_PREFIX="newme-staging-uat"
@@ -47,7 +48,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam22|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -55,7 +56,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
+  build|deploy|uat|uat-sam20|uat-sam22|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -421,6 +422,84 @@ run_uat_sam20() {
   echo "staging control SAM-20 UAT passed SHA=$SHA cleanup=verified"
 }
 
+run_uat_sam22() {
+  verify_current_release "$SHA"
+  command -v docker >/dev/null 2>&1 || fail "docker is required for staging UAT"
+  [ -r "$ENV_FILE" ] || fail "staging environment is missing"
+  [ "$(
+    docker image inspect "$UAT_IMAGE_PREFIX:$SHA" \
+      --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+  )" = "$SHA" ] || fail "staging UAT image provenance does not match"
+  local run_dir runner output rc
+  run_dir="$(mktemp -d "/run/newme-staging-sam22-$SHA.XXXXXX")"
+  runner="$run_dir/sam22-two-organization-isolation.mjs"
+  output="$(mktemp "$STATE_DIR/.uat-sam22.XXXXXX")"
+  register_temporary_path "$run_dir"
+  register_temporary_path "$output"
+  copy_commit_blob "$SHA" "$SAM22_RUNNER" "$runner"
+  chown root:root "$run_dir" "$runner"
+  chmod 0755 "$run_dir"
+  chmod 0555 "$runner"
+  rc=0
+  docker run \
+    --rm \
+    --init \
+    --network host \
+    --read-only \
+    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m \
+    --tmpfs /runner/home:rw,nosuid,nodev,size=64m \
+    --env-file "$ENV_FILE" \
+    --env "HOME=/runner/home" \
+    --env "SAM22_UAT_BASE_URL=http://127.0.0.1:3101" \
+    --env "SAM22_RELEASE_SHA=$SHA" \
+    --env "SAM22_UAT_CONFIRM=SAM22_STAGING_ONLY" \
+    --mount "type=bind,src=$runner,dst=/runner/sam22-two-organization-isolation.mjs,readonly" \
+    --mount "type=bind,src=$RELEASES/$SHA/manifest.json,dst=/runner/release/manifest.json,readonly" \
+    --entrypoint /usr/bin/node \
+    "$UAT_IMAGE_PREFIX:$SHA" \
+    /runner/sam22-two-organization-isolation.mjs \
+    >"$output" 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "SAM-22 staging UAT failed with status $rc"
+  node -e '
+    const fs = require("fs");
+    const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const required = [
+      "organizations",
+      "memberships",
+      "leads",
+      "snapshots",
+      "audit_events",
+      "child_records",
+      "user_session_daily",
+      "audit_logs",
+      "profiles",
+      "auth_fixtures",
+    ];
+    const resultNames = [
+      "list_search",
+      "direct_id",
+      "export",
+      "import",
+      "webhook",
+      "cron",
+      "dashboard",
+      "member_admin",
+    ];
+    if (
+      body.linearId !== "SAM-22" ||
+      body.releaseSha !== process.argv[2] ||
+      body.projectRef !== process.argv[3] ||
+      body.cleanup !== "verified" ||
+      resultNames.some((key) => body.results?.[key] === undefined) ||
+      required.some((key) => body.cleanupCounts?.[key] !== 0)
+    ) process.exit(1);
+  ' "$output" "$SHA" "$STAGING_REF" ||
+    fail "SAM-22 UAT evidence or cleanup is incomplete"
+  rm -rf -- "$run_dir"
+  rm -f -- "$output"
+  echo "staging control SAM-22 UAT passed SHA=$SHA cleanup=verified"
+}
+
 run_uat_sam68() {
   verify_current_release "$SHA"
   [ -r "$ENV_FILE" ] || fail "staging environment is missing"
@@ -684,6 +763,7 @@ case "$ACTION" in
   deploy) run_deploy ;;
   uat) run_uat ;;
   uat-sam20) run_uat_sam20 ;;
+  uat-sam22) run_uat_sam22 ;;
   uat-sam68) run_uat_sam68 ;;
   uat-sam70) run_uat_sam70 ;;
   uat-product-saas) run_uat_product_saas ;;

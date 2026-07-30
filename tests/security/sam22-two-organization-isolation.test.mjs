@@ -142,11 +142,15 @@ test("SAM-22 UAT is release-locked, synthetic-only, and verifies marker cleanup"
     "snapshots",
     "audit_events",
     "child_records",
+    "user_session_daily",
+    "audit_logs",
     "profiles",
     "auth_fixtures",
   ]) {
     assert.ok(uat.includes(`${fixture}: 0`));
   }
+  assert.match(uat, /\.from\("user_session_daily"\)[\s\S]*\.in\("user_id", users\)/);
+  assert.match(uat, /\.from\("audit_logs"\)[\s\S]*\.in\("actor_id", users\)/);
   assert.match(uat, /cleanup: "verified"/);
   assert.doesNotMatch(uat, /cleanup: 0/);
 });

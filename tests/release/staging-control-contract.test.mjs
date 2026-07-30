@@ -24,6 +24,7 @@ test("staging controller has one fixed command surface and strict SHA arity", as
     "deploy",
     "uat",
     "uat-sam20",
+    "uat-sam22",
     "uat-sam68",
     "uat-sam70",
     "uat-product-saas",
@@ -99,7 +100,7 @@ test("SAM-26 UAT image and runtime remain SHA-bound and disposable", async () =>
     /SAM26_EXPECTED_RELEASE_SHA=\$SHA/,
     /SAM26_RELEASE_MANIFEST=\/runner\/release\/manifest\.json/,
   ]) assert.match(control, pattern);
-  assert.equal((control.match(/--network host/g) ?? []).length, 4);
+  assert.equal((control.match(/--network host/g) ?? []).length, 5);
   assert.equal(
     (control.match(/--add-host staging\.newme\.ae:127\.0\.0\.1/g) ?? []).length,
     3,
@@ -141,6 +142,51 @@ test("SAM-20 UAT uses the current release, fixed runner, local manifest, and zer
   ]) assert.ok(control.includes(`"${fixture}"`));
   assert.doesNotMatch(control, /RELEASES\/\$SHA\/node_modules/);
   assert.doesNotMatch(control, /ln -s .*node_modules/);
+  assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
+  assert.doesNotMatch(control, /cat "\$output"/);
+});
+
+test("SAM-22 UAT is SHA-bound, complete, and proves zero fixture residue", async () => {
+  const control = await read("scripts/newme-staging-control.sh");
+  for (const pattern of [
+    /SAM22_RUNNER="scripts\/uat\/sam22-two-organization-isolation\.mjs"/,
+    /copy_commit_blob "\$SHA" "\$SAM22_RUNNER" "\$runner"/,
+    /verify_current_release "\$SHA"/,
+    /SAM22_UAT_BASE_URL=http:\/\/127\.0\.0\.1:3101/,
+    /SAM22_RELEASE_SHA=\$SHA/,
+    /SAM22_UAT_CONFIRM=SAM22_STAGING_ONLY/,
+    /src=\$runner,dst=\/runner\/sam22-two-organization-isolation\.mjs,readonly/,
+    /src=\$RELEASES\/\$SHA\/manifest\.json,dst=\/runner\/release\/manifest\.json,readonly/,
+    /body\.linearId !== "SAM-22"/,
+    /body\.releaseSha !== process\.argv\[2\]/,
+    /body\.projectRef !== process\.argv\[3\]/,
+    /body\.cleanup !== "verified"/,
+    /resultNames\.some\(\(key\) => body\.results\?\.\[key\] === undefined\)/,
+    /body\.cleanupCounts\?\.\[key\] !== 0/,
+    /uat-sam22\) run_uat_sam22/,
+  ]) assert.match(control, pattern);
+  for (const result of [
+    "list_search",
+    "direct_id",
+    "export",
+    "import",
+    "webhook",
+    "cron",
+    "dashboard",
+    "member_admin",
+  ]) assert.ok(control.includes(`"${result}"`));
+  for (const fixture of [
+    "organizations",
+    "memberships",
+    "leads",
+    "snapshots",
+    "audit_events",
+    "child_records",
+    "user_session_daily",
+    "audit_logs",
+    "profiles",
+    "auth_fixtures",
+  ]) assert.ok(control.includes(`"${fixture}"`));
   assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
   assert.doesNotMatch(control, /cat "\$output"/);
 });

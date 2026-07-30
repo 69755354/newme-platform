@@ -18,10 +18,14 @@ export const logger = pino({
     service: CANONICAL_SERVICE_NAME,
     environment: process.env.NODE_ENV || "development",
     release_sha:
+      process.env.NEWME_RELEASE_SHA ||
       process.env.BUILD_ID ||
       process.env.VERCEL_GIT_COMMIT_SHA ||
       "unknown",
-    build_id: process.env.BUILD_ID || "unknown",
+    build_id:
+      process.env.NEWME_BUILD_ID ||
+      process.env.BUILD_ID ||
+      "unknown",
   },
   redact: {
     paths: [

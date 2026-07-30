@@ -2,6 +2,7 @@ import pino from "pino";
 import { createPinoHooks, serializeErr } from "./observability.mjs";
 
 const isProd = process.env.NODE_ENV === "production";
+const CANONICAL_SERVICE_NAME = "newme-platform";
 
 export const logger = pino({
   level: process.env.LOG_LEVEL || (isProd ? "info" : "debug"),
@@ -14,7 +15,7 @@ export const logger = pino({
         },
       }),
   base: {
-    service: process.env.SERVICE_NAME || "newme-crm",
+    service: CANONICAL_SERVICE_NAME,
     environment: process.env.NODE_ENV || "development",
     release_sha:
       process.env.BUILD_ID ||

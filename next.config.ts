@@ -32,10 +32,15 @@ const isStandaloneBuild = process.env.NEWME_STANDALONE_BUILD === "1";
 const isLowMemoryWebpackBuild = process.env.NEWME_STAGING_LOW_MEMORY === "1";
 const shouldUploadSentrySourceMaps = process.env.SENTRY_UPLOAD_SOURCEMAPS === "1"
   && Boolean(process.env.SENTRY_AUTH_TOKEN);
+const stagingReleaseSha = process.env.NEXT_PUBLIC_APP_VERSION || "";
+if (isStandaloneBuild && !/^[0-9a-f]{40}$/.test(stagingReleaseSha)) {
+  throw new Error("staging standalone builds require an exact 40-character release SHA");
+}
 
 // Get git hash at build time
 const gitHash = process.env.NEXT_PUBLIC_APP_VERSION ||
   execSync("git rev-parse --short HEAD").toString().trim();
+const stagingReleaseMetadata = isStandaloneBuild ? stagingReleaseSha : "";
 
 export function getLocalSupabaseConnectOrigin(
   nodeEnv = process.env.NODE_ENV,
@@ -86,7 +91,13 @@ const nextConfig: NextConfig = {
     : undefined,
   env: {
     NEXT_PUBLIC_APP_VERSION: gitHash,
+    NEWME_RELEASE_SHA: stagingReleaseMetadata,
+    NEWME_BUILD_ID: stagingReleaseMetadata,
+    NEWME_RELEASE_METADATA_REQUIRED: isStandaloneBuild ? "1" : "0",
   },
+  generateBuildId: isStandaloneBuild
+    ? async () => stagingReleaseSha
+    : undefined,
   poweredByHeader: false,
   async headers() {
     return [

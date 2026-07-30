@@ -295,9 +295,16 @@ test("Product/SaaS UAT is image-bound, staging-only, and verifies every issue an
     /body\.release\?\.release_sha !== process\.argv\[2\]/,
     /body\.cleanup !== "verified"/,
     /body\.results\?\.\[id\]\?\.status !== "pass"/,
+    /const sam25 = body\.results\?\.\["SAM-25"\]\?\.evidence/,
+    /negative\.length !== negativeCases\.size/,
+    /chain\.installment_plan_ids\.length !== 1/,
+    /chain\.payment_allocation_ids\.length !== 1/,
+    /new Set\(negative\.map\(\(item\) => item\?\.name\)\)\.size !== negativeCases\.size/,
+    /last-uat-product-saas\.json/,
+    /install -m 0600 -o root -g root "\$output" "\$evidence_tmp"/,
     /body\.cleanupCounts\?\.\[key\] !== 0/,
   ]) assert.match(control, pattern);
-  for (const issue of ["SAM-11", "SAM-13", "SAM-35", "SAM-49", "SAM-61"]) {
+  for (const issue of ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61"]) {
     assert.ok(control.includes(`"${issue}"`));
   }
   for (const fixture of [
@@ -310,8 +317,26 @@ test("Product/SaaS UAT is image-bound, staging-only, and verifies every issue an
     "activity_logs",
     "activities",
     "user_session_daily",
+    "quotations",
+    "contracts",
+    "payments",
+    "projects",
+    "installment_plans",
+    "contract_approvals",
+    "payment_allocations",
+    "pipeline_notifications",
     "lead_children",
   ]) assert.ok(control.includes(`"${fixture}"`));
+  for (const [name, status] of [
+    ["hermes_unauthenticated", 401],
+    ["draft_conversion", 400],
+    ["finance_conversion", 403],
+    ["duplicate_conversion", 400],
+    ["zero_amount_payment", 400],
+    ["operator_confirmation", 403],
+  ]) {
+    assert.ok(control.includes(`["${name}", ${status}]`));
+  }
 
   assert.match(dockerfile, /COPY product-saas-final\.mjs \/runner\/product-saas-final\.mjs/);
   assert.match(runScript, /product-saas-final\)/);

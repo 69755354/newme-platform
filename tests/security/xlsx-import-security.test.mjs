@@ -79,7 +79,8 @@ test("xlsx bytes are parsed only in the guarded client import entrypoint", async
   assert.equal(preview.includes('from "xlsx"'), false);
   assert.equal(confirm.includes('from "xlsx"'), false);
   assert.ok(preview.includes('["admin", "boss"].includes(profile.role)'));
-  assert.ok(confirm.includes('["admin", "boss"].includes(profile.role)'));
+  assert.ok(confirm.includes('["admin", "boss"].includes(access.context.role)'));
+  assert.ok(confirm.includes("resolveLeadOrganizationAccess"));
 });
 
 test("xlsx resource limits reject oversized files and row sets", () => {

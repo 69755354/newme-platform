@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=d327d9e69fa05419cedad44797e4e5d0261691067e9a742a220f6368cabc67d1
+// Migration fingerprint: sha256=e5f214b64f30d8f12951c6039b21ed58927dab5a366debc80cfe1bdc59a16f43
 export type Json =
   | string
   | number
@@ -892,6 +892,7 @@ export type Database = {
           current_milestone: string
           id: string
           lead_count: number
+          organization_id: string
           snapshot_date: string
           total_value: number | null
         }
@@ -900,6 +901,7 @@ export type Database = {
           current_milestone: string
           id?: string
           lead_count?: number
+          organization_id: string
           snapshot_date?: string
           total_value?: number | null
         }
@@ -908,10 +910,19 @@ export type Database = {
           current_milestone?: string
           id?: string
           lead_count?: number
+          organization_id?: string
           snapshot_date?: string
           total_value?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "crm_daily_funnel_snapshot_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       customers: {
         Row: {

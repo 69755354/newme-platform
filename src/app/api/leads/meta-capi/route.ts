@@ -1,6 +1,7 @@
 // RBAC: public
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getRequestedOrganizationId } from "@/lib/organization-context";
 
 /**
  * Meta CAPI (Conversions API) — 接收 Meta 转化的 lead 事件
@@ -32,6 +33,33 @@ export async function POST(request: NextRequest) {
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
     if (token !== webhookSecret) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const organizationId = getRequestedOrganizationId(request);
+    if (!organizationId) {
+      return NextResponse.json(
+        { error: "organization_context_required" },
+        { status: 400 },
+      );
+    }
+
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: organization, error: organizationError } = await supabaseAdmin
+      .from("organizations")
+      .select("id")
+      .eq("id", organizationId)
+      .eq("status", "active")
+      .maybeSingle();
+    if (organizationError) {
+      return NextResponse.json(
+        { error: "organization_lookup_failed" },
+        { status: 503 },
+      );
+    }
+    if (!organization) {
+      return NextResponse.json(
+        { error: "active_organization_required" },
+        { status: 403 },
+      );
     }
 
     const body = await request.json();
@@ -67,6 +95,7 @@ export async function POST(request: NextRequest) {
       : now;
 
     const leadData = {
+      organization_id: organizationId,
       source,
       customer_name: customerName,
       phone,
@@ -83,8 +112,6 @@ export async function POST(request: NextRequest) {
       first_touch_at: eventTimestamp,
       created_at: now,
     };
-
-    const supabaseAdmin = getSupabaseAdmin();
 
     // 处理重复: 根据 email 或 phone 查找已有线索
     let existingLeadId: string | null = null;
@@ -110,6 +137,7 @@ export async function POST(request: NextRequest) {
       const dupQuery = supabaseAdmin
         .from("leads")
         .select("id")
+        .eq("organization_id", organizationId)
         .or(orFilters)
         .limit(1);
 
@@ -139,6 +167,7 @@ export async function POST(request: NextRequest) {
           ...(location && { location }),
           updated_at: now,
         })
+        .eq("organization_id", organizationId)
         .eq("id", existingLeadId)
         .select("id")
         .single();
@@ -176,6 +205,7 @@ export async function POST(request: NextRequest) {
       lead_id: result.id,
       duplicate: result.duplicate,
       source,
+      organization_id: organizationId,
     });
   } catch (err: any) {
     console.error("[Meta CAPI] Error:", err);

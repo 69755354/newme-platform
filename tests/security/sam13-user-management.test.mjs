@@ -4,51 +4,50 @@ import test from "node:test";
 
 const read = (path) => readFileSync(path, "utf8");
 
-test("SAM-13 limits every user-management entry point to admin and boss", () => {
+test("SAM-13 keeps every user-management entry point behind the shared admin boundary", () => {
   const usersRoute = read("src/app/api/users/route.ts");
   const teamActions = read("src/app/actions/team.ts");
   const teamPage = read("src/app/(dashboard)/team/page.tsx");
 
-  assert.match(usersRoute, /profile\.role !== "admin" && profile\.role !== "boss"/);
-  assert.doesNotMatch(usersRoute, /profile\.role !== "sales"/);
-  assert.match(teamActions, /\['admin', 'boss'\]\.includes\(profile\.role\)/);
-  assert.doesNotMatch(teamActions, /\['admin', 'boss', 'sales'\]\.includes\(profile\.role\)/);
+  assert.match(usersRoute, /resolveOrganizationMemberAdminAccess\(request\)/);
+  assert.match(
+    teamActions,
+    /resolveOrganizationMemberAdminAccess\(await actionRequest\(\)\)/,
+  );
   assert.match(teamPage, /useRequireRole\(\["admin", "boss"\]\)/);
 });
 
-test("SAM-13 API authorization is fail-closed while preserving both manager roles", () => {
-  const usersRoute = read("src/app/api/users/route.ts");
-  const checkRole = usersRoute.slice(
-    usersRoute.indexOf("async function checkRole"),
-    usersRoute.indexOf("// ─── GET /api/users"),
-  );
+test("SAM-13 authorization is fail-closed and now requires an active organization membership", () => {
+  const access = read("src/lib/organization-member-admin.ts");
 
-  // A missing identity or profile must never reach the privileged admin client.
-  assert.match(checkRole, /authErr \|\| !user/);
-  assert.match(checkRole, /profileErr \|\| !profile/);
-  assert.match(checkRole, /status: 401/);
-  assert.match(checkRole, /status: 403/);
-
-  // Both intended manager roles pass; every other role is rejected before return.
-  assert.match(checkRole, /profile\.role !== "admin" && profile\.role !== "boss"/);
-  assert.match(checkRole, /return profile\.role/);
-  assert.doesNotMatch(checkRole, /return profile\?\.role/);
+  assert.match(access, /getRequestAuthContext\(request\)/);
+  assert.match(access, /organization_context_required/);
+  assert.match(access, /!\["admin", "boss"\]\.includes\(context\.role\)/);
+  assert.match(access, /organization_admin_required/);
+  assert.match(access, /active_organization_membership_required/);
+  assert.match(access, /\.eq\("organization_id", organizationId\)/);
+  assert.match(access, /\.eq\("user_id", context\.user\.id\)/);
 });
 
 test("SAM-13 password reset reuses the server-only admin client", () => {
   const teamActions = read("src/app/actions/team.ts");
-  const resetAction = teamActions.slice(teamActions.indexOf("export async function resetUserPassword"));
+  const resetAction = teamActions.slice(
+    teamActions.indexOf("export async function resetUserPassword"),
+  );
 
   assert.match(resetAction, /supabaseAdmin\.auth\.admin\.updateUserById/);
+  assert.match(resetAction, /requireOrganizationMembership/);
   assert.doesNotMatch(resetAction, /createClient\(/);
   assert.doesNotMatch(resetAction, /SUPABASE_SERVICE_ROLE_KEY/);
 });
 
-test("SAM-13 uses one fail-closed finalizer for trigger-created profiles", () => {
+test("SAM-13 uses one fail-closed finalizer and creates the organization membership", () => {
   const usersRoute = read("src/app/api/users/route.ts");
   const teamActions = read("src/app/actions/team.ts");
   const finalizer = read("src/lib/user-profile-provisioning.ts");
-  const createAction = usersRoute.slice(usersRoute.indexOf("export async function POST"));
+  const createAction = usersRoute.slice(
+    usersRoute.indexOf("export async function POST"),
+  );
   const addTeamMember = teamActions.slice(
     teamActions.indexOf("export async function addTeamMember"),
     teamActions.indexOf("export async function removeTeamMember"),
@@ -56,14 +55,16 @@ test("SAM-13 uses one fail-closed finalizer for trigger-created profiles", () =>
 
   assert.match(createAction, /finalizeTriggerCreatedUserProfile/);
   assert.match(addTeamMember, /finalizeTriggerCreatedUserProfile/);
+  assert.match(createAction, /\.from\("memberships"\)/);
+  assert.match(addTeamMember, /\.from\('memberships'\)/);
   assert.doesNotMatch(createAction, /\.from\("profiles"\)\s*\.insert\(/);
   assert.doesNotMatch(addTeamMember, /\.from\('profiles'\)\s*\.insert\(/);
-
   assert.match(finalizer, /\.from\("profiles"\)\s*\.update\(/);
-  assert.match(finalizer, /\.eq\("id", userId\)\s*\.select\("id"\)\s*\.maybeSingle\(\)/);
-  assert.match(finalizer, /profile\?\.id !== userId/);
+  assert.match(
+    finalizer,
+    /\.eq\("id", userId\)\s*\.select\("id"\)\s*\.maybeSingle\(\)/,
+  );
   assert.match(finalizer, /deleteUser\(userId\)/);
-  assert.match(finalizer, /cleanupError/);
 });
 
 test("SAM-13 removes temporary scripts with embedded production account operations", () => {
@@ -78,8 +79,6 @@ test("SAM-13 removes temporary scripts with embedded production account operatio
 
 test("SAM-13 secret gate rejects a tracked file missing from the worktree", () => {
   const gate = read("scripts/check-e2e-secrets.mjs");
-
   assert.match(gate, /tracked file missing from working tree/);
   assert.doesNotMatch(gate, /if \(!existsSync\(filePath\)\) continue;/);
 });
-

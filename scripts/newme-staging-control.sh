@@ -336,6 +336,8 @@ run_uat() {
     --rm \
     --init \
     --ipc=host \
+    --network host \
+    --add-host staging.newme.ae:127.0.0.1 \
     --read-only \
     --tmpfs /tmp:rw,nosuid,nodev,noexec,size=128m \
     --tmpfs /runner/home:rw,nosuid,nodev,size=64m \
@@ -373,7 +375,7 @@ run_uat_sam20() {
     PATH="/usr/local/bin:/usr/bin:/bin" \
     NEWME_STAGING_ENV_FILE="$ENV_FILE" \
     SAM20_RUNNER_PATH="$runner" \
-    SAM20_UAT_BASE_URL="https://staging.newme.ae" \
+    SAM20_UAT_BASE_URL="http://127.0.0.1:3101" \
     SAM20_RELEASE_SHA="$SHA" \
     SAM20_RELEASE_MANIFEST="$RELEASES/$SHA/manifest.json" \
     SAM20_UAT_CONFIRM="SAM20_STAGING_ONLY" \
@@ -488,6 +490,8 @@ run_uat_sam70() {
     --rm \
     --init \
     --ipc=host \
+    --network host \
+    --add-host staging.newme.ae:127.0.0.1 \
     --read-only \
     --tmpfs /tmp:rw,nosuid,nodev,noexec,size=128m \
     --tmpfs /runner/home:rw,nosuid,nodev,size=64m \
@@ -574,6 +578,8 @@ run_uat_product_saas() {
     --rm \
     --init \
     --ipc=host \
+    --network host \
+    --add-host staging.newme.ae:127.0.0.1 \
     --read-only \
     --tmpfs /tmp:rw,nosuid,nodev,noexec,size=128m \
     --tmpfs /runner/home:rw,nosuid,nodev,size=64m \

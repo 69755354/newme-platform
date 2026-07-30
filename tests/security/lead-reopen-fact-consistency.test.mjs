@@ -36,7 +36,7 @@ test("active Leads with no completed milestone remain in funnel facts as new", a
   assert.doesNotMatch(snapshot, /if \(!lead\.current_milestone\) continue/);
   assert.match(
     snapshot,
-    /\.select\('current_milestone'\)\s*\.is\('final_status', null\)\s*\.eq\('archived', false\)/,
+    /\.select\('current_milestone'\)\s*\.eq\('organization_id', organization\.id\)\s*\.is\('final_status', null\)\s*\.eq\('archived', false\)/,
   );
 });
 

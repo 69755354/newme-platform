@@ -1,8 +1,13 @@
 // RBAC: user (authenticated)
 // GET /api/dashboard/summary — Aggregated dashboard data with 30s cache
 import { NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
 import { getCached, setCache } from "@/lib/api-cache";
+import {
+  LeadOrganizationAccessError,
+  resolveLeadOrganizationAccess,
+} from "@/lib/lead-organization-access";
+import { RequestAuthError } from "@/lib/request-auth-context";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const DASHBOARD_ROLES = new Set(["admin", "boss", "operator", "sales"]);
 
@@ -21,31 +26,33 @@ interface TopAction {
 }
 
 export async function GET(request: Request) {
-  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-  const cookieHeader = request.headers.get("cookie") ?? "";
-  const supabase = await createServerSupabase(bearerToken, cookieHeader);
-
-  // 1. Auth
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let access;
+  try {
+    access = await resolveLeadOrganizationAccess(
+      request,
+      "lead:read",
+      "dashboard_summary",
+      null,
+    );
+  } catch (error) {
+    if (error instanceof LeadOrganizationAccessError) {
+      return NextResponse.json({ error: error.code }, { status: error.status });
+    }
+    if (error instanceof RequestAuthError) {
+      return NextResponse.json({ error: error.code }, { status: error.status });
+    }
+    return NextResponse.json(
+      { error: "dashboard_organization_access_unavailable" },
+      { status: 503 },
+    );
   }
+
+  const supabase = access.client;
 
   // 2. Profile → role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.role) {
-    return NextResponse.json({ error: "Profile not found" }, { status: 403 });
-  }
-
-  const role = profile.role;
-  const userId: string = user.id;
+  const role = access.context.role;
+  const userId: string = access.context.user.id;
+  const organizationId = access.organizationId;
   const isManagement = ["admin", "boss", "operator"].includes(role);
   const isSales = role === "sales";
   if (!DASHBOARD_ROLES.has(role)) {
@@ -71,23 +78,46 @@ export async function GET(request: Request) {
   }
 
   // ── Cache key ──
-  const cacheKey = `dashboard-summary:${role}:${userId}:${month || ""}`;
+  const cacheKey =
+    `dashboard-summary:${organizationId}:${role}:${userId}:${month || ""}`;
   const cached = getCached(cacheKey);
   if (cached) {
     return NextResponse.json(cached);
   }
 
   // ── 3. Sales users ──
-  const { data: salesUsers } = isManagement
-    ? await supabase
+  let salesUsers: Array<{
+    id: string;
+    email: string | null;
+    role: string | null;
+    full_name: string | null;
+  }> = [];
+  let organizationMemberIds: string[] = [];
+  if (!access.supportSessionId) {
+    const { data: membershipRows } = await supabaseAdmin
+      .from("memberships")
+      .select("user_id")
+      .eq("organization_id", organizationId)
+      .eq("status", "active");
+    organizationMemberIds = [
+      ...new Set((membershipRows ?? []).map((row) => row.user_id)),
+    ];
+    if (isManagement && organizationMemberIds.length > 0) {
+      const { data } = await supabase
         .from("profiles")
         .select("id,email,role,full_name")
+        .in("id", organizationMemberIds)
         .eq("is_active", true)
-        .in("role", ["admin", "sales", "operator", "boss"])
-    : { data: [] };
+        .in("role", ["admin", "sales", "operator", "boss"]);
+      salesUsers = data ?? [];
+    }
+  }
 
   // ── 4a. Leads (no dependency) ──
-  let leadsQuery = supabase.from("leads").select("*");
+  let leadsQuery = supabase
+    .from("leads")
+    .select("*")
+    .eq("organization_id", organizationId);
   if (isSales && userId) {
     leadsQuery = leadsQuery.eq("assigned_to", userId);
   }
@@ -96,15 +126,20 @@ export async function GET(request: Request) {
   // ── 4b. Contracts (no dependency) ──
   let contractQuery = supabase
     .from("contracts")
-    .select("id,contract_amount,status,created_at");
+    .select("id,contract_amount,status,created_at,leads!inner(organization_id)")
+    .eq("leads.organization_id", organizationId);
   if (isSales && userId) {
     contractQuery = contractQuery.eq("sales_id", userId);
   }
   const contractsPromise = contractQuery;
 
   // ── 4c. KPI targets (no dependency) ──
-  const kpiPromise = month
-    ? supabase.from("kpi_targets").select("*").eq("period", month)
+  const kpiPromise = month && organizationMemberIds.length > 0
+    ? supabase
+        .from("kpi_targets")
+        .select("*")
+        .eq("period", month)
+        .in("assigned_to", organizationMemberIds)
     : Promise.resolve({ data: [], error: null });
 
   const periodLeadsPromise = monthStart && monthEnd
@@ -112,6 +147,7 @@ export async function GET(request: Request) {
         let q = supabase
           .from("leads")
           .select("quality,source")
+          .eq("organization_id", organizationId)
           .gte("created_at", monthStart)
           .lt("created_at", monthEnd);
         if (isSales && userId) q = q.eq("assigned_to", userId);
@@ -123,7 +159,8 @@ export async function GET(request: Request) {
     ? (() => {
         let q = supabase
           .from("contracts")
-          .select("contract_amount")
+          .select("contract_amount,leads!inner(organization_id)")
+          .eq("leads.organization_id", organizationId)
           .gte("created_at", monthStart)
           .lt("created_at", monthEnd);
         if (isSales && userId) q = q.eq("sales_id", userId);
@@ -136,6 +173,7 @@ export async function GET(request: Request) {
         let q = supabase
           .from("leads")
           .select("id", { count: "exact", head: true })
+          .eq("organization_id", organizationId)
           .eq("final_status", "won")
           .gte("won_at", monthStart)
           .lt("won_at", monthEnd);
@@ -183,9 +221,9 @@ export async function GET(request: Request) {
   const leadsData = (leads || []) as any[];
   const contractsData = (contracts || []) as any[];
   const visibleLeadIds = new Set(leadsData.map((lead) => lead.id));
-  const stageChanges = isSales
-    ? ((stageChangesRaw || []) as Array<{ lead_id: string }>).filter((change) => visibleLeadIds.has(change.lead_id))
-    : (stageChangesRaw || []);
+  const stageChanges = ((stageChangesRaw || []) as Array<{ lead_id: string }>).filter(
+    (change) => visibleLeadIds.has(change.lead_id),
+  );
 
   // ── Compute contract IDs & active contracts ──
   const contractIds = contractsData.map((c: any) => c.id);
@@ -205,72 +243,61 @@ export async function GET(request: Request) {
 
   // ── 4d–m. Second batch: everything with contract-id or independent ──
   const buildPaymentsQuery = () => {
-    if (isSales && contractIds.length === 0) return Promise.resolve({ data: [], error: null });
-    let q = supabase.from("payments").select("amount,confirmed,payment_date");
-    if (isSales && userId) q = q.in("contract_id", contractIds);
-    return q;
+    if (contractIds.length === 0) {
+      return Promise.resolve({ data: [], error: null });
+    }
+    return supabase
+      .from("payments")
+      .select("amount,confirmed,payment_date")
+      .in("contract_id", contractIds);
   };
 
   const buildPeriodPaymentsQuery = () => {
-    if (!monthStart || !monthEnd || (isSales && contractIds.length === 0)) {
+    if (!monthStart || !monthEnd || contractIds.length === 0) {
       return Promise.resolve({ data: [], error: null });
     }
-    let q = supabase
+    return supabase
       .from("payments")
       .select("amount")
       .eq("confirmed", true)
       .gte("payment_date", monthStart)
-      .lt("payment_date", monthEnd);
-    if (isSales && userId) q = q.in("contract_id", contractIds);
-    return q;
+      .lt("payment_date", monthEnd)
+      .in("contract_id", contractIds);
   };
 
   const buildOverdueQuery = () => {
-    if (isSales && contractIds.length === 0) return Promise.resolve({ data: [], error: null });
-    let q = supabase
+    if (contractIds.length === 0) return Promise.resolve({ data: [], error: null });
+    return supabase
       .from("installment_plans")
       .select("amount,due_date,status,paid_amount")
       .lt("due_date", nowISO)
-      .neq("status", "paid");
-    if (isSales && userId) q = q.in("contract_id", contractIds);
-    return q;
+      .neq("status", "paid")
+      .in("contract_id", contractIds);
   };
 
   const buildDueQuery = () => {
-    if (isSales && contractIds.length === 0) return Promise.resolve({ data: [], error: null });
-    let q = supabase
+    if (contractIds.length === 0) return Promise.resolve({ data: [], error: null });
+    return supabase
       .from("installment_plans")
       .select("amount,due_date,status,paid_amount")
       .gte("due_date", nowISO)
       .lte("due_date", nextWeekStr)
-      .eq("status", "pending");
-    if (isSales && userId) q = q.in("contract_id", contractIds);
-    return q;
+      .eq("status", "pending")
+      .in("contract_id", contractIds);
   };
 
   const buildRiskPoolQuery = async (): Promise<number> => {
-    if (isSales && userId) {
-      const { count } = await supabase
-        .from("tasks")
-        .select("id", { count: "exact", head: true })
-        .eq("assignee_id", userId)
-        .is("completed_at", null)
-        .lt("due_at", new Date().toISOString());
-      return count || 0;
-    }
-    try {
-      const { count } = await supabase
-        .from("v_risk_pool")
-        .select("*", { count: "exact", head: true });
-      return count || 0;
-    } catch {
-      const { count } = await supabase
-        .from("tasks")
-        .select("id", { count: "exact", head: true })
-        .is("completed_at", null)
-        .lt("due_at", new Date().toISOString());
-      return count || 0;
-    }
+    const visibleIds = [...visibleLeadIds];
+    if (visibleIds.length === 0) return 0;
+    let query = supabase
+      .from("tasks")
+      .select("id", { count: "exact", head: true })
+      .in("lead_id", visibleIds)
+      .is("completed_at", null)
+      .lt("due_at", new Date().toISOString());
+    if (isSales && userId) query = query.eq("assignee_id", userId);
+    const { count } = await query;
+    return count || 0;
   };
 
   const buildTodayFollowupsQuery = () => {
@@ -304,6 +331,7 @@ export async function GET(request: Request) {
     let q = supabase
       .from("leads")
       .select("id, customer_name, quotation_value, win_probability, stage, phone")
+      .eq("organization_id", organizationId)
       .eq("lead_status", "hot")
       .is("final_status", null)
       .order("quotation_value", { ascending: false })
@@ -316,6 +344,7 @@ export async function GET(request: Request) {
     let q = supabase
       .from("quotations")
       .select("*, leads!inner(customer_name, quotation_value, id, phone)")
+      .eq("leads.organization_id", organizationId)
       .eq("status", "draft")
       .order("total_amount", { ascending: false })
       .limit(3);
@@ -327,6 +356,7 @@ export async function GET(request: Request) {
     let q = supabase
       .from("leads")
       .select("id, customer_name, quotation_value, last_contact_date, stage, phone")
+      .eq("organization_id", organizationId)
       .is("final_status", null)
       .or(`last_contact_date.lt.${cutoff48h},last_contact_date.is.null`)
       .order("quotation_value", { ascending: false })
@@ -339,6 +369,7 @@ export async function GET(request: Request) {
     let q = supabase
       .from("lead_workflow_stages")
       .select("*, leads!inner(customer_name, quotation_value, phone)")
+      .eq("leads.organization_id", organizationId)
       .eq("status", "in_progress")
       .lt("deadline_at", new Date().toISOString())
       .order("deadline_at", { ascending: true })

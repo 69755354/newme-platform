@@ -2,7 +2,11 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { createServerSupabase } from "@/lib/supabase-server";
+import {
+  LeadOrganizationAccessError,
+  resolveLeadOrganizationAccess,
+} from "@/lib/lead-organization-access";
+import { RequestAuthError } from "@/lib/request-auth-context";
 import {
   readXlsxImportJson,
   validateXlsxImportLimits,
@@ -25,22 +29,16 @@ function importFingerprint(row: Record<string, unknown>): string {
 // ─── POST /api/leads/import/confirm ───
 export async function POST(request: NextRequest) {
   try {
-    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(bearerToken, cookieHeader);
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
-    if (authErr || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-    if (!profile?.role || !["admin", "boss"].includes(profile.role)) {
+    const access = await resolveLeadOrganizationAccess(
+      request,
+      "lead:write",
+      "lead_import",
+      null,
+    );
+    if (!["admin", "boss"].includes(access.context.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    const user = access.context.user;
 
     // ─── Server-side re-validation helpers ───
     function mapSource(raw: string): string {
@@ -165,6 +163,7 @@ export async function POST(request: NextRequest) {
 
       return {
         row_number: row.row_number,
+        organization_id: access.organizationId,
         customer_name: row.customer_name || `Row ${row.row_number}`,
         phone: row.phone || null,
         source: sourceResult,
@@ -205,7 +204,7 @@ export async function POST(request: NextRequest) {
       const { data, error: insertErr } = await adminClient
         .from("leads")
         .upsert(cleanBatch, {
-          onConflict: "import_fingerprint",
+          onConflict: "organization_id,import_fingerprint",
           ignoreDuplicates: true,
         })
         .select("id, import_fingerprint");
@@ -218,7 +217,7 @@ export async function POST(request: NextRequest) {
           const { data: single, error: singleErr } = await adminClient
             .from("leads")
             .upsert(cleanRow, {
-              onConflict: "import_fingerprint",
+              onConflict: "organization_id,import_fingerprint",
               ignoreDuplicates: true,
             })
             .select("id, import_fingerprint")
@@ -281,8 +280,15 @@ export async function POST(request: NextRequest) {
       imported_ids: Array.from(rowNumToLeadId.values()),
       errors,
       notes_created: notesCreated,
+      organization_id: access.organizationId,
     });
   } catch (err: any) {
+    if (err instanceof LeadOrganizationAccessError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    if (err instanceof RequestAuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
     console.error("[Import Confirm] Error:", err);
     return NextResponse.json(
       { error: err.message || "Import failed" },

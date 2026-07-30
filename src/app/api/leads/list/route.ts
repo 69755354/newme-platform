@@ -62,6 +62,8 @@ export async function GET(request: Request) {
   }
   const role = access.context.role;
   const userId = user.id;
+  const search = new URL(request.url).searchParams.get("q")?.trim() ?? "";
+  const safeSearch = search.replace(/[%_,().]/g, "").slice(0, 100);
 
   let leadsQuery = supabase
     .from("leads")
@@ -69,6 +71,11 @@ export async function GET(request: Request) {
       "id,customer_name,phone,source,stage,final_status,quotation_value,location,property_type,project_type,project_status,property_size_sqm,ai_quality,lead_status,assigned_to,win_probability,last_contact_date,next_followup_date,next_action,followup_count,created_at,updated_at,recovery_candidate,transfer_candidate,sales_manager_review,hold_since,lost_reason,decision_maker,decision_date,competitor,campaign_name,source_platform,quality,poor_reason",
     )
     .eq("organization_id", access.organizationId);
+  if (safeSearch) {
+    leadsQuery = leadsQuery.or(
+      `customer_name.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%,phone.ilike.%${safeSearch}%`,
+    );
+  }
   if (role === "sales") {
     leadsQuery = leadsQuery.eq("assigned_to", userId);
   }

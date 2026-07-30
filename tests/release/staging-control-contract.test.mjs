@@ -114,6 +114,12 @@ test("SAM-20 UAT uses the current release, fixed runner, local manifest, and zer
   for (const pattern of [
     /verify_current_release "\$SHA"/,
     /SAM20_RUNNER="scripts\/uat\/sam20-lead-organization-isolation\.mjs"/,
+    /boundedReasonAndExpiry !== 1/,
+    /companyAdminDeniedPlatformRole !== 2/,
+    /startAudit !== 1/,
+    /objectAudit !== 1/,
+    /endAudit !== 1/,
+    /endedSessionDenied !== 1/,
     /copy_commit_blob "\$SHA" "\$SAM20_RUNNER" "\$runner"/,
     /docker image inspect "\$UAT_IMAGE_PREFIX:\$SHA"/,
     /--env "SAM20_UAT_BASE_URL=http:\/\/127\.0\.0\.1:3101"/,

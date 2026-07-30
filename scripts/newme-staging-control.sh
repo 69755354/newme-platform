@@ -413,6 +413,12 @@ run_uat_sam20() {
       body.releaseSha !== process.argv[2] ||
       body.projectRef !== process.argv[3] ||
       body.cleanup !== "verified" ||
+      body.results?.support?.boundedReasonAndExpiry !== 1 ||
+      body.results?.support?.companyAdminDeniedPlatformRole !== 2 ||
+      body.results?.support?.startAudit !== 1 ||
+      body.results?.support?.objectAudit !== 1 ||
+      body.results?.support?.endAudit !== 1 ||
+      body.results?.support?.endedSessionDenied !== 1 ||
       required.some((key) => body.cleanupCounts?.[key] !== 0)
     ) process.exit(1);
   ' "$output" "$SHA" "$STAGING_REF" ||

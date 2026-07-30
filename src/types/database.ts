@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=e5f214b64f30d8f12951c6039b21ed58927dab5a366debc80cfe1bdc59a16f43
+// Migration fingerprint: sha256=c497ebb4a04c26ea2b2efcde7ef6517ce30603093a1ea1c96fabeff6f6252d30
 export type Json =
   | string
   | number
@@ -4346,6 +4346,14 @@ export type Database = {
         Returns: Json
       }
       detect_stale_leads: { Args: { stale_days?: number }; Returns: number }
+      end_support_session_atomic: {
+        Args: {
+          p_actor_user_id: string
+          p_request_id: string
+          p_support_session_id: string
+        }
+        Returns: boolean
+      }
       generate_quote_no: { Args: { year_param: number }; Returns: string }
       get_my_role: { Args: never; Returns: string }
       requested_organization_id: { Args: never; Returns: string }
@@ -4413,6 +4421,19 @@ export type Database = {
       reopen_lead_milestone: {
         Args: { p_lead_id: string; p_milestone_key: string; p_reason: string }
         Returns: Json
+      }
+      start_support_session_atomic: {
+        Args: {
+          p_actor_user_id: string
+          p_approver_user_id: string
+          p_expires_at: string
+          p_organization_id: string
+          p_reason: string
+          p_request_id: string
+          p_scope: Json
+          p_ticket_ref: string
+        }
+        Returns: string
       }
       transition_lead_stage: {
         Args: {

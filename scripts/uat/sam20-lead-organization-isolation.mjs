@@ -192,17 +192,20 @@ async function main() {
     const userB = await createUser("user-b", "sales");
     const supportUser = await createUser("support", "operator");
     const approverUser = await createUser("approver", "admin");
+    const companyAdminUser = await createUser("company-admin", "admin");
     const organizationA = await createOrganization("org-a");
     const organizationB = await createOrganization("org-b");
     await createMembership(organizationA, userA.id);
     await createMembership(organizationB, userB.id);
+    await createMembership(organizationA, companyAdminUser.id);
     const leadA = await createLead(organizationA, userA.id, "lead-a");
     const leadB = await createLead(organizationB, userB.id, "lead-b");
 
-    const [tokenA, tokenB, supportToken] = await Promise.all([
+    const [tokenA, tokenB, supportToken, companyAdminToken] = await Promise.all([
       signIn(supabaseUrl, anonKey, userA.email, password),
       signIn(supabaseUrl, anonKey, userB.email, password),
       signIn(supabaseUrl, anonKey, supportUser.email, password),
+      signIn(supabaseUrl, anonKey, companyAdminUser.email, password),
     ]);
     const clientA = dataClient(supabaseUrl, anonKey, tokenA, organizationA);
     const clientB = dataClient(supabaseUrl, anonKey, tokenB, organizationB);
@@ -305,35 +308,166 @@ async function main() {
     ]);
     if (staffError) throw new Error(`platform_staff_failed:${staffError.message}`);
 
-    supportSessionId = randomUUID();
     const now = new Date();
-    const { error: sessionError } = await admin.from("support_sessions").insert({
-      id: supportSessionId,
+    const expiresAt = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
+    const supportRequest = {
       organization_id: organizationA,
-      platform_staff_id: supportStaffId,
+      approver_user_id: approverUser.id,
       ticket_ref: `${marker}-ticket`,
-      reason: "Synthetic SAM-20 organization-boundary verification",
+      reason: "Synthetic SAM-14 cross-organization support verification",
       scope: ["lead:read"],
-      status: "active",
-      requested_at: now.toISOString(),
-      approved_by_platform_staff_id: approverStaffId,
-      approved_at: now.toISOString(),
-      expires_at: new Date(now.getTime() + 30 * 60 * 1000).toISOString(),
+      expires_at: expiresAt,
+    };
+
+    const companyAdminStart = await jsonResponse(
+      await fetch(`${baseUrl}/api/platform/support-sessions`, {
+        method: "POST",
+        headers: {
+          ...apiHeaders(companyAdminToken, organizationA),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(supportRequest),
+      }),
+    );
+    assert(
+      companyAdminStart.response.status === 403
+        && companyAdminStart.body?.error === "platform_staff_required",
+      `company_admin_platform_role_not_denied:${companyAdminStart.response.status}`,
+    );
+
+    const platformRoleEmail = `${marker}-platform-role@invalid.test`;
+    const companyAdminRoleGrant = await jsonResponse(
+      await fetch(`${baseUrl}/api/users`, {
+        method: "POST",
+        headers: {
+          ...apiHeaders(companyAdminToken, organizationA),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          email: platformRoleEmail,
+          password,
+          full_name: "Synthetic forbidden platform role",
+          role: "platform_staff",
+        }),
+      }),
+    );
+    assert(
+      companyAdminRoleGrant.response.status === 400
+        && companyAdminRoleGrant.body?.error === "invalid_role",
+      `company_admin_platform_role_grant_not_denied:${companyAdminRoleGrant.response.status}`,
+    );
+    const { count: forbiddenPlatformProfileCount, error: forbiddenProfileError } =
+      await admin
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("email", platformRoleEmail);
+    if (forbiddenProfileError) {
+      throw new Error(`forbidden_platform_profile_check_failed:${forbiddenProfileError.message}`);
+    }
+    assert(forbiddenPlatformProfileCount === 0, "company_admin_platform_profile_created");
+
+    const blankReason = await fetch(`${baseUrl}/api/platform/support-sessions`, {
+      method: "POST",
+      headers: {
+        ...apiHeaders(supportToken, organizationA),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ ...supportRequest, reason: "   " }),
     });
-    if (sessionError) throw new Error(`support_session_failed:${sessionError.message}`);
+    assert(blankReason.status === 400, `blank_support_reason_http:${blankReason.status}`);
+
+    const longExpiry = await jsonResponse(
+      await fetch(`${baseUrl}/api/platform/support-sessions`, {
+        method: "POST",
+        headers: {
+          ...apiHeaders(supportToken, organizationA),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          ...supportRequest,
+          expires_at: new Date(now.getTime() + 4 * 60 * 60 * 1000 + 60_000).toISOString(),
+        }),
+      }),
+    );
+    assert(
+      longExpiry.response.status === 400
+        && longExpiry.body?.error === "support_expiry_invalid",
+      `long_support_expiry_not_denied:${longExpiry.response.status}`,
+    );
+
+    const supportStart = await jsonResponse(
+      await fetch(`${baseUrl}/api/platform/support-sessions`, {
+        method: "POST",
+        headers: {
+          ...apiHeaders(supportToken, organizationA),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(supportRequest),
+      }),
+    );
+    assert(supportStart.response.status === 201, `support_start_http:${supportStart.response.status}`);
+    supportSessionId = supportStart.body?.support_session_id;
+    assert(
+      typeof supportSessionId === "string" && supportSessionId.length > 0,
+      "support_session_id_missing",
+    );
 
     const supportList = await fetch(`${baseUrl}/api/leads/list`, {
       headers: apiHeaders(supportToken, organizationA, supportSessionId),
     });
     assert(supportList.status === 200, `support_list_http:${supportList.status}`);
-    const { count: auditCount, error: auditCountError } = await admin
+
+    const supportEnd = await jsonResponse(
+      await fetch(`${baseUrl}/api/platform/support-sessions`, {
+        method: "DELETE",
+        headers: {
+          ...apiHeaders(supportToken, organizationA),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ support_session_id: supportSessionId }),
+      }),
+    );
+    assert(
+      supportEnd.response.status === 200
+        && supportEnd.body?.status === "revoked",
+      `support_end_http:${supportEnd.response.status}`,
+    );
+
+    const endedSessionAccess = await jsonResponse(
+      await fetch(`${baseUrl}/api/leads/list`, {
+        headers: apiHeaders(supportToken, organizationA, supportSessionId),
+      }),
+    );
+    assert(
+      endedSessionAccess.response.status === 403
+        && endedSessionAccess.body?.error === "support_session_not_authorized",
+      `ended_support_session_not_denied:${endedSessionAccess.response.status}`,
+    );
+
+    const { data: supportAudits, error: auditCountError } = await admin
       .from("audit_events")
-      .select("id", { count: "exact", head: true })
+      .select("action, outcome")
       .eq("support_session_id", supportSessionId)
-      .eq("outcome", "success");
+      .order("occurred_at", { ascending: true });
     if (auditCountError) throw new Error(`audit_count_failed:${auditCountError.message}`);
-    assert(auditCount === 1, `support_audit_count:${auditCount}`);
-    results.support = { auditedAccess: 1 };
+    const auditOutcomes = (supportAudits ?? [])
+      .map((row) => `${row.action}:${row.outcome}`);
+    for (const expected of [
+      "support.session.start:success",
+      "support.lead:read:success",
+      "support.session.end:success",
+      "support.lead:read:denied",
+    ]) {
+      assert(auditOutcomes.includes(expected), `support_audit_missing:${expected}`);
+    }
+    results.support = {
+      boundedReasonAndExpiry: 1,
+      companyAdminDeniedPlatformRole: 2,
+      startAudit: 1,
+      objectAudit: 1,
+      endAudit: 1,
+      endedSessionDenied: 1,
+    };
   } catch (error) {
     executionError = error;
   } finally {

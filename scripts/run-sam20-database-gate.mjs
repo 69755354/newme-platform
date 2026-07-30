@@ -246,8 +246,11 @@ async function main() {
 
     const fixturePaths = [
       "supabase/migrations/20260730100000_sam20_lead_organization_isolation.sql",
+      "supabase/migrations/20260730225759_sam14_platform_support_session_lifecycle.sql",
       "supabase/rollback/20260730100000_sam20_lead_organization_isolation_rollback.sql",
+      "supabase/rollback/20260730225759_sam14_platform_support_session_lifecycle_rollback.sql",
       "tests/database/sam20-lead-organization-isolation.sql",
+      "tests/database/sam14-platform-support-session-lifecycle.sql",
       "tests/database/sam20-lead-organization-rollback-verify.sql",
     ];
     for (const fixturePath of fixturePaths) {
@@ -256,6 +259,9 @@ async function main() {
 
     psql(docker, container, ["-f", "sam20-lead-organization-isolation.sql"], {
       label: "sam20_apply_harness",
+    });
+    psql(docker, container, ["-f", "sam14-platform-support-session-lifecycle.sql"], {
+      label: "sam14_lifecycle_harness",
     });
 
     const columns = queryJson(
@@ -332,6 +338,47 @@ async function main() {
       throw new Error(`sam20_failed_rollback_changed_schema:${appliedTable.stdout.trim()}`);
     }
 
+    const deniedSam14Rollback = psql(
+      docker,
+      container,
+      ["-f", "/work/supabase/rollback/20260730225759_sam14_platform_support_session_lifecycle_rollback.sql"],
+      { expectFailure: true, label: "sam14_rollback_without_environment" },
+    );
+    if (!deniedSam14Rollback.combined.includes("sam14_rollback_requires_staging_or_test")) {
+      throw new Error(
+        `sam14_rollback_wrong_failure:${deniedSam14Rollback.combined || "no_output"}`,
+      );
+    }
+
+    psql(
+      docker,
+      container,
+      ["-f", "/work/supabase/rollback/20260730225759_sam14_platform_support_session_lifecycle_rollback.sql"],
+      { environmentName: "test", label: "sam14_rollback" },
+    );
+    const sam14Functions = psql(
+      docker,
+      container,
+      [
+        "-A",
+        "-t",
+        "-q",
+        "-c",
+        `SELECT count(*)
+         FROM pg_proc procedure
+         JOIN pg_namespace namespace ON namespace.oid = procedure.pronamespace
+         WHERE namespace.nspname = 'public'
+           AND procedure.proname IN (
+             'start_support_session_atomic',
+             'end_support_session_atomic'
+           )`,
+      ],
+      { label: "sam14_rollback_verify" },
+    );
+    if (sam14Functions.stdout.trim() !== "0") {
+      throw new Error(`sam14_rollback_residue:${sam14Functions.stdout.trim()}`);
+    }
+
     psql(
       docker,
       container,
@@ -347,6 +394,8 @@ async function main() {
       image: POSTGRES_IMAGE,
       apply: "verified",
       rls_and_triggers: "verified",
+      sam14_support_lifecycle: "verified",
+      sam14_audit_atomicity: "verified",
       type_equivalence: "verified",
       rollback_fail_closed: "verified",
       rollback: "verified",

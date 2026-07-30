@@ -38,7 +38,7 @@
 | `supabase/migrations/20260730110000_sam22_two_organization_isolation.sql` | `f0222d10d8653aa9e2c872f0e4cac2a70e7a0651` | 每组织导入幂等键与日报快照组织键 |
 | `tests/security/sam20-lead-organization-isolation.test.mjs` | `d4ba0b9f6c1d908172334d6b878e38a814190a40` | SAM-20 静态组织边界合同 |
 | `tests/security/sam22-two-organization-isolation.test.mjs` | `ee1f4bdb4652d70138d90743fa00e12ffa73787f` | SAM-22 静态双组织合同与 marker residue 清理 |
-| `src/types/database.ts` | `9de949e9e043951e620b83c27b29f4744327113a` | canonical 生成类型中可见的表、列和关系 |
+| `src/types/database.ts` | `e9d61148be68baf1bc828999fa0728d27baf3bf1` | canonical 生成类型中可见的表、列和关系 |
 
 依赖状态按 2026-07-30 读取结果记录如下：
 

@@ -62,7 +62,7 @@ test("SAM-23 evidence ledger matches the reviewed canonical source blobs", async
     ],
     [
       "src/types/database.ts",
-      "9de949e9e043951e620b83c27b29f4744327113a",
+      "e9d61148be68baf1bc828999fa0728d27baf3bf1",
     ],
   ]);
 

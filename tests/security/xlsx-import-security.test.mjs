@@ -17,20 +17,14 @@ const SHEETJS_INTEGRITY = "sha512-+nKZ39+nvK7Qq6i0PvWWRA4j/EkfWOtkP/YhMtupm+lJIi
 test("production xlsx dependency is pinned to the patched official release", async () => {
   const packageJson = JSON.parse(await read("package.json"));
   const packageLock = JSON.parse(await read("package-lock.json"));
-  const pnpmLock = await read("pnpm-lock.yaml");
   const lockedXlsx = packageLock.packages["node_modules/xlsx"];
 
+  assert.equal(packageJson.packageManager, "npm@11.16.0");
   assert.equal(packageJson.dependencies.xlsx, SHEETJS_CDN);
+  assert.equal(packageLock.packages[""].dependencies.xlsx, SHEETJS_CDN);
   assert.equal(lockedXlsx.version, "0.20.2");
   assert.equal(lockedXlsx.resolved, SHEETJS_CDN);
   assert.equal(lockedXlsx.integrity, SHEETJS_INTEGRITY);
-  assert.equal(pnpmLock.includes(`integrity: ${SHEETJS_INTEGRITY}`), true);
-  assert.equal(
-    pnpmLock.includes(`xlsx@${SHEETJS_CDN}`),
-    true,
-    "pnpm lock must resolve the same official tarball",
-  );
-  assert.equal(pnpmLock.includes("xlsx@0.18.5"), false);
 });
 
 test("normal workbook import preserves lead fields and values", () => {

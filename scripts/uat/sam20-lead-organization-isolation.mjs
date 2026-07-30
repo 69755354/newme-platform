@@ -118,6 +118,8 @@ async function main() {
     platform_staff: 0,
     support_sessions: 0,
     audit_events: 0,
+    user_session_daily: 0,
+    audit_logs: 0,
     profiles: 0,
     auth_fixtures: 0,
   };
@@ -248,16 +250,16 @@ async function main() {
     assert(listB.response.status === 200, `list_b_http:${listB.response.status}`);
     const listAIds = (listA.body?.leads ?? []).map((lead) => lead.id);
     const listBIds = (listB.body?.leads ?? []).map((lead) => lead.id);
-    const listAEmails = (listA.body?.salesUsers ?? []).map((profile) => profile.email);
-    const listBEmails = (listB.body?.salesUsers ?? []).map((profile) => profile.email);
+    const listAProfileIds = (listA.body?.salesUsers ?? []).map((profile) => profile.id);
+    const listBProfileIds = (listB.body?.salesUsers ?? []).map((profile) => profile.id);
     assert(listAIds.includes(leadA) && !listAIds.includes(leadB), "list_a_isolation_failed");
     assert(listBIds.includes(leadB) && !listBIds.includes(leadA), "list_b_isolation_failed");
     assert(
-      listAEmails.includes(userA.email) && !listAEmails.includes(userB.email),
+      listAProfileIds.includes(userA.id) && !listAProfileIds.includes(userB.id),
       "list_a_profile_directory_isolation_failed",
     );
     assert(
-      listBEmails.includes(userB.email) && !listBEmails.includes(userA.email),
+      listBProfileIds.includes(userB.id) && !listBProfileIds.includes(userA.id),
       "list_b_profile_directory_isolation_failed",
     );
     results.list = {
@@ -385,6 +387,12 @@ async function main() {
       await cleanupStep("organizations", () =>
         admin.from("organizations").delete().in("id", organizationIds));
     }
+    if (users.length > 0) {
+      await cleanupStep("user_session_daily", () =>
+        admin.from("user_session_daily").delete().in("user_id", users));
+      await cleanupStep("audit_logs", () =>
+        admin.from("audit_logs").delete().in("actor_id", users));
+    }
     for (const userId of users) {
       await cleanupStep(`auth_user:${userId}`, () =>
         admin.auth.admin.deleteUser(userId));
@@ -423,6 +431,14 @@ async function main() {
         .eq("support_session_id", supportSessionId));
     }
     if (users.length > 0) {
+      await verifyZero("user_session_daily", () => admin
+        .from("user_session_daily")
+        .select("id", { count: "exact", head: true })
+        .in("user_id", users));
+      await verifyZero("audit_logs", () => admin
+        .from("audit_logs")
+        .select("id", { count: "exact", head: true })
+        .in("actor_id", users));
       await verifyZero("profiles", () => admin
         .from("profiles")
         .select("id", { count: "exact", head: true })

@@ -402,6 +402,8 @@ run_uat_sam20() {
       "platform_staff",
       "support_sessions",
       "audit_events",
+      "user_session_daily",
+      "audit_logs",
       "profiles",
       "auth_fixtures",
     ];

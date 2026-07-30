@@ -47,8 +47,12 @@ of these actions plus one full 40-character SHA:
   marker, all required abuse/ownership cases, and zero marker-scoped cleanup
   residue.
 - `uat-product-saas <SHA>` runs the exact final Product/SaaS runner from the
-  same image and read-only manifest. It accepts only passing SAM-11, SAM-35,
-  SAM-49, and SAM-61 evidence plus zero residue for all eight fixture classes.
+  same image and read-only manifest. It accepts only passing SAM-11, SAM-13,
+  SAM-25, SAM-35, SAM-49, and SAM-61 evidence. SAM-25 must contain the exact
+  Lead → Quotation → Contract → Payment → Project links, six zero-write
+  negative cases, and zero residue for all eighteen cleanup classes. The
+  validated, credential-free JSON operation record is atomically retained as
+  root-only `0600` state at `last-uat-product-saas.json`.
 - `rollback <oldSHA>` accepts only the recorded direct predecessor. It refuses
   an application-only rollback when the new release contains the SAM-20
   database contract and the predecessor does not; it never changes database

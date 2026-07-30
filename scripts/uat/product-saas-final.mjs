@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Final staging-only Product/SaaS UAT for SAM-11, SAM-13, SAM-35, SAM-49,
- * and SAM-61.
+ * Final staging-only Product/SaaS UAT for SAM-11, SAM-13, SAM-25, SAM-35,
+ * SAM-49, and SAM-61.
  *
  * The versioned staging controller invokes this runner with the approved
  * release SHA, fixed local release manifest, and staging-only Supabase
@@ -21,7 +21,7 @@ export const CONFIRMATION = "PRODUCT_SAAS_STAGING_ONLY";
 export const FIXTURE_SCOPE = "product-saas-final";
 export const REQUIRED_ROLES = ["boss", "admin", "operator", "sales", "finance", "designer"];
 export const NON_MANAGEMENT_ROLES = ["operator", "sales", "finance", "designer"];
-export const LINEAR_IDS = ["SAM-11", "SAM-13", "SAM-35", "SAM-49", "SAM-61"];
+export const LINEAR_IDS = ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61"];
 export const SAM13_CONTRACT_VERSION = 1;
 export const SAM13_DANGEROUS_PATHS = [
   "/revert_passwords.py",
@@ -281,6 +281,13 @@ function initializeState(config, runId) {
     actors: new Map(),
     userIds: new Set(),
     leadIds: new Set(),
+    quotationIds: new Set(),
+    contractIds: new Set(),
+    paymentIds: new Set(),
+    projectIds: new Set(),
+    installmentPlanIds: new Set(),
+    contractApprovalIds: new Set(),
+    paymentAllocationIds: new Set(),
     importBatchIds: new Set(),
     archiveBatchIds: new Set(),
     sam13FixtureEmails: new Set(),
@@ -320,6 +327,20 @@ async function appRequest(state, role, path, { method = "GET", body } = {}) {
     location: response.headers.get("location"),
     payload: await responsePayload(response),
   };
+}
+
+async function anonymousAppRequest(state, path, { method = "GET", body } = {}) {
+  const response = await fetch(`${state.config.baseUrl}${path}`, {
+    method,
+    redirect: "manual",
+    cache: "no-store",
+    headers: {
+      "x-newme-organization-id": state.organizationId,
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { status: response.status, payload: await responsePayload(response) };
 }
 
 async function createLead(state, suffix, overrides = {}) {
@@ -523,6 +544,15 @@ async function countForLead(state, table, leadId) {
   return count;
 }
 
+async function countWhere(state, table, column, value) {
+  const { count, error } = await state.admin
+    .from(table)
+    .select("id", { count: "exact", head: true })
+    .eq(column, value);
+  if (error || count === null) fail(`could not count ${table}.${column}`);
+  return count;
+}
+
 async function runSam49(state) {
   const unknown = await createLead(state, "hermes-unknown");
   const nonPositive = await createLead(state, "hermes-non-positive");
@@ -579,6 +609,413 @@ async function runSam49(state) {
   return {
     unknown_devices: { status: 400, writes: 0 },
     non_positive_total: { status: 400, writes: 0 },
+  };
+}
+
+async function runSam25(state) {
+  const lead = await createLead(state, "lead-quote-contract-payment-project", {
+    property_type: "apartment",
+    property_size_sqm: 150,
+    location: `${state.markerText} Dubai`,
+    phone: `+97150${state.runId.replaceAll("-", "").slice(0, 7)}`,
+  });
+  const negativeMatrix = [];
+  const recordNegative = (name, status) => {
+    negativeMatrix.push({ name, status, writes: 0 });
+  };
+
+  const beforeAnonymous = await countForLead(state, "quotations", lead.id);
+  const anonymous = await anonymousAppRequest(state, "/api/hermes/generate-quote", {
+    method: "POST",
+    body: { lead_id: lead.id, devices_json: { knx_ip_router: 1 } },
+  });
+  expectStatus("unauthenticated Hermes denial", anonymous, 401);
+  assert.equal(
+    await countForLead(state, "quotations", lead.id),
+    beforeAnonymous,
+    "unauthenticated Hermes request wrote a quotation",
+  );
+  recordNegative("hermes_unauthenticated", 401);
+
+  const generated = await appRequest(state, "sales", "/api/hermes/generate-quote", {
+    method: "POST",
+    body: { lead_id: lead.id, devices_json: { knx_ip_router: 1 } },
+  });
+  expectStatus("Hermes positive quotation", generated, 200);
+  assert.equal(generated.payload?.status, "ok", "Hermes positive status mismatch");
+  assertUuid(generated.payload?.quote_id, "positive quotation id");
+  assert.match(generated.payload?.quote_no ?? "", /^NM-\d{4}-\d{4,}$/);
+  assert.ok(generated.payload?.total_aed > 0, "positive quotation total must be greater than zero");
+  state.quotationIds.add(generated.payload.quote_id);
+
+  const { data: quotation, error: quotationError } = await state.admin
+    .from("quotations")
+    .select("id, lead_id, quote_no, status, total_amount, devices_json, contract_id")
+    .eq("id", generated.payload.quote_id)
+    .single();
+  if (quotationError || !quotation) fail("could not read back positive quotation");
+  assert.equal(quotation.lead_id, lead.id, "quotation did not link to marked lead");
+  assert.equal(quotation.status, "draft", "new quotation status was not draft");
+  assert.equal(quotation.contract_id, null, "new quotation unexpectedly linked a contract");
+  assert.equal(quotation.total_amount, generated.payload.total_aed, "quotation total readback drifted");
+  assert.equal(
+    quotation.devices_json?.knx_ip_router?.qty,
+    1,
+    "quotation product detail did not preserve the exact device quantity",
+  );
+  const { data: quotedLead, error: quotedLeadError } = await state.admin
+    .from("leads")
+    .select("stage")
+    .eq("id", lead.id)
+    .single();
+  if (quotedLeadError || quotedLead?.stage !== "quotation_submitted") {
+    fail("positive quotation did not advance the marked lead");
+  }
+
+  const firstDueDate = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  const draftConversion = await appRequest(
+    state,
+    "sales",
+    `/api/quotations/${generated.payload.quote_id}/convert`,
+    {
+      method: "POST",
+      body: {
+        installments: [{
+          seq: 1,
+          amount: generated.payload.total_aed,
+          due_date: firstDueDate,
+          description: state.markerText,
+        }],
+      },
+    },
+  );
+  expectStatus("draft quotation conversion denial", draftConversion, 400);
+  assert.equal(await countWhere(state, "contracts", "lead_id", lead.id), 0);
+  assert.equal(await countWhere(state, "projects", "lead_id", lead.id), 0);
+  recordNegative("draft_conversion", 400);
+
+  const { error: acceptError } = await state.admin
+    .from("quotations")
+    .update({ status: "accepted", accepted_at: new Date().toISOString() })
+    .eq("id", generated.payload.quote_id);
+  if (acceptError) fail("could not mark the exact fixture quotation accepted");
+
+  const financeConversion = await appRequest(
+    state,
+    "finance",
+    `/api/quotations/${generated.payload.quote_id}/convert`,
+    { method: "POST", body: {} },
+  );
+  expectStatus("finance quotation conversion denial", financeConversion, 403);
+  assert.equal(await countWhere(state, "contracts", "lead_id", lead.id), 0);
+  assert.equal(await countWhere(state, "projects", "lead_id", lead.id), 0);
+  recordNegative("finance_conversion", 403);
+
+  const converted = await appRequest(
+    state,
+    "operator",
+    `/api/quotations/${generated.payload.quote_id}/convert`,
+    {
+      method: "POST",
+      body: {
+        first_payment_due_date: firstDueDate,
+        installments: [{
+          seq: 1,
+          amount: generated.payload.total_aed,
+          due_date: firstDueDate,
+          description: `${state.markerText} first installment`,
+        }],
+      },
+    },
+  );
+  expectStatus("accepted quotation conversion", converted, 200);
+  assert.equal(converted.payload?.success, true, "quotation conversion did not report success");
+  assert.equal(
+    converted.payload?.quotation_status,
+    "contract_created",
+    "quotation conversion status mismatch",
+  );
+  assertUuid(converted.payload?.contract_id, "positive contract id");
+  assert.match(converted.payload?.contract_no ?? "", /^NEW-\d{8}-\d{3,}$/);
+  state.contractIds.add(converted.payload.contract_id);
+
+  const { data: contract, error: contractError } = await state.admin
+    .from("contracts")
+    .select("id, lead_id, quotation_id, sales_id, contract_no, contract_amount, status")
+    .eq("id", converted.payload.contract_id)
+    .single();
+  if (contractError || !contract) fail("could not read back positive contract");
+  assert.equal(contract.lead_id, lead.id, "contract did not link to marked lead");
+  assert.equal(contract.quotation_id, generated.payload.quote_id, "contract quotation link drifted");
+  assert.equal(contract.sales_id, state.actors.get("sales").id, "contract sales owner drifted");
+  assert.equal(contract.contract_amount, generated.payload.total_aed, "contract amount drifted");
+  assert.equal(contract.status, "draft", "new contract status drifted");
+  const { data: convertedQuotation, error: convertedQuotationError } = await state.admin
+    .from("quotations")
+    .select("status, contract_id")
+    .eq("id", generated.payload.quote_id)
+    .single();
+  if (
+    convertedQuotationError
+    || convertedQuotation?.status !== "contract_created"
+    || convertedQuotation.contract_id !== contract.id
+  ) {
+    fail("quotation did not link back to the exact contract");
+  }
+  const { data: wonLead, error: wonLeadError } = await state.admin
+    .from("leads")
+    .select("final_status")
+    .eq("id", lead.id)
+    .single();
+  if (wonLeadError || wonLead?.final_status !== "won") {
+    fail("converted quotation did not mark the exact lead won");
+  }
+
+  const { data: plans, error: plansError } = await state.admin
+    .from("installment_plans")
+    .select("id, contract_id, seq, amount, allocated_amount, status")
+    .eq("contract_id", contract.id);
+  if (plansError || plans?.length !== 1) fail("positive contract did not create one installment");
+  for (const plan of plans) {
+    assertUuid(plan.id, "installment plan id");
+    state.installmentPlanIds.add(plan.id);
+  }
+  assert.equal(plans[0].contract_id, contract.id, "installment contract link drifted");
+  assert.equal(plans[0].seq, 1, "first installment sequence drifted");
+  assert.equal(plans[0].amount, generated.payload.total_aed, "installment amount drifted");
+
+  const { data: approvals, error: approvalsError } = await state.admin
+    .from("contract_approvals")
+    .select("id, contract_id, step, status")
+    .eq("contract_id", contract.id);
+  if (approvalsError || approvals?.length !== 1) {
+    fail("positive contract did not create one approval record");
+  }
+  for (const approval of approvals) {
+    assertUuid(approval.id, "contract approval id");
+    state.contractApprovalIds.add(approval.id);
+  }
+  assert.equal(approvals[0].contract_id, contract.id, "approval contract link drifted");
+  assert.equal(approvals[0].step, "admin_review", "contract approval step drifted");
+  assert.equal(approvals[0].status, "pending", "contract approval status drifted");
+
+  const { data: projects, error: projectsError } = await state.admin
+    .from("projects")
+    .select("id, lead_id, contract_id, sales_id, contract_amount, paid_amount, status")
+    .eq("contract_id", contract.id);
+  if (projectsError || projects?.length !== 1) {
+    fail("positive conversion did not create one project");
+  }
+  for (const project of projects) {
+    assertUuid(project.id, "positive project id");
+    state.projectIds.add(project.id);
+  }
+  assert.equal(projects[0].lead_id, lead.id, "project lead link drifted");
+  assert.equal(projects[0].contract_id, contract.id, "project contract link drifted");
+  assert.equal(projects[0].sales_id, state.actors.get("sales").id, "project sales owner drifted");
+  assert.equal(projects[0].contract_amount, generated.payload.total_aed, "project amount drifted");
+  assert.equal(projects[0].status, "active", "project status drifted");
+
+  const duplicateBefore = {
+    contracts: await countWhere(state, "contracts", "lead_id", lead.id),
+    projects: await countWhere(state, "projects", "lead_id", lead.id),
+  };
+  const duplicateConversion = await appRequest(
+    state,
+    "operator",
+    `/api/quotations/${generated.payload.quote_id}/convert`,
+    { method: "POST", body: {} },
+  );
+  expectStatus("duplicate quotation conversion denial", duplicateConversion, 400);
+  assert.equal(
+    await countWhere(state, "contracts", "lead_id", lead.id),
+    duplicateBefore.contracts,
+    "duplicate conversion created a contract",
+  );
+  assert.equal(
+    await countWhere(state, "projects", "lead_id", lead.id),
+    duplicateBefore.projects,
+    "duplicate conversion created a project",
+  );
+  recordNegative("duplicate_conversion", 400);
+
+  const paymentDate = new Date().toISOString().slice(0, 10);
+  const zeroPayment = await appRequest(state, "finance", "/api/payments", {
+    method: "POST",
+    body: {
+      contract_id: contract.id,
+      amount: 0,
+      payment_date: paymentDate,
+      payment_method: "bank_transfer",
+      reference_no: `${state.marker}-zero`,
+    },
+  });
+  expectStatus("zero payment denial", zeroPayment, 400);
+  assert.equal(await countWhere(state, "payments", "contract_id", contract.id), 0);
+  recordNegative("zero_amount_payment", 400);
+
+  const paymentAmount = Math.min(1_000, generated.payload.total_aed);
+  const payment = await appRequest(state, "finance", "/api/payments", {
+    method: "POST",
+    body: {
+      contract_id: contract.id,
+      amount: paymentAmount,
+      payment_date: paymentDate,
+      payment_method: "bank_transfer",
+      reference_no: `${state.marker}-payment`,
+      notes: state.markerText,
+    },
+  });
+  expectStatus("positive payment creation", payment, 201);
+  assertUuid(payment.payload?.id, "positive payment id");
+  assert.equal(payment.payload?.amount, paymentAmount, "positive payment amount drifted");
+  state.paymentIds.add(payment.payload.id);
+
+  const operatorConfirmation = await appRequest(
+    state,
+    "operator",
+    `/api/payments/${payment.payload.id}/confirm`,
+    { method: "POST", body: {} },
+  );
+  expectStatus("operator payment confirmation denial", operatorConfirmation, 403);
+  const { data: unconfirmed, error: unconfirmedError } = await state.admin
+    .from("payments")
+    .select("confirmed, confirmed_by")
+    .eq("id", payment.payload.id)
+    .single();
+  if (unconfirmedError || unconfirmed?.confirmed !== false || unconfirmed.confirmed_by !== null) {
+    fail("denied operator confirmation changed payment state");
+  }
+  recordNegative("operator_confirmation", 403);
+
+  const confirmed = await appRequest(
+    state,
+    "finance",
+    `/api/payments/${payment.payload.id}/confirm`,
+    { method: "POST", body: {} },
+  );
+  expectStatus("finance payment confirmation", confirmed, 200);
+  assert.equal(confirmed.payload?.data?.success, true, "payment confirmation did not report success");
+  assert.equal(
+    confirmed.payload?.data?.payment_id,
+    payment.payload.id,
+    "payment confirmation returned the wrong payment",
+  );
+
+  const allocated = await appRequest(
+    state,
+    "finance",
+    `/api/payments/${payment.payload.id}/allocate`,
+    {
+      method: "POST",
+      body: { allocations: [{ plan_id: plans[0].id, amount: paymentAmount }] },
+    },
+  );
+  expectStatus("confirmed payment allocation", allocated, 200);
+  assert.equal(allocated.payload?.data?.success, true, "payment allocation did not report success");
+  assert.equal(allocated.payload?.data?.allocations_count, 1, "payment allocation count drifted");
+
+  const { data: allocations, error: allocationsError } = await state.admin
+    .from("payment_allocations")
+    .select("id, payment_id, plan_id, amount_allocated, allocated_by")
+    .eq("payment_id", payment.payload.id);
+  if (allocationsError || allocations?.length !== 1) {
+    fail("positive payment did not create one allocation");
+  }
+  for (const allocation of allocations) {
+    assertUuid(allocation.id, "payment allocation id");
+    state.paymentAllocationIds.add(allocation.id);
+  }
+  assert.equal(allocations[0].payment_id, payment.payload.id, "allocation payment link drifted");
+  assert.equal(allocations[0].plan_id, plans[0].id, "allocation installment link drifted");
+  assert.equal(allocations[0].amount_allocated, paymentAmount, "allocation amount drifted");
+  assert.equal(
+    allocations[0].allocated_by,
+    state.actors.get("finance").id,
+    "allocation actor drifted",
+  );
+
+  const { data: finalPayment, error: finalPaymentError } = await state.admin
+    .from("payments")
+    .select("id, contract_id, amount, confirmed, confirmed_by")
+    .eq("id", payment.payload.id)
+    .single();
+  if (
+    finalPaymentError
+    || finalPayment?.contract_id !== contract.id
+    || finalPayment.amount !== paymentAmount
+    || finalPayment.confirmed !== true
+    || finalPayment.confirmed_by !== state.actors.get("finance").id
+  ) {
+    fail("confirmed payment readback drifted");
+  }
+
+  const { data: finalProject, error: finalProjectError } = await state.admin
+    .from("projects")
+    .select("id, paid_amount")
+    .eq("id", projects[0].id)
+    .single();
+  if (finalProjectError || finalProject?.paid_amount !== paymentAmount) {
+    fail("confirmed payment did not update the linked project");
+  }
+
+  const { data: tasks, error: tasksError } = await state.admin
+    .from("tasks")
+    .select("id, lead_id")
+    .eq("lead_id", lead.id);
+  if (tasksError || (tasks ?? []).some((task) => task.lead_id !== lead.id)) {
+    fail("marked lead task consistency check failed");
+  }
+  const relatedIds = [
+    lead.id,
+    generated.payload.quote_id,
+    contract.id,
+    payment.payload.id,
+    projects[0].id,
+  ];
+  const { data: notifications, error: notificationsError } = await state.admin
+    .from("notifications")
+    .select("id, related_id")
+    .in("related_id", relatedIds);
+  if (
+    notificationsError
+    || (notifications ?? []).some((notification) => !relatedIds.includes(notification.related_id))
+  ) {
+    fail("pipeline notification consistency check failed");
+  }
+
+  assert.deepEqual(
+    negativeMatrix,
+    [
+      { name: "hermes_unauthenticated", status: 401, writes: 0 },
+      { name: "draft_conversion", status: 400, writes: 0 },
+      { name: "finance_conversion", status: 403, writes: 0 },
+      { name: "duplicate_conversion", status: 400, writes: 0 },
+      { name: "zero_amount_payment", status: 400, writes: 0 },
+      { name: "operator_confirmation", status: 403, writes: 0 },
+    ],
+    "SAM-25 negative matrix drifted",
+  );
+
+  return {
+    positive_chain: {
+      lead_id: lead.id,
+      quotation_id: generated.payload.quote_id,
+      contract_id: contract.id,
+      payment_id: payment.payload.id,
+      project_id: projects[0].id,
+      installment_plan_ids: [plans[0].id],
+      payment_allocation_ids: [allocations[0].id],
+      quote_no: generated.payload.quote_no,
+      contract_no: converted.payload.contract_no,
+      total_aed: generated.payload.total_aed,
+      payment_confirmed: true,
+      project_paid_amount: finalProject.paid_amount,
+      product_quantity: quotation.devices_json.knx_ip_router.qty,
+      task_count: tasks?.length ?? 0,
+      notification_count: notifications?.length ?? 0,
+    },
+    negative_matrix: negativeMatrix,
   };
 }
 
@@ -994,8 +1431,71 @@ async function cleanup(state) {
     }
   });
 
+  await capture("discover marked quotations", async () => {
+    if (state.leadIds.size === 0) return;
+    const { data, error } = await state.admin
+      .from("quotations")
+      .select("id,contract_id")
+      .in("lead_id", [...state.leadIds]);
+    if (error) fail("could not discover marked quotations before cleanup");
+    for (const quotation of data ?? []) {
+      if (UUID_PATTERN.test(quotation.id ?? "")) state.quotationIds.add(quotation.id);
+      if (UUID_PATTERN.test(quotation.contract_id ?? "")) state.contractIds.add(quotation.contract_id);
+    }
+  });
+  await capture("discover marked contracts", async () => {
+    if (state.leadIds.size === 0) return;
+    const { data, error } = await state.admin
+      .from("contracts")
+      .select("id")
+      .in("lead_id", [...state.leadIds]);
+    if (error) fail("could not discover marked contracts before cleanup");
+    for (const contract of data ?? []) {
+      if (UUID_PATTERN.test(contract.id ?? "")) state.contractIds.add(contract.id);
+    }
+  });
+  await capture("discover marked projects", async () => {
+    if (state.leadIds.size === 0) return;
+    const { data, error } = await state.admin
+      .from("projects")
+      .select("id,contract_id")
+      .in("lead_id", [...state.leadIds]);
+    if (error) fail("could not discover marked projects before cleanup");
+    for (const project of data ?? []) {
+      if (UUID_PATTERN.test(project.id ?? "")) state.projectIds.add(project.id);
+      if (UUID_PATTERN.test(project.contract_id ?? "")) state.contractIds.add(project.contract_id);
+    }
+  });
+  await capture("discover marked contract children", async () => {
+    if (state.contractIds.size === 0) return;
+    for (const [table, target] of [
+      ["installment_plans", state.installmentPlanIds],
+      ["contract_approvals", state.contractApprovalIds],
+      ["payments", state.paymentIds],
+    ]) {
+      const { data, error } = await state.admin
+        .from(table)
+        .select("id")
+        .in("contract_id", [...state.contractIds]);
+      if (error) fail(`could not discover marked ${table} before cleanup`);
+      for (const row of data ?? []) {
+        if (UUID_PATTERN.test(row.id ?? "")) target.add(row.id);
+      }
+    }
+  });
+  await capture("discover marked payment allocations", async () => {
+    if (state.paymentIds.size === 0) return;
+    const { data, error } = await state.admin
+      .from("payment_allocations")
+      .select("id")
+      .in("payment_id", [...state.paymentIds]);
+    if (error) fail("could not discover marked payment allocations before cleanup");
+    for (const allocation of data ?? []) {
+      if (UUID_PATTERN.test(allocation.id ?? "")) state.paymentAllocationIds.add(allocation.id);
+    }
+  });
+
   const leadTables = [
-    ["notifications", "related_id"],
     ["activities", "lead_id"],
     ["business_events", "lead_id"],
     ["tasks", "lead_id"],
@@ -1007,7 +1507,6 @@ async function cleanup(state) {
     ["lead_deletion_requests", "deleted_lead_id"],
     ["chat_messages", "lead_id"],
     ["lead_documents", "lead_id"],
-    ["quotations", "lead_id"],
   ];
   const directlyDeletedLeadTables = leadTables.filter(
     ([table]) => table !== "lead_milestones",
@@ -1022,6 +1521,74 @@ async function cleanup(state) {
   await capture("archive business-event marker", async () => {
     const { error } = await state.admin.from("business_events").delete().like("description", `%${state.markerText}%`);
     if (error) fail("could not delete marked archive business events");
+  });
+  await capture("pipeline notifications", async () => {
+    const relatedIds = [
+      ...state.leadIds,
+      ...state.quotationIds,
+      ...state.contractIds,
+      ...state.paymentIds,
+      ...state.projectIds,
+      ...state.installmentPlanIds,
+    ];
+    if (relatedIds.length === 0) return;
+    const { error } = await state.admin.from("notifications").delete().in("related_id", relatedIds);
+    if (error) fail("could not delete marked pipeline notifications");
+  });
+  await capture("payment allocations", async () => {
+    if (state.paymentAllocationIds.size === 0) return;
+    const { error } = await state.admin
+      .from("payment_allocations")
+      .delete()
+      .in("id", [...state.paymentAllocationIds]);
+    if (error) fail("could not delete marked payment allocations");
+  });
+  await capture("payments", async () => {
+    if (state.paymentIds.size === 0) return;
+    const { error } = await state.admin.from("payments").delete().in("id", [...state.paymentIds]);
+    if (error) fail("could not delete marked payments");
+  });
+  await capture("installment plans", async () => {
+    if (state.installmentPlanIds.size === 0) return;
+    const { error } = await state.admin
+      .from("installment_plans")
+      .delete()
+      .in("id", [...state.installmentPlanIds]);
+    if (error) fail("could not delete marked installment plans");
+  });
+  await capture("contract approvals", async () => {
+    if (state.contractApprovalIds.size === 0) return;
+    const { error } = await state.admin
+      .from("contract_approvals")
+      .delete()
+      .in("id", [...state.contractApprovalIds]);
+    if (error) fail("could not delete marked contract approvals");
+  });
+  await capture("projects", async () => {
+    if (state.projectIds.size === 0) return;
+    const { error } = await state.admin.from("projects").delete().in("id", [...state.projectIds]);
+    if (error) fail("could not delete marked projects");
+  });
+  await capture("break quotation contract links", async () => {
+    if (state.quotationIds.size === 0) return;
+    const { error } = await state.admin
+      .from("quotations")
+      .update({ contract_id: null })
+      .in("id", [...state.quotationIds]);
+    if (error) fail("could not break marked quotation contract links");
+  });
+  await capture("contracts", async () => {
+    if (state.contractIds.size === 0) return;
+    const { error } = await state.admin.from("contracts").delete().in("id", [...state.contractIds]);
+    if (error) fail("could not delete marked contracts");
+  });
+  await capture("quotations", async () => {
+    if (state.quotationIds.size === 0) return;
+    const { error } = await state.admin
+      .from("quotations")
+      .delete()
+      .in("id", [...state.quotationIds]);
+    if (error) fail("could not delete marked quotations");
   });
   await capture("marked leads", () => deleteByLeadIds(state, "leads", "id"));
   await capture("discovered marked leads", async () => {
@@ -1088,6 +1655,14 @@ async function cleanup(state) {
       exactIdentityMarker(candidate, state.runId)
       || exactSam13FixtureIdentity(candidate, state)
     )).length;
+  const pipelineRelatedIds = [
+    ...state.leadIds,
+    ...state.quotationIds,
+    ...state.contractIds,
+    ...state.paymentIds,
+    ...state.projectIds,
+    ...state.installmentPlanIds,
+  ];
   const counts = {
     auth_users: remainingAuth,
     profiles: await exactCount(state.admin, "profiles", "id", [...state.userIds]),
@@ -1104,6 +1679,34 @@ async function cleanup(state) {
       [state.organizationId],
     ),
     user_session_daily: await exactCount(state.admin, "user_session_daily", "user_id", [...state.userIds]),
+    quotations: await exactCount(state.admin, "quotations", "id", [...state.quotationIds]),
+    contracts: await exactCount(state.admin, "contracts", "id", [...state.contractIds]),
+    payments: await exactCount(state.admin, "payments", "id", [...state.paymentIds]),
+    projects: await exactCount(state.admin, "projects", "id", [...state.projectIds]),
+    installment_plans: await exactCount(
+      state.admin,
+      "installment_plans",
+      "id",
+      [...state.installmentPlanIds],
+    ),
+    contract_approvals: await exactCount(
+      state.admin,
+      "contract_approvals",
+      "id",
+      [...state.contractApprovalIds],
+    ),
+    payment_allocations: await exactCount(
+      state.admin,
+      "payment_allocations",
+      "id",
+      [...state.paymentAllocationIds],
+    ),
+    pipeline_notifications: await exactCount(
+      state.admin,
+      "notifications",
+      "related_id",
+      pipelineRelatedIds,
+    ),
     lead_children: 0,
   };
   for (const [table, column] of leadTables) {
@@ -1162,6 +1765,7 @@ export async function runProductSaasFinalUat(env = process.env, dependencies = {
   try {
     await prepareFixtures(state);
     await recordIssue(report, "SAM-11", () => runSam11(state));
+    await recordIssue(report, "SAM-25", () => runSam25(state));
     await recordIssue(report, "SAM-35", () => runSam35(state));
     await recordIssue(report, "SAM-49", () => runSam49(state));
     await recordIssue(report, "SAM-61", () => runSam61(state));

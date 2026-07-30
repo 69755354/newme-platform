@@ -664,7 +664,9 @@ run_uat_product_saas() {
     docker image inspect "$UAT_IMAGE_PREFIX:$SHA" \
       --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
   )" = "$SHA" ] || fail "staging UAT image provenance does not match"
-  local output rc
+  local output rc evidence evidence_tmp
+  evidence="$STATE_DIR/last-uat-product-saas.json"
+  rm -f -- "$evidence"
   output="$(mktemp "$STATE_DIR/.uat-product-saas.XXXXXX")"
   register_temporary_path "$output"
   rc=0
@@ -689,7 +691,7 @@ run_uat_product_saas() {
   node -e '
     const fs = require("fs");
     const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const requiredIssues = ["SAM-11", "SAM-13", "SAM-35", "SAM-49", "SAM-61"];
+    const requiredIssues = ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61"];
     const zeroResidue = [
       "auth_users",
       "profiles",
@@ -700,9 +702,28 @@ run_uat_product_saas() {
       "activity_logs",
       "activities",
       "user_session_daily",
+      "quotations",
+      "contracts",
+      "payments",
+      "projects",
+      "installment_plans",
+      "contract_approvals",
+      "payment_allocations",
+      "pipeline_notifications",
       "lead_children",
     ];
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const sam25 = body.results?.["SAM-25"]?.evidence;
+    const chain = sam25?.positive_chain;
+    const negative = sam25?.negative_matrix;
+    const negativeCases = new Map([
+      ["hermes_unauthenticated", 401],
+      ["draft_conversion", 400],
+      ["finance_conversion", 403],
+      ["duplicate_conversion", 400],
+      ["zero_amount_payment", 400],
+      ["operator_confirmation", 403],
+    ]);
     if (
       body.ok !== true ||
       body.scope !== "product-saas-final" ||
@@ -712,12 +733,44 @@ run_uat_product_saas() {
       body.release?.health !== 200 ||
       body.cleanup !== "verified" ||
       requiredIssues.some((id) => body.results?.[id]?.status !== "pass") ||
+      !uuid.test(chain?.lead_id ?? "") ||
+      !uuid.test(chain?.quotation_id ?? "") ||
+      !uuid.test(chain?.contract_id ?? "") ||
+      !uuid.test(chain?.payment_id ?? "") ||
+      !uuid.test(chain?.project_id ?? "") ||
+      !Array.isArray(chain?.installment_plan_ids) ||
+      chain.installment_plan_ids.length !== 1 ||
+      !uuid.test(chain.installment_plan_ids[0] ?? "") ||
+      !Array.isArray(chain?.payment_allocation_ids) ||
+      chain.payment_allocation_ids.length !== 1 ||
+      !uuid.test(chain.payment_allocation_ids[0] ?? "") ||
+      !/^NM-\d{4}-\d{4,}$/.test(chain?.quote_no ?? "") ||
+      !/^NEW-\d{8}-\d{3,}$/.test(chain?.contract_no ?? "") ||
+      !(chain?.total_aed > 0) ||
+      chain?.payment_confirmed !== true ||
+      !(chain?.project_paid_amount > 0) ||
+      chain?.product_quantity !== 1 ||
+      !Number.isInteger(chain?.task_count) ||
+      chain.task_count < 0 ||
+      !Number.isInteger(chain?.notification_count) ||
+      chain.notification_count < 0 ||
+      !Array.isArray(negative) ||
+      negative.length !== negativeCases.size ||
+      new Set(negative.map((item) => item?.name)).size !== negativeCases.size ||
+      negative.some((item) => (
+        negativeCases.get(item?.name) !== item?.status ||
+        item?.writes !== 0
+      )) ||
       zeroResidue.some((key) => body.cleanupCounts?.[key] !== 0)
     ) process.exit(1);
   ' "$output" "$SHA" "$STAGING_REF" ||
     fail "Product/SaaS UAT evidence or cleanup verification is incomplete"
+  evidence_tmp="$(mktemp "$STATE_DIR/.last-uat-product-saas.XXXXXX")"
+  register_temporary_path "$evidence_tmp"
+  install -m 0600 -o root -g root "$output" "$evidence_tmp"
+  mv -Tf "$evidence_tmp" "$evidence"
   rm -f -- "$output"
-  echo "staging control Product/SaaS UAT passed SHA=$SHA cleanup=verified"
+  echo "staging control Product/SaaS UAT passed SHA=$SHA cleanup=verified evidence=$evidence"
 }
 
 run_rollback() {

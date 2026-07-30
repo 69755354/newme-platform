@@ -91,12 +91,19 @@ test("SAM-26 UAT image and runtime remain SHA-bound and disposable", async () =>
     /--rm/,
     /--init/,
     /--ipc=host/,
+    /--network host/,
+    /--add-host staging\.newme\.ae:127\.0\.0\.1/,
     /--read-only/,
     /--env-file "\$ENV_FILE"/,
     /SAM_UAT_SUITE=sam26/,
     /SAM26_EXPECTED_RELEASE_SHA=\$SHA/,
     /SAM26_RELEASE_MANIFEST=\/runner\/release\/manifest\.json/,
   ]) assert.match(control, pattern);
+  assert.equal((control.match(/--network host/g) ?? []).length, 3);
+  assert.equal(
+    (control.match(/--add-host staging\.newme\.ae:127\.0\.0\.1/g) ?? []).length,
+    3,
+  );
   assert.doesNotMatch(control, /docker\.sock/);
   assert.doesNotMatch(control, new RegExp(`--env[^\\n]*${"SUPABASE_SERVICE_ROLE_KEY"}=`));
 });
@@ -107,6 +114,7 @@ test("SAM-20 UAT uses the current release, fixed runner, local manifest, and zer
     /verify_current_release "\$SHA"/,
     /SAM20_RUNNER="scripts\/uat\/sam20-lead-organization-isolation\.mjs"/,
     /copy_commit_blob "\$SHA" "\$SAM20_RUNNER" "\$runner"/,
+    /SAM20_UAT_BASE_URL="http:\/\/127\.0\.0\.1:3101"/,
     /SAM20_RELEASE_MANIFEST="\$RELEASES\/\$SHA\/manifest\.json"/,
     /SAM20_UAT_CONFIRM="SAM20_STAGING_ONLY"/,
     /body\.linearId !== "SAM-20"/,
@@ -165,6 +173,8 @@ test("SAM-70 UAT is SHA-bound, staging-only, fail-closed, and residue verified",
     /copy_commit_blob "\$SHA" "scripts\/verify-staging-sam70-xlsx\.mjs"/,
     /verify_current_release "\$SHA"/,
     /SAM_UAT_SUITE=sam70/,
+    /--network host/,
+    /--add-host staging\.newme\.ae:127\.0\.0\.1/,
     /SAM70_EXPECTED_RELEASE_SHA=\$SHA/,
     /SAM70_BASE_URL=https:\/\/staging\.newme\.ae/,
     /SAM70_RELEASE_MANIFEST=\/runner\/release\/manifest\.json/,
@@ -215,6 +225,8 @@ test("Product/SaaS UAT is image-bound, staging-only, and verifies every issue an
     /copy_commit_blob "\$SHA" "\$PRODUCT_SAAS_RUNNER"/,
     /verify_current_release "\$SHA"/,
     /SAM_UAT_SUITE=product-saas-final/,
+    /--network host/,
+    /--add-host staging\.newme\.ae:127\.0\.0\.1/,
     /PRODUCT_UAT_RELEASE_SHA=\$SHA/,
     /PRODUCT_UAT_BASE_URL=https:\/\/staging\.newme\.ae/,
     /PRODUCT_UAT_RELEASE_MANIFEST=\/runner\/release\/manifest\.json/,

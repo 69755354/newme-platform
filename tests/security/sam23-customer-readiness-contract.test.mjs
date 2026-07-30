@@ -58,7 +58,7 @@ test("SAM-23 evidence ledger matches the reviewed canonical source blobs", async
     ],
     [
       "tests/security/sam22-two-organization-isolation.test.mjs",
-      "f762eaf243e482f51bb09aa825eeb0d0a1a22254",
+      "ee1f4bdb4652d70138d90743fa00e12ffa73787f",
     ],
     [
       "src/types/database.ts",

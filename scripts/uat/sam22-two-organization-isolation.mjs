@@ -88,6 +88,8 @@ async function main() {
     snapshots: 0,
     audit_events: 0,
     child_records: 0,
+    user_session_daily: 0,
+    audit_logs: 0,
     profiles: 0,
     auth_fixtures: 0,
   };
@@ -438,6 +440,16 @@ async function main() {
         .delete()
         .in("id", organizationIds));
     }
+    if (users.length > 0) {
+      await cleanup("user_session_daily", () => admin
+        .from("user_session_daily")
+        .delete()
+        .in("user_id", users));
+      await cleanup("audit_logs", () => admin
+        .from("audit_logs")
+        .delete()
+        .in("actor_id", users));
+    }
     for (const userId of users) {
       await cleanup(`auth_user:${userId}`, () => admin.auth.admin.deleteUser(userId));
     }
@@ -476,6 +488,10 @@ async function main() {
         .select("id", { count: "exact", head: true }).in("id", snapshotIds));
     }
     if (users.length > 0) {
+      await verifyZero("user_session_daily", () => admin.from("user_session_daily")
+        .select("id", { count: "exact", head: true }).in("user_id", users));
+      await verifyZero("audit_logs", () => admin.from("audit_logs")
+        .select("id", { count: "exact", head: true }).in("actor_id", users));
       await verifyZero("profiles", () => admin.from("profiles")
         .select("id", { count: "exact", head: true }).in("id", users));
       let authCount = 0;

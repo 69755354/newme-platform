@@ -34,6 +34,10 @@ of these actions plus one full 40-character SHA:
 - `uat-sam20 <SHA>` runs the fixed SAM-20 runner blob from the same current
   release SHA, passes its local read-only manifest path, and accepts only
   verified zero counts for all eight fixture classes.
+- `uat-sam22 <SHA>` runs the fixed two-organization runner blob from the same
+  current release SHA. It accepts only complete list/search/detail/export,
+  import, webhook, cron, Dashboard and member-admin isolation evidence plus
+  verified zero residue for every synthetic fixture class.
 - `uat-sam68 <SHA>` runs the fixed SAM-68 observability runner blob from the
   same current release SHA. It accepts only a retired monitoring endpoint with
   no hostile-body persistence, authenticated readiness within three seconds,

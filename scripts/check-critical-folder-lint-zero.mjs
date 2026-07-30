@@ -12,6 +12,7 @@ export const CRITICAL_LINT_ZERO_SCOPES = [
   "src/app/api/notifications/read-all",
   "src/app/api/notifications/[id]",
   "src/app/api/cron/daily-reminder",
+  "src/app/api/activity/daily-report",
 ];
 
 export function checkCriticalFolderLintZero({

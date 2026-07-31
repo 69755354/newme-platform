@@ -152,6 +152,7 @@ CREATE TABLE public.projects (
   lead_id uuid NULL REFERENCES public.leads(id),
   contract_id uuid NULL REFERENCES public.contracts(id),
   status text DEFAULT 'active',
+  paid_amount numeric NOT NULL DEFAULT 0,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -228,6 +229,7 @@ VALUES
 \ir ../../supabase/migrations/20260730231446_sam23_organization_owned_commercial_core.sql
 \ir ../../supabase/migrations/20260731015812_sam23_govern_billable_seat_rpcs.sql
 \ir ../../supabase/migrations/20260801023000_sam25_allow_rls_safe_commercial_updates.sql
+\ir ../../supabase/migrations/20260801025500_sam25_sync_project_paid_amount.sql
 
 DO $$
 DECLARE
@@ -757,6 +759,13 @@ BEGIN
   WHERE id = 'aaaaaaaa-4000-4000-8000-000000000023';
   IF is_confirmed IS DISTINCT FROM true THEN
     RAISE EXCEPTION 'finance payment confirmation was not persisted';
+  END IF;
+  IF (
+    SELECT paid_amount
+    FROM public.projects
+    WHERE id = 'aaaaaaaa-7000-4000-8000-000000000023'
+  ) IS DISTINCT FROM 1000::numeric THEN
+    RAISE EXCEPTION 'finance payment confirmation did not sync project';
   END IF;
 END
 $$;

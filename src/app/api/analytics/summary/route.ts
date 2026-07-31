@@ -128,7 +128,7 @@ export async function GET(request: Request) {
   // ── 3b. Contracts with installment plans ──
   let contractQuery = supabase
     .from("contracts")
-    .select(`id, contract_no, contract_amount, contract_date, status, sales_id, party_a_name, lead_id, leads!inner(customer_name, assigned_to), installment_plans(id, seq, amount, due_date, status, paid_amount), payments(id, amount, confirmed, payment_date)`)
+    .select(`id, contract_no, contract_amount, contract_date, status, sales_id, party_a_name, lead_id, leads!contracts_lead_id_fkey!inner(customer_name, assigned_to), installment_plans!installment_plans_contract_id_fkey(id, seq, amount, due_date, status, paid_amount), payments!payments_contract_id_fkey(id, amount, confirmed, payment_date)`)
     .order("created_at", { ascending: false });
   if (!isManagement) contractQuery = contractQuery.eq("sales_id", userId);
   const contractsPromise = contractQuery;

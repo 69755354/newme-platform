@@ -126,7 +126,7 @@ export async function GET(request: Request) {
   // ── 4b. Contracts (no dependency) ──
   let contractQuery = supabase
     .from("contracts")
-    .select("id,contract_amount,status,created_at,leads!inner(organization_id)")
+    .select("id,contract_amount,status,created_at,leads!contracts_lead_id_fkey!inner(organization_id)")
     .eq("leads.organization_id", organizationId);
   if (isSales && userId) {
     contractQuery = contractQuery.eq("sales_id", userId);
@@ -159,7 +159,7 @@ export async function GET(request: Request) {
     ? (() => {
         let q = supabase
           .from("contracts")
-          .select("contract_amount,leads!inner(organization_id)")
+          .select("contract_amount,leads!contracts_lead_id_fkey!inner(organization_id)")
           .eq("leads.organization_id", organizationId)
           .gte("created_at", monthStart)
           .lt("created_at", monthEnd);
@@ -303,7 +303,7 @@ export async function GET(request: Request) {
   const buildTodayFollowupsQuery = () => {
     let q = supabase
       .from("tasks")
-      .select("lead_id, due_at, leads!inner(*)")
+      .select("lead_id, due_at, leads!tasks_lead_id_fkey!inner(*)")
       .is("completed_at", null)
       .gte("due_at", todayStart.toISOString())
       .lt("due_at", tomorrowStart.toISOString());
@@ -317,7 +317,7 @@ export async function GET(request: Request) {
     let q = supabase
       .from("tasks")
       .select(
-        "lead_id, due_at, leads!inner(id, customer_name, quotation_value, last_contact_date, phone, final_status)"
+        "lead_id, due_at, leads!tasks_lead_id_fkey!inner(id, customer_name, quotation_value, last_contact_date, phone, final_status)"
       )
       .is("completed_at", null)
       .lt("due_at", new Date().toISOString())
@@ -343,7 +343,7 @@ export async function GET(request: Request) {
   const buildDraftQuotesQuery = () => {
     let q = supabase
       .from("quotations")
-      .select("*, leads!inner(customer_name, quotation_value, id, phone)")
+      .select("*, leads!quotations_lead_id_fkey!inner(customer_name, quotation_value, id, phone)")
       .eq("leads.organization_id", organizationId)
       .eq("status", "draft")
       .order("total_amount", { ascending: false })

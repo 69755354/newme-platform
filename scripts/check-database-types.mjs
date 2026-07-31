@@ -11,9 +11,12 @@ const required = [
   "export type Database =",
   "audit_events:",
   "memberships:",
+  "membership_roles:",
   "organizations:",
+  "organization_provisioning_requests:",
   "platform_staff:",
   "profiles:",
+  "roles:",
   "leads:",
   "support_sessions:",
   "allocate_payment:",
@@ -21,6 +24,9 @@ const required = [
   "end_support_session_atomic:",
   'requested_organization_id: { Args: never; Returns: string }',
   "start_support_session_atomic:",
+  "organization_billable_seat_count:",
+  "initialize_organization:",
+  "v_sam23_organization_commercial_summary:",
   "transition_lead_stage:",
 ];
 

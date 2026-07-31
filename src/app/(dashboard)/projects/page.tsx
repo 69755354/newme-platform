@@ -30,7 +30,7 @@ export default async function ProjectsPage() {
         customer:customers!customer_id(
           name,
           phone,
-          lead:leads!lead_id(customer_name)
+          lead:leads!fk_projects_lead(customer_name)
         ),
         assigned_profile:profiles!assigned_to(full_name)
       `

@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
     // Fetch quotation with lead relationship
     const { data: quote, error: quoteErr } = await (supabaseAdmin as any)
       .from("quotations")
-      .select("*, leads!inner(assigned_to)")
+      .select("*, leads!quotations_lead_id_fkey!inner(assigned_to)")
       .eq("id", quoteId)
       .single();
 

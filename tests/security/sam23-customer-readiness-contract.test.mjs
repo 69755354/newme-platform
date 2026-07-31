@@ -35,7 +35,7 @@ function tableBlock(types, table) {
 
 test("SAM-23 evidence ledger matches the reviewed canonical source blobs", async () => {
   const document = await read(DOCUMENT_PATH);
-  const evidence = new Map([
+  const immutableEvidence = new Map([
     [
       "docs/product-decisions/SAM-18-saas-product-boundary.md",
       "94a45599582885507ad789d190f237230fc57a60",
@@ -53,12 +53,14 @@ test("SAM-23 evidence ledger matches the reviewed canonical source blobs", async
       "f0222d10d8653aa9e2c872f0e4cac2a70e7a0651",
     ],
     [
-      "tests/security/sam20-lead-organization-isolation.test.mjs",
-      "d4ba0b9f6c1d908172334d6b878e38a814190a40",
-    ],
-    [
       "tests/security/sam22-two-organization-isolation.test.mjs",
       "ee1f4bdb4652d70138d90743fa00e12ffa73787f",
+    ],
+  ]);
+  const historicalSnapshotEvidence = new Map([
+    [
+      "tests/security/sam20-lead-organization-isolation.test.mjs",
+      "d4ba0b9f6c1d908172334d6b878e38a814190a40",
     ],
     [
       "src/types/database.ts",
@@ -75,20 +77,28 @@ test("SAM-23 evidence ledger matches the reviewed canonical source blobs", async
     /canonical tree \| `7a3cbc461fdabffd113ef2f5d5934e14e245af1f`/,
   );
 
-  for (const [path, expectedSha] of evidence) {
+  for (const [path, expectedSha] of immutableEvidence) {
     const source = await read(path);
     assert.equal(gitBlobSha(source), expectedSha, `${path} changed after the audit`);
     assert.ok(document.includes(`\`${path}\``), `${path} missing from evidence ledger`);
     assert.ok(document.includes(`\`${expectedSha}\``), `${path} SHA missing from ledger`);
   }
+  for (const [path, expectedSha] of historicalSnapshotEvidence) {
+    assert.ok(document.includes(`\`${path}\``), `${path} missing from historical ledger`);
+    assert.ok(
+      document.includes(`\`${expectedSha}\``),
+      `${path} historical SHA missing from ledger`,
+    );
+  }
 });
 
-test("SAM-23 current-state claims match generated database types and merged boundaries", async () => {
-  const [document, types, sam20, sam22] = await Promise.all([
+test("SAM-23 historical audit stays pinned while current types expose the implemented successor", async () => {
+  const [document, types, sam20, sam22, sam23] = await Promise.all([
     read(DOCUMENT_PATH),
     read("src/types/database.ts"),
     read("supabase/migrations/20260730100000_sam20_lead_organization_isolation.sql"),
     read("supabase/migrations/20260730110000_sam22_two_organization_isolation.sql"),
+    read("supabase/migrations/20260730231446_sam23_organization_owned_commercial_core.sql"),
   ]);
 
   for (const table of ["leads", "crm_daily_funnel_snapshot"]) {
@@ -107,15 +117,15 @@ test("SAM-23 current-state claims match generated database types and merged boun
     "tasks",
     "lead_documents",
   ]) {
-    assert.doesNotMatch(
+    assert.match(
       tableBlock(types, table),
       /\n\s+organization_id:/,
-      `${table} gained an organization key; refresh the SAM-23 audit`,
+      `${table} must expose the implemented SAM-23 organization key`,
     );
   }
 
-  assert.equal(types.includes("      roles: {"), false);
-  assert.equal(types.includes("      membership_roles: {"), false);
+  assert.equal(types.includes("      roles: {"), true);
+  assert.equal(types.includes("      membership_roles: {"), true);
   assert.match(sam20, /'lead_documents'/);
   assert.match(sam20, /'tasks'/);
   assert.match(
@@ -126,6 +136,8 @@ test("SAM-23 current-state claims match generated database types and merged boun
     sam22,
     /crm_daily_funnel_snapshot[\s\S]*ADD COLUMN IF NOT EXISTS organization_id uuid/,
   );
+  assert.match(sam23, /CREATE TABLE public\.roles/);
+  assert.match(sam23, /CREATE TABLE public\.membership_roles/);
   assert.match(document, /canonical 尚无 `roles`、`membership_roles`/);
 });
 

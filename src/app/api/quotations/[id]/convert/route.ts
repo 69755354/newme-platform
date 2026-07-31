@@ -29,7 +29,7 @@ export async function POST(
     // Fetch quotation with lead info
     const { data: quote, error: quoteErr } = await supabase
       .from("quotations")
-      .select("*, leads(id, customer_name, property_type, property_size_sqm, location, phone)")
+      .select("*, leads!quotations_lead_id_fkey(id, customer_name, property_type, property_size_sqm, location, phone)")
       .eq("id", quotationId)
       .single();
 

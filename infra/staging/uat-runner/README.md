@@ -34,6 +34,18 @@ of these actions plus one full 40-character SHA:
 - `uat-sam20 <SHA>` runs the fixed SAM-20 runner blob from the same current
   release SHA, passes its local read-only manifest path, and accepts only
   verified zero counts for all eight fixture classes.
+- `reconcile-sam21 <SHA>` runs the exact repository-owned read-only SQL against
+  the fixed staging database host using the root-only
+  `/etc/newme-staging/sam21-db.pgpass`. Call it once before and once after the
+  separately approved SAM-20/SAM-22 migration window. It never applies or
+  repairs migrations and refuses to overwrite either immutable snapshot.
+- `uat-sam21 <SHA>` accepts only the exact pre/post reconciliation pair for the
+  current release: aggregate metrics, owners, history and document digests
+  must be preserved; every existing Lead and funnel snapshot must belong to
+  the legacy organization; active memberships must match active profiles; and
+  both exact migration-history rows and versioned rollback assets must be
+  present. The production reconciliation remains explicitly unexecuted and
+  read-only-ready.
 - `uat-sam22 <SHA>` runs the fixed two-organization runner blob from the same
   current release SHA. It accepts only complete list/search/detail/export,
   import, webhook, cron, Dashboard and member-admin isolation evidence plus

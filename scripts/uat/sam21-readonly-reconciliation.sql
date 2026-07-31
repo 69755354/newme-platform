@@ -19,6 +19,19 @@ SELECT CASE
 END AS sam21_post_migration
 \gset
 
+SELECT CASE
+  WHEN to_regclass('supabase_migrations.schema_migrations') IS NOT NULL
+  THEN 'true'
+  ELSE 'false'
+END AS sam21_migration_history_present
+\gset
+
+\if :sam21_migration_history_present
+\set sam21_migration_history_sql '(SELECT coalesce(jsonb_object_agg(version, jsonb_build_object(''name'', name, ''statement_count'', cardinality(statements))), ''{}''::jsonb) FROM supabase_migrations.schema_migrations WHERE version IN (''20260730100000'', ''20260730110000''))'
+\else
+\set sam21_migration_history_sql '''{}''::jsonb'
+\endif
+
 \if :sam21_post_migration
 WITH
 table_counts AS (
@@ -171,7 +184,8 @@ SELECT jsonb_build_object(
     WHERE organization_id =
       '6bc3b06e-5c05-4f45-9f1f-e9ea03a3cdd1'::uuid
       AND status = 'active'
-  )
+  ),
+  'migration_history', :sam21_migration_history_sql
 )
 FROM table_counts, stage_counts, lead_owners, history_relationships,
   document_ownership, orphan_counts;

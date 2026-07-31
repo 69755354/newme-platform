@@ -18,12 +18,20 @@ readonly STATE_DIR="/var/lib/newme-staging-control"
 readonly STATE_FILE="$STATE_DIR/last-deploy.state"
 readonly SAM27_EVIDENCE="$STATE_DIR/last-uat-sam27.json"
 readonly SAM52_EVIDENCE="$STATE_DIR/last-uat-sam52.json"
+readonly SAM21_STATE_DIR="$STATE_DIR/sam21"
+readonly SAM21_EVIDENCE="$STATE_DIR/last-uat-sam21.json"
 readonly SAM68_EVIDENCE="$STATE_DIR/last-uat-sam68.json"
 readonly SAM54_EVIDENCE="$STATE_DIR/last-uat-sam54.json"
 readonly STAGING_REF="bfsiibofuzoglziltgyd"
 readonly PRODUCTION_REF="vfopmpxlhwzpxqegayew"
 readonly SAM20_RUNNER="scripts/uat/sam20-lead-organization-isolation.mjs"
 readonly SAM20_MIGRATION="supabase/migrations/20260730100000_sam20_lead_organization_isolation.sql"
+readonly SAM21_CAPTURE="scripts/capture-staging-sam21-reconciliation.mjs"
+readonly SAM21_VERIFY="scripts/verify-staging-sam21-migration-rehearsal.mjs"
+readonly SAM21_RECONCILIATION="scripts/uat/sam21-readonly-reconciliation.sql"
+readonly SAM21_PGPASS="/etc/newme-staging/sam21-db.pgpass"
+readonly SAM20_ROLLBACK="supabase/rollback/20260730100000_sam20_lead_organization_isolation_rollback.sql"
+readonly SAM22_ROLLBACK="supabase/rollback/20260730110000_sam22_two_organization_isolation_rollback.sql"
 readonly SAM22_RUNNER="scripts/uat/sam22-two-organization-isolation.mjs"
 readonly SAM27_RUNNER="scripts/verify-staging-sam27-integrations.mjs"
 readonly SAM27_LIBRARY="src/lib/integration-execution.mjs"
@@ -57,7 +65,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam22|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -65,7 +73,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|uat-sam22|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
+  build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -435,6 +443,161 @@ run_uat_sam20() {
   rm -rf -- "$run_dir"
   rm -f -- "$output"
   echo "staging control SAM-20 UAT passed SHA=$SHA cleanup=verified"
+}
+
+run_reconcile_sam21() {
+  production_healthy || fail "production health is not green"
+  staging_healthy || fail "staging health is not green"
+  [ -x /usr/bin/psql ] || fail "psql is required for SAM-21 reconciliation"
+  [ -f "$SAM21_PGPASS" ] ||
+    fail "SAM-21 staging database password file is missing"
+  [ ! -L "$SAM21_PGPASS" ] ||
+    fail "SAM-21 staging database password file must not be a symlink"
+  [ "$(stat -c '%u:%g:%a' "$SAM21_PGPASS")" = "0:0:600" ] ||
+    fail "SAM-21 staging database password file must be root:root mode 0600"
+  install -d -m 0700 -o root -g root "$SAM21_STATE_DIR"
+  [ "$(stat -c '%u:%g:%a' "$SAM21_STATE_DIR")" = "0:0:700" ] ||
+    fail "SAM-21 evidence directory must be root:root mode 0700"
+
+  local run_dir capture reconciliation output sql_blob phase target rc
+  run_dir="$(mktemp -d "/run/newme-staging-sam21-$SHA.XXXXXX")"
+  capture="$run_dir/capture-staging-sam21-reconciliation.mjs"
+  reconciliation="$run_dir/sam21-readonly-reconciliation.sql"
+  output="$(mktemp "$SAM21_STATE_DIR/.reconciliation.XXXXXX")"
+  register_temporary_path "$run_dir"
+  register_temporary_path "$output"
+  copy_commit_blob "$SHA" "$SAM21_CAPTURE" "$capture"
+  copy_commit_blob "$SHA" "$SAM21_RECONCILIATION" "$reconciliation"
+  sql_blob="$(
+    git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM21_RECONCILIATION"
+  )"
+  chown root:root "$run_dir" "$capture" "$reconciliation"
+  chmod 0700 "$run_dir"
+  chmod 0500 "$capture"
+  chmod 0400 "$reconciliation"
+  rc=0
+  /usr/bin/env -i \
+    HOME="/root" \
+    PATH="/usr/local/bin:/usr/bin:/bin" \
+    PGPASSFILE="$SAM21_PGPASS" \
+    SAM21_EXPECTED_RELEASE_SHA="$SHA" \
+    SAM21_PROJECT_REF="$STAGING_REF" \
+    SAM21_SQL_BLOB="$sql_blob" \
+    SAM21_SQL_PATH="$reconciliation" \
+    /usr/bin/node "$capture" >"$output" 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] ||
+    fail "SAM-21 read-only staging reconciliation failed with status $rc"
+  phase="$(
+    node -e '
+      const fs = require("fs");
+      const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      if (
+        body.schemaVersion !== 1 ||
+        body.linearId !== "SAM-21" ||
+        body.releaseSha !== process.argv[2] ||
+        body.projectRef !== process.argv[3] ||
+        body.sqlBlob !== process.argv[4] ||
+        !["pre", "post"].includes(body.schemaPhase) ||
+        body.evidence?.schema_phase !== body.schemaPhase ||
+        body.evidence?.transaction_read_only !== true
+      ) process.exit(1);
+      process.stdout.write(body.schemaPhase);
+    ' "$output" "$SHA" "$STAGING_REF" "$sql_blob"
+  )" || fail "SAM-21 reconciliation evidence is incomplete"
+  target="$SAM21_STATE_DIR/$SHA-$phase.json"
+  [ ! -e "$target" ] ||
+    fail "SAM-21 $phase reconciliation evidence already exists"
+  chown root:root "$output"
+  chmod 0600 "$output"
+  mv -f "$output" "$target"
+  rm -rf -- "$run_dir"
+  echo "staging control SAM-21 reconciliation captured SHA=$SHA phase=$phase evidence=$target"
+}
+
+run_uat_sam21() {
+  verify_current_release "$SHA"
+  local pre post run_dir runner capture output sql_blob sam20_blob sam22_blob rc
+  pre="$SAM21_STATE_DIR/$SHA-pre.json"
+  post="$SAM21_STATE_DIR/$SHA-post.json"
+  for snapshot in "$pre" "$post"; do
+    [ -f "$snapshot" ] || fail "SAM-21 reconciliation snapshot is missing"
+    [ ! -L "$snapshot" ] ||
+      fail "SAM-21 reconciliation snapshot must not be a symlink"
+    [ "$(stat -c '%u:%g:%a' "$snapshot")" = "0:0:600" ] ||
+      fail "SAM-21 reconciliation snapshot must be root:root mode 0600"
+  done
+  run_dir="$(mktemp -d "/run/newme-staging-sam21-verify-$SHA.XXXXXX")"
+  runner="$run_dir/verify-staging-sam21-migration-rehearsal.mjs"
+  capture="$run_dir/capture-staging-sam21-reconciliation.mjs"
+  output="$(mktemp "$STATE_DIR/.uat-sam21.XXXXXX")"
+  register_temporary_path "$run_dir"
+  register_temporary_path "$output"
+  copy_commit_blob "$SHA" "$SAM21_VERIFY" "$runner"
+  copy_commit_blob "$SHA" "$SAM21_CAPTURE" "$capture"
+  sql_blob="$(
+    git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM21_RECONCILIATION"
+  )"
+  sam20_blob="$(
+    git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM20_ROLLBACK"
+  )"
+  sam22_blob="$(
+    git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM22_ROLLBACK"
+  )"
+  chown root:root "$run_dir" "$runner" "$capture"
+  chmod 0700 "$run_dir"
+  chmod 0500 "$runner"
+  chmod 0400 "$capture"
+  rc=0
+  /usr/bin/env -i \
+    HOME="/root" \
+    PATH="/usr/local/bin:/usr/bin:/bin" \
+    SAM21_EXPECTED_RELEASE_SHA="$SHA" \
+    SAM21_SQL_BLOB="$sql_blob" \
+    SAM21_PRE_EVIDENCE="$pre" \
+    SAM21_POST_EVIDENCE="$post" \
+    SAM21_SAM20_ROLLBACK_BLOB="$sam20_blob" \
+    SAM21_SAM22_ROLLBACK_BLOB="$sam22_blob" \
+    /usr/bin/node "$runner" >"$output" 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "SAM-21 staging migration evidence gate failed"
+  node -e '
+    const fs = require("fs");
+    const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const preservation = [
+      "aggregateCounts",
+      "quotationValueTotal",
+      "stageCounts",
+      "leadOwners",
+      "historyRelationships",
+      "documentOwnership",
+      "legacyLeadBackfill",
+      "legacySnapshotBackfill",
+      "activeMembershipBackfill",
+      "migrationHistory",
+    ];
+    if (
+      body.schemaVersion !== 1 ||
+      body.linearId !== "SAM-21" ||
+      body.releaseSha !== process.argv[2] ||
+      body.projectRef !== process.argv[3] ||
+      body.status !== "passed" ||
+      preservation.some((key) => body.preservation?.[key] !== "verified") ||
+      body.preservation?.orphanCounts !== "unchanged" ||
+      body.rollback?.status !== "versioned_assets_verified" ||
+      JSON.stringify(body.rollback?.order) !== JSON.stringify(["SAM-22", "SAM-20"]) ||
+      body.productionReconciliation?.status !== "contract_ready_read_only" ||
+      body.productionReconciliation?.pii !== "excluded" ||
+      body.productionReconciliation?.executed !== false ||
+      body.cleanup?.status !== "not_applicable" ||
+      !Array.isArray(body.cleanup?.fixtureIds) ||
+      body.cleanup.fixtureIds.length !== 0
+    ) process.exit(1);
+  ' "$output" "$SHA" "$STAGING_REF" ||
+    fail "SAM-21 migration evidence is incomplete"
+  chown root:root "$output"
+  chmod 0600 "$output"
+  mv -f "$output" "$SAM21_EVIDENCE"
+  rm -rf -- "$run_dir"
+  echo "staging control SAM-21 UAT passed SHA=$SHA evidence=$SAM21_EVIDENCE cleanup=not_applicable"
 }
 
 run_uat_sam22() {
@@ -1092,6 +1255,8 @@ case "$ACTION" in
   deploy) run_deploy ;;
   uat) run_uat ;;
   uat-sam20) run_uat_sam20 ;;
+  reconcile-sam21) run_reconcile_sam21 ;;
+  uat-sam21) run_uat_sam21 ;;
   uat-sam22) run_uat_sam22 ;;
   uat-sam27) run_uat_sam27 ;;
   uat-sam52) run_uat_sam52 ;;

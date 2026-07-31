@@ -204,6 +204,7 @@ async function main() {
     notifications: 0,
     follow_up_logs: 0,
     audit_events: 0,
+    user_session_daily: 0,
     profiles: 0,
     auth_fixtures: 0,
   };
@@ -774,6 +775,13 @@ async function main() {
       deleteIds(
         "organizations", "id", organizationIds, "cleanup_organizations",
       ));
+    await safely("user_session_daily", () =>
+      deleteIds(
+        "user_session_daily",
+        "user_id",
+        userIds,
+        "cleanup_user_session_daily",
+      ));
     for (const userId of userIds) {
       await safely(`auth_${userId}`, async () => {
         const { error } = await admin.auth.admin.deleteUser(userId);
@@ -839,6 +847,14 @@ async function main() {
         "audit_events",
         "organization_id",
         organizationIds,
+      );
+    });
+    await safely("verify_user_session_daily", async () => {
+      cleanupCounts.user_session_daily = await exactCount(
+        admin,
+        "user_session_daily",
+        "user_id",
+        userIds,
       );
     });
     await safely("verify_profiles", async () => {

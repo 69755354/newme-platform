@@ -236,6 +236,7 @@ test("SAM-23 staging UAT is release-bound, synthetic-only, and verifies exact cl
     "notifications",
     "follow_up_logs",
     "audit_events",
+    "user_session_daily",
     "profiles",
     "auth_fixtures",
   ]) {
@@ -280,6 +281,14 @@ test("SAM-23 staging UAT is release-bound, synthetic-only, and verifies exact cl
   assert.match(uat, /recover_provisioning[\s\S]*recoverProvisioningFixtures/);
   assert.match(uat, /recover_auth[\s\S]*recoverAuthFixtures/);
   assert.match(uat, /recover_commercial[\s\S]*recoverCommercialFixtures/);
+  assert.match(
+    uat,
+    /deleteIds\(\s*"user_session_daily",\s*"user_id",\s*userIds,[\s\S]*?for \(const userId of userIds\)/,
+  );
+  assert.match(
+    uat,
+    /cleanupCounts\.user_session_daily = await exactCount\(\s*admin,\s*"user_session_daily",\s*"user_id",\s*userIds/,
+  );
   assert.match(uat, /id: viewerMembershipId/);
   assert.match(uat, /id: crossMembershipId/);
   assert.match(uat, /id: crossContractId/);

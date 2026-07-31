@@ -8,6 +8,13 @@ const EXPECTED_PROJECT_REF = "bfsiibofuzoglziltgyd";
 const CONFIRMATION = "SAM23_STAGING_ONLY";
 const RELEASE_MANIFEST_PATH = "/runner/release/manifest.json";
 const ORGANIZATION_HEADER = "x-newme-organization-id";
+const STAGING_BASE_URL = "http://127.0.0.1:3101";
+const STAGING_SUPABASE_URL =
+  `https://${EXPECTED_PROJECT_REF}.supabase.co`;
+const RELEASE_SHA_PATTERN = /^[0-9a-f]{40}$/;
+const FIXTURE_SCOPE = "newme-staging-uat";
+const FIXTURE_KIND = "sam23-organization-commercial-core";
+const AUTH_PAGE_LIMIT = 20;
 
 function required(name) {
   const value = process.env[name];
@@ -17,6 +24,18 @@ function required(name) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function trackUnique(values, value) {
+  if (value && !values.includes(value)) values.push(value);
+}
+
+function exactAuthMarker(user, runId, email) {
+  const metadata = user?.app_metadata ?? {};
+  return user?.email === email
+    && metadata.fixture_scope === FIXTURE_SCOPE
+    && metadata.fixture_kind === FIXTURE_KIND
+    && metadata.run_id === runId;
 }
 
 function createSupabase(url, key, headers = {}) {
@@ -73,10 +92,43 @@ async function exactCount(client, table, column, values) {
   return count ?? 0;
 }
 
+async function exactEqCount(client, table, column, value) {
+  const { count, error } = await client
+    .from(table)
+    .select("*", { count: "exact", head: true })
+    .eq(column, value);
+  if (error) throw new Error(`count_${table}_${column}_failed:${error.message}`);
+  return count ?? 0;
+}
+
+async function exactLikeCount(client, table, column, value) {
+  const { count, error } = await client
+    .from(table)
+    .select("*", { count: "exact", head: true })
+    .like(column, value);
+  if (error) throw new Error(`count_${table}_${column}_failed:${error.message}`);
+  return count ?? 0;
+}
+
+async function listAllAuthUsers(admin) {
+  const users = [];
+  for (let page = 1; page <= AUTH_PAGE_LIMIT; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({
+      page,
+      perPage: 200,
+    });
+    if (error) throw new Error(`list_auth_users_failed:${error.message}`);
+    users.push(...(data.users ?? []));
+    if ((data.users ?? []).length < 200) return users;
+  }
+  throw new Error("list_auth_users_page_limit_exceeded");
+}
+
 async function main() {
   const baseUrl = required("SAM23_UAT_BASE_URL").replace(/\/$/, "");
   const releaseSha = required("SAM23_RELEASE_SHA");
-  const projectRef = required("SUPABASE_PROJECT_REF");
+  const manifestPath = required("SAM23_RELEASE_MANIFEST");
+  const projectRef = required("NEWME_STAGING_PROJECT_REF");
   const supabaseUrl = required("NEXT_PUBLIC_SUPABASE_URL");
   const anonKey = required("NEXT_PUBLIC_SUPABASE_ANON_KEY");
   const serviceRoleKey = required("SUPABASE_SERVICE_ROLE_KEY");
@@ -85,10 +137,16 @@ async function main() {
     process.env.SAM23_UAT_CONFIRM === CONFIRMATION,
     `confirmation_required:${CONFIRMATION}`,
   );
+  assert(RELEASE_SHA_PATTERN.test(releaseSha), "invalid_release_sha");
+  assert(baseUrl === STAGING_BASE_URL, `wrong_base_url:${baseUrl}`);
+  assert(
+    manifestPath === RELEASE_MANIFEST_PATH,
+    `wrong_release_manifest:${manifestPath}`,
+  );
   assert(projectRef === EXPECTED_PROJECT_REF, `wrong_project_ref:${projectRef}`);
   assert(
-    new URL(supabaseUrl).hostname.startsWith(`${EXPECTED_PROJECT_REF}.`),
-    `wrong_supabase_url:${new URL(supabaseUrl).hostname}`,
+    supabaseUrl === STAGING_SUPABASE_URL,
+    `wrong_supabase_url:${supabaseUrl}`,
   );
 
   const healthResponse = await fetch(`${baseUrl}/api/health`, {
@@ -98,7 +156,7 @@ async function main() {
   assert(healthResponse.status === 200, `health_http:${healthResponse.status}`);
   assert(health?.status === "ok", "health_status_not_ok");
 
-  const manifest = JSON.parse(await readFile(RELEASE_MANIFEST_PATH, "utf8"));
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   assert(manifest?.git_sha === releaseSha, `manifest_sha:${manifest?.git_sha}`);
 
   const admin = createSupabase(supabaseUrl, serviceRoleKey);
@@ -106,6 +164,7 @@ async function main() {
   const marker = `sam23-${releaseSha.slice(0, 8)}-${runId}`;
   const password = `Sam23-${randomUUID()}!aA1`;
   const userIds = [];
+  const userEmails = [];
   const organizationIds = [];
   const membershipIds = [];
   const commercialIds = {
@@ -139,9 +198,24 @@ async function main() {
     projects: 0,
     tasks: 0,
     lead_documents: 0,
+    activities: 0,
+    business_events: 0,
+    notifications: 0,
+    follow_up_logs: 0,
     audit_events: 0,
     profiles: 0,
     auth_fixtures: 0,
+  };
+  const cleanupScopeCounts = {
+    organizations_by_marker: 0,
+    provisioning_by_idempotency: 0,
+    leads_by_marker: 0,
+    quotations_by_marker: 0,
+    contracts_by_marker: 0,
+    projects_by_marker: 0,
+    tasks_by_marker: 0,
+    lead_documents_by_marker: 0,
+    auth_users_by_marker: 0,
   };
   const results = {};
   const cleanupErrors = [];
@@ -157,16 +231,23 @@ async function main() {
 
   async function createUser(label, role) {
     const email = `${marker}-${label}@invalid.test`;
+    trackUnique(userEmails, email);
     const { data, error } = await admin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
+      app_metadata: {
+        fixture_scope: FIXTURE_SCOPE,
+        fixture_kind: FIXTURE_KIND,
+        run_id: runId,
+        label,
+      },
       user_metadata: { full_name: `Synthetic ${label}` },
     });
-    if (error || !data.user) {
+    if (error || !data.user || !exactAuthMarker(data.user, runId, email)) {
       throw new Error(`create_user_failed:${label}:${error?.message ?? "no_user"}`);
     }
-    userIds.push(data.user.id);
+    trackUnique(userIds, data.user.id);
     const { error: profileError } = await admin
       .from("profiles")
       .update({ role, is_active: true })
@@ -193,6 +274,8 @@ async function main() {
         `initialize_${label}_failed:${first.error?.message ?? "no_result"}`,
       );
     }
+    trackUnique(organizationIds, first.data.organization_id);
+    trackUnique(membershipIds, first.data.owner_membership_id);
     const replay = await admin.rpc("initialize_organization", args);
     if (replay.error) {
       throw new Error(`initialize_${label}_replay_failed:${replay.error.message}`);
@@ -201,8 +284,6 @@ async function main() {
       JSON.stringify(replay.data) === JSON.stringify(first.data),
       `initialize_${label}_not_idempotent`,
     );
-    organizationIds.push(first.data.organization_id);
-    membershipIds.push(first.data.owner_membership_id);
     return { args, result: first.data };
   }
 
@@ -218,6 +299,21 @@ async function main() {
     const taskId = randomUUID();
     const documentId = randomUUID();
     const suffix = label.toUpperCase();
+    const values = {
+      leads: leadId,
+      quotations: quotationId,
+      contracts: contractId,
+      installment_plans: planId,
+      payments: paymentId,
+      contract_approvals: approvalId,
+      payment_allocations: allocationId,
+      projects: projectId,
+      tasks: taskId,
+      lead_documents: documentId,
+    };
+    for (const [table, id] of Object.entries(values)) {
+      trackUnique(commercialIds[table], id);
+    }
 
     await requireInsert(admin.from("leads").insert({
       id: leadId,
@@ -276,14 +372,14 @@ async function main() {
     }), `allocation_${label}`);
     await requireInsert(admin.from("projects").insert({
       id: projectId,
-      name: `Synthetic project ${label}`,
+      name: `Synthetic project ${marker}-${label}`,
       lead_id: leadId,
       contract_id: contractId,
     }), `project_${label}`);
     await requireInsert(admin.from("tasks").insert({
       id: taskId,
       lead_id: leadId,
-      title: `Synthetic task ${label}`,
+      title: `Synthetic task ${marker}-${label}`,
       assignee_id: ownerId,
     }), `task_${label}`);
     await requireInsert(admin.from("lead_documents").insert({
@@ -294,22 +390,74 @@ async function main() {
       file_url: `synthetic://${marker}/${label}/document`,
     }), `document_${label}`);
 
-    const values = {
-      leads: leadId,
-      quotations: quotationId,
-      contracts: contractId,
-      installment_plans: planId,
-      payments: paymentId,
-      contract_approvals: approvalId,
-      payment_allocations: allocationId,
-      projects: projectId,
-      tasks: taskId,
-      lead_documents: documentId,
-    };
-    for (const [table, id] of Object.entries(values)) {
-      commercialIds[table].push(id);
-    }
     return values;
+  }
+
+  async function recoverProvisioningFixtures() {
+    const provisioning = await admin
+      .from("organization_provisioning_requests")
+      .select("idempotency_key, organization_id, owner_membership_id")
+      .in("idempotency_key", initializationKeys);
+    if (provisioning.error) {
+      throw new Error(
+        `recover_provisioning_failed:${provisioning.error.message}`,
+      );
+    }
+    for (const row of provisioning.data ?? []) {
+      trackUnique(organizationIds, row.organization_id);
+      trackUnique(membershipIds, row.owner_membership_id);
+    }
+  }
+
+  async function recoverAuthFixtures() {
+    const expectedEmails = new Set(userEmails);
+    const unexpected = [];
+    for (const user of await listAllAuthUsers(admin)) {
+      const metadata = user.app_metadata ?? {};
+      const belongsToRun =
+        metadata.fixture_scope === FIXTURE_SCOPE
+        && metadata.fixture_kind === FIXTURE_KIND
+        && metadata.run_id === runId;
+      if (!belongsToRun) continue;
+      trackUnique(userIds, user.id);
+      if (
+        !expectedEmails.has(user.email)
+        || !exactAuthMarker(user, runId, user.email)
+      ) {
+        unexpected.push(user.id);
+      }
+    }
+    assert(
+      unexpected.length === 0,
+      `unexpected_auth_fixtures:${unexpected.length}`,
+    );
+  }
+
+  async function recoverCommercialFixtures() {
+    const markerQueries = [
+      ["leads", "notes", "eq", marker],
+      ["quotations", "quote_no", "like", `${marker}-%`],
+      ["contracts", "contract_no", "like", `${marker}-%`],
+      ["projects", "name", "like", `%${marker}%`],
+      ["tasks", "title", "like", `%${marker}%`],
+      ["lead_documents", "file_name", "like", `${marker}-%`],
+    ];
+    const recoveryErrors = [];
+    for (const [table, column, operation, value] of markerQueries) {
+      let query = admin.from(table).select("id");
+      query = operation === "eq"
+        ? query.eq(column, value)
+        : query.like(column, value);
+      const { data, error } = await query;
+      if (error) {
+        recoveryErrors.push(`${table}:${error.message}`);
+        continue;
+      }
+      for (const row of data ?? []) trackUnique(commercialIds[table], row.id);
+    }
+    if (recoveryErrors.length > 0) {
+      throw new Error(`recover_commercial_failed:${recoveryErrors.join("|")}`);
+    }
   }
 
   try {
@@ -345,13 +493,16 @@ async function main() {
       payloadMismatchRejected: true,
     };
 
+    const viewerMembershipId = randomUUID();
+    trackUnique(membershipIds, viewerMembershipId);
     const viewerMembership = await requireInsert(admin.from("memberships").insert({
+      id: viewerMembershipId,
       organization_id: organizationA,
       user_id: viewer.id,
       status: "active",
       accepted_at: new Date().toISOString(),
     }), "viewer_membership");
-    membershipIds.push(viewerMembership.id);
+    trackUnique(membershipIds, viewerMembership.id);
     const viewerRole = await admin
       .from("roles")
       .select("id")
@@ -366,13 +517,16 @@ async function main() {
       role_id: viewerRole.data.id,
     }), "viewer_role_grant");
 
+    const crossMembershipId = randomUUID();
+    trackUnique(membershipIds, crossMembershipId);
     const crossMembership = await requireInsert(admin.from("memberships").insert({
+      id: crossMembershipId,
       organization_id: organizationB,
       user_id: ownerA.id,
       status: "active",
       accepted_at: new Date().toISOString(),
     }), "cross_membership");
-    membershipIds.push(crossMembership.id);
+    trackUnique(membershipIds, crossMembership.id);
     const financeRole = await admin
       .from("roles")
       .select("id")
@@ -414,7 +568,10 @@ async function main() {
       createCommercialChain("b", organizationB, ownerB.id, 2000),
     ]);
 
+    const crossContractId = randomUUID();
+    trackUnique(commercialIds.contracts, crossContractId);
     const crossContract = await admin.from("contracts").insert({
+      id: crossContractId,
       lead_id: chainA.leads,
       quotation_id: chainB.quotations,
       contract_no: `${marker}-CROSS`,
@@ -425,9 +582,12 @@ async function main() {
       crossContract.error?.message?.includes("commercial_cross_organization_parent"),
       "cross_organization_contract_not_rejected",
     );
+    const crossTaskId = randomUUID();
+    trackUnique(commercialIds.tasks, crossTaskId);
     const crossTask = await admin.from("tasks").insert({
+      id: crossTaskId,
       lead_id: chainA.leads,
-      title: "Forbidden assignee",
+      title: `Forbidden assignee ${marker}`,
       assignee_id: ownerB.id,
     });
     assert(
@@ -521,6 +681,9 @@ async function main() {
       }
     };
 
+    await safely("recover_provisioning", recoverProvisioningFixtures);
+    await safely("recover_auth", recoverAuthFixtures);
+    await safely("recover_commercial", recoverCommercialFixtures);
     await safely("lead_documents", () =>
       deleteIds(
         "lead_documents", "id", commercialIds.lead_documents,
@@ -620,6 +783,21 @@ async function main() {
         cleanupCounts[table] = await exactCount(admin, table, "id", ids);
       });
     }
+    for (const [table, column] of [
+      ["activities", "lead_id"],
+      ["business_events", "lead_id"],
+      ["notifications", "related_id"],
+      ["follow_up_logs", "lead_id"],
+    ]) {
+      await safely(`verify_${table}`, async () => {
+        cleanupCounts[table] = await exactCount(
+          admin,
+          table,
+          column,
+          commercialIds.leads,
+        );
+      });
+    }
     await safely("verify_membership_roles", async () => {
       cleanupCounts.membership_roles = await exactCount(
         admin,
@@ -668,13 +846,61 @@ async function main() {
         userIds,
       );
     });
-    for (const userId of userIds) {
-      const authLookup = await admin.auth.admin.getUserById(userId);
-      if (authLookup.data?.user) cleanupCounts.auth_fixtures += 1;
+    await safely("verify_marker_organizations", async () => {
+      cleanupScopeCounts.organizations_by_marker = await exactLikeCount(
+        admin,
+        "organizations",
+        "slug",
+        `${marker}-%`,
+      );
+    });
+    await safely("verify_idempotency_requests", async () => {
+      cleanupScopeCounts.provisioning_by_idempotency = await exactCount(
+        admin,
+        "organization_provisioning_requests",
+        "idempotency_key",
+        initializationKeys,
+      );
+    });
+    for (const [key, table, column, operation, value] of [
+      ["leads_by_marker", "leads", "notes", "eq", marker],
+      ["quotations_by_marker", "quotations", "quote_no", "like", `${marker}-%`],
+      ["contracts_by_marker", "contracts", "contract_no", "like", `${marker}-%`],
+      ["projects_by_marker", "projects", "name", "like", `%${marker}%`],
+      ["tasks_by_marker", "tasks", "title", "like", `%${marker}%`],
+      [
+        "lead_documents_by_marker",
+        "lead_documents",
+        "file_name",
+        "like",
+        `${marker}-%`,
+      ],
+    ]) {
+      await safely(`verify_${key}`, async () => {
+        cleanupScopeCounts[key] = operation === "eq"
+          ? await exactEqCount(admin, table, column, value)
+          : await exactLikeCount(admin, table, column, value);
+      });
     }
+    await safely("verify_auth_users", async () => {
+      const users = await listAllAuthUsers(admin);
+      const expectedIds = new Set(userIds);
+      cleanupCounts.auth_fixtures = users.filter((user) =>
+        expectedIds.has(user.id)
+      ).length;
+      cleanupScopeCounts.auth_users_by_marker = users.filter((user) => {
+        const metadata = user.app_metadata ?? {};
+        return metadata.fixture_scope === FIXTURE_SCOPE
+          && metadata.fixture_kind === FIXTURE_KIND
+          && metadata.run_id === runId;
+      }).length;
+    });
   }
 
-  const residue = Object.entries(cleanupCounts).filter(([, count]) => count !== 0);
+  const residue = [
+    ...Object.entries(cleanupCounts),
+    ...Object.entries(cleanupScopeCounts),
+  ].filter(([, count]) => count !== 0);
   if (executionError || cleanupErrors.length || residue.length) {
     throw new Error(JSON.stringify({
       execution: executionError instanceof Error
@@ -694,6 +920,7 @@ async function main() {
     results,
     cleanup: "verified",
     cleanupCounts,
+    cleanupScopeCounts,
   })}\n`);
 }
 

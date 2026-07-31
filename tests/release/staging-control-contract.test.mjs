@@ -27,6 +27,7 @@ test("staging controller has one fixed command surface and strict SHA arity", as
     "reconcile-sam21",
     "uat-sam21",
     "uat-sam22",
+    "uat-sam23",
     "uat-sam27",
     "uat-sam52",
     "uat-sam54",
@@ -105,7 +106,7 @@ test("SAM-26 UAT image and runtime remain SHA-bound and disposable", async () =>
     /SAM26_EXPECTED_RELEASE_SHA=\$SHA/,
     /SAM26_RELEASE_MANIFEST=\/runner\/release\/manifest\.json/,
   ]) assert.match(control, pattern);
-  assert.equal((control.match(/--network host/g) ?? []).length, 5);
+  assert.equal((control.match(/--network host/g) ?? []).length, 6);
   assert.equal(
     (control.match(/--add-host staging\.newme\.ae:127\.0\.0\.1/g) ?? []).length,
     3,
@@ -198,6 +199,86 @@ test("SAM-22 UAT is SHA-bound, complete, and proves zero fixture residue", async
     "profiles",
     "auth_fixtures",
   ]) assert.ok(control.includes(`"${fixture}"`));
+  assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
+  assert.doesNotMatch(control, /cat "\$output"/);
+});
+
+test("SAM-23 UAT is image-bound, loopback-only, and proves scoped cleanup", async () => {
+  const [control, dockerfile, runScript, readme] = await Promise.all([
+    read("scripts/newme-staging-control.sh"),
+    read("infra/staging/uat-runner/Dockerfile"),
+    read("infra/staging/uat-runner/run.sh"),
+    read("infra/staging/uat-runner/README.md"),
+  ]);
+  for (const pattern of [
+    /SAM23_EVIDENCE="\$STATE_DIR\/last-uat-sam23\.json"/,
+    /SAM23_RUNNER="scripts\/uat\/sam23-organization-commercial-core\.mjs"/,
+    /copy_commit_blob "\$SHA" "\$SAM23_RUNNER"/,
+    /verify_current_release "\$SHA"/,
+    /SAM_UAT_SUITE=sam23/,
+    /SAM23_UAT_BASE_URL=http:\/\/127\.0\.0\.1:3101/,
+    /SAM23_RELEASE_SHA=\$SHA/,
+    /SAM23_RELEASE_MANIFEST=\/runner\/release\/manifest\.json/,
+    /SAM23_UAT_CONFIRM=SAM23_STAGING_ONLY/,
+    /src=\$RELEASES\/\$SHA\/manifest\.json,dst=\/runner\/release\/manifest\.json,readonly/,
+    /body\.ok !== true/,
+    /body\.issue !== "SAM-23"/,
+    /body\.releaseSha !== process\.argv\[2\]/,
+    /body\.projectRef !== process\.argv\[3\]/,
+    /body\.results\?\.initialization\?\.organizations !== 2/,
+    /body\.results\?\.billableSeats\?\.organizationA !== 1/,
+    /body\.results\?\.commercialBoundary\?\.crossRowsHidden !== 20/,
+    /body\.cleanup !== "verified"/,
+    /exactZeroObject\(body\.cleanupCounts, cleanupKeys\)/,
+    /exactZeroObject\(body\.cleanupScopeCounts, scopeKeys\)/,
+    /install -m 0600 -o root -g root "\$output" "\$evidence_tmp"/,
+    /uat-sam23\) run_uat_sam23/,
+  ]) assert.match(control, pattern);
+  for (const fixture of [
+    "organizations",
+    "memberships",
+    "membership_roles",
+    "provisioning_requests",
+    "leads",
+    "quotations",
+    "contracts",
+    "installment_plans",
+    "payments",
+    "contract_approvals",
+    "payment_allocations",
+    "projects",
+    "tasks",
+    "lead_documents",
+    "activities",
+    "business_events",
+    "notifications",
+    "follow_up_logs",
+    "audit_events",
+    "profiles",
+    "auth_fixtures",
+  ]) assert.ok(control.includes(`"${fixture}"`));
+  for (const scope of [
+    "organizations_by_marker",
+    "provisioning_by_idempotency",
+    "leads_by_marker",
+    "quotations_by_marker",
+    "contracts_by_marker",
+    "projects_by_marker",
+    "tasks_by_marker",
+    "lead_documents_by_marker",
+    "auth_users_by_marker",
+  ]) assert.ok(control.includes(`"${scope}"`));
+  assert.match(
+    dockerfile,
+    /COPY sam23-organization-commercial-core\.mjs \/runner\/sam23-organization-commercial-core\.mjs/,
+  );
+  assert.match(runScript, /sam23\)/);
+  assert.match(runScript, /refusing non-loopback staging application URL/);
+  assert.match(
+    runScript,
+    /exec node \/runner\/sam23-organization-commercial-core\.mjs/,
+  );
+  assert.match(readme, /uat-sam23 <SHA>/);
   assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
   assert.doesNotMatch(control, /cat "\$output"/);
 });

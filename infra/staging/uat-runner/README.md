@@ -1,12 +1,12 @@
 # Staging UAT runner
 
 This directory builds the isolated runtime for the versioned SAM-26 role,
-SAM-70 XLSX abuse, and final Product/SaaS runners without adding Playwright,
-Chromium, SheetJS, or runner-only dependencies to the Next.js standalone
-release.
+SAM-23 commercial-core, SAM-70 XLSX abuse, and final Product/SaaS runners
+without adding Playwright, Chromium, SheetJS, or runner-only dependencies to
+the Next.js standalone release.
 
 The staging-only build service must create a fresh temporary Docker build
-context containing exactly these seven files from the exact checked-out SHA:
+context containing exactly these eight files from the exact checked-out SHA:
 
 - `infra/staging/uat-runner/Dockerfile`
 - `infra/staging/uat-runner/package.json`
@@ -14,6 +14,7 @@ context containing exactly these seven files from the exact checked-out SHA:
 - `infra/staging/uat-runner/run.sh`
 - `scripts/verify-staging-sam26-roles.mjs`
 - `scripts/verify-staging-sam70-xlsx.mjs`
+- `scripts/uat/sam23-organization-commercial-core.mjs`
 - `scripts/uat/product-saas-final.mjs`
 
 It then builds:
@@ -26,7 +27,7 @@ The repository-owned `/usr/local/sbin/newme-staging-control` accepts exactly one
 of these actions plus one full 40-character SHA:
 
 - `build <SHA>` starts the fixed staging build unit and builds this image from
-  the five exact blobs at the canonical staging SHA.
+  the eight exact blobs at the canonical staging SHA.
 - `deploy <SHA>` starts the fixed staging deploy unit and atomically records the
   direct immutable predecessor in root-only state.
 - `uat <SHA>` runs that exact image with only the staging environment file and
@@ -50,6 +51,11 @@ of these actions plus one full 40-character SHA:
   current release SHA. It accepts only complete list/search/detail/export,
   import, webhook, cron, Dashboard and member-admin isolation evidence plus
   verified zero residue for every synthetic fixture class.
+- `uat-sam23 <SHA>` runs the image-contained commercial-core runner against
+  staging loopback only. It requires the exact release manifest, deterministic
+  initialization and seats, two-organization commercial isolation, exact
+  ID cleanup, marker/idempotency residue counts of zero, and atomically retains
+  only the credential-free JSON evidence as root-only `0600` state.
 - `uat-sam27 <SHA>` runs the exact SAM-27 runner and integration-execution
   library blobs from the same current release SHA. It accepts only minimal
   health, explicitly disabled staging Meta routes, bounded synthetic retry,
@@ -98,5 +104,6 @@ Use `--rm --init --ipc=host --read-only` plus writable tmpfs mounts for `/tmp` a
 
 The image tag, `package.json`, and lockfile deliberately pin Playwright
 `1.60.0` together. Supabase JS is pinned to `2.106.2`, matching the application
-lockfile version used by the final Product/SaaS runner. SheetJS is pinned to the same immutable
-`xlsx-0.20.2.tgz` URL and integrity used by the application lockfile.
+lockfile version used by the SAM-23 and final Product/SaaS runners. SheetJS is
+pinned to the same immutable `xlsx-0.20.2.tgz` URL and integrity used by the
+application lockfile.

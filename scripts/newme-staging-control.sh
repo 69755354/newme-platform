@@ -18,6 +18,7 @@ readonly STATE_DIR="/var/lib/newme-staging-control"
 readonly STATE_FILE="$STATE_DIR/last-deploy.state"
 readonly SAM27_EVIDENCE="$STATE_DIR/last-uat-sam27.json"
 readonly SAM68_EVIDENCE="$STATE_DIR/last-uat-sam68.json"
+readonly SAM54_EVIDENCE="$STATE_DIR/last-uat-sam54.json"
 readonly STAGING_REF="bfsiibofuzoglziltgyd"
 readonly PRODUCTION_REF="vfopmpxlhwzpxqegayew"
 readonly SAM20_RUNNER="scripts/uat/sam20-lead-organization-isolation.mjs"
@@ -26,6 +27,8 @@ readonly SAM22_RUNNER="scripts/uat/sam22-two-organization-isolation.mjs"
 readonly SAM27_RUNNER="scripts/verify-staging-sam27-integrations.mjs"
 readonly SAM27_LIBRARY="src/lib/integration-execution.mjs"
 readonly SAM68_RUNNER="scripts/verify-staging-sam68-observability.mjs"
+readonly SAM54_RUNNER="scripts/verify-staging-sam54-diagnostics.mjs"
+readonly SAM54_ALERT_STATE="infra/observability/hermes-alert-state-v1.sh"
 readonly PRODUCT_SAAS_RUNNER="scripts/uat/product-saas-final.mjs"
 readonly UAT_IMAGE_PREFIX="newme-staging-uat"
 TEMPORARY_PATHS=()
@@ -51,7 +54,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam22|uat-sam27|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam22|uat-sam27|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -59,7 +62,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|uat-sam22|uat-sam27|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
+  build|deploy|uat|uat-sam20|uat-sam22|uat-sam27|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -588,6 +591,124 @@ run_uat_sam27() {
   echo "staging control SAM-27 UAT passed SHA=$SHA evidence=$SAM27_EVIDENCE cleanup=not_applicable meta=disabled"
 }
 
+run_uat_sam54() {
+  verify_current_release "$SHA"
+  local run_dir runner alert_state state_dir output rc marker synthetic_alert
+  run_dir="$(mktemp -d "/run/newme-staging-sam54-$SHA.XXXXXX")"
+  runner="$run_dir/verify-staging-sam54-diagnostics.mjs"
+  alert_state="$run_dir/hermes-alert-state-v1.sh"
+  state_dir="$run_dir/state"
+  output="$(mktemp "$STATE_DIR/.uat-sam54.XXXXXX")"
+  register_temporary_path "$run_dir"
+  register_temporary_path "$output"
+  copy_commit_blob "$SHA" "$SAM54_RUNNER" "$runner"
+  copy_commit_blob "$SHA" "$SAM54_ALERT_STATE" "$alert_state"
+  mkdir -m 0700 "$state_dir"
+  chown root:root "$run_dir" "$state_dir" "$runner" "$alert_state"
+  chmod 0700 "$run_dir"
+  chmod 0500 "$runner" "$alert_state"
+  marker="sam54-${SHA:0:12}"
+  synthetic_alert="$(
+    printf \
+      '{"schemaVersion":1,"source":"sam54-staging-uat","type":"diagnostic.requested","target":"staging","reason":"synthetic_acceptance","releaseSha":"%s","marker":"%s"}' \
+      "$SHA" "$marker"
+  )"
+  for attempt in 1 2; do
+    rc=0
+    /usr/bin/env -i \
+      HOME="/root" \
+      PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+      HERMES_ALERT_CONFIG="$run_dir/no-host-config.env" \
+      HERMES_ALERT_STATE_DIR="$state_dir" \
+      HERMES_ALERT_THRESHOLD="2" \
+      HERMES_ALERT_NOTIFIER="/usr/bin/true" \
+      HERMES_ALERT_DIAGNOSTIC="$runner" \
+      SAM54_EXPECTED_RELEASE_SHA="$SHA" \
+      SAM54_SYNTHETIC_ALERT="$synthetic_alert" \
+      /usr/bin/bash "$alert_state" \
+        "sam54-staging-uat" "failure" "synthetic_acceptance" \
+        >>"$output" 2>&1 || rc=$?
+    [ "$rc" -eq 0 ] ||
+      fail "SAM-54 alert-to-diagnostic staging UAT failed with status $rc on attempt $attempt"
+  done
+  node -e '
+    const fs = require("fs");
+    const transcript = fs.readFileSync(process.argv[1], "utf8");
+    const lines = transcript.split(/\r?\n/).filter(Boolean);
+    const bodies = [];
+    for (const line of lines) {
+      try {
+        const body = JSON.parse(line);
+        if (body?.linearId === "SAM-54") bodies.push(body);
+      } catch {}
+    }
+    if (
+      bodies.length !== 1 ||
+      !lines.some((line) =>
+        /transition=below-threshold .*failure_count=1$/.test(line)
+      ) ||
+      !lines.some((line) =>
+        /transition=alert .*diagnostic=complete capture=1$/.test(line)
+      )
+    ) process.exit(1);
+    const body = bodies[0];
+    const disk = body.checks?.disk;
+    const journal = body.checks?.journal;
+    const fixedExecutables = body.safety?.fixedExecutables;
+    if (
+      body.schemaVersion !== 1 ||
+      body.linearId !== "SAM-54" ||
+      body.releaseSha !== process.argv[2] ||
+      body.target !== "staging-loopback" ||
+      body.automaticDispatch !== true ||
+      body.trigger?.alertKey !== "sam54-staging-uat" ||
+      body.trigger?.source !== "sam54-staging-uat" ||
+      body.trigger?.type !== "diagnostic.requested" ||
+      body.trigger?.marker !== `sam54-${process.argv[2].slice(0, 12)}` ||
+      body.checks?.service?.unit !== "newme-staging.service" ||
+      body.checks?.service?.state !== "active" ||
+      body.checks?.service?.active !== true ||
+      body.checks?.health?.httpStatus !== 200 ||
+      body.checks?.health?.status !== "ok" ||
+      body.checks?.authMe?.httpStatus !== 401 ||
+      journal?.unit !== "newme-staging.service" ||
+      journal?.windowMinutes !== 15 ||
+      !Number.isInteger(journal?.entries) ||
+      journal.entries < 0 ||
+      !Number.isInteger(journal?.unauthorizedMatches) ||
+      journal.unauthorizedMatches < 0 ||
+      !Number.isInteger(journal?.errorMatches) ||
+      journal.errorMatches < 0 ||
+      disk?.root !== "/opt/newme-staging" ||
+      !Number.isInteger(disk?.usedPercent) ||
+      disk.usedPercent < 0 ||
+      disk.usedPercent > 100 ||
+      disk?.alertThresholdPercent !== 90 ||
+      disk?.overThreshold !== (disk.usedPercent >= 90) ||
+      !Number.isSafeInteger(disk?.stagingBytes) ||
+      disk.stagingBytes < 0 ||
+      JSON.stringify(fixedExecutables) !==
+        JSON.stringify(["systemctl", "journalctl", "df", "du"]) ||
+      body.safety?.mode !== "read_only" ||
+      body.safety?.secretsRead !== false ||
+      body.safety?.mutationAttempted !== false ||
+      body.cleanup?.status !== "not_applicable" ||
+      body.cleanup?.reason !== "read_only_diagnostics" ||
+      !Array.isArray(body.cleanup?.fixtureIds) ||
+      body.cleanup.fixtureIds.length !== 0
+    ) process.exit(1);
+    fs.writeFileSync(process.argv[1], `${JSON.stringify(body)}\n`, {
+      mode: 0o600,
+    });
+  ' "$output" "$SHA" ||
+    fail "SAM-54 automatic alert dispatch evidence is incomplete"
+  chown root:root "$output"
+  chmod 0600 "$output"
+  mv -f "$output" "$SAM54_EVIDENCE"
+  rm -rf -- "$run_dir"
+  echo "staging control SAM-54 UAT passed SHA=$SHA evidence=$SAM54_EVIDENCE dispatch=alert-state cleanup=not_applicable mode=read_only"
+}
+
 run_uat_sam68() {
   verify_current_release "$SHA"
   [ -r "$ENV_FILE" ] || fail "staging environment is missing"
@@ -906,6 +1027,7 @@ case "$ACTION" in
   uat-sam20) run_uat_sam20 ;;
   uat-sam22) run_uat_sam22 ;;
   uat-sam27) run_uat_sam27 ;;
+  uat-sam54) run_uat_sam54 ;;
   uat-sam68) run_uat_sam68 ;;
   uat-sam70) run_uat_sam70 ;;
   uat-product-saas) run_uat_product_saas ;;

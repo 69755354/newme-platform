@@ -3,12 +3,27 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-const script = new URL("../../infra/observability/hermes-alert-state-v1.sh", import.meta.url);
-const adapter = new URL("../../infra/observability/hermes-alert-notifier-v1.sh", import.meta.url);
+const script = fileURLToPath(
+  new URL("../../infra/observability/hermes-alert-state-v1.sh", import.meta.url),
+);
+const adapter = fileURLToPath(
+  new URL("../../infra/observability/hermes-alert-notifier-v1.sh", import.meta.url),
+);
 
-async function runAlert({ stateDir, notifier, eventsFile, event, summary, expectCode = 0, threshold, extraEnv = {} }) {
+async function runAlert({
+  stateDir,
+  notifier,
+  diagnostic,
+  eventsFile,
+  event,
+  summary,
+  expectCode = 0,
+  threshold,
+  extraEnv = {},
+}) {
   const env = {
     ...process.env,
     HERMES_ALERT_CONFIG: join(stateDir, "fixture.env"),
@@ -17,10 +32,11 @@ async function runAlert({ stateDir, notifier, eventsFile, event, summary, expect
     ...extraEnv,
   };
   if (notifier !== undefined) env.HERMES_ALERT_NOTIFIER = notifier;
+  if (diagnostic !== undefined) env.HERMES_ALERT_DIAGNOSTIC = diagnostic;
   if (threshold !== undefined) env.HERMES_ALERT_THRESHOLD = threshold;
 
   const result = await new Promise((resolve) => {
-    const child = spawn("bash", [script.pathname, "login-probe", event, summary], {
+    const child = spawn("bash", [script, "login-probe", event, summary], {
       env,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -45,8 +61,9 @@ async function events(eventsFile) {
 }
 
 async function runCommand(command, args, env, expectCode = 0) {
+  const commandPath = command instanceof URL ? fileURLToPath(command) : command;
   const result = await new Promise((resolve) => {
-    const child = spawn("bash", [command.pathname, ...args], {
+    const child = spawn("bash", [commandPath, ...args], {
       env: { ...process.env, ...env },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -68,7 +85,7 @@ test("adapter calls source-only production functions and direct execution is ine
     "",
   ].join("\n"), { mode: 0o700 });
 
-  await runCommand(new URL("file://" + library), [], { HERMES_ALERT_EVENTS: eventsFile });
+  await runCommand(library, [], { HERMES_ALERT_EVENTS: eventsFile });
   assert.equal(await events(eventsFile), "");
 
   const env = { HERMES_ALERT_LIBRARY: library, HERMES_ALERT_EVENTS: eventsFile };
@@ -125,24 +142,24 @@ test("adapter transport failures remain retryable for alert and recovery", async
     HERMES_ALERT_EVENTS: eventsFile,
     HERMES_FIXTURE_ALERT_RC: "1",
   };
-  await runAlert({ stateDir, notifier: adapter.pathname, eventsFile, event: "failure", summary: "failure one", extraEnv: adapterEnv });
-  await runAlert({ stateDir, notifier: adapter.pathname, eventsFile, event: "failure", summary: "failure two", expectCode: 1, extraEnv: adapterEnv });
+  await runAlert({ stateDir, notifier: adapter, eventsFile, event: "failure", summary: "failure one", extraEnv: adapterEnv });
+  await runAlert({ stateDir, notifier: adapter, eventsFile, event: "failure", summary: "failure two", expectCode: 1, extraEnv: adapterEnv });
   assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=pending_failure/);
 
   await runAlert({
-    stateDir, notifier: adapter.pathname, eventsFile, event: "failure", summary: "retry alert",
+    stateDir, notifier: adapter, eventsFile, event: "failure", summary: "retry alert",
     extraEnv: { ...adapterEnv, HERMES_FIXTURE_ALERT_RC: "0" },
   });
   assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=firing/);
 
   await runAlert({
-    stateDir, notifier: adapter.pathname, eventsFile, event: "recovery", summary: "recovery fails",
+    stateDir, notifier: adapter, eventsFile, event: "recovery", summary: "recovery fails",
     expectCode: 1, extraEnv: { ...adapterEnv, HERMES_FIXTURE_ALERT_RC: "0", HERMES_FIXTURE_OK_RC: "1" },
   });
   assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=pending_recovery/);
 
   await runAlert({
-    stateDir, notifier: adapter.pathname, eventsFile, event: "recovery", summary: "retry recovery",
+    stateDir, notifier: adapter, eventsFile, event: "recovery", summary: "retry recovery",
     extraEnv: { ...adapterEnv, HERMES_FIXTURE_ALERT_RC: "0", HERMES_FIXTURE_OK_RC: "0" },
   });
   assert.match(await readFile(join(stateDir, "login-probe.state"), "utf8"), /status=ok/);
@@ -174,6 +191,126 @@ test("emits capture marker only on the first threshold crossing", async () => {
   assert.doesNotMatch(first, /capture=1/);
   assert.match(second, /capture=1/);
   assert.doesNotMatch(duplicate, /capture=1/);
+});
+
+test("automatically dispatches one diagnostic on the first alert threshold crossing", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "hermes-alert-diagnostic-"));
+  const notifierEvents = join(stateDir, "notifier.log");
+  const diagnosticEvents = join(stateDir, "diagnostic.log");
+  const notifier = await makeNotifier(stateDir, recordingNotifier);
+  const diagnostic = await makeNotifier(stateDir, [
+    "#!/usr/bin/env bash",
+    'printf "%s|%s\\n" "$HERMES_ALERT_KEY" "$HERMES_ALERT_SUMMARY" >> "$HERMES_DIAGNOSTIC_EVENTS"',
+    "",
+  ].join("\n"), "diagnostic.sh");
+  const extraEnv = { HERMES_DIAGNOSTIC_EVENTS: diagnosticEvents };
+
+  await runAlert({
+    stateDir,
+    notifier,
+    diagnostic,
+    eventsFile: notifierEvents,
+    event: "failure",
+    summary: "first failure",
+    threshold: 2,
+    extraEnv,
+  });
+  const crossing = await runAlert({
+    stateDir,
+    notifier,
+    diagnostic,
+    eventsFile: notifierEvents,
+    event: "failure",
+    summary: "threshold failure",
+    threshold: 2,
+    extraEnv,
+  });
+  await runAlert({
+    stateDir,
+    notifier,
+    diagnostic,
+    eventsFile: notifierEvents,
+    event: "failure",
+    summary: "duplicate failure",
+    threshold: 2,
+    extraEnv,
+  });
+
+  assert.match(crossing, /transition=alert .*diagnostic=complete capture=1/);
+  assert.equal(
+    await readFile(diagnosticEvents, "utf8"),
+    "login-probe|threshold failure\n",
+  );
+  assert.equal(
+    ((await readFile(notifierEvents, "utf8")).match(/^alert /gm) || []).length,
+    1,
+  );
+});
+
+test("retries a failed diagnostic without sending a duplicate alert", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "hermes-alert-diagnostic-retry-"));
+  const notifierEvents = join(stateDir, "notifier.log");
+  const diagnosticEvents = join(stateDir, "diagnostic.log");
+  const notifier = await makeNotifier(stateDir, recordingNotifier);
+  const diagnostic = await makeNotifier(stateDir, [
+    "#!/usr/bin/env bash",
+    'printf "attempt\\n" >> "$HERMES_DIAGNOSTIC_EVENTS"',
+    '[ "${HERMES_DIAGNOSTIC_RC:-1}" -eq 0 ]',
+    "",
+  ].join("\n"), "diagnostic.sh");
+
+  await runAlert({
+    stateDir,
+    notifier,
+    diagnostic,
+    eventsFile: notifierEvents,
+    event: "failure",
+    summary: "first",
+    threshold: 2,
+    extraEnv: { HERMES_DIAGNOSTIC_EVENTS: diagnosticEvents },
+  });
+  await runAlert({
+    stateDir,
+    notifier,
+    diagnostic,
+    eventsFile: notifierEvents,
+    event: "failure",
+    summary: "threshold",
+    threshold: 2,
+    expectCode: 1,
+    extraEnv: { HERMES_DIAGNOSTIC_EVENTS: diagnosticEvents },
+  });
+  assert.match(
+    await readFile(join(stateDir, "login-probe.state"), "utf8"),
+    /status=pending_diagnostic/,
+  );
+
+  const retry = await runAlert({
+    stateDir,
+    notifier,
+    diagnostic,
+    eventsFile: notifierEvents,
+    event: "failure",
+    summary: "retry",
+    threshold: 2,
+    extraEnv: {
+      HERMES_DIAGNOSTIC_EVENTS: diagnosticEvents,
+      HERMES_DIAGNOSTIC_RC: "0",
+    },
+  });
+  assert.match(retry, /transition=diagnostic-retry .*diagnostic=complete/);
+  assert.match(
+    await readFile(join(stateDir, "login-probe.state"), "utf8"),
+    /status=firing/,
+  );
+  assert.equal(
+    ((await readFile(notifierEvents, "utf8")).match(/^alert /gm) || []).length,
+    1,
+  );
+  assert.equal(
+    ((await readFile(diagnosticEvents, "utf8")).match(/^attempt$/gm) || []).length,
+    2,
+  );
 });
 
 test("probes delegate incident capture to the state transition marker", async () => {

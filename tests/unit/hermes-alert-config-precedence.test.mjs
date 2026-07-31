@@ -3,9 +3,12 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-const script = new URL("../../infra/observability/hermes-alert-state-v1.sh", import.meta.url);
+const script = fileURLToPath(
+  new URL("../../infra/observability/hermes-alert-state-v1.sh", import.meta.url),
+);
 
 test("explicit alert runtime overrides take precedence over host configuration", async () => {
   const root = await mkdtemp(join(tmpdir(), "hermes-alert-config-precedence-"));
@@ -22,19 +25,21 @@ test("explicit alert runtime overrides take precedence over host configuration",
   await writeFile(config, [
     "HERMES_ALERT_THRESHOLD=99",
     "HERMES_ALERT_NOTIFIER=/not/a/test/notifier",
+    "HERMES_ALERT_DIAGNOSTIC=/not/a/test/diagnostic",
     "HERMES_ALERT_STATE_DIR=/not/a/test/state",
     "HERMES_ALERT_EVENTS=/not/a/test/events",
     "",
   ].join("\n"));
 
   const result = await new Promise((resolve) => {
-    const child = spawn("bash", [script.pathname, "login-probe", "failure", "fixture"], {
+    const child = spawn("bash", [script, "login-probe", "failure", "fixture"], {
       env: {
         ...process.env,
         HERMES_ALERT_CONFIG: config,
         HERMES_ALERT_STATE_DIR: stateDir,
         HERMES_ALERT_EVENTS: eventsFile,
         HERMES_ALERT_NOTIFIER: notifier,
+        HERMES_ALERT_DIAGNOSTIC: "",
         HERMES_ALERT_THRESHOLD: "1",
       },
       stdio: ["ignore", "pipe", "pipe"],

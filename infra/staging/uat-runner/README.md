@@ -43,6 +43,10 @@ of these actions plus one full 40-character SHA:
   health, explicitly disabled staging Meta routes, bounded synthetic retry,
   final-failure alert and audit evidence, and explicit N/A cleanup. It contacts
   loopback only and never calls the production Meta callback.
+- `uat-sam54 <SHA>` drives the exact versioned alert state machine across its
+  threshold, requires that transition to invoke the SHA-bound read-only
+  diagnostic automatically, and stores only the validated, bounded result in
+  root-only controller state.
 - `uat-sam68 <SHA>` runs the fixed SAM-68 observability runner blob from the
   same current release SHA. It accepts only a retired monitoring endpoint with
   no hostile-body persistence, authenticated readiness within three seconds,

@@ -215,6 +215,8 @@ test("SAM-25 stages one positive pipeline, six zero-write negatives, and exact c
   ]);
   for (const contract of [
     'await recordIssue(report, "SAM-25", () => runSam25(state))',
+    'stage: "solution_submitted"',
+    '"positive quotation fixture did not start at the sequential predecessor stage"',
     'body: { lead_id: lead.id, devices_json: { knx_ip_router: 1 } }',
     '"hermes_unauthenticated"',
     '"draft_conversion"',
@@ -236,6 +238,11 @@ test("SAM-25 stages one positive pipeline, six zero-write negatives, and exact c
   ]) {
     assert.ok(source.includes(contract), `SAM-25 runner is missing contract: ${contract}`);
   }
+  assert.ok(
+    source.indexOf('stage: "solution_submitted"') <
+      source.indexOf('body: { lead_id: lead.id, devices_json: { knx_ip_router: 1 } }'),
+    "SAM-25 must establish the legal quotation predecessor before calling Hermes",
+  );
   assert.match(
     source,
     /negativeMatrix,\s*\[\s*\{ name: "hermes_unauthenticated", status: 401, writes: 0 \}[\s\S]*\{ name: "operator_confirmation", status: 403, writes: 0 \}/,

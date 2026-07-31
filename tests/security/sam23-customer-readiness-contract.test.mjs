@@ -54,7 +54,7 @@ test("SAM-23 evidence ledger matches the reviewed canonical source blobs", async
     ],
     [
       "tests/security/sam22-two-organization-isolation.test.mjs",
-      "ee1f4bdb4652d70138d90743fa00e12ffa73787f",
+      "e0a28c7964c2d9da19c806b1aa2c1e51e3ab1d35",
     ],
   ]);
   const historicalSnapshotEvidence = new Map([

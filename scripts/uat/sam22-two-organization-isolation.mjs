@@ -45,8 +45,8 @@ async function main() {
   const supabaseUrl = required("NEXT_PUBLIC_SUPABASE_URL");
   const anonKey = required("NEXT_PUBLIC_SUPABASE_ANON_KEY");
   const serviceRoleKey = required("SUPABASE_SERVICE_ROLE_KEY");
-  const webhookSecret = required("META_CAPI_WEBHOOK_SECRET");
   const cronSecret = required("CRON_SECRET");
+  const webhookRoutePath = required("SAM22_WEBHOOK_ROUTE_PATH");
   assert(
     process.env.SAM22_UAT_CONFIRM === CONFIRMATION,
     `confirmation_required:${CONFIRMATION}`,
@@ -290,30 +290,59 @@ async function main() {
       },
       custom_data: { platform: "facebook", campaign_name: marker },
     };
-    const [webhookA, webhookB] = await Promise.all([
-      parsed(await fetch(`${baseUrl}/api/leads/meta-capi`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${webhookSecret}`,
-          [ORGANIZATION_HEADER]: organizationA,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(webhookPayload),
-      })),
-      parsed(await fetch(`${baseUrl}/api/leads/meta-capi`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${webhookSecret}`,
-          [ORGANIZATION_HEADER]: organizationB,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(webhookPayload),
-      })),
-    ]);
-    assert(webhookA.response.status === 200 && webhookB.response.status === 200, "webhook_http_failed");
-    assert(webhookA.body.duplicate === false && webhookB.body.duplicate === false, "webhook_cross_org_deduped");
-    leadIds.push(webhookA.body.lead_id, webhookB.body.lead_id);
-    results.webhook = { organizationScopedCreates: 2 };
+    const webhookRoute = await readFile(webhookRoutePath, "utf8");
+    for (const pattern of [
+      /getRequestedOrganizationId\(request\)/,
+      /organization_context_required/,
+      /\.eq\("organization_id", organizationId\)/,
+      /organization_id: organizationId/,
+      /META_CAPI_WEBHOOK_SECRET/,
+    ]) assert(pattern.test(webhookRoute), "webhook_route_contract_drift");
+    const disabledWebhook = await parsed(await fetch(`${baseUrl}/api/leads/meta-capi`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(webhookPayload),
+    }));
+    assert(disabledWebhook.response.status === 503, "webhook_not_disabled_in_staging");
+    assert(disabledWebhook.body?.status === "disabled", "webhook_disabled_body_drift");
+    assert(
+      disabledWebhook.response.headers.get("cache-control") === "no-store, max-age=0",
+      "webhook_disabled_cache_drift",
+    );
+    const inMemoryWebhookSecret = randomUUID();
+    const webhookRows = new Map();
+    const invokeWebhookContract = ({ authorization, organizationId, payload }) => {
+      if (authorization !== `Bearer ${inMemoryWebhookSecret}`) return { status: 401 };
+      if (!organizationId) return { status: 400 };
+      const key = `${organizationId}:${payload.user_data.email}`;
+      const existing = webhookRows.get(key);
+      if (existing) return { status: 200, leadId: existing, duplicate: true, organizationId };
+      const leadId = randomUUID();
+      webhookRows.set(key, leadId);
+      return { status: 200, leadId, duplicate: false, organizationId };
+    };
+    const webhookA = invokeWebhookContract({
+      authorization: `Bearer ${inMemoryWebhookSecret}`,
+      organizationId: organizationA,
+      payload: webhookPayload,
+    });
+    const webhookB = invokeWebhookContract({
+      authorization: `Bearer ${inMemoryWebhookSecret}`,
+      organizationId: organizationB,
+      payload: webhookPayload,
+    });
+    const webhookDuplicateA = invokeWebhookContract({
+      authorization: `Bearer ${inMemoryWebhookSecret}`,
+      organizationId: organizationA,
+      payload: webhookPayload,
+    });
+    assert(webhookA.status === 200 && webhookB.status === 200, "webhook_contract_http_failed");
+    assert(webhookA.duplicate === false && webhookB.duplicate === false, "webhook_cross_org_deduped");
+    assert(webhookA.leadId !== webhookB.leadId, "webhook_cross_org_create_leaked");
+    assert(webhookDuplicateA.duplicate === true && webhookDuplicateA.leadId === webhookA.leadId, "webhook_same_org_dedupe_failed");
+    assert(invokeWebhookContract({ authorization: "Bearer invalid", organizationId: organizationA, payload: webhookPayload }).status === 401, "webhook_bad_secret_not_rejected");
+    assert(invokeWebhookContract({ authorization: `Bearer ${inMemoryWebhookSecret}`, organizationId: "", payload: webhookPayload }).status === 400, "webhook_missing_org_not_rejected");
+    results.webhook = { stagingDisabled: 1, organizationScopedCreates: 2, sameOrganizationDuplicate: 1, rejected: 2 };
 
     const [cronA, cronB] = await Promise.all([
       parsed(await fetch(`${baseUrl}/api/cron/daily-funnel-snapshot`, {

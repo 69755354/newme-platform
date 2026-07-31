@@ -167,6 +167,10 @@ test("SAM-22 UAT is SHA-bound, complete, and proves zero fixture residue", async
     /SAM22_UAT_BASE_URL=http:\/\/127\.0\.0\.1:3101/,
     /SAM22_RELEASE_SHA=\$SHA/,
     /SAM22_UAT_CONFIRM=SAM22_STAGING_ONLY/,
+    /SAM22_WEBHOOK_ROUTE="src\/app\/api\/leads\/meta-capi\/route\.ts"/,
+    /copy_commit_blob "\$SHA" "\$SAM22_WEBHOOK_ROUTE" "\$webhook_route"/,
+    /SAM22_WEBHOOK_ROUTE_PATH=\/runner\/meta-capi-route\.ts/,
+    /src=\$webhook_route,dst=\/runner\/meta-capi-route\.ts,readonly/,
     /src=\$runner,dst=\/runner\/sam22-two-organization-isolation\.mjs,readonly/,
     /src=\$RELEASES\/\$SHA\/manifest\.json,dst=\/runner\/release\/manifest\.json,readonly/,
     /body\.linearId !== "SAM-22"/,
@@ -201,6 +205,7 @@ test("SAM-22 UAT is SHA-bound, complete, and proves zero fixture residue", async
   ]) assert.ok(control.includes(`"${fixture}"`));
   assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
   assert.doesNotMatch(control, /cat "\$output"/);
+  assert.doesNotMatch(control, /--env "META_CAPI_WEBHOOK_SECRET=/);
 });
 
 test("SAM-23 UAT is image-bound, loopback-only, and proves scoped cleanup", async () => {

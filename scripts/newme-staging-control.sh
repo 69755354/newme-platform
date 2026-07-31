@@ -34,6 +34,7 @@ readonly SAM21_PGPASS="/etc/newme-staging/sam21-db.pgpass"
 readonly SAM20_ROLLBACK="supabase/rollback/20260730100000_sam20_lead_organization_isolation_rollback.sql"
 readonly SAM22_ROLLBACK="supabase/rollback/20260730110000_sam22_two_organization_isolation_rollback.sql"
 readonly SAM22_RUNNER="scripts/uat/sam22-two-organization-isolation.mjs"
+readonly SAM22_WEBHOOK_ROUTE="src/app/api/leads/meta-capi/route.ts"
 readonly SAM23_RUNNER="scripts/uat/sam23-organization-commercial-core.mjs"
 readonly SAM27_RUNNER="scripts/verify-staging-sam27-integrations.mjs"
 readonly SAM27_LIBRARY="src/lib/integration-execution.mjs"
@@ -612,16 +613,19 @@ run_uat_sam22() {
     docker image inspect "$UAT_IMAGE_PREFIX:$SHA" \
       --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
   )" = "$SHA" ] || fail "staging UAT image provenance does not match"
-  local run_dir runner output rc
+  local run_dir runner webhook_route output rc
   run_dir="$(mktemp -d "/run/newme-staging-sam22-$SHA.XXXXXX")"
   runner="$run_dir/sam22-two-organization-isolation.mjs"
+  webhook_route="$run_dir/meta-capi-route.ts"
   output="$(mktemp "$STATE_DIR/.uat-sam22.XXXXXX")"
   register_temporary_path "$run_dir"
   register_temporary_path "$output"
   copy_commit_blob "$SHA" "$SAM22_RUNNER" "$runner"
-  chown root:root "$run_dir" "$runner"
+  copy_commit_blob "$SHA" "$SAM22_WEBHOOK_ROUTE" "$webhook_route"
+  chown root:root "$run_dir" "$runner" "$webhook_route"
   chmod 0755 "$run_dir"
   chmod 0555 "$runner"
+  chmod 0444 "$webhook_route"
   rc=0
   docker run \
     --rm \
@@ -635,7 +639,9 @@ run_uat_sam22() {
     --env "SAM22_UAT_BASE_URL=http://127.0.0.1:3101" \
     --env "SAM22_RELEASE_SHA=$SHA" \
     --env "SAM22_UAT_CONFIRM=SAM22_STAGING_ONLY" \
+    --env "SAM22_WEBHOOK_ROUTE_PATH=/runner/meta-capi-route.ts" \
     --mount "type=bind,src=$runner,dst=/runner/sam22-two-organization-isolation.mjs,readonly" \
+    --mount "type=bind,src=$webhook_route,dst=/runner/meta-capi-route.ts,readonly" \
     --mount "type=bind,src=$RELEASES/$SHA/manifest.json,dst=/runner/release/manifest.json,readonly" \
     --entrypoint /usr/bin/node \
     "$UAT_IMAGE_PREFIX:$SHA" \

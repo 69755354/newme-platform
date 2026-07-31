@@ -132,6 +132,11 @@ test("SAM-22 UAT is release-locked, synthetic-only, and verifies marker cleanup"
   assert.match(uat, /results\.export/);
   assert.match(uat, /results\.import/);
   assert.match(uat, /results\.webhook/);
+  assert.match(uat, /SAM22_WEBHOOK_ROUTE_PATH/);
+  assert.match(uat, /webhook_not_disabled_in_staging/);
+  assert.match(uat, /webhook_cross_org_create_leaked/);
+  assert.match(uat, /webhook_bad_secret_not_rejected/);
+  assert.doesNotMatch(uat, /required\("META_CAPI_WEBHOOK_SECRET"\)/);
   assert.match(uat, /results\.cron/);
   assert.match(uat, /results\.dashboard/);
   assert.match(uat, /results\.member_admin/);

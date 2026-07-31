@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase-server';
 import { logger, genReqId } from '@/lib/logger';
 import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
-import { isCompleteContact } from '@/lib/first-contact-gate.mjs';
+import { isCompleteContact } from '@/modules/leads/first-contact-gate.mjs';
 
 export async function POST(
   req: NextRequest,
@@ -14,7 +14,8 @@ export async function POST(
   try {
     const cookieHeader = req.headers.get("cookie") ?? "";
     const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const supabase = await createServerSupabase(bearerToken, cookieHeader);
+    const organizationId = req.headers.get("x-newme-organization-id") ?? undefined;
+    const supabase = await createServerSupabase(bearerToken, cookieHeader, organizationId);
     const profile = await getAuthProfile(bearerToken, cookieHeader);
     if (!profile) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

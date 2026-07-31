@@ -1,15 +1,24 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
+import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
+import {
+  LeadOrganizationAccessError,
+  resolveLeadOrganizationAccess,
+} from "@/lib/lead-organization-access";
 import { calculateQuotation } from "../../../../lib/quotation-engine";
+import { DEVICE_CATALOG } from "@/lib/device-catalog";
 import { logger, genReqId } from "@/lib/logger";
+
+const VALID_DEVICE_IDS = new Set<string>(
+  DEVICE_CATALOG.flatMap((category) => category.devices.map((device) => device.id)),
+);
 
 /**
  * POST /api/hermes/generate-quote
  * 使用内置计算引擎生成报价 (替代已下线的 Hermes 外部服务)
  *
- * Input:  { lead_id }
+ * Input:  { lead_id, devices_json? }
  * Output: { status, quote_id, total_aed, quote_url }
  *
  * 从 lead 的 devices_json 字段 (或 service_needs) 自动推导设备清单，
@@ -145,14 +154,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { lead_id } = await request.json();
+    const { lead_id, devices_json } = await request.json();
     if (!lead_id) {
       return NextResponse.json({ error: "lead_id required" }, { status: 400 });
     }
+    if (
+      devices_json !== undefined
+      && (
+        devices_json === null
+        || typeof devices_json !== "object"
+        || Array.isArray(devices_json)
+      )
+    ) {
+      return NextResponse.json({ error: "devices_json must be an object" }, { status: 400 });
+    }
 
-    // Ownership check
-    if (!(await canAccessLead(lead_id, profile, bearerToken, cookieHeader))) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    let organizationAccess;
+    try {
+      organizationAccess = await resolveLeadOrganizationAccess(
+        request,
+        "lead:write",
+        "lead",
+        lead_id,
+      );
+    } catch (error) {
+      if (error instanceof LeadOrganizationAccessError) {
+        return NextResponse.json({ error: error.code }, { status: error.status });
+      }
+      throw error;
     }
 
     const supabaseAdmin = getSupabaseAdmin();
@@ -162,9 +191,10 @@ export async function POST(request: NextRequest) {
       .from("leads")
       .select("*")
       .eq("id", lead_id)
+      .eq("organization_id", organizationAccess.organizationId)
       .single();
 
-    if (leadErr) {
+    if (leadErr && leadErr.code !== "PGRST116") {
       logger.error(
         {
           err: leadErr,
@@ -180,9 +210,25 @@ export async function POST(request: NextRequest) {
     if (!lead) {
       return NextResponse.json({ error: "lead not found" }, { status: 404 });
     }
+    if (!isAdminOrBoss(profile) && lead.assigned_to !== profile.userId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     // 2. Derive device quantities from lead data
-    const devices = deriveDevices(lead);
+    const devices = deriveDevices({
+      ...lead,
+      ...(devices_json === undefined ? {} : { devices_json }),
+    });
+
+    // Reject invalid stored device keys instead of letting the calculation
+    // engine silently ignore them and persist a zero-total quotation.
+    const unknownDevices = Object.keys(devices).filter((id) => !VALID_DEVICE_IDS.has(id));
+    if (unknownDevices.length > 0) {
+      return NextResponse.json(
+        { error: "Unknown device_ids", unknown_devices: unknownDevices },
+        { status: 400 },
+      );
+    }
 
     // 3. Calculate quotation using internal engine
     const calculation = calculateQuotation({
@@ -190,6 +236,13 @@ export async function POST(request: NextRequest) {
       devices,
       discount_rate: 0,
     });
+
+    if (calculation.total <= 0) {
+      return NextResponse.json(
+        { error: "Quotation total must be greater than zero" },
+        { status: 400 },
+      );
+    }
 
     // 4. Generate quote number
     const quoteNo = await generateQuoteNo(supabaseAdmin);

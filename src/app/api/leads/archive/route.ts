@@ -27,7 +27,8 @@ async function requireBoss(
 export async function POST(request: NextRequest) {
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
   const cookieHeader = request.headers.get("cookie") ?? "";
-  const supabase = await createServerSupabase(bearerToken, cookieHeader);
+  const organizationId = request.headers.get("x-newme-organization-id") ?? undefined;
+  const supabase = await createServerSupabase(bearerToken, cookieHeader, organizationId);
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -119,7 +120,8 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
   const cookieHeader = request.headers.get("cookie") ?? "";
-  const supabase = await createServerSupabase(bearerToken, cookieHeader);
+  const organizationId = request.headers.get("x-newme-organization-id") ?? undefined;
+  const supabase = await createServerSupabase(bearerToken, cookieHeader, organizationId);
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -172,7 +174,8 @@ export async function GET(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
   const cookieHeader = request.headers.get("cookie") ?? "";
-  const supabase = await createServerSupabase(bearerToken, cookieHeader);
+  const organizationId = request.headers.get("x-newme-organization-id") ?? undefined;
+  const supabase = await createServerSupabase(bearerToken, cookieHeader, organizationId);
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

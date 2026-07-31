@@ -50,7 +50,7 @@ const STATUS_STYLES: Record<string, { color: string; bg: string; border: string 
 interface Project {
   id: string;
   name: string | null;
-  description: string | null;
+  description?: string | null;
   phase: string | null;
   status: string | null;
   property_type: string | null;
@@ -59,12 +59,12 @@ interface Project {
   quoted_amount: number | null;
   contract_amount: number | null;
   paid_amount: number | null;
-  budget: number | null;
-  actual_cost: number | null;
-  start_date: string | null;
-  end_date: string | null;
-  created_at: string;
-  updated_at: string;
+  budget?: number | null;
+  actual_cost?: number | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  created_at: string | null;
+  updated_at: string | null;
   lead_id: string | null;
   contract_id: string | null;
   customer_id: string | null;
@@ -172,7 +172,7 @@ export default function ProjectsClient({ initialData, fetchError }: ProjectsClie
           customer:customers!customer_id(
             name,
             phone,
-            lead:leads!lead_id(customer_name)
+            lead:leads!fk_projects_lead(customer_name)
           ),
           assigned_profile:profiles!assigned_to(full_name)
         `
@@ -249,7 +249,8 @@ export default function ProjectsClient({ initialData, fetchError }: ProjectsClie
           break;
         case "created_at":
         default:
-          cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          cmp = new Date(a.created_at ?? 0).getTime()
+            - new Date(b.created_at ?? 0).getTime();
           break;
       }
       return sortDir === "desc" ? -cmp : cmp;

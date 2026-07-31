@@ -6,6 +6,8 @@ import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { getCached, setCache } from "@/lib/api-cache";
 
+const ANALYTICS_ROLES = new Set(["admin", "boss", "operator", "sales"]);
+
 /* ─── Helpers ─── */
 function normalizeCampaign(name: string | null): string {
   if (!name) return "Uncategorized";
@@ -66,6 +68,9 @@ export async function GET(request: Request) {
   const userId: string = user.id;
   const isManagement = ["admin", "boss", "operator"].includes(role);
   const isCEO = isManagement;
+  if (!ANALYTICS_ROLES.has(role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   // ── Cache key ──
   const cacheKey = `analytics-summary:${role}:${userId}`;
@@ -123,7 +128,7 @@ export async function GET(request: Request) {
   // ── 3b. Contracts with installment plans ──
   let contractQuery = supabase
     .from("contracts")
-    .select(`id, contract_no, contract_amount, contract_date, status, sales_id, party_a_name, lead_id, leads!inner(customer_name, assigned_to), installment_plans(id, seq, amount, due_date, status, paid_amount), payments(id, amount, confirmed, payment_date)`)
+    .select(`id, contract_no, contract_amount, contract_date, status, sales_id, party_a_name, lead_id, leads!contracts_lead_id_fkey!inner(customer_name, assigned_to), installment_plans!installment_plans_contract_id_fkey(id, seq, amount, due_date, status, paid_amount), payments!payments_contract_id_fkey(id, amount, confirmed, payment_date)`)
     .order("created_at", { ascending: false });
   if (!isManagement) contractQuery = contractQuery.eq("sales_id", userId);
   const contractsPromise = contractQuery;

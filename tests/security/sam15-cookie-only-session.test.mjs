@@ -162,6 +162,14 @@ test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives au
   const server = loadTypeScriptModule("src/lib/supabase-server.ts", {
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
     "@/lib/auth-refresh.mjs": { classifyRefreshFailure: () => "upstream_error" },
+    "@/lib/organization-context": {
+      ORGANIZATION_CONTEXT_COOKIE: "newme-organization-id",
+      ORGANIZATION_CONTEXT_HEADER: "x-newme-organization-id",
+      parseOrganizationId: (value) =>
+        typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value)
+          ? value
+          : null,
+    },
     "@supabase/supabase-js": {
       createClient: (_url, _key, options) => {
         capturedHeaders = options.global.headers;
@@ -305,6 +313,14 @@ test("server component refresh path never writes through the read-only cookies s
   const server = loadTypeScriptModule("src/lib/supabase-server.ts", {
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
     "@/lib/auth-refresh.mjs": { classifyRefreshFailure: () => "upstream_error" },
+    "@/lib/organization-context": {
+      ORGANIZATION_CONTEXT_COOKIE: "newme-organization-id",
+      ORGANIZATION_CONTEXT_HEADER: "x-newme-organization-id",
+      parseOrganizationId: (value) =>
+        typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value)
+          ? value
+          : null,
+    },
     "@supabase/supabase-js": { createClient: (_url, _key, options) => ({ options }) },
     "next/headers": { cookies: async () => cookieStore },
   });
@@ -362,20 +378,144 @@ test("middleware passes the explicit Cookie header and writes custom refresh coo
   assert.deepEqual(getResponse().cookiesSet, refreshedCookies);
 });
 
-test("same-origin logout clears dynamic and legacy cookies", async () => {
+test("same-origin logout revokes the current Supabase session and clears all cookies", async (t) => {
   const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
+  const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const previousKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://demo.supabase.co";
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
+  t.after(() => {
+    if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    else process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = previousKey;
+  });
+
+  const requests = [];
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), init });
+    return { ok: true };
+  };
+  t.after(() => {
+    globalThis.fetch = previousFetch;
+  });
+
   const logout = loadTypeScriptModule("src/app/api/auth/logout/route.ts", {
     "@/lib/supabase-server": {
-      createServerSupabase: async () => ({ auth: { signOut: async () => ({ error: null }) } }),
+      extractSessionTokensFromCookieHeader: () => ({
+        accessToken: "cookie-access-token",
+        refreshToken: "cookie-refresh-token",
+      }),
     },
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
     "next/server": createCookieResponseMock(),
   });
-  const response = await logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
+  const response = await logout.POST(new Request("http://localhost/api/auth/logout", {
+    headers: { cookie: "session=cookie" },
+    method: "POST",
+  }));
+
   assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, revoked: true });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, "https://demo.supabase.co/auth/v1/logout?scope=local");
+  assert.equal(requests[0].init.headers.apikey, "test-anon-key");
+  assert.equal(requests[0].init.headers.Authorization, "Bearer cookie-access-token");
   assert.deepEqual(
     response.cookiesSet.map((cookie) => cookie.name),
     [names.authToken, names.refreshToken, "sb-access-token", "sb-refresh-token"],
   );
+  assert.ok(response.cookiesSet.every((cookie) => cookie.value === "" && cookie.options.maxAge === 0));
+});
+
+test("logout refreshes an expired cookie session before revocation", async (t) => {
+  const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
+  const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const previousKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://demo.supabase.co";
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
+  t.after(() => {
+    if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    else process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = previousKey;
+  });
+
+  const requests = [];
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), init });
+    if (String(url).includes("grant_type=refresh_token")) {
+      return {
+        ok: true,
+        json: async () => ({ access_token: "refreshed-access-token" }),
+      };
+    }
+    return { ok: true };
+  };
+  t.after(() => {
+    globalThis.fetch = previousFetch;
+  });
+
+  const logout = loadTypeScriptModule("src/app/api/auth/logout/route.ts", {
+    "@/lib/supabase-server": {
+      extractSessionTokensFromCookieHeader: () => ({
+        refreshToken: "cookie-refresh-token",
+      }),
+    },
+    "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
+    "next/server": createCookieResponseMock(),
+  });
+  const response = await logout.POST(new Request("http://localhost/api/auth/logout", {
+    headers: { cookie: "session=cookie" },
+    method: "POST",
+  }));
+
+  assert.deepEqual(await response.json(), { ok: true, revoked: true });
+  assert.equal(requests.length, 2);
+  assert.equal(
+    requests[0].url,
+    "https://demo.supabase.co/auth/v1/token?grant_type=refresh_token",
+  );
+  assert.equal(requests[1].url, "https://demo.supabase.co/auth/v1/logout?scope=local");
+  assert.equal(requests[1].init.headers.Authorization, "Bearer refreshed-access-token");
+});
+
+test("logout clears cookies when Supabase Auth is unavailable", async (t) => {
+  const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
+  const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const previousKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://demo.supabase.co";
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
+  t.after(() => {
+    if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    else process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = previousKey;
+  });
+
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("upstream unavailable");
+  };
+  t.after(() => {
+    globalThis.fetch = previousFetch;
+  });
+
+  const logout = loadTypeScriptModule("src/app/api/auth/logout/route.ts", {
+    "@/lib/supabase-server": {
+      extractSessionTokensFromCookieHeader: () => ({ accessToken: "cookie-access-token" }),
+    },
+    "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
+    "next/server": createCookieResponseMock(),
+  });
+  const response = await logout.POST(new Request("http://localhost/api/auth/logout", {
+    headers: { cookie: "session=cookie" },
+    method: "POST",
+  }));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, revoked: false });
   assert.ok(response.cookiesSet.every((cookie) => cookie.value === "" && cookie.options.maxAge === 0));
 });

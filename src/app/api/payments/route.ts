@@ -1,6 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { getRequestedOrganizationId } from "@/lib/organization-context";
 import { logger, genReqId } from "@/lib/logger";
 
 /**
@@ -12,7 +13,11 @@ export async function POST(request: NextRequest) {
   try {
     const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
     const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(bearerToken, cookieHeader);
+    const supabase = await createServerSupabase(
+      bearerToken,
+      cookieHeader,
+      getRequestedOrganizationId(request) ?? undefined,
+    );
     const {
       data: { user },
       error: authErr,
@@ -120,7 +125,11 @@ export async function GET(request: NextRequest) {
   try {
     const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
     const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(bearerToken, cookieHeader);
+    const supabase = await createServerSupabase(
+      bearerToken,
+      cookieHeader,
+      getRequestedOrganizationId(request) ?? undefined,
+    );
     const {
       data: { user },
       error: authErr,

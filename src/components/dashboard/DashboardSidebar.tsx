@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Menu, X, LogOut, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { LanguageToggle } from "@/components/LanguageToggle";
@@ -48,18 +48,8 @@ export function DashboardSidebar({
   role,
 }: DashboardSidebarProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [buildId, setBuildId] = useState("unknown");
-
-  useEffect(() => {
-    fetch("/api/health")
-      .then((response) => response.ok ? response.json() : null)
-      .then((health) => {
-        if (typeof health?.version === "string") setBuildId(health.version);
-      })
-      .catch(() => {});
-  }, []);
   const { t } = useLanguage();
-  const nav = isManagement ? MGMT_NAV : SALES_NAV;
+  const nav = isManagement ? MGMT_NAV : role === "sales" ? SALES_NAV : [];
 
   const isItemActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -161,11 +151,7 @@ export function DashboardSidebar({
               <span className="truncate">{userEmail}</span>
             </div>
           )}
-          <div className="flex items-center justify-between px-2">
-            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              v{buildId}
-            </div>
+          <div className="flex justify-end px-2">
             <button
               onClick={handleLogout}
               className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-rose-400 transition-colors"

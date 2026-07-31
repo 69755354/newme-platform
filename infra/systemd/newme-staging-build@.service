@@ -1,0 +1,26 @@
+[Unit]
+Description=Build isolated NewMe staging commit %i
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/newme-staging/build.env
+ConditionPathExists=/etc/newme-staging/github_deploy_key
+ConditionPathExists=/etc/newme-staging/github_known_hosts
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/newme-staging/build.env
+Environment=NODE_OPTIONS=--max-old-space-size=768
+ExecStart=/opt/newme-staging/control/run-staging-build.sh %i
+TimeoutStartSec=30min
+MemoryHigh=1280M
+MemoryMax=1536M
+MemorySwapMax=256M
+CPUQuota=100%
+IOWeight=10
+Nice=10
+TasksMax=256
+OOMPolicy=stop
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=newme-staging-build

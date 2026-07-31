@@ -1,0 +1,21 @@
+[Unit]
+Description=Verify and deploy prebuilt NewMe staging commit %i
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/newme-staging/staging.env
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/newme-staging/staging.env
+ExecStart=/opt/newme-staging/control/deploy-staging.sh %i
+TimeoutStartSec=15min
+MemoryHigh=384M
+MemoryMax=512M
+MemorySwapMax=0
+CPUQuota=50%
+IOWeight=25
+Nice=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=newme-staging-deploy

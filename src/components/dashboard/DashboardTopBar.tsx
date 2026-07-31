@@ -42,7 +42,15 @@ export function DashboardTopBar({
   const { t } = useLanguage();
 
   const isManagement = role === "admin" || role === "boss" || role === "operator";
-  const roleLabel = isManagement ? t("nav.roleManagement") : t("nav.roleSales");
+  const roleLabel = isManagement
+    ? t("nav.roleManagement")
+    : role === "sales"
+      ? t("nav.roleSales")
+      : role === "finance"
+        ? t("team.roleFinance")
+        : role === "designer"
+          ? t("team.roleDesigner")
+          : t("nav.platformTitle");
 
   return (
     <div className="flex items-center justify-end gap-3 px-6 py-2.5 border-b border-border/50 bg-background/80 backdrop-blur-sm sticky top-0 z-30">

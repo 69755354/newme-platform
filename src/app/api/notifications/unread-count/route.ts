@@ -25,8 +25,13 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ count: count || 0 });
-  } catch (err: any) {
-    const msg = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
+  } catch (err) {
+    const msg =
+      process.env.NODE_ENV === "production"
+        ? "Internal server error"
+        : err instanceof Error
+          ? err.message
+          : "Unknown error";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

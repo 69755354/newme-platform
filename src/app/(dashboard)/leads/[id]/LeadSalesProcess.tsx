@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { COMPLETABLE_MILESTONES } from "@/lib/milestones";
 import { calculateHealthScore } from "@/lib/health-score";
-import { evaluateFirstContactGate, isAssessedQuality } from "@/lib/first-contact-gate.mjs";
+import { evaluateFirstContactGate, isAssessedQuality } from "@/modules/leads/first-contact-gate.mjs";
 import { STAGES, STAGE_COLORS } from "./types";
 import { fmtAED, daysSince } from "./utils";
 import type {

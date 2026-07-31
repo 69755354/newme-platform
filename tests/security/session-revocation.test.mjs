@@ -157,7 +157,7 @@ test("real lead stage handler rejects an inactive old session before business ac
     "@/lib/supabase-server": supabaseServer,
   });
   const stage = loadTypeScriptModule("src/app/api/leads/[id]/stage/route.ts", {
-    "@/lib/first-contact-gate.mjs": {
+    "@/modules/leads/first-contact-gate.mjs": {
       evaluateFirstContactGate: () => ({ allowed: true, reasons: [] }),
       isCompleteContact: () => true,
     },

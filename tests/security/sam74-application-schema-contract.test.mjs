@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 const migration = await readFile(
@@ -50,4 +50,20 @@ test("SAM-74 application views preserve caller RLS and browser read boundaries",
 test("SAM-74 reloads the PostgREST schema cache after restoring the contract", () => {
   assert.match(migration, /NOTIFY pgrst,\s*'reload schema'/i);
   assert.match(circuitMigration, /NOTIFY pgrst,\s*'reload schema'/i);
+});
+
+test("SAM-74 keeps rollback scripts out of the forward migration chain", async () => {
+  const migrationDirectory = new URL("../../supabase/migrations/", import.meta.url);
+  const migrationFiles = (await readdir(migrationDirectory)).filter((name) =>
+    name.endsWith(".sql"),
+  );
+
+  for (const filename of migrationFiles) {
+    assert.match(filename, /^\d{14}_.+\.sql$/);
+    assert.doesNotMatch(filename, /^rollback_/i);
+  }
+
+  for (const filename of ["rollback_crm_v3.sql", "rollback_p0_10.sql"]) {
+    await readFile(new URL(`../../supabase/rollback/${filename}`, import.meta.url), "utf8");
+  }
 });

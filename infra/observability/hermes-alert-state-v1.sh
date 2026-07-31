@@ -5,10 +5,25 @@
 set -euo pipefail
 
 CONFIG_FILE="${HERMES_ALERT_CONFIG:-/etc/hermes/observability/hermes-alert-v1.env}"
+
+# Explicit process values are test/runtime overrides. Preserve them across the
+# host configuration source so a host-only config cannot redirect a staging
+# invocation or make its test fixture non-hermetic.
+declare -A saved_overrides=()
+for override_name in HERMES_ALERT_STATE_DIR HERMES_ALERT_THRESHOLD HERMES_ALERT_NOTIFIER HERMES_ALERT_DIAGNOSTIC HERMES_ALERT_DIAGNOSTIC_INTERPRETER HERMES_ALERT_EVENTS; do
+  if [[ -v "$override_name" ]]; then
+    saved_overrides["$override_name"]="${!override_name}"
+  fi
+done
+
 if [ -r "$CONFIG_FILE" ]; then
   # shellcheck disable=SC1090
   . "$CONFIG_FILE"
 fi
+
+for override_name in "${!saved_overrides[@]}"; do
+  export "$override_name=${saved_overrides[$override_name]}"
+done
 
 ALERT_KEY="${1:?alert key is required}"
 EVENT="${2:?event must be failure or recovery}"
@@ -16,6 +31,8 @@ SUMMARY="${3:-}"
 STATE_DIR="${HERMES_ALERT_STATE_DIR:-${XDG_STATE_HOME:-${HOME:-/home/ubuntu}/.local/state}/hermes-alert-v1}"
 THRESHOLD="${HERMES_ALERT_THRESHOLD:-2}"
 NOTIFIER="${HERMES_ALERT_NOTIFIER:-/opt/hermes-scripts/observability/hermes-alert-notifier-v1.sh}"
+DIAGNOSTIC="${HERMES_ALERT_DIAGNOSTIC:-}"
+DIAGNOSTIC_INTERPRETER="${HERMES_ALERT_DIAGNOSTIC_INTERPRETER:-}"
 
 case "$EVENT" in
   failure|recovery) ;;
@@ -70,6 +87,29 @@ notify() {
   "$NOTIFIER" "$notify_event" "$ALERT_KEY" "$safe_summary"
 }
 
+diagnose() {
+  if [ -z "$DIAGNOSTIC" ]; then
+    return 0
+  fi
+  if [ -n "$DIAGNOSTIC_INTERPRETER" ]; then
+    if [ ! -x "$DIAGNOSTIC_INTERPRETER" ] || [ ! -r "$DIAGNOSTIC" ]; then
+      echo "hermes-alert-state-v1: diagnostic interpreter or script is unavailable" >&2
+      return 1
+    fi
+    HERMES_ALERT_KEY="$ALERT_KEY" \
+      HERMES_ALERT_SUMMARY="$safe_summary" \
+      "$DIAGNOSTIC_INTERPRETER" "$DIAGNOSTIC"
+    return
+  fi
+  if [ ! -x "$DIAGNOSTIC" ]; then
+    echo "hermes-alert-state-v1: diagnostic is not executable: $DIAGNOSTIC" >&2
+    return 1
+  fi
+  HERMES_ALERT_KEY="$ALERT_KEY" \
+    HERMES_ALERT_SUMMARY="$safe_summary" \
+    "$DIAGNOSTIC"
+}
+
 read_state
 case "$EVENT:$STATUS" in
   failure:ok)
@@ -78,8 +118,15 @@ case "$EVENT:$STATUS" in
       write_state "ok" "$FAILURES"
       printf 'hermes-alert-state-v1 transition=below-threshold key=%s failure_count=%s\n' "$ALERT_KEY" "$FAILURES"
     elif notify "alert"; then
-      write_state "firing" "$FAILURES"
-      printf 'hermes-alert-state-v1 transition=alert key=%s failure_count=%s capture=1\n' "$ALERT_KEY" "$FAILURES"
+      if diagnose; then
+        write_state "firing" "$FAILURES"
+        printf 'hermes-alert-state-v1 transition=alert key=%s failure_count=%s diagnostic=complete capture=1\n' "$ALERT_KEY" "$FAILURES"
+      else
+        write_state "pending_diagnostic" "$FAILURES"
+        printf 'hermes-alert-state-v1 transition=diagnostic-pending key=%s failure_count=%s capture=1\n' "$ALERT_KEY" "$FAILURES"
+        echo "hermes-alert-state-v1: read-only diagnostic failed; retry pending" >&2
+        exit 1
+      fi
     else
       write_state "pending_failure" "$FAILURES"
       printf 'hermes-alert-state-v1 transition=alert-pending key=%s failure_count=%s capture=1\n' "$ALERT_KEY" "$FAILURES"
@@ -89,11 +136,28 @@ case "$EVENT:$STATUS" in
     ;;
   failure:pending_failure)
     if notify "alert"; then
-      write_state "firing" "$FAILURES"
-      printf 'hermes-alert-state-v1 transition=alert-retry key=%s failure_count=%s\n' "$ALERT_KEY" "$FAILURES"
+      if diagnose; then
+        write_state "firing" "$FAILURES"
+        printf 'hermes-alert-state-v1 transition=alert-retry key=%s failure_count=%s diagnostic=complete\n' "$ALERT_KEY" "$FAILURES"
+      else
+        write_state "pending_diagnostic" "$FAILURES"
+        echo "hermes-alert-state-v1: read-only diagnostic failed; retry pending" >&2
+        exit 1
+      fi
     else
       write_state "pending_failure" "$FAILURES"
       echo "hermes-alert-state-v1: alert transport failed; retry pending" >&2
+      exit 1
+    fi
+    ;;
+  failure:pending_diagnostic)
+    FAILURES=$((FAILURES + 1))
+    if diagnose; then
+      write_state "firing" "$FAILURES"
+      printf 'hermes-alert-state-v1 transition=diagnostic-retry key=%s failure_count=%s diagnostic=complete\n' "$ALERT_KEY" "$FAILURES"
+    else
+      write_state "pending_diagnostic" "$FAILURES"
+      echo "hermes-alert-state-v1: read-only diagnostic failed; retry pending" >&2
       exit 1
     fi
     ;;
@@ -102,7 +166,7 @@ case "$EVENT:$STATUS" in
     write_state "firing" "$FAILURES"
     printf 'hermes-alert-state-v1 transition=duplicate-suppressed key=%s failure_count=%s\n' "$ALERT_KEY" "$FAILURES"
     ;;
-  recovery:firing|recovery:pending_recovery)
+  recovery:firing|recovery:pending_diagnostic|recovery:pending_recovery)
     if notify "recovery"; then
       write_state "ok" "0"
       printf 'hermes-alert-state-v1 transition=recovery key=%s\n' "$ALERT_KEY"

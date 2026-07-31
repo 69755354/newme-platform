@@ -2,6 +2,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 // ─── Self-test mode ───
 if (process.argv.includes("--self-test")) {
@@ -35,7 +37,25 @@ if (process.argv.includes("--self-test")) {
   }
 }
 
-const root = process.cwd();
+let root;
+export function checkSupabaseBoundaries({ root: targetRoot = process.cwd(), log = console.log, error = console.error } = {}) {
+  const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
+    cwd: targetRoot,
+    encoding: "utf8",
+  });
+  const stdout = typeof result.stdout === "string" ? result.stdout : "";
+  const stderr = typeof result.stderr === "string" ? result.stderr : "";
+  if (stdout) log(stdout.trim());
+  if (stderr) error(stderr.trim());
+  return {
+    exitCode: typeof result.status === "number" ? result.status : 1,
+    output: `${stdout}${stderr}`,
+  };
+}
+
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+root = process.cwd();
 const allowlistPath = path.join(root, "scripts/supabase-boundary-allowlist.json");
 const allowlist = fs.existsSync(allowlistPath)
   ? JSON.parse(fs.readFileSync(allowlistPath, "utf8"))
@@ -92,6 +112,51 @@ function isBrowserRoot(file, text) {
     name.includes("/shared/hooks/")
   );
 }
+function skipLeadingTrivia(text, start) {
+  let index = start;
+  while (index < text.length) {
+    if (/\s/.test(text[index])) {
+      index += 1;
+      continue;
+    }
+    if (text.startsWith("//", index)) {
+      const newline = text.indexOf("\n", index + 2);
+      return newline < 0 ? text.length : skipLeadingTrivia(text, newline + 1);
+    }
+    if (text.startsWith("/*", index)) {
+      const end = text.indexOf("*/", index + 2);
+      return end < 0 ? text.length : skipLeadingTrivia(text, end + 2);
+    }
+    break;
+  }
+  return index;
+}
+function readModulePrologue(text) {
+  let index = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  const directives = [];
+  while (index < text.length) {
+    index = skipLeadingTrivia(text, index);
+    const quote = text[index];
+    if (quote !== '"' && quote !== "'") break;
+    const end = text.indexOf(quote, index + 1);
+    if (end < 0) break;
+    const value = text.slice(index + 1, end);
+    let statementEnd = end + 1;
+    while (text[statementEnd] === " " || text[statementEnd] === "\t") statementEnd += 1;
+    if (text[statementEnd] === ";") statementEnd += 1;
+    else if (statementEnd < text.length && text[statementEnd] !== "\r" && text[statementEnd] !== "\n") break;
+    directives.push(value);
+    index = statementEnd;
+  }
+  return { directives, index };
+}
+function hasServerOnlyBoundary(text) {
+  const { directives, index } = readModulePrologue(text);
+  if (directives.includes("use client")) return false;
+  if (directives.includes("use server")) return true;
+  const importStart = skipLeadingTrivia(text, index);
+  return /^import\s+["']server-only["']\s*;?/.test(text.slice(importStart));
+}
 function isServerOnlyPath(name) {
   return name.startsWith("src/app/api/") ||
     name.startsWith("src/app/actions/") ||
@@ -120,6 +185,7 @@ for (const file of fileList) {
 while (queue.length) {
   const file = queue.shift();
   for (const dependency of importsOf(file, contents.get(file), fileSet)) {
+    if (hasServerOnlyBoundary(contents.get(dependency))) continue;
     if (!browserReachable.has(dependency)) {
       browserReachable.add(dependency);
       queue.push(dependency);
@@ -187,3 +253,4 @@ if (failures) {
   process.exit(1);
 }
 console.log(`Supabase boundary check passed with ${findings.length} finding(s); no rule/file count exceeded the reviewed baseline.`);
+}

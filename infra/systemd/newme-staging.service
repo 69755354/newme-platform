@@ -1,0 +1,40 @@
+[Unit]
+Description=NewMe SaaS Staging (Next.js standalone)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=newme-staging
+Group=newme-staging
+WorkingDirectory=/opt/newme-staging/current
+Environment=NODE_ENV=production
+Environment=PORT=3101
+Environment=HOSTNAME=127.0.0.1
+EnvironmentFile=/etc/newme-staging/staging.env
+ExecStart=/usr/bin/node /opt/newme-staging/current/server.js
+Restart=always
+RestartSec=5
+SuccessExitStatus=143 SIGTERM
+KillMode=control-group
+KillSignal=SIGTERM
+FinalKillSignal=SIGKILL
+SendSIGKILL=yes
+TimeoutStopSec=30
+MemoryHigh=384M
+MemoryMax=512M
+MemorySwapMax=0
+CPUQuota=50%
+Nice=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=newme-staging
+
+[Install]
+WantedBy=multi-user.target

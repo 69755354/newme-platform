@@ -1,6 +1,9 @@
 name: ci
 
 on:
+  pull_request:
+    branches:
+      - agent/saas-staging-isolation
   workflow_dispatch:
     inputs:
       validation_level:
@@ -29,8 +32,8 @@ env:
 
 jobs:
   validate:
-    name: Repository validation (${{ inputs.validation_level }})
-    runs-on: ubuntu-latest
+    name: Repository validation
+    runs-on: [self-hosted, staging-ci]
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -39,8 +42,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24.18.0'
           cache: npm
+
+      - name: Toolchain reproducibility gate
+        run: node scripts/check-toolchain.mjs
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
@@ -50,6 +56,12 @@ jobs:
 
       - name: E2E secret gate negative regression
         run: node --test tests/security/e2e-secret-gate.test.mjs
+
+      - name: E2E artifact isolation gate
+        run: npm run check:e2e-artifacts
+
+      - name: E2E artifact isolation gate negative regression
+        run: node --test tests/security/e2e-artifact-isolation.test.mjs
 
       - name: Taskboard gate
         run: bash scripts/check-taskboard.sh
@@ -68,6 +80,15 @@ jobs:
 
       - name: Database static regression gate
         run: npm run check:db-static
+
+      - name: SAM-20 disposable database apply and rollback gate
+        run: npm run check:sam20-database
+
+      - name: SAM-23 organization commercial core database gate
+        run: npm run check:sam23-database
+
+      - name: SAM-61 active-profile milestone guard
+        run: npm run check:sam61-active-profile-database
 
       - name: CRM regression contract
         run: python3 scripts/crm-regression.py --self-test

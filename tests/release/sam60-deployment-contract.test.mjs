@@ -25,8 +25,14 @@ test("SAM-60/SAM-68 contracts", async () => {
   }
   assert.match(rollback, /manifest\.sha256/);
   assert.doesNotMatch(health, /fs|BUILD_ID|database|checks|responseTime/);
+  assert.match(health, /export const dynamic = "force-dynamic"/);
+  assert.match(health, /export const revalidate = 0/);
+  assert.match(health, /Cache-Control": "no-store, max-age=0"/);
   assert.match(ready, /401|AbortController/);
   assert.doesNotMatch(ready, /error\.message|responseTime|writeFileSync|readFileSync/);
+  assert.match(ready, /export const dynamic = "force-dynamic"/);
+  assert.match(ready, /export const revalidate = 0/);
+  assert.match(ready, /Cache-Control": "no-store, max-age=0"/);
   assert.match(helper, /x-newme-readiness-token/);
   assert.match(helper, /mktemp|chmod 600|--config/);
   assert.doesNotMatch(helper, /curl[^\n]*-H[^\n]*x-newme-readiness-token/);

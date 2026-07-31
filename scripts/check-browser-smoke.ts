@@ -12,7 +12,13 @@ import { chromium } from "playwright";
 import * as fs from "fs";
 import * as path from "path";
 
-const BASE = "https://app.newme.ae";
+const BASE = (
+  process.env.BROWSER_SMOKE_BASE_URL ||
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  "https://app.newme.ae"
+).replace(/\/+$/, "");
+const REPORT_PATH =
+  process.env.BROWSER_SMOKE_REPORT_PATH || "/tmp/browser-smoke-report.json";
 const CREDS = {
   email: process.env.DEV_EMAIL || "",
   password: process.env.DEV_PASSWORD || "",
@@ -40,6 +46,8 @@ interface PageResult {
   status: "PASS" | "P0" | "P1" | "SKIP";
   reason?: string;
   consoleErrors: string[];
+  finalUrl?: string;
+  durationMs?: number;
 }
 
 async function loadEnv() {
@@ -82,7 +90,11 @@ async function main() {
   try {
     // ─── Step 1: Login ───
     console.log("🔐 Logging in...");
-    await page.goto(`${BASE}/login`, { waitUntil: "networkidle", timeout: 30000 });
+    await page.goto(`${BASE}/login`, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
+    });
+    await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
     await page.fill('input[type="email"]', CREDS.email);
     await page.fill('input[type="password"]', CREDS.password);
     await page.click('button[type="submit"]');
@@ -94,16 +106,19 @@ async function main() {
     // ─── Step 2: Smoke each route ───
     for (const route of ROUTES) {
       const result: PageResult = { route, status: "PASS", consoleErrors: [] };
+      const startedAt = Date.now();
       pageErrors.length = 0; // reset
 
       try {
         const resp = await page.goto(`${BASE}${route}`, {
-          waitUntil: "networkidle",
+          waitUntil: "domcontentloaded",
           timeout: 20000,
         });
+        await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
 
         const status = resp?.status() || 0;
         const bodyText = await page.textContent("body");
+        result.finalUrl = page.url();
 
         // Check for crash indicators
         if (status >= 500) {
@@ -151,7 +166,10 @@ async function main() {
       } catch (e: any) {
         result.status = "P0";
         result.reason = `Navigation error: ${e.message?.slice(0, 80)}`;
+        result.finalUrl = page.url();
         console.log(`🔴 ${route} — ${result.reason}`);
+      } finally {
+        result.durationMs = Date.now() - startedAt;
       }
 
       results.push(result);
@@ -185,22 +203,33 @@ async function main() {
   }
 
   // Write JSON report
-  const reportPath = "/tmp/browser-smoke-report.json";
   fs.writeFileSync(
-    reportPath,
+    REPORT_PATH,
     JSON.stringify(
       {
         timestamp: new Date().toISOString(),
+        baseUrl: BASE,
         total: ROUTES.length,
         pass: pass.length,
-        p0: p0.map((r) => ({ route: r.route, reason: r.reason })),
-        p1: p1.map((r) => ({ route: r.route, reason: r.reason })),
+        results,
+        p0: p0.map((r) => ({
+          route: r.route,
+          reason: r.reason,
+          finalUrl: r.finalUrl,
+          durationMs: r.durationMs,
+        })),
+        p1: p1.map((r) => ({
+          route: r.route,
+          reason: r.reason,
+          finalUrl: r.finalUrl,
+          durationMs: r.durationMs,
+        })),
       },
       null,
       2
     )
   );
-  console.log(`\n📄 Report saved: ${reportPath}`);
+  console.log(`\n📄 Report saved: ${REPORT_PATH}`);
 
   process.exit(p0.length > 0 ? 1 : 0);
 }

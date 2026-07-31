@@ -12,10 +12,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 **Before writing, modifying, or reviewing ANY source code in this project:**
 
 1. `cat TASKBOARD.md` — read the full task board
-2. `bash scripts/check-taskboard.sh` — run verification
+2. `npm run check:taskboard` — run the cross-platform verification (the shell checker remains the Linux deploy gate)
 3. If any ❌ items exist → those are your priority. Do NOT write new features until all ❌ are resolved.
 4. After completing a task → update TASKBOARD.md status from ❌ to ✅ with date
-5. Before commit → run `bash scripts/check-taskboard.sh` again to confirm progress
+5. Before commit → run `npm run check:taskboard` again to confirm progress
 
 ## Why this exists
 

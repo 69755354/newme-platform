@@ -69,6 +69,29 @@ case "$SAM_UAT_SUITE" in
     [[ "$SAM70_BASE_URL" != *"$PRODUCTION_REF"* ]] || exit 65
     exec node /runner/verify-staging-sam70-xlsx.mjs
     ;;
+  sam23)
+    : "${SAM23_RELEASE_SHA:?missing expected release SHA}"
+    : "${SAM23_UAT_BASE_URL:?missing staging app URL}"
+    : "${SAM23_RELEASE_MANIFEST:?missing read-only release manifest}"
+    : "${SAM23_UAT_CONFIRM:?missing staging-only confirmation}"
+    [[ "$SAM23_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+      echo "invalid expected release SHA" >&2
+      exit 64
+    }
+    [[ "$SAM23_UAT_BASE_URL" == "http://127.0.0.1:3101" ]] || {
+      echo "refusing non-loopback staging application URL" >&2
+      exit 65
+    }
+    [[ "$SAM23_RELEASE_MANIFEST" == "/runner/release/manifest.json" && -r "$SAM23_RELEASE_MANIFEST" ]] || {
+      echo "refusing missing or non-fixed release manifest" >&2
+      exit 65
+    }
+    [[ "$SAM23_UAT_CONFIRM" == "SAM23_STAGING_ONLY" ]] || {
+      echo "refusing missing staging-only confirmation" >&2
+      exit 65
+    }
+    exec node /runner/sam23-organization-commercial-core.mjs
+    ;;
   product-saas-final)
     : "${PRODUCT_UAT_RELEASE_SHA:?missing expected release SHA}"
     : "${PRODUCT_UAT_BASE_URL:?missing staging app URL}"

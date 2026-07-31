@@ -16,6 +16,7 @@ test("staging UAT runner uses pinned and fail-closed browser dependencies", asyn
     runner,
     sam26Script,
     sam70Script,
+    sam23Script,
   ] = await Promise.all([
     readFile(resolve(runnerRoot, "Dockerfile"), "utf8"),
     readFile(resolve(runnerRoot, "package.json"), "utf8"),
@@ -23,6 +24,10 @@ test("staging UAT runner uses pinned and fail-closed browser dependencies", asyn
     readFile(resolve(runnerRoot, "run.sh"), "utf8"),
     readFile(resolve(root, "scripts/verify-staging-sam26-roles.mjs"), "utf8"),
     readFile(resolve(root, "scripts/verify-staging-sam70-xlsx.mjs"), "utf8"),
+    readFile(
+      resolve(root, "scripts/uat/sam23-organization-commercial-core.mjs"),
+      "utf8",
+    ),
   ]);
   const manifest = JSON.parse(manifestRaw);
   const lock = JSON.parse(lockRaw);
@@ -43,6 +48,10 @@ test("staging UAT runner uses pinned and fail-closed browser dependencies", asyn
     dockerfile,
     /COPY verify-staging-sam70-xlsx\.mjs \/runner\/verify-staging-sam70-xlsx\.mjs/,
   );
+  assert.match(
+    dockerfile,
+    /COPY sam23-organization-commercial-core\.mjs \/runner\/sam23-organization-commercial-core\.mjs/,
+  );
   assert.doesNotMatch(dockerfile, new RegExp(productionRef));
   assert.match(runner, new RegExp(`readonly STAGING_REF="${stagingRef}"`));
   assert.match(runner, new RegExp(`readonly PRODUCTION_REF="${productionRef}"`));
@@ -54,8 +63,17 @@ test("staging UAT runner uses pinned and fail-closed browser dependencies", asyn
   assert.match(runner, /SAM_UAT_SUITE/);
   assert.match(runner, /sam26\)/);
   assert.match(runner, /sam70\)/);
+  assert.match(runner, /sam23\)/);
   assert.match(runner, /SAM70_UAT_CONFIRM/);
   assert.match(runner, /exec node \/runner\/verify-staging-sam70-xlsx\.mjs/);
+  assert.match(runner, /SAM23_RELEASE_SHA/);
+  assert.match(runner, /SAM23_UAT_BASE_URL" == "http:\/\/127\.0\.0\.1:3101"/);
+  assert.match(runner, /SAM23_RELEASE_MANIFEST/);
+  assert.match(runner, /SAM23_STAGING_ONLY/);
+  assert.match(
+    runner,
+    /exec node \/runner\/sam23-organization-commercial-core\.mjs/,
+  );
   assert.match(sam26Script, /releaseManifest\?\.git_sha/);
   assert.match(sam26Script, new RegExp(`const CLEANROOM_REF = "${stagingRef}"`));
   assert.match(sam26Script, new RegExp(`const PRODUCTION_REF = "${productionRef}"`));
@@ -69,4 +87,7 @@ test("staging UAT runner uses pinned and fail-closed browser dependencies", asyn
   assert.match(sam70Script, /await createOrganization\(\)/);
   assert.match(sam70Script, /organization_id: organizationId/);
   assert.match(sam70Script, /"x-newme-organization-id": organizationId/);
+  assert.match(sam23Script, /SAM23_UAT_CONFIRM/);
+  assert.match(sam23Script, /STAGING_BASE_URL = "http:\/\/127\.0\.0\.1:3101"/);
+  assert.match(sam23Script, /cleanupScopeCounts/);
 });

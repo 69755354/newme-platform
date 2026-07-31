@@ -20,6 +20,7 @@ readonly SAM27_EVIDENCE="$STATE_DIR/last-uat-sam27.json"
 readonly SAM52_EVIDENCE="$STATE_DIR/last-uat-sam52.json"
 readonly SAM21_STATE_DIR="$STATE_DIR/sam21"
 readonly SAM21_EVIDENCE="$STATE_DIR/last-uat-sam21.json"
+readonly SAM23_EVIDENCE="$STATE_DIR/last-uat-sam23.json"
 readonly SAM68_EVIDENCE="$STATE_DIR/last-uat-sam68.json"
 readonly SAM54_EVIDENCE="$STATE_DIR/last-uat-sam54.json"
 readonly STAGING_REF="bfsiibofuzoglziltgyd"
@@ -33,6 +34,7 @@ readonly SAM21_PGPASS="/etc/newme-staging/sam21-db.pgpass"
 readonly SAM20_ROLLBACK="supabase/rollback/20260730100000_sam20_lead_organization_isolation_rollback.sql"
 readonly SAM22_ROLLBACK="supabase/rollback/20260730110000_sam22_two_organization_isolation_rollback.sql"
 readonly SAM22_RUNNER="scripts/uat/sam22-two-organization-isolation.mjs"
+readonly SAM23_RUNNER="scripts/uat/sam23-organization-commercial-core.mjs"
 readonly SAM27_RUNNER="scripts/verify-staging-sam27-integrations.mjs"
 readonly SAM27_LIBRARY="src/lib/integration-execution.mjs"
 readonly SAM52_RUNNER="scripts/verify-staging-sam52-alert-bridge.mjs"
@@ -65,7 +67,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -73,7 +75,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
+  build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -296,6 +298,8 @@ build_uat_image() {
     "$context/verify-staging-sam26-roles.mjs"
   copy_commit_blob "$SHA" "scripts/verify-staging-sam70-xlsx.mjs" \
     "$context/verify-staging-sam70-xlsx.mjs"
+  copy_commit_blob "$SHA" "$SAM23_RUNNER" \
+    "$context/sam23-organization-commercial-core.mjs"
   copy_commit_blob "$SHA" "$PRODUCT_SAAS_RUNNER" \
     "$context/product-saas-final.mjs"
   docker build \
@@ -676,6 +680,119 @@ run_uat_sam22() {
   rm -rf -- "$run_dir"
   rm -f -- "$output"
   echo "staging control SAM-22 UAT passed SHA=$SHA cleanup=verified"
+}
+
+run_uat_sam23() {
+  verify_current_release "$SHA"
+  command -v docker >/dev/null 2>&1 || fail "docker is required for staging UAT"
+  [ -r "$ENV_FILE" ] || fail "staging environment is missing"
+  [ "$(
+    docker image inspect "$UAT_IMAGE_PREFIX:$SHA" \
+      --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+  )" = "$SHA" ] || fail "staging UAT image provenance does not match"
+  local output rc evidence_tmp
+  rm -f -- "$SAM23_EVIDENCE"
+  output="$(mktemp "$STATE_DIR/.uat-sam23.XXXXXX")"
+  register_temporary_path "$output"
+  rc=0
+  docker run \
+    --rm \
+    --init \
+    --network host \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m \
+    --tmpfs /runner/home:rw,nosuid,nodev,size=64m \
+    --env-file "$ENV_FILE" \
+    --env "HOME=/runner/home" \
+    --env "SAM_UAT_SUITE=sam23" \
+    --env "SAM23_UAT_BASE_URL=http://127.0.0.1:3101" \
+    --env "SAM23_RELEASE_SHA=$SHA" \
+    --env "SAM23_RELEASE_MANIFEST=/runner/release/manifest.json" \
+    --env "SAM23_UAT_CONFIRM=SAM23_STAGING_ONLY" \
+    --mount "type=bind,src=$RELEASES/$SHA/manifest.json,dst=/runner/release/manifest.json,readonly" \
+    "$UAT_IMAGE_PREFIX:$SHA" >"$output" 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "SAM-23 staging UAT failed with status $rc"
+  node -e '
+    const fs = require("fs");
+    const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const cleanupKeys = [
+      "organizations",
+      "memberships",
+      "membership_roles",
+      "provisioning_requests",
+      "leads",
+      "quotations",
+      "contracts",
+      "installment_plans",
+      "payments",
+      "contract_approvals",
+      "payment_allocations",
+      "projects",
+      "tasks",
+      "lead_documents",
+      "activities",
+      "business_events",
+      "notifications",
+      "follow_up_logs",
+      "audit_events",
+      "profiles",
+      "auth_fixtures",
+    ];
+    const scopeKeys = [
+      "organizations_by_marker",
+      "provisioning_by_idempotency",
+      "leads_by_marker",
+      "quotations_by_marker",
+      "contracts_by_marker",
+      "projects_by_marker",
+      "tasks_by_marker",
+      "lead_documents_by_marker",
+      "auth_users_by_marker",
+    ];
+    const exactZeroObject = (value, keys) =>
+      value &&
+      Object.keys(value).length === keys.length &&
+      keys.every((key) => value[key] === 0);
+    const marker = new RegExp(
+      `^sam23-${process.argv[2].slice(0, 8)}-` +
+      "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-" +
+      "[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "i",
+    );
+    if (
+      body.ok !== true ||
+      body.issue !== "SAM-23" ||
+      body.releaseSha !== process.argv[2] ||
+      body.projectRef !== process.argv[3] ||
+      !marker.test(body.marker ?? "") ||
+      body.results?.initialization?.organizations !== 2 ||
+      body.results?.initialization?.idempotentReplays !== 2 ||
+      body.results?.initialization?.payloadMismatchRejected !== true ||
+      body.results?.billableSeats?.organizationA !== 1 ||
+      body.results?.billableSeats?.organizationB !== 2 ||
+      body.results?.billableSeats?.viewerFree !== true ||
+      body.results?.billableSeats?.sameUserCountedPerOrganization !== true ||
+      body.results?.commercialBoundary?.tables !== 10 ||
+      body.results?.commercialBoundary?.ownRowsVisible !== 20 ||
+      body.results?.commercialBoundary?.crossRowsHidden !== 20 ||
+      body.results?.commercialBoundary?.crossParentRejected !== true ||
+      body.results?.commercialBoundary?.crossAssigneeRejected !== true ||
+      body.results?.commercialBoundary?.missingContextHidden !== true ||
+      body.results?.commercialBoundary?.reporting !== "verified" ||
+      body.cleanup !== "verified" ||
+      !exactZeroObject(body.cleanupCounts, cleanupKeys) ||
+      !exactZeroObject(body.cleanupScopeCounts, scopeKeys)
+    ) process.exit(1);
+  ' "$output" "$SHA" "$STAGING_REF" ||
+    fail "SAM-23 UAT evidence or cleanup is incomplete"
+  evidence_tmp="$(mktemp "$STATE_DIR/.last-uat-sam23.XXXXXX")"
+  register_temporary_path "$evidence_tmp"
+  install -m 0600 -o root -g root "$output" "$evidence_tmp"
+  mv -Tf "$evidence_tmp" "$SAM23_EVIDENCE"
+  rm -f -- "$output"
+  echo "staging control SAM-23 UAT passed SHA=$SHA cleanup=verified evidence=$SAM23_EVIDENCE"
 }
 
 run_uat_sam27() {
@@ -1258,6 +1375,7 @@ case "$ACTION" in
   reconcile-sam21) run_reconcile_sam21 ;;
   uat-sam21) run_uat_sam21 ;;
   uat-sam22) run_uat_sam22 ;;
+  uat-sam23) run_uat_sam23 ;;
   uat-sam27) run_uat_sam27 ;;
   uat-sam52) run_uat_sam52 ;;
   uat-sam54) run_uat_sam54 ;;

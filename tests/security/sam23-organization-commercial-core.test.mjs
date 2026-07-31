@@ -182,6 +182,17 @@ test("SAM-23 staging UAT is release-bound, synthetic-only, and verifies exact cl
   assert.match(uat, /EXPECTED_PROJECT_REF = "bfsiibofuzoglziltgyd"/);
   assert.match(uat, /CONFIRMATION = "SAM23_STAGING_ONLY"/);
   assert.match(uat, /RELEASE_MANIFEST_PATH = "\/runner\/release\/manifest\.json"/);
+  assert.match(uat, /STAGING_BASE_URL = "http:\/\/127\.0\.0\.1:3101"/);
+  assert.match(
+    uat,
+    /STAGING_SUPABASE_URL =\s+`https:\/\/\$\{EXPECTED_PROJECT_REF\}\.supabase\.co`/,
+  );
+  assert.match(uat, /RELEASE_SHA_PATTERN = \/\^\[0-9a-f\]\{40\}\$\//);
+  assert.match(uat, /manifestPath = required\("SAM23_RELEASE_MANIFEST"\)/);
+  assert.match(uat, /projectRef = required\("NEWME_STAGING_PROJECT_REF"\)/);
+  assert.match(uat, /baseUrl === STAGING_BASE_URL/);
+  assert.match(uat, /supabaseUrl === STAGING_SUPABASE_URL/);
+  assert.doesNotMatch(uat, /hostname\.startsWith/);
   assert.match(uat, /manifest\?\.git_sha === releaseSha/);
   assert.match(uat, /@invalid\.test/);
   assert.match(uat, /initialize_organization/);
@@ -204,12 +215,63 @@ test("SAM-23 staging UAT is release-bound, synthetic-only, and verifies exact cl
     "projects",
     "tasks",
     "lead_documents",
+    "activities",
+    "business_events",
+    "notifications",
+    "follow_up_logs",
     "audit_events",
     "profiles",
     "auth_fixtures",
   ]) {
     assert.ok(uat.includes(`${fixture}: 0`), `missing cleanup counter ${fixture}`);
   }
+  for (const scope of [
+    "organizations_by_marker",
+    "provisioning_by_idempotency",
+    "leads_by_marker",
+    "quotations_by_marker",
+    "contracts_by_marker",
+    "projects_by_marker",
+    "tasks_by_marker",
+    "lead_documents_by_marker",
+    "auth_users_by_marker",
+  ]) {
+    assert.ok(uat.includes(`${scope}: 0`), `missing scoped cleanup counter ${scope}`);
+  }
+  const commercialValues = uat.indexOf("const values = {");
+  const commercialTracking = uat.indexOf(
+    "trackUnique(commercialIds[table], id)",
+    commercialValues,
+  );
+  const firstCommercialWrite = uat.indexOf(
+    'await requireInsert(admin.from("leads").insert',
+    commercialValues,
+  );
+  assert.ok(commercialValues >= 0);
+  assert.ok(commercialTracking > commercialValues);
+  assert.ok(
+    commercialTracking < firstCommercialWrite,
+    "commercial UUIDs must be tracked before the first write",
+  );
+  assert.match(uat, /app_metadata: \{[\s\S]*fixture_scope: FIXTURE_SCOPE/);
+  assert.match(uat, /trackUnique\(userEmails, email\)[\s\S]*createUser\(\{/);
+  assert.match(
+    uat,
+    /recoverProvisioningFixtures[\s\S]*organization_provisioning_requests/,
+  );
+  assert.match(uat, /recoverAuthFixtures[\s\S]*listAllAuthUsers/);
+  assert.match(uat, /recoverCommercialFixtures[\s\S]*markerQueries/);
+  assert.match(uat, /recover_provisioning[\s\S]*recoverProvisioningFixtures/);
+  assert.match(uat, /recover_auth[\s\S]*recoverAuthFixtures/);
+  assert.match(uat, /recover_commercial[\s\S]*recoverCommercialFixtures/);
+  assert.match(uat, /id: viewerMembershipId/);
+  assert.match(uat, /id: crossMembershipId/);
+  assert.match(uat, /id: crossContractId/);
+  assert.match(uat, /id: crossTaskId/);
+  assert.match(
+    uat,
+    /\.\.\.Object\.entries\(cleanupCounts\),[\s\S]*\.\.\.Object\.entries\(cleanupScopeCounts\)/,
+  );
   assert.match(uat, /cleanup: "verified"/);
   assert.doesNotMatch(uat, /vfopmpxlhwzpxqegayew/);
 });

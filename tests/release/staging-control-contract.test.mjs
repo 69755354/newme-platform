@@ -361,6 +361,7 @@ test("SAM-54 UAT crosses the versioned alert state and captures read-only diagno
     /HERMES_ALERT_THRESHOLD="2"/,
     /HERMES_ALERT_NOTIFIER="\/usr\/bin\/true"/,
     /HERMES_ALERT_DIAGNOSTIC="\$runner"/,
+    /HERMES_ALERT_DIAGNOSTIC_INTERPRETER="\/usr\/bin\/node"/,
     /"sam54-staging-uat" "failure" "synthetic_acceptance"/,
     /transition=below-threshold .*failure_count=1/,
     /transition=alert .*diagnostic=complete capture=1/,

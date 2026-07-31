@@ -743,6 +743,7 @@ run_uat_sam23() {
       "notifications",
       "follow_up_logs",
       "audit_events",
+      "user_session_daily",
       "profiles",
       "auth_fixtures",
     ];

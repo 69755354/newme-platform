@@ -18,6 +18,20 @@ const TABLES = [
   "support_sessions",
   "audit_events",
 ];
+const FORWARD_TYPE_COLUMNS = new Map([
+  ["organizations", new Map([
+    ["billable_seat_limit", {
+      Row: ": number",
+      Insert: "?: number",
+      Update: "?: number",
+    }],
+    ["plan_key", {
+      Row: ": string",
+      Insert: "?: string",
+      Update: "?: string",
+    }],
+  ])],
+]);
 
 function command(docker, args, options = {}) {
   const result = spawnSync(docker, args, {
@@ -152,9 +166,24 @@ export function verifyDatabaseTypes(source, contract) {
           );
         }
       }
-      if (table !== "leads" && properties.size !== expectedColumns.length) {
+      const expectedNames = new Set(expectedColumns.map((column) => column.column_name));
+      const allowedForwardColumns = FORWARD_TYPE_COLUMNS.get(table) ?? new Map();
+      for (const [columnName, sectionContract] of allowedForwardColumns) {
+        const actual = properties.get(columnName);
+        const expected = sectionContract[section];
+        if (actual !== expected) {
+          throw new Error(
+            `database_type_forward_mismatch:${table}.${section}.${columnName}:expected=${expected}:actual=${actual ?? "missing"}`,
+          );
+        }
+      }
+      const unexpectedColumns = [...properties.keys()].filter(
+        (columnName) =>
+          !expectedNames.has(columnName) && !allowedForwardColumns.has(columnName),
+      );
+      if (table !== "leads" && unexpectedColumns.length > 0) {
         throw new Error(
-          `database_type_column_count_mismatch:${table}.${section}:expected=${expectedColumns.length}:actual=${properties.size}`,
+          `database_type_unexpected_columns:${table}.${section}:${unexpectedColumns.join(",")}`,
         );
       }
     }

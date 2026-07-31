@@ -191,6 +191,12 @@ test("SAM-20 database gate fails closed and CI runs the disposable apply/rollbac
     read("package.json"),
   ]);
   assert.match(runner, /postgres:17-alpine@sha256:[a-f0-9]{64}/);
+  assert.match(
+    runner,
+    /FORWARD_TYPE_COLUMNS[\s\S]*organizations[\s\S]*billable_seat_limit[\s\S]*plan_key/,
+  );
+  assert.match(runner, /database_type_forward_mismatch/);
+  assert.match(runner, /database_type_unexpected_columns/);
   assert.match(runner, /sam20_rollback_without_environment/);
   assert.match(runner, /sam20_rollback_requires_staging_or_test/);
   assert.match(runner, /finally \{/);

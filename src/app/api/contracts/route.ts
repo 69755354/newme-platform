@@ -265,7 +265,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const leadId = searchParams.get("lead_id");
 
-    let q = supabase.from("contracts").select("*, installment_plans(*)").order("created_at", { ascending: false });
+    let q = supabase.from("contracts").select(
+      "*, installment_plans!installment_plans_contract_id_fkey(*)",
+    ).order("created_at", { ascending: false });
     if (leadId) q = q.eq("lead_id", leadId);
 
     // sales role: only see own contracts

@@ -168,6 +168,7 @@ async function main() {
       "supabase/migrations/20260730231446_sam23_organization_owned_commercial_core.sql",
       "supabase/migrations/20260731015812_sam23_govern_billable_seat_rpcs.sql",
       "supabase/migrations/20260801023000_sam25_allow_rls_safe_commercial_updates.sql",
+      "supabase/migrations/20260801025500_sam25_sync_project_paid_amount.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",

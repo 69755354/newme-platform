@@ -6,6 +6,7 @@ WITH expected(regprocedure) AS (
     ('delete_lead_atomic(uuid,uuid)'),
     ('get_my_role()'),
     ('next_quote_no()'),
+    ('organization_billable_seat_count(uuid)'),
     ('reassign_lead_atomic(uuid,uuid,timestamp with time zone,uuid,text)'),
     ('recomplete_lead_milestone(uuid,text,text)'),
     ('record_lead_contact_atomic(uuid,text,timestamp with time zone,text,text,text,uuid)'),

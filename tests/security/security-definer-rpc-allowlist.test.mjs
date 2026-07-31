@@ -40,7 +40,7 @@ function withManifest(mutator, callback) {
 test("SAM-67 governed SECURITY DEFINER RPC allowlist is internally consistent", () => {
   const result = run();
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /9 reviewed authenticated RPCs/);
+  assert.match(result.stdout, /10 reviewed authenticated RPCs/);
 });
 
 test("SAM-67 gate fails closed when governance fields are missing", async (t) => {

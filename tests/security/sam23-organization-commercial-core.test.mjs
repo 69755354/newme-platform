@@ -53,6 +53,9 @@ test("SAM-23 seats and initialization are deterministic and fail closed", async 
   const migration = await read(
     "supabase/migrations/20260730231446_sam23_organization_owned_commercial_core.sql",
   );
+  const governance = await read(
+    "supabase/migrations/20260731015812_sam23_govern_billable_seat_rpcs.sql",
+  );
 
   for (const role of [
     "org_owner",
@@ -83,6 +86,19 @@ test("SAM-23 seats and initialization are deterministic and fail closed", async 
     migration,
     /REVOKE ALL ON FUNCTION public\.initialize_organization[\s\S]*FROM PUBLIC, anon, authenticated/i,
   );
+  assert.match(
+    governance,
+    /REVOKE ALL ON FUNCTION public\.organization_billable_seat_count\(uuid\)[\s\S]*FROM PUBLIC, anon, authenticated;[\s\S]*GRANT EXECUTE ON FUNCTION public\.organization_billable_seat_count\(uuid\)[\s\S]*TO authenticated, service_role;/i,
+  );
+  assert.match(
+    governance,
+    /REVOKE ALL ON FUNCTION public\.sam23_enforce_billable_seat_limit\(\)[\s\S]*FROM PUBLIC, anon, authenticated;/i,
+  );
+  assert.match(
+    governance,
+    /'organization_billable_seat_count\(uuid\)'/,
+  );
+  assert.match(governance, /'gate_version', 'sam61-allowlist-v3'/);
 });
 
 test("SAM-23 rollback is staging/test-only and preserves the SAM-20 core", async () => {

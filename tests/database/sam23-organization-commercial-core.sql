@@ -226,6 +226,52 @@ VALUES
 
 \ir ../../supabase/migrations/20260730100000_sam20_lead_organization_isolation.sql
 \ir ../../supabase/migrations/20260730231446_sam23_organization_owned_commercial_core.sql
+\ir ../../supabase/migrations/20260731015812_sam23_govern_billable_seat_rpcs.sql
+
+DO $$
+DECLARE
+  gate jsonb := public.security_definer_rpc_allowlist_gate();
+BEGIN
+  IF pg_catalog.has_function_privilege(
+    'anon',
+    'public.organization_billable_seat_count(uuid)',
+    'EXECUTE'
+  ) THEN
+    RAISE EXCEPTION 'anonymous billable-seat count execution remained';
+  END IF;
+  IF NOT pg_catalog.has_function_privilege(
+    'authenticated',
+    'public.organization_billable_seat_count(uuid)',
+    'EXECUTE'
+  ) THEN
+    RAISE EXCEPTION 'authenticated billable-seat count execution missing';
+  END IF;
+  IF pg_catalog.has_function_privilege(
+    'anon',
+    'public.sam23_enforce_billable_seat_limit()',
+    'EXECUTE'
+  ) OR pg_catalog.has_function_privilege(
+    'authenticated',
+    'public.sam23_enforce_billable_seat_limit()',
+    'EXECUTE'
+  ) THEN
+    RAISE EXCEPTION 'billable-seat trigger function remained API executable';
+  END IF;
+  IF gate ->> 'gate_version' <> 'sam61-allowlist-v3' THEN
+    RAISE EXCEPTION 'unexpected SECURITY DEFINER allowlist gate version';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(gate -> 'violations') violation
+    WHERE violation ->> 'regprocedure' IN (
+      'organization_billable_seat_count(uuid)',
+      'sam23_enforce_billable_seat_limit()'
+    )
+  ) THEN
+    RAISE EXCEPTION 'SAM-23 SECURITY DEFINER gate violation remained';
+  END IF;
+END
+$$;
 
 SET ROLE service_role;
 

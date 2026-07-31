@@ -17,6 +17,7 @@ async function runAlert({
   stateDir,
   notifier,
   diagnostic,
+  diagnosticInterpreter,
   eventsFile,
   event,
   summary,
@@ -33,6 +34,9 @@ async function runAlert({
   };
   if (notifier !== undefined) env.HERMES_ALERT_NOTIFIER = notifier;
   if (diagnostic !== undefined) env.HERMES_ALERT_DIAGNOSTIC = diagnostic;
+  if (diagnosticInterpreter !== undefined) {
+    env.HERMES_ALERT_DIAGNOSTIC_INTERPRETER = diagnosticInterpreter;
+  }
   if (threshold !== undefined) env.HERMES_ALERT_THRESHOLD = threshold;
 
   const result = await new Promise((resolve) => {
@@ -245,6 +249,43 @@ test("automatically dispatches one diagnostic on the first alert threshold cross
     ((await readFile(notifierEvents, "utf8")).match(/^alert /gm) || []).length,
     1,
   );
+});
+
+test("uses a fixed interpreter for a readable non-executable diagnostic", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "hermes-alert-diagnostic-interpreter-"));
+  const notifierEvents = join(stateDir, "notifier.log");
+  const diagnosticEvents = join(stateDir, "diagnostic.log");
+  const notifier = await makeNotifier(stateDir, recordingNotifier);
+  const diagnostic = join(stateDir, "diagnostic.mjs");
+  const interpreter = await makeNotifier(stateDir, [
+    "#!/usr/bin/env bash",
+    '[ "$1" = "$HERMES_DIAGNOSTIC_SCRIPT" ]',
+    'bash "$1"',
+    "",
+  ].join("\n"), "node.sh");
+  await writeFile(diagnostic, [
+    "#!/usr/bin/env bash",
+    'printf "%s|%s\\n" "$HERMES_ALERT_KEY" "$HERMES_ALERT_SUMMARY" >> "$HERMES_DIAGNOSTIC_EVENTS"',
+    "",
+  ].join("\n"), { mode: 0o600 });
+
+  const output = await runAlert({
+    stateDir,
+    notifier,
+    diagnostic,
+    diagnosticInterpreter: interpreter,
+    eventsFile: notifierEvents,
+    event: "failure",
+    summary: "threshold",
+    threshold: 1,
+    extraEnv: {
+      HERMES_DIAGNOSTIC_EVENTS: diagnosticEvents,
+      HERMES_DIAGNOSTIC_SCRIPT: diagnostic,
+    },
+  });
+
+  assert.match(output, /transition=alert .*diagnostic=complete capture=1/);
+  assert.equal(await readFile(diagnosticEvents, "utf8"), "login-probe|threshold\n");
 });
 
 test("retries a failed diagnostic without sending a duplicate alert", async () => {

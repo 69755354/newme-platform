@@ -906,6 +906,7 @@ run_uat_sam54() {
       HERMES_ALERT_THRESHOLD="2" \
       HERMES_ALERT_NOTIFIER="/usr/bin/true" \
       HERMES_ALERT_DIAGNOSTIC="$runner" \
+      HERMES_ALERT_DIAGNOSTIC_INTERPRETER="/usr/bin/node" \
       SAM54_EXPECTED_RELEASE_SHA="$SHA" \
       SAM54_SYNTHETIC_ALERT="$synthetic_alert" \
       /usr/bin/bash "$alert_state" \

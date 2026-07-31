@@ -10,7 +10,7 @@ CONFIG_FILE="${HERMES_ALERT_CONFIG:-/etc/hermes/observability/hermes-alert-v1.en
 # host configuration source so a host-only config cannot redirect a staging
 # invocation or make its test fixture non-hermetic.
 declare -A saved_overrides=()
-for override_name in HERMES_ALERT_STATE_DIR HERMES_ALERT_THRESHOLD HERMES_ALERT_NOTIFIER HERMES_ALERT_DIAGNOSTIC HERMES_ALERT_EVENTS; do
+for override_name in HERMES_ALERT_STATE_DIR HERMES_ALERT_THRESHOLD HERMES_ALERT_NOTIFIER HERMES_ALERT_DIAGNOSTIC HERMES_ALERT_DIAGNOSTIC_INTERPRETER HERMES_ALERT_EVENTS; do
   if [[ -v "$override_name" ]]; then
     saved_overrides["$override_name"]="${!override_name}"
   fi
@@ -32,6 +32,7 @@ STATE_DIR="${HERMES_ALERT_STATE_DIR:-${XDG_STATE_HOME:-${HOME:-/home/ubuntu}/.lo
 THRESHOLD="${HERMES_ALERT_THRESHOLD:-2}"
 NOTIFIER="${HERMES_ALERT_NOTIFIER:-/opt/hermes-scripts/observability/hermes-alert-notifier-v1.sh}"
 DIAGNOSTIC="${HERMES_ALERT_DIAGNOSTIC:-}"
+DIAGNOSTIC_INTERPRETER="${HERMES_ALERT_DIAGNOSTIC_INTERPRETER:-}"
 
 case "$EVENT" in
   failure|recovery) ;;
@@ -89,6 +90,16 @@ notify() {
 diagnose() {
   if [ -z "$DIAGNOSTIC" ]; then
     return 0
+  fi
+  if [ -n "$DIAGNOSTIC_INTERPRETER" ]; then
+    if [ ! -x "$DIAGNOSTIC_INTERPRETER" ] || [ ! -r "$DIAGNOSTIC" ]; then
+      echo "hermes-alert-state-v1: diagnostic interpreter or script is unavailable" >&2
+      return 1
+    fi
+    HERMES_ALERT_KEY="$ALERT_KEY" \
+      HERMES_ALERT_SUMMARY="$safe_summary" \
+      "$DIAGNOSTIC_INTERPRETER" "$DIAGNOSTIC"
+    return
   fi
   if [ ! -x "$DIAGNOSTIC" ]; then
     echo "hermes-alert-state-v1: diagnostic is not executable: $DIAGNOSTIC" >&2

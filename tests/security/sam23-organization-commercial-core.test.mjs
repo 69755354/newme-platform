@@ -286,6 +286,20 @@ test("SAM-23 staging UAT is release-bound, synthetic-only, and verifies exact cl
   assert.match(uat, /id: crossTaskId/);
   assert.match(
     uat,
+    /const TASK_DUE_AT = "2099-12-31T23:59:59\.000Z";/,
+  );
+  assert.equal(
+    [...uat.matchAll(/admin\.from\("tasks"\)\.insert\(\{/g)].length,
+    2,
+    "the UAT must keep exactly the positive and negative task fixtures",
+  );
+  assert.equal(
+    [...uat.matchAll(/due_at: TASK_DUE_AT/g)].length,
+    2,
+    "every SAM-23 task fixture must provide the required due_at column",
+  );
+  assert.match(
+    uat,
     /\.\.\.Object\.entries\(cleanupCounts\),[\s\S]*\.\.\.Object\.entries\(cleanupScopeCounts\)/,
   );
   assert.match(uat, /cleanup: "verified"/);

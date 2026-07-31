@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "reviewed_at": "2026-07-30",
+  "reviewed_at": "2026-07-31",
   "scope": "public SECURITY DEFINER functions intentionally executable by authenticated",
   "required_search_path": "pg_catalog, public, pg_temp",
   "entries": [
@@ -37,6 +37,18 @@
       "test_evidence": [
         "tests/security/sam61-definer-boundaries.test.mjs",
         "tests/security/sam61-next-quote-authorization.test.mjs"
+      ]
+    },
+    {
+      "regprocedure": "organization_billable_seat_count(uuid)",
+      "owner": "product-saas",
+      "justification": "Returns the deterministic billable-seat count for one organization while enforcing the caller boundary inside the function.",
+      "expiry": "2026-10-29",
+      "linked_issue": "SAM-23",
+      "authorization_boundary": "Requires service_role or an authenticated caller with an active accepted membership in the requested organization.",
+      "test_evidence": [
+        "tests/database/sam23-organization-commercial-core.sql",
+        "tests/security/sam23-organization-commercial-core.test.mjs"
       ]
     },
     {

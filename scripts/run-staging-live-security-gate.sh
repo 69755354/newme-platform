@@ -4,7 +4,7 @@ set -Eeuo pipefail
 EXPECTED_REF="${1:-}"
 RUNTIME_ENV_FILE="${2:-/etc/newme-staging/staging.env}"
 PRODUCTION_REF="vfopmpxlhwzpxqegayew"
-GATE_VERSION="sam61-allowlist-v2"
+GATE_VERSION="sam61-allowlist-v3"
 
 fail() {
   echo "staging live security gate failed: $*" >&2

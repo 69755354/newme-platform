@@ -614,11 +614,17 @@ async function runSam49(state) {
 
 async function runSam25(state) {
   const lead = await createLead(state, "lead-quote-contract-payment-project", {
+    stage: "solution_submitted",
     property_type: "apartment",
     property_size_sqm: 150,
     location: `${state.markerText} Dubai`,
     phone: `+97150${state.runId.replaceAll("-", "").slice(0, 7)}`,
   });
+  assert.equal(
+    lead.stage,
+    "solution_submitted",
+    "positive quotation fixture did not start at the sequential predecessor stage",
+  );
   const negativeMatrix = [];
   const recordNegative = (name, status) => {
     negativeMatrix.push({ name, status, writes: 0 });

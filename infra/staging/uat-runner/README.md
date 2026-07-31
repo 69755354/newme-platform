@@ -47,6 +47,11 @@ of these actions plus one full 40-character SHA:
   threshold, requires that transition to invoke the SHA-bound read-only
   diagnostic automatically, and stores only the validated, bounded result in
   root-only controller state.
+- `uat-sam52 <SHA>` runs the fixed SAM-52 synthetic alert-bridge contract from
+  the same current release SHA. It verifies raw-body HMAC, strict schema,
+  replay deduplication, bounded retry and redacted audit evidence without
+  contacting Sentry, Hermes or a chat provider. Its evidence remains explicit
+  NO-GO until the named external owners and credentials are authorized.
 - `uat-sam68 <SHA>` runs the fixed SAM-68 observability runner blob from the
   same current release SHA. It accepts only a retired monitoring endpoint with
   no hostile-body persistence, authenticated readiness within three seconds,

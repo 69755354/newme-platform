@@ -17,6 +17,7 @@ readonly LOCK="/run/lock/newme-staging-control.lock"
 readonly STATE_DIR="/var/lib/newme-staging-control"
 readonly STATE_FILE="$STATE_DIR/last-deploy.state"
 readonly SAM27_EVIDENCE="$STATE_DIR/last-uat-sam27.json"
+readonly SAM52_EVIDENCE="$STATE_DIR/last-uat-sam52.json"
 readonly SAM68_EVIDENCE="$STATE_DIR/last-uat-sam68.json"
 readonly SAM54_EVIDENCE="$STATE_DIR/last-uat-sam54.json"
 readonly STAGING_REF="bfsiibofuzoglziltgyd"
@@ -26,6 +27,8 @@ readonly SAM20_MIGRATION="supabase/migrations/20260730100000_sam20_lead_organiza
 readonly SAM22_RUNNER="scripts/uat/sam22-two-organization-isolation.mjs"
 readonly SAM27_RUNNER="scripts/verify-staging-sam27-integrations.mjs"
 readonly SAM27_LIBRARY="src/lib/integration-execution.mjs"
+readonly SAM52_RUNNER="scripts/verify-staging-sam52-alert-bridge.mjs"
+readonly SAM52_BRIDGE="src/lib/sentry-webhook-bridge.mjs"
 readonly SAM68_RUNNER="scripts/verify-staging-sam68-observability.mjs"
 readonly SAM54_RUNNER="scripts/verify-staging-sam54-diagnostics.mjs"
 readonly SAM54_ALERT_STATE="infra/observability/hermes-alert-state-v1.sh"
@@ -54,7 +57,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam22|uat-sam27|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|uat-sam22|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -62,7 +65,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|uat-sam22|uat-sam27|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
+  build|deploy|uat|uat-sam20|uat-sam22|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -709,6 +712,70 @@ run_uat_sam54() {
   echo "staging control SAM-54 UAT passed SHA=$SHA evidence=$SAM54_EVIDENCE dispatch=alert-state cleanup=not_applicable mode=read_only"
 }
 
+run_uat_sam52() {
+  verify_current_release "$SHA"
+  local run_dir runner bridge output rc
+  run_dir="$(mktemp -d "/run/newme-staging-sam52-$SHA.XXXXXX")"
+  runner="$run_dir/scripts/verify-staging-sam52-alert-bridge.mjs"
+  bridge="$run_dir/src/lib/sentry-webhook-bridge.mjs"
+  output="$(mktemp "$STATE_DIR/.uat-sam52.XXXXXX")"
+  register_temporary_path "$run_dir"
+  register_temporary_path "$output"
+  install -d -m 0700 -o root -g root "$run_dir/scripts" "$run_dir/src/lib"
+  copy_commit_blob "$SHA" "$SAM52_RUNNER" "$runner"
+  copy_commit_blob "$SHA" "$SAM52_BRIDGE" "$bridge"
+  chown root:root "$run_dir" "$runner" "$bridge"
+  chmod 0700 "$run_dir"
+  chmod 0500 "$runner"
+  chmod 0400 "$bridge"
+  rc=0
+  /usr/bin/env -i \
+    HOME="/root" \
+    PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    SAM52_EXPECTED_RELEASE_SHA="$SHA" \
+    /usr/bin/node "$runner" >"$output" 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "SAM-52 staging UAT failed with status $rc"
+  node -e '
+    const fs = require("fs");
+    const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const digest = body.bridge?.evidenceDigest;
+    const required = [
+      "sentry_alert_rule_owner",
+      "sentry_service_hook_secret",
+      "hermes_destination_owner",
+      "wecom_or_telegram_credentials",
+    ];
+    if (
+      body.schemaVersion !== 1 ||
+      body.linearId !== "SAM-52" ||
+      body.releaseSha !== process.argv[2] ||
+      body.target !== "staging-local-synthetic" ||
+      body.bridge?.status !== "passed" ||
+      body.bridge?.signature !== "verified" ||
+      body.bridge?.schema !== "strict" ||
+      body.bridge?.replay !== "deduplicated" ||
+      body.bridge?.retryAttempts !== 3 ||
+      body.bridge?.audit !== "redacted" ||
+      !/^[0-9a-f]{64}$/.test(digest ?? "") ||
+      body.external?.status !== "blocked" ||
+      body.external?.reason !== "third_party_configuration_not_authorized" ||
+      !Array.isArray(body.external?.required) ||
+      required.some((value) => !body.external.required.includes(value)) ||
+      body.cleanup?.status !== "not_applicable" ||
+      body.cleanup?.reason !==
+        "synthetic_in_memory_transport_and_replay_store" ||
+      !Array.isArray(body.cleanup?.fixtureIds) ||
+      body.cleanup.fixtureIds.length !== 0
+    ) process.exit(1);
+  ' "$output" "$SHA" ||
+    fail "SAM-52 UAT evidence is incomplete"
+  chown root:root "$output"
+  chmod 0600 "$output"
+  mv -f "$output" "$SAM52_EVIDENCE"
+  rm -rf -- "$run_dir"
+  echo "staging control SAM-52 UAT passed SHA=$SHA evidence=$SAM52_EVIDENCE external=blocked cleanup=not_applicable"
+}
+
 run_uat_sam68() {
   verify_current_release "$SHA"
   [ -r "$ENV_FILE" ] || fail "staging environment is missing"
@@ -1027,6 +1094,7 @@ case "$ACTION" in
   uat-sam20) run_uat_sam20 ;;
   uat-sam22) run_uat_sam22 ;;
   uat-sam27) run_uat_sam27 ;;
+  uat-sam52) run_uat_sam52 ;;
   uat-sam54) run_uat_sam54 ;;
   uat-sam68) run_uat_sam68 ;;
   uat-sam70) run_uat_sam70 ;;

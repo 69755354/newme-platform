@@ -227,6 +227,7 @@ VALUES
 \ir ../../supabase/migrations/20260730100000_sam20_lead_organization_isolation.sql
 \ir ../../supabase/migrations/20260730231446_sam23_organization_owned_commercial_core.sql
 \ir ../../supabase/migrations/20260731015812_sam23_govern_billable_seat_rpcs.sql
+\ir ../../supabase/migrations/20260801023000_sam25_allow_rls_safe_commercial_updates.sql
 
 DO $$
 DECLARE
@@ -586,7 +587,7 @@ VALUES
     'aaaaaaaa-2000-4000-8000-000000000023',
     'aaaaaaaa-3000-4000-8000-000000000023',
     1000,
-    true
+    false
   ),
   (
     'bbbbbbbb-4000-4000-8000-000000000023',
@@ -722,6 +723,44 @@ FROM sam23_ids
 WHERE key = 'org_a'
 \gset
 SET ROLE authenticated;
+SET request.jwt.claim.sub =
+  'dddddddd-dddd-4ddd-8ddd-ddddddddddd1';
+SELECT set_config(
+  'request.headers',
+  jsonb_build_object('x-newme-organization-id', :'org_a')::text,
+  false
+);
+
+DO $$
+DECLARE
+  affected_count integer;
+  is_confirmed boolean;
+BEGIN
+  UPDATE public.contracts
+  SET status = status
+  WHERE id = 'aaaaaaaa-2000-4000-8000-000000000023';
+  GET DIAGNOSTICS affected_count = ROW_COUNT;
+  IF affected_count <> 1 THEN
+    RAISE EXCEPTION 'finance contract update count %, expected 1', affected_count;
+  END IF;
+
+  UPDATE public.payments
+  SET confirmed = true
+  WHERE id = 'aaaaaaaa-4000-4000-8000-000000000023';
+  GET DIAGNOSTICS affected_count = ROW_COUNT;
+  IF affected_count <> 1 THEN
+    RAISE EXCEPTION 'finance payment update count %, expected 1', affected_count;
+  END IF;
+
+  SELECT confirmed INTO is_confirmed
+  FROM public.payments
+  WHERE id = 'aaaaaaaa-4000-4000-8000-000000000023';
+  IF is_confirmed IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'finance payment confirmation was not persisted';
+  END IF;
+END
+$$;
+
 SET request.jwt.claim.sub =
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
 SELECT set_config(

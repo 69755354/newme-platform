@@ -44,7 +44,7 @@ const CANONICAL_ASSET_BLOBS = new Map([
   ],
   [
     "scripts/uat/sam22-two-organization-isolation.mjs",
-    "18f7b26a1a916be7d6686042248a8831541179ec",
+    "d53a9525ba2abe14139373c267af73c79ad321e4",
   ],
 ]);
 

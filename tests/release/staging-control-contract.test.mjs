@@ -24,6 +24,8 @@ test("staging controller has one fixed command surface and strict SHA arity", as
     "deploy",
     "uat",
     "uat-sam20",
+    "reconcile-sam21",
+    "uat-sam21",
     "uat-sam22",
     "uat-sam27",
     "uat-sam52",

@@ -15,6 +15,7 @@ const RELEASE_SHA_PATTERN = /^[0-9a-f]{40}$/;
 const FIXTURE_SCOPE = "newme-staging-uat";
 const FIXTURE_KIND = "sam23-organization-commercial-core";
 const AUTH_PAGE_LIMIT = 20;
+const TASK_DUE_AT = "2099-12-31T23:59:59.000Z";
 
 function required(name) {
   const value = process.env[name];
@@ -381,6 +382,7 @@ async function main() {
       lead_id: leadId,
       title: `Synthetic task ${marker}-${label}`,
       assignee_id: ownerId,
+      due_at: TASK_DUE_AT,
     }), `task_${label}`);
     await requireInsert(admin.from("lead_documents").insert({
       id: documentId,
@@ -589,6 +591,7 @@ async function main() {
       lead_id: chainA.leads,
       title: `Forbidden assignee ${marker}`,
       assignee_id: ownerB.id,
+      due_at: TASK_DUE_AT,
     });
     assert(
       crossTask.error?.message?.includes(

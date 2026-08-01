@@ -62,6 +62,7 @@ test("SAM-70 runner covers XLSX and server abuse boundaries", async () => {
 test("SAM-70 runner verifies export ownership and removes exact marker residue", async () => {
   const source = await read("scripts/verify-staging-sam70-xlsx.mjs");
   assert.match(source, /quotation export enforces ownership and management access/);
+  assert.match(source, /expectStatus\(hidden, 404, "cross-owner export is hidden"\)/);
   assert.match(source, /expectStatus\(unauthenticated, 401/);
   assert.match(source, /expectStatus\(forbidden, 403/);
   assert.match(source, /\["owner", owner\.token\]/);

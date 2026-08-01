@@ -585,8 +585,8 @@ async function testExportOwnership() {
     const unauthenticated = await appRequest(path);
     expectStatus(unauthenticated, 401, "unauthenticated export");
 
-    const forbidden = await appRequest(path, { token: outsider.token });
-    expectStatus(forbidden, 403, "cross-owner export");
+    const hidden = await appRequest(path, { token: outsider.token });
+    expectStatus(hidden, 404, "cross-owner export is hidden");
 
     for (const [label, token] of [
       ["owner", owner.token],

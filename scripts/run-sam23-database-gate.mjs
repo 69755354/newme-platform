@@ -176,11 +176,13 @@ async function main() {
       "supabase/migrations/20260801202728_organization_customer_exit_lifecycle.sql",
       "supabase/migrations/20260802055200_multitenant_auth_activity_context.sql",
       "supabase/migrations/20260802064000_organization_lifecycle_cascade_context.sql",
+      "supabase/migrations/20260802074500_fix_customer_export_notification_uuid.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
       "supabase/rollback/20260801202728_organization_customer_exit_lifecycle_rollback.sql",
       "supabase/rollback/20260802055200_multitenant_auth_activity_context_rollback.sql",
       "supabase/rollback/20260802064000_organization_lifecycle_cascade_context_rollback.sql",
+      "supabase/rollback/20260802074500_fix_customer_export_notification_uuid_rollback.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
       "tests/database/commercial-p0-seat-role-integrity.sql",
@@ -369,6 +371,13 @@ async function main() {
       "organization_exit_apply",
     );
     requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260802074500_fix_customer_export_notification_uuid.sql",
+      ]),
+      "customer_export_notification_uuid_apply",
+    );
+    requireSuccess(
       psql(container, ["-f", "organization-customer-exit.sql"]),
       "organization_exit_fixture",
     );
@@ -486,6 +495,32 @@ async function main() {
         "test",
       ),
       "multitenant_auth_activity_rollback",
+    );
+
+    const deniedCustomerExportUuidRollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260802074500_fix_customer_export_notification_uuid_rollback.sql",
+    ]);
+    if (
+      deniedCustomerExportUuidRollback.status === 0
+      || !combined(deniedCustomerExportUuidRollback).includes(
+        "customer_export_notification_uuid_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error(
+        `customer_export_notification_uuid_rollback_fail_closed_contract_failed:${combined(deniedCustomerExportUuidRollback)}`,
+      );
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260802074500_fix_customer_export_notification_uuid_rollback.sql",
+        ],
+        "test",
+      ),
+      "customer_export_notification_uuid_rollback",
     );
 
     const deniedOrganizationExitRollback = psql(container, [

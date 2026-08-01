@@ -16,6 +16,20 @@ const rollback = await readFile(
   ),
   "utf8",
 );
+const notificationUuidFix = await readFile(
+  new URL(
+    "../../supabase/migrations/20260802074500_fix_customer_export_notification_uuid.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const notificationUuidRollback = await readFile(
+  new URL(
+    "../../supabase/rollback/20260802074500_fix_customer_export_notification_uuid_rollback.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const exportRoute = await readFile(
   new URL("../../src/app/api/organizations/export/route.ts", import.meta.url),
   "utf8",
@@ -49,6 +63,18 @@ test("customer export is deterministic, complete by catalog and service-role onl
   assert.match(migration, /extensions\.digest\(convert_to\(snapshot::text, 'UTF8'\), 'sha256'\)/);
   assert.match(migration, /legacy_unscoped_tables/);
   assert.match(migration, /FROM PUBLIC, anon, authenticated;[\s\S]*TO service_role;/);
+});
+
+test("customer export compares canonical uuid notification references without casts", () => {
+  assert.match(notificationUuidFix, /old_token_count <> 6/);
+  assert.match(notificationUuidFix, /new_token_count <> 6/);
+  assert.match(notificationUuidFix, /security_metadata_drift/);
+  assert.match(notificationUuidFix, /replace\(function_sql, old_token, new_token\)/);
+  assert.doesNotMatch(notificationUuidFix, /DELETE FROM public\./i);
+  assert.match(
+    notificationUuidRollback,
+    /customer_export_notification_uuid_rollback_requires_staging_or_test/,
+  );
 });
 
 test("read-only lifecycle is enforced below application routes", () => {

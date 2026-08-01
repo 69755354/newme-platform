@@ -104,7 +104,7 @@ ALTER TABLE public.user_session_daily
 CREATE TABLE IF NOT EXISTS public.notifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES public.profiles(id),
-  related_id text,
+  related_id uuid,
   related_type text
 );
 CREATE TABLE IF NOT EXISTS public.user_features (

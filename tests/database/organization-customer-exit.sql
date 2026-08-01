@@ -87,6 +87,15 @@ VALUES (
   '30000000-0000-4000-8000-000000000001',
   'SAM Exit retained activity'
 );
+RESET ROLE;
+INSERT INTO public.notifications(id, user_id, related_id, related_type)
+VALUES (
+  '30000000-0000-4000-8000-000000000004',
+  '10000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000001',
+  'lead'
+);
+SET ROLE service_role;
 UPDATE public.organizations
 SET status = 'read_only'
 WHERE id = (SELECT value::uuid FROM exit_fixture_ids
@@ -122,6 +131,7 @@ BEGIN
   IF (exported #>> '{data,counts,leads}')::integer <> 1
     OR (exported #>> '{data,counts,activities}')::integer <> 1
     OR (exported #>> '{data,counts,memberships}')::integer <> 1
+    OR (exported #>> '{data,counts,notifications}')::integer <> 1
   THEN
     RAISE EXCEPTION 'customer export table counts mismatch';
   END IF;
@@ -249,6 +259,8 @@ WHERE id IN (
   '20000000-0000-4000-8000-000000000003'
 );
 RESET ROLE;
+DELETE FROM public.notifications
+WHERE id = '30000000-0000-4000-8000-000000000004';
 DELETE FROM public.profiles WHERE id IN (
   '10000000-0000-4000-8000-000000000001',
   '10000000-0000-4000-8000-000000000002',
@@ -265,6 +277,8 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.organizations WHERE slug = 'sam-exit-org-0001')
     OR EXISTS (SELECT 1 FROM public.leads
                WHERE id = '30000000-0000-4000-8000-000000000001')
+    OR EXISTS (SELECT 1 FROM public.notifications
+               WHERE id = '30000000-0000-4000-8000-000000000004')
     OR EXISTS (SELECT 1 FROM public.organization_exit_requests
                WHERE idempotency_key = 'sam-exit-request-0001')
   THEN

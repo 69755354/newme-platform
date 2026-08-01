@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=9f07d2ad1eb2b46e0e77a833e68b659c6b5c46caa9c5196a4417e7bdfd5bacbb
+// Migration fingerprint: sha256=49cf0833a38e0ff9a342594b334ba21006ef0fead43d8231b2abc0048963b4a2
 export type Json =
   | string
   | number
@@ -2657,6 +2657,82 @@ export type Database = {
           },
         ]
       }
+      organization_exit_requests: {
+        Row: {
+          approved_by_platform_staff_id: string
+          backup_evidence_ref: string | null
+          completed_at: string | null
+          created_at: string
+          customer_confirmation_ref: string | null
+          export_sha256: string | null
+          id: string
+          idempotency_key: string
+          organization_id: string
+          prepared_at: string
+          previous_organization_status: string
+          reason: string
+          requested_by_platform_staff_id: string
+          retention_basis: string | null
+          status: string
+        }
+        Insert: {
+          approved_by_platform_staff_id: string
+          backup_evidence_ref?: string | null
+          completed_at?: string | null
+          created_at?: string
+          customer_confirmation_ref?: string | null
+          export_sha256?: string | null
+          id?: string
+          idempotency_key: string
+          organization_id: string
+          prepared_at?: string
+          previous_organization_status: string
+          reason: string
+          requested_by_platform_staff_id: string
+          retention_basis?: string | null
+          status?: string
+        }
+        Update: {
+          approved_by_platform_staff_id?: string
+          backup_evidence_ref?: string | null
+          completed_at?: string | null
+          created_at?: string
+          customer_confirmation_ref?: string | null
+          export_sha256?: string | null
+          id?: string
+          idempotency_key?: string
+          organization_id?: string
+          prepared_at?: string
+          previous_organization_status?: string
+          reason?: string
+          requested_by_platform_staff_id?: string
+          retention_basis?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_exit_requests_approved_by_platform_staff_id_fkey"
+            columns: ["approved_by_platform_staff_id"]
+            isOneToOne: false
+            referencedRelation: "platform_staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_exit_requests_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_exit_requests_requested_by_platform_staff_id_fkey"
+            columns: ["requested_by_platform_staff_id"]
+            isOneToOne: false
+            referencedRelation: "platform_staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_provisioning_requests: {
         Row: {
           completed_at: string | null
@@ -4698,9 +4774,46 @@ export type Database = {
         }
         Returns: Json
       }
+      complete_organization_customer_exit: {
+        Args: {
+          p_actor_user_id: string
+          p_approver_user_id: string
+          p_backup_evidence_ref: string
+          p_customer_confirmation_ref: string
+          p_expected_export_sha256: string
+          p_idempotency_key: string
+          p_organization_id: string
+          p_request_id: string
+          p_retention_basis: string
+        }
+        Returns: Json
+      }
+      export_organization_customer_data: {
+        Args: {
+          p_actor_user_id: string
+          p_organization_id: string
+          p_request_id: string
+        }
+        Returns: Json
+      }
       organization_billable_seat_count: {
         Args: { p_organization_id: string }
         Returns: number
+      }
+      organization_customer_snapshot: {
+        Args: { p_organization_id: string }
+        Returns: Json
+      }
+      prepare_organization_customer_exit: {
+        Args: {
+          p_actor_user_id: string
+          p_approver_user_id: string
+          p_idempotency_key: string
+          p_organization_id: string
+          p_reason: string
+          p_request_id: string
+        }
+        Returns: Json
       }
       provision_organization_member: {
         Args: {

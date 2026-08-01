@@ -173,13 +173,17 @@ async function main() {
       "supabase/migrations/20260801025500_sam25_sync_project_paid_amount.sql",
       "supabase/migrations/20260801120000_commercial_p0_seat_role_integrity.sql",
       "supabase/migrations/20260801184548_replace_time_relative_tasks_constraint.sql",
+      "supabase/migrations/20260801202728_organization_customer_exit_lifecycle.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
+      "supabase/rollback/20260801202728_organization_customer_exit_lifecycle_rollback.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
       "tests/database/commercial-p0-seat-role-integrity.sql",
       "tests/database/tasks-restorable-due-constraint.sql",
       "tests/database/tasks-restorable-due-cleanup.sql",
+      "tests/database/organization-customer-exit-prelude.sql",
+      "tests/database/organization-customer-exit.sql",
     ]) {
       await copyFixture(container, relativePath);
     }
@@ -347,6 +351,74 @@ async function main() {
       "commercial_p0_fixture",
     );
 
+    requireSuccess(
+      psql(container, ["-f", "organization-customer-exit-prelude.sql"]),
+      "organization_exit_prelude",
+    );
+    requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260801202728_organization_customer_exit_lifecycle.sql",
+      ]),
+      "organization_exit_apply",
+    );
+    requireSuccess(
+      psql(container, ["-f", "organization-customer-exit.sql"]),
+      "organization_exit_fixture",
+    );
+
+    const deniedOrganizationExitRollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260801202728_organization_customer_exit_lifecycle_rollback.sql",
+    ]);
+    if (
+      deniedOrganizationExitRollback.status === 0
+      || !combined(deniedOrganizationExitRollback).includes(
+        "organization_exit_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error(
+        `organization_exit_rollback_fail_closed_contract_failed:${combined(deniedOrganizationExitRollback)}`,
+      );
+    }
+    const organizationExitStillApplied = requireSuccess(
+      psql(container, [
+        "-A",
+        "-t",
+        "-q",
+        "-c",
+        "SELECT to_regclass('public.organization_exit_requests')::text",
+      ]),
+      "organization_exit_failed_rollback_atomicity",
+    );
+    if (organizationExitStillApplied.stdout.trim() !== "organization_exit_requests") {
+      throw new Error("organization_exit_failed_rollback_changed_schema");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260801202728_organization_customer_exit_lifecycle_rollback.sql",
+        ],
+        "test",
+      ),
+      "organization_exit_rollback",
+    );
+    const organizationExitRemoved = requireSuccess(
+      psql(container, [
+        "-A",
+        "-t",
+        "-q",
+        "-c",
+        "SELECT to_regclass('public.organization_exit_requests') IS NULL",
+      ]),
+      "organization_exit_rollback_verify",
+    );
+    if (organizationExitRemoved.stdout.trim() !== "t") {
+      throw new Error("organization_exit_rollback_incomplete");
+    }
+
     const deniedCommercialRollback = psql(container, [
       "-f",
       "/work/supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
@@ -445,6 +517,8 @@ async function main() {
       rollback: "verified",
       task_backup_restore: "verified",
       task_backup_fixture_cleanup: "verified",
+      organization_customer_exit: "verified",
+      organization_exit_rollback: "verified",
       fixture_cleanup: "verified",
     })}\n`);
   } finally {

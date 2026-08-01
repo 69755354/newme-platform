@@ -195,6 +195,7 @@ function exactIdentityMarker(user, runId) {
 function makeClients(config, organizationId) {
   const admin = createClient(config.supabaseUrl, config.serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
+    global: { headers: { "x-newme-organization-id": organizationId } },
   });
   const userClient = (token) => createClient(config.supabaseUrl, config.anonKey, {
     auth: { autoRefreshToken: false, persistSession: false },

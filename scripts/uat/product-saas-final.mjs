@@ -21,6 +21,14 @@ export const CONFIRMATION = "PRODUCT_SAAS_STAGING_ONLY";
 export const FIXTURE_SCOPE = "product-saas-final";
 export const REQUIRED_ROLES = ["boss", "admin", "operator", "sales", "finance", "designer"];
 export const NON_MANAGEMENT_ROLES = ["operator", "sales", "finance", "designer"];
+const ORGANIZATION_ROLE_BY_PROFILE = {
+  boss: "org_owner",
+  admin: "org_admin",
+  operator: "operations",
+  sales: "sales_agent",
+  finance: "finance",
+  designer: "specialist",
+};
 export const LINEAR_IDS = ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61"];
 export const SAM13_CONTRACT_VERSION = 1;
 export const SAM13_DANGEROUS_PATHS = [
@@ -239,13 +247,33 @@ async function createActor(state, role, actorKey = role) {
   }).eq("id", data.user.id);
   if (profileError) fail(`could not configure ${role} profile`);
 
-  const { error: membershipError } = await state.admin.from("memberships").insert({
-    organization_id: state.organizationId,
-    user_id: data.user.id,
-    status: "active",
-    accepted_at: new Date().toISOString(),
-  });
-  if (membershipError) fail(`could not create ${role} organization membership`);
+  const { data: membership, error: membershipError } = await state.admin
+    .from("memberships")
+    .insert({
+      organization_id: state.organizationId,
+      user_id: data.user.id,
+      status: "active",
+      accepted_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+  if (membershipError || !membership?.id) {
+    fail(`could not create ${role} organization membership`);
+  }
+
+  const { data: organizationRole, error: roleError } = await state.admin
+    .from("roles")
+    .select("id")
+    .eq("scope", "organization")
+    .eq("role_key", ORGANIZATION_ROLE_BY_PROFILE[role])
+    .single();
+  if (roleError || !organizationRole?.id) {
+    fail(`could not resolve ${role} organization role`);
+  }
+  const { error: membershipRoleError } = await state.admin
+    .from("membership_roles")
+    .insert({ membership_id: membership.id, role_id: organizationRole.id });
+  if (membershipRoleError) fail(`could not map ${role} organization role`);
 
   const client = createClient(state.config.supabaseUrl, state.config.anonKey, {
     auth: { autoRefreshToken: false, persistSession: false },

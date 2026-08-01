@@ -147,6 +147,8 @@ test("runner source pins required issue paths, markers, guards, and cleanup evid
     "x-newme-organization-id",
     'plan_key: "growth"',
     "billable_seat_limit: 10",
+    "ORGANIZATION_ROLE_BY_PROFILE",
+    '.from("membership_roles")',
     "tenant_id: state.organizationId",
     'const sessionDate = "2099-12-31"',
     "new URL(inactiveTeam.location, state.config.baseUrl)",

@@ -301,6 +301,8 @@ async function prepareFixtures(state) {
     slug: `product-saas-${runId}`,
     name: `${state.markerText} organization`,
     industry_key: "real_estate",
+    plan_key: "growth",
+    billable_seat_limit: 10,
     status: "active",
   });
   if (organizationError) fail("could not create exact marked staging organization");

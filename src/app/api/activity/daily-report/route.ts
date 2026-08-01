@@ -2,49 +2,46 @@
 // force-dynamic: Supabase clients require runtime env vars (NEXT_PUBLIC_SUPABASE_URL,
 // SUPABASE_SERVICE_ROLE_KEY). Build-time static analysis triggers "supabaseUrl is required".
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import {
+  LeadOrganizationAccessError,
+  resolveLeadOrganizationAccess,
+} from "@/lib/lead-organization-access";
+import { RequestAuthError } from "@/lib/request-auth-context";
 
 export const dynamic = "force-dynamic";
 
-// ─── Auth check — only boss/admin ───
-async function checkAdminOrBoss(request: NextRequest): Promise<NextResponse | null> {
-  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-  const cookieHeader = request.headers.get("cookie") ?? "";
-  const supabase = await createServerSupabase(bearerToken, cookieHeader);
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-
-  if (authErr || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { data: profile, error: profileErr } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (profileErr || !profile) {
-    return NextResponse.json({ error: "Profile not found" }, { status: 403 });
-  }
-
-  if (profile.role !== "admin" && profile.role !== "boss") {
+// ─── GET /api/activity/daily-report?date=YYYY-MM-DD ───
+export async function GET(request: NextRequest) {
+  let access;
+  try {
+    access = await resolveLeadOrganizationAccess(
+      request,
+      "lead:read",
+      "activity_daily_report",
+      null,
+    );
+  } catch (error) {
+    if (error instanceof LeadOrganizationAccessError) {
+      return NextResponse.json({ error: error.code }, { status: error.status });
+    }
+    if (error instanceof RequestAuthError) {
+      return NextResponse.json({ error: error.code }, { status: error.status });
+    }
     return NextResponse.json(
-      { error: "Insufficient permissions. Admin or Boss role required." },
+      { error: "activity_report_access_unavailable" },
+      { status: 503 },
+    );
+  }
+  if (
+    access.supportSessionId
+    || !["admin", "boss"].includes(access.context.role)
+  ) {
+    return NextResponse.json(
+      { error: "organization_admin_required" },
       { status: 403 },
     );
   }
-
-  return null; // allowed
-}
-
-// ─── GET /api/activity/daily-report?date=YYYY-MM-DD ───
-export async function GET(request: NextRequest) {
-  const forbidden = await checkAdminOrBoss(request);
-  if (forbidden) return forbidden;
 
   const { searchParams } = new URL(request.url);
   const dateParam = searchParams.get("date");
@@ -64,13 +61,15 @@ export async function GET(request: NextRequest) {
   const [activitiesResult, eventsResult] = await Promise.all([
     supabaseAdmin
       .from("activities")
-      .select("user_id, type, content, created_at")
+      .select("user_id, type, content, created_at, leads!activities_lead_id_fkey!inner(organization_id)")
+      .eq("leads.organization_id", access.organizationId)
       .gte("created_at", dayStart)
       .lte("created_at", dayEnd)
       .order("created_at", { ascending: true }),
     supabaseAdmin
       .from("business_events")
-      .select("user_id, event_type, description, created_at")
+      .select("user_id, event_type, description, created_at, leads!business_events_lead_id_fkey!inner(organization_id)")
+      .eq("leads.organization_id", access.organizationId)
       .gte("created_at", dayStart)
       .lte("created_at", dayEnd)
       .order("created_at", { ascending: true }),

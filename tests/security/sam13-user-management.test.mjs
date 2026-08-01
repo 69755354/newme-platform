@@ -41,7 +41,7 @@ test("SAM-13 password reset reuses the server-only admin client", () => {
   assert.doesNotMatch(resetAction, /SUPABASE_SERVICE_ROLE_KEY/);
 });
 
-test("SAM-13 uses one fail-closed finalizer and creates the organization membership", () => {
+test("SAM-13 uses one fail-closed finalizer and atomically creates membership roles", () => {
   const usersRoute = read("src/app/api/users/route.ts");
   const teamActions = read("src/app/actions/team.ts");
   const finalizer = read("src/lib/user-profile-provisioning.ts");
@@ -55,8 +55,8 @@ test("SAM-13 uses one fail-closed finalizer and creates the organization members
 
   assert.match(createAction, /finalizeTriggerCreatedUserProfile/);
   assert.match(addTeamMember, /finalizeTriggerCreatedUserProfile/);
-  assert.match(createAction, /\.from\("memberships"\)/);
-  assert.match(addTeamMember, /\.from\('memberships'\)/);
+  assert.match(createAction, /provision_organization_member/);
+  assert.match(addTeamMember, /provision_organization_member/);
   assert.doesNotMatch(createAction, /\.from\("profiles"\)\s*\.insert\(/);
   assert.doesNotMatch(addTeamMember, /\.from\('profiles'\)\s*\.insert\(/);
   assert.match(finalizer, /\.from\("profiles"\)\s*\.update\(/);

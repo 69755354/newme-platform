@@ -1,24 +1,16 @@
-// RBAC: user (authenticated) + service_role
+// RBAC: authenticated organization member; support sessions cannot export.
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import {
+  LeadOrganizationAccessError,
+  resolveLeadOrganizationAccess,
+} from "@/lib/lead-organization-access";
+import { RequestAuthError } from "@/lib/request-auth-context";
 
 /**
  * GET /api/quotations/export?id=<quote_id>
  * Export quotation as CSV file
  */
-
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY not configured — set it in production environment variables.",
-    );
-  }
-  return createClient(url, key);
-}
 
 /** Escape a CSV field value */
 function csvEscape(val: unknown): string {
@@ -39,12 +31,17 @@ function buildCsv(rows: string[][]): string {
 export async function GET(request: NextRequest) {
   const request_id = genReqId();
   try {
-    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(bearerToken, cookieHeader);
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
-    if (authErr || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const access = await resolveLeadOrganizationAccess(
+      request,
+      "lead:read",
+      "quotation_export",
+      null,
+    );
+    if (access.supportSessionId) {
+      return NextResponse.json(
+        { error: "support_export_not_permitted" },
+        { status: 403 },
+      );
     }
 
     const { searchParams } = new URL(request.url);
@@ -57,22 +54,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const supabaseAdmin = getSupabaseAdmin();
-
-    // Fetch user role for ownership check
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    const isAdminBoss = profile?.role === "admin" || profile?.role === "boss";
+    const isManagement = ["admin", "boss", "operator"].includes(
+      access.context.role,
+    );
 
     // Fetch quotation with lead relationship
-    const { data: quote, error: quoteErr } = await (supabaseAdmin as any)
+    const { data: quote, error: quoteErr } = await access.client
       .from("quotations")
-      .select("*, leads!quotations_lead_id_fkey!inner(assigned_to)")
+      .select("*, leads!quotations_lead_id_fkey!inner(assigned_to,organization_id)")
       .eq("id", quoteId)
+      .eq("organization_id", access.organizationId)
+      .eq("leads.organization_id", access.organizationId)
       .single();
 
     if (quoteErr || !quote) {
@@ -80,9 +72,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Ownership check: non-admin/boss users can only export their own leads' quotations
-    if (!isAdminBoss) {
-      const assignedTo = quote.leads?.assigned_to;
-      if (!assignedTo || assignedTo !== user.id) {
+    if (!isManagement) {
+      const lead = Array.isArray(quote.leads) ? quote.leads[0] : quote.leads;
+      const assignedTo = lead?.assigned_to;
+      if (!assignedTo || assignedTo !== access.context.user.id) {
         return NextResponse.json({ error: "Forbidden: not assigned to this lead" }, { status: 403 });
       }
     }
@@ -105,10 +98,10 @@ export async function GET(request: NextRequest) {
 
     const devicesJson = quote.devices_json || {};
     for (const [deviceId, info] of Object.entries(devicesJson)) {
-      const d = info as Record<string, any>;
+      const d = info as Record<string, unknown>;
       rows.push([
         deviceId,
-        d.name || EMPTY,
+        String(d.name ?? EMPTY),
         String(d.qty || 0),
         String(d.unit_price || 0),
         String(d.line_total || 0),
@@ -157,7 +150,13 @@ export async function GET(request: NextRequest) {
         "Content-Disposition": `attachment; filename="${filename}"`,
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    if (err instanceof LeadOrganizationAccessError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    if (err instanceof RequestAuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
     logger.error(
       {
         err,
@@ -166,7 +165,11 @@ export async function GET(request: NextRequest) {
       },
       "[Quotation Export] Error",
     );
-    const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
+    const message = process.env.NODE_ENV === "production"
+      ? "Internal server error"
+      : err instanceof Error
+        ? err.message
+        : "Internal error";
     return NextResponse.json(
       { error: message || "Internal error" },
       { status: 500 },

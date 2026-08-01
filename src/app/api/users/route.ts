@@ -120,17 +120,22 @@ export async function POST(request: NextRequest) {
       throw new Error("profile_creation_failed");
     }
 
-    const { error: membershipError } = await supabaseAdmin
-      .from("memberships")
-      .insert({
-        organization_id: access.organizationId,
-        user_id: createdUserId,
-        status: "active",
-        invited_by_membership_id: access.callerMembershipId,
-        accepted_at: new Date().toISOString(),
-      });
+    const { error: membershipError } = await supabaseAdmin.rpc(
+      "provision_organization_member",
+      {
+        p_organization_id: access.organizationId,
+        p_user_id: createdUserId,
+        p_profile_role: role,
+        p_invited_by_membership_id: access.callerMembershipId,
+        p_request_id: access.context.requestId,
+      },
+    );
     if (membershipError) {
-      throw new Error(`membership_creation_failed:${membershipError.message}`);
+      const safeReason = [
+        "billable_seat_limit_reached",
+        "organization_membership_already_exists",
+      ].find((reason) => membershipError.message.includes(reason));
+      throw new Error(safeReason ?? "organization_member_provision_failed");
     }
 
     return NextResponse.json(

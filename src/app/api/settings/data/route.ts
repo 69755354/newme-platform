@@ -1,44 +1,69 @@
 // RBAC: user (authenticated)
 import { NextResponse } from "next/server"
-import { createServerSupabase } from "@/lib/supabase-server"
 import { getCached, setCache } from "@/lib/api-cache"
 import { filterLeadTransferCandidateQuery } from "@/lib/lead-transfer-candidates.mjs"
+import {
+  LeadOrganizationAccessError,
+  resolveLeadOrganizationAccess,
+} from "@/lib/lead-organization-access"
+import { activeOrganizationMemberIds } from "@/lib/organization-member-admin"
+import { RequestAuthError } from "@/lib/request-auth-context"
 
 export async function GET(request: Request) {
-  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-  const cookieHeader = request.headers.get("cookie") ?? "";
-  const supabase = await createServerSupabase(bearerToken, cookieHeader)
-
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  let access
+  try {
+    access = await resolveLeadOrganizationAccess(
+      request,
+      "lead:read",
+      "settings_data",
+      null,
+    )
+  } catch (error) {
+    if (error instanceof LeadOrganizationAccessError) {
+      return NextResponse.json({ error: error.code }, { status: error.status })
+    }
+    if (error instanceof RequestAuthError) {
+      return NextResponse.json({ error: error.code }, { status: error.status })
+    }
+    return NextResponse.json(
+      { error: "settings_organization_access_unavailable" },
+      { status: 503 },
+    )
+  }
+  if (access.supportSessionId) {
+    return NextResponse.json(
+      { error: "support_settings_not_permitted" },
+      { status: 403 },
+    )
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single()
-
-  if (profileError || !profile) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  const supabase = access.client
+  const role = access.context.role
+  const userId = access.context.user.id
+  const organizationId = access.organizationId
+  let memberIds: string[]
+  try {
+    memberIds = await activeOrganizationMemberIds(organizationId)
+  } catch {
+    return NextResponse.json(
+      { error: "organization_memberships_fetch_failed" },
+      { status: 503 },
+    )
   }
-
-  const role = profile.role
-  const userId = user.id
 
   const { searchParams } = new URL(request.url)
   const period = searchParams.get("period") || ""
 
-  const cacheKey = `settings:data:${role}:${userId}:${period}`
+  const cacheKey = `settings:data:${organizationId}:${role}:${userId}:${period}`
   const cached = getCached(cacheKey)
   if (cached) return NextResponse.json(cached)
 
-  const kpiPromise = period
-    ? supabase.from("kpi_targets").select("*, profiles(full_name)").eq("period", period)
+  const kpiPromise = period && memberIds.length > 0
+    ? supabase
+        .from("kpi_targets")
+        .select("*, profiles(full_name)")
+        .eq("period", period)
+        .in("assigned_to", memberIds)
     : Promise.resolve({ data: [], error: null })
 
   const profilesQuery = supabase
@@ -52,16 +77,26 @@ export async function GET(request: Request) {
     supabase
       .from("leads")
       .select("id,customer_name,phone,stage,final_status,assigned_to,owner,sales_manager,location,source,quotation_value")
+      .eq("organization_id", organizationId)
       .order("updated_at", { ascending: false })
       .limit(1000),
-    eligibleProfilesQuery,
+    memberIds.length > 0
+      ? eligibleProfilesQuery.in("id", memberIds)
+      : Promise.resolve({ data: [], error: null }),
     kpiPromise,
   ])
 
+  if (leadsResult.error || profilesResult.error || kpiResult.error) {
+    return NextResponse.json(
+      { error: "settings_data_fetch_failed" },
+      { status: 503 },
+    )
+  }
+
   const responseData = {
-    leads: (leadsResult.data ?? []) as any[],
-    profiles: (profilesResult.data ?? []) as any[],
-    kpiTargets: (kpiResult.data ?? []) as any[],
+    leads: leadsResult.data ?? [],
+    profiles: profilesResult.data ?? [],
+    kpiTargets: kpiResult.data ?? [],
   }
 
   setCache(cacheKey, responseData, 30)

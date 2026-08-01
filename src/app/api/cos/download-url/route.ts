@@ -2,7 +2,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { getAuthProfile, canAccessLead, isAdminOrBoss } from "@/lib/lead-auth";
+import {
+  LeadOrganizationAccessError,
+  resolveLeadOrganizationAccess,
+} from "@/lib/lead-organization-access";
+import { RequestAuthError } from "@/lib/request-auth-context";
 
 /** Service-role client used only to map a COS key back to its owning lead. */
 function getSupabaseAdmin(): SupabaseClient | null {
@@ -101,12 +105,12 @@ async function resolveLeadIdFromKey(
  */
 export async function POST(request: NextRequest) {
   try {
-    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const profile = await getAuthProfile(bearerToken, cookieHeader);
-    if (!profile) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const access = await resolveLeadOrganizationAccess(
+      request,
+      "lead:read",
+      "cos_download",
+      null,
+    );
 
     const { key, expires } = await request.json();
 
@@ -119,22 +123,42 @@ export async function POST(request: NextRequest) {
     if (!safePattern.test(key)) {
       return NextResponse.json({ error: "Invalid key: contains unsafe characters" }, { status: 400 });
     }
+    if (key.split("/").some((segment: string) => !segment || segment === "." || segment === "..")) {
+      return NextResponse.json({ error: "Invalid key: unsafe path segment" }, { status: 400 });
+    }
     const knownPrefixes = ["quotations/", "attachments/", "leads/", "media/", "contracts/"];
     const hasKnownPrefix = knownPrefixes.some(p => key.startsWith(p));
     if (!hasKnownPrefix) {
       return NextResponse.json({ error: "Invalid key: unknown path prefix" }, { status: 400 });
     }
 
-    // Ownership check: resolve the COS key back to its owning lead and verify
-    // the caller may access that lead. admin/boss bypass. If the owning lead
-    // cannot be determined, fall back to admin/boss only.
+    // Resolve the object to a lead, then bind that lead to the caller's exact
+    // organization before signing. Unresolvable objects are never signable.
     const admin = getSupabaseAdmin();
     const ownerLeadId = await resolveLeadIdFromKey(key, admin);
     if (!ownerLeadId) {
-      if (!isAdminOrBoss(profile)) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      }
-    } else if (!(await canAccessLead(ownerLeadId, profile, bearerToken, cookieHeader))) {
+      return NextResponse.json({ error: "Object not found" }, { status: 404 });
+    }
+    const { data: ownerLead, error: ownerLeadError } = await access.client
+      .from("leads")
+      .select("assigned_to")
+      .eq("id", ownerLeadId)
+      .eq("organization_id", access.organizationId)
+      .maybeSingle();
+    if (ownerLeadError) {
+      return NextResponse.json({ error: "lead_access_lookup_failed" }, { status: 503 });
+    }
+    if (!ownerLead) {
+      return NextResponse.json({ error: "Object not found" }, { status: 404 });
+    }
+    const isManagement = ["admin", "boss", "operator"].includes(
+      access.context.role,
+    );
+    if (
+      !access.supportSessionId
+      && !isManagement
+      && ownerLead.assigned_to !== access.context.user.id
+    ) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -163,6 +187,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(data);
   } catch (err: unknown) {
+    if (err instanceof LeadOrganizationAccessError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    if (err instanceof RequestAuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
     console.error("[COS Download] Error:", err);
     const message =
       process.env.NODE_ENV === "production"

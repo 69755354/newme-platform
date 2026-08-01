@@ -4,19 +4,51 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createIntegrationLogSinks } from "@/lib/integration-execution.mjs";
 import { genReqId, logger } from "@/lib/logger";
 
-type OverduePlan = { id: string; contract_id: string; seq: number; amount: number; due_date: string };
+type OverduePlan = {
+  id: string;
+  organization_id: string;
+  contract_id: string;
+  seq: number;
+  amount: number;
+  due_date: string;
+};
 type NotificationFailure = { installment_id: string; reason: string };
 
 async function createOverdueNotifications(plan: OverduePlan): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const [{ data: admins, error: adminsError }, { data: contract, error: contractError }] = await Promise.all([
-    supabaseAdmin.from("profiles").select("id").in("role", ["admin", "boss"]).eq("is_active", true),
-    supabaseAdmin.from("contracts").select("sales_id").eq("id", plan.contract_id).single(),
+  const [{ data: memberships, error: membershipsError }, { data: contract, error: contractError }] = await Promise.all([
+    supabaseAdmin
+      .from("memberships")
+      .select("user_id")
+      .eq("organization_id", plan.organization_id)
+      .eq("status", "active"),
+    supabaseAdmin
+      .from("contracts")
+      .select("sales_id")
+      .eq("organization_id", plan.organization_id)
+      .eq("id", plan.contract_id)
+      .single(),
   ]);
-  if (adminsError) return { ok: false, reason: "admin_lookup_failed" };
+  if (membershipsError) return { ok: false, reason: "membership_lookup_failed" };
   if (contractError || !contract) return { ok: false, reason: "contract_lookup_failed" };
 
-  const recipientIds = new Set((admins ?? []).map((admin: { id: string }) => admin.id));
-  if (contract.sales_id) recipientIds.add(contract.sales_id);
+  const memberIds = [...new Set((memberships ?? []).map((membership) => membership.user_id))];
+  if (memberIds.length === 0) return { ok: false, reason: "no_active_members" };
+  const { data: profiles, error: profilesError } = await supabaseAdmin
+    .from("profiles")
+    .select("id, role")
+    .in("id", memberIds)
+    .eq("is_active", true);
+  if (profilesError) return { ok: false, reason: "profile_lookup_failed" };
+
+  const activeProfileIds = new Set((profiles ?? []).map((profile) => profile.id));
+  const recipientIds = new Set(
+    (profiles ?? [])
+      .filter((profile) => profile.role === "admin" || profile.role === "boss")
+      .map((profile) => profile.id),
+  );
+  if (contract.sales_id && activeProfileIds.has(contract.sales_id)) {
+    recipientIds.add(contract.sales_id);
+  }
   if (recipientIds.size === 0) return { ok: false, reason: "no_recipients" };
 
   const { data: existingNotifications, error: existingError } = await supabaseAdmin
@@ -79,7 +111,7 @@ export async function GET(request: NextRequest) {
     // which keeps a failed notification eligible for the next cron run.
     const { data: overdue, error: overdueQueryError } = await supabaseAdmin
       .from("installment_plans")
-      .select("id, contract_id, seq, amount, due_date")
+      .select("id, organization_id, contract_id, seq, amount, due_date")
       .in("status", ["pending", "partial"])
       .lt("due_date", today);
 
@@ -101,6 +133,7 @@ export async function GET(request: NextRequest) {
             .from("installment_plans")
             .update({ status: "overdue", updated_at: new Date().toISOString() })
             .eq("id", plan.id)
+            .eq("organization_id", plan.organization_id)
             .in("status", ["pending", "partial"])
             .select("id")
             .maybeSingle();

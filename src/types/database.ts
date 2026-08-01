@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=32726b5ccc6d93ffaf868218ce0bc62e61003d4ff29044f7755d8b58e7ebba83
+// Migration fingerprint: sha256=22149eb3ffb8ef831b1c476b2281cee75954a809376fd23142acac6792443da1
 export type Json =
   | string
   | number
@@ -4701,6 +4701,16 @@ export type Database = {
       organization_billable_seat_count: {
         Args: { p_organization_id: string }
         Returns: number
+      }
+      provision_organization_member: {
+        Args: {
+          p_invited_by_membership_id: string
+          p_organization_id: string
+          p_profile_role: string
+          p_request_id: string
+          p_user_id: string
+        }
+        Returns: Json
       }
       requested_organization_id: { Args: never; Returns: string }
       get_team_activity: {

@@ -67,18 +67,23 @@ export async function addTeamMember(data: AddTeamMemberInput) {
     throw new Error('Failed to create profile')
   }
 
-  const { data: updatedMembership, error: membershipError } = await supabaseAdmin
-    .from('memberships')
-    .insert({
-      organization_id: access.organizationId,
-      user_id: authData.user.id,
-      status: 'active',
-      invited_by_membership_id: access.callerMembershipId,
-      accepted_at: new Date().toISOString(),
-    })
+  const { error: membershipError } = await supabaseAdmin.rpc(
+    'provision_organization_member',
+    {
+      p_organization_id: access.organizationId,
+      p_user_id: authData.user.id,
+      p_profile_role: data.role,
+      p_invited_by_membership_id: access.callerMembershipId,
+      p_request_id: access.context.requestId,
+    },
+  )
   if (membershipError) {
     await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
-    throw new Error(`Failed to create organization membership: ${membershipError.message}`)
+    const safeReason = [
+      'billable_seat_limit_reached',
+      'organization_membership_already_exists',
+    ].find((reason) => membershipError.message.includes(reason))
+    throw new Error(safeReason ?? 'organization_member_provision_failed')
   }
 
   return {
@@ -125,7 +130,7 @@ export async function removeTeamMember(userId: string) {
     .eq('assigned_to', userId)
   if (orphanedLeadsErr) throw new Error(`Failed to load leads for reassignment: ${orphanedLeadsErr.message}`)
   if (orphanedLeads && orphanedLeads.length > 0) {
-    const leadIds = orphanedLeads.map((l: any) => l.id)
+    const leadIds = orphanedLeads.map((lead) => lead.id)
     const { error: leadErr } = await supabaseAdmin
       .from('leads')
       .update({ assigned_to: reassignTo })

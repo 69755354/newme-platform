@@ -26,6 +26,7 @@ const required = [
   "start_support_session_atomic:",
   "organization_billable_seat_count:",
   "initialize_organization:",
+  "provision_organization_member:",
   "v_sam23_organization_commercial_summary:",
   "transition_lead_stage:",
 ];

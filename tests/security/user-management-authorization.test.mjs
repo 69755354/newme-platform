@@ -13,13 +13,13 @@ test("GET /api/users requires organization admin access and scopes the directory
   assert.match(api, /organization_id: access\.organizationId/);
 });
 
-test("POST /api/users creates exactly one current-organization membership", async () => {
+test("POST /api/users atomically creates one membership and organization role", async () => {
   const api = await read("src/app/api/users/route.ts");
   const post = api.slice(api.indexOf("export async function POST"));
   assert.match(post, /resolveOrganizationMemberAdminAccess\(request\)/);
-  assert.match(post, /\.from\("memberships"\)/);
-  assert.match(post, /organization_id: access\.organizationId/);
-  assert.match(post, /invited_by_membership_id: access\.callerMembershipId/);
+  assert.match(post, /provision_organization_member/);
+  assert.match(post, /p_organization_id: access\.organizationId/);
+  assert.match(post, /p_invited_by_membership_id: access\.callerMembershipId/);
 });
 
 test("shared organization admin boundary rejects missing context, wrong role, and missing membership", async () => {

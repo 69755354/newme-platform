@@ -4,10 +4,21 @@ import test from "node:test";
 
 const route = new URL("../../src/app/api/cron/check-overdue-installments/route.ts", import.meta.url);
 
-test("creates payment-overdue notifications for admins and the contract salesperson", async () => {
+test("creates payment-overdue notifications only for active members in the contract organization", async () => {
   const source = await readFile(route, "utf8");
-  assert.match(source, /from\("profiles"\).*\.in\("role", \["admin", "boss"\]\).*\.eq\("is_active", true\)/s);
-  assert.match(source, /recipientIds\.add\(contract\.sales_id\)/);
+  assert.match(
+    source,
+    /from\("memberships"\)[\s\S]*\.eq\("organization_id", plan\.organization_id\)[\s\S]*\.eq\("status", "active"\)/,
+  );
+  assert.match(
+    source,
+    /from\("profiles"\)[\s\S]*\.in\("id", memberIds\)[\s\S]*\.eq\("is_active", true\)/,
+  );
+  assert.match(source, /profile\.role === "admin" \|\| profile\.role === "boss"/);
+  assert.match(
+    source,
+    /contract\.sales_id && activeProfileIds\.has\(contract\.sales_id\)/,
+  );
   assert.match(source, /from\("notifications"\)\.insert/);
   assert.match(source, /type: "payment_overdue"/);
 });

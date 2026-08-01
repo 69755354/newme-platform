@@ -119,6 +119,8 @@ function requireTypeTokens(source) {
   ) || !source.includes(
     "initialize_organization: {",
   ) || !source.includes(
+    "provision_organization_member: {",
+  ) || !source.includes(
     "v_sam23_organization_commercial_summary: {",
   )) {
     throw new Error("sam23_type_api_contract_missing");
@@ -169,9 +171,12 @@ async function main() {
       "supabase/migrations/20260731015812_sam23_govern_billable_seat_rpcs.sql",
       "supabase/migrations/20260801023000_sam25_allow_rls_safe_commercial_updates.sql",
       "supabase/migrations/20260801025500_sam25_sync_project_paid_amount.sql",
+      "supabase/migrations/20260801120000_commercial_p0_seat_role_integrity.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
+      "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
+      "tests/database/commercial-p0-seat-role-integrity.sql",
     ]) {
       await copyFixture(container, relativePath);
     }
@@ -229,6 +234,55 @@ async function main() {
     );
     requireTypeTokens(typesSource);
 
+    requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260801120000_commercial_p0_seat_role_integrity.sql",
+      ]),
+      "commercial_p0_apply",
+    );
+    requireSuccess(
+      psql(container, ["-f", "commercial-p0-seat-role-integrity.sql"]),
+      "commercial_p0_fixture",
+    );
+
+    const deniedCommercialRollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
+    ]);
+    if (
+      deniedCommercialRollback.status === 0
+      || !combined(deniedCommercialRollback).includes(
+        "commercial_p0_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error("commercial_p0_rollback_fail_closed_contract_failed");
+    }
+    const commercialRpcStillApplied = requireSuccess(
+      psql(container, [
+        "-A",
+        "-t",
+        "-q",
+        "-c",
+        "SELECT to_regprocedure('public.provision_organization_member(uuid,uuid,text,uuid,text)')::text",
+      ]),
+      "commercial_p0_failed_rollback_atomicity",
+    );
+    if (!commercialRpcStillApplied.stdout.includes("provision_organization_member")) {
+      throw new Error("commercial_p0_failed_rollback_changed_schema");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
+        ],
+        "test",
+      ),
+      "commercial_p0_rollback",
+    );
+
     const deniedRollback = psql(container, [
       "-f",
       "/work/supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
@@ -280,6 +334,8 @@ async function main() {
       image: POSTGRES_IMAGE,
       initialization_idempotency: "verified",
       billable_seats: "verified",
+      commercial_seat_tiers: "verified",
+      atomic_membership_roles: "verified",
       organization_columns: ORGANIZATION_TABLES.length,
       composite_foreign_keys: schemaContract.composite_foreign_keys,
       rls_and_report: "verified",

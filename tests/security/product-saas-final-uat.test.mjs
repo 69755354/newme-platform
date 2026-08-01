@@ -167,6 +167,10 @@ test("runner source pins required issue paths, markers, guards, and cleanup evid
   );
   assert.match(source, /from\("activity_logs"\)\.delete\(\)\.eq\("user_id", id\)/);
   assert.match(source, /from\("activities"\)\.delete\(\)\.eq\("user_id", id\)/);
+  assert.match(
+    source,
+    /from\("membership_roles"\)[\s\S]*\.delete\(\)[\s\S]*\.in\("membership_id", organizationMembershipIds\)/,
+  );
 });
 
 test("SAM-13 staging contract dynamically covers A-D without a new controller action", async () => {

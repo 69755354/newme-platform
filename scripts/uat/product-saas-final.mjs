@@ -1436,6 +1436,7 @@ async function countByLeadIds(state, table, column = "lead_id") {
 
 async function cleanup(state) {
   const errors = [];
+  const organizationMembershipIds = [];
   const capture = async (label, operation) => {
     try {
       await operation();
@@ -1666,6 +1667,26 @@ async function cleanup(state) {
       .eq("organization_id", state.organizationId);
     if (error) fail("could not delete marked audit events");
   });
+  await capture("discover organization memberships", async () => {
+    const { data, error } = await state.admin
+      .from("memberships")
+      .select("id")
+      .eq("organization_id", state.organizationId);
+    if (error) fail("could not discover marked memberships");
+    for (const membership of data ?? []) {
+      if (UUID_PATTERN.test(membership.id ?? "")) {
+        organizationMembershipIds.push(membership.id);
+      }
+    }
+  });
+  await capture("membership_roles", async () => {
+    if (organizationMembershipIds.length === 0) return;
+    const { error } = await state.admin
+      .from("membership_roles")
+      .delete()
+      .in("membership_id", organizationMembershipIds);
+    if (error) fail("could not delete marked membership roles");
+  });
   await capture("memberships", async () => {
     const { error } = await state.admin.from("memberships").delete().eq("organization_id", state.organizationId);
     if (error) fail("could not delete marked memberships");
@@ -1704,6 +1725,12 @@ async function cleanup(state) {
     profiles: await exactCount(state.admin, "profiles", "id", [...state.userIds]),
     organizations: await exactCount(state.admin, "organizations", "id", [state.organizationId]),
     memberships: await exactCount(state.admin, "memberships", "organization_id", [state.organizationId]),
+    membership_roles: await exactCount(
+      state.admin,
+      "membership_roles",
+      "membership_id",
+      organizationMembershipIds,
+    ),
     leads: await exactLikeCount(state.admin, "leads", "customer_name", `${state.markerText}%`),
     audit_logs: await exactCount(state.admin, "audit_logs", "actor_id", [...state.userIds]),
     activity_logs: await exactCount(state.admin, "activity_logs", "user_id", [...state.userIds]),

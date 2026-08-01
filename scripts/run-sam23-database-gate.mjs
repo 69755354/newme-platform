@@ -44,7 +44,7 @@ function requireSuccess(result, label) {
   return result;
 }
 
-function psql(container, args, environmentName) {
+function psql(container, args, environmentName, database = DATABASE) {
   const environment = ["-e", `PGPASSWORD=${PASSWORD}`];
   if (environmentName) {
     environment.push(
@@ -65,7 +65,7 @@ function psql(container, args, environmentName) {
     "-U",
     "postgres",
     "-d",
-    DATABASE,
+    database,
     ...args,
   ]);
 }
@@ -172,11 +172,14 @@ async function main() {
       "supabase/migrations/20260801023000_sam25_allow_rls_safe_commercial_updates.sql",
       "supabase/migrations/20260801025500_sam25_sync_project_paid_amount.sql",
       "supabase/migrations/20260801120000_commercial_p0_seat_role_integrity.sql",
+      "supabase/migrations/20260801184548_replace_time_relative_tasks_constraint.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
       "tests/database/commercial-p0-seat-role-integrity.sql",
+      "tests/database/tasks-restorable-due-constraint.sql",
+      "tests/database/tasks-restorable-due-cleanup.sql",
     ]) {
       await copyFixture(container, relativePath);
     }
@@ -184,6 +187,104 @@ async function main() {
     requireSuccess(
       psql(container, ["-f", "sam23-organization-commercial-core.sql"]),
       "sam23_apply_harness",
+    );
+
+    requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260801184548_replace_time_relative_tasks_constraint.sql",
+      ]),
+      "task_due_constraint_apply",
+    );
+    requireSuccess(
+      psql(container, ["-f", "tasks-restorable-due-constraint.sql"]),
+      "task_due_constraint_fixture",
+    );
+
+    const backupPath = "/tmp/sam23-restorable.dump";
+    const restoredDatabase = "sam23_restore";
+    requireSuccess(command([
+      "exec",
+      "-e",
+      `PGPASSWORD=${PASSWORD}`,
+      container,
+      "pg_dump",
+      "-U",
+      "postgres",
+      "-d",
+      DATABASE,
+      "--format=custom",
+      "--no-owner",
+      "--no-privileges",
+      "--file",
+      backupPath,
+    ]), "task_backup_dump");
+    requireSuccess(command([
+      "exec",
+      "-e",
+      `PGPASSWORD=${PASSWORD}`,
+      container,
+      "createdb",
+      "-U",
+      "postgres",
+      restoredDatabase,
+    ]), "task_backup_target_create");
+    requireSuccess(command([
+      "exec",
+      "-e",
+      `PGPASSWORD=${PASSWORD}`,
+      container,
+      "pg_restore",
+      "-U",
+      "postgres",
+      "-d",
+      restoredDatabase,
+      "--exit-on-error",
+      "--clean",
+      "--if-exists",
+      "--no-owner",
+      "--no-privileges",
+      backupPath,
+    ]), "task_backup_restore");
+    const restoredTask = requireSuccess(
+      psql(
+        container,
+        [
+          "-A",
+          "-t",
+          "-q",
+          "-c",
+          `SELECT json_build_object(
+            'overdue_rows', count(*) FILTER (
+              WHERE due_at = timestamptz '2020-01-02 09:00:00+00'
+            ),
+            'constraint', (
+              SELECT pg_get_constraintdef(oid, true)
+              FROM pg_constraint
+              WHERE conrelid = 'public.tasks'::regclass
+                AND conname = 'tasks_future_only'
+            )
+          )
+          FROM public.tasks`,
+        ],
+        undefined,
+        restoredDatabase,
+      ),
+      "task_backup_restore_verify",
+    );
+    const restoredTaskContract = JSON.parse(restoredTask.stdout.trim());
+    if (
+      restoredTaskContract.overdue_rows !== 1
+      || restoredTaskContract.constraint
+        !== "CHECK (due_at > (created_at - '1 day'::interval))"
+    ) {
+      throw new Error(
+        `task_backup_restore_contract_mismatch:${restoredTask.stdout.trim()}`,
+      );
+    }
+    requireSuccess(
+      psql(container, ["-f", "tasks-restorable-due-cleanup.sql"]),
+      "task_backup_fixture_cleanup",
     );
 
     const schema = requireSuccess(
@@ -342,6 +443,8 @@ async function main() {
       type_contract: "verified",
       rollback_fail_closed: "verified",
       rollback: "verified",
+      task_backup_restore: "verified",
+      task_backup_fixture_cleanup: "verified",
       fixture_cleanup: "verified",
     })}\n`);
   } finally {

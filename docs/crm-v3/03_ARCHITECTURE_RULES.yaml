@@ -29,7 +29,7 @@ rules:
     enforcement:
       sql: |
         ALTER TABLE tasks ADD CONSTRAINT tasks_future_only
-          CHECK (due_at > now());
+          CHECK (due_at > created_at - interval '1 day');
     depends_on: []
     notes: "历史跟进记录从 follow_up_logs 查询，tasks 是待办队列"
 

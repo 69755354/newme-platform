@@ -167,6 +167,11 @@ test("runner source pins required issue paths, markers, guards, and cleanup evid
     source,
     /directlyDeletedLeadTables = leadTables\.filter\([\s\S]*table !== "lead_milestones"/,
   );
+  assert.match(
+    source,
+    /const admin = createClient\(config\.supabaseUrl, config\.serviceKey,[\s\S]*global: \{ headers: \{ "x-newme-organization-id": organizationId \} \}/,
+    "service-role cleanup must carry the exact organization context for cascaded lifecycle triggers",
+  );
   assert.match(source, /from\("activity_logs"\)\.delete\(\)\.eq\("user_id", id\)/);
   assert.match(source, /from\("activities"\)\.delete\(\)\.eq\("user_id", id\)/);
   assert.match(

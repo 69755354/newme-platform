@@ -62,7 +62,7 @@ CREATE TABLE public.lead_documents (
 );
 CREATE TABLE public.lead_milestones (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  lead_id uuid NOT NULL REFERENCES public.leads(id),
+  lead_id uuid NOT NULL REFERENCES public.leads(id) ON DELETE CASCADE,
   milestone_key text NULL
 );
 CREATE TABLE public.tasks (

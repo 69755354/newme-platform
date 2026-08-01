@@ -175,10 +175,12 @@ async function main() {
       "supabase/migrations/20260801184548_replace_time_relative_tasks_constraint.sql",
       "supabase/migrations/20260801202728_organization_customer_exit_lifecycle.sql",
       "supabase/migrations/20260802055200_multitenant_auth_activity_context.sql",
+      "supabase/migrations/20260802064000_organization_lifecycle_cascade_context.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
       "supabase/rollback/20260801202728_organization_customer_exit_lifecycle_rollback.sql",
       "supabase/rollback/20260802055200_multitenant_auth_activity_context_rollback.sql",
+      "supabase/rollback/20260802064000_organization_lifecycle_cascade_context_rollback.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
       "tests/database/commercial-p0-seat-role-integrity.sql",
@@ -187,6 +189,7 @@ async function main() {
       "tests/database/organization-customer-exit-prelude.sql",
       "tests/database/organization-customer-exit.sql",
       "tests/database/multitenant-auth-activity-context.sql",
+      "tests/database/organization-lifecycle-cascade-context.sql",
     ]) {
       await copyFixture(container, relativePath);
     }
@@ -382,6 +385,70 @@ async function main() {
       "multitenant_auth_activity_fixture",
     );
 
+    requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260802064000_organization_lifecycle_cascade_context.sql",
+      ]),
+      "organization_lifecycle_cascade_apply",
+    );
+    requireSuccess(
+      psql(container, ["-f", "organization-lifecycle-cascade-context.sql"]),
+      "organization_lifecycle_cascade_fixture",
+    );
+
+    const deniedCascadeRollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260802064000_organization_lifecycle_cascade_context_rollback.sql",
+    ]);
+    if (
+      deniedCascadeRollback.status === 0
+      || !combined(deniedCascadeRollback).includes(
+        "organization_lifecycle_cascade_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error(
+        `organization_lifecycle_cascade_rollback_fail_closed_contract_failed:${combined(deniedCascadeRollback)}`,
+      );
+    }
+    const cascadeStillApplied = requireSuccess(
+      psql(container, [
+        "-A",
+        "-t",
+        "-q",
+        "-c",
+        "SELECT position('pg_trigger_depth() > 1' in pg_get_functiondef('public.organization_lifecycle_write_guard()'::regprocedure)) > 0",
+      ]),
+      "organization_lifecycle_cascade_failed_rollback_atomicity",
+    );
+    if (cascadeStillApplied.stdout.trim() !== "t") {
+      throw new Error("organization_lifecycle_cascade_failed_rollback_changed_schema");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260802064000_organization_lifecycle_cascade_context_rollback.sql",
+        ],
+        "test",
+      ),
+      "organization_lifecycle_cascade_rollback",
+    );
+    const cascadeRolledBack = requireSuccess(
+      psql(container, [
+        "-A",
+        "-t",
+        "-q",
+        "-c",
+        "SELECT position('pg_trigger_depth() > 1' in pg_get_functiondef('public.organization_lifecycle_write_guard()'::regprocedure)) = 0",
+      ]),
+      "organization_lifecycle_cascade_rollback_verify",
+    );
+    if (cascadeRolledBack.stdout.trim() !== "t") {
+      throw new Error("organization_lifecycle_cascade_rollback_incomplete");
+    }
+
     const deniedAuthActivityRollback = psql(container, [
       "-f",
       "/work/supabase/rollback/20260802055200_multitenant_auth_activity_context_rollback.sql",
@@ -573,6 +640,7 @@ async function main() {
       task_backup_fixture_cleanup: "verified",
       organization_customer_exit: "verified",
       organization_exit_rollback: "verified",
+      organization_lifecycle_cascade: "verified",
       fixture_cleanup: "verified",
     })}\n`);
   } finally {

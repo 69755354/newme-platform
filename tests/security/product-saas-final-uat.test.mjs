@@ -3,10 +3,12 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   CONFIRMATION,
+  CUSTOMER_EXIT_RESULT_ID,
   FIXED_MANIFEST_PATH,
   LINEAR_IDS,
   NON_MANAGEMENT_ROLES,
   PRODUCTION_PROJECT_REF,
+  REQUIRED_RESULT_IDS,
   SAM13_CONTRACT_VERSION,
   SAM13_DANGEROUS_PATHS,
   STAGING_PROJECT_REF,
@@ -118,7 +120,7 @@ test("runner source pins required issue paths, markers, guards, and cleanup evid
     new URL("../../scripts/uat/product-saas-final.mjs", import.meta.url),
     "utf8",
   );
-  for (const linearId of LINEAR_IDS) assert.match(source, new RegExp(`"${linearId}"`));
+  for (const resultId of REQUIRED_RESULT_IDS) assert.match(source, new RegExp(`"${resultId}"`));
   for (const contract of [
     "/api/leads/import/preview",
     "/api/leads/import/confirm",
@@ -171,6 +173,48 @@ test("runner source pins required issue paths, markers, guards, and cleanup evid
     source,
     /from\("membership_roles"\)[\s\S]*\.delete\(\)[\s\S]*\.in\("membership_id", organizationMembershipIds\)/,
   );
+});
+
+test("customer exit UAT proves export, freeze, closure, idempotency, retention, and exact cleanup", async () => {
+  assert.equal(CUSTOMER_EXIT_RESULT_ID, "CUSTOMER-EXIT");
+  assert.deepEqual(REQUIRED_RESULT_IDS, [...LINEAR_IDS, CUSTOMER_EXIT_RESULT_ID]);
+  const [source, controller] = await Promise.all([
+    readFile(new URL("../../scripts/uat/product-saas-final.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../../scripts/newme-staging-control.sh", import.meta.url), "utf8"),
+  ]);
+  for (const contract of [
+    'await recordIssue(report, CUSTOMER_EXIT_RESULT_ID, () => runCustomerExit(state))',
+    '"/api/platform/organization-exit"',
+    '"/api/organizations/export"',
+    'action: "prepare"',
+    'action: "complete"',
+    "organization_is_not_writable",
+    'completion_retry: "idempotent"',
+    'data_deleted: false',
+    'await capture("reopen exact organization for cleanup"',
+    'await capture("support sessions"',
+    'await capture("organization exit requests"',
+    'await capture("platform staff"',
+    'organization_exit_requests: await exactCount(',
+    'support_sessions: await exactCount(',
+    'platform_staff: await exactCount(',
+  ]) {
+    assert.ok(source.includes(contract), `customer-exit runner is missing contract: ${contract}`);
+  }
+  for (const contract of [
+    '"CUSTOMER-EXIT"',
+    'const customerExit = body.results?.["CUSTOMER-EXIT"]?.evidence',
+    'customerExit?.organization_status !== "closed"',
+    'customerExit?.active_memberships !== 0',
+    'customerExit?.support_session_status !== "revoked"',
+    'customerExit?.completion_retry !== "idempotent"',
+    'customerExit?.data_deleted !== false',
+    '"support_sessions"',
+    '"organization_exit_requests"',
+    '"platform_staff"',
+  ]) {
+    assert.ok(controller.includes(contract), `controller is missing customer-exit gate: ${contract}`);
+  }
 });
 
 test("SAM-13 staging contract dynamically covers A-D without a new controller action", async () => {

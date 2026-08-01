@@ -80,9 +80,12 @@ of these actions plus one full 40-character SHA:
   residue.
 - `uat-product-saas <SHA>` runs the exact final Product/SaaS runner from the
   same image and read-only manifest. It accepts only passing SAM-11, SAM-13,
-  SAM-25, SAM-35, SAM-49, and SAM-61 evidence. SAM-25 must contain the exact
+  SAM-25, SAM-35, SAM-49, SAM-61, and commercial customer-exit evidence.
+  The customer-exit result must prove deterministic export, read-only freeze,
+  two-person closure, access revocation, retained data, idempotent completion,
+  and exact cleanup. SAM-25 must contain the exact
   Lead → Quotation → Contract → Payment → Project links, six zero-write
-  negative cases, and zero residue for all eighteen cleanup classes. The
+  negative cases, and zero residue for every declared cleanup class. The
   validated, credential-free JSON operation record is atomically retained as
   root-only `0600` state at `last-uat-product-saas.json`.
 - `rollback <oldSHA>` accepts only the recorded direct predecessor. It refuses

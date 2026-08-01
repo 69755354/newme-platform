@@ -467,6 +467,9 @@ test("Product/SaaS UAT is image-bound, staging-only, and verifies every issue an
     /body\.cleanup !== "verified"/,
     /body\.results\?\.\[id\]\?\.status !== "pass"/,
     /const sam25 = body\.results\?\.\["SAM-25"\]\?\.evidence/,
+    /const customerExit = body\.results\?\.\["CUSTOMER-EXIT"\]\?\.evidence/,
+    /customerExit\?\.organization_status !== "closed"/,
+    /customerExit\?\.completion_retry !== "idempotent"/,
     /negative\.length !== negativeCases\.size/,
     /chain\.installment_plan_ids\.length !== 1/,
     /chain\.payment_allocation_ids\.length !== 1/,
@@ -475,7 +478,7 @@ test("Product/SaaS UAT is image-bound, staging-only, and verifies every issue an
     /install -m 0600 -o root -g root "\$output" "\$evidence_tmp"/,
     /body\.cleanupCounts\?\.\[key\] !== 0/,
   ]) assert.match(control, pattern);
-  for (const issue of ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61"]) {
+  for (const issue of ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61", "CUSTOMER-EXIT"]) {
     assert.ok(control.includes(`"${issue}"`));
   }
   for (const fixture of [
@@ -483,6 +486,9 @@ test("Product/SaaS UAT is image-bound, staging-only, and verifies every issue an
     "profiles",
     "organizations",
     "memberships",
+    "support_sessions",
+    "organization_exit_requests",
+    "platform_staff",
     "leads",
     "audit_logs",
     "activity_logs",

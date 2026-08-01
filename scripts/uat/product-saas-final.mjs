@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Final staging-only Product/SaaS UAT for SAM-11, SAM-13, SAM-25, SAM-35,
- * SAM-49, and SAM-61.
+ * SAM-49, SAM-61, and the commercial customer-exit lifecycle.
  *
  * The versioned staging controller invokes this runner with the approved
  * release SHA, fixed local release manifest, and staging-only Supabase
@@ -30,6 +30,8 @@ const ORGANIZATION_ROLE_BY_PROFILE = {
   designer: "specialist",
 };
 export const LINEAR_IDS = ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61"];
+export const CUSTOMER_EXIT_RESULT_ID = "CUSTOMER-EXIT";
+export const REQUIRED_RESULT_IDS = [...LINEAR_IDS, CUSTOMER_EXIT_RESULT_ID];
 export const SAM13_CONTRACT_VERSION = 1;
 export const SAM13_DANGEROUS_PATHS = [
   "/revert_passwords.py",
@@ -318,6 +320,9 @@ function initializeState(config, runId) {
     paymentAllocationIds: new Set(),
     importBatchIds: new Set(),
     archiveBatchIds: new Set(),
+    platformStaffIds: new Set(),
+    supportSessionIds: new Set(),
+    exitRequestIds: new Set(),
     sam13FixtureEmails: new Set(),
   };
 }
@@ -1121,6 +1126,143 @@ async function runSam61(state) {
   };
 }
 
+async function runCustomerExit(state) {
+  const admin = state.actors.get("admin");
+  const boss = state.actors.get("boss");
+  const operatorStaffId = randomUUID();
+  const approverStaffId = randomUUID();
+  const supportSessionId = randomUUID();
+  state.platformStaffIds.add(operatorStaffId);
+  state.platformStaffIds.add(approverStaffId);
+  state.supportSessionIds.add(supportSessionId);
+
+  const { error: staffError } = await state.admin.from("platform_staff").insert([
+    {
+      id: operatorStaffId,
+      user_id: admin.id,
+      staff_ref: `EXIT-${state.runId.slice(0, 8)}-OP`,
+      status: "active",
+    },
+    {
+      id: approverStaffId,
+      user_id: boss.id,
+      staff_ref: `EXIT-${state.runId.slice(0, 8)}-APP`,
+      status: "active",
+    },
+  ]);
+  if (staffError) fail("could not create customer-exit platform staff fixtures");
+
+  const { error: supportError } = await state.admin.from("support_sessions").insert({
+    id: supportSessionId,
+    organization_id: state.organizationId,
+    platform_staff_id: operatorStaffId,
+    approved_by_platform_staff_id: approverStaffId,
+    ticket_ref: `EXIT-${state.runId}`,
+    reason: "Synthetic customer exit verification",
+    scope: ["organization:read"],
+    status: "active",
+    approved_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  });
+  if (supportError) fail("could not create customer-exit support session");
+
+  const idempotencyKey = `exit-${state.runId}`;
+  const prepared = await appRequest(state, "admin", "/api/platform/organization-exit", {
+    method: "POST",
+    body: {
+      action: "prepare",
+      organization_id: state.organizationId,
+      approver_user_id: boss.id,
+      idempotency_key: idempotencyKey,
+      reason: "Synthetic customer-approved staging exit verification",
+    },
+  });
+  expectStatus("customer exit prepare", prepared, 201);
+  assert.equal(prepared.payload?.status, "prepared");
+  assert.equal(prepared.payload?.organization_status, "read_only");
+  assertUuid(prepared.payload?.exit_request_id, "customer exit request");
+  state.exitRequestIds.add(prepared.payload.exit_request_id);
+
+  const deniedWrite = await state.admin.from("leads").insert({
+    organization_id: state.organizationId,
+    customer_name: `${state.markerText} forbidden after freeze`,
+    source: "other",
+    stage: "new",
+  });
+  if (!deniedWrite.error || !/organization_is_not_writable/.test(deniedWrite.error.message ?? "")) {
+    fail("read-only customer organization accepted a business write");
+  }
+
+  const exported = await appRequest(state, "admin", "/api/organizations/export");
+  expectStatus("customer export", exported, 200);
+  assert.equal(exported.payload?.contract_version, 1);
+  assert.match(exported.payload?.data_sha256 ?? "", /^[0-9a-f]{64}$/);
+  assert.equal(exported.payload?.data?.counts?.organizations, 1);
+  assert.ok(exported.payload?.data?.counts?.memberships >= REQUIRED_ROLES.length);
+  assert.ok(exported.payload?.data?.counts?.leads >= 1);
+
+  const completionBody = {
+    action: "complete",
+    organization_id: state.organizationId,
+    approver_user_id: boss.id,
+    idempotency_key: idempotencyKey,
+    expected_export_sha256: exported.payload.data_sha256,
+    backup_evidence_ref: `staging-backup-${state.config.releaseSha}`,
+    customer_confirmation_ref: `synthetic-confirmation-${state.runId}`,
+    retention_basis: "synthetic-staging-seven-year-contractual-retention",
+  };
+  const completed = await appRequest(state, "admin", "/api/platform/organization-exit", {
+    method: "POST",
+    body: completionBody,
+  });
+  expectStatus("customer exit complete", completed, 200);
+  assert.equal(completed.payload?.status, "completed");
+  assert.equal(completed.payload?.organization_status, "closed");
+  assert.equal(completed.payload?.data_deleted, false);
+
+  const retried = await appRequest(state, "admin", "/api/platform/organization-exit", {
+    method: "POST",
+    body: completionBody,
+  });
+  expectStatus("customer exit idempotent retry", retried, 200);
+  assert.equal(retried.payload?.idempotent, true);
+
+  const [organization, activeMemberships, supportSession, retainedLeads] = await Promise.all([
+    state.admin.from("organizations").select("status,closed_at").eq("id", state.organizationId).single(),
+    state.admin.from("memberships").select("id", { count: "exact", head: true })
+      .eq("organization_id", state.organizationId).eq("status", "active"),
+    state.admin.from("support_sessions").select("status,revoked_at").eq("id", supportSessionId).single(),
+    state.admin.from("leads").select("id", { count: "exact", head: true })
+      .eq("organization_id", state.organizationId),
+  ]);
+  if (organization.error || organization.data?.status !== "closed" || !organization.data?.closed_at) {
+    fail("customer exit did not close the organization");
+  }
+  if (activeMemberships.error || activeMemberships.count !== 0) {
+    fail("customer exit did not deactivate every membership");
+  }
+  if (supportSession.error || supportSession.data?.status !== "revoked" || !supportSession.data?.revoked_at) {
+    fail("customer exit did not revoke support access");
+  }
+  if (retainedLeads.error || !retainedLeads.count) {
+    fail("customer exit deleted retained business data");
+  }
+
+  const deniedAfterClose = await appRequest(state, "admin", "/api/organizations/export");
+  expectStatus("closed organization customer access", deniedAfterClose, [401, 403]);
+
+  return {
+    exit_request_id: prepared.payload.exit_request_id,
+    export_sha256: exported.payload.data_sha256,
+    organization_status: organization.data.status,
+    active_memberships: activeMemberships.count,
+    support_session_status: supportSession.data.status,
+    retained_leads: retainedLeads.count,
+    completion_retry: "idempotent",
+    data_deleted: false,
+  };
+}
+
 function exactSam13FixtureIdentity(user, state) {
   const email = typeof user?.email === "string" ? user.email.toLowerCase() : "";
   const metadata = user?.user_metadata ?? {};
@@ -1445,6 +1587,14 @@ async function cleanup(state) {
     }
   };
 
+  await capture("reopen exact organization for cleanup", async () => {
+    const { error } = await state.admin
+      .from("organizations")
+      .update({ status: "active", closed_at: null })
+      .eq("id", state.organizationId);
+    if (error) fail("could not reopen exact marked organization for cleanup");
+  });
+
   for (const batchId of state.archiveBatchIds) {
     await capture("restore archive batch", async () => {
       const { error } = await state.admin.from("leads").update({
@@ -1667,6 +1817,22 @@ async function cleanup(state) {
       .eq("organization_id", state.organizationId);
     if (error) fail("could not delete marked audit events");
   });
+  await capture("support sessions", async () => {
+    if (state.supportSessionIds.size === 0) return;
+    const { error } = await state.admin
+      .from("support_sessions")
+      .delete()
+      .in("id", [...state.supportSessionIds]);
+    if (error) fail("could not delete marked support sessions");
+  });
+  await capture("organization exit requests", async () => {
+    if (state.exitRequestIds.size === 0) return;
+    const { error } = await state.admin
+      .from("organization_exit_requests")
+      .delete()
+      .in("id", [...state.exitRequestIds]);
+    if (error) fail("could not delete marked organization exit requests");
+  });
   await capture("discover organization memberships", async () => {
     const { data, error } = await state.admin
       .from("memberships")
@@ -1690,6 +1856,14 @@ async function cleanup(state) {
   await capture("memberships", async () => {
     const { error } = await state.admin.from("memberships").delete().eq("organization_id", state.organizationId);
     if (error) fail("could not delete marked memberships");
+  });
+  await capture("platform staff", async () => {
+    if (state.platformStaffIds.size === 0) return;
+    const { error } = await state.admin
+      .from("platform_staff")
+      .delete()
+      .in("id", [...state.platformStaffIds]);
+    if (error) fail("could not delete marked platform staff");
   });
 
   for (const id of state.userIds) {
@@ -1725,6 +1899,24 @@ async function cleanup(state) {
     profiles: await exactCount(state.admin, "profiles", "id", [...state.userIds]),
     organizations: await exactCount(state.admin, "organizations", "id", [state.organizationId]),
     memberships: await exactCount(state.admin, "memberships", "organization_id", [state.organizationId]),
+    support_sessions: await exactCount(
+      state.admin,
+      "support_sessions",
+      "id",
+      [...state.supportSessionIds],
+    ),
+    organization_exit_requests: await exactCount(
+      state.admin,
+      "organization_exit_requests",
+      "id",
+      [...state.exitRequestIds],
+    ),
+    platform_staff: await exactCount(
+      state.admin,
+      "platform_staff",
+      "id",
+      [...state.platformStaffIds],
+    ),
     membership_roles: await exactCount(
       state.admin,
       "membership_roles",
@@ -1833,6 +2025,7 @@ export async function runProductSaasFinalUat(env = process.env, dependencies = {
     await recordIssue(report, "SAM-49", () => runSam49(state));
     await recordIssue(report, "SAM-61", () => runSam61(state));
     await recordIssue(report, "SAM-13", () => runSam13(state));
+    await recordIssue(report, CUSTOMER_EXIT_RESULT_ID, () => runCustomerExit(state));
   } finally {
     try {
       report.cleanupCounts = await cleanup(state);
@@ -1844,8 +2037,8 @@ export async function runProductSaasFinalUat(env = process.env, dependencies = {
     }
   }
   if (cleanupError) throw cleanupError;
-  if (Object.keys(report.results).length !== LINEAR_IDS.length) {
-    fail("not every required Linear issue produced a result");
+  if (Object.keys(report.results).length !== REQUIRED_RESULT_IDS.length) {
+    fail("not every required Product/SaaS acceptance result was produced");
   }
   return report;
 }

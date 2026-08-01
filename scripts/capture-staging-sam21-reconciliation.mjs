@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 
 const STAGING_PROJECT_REF = "bfsiibofuzoglziltgyd";
 const STAGING_DATABASE_HOST = "aws-0-ap-southeast-1.pooler.supabase.com";
-const STAGING_DATABASE_USER = `postgres.${STAGING_PROJECT_REF}`;
+const STAGING_DATABASE_USER = `newme_staging_backup.${STAGING_PROJECT_REF}`;
 const RECONCILIATION_CONTRACT = "sam21-readonly-reconciliation-v1";
 const MAX_OUTPUT_BYTES = 128 * 1024;
 

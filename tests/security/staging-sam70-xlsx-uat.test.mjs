@@ -98,3 +98,11 @@ test("SAM-70 report contains no credential fields", async () => {
   assert.equal((source.match(/console\.log/g) ?? []).length, 2);
   assert.doesNotMatch(source, /console\.(?:debug|info|warn|error)/);
 });
+
+test("SAM-70 imported notes satisfy the live follow_up_logs time contract", async () => {
+  const source = await read("src/app/api/leads/import/confirm/route.ts");
+  assert.match(
+    source,
+    /contact_type:\s*"note",\s*contact_time:\s*now,\s*summary:\s*notes/,
+  );
+});

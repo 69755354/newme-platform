@@ -252,6 +252,7 @@ export async function POST(request: NextRequest) {
           notesToInsert.push({
             lead_id: leadId,
             contact_type: "note",
+            contact_time: now,
             summary: notes,
             user_id: user.id,
             no_answer: false,

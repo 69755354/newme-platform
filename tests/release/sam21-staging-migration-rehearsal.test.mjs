@@ -123,7 +123,9 @@ test("SAM-21 capture path is fixed-staging, read-only, credential-safe, and PII-
       "utf8",
     ),
   ]);
-  assert.match(capture, /db\.\$\{STAGING_PROJECT_REF\}\.supabase\.co/);
+  assert.match(capture, /aws-0-ap-southeast-1\.pooler\.supabase\.com/);
+  assert.match(capture, /`postgres\.\$\{STAGING_PROJECT_REF\}`/);
+  assert.doesNotMatch(capture, /db\.\$\{STAGING_PROJECT_REF\}\.supabase\.co/);
   assert.match(capture, /PGSSLMODE: "verify-full"/);
   assert.match(capture, /default_transaction_read_only=on/);
   assert.match(capture, /\/etc\/newme-staging\/sam21-db\.pgpass/);

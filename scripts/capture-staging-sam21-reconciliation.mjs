@@ -6,7 +6,8 @@ import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const STAGING_PROJECT_REF = "bfsiibofuzoglziltgyd";
-const STAGING_DATABASE_HOST = `db.${STAGING_PROJECT_REF}.supabase.co`;
+const STAGING_DATABASE_HOST = "aws-0-ap-southeast-1.pooler.supabase.com";
+const STAGING_DATABASE_USER = `postgres.${STAGING_PROJECT_REF}`;
 const RECONCILIATION_CONTRACT = "sam21-readonly-reconciliation-v1";
 const MAX_OUTPUT_BYTES = 128 * 1024;
 
@@ -144,7 +145,7 @@ async function main() {
       "--port",
       "5432",
       "--username",
-      "postgres",
+      STAGING_DATABASE_USER,
       "--dbname",
       "postgres",
       "--file",

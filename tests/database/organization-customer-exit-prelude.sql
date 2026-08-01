@@ -78,6 +78,29 @@ CREATE TABLE IF NOT EXISTS public.user_session_daily (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES public.organizations(id)
 );
+ALTER TABLE auth.users
+  ADD COLUMN IF NOT EXISTS last_sign_in_at timestamptz;
+ALTER TABLE public.activity_logs
+  ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES public.profiles(id),
+  ADD COLUMN IF NOT EXISTS action text,
+  ADD COLUMN IF NOT EXISTS entity_type text,
+  ADD COLUMN IF NOT EXISTS entity_id uuid,
+  ADD COLUMN IF NOT EXISTS details jsonb,
+  ADD COLUMN IF NOT EXISTS page_path text,
+  ADD COLUMN IF NOT EXISTS duration_seconds integer,
+  ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+ALTER TABLE public.user_session_daily
+  ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES public.profiles(id),
+  ADD COLUMN IF NOT EXISTS session_date date DEFAULT CURRENT_DATE,
+  ADD COLUMN IF NOT EXISTS first_login timestamptz,
+  ADD COLUMN IF NOT EXISTS last_active timestamptz,
+  ADD COLUMN IF NOT EXISTS login_count integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS pages_viewed integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS actions_count integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+ALTER TABLE public.user_session_daily
+  ADD CONSTRAINT user_session_daily_user_id_session_date_key
+  UNIQUE (user_id, session_date);
 CREATE TABLE IF NOT EXISTS public.notifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES public.profiles(id),

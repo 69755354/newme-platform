@@ -174,9 +174,11 @@ async function main() {
       "supabase/migrations/20260801120000_commercial_p0_seat_role_integrity.sql",
       "supabase/migrations/20260801184548_replace_time_relative_tasks_constraint.sql",
       "supabase/migrations/20260801202728_organization_customer_exit_lifecycle.sql",
+      "supabase/migrations/20260802055200_multitenant_auth_activity_context.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
       "supabase/rollback/20260801202728_organization_customer_exit_lifecycle_rollback.sql",
+      "supabase/rollback/20260802055200_multitenant_auth_activity_context_rollback.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
       "tests/database/commercial-p0-seat-role-integrity.sql",
@@ -184,6 +186,7 @@ async function main() {
       "tests/database/tasks-restorable-due-cleanup.sql",
       "tests/database/organization-customer-exit-prelude.sql",
       "tests/database/organization-customer-exit.sql",
+      "tests/database/multitenant-auth-activity-context.sql",
     ]) {
       await copyFixture(container, relativePath);
     }
@@ -365,6 +368,57 @@ async function main() {
     requireSuccess(
       psql(container, ["-f", "organization-customer-exit.sql"]),
       "organization_exit_fixture",
+    );
+
+    requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260802055200_multitenant_auth_activity_context.sql",
+      ]),
+      "multitenant_auth_activity_apply",
+    );
+    requireSuccess(
+      psql(container, ["-f", "multitenant-auth-activity-context.sql"]),
+      "multitenant_auth_activity_fixture",
+    );
+
+    const deniedAuthActivityRollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260802055200_multitenant_auth_activity_context_rollback.sql",
+    ]);
+    if (
+      deniedAuthActivityRollback.status === 0
+      || !combined(deniedAuthActivityRollback).includes(
+        "multitenant_auth_activity_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error(
+        `multitenant_auth_activity_rollback_fail_closed_contract_failed:${combined(deniedAuthActivityRollback)}`,
+      );
+    }
+    const authActivityStillApplied = requireSuccess(
+      psql(container, [
+        "-A",
+        "-t",
+        "-q",
+        "-c",
+        "SELECT to_regclass('public.user_session_daily_tenant_user_session_date_key') IS NOT NULL",
+      ]),
+      "multitenant_auth_activity_failed_rollback_atomicity",
+    );
+    if (authActivityStillApplied.stdout.trim() !== "t") {
+      throw new Error("multitenant_auth_activity_failed_rollback_changed_schema");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260802055200_multitenant_auth_activity_context_rollback.sql",
+        ],
+        "test",
+      ),
+      "multitenant_auth_activity_rollback",
     );
 
     const deniedOrganizationExitRollback = psql(container, [

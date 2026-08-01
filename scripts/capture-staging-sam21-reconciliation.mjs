@@ -8,6 +8,8 @@ import { pathToFileURL } from "node:url";
 const STAGING_PROJECT_REF = "bfsiibofuzoglziltgyd";
 const STAGING_DATABASE_HOST = "aws-0-ap-southeast-1.pooler.supabase.com";
 const STAGING_DATABASE_USER = `newme_staging_backup.${STAGING_PROJECT_REF}`;
+const STAGING_DATABASE_ROOT_CA =
+  "/etc/newme-staging/supabase-root-2021-ca.crt";
 const RECONCILIATION_CONTRACT = "sam21-readonly-reconciliation-v1";
 const MAX_OUTPUT_BYTES = 128 * 1024;
 
@@ -127,6 +129,16 @@ async function main() {
   ) {
     throw new Error("sam21_pgpass_owner_or_mode_invalid");
   }
+  const rootCaStat = await lstat(STAGING_DATABASE_ROOT_CA);
+  if (
+    !rootCaStat.isFile() ||
+    rootCaStat.isSymbolicLink() ||
+    rootCaStat.uid !== 0 ||
+    rootCaStat.gid !== 0 ||
+    (rootCaStat.mode & 0o777) !== 0o600
+  ) {
+    throw new Error("sam21_root_ca_owner_or_mode_invalid");
+  }
 
   const sql = await readFile(sqlPath);
   if (gitBlobSha(sql) !== expectedSqlBlob) {
@@ -162,6 +174,7 @@ async function main() {
         PGCONNECT_TIMEOUT: "10",
         PGPASSFILE: pgpassFile,
         PGSSLMODE: "verify-full",
+        PGSSLROOTCERT: STAGING_DATABASE_ROOT_CA,
         PGOPTIONS: "-c default_transaction_read_only=on",
       },
     },

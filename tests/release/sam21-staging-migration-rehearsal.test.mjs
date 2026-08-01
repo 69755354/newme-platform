@@ -131,6 +131,16 @@ test("SAM-21 capture path is fixed-staging, read-only, credential-safe, and PII-
   assert.doesNotMatch(capture, /`postgres\.\$\{STAGING_PROJECT_REF\}`/);
   assert.doesNotMatch(capture, /db\.\$\{STAGING_PROJECT_REF\}\.supabase\.co/);
   assert.match(capture, /PGSSLMODE: "verify-full"/);
+  assert.match(
+    capture,
+    /PGSSLROOTCERT: STAGING_DATABASE_ROOT_CA/,
+  );
+  assert.match(
+    capture,
+    /"\/etc\/newme-staging\/supabase-root-2021-ca\.crt"/,
+  );
+  assert.match(capture, /rootCaStat\.isSymbolicLink\(\)/);
+  assert.match(capture, /\(rootCaStat\.mode & 0o777\) !== 0o600/);
   assert.match(capture, /default_transaction_read_only=on/);
   assert.match(capture, /\/etc\/newme-staging\/sam21-db\.pgpass/);
   assert.match(capture, /pgpassStat\.uid !== 0/);

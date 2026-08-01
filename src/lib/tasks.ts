@@ -9,7 +9,7 @@ export interface FollowUpTaskInput {
   leadId: string;
   /**
    * 用户给的到期日：YYYY-MM-DD 或 ISO 字符串。
-   * "今天" 会被接受（tasks_future_only 已放宽为 24h 宽限）。
+   * "今天" 会被接受（tasks_future_only uses a created_at-based 24h creation grace）。
    */
   dueAt: string;
   assigneeId?: string | null;

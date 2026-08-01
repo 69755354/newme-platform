@@ -1255,12 +1255,15 @@ run_uat_product_saas() {
   node -e '
     const fs = require("fs");
     const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const requiredIssues = ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61"];
+    const requiredIssues = ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61", "CUSTOMER-EXIT"];
     const zeroResidue = [
       "auth_users",
       "profiles",
       "organizations",
       "memberships",
+      "support_sessions",
+      "organization_exit_requests",
+      "platform_staff",
       "leads",
       "audit_logs",
       "activity_logs",
@@ -1278,6 +1281,7 @@ run_uat_product_saas() {
     ];
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     const sam25 = body.results?.["SAM-25"]?.evidence;
+    const customerExit = body.results?.["CUSTOMER-EXIT"]?.evidence;
     const chain = sam25?.positive_chain;
     const negative = sam25?.negative_matrix;
     const negativeCases = new Map([
@@ -1297,6 +1301,14 @@ run_uat_product_saas() {
       body.release?.health !== 200 ||
       body.cleanup !== "verified" ||
       requiredIssues.some((id) => body.results?.[id]?.status !== "pass") ||
+      !uuid.test(customerExit?.exit_request_id ?? "") ||
+      !/^[0-9a-f]{64}$/.test(customerExit?.export_sha256 ?? "") ||
+      customerExit?.organization_status !== "closed" ||
+      customerExit?.active_memberships !== 0 ||
+      customerExit?.support_session_status !== "revoked" ||
+      !(customerExit?.retained_leads > 0) ||
+      customerExit?.completion_retry !== "idempotent" ||
+      customerExit?.data_deleted !== false ||
       !uuid.test(chain?.lead_id ?? "") ||
       !uuid.test(chain?.quotation_id ?? "") ||
       !uuid.test(chain?.contract_id ?? "") ||

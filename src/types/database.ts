@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=a2c7e9665c4f9c4a3fe375a7ddb76a4e8d574e5856a15d3cd7b16b5e9ea72481
+// Migration fingerprint: sha256=c7e5e175baecca6a9d7aa79a41a4980481df49003c46edd15db662e0215062c7
 export type Json =
   | string
   | number
@@ -543,6 +543,30 @@ export type Database = {
             referencedColumns: ["user_id"]
           },
         ]
+      }
+      capabilities: {
+        Row: {
+          capability_key: string
+          created_at: string
+          description: string
+          id: string
+          scope: string
+        }
+        Insert: {
+          capability_key: string
+          created_at?: string
+          description: string
+          id?: string
+          scope?: string
+        }
+        Update: {
+          capability_key?: string
+          created_at?: string
+          description?: string
+          id?: string
+          scope?: string
+        }
+        Relationships: []
       }
       chat_messages: {
         Row: {
@@ -3183,6 +3207,7 @@ export type Database = {
           id: string
           is_active: boolean | null
           name: string
+          organization_id: string | null
           sku: string
           tenant_id: string | null
           unit: string | null
@@ -3197,6 +3222,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name: string
+          organization_id?: string | null
           sku: string
           tenant_id?: string | null
           unit?: string | null
@@ -3211,13 +3237,22 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name?: string
+          organization_id?: string | null
           sku?: string
           tenant_id?: string | null
           unit?: string | null
           unit_price?: number
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "products_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       platform_staff: {
         Row: {
@@ -3835,6 +3870,39 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_lead_trace"
             referencedColumns: ["project_id"]
+          },
+        ]
+      }
+      role_capabilities: {
+        Row: {
+          capability_id: string
+          granted_at: string
+          role_id: string
+        }
+        Insert: {
+          capability_id: string
+          granted_at?: string
+          role_id: string
+        }
+        Update: {
+          capability_id?: string
+          granted_at?: string
+          role_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "role_capabilities_capability_id_fkey"
+            columns: ["capability_id"]
+            isOneToOne: false
+            referencedRelation: "capabilities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "role_capabilities_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4735,6 +4803,10 @@ export type Database = {
         Args: { p_confirmer_id: string; p_payment_id: string }
         Returns: Json
       }
+      create_product_for_organization: {
+        Args: { p_organization_id: string; p_product: Json }
+        Returns: Json
+      }
       create_business_event: {
         Args: {
           p_created_by: string
@@ -4772,6 +4844,10 @@ export type Database = {
           p_plan_key: string
           p_slug: string
         }
+        Returns: Json
+      }
+      import_products_for_organization: {
+        Args: { p_organization_id: string; p_products: Json }
         Returns: Json
       }
       complete_organization_customer_exit: {

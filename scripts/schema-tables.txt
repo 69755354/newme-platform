@@ -5,6 +5,7 @@ AS
 audit_logs
 audit_events
 business_events
+capabilities
 chat_messages
 contract_approvals
 contracts
@@ -23,6 +24,7 @@ leads
 lead_workflow_stages
 meta_tokens
 memberships
+membership_roles
 notifications
 organizations
 payment_allocations
@@ -33,6 +35,8 @@ profiles
 projects
 quotations
 quotes
+role_capabilities
+roles
 support_sessions
 tasks
 transfer_history

@@ -68,7 +68,17 @@ CREATE TABLE IF NOT EXISTS public.crm_daily_funnel_snapshot (
 );
 CREATE TABLE IF NOT EXISTS public.products (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id uuid NOT NULL REFERENCES public.organizations(id)
+  tenant_id uuid NOT NULL REFERENCES public.organizations(id),
+  name text NOT NULL,
+  sku text NOT NULL UNIQUE,
+  category text NULL,
+  brand text NULL,
+  unit text NULL,
+  unit_price numeric NOT NULL DEFAULT 0,
+  description text NULL,
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS public.activity_logs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -177,12 +177,14 @@ async function main() {
       "supabase/migrations/20260802055200_multitenant_auth_activity_context.sql",
       "supabase/migrations/20260802064000_organization_lifecycle_cascade_context.sql",
       "supabase/migrations/20260802074500_fix_customer_export_notification_uuid.sql",
+      "supabase/migrations/20260803100000_v4_tenant_capability_boundary.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
       "supabase/rollback/20260801202728_organization_customer_exit_lifecycle_rollback.sql",
       "supabase/rollback/20260802055200_multitenant_auth_activity_context_rollback.sql",
       "supabase/rollback/20260802064000_organization_lifecycle_cascade_context_rollback.sql",
       "supabase/rollback/20260802074500_fix_customer_export_notification_uuid_rollback.sql",
+      "supabase/rollback/20260803100000_v4_tenant_capability_boundary_rollback.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
       "tests/database/commercial-p0-seat-role-integrity.sql",
@@ -192,6 +194,10 @@ async function main() {
       "tests/database/organization-customer-exit.sql",
       "tests/database/multitenant-auth-activity-context.sql",
       "tests/database/organization-lifecycle-cascade-context.sql",
+      "tests/database/v4-tenant-capability-boundary.sql",
+      "tests/database/v4-tenant-capability-expand-compatibility.sql",
+      "tests/database/v4-tenant-capability-rollback-guard.sql",
+      "tests/database/v4-tenant-capability-rollback-guard-cleanup.sql",
     ]) {
       await copyFixture(container, relativePath);
     }
@@ -405,6 +411,98 @@ async function main() {
       psql(container, ["-f", "organization-lifecycle-cascade-context.sql"]),
       "organization_lifecycle_cascade_fixture",
     );
+
+    requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260803100000_v4_tenant_capability_boundary.sql",
+      ]),
+      "v4_tenant_capability_expand_apply",
+    );
+    requireSuccess(
+      psql(container, ["-f", "v4-tenant-capability-expand-compatibility.sql"]),
+      "v4_tenant_capability_expand_compatibility_fixture",
+    );
+
+    requireSuccess(
+      psql(container, ["-f", "v4-tenant-capability-boundary.sql"]),
+      "v4_tenant_capability_fixture",
+    );
+
+    requireSuccess(
+      psql(container, ["-f", "v4-tenant-capability-rollback-guard.sql"]),
+      "v4_tenant_capability_rollback_guard_fixture",
+    );
+    const deniedNonlegacyV4CapabilityRollback = psql(
+      container,
+      [
+        "-f",
+        "/work/supabase/rollback/20260803100000_v4_tenant_capability_boundary_rollback.sql",
+      ],
+      "test",
+    );
+    if (
+      deniedNonlegacyV4CapabilityRollback.status === 0
+      || !combined(deniedNonlegacyV4CapabilityRollback).includes(
+        "v4_tenant_capability_expand_rollback_nonlegacy_products_present",
+      )
+    ) {
+      throw new Error("v4_tenant_capability_nonlegacy_rollback_not_fail_closed");
+    }
+    const v4CapabilityStillApplied = requireSuccess(
+      psql(container, [
+        "-A",
+        "-t",
+        "-q",
+        "-c",
+        "SELECT to_regclass('public.capabilities') IS NOT NULL AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'products' AND policyname LIKE 'v4_products_capability_%') = 4",
+      ]),
+      "v4_tenant_capability_failed_rollback_atomicity",
+    );
+    if (v4CapabilityStillApplied.stdout.trim() !== "t") {
+      throw new Error("v4_tenant_capability_failed_rollback_changed_schema");
+    }
+    requireSuccess(
+      psql(container, ["-f", "v4-tenant-capability-rollback-guard-cleanup.sql"]),
+      "v4_tenant_capability_rollback_guard_cleanup",
+    );
+
+    const deniedV4CapabilityExpandRollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260803100000_v4_tenant_capability_boundary_rollback.sql",
+    ]);
+    if (
+      deniedV4CapabilityExpandRollback.status === 0
+      || !combined(deniedV4CapabilityExpandRollback).includes(
+        "v4_tenant_capability_expand_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error("v4_tenant_capability_expand_rollback_fail_closed_contract_failed");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260803100000_v4_tenant_capability_boundary_rollback.sql",
+        ],
+        "test",
+      ),
+      "v4_tenant_capability_expand_rollback",
+    );
+    const v4CapabilityExpandRolledBack = requireSuccess(
+      psql(container, [
+        "-A",
+        "-t",
+        "-q",
+        "-c",
+        "SELECT to_regclass('public.capabilities') IS NULL AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'organization_id') AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'products' AND policyname IN ('policy_products_select_admin','policy_products_select_finance','policy_products_select_designer','policy_products_select_sales','policy_products_insert_admin','policy_products_update_admin','policy_products_delete_admin')) = 7 AND NOT (SELECT relforcerowsecurity FROM pg_class WHERE oid = 'public.products'::regclass)",
+      ]),
+      "v4_tenant_capability_expand_rollback_verify",
+    );
+    if (v4CapabilityExpandRolledBack.stdout.trim() !== "t") {
+      throw new Error("v4_tenant_capability_expand_rollback_incomplete");
+    }
 
     const deniedCascadeRollback = psql(container, [
       "-f",
@@ -676,6 +774,8 @@ async function main() {
       organization_customer_exit: "verified",
       organization_exit_rollback: "verified",
       organization_lifecycle_cascade: "verified",
+      v4_tenant_capabilities: "verified",
+      v4_product_catalog_isolation: "verified",
       fixture_cleanup: "verified",
     })}\n`);
   } finally {

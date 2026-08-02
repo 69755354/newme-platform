@@ -10,6 +10,7 @@ const provenancePrefix = "// Migration fingerprint: sha256=";
 const required = [
   "export type Database =",
   "audit_events:",
+  "capabilities:",
   "memberships:",
   "membership_roles:",
   "organizations:",
@@ -17,6 +18,7 @@ const required = [
   "organization_provisioning_requests:",
   "platform_staff:",
   "profiles:",
+  "role_capabilities:",
   "roles:",
   "leads:",
   "support_sessions:",

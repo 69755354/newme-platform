@@ -34,6 +34,11 @@ release approval and does not claim that production was changed.
 - Function owner remains `postgres`; ACL remains
   `{postgres=X/postgres,service_role=X/postgres}`; search path remains
   `pg_catalog, public, pg_temp`.
+- The same-head SAM-23 disposable PostgreSQL gate performed a logical task
+  backup, restored it into a separate database, verified the overdue-row and
+  constraint contract, and removed the backup fixture. The successful CI step
+  therefore supplies an executed backup/restore rehearsal without using
+  production data.
 
 ## Dynamic staging results
 

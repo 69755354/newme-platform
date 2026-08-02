@@ -34,6 +34,11 @@ release approval and does not claim that production was changed.
 - Function owner remains `postgres`; ACL remains
   `{postgres=X/postgres,service_role=X/postgres}`; search path remains
   `pg_catalog, public, pg_temp`.
+- The same-head SAM-23 disposable PostgreSQL gate performed a logical task
+  backup, restored it into a separate database, verified the overdue-row and
+  constraint contract, and removed the backup fixture. The successful CI step
+  therefore supplies an executed backup/restore rehearsal without using
+  production data.
 
 ## Dynamic staging results
 
@@ -104,7 +109,15 @@ passed in CI; this is not represented as a live pre/post rehearsal.
   `cde3fe9b066c23258407a30575b998cf80a25a1c`.
 - The customer-export database rollback is versioned and refuses environments
   other than staging or test.
-- Root filesystem usage after the UAT suite was 80% (46 GiB used of 59 GiB);
-  unused build images and temporary assets require a separately verified
-  cleanup that must preserve the current UAT image and immutable rollback
-  release.
+- A later cleanup preflight proved the controller lock was free, no Docker
+  containers existed, and the current release was still `784a0c88...`.
+  Fourteen exact unused `newme-staging-uat` image tags were removed; the
+  current `784a0c88...` image, direct predecessor `cde3fe9b...`, Playwright
+  base image, immutable releases, and all evidence files were preserved.
+  Dangling-image and builder-cache pruning completed. Production and staging
+  health both remained `ok`.
+- The integer filesystem display remained 46 GiB used of 59 GiB (81%); the
+  displayed available space changed from 11 GiB to 12 GiB. Most reported image
+  size was shared with the two preserved UAT images, so deleting tags did not
+  produce the originally estimated multi-gigabyte reduction. No broader
+  release or user-data deletion was performed.

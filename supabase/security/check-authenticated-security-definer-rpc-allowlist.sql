@@ -3,8 +3,10 @@
 WITH expected(regprocedure) AS (
   -- BEGIN AUTHENTICATED_SECURITY_DEFINER_ALLOWLIST
   VALUES
+    ('create_product_for_organization(uuid,jsonb)'),
     ('delete_lead_atomic(uuid,uuid)'),
     ('get_my_role()'),
+    ('import_products_for_organization(uuid,jsonb)'),
     ('next_quote_no()'),
     ('organization_billable_seat_count(uuid)'),
     ('reassign_lead_atomic(uuid,uuid,timestamp with time zone,uuid,text)'),

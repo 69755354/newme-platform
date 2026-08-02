@@ -1,9 +1,21 @@
 {
   "schema_version": 2,
-  "reviewed_at": "2026-07-31",
+  "reviewed_at": "2026-08-03",
   "scope": "public SECURITY DEFINER functions intentionally executable by authenticated",
   "required_search_path": "pg_catalog, public, pg_temp",
   "entries": [
+    {
+      "regprocedure": "create_product_for_organization(uuid,jsonb)",
+      "owner": "product-saas",
+      "justification": "Creates one product through a bounded tenant-aware write path after direct authenticated table INSERT is revoked.",
+      "expiry": "2026-11-01",
+      "linked_issue": "SAM-78",
+      "authorization_boundary": "Requires an active profile, active accepted membership, active organization and catalog.products.create in the requested organization; payload keys and size are bounded.",
+      "test_evidence": [
+        "tests/database/v4-tenant-capability-boundary.sql",
+        "tests/security/v4-tenant-capability-boundary.test.mjs"
+      ]
+    },
     {
       "regprocedure": "delete_lead_atomic(uuid,uuid)",
       "owner": "platform-delivery",
@@ -25,6 +37,18 @@
       "authorization_boundary": "Uses auth.uid() and reads only the matching profile row.",
       "test_evidence": [
         "tests/security/sam61-definer-boundaries.test.mjs"
+      ]
+    },
+    {
+      "regprocedure": "import_products_for_organization(uuid,jsonb)",
+      "owner": "product-saas",
+      "justification": "Bulk imports products only through a database-enforced tenant, capability, row-count and payload-size boundary.",
+      "expiry": "2026-11-01",
+      "linked_issue": "SAM-78",
+      "authorization_boundary": "Requires an active profile, active accepted membership, active organization and catalog.products.import in the requested organization; direct authenticated table INSERT remains revoked.",
+      "test_evidence": [
+        "tests/database/v4-tenant-capability-boundary.sql",
+        "tests/security/v4-tenant-capability-boundary.test.mjs"
       ]
     },
     {

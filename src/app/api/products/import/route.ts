@@ -1,7 +1,85 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { createServerSupabase } from "@/lib/supabase-server";
+import {
+  OrganizationAuthorizationError,
+  resolveOrganizationAuthorization,
+} from "@/lib/organization-authorization";
+import {
+  applyRequestAuthCookies,
+  RequestAuthError,
+  type RequestAuthContext,
+} from "@/lib/request-auth-context";
+
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_REQUEST_BYTES = MAX_FILE_BYTES + 64 * 1024;
+const MAX_IMPORT_ROWS = 2_000;
+
+class ProductImportRequestError extends Error {
+  readonly status: 400 | 413 | 415;
+  readonly code: string;
+
+  constructor(status: 400 | 413 | 415, code: string) {
+    super(code);
+    this.status = status;
+    this.code = code;
+  }
+}
+
+function jsonWithAuthCookies(
+  context: RequestAuthContext,
+  body: unknown,
+  init?: ResponseInit,
+) {
+  return applyRequestAuthCookies(context, NextResponse.json(body, init));
+}
+
+async function readBoundedMultipartForm(request: NextRequest) {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().startsWith("multipart/form-data;")) {
+    throw new ProductImportRequestError(415, "multipart_form_required");
+  }
+
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength !== null) {
+    const parsedLength = Number(declaredLength);
+    if (!Number.isSafeInteger(parsedLength) || parsedLength < 0) {
+      throw new ProductImportRequestError(400, "invalid_content_length");
+    }
+    if (parsedLength > MAX_REQUEST_BYTES) {
+      throw new ProductImportRequestError(413, "product_import_request_too_large");
+    }
+  }
+
+  if (!request.body) {
+    throw new ProductImportRequestError(400, "multipart_body_required");
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > MAX_REQUEST_BYTES) {
+      await reader.cancel("product_import_request_too_large");
+      throw new ProductImportRequestError(413, "product_import_request_too_large");
+    }
+    chunks.push(value);
+  }
+
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new Request(request.url, {
+    method: "POST",
+    headers: { "content-type": contentType },
+    body,
+  }).formData();
+}
 
 // ─── CSV parser ───
 function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
@@ -98,6 +176,10 @@ function validateRow(row: Record<string, string>, rowNum: number): ValidationErr
   if (!name) {
     return { row: rowNum, data: row, reason: `Row ${rowNum}: "name" is required` };
   }
+  const sku = row.sku?.trim();
+  if (!sku) {
+    return { row: rowNum, data: row, reason: `Row ${rowNum}: "sku" is required` };
+  }
 
   const unitPriceStr = row.unit_price?.trim();
   if (unitPriceStr !== undefined && unitPriceStr !== "") {
@@ -132,10 +214,10 @@ function buildProductRow(row: Record<string, string>) {
   const unitPrice = unitPriceStr ? parseFloat(unitPriceStr) : null;
 
   return {
-    name: row.name?.trim() || null,
+    name: row.name?.trim() ?? "",
     category: row.category?.trim() || null,
-    sku: row.sku?.trim() || null,
-    unit_price: unitPrice,
+    sku: row.sku?.trim() ?? "",
+    unit_price: unitPrice ?? 0,
     description: row.description?.trim() || null,
     unit: row.unit?.trim() || null,
   };
@@ -143,44 +225,50 @@ function buildProductRow(row: Record<string, string>) {
 
 // ─── Route handler ───
 export async function POST(request: NextRequest) {
+  let accessContext: RequestAuthContext | undefined;
   try {
-    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(bearerToken, cookieHeader);
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
-    if (authErr || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-    if (!profile || profile.role !== "admin") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    // Use service role for bulk insert (bypasses RLS)
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    const adminClient = createClient(supabaseUrl, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
+    const access = await resolveOrganizationAuthorization(
+      request,
+      "catalog.products.import",
+      "write",
+    );
+    accessContext = access.context;
 
     // Parse the uploaded file
-    const formData = await request.formData();
-    const file = formData.get("file") as File | null;
+    const formData = await readBoundedMultipartForm(request);
+    const file = formData.get("file");
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (!(file instanceof File)) {
+      return jsonWithAuthCookies(
+        access.context,
+        { error: "No file provided" },
+        { status: 400 },
+      );
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      return jsonWithAuthCookies(
+        access.context,
+        { error: "product_import_file_too_large" },
+        { status: 413 },
+      );
     }
 
     const text = await file.text();
     const { rows: rawRows } = parseCSV(text);
 
     if (rawRows.length === 0) {
-      return NextResponse.json({ error: "CSV file is empty or invalid" }, { status: 400 });
+      return jsonWithAuthCookies(
+        access.context,
+        { error: "CSV file is empty or invalid" },
+        { status: 400 },
+      );
+    }
+    if (rawRows.length > MAX_IMPORT_ROWS) {
+      return jsonWithAuthCookies(
+        access.context,
+        { error: "product_import_row_limit_exceeded" },
+        { status: 413 },
+      );
     }
 
     // Normalize and validate
@@ -197,48 +285,84 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Batch insert valid rows
-    const batchSize = 100;
-    let created = 0;
+    const { data: importResult, error: importError } =
+      await access.context.supabase.rpc("import_products_for_organization", {
+        p_organization_id: access.organizationId,
+        p_products: validated.map((entry) => entry.product),
+      });
 
-    for (let i = 0; i < validated.length; i += batchSize) {
-      const batch = validated.slice(i, i + batchSize).map((v) => v.product);
-
-      const { error: insertErr } = await adminClient
-        .from("products")
-        .insert(batch);
-
-      if (insertErr) {
-        // Try inserting one by one for this batch to isolate failures
-        for (let j = 0; j < batch.length; j++) {
-          const { error: singleErr } = await adminClient
-            .from("products")
-            .insert(batch[j]);
-          if (singleErr) {
-            failed.push({
-              row: i + j + 2,
-              data: validated[i + j].row,
-              reason: `Row ${i + j + 2}: ${singleErr.message}`,
-            });
-          } else {
-            created++;
-          }
-        }
-      } else {
-        created += batch.length;
-      }
+    if (importError || !importResult || typeof importResult !== "object") {
+      return jsonWithAuthCookies(
+        access.context,
+        { error: "product_import_failed" },
+        { status: 503 },
+      );
     }
 
-    return NextResponse.json({
-      created,
-      total: rawRows.length,
-      failed: failed.length > 0 ? failed : undefined,
-    });
-  } catch (err: any) {
-    console.error("[Products Import] Error:", err);
-    return NextResponse.json(
-      { error: err.message || "Failed to import products" },
-      { status: 500 },
+    const result = importResult as {
+      created?: unknown;
+      failed_indexes?: unknown;
+    };
+    if (
+      !Number.isInteger(result.created)
+      || !Array.isArray(result.failed_indexes)
+      || result.failed_indexes.some(
+        (index) => !Number.isInteger(index) || index < 0 || index >= validated.length,
+      )
+    ) {
+      return jsonWithAuthCookies(
+        access.context,
+        { error: "product_import_failed" },
+        { status: 503 },
+      );
+    }
+
+    for (const index of result.failed_indexes as number[]) {
+      const source = validated[index];
+      failed.push({
+        row: index + 2,
+        data: source.row,
+        reason: `Row ${index + 2}: product_import_insert_failed`,
+      });
+    }
+    const created = result.created as number;
+
+    return jsonWithAuthCookies(
+      access.context,
+      {
+        organization_id: access.organizationId,
+        created,
+        total: rawRows.length,
+        failed: failed.length > 0 ? failed : undefined,
+      },
     );
+  } catch (error: unknown) {
+    if (error instanceof OrganizationAuthorizationError) {
+      return jsonWithAuthCookies(
+        error.context,
+        { error: error.code },
+        { status: error.status },
+      );
+    }
+    if (error instanceof RequestAuthError) {
+      return NextResponse.json({ error: error.code }, { status: error.status });
+    }
+    if (error instanceof ProductImportRequestError) {
+      const response = NextResponse.json(
+        { error: error.code },
+        { status: error.status },
+      );
+      return accessContext
+        ? applyRequestAuthCookies(accessContext, response)
+        : response;
+    }
+    console.error("[Products Import] Error:", error);
+    const response = NextResponse.json(
+      { error: "product_import_failed" },
+      { status: 503 },
+    );
+    return accessContext
+      ? applyRequestAuthCookies(accessContext, response)
+      : response;
   }
 }

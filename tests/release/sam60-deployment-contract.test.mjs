@@ -6,10 +6,11 @@ const root = new URL("../../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("SAM-60/SAM-68 contracts", async () => {
-  const [deploy, installer, rollback, health, ready, helper, unit] = await Promise.all([
+  const [deploy, installer, rollback, productionRollback, health, ready, helper, unit] = await Promise.all([
     read("scripts/deploy-immutable.sh"),
     read("scripts/install-systemd-assets.sh"),
     read("scripts/rollback-systemd-assets.sh"),
+    read("infra/systemd/newme-production-rollback.sh"),
     read("src/app/api/health/route.ts"),
     read("src/app/api/ready/route.ts"),
     read("infra/systemd/newme-readiness.sh"),
@@ -24,6 +25,9 @@ test("SAM-60/SAM-68 contracts", async () => {
     assert.match(installer, new RegExp(token));
   }
   assert.match(rollback, /manifest\.sha256/);
+  assert.match(productionRollback, /\/opt\/newme\/current\.rollback/);
+  assert.match(productionRollback, /\.newme-protect/);
+  assert.match(productionRollback, /newme-service-control restart/);
   assert.doesNotMatch(health, /fs|BUILD_ID|database|checks|responseTime/);
   assert.match(health, /export const dynamic = "force-dynamic"/);
   assert.match(health, /export const revalidate = 0/);

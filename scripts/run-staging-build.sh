@@ -26,6 +26,9 @@ WINDOW_OVERRIDE="/run/newme-staging-window-override"
 WORK="$BUILD_ROOT/$SHA"
 ARTIFACT="$INCOMING/$SHA.tar.gz"
 CHECKSUM="$ARTIFACT.sha256"
+PROVENANCE="/run/newme-staging-build.provenance"
+PROVENANCE_TEMP=""
+PROVENANCE_CREATED=0
 BUILD_PID=""
 BUILD_PGID=""
 
@@ -54,6 +57,12 @@ cleanup() {
   local rc=$?
   trap - EXIT INT TERM
   stop_build
+  if [ "$PROVENANCE_CREATED" -eq 1 ]; then
+    rm -f -- "$PROVENANCE"
+  fi
+  if [ -n "$PROVENANCE_TEMP" ]; then
+    rm -f -- "$PROVENANCE_TEMP"
+  fi
   if [ -d "$WORK" ]; then
     rm -rf -- "$WORK"
   fi
@@ -83,6 +92,9 @@ production_healthy || fail "production health is not green"
 [ ! -e "$ARTIFACT" ] || fail "artifact already exists"
 [ ! -e "$CHECKSUM" ] || fail "artifact checksum already exists"
 [ ! -e "$WORK" ] || fail "build workspace already exists"
+if [ -e "$PROVENANCE" ] || [ -L "$PROVENANCE" ]; then
+  fail "staging archive provenance path is not clean"
+fi
 
 mkdir -p "$BUILD_ROOT" "$INCOMING"
 exec 9>"$LOCK"
@@ -99,18 +111,77 @@ mkdir "$WORK"
 git --git-dir="$REPOSITORY" archive "$SHA" | tar -x -C "$WORK"
 git -C "$WORK" init --quiet
 git -C "$WORK" add --force --all
+
+REGISTRY="$WORK/docs/v4-frontend-increment/contracts/v4-id-registry.v1.json"
+[ -f "$REGISTRY" ] && [ ! -L "$REGISTRY" ] ||
+  fail "V4 canonical source registry is missing from the archive"
+UPSTREAM_SHA="$(
+  sed -n '/"canonical_source"[[:space:]]*:/,/^[[:space:]]*}/ {
+    s/.*"commit"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p
+  }' "$REGISTRY"
+)"
+UPSTREAM_PATH="$(
+  sed -n '/"canonical_source"[[:space:]]*:/,/^[[:space:]]*}/ {
+    s/.*"path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p
+  }' "$REGISTRY"
+)"
+UPSTREAM_BLOB="$(
+  sed -n '/"canonical_source"[[:space:]]*:/,/^[[:space:]]*}/ {
+    s/.*"blob"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p
+  }' "$REGISTRY"
+)"
+[[ "$UPSTREAM_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+  fail "V4 canonical upstream commit is malformed"
+[[ "$UPSTREAM_PATH" =~ ^[A-Za-z0-9._/-]+$ ]] ||
+  fail "V4 canonical upstream path is malformed"
+[[ "$UPSTREAM_BLOB" =~ ^[0-9a-f]{40}$ ]] ||
+  fail "V4 canonical upstream blob is malformed"
+git --git-dir="$REPOSITORY" merge-base --is-ancestor "$UPSTREAM_SHA" "$SHA" ||
+  fail "V4 canonical upstream is not an ancestor of the staging SHA"
+ACTUAL_UPSTREAM_BLOB="$(
+  git --git-dir="$REPOSITORY" rev-parse "$UPSTREAM_SHA:$UPSTREAM_PATH"
+)"
+[ "$ACTUAL_UPSTREAM_BLOB" = "$UPSTREAM_BLOB" ] ||
+  fail "V4 canonical upstream blob does not match the registry"
+EXPECTED_TREE="$(git --git-dir="$REPOSITORY" rev-parse "$SHA^{tree}")"
+ARCHIVE_TREE="$(git -C "$WORK" write-tree)"
+[[ "$EXPECTED_TREE" =~ ^[0-9a-f]{40}$ ]] ||
+  fail "staging candidate tree is malformed"
+[ "$ARCHIVE_TREE" = "$EXPECTED_TREE" ] ||
+  fail "staging archive tree does not match the candidate commit"
+
 chown -R newme-staging:newme-staging "$WORK" "$INCOMING"
+
+PROVENANCE_TEMP="$(mktemp /run/.newme-staging-build.provenance.XXXXXX)"
+printf 'candidate_sha=%s\nupstream_sha=%s\nupstream_blob=%s\ntree_sha=%s\n' \
+  "$SHA" "$UPSTREAM_SHA" "$UPSTREAM_BLOB" "$EXPECTED_TREE" > "$PROVENANCE_TEMP"
+chown root:root "$PROVENANCE_TEMP"
+chmod 0400 "$PROVENANCE_TEMP"
+PROVENANCE_SHA256="$(sha256sum "$PROVENANCE_TEMP" | awk '{print $1}')"
+[[ "$PROVENANCE_SHA256" =~ ^[0-9a-f]{64}$ ]] ||
+  fail "staging archive provenance digest is malformed"
+mv -T -- "$PROVENANCE_TEMP" "$PROVENANCE"
+PROVENANCE_TEMP=""
+PROVENANCE_CREATED=1
 
 production_healthy || fail "production health changed before staging build"
 setsid runuser -u newme-staging --group newme-staging --supp-group docker -- env -i \
+  CI=true \
   HOME="$ROOT" \
   PATH="/usr/local/bin:/usr/bin:/bin" \
   XDG_CACHE_HOME="$ROOT/cache" \
   npm_config_cache="$ROOT/cache/npm" \
+  NEXT_PUBLIC_APP_VERSION="$SHA" \
+  NEWME_STAGING_EXPECTED_SHA="$SHA" \
+  NEWME_STAGING_UPSTREAM_SHA="$UPSTREAM_SHA" \
+  NEWME_STAGING_UPSTREAM_BLOB="$UPSTREAM_BLOB" \
+  NEWME_STAGING_EXPECTED_TREE="$EXPECTED_TREE" \
+  NEWME_STAGING_ARCHIVE_PROVENANCE_PATH="$PROVENANCE" \
+  NEWME_STAGING_ARCHIVE_PROVENANCE_SHA256="$PROVENANCE_SHA256" \
   NEWME_STAGING_PROJECT_REF="$EXPECTED_REF" \
   NEWME_STAGING_BUILD_HEAP_MB="${NEWME_STAGING_BUILD_HEAP_MB:-896}" \
   bash "$WORK/scripts/build-staging-artifact.sh" \
-    "$SHA" "$PUBLIC_ENV" "$INCOMING" "$EXPECTED_REF" &
+    "$SHA" "$PUBLIC_ENV" "$INCOMING" "$EXPECTED_REF" "$PROVENANCE" &
 BUILD_PID=$!
 BUILD_PGID=$BUILD_PID
 

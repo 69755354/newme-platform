@@ -1,12 +1,83 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 
-import { loadDocuments, validateDocuments, validateV4FrontendContracts } from '../../scripts/check-v4-frontend-contracts.mjs'
+import {
+  loadDocuments,
+  stagingArchiveProvenanceContent,
+  stagingArchiveProvenancePath,
+  validateDocuments,
+  validateStagingArchiveProvenance,
+  validateV4FrontendContracts,
+} from '../../scripts/check-v4-frontend-contracts.mjs'
 
 const clone = (value) => structuredClone(value)
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+
+function createArchiveFixture() {
+  try {
+    execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: repositoryRoot, stdio: 'ignore' })
+  } catch {
+    const upstream = loadDocuments(repositoryRoot).ids.canonical_source
+    const metadata = fs.lstatSync(stagingArchiveProvenancePath)
+    return {
+      directory: null,
+      root: repositoryRoot,
+      upstream,
+      env: process.env,
+      metadata,
+      nested: false,
+    }
+  }
+
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'newme-v4-archive-'))
+  const root = path.join(directory, 'source')
+  const archive = path.join(directory, 'source.tar')
+  const candidateSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).trim()
+  fs.mkdirSync(root)
+  execFileSync('git', ['archive', '--format=tar', '-o', archive, candidateSha], { cwd: repositoryRoot })
+  execFileSync('tar', ['-xf', archive, '-C', root])
+  execFileSync('git', ['init', '--quiet'], { cwd: root })
+  execFileSync('git', ['add', '--force', '--all'], { cwd: root })
+  const treeSha = execFileSync('git', ['write-tree'], { cwd: root, encoding: 'utf8' }).trim()
+  const upstream = loadDocuments(root).ids.canonical_source
+  const content = stagingArchiveProvenanceContent({
+    candidateSha,
+    upstreamSha: upstream.commit,
+    upstreamBlob: upstream.blob,
+    treeSha,
+  })
+  const env = {
+    ...process.env,
+    CI: 'true',
+    NEXT_PUBLIC_APP_VERSION: candidateSha,
+    NEWME_STAGING_EXPECTED_SHA: candidateSha,
+    NEWME_STAGING_UPSTREAM_SHA: upstream.commit,
+    NEWME_STAGING_UPSTREAM_BLOB: upstream.blob,
+    NEWME_STAGING_EXPECTED_TREE: treeSha,
+    NEWME_STAGING_ARCHIVE_PROVENANCE_PATH: stagingArchiveProvenancePath,
+    NEWME_STAGING_ARCHIVE_PROVENANCE_SHA256: createHash('sha256').update(content).digest('hex'),
+  }
+  const metadata = {
+    isFile: () => true,
+    isSymbolicLink: () => false,
+    uid: 0,
+    gid: 0,
+    mode: 0o100400,
+    nlink: 1,
+    size: Buffer.byteLength(content),
+  }
+  return { directory, root, upstream, env, metadata, nested: true }
+}
+
+const cleanupArchiveFixture = (fixture) => {
+  if (fixture.directory) fs.rmSync(fixture.directory, { recursive: true, force: true })
+}
 
 test('V4 frontend registry, schemas, routes and trace close on repository state', () => {
   const result = validateV4FrontendContracts()
@@ -133,6 +204,118 @@ test('V4 frontend provenance requires the CI checkout to retain full history', (
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('V4 staging archive provenance reaches the real contracts without weakening ordinary checkout ancestry', () => {
+  const fixture = createArchiveFixture()
+  const provenanceDependencies = {
+    env: fixture.env,
+    lstatSync: () => fixture.metadata,
+  }
+  try {
+    assert.doesNotThrow(() => validateDocuments(loadDocuments(fixture.root), fixture.root, { provenanceDependencies }))
+    const mutated = clone(loadDocuments(fixture.root))
+    mutated.trace.frontend_requirements[0].source_refs[0].meaning = 'drift'
+    assert.throws(
+      () => validateDocuments(mutated, fixture.root, { provenanceDependencies }),
+      /source or meaning drift/,
+    )
+
+    if (fixture.nested) {
+      const forgedNormalEnvironment = {
+        ...process.env,
+        NEWME_STAGING_EXPECTED_SHA: fixture.env.NEWME_STAGING_EXPECTED_SHA,
+      }
+      assert.throws(
+        () => validateDocuments(loadDocuments(), repositoryRoot, {
+          provenanceDependencies: { env: forgedNormalEnvironment },
+        }),
+        /staging archive provenance is forbidden in a normal checkout/,
+      )
+    }
+  } finally {
+    cleanupArchiveFixture(fixture)
+  }
+})
+
+test('V4 staging archive provenance rejects missing, drifted, and forged root evidence', async (t) => {
+  const fixture = createArchiveFixture()
+  const validate = (env = fixture.env, metadata = fixture.metadata) =>
+    validateStagingArchiveProvenance(fixture.root, fixture.upstream, {
+      env,
+      lstatSync: () => metadata,
+    })
+  try {
+    assert.doesNotThrow(() => validate())
+    await t.test('missing CI marker', () => {
+      assert.throws(() => validate({ ...fixture.env, CI: '' }), /requires CI=true/)
+    })
+    await t.test('candidate SHA drift', () => {
+      assert.throws(
+        () => validate({ ...fixture.env, NEXT_PUBLIC_APP_VERSION: '0'.repeat(40) }),
+        /candidate SHA and application version differ/,
+      )
+    })
+    await t.test('upstream SHA drift', () => {
+      assert.throws(
+        () => validate({ ...fixture.env, NEWME_STAGING_UPSTREAM_SHA: '0'.repeat(40) }),
+        /upstream SHA drift/,
+      )
+    })
+    await t.test('tree drift', () => {
+      assert.throws(
+        () => validate({ ...fixture.env, NEWME_STAGING_EXPECTED_TREE: '0'.repeat(40) }),
+        /provenance digest drift|index tree differs/,
+      )
+    })
+    await t.test('forged digest', () => {
+      assert.throws(
+        () => validate({ ...fixture.env, NEWME_STAGING_ARCHIVE_PROVENANCE_SHA256: '0'.repeat(64) }),
+        /provenance digest drift/,
+      )
+    })
+    await t.test('non-root or writable marker', () => {
+      assert.throws(
+        () => validate(fixture.env, { ...fixture.metadata, uid: 1000, mode: 0o100600 }),
+        /ownership or mode drift/,
+      )
+    })
+    await t.test('symlink marker', () => {
+      assert.throws(
+        () => validate(fixture.env, { ...fixture.metadata, isFile: () => false, isSymbolicLink: () => true }),
+        /regular non-symlink/,
+      )
+    })
+  } finally {
+    cleanupArchiveFixture(fixture)
+  }
+})
+
+test('staging build creates and forwards only fixed root-owned archive provenance', () => {
+  const runner = fs.readFileSync(path.join(repositoryRoot, 'scripts/run-staging-build.sh'), 'utf8')
+  const builder = fs.readFileSync(path.join(repositoryRoot, 'scripts/build-staging-artifact.sh'), 'utf8')
+  for (const token of [
+    'PROVENANCE="/run/newme-staging-build.provenance"',
+    'merge-base --is-ancestor "$UPSTREAM_SHA" "$SHA"',
+    'rev-parse "$SHA^{tree}"',
+    '[ "$ARCHIVE_TREE" = "$EXPECTED_TREE" ]',
+    'chown root:root "$PROVENANCE_TEMP"',
+    'chmod 0400 "$PROVENANCE_TEMP"',
+    'CI=true',
+    'NEWME_STAGING_EXPECTED_SHA="$SHA"',
+    'NEWME_STAGING_UPSTREAM_SHA="$UPSTREAM_SHA"',
+    'NEWME_STAGING_EXPECTED_TREE="$EXPECTED_TREE"',
+    'NEWME_STAGING_ARCHIVE_PROVENANCE_PATH="$PROVENANCE"',
+  ]) assert.ok(runner.includes(token), `missing root staging provenance contract: ${token}`)
+  assert.ok(runner.indexOf('merge-base --is-ancestor') < runner.indexOf('setsid runuser'))
+  assert.ok(runner.indexOf('chmod 0400 "$PROVENANCE_TEMP"') < runner.indexOf('setsid runuser'))
+  for (const token of [
+    'readonly STAGING_ARCHIVE_PROVENANCE="/run/newme-staging-build.provenance"',
+    '[ "$PROVENANCE_PATH" = "$STAGING_ARCHIVE_PROVENANCE" ]',
+    '[ "${CI:-}" = "true" ]',
+    '[ "${NEWME_STAGING_EXPECTED_SHA:-}" = "$SHA" ]',
+    '[ "$(stat -c \'%u:%g:%a\' "$PROVENANCE_PATH")" = "0:0:400" ]',
+  ]) assert.ok(builder.includes(token), `missing child staging provenance contract: ${token}`)
 })
 
 test('V4 lifecycle transitions cannot bypass independent approved facts', () => {

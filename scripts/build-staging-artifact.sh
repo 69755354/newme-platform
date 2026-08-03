@@ -6,8 +6,10 @@ SHA="${1:-}"
 ENV_FILE="${2:-}"
 OUTPUT_DIR="${3:-/output}"
 EXPECTED_REF="${4:-${NEWME_STAGING_PROJECT_REF:-}}"
+PROVENANCE_PATH="${5:-}"
 HEAP_MB="${NEWME_STAGING_BUILD_HEAP_MB:-896}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+readonly STAGING_ARCHIVE_PROVENANCE="/run/newme-staging-build.provenance"
 readonly NODE_VERSION="24.18.0"
 readonly NPM_VERSION="11.16.0"
 readonly NODE_DIST="node-v${NODE_VERSION}-linux-x64"
@@ -94,6 +96,27 @@ bootstrap_toolchain() {
 
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || fail "a full 40-character staging SHA is required"
 [[ "$EXPECTED_REF" =~ ^[a-z]{20}$ ]] || fail "an explicit 20-character staging project ref is required"
+[ "$PROVENANCE_PATH" = "$STAGING_ARCHIVE_PROVENANCE" ] ||
+  fail "the fixed staging archive provenance path is required"
+[ "${NEWME_STAGING_ARCHIVE_PROVENANCE_PATH:-}" = "$STAGING_ARCHIVE_PROVENANCE" ] ||
+  fail "staging archive provenance environment path drifted"
+[ "${CI:-}" = "true" ] || fail "staging archive builds require CI=true"
+[ "${NEWME_STAGING_EXPECTED_SHA:-}" = "$SHA" ] ||
+  fail "staging archive candidate SHA drifted"
+[ "${NEXT_PUBLIC_APP_VERSION:-}" = "$SHA" ] ||
+  fail "staging application version drifted from the archive candidate"
+[[ "${NEWME_STAGING_UPSTREAM_SHA:-}" =~ ^[0-9a-f]{40}$ ]] ||
+  fail "staging archive upstream SHA is malformed"
+[[ "${NEWME_STAGING_UPSTREAM_BLOB:-}" =~ ^[0-9a-f]{40}$ ]] ||
+  fail "staging archive upstream blob is malformed"
+[[ "${NEWME_STAGING_EXPECTED_TREE:-}" =~ ^[0-9a-f]{40}$ ]] ||
+  fail "staging archive candidate tree is malformed"
+[[ "${NEWME_STAGING_ARCHIVE_PROVENANCE_SHA256:-}" =~ ^[0-9a-f]{64}$ ]] ||
+  fail "staging archive provenance digest is malformed"
+[ -f "$PROVENANCE_PATH" ] && [ ! -L "$PROVENANCE_PATH" ] ||
+  fail "staging archive provenance must be a regular non-symlink file"
+[ "$(stat -c '%u:%g:%a' "$PROVENANCE_PATH")" = "0:0:400" ] ||
+  fail "staging archive provenance must be root:root mode 0400"
 [[ "$HEAP_MB" =~ ^[0-9]+$ ]] || fail "build heap must be an integer number of MiB"
 [ "$HEAP_MB" -ge 768 ] && [ "$HEAP_MB" -le 1152 ] ||
   fail "build heap must stay between 768 and 1152 MiB"

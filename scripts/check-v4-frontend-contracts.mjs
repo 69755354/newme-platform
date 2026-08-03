@@ -7,10 +7,95 @@ import { fileURLToPath } from 'node:url'
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const defaultRoot = path.resolve(scriptDir, '..')
 const contractDir = 'docs/v4-frontend-increment/contracts'
+export const stagingArchiveProvenancePath = '/run/newme-staging-build.provenance'
 
 const readJson = (root, name) => JSON.parse(fs.readFileSync(path.join(root, contractDir, name), 'utf8'))
 const invariant = (condition, message) => {
   if (!condition) throw new Error(`v4_frontend_contract_failed: ${message}`)
+}
+
+export const stagingArchiveProvenanceContent = ({ candidateSha, upstreamSha, upstreamBlob, treeSha }) =>
+  `candidate_sha=${candidateSha}\nupstream_sha=${upstreamSha}\nupstream_blob=${upstreamBlob}\ntree_sha=${treeSha}\n`
+
+export function validateStagingArchiveProvenance(root, upstream, dependencies = {}) {
+  const env = dependencies.env ?? process.env
+  const run = dependencies.execFileSync ?? execFileSync
+  const lstat = dependencies.lstatSync ?? fs.lstatSync
+  const candidateSha = env.NEWME_STAGING_EXPECTED_SHA ?? ''
+  const upstreamSha = env.NEWME_STAGING_UPSTREAM_SHA ?? ''
+  const upstreamBlob = env.NEWME_STAGING_UPSTREAM_BLOB ?? ''
+  const treeSha = env.NEWME_STAGING_EXPECTED_TREE ?? ''
+
+  invariant(env.CI === 'true', 'staging archive provenance requires CI=true')
+  invariant(env.NEWME_STAGING_ARCHIVE_PROVENANCE_PATH === stagingArchiveProvenancePath, 'staging archive provenance path drift')
+  invariant(/^[0-9a-f]{40}$/.test(candidateSha), 'staging archive candidate SHA is malformed')
+  invariant(env.NEXT_PUBLIC_APP_VERSION === candidateSha, 'staging archive candidate SHA and application version differ')
+  invariant(upstreamSha === upstream.commit, 'staging archive upstream SHA drift')
+  invariant(upstreamBlob === upstream.blob, 'staging archive upstream blob drift')
+  invariant(/^[0-9a-f]{40}$/.test(treeSha), 'staging archive candidate tree is malformed')
+
+  let provenance
+  try { provenance = lstat(stagingArchiveProvenancePath) } catch { provenance = null }
+  invariant(provenance?.isFile() && !provenance.isSymbolicLink?.(), 'staging archive provenance must be a regular non-symlink file')
+  invariant(provenance.uid === 0 && provenance.gid === 0 && (provenance.mode & 0o777) === 0o400 && provenance.nlink === 1, 'staging archive provenance ownership or mode drift')
+
+  const content = stagingArchiveProvenanceContent({ candidateSha, upstreamSha, upstreamBlob, treeSha })
+  const digest = createHash('sha256').update(content).digest('hex')
+  invariant(env.NEWME_STAGING_ARCHIVE_PROVENANCE_SHA256 === digest, 'staging archive provenance digest drift')
+  invariant(provenance.size === Buffer.byteLength(content), 'staging archive provenance size drift')
+
+  const indexTree = run('git', ['write-tree'], { cwd: root, encoding: 'utf8' }).trim()
+  invariant(indexTree === treeSha, 'staging archive index tree differs from the candidate tree')
+  try {
+    run('git', ['diff-files', '--quiet'], { cwd: root, stdio: 'ignore' })
+  } catch {
+    invariant(false, 'staging archive working tree differs from its verified index')
+  }
+  return { candidateSha, upstreamSha, upstreamBlob, treeSha }
+}
+
+function createGitProvenance(root, upstream, dependencies = {}) {
+  const env = dependencies.env ?? process.env
+  const run = dependencies.execFileSync ?? execFileSync
+  let upstreamIsAncestor = true
+  try { run('git', ['merge-base', '--is-ancestor', upstream.commit, 'HEAD'], { cwd: root, stdio: 'ignore' }) } catch { upstreamIsAncestor = false }
+
+  if (upstreamIsAncestor) {
+    for (const key of [
+      'NEWME_STAGING_EXPECTED_SHA',
+      'NEWME_STAGING_UPSTREAM_SHA',
+      'NEWME_STAGING_UPSTREAM_BLOB',
+      'NEWME_STAGING_EXPECTED_TREE',
+      'NEWME_STAGING_ARCHIVE_PROVENANCE_PATH',
+      'NEWME_STAGING_ARCHIVE_PROVENANCE_SHA256'
+    ]) invariant(!env[key], 'staging archive provenance is forbidden in a normal checkout')
+    return {
+      mode: 'history',
+      sourceBlob: (commit, filePath) => run('git', ['rev-parse', `${commit}:${filePath}`], { cwd: root, encoding: 'utf8' }).trim(),
+      candidateBlob: (filePath) => run('git', ['rev-parse', `HEAD:${filePath}`], { cwd: root, encoding: 'utf8' }).trim(),
+      sourceText: (commit, filePath) => run('git', ['show', `${commit}:${filePath}`], { cwd: root, encoding: 'utf8' }),
+      isTracked: (filePath) => run('git', ['ls-files', '--error-unmatch', filePath], { cwd: root, encoding: 'utf8' }).trim().length > 0
+    }
+  }
+
+  let hasHead = true
+  try { run('git', ['rev-parse', '--verify', 'HEAD'], { cwd: root, stdio: 'ignore' }) } catch { hasHead = false }
+  invariant(!hasHead, 'upstream V4 source must be an ancestor of the candidate commit')
+  validateStagingArchiveProvenance(root, upstream, dependencies)
+  const indexBlob = (filePath) => run('git', ['rev-parse', `:${filePath}`], { cwd: root, encoding: 'utf8' }).trim()
+  return {
+    mode: 'staging-archive',
+    sourceBlob: (commit, filePath) => {
+      invariant(commit === upstream.commit, 'staging archive source commit differs from the verified upstream')
+      return indexBlob(filePath)
+    },
+    candidateBlob: indexBlob,
+    sourceText: (commit, filePath) => {
+      invariant(commit === upstream.commit, 'staging archive source commit differs from the verified upstream')
+      return fs.readFileSync(path.join(root, filePath), 'utf8')
+    },
+    isTracked: (filePath) => run('git', ['ls-files', '--error-unmatch', filePath], { cwd: root, encoding: 'utf8' }).trim().length > 0
+  }
 }
 
 const valueAt = (value, dottedPath) => dottedPath.split('.').reduce((current, key) => current?.[key], value)
@@ -158,7 +243,7 @@ export function loadDocuments(root = defaultRoot) {
   }
 }
 
-export function validateDocuments(documents, root = defaultRoot) {
+export function validateDocuments(documents, root = defaultRoot, options = {}) {
   const { ids, trace, routes, events, payloads, api, sources, sourceEvidence, roleMapping, schemas, eventModel, prd, platform, nfr } = documents
   const workflow = fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8')
   const checkoutBlock = workflow.match(/- name:\s*Checkout[\s\S]*?(?=\n\s*- name:)/)?.[0] ?? ''
@@ -168,13 +253,11 @@ export function validateDocuments(documents, root = defaultRoot) {
   invariant(ids.requirements.every((item) => item.id && item.meaning && item.source_path && item.source_locator), 'V4 registry row missing id/meaning/source_path/source_locator')
   const upstream = ids.canonical_source
   invariant(trace.upstream_registry.commit === upstream.commit && trace.upstream_registry.path === upstream.path && trace.upstream_registry.blob === upstream.blob, 'frontend trace upstream provenance drift')
-  let upstreamIsAncestor = true
-  try { execFileSync('git', ['merge-base', '--is-ancestor', upstream.commit, 'HEAD'], { cwd: root, stdio: 'ignore' }) } catch { upstreamIsAncestor = false }
-  invariant(upstreamIsAncestor, 'upstream V4 source must be an ancestor of the candidate commit')
-  const actualBlob = execFileSync('git', ['rev-parse', `${upstream.commit}:${upstream.path}`], { cwd: root, encoding: 'utf8' }).trim()
+  const gitProvenance = createGitProvenance(root, upstream, options.provenanceDependencies)
+  const actualBlob = gitProvenance.sourceBlob(upstream.commit, upstream.path)
   invariant(actualBlob === upstream.blob, 'upstream V4 trace blob does not match Git object')
-  invariant(execFileSync('git', ['rev-parse', `HEAD:${upstream.path}`], { cwd: root, encoding: 'utf8' }).trim() === upstream.blob, 'candidate must retain tracked upstream V4 trace bytes')
-  const upstreamLines = execFileSync('git', ['show', `${upstream.commit}:${upstream.path}`], { cwd: root, encoding: 'utf8' }).split(/\r?\n/)
+  invariant(gitProvenance.candidateBlob(upstream.path) === upstream.blob, 'candidate must retain tracked upstream V4 trace bytes')
+  const upstreamLines = gitProvenance.sourceText(upstream.commit, upstream.path).split(/\r?\n/)
   for (const item of ids.requirements) {
     const rowIndex = upstreamLines.findIndex((line) => line.startsWith(`| ${item.id} |`))
     invariant(rowIndex >= 0, `${item.id} missing from upstream Git object`)
@@ -194,10 +277,10 @@ export function validateDocuments(documents, root = defaultRoot) {
     invariant(conflict.canonical_line === canonicalRowIndex + 1, `${conflict.id} canonical conflict line drift`)
     invariant(conflict.resolution === requiredConflictResolutions.get(conflict.id), `${conflict.id} conflict resolution drift`)
     const source = conflict.conflicting_source
-    const blob = execFileSync('git', ['rev-parse', `${source.commit}:${source.path}`], { cwd: root, encoding: 'utf8' }).trim()
+    const blob = gitProvenance.sourceBlob(source.commit, source.path)
     invariant(blob === source.blob, `${conflict.id} conflicting PRD blob drift`)
-    invariant(execFileSync('git', ['rev-parse', `HEAD:${source.path}`], { cwd: root, encoding: 'utf8' }).trim() === source.blob, `${conflict.id} candidate PRD bytes drift`)
-    const line = execFileSync('git', ['show', `${source.commit}:${source.path}`], { cwd: root, encoding: 'utf8' }).split(/\r?\n/)[source.line - 1]
+    invariant(gitProvenance.candidateBlob(source.path) === source.blob, `${conflict.id} candidate PRD bytes drift`)
+    const line = gitProvenance.sourceText(source.commit, source.path).split(/\r?\n/)[source.line - 1]
     invariant(line === `### ${conflict.id} ${source.heading}`, `${conflict.id} conflicting PRD row drift`)
   }
 
@@ -479,15 +562,15 @@ export function validateDocuments(documents, root = defaultRoot) {
   invariant(sources.immutable_registry_metadata_snapshot === 'research-evidence-snapshot.v1.json', 'official source registry metadata snapshot binding missing')
   invariant(sourceEvidence.snapshot_scope === 'registry metadata only; no webpage body, quote, or content snapshot is claimed', 'official source snapshot scope overclaims webpage content')
   invariant(sourceEvidence.records.length === sources.sources.length, 'official source evidence record count drift')
-  invariant(execFileSync('git', ['ls-files', '--error-unmatch', `${contractDir}/${sources.immutable_registry_metadata_snapshot}`], { cwd: root, encoding: 'utf8' }).trim().length > 0, 'official source registry metadata snapshot must be tracked')
+  invariant(gitProvenance.isTracked(`${contractDir}/${sources.immutable_registry_metadata_snapshot}`), 'official source registry metadata snapshot must be tracked')
   for (const source of sources.sources) {
     const record = sourceEvidence.records.find((item) => item.source_id === source.source_id)
     invariant(record && ['title','url','locator'].every((key) => record[key] === source[key]) && record.accessed_at === sources.accessed_at, `${source.source_id} evidence snapshot drift`)
     const fact = { source_id:record.source_id, title:record.title, url:record.url, locator:record.locator, accessed_at:record.accessed_at }
     invariant(createHash('sha256').update(JSON.stringify(fact)).digest('hex') === record.record_sha256, `${source.source_id} evidence hash mismatch`)
   }
-  invariant(execFileSync('git', ['ls-files', '--error-unmatch', `${contractDir}/legacy-role-mapping.v1.json`], { cwd: root, encoding: 'utf8' }).trim().length > 0, 'legacy role mapping must be tracked')
-  for (const source of roleMapping.sources) invariant(execFileSync('git', ['rev-parse', `HEAD:${source.path}`], { cwd: root, encoding: 'utf8' }).trim() === source.blob, `${source.issue} role mapping source blob drift`)
+  invariant(gitProvenance.isTracked(`${contractDir}/legacy-role-mapping.v1.json`), 'legacy role mapping must be tracked')
+  for (const source of roleMapping.sources) invariant(gitProvenance.candidateBlob(source.path) === source.blob, `${source.issue} role mapping source blob drift`)
   const expectedRoleMapping = { admin:'org_admin', boss:'org_owner', designer:'specialist', finance:'finance', operator:'operations', sales:'sales_agent' }
   invariant(roleMapping.legacy_to_canonical.length === 6 && roleMapping.legacy_to_canonical.every((item) => expectedRoleMapping[item.legacy_role] === item.canonical_role && item.scope === 'organization'), 'SAM-18/19 legacy role mapping drift')
   invariant(roleMapping.legacy_to_canonical.find((item) => item.legacy_role === 'boss').requires_human_review === true, 'org_owner migration must require human review')

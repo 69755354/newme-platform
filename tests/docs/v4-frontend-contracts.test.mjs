@@ -123,6 +123,37 @@ function restoreArchiveGitlinks(fixture) {
   }
 }
 
+function validateGitlinkArchiveFixture(fixture) {
+  const upstream = { commit: fixture.gitlinkObject, blob: 'a'.repeat(40) }
+  const content = stagingArchiveProvenanceContent({
+    candidateSha: fixture.candidateSha,
+    upstreamSha: upstream.commit,
+    upstreamBlob: upstream.blob,
+    treeSha: fixture.expectedTree,
+  })
+  return validateStagingArchiveProvenance(fixture.root, upstream, {
+    env: {
+      CI: 'true',
+      NEXT_PUBLIC_APP_VERSION: fixture.candidateSha,
+      NEWME_STAGING_EXPECTED_SHA: fixture.candidateSha,
+      NEWME_STAGING_UPSTREAM_SHA: upstream.commit,
+      NEWME_STAGING_UPSTREAM_BLOB: upstream.blob,
+      NEWME_STAGING_EXPECTED_TREE: fixture.expectedTree,
+      NEWME_STAGING_ARCHIVE_PROVENANCE_PATH: stagingArchiveProvenancePath,
+      NEWME_STAGING_ARCHIVE_PROVENANCE_SHA256: createHash('sha256').update(content).digest('hex'),
+    },
+    lstatSync: () => ({
+      isFile: () => true,
+      isSymbolicLink: () => false,
+      uid: 0,
+      gid: 0,
+      mode: 0o100400,
+      nlink: 1,
+      size: Buffer.byteLength(content),
+    }),
+  })
+}
+
 test('V4 frontend registry, schemas, routes and trace close on repository state', () => {
   const result = validateV4FrontendContracts()
   assert.deepEqual(result, { requirements: 41, frontend_requirements: 25, acceptance: 47, screens: 24, routes: 27, event_keys: 95, payload_contracts: 95, sources: 22, source_evidence: 22, schemas: 9, error_experiences: 13, role_mappings: 6 })
@@ -346,6 +377,45 @@ test('staging archive restores real NUL-delimited gitlinks before exact tree com
     for (const gitlinkPath of fixture.gitlinkPaths) {
       assert.ok(index.includes(`160000 ${fixture.gitlinkObject} 0\t${gitlinkPath}`), `missing restored gitlink: ${JSON.stringify(gitlinkPath)}`)
     }
+  } finally {
+    fs.rmSync(fixture.directory, { recursive: true, force: true })
+  }
+})
+
+test('staging archive cleanliness ignores only absent verified gitlinks', async (t) => {
+  const fixture = createGitlinkArchiveFixture()
+  try {
+    restoreArchiveGitlinks(fixture)
+    for (const gitlinkPath of fixture.gitlinkPaths) {
+      fs.rmSync(path.join(fixture.root, gitlinkPath), { recursive: true, force: true })
+    }
+    assert.doesNotThrow(() => validateGitlinkArchiveFixture(fixture))
+
+    await t.test('materialized gitlink is rejected', () => {
+      fs.mkdirSync(path.join(fixture.root, 'ci-test'))
+      assert.throws(() => validateGitlinkArchiveFixture(fixture), /gitlink must remain absent/)
+      fs.rmSync(path.join(fixture.root, 'ci-test'), { recursive: true, force: true })
+    })
+    await t.test('ordinary untracked addition is rejected', () => {
+      fs.writeFileSync(path.join(fixture.root, 'unexpected.txt'), 'unexpected\n')
+      assert.throws(() => validateGitlinkArchiveFixture(fixture), /contains an untracked file/)
+      fs.rmSync(path.join(fixture.root, 'unexpected.txt'))
+    })
+    await t.test('ordinary tracked modification is rejected', () => {
+      fs.appendFileSync(path.join(fixture.root, 'tracked.txt'), 'drift\n')
+      assert.throws(() => validateGitlinkArchiveFixture(fixture), /working tree differs/)
+      execFileSync('git', ['checkout-index', '--force', '--', 'tracked.txt'], { cwd: fixture.root })
+    })
+    await t.test('ordinary tracked deletion is rejected', () => {
+      fs.rmSync(path.join(fixture.root, 'tracked.txt'))
+      assert.throws(() => validateGitlinkArchiveFixture(fixture), /working tree differs/)
+      execFileSync('git', ['checkout-index', '--force', '--', 'tracked.txt'], { cwd: fixture.root })
+    })
+    await t.test('forged gitlink index object is rejected', () => {
+      execFileSync('git', ['update-index', '--cacheinfo', '160000', fixture.candidateSha, 'ci-test'], { cwd: fixture.root })
+      assert.throws(() => validateGitlinkArchiveFixture(fixture), /index tree differs/)
+      execFileSync('git', ['update-index', '--cacheinfo', '160000', fixture.gitlinkObject, 'ci-test'], { cwd: fixture.root })
+    })
   } finally {
     fs.rmSync(fixture.directory, { recursive: true, force: true })
   }

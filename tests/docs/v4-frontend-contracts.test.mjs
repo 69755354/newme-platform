@@ -193,7 +193,17 @@ test('V4 frontend provenance fails when the upstream Git blob drifts', () => {
   const mutated = clone(docs)
   mutated.ids.canonical_source.blob = '0000000000000000000000000000000000000000'
   mutated.trace.upstream_registry.blob = mutated.ids.canonical_source.blob
-  assert.throws(() => validateDocuments(mutated), /upstream V4 trace blob/)
+  const normalCheckoutEnvironment = { ...process.env }
+  for (const key of Object.keys(normalCheckoutEnvironment)) {
+    if (key.startsWith('NEWME_STAGING_')) delete normalCheckoutEnvironment[key]
+  }
+  assert.equal(Object.keys(normalCheckoutEnvironment).some((key) => key.startsWith('NEWME_STAGING_')), false)
+  assert.throws(
+    () => validateDocuments(mutated, repositoryRoot, {
+      provenanceDependencies: { env: normalCheckoutEnvironment },
+    }),
+    /upstream V4 trace blob/,
+  )
 })
 
 test('V4 frontend payload registry fails when an event loses its strict command schema', () => {

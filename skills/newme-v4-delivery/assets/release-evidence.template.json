@@ -1,0 +1,17 @@
+{
+  "candidateSha": "0000000000000000000000000000000000000000",
+  "previousReleaseSha": "1111111111111111111111111111111111111111",
+  "environment": {"id": "staging-project-id", "name": "staging"},
+  "ci": {
+    "headSha": "0000000000000000000000000000000000000000",
+    "status": "success",
+    "runUrl": "https://github.com/owner/repo/actions/runs/1"
+  },
+  "artifact": {"sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  "manifest": {"gitSha": "0000000000000000000000000000000000000000"},
+  "health": {"staging": "ok", "production": "unchanged-ok"},
+  "migrations": {"status": "verified", "versions": []},
+  "uat": {"checks": ["smoke"], "status": "success"},
+  "cleanup": {"status": "verified", "counts": {"fixtures": 0}},
+  "rollback": {"status": "ready", "targetSha": "1111111111111111111111111111111111111111"}
+}

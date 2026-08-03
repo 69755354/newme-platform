@@ -1,9 +1,11 @@
 # NewMe V4 SaaS PRD
 
-Status: Proposed product and engineering baseline  
-Decision date: 2026-08-03  
-Target repository: `69755354/newme-platform`  
+Status: Repository planning baseline; commercial delivery in progress
+Decision date: 2026-08-03
+Target repository: `69755354/newme-platform`
 Target base at research lock: `agent/saas-staging-isolation@0c75a141043f5eca828b7b50778bf1f071d65e33`
+Current execution snapshot: `V4_EXECUTION_BACKLOG.md`
+External audit manifest: `V4_EXTERNAL_AUDIT_INDEX.md`
 
 ## 1. Evidence boundary
 

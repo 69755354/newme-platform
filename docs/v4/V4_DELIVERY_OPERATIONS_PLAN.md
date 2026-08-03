@@ -1,8 +1,10 @@
 # NewMe V4 Delivery and Operations Plan
 
-Status: Proposed execution baseline  
-Date: 2026-08-03  
+Status: Repository execution baseline; implementation in progress
+Date: 2026-08-03
 Applies to: V4 planning, implementation, staging, pilot and production release
+Current execution snapshot: `V4_EXECUTION_BACKLOG.md`
+External audit manifest: `V4_EXTERNAL_AUDIT_INDEX.md`
 
 ## 1. Delivery model
 
@@ -319,14 +321,14 @@ Never access or change production unless this prompt explicitly names and author
 
 ## 13. Reusable repository skill
 
-The companion `skills/newme-v4-delivery/SKILL.md` encodes the evidence states, dependency order, work-package rules, review model and release gates. It is intended to make later agents follow the same delivery system without recreating this analysis.
+The companion `skills/newme-v4-delivery/` Skill Pack encodes the evidence states, dependency order, work-package rules, tenant/migration controls, Git/CI contract, staging/release procedure, vertical acceptance matrices, reusable templates and deterministic validators. It is intended to let later agents execute the same delivery system without recreating this analysis or rewriting recurring evidence formats.
 
 ## 14. Immediate next delivery sequence
 
-1. approve and merge the V4 planning baseline;
-2. obtain read access and exact commit/tree/licensing evidence for the Axon private repository, without blocking domain planning;
-3. execute V4-02 tenant identity/isolation gap analysis against the then-current canonical code;
-4. implement M1 as one end-to-end tenant lifecycle slice;
-5. proceed to M2 commercial control plane only after G1 evidence passes.
+1. reconcile SAM-77/SAM-78 status and dependency evidence against `V4_EXECUTION_BACKLOG.md`;
+2. obtain exact commit/tree/licensing evidence for the Axon private repository, or formally defer code reuse without blocking domain planning;
+3. finish the incomplete V4-02 tenant lifecycle, cross-layer isolation and exact-release staging acceptance;
+4. execute V4-03 commercial control plane and V4-04 shared services as independent parallel work packages after G1/G2 pass;
+5. proceed to the real-estate and retail commercial slices only after their shared contracts stabilize.
 
 This sequence deliberately places tenant safety before billing and both vertical packs.

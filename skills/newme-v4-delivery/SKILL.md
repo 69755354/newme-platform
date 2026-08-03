@@ -1,138 +1,83 @@
 ---
 name: newme-v4-delivery
-description: Execute or review NewMe V4 SaaS work for the shared platform, real-estate pack, retail pack, migrations, Linear planning, Git delivery, staging validation, operations, and commercial release. Use when a task mentions NewMe V4, SaaS commercialization, tenant isolation, real estate, retail, vertical packs, production-data rehearsal, V4 Linear work packages, or V4 release readiness.
+description: Execute or review NewMe V4 SaaS work across planning, tenant isolation, migrations, Git and CI, staging release, real-estate and retail slices, operations, Linear evidence and commercial release. Use when a task mentions NewMe V4, SaaS commercialization, tenant or organization isolation, V4 Linear work packages, migrations, exact-head CI, staging UAT, production-data rehearsal, vertical packs, release readiness or external audit.
 ---
 
 # NewMe V4 Delivery
 
-## Required context
+## Load the authoritative context
 
-Read these repository documents before planning or changing V4 behavior:
+Read these files before planning or changing V4 behavior:
 
 1. `docs/v4/V4_SAAS_PRD.md`
 2. `docs/v4/V4_REQUIREMENTS_TRACEABILITY.md`
 3. `docs/v4/V4_DELIVERY_OPERATIONS_PLAN.md`
+4. `docs/v4/V4_EXECUTION_BACKLOG.md`
 
-Read only the additional code, migration, Linear issue and release evidence needed by the active work package.
+Read `docs/v4/V4_EXTERNAL_AUDIT_INDEX.md` for an audit request. Read only the active Linear issue, code, migration and release evidence required by the work package.
+
+## Select the workflow
+
+- Planning, issue definition, traceability or closeout: read `references/work-package-and-traceability.md`.
+- Tenant ownership, RLS, database change, rollback or production-data rehearsal: read `references/tenant-data-and-migrations.md`.
+- Branch, PR, CI, evidence binding or publication: read `references/git-ci-and-evidence.md`.
+- Build, deploy, staging UAT, cleanup, rollback, incident or disk operation: read `references/staging-release-and-operations.md`.
+- Real-estate or retail implementation/review: read `references/vertical-acceptance.md` plus the tenant/data reference.
+
+Do not load unrelated references.
+
+## Execute one acceptance package
+
+1. Read the live Linear issue and exact Git base once.
+2. Create a work-package manifest from `assets/work-package.template.json`.
+3. State Linear/V4 IDs, exact base, allowed paths, outcome, non-goals, data/security impact, validation, risk and executable rollback.
+4. Run `node skills/newme-v4-delivery/scripts/validate-work-package.mjs <manifest>` before implementation.
+5. Implement one independently acceptable business outcome. Keep schema, service, UI, tests and operations together when separation creates an unsafe partial state.
+6. Run focused checks, applicable disposable database gates and exact-head CI. Run a production build for a release candidate.
+7. Require exact-release staging UAT and residue-zero cleanup for environment claims.
+8. Publish one bounded PR using `assets/pr-body.template.md`.
+9. Update Linear using `assets/linear-evidence-comment.template.md` only after immutable evidence exists. A green PR is not Done when staging, restore or pilot evidence remains.
 
 ## Evidence discipline
 
-Classify every material claim as one of:
+Classify material claims as `verified-current`, `source-claim`, `target`, `validated-staging`, `validated-production`, `deferred` or `rejected`. Bind repository behavior to an exact Git SHA and executed evidence. Bind environment behavior to an exact release manifest and environment ID.
 
-- `verified-current`
-- `source-claim`
-- `target`
-- `validated-staging`
-- `validated-production`
-- `deferred`
-- `rejected`
+Treat the Axon archive and its tenantless schema as domain input, not reusable SaaS implementation. Treat International City acceptance scenarios as targets, not executed results.
 
-Never promote a source claim because a document calls it production-ready. Bind implemented behavior to an exact Git SHA and executed evidence. Bind environment behavior to an exact release manifest and environment identifier.
+## Required order and safety
 
-The Axon archive and its tenantless Prisma snapshot are domain inputs, not a reusable SaaS implementation. The International City acceptance tables are target scenarios, not executed results.
+Follow M0→M8 unless an approved ADR changes it: evidence/architecture; tenant isolation; commercial control plane; shared services; real estate; retail; agents/integrations; operations/migration rehearsal; pilot.
 
-## Dependency order
+For tenant-owned behavior verify immutable organization ownership, active profile and membership, capability, entitlement/quota/lifecycle, database/RLS/API/RPC/worker/storage/import/export boundaries, idempotency, immutable audit, cleanup and rollback. UI hiding, a branch/location field, a single role or a client flag is not authorization.
 
-Work in this order unless an approved ADR changes it:
+Share platform primitives, not vertical state machines. Keep real-estate listing/viewing/offer/deal/commission separate from retail SKU/inventory/quotation/order/procurement/delivery/COD.
 
-1. M0 evidence, ownership, architecture and traceability
-2. M1 tenant identity, membership, capability and isolation
-3. M2 plan, seat, entitlement and lifecycle control plane
-4. M3 shared workflow and operational services
-5. M4 real-estate commercial slice
-6. M5 retail commercial slice
-7. M6 controlled agents and integrations
-8. M7 operations, migration and release rehearsal
-9. M8 pilot and commercial decision
+Route agents and integrations through versioned server-side commands. Inject actor and tenant context server-side. Require approval for L3 and prohibit L4 authorization changes, cross-tenant access, audit deletion, raw database writes, forged financial facts and hidden customer sends.
 
-Tenant identity and isolation always precede billing and vertical expansion.
+## Stop conditions
 
-## Define one work package
+Stop without expanding scope when:
 
-Before implementation, state in at most six lines:
+- the source/base SHA or acceptance contract changes;
+- ownership, license or deployment authority is missing;
+- the same command, connection or unchanged gate fails twice;
+- a migration cannot prove forward/rollback compatibility;
+- environment SHA, project, health, permission or cleanup residue mismatches;
+- unrelated worktree changes overlap the package.
 
-- Linear ID and V4 requirement IDs
-- exact base SHA and allowed paths/contracts
-- business outcome and explicit non-goals
-- data/security/migration impact
-- validation and exact-release evidence
-- risk and executable rollback
+Classify infrastructure failure as infrastructure evidence, never code failure or green evidence. Do not rerun an unchanged audit without a changed source, SHA, environment or contract.
 
-One work package is an independently acceptable business outcome. Keep its schema, service, UI, tests and operations changes together when separating them would create unsafe partial states. Do not split work by file count.
+## Deterministic checks
 
-## Implement the shared platform safely
+- `node skills/newme-v4-delivery/scripts/validate-governance.mjs`
+- `node skills/newme-v4-delivery/scripts/validate-work-package.mjs <manifest.json>`
+- `node skills/newme-v4-delivery/scripts/validate-release-evidence.mjs <evidence.json>`
+- `node --test skills/newme-v4-delivery/scripts/validate-scripts.test.mjs`
 
-For tenant-owned behavior verify:
+Use the templates under `assets/`; do not rewrite recurring evidence formats from scratch.
 
-- immutable organization ownership and composite integrity
-- active profile and membership
-- capability and record ownership where required
-- industry entitlement, quota and lifecycle state
-- database/RLS, API/RPC, worker/cron, storage, import and export boundaries
-- idempotency and immutable audit
-- exact cleanup and rollback
+## Production boundary
 
-Do not treat UI hiding, branch/location, a single role field or a client feature flag as tenant authorization.
+Never load raw production data into shared staging. Use only an approved isolated ephemeral clone with clone-only credentials, outbound integrations disabled, masking before application access, bounded retention, aggregate evidence and verified destruction.
 
-## Keep vertical semantics separate
-
-Share organization, capability, approval, audit, files, tasks, notifications, idempotency, integrations and commercial control-plane primitives.
-
-Keep real-estate listing/viewing/property-offer/deal/commission/payroll separate from retail SKU/inventory/quotation/order/procurement/delivery/COD. Similar names do not justify one state machine or table.
-
-## Control agents and integrations
-
-Route all agent actions through versioned domain commands. Inject actor and tenant context server-side. Apply risk levels L0–L4. Require approval for L3. Prohibit L4 actions: authorization changes, cross-tenant access, audit deletion, raw database writes, forged financial/sign-off facts and hidden customer sends.
-
-Keep external adapters disabled until credentials, consent, policy, sandbox behavior, retries, reconciliation and audit pass.
-
-## Validate
-
-Run only relevant local checks before full CI. When applicable require:
-
-1. focused domain and negative tests
-2. disposable database apply/verify/rollback
-3. generated type and migration-history checks
-4. tenant/RLS/API/worker/storage negatives
-5. type, lint and repository tests
-6. production build for full release candidates
-7. exact-release staging UAT and residue-zero cleanup
-8. migration/canary/rollback/restore rehearsal for release work
-
-Infrastructure failures are infrastructure evidence, not code failures or green evidence. Do not repeat an unchanged audit or gate without a changed source, SHA, environment or acceptance contract.
-
-## Use multi-agent work without fragmentation
-
-Delegate only independent lanes:
-
-- product/evidence
-- platform/data
-- one vertical slice
-- operations/reviewer
-
-The coordinating agent owns the integrated result. Cross-review only release-blocking correctness: traceability, tenancy, authorization, data integrity, migration/rollback, idempotency, cleanup, telemetry and evidence binding.
-
-Do not create parallel PRs in one dependency chain. Do not create one-file chores when several files implement one behavior. Do not create duplicate Linear issues for prior evidence; link existing SAM items.
-
-## Publish and trace
-
-Linear is the status/dependency/owner source. Git is the immutable product/code/evidence source.
-
-Every PR must include:
-
-- Linear ID and V4 requirement IDs
-- base/head and scope
-- positive/negative/idempotency/cleanup behavior
-- data, security, migration and operations impact
-- validation evidence
-- deployment order, risk and rollback
-
-Every Linear issue links its PR and lists the acceptance evidence required to close. A green PR does not close an issue that still requires staging, recovery or pilot evidence.
-
-## Rehearse production data safely
-
-Never load raw production data into shared staging. Use an approved isolated ephemeral clone with clone-only credentials, outbound integrations disabled, masking before application access, bounded retention, aggregate evidence and verified destruction.
-
-## Release decision
-
-Use gates G0–G8 from the PRD. Claim only the verticals whose tenant, change, commercial, security, operations, migration and pilot gates pass. Production remains unchanged unless a separate authorization names exact production target, candidate SHA, window, owners and rollback.
+Do not access or change production unless a separate authorization names the exact production target, candidate SHA, window, owners and rollback.

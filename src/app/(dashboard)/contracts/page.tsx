@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { FileText, DollarSign, Calendar, User, Clock, Briefcase, Plus, Bell, CheckCircle, AlertTriangle, Upload, Ban, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Filter } from "lucide-react";
+import { FileText, DollarSign, Calendar, User, Clock, Plus, Bell, CheckCircle, AlertTriangle, Upload, Ban, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Filter } from "lucide-react";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import SubNavTabs from "@/components/SubNavTabs";
 import Link from "next/link";
@@ -22,6 +22,12 @@ import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { approveContract, revokeContract } from "@/app/actions/contracts";
 import { fmtAED } from "@/shared/utils/format";
+import {
+  createUploadAttempt,
+  uploadContractFile,
+} from "@/lib/client-request-integrity";
+import type { UploadAttempt } from "@/lib/client-request-integrity";
+import { hasNotificationWarning } from "@/lib/contract-approval-result";
 
 interface Contract {
   id: string; contract_no: string; contract_amount: number; status: string;
@@ -35,7 +41,7 @@ interface Contract {
 
 export default function ContractsPage() {
   const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss"]);
-  const { t, lang } = useLanguage();
+  const { t } = useLanguage();
 
   const STATUS_LABELS: Record<string, string> = {
     draft: t("contracts.statusDraft"),
@@ -60,6 +66,7 @@ export default function ContractsPage() {
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadAttemptRef = useRef<UploadAttempt | null>(null);
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectNotes, setRejectNotes] = useState("");
@@ -94,7 +101,9 @@ export default function ContractsPage() {
     if (dueDate && dueDate < today) {
       return { color: "bg-rose-500/10 text-rose-400 border-rose-500/30", label: "Overdue", icon: <AlertTriangle className="w-3 h-3" /> };
     }
-    if (dueDate && dueDate <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)) {
+    const dueSoon = new Date(`${today}T00:00:00.000Z`);
+    dueSoon.setUTCDate(dueSoon.getUTCDate() + 7);
+    if (dueDate && dueDate <= dueSoon.toISOString().slice(0, 10)) {
       return { color: "bg-amber-500/10 text-amber-400 border-amber-500/30", label: "Due Soon", icon: <Clock className="w-3 h-3" /> };
     }
     return { color: "bg-muted text-muted-foreground border-border/30", label: "Unpaid", icon: <Clock className="w-3 h-3" /> };
@@ -119,22 +128,28 @@ export default function ContractsPage() {
   // Approval / Reject action
   async function handleApproval(contractId: string, action: "approve" | "reject", notes?: string) {
     try {
-      await approveContract(contractId, action, notes);
+      const result = await approveContract(contractId, action, notes);
       toast.success(t("contracts.approvalSuccess"));
+      if (hasNotificationWarning(result)) {
+        toast.warning("Approval saved; notification delivery failed.");
+      }
       window.location.reload();
-    } catch (err: any) {
-      toast.error(err.message || t("contracts.approvalFailed"));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : t("contracts.approvalFailed"));
     }
   }
 
   // Revoke action
   async function handleRevoke(contractId: string, reason: string) {
     try {
-      await revokeContract(contractId, reason);
+      const result = await revokeContract(contractId, reason);
       toast.success(t("contracts.revokeSuccess"));
+      if (hasNotificationWarning(result)) {
+        toast.warning("Revocation saved; notification delivery failed.");
+      }
       window.location.reload();
-    } catch (err: any) {
-      toast.error(err.message || t("contracts.revokeFailed"));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : t("contracts.revokeFailed"));
     }
   }
 
@@ -180,47 +195,13 @@ export default function ContractsPage() {
     setUploadingId(id);
     setUploadProgress(0);
     try {
-      // 1. Get presigned URL
-      const urlRes = await fetch(`/api/contracts/${id}/upload-url`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name }),
-      });
-      if (!urlRes.ok) {
-        const err = await urlRes.json().catch(() => ({}));
-        toast.error(err.error || t("contracts.uploadFailed"));
-        setUploadingId(null);
-        return;
-      }
-      const { url, key } = await urlRes.json();
-
-      // 2. Upload to COS with progress
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", url);
-        xhr.upload.onprogress = (ev) => {
-          if (ev.lengthComputable) setUploadProgress(Math.round((ev.loaded / ev.total) * 100));
-        };
-        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("Upload failed")));
-        xhr.onerror = () => reject(new Error("Upload failed"));
-        xhr.send(file);
-      });
-
-      // 3. Confirm upload
-      const confirmRes = await fetch(`/api/contracts/${id}/confirm-upload`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, filename: file.name, size: file.size }),
-      });
-      if (confirmRes.ok) {
-        toast.success(t("contracts.uploadSuccess"));
-        window.location.reload();
-      } else {
-        const err = await confirmRes.json().catch(() => ({}));
-        toast.error(err.error || t("contracts.uploadFailed"));
-      }
-    } catch {
-      toast.error(t("contracts.uploadFailed"));
+      uploadAttemptRef.current ??= createUploadAttempt();
+      await uploadContractFile(id, file, uploadAttemptRef.current, setUploadProgress);
+      uploadAttemptRef.current = null;
+      toast.success(t("contracts.uploadSuccess"));
+      window.location.reload();
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : t("contracts.uploadFailed"));
     } finally {
       setUploadingId(null);
       setUploadProgress(0);
@@ -269,7 +250,7 @@ export default function ContractsPage() {
       }
       setLoading(false);
     })();
-  }, [page, statusFilter]);
+  }, [page, pageSize, statusFilter, t]);
 
   if (roleLoading || blocked) return null;
 

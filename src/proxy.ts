@@ -2,6 +2,7 @@ import { NextResponse, NextRequest, type NextFetchEvent } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase-middleware";
 import { reportServerError } from "@/lib/report-server-error";
 import { isActiveProfile } from "@/lib/auth-profile.mjs";
+import { getRequestedOrganizationId } from "@/lib/organization-context";
 
 const PROTECTED_ROUTES: Record<string, string[]> = {
   "/settings": ["admin", "boss", "operator"],
@@ -267,11 +268,14 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
           console.error("Activity tracking error:", error.message);
         }
       });
-      const auditWrite = writeServerEvidence("audit_logs", "", "POST", {
+      const organizationId = getRequestedOrganizationId(request);
+      const auditWrite = organizationId
+        ? writeServerEvidence("audit_logs", "", "POST", {
         // NOTE: audit_logs.actor_id is the genuine column (NOT a business_events alias).
         // Migration 20260613000000_audit_logs.sql:6 declares it. Unlike business_events
         // (where actor_id was the wrong alias), audit_logs always used actor_id. Do NOT rename.
         actor_id: user.id,
+        organization_id: organizationId,
         action: "PAGE_VISIT",
         details: { page: pathname },
         ip_address: clientIp,
@@ -287,7 +291,8 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
           });
           console.error("Audit log error:", error.message);
         }
-      });
+      })
+        : Promise.resolve({ error: null });
       event.waitUntil(
         Promise.allSettled([profileWrite, auditWrite]).then(() => undefined),
       );

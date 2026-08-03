@@ -6,6 +6,58 @@ import { verifyDatabaseTypes } from "../../scripts/run-sam20-database-gate.mjs";
 const read = (path) =>
   readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
+function sam20TypeFixture() {
+  const tables = [
+    "organizations",
+    "memberships",
+    "platform_staff",
+    "support_sessions",
+    "audit_events",
+    "leads",
+  ];
+  const tableSource = tables.map((table) => {
+    const baseColumn = table === "leads" ? "organization_id" : "id";
+    const forward = table === "organizations"
+      ? {
+          Row: ["billable_seat_limit: number", "plan_key: string"],
+          Insert: ["billable_seat_limit?: number", "plan_key?: string"],
+          Update: ["billable_seat_limit?: number", "plan_key?: string"],
+        }
+      : table === "platform_staff"
+        ? {
+          Row: ["role_key: string"],
+            Insert: ["role_key: string"],
+            Update: ["role_key?: string"],
+          }
+        : { Row: [], Insert: [], Update: [] };
+    const section = (name) => {
+      const optional = name === "Update" ? "?" : "";
+      const properties = [
+        `${baseColumn}${optional}: string`,
+        ...forward[name],
+      ].map((property) => `          ${property}`).join("\n");
+      return `        ${name}: {\n${properties}\n        }`;
+    };
+    return `      ${table}: {\n${["Row", "Insert", "Update"].map(section).join("\n")}\n      }`;
+  }).join("\n");
+  const columns = tables.map((table, ordinal) => ({
+    table_name: table,
+    column_name: table === "leads" ? "organization_id" : "id",
+    ordinal_position: ordinal + 1,
+    is_nullable: "NO",
+    udt_name: "uuid",
+    column_default: null,
+  }));
+  return {
+    source: `export type Database = {\n  public: {\n    Tables: {\n${tableSource}\n    }\n    Functions: {\n      requested_organization_id: { Args: never; Returns: string }\n    }\n  }\n}`,
+    contract: {
+      columns,
+      foreign_keys: [],
+      requested_organization_id_return: "uuid",
+    },
+  };
+}
+
 test("SAM-20 migration establishes one explicit Lead organization boundary", async () => {
   const sql = await read(
     "supabase/migrations/20260730100000_sam20_lead_organization_isolation.sql",
@@ -195,6 +247,10 @@ test("SAM-20 database gate fails closed and CI runs the disposable apply/rollbac
     runner,
     /FORWARD_TYPE_COLUMNS[\s\S]*organizations[\s\S]*billable_seat_limit[\s\S]*plan_key/,
   );
+  assert.match(
+    runner,
+    /FORWARD_TYPE_COLUMNS[\s\S]*platform_staff[\s\S]*role_key[\s\S]*Row: ": string"/,
+  );
   assert.match(runner, /database_type_forward_mismatch/);
   assert.match(runner, /database_type_unexpected_columns/);
   assert.match(runner, /sam20_rollback_without_environment/);
@@ -208,6 +264,22 @@ test("SAM-20 database gate fails closed and CI runs the disposable apply/rollbac
   assert.equal(
     JSON.parse(packageJson).scripts["check:sam20-database"],
     "node scripts/run-sam20-database-gate.mjs",
+  );
+});
+
+test("SAM-20 type gate permits the exact later required role_key addition but rejects original-column drift", () => {
+  const fixture = sam20TypeFixture();
+
+  assert.doesNotThrow(() => verifyDatabaseTypes(fixture.source, fixture.contract));
+
+  const driftedSource = fixture.source.replace(
+    "      platform_staff: {\n        Row: {\n          id: string",
+    "      platform_staff: {\n        Row: {\n          id: number",
+  );
+  assert.notEqual(driftedSource, fixture.source);
+  assert.throws(
+    () => verifyDatabaseTypes(driftedSource, fixture.contract),
+    /database_type_mismatch:platform_staff\.Row\.id:expected=: string:actual=: number/,
   );
 });
 

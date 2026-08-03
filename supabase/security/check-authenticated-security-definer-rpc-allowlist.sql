@@ -15,6 +15,13 @@ WITH expected(regprocedure) AS (
     ('record_lead_note_atomic(uuid,text,uuid)'),
     ('reopen_lead_milestone(uuid,text,text)'),
     ('transition_lead_stage(uuid,text,text,text,uuid)')
+    ,('v4_accept_organization_membership(uuid,uuid,text)')
+    ,('v4_actor_has_capability(uuid,uuid,text,text)')
+    ,('v4_approve_platform_action(uuid,text)')
+    ,('v4_import_leads_for_organization(uuid,jsonb,uuid,text)')
+    ,('v4_invite_organization_member(uuid,uuid,text,text)')
+    ,('v4_register_tenant_file(uuid,text,uuid,text,text,text,bigint,text,text)')
+    ,('v4_request_platform_action_approval(text,text,jsonb,text)')
   -- END AUTHENTICATED_SECURITY_DEFINER_ALLOWLIST
 ),
 actual AS (

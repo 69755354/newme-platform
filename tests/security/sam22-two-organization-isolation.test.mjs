@@ -58,9 +58,10 @@ test("list, search, direct-ID, and export all carry the same explicit organizati
 });
 
 test("webhook, import, cron, and Dashboard are explicitly organization-scoped", async () => {
-  const [webhook, importRoute, cron, dashboard] = await Promise.all([
+  const [webhook, importRoute, importMigration, cron, dashboard] = await Promise.all([
     read("src/app/api/leads/meta-capi/route.ts"),
     read("src/app/api/leads/import/confirm/route.ts"),
+    read("supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql"),
     read("src/app/api/cron/daily-funnel-snapshot/route.ts"),
     read("src/app/api/dashboard/summary/route.ts"),
   ]);
@@ -71,11 +72,15 @@ test("webhook, import, cron, and Dashboard are explicitly organization-scoped", 
   assert.match(webhook, /organization_id: organizationId/);
 
   assert.match(importRoute, /resolveLeadOrganizationAccess/);
-  assert.match(importRoute, /organization_id: access\.organizationId/);
+  assert.match(importRoute, /\.rpc\(\s*"v4_import_leads_for_organization"/);
+  assert.match(importRoute, /p_organization_id: access\.organizationId/);
+  assert.match(importRoute, /p_rows: normalizedRows/);
+  assert.doesNotMatch(importRoute, /\.from\(["']leads["']\)[\s\S]*\.upsert\(/);
   assert.match(
-    importRoute,
-    /onConflict: "organization_id,import_fingerprint"/,
+    importMigration,
+    /ON CONFLICT \(organization_id, import_fingerprint\) DO NOTHING/,
   );
+  assert.match(importMigration, /'skipped_duplicates', skipped_count/);
 
   assert.match(cron, /getRequestedOrganizationId\(req\)/);
   assert.match(cron, /\.eq\('organization_id', organization\.id\)/);

@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { DEVICE_CATALOG, findDevice, QUOTATION_DEFAULTS } from "@/lib/device-catalog";
 import { calculateQuotation, type CalculateResult } from "@/lib/quotation-engine";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { getBrowserOrganizationId } from "@/lib/organization-context";
 
 interface Lead { id: string; customer_name: string | null; phone: string | null; }
 interface Room { id: string; name: string; type: string; floor: number; }
@@ -121,7 +122,7 @@ function wizRed(state: WState, action: WAction): WState {
 }
 
 export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId }: QuoteWizardProps) {
-  const { t, lang } = useLanguage();
+  const { t } = useLanguage();
   const supabase = createClient();
   const isEmbedded = !!initialLeadId;
   const [s, d] = useReducer(wizRed, initState);
@@ -214,6 +215,11 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
     if (!s.selectedLeadId) return;
     d({ type: "SV", saving: true });
     try {
+      const organizationId = getBrowserOrganizationId();
+      if (!organizationId) {
+        toast.error(t("quotes.calc.saveFailed") + "Organization context is unavailable");
+        return;
+      }
       const { data: rpcQuoteNo, error: rpcError } = await supabase.rpc('next_quote_no');
       if (rpcError || !rpcQuoteNo) { console.error("RPC error:", rpcError); toast.error(t("quotes.calc.saveFailed") + (rpcError?.message || "Failed to generate quote number")); return; }
       const qn = rpcQuoteNo as string;
@@ -222,7 +228,8 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
         return { device_id: id, name: dev?.name || id, price: dev?.price || 0, quantity: qty, unit: dev?.unit || "pcs", subtotal: (dev?.price || 0) * qty };
       });
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from("quotations").insert({
+      const { data: insertedQuote, error } = await supabase.from("quotations").insert({
+        organization_id: organizationId,
         lead_id: s.selectedLeadId, quote_no: qn, version: 1,
         subtotal: calc.subtotal, discount_rate: s.discountRate,
         discount_amount: calc.discount_amount, tax_rate: 5, tax_amount: calc.tax_amount,
@@ -230,12 +237,10 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
         devices_json: dp, created_by: user?.id || null,
         notes: `${t("quotes.calc.property")}: ${s.propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${s.area}㎡\n${t("quotes.calc.installLabor")} (30%): ${calc.install_labor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")} (12%): ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")} (8%): ${calc.project_management.toFixed(2)} AED`,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      });
+      }).select("id").single();
       if (error) { console.error("Save error:", error); toast.error(t("quotes.calc.saveFailed") + error.message); return; }
-      // Notify about new quotation
-      import("@/lib/notify").then(({ notify }) => {
-        notify({ type: "quote_created", quote_id: qn, lead_id: s.selectedLeadId, quote_no: qn });
-      }).catch(() => {});
+      const { notify } = await import("@/lib/notify");
+      await notify({ type: "quote_created", quote_id: insertedQuote.id });
       d({ type: "SQ", id: qn }); onSaved?.(); onOpenChange(false);
     } finally { d({ type: "SV", saving: false }); }
   };

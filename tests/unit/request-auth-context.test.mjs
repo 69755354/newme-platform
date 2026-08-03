@@ -24,11 +24,14 @@ test("request auth context keeps explicit request, timeout, typed failures, and 
   assert.match(context, /response\.cookies\.set\(/);
 });
 
-test("high-risk impersonation route uses one context boundary and preserves refreshed cookies", () => {
+test("retired impersonation route cannot enter an authentication or service-client path", () => {
   const route = source("src/app/api/admin/impersonate/route.ts");
 
-  assert.match(route, /getRequestAuthContext\(request\)/);
-  assert.doesNotMatch(route, /createServerSupabase/);
-  assert.equal((route.match(/getRequestAuthContext\(/g) ?? []).length, 1);
-  assert.match(route, /applyRequestAuthCookies\(context,/);
+  assert.match(route, /export async function POST\(\)/);
+  assert.match(route, /status: 410/);
+  assert.match(route, /"Cache-Control": "no-store"/);
+  assert.doesNotMatch(
+    route,
+    /getRequestAuthContext|applyRequestAuthCookies|createServerSupabase|supabaseAdmin|generateLink/,
+  );
 });

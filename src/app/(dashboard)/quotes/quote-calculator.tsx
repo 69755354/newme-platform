@@ -18,7 +18,8 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { DEVICE_CATALOG, findDevice, type DeviceInfo, type CategoryInfo } from "@/lib/device-catalog";
+import { DEVICE_CATALOG, findDevice } from "@/lib/device-catalog";
+import { getBrowserOrganizationId } from "@/lib/organization-context";
 
 interface Lead { id: string; customer_name: string | null; phone: string | null; }
 
@@ -121,6 +122,11 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
     if (!selectedLeadId) return;
     setSaving(true);
     try {
+      const organizationId = getBrowserOrganizationId();
+      if (!organizationId) {
+        toast.error(t("quotes.calc.saveFailed") + "Organization context is unavailable");
+        return;
+      }
       const quoteNo = `Q-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
       const devicesPayload = Object.entries(quantities).map(([id, qty]) => {
         const d = findDevice(id);
@@ -128,7 +134,8 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
           quantity: qty, unit: d?.unit || "pcs", subtotal: (d?.price || 0) * qty };
       });
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from("quotations").insert({
+      const { data: insertedQuote, error } = await supabase.from("quotations").insert({
+        organization_id: organizationId,
         lead_id: selectedLeadId, quote_no: quoteNo, version: 1,
         subtotal: calc.deviceSubtotal, discount_rate: discountRate,
         discount_amount: calc.discountAmount, tax_rate: 5, tax_amount: calc.vat,
@@ -137,12 +144,10 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
         created_by: user?.id || null,
 notes: `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${area}㎡\n${t("quotes.calc.installLabor")} (30%): ${calc.installLabor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")} (12%): ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")} (8%): ${calc.pm.toFixed(2)} AED`,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      });
+      }).select("id").single();
       if (error) { console.error("Save error:", error); toast.error(t("quotes.calc.saveFailed") + error.message); return; }
-      // Notify about new quotation
-      import("@/lib/notify").then(({ notify }) => {
-        notify({ type: "quote_created", quote_id: quoteNo, lead_id: selectedLeadId, quote_no: quoteNo });
-      }).catch(() => {});
+      const { notify } = await import("@/lib/notify");
+      await notify({ type: "quote_created", quote_id: insertedQuote.id });
       setSavedQuoteId(quoteNo); onSaved?.(); onOpenChange(false);
     } finally { setSaving(false); }
   };

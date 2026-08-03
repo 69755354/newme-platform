@@ -1,13 +1,46 @@
 // RBAC: user (admin, boss, finance)
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { getRequestedOrganizationId } from "@/lib/organization-context";
+import {
+  OrganizationAuthorizationError,
+  resolveOrganizationAuthorization,
+} from "@/lib/organization-authorization";
+import { RequestAuthError } from "@/lib/request-auth-context";
 import { logger, genReqId } from "@/lib/logger";
 import type { Json } from "@/types/database";
 
 interface AllocationItem {
   plan_id: string;
   amount: number;
+}
+
+function paymentFailure(value: unknown): { code: string; status: number } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || typeof (value as { error?: unknown }).error !== "string") return null;
+  const error = (value as { error: string }).error;
+  const normalized = error.toLowerCase();
+  return normalized.includes("not found")
+    ? { code: "payment_not_found", status: 404 }
+    : normalized.includes("exceed")
+      ? { code: "payment_allocation_exceeds_amount", status: 409 }
+      : { code: "payment_allocation_conflict", status: 409 };
+}
+
+function paymentRpcStatus(message: string): number {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("not_found") || normalized.includes("not found")) return 404;
+  if (normalized.includes("capability") || normalized.includes("required")) return 403;
+  if (normalized.includes("invalid")) return 400;
+  if (normalized.includes("already") || normalized.includes("exceed")
+    || normalized.includes("conflict")) return 409;
+  return 503;
+}
+
+function paymentRpcCode(status: number): string {
+  if (status === 400) return "invalid_payment_allocation";
+  if (status === 403) return "payment_allocation_forbidden";
+  if (status === 404) return "payment_not_found";
+  if (status === 409) return "payment_allocation_conflict";
+  return "payment_allocation_unavailable";
 }
 
 /**
@@ -22,36 +55,12 @@ export async function POST(
   const request_id = genReqId();
   const { id: paymentId } = await params;
   try {
-    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(
-      bearerToken,
-      cookieHeader,
-      getRequestedOrganizationId(request) ?? undefined,
+    const access = await resolveOrganizationAuthorization(
+      request,
+      "payments.allocate",
+      "write",
     );
-    const {
-      data: { user },
-      error: authErr,
-    } = await supabase.auth.getUser();
-    if (authErr || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Fetch user role for access control
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile?.role) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 403 });
-    }
-
-    const allowedRoles = ["admin", "boss", "finance"];
-    if (!allowedRoles.includes(profile.role)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const { supabase, user } = access.context;
 
     const body = await request.json();
     const { allocations } = body as { allocations: AllocationItem[] };
@@ -84,6 +93,7 @@ export async function POST(
       .from("payments")
       .select("id, confirmed")
       .eq("id", paymentId)
+      .eq("organization_id", access.organizationId)
       .single();
 
     if (paymentErr || !payment) {
@@ -99,11 +109,15 @@ export async function POST(
 
     // Preserve the atomic allocation RPC and serialize only its generated JSON argument.
     const allocationPayload: Json = allocations.map(({ plan_id, amount }) => ({ plan_id, amount }));
-    const { data: result, error: rpcErr } = await supabase.rpc("allocate_payment", {
-      p_payment_id: paymentId,
-      p_allocations: allocationPayload,
-      p_allocated_by: user.id,
-    });
+    const { data: result, error: rpcErr } = await supabase.rpc(
+      "v4_allocate_payment_for_organization",
+      {
+        p_organization_id: access.organizationId,
+        p_payment_id: paymentId,
+        p_allocations: allocationPayload,
+        p_request_id: access.context.requestId,
+      },
+    );
 
     if (rpcErr) {
       logger.error(
@@ -116,15 +130,26 @@ export async function POST(
         },
         "[API Payments Allocate] RPC failed",
       );
+      const status = paymentRpcStatus(rpcErr.message || "");
+      return NextResponse.json({ error: paymentRpcCode(status) }, { status });
+    }
+
+    const businessFailure = paymentFailure(result);
+    if (businessFailure) {
       return NextResponse.json(
-        { error: rpcErr.message || "Failed to allocate payment" },
-        { status: 500 }
+        { error: businessFailure.code },
+        { status: businessFailure.status },
       );
     }
 
     return NextResponse.json({ data: result });
-  } catch (err: any) {
-    const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
+  } catch (err: unknown) {
+    if (err instanceof OrganizationAuthorizationError || err instanceof RequestAuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    const message = process.env.NODE_ENV === "production"
+      ? "Internal server error"
+      : err instanceof Error ? err.message : "Internal server error";
     logger.error(
       {
         err,

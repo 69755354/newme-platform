@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createIntegrationLogSinks } from "@/lib/integration-execution.mjs";
 import { genReqId, logger } from "@/lib/logger";
+import { getAdminUserIds, getAllActiveUserIds } from "@/lib/notifications";
 
 type OverduePlan = {
   id: string;
@@ -15,37 +16,19 @@ type OverduePlan = {
 type NotificationFailure = { installment_id: string; reason: string };
 
 async function createOverdueNotifications(plan: OverduePlan): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const [{ data: memberships, error: membershipsError }, { data: contract, error: contractError }] = await Promise.all([
-    supabaseAdmin
-      .from("memberships")
-      .select("user_id")
-      .eq("organization_id", plan.organization_id)
-      .eq("status", "active"),
+  const [{ data: contract, error: contractError }, adminIds, activeIds] = await Promise.all([
     supabaseAdmin
       .from("contracts")
       .select("sales_id")
       .eq("organization_id", plan.organization_id)
       .eq("id", plan.contract_id)
       .single(),
+    getAdminUserIds(plan.organization_id),
+    getAllActiveUserIds(plan.organization_id),
   ]);
-  if (membershipsError) return { ok: false, reason: "membership_lookup_failed" };
   if (contractError || !contract) return { ok: false, reason: "contract_lookup_failed" };
-
-  const memberIds = [...new Set((memberships ?? []).map((membership) => membership.user_id))];
-  if (memberIds.length === 0) return { ok: false, reason: "no_active_members" };
-  const { data: profiles, error: profilesError } = await supabaseAdmin
-    .from("profiles")
-    .select("id, role")
-    .in("id", memberIds)
-    .eq("is_active", true);
-  if (profilesError) return { ok: false, reason: "profile_lookup_failed" };
-
-  const activeProfileIds = new Set((profiles ?? []).map((profile) => profile.id));
-  const recipientIds = new Set(
-    (profiles ?? [])
-      .filter((profile) => profile.role === "admin" || profile.role === "boss")
-      .map((profile) => profile.id),
-  );
+  const activeProfileIds = new Set(activeIds);
+  const recipientIds = new Set(adminIds);
   if (contract.sales_id && activeProfileIds.has(contract.sales_id)) {
     recipientIds.add(contract.sales_id);
   }
@@ -54,6 +37,7 @@ async function createOverdueNotifications(plan: OverduePlan): Promise<{ ok: true
   const { data: existingNotifications, error: existingError } = await supabaseAdmin
     .from("notifications")
     .select("user_id")
+    .eq("organization_id", plan.organization_id)
     .eq("type", "payment_overdue")
     .eq("related_id", plan.id)
     .eq("related_type", "payment");
@@ -65,6 +49,7 @@ async function createOverdueNotifications(plan: OverduePlan): Promise<{ ok: true
 
   const { error: insertError } = await supabaseAdmin.from("notifications").insert(
     missingRecipientIds.map((userId) => ({
+      organization_id: plan.organization_id,
       user_id: userId,
       type: "payment_overdue",
       title: `Overdue installment: AED ${plan.amount}`,

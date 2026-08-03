@@ -1,6 +1,7 @@
 'use server'
 
-import { createServerSupabase } from '@/lib/supabase-server'
+import { cookies } from 'next/headers'
+import { resolveOrganizationAuthorization } from '@/lib/organization-authorization'
 import type { Json } from '@/types/database'
 
 interface CreatePaymentInput {
@@ -17,13 +18,23 @@ interface AllocationItem {
   amount: number
 }
 
+async function actionRequest() {
+  const cookieStore = await cookies()
+  return new Request('http://newme.internal/actions/payments', {
+    headers: { cookie: cookieStore.toString() },
+  })
+}
+
 /**
  * Record a new payment against a contract.
  */
 export async function createPayment(data: CreatePaymentInput) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
+  const access = await resolveOrganizationAuthorization(
+    await actionRequest(),
+    'payments.create',
+    'write',
+  )
+  const { supabase, user } = access.context
 
   // Validation
   if (!data.contract_id) throw new Error('contract_id is required')
@@ -36,21 +47,15 @@ export async function createPayment(data: CreatePaymentInput) {
   // Verify the contract exists
   const { data: contract, error: contractErr } = await supabase
     .from('contracts')
-    .select('id, sales_id')
+    .select('id, sales_id, organization_id')
     .eq('id', data.contract_id)
+    .eq('organization_id', access.organizationId)
     .single()
 
   if (contractErr || !contract) throw new Error('Contract not found')
 
-  // Fetch user role for access control
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  const userRole = profile?.role
-  const isPrivileged = userRole ? ['admin', 'boss', 'finance', 'operator'].includes(userRole) : false
+  const isPrivileged = access.capabilities.includes('contracts.write_any')
+    || access.capabilities.includes('payments.confirm')
 
   // Sales can only record payments against their own contracts
   if (!isPrivileged && contract.sales_id !== user.id) {
@@ -60,6 +65,7 @@ export async function createPayment(data: CreatePaymentInput) {
   const { data: payment, error: insertErr } = await supabase
     .from('payments')
     .insert({
+      organization_id: access.organizationId,
       contract_id: data.contract_id,
       created_by: user.id,
       amount: data.amount,
@@ -81,39 +87,39 @@ export async function createPayment(data: CreatePaymentInput) {
  * Confirm a payment (admin/boss/finance only).
  */
 export async function confirmPayment(paymentId: string) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
-
-  // Fetch user role for access control
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile) throw new Error('Profile not found')
-
-  const allowedRoles = ['admin', 'boss', 'finance']
-  if (!profile.role || !allowedRoles.includes(profile.role)) throw new Error('Forbidden')
+  const access = await resolveOrganizationAuthorization(
+    await actionRequest(),
+    'payments.confirm',
+    'write',
+  )
+  const { supabase } = access.context
 
   // Verify the payment exists and is not already confirmed
   const { data: payment, error: paymentErr } = await supabase
     .from('payments')
     .select('id, confirmed')
     .eq('id', paymentId)
+    .eq('organization_id', access.organizationId)
     .single()
 
   if (paymentErr || !payment) throw new Error('Payment not found')
   if (payment.confirmed) throw new Error('Payment is already confirmed')
 
   // Call the RPC function to confirm the payment with cascading updates
-  const { data: result, error: rpcErr } = await supabase.rpc('confirm_payment', {
-    p_payment_id: paymentId,
-    p_confirmer_id: user.id,
-  })
+  const { data: result, error: rpcErr } = await supabase.rpc(
+    'v4_confirm_payment_for_organization',
+    {
+      p_organization_id: access.organizationId,
+      p_payment_id: paymentId,
+      p_request_id: access.context.requestId,
+    },
+  )
 
   if (rpcErr) throw new Error(rpcErr.message || 'Failed to confirm payment')
+  if (result && typeof result === 'object' && !Array.isArray(result)
+    && typeof (result as { error?: unknown }).error === 'string') {
+    throw new Error((result as { error: string }).error)
+  }
 
   return { data: result }
 }
@@ -122,21 +128,12 @@ export async function confirmPayment(paymentId: string) {
  * Allocate a confirmed payment to installment plans (admin/boss/finance only).
  */
 export async function allocatePayment(paymentId: string, allocations: AllocationItem[]) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
-
-  // Fetch user role for access control
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile) throw new Error('Profile not found')
-
-  const allowedRoles = ['admin', 'boss', 'finance']
-  if (!profile?.role || !allowedRoles.includes(profile.role)) throw new Error('Forbidden')
+  const access = await resolveOrganizationAuthorization(
+    await actionRequest(),
+    'payments.allocate',
+    'write',
+  )
+  const { supabase } = access.context
 
   // Validate allocations
   if (!allocations || !Array.isArray(allocations) || allocations.length === 0) {
@@ -156,6 +153,7 @@ export async function allocatePayment(paymentId: string, allocations: Allocation
     .from('payments')
     .select('id, confirmed, contract_id')
     .eq('id', paymentId)
+    .eq('organization_id', access.organizationId)
     .single()
 
   if (paymentErr || !payment) throw new Error('Payment not found')
@@ -165,6 +163,7 @@ export async function allocatePayment(paymentId: string, allocations: Allocation
   const { data: plans, error: plansErr } = await supabase
     .from('installment_plans')
     .select('id, contract_id')
+    .eq('organization_id', access.organizationId)
     .in('id', planIds)
 
   if (
@@ -178,13 +177,21 @@ export async function allocatePayment(paymentId: string, allocations: Allocation
 
   // RPC payload must match the generated JSON contract.
   const allocationPayload: Json = allocations.map(({ plan_id, amount }) => ({ plan_id, amount }));
-  const { data: result, error: rpcErr } = await supabase.rpc('allocate_payment', {
-    p_payment_id: paymentId,
-    p_allocations: allocationPayload,
-    p_allocated_by: user.id,
-  })
+  const { data: result, error: rpcErr } = await supabase.rpc(
+    'v4_allocate_payment_for_organization',
+    {
+      p_organization_id: access.organizationId,
+      p_payment_id: paymentId,
+      p_allocations: allocationPayload,
+      p_request_id: access.context.requestId,
+    },
+  )
 
   if (rpcErr) throw new Error(rpcErr.message || 'Failed to allocate payment')
+  if (result && typeof result === 'object' && !Array.isArray(result)
+    && typeof (result as { error?: unknown }).error === 'string') {
+    throw new Error((result as { error: string }).error)
+  }
 
   return { data: result }
 }

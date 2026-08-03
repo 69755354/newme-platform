@@ -29,14 +29,21 @@ test("XLSX import rejects prototype-pollution keys before either route processes
     /unsafe column name/i,
   );
 
-  for (const [path, loop] of [
+  for (const [path, firstProcessingStep] of [
     ["src/app/api/leads/import/preview/route.ts", "for (let i"],
-    ["src/app/api/leads/import/confirm/route.ts", "const leadsToInsert"],
+    ["src/app/api/leads/import/confirm/route.ts", "const normalizedRows"],
   ]) {
     const source = await read(path);
-    assert.match(source, /validateXlsxImportRows\(untrustedRows\)/);
+    const validation = source.match(/validateXlsxImportRows\(([A-Za-z_$][\w$]*)\)/);
+    assert.ok(validation, `${path} must validate the untrusted row collection`);
+    const rowCollection = validation[1];
+    assert.match(
+      source,
+      new RegExp(`!Array\\.isArray\\(${rowCollection}\\)`),
+      `${path} must prove the validated value is an array`,
+    );
     assert.ok(
-      source.indexOf("validateXlsxImportRows(") < source.indexOf(loop),
+      source.indexOf(validation[0]) < source.indexOf(firstProcessingStep),
       `${path} must validate rows before iterating them`,
     );
   }

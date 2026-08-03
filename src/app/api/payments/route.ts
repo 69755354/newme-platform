@@ -1,8 +1,15 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { getRequestedOrganizationId } from "@/lib/organization-context";
+import {
+  OrganizationAuthorizationError,
+  resolveOrganizationAuthorization,
+} from "@/lib/organization-authorization";
+import { RequestAuthError } from "@/lib/request-auth-context";
 import { logger, genReqId } from "@/lib/logger";
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Internal server error";
+}
 
 /**
  * POST /api/payments
@@ -11,20 +18,12 @@ import { logger, genReqId } from "@/lib/logger";
 export async function POST(request: NextRequest) {
   const request_id = genReqId();
   try {
-    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(
-      bearerToken,
-      cookieHeader,
-      getRequestedOrganizationId(request) ?? undefined,
+    const access = await resolveOrganizationAuthorization(
+      request,
+      "payments.create",
+      "write",
     );
-    const {
-      data: { user },
-      error: authErr,
-    } = await supabase.auth.getUser();
-    if (authErr || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { supabase, user } = access.context;
 
     const body = await request.json();
     const { contract_id, amount, payment_date, payment_method, reference_no, notes } = body;
@@ -45,26 +44,17 @@ export async function POST(request: NextRequest) {
     // Verify the contract exists
     const { data: contract, error: contractErr } = await supabase
       .from("contracts")
-      .select("id, sales_id")
+      .select("id, sales_id, organization_id")
       .eq("id", contract_id)
+      .eq("organization_id", access.organizationId)
       .single();
 
     if (contractErr || !contract) {
       return NextResponse.json({ error: "Contract not found" }, { status: 404 });
     }
 
-    // Fetch user role for access control
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile?.role) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-    const userRole = profile.role;
-    const isPrivileged = ["admin", "boss", "finance", "operator"].includes(userRole);
+    const isPrivileged = access.capabilities.includes("contracts.write_any")
+      || access.capabilities.includes("payments.confirm");
 
     // Sales can only record payments against their own contracts
     if (!isPrivileged && contract.sales_id !== user.id) {
@@ -74,6 +64,7 @@ export async function POST(request: NextRequest) {
     const { data: payment, error: insertErr } = await supabase
       .from("payments")
       .insert({
+        organization_id: access.organizationId,
         contract_id,
         created_by: user.id,
         amount,
@@ -101,8 +92,13 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ id: payment.id, amount: payment.amount }, { status: 201 });
-  } catch (err: any) {
-    const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
+  } catch (err: unknown) {
+    if (err instanceof OrganizationAuthorizationError || err instanceof RequestAuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    const message = process.env.NODE_ENV === "production"
+      ? "Internal server error"
+      : errorMessage(err);
     logger.error(
       {
         err,
@@ -123,37 +119,12 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const request_id = genReqId();
   try {
-    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(
-      bearerToken,
-      cookieHeader,
-      getRequestedOrganizationId(request) ?? undefined,
+    const access = await resolveOrganizationAuthorization(
+      request,
+      "payments.read",
+      "read",
     );
-    const {
-      data: { user },
-      error: authErr,
-    } = await supabase.auth.getUser();
-    if (authErr || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Fetch user role for access control
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile?.role) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 403 });
-    }
-
-    const userRole = profile.role;
-    const allowedRoles = ["admin", "boss", "sales", "finance", "operator"];
-    if (!allowedRoles.includes(userRole)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const { supabase, user } = access.context;
 
     const { searchParams } = new URL(request.url);
     const contractId = searchParams.get("contract_id");
@@ -162,6 +133,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from("payments")
       .select("*")
+      .eq("organization_id", access.organizationId)
       .order("created_at", { ascending: false });
 
     if (contractId) {
@@ -172,11 +144,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Sales can only see payments for their own contracts
-    if (userRole === "sales") {
+    const canReadAll = access.roleKeys.some((roleKey) => [
+      "org_owner", "org_admin", "operations", "finance",
+    ].includes(roleKey));
+    if (!canReadAll) {
       // Get contract IDs owned by this sales user
       const { data: ownContracts, error: contractsErr } = await supabase
         .from("contracts")
         .select("id")
+        .eq("organization_id", access.organizationId)
         .eq("sales_id", user.id);
 
       if (contractsErr) {
@@ -217,8 +193,13 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ data });
-  } catch (err: any) {
-    const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
+  } catch (err: unknown) {
+    if (err instanceof OrganizationAuthorizationError || err instanceof RequestAuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    const message = process.env.NODE_ENV === "production"
+      ? "Internal server error"
+      : errorMessage(err);
     logger.error(
       {
         err,

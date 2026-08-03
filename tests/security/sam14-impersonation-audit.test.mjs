@@ -1,24 +1,38 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const route = readFileSync("src/app/api/admin/impersonate/route.ts", "utf8");
+const routeUrl = new URL(
+  "../../src/app/api/admin/impersonate/route.ts",
+  import.meta.url,
+);
 
-test("SAM-14 requires a reason before a legacy impersonation link can be requested", () => {
-  assert.match(route, /const reason = typeof input\.reason === "string" \? input\.reason\.trim\(\) : "";/);
-  assert.match(route, /if \(!reason\) \{[\s\S]*reason required[\s\S]*status: 400/);
-  assert.match(route, /details: \{[\s\S]*reason,/);
+test("legacy impersonation is permanently retired without reading caller input", async () => {
+  const route = await import(routeUrl);
+  let requestWasRead = false;
+  const poisonRequest = new Proxy({}, {
+    get() {
+      requestWasRead = true;
+      throw new Error("retired route read request input");
+    },
+  });
+
+  const response = await route.POST(poisonRequest);
+
+  assert.equal(requestWasRead, false);
+  assert.equal(response.status, 410);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await response.json(), {
+    error: "impersonation_endpoint_retired",
+  });
 });
 
-test("SAM-14 fails closed when the impersonation audit write fails", () => {
-  const auditWrite = route.indexOf('const { error: auditError } = await supabaseAdmin.from("audit_logs").insert({');
-  const auditFailure = route.indexOf("if (auditError)");
-  const magicLink = route.indexOf("supabaseAdmin.auth.admin.generateLink");
+test("retired impersonation route has no authorization or magic-link compatibility path", async () => {
+  const source = await readFile(routeUrl, "utf8");
 
-  assert.ok(auditWrite >= 0, "audit write must be awaited");
-  assert.ok(auditFailure > auditWrite, "audit failure must be handled after the write");
-  assert.ok(magicLink > auditFailure, "magic link must be generated only after audit success");
-  assert.match(route, /Audit logging unavailable; access denied/);
-  assert.match(route, /status: 503/);
-  assert.doesNotMatch(route, /\.insert\([\s\S]*?\.then\(/);
+  assert.match(source, /export async function POST\(\)/);
+  assert.match(source, /status: 410/);
+  assert.match(source, /"Cache-Control": "no-store"/);
+  assert.doesNotMatch(source, /NextRequest|request\.json|request\.|supabaseAdmin/);
+  assert.doesNotMatch(source, /generateLink|magiclink|getRequestAuthContext|targetUserId/);
 });

@@ -20,10 +20,10 @@ test("preview accepts current and legacy CRM workbook headers", async () => {
 
 test("confirm revalidates original workbook values instead of normalized labels", async () => {
   const source = await read("src/app/api/leads/import/confirm/route.ts");
-  assert.ok(source.includes("rawImportData.raw_quality ?? row.quality"));
-  assert.ok(source.includes("rawImportData.raw_source ?? row.source"));
-  assert.ok(source.includes("mapQuality(String(rawQuality ??"));
-  assert.equal(source.includes("mapQuality(String(row.quality ??"), false);
+  assert.ok(source.includes("raw.raw_quality ?? row.quality"));
+  assert.ok(source.includes("raw.raw_source ?? row.source"));
+  assert.ok(source.includes("mapQuality(raw.raw_quality ?? row.quality)"));
+  assert.equal(source.includes("mapQuality(row.quality)"), false);
 });
 
 test("country stays in raw import data until the leads schema supports it", async () => {

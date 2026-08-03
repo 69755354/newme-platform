@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,11 @@ import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import {
+  buildPercentageInstallments,
+  createSubmissionSession,
+  submissionIdempotencyKey,
+} from "@/lib/client-request-integrity";
 
 const DEFAULT_PCTS = [50, 30, 20];
 const DEFAULT_DAYS = [0, 30, 60];
@@ -32,9 +37,29 @@ interface LeadOption {
   quotation_value: number | null;
 }
 
+interface ContractCreatePayload {
+  lead_id: string;
+  amount: number;
+  currency: string;
+  party_a_name: string;
+  party_a_contact: string | null;
+  party_b_name: string;
+  installments: Array<{
+    seq: number;
+    amount: number;
+    due_date: string;
+    description: string;
+  }>;
+}
+
+interface ContractCreateAttempt {
+  inputIdentity: string;
+  payload: ContractCreatePayload;
+  workflowKey: string;
+}
+
 function NewContractPageInner() {
   const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss"]);
-  const router = useRouter();
   const searchParams = useSearchParams();
   const presetLeadId = searchParams.get("lead_id");
   const { t } = useLanguage();
@@ -42,6 +67,7 @@ function NewContractPageInner() {
   const [leads, setLeads] = useState<LeadOption[]>([]);
   const [showLeadPicker, setShowLeadPicker] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadOption | null>(null);
+  const createAttemptRef = useRef<ContractCreateAttempt | null>(null);
 
   // Form fields
   const [contractAmount, setContractAmount] = useState("");
@@ -112,55 +138,81 @@ function NewContractPageInner() {
     }
 
     const amount = parseFloat(contractAmount);
-    if (isNaN(amount) || amount <= 0) {
+    const amountCents = Math.round(amount * 100);
+    if (!Number.isFinite(amount) || amount <= 0
+      || Math.abs(amount * 100 - amountCents) > 1e-6) {
       toast.error(t("contracts.validAmount"));
       setSaving(false);
       return;
     }
 
-    const pctList = pcts.split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
-    const dayList = dueDays.split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+    const pctList = pcts.split(",").map((value) => Number(value.trim()));
+    const dayList = dueDays.split(",").map((value) => Number(value.trim()));
 
-    if (pctList.length < 1 || dayList.length < 1) {
+    if (pctList.length < 1 || pctList.length !== dayList.length
+      || pctList.some((percentage) => !Number.isInteger(percentage) || percentage <= 0)
+      || dayList.some((days) => !Number.isInteger(days) || days < 0)
+      || pctList.reduce((sum, percentage) => sum + percentage, 0) !== 100) {
       toast.error(t("contracts.invalidInstallment"));
       setSaving(false);
       return;
     }
 
-    const installCount = Math.min(pctList.length, dayList.length);
-
-    // Build installment data
-    const now = new Date();
-    const installments = [];
-    for (let i = 0; i < installCount; i++) {
-      const instAmount = Math.round((amount * pctList[i]) / 100 * 100) / 100;
-      const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + dayList[i]);
-      installments.push({
-        seq: i + 1,
-        amount: instAmount,
-        due_date: dueDate.toISOString().slice(0, 10),
-        description: i === 0 ? t("contracts.installmentFirst") : i === installCount - 1 ? t("contracts.installmentLast") : t("contracts.installmentNth").replace("{n}", String(i + 1)),
-      });
-    }
-
-    // Create contract via server API (avoids direct browser-side DB inserts)
+    // Create contract via the tenant-bound atomic workflow endpoint.
     let res: Response;
     try {
-      res = await fetch("/api/contracts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const inputIdentity = JSON.stringify({
+        lead_id: selectedLead.id,
+        amount_cents: amountCents,
+        party_a_name: partyAName || selectedLead.customer_name || "Unknown",
+        party_a_contact: partyAPhone || selectedLead.phone || null,
+        percentages: pctList,
+        due_days: dayList,
+      });
+      let attempt = createAttemptRef.current;
+      if (!attempt || attempt.inputIdentity !== inputIdentity) {
+        const baseInstallments = buildPercentageInstallments(
+          amountCents / 100,
+          pctList,
+          dayList,
+          new Date(),
+        );
+        const payload: ContractCreatePayload = {
           lead_id: selectedLead.id,
-          amount,
+          amount: amountCents / 100,
           currency: "AED",
           party_a_name: partyAName || selectedLead.customer_name || "Unknown",
           party_a_contact: partyAPhone || selectedLead.phone || null,
           party_b_name: "NewMe Smart Home FZCO",
-          installments,
-        }),
+          installments: baseInstallments.map((installment, index) => ({
+            ...installment,
+            description: index === 0
+              ? t("contracts.installmentFirst")
+              : index === baseInstallments.length - 1
+                ? t("contracts.installmentLast")
+                : t("contracts.installmentNth").replace("{n}", String(index + 1)),
+          })),
+        };
+        attempt = {
+          inputIdentity,
+          payload,
+          workflowKey: await submissionIdempotencyKey(
+            "contract.create.ui",
+            createSubmissionSession(),
+            payload,
+          ),
+        };
+        createAttemptRef.current = attempt;
+      }
+      res = await fetch("/api/contracts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": attempt.workflowKey,
+        },
+        body: JSON.stringify(attempt.payload),
       });
-    } catch (err) {
+    } catch {
       toast.error(t("contracts.createFailed") || "Network error");
       setSaving(false);
       return;
@@ -174,6 +226,7 @@ function NewContractPageInner() {
       return;
     }
 
+    createAttemptRef.current = null;
     toast.success(t("contracts.created").replace("{no}", result.contract_no));
     setSaving(false);
     window.location.href = "/contracts";

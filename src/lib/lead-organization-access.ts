@@ -8,6 +8,10 @@ import {
 } from "@/lib/request-auth-context";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
+  OrganizationAuthorizationError,
+  resolveOrganizationAuthorization,
+} from "@/lib/organization-authorization";
+import {
   getRequestedOrganizationId,
   parseOrganizationId,
   SUPPORT_SESSION_HEADER,
@@ -52,24 +56,32 @@ export async function resolveLeadOrganizationAccess(
     throw new LeadOrganizationAccessError(400, "organization_context_required");
   }
 
-  const { data: membership, error: membershipError } = await supabaseAdmin
-    .from("memberships")
-    .select("id")
-    .eq("organization_id", organizationId)
-    .eq("user_id", context.user.id)
-    .eq("status", "active")
-    .maybeSingle();
-
-  if (membershipError) {
-    throw new LeadOrganizationAccessError(503, "organization_access_unavailable");
-  }
-  if (membership) {
+  try {
+    const authorization = await resolveOrganizationAuthorization(
+      request,
+      requiredScope === "lead:write" ? "leads.write" : "leads.read",
+      requiredScope === "lead:write" ? "write" : "read",
+    );
     return {
-      client: context.supabase,
-      context,
+      client: authorization.context.supabase,
+      context: authorization.context,
       organizationId,
       supportSessionId: null,
     };
+  } catch (error) {
+    if (
+      !(error instanceof OrganizationAuthorizationError)
+      || ![
+        "active_organization_membership_required",
+        "organization_role_required",
+        "organization_capability_required",
+      ].includes(error.code)
+    ) {
+      if (error instanceof OrganizationAuthorizationError) {
+        throw new LeadOrganizationAccessError(error.status, error.code);
+      }
+      throw error;
+    }
   }
 
   const supportSessionId = parseOrganizationId(

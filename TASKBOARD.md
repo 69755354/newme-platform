@@ -66,6 +66,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | SAM-22 | REVIEW | Codex | 2026-07-30 |
 | SAM-23 | IN_PROGRESS | Codex | 2026-07-30 |
 | SAM-70 | IN_PROGRESS | Codex | 2026-07-30 |
+| SAM-78 | IN_PROGRESS | Codex | 2026-08-03 |
 
 > `SAM-15` (2026-07-28): staging-local evidence: 23/23 focused execution tests plus taskboard, typecheck, security, lint-ratchet, and direct `npx next build` passed. Public liveness now returns only `{ status: "ok" }`; readiness authentication and bounded timeout are executed. CSP/HSTS, OAuth state replay rejection, and dynamic split-session cookies are covered. Status remains `REVIEW` pending live staging header and OAuth UAT; no production claim.
 
@@ -76,6 +77,8 @@ TODO → IN_PROGRESS → REVIEW → DONE
 > `SAM-21` (2026-07-30): implemented and locally verified a disposable first-organization migration rehearsal over the exact SAM-20/22 assets. Before/after aggregate counts, quotation value, Lead owners, history relationships, and document ownership remained identical; environment and fixture rollback guards, full rollback, old Lead read/write restoration, harness cleanup, and a PII-free read-only reconciliation contract passed. No staging or production database was accessed.
 >
 > `SAM-23` (2026-07-30): delivered a repository-only, machine-verifiable customer-readiness and delivery-boundary contract. Focused contract tests passed 3/3; taskboard 18/18, security, typecheck, and lint baseline passed. The current Windows worktree full suite passed 431/460 with 26 failures outside the three SAM-23 changed paths and 3 skips; the SAM-23 tests were all green. The exact-toolchain gate rejected local Node 24.14.1 against pinned 24.18.0. The customer-onboarding baseline remains NO-GO: common-module organization keys, deterministic billable-seat implementation, the complete negative isolation matrix, and staging UAT are not complete. This unit does not change runtime code, schema, databases, environments, or Linear status.
+>
+> `SAM-78` (2026-08-03): continuing the V4-PF-001..004/G1/G2 tenant closure from exact canonical base `agent/saas-staging-isolation@f2bd6576a0723fea58a13926baef2dedcc37da8e` on isolated branch `codex/sam-78-tenant-closure`. PR #255 is prior capability/product-catalog foundation evidence and is not treated as full SAM-78 acceptance. Required remaining acceptance includes tenant-owned FK/RLS/API/RPC/worker/storage/import/export coverage, support-session immutable audit, provisioning through suspension/recovery, two-organization negatives, disposable apply/verify/rollback, generated types and residue-zero cleanup. No production action is authorized.
 
 > M1 发布链（Linear 为真源）：**RELEASED 2026-07-20**。发布 SHA `49bbb26` → BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6~12 全链 Done：SAM-28 业务签收（森哥 2026-07-20）+ 技术签收（机器全量验收），SAM-12 发布记录出具。SAM-26 视觉/移动端留人工不拦发布；SAM-45/46 进 M2 backlog。
 >

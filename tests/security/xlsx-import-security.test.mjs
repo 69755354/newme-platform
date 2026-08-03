@@ -79,8 +79,10 @@ test("xlsx bytes are parsed only in the guarded client import entrypoint", async
   assert.equal(preview.includes('from "xlsx"'), false);
   assert.equal(confirm.includes('from "xlsx"'), false);
   assert.ok(preview.includes('["admin", "boss"].includes(profile.role)'));
-  assert.ok(confirm.includes('["admin", "boss"].includes(access.context.role)'));
   assert.ok(confirm.includes("resolveLeadOrganizationAccess"));
+  assert.ok(confirm.includes('request,\n      "lead:write"'));
+  assert.ok(confirm.includes("p_organization_id: access.organizationId"));
+  assert.ok(confirm.includes('"v4_import_leads_for_organization"'));
 });
 
 test("xlsx resource limits reject oversized files and row sets", () => {
@@ -109,5 +111,5 @@ test("client and server enforce the shared xlsx limits before work is accepted",
   );
   assert.match(dialog, /validateXlsxImportLimits\(\{ rowCount: rows\.length \}\)/);
   assert.match(preview, /validateXlsxImportLimits\(\{ rowCount: rawRows\.length \}\)/);
-  assert.match(confirm, /validateXlsxImportLimits\(\{ rowCount: allRows\.length \}\)/);
+  assert.match(confirm, /validateXlsxImportLimits\(\{ rowCount: rows\.length \}\)/);
 });

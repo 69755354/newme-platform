@@ -1143,12 +1143,14 @@ async function runCustomerExit(state) {
       user_id: admin.id,
       staff_ref: `EXIT-${state.runId.slice(0, 8)}-OP`,
       status: "active",
+      role_key: "platform_ops",
     },
     {
       id: approverStaffId,
       user_id: boss.id,
       staff_ref: `EXIT-${state.runId.slice(0, 8)}-APP`,
       status: "active",
+      role_key: "platform_owner",
     },
   ]);
   if (staffError) fail("could not create customer-exit platform staff fixtures");
@@ -1173,16 +1175,24 @@ async function runCustomerExit(state) {
     body: {
       action: "prepare",
       organization_id: state.organizationId,
-      approver_user_id: boss.id,
       idempotency_key: idempotencyKey,
       reason: "Synthetic customer-approved staging exit verification",
     },
   });
-  expectStatus("customer exit prepare", prepared, 201);
-  assert.equal(prepared.payload?.status, "prepared");
-  assert.equal(prepared.payload?.organization_status, "read_only");
-  assertUuid(prepared.payload?.exit_request_id, "customer exit request");
-  state.exitRequestIds.add(prepared.payload.exit_request_id);
+  expectStatus("customer exit prepare request", prepared, 202);
+  assertUuid(prepared.payload?.approval_request_id, "customer exit prepare approval");
+  const preparedExecution = await appRequest(state, "boss", "/api/platform/approvals", {
+    method: "PATCH",
+    body: {
+      approval_request_id: prepared.payload.approval_request_id,
+      consumption_key: `exit-prepare-${state.runId}`,
+    },
+  });
+  expectStatus("customer exit prepare approval", preparedExecution, 200);
+  assert.equal(preparedExecution.payload?.status, "prepared");
+  assert.equal(preparedExecution.payload?.organization_status, "read_only");
+  assertUuid(preparedExecution.payload?.exit_request_id, "customer exit request");
+  state.exitRequestIds.add(preparedExecution.payload.exit_request_id);
 
   const deniedWrite = await state.admin.from("leads").insert({
     organization_id: state.organizationId,
@@ -1205,7 +1215,6 @@ async function runCustomerExit(state) {
   const completionBody = {
     action: "complete",
     organization_id: state.organizationId,
-    approver_user_id: boss.id,
     idempotency_key: idempotencyKey,
     expected_export_sha256: exported.payload.data_sha256,
     backup_evidence_ref: `staging-backup-${state.config.releaseSha}`,
@@ -1216,17 +1225,35 @@ async function runCustomerExit(state) {
     method: "POST",
     body: completionBody,
   });
-  expectStatus("customer exit complete", completed, 200);
-  assert.equal(completed.payload?.status, "completed");
-  assert.equal(completed.payload?.organization_status, "closed");
-  assert.equal(completed.payload?.data_deleted, false);
+  expectStatus("customer exit complete request", completed, 202);
+  assertUuid(completed.payload?.approval_request_id, "customer exit complete approval");
+  const completedExecution = await appRequest(state, "boss", "/api/platform/approvals", {
+    method: "PATCH",
+    body: {
+      approval_request_id: completed.payload.approval_request_id,
+      consumption_key: `exit-complete-${state.runId}`,
+    },
+  });
+  expectStatus("customer exit complete approval", completedExecution, 200);
+  assert.equal(completedExecution.payload?.status, "completed");
+  assert.equal(completedExecution.payload?.organization_status, "closed");
+  assert.equal(completedExecution.payload?.data_deleted, false);
 
   const retried = await appRequest(state, "admin", "/api/platform/organization-exit", {
     method: "POST",
     body: completionBody,
   });
-  expectStatus("customer exit idempotent retry", retried, 200);
+  expectStatus("customer exit idempotent request retry", retried, 202);
   assert.equal(retried.payload?.idempotent, true);
+  const retriedExecution = await appRequest(state, "boss", "/api/platform/approvals", {
+    method: "PATCH",
+    body: {
+      approval_request_id: retried.payload.approval_request_id,
+      consumption_key: `exit-complete-${state.runId}`,
+    },
+  });
+  expectStatus("customer exit idempotent execution retry", retriedExecution, 200);
+  assert.equal(retriedExecution.payload?.idempotent, true);
 
   const [organization, activeMemberships, supportSession, retainedLeads] = await Promise.all([
     state.admin.from("organizations").select("status,closed_at").eq("id", state.organizationId).single(),

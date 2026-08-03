@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { useParams } from "next/navigation";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import Link from "next/link";
 import {
@@ -25,14 +25,37 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { fmtAED } from "@/shared/utils/format";
+import {
+  createUploadAttempt,
+  uploadContractFile,
+} from "@/lib/client-request-integrity";
+import type { UploadAttempt } from "@/lib/client-request-integrity";
+import { hasNotificationWarning } from "@/lib/contract-approval-result";
 
 /* ─── Types ─── */
 interface DetailResponse {
-  contract: any;
+  contract: ContractDetail;
   installments: Installment[];
   payments: Payment[];
   approvals: Approval[];
   canManage: boolean;
+}
+
+interface ContractDetail {
+  contract_amount: number | null;
+  contract_date: string | null;
+  contract_no: string;
+  currency: string | null;
+  file_url: string | null;
+  leads: { id: string; customer_name: string | null; source: string | null } | null;
+  party_a_contact: string | null;
+  party_a_name: string | null;
+  party_b_contact: string | null;
+  party_b_name: string | null;
+  profiles: { full_name: string | null; email: string | null } | null;
+  sealed_file_url: string | null;
+  signed_at: string | null;
+  status: string;
 }
 
 interface Installment {
@@ -64,7 +87,7 @@ interface Approval {
   id: string;
   step: string;
   status: string;
-  notes: any;
+  notes: unknown;
   reviewed_at: string | null;
   created_at: string;
   approver_name?: string | null;
@@ -83,7 +106,6 @@ export default function ContractDetailPage() {
     "admin", "boss", "sales", "finance", "operator",
   ]);
   const params = useParams();
-  const router = useRouter();
   const { t } = useLanguage();
 
   const contractId = String(params?.id ?? "");
@@ -101,28 +123,28 @@ export default function ContractDetailPage() {
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [revokeReason, setRevokeReason] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadAttemptRef = useRef<UploadAttempt | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
-      setLoading(true);
       const res = await fetch(`/api/contracts/${contractId}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to load contract");
       }
       setData(await res.json());
-    } catch (err: any) {
-      setError(err.message || t("common.loadFailed"));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t("common.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }
+  }, [contractId, t]);
 
   useEffect(() => {
     if (!contractId) return;
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contractId]);
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [contractId, load]);
 
   if (roleLoading || blocked) return null;
 
@@ -174,7 +196,7 @@ export default function ContractDetailPage() {
   const collectedPct = totalContract > 0 ? Math.round((collected / totalContract) * 100) : 0;
 
   /* ── Action helpers (reuse existing endpoints) ── */
-  async function postAction(path: string, body: any, successMsg: string) {
+  async function postAction(path: string, body: Record<string, unknown>, successMsg: string) {
     setActing(true);
     try {
       const res = await fetch(path, {
@@ -182,12 +204,21 @@ export default function ContractDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      const responseBody: unknown = await res.json().catch(() => ({}));
       if (res.ok) {
         toast.success(successMsg);
+        if (hasNotificationWarning(responseBody)) {
+          toast.warning("Action saved; notification delivery failed.");
+        }
         await load();
       } else {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || t("common.operationFailed"));
+        const errorCode = responseBody !== null
+          && typeof responseBody === "object"
+          && "error" in responseBody
+          && typeof responseBody.error === "string"
+          ? responseBody.error
+          : t("common.operationFailed");
+        toast.error(errorCode);
       }
     } catch {
       toast.error(t("login.networkError"));
@@ -210,47 +241,18 @@ export default function ContractDetailPage() {
     setUploading(true);
     setUploadProgress(0);
     try {
-      // 1. Get presigned URL
-      const urlRes = await fetch(`/api/contracts/${contractId}/upload-url`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name }),
-      });
-      if (!urlRes.ok) {
-        const err = await urlRes.json().catch(() => ({}));
-        toast.error(err.error || t("contracts.uploadFailed"));
-        setUploading(false);
-        return;
-      }
-      const { url, key } = await urlRes.json();
-
-      // 2. Upload to COS with progress
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", url);
-        xhr.upload.onprogress = (ev) => {
-          if (ev.lengthComputable) setUploadProgress(Math.round((ev.loaded / ev.total) * 100));
-        };
-        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("Upload failed")));
-        xhr.onerror = () => reject(new Error("Upload failed"));
-        xhr.send(file);
-      });
-
-      // 3. Confirm upload
-      const confirmRes = await fetch(`/api/contracts/${contractId}/confirm-upload`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, filename: file.name, size: file.size }),
-      });
-      if (confirmRes.ok) {
-        toast.success(t("contracts.uploadSuccess"));
-        await load();
-      } else {
-        const err = await confirmRes.json().catch(() => ({}));
-        toast.error(err.error || t("contracts.uploadFailed"));
-      }
-    } catch {
-      toast.error(t("contracts.uploadFailed"));
+      uploadAttemptRef.current ??= createUploadAttempt();
+      await uploadContractFile(
+        contractId,
+        file,
+        uploadAttemptRef.current,
+        setUploadProgress,
+      );
+      uploadAttemptRef.current = null;
+      toast.success(t("contracts.uploadSuccess"));
+      await load();
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : t("contracts.uploadFailed"));
     } finally {
       setUploading(false);
       setUploadProgress(0);

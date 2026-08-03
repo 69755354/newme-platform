@@ -1,6 +1,12 @@
 'use server'
 
 import { createServerSupabase } from '@/lib/supabase-server'
+import { createNotificationsBulk, getAdminUserIds } from '@/lib/notifications'
+import {
+  completeContractApproval,
+  withContractNotificationWarning,
+} from '@/lib/contract-approval-result'
+import { buildContractRevocationNotifications } from '@/lib/contract-revocation-notification'
 
 /**
  * Approve or reject a contract via the two-step approval workflow.
@@ -70,37 +76,30 @@ export async function approveContract(
     p_notes: notes || undefined,
   })
 
-  if (rpcErr) throw new Error(rpcErr.message || 'Approval RPC failed')
+  if (rpcErr) throw new Error('contract_approval_unavailable')
 
-  // Send notification
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  return completeContractApproval(rpcResult, async () => {
     const notificationType = action === 'approve' ? 'contract_approved' : 'contract_rejected'
-
-    const { data: contractInfo } = await supabase
-      .from('contracts')
-      .select('contract_no, sales_id')
-      .eq('id', contractId)
-      .single()
-
-    await fetch(`${baseUrl}/api/notify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: notificationType,
-        contract_id: contractId,
-        contract_no: contractInfo?.contract_no,
-        action,
-        step: currentStep,
-        approver_name: profile.full_name || 'Unknown',
-        target_user_id: contractInfo?.sales_id,
-      }),
-    })
-  } catch {
-    // Notification failure is non-critical
-  }
-
-  return rpcResult
+    const { data: contractInfo, error: contractInfoError } = await supabase
+        .from('contracts')
+        .select('contract_no, sales_id, organization_id')
+        .eq('id', contractId)
+        .single()
+    if (contractInfoError || !contractInfo) throw new Error('contract_notification_context_failed')
+    const recipients = [...new Set([
+      ...(await getAdminUserIds(contractInfo.organization_id)),
+      contractInfo.sales_id,
+    ].filter((id): id is string => Boolean(id)))];
+    await createNotificationsBulk(contractInfo.organization_id, recipients.map((userId) => ({
+      userId,
+      type: notificationType,
+      title: `Contract ${action === 'approve' ? 'approved' : 'rejected'}: ${contractInfo.contract_no}`,
+      body: `${profile.full_name || 'An approver'} ${action}d ${currentStep}.`,
+      relatedId: contractId,
+      relatedType: 'contract',
+      eventKey: `contract:${contractId}:${notificationType}:${pendingApproval.id}`,
+    })))
+  })
 }
 
 /**
@@ -128,7 +127,7 @@ export async function revokeContract(contractId: string, reason: string) {
   // Fetch the contract
   const { data: contract, error: contractErr } = await supabase
     .from('contracts')
-    .select('id, contract_no, status, sales_id')
+    .select('id, organization_id, contract_no, status, sales_id')
     .eq('id', contractId)
     .single()
 
@@ -147,26 +146,22 @@ export async function revokeContract(contractId: string, reason: string) {
       updated_at: new Date().toISOString(),
     })
     .eq('id', contractId)
+    .eq('organization_id', contract.organization_id)
 
   if (updateErr) throw new Error('Failed to update contract status')
 
-  // Send notifications
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    await fetch(`${baseUrl}/api/notify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'contract_revoked',
-        contract_id: contractId,
-        contract_no: contract.contract_no,
-        reason,
-        revoked_by: user.id,
-      }),
-    })
-  } catch {
-    // Notification failure is non-critical
-  }
-
-  return { success: true, contract_id: contractId, status: newStatus }
+  return withContractNotificationWarning({
+    success: true as const,
+    contract_id: contractId,
+    status: newStatus,
+  }, async () => {
+    const notifications = buildContractRevocationNotifications({
+      contractId,
+      contractNo: contract.contract_no,
+      salesId: contract.sales_id,
+      status: newStatus,
+      reason,
+    }, await getAdminUserIds(contract.organization_id))
+    await createNotificationsBulk(contract.organization_id, notifications)
+  })
 }

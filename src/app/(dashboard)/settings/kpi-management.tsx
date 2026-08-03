@@ -3,18 +3,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Target, TrendingUp, Wallet, Save, ChevronDown } from "lucide-react";
+import { Target, TrendingUp, Wallet, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { fmtAED } from "@/shared/utils/format";
 
 interface Profile { id: string; full_name: string | null; email: string | null; role: string; }
 interface KpiTarget { id: string; period: string; target_type: string; target_amount: number; assigned_to: string | null; notes: string | null; profiles?: { full_name: string | null } | null; }
+interface KpiTargetInput { target_type: string; target_amount: number; assigned_to: string | null; }
 
 export default function KpiManagement() {
-  const { t, lang } = useLanguage();
+  const { t } = useLanguage();
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [targets, setTargets] = useState<KpiTarget[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -28,19 +27,16 @@ export default function KpiManagement() {
   const [salesCollectionTargets, setSalesCollectionTargets] = useState<Record<string, string>>({});
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await fetch(`/api/settings/data?period=${period}`);
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
 
       // Filter profiles to sales only
-      const salesProfiles = ((data.profiles ?? []) as any[]).filter((p: any) => p.role === "sales");
-      setProfiles(salesProfiles as Profile[]);
+      const salesProfiles = ((data.profiles ?? []) as Profile[]).filter((p) => p.role === "sales");
+      setProfiles(salesProfiles);
 
       const kpiData = (data.kpiTargets ?? []) as KpiTarget[];
-      setTargets(kpiData);
-
       // Populate form
       const signing = kpiData.find((t: KpiTarget) => t.target_type === "signing" && !t.assigned_to);
       const collection = kpiData.find((t: KpiTarget) => t.target_type === "collection" && !t.assigned_to);
@@ -60,11 +56,14 @@ export default function KpiManagement() {
     setLoading(false);
   }, [period]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => { void fetchData(); }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchData]);
 
   const handleSave = async () => {
     setSaving(true);
-    const payload = { period, targets: [] as any[] };
+    const payload: { period: string; targets: KpiTargetInput[] } = { period, targets: [] };
 
     // Company targets
     if (companySigning) {
@@ -93,22 +92,9 @@ export default function KpiManagement() {
     });
 
     if (res.ok) {
-      fetchData();
+      await fetchData();
       toast.success(t("kpi.kpiSaved"));
 
-      // Notify salespeople whose KPI targets were set/updated
-      import("@/lib/notify").then(({ notify }) => {
-        for (const p of profiles) {
-          const sv = salesSigningTargets[p.id];
-          const cv = salesCollectionTargets[p.id];
-          if (sv) {
-            notify({ type: "kpi_target_set", period, assigned_to: p.id, target_type: "signing", target_amount: parseFloat(sv) });
-          }
-          if (cv) {
-            notify({ type: "kpi_target_set", period, assigned_to: p.id, target_type: "collection", target_amount: parseFloat(cv) });
-          }
-        }
-      });
     } else {
       const err = await res.json();
       toast.error(t("kpi.saveFailed") + ": " + err.error);
@@ -132,7 +118,10 @@ export default function KpiManagement() {
         <Target className="w-5 h-5 text-copper-400" />
         <select
           value={period}
-          onChange={(e) => setPeriod(e.target.value)}
+          onChange={(e) => {
+            setLoading(true);
+            setPeriod(e.target.value);
+          }}
           className="bg-muted/50 border border-border/50 rounded-lg px-3 py-2 text-sm font-medium"
         >
           {months.map(m => (

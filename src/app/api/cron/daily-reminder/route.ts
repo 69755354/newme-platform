@@ -1,84 +1,87 @@
 // RBAC: cron (x-cron-secret)
-import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import {
+  dailyReminderBusinessDate,
+  dailyReminderDeliveryResult,
+  deliverDailyReminderNotifications,
+  type DailyReminderTask,
+} from "@/lib/daily-reminder-result";
 
 export async function GET(request: Request) {
-  return handleCron(request)
+  return handleCron(request);
 }
 
 export async function POST(request: Request) {
-  return handleCron(request)
+  return handleCron(request);
 }
 
 async function handleCron(request: Request) {
-  const cronSecret = request.headers.get('x-cron-secret')
+  const cronSecret = request.headers.get("x-cron-secret");
   if (!cronSecret || cronSecret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
-    const now = new Date()
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
-    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
     const { data: tasks, error: tasksError } = await supabaseAdmin
-      .from('tasks')
+      .from("tasks")
       .select(`
         id,
+        organization_id,
         title,
         assignee_id,
         due_at,
         leads ( id, customer_name )
       `)
-      .eq('status', 'pending')
-      .gte('due_at', startOfDay.toISOString())
-      .lte('due_at', endOfDay.toISOString())
+      .eq("status", "pending")
+      .gte("due_at", startOfDay.toISOString())
+      .lte("due_at", endOfDay.toISOString());
 
     if (tasksError) {
-      return NextResponse.json({ error: tasksError.message }, { status: 500 })
+      return NextResponse.json({ error: tasksError.message }, { status: 500 });
     }
 
     if (!tasks || tasks.length === 0) {
-      return NextResponse.json({ checked: 0, notificationsCreated: 0 })
+      return NextResponse.json({ checked: 0, notificationsCreated: 0 });
     }
 
-    const tasksByAssignee = new Map<string, typeof tasks>()
-    for (const task of tasks) {
-      if (!task.assignee_id) continue
-      const existing = tasksByAssignee.get(task.assignee_id)
-      if (existing) existing.push(task)
-      else tasksByAssignee.set(task.assignee_id, [task])
-    }
+    const reminderTasks = tasks.flatMap<DailyReminderTask>((task) => {
+      if (!task.assignee_id || !task.organization_id) return [];
+      return [{
+        id: task.id,
+        organizationId: task.organization_id,
+        assigneeId: task.assignee_id,
+        title: task.title,
+        customerName: task.leads?.[0]?.customer_name ?? null,
+      }];
+    });
 
-    let notificationsCreated = 0
+    const delivery = await deliverDailyReminderNotifications(
+      reminderTasks,
+      dailyReminderBusinessDate(now),
+      async (notification) => {
+        const { data, error: notificationError } = await supabaseAdmin
+          .from("notifications")
+          .upsert(notification, {
+            onConflict: "organization_id,user_id,event_key",
+            ignoreDuplicates: true,
+          })
+          .select("id");
+        if (notificationError) throw new Error("notification_write_failed");
+        return (data?.length ?? 0) > 0;
+      },
+    );
 
-    for (const [assigneeId, assigneeTasks] of tasksByAssignee) {
-      const count = assigneeTasks.length
-      const previewItems = assigneeTasks.slice(0, 5).map((t) => {
-        const name = t.leads?.[0]?.customer_name
-        return name ? `${t.title}（${name}）` : t.title
-      })
-      const preview = previewItems.join('；')
-      const suffix = count > 5 ? '等' : ''
-
-      const { error: notifError } = await supabaseAdmin
-        .from('notifications')
-        .insert({
-          user_id: assigneeId,
-          type: 'reminder',
-          title: `今日待办提醒（${count} 项）`,
-          body: `您今天有 ${count} 项待办任务：${preview}${suffix}。`,
-          related_id: assigneeTasks[0].id,
-          related_type: 'task',
-        })
-
-      if (!notifError) notificationsCreated++
-    }
-
-    return NextResponse.json({
-      checked: tasks.length,
-      notificationsCreated,
-    })
+    const outcome = dailyReminderDeliveryResult(
+      tasks.length,
+      delivery.notificationsCreated,
+      delivery.notificationFailures,
+    );
+    return NextResponse.json(outcome.body, { status: outcome.status });
   } catch {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -76,7 +76,7 @@ async function resolveRoleCapabilities(
 export async function resolveOrganizationAuthorization(
   request: Request,
   requiredCapability: string,
-  accessMode: "read" | "write" = "read",
+  accessMode: "read" | "write" | "export" = "read",
 ): Promise<OrganizationAuthorization> {
   const context = await getRequestAuthContext(request);
   const organizationId = getRequestedOrganizationId(request);
@@ -102,7 +102,9 @@ export async function resolveOrganizationAuthorization(
   }
   const allowedStatuses = accessMode === "write"
     ? ["active"]
-    : ["active", "read_only"];
+    : accessMode === "export"
+      ? ["active", "read_only", "suspended", "export_only"]
+      : ["active", "read_only"];
   if (!organization || !allowedStatuses.includes(organization.status)) {
     throw new OrganizationAuthorizationError(
       403,

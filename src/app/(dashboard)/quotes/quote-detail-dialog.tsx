@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import {
   Dialog,
   DialogContent,
@@ -13,12 +14,17 @@ import { cn, fmtDubai } from "@/lib/utils";
 import {
   ChevronDown, ChevronUp, Download, FileSpreadsheet,
   FileText, Send, CheckCircle, XCircle, Calendar,
-  DollarSign, Hash, Clock, ExternalLink,
+  Hash, ExternalLink,
 } from "lucide-react";
 import { DEVICE_CATALOG } from "@/lib/device-catalog";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { toast } from "sonner";
 import { fmtAED } from "@/shared/utils/format";
+import {
+  buildFullAmountInstallment,
+  createSubmissionSession,
+  submissionIdempotencyKey,
+} from "@/lib/client-request-integrity";
 
 /* ─── Types ─── */
 interface Quotation {
@@ -52,6 +58,23 @@ interface QuoteDetailDialogProps {
   onOpenChange: (open: boolean) => void;
   quote: Quotation | null;
   onStatusChange: (id: string, newStatus: string) => void;
+}
+
+interface QuoteConversionAttempt {
+  payload: {
+    first_payment_due_date: string;
+    installments: ReturnType<typeof buildFullAmountInstallment>;
+  };
+  workflowKey: string;
+}
+
+interface QuoteLineItem {
+  id: string;
+  name: string;
+  qty: number;
+  unit_price: number;
+  line_total: number;
+  unit?: string;
 }
 
 /* ─── Status config ─── */
@@ -88,23 +111,26 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
   const [loadingDownload, setLoadingDownload] = useState<string | null>(null);
   const [loadingConvert, setLoadingConvert] = useState(false);
   const [activeStatus, setActiveStatus] = useState("");
+  const conversionAttemptsRef = useRef<Map<string, QuoteConversionAttempt>>(new Map());
 
   useEffect(() => {
-    if (quote) {
-      setActiveStatus(quote.status);
-      // Auto-expand all categories
-      const cats = new Set<string>();
-      if (quote.devices_json) {
-        Object.keys(quote.devices_json).forEach((deviceId) => {
-          for (const cat of DEVICE_CATALOG) {
-            if (cat.devices.some((d) => d.id === deviceId)) {
-              cats.add(cat.key);
+    const timer = window.setTimeout(() => {
+      if (quote) {
+        setActiveStatus(quote.status);
+        const cats = new Set<string>();
+        if (quote.devices_json) {
+          Object.keys(quote.devices_json).forEach((deviceId) => {
+            for (const cat of DEVICE_CATALOG) {
+              if (cat.devices.some((d) => d.id === deviceId)) {
+                cats.add(cat.key);
+              }
             }
-          }
-        });
+          });
+        }
+        setExpandedCategories(cats);
       }
-      setExpandedCategories(cats);
-    }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [quote]);
 
   if (!quote) return null;
@@ -113,7 +139,12 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
   const customerName = quote.leads?.customer_name || t("contracts.unnamed");
 
   // Group line items by category
-  const categoryGroups: Record<string, { label: string; icon: string; items: any[]; subtotal: number }> = {};
+  const categoryGroups: Record<string, {
+    label: string;
+    icon: string;
+    items: QuoteLineItem[];
+    subtotal: number;
+  }> = {};
   if (quote.devices_json) {
     for (const [deviceId, info] of Object.entries(quote.devices_json)) {
       let catKey = "other";
@@ -177,14 +208,41 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
   const handleConvert = async () => {
     setLoadingConvert(true);
     try {
-      const res = await fetch(`/api/quotations/${quote.id}/convert`, { method: "POST" });
+      let attempt = conversionAttemptsRef.current.get(quote.id);
+      if (!attempt) {
+        const defaultDueDate = new Date();
+        defaultDueDate.setUTCDate(defaultDueDate.getUTCDate() + 30);
+        const dueDate = quote.valid_until && /^\d{4}-\d{2}-\d{2}$/.test(quote.valid_until)
+          ? quote.valid_until
+          : defaultDueDate.toISOString().slice(0, 10);
+        const installments = buildFullAmountInstallment(Number(quote.total_amount), dueDate);
+        const payload = { first_payment_due_date: dueDate, installments };
+        attempt = {
+          payload,
+          workflowKey: await submissionIdempotencyKey(
+            "quotation.convert.ui",
+            createSubmissionSession(),
+            payload,
+          ),
+        };
+        conversionAttemptsRef.current.set(quote.id, attempt);
+      }
+      const res = await fetch(`/api/quotations/${quote.id}/convert`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": attempt.workflowKey,
+        },
+        body: JSON.stringify(attempt.payload),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Conversion failed");
+      conversionAttemptsRef.current.delete(quote.id);
       toast.success(`Contract ${data.contract_no} created successfully`);
       onStatusChange(quote.id, "contract_created");
       setActiveStatus("contract_created");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to convert to contract");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to convert to contract");
     } finally {
       setLoadingConvert(false);
     }
@@ -394,13 +452,13 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
 
           {/* Contract link */}
           {quote.contract_id && (
-            <a
+            <Link
               href="/contracts"
               className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
             >
               <ExternalLink className="w-3 h-3" />
               {quote.contract_no || "View Contract"}
-            </a>
+            </Link>
           )}
 
           <div className="flex-1" />

@@ -13,7 +13,7 @@
 
 ## Data and security
 
-- Tenant ownership/authorization:
+- Tenant ownership and authorization:
 - Schema/migration/types:
 - Worker/storage/import/export:
 - Idempotency/audit/cleanup:

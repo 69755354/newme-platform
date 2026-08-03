@@ -1,7 +1,8 @@
 # NewMe V4 External Audit Index
 
 Status: Audit manifest
-Snapshot date: 2026-08-03 (Asia/Shanghai)
+Repository snapshot date: 2026-08-03 (Asia/Shanghai)
+Linear query interval: 2026-08-03T01:19:03.715Z to 2026-08-03T01:19:04.955Z
 
 ## 1. Audit objective
 
@@ -31,20 +32,20 @@ Determine whether the NewMe V4 plan is source-traceable, internally consistent, 
 
 Project: [NewMe V4 SaaS — Real Estate and Retail](https://linear.app/samnewme/project/newme-v4-saas-real-estate-and-retail-6400aa7c0e9d)
 
-| Linear | Audit object | Required cross-check |
-|---|---|---|
-| [SAM-77](https://linear.app/samnewme/issue/SAM-77/v4-01-lock-requirements-sources-and-architecture) | Requirements, sources and architecture lock | PR #254, source registry, ownership/license decision and M0 status |
-| [SAM-78](https://linear.app/samnewme/issue/SAM-78/v4-02-deliver-tenant-identity-and-isolation-foundation) | Tenant identity and isolation | PR #255, its incomplete-scope comment, live Done status and M1 progress conflict |
-| [SAM-79](https://linear.app/samnewme/issue/SAM-79/v4-03-deliver-commercial-control-plane) | Commercial control plane | V4-PF-005..008 and G3 |
-| [SAM-80](https://linear.app/samnewme/issue/SAM-80/v4-04-deliver-shared-workflow-and-operational-services) | Shared operational services | V4-PF-009..012 and G1/G5/G6 |
-| [SAM-81](https://linear.app/samnewme/issue/SAM-81/v4-05-deliver-real-estate-commercial-slice) | Real-estate commercial slice | V4-RE-001..008, V4-PILOT-001 and G4 |
-| [SAM-82](https://linear.app/samnewme/issue/SAM-82/v4-06-deliver-retail-catalog-inventory-and-pricing) | Retail catalog, inventory and pricing | V4-RT-001..005 and G4 |
-| [SAM-83](https://linear.app/samnewme/issue/SAM-83/v4-07-deliver-retail-orders-procurement-delivery-and-finance) | Retail order-to-finance | V4-RT-006..009 and G4 |
-| [SAM-84](https://linear.app/samnewme/issue/SAM-84/v4-08-deliver-controlled-agent-and-integration-gateway) | Agent and integration gateway | V4-AI-001..003, V4-INT-001 and G5 |
-| [SAM-85](https://linear.app/samnewme/issue/SAM-85/v4-09-rehearse-migration-import-and-reconciliation) | Migration and reconciliation | V4-MIG-001 and G2/G7 |
-| [SAM-86](https://linear.app/samnewme/issue/SAM-86/v4-10-prove-sre-security-backup-and-performance) | SRE, security, backup and performance | V4-OPS-001..004 and G5/G6 |
-| [SAM-87](https://linear.app/samnewme/issue/SAM-87/v4-11-rehearse-canary-deployment-and-rollback) | Canary and rollback rehearsal | V4-OPS-001, V4-MIG-001 and G2/G6/G7 |
-| [SAM-88](https://linear.app/samnewme/issue/SAM-88/v4-12-run-design-partner-pilot-and-commercial-decision) | Design-partner pilot | V4-PILOT-001..003 and G8 |
+| Linear | State at query | Audit object | Required cross-check |
+|---|---|---|---|
+| [SAM-77](https://linear.app/samnewme/issue/SAM-77/v4-01-lock-requirements-sources-and-architecture) | In Progress | Requirements, sources and architecture lock | PR #254, source registry, ownership/license decision and M0 status |
+| [SAM-78](https://linear.app/samnewme/issue/SAM-78/v4-02-deliver-tenant-identity-and-isolation-foundation) | Done (evidence-conflicted) | Tenant identity and isolation | PR #255, its incomplete-scope comment, live Done status and M1 progress conflict |
+| [SAM-79](https://linear.app/samnewme/issue/SAM-79/v4-03-deliver-commercial-control-plane) | Backlog | Commercial control plane | V4-PF-005..008 and G3 |
+| [SAM-80](https://linear.app/samnewme/issue/SAM-80/v4-04-deliver-shared-workflow-and-operational-services) | Backlog | Shared operational services | V4-PF-009..012 and G1/G5/G6 |
+| [SAM-81](https://linear.app/samnewme/issue/SAM-81/v4-05-deliver-real-estate-commercial-slice) | Backlog | Real-estate commercial slice | V4-RE-001..008, V4-PILOT-001 and G4 |
+| [SAM-82](https://linear.app/samnewme/issue/SAM-82/v4-06-deliver-retail-catalog-inventory-and-pricing) | Backlog | Retail catalog, inventory and pricing | V4-RT-001..005 and G4 |
+| [SAM-83](https://linear.app/samnewme/issue/SAM-83/v4-07-deliver-retail-orders-procurement-delivery-and-finance) | Backlog | Retail order-to-finance | V4-RT-006..009 and G4 |
+| [SAM-84](https://linear.app/samnewme/issue/SAM-84/v4-08-deliver-controlled-agent-and-integration-gateway) | Backlog | Agent and integration gateway | V4-AI-001..003, V4-INT-001 and G5 |
+| [SAM-85](https://linear.app/samnewme/issue/SAM-85/v4-09-rehearse-migration-import-and-reconciliation) | Backlog | Migration and reconciliation | V4-MIG-001 and G2/G7 |
+| [SAM-86](https://linear.app/samnewme/issue/SAM-86/v4-10-prove-sre-security-backup-and-performance) | Backlog | SRE, security, backup and performance | V4-OPS-001..004 and G5/G6 |
+| [SAM-87](https://linear.app/samnewme/issue/SAM-87/v4-11-rehearse-canary-deployment-and-rollback) | Backlog | Canary and rollback rehearsal | V4-OPS-001, V4-MIG-001 and G2/G6/G7 |
+| [SAM-88](https://linear.app/samnewme/issue/SAM-88/v4-12-run-design-partner-pilot-and-commercial-decision) | Backlog | Design-partner pilot | V4-PILOT-001..003 and G8 |
 
 Linear is live state. The auditor must record the query timestamp and must not substitute this repository snapshot for current status.
 
@@ -58,6 +59,10 @@ Linear is live state. The auditor must record the query timestamp and must not s
 | Tenant foundation exact head | `631509a13ffa053347a937387171eb05819905a8` |
 | Tenant foundation merge/canonical at snapshot | `f2bd6576a0723fea58a13926baef2dedcc37da8e` |
 | Tenant foundation full CI | [run 30768558258](https://github.com/69755354/newme-platform/actions/runs/30768558258), job `91551547421`, success |
+| Governance delivery PR | [#256](https://github.com/69755354/newme-platform/pull/256) |
+| First-audit exact head | `80f7e2349324900cf5852f31b3a0459532fd6c1a` |
+| First-audit exact-head CI | [run 30775237766](https://github.com/69755354/newme-platform/actions/runs/30775237766), job `91569377924`, success |
+| Independent first reviews | Hermes review `4840188187`; OpenCode/GLM-5.2 review `4840192089` |
 
 ## 5. Source-input custody boundary
 

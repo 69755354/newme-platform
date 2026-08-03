@@ -76,6 +76,8 @@ Classify infrastructure failure as infrastructure evidence, never code failure o
 
 Use the templates under `assets/`; do not rewrite recurring evidence formats from scratch.
 
+`agents/openai.yaml` is the Skill Creator-generated Codex interface metadata for discovery and default routing. Keep it versioned with this skill; it is not an executable workflow or a substitute for `SKILL.md`.
+
 ## Production boundary
 
 Never load raw production data into shared staging. Use only an approved isolated ephemeral clone with clone-only credentials, outbound integrations disabled, masking before application access, bounded retention, aggregate evidence and verified destruction.

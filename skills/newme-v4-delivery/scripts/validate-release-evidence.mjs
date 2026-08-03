@@ -5,9 +5,8 @@ import { readFile } from 'node:fs/promises'
 const SHA = /^[0-9a-f]{40}$/
 const SHA256 = /^[0-9a-f]{64}$/
 const MIGRATION_VERSION = /^\d{14}$/
-const HOMOGENEOUS_HEX = /^([0-9a-f])\1+$/
 const FORBIDDEN_KEY = /(?:password|passwd|passphrase|secret|token|cookie|authorization|bearer|(?:service|api|private|access)[_-]?key|credential|dsn|cert(?:ificate)?)/i
-const FORBIDDEN_VALUE = /(?:\bBearer\s+[A-Za-z0-9._~+\/-]+=*|-----BEGIN [^-]*(?:PRIVATE KEY|CERTIFICATE)-----|\b(?:ghp_|github_pat_|sb_secret_|AKIA)[A-Za-z0-9_-]+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@|\b(?:password|passwd|passphrase|secret|token|api[_-]?key|private[_-]?key|access[_-]?key|credential)\s*[=:]\s*\S+)/i
+const FORBIDDEN_VALUE = /(?:\b(?:Basic\s+[A-Za-z0-9+\/]+=*|Bearer\s+[A-Za-z0-9._~+\/-]+=*)|-----BEGIN [^-]*(?:PRIVATE KEY|CERTIFICATE)-----|\b(?:ghp_|github_pat_|sb_secret_|AKIA)[A-Za-z0-9_-]+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@|\b(?:password|passwd|passphrase|secret|token|api[_-]?key|private[_-]?key|access[_-]?key|credential)\s*[=:]\s*\S+)/i
 
 function fail(message) {
   console.error(`V4_RELEASE_EVIDENCE_INVALID: ${message}`)
@@ -27,8 +26,16 @@ function scan(value, path = '$') {
   }
 }
 
+function isRepeatedHexPattern(value) {
+  for (let period = 1; period <= Math.floor(value.length / 2); period += 1) {
+    if (value.length % period === 0
+      && value === value.slice(0, period).repeat(value.length / period)) return true
+  }
+  return false
+}
+
 function validDigest(value, pattern) {
-  return typeof value === 'string' && pattern.test(value) && !HOMOGENEOUS_HEX.test(value)
+  return typeof value === 'string' && pattern.test(value) && !isRepeatedHexPattern(value)
 }
 
 function uniqueStrings(value) {

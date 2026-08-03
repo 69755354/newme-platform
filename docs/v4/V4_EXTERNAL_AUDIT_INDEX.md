@@ -63,8 +63,13 @@ Linear is live state. The auditor must record the query timestamp and must not s
 | First-audit exact head | `80f7e2349324900cf5852f31b3a0459532fd6c1a` |
 | First-audit exact-head CI | [run 30775237766](https://github.com/69755354/newme-platform/actions/runs/30775237766), job `91569377924`, success |
 | Independent first reviews | Hermes review `4840188187`; OpenCode/GLM-5.2 review `4840192089` |
-| Audit-remediation exact head | `2be17e85caf32b24e013da223c958e2b1ec47b0b` |
-| Audit-remediation exact-head CI | [run 30777036124](https://github.com/69755354/newme-platform/actions/runs/30777036124), job `91574370569`, success |
+| Audit-remediation implementation commit | `2be17e85caf32b24e013da223c958e2b1ec47b0b` |
+| Audit-remediation implementation CI | [run 30777036124](https://github.com/69755354/newme-platform/actions/runs/30777036124), job `91574370569`, success |
+| Second-audit exact head | `8dbab48898757640326b5f316e62a8ca6e6573f7` |
+| Second-audit exact-head CI | [run 30777227710](https://github.com/69755354/newme-platform/actions/runs/30777227710), job `91574892604`, success |
+| Independent second reviews | Hermes review `4840962516`; OpenCode/GLM-5.2 review `4840970662` |
+
+The immutable rows above bind each completed audit to the commit actually reviewed. The live PR head is intentionally not self-referenced from the commit that would create that head; auditors must read the current head from [PR #256](https://github.com/69755354/newme-platform/pull/256) and bind any later verdict to that exact SHA and its CI run.
 
 ## 5. Source-input custody boundary
 

@@ -5,7 +5,6 @@ import { readFile } from 'node:fs/promises'
 const SHA = /^[0-9a-f]{40}$/
 const LINEAR = /^SAM-(\d+)$/
 const V4 = /^V4-(?:PF|RE|RT|AI|INT|OPS|MIG|PILOT)-(\d{3})$/
-const HOMOGENEOUS_SHA = /^([0-9a-f])\1{39}$/
 
 function fail(message) {
   console.error(`V4_WORK_PACKAGE_INVALID: ${message}`)
@@ -18,6 +17,14 @@ function nonEmptyString(value) {
 
 function nonEmptyStrings(value) {
   return Array.isArray(value) && value.length > 0 && value.every(nonEmptyString)
+}
+
+function isRepeatedHexPattern(value) {
+  for (let period = 1; period <= Math.floor(value.length / 2); period += 1) {
+    if (value.length % period === 0
+      && value === value.slice(0, period).repeat(value.length / period)) return true
+  }
+  return false
 }
 
 const path = process.argv[2]
@@ -38,7 +45,7 @@ if (!nonEmptyStrings(value.v4Ids) || !value.v4Ids.every((id) => {
 })) {
   fail('v4Ids must contain valid V4 requirement IDs')
 }
-if (!SHA.test(value.baseSha ?? '') || HOMOGENEOUS_SHA.test(value.baseSha)) {
+if (!SHA.test(value.baseSha ?? '') || isRepeatedHexPattern(value.baseSha)) {
   fail('baseSha must be a non-placeholder lowercase 40-character Git SHA')
 }
 if (!nonEmptyStrings(value.allowedPaths)) fail('allowedPaths must be non-empty strings')

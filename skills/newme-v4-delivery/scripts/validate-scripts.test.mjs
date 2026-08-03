@@ -38,7 +38,7 @@ async function validReleaseEvidence() {
   value.candidateSha = candidateSha
   value.previousReleaseSha = previousSha
   value.ci.headSha = candidateSha
-  value.artifact.sha256 = 'a1'.repeat(32)
+  value.artifact.sha256 = 'af68e375ca9d0dbbeaacc1093f4e905d9cce3ece60ab4370487a1569ca3a7aa7'
   value.manifest.gitSha = candidateSha
   value.rollback.targetSha = previousSha
   return value
@@ -93,6 +93,11 @@ test('work-package validator accepts filled evidence and rejects template placeh
     result = run('validate-work-package.mjs', await writeJson(directory, 'sha-placeholder.json', value))
     assert.notEqual(result.status, 0)
     assert.match(result.stderr, /non-placeholder lowercase 40-character Git SHA/)
+
+    value.baseSha = '0123456789'.repeat(4)
+    result = run('validate-work-package.mjs', await writeJson(directory, 'periodic-sha-placeholder.json', value))
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /non-placeholder lowercase 40-character Git SHA/)
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
@@ -139,6 +144,20 @@ test('release validator rejects homogeneous digests and duplicate release SHAs',
     result = run('validate-release-evidence.mjs', await writeJson(directory, 'artifact-placeholder.json', value))
     assert.notEqual(result.status, 0)
     assert.match(result.stderr, /artifact sha256 must be a non-placeholder/)
+
+    Object.assign(value, await validReleaseEvidence())
+    value.candidateSha = 'deadbeef'.repeat(5)
+    value.ci.headSha = value.candidateSha
+    value.manifest.gitSha = value.candidateSha
+    result = run('validate-release-evidence.mjs', await writeJson(directory, 'periodic-candidate-placeholder.json', value))
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /candidateSha must be a non-placeholder/)
+
+    Object.assign(value, await validReleaseEvidence())
+    value.artifact.sha256 = '01234567'.repeat(8)
+    result = run('validate-release-evidence.mjs', await writeJson(directory, 'periodic-artifact-placeholder.json', value))
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /artifact sha256 must be a non-placeholder/)
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
@@ -157,6 +176,7 @@ test('release evidence rejects secret-shaped keys and values', async () => {
 
     for (const [name, secretValue] of [
       ['bearer', 'Bearer abc.def.ghi'],
+      ['basic', 'Basic dXNlcjpwYXNzd29yZA=='],
       ['github', 'github_pat_AAAABBBBCCCCDDDDEEEE'],
       ['jwt', 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature'],
       ['uri', 'postgresql://user:password@example.invalid/db']

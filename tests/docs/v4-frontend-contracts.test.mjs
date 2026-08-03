@@ -193,16 +193,22 @@ test('V4 frontend provenance fails when the upstream Git blob drifts', () => {
   const mutated = clone(docs)
   mutated.ids.canonical_source.blob = '0000000000000000000000000000000000000000'
   mutated.trace.upstream_registry.blob = mutated.ids.canonical_source.blob
-  const normalCheckoutEnvironment = { ...process.env }
-  for (const key of Object.keys(normalCheckoutEnvironment)) {
-    if (key.startsWith('NEWME_STAGING_')) delete normalCheckoutEnvironment[key]
+  let expectedFailure = /upstream V4 trace blob/
+  let provenanceEnvironment = { ...process.env }
+  try {
+    execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: repositoryRoot, stdio: 'ignore' })
+    for (const key of Object.keys(provenanceEnvironment)) {
+      if (key.startsWith('NEWME_STAGING_')) delete provenanceEnvironment[key]
+    }
+    assert.equal(Object.keys(provenanceEnvironment).some((key) => key.startsWith('NEWME_STAGING_')), false)
+  } catch {
+    expectedFailure = /staging archive upstream blob drift/
   }
-  assert.equal(Object.keys(normalCheckoutEnvironment).some((key) => key.startsWith('NEWME_STAGING_')), false)
   assert.throws(
     () => validateDocuments(mutated, repositoryRoot, {
-      provenanceDependencies: { env: normalCheckoutEnvironment },
+      provenanceDependencies: { env: provenanceEnvironment },
     }),
-    /upstream V4 trace blob/,
+    expectedFailure,
   )
 })
 

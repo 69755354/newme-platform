@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://newme.ae/contracts/v4/event.schema.v1.json",
+  "title": "NewMe V4 Domain Event",
+  "x-discriminator": {"property":"event_type","registry":"event-command-payload-registry.v1.json","payload_property":"payload","schema_property":"event_payload_schema"},
+  "x-source-command-constraint": {"event_path":"event_type","command_path":"source.command","registry":"event-command-payload-registry.v1.json"},
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id","event_type","occurred_at","recorded_at","organization_id","vertical_key","location_id","aggregate_type","aggregate_id","aggregate_version","actor","source","correlation_id","causation_id","idempotency_key","policy_version","data_class","payload","schema_version"],
+  "properties": {
+    "event_id": {"type":"string","format":"uuid"},
+    "event_type": {"$ref":"event-type.schema.v1.json"},
+    "occurred_at": {"type":"string","format":"date-time"},
+    "recorded_at": {"type":"string","format":"date-time"},
+    "organization_id": {"type":"string","format":"uuid"},
+    "vertical_key": {"enum":["platform","crm","real_estate","retail"]},
+    "location_id": {"type":["string","null"],"format":"uuid"},
+    "aggregate_type": {"type":"string","minLength":1,"maxLength":80},
+    "aggregate_id": {"type":"string","format":"uuid"},
+    "aggregate_version": {"type":"integer","minimum":1},
+    "actor": {"type":"object","additionalProperties":false,"required":["actor_type","actor_id","support_session_id"],"properties":{"actor_type":{"enum":["user","system","adapter"]},"actor_id":{"type":"string","format":"uuid"},"support_session_id":{"type":["string","null"],"format":"uuid"}}},
+    "source": {"type":"object","additionalProperties":false,"required":["channel","command","adapter_key"],"properties":{"channel":{"enum":["web","api","worker","adapter"]},"command":{"type":"string","minLength":1},"adapter_key":{"type":["string","null"]}}},
+    "correlation_id": {"type":"string","format":"uuid"},
+    "causation_id": {"type":["string","null"],"format":"uuid"},
+    "idempotency_key": {"type":"string","minLength":16,"maxLength":200},
+    "policy_version": {"type":"string","minLength":1},
+    "data_class": {"enum":["public","internal","confidential","restricted"]},
+    "payload": {"type":"object"},
+    "schema_version": {"const":1}
+  }
+}

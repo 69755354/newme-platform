@@ -1,0 +1,17 @@
+{
+  "schema_version":1,
+  "status":"migration_contract_not_runtime_evidence",
+  "sources":[
+    {"issue":"SAM-18","path":"docs/product-decisions/SAM-18-saas-product-boundary.md","blob":"94a45599582885507ad789d190f237230fc57a60","mapping_lines":"77-88"},
+    {"issue":"SAM-19","path":"docs/product-decisions/SAM-19-organization-membership-data-model.md","blob":"f6d968456fa82034afca2679d012feaa9bec4560","mapping_lines":"362-364"}
+  ],
+  "legacy_to_canonical":[
+    {"legacy_role":"admin","canonical_role":"org_admin","scope":"organization"},
+    {"legacy_role":"boss","canonical_role":"org_owner","scope":"organization","requires_human_review":true},
+    {"legacy_role":"designer","canonical_role":"specialist","scope":"organization"},
+    {"legacy_role":"finance","canonical_role":"finance","scope":"organization"},
+    {"legacy_role":"operator","canonical_role":"operations","scope":"organization"},
+    {"legacy_role":"sales","canonical_role":"sales_agent","scope":"organization"}
+  ],
+  "migration_rules":["preview_before_write","exact_role_counts","exception_ledger","org_owner_human_review","rollback_manifest","platform_roles_never_inherited"]
+}

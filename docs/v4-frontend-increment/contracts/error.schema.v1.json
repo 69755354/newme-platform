@@ -1,0 +1,35 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://newme.ae/contracts/v4/error.schema.v1.json",
+  "title":"NewMe V4 Error Envelope",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["code","http_status","message_key","request_id","retryable","recovery_action","focus_target","aria_live","field_errors","current_version"],
+  "properties":{
+    "code":{"enum":["UNAUTHENTICATED","INACTIVE_ACCOUNT","FORBIDDEN","CONTEXT_DENIED","CAPABILITY_DISABLED","NOT_FOUND","VALIDATION_FAILED","CONFLICT","APPROVAL_REQUIRED","RATE_LIMITED","PROJECTION_STALE","DEPENDENCY_UNAVAILABLE","INTERNAL_ERROR"]},
+    "http_status":{"type":"integer","minimum":100},
+    "message_key":{"type":"string","pattern":"^(error|status)\\.[a-z0-9_.]+$"},
+    "request_id":{"type":"string","format":"uuid"},
+    "retryable":{"type":"boolean"},
+    "recovery_action":{"type":"string","minLength":1},
+    "focus_target":{"type":"string","minLength":1},
+    "aria_live":{"enum":["polite","assertive"]},
+    "field_errors":{"type":["array","null"],"items":{"type":"object","additionalProperties":false,"required":["field","code","message_key"],"properties":{"field":{"type":"string"},"code":{"type":"string"},"message_key":{"type":"string"}}}},
+    "current_version":{"type":["integer","null"],"minimum":1}
+  },
+  "oneOf":[
+    {"properties":{"code":{"const":"UNAUTHENTICATED"},"http_status":{"const":401},"retryable":{"const":false},"message_key":{"const":"error.auth.required"},"recovery_action":{"const":"sign_in"},"focus_target":{"const":"page_heading"},"aria_live":{"const":"assertive"}}},
+    {"properties":{"code":{"const":"INACTIVE_ACCOUNT"},"http_status":{"const":401},"retryable":{"const":false},"message_key":{"const":"error.auth.inactive"},"recovery_action":{"const":"contact_organization_admin"},"focus_target":{"const":"page_heading"},"aria_live":{"const":"assertive"}}},
+    {"properties":{"code":{"const":"FORBIDDEN"},"http_status":{"const":403},"retryable":{"const":false},"message_key":{"const":"error.access.denied"},"recovery_action":{"const":"return_to_safe_page"},"focus_target":{"const":"error_summary"},"aria_live":{"const":"assertive"}}},
+    {"properties":{"code":{"const":"CONTEXT_DENIED"},"http_status":{"const":403},"retryable":{"const":false},"message_key":{"const":"error.context.denied"},"recovery_action":{"const":"switch_context"},"focus_target":{"const":"context_selector"},"aria_live":{"const":"assertive"}}},
+    {"properties":{"code":{"const":"CAPABILITY_DISABLED"},"http_status":{"const":403},"retryable":{"const":false},"message_key":{"const":"error.capability.disabled"},"recovery_action":{"const":"request_capability"},"focus_target":{"const":"error_summary"},"aria_live":{"const":"polite"}}},
+    {"properties":{"code":{"const":"NOT_FOUND"},"http_status":{"const":404},"retryable":{"const":false},"message_key":{"const":"error.record.not_found"},"recovery_action":{"const":"return_to_list"},"focus_target":{"const":"page_heading"},"aria_live":{"const":"polite"}}},
+    {"properties":{"code":{"const":"VALIDATION_FAILED"},"http_status":{"const":400},"retryable":{"const":false},"message_key":{"const":"error.validation.failed"},"recovery_action":{"const":"correct_fields"},"focus_target":{"const":"first_invalid_field"},"aria_live":{"const":"assertive"}}},
+    {"properties":{"code":{"const":"CONFLICT"},"http_status":{"const":409},"retryable":{"const":false},"message_key":{"const":"error.record.conflict"},"recovery_action":{"const":"reload_and_review"},"focus_target":{"const":"conflict_summary"},"aria_live":{"const":"assertive"}}},
+    {"properties":{"code":{"const":"APPROVAL_REQUIRED"},"http_status":{"const":202},"retryable":{"const":false},"message_key":{"const":"status.approval.required"},"recovery_action":{"const":"view_approval"},"focus_target":{"const":"approval_status"},"aria_live":{"const":"polite"}}},
+    {"properties":{"code":{"const":"RATE_LIMITED"},"http_status":{"const":429},"retryable":{"const":true},"message_key":{"const":"error.rate_limited"},"recovery_action":{"const":"retry_after"},"focus_target":{"const":"action_status"},"aria_live":{"const":"polite"}}},
+    {"properties":{"code":{"const":"PROJECTION_STALE"},"http_status":{"const":409},"retryable":{"const":true},"message_key":{"const":"status.projection.stale"},"recovery_action":{"const":"refresh_projection"},"focus_target":{"const":"stale_banner"},"aria_live":{"const":"polite"}}},
+    {"properties":{"code":{"const":"DEPENDENCY_UNAVAILABLE"},"http_status":{"const":503},"retryable":{"const":true},"message_key":{"const":"error.dependency.unavailable"},"recovery_action":{"const":"retry"},"focus_target":{"const":"error_summary"},"aria_live":{"const":"assertive"}}},
+    {"properties":{"code":{"const":"INTERNAL_ERROR"},"http_status":{"const":500},"retryable":{"const":true},"message_key":{"const":"error.internal"},"recovery_action":{"const":"retry_or_contact_support"},"focus_target":{"const":"error_summary"},"aria_live":{"const":"assertive"}}}
+  ]
+}

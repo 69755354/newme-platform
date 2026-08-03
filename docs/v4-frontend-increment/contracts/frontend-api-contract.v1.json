@@ -1,0 +1,95 @@
+{
+  "contract_version": 1,
+  "base_path": "/api/v4",
+  "request_token": {
+    "location": "X-NewMe-Request-Token",
+    "owner": "client",
+    "format": "uuid",
+    "purpose": "retry correlation only",
+    "must_not_be_used_as": "canonical idempotency key"
+  },
+  "idempotency_key": {
+    "location": "response.idempotency_key",
+    "owner": "server",
+    "derivation": "after authenticated organization, actor, command, aggregate and policy are resolved",
+    "lookup_endpoint": "/api/v4/commands/{idempotency_key}",
+    "client_may_supply": false
+  },
+  "pagination": {
+    "strategy": "opaque_cursor",
+    "request": {"cursor":"string|null","limit":"integer:1..100"},
+    "response": {"items":"array","next_cursor":"string|null","as_of":"date-time","projection_version":"integer"},
+    "ordering": "server-defined stable order with immutable tie-break id"
+  },
+  "resume": {
+    "header": "Last-Event-ID",
+    "query": "after_event_id",
+    "fallback": "GET snapshot then reconnect",
+    "stale_projection_behavior": "disable L2/L3 action until server revalidation"
+  },
+  "error_envelope": {
+    "schema": "error.schema.v1.json",
+    "required": ["code","http_status","message_key","request_id","retryable","recovery_action","focus_target","aria_live","field_errors","current_version"],
+    "codes": ["UNAUTHENTICATED","INACTIVE_ACCOUNT","FORBIDDEN","CONTEXT_DENIED","CAPABILITY_DISABLED","NOT_FOUND","VALIDATION_FAILED","CONFLICT","APPROVAL_REQUIRED","RATE_LIMITED","PROJECTION_STALE","DEPENDENCY_UNAVAILABLE","INTERNAL_ERROR"],
+    "nullable": ["field_errors","current_version"],
+    "pii_rule": "message_key and code only; no internal object name or cross-tenant identifiers"
+  },
+  "error_experience": [
+    {"code":"UNAUTHENTICATED","http_status":401,"retryable":false,"message_key":"error.auth.required","recovery_action":"sign_in","focus_target":"page_heading","aria_live":"assertive","localized_copy":{"en":"Sign in to continue.","zh-CN":"请登录后继续。","ar":"سجّل الدخول للمتابعة."}},
+    {"code":"INACTIVE_ACCOUNT","http_status":401,"retryable":false,"message_key":"error.auth.inactive","recovery_action":"contact_organization_admin","focus_target":"page_heading","aria_live":"assertive","localized_copy":{"en":"This account is inactive.","zh-CN":"此账号已停用。","ar":"هذا الحساب غير نشط."}},
+    {"code":"FORBIDDEN","http_status":403,"retryable":false,"message_key":"error.access.denied","recovery_action":"return_to_safe_page","focus_target":"error_summary","aria_live":"assertive","localized_copy":{"en":"You do not have permission for this action.","zh-CN":"你没有执行此操作的权限。","ar":"ليست لديك صلاحية لتنفيذ هذا الإجراء."}},
+    {"code":"CONTEXT_DENIED","http_status":403,"retryable":false,"message_key":"error.context.denied","recovery_action":"switch_context","focus_target":"context_selector","aria_live":"assertive","localized_copy":{"en":"This item is not available in the current context.","zh-CN":"当前上下文无法访问此项目。","ar":"هذا العنصر غير متاح في السياق الحالي."}},
+    {"code":"CAPABILITY_DISABLED","http_status":403,"retryable":false,"message_key":"error.capability.disabled","recovery_action":"request_capability","focus_target":"error_summary","aria_live":"polite","localized_copy":{"en":"This capability is not enabled.","zh-CN":"此能力尚未启用。","ar":"هذه الإمكانية غير مفعّلة."}},
+    {"code":"NOT_FOUND","http_status":404,"retryable":false,"message_key":"error.record.not_found","recovery_action":"return_to_list","focus_target":"page_heading","aria_live":"polite","localized_copy":{"en":"The requested record was not found.","zh-CN":"未找到请求的记录。","ar":"لم يتم العثور على السجل المطلوب."}},
+    {"code":"VALIDATION_FAILED","http_status":400,"retryable":false,"message_key":"error.validation.failed","recovery_action":"correct_fields","focus_target":"first_invalid_field","aria_live":"assertive","localized_copy":{"en":"Check the highlighted fields.","zh-CN":"请检查标记的字段。","ar":"تحقق من الحقول المحددة."}},
+    {"code":"CONFLICT","http_status":409,"retryable":false,"message_key":"error.record.conflict","recovery_action":"reload_and_review","focus_target":"conflict_summary","aria_live":"assertive","localized_copy":{"en":"This record changed. Reload and review before retrying.","zh-CN":"此记录已变更，请刷新并核对后重试。","ar":"تم تغيير هذا السجل. أعد التحميل وراجعه قبل المحاولة."}},
+    {"code":"APPROVAL_REQUIRED","http_status":202,"retryable":false,"message_key":"status.approval.required","recovery_action":"view_approval","focus_target":"approval_status","aria_live":"polite","localized_copy":{"en":"Approval is required before completion.","zh-CN":"完成前需要审批。","ar":"يلزم الحصول على موافقة قبل الإكمال."}},
+    {"code":"RATE_LIMITED","http_status":429,"retryable":true,"message_key":"error.rate_limited","recovery_action":"retry_after","focus_target":"action_status","aria_live":"polite","localized_copy":{"en":"Too many requests. Try again later.","zh-CN":"请求过多，请稍后重试。","ar":"طلبات كثيرة. حاول مرة أخرى لاحقًا."}},
+    {"code":"PROJECTION_STALE","http_status":409,"retryable":true,"message_key":"status.projection.stale","recovery_action":"refresh_projection","focus_target":"stale_banner","aria_live":"polite","localized_copy":{"en":"The view may be out of date. Refresh before acting.","zh-CN":"当前视图可能已过期，请刷新后操作。","ar":"قد تكون الشاشة قديمة. حدّثها قبل المتابعة."}},
+    {"code":"DEPENDENCY_UNAVAILABLE","http_status":503,"retryable":true,"message_key":"error.dependency.unavailable","recovery_action":"retry","focus_target":"error_summary","aria_live":"assertive","localized_copy":{"en":"A required service is unavailable. Try again.","zh-CN":"所需服务暂不可用，请重试。","ar":"الخدمة المطلوبة غير متاحة. حاول مرة أخرى."}},
+    {"code":"INTERNAL_ERROR","http_status":500,"retryable":true,"message_key":"error.internal","recovery_action":"retry_or_contact_support","focus_target":"error_summary","aria_live":"assertive","localized_copy":{"en":"Something went wrong. Try again or contact support.","zh-CN":"发生错误，请重试或联系支持。","ar":"حدث خطأ. حاول مرة أخرى أو تواصل مع الدعم."}}
+  ],
+  "error_negative_acceptance": [
+    {"case":"unknown_error_code","expected":"fail closed to INTERNAL_ERROR copy without raw message"},
+    {"case":"cross_tenant_error_detail","expected":"no object name, count, organization id or identifier rendered"},
+    {"case":"validation_error","expected":"focus first invalid field and summary links; aria-live announced once"},
+    {"case":"conflict_after_submit","expected":"preserve intent, disable replay and focus conflict summary"},
+    {"case":"localized_copy_missing","expected":"contract validation fails; no raw message fallback"},
+    {"case":"retryable_mismatch","expected":"contract validation fails for code/default retryability drift"}
+  ],
+  "cache_invalidation": {
+    "scope_key": ["organization_id","vertical_key","location_id","membership_version","entitlement_version"],
+    "tags": ["session-context","work-items","record:{aggregate_type}:{aggregate_id}","approvals","team-command","entitlements"],
+    "events": ["organization_switch","location_switch","membership_changed","entitlement_changed","support_session_expired","command_completed","projection_advanced"],
+    "rule": "context changes clear every previous-scope tag before target-scope fetch"
+  },
+  "endpoints": [
+    {"method":"GET","path":"/api/v4/context","auth":"session","capability":null,"response":"session organization membership entitlement capability summary","cache_tags":["session-context"]},
+    {"method":"GET","path":"/api/v4/work-items","auth":"session","capability":"work_items.read","query":["queue","status","cursor","limit"],"response_schema":"work-item.schema.v1.json[]","pagination":"opaque_cursor","cache_tags":["work-items"]},
+    {"method":"GET","path":"/api/v4/work-items/{work_item_id}/nba","auth":"session","capability":"work_items.read","response_schema":"nba.schema.v1.json","cache_tags":["work-items"]},
+    {"method":"POST","path":"/api/v4/work-items/{work_item_id}/dispositions","auth":"session","capability":"work_items.disposition","request_schema":"command.schema.v1.json","response_schema":"command-result.schema.v1.json","allowed_commands":["start_work_item","complete_work_item","snooze_work_item","skip_work_item","reassign_work_item"],"results":["accepted","completed","approval_pending","conflict","denied"],"cache_invalidate":["work-items","team-command"]},
+    {"method":"POST","path":"/api/v4/commands","auth":"session","capability":"command-specific","request_schema":"command.schema.v1.json","response_schema":"command-result.schema.v1.json","results":["accepted","completed","approval_pending","conflict","denied"],"response_required":["request_token","idempotency_key","request_id","correlation_id","status","expected_event"],"cache_invalidate":["record:{aggregate_type}:{aggregate_id}","work-items","approvals"]},
+    {"method":"GET","path":"/api/v4/commands/{idempotency_key}","auth":"session","capability":"command-specific","response_schema":"command-result.schema.v1.json","response_required":["idempotency_key","status","event_id","error"],"nullable":["event_id","error"],"cache_tags":[]},
+    {"method":"GET","path":"/api/v4/events/stream","auth":"session","capability":"events.read","transport":"SSE","resume":"Last-Event-ID","response_schema":"event-stream-response.schema.v1.json","cache_tags":[]},
+    {"method":"GET","path":"/api/v4/platform/organizations","auth":"session","roles":["platform_owner","platform_ops","platform_support","platform_auditor"],"response_schema":"platform-read-responses.schema.v1.json","response_variant":"organizations","pagination":"opaque_cursor","cache_tags":["platform-organizations"]},
+    {"method":"GET","path":"/api/v4/platform/support-sessions","auth":"session","roles":["platform_owner","platform_ops","platform_support","platform_auditor"],"response_schema":"platform-read-responses.schema.v1.json","response_variant":"support_sessions","pagination":"opaque_cursor","cache_tags":["support-sessions"]},
+    {"method":"GET","path":"/api/v4/platform/plans","auth":"session","roles":["platform_owner","platform_ops","platform_auditor"],"response_schema":"platform-read-responses.schema.v1.json","response_variant":"plans","pagination":"opaque_cursor","cache_tags":["entitlements"]},
+    {"method":"GET","path":"/api/v4/platform/organizations/{organization_id}/entitlements","auth":"session","roles":["platform_owner","platform_ops","platform_auditor"],"response_schema":"platform-read-responses.schema.v1.json","response_variant":"entitlements","pagination":"opaque_cursor","cache_tags":["entitlements"]},
+    {"method":"GET","path":"/api/v4/platform/organizations/{organization_id}/seats","auth":"session","roles":["platform_owner","platform_ops","platform_auditor"],"response_schema":"platform-read-responses.schema.v1.json","response_variant":"seats","pagination":"opaque_cursor","cache_tags":["entitlements"]},
+    {"method":"GET","path":"/api/v4/platform/organizations/{organization_id}/quotas","auth":"session","roles":["platform_owner","platform_ops","platform_auditor"],"response_schema":"platform-read-responses.schema.v1.json","response_variant":"quotas","pagination":"opaque_cursor","cache_tags":["entitlements"]},
+    {"method":"GET","path":"/api/v4/platform/organizations/{organization_id}/usage","auth":"session","roles":["platform_owner","platform_ops","platform_auditor"],"response_schema":"platform-read-responses.schema.v1.json","response_variant":"usage","pagination":"opaque_cursor","cache_tags":["platform-organizations"]},
+    {"method":"GET","path":"/api/v4/platform/subscriptions/{subscription_id}/invoice-references","auth":"session","roles":["platform_owner","platform_ops","platform_auditor"],"response_schema":"platform-read-responses.schema.v1.json","response_variant":"invoice_references","pagination":"opaque_cursor","cache_tags":["platform-organizations"]},
+    {"method":"POST","path":"/api/v4/platform/organizations","auth":"session","roles":["platform_owner","platform_ops"],"request_schema":"command.schema.v1.json","command":"provision_organization","cache_invalidate":["platform-organizations"]},
+    {"method":"POST","path":"/api/v4/platform/organizations/{organization_id}/transitions","auth":"session","roles":["platform_owner","platform_ops"],"request_schema":"command.schema.v1.json","command":"transition_organization_lifecycle","state_machine":"organization","approval_required":true,"approval_status_required":"approved","requester_must_differ_from_approver":true,"approval_binding":["approval_id","requested_by_actor_id","approved_by_actor_id","approval_event_id"],"transition_policy":{"platform_owner":["active","read_only","suspended","export_only","closed"],"platform_ops":["active","read_only","suspended","export_only"]},"cache_invalidate":["platform-organizations","entitlements","session-context"]},
+    {"method":"POST","path":"/api/v4/platform/subscriptions/{subscription_id}/transitions","auth":"session","roles":["platform_owner","platform_ops"],"request_schema":"command.schema.v1.json","command":"transition_billing_lifecycle","state_machine":"billing","approval_required":true,"approval_status_required":"approved","requester_must_differ_from_approver":true,"approval_binding":["approval_id","requested_by_actor_id","approved_by_actor_id","approval_event_id"],"transition_policy":{"platform_owner":["active","grace","dunning","suspended","closed"],"platform_ops":["active","grace","dunning","suspended"]},"cache_invalidate":["platform-organizations","entitlements","session-context"]},
+    {"method":"POST","path":"/api/v4/platform/support-session-requests","auth":"session","roles":["platform_support"],"request_schema":"command.schema.v1.json","command":"request_support_session","response_required":["support_session_request_id","approval_id","status"],"result_status":"approval_pending","cache_invalidate":["support-session-requests"]},
+    {"method":"POST","path":"/api/v4/platform/support-session-requests/{support_session_request_id}/approve","auth":"session","roles":["platform_owner","platform_ops"],"request_schema":"command.schema.v1.json","command":"approve_support_session","requester_must_differ_from_approver":true,"response_required":["support_session_id","approval_id","approved_by_actor_id","expires_at","scope","audit_event_id"],"result_status":"completed","cache_invalidate":["support-session-requests","support-sessions"]},
+    {"method":"DELETE","path":"/api/v4/platform/support-sessions/{support_session_id}","auth":"session","roles":["platform_owner","platform_ops","platform_support"],"request_header":"X-NewMe-Request-Token","command":"revoke_support_session","authorization_policy":{"platform_owner":"any_active_session","platform_ops":"any_active_session","platform_support":"own_requested_active_session_only"},"owner_binding":"session.requested_by_actor_id == actor_id","cache_invalidate":["support-sessions","session-context"]},
+    {"method":"POST","path":"/api/v4/platform/organizations/{organization_id}/entitlements","auth":"session","roles":["platform_owner","platform_ops"],"request_schema":"command.schema.v1.json","command":"change_entitlements","cache_invalidate":["entitlements","session-context"]},
+    {"method":"POST","path":"/api/v4/platform/organizations/{organization_id}/seats","auth":"session","roles":["platform_owner","platform_ops"],"request_schema":"command.schema.v1.json","command":"change_paid_seats","cache_invalidate":["entitlements","session-context"]},
+    {"method":"POST","path":"/api/v4/platform/organizations/{organization_id}/quotas","auth":"session","roles":["platform_owner","platform_ops"],"request_schema":"command.schema.v1.json","command":"change_quota","cache_invalidate":["entitlements","session-context"]},
+    {"method":"POST","path":"/api/v4/platform/organizations/{organization_id}/usage","auth":"service","roles":["platform_ops"],"request_schema":"command.schema.v1.json","command":"record_usage","cache_invalidate":["platform-organizations"]},
+    {"method":"POST","path":"/api/v4/platform/subscriptions/{subscription_id}/invoice-references","auth":"session","roles":["platform_owner","platform_ops"],"request_schema":"command.schema.v1.json","command":"record_invoice_reference","cache_invalidate":["platform-organizations"]},
+    {"method":"GET","path":"/api/v4/platform/audit","auth":"session","roles":["platform_owner","platform_auditor"],"response_schema":"platform-read-responses.schema.v1.json","response_variant":"audit","pagination":"opaque_cursor","cache_tags":["platform-audit"]}
+  ]
+}

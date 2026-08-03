@@ -382,19 +382,17 @@ test('staging archive restores real NUL-delimited gitlinks before exact tree com
   }
 })
 
-test('staging archive cleanliness ignores only absent verified gitlinks', async (t) => {
+test('staging archive cleanliness accepts archive-created empty gitlink directories only', async (t) => {
   const fixture = createGitlinkArchiveFixture()
   try {
     restoreArchiveGitlinks(fixture)
-    for (const gitlinkPath of fixture.gitlinkPaths) {
-      fs.rmSync(path.join(fixture.root, gitlinkPath), { recursive: true, force: true })
-    }
+    for (const gitlinkPath of fixture.gitlinkPaths) assert.ok(fs.statSync(path.join(fixture.root, gitlinkPath)).isDirectory())
     assert.doesNotThrow(() => validateGitlinkArchiveFixture(fixture))
 
-    await t.test('materialized gitlink is rejected', () => {
-      fs.mkdirSync(path.join(fixture.root, 'ci-test'))
-      assert.throws(() => validateGitlinkArchiveFixture(fixture), /gitlink must remain absent/)
-      fs.rmSync(path.join(fixture.root, 'ci-test'), { recursive: true, force: true })
+    await t.test('non-ignored file inside a gitlink directory is rejected', () => {
+      fs.writeFileSync(path.join(fixture.root, 'ci-test', 'unexpected.txt'), 'unexpected\n')
+      assert.throws(() => validateGitlinkArchiveFixture(fixture), /gitlink path must be absent or an empty directory/)
+      fs.rmSync(path.join(fixture.root, 'ci-test', 'unexpected.txt'))
     })
     await t.test('ordinary untracked addition is rejected', () => {
       fs.writeFileSync(path.join(fixture.root, 'unexpected.txt'), 'unexpected\n')

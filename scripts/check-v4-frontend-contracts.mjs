@@ -21,7 +21,6 @@ export function validateStagingArchiveProvenance(root, upstream, dependencies = 
   const env = dependencies.env ?? process.env
   const run = dependencies.execFileSync ?? execFileSync
   const lstat = dependencies.lstatSync ?? fs.lstatSync
-  const worktreeLstat = dependencies.worktreeLstatSync ?? fs.lstatSync
   const candidateSha = env.NEWME_STAGING_EXPECTED_SHA ?? ''
   const upstreamSha = env.NEWME_STAGING_UPSTREAM_SHA ?? ''
   const upstreamBlob = env.NEWME_STAGING_UPSTREAM_BLOB ?? ''
@@ -47,24 +46,17 @@ export function validateStagingArchiveProvenance(root, upstream, dependencies = 
 
   const indexTree = run('git', ['write-tree'], { cwd: root, encoding: 'utf8' }).trim()
   invariant(indexTree === treeSha, 'staging archive index tree differs from the candidate tree')
-
   const indexEntries = run('git', ['ls-files', '--stage', '-z'], { cwd: root, encoding: 'utf8' })
-  for (const entry of indexEntries.split('\0').filter(Boolean)) {
-    const separator = entry.indexOf('\t')
+  for (const record of indexEntries.split('\0').filter(Boolean)) {
+    const separator = record.indexOf('\t')
     invariant(separator > 0, 'staging archive index entry is malformed')
-    const mode = entry.slice(0, separator).split(' ')[0]
+    const [mode] = record.slice(0, separator).split(' ')
     if (mode !== '160000') continue
-    const gitlinkPath = entry.slice(separator + 1)
-    let materialized = true
-    try {
-      worktreeLstat(path.join(root, gitlinkPath))
-    } catch (error) {
-      if (error?.code === 'ENOENT') materialized = false
-      else throw error
-    }
-    invariant(!materialized, 'staging archive gitlink must remain absent from the materialized worktree')
+    const gitlinkPath = path.join(root, record.slice(separator + 1))
+    if (!fs.existsSync(gitlinkPath)) continue
+    const gitlink = fs.lstatSync(gitlinkPath)
+    invariant(gitlink.isDirectory() && fs.readdirSync(gitlinkPath).length === 0, 'staging archive gitlink path must be absent or an empty directory')
   }
-
   try {
     run('git', ['diff-files', '--quiet', '--ignore-submodules=all'], { cwd: root, stdio: 'ignore' })
   } catch {

@@ -195,6 +195,28 @@ CREATE TABLE IF NOT EXISTS public.user_session_daily (
   user_id uuid
 );
 
+-- The original activity schema used the all-zero UUID as its single-tenant
+-- sentinel. Preserve that historical value while proving V4 assigns the
+-- legacy organization only to the new ownership column.
+INSERT INTO public.organizations(id, slug, name, industry_key, status) VALUES (
+  '00000000-0000-0000-0000-000000000000',
+  'legacy-zero-tenant-sentinel',
+  'Disposable legacy zero tenant sentinel',
+  'real_estate',
+  'active'
+) ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.activity_logs(id, tenant_id, user_id, action) VALUES (
+  '78000000-3088-4000-8000-000000000088',
+  '00000000-0000-0000-0000-000000000000',
+  '78000000-0088-4000-8000-000000000088',
+  'legacy_zero_tenant_activity'
+) ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.user_session_daily(id, tenant_id, user_id) VALUES (
+  '78000000-3288-4000-8000-000000000088',
+  '00000000-0000-0000-0000-000000000000',
+  '78000000-0088-4000-8000-000000000088'
+) ON CONFLICT (id) DO NOTHING;
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.activities, public.activity_logs, public.ad_spend, public.audit_logs,
   public.business_events, public.chat_messages, public.customers,

@@ -106,6 +106,19 @@ function psqlAsync(container, sql) {
   ]);
 }
 
+function verifySam78Live(container, action, phase) {
+  return psql(
+    container,
+    [
+      "-c",
+      `SET newme.sam78_action = '${action}'; SET newme.sam78_verify_phase = '${phase}'`,
+      "-f",
+      "/work/scripts/uat/sam78-staging-migration-verify.sql",
+    ],
+    "test",
+  );
+}
+
 async function copyFixture(container, relativePath) {
   const destination = `/work/${relativePath.replaceAll("\\", "/")}`;
   const parent = destination.slice(0, destination.lastIndexOf("/"));
@@ -226,6 +239,7 @@ async function main() {
       "supabase/rollback/20260802074500_fix_customer_export_notification_uuid_rollback.sql",
       "supabase/rollback/20260803100000_v4_tenant_capability_boundary_rollback.sql",
       "supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql",
+      "scripts/uat/sam78-staging-migration-verify.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
       "tests/database/commercial-p0-seat-role-integrity.sql",
@@ -494,6 +508,10 @@ async function main() {
     );
 
     requireSuccess(
+      verifySam78Live(container, "apply", "pre"),
+      "v4_tenant_live_verify_apply_pre",
+    );
+    requireSuccess(
       psql(container, [
         "-f",
         "/work/supabase/migrations/20260803100000_v4_tenant_capability_boundary.sql",
@@ -585,6 +603,10 @@ async function main() {
         "/work/supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql",
       ]),
       "v4_tenant_lifecycle_closure_apply",
+    );
+    requireSuccess(
+      verifySam78Live(container, "apply", "post"),
+      "v4_tenant_live_verify_apply_post",
     );
     if (SAM78_GATE_PHASE === "apply") {
       process.stdout.write(`${JSON.stringify({
@@ -689,6 +711,10 @@ async function main() {
         return;
       }
     }
+    requireSuccess(
+      verifySam78Live(container, "rollback", "pre"),
+      "v4_tenant_live_verify_rollback_pre",
+    );
     const missingRollbackEnvironment = requireSuccess(
       psql(container, [
         "-A", "-t", "-q", "-c",
@@ -821,6 +847,10 @@ async function main() {
     if (v4CapabilityExpandRolledBack.stdout.trim() !== "t") {
       throw new Error("v4_tenant_capability_expand_rollback_incomplete");
     }
+    requireSuccess(
+      verifySam78Live(container, "rollback", "post"),
+      "v4_tenant_live_verify_rollback_post",
+    );
 
     const deniedCascadeRollback = psql(container, [
       "-f",

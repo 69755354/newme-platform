@@ -88,6 +88,36 @@ of these actions plus one full 40-character SHA:
   negative cases, and zero residue for every declared cleanup class. The
   validated, credential-free JSON operation record is atomically retained as
   root-only `0600` state at `last-uat-product-saas.json`.
+- `migrate-sam78 <SHA>` applies exactly migrations `20260803100000` and
+  `20260803143000` to the fixed staging project with the schema owner
+  `postgres.bfsiibofuzoglziltgyd`. Before opening a database connection it
+  verifies the SHA-bound build artifact checksum, root-only `0600` pgpass and
+  Supabase CA, a root-only explicit platform-staff role mapping, and commit
+  blobs for both migrations, both rollbacks, the live
+  verifier, and the complete canonical migration-history manifest. It strips
+  only each file's outer transaction boundary and applies both migrations plus
+  their exact `version`, `name`, and parsed `statements` rows in one bounded
+  transaction. A nonblocking advisory lock, migration-history table lock,
+  exact predecessor history, schema prestate, or live FK/RLS/ACL/backfill
+  mismatch fails closed. Production and the SAM-21 read-only credential are
+  never accepted.
+- `rollback-sam78-db <SHA>` requires the exact applied history and live
+  rollback prestate, executes both versioned rollback files in reverse order,
+  removes their history rows, and verifies the exact canonical predecessor,
+  restored policies/ACL, removed managed objects, preserved legacy rows, and
+  disabled rollback FORCE RLS in the same bounded transaction. It never
+  performs an application rollback and never guesses a partial database state.
+
+Before the separately approved `migrate-sam78` window, an operator must install
+three root-owned regular files with mode `0600`: the fixed staging-owner pgpass
+at `/etc/newme-staging/staging-migration.pgpass`, the Supabase root certificate
+at `/etc/newme-staging/supabase-root-2021-ca.crt`, and an approved JSON object
+keyed by immutable `platform_staff.id` at
+`/etc/newme-staging/sam78-platform-staff-role-mapping.json`. Mapping values are
+limited to `platform_owner`, `platform_ops`, `platform_support`, or
+`platform_auditor`; unresolved live rows abort the migration. The controller
+records only the mapping checksum, never its contents.
+
 - `rollback <oldSHA>` accepts only the recorded direct predecessor. It refuses
   an application-only rollback when the new release contains the SAM-20
   database contract and the predecessor does not; it never changes database

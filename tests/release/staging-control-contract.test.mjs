@@ -34,9 +34,69 @@ test("staging controller has one fixed command surface and strict SHA arity", as
     "uat-sam68",
     "uat-sam70",
     "uat-product-saas",
+    "migrate-sam78",
+    "rollback-sam78-db",
     "rollback",
   ]) assert.ok(control.includes(action), `missing fixed controller action ${action}`);
   assert.doesNotMatch(control, /\beval\b/);
+});
+
+test("SAM-78 database actions are SHA-bound and verify provenance before execution", async () => {
+  const control = await read("scripts/newme-staging-control.sh");
+  for (const pattern of [
+    /readonly SAM78_EXECUTOR="scripts\/run-staging-sam78-migrations\.mjs"/,
+    /readonly SAM78_VERIFY="scripts\/uat\/sam78-staging-migration-verify\.sql"/,
+    /readonly SAM78_HISTORY_MANIFEST="scripts\/uat\/sam78-canonical-migration-history\.txt"/,
+    /readonly SAM78_PGPASS="\/etc\/newme-staging\/staging-migration\.pgpass"/,
+    /readonly SAM78_CA="\/etc\/newme-staging\/supabase-root-2021-ca\.crt"/,
+    /readonly SAM78_PLATFORM_STAFF_ROLE_MAPPING="\/etc\/newme-staging\/sam78-platform-staff-role-mapping\.json"/,
+    /SAM78_EXPECTED_RELEASE_SHA="\$SHA"/,
+    /SAM78_BUILD_ARTIFACT_SHA256="\$expected_checksum"/,
+    /SAM78_PROJECT_REF="\$STAGING_REF"/,
+    /SAM78_HISTORY_MANIFEST_BLOB="\$history_manifest_blob"/,
+    /SAM78_PLATFORM_STAFF_ROLE_MAPPING_SHA256="\$platform_staff_role_mapping_checksum"/,
+    /SAM78_MIGRATION_031000_BLOB="\$migration_031000_blob"/,
+    /SAM78_MIGRATION_143000_BLOB="\$migration_143000_blob"/,
+    /SAM78_ROLLBACK_031000_BLOB="\$rollback_031000_blob"/,
+    /SAM78_ROLLBACK_143000_BLOB="\$rollback_143000_blob"/,
+    /historyManifestBlob !== process\.argv\[5\]/,
+    /buildArtifactSha256 !== process\.argv\[6\]/,
+    /body\.platformStaffRoleMappingSha256 !==/,
+  ]) assert.match(control, pattern);
+
+  const artifactGate = control.indexOf("SAM-78 build artifact checksum mismatch");
+  const executorCall = control.indexOf('/usr/bin/node "$executor"');
+  assert.ok(artifactGate > 0 && executorCall > artifactGate);
+  assert.match(control, /stat -c '%u:%g:%a' "\$SAM78_PGPASS"\)" = "0:0:600"/);
+  assert.match(control, /stat -c '%u:%g:%a' "\$SAM78_CA"\)" = "0:0:600"/);
+  assert.match(
+    control,
+    /stat -c '%u:%g:%a' "\$SAM78_PLATFORM_STAFF_ROLE_MAPPING"\)" = "0:0:600"/,
+  );
+  assert.match(control, /chmod 0400 "\$verify" "\$history_manifest"/);
+  assert.match(control, /migrate-sam78\) database_action="apply"/);
+  assert.match(control, /rollback-sam78-db\) database_action="rollback"/);
+  assert.doesNotMatch(control, /SAM78_PGPASS=.*sam21-db\.pgpass/);
+  assert.doesNotMatch(control, /SAM78_[A-Z_]*(?:PASSWORD|SERVICE_ROLE|ANON_KEY)/);
+  assert.doesNotMatch(control, /(?:cat|source|\.)\s+"?\$SAM78_PGPASS/);
+});
+
+test("SAM-78 controller copies only commit-bound assets and redacts database output", async () => {
+  const control = await read("scripts/newme-staging-control.sh");
+  for (const source of [
+    "$SAM78_EXECUTOR",
+    "$SAM78_VERIFY",
+    "$SAM78_HISTORY_MANIFEST",
+    "$SAM78_MIGRATION_031000",
+    "$SAM78_MIGRATION_143000",
+    "$SAM78_ROLLBACK_031000",
+    "$SAM78_ROLLBACK_143000",
+  ]) assert.ok(control.includes(`copy_commit_blob "$SHA" "${source}"`), `missing exact copy for ${source}`);
+  assert.match(control, /\/usr\/bin\/node "\$executor" >"\$output" 2>&1/);
+  assert.match(control, /captured output is redacted/);
+  assert.doesNotMatch(control, /echo .*\$output/);
+  assert.doesNotMatch(control, /cat .*\$output/);
+  assert.match(control, /install -m 0600 -o root -g root "\$output" "\$evidence_tmp"/);
 });
 
 test("staging controller rejects missing, extra, unknown, and malformed arguments", async () => {

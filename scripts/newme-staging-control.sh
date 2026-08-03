@@ -23,6 +23,7 @@ readonly SAM21_EVIDENCE="$STATE_DIR/last-uat-sam21.json"
 readonly SAM23_EVIDENCE="$STATE_DIR/last-uat-sam23.json"
 readonly SAM68_EVIDENCE="$STATE_DIR/last-uat-sam68.json"
 readonly SAM54_EVIDENCE="$STATE_DIR/last-uat-sam54.json"
+readonly SAM78_EVIDENCE="$STATE_DIR/last-migrate-sam78.json"
 readonly STAGING_REF="bfsiibofuzoglziltgyd"
 readonly PRODUCTION_REF="vfopmpxlhwzpxqegayew"
 readonly SAM20_RUNNER="scripts/uat/sam20-lead-organization-isolation.mjs"
@@ -43,6 +44,16 @@ readonly SAM52_BRIDGE="src/lib/sentry-webhook-bridge.mjs"
 readonly SAM68_RUNNER="scripts/verify-staging-sam68-observability.mjs"
 readonly SAM54_RUNNER="scripts/verify-staging-sam54-diagnostics.mjs"
 readonly SAM54_ALERT_STATE="infra/observability/hermes-alert-state-v1.sh"
+readonly SAM78_EXECUTOR="scripts/run-staging-sam78-migrations.mjs"
+readonly SAM78_VERIFY="scripts/uat/sam78-staging-migration-verify.sql"
+readonly SAM78_HISTORY_MANIFEST="scripts/uat/sam78-canonical-migration-history.txt"
+readonly SAM78_MIGRATION_031000="supabase/migrations/20260803100000_v4_tenant_capability_boundary.sql"
+readonly SAM78_MIGRATION_143000="supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql"
+readonly SAM78_ROLLBACK_031000="supabase/rollback/20260803100000_v4_tenant_capability_boundary_rollback.sql"
+readonly SAM78_ROLLBACK_143000="supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql"
+readonly SAM78_PGPASS="/etc/newme-staging/staging-migration.pgpass"
+readonly SAM78_CA="/etc/newme-staging/supabase-root-2021-ca.crt"
+readonly SAM78_PLATFORM_STAFF_ROLE_MAPPING="/etc/newme-staging/sam78-platform-staff-role-mapping.json"
 readonly PRODUCT_SAAS_RUNNER="scripts/uat/product-saas-final.mjs"
 readonly UAT_IMAGE_PREFIX="newme-staging-uat"
 TEMPORARY_PATHS=()
@@ -68,7 +79,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|migrate-sam78|rollback-sam78-db|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -76,7 +87,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|rollback) ;;
+  build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|migrate-sam78|rollback-sam78-db|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -1349,6 +1360,154 @@ run_uat_product_saas() {
   echo "staging control Product/SaaS UAT passed SHA=$SHA cleanup=verified evidence=$evidence"
 }
 
+run_sam78_database_action() {
+  production_healthy || fail "production health is not green"
+  staging_healthy || fail "staging health is not green"
+  [ -x /usr/bin/node ] || fail "node is required for SAM-78 migration execution"
+  [ -x /usr/bin/psql ] || fail "psql is required for SAM-78 migration execution"
+  [ -x /usr/bin/sha256sum ] || fail "sha256sum is required for SAM-78 provenance"
+  [ -f "$SAM78_PGPASS" ] || fail "SAM-78 staging database password file is missing"
+  [ ! -L "$SAM78_PGPASS" ] || fail "SAM-78 staging database password file must not be a symlink"
+  [ "$(stat -c '%u:%g:%a' "$SAM78_PGPASS")" = "0:0:600" ] ||
+    fail "SAM-78 staging database password file must be root:root mode 0600"
+  [ -f "$SAM78_CA" ] || fail "SAM-78 Supabase CA is missing"
+  [ ! -L "$SAM78_CA" ] || fail "SAM-78 Supabase CA must not be a symlink"
+  [ "$(stat -c '%u:%g:%a' "$SAM78_CA")" = "0:0:600" ] ||
+    fail "SAM-78 Supabase CA must be root:root mode 0600"
+
+  local database_action
+  case "$ACTION" in
+    migrate-sam78) database_action="apply" ;;
+    rollback-sam78-db) database_action="rollback" ;;
+    *) fail "invalid SAM-78 database action" ;;
+  esac
+  local platform_staff_role_mapping_checksum=""
+  if [ "$database_action" = "apply" ]; then
+    [ -f "$SAM78_PLATFORM_STAFF_ROLE_MAPPING" ] ||
+      fail "SAM-78 platform staff role mapping is missing"
+    [ ! -L "$SAM78_PLATFORM_STAFF_ROLE_MAPPING" ] ||
+      fail "SAM-78 platform staff role mapping must not be a symlink"
+    [ "$(stat -c '%u:%g:%a' "$SAM78_PLATFORM_STAFF_ROLE_MAPPING")" = "0:0:600" ] ||
+      fail "SAM-78 platform staff role mapping must be root:root mode 0600"
+    platform_staff_role_mapping_checksum="$(
+      /usr/bin/sha256sum "$SAM78_PLATFORM_STAFF_ROLE_MAPPING" | awk '{print $1}'
+    )"
+    [[ "$platform_staff_role_mapping_checksum" =~ ^[0-9a-f]{64}$ ]] ||
+      fail "SAM-78 platform staff role mapping checksum is invalid"
+  fi
+
+  local artifact="$INCOMING/$SHA.tar.gz"
+  local checksum="$artifact.sha256"
+  [ -f "$artifact" ] || fail "SAM-78 build artifact is missing"
+  [ ! -L "$artifact" ] || fail "SAM-78 build artifact must not be a symlink"
+  [ -f "$checksum" ] || fail "SAM-78 build artifact checksum is missing"
+  [ ! -L "$checksum" ] || fail "SAM-78 build artifact checksum must not be a symlink"
+  local expected_checksum actual_checksum
+  expected_checksum="$(tr -d '\r\n' < "$checksum")"
+  [[ "$expected_checksum" =~ ^[0-9a-f]{64}$ ]] ||
+    fail "SAM-78 build artifact checksum must be lowercase SHA-256"
+  actual_checksum="$(/usr/bin/sha256sum "$artifact" | awk '{print $1}')"
+  [ "$actual_checksum" = "$expected_checksum" ] ||
+    fail "SAM-78 build artifact checksum mismatch"
+
+  local run_dir executor verify history_manifest
+  local migration_031000 migration_143000 rollback_031000 rollback_143000
+  local output rc evidence_tmp
+  local verify_blob history_manifest_blob
+  local migration_031000_blob migration_143000_blob
+  local rollback_031000_blob rollback_143000_blob
+  run_dir="$(mktemp -d "/run/newme-staging-sam78-$SHA.XXXXXX")"
+  executor="$run_dir/run-staging-sam78-migrations.mjs"
+  verify="$run_dir/sam78-staging-migration-verify.sql"
+  history_manifest="$run_dir/sam78-canonical-migration-history.txt"
+  migration_031000="$run_dir/20260803100000.sql"
+  migration_143000="$run_dir/20260803143000.sql"
+  rollback_031000="$run_dir/20260803100000.rollback.sql"
+  rollback_143000="$run_dir/20260803143000.rollback.sql"
+  output="$(mktemp "$STATE_DIR/.sam78-database-action.XXXXXX")"
+  register_temporary_path "$run_dir"
+  register_temporary_path "$output"
+
+  copy_commit_blob "$SHA" "$SAM78_EXECUTOR" "$executor"
+  copy_commit_blob "$SHA" "$SAM78_VERIFY" "$verify"
+  copy_commit_blob "$SHA" "$SAM78_HISTORY_MANIFEST" "$history_manifest"
+  copy_commit_blob "$SHA" "$SAM78_MIGRATION_031000" "$migration_031000"
+  copy_commit_blob "$SHA" "$SAM78_MIGRATION_143000" "$migration_143000"
+  copy_commit_blob "$SHA" "$SAM78_ROLLBACK_031000" "$rollback_031000"
+  copy_commit_blob "$SHA" "$SAM78_ROLLBACK_143000" "$rollback_143000"
+  verify_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_VERIFY")"
+  history_manifest_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_HISTORY_MANIFEST")"
+  migration_031000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_031000")"
+  migration_143000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_143000")"
+  rollback_031000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_031000")"
+  rollback_143000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_143000")"
+
+  chown root:root "$run_dir" "$executor" "$verify" "$history_manifest" \
+    "$migration_031000" "$migration_143000" "$rollback_031000" "$rollback_143000"
+  chmod 0700 "$run_dir"
+  chmod 0500 "$executor"
+  chmod 0400 "$verify" "$history_manifest" "$migration_031000" "$migration_143000" \
+    "$rollback_031000" "$rollback_143000"
+
+  rc=0
+  /usr/bin/env -i \
+    HOME="/root" \
+    PATH="/usr/bin:/bin" \
+    SAM78_ACTION="$database_action" \
+    SAM78_EXPECTED_RELEASE_SHA="$SHA" \
+    SAM78_BUILD_ARTIFACT_SHA256="$expected_checksum" \
+    SAM78_PROJECT_REF="$STAGING_REF" \
+    SAM78_PGPASS_PATH="$SAM78_PGPASS" \
+    SAM78_PLATFORM_STAFF_ROLE_MAPPING_PATH="$SAM78_PLATFORM_STAFF_ROLE_MAPPING" \
+    SAM78_PLATFORM_STAFF_ROLE_MAPPING_SHA256="$platform_staff_role_mapping_checksum" \
+    SAM78_VERIFY_SQL_PATH="$verify" \
+    SAM78_VERIFY_SQL_BLOB="$verify_blob" \
+    SAM78_HISTORY_MANIFEST_PATH="$history_manifest" \
+    SAM78_HISTORY_MANIFEST_BLOB="$history_manifest_blob" \
+    SAM78_MIGRATION_031000_PATH="$migration_031000" \
+    SAM78_MIGRATION_031000_BLOB="$migration_031000_blob" \
+    SAM78_MIGRATION_143000_PATH="$migration_143000" \
+    SAM78_MIGRATION_143000_BLOB="$migration_143000_blob" \
+    SAM78_ROLLBACK_031000_PATH="$rollback_031000" \
+    SAM78_ROLLBACK_031000_BLOB="$rollback_031000_blob" \
+    SAM78_ROLLBACK_143000_PATH="$rollback_143000" \
+    SAM78_ROLLBACK_143000_BLOB="$rollback_143000_blob" \
+    /usr/bin/node "$executor" >"$output" 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] ||
+    fail "SAM-78 $database_action failed with status $rc; captured output is redacted"
+  /usr/bin/node -e '
+    const fs = require("fs");
+    const lines = fs.readFileSync(process.argv[1], "utf8").trim().split(/\r?\n/);
+    if (lines.length !== 1) process.exit(1);
+    const body = JSON.parse(lines[0]);
+    if (
+      body.schemaVersion !== 1 ||
+      body.linearId !== "SAM-78" ||
+      body.releaseSha !== process.argv[2] ||
+      body.projectRef !== process.argv[3] ||
+      body.action !== process.argv[4] ||
+      body.status !== "passed" ||
+      body.history !== "verified" ||
+      body.historyManifestBlob !== process.argv[5] ||
+      body.buildArtifactSha256 !== process.argv[6] ||
+      body.platformStaffRoleMappingSha256 !== (
+        process.argv[4] === "apply" ? process.argv[7] : null
+      ) ||
+      JSON.stringify(body.versions) !== JSON.stringify(["20260803100000", "20260803143000"])
+    ) process.exit(1);
+  ' "$output" "$SHA" "$STAGING_REF" "$database_action" \
+    "$history_manifest_blob" "$expected_checksum" \
+    "$platform_staff_role_mapping_checksum" ||
+    fail "SAM-78 $database_action evidence is incomplete"
+  evidence_tmp="$(mktemp "$STATE_DIR/.last-migrate-sam78.XXXXXX")"
+  register_temporary_path "$evidence_tmp"
+  install -m 0600 -o root -g root "$output" "$evidence_tmp"
+  mv -Tf "$evidence_tmp" "$SAM78_EVIDENCE"
+  rm -rf -- "$run_dir"
+  rm -f -- "$output"
+  echo "staging control SAM-78 database action passed SHA=$SHA action=$database_action evidence=$SAM78_EVIDENCE"
+}
+
 run_rollback() {
   load_state
   [ "$SHA" = "$STATE_OLD_SHA" ] ||
@@ -1402,5 +1561,6 @@ case "$ACTION" in
   uat-sam68) run_uat_sam68 ;;
   uat-sam70) run_uat_sam70 ;;
   uat-product-saas) run_uat_product_saas ;;
+  migrate-sam78|rollback-sam78-db) run_sam78_database_action ;;
   rollback) run_rollback ;;
 esac

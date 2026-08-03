@@ -151,10 +151,18 @@ WHERE membership.id = role_link.membership_id
   AND role_link.organization_id IS NULL;
 
 UPDATE public.activity_logs
-SET organization_id = tenant_id
+SET organization_id = CASE
+  WHEN tenant_id = '00000000-0000-0000-0000-000000000000'::uuid THEN
+    '6bc3b06e-5c05-4f45-9f1f-e9ea03a3cdd1'::uuid
+  ELSE tenant_id
+END
 WHERE organization_id IS NULL;
 UPDATE public.user_session_daily
-SET organization_id = tenant_id
+SET organization_id = CASE
+  WHEN tenant_id = '00000000-0000-0000-0000-000000000000'::uuid THEN
+    '6bc3b06e-5c05-4f45-9f1f-e9ea03a3cdd1'::uuid
+  ELSE tenant_id
+END
 WHERE organization_id IS NULL;
 
 DO $$

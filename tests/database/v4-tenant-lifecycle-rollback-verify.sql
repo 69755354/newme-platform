@@ -2,6 +2,33 @@
 
 DO $$
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.activity_logs
+    WHERE id = '78000000-3088-4000-8000-000000000088'
+      AND tenant_id = '00000000-0000-0000-0000-000000000000'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.user_session_daily
+    WHERE id = '78000000-3288-4000-8000-000000000088'
+      AND tenant_id = '00000000-0000-0000-0000-000000000000'
+  ) THEN
+    RAISE EXCEPTION 'legacy_zero_tenant_values_not_preserved_by_rollback';
+  END IF;
+END
+$$;
+
+-- The all-zero tenant rows are disposable rollback evidence. Remove them only
+-- after proving rollback preserved the original tenant_id, then remove the
+-- sentinel organization so older migration rollback gates see their exact
+-- predecessor dataset.
+DELETE FROM public.activity_logs
+WHERE id = '78000000-3088-4000-8000-000000000088';
+DELETE FROM public.user_session_daily
+WHERE id = '78000000-3288-4000-8000-000000000088';
+DELETE FROM public.organizations
+WHERE id = '00000000-0000-0000-0000-000000000000';
+
+DO $$
+BEGIN
   IF to_regclass('public.tenant_file_objects') IS NOT NULL
     OR to_regclass('public.tenant_file_deletion_outbox') IS NOT NULL
     OR to_regclass('public.organization_document_sequences') IS NOT NULL

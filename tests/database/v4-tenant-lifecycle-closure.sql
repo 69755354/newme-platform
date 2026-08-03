@@ -2,6 +2,24 @@
 
 BEGIN;
 
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.activity_logs
+    WHERE id = '78000000-3088-4000-8000-000000000088'
+      AND tenant_id = '00000000-0000-0000-0000-000000000000'
+      AND organization_id = '6bc3b06e-5c05-4f45-9f1f-e9ea03a3cdd1'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.user_session_daily
+    WHERE id = '78000000-3288-4000-8000-000000000088'
+      AND tenant_id = '00000000-0000-0000-0000-000000000000'
+      AND organization_id = '6bc3b06e-5c05-4f45-9f1f-e9ea03a3cdd1'
+  ) THEN
+    RAISE EXCEPTION 'legacy_zero_tenant_organization_backfill_failed';
+  END IF;
+END
+$$;
+
 INSERT INTO auth.users(id) VALUES
   ('78000000-0000-4000-8000-000000000011'),
   ('78000000-0000-4000-8000-000000000012'),

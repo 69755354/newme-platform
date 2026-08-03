@@ -373,7 +373,7 @@ test("staging systemd units enforce separate identity, ports, and resource ceili
   assert.match(runtime, /^CPUQuota=50%$/m);
   assert.match(build, /^EnvironmentFile=\/etc\/newme-staging\/build\.env$/m);
   assert.match(build, /^Environment=NODE_OPTIONS=--max-old-space-size=768$/m);
-  assert.match(build, /^TimeoutStartSec=30min$/m);
+  assert.match(build, /^TimeoutStartSec=60min$/m);
   assert.match(build, /^MemoryHigh=1280M$/m);
   assert.match(build, /^MemoryMax=1536M$/m);
   assert.match(build, /^MemorySwapMax=256M$/m);

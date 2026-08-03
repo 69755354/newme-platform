@@ -53,6 +53,30 @@ stop_build() {
   fi
 }
 
+restore_archive_gitlinks() {
+  local candidate_sha="$1"
+  local entry=""
+  local metadata=""
+  local entry_mode=""
+  local entry_type=""
+  local entry_object=""
+  local entry_path=""
+
+  while IFS= read -r -d '' entry; do
+    metadata="${entry%%$'\t'*}"
+    entry_path="${entry#*$'\t'}"
+    IFS=' ' read -r entry_mode entry_type entry_object <<< "$metadata"
+    [ "$entry_mode" = "160000" ] || continue
+    [ "$entry_type" = "commit" ] ||
+      fail "canonical gitlink tree entry has an unexpected object type"
+    [[ "$entry_object" =~ ^[0-9a-f]{40}$ ]] ||
+      fail "canonical gitlink object is malformed"
+    [ -n "$entry_path" ] || fail "canonical gitlink path is empty"
+    git -C "$WORK" update-index --add --cacheinfo \
+      "$entry_mode" "$entry_object" "$entry_path"
+  done < <(git --git-dir="$REPOSITORY" ls-tree -rz --full-tree "$candidate_sha")
+}
+
 cleanup() {
   local rc=$?
   trap - EXIT INT TERM
@@ -111,6 +135,7 @@ mkdir "$WORK"
 git --git-dir="$REPOSITORY" archive "$SHA" | tar -x -C "$WORK"
 git -C "$WORK" init --quiet
 git -C "$WORK" add --force --all
+restore_archive_gitlinks "$SHA"
 
 REGISTRY="$WORK/docs/v4-frontend-increment/contracts/v4-id-registry.v1.json"
 [ -f "$REGISTRY" ] && [ ! -L "$REGISTRY" ] ||

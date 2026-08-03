@@ -123,7 +123,7 @@ function restoreArchiveGitlinks(fixture) {
   }
 }
 
-function validateGitlinkArchiveFixture(fixture) {
+function validateGitlinkArchiveFixture(fixture, dependencyOverrides = {}) {
   const upstream = { commit: fixture.gitlinkObject, blob: 'a'.repeat(40) }
   const content = stagingArchiveProvenanceContent({
     candidateSha: fixture.candidateSha,
@@ -151,6 +151,7 @@ function validateGitlinkArchiveFixture(fixture) {
       nlink: 1,
       size: Buffer.byteLength(content),
     }),
+    ...dependencyOverrides,
   })
 }
 
@@ -387,7 +388,28 @@ test('staging archive cleanliness accepts archive-created empty gitlink director
   try {
     restoreArchiveGitlinks(fixture)
     for (const gitlinkPath of fixture.gitlinkPaths) assert.ok(fs.statSync(path.join(fixture.root, gitlinkPath)).isDirectory())
-    assert.doesNotThrow(() => validateGitlinkArchiveFixture(fixture))
+    const trackedPath = path.join(fixture.root, 'tracked.txt')
+    const trackedStat = fs.statSync(trackedPath)
+    fs.utimesSync(trackedPath, trackedStat.atime, new Date(trackedStat.mtimeMs + 5000))
+    assert.match(execFileSync('git', ['diff-files', '--name-only', '--ignore-submodules=all'], { cwd: fixture.root, encoding: 'utf8' }), /tracked\.txt/)
+    const commands = []
+    assert.doesNotThrow(() => validateGitlinkArchiveFixture(fixture, {
+      execFileSync: (file, args, options) => {
+        commands.push(args.join(' '))
+        return execFileSync(file, args, options)
+      },
+    }))
+    assert.ok(commands.indexOf('update-index --refresh --ignore-submodules') < commands.indexOf('diff-files --quiet --ignore-submodules=all'))
+    assert.equal(execFileSync('git', ['diff-files', '--name-only', '--ignore-submodules=all'], { cwd: fixture.root, encoding: 'utf8' }), '')
+
+    await t.test('index stat-cache refresh failure is rejected', () => {
+      assert.throws(() => validateGitlinkArchiveFixture(fixture, {
+        execFileSync: (file, args, options) => {
+          if (args.join(' ') === 'update-index --refresh --ignore-submodules') throw new Error('refresh failed')
+          return execFileSync(file, args, options)
+        },
+      }), /index stat cache refresh failed/)
+    })
 
     await t.test('non-ignored file inside a gitlink directory is rejected', () => {
       fs.writeFileSync(path.join(fixture.root, 'ci-test', 'unexpected.txt'), 'unexpected\n')
@@ -401,12 +423,12 @@ test('staging archive cleanliness accepts archive-created empty gitlink director
     })
     await t.test('ordinary tracked modification is rejected', () => {
       fs.appendFileSync(path.join(fixture.root, 'tracked.txt'), 'drift\n')
-      assert.throws(() => validateGitlinkArchiveFixture(fixture), /working tree differs/)
+      assert.throws(() => validateGitlinkArchiveFixture(fixture), /index stat cache refresh failed/)
       execFileSync('git', ['checkout-index', '--force', '--', 'tracked.txt'], { cwd: fixture.root })
     })
     await t.test('ordinary tracked deletion is rejected', () => {
       fs.rmSync(path.join(fixture.root, 'tracked.txt'))
-      assert.throws(() => validateGitlinkArchiveFixture(fixture), /working tree differs/)
+      assert.throws(() => validateGitlinkArchiveFixture(fixture), /index stat cache refresh failed/)
       execFileSync('git', ['checkout-index', '--force', '--', 'tracked.txt'], { cwd: fixture.root })
     })
     await t.test('forged gitlink index object is rejected', () => {

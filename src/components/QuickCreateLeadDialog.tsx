@@ -118,13 +118,15 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
     }
 
     // Notify admins about new lead
-    import("@/lib/notify").then(({ notify }) => {
-      notify({ type: "lead_created", lead_id: data!.id, customer_name: form.customer_name || "Unknown" });
-    });
+    const { notify } = await import("@/lib/notify");
+    await notify({ type: "lead_created", lead_id: data!.id });
 
     // Meta Pixel tracking
-    if (typeof window !== "undefined" && (window as any).fbq) {
-      (window as any).fbq("track", "Lead", {
+    const pixelWindow = window as Window & {
+      fbq?: (event: string, name: string, properties: Record<string, unknown>) => void;
+    };
+    if (pixelWindow.fbq) {
+      pixelWindow.fbq("track", "Lead", {
         content_name: form.customer_name || "unknown",
         content_category: "smart_home_lead",
         source: form.source,

@@ -6,6 +6,7 @@ import {
   type RequestAuthContext,
 } from "@/lib/request-auth-context";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { parseSupportSessionApprovalRequest } from "@/lib/support-session-approval-request";
 
 type JsonObject = Record<string, unknown>;
 
@@ -57,6 +58,17 @@ function supportError(error: unknown): { code: string; status: number } {
   return { code: "support_session_unavailable", status: 503 };
 }
 
+function approvalStatus(message: string): number {
+  if (message.includes("permission_required")
+    || message.includes("platform_staff_required")) return 403;
+  if (message.includes("not_found")
+    || message.includes("active_support_organization_required")) return 404;
+  if (message.includes("payload_mismatch")
+    || message.includes("target_mismatch")) return 409;
+  if (message.includes("invalid_") || message.includes("required")) return 400;
+  return 503;
+}
+
 async function authContext(request: NextRequest) {
   try {
     return {
@@ -88,53 +100,36 @@ export async function POST(request: NextRequest) {
   if (!auth.context) return auth.error;
   const context = auth.context;
 
-  const body = bodyObject(await request.json().catch(() => null));
-  if (!body) return response(context, { error: "invalid_request" }, 400);
-
-  const organizationId = requiredString(body, "organization_id");
-  const approverUserId = requiredString(body, "approver_user_id");
-  const ticketRef = requiredString(body, "ticket_ref");
-  const reason = requiredString(body, "reason");
-  const expiresAt = requiredString(body, "expires_at");
-  const scope = body.scope;
-  if (
-    !organizationId
-    || !approverUserId
-    || !ticketRef
-    || !reason
-    || !expiresAt
-    || !Array.isArray(scope)
-    || !scope.every((item) => typeof item === "string")
-  ) {
+  const input = parseSupportSessionApprovalRequest(
+    await request.json().catch(() => null),
+  );
+  if (!input) {
     return response(context, { error: "invalid_request" }, 400);
   }
-
-  const { data, error } = await supabaseAdmin.rpc(
-    "start_support_session_atomic",
+  const { data, error } = await context.supabase.rpc(
+    "v4_request_platform_action_approval",
     {
-      p_actor_user_id: context.user.id,
-      p_approver_user_id: approverUserId,
-      p_organization_id: organizationId,
-      p_ticket_ref: ticketRef,
-      p_reason: reason,
-      p_scope: scope,
-      p_expires_at: expiresAt,
-      p_request_id: context.requestId,
+      p_action_key: "support.session.start",
+      p_target_key: input.organizationId,
+      p_payload: input.payload,
+      p_request_id: input.idempotencyKey,
     },
   );
-  if (error || typeof data !== "string") {
-    const mapped = supportError(error);
-    return response(context, { error: mapped.code }, mapped.status);
+  if (error || !data) {
+    const message = error?.message ?? "support_approval_request_unavailable";
+    return response(
+      context,
+      { error: "support_approval_request_unavailable" },
+      approvalStatus(message),
+    );
   }
 
-  return response(
+  return applyRequestAuthCookies(
     context,
-    {
-      support_session_id: data,
-      organization_id: organizationId,
-      expires_at: expiresAt,
-    },
-    201,
+    NextResponse.json(data, {
+      status: 202,
+      headers: { "Cache-Control": "no-store" },
+    }),
   );
 }
 

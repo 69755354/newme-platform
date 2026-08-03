@@ -20,13 +20,14 @@ import {
 } from "@/components/ui/dialog";
 import {
   Search, X, Plus, FileText, Calendar, DollarSign,
-  Hash, User, Clock, RefreshCw, Eye, Download, MoreHorizontal,
+  Hash, User, Clock, RefreshCw, Eye, Download,
   Trash2,
 } from "lucide-react";
 import QuoteCalculator from "./quote-calculator";
 import QuoteWizard from "./quote-wizard";
 import QuoteDetailDialog from "./quote-detail-dialog";
 import { fmtAED } from "@/shared/utils/format";
+import { getBrowserOrganizationId } from "@/lib/organization-context";
 
 /* ─── Types ─── */
 interface Lead {
@@ -37,6 +38,7 @@ interface Lead {
 
 interface Quotation {
   id: string;
+  organization_id: string;
   lead_id: string | null;
   customer_id: string | null;
   created_by: string | null;
@@ -55,7 +57,13 @@ interface Quotation {
   status: string;
   pdf_url: string | null;
   ppt_url: string | null;
-  devices_json: any;
+  devices_json: Record<string, {
+    name: string;
+    qty: number;
+    unit_price: number;
+    line_total: number;
+    unit?: string;
+  }> | null;
   notes: string | null;
   internal_notes: string | null;
   created_at: string;
@@ -70,13 +78,6 @@ const STATUS_STYLES: Record<string, { color: string; bg: string; border: string 
   accepted: { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
   rejected: { color: "text-rose-400", bg: "bg-rose-500/10", border: "border-rose-500/20" },
   expired: { color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20" },
-};
-const STATUS_LABEL_KEYS: Record<string, string> = {
-  draft: "quotes.draft",
-  sent: "quotes.sent",
-  accepted: "quotes.accepted",
-  rejected: "quotes.rejected",
-  expired: "quotes.expired",
 };
 const QUOTE_STATUSES = ["draft", "sent", "accepted", "rejected", "expired"];
 
@@ -167,7 +168,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
   const fetchQuotes = useCallback(async () => {
     setLoading(true);
     setError(null);
-    let q = supabase
+    const q = supabase
       .from("quotations")
       .select("*, leads!quotations_lead_id_fkey(customer_name, phone)")
       .order("created_at", { ascending: false })
@@ -181,7 +182,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
     }
     if (data) setQuotations(data as Quotation[]);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, t]);
 
   const fetchLeads = useCallback(async () => {
     const { data } = await supabase
@@ -216,6 +217,11 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
   /* ─── Create quote ─── */
   const handleCreateQuote = async () => {
     if (!createForm.leadId) return;
+    const organizationId = getBrowserOrganizationId();
+    if (!organizationId) {
+      toast.error(t("quotes.createFailed"));
+      return;
+    }
     setCreating(true);
     try {
       const subtotal = createForm.subtotal || 0;
@@ -229,7 +235,8 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
       const quoteNo = `Q-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
       const { data: { user } } = await supabase.auth.getUser();
 
-      const { error: err } = await supabase.from("quotations").insert({
+      const { data: insertedQuote, error: err } = await supabase.from("quotations").insert({
+        organization_id: organizationId,
         lead_id: createForm.leadId,
         quote_no: quoteNo,
         version: 1,
@@ -245,12 +252,10 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
         created_by: user?.id || undefined,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      });
+      }).select("id").single();
       if (err) { console.error("Create quote error:", err); toast.error(t("quotes.createFailed")); return; }
-      // Notify about new quotation
-      import("@/lib/notify").then(({ notify }) => {
-        notify({ type: "quote_created", quote_id: quoteNo, lead_id: createForm.leadId, quote_no: quoteNo });
-      }).catch(() => {});
+      const { notify } = await import("@/lib/notify");
+      await notify({ type: "quote_created", quote_id: insertedQuote.id });
       setCreateOpen(false);
       resetCreateForm();
       fetchQuotes();
@@ -266,17 +271,26 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
 
   /* ─── Status update ─── */
   const handleStatusChange = async (id: string, newStatus: string) => {
+    const quoteScope = quotations.find((quote) => quote.id === id);
+    if (!quoteScope?.organization_id) return;
     const { error: err } = await supabase
       .from("quotations")
       .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("organization_id", quoteScope.organization_id);
     if (!err) {
       // Cascade to lead: if quote accepted, advance lead stage to quotation_submitted
       if (newStatus === "accepted") {
-        const { data: quote } = await supabase.from("quotations").select("lead_id, quote_no").eq("id", id).single();
+        const { data: quote } = await supabase
+          .from("quotations")
+          .select("lead_id, quote_no, organization_id")
+          .eq("id", id)
+          .eq("organization_id", quoteScope.organization_id)
+          .single();
         if (quote?.lead_id) {
           const { data: { user } } = await supabase.auth.getUser();
           await supabase.from("lead_milestones").insert({
+            organization_id: quote.organization_id,
             lead_id: quote.lead_id,
             milestone_key: "quotation",
             completed_by: user?.id || null,
@@ -337,7 +351,11 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
     if (!confirm(t("quotes.confirmDelete"))) return;
     setDeletingQuoteId(quote.id);
     try {
-      const { error: err } = await supabase.from("quotations").delete().eq("id", quote.id);
+      const { error: err } = await supabase
+        .from("quotations")
+        .delete()
+        .eq("id", quote.id)
+        .eq("organization_id", quote.organization_id);
       if (err) throw err;
       setQuotations(prev => prev.filter(q => q.id !== quote.id));
       toast.success(t("quotes.deletedSuccess"));

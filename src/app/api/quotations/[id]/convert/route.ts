@@ -1,266 +1,115 @@
-// RBAC: user (authenticated)
+// RBAC: organization-scoped atomic quotation conversion
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { getRequestedOrganizationId } from "@/lib/organization-context";
+import {
+  OrganizationAuthorizationError,
+  resolveOrganizationAuthorization,
+} from "@/lib/organization-authorization";
+import { RequestAuthError } from "@/lib/request-auth-context";
 import { logger, genReqId } from "@/lib/logger";
+import type { Json } from "@/types/database";
 
-/**
- * POST /api/quotations/[id]/convert
- * Convert an accepted quotation into a draft contract.
- * Sets quotation status to 'contract_created' and links back via contract_id.
- */
+function isJson(value: unknown): value is Json {
+  if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
+    return typeof value !== "number" || Number.isFinite(value);
+  }
+  if (Array.isArray(value)) return value.every(isJson);
+  if (typeof value !== "object") return false;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  return Object.values(value).every(isJson);
+}
+
+function conversionFailure(message: string): { status: number; code: string } {
+  if (message.includes("capability_required") || message.includes("ownership_required")) {
+    return { status: 403, code: "quotation_conversion_forbidden" };
+  }
+  if (message.includes("not_found")) return { status: 404, code: "quotation_resource_not_found" };
+  if (message.includes("already_converted") || message.includes("idempotency")
+    || message.includes("in_progress") || message.includes("duplicate")
+    || message.includes("sequence_exhausted")) return { status: 409, code: "quotation_conversion_conflict" };
+  if (message.includes("not_accepted") || message.includes("invalid_")
+    || message.includes("must_be_positive") || message.includes("request_id_required")
+    || message.includes("installments_total_mismatch")) {
+    return { status: 400, code: "invalid_quotation_conversion" };
+  }
+  return { status: 503, code: "quotation_conversion_unavailable" };
+}
+
+function idempotencyKey(request: Request): string | null {
+  const value = request.headers.get("idempotency-key");
+  return value && /^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/.test(value) ? value : null;
+}
+
+function conversionResult(value: unknown): value is {
+  contract_id: string;
+  contract_no: string;
+  quotation_status: string;
+} {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    && "contract_id" in value && typeof value.contract_id === "string"
+    && "contract_no" in value && typeof value.contract_no === "string"
+    && "quotation_status" in value && typeof value.quotation_status === "string";
+}
+
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const request_id = genReqId();
   const { id: quotationId } = await params;
-  try {    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-  const cookieHeader = request.headers.get("cookie") ?? "";
-  const supabase = await createServerSupabase(
-    bearerToken,
-    cookieHeader,
-    getRequestedOrganizationId(request) ?? undefined,
-  );
-    const {
-      data: { user },
-      error: authErr,
-    } = await supabase.auth.getUser();
-    if (authErr || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const access = await resolveOrganizationAuthorization(
+      request,
+      "quotations.convert",
+      "write",
+    );
+    const workflowKey = idempotencyKey(request);
+    if (!workflowKey) {
+      return NextResponse.json({ error: "invalid_idempotency_key" }, { status: 400 });
     }
-
-    // Fetch quotation with lead info
-    const { data: quote, error: quoteErr } = await supabase
-      .from("quotations")
-      .select("*, leads!quotations_lead_id_fkey(id, customer_name, property_type, property_size_sqm, location, phone)")
-      .eq("id", quotationId)
-      .single();
-
-    if (quoteErr || !quote) {
-      return NextResponse.json(
-        { error: "Quotation not found" },
-        { status: 404 }
-      );
+    const untrustedBody: unknown = await request.json().catch(() => null);
+    if (!isJson(untrustedBody) || untrustedBody === null || Array.isArray(untrustedBody)
+      || typeof untrustedBody !== "object") {
+      return NextResponse.json({ error: "invalid_quotation_convert_payload" }, { status: 400 });
     }
-
-    // Only accepted quotations can be converted
-    if (quote.status !== "accepted") {
-      return NextResponse.json(
-        { error: "Only accepted quotations can be converted", current_status: quote.status },
-        { status: 400 }
-      );
-    }
-
-    // Zero-total quotations cannot be converted: contract_amount would violate
-    // the DB CHECK (contracts_contract_amount_check). Pre-check as 400 instead
-    // of letting the insert below fail with a 500.
-    if (!(quote.total_amount > 0)) {
-      return NextResponse.json(
-        { error: "Quotation total must be greater than zero to convert" },
-        { status: 400 }
-      );
-    }
-
-    // Check if contract already created from this quotation
-    if (quote.contract_id) {
-      return NextResponse.json(
-        { error: "Contract already created from this quotation", contract_id: quote.contract_id },
-        { status: 409 }
-      );
-    }
-
-    // Fetch user role
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    const isAdmin =
-      profile?.role && ["admin", "boss", "operator"].includes(profile.role);
-
-    // Sales can only convert their own quotations
-    if (!isAdmin && quote.created_by !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    // Generate contract number
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
-    const { count } = await supabase
-      .from("contracts")
-      .select("id", { count: "exact", head: true })
-      .gte("created_at", now.toISOString().slice(0, 10));
-    const seq = String((count ?? 0) + 1).padStart(3, "0");
-    const contractNo = `NEW-${dateStr}-${seq}`;
-
-    // Parse optional body for overrides
-    const body = await request.json().catch(() => ({}));
-    const installments = body.installments || [];
-
-    // Create contract from quotation data
-    const { data: contract, error: contractErr } = await supabase
-      .from("contracts")
-      .insert({
-        lead_id: quote.lead_id,
-        quotation_id: quote.id,
-        sales_id: quote.created_by,
-        created_by: user.id,
-        contract_no: contractNo,
-        contract_date: now.toISOString().slice(0, 10),
-        contract_amount: quote.total_amount,
-        currency: quote.currency || "AED",
-        party_a_name: quote.leads?.customer_name || "Unknown",
-        party_b_name: "NewMe Smart Home FZCO",
-        status: "draft",
-        first_payment_due_date: body.first_payment_due_date || null,
-      })
-      .select("id, contract_no")
-      .single();
-
-    if (contractErr) {
+    const { data, error } = await access.context.supabase.rpc(
+      "v4_convert_quotation_for_organization",
+      {
+        p_organization_id: access.organizationId,
+        p_quotation_id: quotationId,
+        p_payload: untrustedBody,
+        p_request_id: workflowKey,
+      },
+    );
+    if (error) {
       logger.error(
-        {
-          err: contractErr,
-          request_id,
-          operation: "quotation_convert",
-          user_id: user.id,
-          quotation_id: quotationId,
-        },
-        "[Quotation Convert] Contract insert failed",
+        { err: error, request_id, operation: "quotation_convert", quotation_id: quotationId },
+        "[Quotation Convert] atomic RPC failed",
       );
-      return NextResponse.json(
-        { error: "Failed to create contract" },
-        { status: 500 }
-      );
+      const failure = conversionFailure(error.message);
+      return NextResponse.json({ error: failure.code }, { status: failure.status });
     }
-
-    // Create installment plans if provided
-    if (installments.length > 0) {
-      const rows = installments.map((inst: { seq: number; amount: number; due_date: string; description?: string }) => ({
-        contract_id: contract.id,
-        seq: inst.seq,
-        amount: inst.amount,
-        due_date: inst.due_date,
-        description: inst.description || "",
-        status: "pending",
-      }));
-      const { error: instErr } = await supabase
-        .from("installment_plans")
-        .insert(rows);
-      if (instErr) {
-        logger.error(
-          {
-            err: instErr,
-            request_id,
-            operation: "quotation_convert",
-            user_id: user.id,
-            quotation_id: quotationId,
-            contract_id: contract.id,
-          },
-          "[Quotation Convert] Installment insert failed",
-        );
-      }
+    if (!conversionResult(data)) {
+      return NextResponse.json({ error: "invalid_quotation_conversion_result" }, { status: 502 });
     }
-
-    // Create first approval record
-    await supabase.from("contract_approvals").insert({
-      contract_id: contract.id,
-      step: "admin_review",
-      status: "pending",
-      notes: { source: "quotation", quotation_id: quote.id, quote_no: quote.quote_no },
-    });
-
-    // Update quotation: link contract + change status
-    await supabase
-      .from("quotations")
-      .update({
-        contract_id: contract.id,
-        status: "contract_created",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", quotationId);
-
-    // Update lead final_status to won
-    if (quote.lead_id) {
-      await supabase
-        .from("leads")
-        .update({ final_status: "won", updated_at: new Date().toISOString() })
-        .eq("id", quote.lead_id);
-    }
-
-    // Create project for won lead
-    const lead = quote.leads as any;
-    const projectName = `${lead?.customer_name || "Client"} - ${lead?.property_type || "Smart Home"}`;
-    await supabase.from("projects").insert({
-      lead_id: quote.lead_id,
-      contract_id: contract.id,
-      sales_id: quote.created_by,
-      customer_id: lead?.customer_id || null,
-      name: projectName,
-      property_type: lead?.property_type || null,
-      property_size: lead?.property_size_sqm || null,
-      location: lead?.location || null,
-      phase: "design",
-      status: "active",
-      contract_amount: quote.total_amount,
-    });
-
-    // Log activity
-    await supabase.from("activities").insert({
-      lead_id: quote.lead_id,
-      type: "note",
-      content: `合同 ${contractNo} 已从报价 ${quote.quote_no} 自动创建，待审批`,
-      ai_generated: true,
-      user_id: user.id,
-    });
-
-    // Notify admins
-    try {
-      await fetch(
-        `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/notify`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "contract_pending_approval",
-            contract_id: contract.id,
-            lead_id: quote.lead_id,
-            amount: quote.total_amount,
-          }),
-        }
-      );
-    } catch {
-      // non-blocking
-    }
-
-    // Revalidate cached pages to reflect new contract
     revalidatePath("/quotes");
     revalidatePath("/contracts");
     revalidatePath("/leads");
-
     return NextResponse.json({
       success: true,
-      contract_id: contract.id,
-      contract_no: contract.contract_no,
-      quotation_status: "contract_created",
+      contract_id: data.contract_id,
+      contract_no: data.contract_no,
+      quotation_status: data.quotation_status,
     });
   } catch (err: unknown) {
-    const message =
-      process.env.NODE_ENV === "production"
-        ? "Internal server error"
-        : (err as Error).message;
+    if (err instanceof OrganizationAuthorizationError || err instanceof RequestAuthError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
     logger.error(
-      {
-        err,
-        request_id,
-        operation: "quotation_convert",
-        quotation_id: quotationId,
-      },
+      { err, request_id, operation: "quotation_convert", quotation_id: quotationId },
       "[Quotation Convert] Error",
     );
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -52,10 +52,6 @@ test("SAM-23 evidence ledger matches the reviewed canonical source blobs", async
       "supabase/migrations/20260730110000_sam22_two_organization_isolation.sql",
       "f0222d10d8653aa9e2c872f0e4cac2a70e7a0651",
     ],
-    [
-      "tests/security/sam22-two-organization-isolation.test.mjs",
-      "e0a28c7964c2d9da19c806b1aa2c1e51e3ab1d35",
-    ],
   ]);
   const historicalSnapshotEvidence = new Map([
     [
@@ -65,6 +61,10 @@ test("SAM-23 evidence ledger matches the reviewed canonical source blobs", async
     [
       "src/types/database.ts",
       "e9d61148be68baf1bc828999fa0728d27baf3bf1",
+    ],
+    [
+      "tests/security/sam22-two-organization-isolation.test.mjs",
+      "e0a28c7964c2d9da19c806b1aa2c1e51e3ab1d35",
     ],
   ]);
 

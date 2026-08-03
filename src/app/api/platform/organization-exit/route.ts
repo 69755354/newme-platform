@@ -4,23 +4,17 @@ import {
   getRequestAuthContext,
   RequestAuthError,
 } from "@/lib/request-auth-context";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import type { Json } from "@/types/database";
 
 type JsonObject = Record<string, unknown>;
 
 const EXIT_ERRORS = new Map<string, number>([
   ["platform_staff_required", 403],
-  ["independent_exit_approver_required", 403],
-  ["exit_idempotency_key_required", 400],
-  ["exit_reason_required", 400],
-  ["valid_export_sha256_required", 400],
-  ["exit_completion_evidence_required", 400],
-  ["exit_idempotency_payload_mismatch", 409],
-  ["organization_exit_not_preparable", 409],
-  ["organization_exit_not_completable", 409],
-  ["prepared_exit_request_required", 409],
-  ["exit_approval_identity_mismatch", 409],
-  ["organization_changed_after_export", 409],
+  ["platform_action_request_permission_required", 403],
+  ["platform_approval_request_id_required", 400],
+  ["noncanonical_platform_approval_payload", 400],
+  ["platform_approval_target_mismatch", 409],
+  ["platform_approval_idempotency_payload_mismatch", 409],
 ]);
 
 function objectBody(value: unknown): JsonObject | null {
@@ -59,30 +53,24 @@ export async function POST(request: NextRequest) {
     }
     const action = text(body, "action");
     const organizationId = text(body, "organization_id");
-    const approverUserId = text(body, "approver_user_id");
     const idempotencyKey = text(body, "idempotency_key");
-    if (!organizationId || !approverUserId || !idempotencyKey) {
+    if (!organizationId || !idempotencyKey || "approver_user_id" in body) {
       return NextResponse.json({ error: "invalid_request" }, { status: 400 });
     }
 
-    let data: unknown;
-    let error: unknown;
+    let actionKey: string;
+    let payload: Json;
     if (action === "prepare") {
       const reason = text(body, "reason");
       if (!reason) {
         return NextResponse.json({ error: "invalid_request" }, { status: 400 });
       }
-      ({ data, error } = await supabaseAdmin.rpc(
-        "prepare_organization_customer_exit",
-        {
-          p_organization_id: organizationId,
-          p_actor_user_id: context.user.id,
-          p_approver_user_id: approverUserId,
-          p_idempotency_key: idempotencyKey,
-          p_reason: reason,
-          p_request_id: context.requestId,
-        },
-      ));
+      actionKey = "organization.exit.prepare";
+      payload = {
+        organization_id: organizationId,
+        idempotency_key: idempotencyKey,
+        reason,
+      };
     } else if (action === "complete") {
       const exportSha256 = text(body, "expected_export_sha256");
       const backupEvidenceRef = text(body, "backup_evidence_ref");
@@ -96,24 +84,28 @@ export async function POST(request: NextRequest) {
       ) {
         return NextResponse.json({ error: "invalid_request" }, { status: 400 });
       }
-      ({ data, error } = await supabaseAdmin.rpc(
-        "complete_organization_customer_exit",
-        {
-          p_organization_id: organizationId,
-          p_actor_user_id: context.user.id,
-          p_approver_user_id: approverUserId,
-          p_idempotency_key: idempotencyKey,
-          p_expected_export_sha256: exportSha256,
-          p_backup_evidence_ref: backupEvidenceRef,
-          p_customer_confirmation_ref: customerConfirmationRef,
-          p_retention_basis: retentionBasis,
-          p_request_id: context.requestId,
-        },
-      ));
+      actionKey = "organization.exit.complete";
+      payload = {
+        organization_id: organizationId,
+        idempotency_key: idempotencyKey,
+        expected_export_sha256: exportSha256.toLowerCase(),
+        backup_evidence_ref: backupEvidenceRef,
+        customer_confirmation_ref: customerConfirmationRef,
+        retention_basis: retentionBasis,
+      };
     } else {
       return NextResponse.json({ error: "invalid_action" }, { status: 400 });
     }
 
+    const { data, error } = await context.supabase.rpc(
+      "v4_request_platform_action_approval",
+      {
+        p_action_key: actionKey,
+        p_target_key: organizationId,
+        p_payload: payload,
+        p_request_id: `exit:${action}:${idempotencyKey}`,
+      },
+    );
     if (error || data === null || typeof data !== "object") {
       const mapped = exitError(error);
       return NextResponse.json({ error: mapped.code }, { status: mapped.status });
@@ -121,7 +113,7 @@ export async function POST(request: NextRequest) {
     return applyRequestAuthCookies(
       context,
       NextResponse.json(data, {
-        status: action === "prepare" ? 201 : 200,
+        status: 202,
         headers: { "Cache-Control": "no-store" },
       }),
     );

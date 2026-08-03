@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { randomUUID } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,10 @@ const POSTGRES_IMAGE =
   "postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193";
 const PASSWORD = "sam23-disposable-only";
 const DATABASE = "sam23";
+const SAM78_GATE_PHASE = process.env.SAM78_GATE_PHASE || "full";
+if (!new Set(["full", "apply", "fixture", "rollback"]).has(SAM78_GATE_PHASE)) {
+  throw new Error(`invalid_sam78_gate_phase:${SAM78_GATE_PHASE}`);
+}
 const ORGANIZATION_TABLES = [
   "quotations",
   "contracts",
@@ -30,6 +34,30 @@ function command(args, options = {}) {
     env: process.env,
     timeout: 240_000,
     ...options,
+  });
+}
+
+function commandAsync(args, options = {}) {
+  return new Promise((resolvePromise) => {
+    const child = spawn(process.env.SAM23_DOCKER_BIN || "docker", args, {
+      cwd: ROOT,
+      env: process.env,
+      windowsHide: true,
+      ...options,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    const timeout = setTimeout(() => child.kill(), 120_000);
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      resolvePromise({ error, status: null, stdout, stderr });
+    });
+    child.on("close", (status) => {
+      clearTimeout(timeout);
+      resolvePromise({ status, stdout, stderr });
+    });
   });
 }
 
@@ -67,6 +95,14 @@ function psql(container, args, environmentName, database = DATABASE) {
     "-d",
     database,
     ...args,
+  ]);
+}
+
+function psqlAsync(container, sql) {
+  return commandAsync([
+    "exec", "-e", `PGPASSWORD=${PASSWORD}`, container,
+    "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "postgres",
+    "-d", DATABASE, "-c", sql,
   ]);
 }
 
@@ -132,7 +168,7 @@ async function main() {
     `newme-sam23-db-${process.pid}-${randomUUID().slice(0, 8)}`;
   let started = false;
   try {
-    requireSuccess(command([
+    const dockerRunArgs = [
       "run",
       "--detach",
       "--rm",
@@ -143,7 +179,8 @@ async function main() {
       "--env",
       `POSTGRES_DB=${DATABASE}`,
       POSTGRES_IMAGE,
-    ]), "sam23_postgres_start");
+    ];
+    requireSuccess(command(dockerRunArgs), "sam23_postgres_start");
     started = true;
 
     let ready = false;
@@ -166,7 +203,9 @@ async function main() {
     if (!ready) throw new Error("sam23_postgres_not_ready");
 
     for (const relativePath of [
+      "supabase/migrations/20260612000001_rpc_functions.sql",
       "supabase/migrations/20260730100000_sam20_lead_organization_isolation.sql",
+      "supabase/migrations/20260730225759_sam14_platform_support_session_lifecycle.sql",
       "supabase/migrations/20260730231446_sam23_organization_owned_commercial_core.sql",
       "supabase/migrations/20260731015812_sam23_govern_billable_seat_rpcs.sql",
       "supabase/migrations/20260801023000_sam25_allow_rls_safe_commercial_updates.sql",
@@ -178,6 +217,7 @@ async function main() {
       "supabase/migrations/20260802064000_organization_lifecycle_cascade_context.sql",
       "supabase/migrations/20260802074500_fix_customer_export_notification_uuid.sql",
       "supabase/migrations/20260803100000_v4_tenant_capability_boundary.sql",
+      "supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
       "supabase/rollback/20260801202728_organization_customer_exit_lifecycle_rollback.sql",
@@ -185,6 +225,7 @@ async function main() {
       "supabase/rollback/20260802064000_organization_lifecycle_cascade_context_rollback.sql",
       "supabase/rollback/20260802074500_fix_customer_export_notification_uuid_rollback.sql",
       "supabase/rollback/20260803100000_v4_tenant_capability_boundary_rollback.sql",
+      "supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
       "tests/database/commercial-p0-seat-role-integrity.sql",
@@ -198,6 +239,13 @@ async function main() {
       "tests/database/v4-tenant-capability-expand-compatibility.sql",
       "tests/database/v4-tenant-capability-rollback-guard.sql",
       "tests/database/v4-tenant-capability-rollback-guard-cleanup.sql",
+      "tests/database/v4-tenant-lifecycle-closure.sql",
+      "tests/database/v4-tenant-workflow-concurrency-prelude.sql",
+      "tests/database/v4-tenant-workflow-fault-injection.sql",
+      "tests/database/v4-tenant-workflow-concurrency-cleanup.sql",
+      "tests/database/v4-tenant-lifecycle-closure-prelude.sql",
+      "tests/database/v4-platform-staff-role-mapping-prelude.sql",
+      "tests/database/v4-tenant-lifecycle-rollback-verify.sql",
     ]) {
       await copyFixture(container, relativePath);
     }
@@ -206,6 +254,39 @@ async function main() {
       psql(container, ["-f", "sam23-organization-commercial-core.sql"]),
       "sam23_apply_harness",
     );
+
+    // Exercise the exact legacy caller-supplied actor RPCs that SAM-78 keeps
+    // service-only across both its forward migration and rollback.
+    requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260612000001_rpc_functions.sql",
+      ]),
+      "legacy_payment_actor_rpcs_apply",
+    );
+
+    // The reduced SAM-23 harness creates the SAM-20 support tables but skips
+    // the canonical SAM-14 atomic support-session RPC migration.
+    requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260730225759_sam14_platform_support_session_lifecycle.sql",
+      ]),
+      "sam14_support_session_lifecycle_apply",
+    );
+    const supportSignature = requireSuccess(
+      psql(container, [
+        "-A",
+        "-t",
+        "-q",
+        "-c",
+        "SELECT to_regprocedure('public.start_support_session_atomic(uuid,uuid,uuid,text,text,jsonb,timestamptz,text)') IS NOT NULL",
+      ]),
+      "sam14_support_session_signature_probe",
+    );
+    if (supportSignature.stdout.trim() !== "t") {
+      throw new Error("sam14_support_session_signature_missing");
+    }
 
     requireSuccess(
       psql(container, [
@@ -428,6 +509,243 @@ async function main() {
       psql(container, ["-f", "v4-tenant-capability-boundary.sql"]),
       "v4_tenant_capability_fixture",
     );
+
+    requireSuccess(
+      psql(container, ["-f", "v4-tenant-lifecycle-closure-prelude.sql"]),
+      "v4_tenant_lifecycle_closure_prelude",
+    );
+    requireSuccess(
+      psql(container, ["-f", "v4-platform-staff-role-mapping-prelude.sql"]),
+      "v4_platform_staff_role_mapping_prelude",
+    );
+    const deniedUnmappedPlatformStaff = psql(container, [
+      "-f",
+      "/work/supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql",
+    ]);
+    if (
+      deniedUnmappedPlatformStaff.status === 0
+      || !combined(deniedUnmappedPlatformStaff).includes(
+        "platform_staff_role_mapping_required:78000000-0099-4000-8000-000000000099",
+      )
+    ) {
+      throw new Error("v4_platform_staff_role_mapping_not_fail_closed");
+    }
+    const failedMappingApplyWasAtomic = requireSuccess(
+      psql(container, [
+        "-A", "-t", "-q", "-c",
+        "SELECT NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'platform_staff' AND column_name = 'role_key')",
+      ]),
+      "v4_platform_staff_role_mapping_failed_apply_atomicity",
+    );
+    if (failedMappingApplyWasAtomic.stdout.trim() !== "t") {
+      throw new Error("v4_platform_staff_role_mapping_failed_apply_changed_schema");
+    }
+    requireSuccess(
+      psql(container, [
+        "-c",
+        `INSERT INTO public.contracts (
+          id, organization_id, lead_id, contract_no, contract_date,
+          contract_amount, party_a_name, party_b_name, status
+        ) VALUES (
+          '78000000-2091-4000-8000-000000000091',
+          '6bc3b06e-5c05-4f45-9f1f-e9ea03a3cdd1',
+          '78000000-1090-4000-8000-000000000090',
+          'LEGACY-NONSTANDARD-008', DATE '2026-08-02', 800,
+          'Invalid legacy sequence', 'NewMe', 'archived'
+        )`,
+      ]),
+      "v4_invalid_legacy_contract_seed",
+    );
+    const deniedInvalidLegacyContract = psql(container, [
+      "-c",
+      "SET newme.platform_staff_role_mapping = '{\"78000000-0099-4000-8000-000000000099\":\"platform_support\"}'",
+      "-f",
+      "/work/supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql",
+    ]);
+    if (
+      deniedInvalidLegacyContract.status === 0
+      || !combined(deniedInvalidLegacyContract).includes(
+        "legacy_contract_number_invalid:78000000-2091-4000-8000-000000000091",
+      )
+    ) {
+      throw new Error("v4_invalid_legacy_contract_not_fail_closed");
+    }
+    requireSuccess(
+      psql(container, [
+        "-c",
+        "DELETE FROM public.contracts WHERE id = '78000000-2091-4000-8000-000000000091'",
+      ]),
+      "v4_invalid_legacy_contract_cleanup",
+    );
+    requireSuccess(
+      psql(container, [
+        "-c",
+        "SET newme.platform_staff_role_mapping = '{\"78000000-0099-4000-8000-000000000099\":\"platform_support\"}'",
+        "-f",
+        "/work/supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql",
+      ]),
+      "v4_tenant_lifecycle_closure_apply",
+    );
+    if (SAM78_GATE_PHASE === "apply") {
+      process.stdout.write(`${JSON.stringify({
+        status: "passed",
+        phase: "apply",
+        environment: "disposable_test_container",
+      })}\n`);
+      return;
+    }
+    if (SAM78_GATE_PHASE !== "rollback") {
+      requireSuccess(
+        psql(container, ["-f", "v4-tenant-lifecycle-closure.sql"]),
+        "v4_tenant_lifecycle_closure_fixture",
+      );
+      requireSuccess(
+        psql(container, ["-f", "v4-tenant-workflow-concurrency-prelude.sql"]),
+        "v4_tenant_workflow_concurrency_prelude",
+      );
+      const authPrefix = `SET ROLE authenticated;
+        SET request.jwt.claim.sub = '78000000-0090-4000-8000-000000000090';
+        SET request.headers = '{"x-newme-organization-id":"78000000-9090-4000-8000-000000000090"}';`;
+      const createSql = `${authPrefix}
+        SELECT public.v4_create_contract_for_organization(
+          '78000000-9090-4000-8000-000000000090',
+          jsonb_build_object(
+            'lead_id', '78000000-9290-4000-8000-000000000090',
+            'amount', 100,
+            'installments', jsonb_build_array(jsonb_build_object(
+              'seq', 1, 'amount', 100, 'due_date', (current_date + 30)::text
+            ))
+          ),
+          'sam78.concurrent.create.0001'
+        )`;
+      const createResults = await Promise.all([
+        psqlAsync(container, createSql),
+        psqlAsync(container, createSql),
+      ]);
+      for (const result of createResults) {
+        requireSuccess(result, "v4_concurrent_same_key_create");
+      }
+      const convertSql = (key) => `${authPrefix}
+        SELECT public.v4_convert_quotation_for_organization(
+          '78000000-9090-4000-8000-000000000090',
+          '78000000-9390-4000-8000-000000000090',
+          jsonb_build_object(
+            'installments', jsonb_build_array(jsonb_build_object(
+              'seq', 1, 'amount', 200, 'due_date', (current_date + 30)::text
+            ))
+          ),
+          '${key}'
+        )`;
+      const convertResults = await Promise.all([
+        psqlAsync(container, convertSql("sam78.concurrent.quote.0001")),
+        psqlAsync(container, convertSql("sam78.concurrent.quote.0002")),
+      ]);
+      const successfulConversions = convertResults.filter(
+        (result) => !result.error && result.status === 0,
+      );
+      const rejectedConversions = convertResults.filter(
+        (result) => result.error || result.status !== 0,
+      );
+      if (successfulConversions.length !== 1 || rejectedConversions.length !== 1
+        || !combined(rejectedConversions[0]).includes("quotation_already_converted")) {
+        throw new Error(`v4_concurrent_quote_conversion_contract_failed:${convertResults.map(combined).join("\n")}`);
+      }
+      const concurrencyEvidence = requireSuccess(
+        psql(container, [
+          "-A", "-t", "-q", "-c",
+          `SELECT json_build_object(
+            'contracts', (SELECT count(*) FROM public.contracts WHERE organization_id = '78000000-9090-4000-8000-000000000090'),
+            'numbers', (SELECT count(DISTINCT contract_no) FROM public.contracts WHERE organization_id = '78000000-9090-4000-8000-000000000090'),
+            'requests', (SELECT count(*) FROM public.contract_workflow_requests WHERE organization_id = '78000000-9090-4000-8000-000000000090'),
+            'quote_linked', (SELECT contract_id IS NOT NULL FROM public.quotations WHERE id = '78000000-9390-4000-8000-000000000090'),
+            'next_value', (SELECT next_value FROM public.organization_document_sequences WHERE organization_id = '78000000-9090-4000-8000-000000000090' AND document_kind = 'contract' AND document_date = current_date)
+          )`,
+        ]),
+        "v4_tenant_workflow_concurrency_evidence",
+      );
+      const concurrencyContract = JSON.parse(concurrencyEvidence.stdout.trim());
+      if (concurrencyContract.contracts !== 2
+        || concurrencyContract.numbers !== 2
+        || concurrencyContract.requests !== 2
+        || concurrencyContract.quote_linked !== true
+        || concurrencyContract.next_value !== 3) {
+        throw new Error(`v4_tenant_workflow_concurrency_mismatch:${concurrencyEvidence.stdout.trim()}`);
+      }
+      requireSuccess(
+        psql(container, ["-f", "v4-tenant-workflow-fault-injection.sql"]),
+        "v4_tenant_workflow_fault_injection",
+      );
+      requireSuccess(
+        psql(container, ["-f", "v4-tenant-workflow-concurrency-cleanup.sql"]),
+        "v4_tenant_workflow_concurrency_cleanup",
+      );
+      if (SAM78_GATE_PHASE === "fixture") {
+        process.stdout.write(`${JSON.stringify({
+          status: "passed",
+          phase: "fixture",
+          cleanup: "verified",
+          environment: "disposable_test_container",
+        })}\n`);
+        return;
+      }
+    }
+    const missingRollbackEnvironment = requireSuccess(
+      psql(container, [
+        "-A", "-t", "-q", "-c",
+        "SELECT current_setting('newme.environment', true) IS NULL",
+      ]),
+      "v4_tenant_lifecycle_closure_missing_environment_probe",
+    );
+    if (missingRollbackEnvironment.stdout.trim() !== "t") {
+      throw new Error("v4_tenant_lifecycle_closure_missing_environment_probe_failed");
+    }
+    const deniedV4ClosureRollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql",
+    ]);
+    if (
+      deniedV4ClosureRollback.status === 0
+      || !combined(deniedV4ClosureRollback).includes(
+        "v4_tenant_lifecycle_closure_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error("v4_tenant_lifecycle_closure_rollback_not_fail_closed");
+    }
+    const v4ClosureStillApplied = requireSuccess(
+      psql(container, [
+        "-A", "-t", "-q", "-c",
+        "SELECT to_regclass('public.tenant_file_objects') IS NOT NULL AND to_regprocedure('public.v4_transition_organization_lifecycle(uuid,text,uuid,uuid,text,text)') IS NOT NULL",
+      ]),
+      "v4_tenant_lifecycle_closure_failed_rollback_atomicity",
+    );
+    if (v4ClosureStillApplied.stdout.trim() !== "t") {
+      throw new Error("v4_tenant_lifecycle_closure_failed_rollback_changed_schema");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql",
+        ],
+        "test",
+      ),
+      "v4_tenant_lifecycle_closure_rollback",
+    );
+    requireSuccess(
+      psql(container, ["-f", "v4-tenant-lifecycle-rollback-verify.sql"]),
+      "v4_tenant_lifecycle_closure_rollback_verify",
+    );
+    if (SAM78_GATE_PHASE === "rollback") {
+      process.stdout.write(`${JSON.stringify({
+        status: "passed",
+        phase: "rollback",
+        rollback_fail_closed: "verified",
+        cleanup: "verified",
+        environment: "disposable_test_container",
+      })}\n`);
+      return;
+    }
 
     requireSuccess(
       psql(container, ["-f", "v4-tenant-capability-rollback-guard.sql"]),
@@ -776,6 +1094,7 @@ async function main() {
       organization_lifecycle_cascade: "verified",
       v4_tenant_capabilities: "verified",
       v4_product_catalog_isolation: "verified",
+      v4_tenant_lifecycle_closure: "verified",
       fixture_cleanup: "verified",
     })}\n`);
   } finally {

@@ -45,21 +45,51 @@ test("SAM-14 lifecycle is a private service-role RPC with atomic start and end a
   assert.match(databaseTypes, /end_support_session_atomic:/);
 });
 
-test("SAM-14 API binds the authenticated user to private lifecycle RPCs", async () => {
-  const [route, access, users, uat, controller] = await Promise.all([
+test("support POST requests dual-session approval while revoke remains actor-bound", async () => {
+  const [route, closure, fixture, access, users, uat, controller] = await Promise.all([
     read("src/app/api/platform/support-sessions/route.ts"),
+    read("supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql"),
+    read("tests/database/v4-tenant-lifecycle-closure.sql"),
     read("src/lib/lead-organization-access.ts"),
     read("src/app/api/users/route.ts"),
     read("scripts/uat/sam20-lead-organization-isolation.mjs"),
     read("scripts/newme-staging-control.sh"),
   ]);
+  const postRoute = route.slice(
+    route.indexOf("export async function POST"),
+    route.indexOf("export async function DELETE"),
+  );
 
   assert.match(route, /getRequestAuthContext\(request\)/);
-  assert.match(route, /p_actor_user_id: context\.user\.id/);
-  assert.match(route, /"start_support_session_atomic"/);
+  assert.match(route, /parseSupportSessionApprovalRequest/);
+  assert.match(route, /"v4_request_platform_action_approval"/);
+  assert.match(route, /p_action_key: "support\.session\.start"/);
+  assert.match(postRoute, /p_request_id: input\.idempotencyKey/);
+  assert.match(route, /context\.supabase\.rpc/);
+  assert.doesNotMatch(postRoute, /p_approver_user_id|p_actor_user_id|supabaseAdmin/);
+  assert.doesNotMatch(postRoute, /"start_support_session_atomic"/);
   assert.match(route, /"end_support_session_atomic"/);
   assert.doesNotMatch(route, /\.from\("platform_staff"\)\.insert/);
   assert.doesNotMatch(route, /SUPABASE_SERVICE_ROLE_KEY|NEXT_PUBLIC_SUPABASE_URL/);
+  assert.match(closure, /'support\.session\.start'/);
+  assert.match(
+    closure,
+    /WHEN 'support\.session\.start'[\s\S]*start_support_session_atomic\([\s\S]*approval\.payload/,
+  );
+  assert.match(
+    closure,
+    /JOIN public\.profiles profile[\s\S]*profile\.is_active IS TRUE/,
+  );
+  for (const evidence of [
+    "inactive profile requested support approval",
+    "platform support self-approved support session",
+    "inactive profile approved support session",
+    "inactive requester profile executed support session",
+    "inactive requester replayed consumed support session",
+    "inactive consumed replay left support side effects",
+    "two-session support approval did not execute atomically",
+    "forged support user UUID accepted",
+  ]) assert.match(fixture, new RegExp(evidence));
 
   const objectAudit = access.indexOf('.from("audit_events").insert');
   const objectGrant = access.lastIndexOf("supportSessionId,");
@@ -79,4 +109,24 @@ test("SAM-14 API binds the authenticated user to private lifecycle RPCs", async 
     assert.match(uat, new RegExp(marker));
     assert.match(controller, new RegExp(`${marker} !== ${count}`));
   }
+});
+
+test("support request parser dynamically rejects caller-supplied approver UUIDs", async () => {
+  const { parseSupportSessionApprovalRequest } = await import(
+    new URL("../../src/lib/support-session-approval-request.ts", import.meta.url)
+  );
+  const valid = {
+    support_user_id: "78000000-0000-4000-8000-000000000016",
+    organization_id: "78000000-0000-4000-8000-000000000001",
+    ticket_ref: "SAM78-support-parser",
+    reason: "Independently approved support access",
+    scope: ["lead:read"],
+    expires_at: "2026-08-03T12:00:00.000Z",
+    idempotency_key: "sam78-support-parser",
+  };
+  assert.ok(parseSupportSessionApprovalRequest(valid));
+  assert.equal(parseSupportSessionApprovalRequest({
+    ...valid,
+    approver_user_id: "78000000-0000-4000-8000-000000000099",
+  }), null);
 });

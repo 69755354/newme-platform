@@ -1,80 +1,53 @@
-// RBAC: cron (x-cron-secret)
-import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+// RBAC: cron (x-cron-secret); tenant work is partitioned by active organization.
+import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function GET(request: Request) {
-  return handleCron(request)
+  return handleCron(request);
 }
 
 export async function POST(request: Request) {
-  return handleCron(request)
+  return handleCron(request);
 }
 
 async function handleCron(request: Request) {
-  try {
-    const cronSecret = request.headers.get('x-cron-secret')
-    if (!cronSecret || cronSecret !== process.env.CRON_SECRET) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const { data: leads, error: leadsError } = await supabaseAdmin
-      .from('leads')
-      .select('id, assigned_to, customer_name')
-
-    if (leadsError) {
-      return NextResponse.json({ error: leadsError.message }, { status: 500 })
-    }
-
-    if (!leads || leads.length === 0) {
-      return NextResponse.json({ checked: 0, markedNoAnswer: 0, notifications: 0 })
-    }
-
-    let markedNoAnswer = 0
-    let notificationsCreated = 0
-
-    for (const lead of leads) {
-      const { data: recentLogs, error: logsError } = await supabaseAdmin
-        .from('follow_up_logs')
-        .select('id, no_answer')
-        .eq('lead_id', lead.id)
-        .order('created_at', { ascending: false })
-        .limit(3)
-
-      if (logsError || !recentLogs) continue
-      if (recentLogs.length < 3) continue
-
-      const allNoAnswer = recentLogs.every((log) => log.no_answer === true)
-      if (!allNoAnswer) continue
-
-      markedNoAnswer++
-
-      await supabaseAdmin
-        .from('leads')
-        .update({ no_answer_flag: true })
-        .eq('id', lead.id)
-
-      if (lead.assigned_to) {
-        const { error: notifError } = await supabaseAdmin
-          .from('notifications')
-          .insert({
-            user_id: lead.assigned_to,
-            type: 'warning',
-            title: '客户连续3次未接听',
-            body: `客户「${lead.customer_name ?? '未知'}」最近 3 次跟进均为未接听，请及时关注并调整跟进策略。`,
-            related_id: lead.id,
-            related_type: 'lead',
-          })
-
-        if (!notifError) notificationsCreated++
-      }
-    }
-
-    return NextResponse.json({
-      checked: leads.length,
-      markedNoAnswer,
-      notifications: notificationsCreated,
-    })
-  } catch {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  const cronSecret = request.headers.get("x-cron-secret");
+  if (!cronSecret || cronSecret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const runId = crypto.randomUUID();
+  const { error: expiryError } = await supabaseAdmin.rpc(
+    "v4_expire_support_sessions",
+    { p_request_id: `no-answer-expiry:${runId}` },
+  );
+  if (expiryError) {
+    return NextResponse.json({ error: "support_expiry_failed" }, { status: 503 });
+  }
+  const { data: organizations, error: organizationError } = await supabaseAdmin
+    .from("organizations")
+    .select("id")
+    .eq("status", "active");
+  if (organizationError) {
+    return NextResponse.json({ error: "organization_lookup_failed" }, { status: 503 });
+  }
+  const results: unknown[] = [];
+  const failedOrganizations: string[] = [];
+  for (const organization of organizations ?? []) {
+    const { data, error } = await supabaseAdmin.rpc(
+      "v4_process_no_answer_worker",
+      {
+        p_organization_id: organization.id,
+        p_request_id: `no-answer:${runId}:${organization.id}`,
+      },
+    );
+    if (error) failedOrganizations.push(organization.id);
+    else results.push(data);
+  }
+  if (failedOrganizations.length > 0) {
+    return NextResponse.json(
+      { error: "tenant_worker_failed", run_id: runId, failed_organizations: failedOrganizations },
+      { status: 503 },
+    );
+  }
+  return NextResponse.json({ run_id: runId, organizations: results });
 }

@@ -4,17 +4,23 @@ import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
-test("lead imports generate stable row fingerprints and ignore conflicts", async () => {
-  const source = await read("src/app/api/leads/import/confirm/route.ts");
+test("lead imports generate stable row fingerprints and delegate tenant-local conflicts to one RPC", async () => {
+  const [source, migration] = await Promise.all([
+    read("src/app/api/leads/import/confirm/route.ts"),
+    read("supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql"),
+  ]);
   for (const token of [
     'createHash("sha256")',
     "import_fingerprint: importFingerprint(row)",
-    'onConflict: "organization_id,import_fingerprint"',
-    "ignoreDuplicates: true",
-    "skipped_duplicates: skippedDuplicates",
+    '"v4_import_leads_for_organization"',
+    "p_organization_id: access.organizationId",
   ]) assert.ok(source.includes(token), `missing idempotency evidence: ${token}`);
   assert.ok(source.includes("row_number: row.row_number"));
-  assert.ok(source.includes("raw_import_data: row.raw_import_data"));
+  assert.ok(source.includes("raw_import_data: toJson(raw)"));
+  assert.ok(source.includes("p_rows: normalizedRows"));
+  assert.ok(source.includes("validateXlsxImportRows(rows)"));
+  assert.ok(migration.includes("ON CONFLICT (organization_id, import_fingerprint) DO NOTHING"));
+  assert.ok(migration.includes("skipped_duplicates"));
 });
 
 test("database enforces import fingerprint uniqueness without rewriting legacy rows", async () => {

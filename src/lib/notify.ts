@@ -1,26 +1,19 @@
 /**
- * Client-side helper to trigger notifications via /api/notify.
- * Called after business actions complete (assign lead, stage change, etc.).
- * Fire-and-forget: errors are logged but don't block the UI.
+ * Narrow actor-event client. Callers await it; system events are intentionally
+ * absent because only trusted business handlers may emit them.
  */
 
-interface NotifyParams {
-  type: "lead_created" | "lead_assigned" | "lead_stage_change" | "lead_stage_changed" | "quote_created" | "contract_created" | "contract_signed" | "contract_pending_approval" | "contract_approved" | "contract_rejected" | "payment_due" | "payment_received" | "payment_overdue" | "first_payment_reminder" | "kpi_target_set" | "followup_reminder" | "follow_up_overdue" | "team_member_added";
-  [key: string]: any;
-}
+type NotifyParams =
+  | { type: "lead_created"; lead_id: string }
+  | { type: "quote_created"; quote_id: string };
 
 export async function notify(params: NotifyParams): Promise<void> {
-  try {
-    const res = await fetch("/api/notify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      console.warn("[notify] Failed:", res.status, err);
-    }
-  } catch (e) {
-    console.warn("[notify] Network error:", e);
+  const res = await fetch("/api/notify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    throw new Error(`notification_dispatch_failed:${res.status}`);
   }
 }

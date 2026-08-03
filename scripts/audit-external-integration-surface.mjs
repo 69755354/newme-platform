@@ -73,11 +73,18 @@ const DEFAULT_CHECKS = [
     id: "authenticated-notification-trigger",
     file: "src/app/api/notify/route.ts",
     patterns: [
-      "createServerSupabase",
-      "supabase.auth.getUser",
-      "Unauthorized",
+      "resolveOrganizationAuthorization",
+      "BROWSER_EVENT_CAPABILITY",
+      "system_notification_event_forbidden",
+      ".eq(\"organization_id\", organizationId)",
+      "notification_creator_required",
       'integration: "in_app_notification"',
       'outcome: "success"',
+    ],
+    forbidden: [
+      "createServerSupabase",
+      "supabase.auth.getUser",
+      "getAllActiveUserIds",
     ],
   },
   {

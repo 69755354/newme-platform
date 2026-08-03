@@ -38,6 +38,10 @@ const exitRoute = await readFile(
   new URL("../../src/app/api/platform/organization-exit/route.ts", import.meta.url),
   "utf8",
 );
+const approvalRoute = await readFile(
+  new URL("../../src/app/api/platform/approvals/route.ts", import.meta.url),
+  "utf8",
+);
 
 test("customer exit is non-destructive, independently approved and audited", () => {
   assert.match(migration, /status IN \('prepared', 'completed', 'cancelled'\)/);
@@ -86,13 +90,18 @@ test("read-only lifecycle is enforced below application routes", () => {
 });
 
 test("customer and platform APIs preserve separate authorization boundaries", () => {
-  assert.match(exportRoute, /resolveOrganizationMemberAdminAccess\(request\)/);
-  assert.match(exportRoute, /export_organization_customer_data/);
+  assert.match(exportRoute, /resolveOrganizationAuthorization\(/);
+  assert.match(exportRoute, /organization\.data\.export/);
+  assert.match(exportRoute, /v4_export_organization_customer_data/);
   assert.match(exportRoute, /Content-Disposition/);
   assert.match(exportRoute, /Cache-Control": "no-store"/);
   assert.match(exitRoute, /getRequestAuthContext\(request\)/);
-  assert.match(exitRoute, /prepare_organization_customer_exit/);
-  assert.match(exitRoute, /complete_organization_customer_exit/);
+  assert.match(exitRoute, /v4_request_platform_action_approval/);
+  assert.match(exitRoute, /organization\.exit\.prepare/);
+  assert.match(exitRoute, /organization\.exit\.complete/);
+  assert.doesNotMatch(exitRoute, /p_approver_user_id|approverUserId/);
+  assert.match(approvalRoute, /v4_approve_platform_action/);
+  assert.match(approvalRoute, /v4_execute_approved_platform_action/);
   assert.doesNotMatch(exitRoute, /SUPABASE_SERVICE_ROLE_KEY/);
 });
 

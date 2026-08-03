@@ -30,6 +30,7 @@ export async function POST(
       .from("contracts")
       .select(`
         id,
+        organization_id,
         contract_no,
         contract_amount,
         party_a_name,
@@ -83,6 +84,7 @@ export async function POST(
 
     // Create notification for the sales person
     await createNotification({
+      organizationId: contract.organization_id,
       userId: contract.sales_id,
       type: "first_payment_reminder",
       title: `First payment reminder: ${contract.contract_no}${urgencyText}`,
@@ -95,11 +97,11 @@ export async function POST(
       success: true,
       message: `Reminder sent to sales person for contract ${contract.contract_no}`,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     const message =
       process.env.NODE_ENV === "production"
         ? "Internal server error"
-        : err.message;
+        : err instanceof Error ? err.message : "Internal server error";
     logger.error(
       {
         err,

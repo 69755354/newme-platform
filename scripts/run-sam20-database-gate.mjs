@@ -31,6 +31,13 @@ const FORWARD_TYPE_COLUMNS = new Map([
       Update: "?: string",
     }],
   ])],
+  ["platform_staff", new Map([
+    ["role_key", {
+      Row: ": string",
+      Insert: ": string",
+      Update: "?: string",
+    }],
+  ])],
 ]);
 
 function command(docker, args, options = {}) {

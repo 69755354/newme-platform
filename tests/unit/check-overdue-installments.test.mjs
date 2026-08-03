@@ -3,23 +3,29 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const route = new URL("../../src/app/api/cron/check-overdue-installments/route.ts", import.meta.url);
+const notificationHelper = new URL("../../src/lib/notifications.ts", import.meta.url);
 
 test("creates payment-overdue notifications only for active members in the contract organization", async () => {
-  const source = await readFile(route, "utf8");
-  assert.match(
-    source,
-    /from\("memberships"\)[\s\S]*\.eq\("organization_id", plan\.organization_id\)[\s\S]*\.eq\("status", "active"\)/,
-  );
-  assert.match(
-    source,
-    /from\("profiles"\)[\s\S]*\.in\("id", memberIds\)[\s\S]*\.eq\("is_active", true\)/,
-  );
-  assert.match(source, /profile\.role === "admin" \|\| profile\.role === "boss"/);
+  const [source, helper] = await Promise.all([
+    readFile(route, "utf8"),
+    readFile(notificationHelper, "utf8"),
+  ]);
+  assert.match(source, /getAdminUserIds\(plan\.organization_id\)/);
+  assert.match(source, /getAllActiveUserIds\(plan\.organization_id\)/);
+  assert.match(helper, /from\("memberships"\)/);
+  assert.match(helper, /\.eq\("organization_id", organizationId\)/);
+  assert.match(helper, /\.eq\("status", "active"\)/);
+  assert.match(helper, /\.not\("accepted_at", "is", null\)/);
+  assert.match(helper, /\.eq\("is_active", true\)/);
+  assert.match(helper, /from\("membership_roles"\)/);
+  assert.match(helper, /\.in\("role_key", \["org_owner", "org_admin"\]\)/);
+  assert.doesNotMatch(helper, /profile\.role === "admin" \|\| profile\.role === "boss"/);
   assert.match(
     source,
     /contract\.sales_id && activeProfileIds\.has\(contract\.sales_id\)/,
   );
   assert.match(source, /from\("notifications"\)\.insert/);
+  assert.match(source, /organization_id: plan\.organization_id/);
   assert.match(source, /type: "payment_overdue"/);
 });
 

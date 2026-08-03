@@ -2,6 +2,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import { createNotificationsBulk, getAdminUserIds } from "@/lib/notifications";
+import {
+  completeContractApproval,
+  ContractApprovalResultError,
+} from "@/lib/contract-approval-result";
 
 /**
  * POST /api/contracts/[id]/approve
@@ -148,57 +153,60 @@ export async function POST(
         "[API Approve] RPC failed",
       );
       return NextResponse.json(
-        { error: rpcErr.message || "Approval RPC failed" },
-        { status: 500 }
+        { error: "contract_approval_unavailable" },
+        { status: 503 }
       );
     }
 
     // ── Send notification on success ───────────────────────────────────
+    let result;
     try {
-      const baseUrl =
-        process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-      const notificationType =
-        action === "approve" ? "contract_approved" : "contract_rejected";
-
-      // Fetch contract info for a richer notification body
-      const { data: contractInfo } = await supabase
-        .from("contracts")
-        .select("contract_no, sales_id")
-        .eq("id", contractId)
-        .single();
-
-      await fetch(`${baseUrl}/api/notify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: notificationType,
-          contract_id: contractId,
-          contract_no: contractInfo?.contract_no,
-          action,
-          step: currentStep,
-          approver_name: profile.full_name || "Unknown",
-          target_user_id: contractInfo?.sales_id,
-        }),
-      });
-    } catch (notifyErr) {
-      logger.warn(
-        {
-          err: notifyErr,
-          request_id,
-          operation: "contract_approve",
-          user_id: user.id,
-          contract_id: contractId,
+      result = await completeContractApproval(
+        rpcResult,
+        async () => {
+          const notificationType = action === "approve"
+            ? "contract_approved"
+            : "contract_rejected";
+          const { data: contractInfo, error: contractInfoError } = await supabase
+            .from("contracts")
+            .select("contract_no, sales_id, organization_id")
+            .eq("id", contractId)
+            .single();
+          if (contractInfoError || !contractInfo) {
+            throw new Error("contract_notification_context_failed");
+          }
+          const recipients = [...new Set([
+            ...(await getAdminUserIds(contractInfo.organization_id)),
+            contractInfo.sales_id,
+          ].filter((id): id is string => Boolean(id)))];
+          await createNotificationsBulk(contractInfo.organization_id, recipients.map((userId) => ({
+            userId,
+            type: notificationType,
+            title: `Contract ${action === "approve" ? "approved" : "rejected"}: ${contractInfo.contract_no}`,
+            body: `${profile.full_name || "An approver"} ${action}d ${currentStep}.`,
+            relatedId: contractId,
+            relatedType: "contract",
+            eventKey: `contract:${contractId}:${notificationType}:${pendingApproval.id}`,
+          })));
         },
-        "[API Approve] Notification failed",
+        (notificationError) => logger.error(
+          {
+            err: notificationError,
+            request_id,
+            operation: "contract_approval_notification",
+            contract_id: contractId,
+          },
+          "[API Approve] Approval committed but notification delivery failed",
+        ),
       );
+    } catch (resultError: unknown) {
+      if (resultError instanceof ContractApprovalResultError) {
+        return NextResponse.json({ error: resultError.code }, { status: resultError.status });
+      }
+      throw resultError;
     }
-
-    return NextResponse.json(rpcResult);
-  } catch (err: any) {
-    const message =
-      process.env.NODE_ENV === "production"
-        ? "Internal server error"
-        : err.message;
+    return NextResponse.json(result);
+  } catch (err: unknown) {
     logger.error(
       {
         err,
@@ -208,6 +216,6 @@ export async function POST(
       },
       "[API Approve] Error",
     );
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

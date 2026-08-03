@@ -100,10 +100,17 @@ test("SAM-70 report contains no credential fields", async () => {
   assert.doesNotMatch(source, /console\.(?:debug|info|warn|error)/);
 });
 
-test("SAM-70 imported notes satisfy the live follow_up_logs time contract", async () => {
-  const source = await read("src/app/api/leads/import/confirm/route.ts");
+test("SAM-70 imported notes cross the tenant RPC into the live follow_up_logs time contract", async () => {
+  const [route, migration] = await Promise.all([
+    read("src/app/api/leads/import/confirm/route.ts"),
+    read("supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql"),
+  ]);
+  assert.match(route, /notes: typeof row\.notes === "string" \? row\.notes : null/);
+  assert.match(route, /\.rpc\(\s*"v4_import_leads_for_organization"/);
+  assert.match(route, /p_rows: normalizedRows/);
+  assert.doesNotMatch(route, /\.from\(["']follow_up_logs["']\)/);
   assert.match(
-    source,
-    /contact_type:\s*"note",\s*contact_time:\s*now,\s*summary:\s*notes/,
+    migration,
+    /INSERT INTO public\.follow_up_logs \([\s\S]*contact_type, contact_time,[\s\S]*summary[\s\S]*\) VALUES \([\s\S]*'note', now\(\),[\s\S]*btrim\(row_data ->> 'notes'\)/,
   );
 });

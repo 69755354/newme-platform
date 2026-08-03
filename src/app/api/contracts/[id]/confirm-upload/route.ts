@@ -1,142 +1,169 @@
-// RBAC: user (authenticated)
+// RBAC: organization capability storage.files.write
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { logger, genReqId } from "@/lib/logger";
+import {
+  OrganizationAuthorizationError,
+  resolveOrganizationAuthorization,
+} from "@/lib/organization-authorization";
+import { RequestAuthError } from "@/lib/request-auth-context";
+import { runCosPresign } from "@/lib/cos-presign";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
-/**
- * POST /api/contracts/[id]/confirm-upload
- * Confirm that a contract file has been uploaded to COS.
- * Updates the contract record with file_url and file_metadata.
- */
+type ConfirmedFile = { id: string; key: string; status: string };
+
+function confirmedFile(value: unknown): value is ConfirmedFile {
+  return value !== null && typeof value === "object"
+    && "id" in value && typeof value.id === "string"
+    && "key" in value && typeof value.key === "string"
+    && "status" in value && value.status === "available";
+}
+
+type VerifiedObject = {
+  key: string;
+  size: number;
+  content_type: string;
+  content_md5: string;
+  etag: string;
+  checksum_crc64ecma: string | null;
+};
+
+function verifiedObject(value: unknown): value is VerifiedObject {
+  return value !== null && typeof value === "object"
+    && "key" in value && typeof value.key === "string"
+    && "size" in value && typeof value.size === "number"
+    && "content_type" in value && typeof value.content_type === "string"
+    && "content_md5" in value && typeof value.content_md5 === "string"
+    && "etag" in value && typeof value.etag === "string"
+    && "checksum_crc64ecma" in value
+    && (value.checksum_crc64ecma === null
+      || typeof value.checksum_crc64ecma === "string");
+}
+
+async function compensateFailedConfirmation(
+  access: Awaited<ReturnType<typeof resolveOrganizationAuthorization>>,
+  fileId: string,
+  reason: string,
+) {
+  const { error } = await access.context.supabase.rpc("v4_cancel_tenant_file_upload", {
+    p_organization_id: access.organizationId,
+    p_file_id: fileId,
+    p_reason: reason,
+    p_request_id: `${access.context.requestId}:cancel`,
+  });
+  if (error) throw new Error("storage_confirmation_compensation_failed");
+}
+
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const request_id = genReqId();
   const { id: contractId } = await params;
   try {
-    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(bearerToken, cookieHeader);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const access = await resolveOrganizationAuthorization(
+      request,
+      "storage.files.write",
+      "write",
+    );
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+    const fileId = typeof body?.file_id === "string" ? body.file_id : "";
+    if (!body || Object.keys(body).length !== 1 || !fileId) {
+      return NextResponse.json({ error: "invalid_storage_confirmation" }, { status: 400 });
     }
-
-    const body = await request.json();
-    const { key, filename, size } = body;
-
-    if (!key || typeof key !== "string") {
-      return NextResponse.json(
-        { error: "key is required" },
-        { status: 400 }
-      );
+    const { data: fileObject, error: fileError } = await access.context.supabase
+      .from("tenant_file_objects")
+      .select("id, object_key, version, status, content_type, expected_size_bytes, expected_content_md5")
+      .eq("id", fileId)
+      .eq("organization_id", access.organizationId)
+      .eq("record_type", "contract")
+      .eq("record_id", contractId)
+      .maybeSingle();
+    if (fileError) {
+      return NextResponse.json({ error: "storage_lookup_failed" }, { status: 503 });
     }
-    if (!filename || typeof filename !== "string") {
-      return NextResponse.json(
-        { error: "filename is required" },
-        { status: 400 }
-      );
+    if (!fileObject || fileObject.status !== "pending") {
+      return NextResponse.json({ error: "storage_object_not_found" }, { status: 404 });
     }
-
-    // Validate key belongs to this contract
-    const expectedPrefix = `contracts/${contractId}/`;
-    if (!key.startsWith(expectedPrefix)) {
-      return NextResponse.json(
-        { error: "Key does not belong to this contract" },
-        { status: 400 }
-      );
-    }
-
-    // Verify the contract exists
-    const { data: contract, error: contractErr } = await supabase
+    const { data: contract, error: contractError } = await access.context.supabase
       .from("contracts")
       .select("id, sales_id")
       .eq("id", contractId)
-      .single();
-
-    if (contractErr || !contract) {
+      .eq("organization_id", access.organizationId)
+      .maybeSingle();
+    if (contractError) {
+      return NextResponse.json({ error: "contract_lookup_failed" }, { status: 503 });
+    }
+    if (!contract) {
+      return NextResponse.json({ error: "contract_not_found" }, { status: 404 });
+    }
+    const canWriteAny = access.capabilities.includes("storage.files.write_any");
+    const canSeal = access.capabilities.includes("storage.files.seal");
+    const isOwningSales = access.roleKeys.includes("sales_agent")
+      && contract.sales_id === access.context.user.id;
+    if (fileObject.version === "sealed" && !canSeal) {
+      return NextResponse.json({ error: "sealed_contract_admin_required" }, { status: 403 });
+    }
+    if (!canWriteAny && (fileObject.version !== "draft" || !isOwningSales)) {
       return NextResponse.json(
-        { error: "Contract not found" },
-        { status: 404 }
+        { error: "sales_contract_file_ownership_required" },
+        { status: 403 },
       );
     }
-
-    // Check user role and ownership
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    const isAdminOrBoss =
-      profile?.role && ["admin", "boss"].includes(profile.role);
-    const isOwner = contract.sales_id === user.id;
-
-    if (!isAdminOrBoss && !isOwner) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    // Build the file URL from COS config
-    const bucket = process.env.COS_BUCKET || "newme-1302961787";
-    const region = process.env.COS_REGION || "ap-singapore";
-    const fileUrl = `https://${bucket}.cos.${region}.myqcloud.com/${key}`;
-
-    // Build file metadata
-    const fileMetadata: Record<string, any> = {
-      filename,
-      key,
-      uploaded_at: new Date().toISOString(),
-      uploaded_by: user.id,
-    };
-    if (typeof size === "number" && size > 0) {
-      fileMetadata.size = size;
-    }
-
-    // Update the contract record
-    const { error: updateErr } = await supabase
-      .from("contracts")
-      .update({
-        file_url: fileUrl,
-        file_metadata: fileMetadata,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", contractId);
-
-    if (updateErr) {
-      logger.error(
-        {
-          err: updateErr,
-          request_id,
-          operation: "contract_confirm_upload",
-          user_id: user.id,
-          contract_id: contractId,
-        },
-        "[Confirm Upload] DB update failed",
+    let verification: unknown;
+    try {
+      verification = await runCosPresign([
+        "--head",
+        fileObject.object_key,
+        String(fileObject.expected_size_bytes),
+        fileObject.content_type,
+        fileObject.expected_content_md5,
+      ]);
+    } catch {
+      await compensateFailedConfirmation(
+        access,
+        fileId,
+        "cos_head_object_verification_failed",
       );
       return NextResponse.json(
-        { error: "Failed to update contract file info" },
-        { status: 500 }
+        { error: "storage_object_verification_failed" },
+        { status: 409 },
       );
     }
-
-    return NextResponse.json({ success: true, file_url: fileUrl });
-  } catch (err: any) {
-    const message =
-      process.env.NODE_ENV === "production"
-        ? "Internal server error"
-        : err.message;
-    logger.error(
+    if (!verifiedObject(verification)
+      || verification.key !== fileObject.object_key
+      || verification.size !== fileObject.expected_size_bytes
+      || verification.content_type !== fileObject.content_type
+      || verification.content_md5 !== fileObject.expected_content_md5) {
+      await compensateFailedConfirmation(
+        access,
+        fileId,
+        "cos_head_object_contract_mismatch",
+      );
+      return NextResponse.json(
+        { error: "storage_object_verification_failed" },
+        { status: 409 },
+      );
+    }
+    const { data, error } = await supabaseAdmin.rpc(
+      "v4_finalize_tenant_file",
       {
-        err,
-        request_id,
-        operation: "contract_confirm_upload",
-        contract_id: contractId,
+        p_organization_id: access.organizationId,
+        p_file_id: fileId,
+        p_verified_size_bytes: verification.size,
+        p_verified_content_type: verification.content_type,
+        p_verified_content_md5: verification.content_md5,
+        p_provider_etag: verification.etag,
+        p_provider_checksum_crc64ecma: verification.checksum_crc64ecma,
+        p_actor_user_id: access.context.user.id,
+        p_request_id: access.context.requestId,
       },
-      "[Confirm Upload] Error",
     );
-    return NextResponse.json({ error: message }, { status: 500 });
+    if (error || !confirmedFile(data)) {
+      return NextResponse.json({ error: "storage_confirmation_failed" }, { status: 503 });
+    }
+    return NextResponse.json({ success: true, file_id: data.id, key: data.key });
+  } catch (error) {
+    if (error instanceof OrganizationAuthorizationError || error instanceof RequestAuthError) {
+      return NextResponse.json({ error: error.code }, { status: error.status });
+    }
+    return NextResponse.json({ error: "storage_confirmation_unavailable" }, { status: 503 });
   }
 }

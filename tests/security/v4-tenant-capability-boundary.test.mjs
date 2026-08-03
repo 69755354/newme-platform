@@ -56,7 +56,7 @@ test("V4 capability foundation is one deployable migration with tenant-safe comp
   assert.match(expandRollback, /CREATE POLICY policy_products_select_admin/);
   assert.match(types, /capabilities: \{/);
   assert.match(types, /role_capabilities: \{/);
-  assert.match(types, /products:[\s\S]*organization_id: string \| null/);
+  assert.match(types, /products:[\s\S]*organization_id: string/);
   assert.match(types, /create_product_for_organization:[\s\S]*p_product: Json/);
   assert.match(types, /import_products_for_organization:[\s\S]*p_products: Json/);
   assert.match(gate, /v4_tenant_capability_fixture/);
@@ -77,9 +77,10 @@ test("server authorization resolves selected membership capabilities and write l
   assert.match(authorization, /\.is\("revoked_at", null\)/);
   assert.match(authorization, /capabilities\.includes\(requiredCapability\)/);
   assert.match(authorization, /readonly context: RequestAuthContext/);
-  assert.match(authorization, /accessMode: "read" \| "write" = "read"/);
+  assert.match(authorization, /accessMode: "read" \| "write" \| "export" = "read"/);
   assert.match(authorization, /accessMode === "write"/);
   assert.match(authorization, /\["active", "read_only"\]/);
+  assert.match(authorization, /"suspended", "export_only"/);
   assert.doesNotMatch(authorization, /context\.role/);
 });
 

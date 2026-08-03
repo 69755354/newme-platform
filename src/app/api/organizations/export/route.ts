@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  OrganizationMemberAdminError,
-  resolveOrganizationMemberAdminAccess,
-} from "@/lib/organization-member-admin";
+  OrganizationAuthorizationError,
+  resolveOrganizationAuthorization,
+} from "@/lib/organization-authorization";
 import { applyRequestAuthCookies } from "@/lib/request-auth-context";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -14,7 +14,7 @@ type ExportPackage = {
 };
 
 function mappedError(error: unknown): { code: string; status: number } {
-  if (error instanceof OrganizationMemberAdminError) {
+  if (error instanceof OrganizationAuthorizationError) {
     return { code: error.code, status: error.status };
   }
   const message = error !== null
@@ -24,7 +24,7 @@ function mappedError(error: unknown): { code: string; status: number } {
     ? error.message
     : "";
   for (const [code, status] of [
-    ["organization_export_owner_required", 403],
+    ["organization_export_capability_required", 403],
     ["organization_export_unavailable", 409],
     ["organization_not_found", 404],
   ] as const) {
@@ -37,7 +37,7 @@ function isExportPackage(value: unknown): value is ExportPackage {
   return value !== null
     && typeof value === "object"
     && "contract_version" in value
-    && value.contract_version === 1
+    && value.contract_version === 2
     && "data_sha256" in value
     && typeof value.data_sha256 === "string"
     && /^[0-9a-f]{64}$/.test(value.data_sha256)
@@ -48,9 +48,13 @@ function isExportPackage(value: unknown): value is ExportPackage {
 
 export async function GET(request: NextRequest) {
   try {
-    const access = await resolveOrganizationMemberAdminAccess(request);
+    const access = await resolveOrganizationAuthorization(
+      request,
+      "organization.data.export",
+      "export",
+    );
     const { data, error } = await supabaseAdmin.rpc(
-      "export_organization_customer_data",
+      "v4_export_organization_customer_data",
       {
         p_organization_id: access.organizationId,
         p_actor_user_id: access.context.user.id,

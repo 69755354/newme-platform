@@ -19,8 +19,15 @@ function loadProxy(mocks) {
   });
   const loaded = new Module(filename);
   const previousLoad = Module._load;
-  Module._load = (request, parent, isMain) => Object.hasOwn(mocks, request)
-    ? mocks[request]
+  const resolvedMocks = {
+    "@/lib/organization-context": {
+      getRequestedOrganizationId: (request) =>
+        request.headers.get("x-newme-organization-id"),
+    },
+    ...mocks,
+  };
+  Module._load = (request, parent, isMain) => Object.hasOwn(resolvedMocks, request)
+    ? resolvedMocks[request]
     : previousLoad.call(Module, request, parent, isMain);
   try {
     loaded._compile(outputText, filename);
@@ -279,6 +286,7 @@ test("activity and audit evidence use the server-only writer without a secret Be
 });
 
 test("server evidence writes survive the response and fail without blocking the page", async (t) => {
+  const organizationId = "11111111-1111-4111-8111-111111111111";
   const previousFetch = globalThis.fetch;
   const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -337,7 +345,9 @@ test("server evidence writes survive the response and fail without blocking the 
   });
 
   const response = await proxy.proxy(
-    request("/dashboard", "GET"),
+    request("/dashboard", "GET", {
+      "x-newme-organization-id": organizationId,
+    }),
     { waitUntil: (promise) => { background = promise; } },
   );
   assert.deepEqual(response, { status: 200 });
@@ -371,5 +381,6 @@ test("server evidence writes survive the response and fail without blocking the 
     reports.map(({ type }) => type).sort(),
     ["activity_tracking_error", "audit_log_error"],
   );
+  assert.equal(JSON.parse(requests[1].init.body).organization_id, organizationId);
 });
 

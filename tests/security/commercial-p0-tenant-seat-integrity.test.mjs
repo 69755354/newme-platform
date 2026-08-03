@@ -80,23 +80,35 @@ test("settings cache and data are bound to the active organization", async () =>
 
 test("COS signing rejects unresolved and cross-organization objects", async () => {
   const source = await read("src/app/api/cos/download-url/route.ts");
-  assert.match(source, /resolveLeadOrganizationAccess/);
+  assert.match(source, /resolveOrganizationAuthorization/);
+  assert.match(source, /"storage\.files\.read"/);
   assert.match(source, /segment === "\.\."/);
   assert.match(source, /\.eq\("organization_id", access\.organizationId\)/);
-  assert.match(source, /Object not found/);
+  assert.match(source, /\.from\("tenant_file_objects"\)/);
+  assert.match(source, /\.eq\("status", "available"\)/);
+  assert.match(source, /storage_object_not_found/);
   assert.doesNotMatch(source, /canAccessLead/);
   assert.doesNotMatch(source, /isAdminOrBoss/);
 });
 
 test("overdue notifications and activity reports cannot span organizations", async () => {
-  const [cron, report] = await Promise.all([
+  const [cron, notifications, report] = await Promise.all([
     read("src/app/api/cron/check-overdue-installments/route.ts"),
+    read("src/lib/notifications.ts"),
     read("src/app/api/activity/daily-report/route.ts"),
   ]);
 
   assert.match(cron, /\.eq\("organization_id", plan\.organization_id\)/);
-  assert.match(cron, /\.from\("memberships"\)/);
+  assert.match(cron, /getAdminUserIds\(plan\.organization_id\)/);
+  assert.match(cron, /getAllActiveUserIds\(plan\.organization_id\)/);
   assert.match(cron, /activeProfileIds\.has\(contract\.sales_id\)/);
+  assert.match(cron, /organization_id: plan\.organization_id/);
+  assert.match(notifications, /\.from\("memberships"\)/);
+  assert.match(notifications, /\.eq\("organization_id", organizationId\)/);
+  assert.match(notifications, /\.eq\("status", "active"\)/);
+  assert.match(notifications, /\.eq\("is_active", true\)/);
+  assert.match(notifications, /\.from\("membership_roles"\)/);
+  assert.doesNotMatch(notifications, /\.from\("profiles"\)[\s\S]{0,160}\.in\("role"/);
   assert.match(report, /resolveLeadOrganizationAccess/);
   assert.match(report, /leads!activities_lead_id_fkey!inner\(organization_id\)/);
   assert.match(report, /leads!business_events_lead_id_fkey!inner\(organization_id\)/);

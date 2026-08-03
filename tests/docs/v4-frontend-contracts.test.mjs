@@ -352,7 +352,13 @@ test('V4 staging archive provenance rejects missing, drifted, and forged root ev
     })
     await t.test('non-root or writable marker', () => {
       assert.throws(
-        () => validate(fixture.env, { ...fixture.metadata, uid: 1000, mode: 0o100600 }),
+        () => validate(fixture.env, {
+          ...fixture.metadata,
+          isFile: () => true,
+          isSymbolicLink: () => false,
+          uid: 1000,
+          mode: 0o100600,
+        }),
         /ownership or mode drift/,
       )
     })

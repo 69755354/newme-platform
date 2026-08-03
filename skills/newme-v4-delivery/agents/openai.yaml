@@ -1,0 +1,4 @@
+interface:
+  display_name: "NewMe V4 Delivery"
+  short_description: "Traceable tenant-safe SaaS delivery"
+  default_prompt: "Use $newme-v4-delivery to execute one evidence-bound NewMe V4 work package."

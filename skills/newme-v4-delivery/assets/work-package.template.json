@@ -1,0 +1,12 @@
+{
+  "linearId": "SAM-000",
+  "v4Ids": ["V4-PF-000"],
+  "baseSha": "0000000000000000000000000000000000000000",
+  "allowedPaths": ["path/to/owned-contract"],
+  "outcome": "One independently acceptable business outcome",
+  "nonGoals": ["Explicitly excluded adjacent scope"],
+  "dataSecurityImpact": "Tenant, authorization, migration and operations impact",
+  "validation": ["Focused positive and negative tests", "Exact-head CI"],
+  "risk": "Primary failure mode",
+  "rollback": "Executable revert, migration rollback or restore boundary"
+}

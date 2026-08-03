@@ -1,8 +1,8 @@
 # NewMe V4 Requirements Traceability
 
-Status: Proposed traceability baseline  
-Date: 2026-08-03  
-Companion documents: `V4_SAAS_PRD.md`, `V4_DELIVERY_OPERATIONS_PLAN.md`
+Status: Repository traceability baseline; implementation evidence remains release-bound
+Date: 2026-08-03
+Companion documents: `V4_SAAS_PRD.md`, `V4_DELIVERY_OPERATIONS_PLAN.md`, `V4_EXECUTION_BACKLOG.md`, `V4_EXTERNAL_AUDIT_INDEX.md`
 
 ## 1. Traceability contract
 

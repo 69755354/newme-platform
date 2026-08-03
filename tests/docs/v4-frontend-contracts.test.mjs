@@ -79,6 +79,50 @@ const cleanupArchiveFixture = (fixture) => {
   if (fixture.directory) fs.rmSync(fixture.directory, { recursive: true, force: true })
 }
 
+function createGitlinkArchiveFixture() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'newme-v4-gitlink-'))
+  const repository = path.join(directory, 'repository')
+  const root = path.join(directory, 'archive')
+  const archive = path.join(directory, 'candidate.tar')
+  const gitlinkPaths = ['ci-test', 'nested/gitlink with space']
+  fs.mkdirSync(repository)
+  fs.mkdirSync(root)
+  execFileSync('git', ['init', '--quiet'], { cwd: repository })
+  execFileSync('git', ['config', 'user.name', 'NewMe contract'], { cwd: repository })
+  execFileSync('git', ['config', 'user.email', 'contract@invalid.test'], { cwd: repository })
+  fs.writeFileSync(path.join(repository, 'tracked.txt'), 'tracked\n')
+  execFileSync('git', ['add', '--', 'tracked.txt'], { cwd: repository })
+  execFileSync('git', ['commit', '--quiet', '-m', 'fixture base'], { cwd: repository })
+  const gitlinkObject = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repository, encoding: 'utf8' }).trim()
+  for (const gitlinkPath of gitlinkPaths) {
+    execFileSync('git', ['update-index', '--add', '--cacheinfo', '160000', gitlinkObject, gitlinkPath], { cwd: repository })
+  }
+  execFileSync('git', ['commit', '--quiet', '-m', 'fixture gitlinks'], { cwd: repository })
+  const candidateSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repository, encoding: 'utf8' }).trim()
+  const expectedTree = execFileSync('git', ['rev-parse', `${candidateSha}^{tree}`], { cwd: repository, encoding: 'utf8' }).trim()
+  execFileSync('git', ['archive', '--format=tar', '-o', archive, candidateSha], { cwd: repository })
+  execFileSync('tar', ['-xf', archive, '-C', root])
+  execFileSync('git', ['init', '--quiet'], { cwd: root })
+  execFileSync('git', ['add', '--force', '--all'], { cwd: root })
+  return { directory, repository, root, candidateSha, expectedTree, gitlinkObject, gitlinkPaths }
+}
+
+function restoreArchiveGitlinks(fixture) {
+  const records = execFileSync(
+    'git',
+    ['ls-tree', '-rz', '--full-tree', fixture.candidateSha],
+    { cwd: fixture.repository },
+  ).toString('utf8').split('\0').filter(Boolean)
+  for (const record of records) {
+    const separator = record.indexOf('\t')
+    const [mode, type, object] = record.slice(0, separator).split(' ')
+    const gitlinkPath = record.slice(separator + 1)
+    if (mode !== '160000') continue
+    assert.equal(type, 'commit')
+    execFileSync('git', ['update-index', '--add', '--cacheinfo', mode, object, gitlinkPath], { cwd: fixture.root })
+  }
+}
+
 test('V4 frontend registry, schemas, routes and trace close on repository state', () => {
   const result = validateV4FrontendContracts()
   assert.deepEqual(result, { requirements: 41, frontend_requirements: 25, acceptance: 47, screens: 24, routes: 27, event_keys: 95, payload_contracts: 95, sources: 22, source_evidence: 22, schemas: 9, error_experiences: 13, role_mappings: 6 })
@@ -291,6 +335,22 @@ test('V4 staging archive provenance rejects missing, drifted, and forged root ev
   }
 })
 
+test('staging archive restores real NUL-delimited gitlinks before exact tree comparison', () => {
+  const fixture = createGitlinkArchiveFixture()
+  try {
+    const archiveTree = execFileSync('git', ['write-tree'], { cwd: fixture.root, encoding: 'utf8' }).trim()
+    assert.notEqual(archiveTree, fixture.expectedTree)
+    restoreArchiveGitlinks(fixture)
+    assert.equal(execFileSync('git', ['write-tree'], { cwd: fixture.root, encoding: 'utf8' }).trim(), fixture.expectedTree)
+    const index = execFileSync('git', ['ls-files', '--stage', '-z'], { cwd: fixture.root }).toString('utf8').split('\0')
+    for (const gitlinkPath of fixture.gitlinkPaths) {
+      assert.ok(index.includes(`160000 ${fixture.gitlinkObject} 0\t${gitlinkPath}`), `missing restored gitlink: ${JSON.stringify(gitlinkPath)}`)
+    }
+  } finally {
+    fs.rmSync(fixture.directory, { recursive: true, force: true })
+  }
+})
+
 test('staging build creates and forwards only fixed root-owned archive provenance', () => {
   const runner = fs.readFileSync(path.join(repositoryRoot, 'scripts/run-staging-build.sh'), 'utf8')
   const builder = fs.readFileSync(path.join(repositoryRoot, 'scripts/build-staging-artifact.sh'), 'utf8')
@@ -306,8 +366,13 @@ test('staging build creates and forwards only fixed root-owned archive provenanc
     'NEWME_STAGING_UPSTREAM_SHA="$UPSTREAM_SHA"',
     'NEWME_STAGING_EXPECTED_TREE="$EXPECTED_TREE"',
     'NEWME_STAGING_ARCHIVE_PROVENANCE_PATH="$PROVENANCE"',
+    "while IFS= read -r -d '' entry",
+    'ls-tree -rz --full-tree "$candidate_sha"',
+    'update-index --add --cacheinfo',
+    'restore_archive_gitlinks "$SHA"',
   ]) assert.ok(runner.includes(token), `missing root staging provenance contract: ${token}`)
   assert.ok(runner.indexOf('merge-base --is-ancestor') < runner.indexOf('setsid runuser'))
+  assert.ok(runner.indexOf('restore_archive_gitlinks "$SHA"') < runner.indexOf('ARCHIVE_TREE="$(git -C "$WORK" write-tree)"'))
   assert.ok(runner.indexOf('chmod 0400 "$PROVENANCE_TEMP"') < runner.indexOf('setsid runuser'))
   for (const token of [
     'readonly STAGING_ARCHIVE_PROVENANCE="/run/newme-staging-build.provenance"',

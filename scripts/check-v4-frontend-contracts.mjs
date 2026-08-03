@@ -58,6 +58,11 @@ export function validateStagingArchiveProvenance(root, upstream, dependencies = 
     invariant(gitlink.isDirectory() && fs.readdirSync(gitlinkPath).length === 0, 'staging archive gitlink path must be absent or an empty directory')
   }
   try {
+    run('git', ['update-index', '--refresh', '--ignore-submodules'], { cwd: root, stdio: 'ignore' })
+  } catch {
+    invariant(false, 'staging archive index stat cache refresh failed')
+  }
+  try {
     run('git', ['diff-files', '--quiet', '--ignore-submodules=all'], { cwd: root, stdio: 'ignore' })
   } catch {
     invariant(false, 'staging archive working tree differs from its verified index')

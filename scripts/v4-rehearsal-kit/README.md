@@ -2,7 +2,7 @@
 
 Status: local preparation only
 Linear scope: SAM-85 / V4-MIG-001 and SAM-86 / V4-OPS-001..004
-Canonical base: `5070f0ff320b5d36dfd05297b806442ee24cf9ff`
+Candidate provenance: this package is base-independent. Each delivery PR must record its exact base, head and tree, and acceptance must use CI from that same head; executed evidence binds the release SHA and tree through the provenance contract.
 V4 design source: PR 254 head `b7e42d728372cf2adb0e994c7026c06847004132`
 
 This package defines aggregate-only evidence contracts and fail-closed validation. It does not create a clone, connect to a database, restore a backup, run load, contact an alert route, read credentials, inspect a server, deploy, or destroy resources.

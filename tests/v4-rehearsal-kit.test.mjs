@@ -319,8 +319,10 @@ test("executed chronology and decisions are derived from evidence", async (t) =>
   const cases = [
     ["invalid calendar date", (b) => { b.clone.approval.expiresAt = "2026-02-31T00:00:00.000Z"; b.clone.retention.destroyBy = "2026-02-31T00:00:00.000Z"; }, "schema_timestamp_invalid"],
     ["masking after access", (b) => { b.clone.execution.maskedAt = "2026-08-03T00:04:00.000Z"; }, "clone_timeline_invalid"],
+    ["masking at access", (b) => { b.clone.execution.maskedAt = b.clone.execution.applicationAccessEnabledAt; }, "clone_timeline_invalid"],
     ["outbound checked before clone creation", (b) => { b.outboundDisable.channels[0].verification.checkedAt = "2026-08-02T23:59:59.000Z"; }, "outbound_verified_before_clone_created"],
     ["outbound checked after access", (b) => { b.outboundDisable.channels[0].verification.checkedAt = "2026-08-03T00:04:00.000Z"; }, "outbound_verified_after_access"],
+    ["outbound checked at access", (b) => { b.outboundDisable.channels[0].verification.checkedAt = b.clone.execution.applicationAccessEnabledAt; }, "outbound_verified_after_access"],
     ["destruction after retention deadline", (b) => { b.destruction.resources[0].completedAt = "2026-08-10T00:00:01.000Z"; b.destruction.verifiedAt = "2026-08-10T00:00:02.000Z"; b.generatedAt = "2026-08-10T00:00:03.000Z"; }, "destruction_after_deadline"],
     ["restore measured RTO drift", (b) => { b.restore.measured.rtoSeconds += 1; }, "restore_measurement_mismatch"],
     ["load decision drift", (b) => { b.load.status = "failed"; }, "load_status_mismatch"],
@@ -373,10 +375,11 @@ test("CLI validates the template and refuses to validate it as executed evidence
 });
 
 test("package is local read-only validation and contains no execution connector", async () => {
-  const [cli, validators, example] = await Promise.all([
+  const [cli, validators, example, readme] = await Promise.all([
     read("scripts/v4-rehearsal-kit/cli.mjs"),
     read("scripts/v4-rehearsal-kit/validators.mjs"),
     read("scripts/v4-rehearsal-kit/examples/synthetic-preparation-bundle.json"),
+    read("scripts/v4-rehearsal-kit/README.md"),
   ]);
   const source = `${cli}\n${validators}`;
   assert.doesNotMatch(source, /node:child_process|\bfetch\s*\(|process\.env|writeFile|appendFile|createWriteStream/);
@@ -384,4 +387,8 @@ test("package is local read-only validation and contains no execution connector"
   assert.match(example, /"mode": "template"/);
   assert.match(example, /"claimsExecuted": false/);
   assert.doesNotMatch(example, /"executionStatus": "executed"/);
+  assert.match(readme, /Candidate provenance: this package is base-independent\./);
+  assert.match(readme, /exact base, head and tree/);
+  assert.match(readme, /CI from that same head/);
+  assert.doesNotMatch(readme, /Canonical base:\s*`[0-9a-f]{40}`/i);
 });

@@ -196,7 +196,7 @@ function validateClone(clone, executed) {
   const createdAt = timestamp(clone.execution.createdAt, "clone_created_at_invalid", "$.clone.execution.createdAt");
   const maskedAt = timestamp(clone.execution.maskedAt, "clone_masked_at_invalid", "$.clone.execution.maskedAt");
   const accessAt = timestamp(clone.execution.applicationAccessEnabledAt, "clone_access_at_invalid", "$.clone.execution.applicationAccessEnabledAt");
-  if (!(approvedAt <= createdAt && createdAt <= maskedAt && maskedAt <= accessAt && accessAt < expiresAt)) {
+  if (!(approvedAt <= createdAt && createdAt <= maskedAt && maskedAt < accessAt && accessAt < expiresAt)) {
     fail("clone_timeline_invalid", "$.clone");
   }
 }
@@ -457,7 +457,7 @@ export function validatePreparationBundle(bundle, options = {}) {
     for (const [index, entry] of bundle.outboundDisable.channels.entries()) {
       const checkedAt = timestamp(entry.verification.checkedAt, "outbound_checked_at_invalid", `$.outboundDisable.channels[${index}].verification.checkedAt`);
       if (checkedAt < cloneCreatedAt) fail("outbound_verified_before_clone_created", `$.outboundDisable.channels[${index}]`);
-      if (checkedAt > accessAt) fail("outbound_verified_after_access", `$.outboundDisable.channels[${index}]`);
+      if (checkedAt >= accessAt) fail("outbound_verified_after_access", `$.outboundDisable.channels[${index}]`);
     }
     const destroyedAt = Math.max(...bundle.destruction.resources.map((entry, index) => {
       const completedAt = timestamp(entry.completedAt, "destruction_completed_at_invalid", `$.destruction.resources[${index}].completedAt`);

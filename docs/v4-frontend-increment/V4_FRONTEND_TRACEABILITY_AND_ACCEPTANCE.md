@@ -1,6 +1,7 @@
 # NewMe V4 前端追踪与验收矩阵
 
-状态：Target；上游 V4 ID 来自 PR #256 head `8dbab48898757640326b5f316e62a8ca6e6573f7`
+状态：Target；上游 V4 ID 来自 PR #256 final head `80f19cc67d26bb592ec8f440fdb965eb224f8b6a`，merge `715fa4bf4a97869077371b16c3094d8599d7e344`
+最终上游复核：2026-08-04；current canonical `858a4ccb51697b4b4499252bfa3c22963381847e`
 
 ## 1. 追踪规则
 
@@ -8,8 +9,8 @@
 
 来源简写：
 
-- `NM-CUR`：本次只读核对的当前 NewMe 源码/生产登录页；
-- `V4`：PR #256 的 `docs/v4` 五文件基线；
+- `NM-CUR`：2026-08-03 历史只读核对的 NewMe 源码/生产登录页；不作为 2026-08-04 runtime 声明；
+- `V4`：PR #256 final head `80f19cc67d26bb592ec8f440fdb965eb224f8b6a` 已合并的 `docs/v4` 五文件基线；
 - `AX`：Axon 用户交付包与可读远端引用，只作 domain/流程来源；
 - `IC`：International City OS 用户交付包，只作 retail/control/acceptance 来源；
 - `OFF`：本包研究登记中的官方产品/标准资料。

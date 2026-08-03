@@ -63,6 +63,8 @@ Linear is live state. The auditor must record the query timestamp and must not s
 | First-audit exact head | `80f7e2349324900cf5852f31b3a0459532fd6c1a` |
 | First-audit exact-head CI | [run 30775237766](https://github.com/69755354/newme-platform/actions/runs/30775237766), job `91569377924`, success |
 | Independent first reviews | Hermes review `4840188187`; OpenCode/GLM-5.2 review `4840192089` |
+| Audit-remediation exact head | `2be17e85caf32b24e013da223c958e2b1ec47b0b` |
+| Audit-remediation exact-head CI | [run 30777036124](https://github.com/69755354/newme-platform/actions/runs/30777036124), job `91574370569`, success |
 
 ## 5. Source-input custody boundary
 

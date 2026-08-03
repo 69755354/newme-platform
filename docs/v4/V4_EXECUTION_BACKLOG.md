@@ -1,12 +1,13 @@
 # NewMe V4 Current Execution Backlog
 
 Status: Live execution snapshot, not a release claim
-Snapshot date: 2026-08-03 (Asia/Shanghai)
+Repository snapshot date: 2026-08-03 (Asia/Shanghai)
+Linear query interval: 2026-08-03T01:19:03.715Z to 2026-08-03T01:19:04.955Z
 Linear project: [NewMe V4 SaaS — Real Estate and Retail](https://linear.app/samnewme/project/newme-v4-saas-real-estate-and-retail-6400aa7c0e9d)
 
 ## 1. Snapshot contract
 
-Linear is the live status and dependency source. Git is the immutable plan, code and evidence source. This file records the directly queried state at the snapshot date so an auditor can reproduce the execution decision; it does not replace later Linear state.
+Linear is the live status and dependency source. Git is the immutable plan, code and evidence source. This file records the directly queried state at the timestamped interval above so an auditor can reproduce the execution decision; it does not replace later Linear state.
 
 Git evidence at this snapshot:
 

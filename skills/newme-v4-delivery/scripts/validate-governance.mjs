@@ -52,6 +52,9 @@ if (gates.join(',') !== '0,1,2,3,4,5,6,7,8') fail('PRD must define exactly order
 
 const backlog = await text('docs/v4/V4_EXECUTION_BACKLOG.md')
 const audit = await text('docs/v4/V4_EXTERNAL_AUDIT_INDEX.md')
+const queryInterval = /Linear query interval: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z to \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/
+if (!queryInterval.test(backlog)) fail('execution backlog must record an exact UTC Linear query interval')
+if (!queryInterval.test(audit)) fail('audit index must record an exact UTC Linear query interval')
 const backlogSection = backlog.match(/^## 3\.[^\n]*$([\s\S]*?)(?=^##\s)/m)?.[1] ?? ''
 const auditSection = audit.match(/^## 3\.[^\n]*$([\s\S]*?)(?=^##\s)/m)?.[1] ?? ''
 const backlogIssues = [...backlogSection.matchAll(/^\| P\d+ \| \[SAM-(\d+)\]\(/gm)].map((match) => Number(match[1]))

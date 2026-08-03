@@ -1,0 +1,43 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://newme.ae/contracts/v4/platform-read-responses.schema.v1.json",
+  "title":"NewMe V4 Platform Read Responses",
+  "oneOf":[
+    {
+      "type":"object","additionalProperties":false,"required":["resource_type","items","next_cursor"],
+      "properties":{"resource_type":{"const":"organizations"},"items":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["organization_id","name","lifecycle_state"],"properties":{"organization_id":{"type":"string","format":"uuid"},"name":{"type":"string"},"lifecycle_state":{"enum":["provisioning","active","read_only","suspended","export_only","closed"]}}}},"next_cursor":{"type":["string","null"]}}
+    },
+    {
+      "type":"object","additionalProperties":false,"required":["resource_type","items","next_cursor"],
+      "properties":{"resource_type":{"const":"support_sessions"},"items":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["support_session_id","organization_id","scope","status","expires_at","approval_id","requested_by_actor_id","approved_by_actor_id"],"properties":{"support_session_id":{"type":"string","format":"uuid"},"organization_id":{"type":"string","format":"uuid"},"scope":{"type":"array","minItems":1,"items":{"type":"string"}},"status":{"enum":["active","expired","revoked"]},"expires_at":{"type":"string","format":"date-time"},"approval_id":{"type":"string","format":"uuid"},"requested_by_actor_id":{"type":"string","format":"uuid"},"approved_by_actor_id":{"type":"string","format":"uuid"}}}},"next_cursor":{"type":["string","null"]}}
+    },
+    {
+      "type":"object","additionalProperties":false,"required":["resource_type","items","next_cursor"],
+      "properties":{"resource_type":{"const":"plans"},"items":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["plan_key","name","active"],"properties":{"plan_key":{"type":"string"},"name":{"type":"string"},"active":{"type":"boolean"}}}},"next_cursor":{"type":["string","null"]}}
+    },
+    {
+      "type":"object","additionalProperties":false,"required":["resource_type","items","next_cursor"],
+      "properties":{"resource_type":{"const":"entitlements"},"items":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["organization_id","entitlement_key","enabled","version"],"properties":{"organization_id":{"type":"string","format":"uuid"},"entitlement_key":{"type":"string"},"enabled":{"type":"boolean"},"version":{"type":"integer","minimum":1}}}},"next_cursor":{"type":["string","null"]}}
+    },
+    {
+      "type":"object","additionalProperties":false,"required":["resource_type","items","next_cursor"],
+      "properties":{"resource_type":{"const":"seats"},"items":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["organization_id","paid_seats","active_seats","overage"],"properties":{"organization_id":{"type":"string","format":"uuid"},"paid_seats":{"type":"integer","minimum":0},"active_seats":{"type":"integer","minimum":0},"overage":{"type":"integer","minimum":0}}}},"next_cursor":{"type":["string","null"]}}
+    },
+    {
+      "type":"object","additionalProperties":false,"required":["resource_type","items","next_cursor"],
+      "properties":{"resource_type":{"const":"quotas"},"items":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["organization_id","quota_key","limit","usage"],"properties":{"organization_id":{"type":"string","format":"uuid"},"quota_key":{"type":"string"},"limit":{"type":"integer","minimum":0},"usage":{"type":"number","minimum":0}}}},"next_cursor":{"type":["string","null"]}}
+    },
+    {
+      "type":"object","additionalProperties":false,"required":["resource_type","items","next_cursor"],
+      "properties":{"resource_type":{"const":"usage"},"items":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["organization_id","usage_key","quantity","period"],"properties":{"organization_id":{"type":"string","format":"uuid"},"usage_key":{"type":"string"},"quantity":{"type":"number","minimum":0},"period":{"type":"string"}}}},"next_cursor":{"type":["string","null"]}}
+    },
+    {
+      "type":"object","additionalProperties":false,"required":["resource_type","items","next_cursor"],
+      "properties":{"resource_type":{"const":"invoice_references"},"items":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["subscription_id","invoice_reference","billing_period"],"properties":{"subscription_id":{"type":"string","format":"uuid"},"invoice_reference":{"type":"string"},"billing_period":{"type":"string"}}}},"next_cursor":{"type":["string","null"]}}
+    },
+    {
+      "type":"object","additionalProperties":false,"required":["resource_type","items","next_cursor"],
+      "properties":{"resource_type":{"const":"audit"},"items":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["audit_event_id","actor_id","action","occurred_at","organization_id","support_session_id"],"properties":{"audit_event_id":{"type":"string","format":"uuid"},"actor_id":{"type":"string","format":"uuid"},"action":{"type":"string"},"occurred_at":{"type":"string","format":"date-time"},"organization_id":{"type":["string","null"],"format":"uuid"},"support_session_id":{"type":["string","null"],"format":"uuid"}}}},"next_cursor":{"type":["string","null"]}}
+    }
+  ]
+}

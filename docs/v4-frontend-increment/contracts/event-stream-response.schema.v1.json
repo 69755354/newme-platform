@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://newme.ae/contracts/v4/event-stream-response.schema.v1.json",
+  "title":"NewMe V4 Event Stream Frame",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["stream_event_id","projection_version","resume_cursor","event"],
+  "properties":{
+    "stream_event_id":{"type":"string","minLength":1},
+    "projection_version":{"type":"integer","minimum":1},
+    "resume_cursor":{"type":"string","minLength":1},
+    "event":{"$ref":"event.schema.v1.json"}
+  }
+}

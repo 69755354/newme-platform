@@ -1,0 +1,27 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://newme.ae/contracts/v4/command-result.schema.v1.json",
+  "title":"NewMe V4 Command Result",
+  "type":"object",
+  "additionalProperties":false,
+  "x-error-request-id-match":true,
+  "required":["request_token","idempotency_key","request_id","correlation_id","status","expected_event","event_id","error"],
+  "properties":{
+    "request_token":{"type":"string","format":"uuid"},
+    "idempotency_key":{"type":"string","minLength":16},
+    "request_id":{"type":"string","format":"uuid"},
+    "correlation_id":{"type":"string","format":"uuid"},
+    "status":{"enum":["accepted","completed","approval_pending","conflict","denied","failed"]},
+    "expected_event":{"oneOf":[{"type":"null"},{"$ref":"event-type.schema.v1.json"}]},
+    "event_id":{"type":["string","null"],"format":"uuid"},
+    "error":{"oneOf":[{"type":"null"},{"$ref":"error.schema.v1.json"}]}
+  },
+  "allOf":[
+    {"if":{"required":["status"],"properties":{"status":{"const":"accepted"}}},"then":{"properties":{"event_id":{"type":"null"},"error":{"type":"null"}}}},
+    {"if":{"required":["status"],"properties":{"status":{"const":"completed"}}},"then":{"properties":{"expected_event":{"$ref":"event-type.schema.v1.json"},"event_id":{"type":"string","format":"uuid"},"error":{"type":"null"}}}},
+    {"if":{"required":["status"],"properties":{"status":{"const":"approval_pending"}}},"then":{"properties":{"event_id":{"type":"null"},"error":{"allOf":[{"$ref":"error.schema.v1.json"},{"properties":{"code":{"const":"APPROVAL_REQUIRED"}}}]}}}},
+    {"if":{"required":["status"],"properties":{"status":{"const":"conflict"}}},"then":{"properties":{"event_id":{"type":"null"},"error":{"allOf":[{"$ref":"error.schema.v1.json"},{"properties":{"code":{"const":"CONFLICT"}}}]}}}},
+    {"if":{"required":["status"],"properties":{"status":{"const":"denied"}}},"then":{"properties":{"event_id":{"type":"null"},"error":{"allOf":[{"$ref":"error.schema.v1.json"},{"properties":{"code":{"enum":["UNAUTHENTICATED","INACTIVE_ACCOUNT","FORBIDDEN","CONTEXT_DENIED","CAPABILITY_DISABLED","NOT_FOUND","VALIDATION_FAILED"]}}}]}}}},
+    {"if":{"required":["status"],"properties":{"status":{"const":"failed"}}},"then":{"properties":{"event_id":{"type":"null"},"error":{"allOf":[{"$ref":"error.schema.v1.json"},{"properties":{"code":{"enum":["RATE_LIMITED","PROJECTION_STALE","DEPENDENCY_UNAVAILABLE","INTERNAL_ERROR"]}}}]}}}}
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://newme.ae/contracts/v4/command.schema.v1.json",
+  "title":"NewMe V4 Client Command Envelope",
+  "x-discriminator":{"property":"command","registry":"event-command-payload-registry.v1.json","payload_property":"payload","schema_property":"command_payload_schema"},
+  "allOf":[{"if":{"required":["command"],"properties":{"command":{"enum":["provision_organization","request_support_session","request_viewing","submit_property_offer","create_purchase_request","create_retail_order","create_inventory_transfer","create_replenishment"]}}},"then":{"properties":{"expected_version":{"const":0}}},"else":{"properties":{"expected_version":{"type":"integer","minimum":1}}}}],
+  "type":"object",
+  "additionalProperties":false,
+  "required":["request_token","aggregate_type","aggregate_id","expected_version","command","payload"],
+  "properties":{
+    "request_token":{"type":"string","format":"uuid","description":"Client generated retry-correlation token. It is not the canonical idempotency key."},
+    "aggregate_type":{"type":"string","minLength":1},
+    "aggregate_id":{"type":"string","format":"uuid"},
+    "expected_version":{"type":"integer","minimum":0},
+    "command":{"type":"string","pattern":"^[a-z][a-z0-9_]+$"},
+    "payload":{"type":"object"}
+  }
+}

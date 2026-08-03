@@ -1,0 +1,21 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://newme.ae/contracts/v4/nba.schema.v1.json",
+  "title":"NewMe V4 Next Best Action",
+  "x-command-event-constraint":{"command_path":"primary_action.command","event_path":"primary_action.expected_event","registry":"event-command-payload-registry.v1.json"},
+  "type":"object",
+  "additionalProperties":false,
+  "required":["recommendation_id","work_item_id","strategy_key","strategy_version","generated_at","valid_until","primary_action","alternatives","explanation","guardrails"],
+  "properties":{
+    "recommendation_id":{"type":"string","format":"uuid"},
+    "work_item_id":{"type":"string","format":"uuid"},
+    "strategy_key":{"type":"string","minLength":1},
+    "strategy_version":{"type":"string","minLength":1},
+    "generated_at":{"type":"string","format":"date-time"},
+    "valid_until":{"type":"string","format":"date-time"},
+    "primary_action":{"type":"object","additionalProperties":false,"required":["command","label_key","risk_level","required_inputs","expected_event","expected_outcome_key"],"properties":{"command":{"type":"string"},"label_key":{"type":"string"},"risk_level":{"enum":["L0","L1","L2","L3","L4"]},"required_inputs":{"type":"array","uniqueItems":true,"items":{"type":"string"}},"expected_event":{"$ref":"event-type.schema.v1.json"},"expected_outcome_key":{"type":"string"}}},
+    "alternatives":{"type":"array","uniqueItems":true,"items":{"type":"string"}},
+    "explanation":{"type":"object","additionalProperties":false,"required":["reason_codes","evidence_refs","human_summary_key"],"properties":{"reason_codes":{"type":"array","minItems":1,"items":{"type":"string"}},"evidence_refs":{"type":"array","minItems":1,"items":{"type":"string"}},"human_summary_key":{"type":"string"}}},
+    "guardrails":{"type":"object","additionalProperties":false,"required":["required_capabilities","approval_required","prohibited_when"],"properties":{"required_capabilities":{"type":"array","items":{"type":"string"}},"approval_required":{"type":"boolean"},"prohibited_when":{"type":"array","items":{"type":"string"}}}}
+  }
+}

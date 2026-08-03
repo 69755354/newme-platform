@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "accessed_at": "2026-08-03",
+  "immutable_registry_metadata_snapshot": "research-evidence-snapshot.v1.json",
+  "sources": [
+    {"source_id":"OFF-CRM-001","title":"Dynamics 365 Sales work list","url":"https://learn.microsoft.com/en-us/dynamics365/sales/prioritize-sales-pipeline-through-work-list","locator":"work-list behaviors: prioritize, complete, skip, snooze"},
+    {"source_id":"OFF-CRM-002","title":"HubSpot guided actions","url":"https://knowledge.hubspot.com/prospecting/customize-guided-actions","locator":"guided action criteria and default action"},
+    {"source_id":"OFF-CRM-003","title":"HubSpot prospecting queue","url":"https://knowledge.hubspot.com/prospecting/use-the-prospecting-queue","locator":"prospecting queue execution flow"},
+    {"source_id":"OFF-CRM-004","title":"Odoo Activities","url":"https://www.odoo.com/documentation/18.0/applications/essentials/activities.html","locator":"activities, due states, Done and Schedule Next"},
+    {"source_id":"OFF-CRM-005","title":"SAP Situation Handling","url":"https://help.sap.com/docs/SAP_S4HANA_CLOUD/a630d57fc5004c6383e7a81efee7a8bb/516c8ecb7462453ca430a42481cc33ec.html","locator":"situation lifecycle and recommended actions"},
+    {"source_id":"OFF-CRM-006","title":"NetSuite Dashboards","url":"https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/chapter_N576403.html","locator":"role centers and dashboards"},
+    {"source_id":"OFF-CRM-007","title":"NetSuite Reminders","url":"https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/section_N581945.html","locator":"reminder counts and drill-through"},
+    {"source_id":"OFF-RE-001","title":"Propertybase Action Plans","url":"https://help.propertybase.com/hc/en-us/articles/115001625232-Using-Action-Plans","locator":"task dependencies, due dates, assignees and reminders"},
+    {"source_id":"OFF-RE-002","title":"Propertybase Homepage","url":"https://help.propertybase.com/hc/en-us/articles/115002776232-Getting-Started-Series-The-Homepage","locator":"lead-to-close object journey"},
+    {"source_id":"OFF-RE-003","title":"Yardi CRM IQ","url":"https://www.yardi.com/news/press-releases/yardi-releases-customer-centric-crm-iq/","locator":"customer journey and role dashboard claims"},
+    {"source_id":"OFF-RE-004","title":"MRI Agora Orchestrator","url":"https://www.mrisoftware.com/ca/mri-agora-orchestrator/","locator":"rules, exceptions, approvals and human review"},
+    {"source_id":"OFF-RE-005","title":"AppFolio 2025 Q2 product update","url":"https://www.appfolio.com/articles/2025-q2-product-update","locator":"multi-property inquiry and guest-card journey"},
+    {"source_id":"OFF-RT-001","title":"Dynamics 365 Commerce POS task management","url":"https://learn.microsoft.com/en-us/dynamics365/commerce/task-mgmt-pos","locator":"My, Overdue, Open and Task Lists"},
+    {"source_id":"OFF-RT-002","title":"Dynamics 365 Commerce task links","url":"https://learn.microsoft.com/en-us/dynamics365/commerce/task-mgmt-create-lists","locator":"task list links to required action"},
+    {"source_id":"OFF-RT-003","title":"Shopify POS smart grid","url":"https://help.shopify.com/en/manual/sell-in-person/getting-started/smart-grid","locator":"location-scoped resource and function tiles"},
+    {"source_id":"OFF-RT-004","title":"Shopify POS staff roles","url":"https://help.shopify.com/en/manual/sell-in-person/shopify-pos/staff-management/understanding-pos-staff-management","locator":"location access, roles and manager approval"},
+    {"source_id":"OFF-RT-005","title":"Shopify order routing","url":"https://help.shopify.com/en/manual/fulfillment/setup/order-routing","locator":"ordered routing rules and location reasons"},
+    {"source_id":"OFF-A11Y-001","title":"WCAG 2.2","url":"https://www.w3.org/TR/WCAG22/","locator":"AA, focus, dragging and target size criteria"},
+    {"source_id":"OFF-A11Y-002","title":"Understanding Reflow","url":"https://www.w3.org/WAI/WCAG22/Understanding/reflow.html","locator":"320 CSS px equivalent reflow"},
+    {"source_id":"OFF-A11Y-003","title":"ARIA APG Dialog Modal Pattern","url":"https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/","locator":"focus move, trap and restore"},
+    {"source_id":"OFF-A11Y-004","title":"ARIA APG Table Pattern","url":"https://www.w3.org/WAI/ARIA/apg/patterns/table/","locator":"table versus interactive grid"},
+    {"source_id":"OFF-A11Y-005","title":"ARIA APG Keyboard Interface","url":"https://www.w3.org/WAI/ARIA/apg/practices/keyboard-interface/","locator":"custom composite keyboard interaction"}
+  ]
+}

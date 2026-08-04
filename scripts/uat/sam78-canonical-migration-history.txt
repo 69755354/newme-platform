@@ -137,3 +137,4 @@
 20260803100000	v4_tenant_capability_boundary
 20260803143000	v4_tenant_lifecycle_closure
 20260804153000	sam78_govern_v4_authenticated_rpcs
+20260804165734	sam26_synthetic_audit_cleanup_boundary

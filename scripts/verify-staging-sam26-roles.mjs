@@ -653,7 +653,10 @@ async function checkProtectedRedirects(page, role, viewport) {
 }
 
 async function runRole(browser, role) {
-  const context = await browser.newContext({ viewport: VIEWPORTS.desktop });
+  const context = await browser.newContext({
+    viewport: VIEWPORTS.desktop,
+    extraHTTPHeaders: { "x-newme-sam26-run-id": runId },
+  });
   await context.addCookies([{
     name: "newme-organization-id",
     value: organizationId,

@@ -210,6 +210,15 @@ BEGIN
     END IF;
   END LOOP;
 
+  IF to_regprocedure('public.v4_reject_mutation()') IS NULL
+    OR pg_get_functiondef('public.v4_reject_mutation()'::regprocedure)
+      NOT ILIKE '%sam26-staging-uat%'
+    OR pg_get_functiondef('public.v4_reject_mutation()'::regprocedure)
+      NOT ILIKE '%current_user = ''service_role''%'
+  THEN
+    RAISE EXCEPTION 'SAM26 synthetic audit cleanup boundary is missing';
+  END IF;
+
   FOREACH target_table_name IN ARRAY tenant_tables LOOP
     IF NOT EXISTS (
       SELECT 1

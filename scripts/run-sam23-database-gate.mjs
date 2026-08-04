@@ -232,6 +232,7 @@ async function main() {
       "supabase/migrations/20260803100000_v4_tenant_capability_boundary.sql",
       "supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql",
       "supabase/migrations/20260804165734_sam26_synthetic_audit_cleanup_boundary.sql",
+      "supabase/migrations/20260804193000_sam20_synthetic_support_cleanup_boundary.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
       "supabase/rollback/20260801202728_organization_customer_exit_lifecycle_rollback.sql",
@@ -241,6 +242,7 @@ async function main() {
       "supabase/rollback/20260803100000_v4_tenant_capability_boundary_rollback.sql",
       "supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql",
       "supabase/rollback/20260804165734_sam26_synthetic_audit_cleanup_boundary_rollback.sql",
+      "supabase/rollback/20260804193000_sam20_synthetic_support_cleanup_boundary_rollback.sql",
       "scripts/uat/sam78-staging-migration-verify.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
@@ -262,6 +264,7 @@ async function main() {
       "tests/database/v4-tenant-lifecycle-closure-prelude.sql",
       "tests/database/v4-platform-staff-role-mapping-prelude.sql",
       "tests/database/v4-tenant-lifecycle-rollback-verify.sql",
+      "tests/database/sam20-synthetic-support-cleanup-boundary.sql",
     ]) {
       await copyFixture(container, relativePath);
     }
@@ -614,6 +617,13 @@ async function main() {
       "sam26_synthetic_audit_cleanup_boundary_apply",
     );
     requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260804193000_sam20_synthetic_support_cleanup_boundary.sql",
+      ]),
+      "sam20_synthetic_support_cleanup_boundary_apply",
+    );
+    requireSuccess(
       verifySam78Live(container, "apply", "post"),
       "v4_tenant_live_verify_apply_post",
     );
@@ -629,6 +639,10 @@ async function main() {
       requireSuccess(
         psql(container, ["-f", "v4-tenant-lifecycle-closure.sql"]),
         "v4_tenant_lifecycle_closure_fixture",
+      );
+      requireSuccess(
+        psql(container, ["-f", "sam20-synthetic-support-cleanup-boundary.sql"]),
+        "sam20_synthetic_support_cleanup_boundary_fixture",
       );
       requireSuccess(
         psql(container, ["-f", "v4-tenant-workflow-concurrency-prelude.sql"]),
@@ -734,6 +748,29 @@ async function main() {
     if (missingRollbackEnvironment.stdout.trim() !== "t") {
       throw new Error("v4_tenant_lifecycle_closure_missing_environment_probe_failed");
     }
+    const deniedSam20SupportRollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260804193000_sam20_synthetic_support_cleanup_boundary_rollback.sql",
+    ]);
+    if (
+      deniedSam20SupportRollback.status === 0
+      || !combined(deniedSam20SupportRollback).includes(
+        "sam20_synthetic_support_cleanup_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error("sam20_synthetic_support_cleanup_rollback_not_fail_closed");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260804193000_sam20_synthetic_support_cleanup_boundary_rollback.sql",
+        ],
+        "test",
+      ),
+      "sam20_synthetic_support_cleanup_boundary_rollback",
+    );
     const deniedSam26AuditRollback = psql(container, [
       "-f",
       "/work/supabase/rollback/20260804165734_sam26_synthetic_audit_cleanup_boundary_rollback.sql",
@@ -1157,6 +1194,7 @@ async function main() {
       v4_tenant_capabilities: "verified",
       v4_product_catalog_isolation: "verified",
       v4_tenant_lifecycle_closure: "verified",
+      sam20_synthetic_support_cleanup: "verified",
       fixture_cleanup: "verified",
     })}\n`);
   } finally {

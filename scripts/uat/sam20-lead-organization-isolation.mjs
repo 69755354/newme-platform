@@ -116,6 +116,7 @@ async function main() {
   const leadIds = [];
   const staffIds = [];
   let supportSessionId = null;
+  let supportApprovalId = null;
   const results = {};
   let executionError = null;
   const cleanupErrors = [];
@@ -126,6 +127,8 @@ async function main() {
     leads: 0,
     platform_staff: 0,
     support_sessions: 0,
+    platform_action_approvals: 0,
+    platform_action_approval_events: 0,
     audit_events: 0,
     user_session_daily: 0,
     audit_logs: 0,
@@ -239,10 +242,11 @@ async function main() {
     const leadA = await createLead(organizationA, userA.id, "lead-a");
     const leadB = await createLead(organizationB, userB.id, "lead-b");
 
-    const [tokenA, tokenB, supportToken, companyAdminToken] = await Promise.all([
+    const [tokenA, tokenB, supportToken, approverToken, companyAdminToken] = await Promise.all([
       signIn(supabaseUrl, anonKey, userA.email, password),
       signIn(supabaseUrl, anonKey, userB.email, password),
       signIn(supabaseUrl, anonKey, supportUser.email, password),
+      signIn(supabaseUrl, anonKey, approverUser.email, password),
       signIn(supabaseUrl, anonKey, companyAdminUser.email, password),
     ]);
     const clientA = dataClient(supabaseUrl, anonKey, tokenA, organizationA);
@@ -336,12 +340,14 @@ async function main() {
         user_id: supportUser.id,
         status: "active",
         staff_ref: `${marker}-support`,
+        role_key: "platform_ops",
       },
       {
         id: approverStaffId,
         user_id: approverUser.id,
         status: "active",
         staff_ref: `${marker}-approver`,
+        role_key: "platform_owner",
       },
     ]);
     if (staffError) throw new Error(`platform_staff_failed:${staffError.message}`);
@@ -349,12 +355,13 @@ async function main() {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
     const supportRequest = {
+      support_user_id: supportUser.id,
       organization_id: organizationA,
-      approver_user_id: approverUser.id,
       ticket_ref: `${marker}-ticket`,
-      reason: "Synthetic SAM-14 cross-organization support verification",
+      reason: "Synthetic SAM-20 cross-organization support verification",
       scope: ["lead:read"],
       expires_at: expiresAt,
+      idempotency_key: `${marker}-support-request`,
     };
 
     const companyAdminStart = await jsonResponse(
@@ -369,7 +376,7 @@ async function main() {
     );
     assert(
       companyAdminStart.response.status === 403
-        && companyAdminStart.body?.error === "platform_staff_required",
+        && companyAdminStart.body?.error === "support_approval_request_unavailable",
       `company_admin_platform_role_not_denied:${companyAdminStart.response.status}`,
     );
 
@@ -429,7 +436,7 @@ async function main() {
     );
     assert(
       longExpiry.response.status === 400
-        && longExpiry.body?.error === "support_expiry_invalid",
+        && longExpiry.body?.error === "support_approval_request_unavailable",
       `long_support_expiry_not_denied:${longExpiry.response.status}`,
     );
 
@@ -443,17 +450,79 @@ async function main() {
         body: JSON.stringify(supportRequest),
       }),
     );
-    assert(supportStart.response.status === 201, `support_start_http:${supportStart.response.status}`);
-    supportSessionId = supportStart.body?.support_session_id;
+    assert(
+      supportStart.response.status === 202
+        && supportStart.response.headers.get("cache-control") === "no-store"
+        && supportStart.body?.status === "pending"
+        && supportStart.body?.action_key === "support.session.start"
+        && supportStart.body?.target_key === organizationA
+        && /^[0-9a-f]{64}$/.test(supportStart.body?.payload_hash ?? "")
+        && supportStart.body?.idempotent === false,
+      `support_request_http:${supportStart.response.status}`,
+    );
+    supportApprovalId = supportStart.body?.approval_request_id;
+    assert(
+      typeof supportApprovalId === "string" && supportApprovalId.length > 0,
+      "support_approval_id_missing",
+    );
+
+    const selfApproval = await jsonResponse(
+      await fetch(`${baseUrl}/api/platform/approvals`, {
+        method: "PATCH",
+        headers: {
+          ...apiHeaders(supportToken, organizationA),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          approval_request_id: supportApprovalId,
+          consumption_key: `${marker}-support-consume`,
+        }),
+      }),
+    );
+    assert(
+      selfApproval.response.status === 403
+        && selfApproval.body?.error === "platform_action_approval_failed",
+      `support_self_approval_not_denied:${selfApproval.response.status}`,
+    );
+
+    const supportApproval = await jsonResponse(
+      await fetch(`${baseUrl}/api/platform/approvals`, {
+        method: "PATCH",
+        headers: {
+          ...apiHeaders(approverToken, organizationA),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          approval_request_id: supportApprovalId,
+          consumption_key: `${marker}-support-consume`,
+        }),
+      }),
+    );
+    assert(
+      supportApproval.response.status === 200
+        && supportApproval.response.headers.get("cache-control") === "no-store"
+        && supportApproval.body?.status === "active"
+        && supportApproval.body?.approval_status === "consumed",
+      `support_approval_http:${supportApproval.response.status}`,
+    );
+    supportSessionId = supportApproval.body?.support_session_id;
     assert(
       typeof supportSessionId === "string" && supportSessionId.length > 0,
       "support_session_id_missing",
     );
 
-    const supportList = await fetch(`${baseUrl}/api/leads/list`, {
+    const supportList = await jsonResponse(await fetch(`${baseUrl}/api/leads/list`, {
       headers: apiHeaders(supportToken, organizationA, supportSessionId),
-    });
-    assert(supportList.status === 200, `support_list_http:${supportList.status}`);
+    }));
+    const supportLeadIds = (supportList.body?.leads ?? []).map((lead) => lead.id);
+    assert(
+      supportList.response.status === 200
+        && supportLeadIds.includes(leadA)
+        && !supportLeadIds.includes(leadB)
+        && Array.isArray(supportList.body?.salesUsers)
+        && supportList.body.salesUsers.length === 0,
+      `support_list_http:${supportList.response.status}`,
+    );
 
     const supportEnd = await jsonResponse(
       await fetch(`${baseUrl}/api/platform/support-sessions`, {
@@ -498,6 +567,18 @@ async function main() {
     ]) {
       assert(auditOutcomes.includes(expected), `support_audit_missing:${expected}`);
     }
+    const { data: approvalEvents, error: approvalEventsError } = await admin
+      .from("platform_action_approval_events")
+      .select("action")
+      .eq("approval_request_id", supportApprovalId);
+    if (approvalEventsError) {
+      throw new Error(`approval_events_failed:${approvalEventsError.message}`);
+    }
+    const approvalActions = new Set((approvalEvents ?? []).map((row) => row.action));
+    assert(approvalEvents?.length === 3, `support_approval_event_count:${approvalEvents?.length}`);
+    for (const action of ["requested", "approved", "consumed"]) {
+      assert(approvalActions.has(action), `support_approval_event_missing:${action}`);
+    }
     results.support = {
       boundedReasonAndExpiry: 1,
       companyAdminDeniedPlatformRole: 2,
@@ -505,6 +586,9 @@ async function main() {
       objectAudit: 1,
       endAudit: 1,
       endedSessionDenied: 1,
+      independentApproval: 1,
+      approvalEvents: 3,
+      selfApprovalDenied: 1,
     };
   } catch (error) {
     executionError = error;
@@ -531,9 +615,49 @@ async function main() {
       }
     }
 
+    if (!supportApprovalId) {
+      const approvalLookup = await admin
+        .from("platform_action_approvals")
+        .select("id, execution_result")
+        .eq("request_id", `${marker}-support-request`)
+        .maybeSingle();
+      if (approvalLookup.error) {
+        cleanupErrors.push(`support_approval_lookup:${approvalLookup.error.message}`);
+      } else if (approvalLookup.data?.id) {
+        supportApprovalId = approvalLookup.data.id;
+        const recoveredSessionId = approvalLookup.data.execution_result?.support_session_id;
+        if (!supportSessionId && typeof recoveredSessionId === "string") {
+          supportSessionId = recoveredSessionId;
+        }
+      }
+    } else if (!supportSessionId) {
+      const approvalLookup = await admin
+        .from("platform_action_approvals")
+        .select("execution_result")
+        .eq("id", supportApprovalId)
+        .maybeSingle();
+      if (approvalLookup.error) {
+        cleanupErrors.push(`support_session_lookup:${approvalLookup.error.message}`);
+      } else if (typeof approvalLookup.data?.execution_result?.support_session_id === "string") {
+        supportSessionId = approvalLookup.data.execution_result.support_session_id;
+      }
+    }
+
     if (supportSessionId) {
       await cleanupStep("audit_events", () =>
         admin.from("audit_events").delete().eq("support_session_id", supportSessionId));
+    }
+    if (supportApprovalId) {
+      await cleanupStep("platform_action_approval_events", () => admin
+        .from("platform_action_approval_events")
+        .delete()
+        .eq("approval_request_id", supportApprovalId));
+      await cleanupStep("platform_action_approvals", () => admin
+        .from("platform_action_approvals")
+        .delete()
+        .eq("id", supportApprovalId));
+    }
+    if (supportSessionId) {
       await cleanupStep("support_sessions", () =>
         admin.from("support_sessions").delete().eq("id", supportSessionId));
     }
@@ -545,23 +669,25 @@ async function main() {
       await cleanupStep("leads", () =>
         admin.from("leads").delete().in("id", leadIds));
     }
-    if (staffIds.length > 0) {
-      await cleanupStep("platform_staff", () =>
-        admin.from("platform_staff").delete().in("id", staffIds));
-    }
     if (organizationIds.length > 0) {
       await cleanupStep("membership_roles", () =>
         admin.from("membership_roles").delete().in("organization_id", organizationIds));
       await cleanupStep("memberships", () =>
         admin.from("memberships").delete().in("organization_id", organizationIds));
-      await cleanupStep("organizations", () =>
-        admin.from("organizations").delete().in("id", organizationIds));
     }
     if (users.length > 0) {
       await cleanupStep("user_session_daily", () =>
         admin.from("user_session_daily").delete().in("user_id", users));
       await cleanupStep("audit_logs", () =>
         admin.from("audit_logs").delete().in("actor_id", users));
+    }
+    if (staffIds.length > 0) {
+      await cleanupStep("platform_staff", () =>
+        admin.from("platform_staff").delete().in("id", staffIds));
+    }
+    if (organizationIds.length > 0) {
+      await cleanupStep("organizations", () =>
+        admin.from("organizations").delete().in("id", organizationIds));
     }
     for (const userId of users) {
       await cleanupStep(`auth_user:${userId}`, () =>
@@ -603,6 +729,16 @@ async function main() {
         .from("audit_events")
         .select("id", { count: "exact", head: true })
         .eq("support_session_id", supportSessionId));
+    }
+    if (supportApprovalId) {
+      await verifyZero("platform_action_approvals", () => admin
+        .from("platform_action_approvals")
+        .select("id", { count: "exact", head: true })
+        .eq("id", supportApprovalId));
+      await verifyZero("platform_action_approval_events", () => admin
+        .from("platform_action_approval_events")
+        .select("id", { count: "exact", head: true })
+        .eq("approval_request_id", supportApprovalId));
     }
     if (users.length > 0) {
       await verifyZero("user_session_daily", () => admin

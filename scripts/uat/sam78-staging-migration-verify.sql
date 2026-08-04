@@ -219,6 +219,16 @@ BEGIN
     RAISE EXCEPTION 'SAM26 synthetic audit cleanup boundary is missing';
   END IF;
 
+  IF to_regprocedure('public.sam20_is_synthetic_support_approval(uuid)') IS NULL
+    OR pg_get_functiondef('public.v4_reject_mutation()'::regprocedure)
+      NOT ILIKE '%platform_action_approval_events%'
+    OR pg_get_functiondef(
+      'public.v4_guard_platform_action_approval_update()'::regprocedure
+    ) NOT ILIKE '%sam20_is_synthetic_support_approval%'
+  THEN
+    RAISE EXCEPTION 'SAM20 synthetic support cleanup boundary is missing';
+  END IF;
+
   FOREACH target_table_name IN ARRAY tenant_tables LOOP
     IF NOT EXISTS (
       SELECT 1

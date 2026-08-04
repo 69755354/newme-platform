@@ -12,6 +12,8 @@ function sam20TypeFixture() {
     "memberships",
     "platform_staff",
     "support_sessions",
+    "platform_action_approvals",
+    "platform_action_approval_events",
     "audit_events",
     "leads",
   ];
@@ -245,7 +247,32 @@ test("SAM-20 UAT uses the canonical release manifest and verifies every fixture 
     /from\("membership_roles"\)\.delete\(\)\.in\("organization_id", organizationIds\)/,
   );
   assert.match(uat, /typeof error\.message === "string"/);
+  assert.match(uat, /role_key: "platform_ops"/);
+  assert.match(uat, /role_key: "platform_owner"/);
+  assert.match(uat, /support_user_id: supportUser\.id/);
+  assert.doesNotMatch(uat, /approver_user_id: approverUser\.id/);
+  assert.match(uat, /approval_request_id: supportApprovalId/);
+  assert.match(uat, /independentApproval: 1/);
+  assert.match(uat, /approvalEvents: 3/);
   assert.doesNotMatch(uat, /cleanup: 0/);
+});
+
+test("SAM-20 synthetic support cleanup stays service-role and marker bound", async () => {
+  const [migration, rollback, gate] = await Promise.all([
+    read("supabase/migrations/20260804193000_sam20_synthetic_support_cleanup_boundary.sql"),
+    read("supabase/rollback/20260804193000_sam20_synthetic_support_cleanup_boundary_rollback.sql"),
+    read("scripts/run-sam23-database-gate.mjs"),
+  ]);
+  assert.match(migration, /current_user = 'service_role'/);
+  assert.match(migration, /\^sam20-\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-4/);
+  assert.match(migration, /platform_action_approval_events/);
+  assert.match(migration, /audit_events/);
+  assert.match(migration, /sam20_is_synthetic_support_approval\(OLD\.id\)/);
+  assert.match(migration, /RAISE EXCEPTION 'immutable_record'/);
+  assert.match(rollback, /sam20_synthetic_support_cleanup_rollback_requires_staging_or_test/);
+  assert.match(rollback, /DROP FUNCTION public\.sam20_is_synthetic_support_approval\(uuid\)/);
+  assert.match(gate, /sam20_synthetic_support_cleanup_boundary_fixture/);
+  assert.match(gate, /sam20_synthetic_support_cleanup_rollback_not_fail_closed/);
 });
 
 test("SAM-20 database gate fails closed and CI runs the disposable apply/rollback roundtrip", async () => {

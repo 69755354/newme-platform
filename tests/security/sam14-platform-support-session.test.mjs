@@ -105,6 +105,9 @@ test("support POST requests dual-session approval while revoke remains actor-bou
     ["objectAudit", 1],
     ["endAudit", 1],
     ["endedSessionDenied", 1],
+    ["independentApproval", 1],
+    ["approvalEvents", 3],
+    ["selfApprovalDenied", 1],
   ]) {
     assert.match(uat, new RegExp(marker));
     assert.match(controller, new RegExp(`${marker} !== ${count}`));

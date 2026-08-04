@@ -14,6 +14,7 @@ const rollbackPath = resolve(
   "supabase/rollback/20260805120000_sam82_retail_catalog_inventory_pricing_rollback.sql",
 );
 const databaseTypesPath = resolve(root, "src/types/database.ts");
+const gatePath = resolve(root, "scripts/run-sam82-database-gate.mjs");
 
 async function read(path) {
   return readFile(path, "utf8");
@@ -124,4 +125,11 @@ test("SAM-82 exposes its committed tables and derived views to TypeScript", asyn
   ]) {
     assert.ok(types.includes(token), `database type missing ${token}`);
   }
+});
+
+test("SAM-82 waits for the final TCP listener, never the initdb-only Unix socket", async () => {
+  const gate = await read(gatePath);
+  assert.match(gate, /"pg_isready", "-h", "127\.0\.0\.1", "-U", "postgres", "-d", database/);
+  assert.match(gate, /"psql", "-X", "-v", "ON_ERROR_STOP=1", "-h", "127\.0\.0\.1", "-U", "postgres"/);
+  assert.match(gate, /Unix-socket-only temporary server/);
 });

@@ -27,6 +27,9 @@ readonly SAM78_EVIDENCE="$STATE_DIR/last-migrate-sam78.json"
 readonly SAM78_UAT_EVIDENCE="$STATE_DIR/last-uat-sam78.json"
 readonly SAM87_RUNNER="scripts/verify-staging-sam87-release-rehearsal.mjs"
 readonly SAM87_EVIDENCE="$STATE_DIR/last-rehearse-sam87.json"
+readonly SAM88_RUNNER="scripts/verify-staging-sam88-design-partner-pilot.mjs"
+readonly SAM88_MANIFEST="$STATE_DIR/sam88-design-partner-pilot-manifest.json"
+readonly SAM88_EVIDENCE="$STATE_DIR/last-validate-sam88-pilot.json"
 readonly STAGING_REF="bfsiibofuzoglziltgyd"
 readonly PRODUCTION_REF="vfopmpxlhwzpxqegayew"
 readonly SAM20_RUNNER="scripts/uat/sam20-lead-organization-isolation.mjs"
@@ -105,7 +108,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rehearse-sam87|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rehearse-sam87|validate-sam88-pilot|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -113,7 +116,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rehearse-sam87|rollback) ;;
+  build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rehearse-sam87|validate-sam88-pilot|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -1850,6 +1853,50 @@ EOF
   echo "staging control SAM-87 rehearsal passed SHA=$SHA restored=$previous_sha evidence=$SAM87_EVIDENCE"
 }
 
+run_sam88_pilot_readiness() {
+  verify_current_release "$SHA"
+  [ -f "$SAM88_MANIFEST" ] && [ ! -L "$SAM88_MANIFEST" ] ||
+    fail "SAM-88 approved pilot manifest is missing or unsafe"
+  [ "$(stat -c '%u:%g:%a' "$SAM88_MANIFEST")" = "0:0:600" ] ||
+    fail "SAM-88 approved pilot manifest must be root:root mode 0600"
+  local run_dir runner output evidence_tmp
+  run_dir="$(mktemp -d "/run/newme-staging-sam88-$SHA.XXXXXX")"
+  runner="$run_dir/verify-staging-sam88-design-partner-pilot.mjs"
+  output="$(mktemp "$STATE_DIR/.validate-sam88-pilot.XXXXXX")"
+  register_temporary_path "$run_dir"
+  register_temporary_path "$output"
+  copy_commit_blob "$SHA" "$SAM88_RUNNER" "$runner"
+  chown root:root "$run_dir" "$runner"
+  chmod 0700 "$run_dir"
+  chmod 0500 "$runner"
+  /usr/bin/node "$runner" --manifest "$SAM88_MANIFEST" --expected-release "$SHA" >"$output" 2>&1 ||
+    fail "SAM-88 approved pilot manifest failed validation"
+  /usr/bin/node -e '
+    const fs = require("fs");
+    const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const phases = ["provisioning", "paid_seat_entitlement", "vertical_e2e", "tenant_isolation", "bounded_support_audit", "billing_lifecycle_export", "backup_restore_exit"];
+    if (
+      body?.linearId !== "SAM-88" ||
+      body?.target !== "staging-only" ||
+      body?.releaseSha !== process.argv[2] ||
+      body?.execution?.status !== "not-executed" ||
+      body?.execution?.redaction !== "references-and-digests-only" ||
+      body?.readiness !== "authorized_cohort_evidence_submitted" ||
+      !Array.isArray(body?.cohort) || body.cohort.length !== 2 ||
+      new Set(body.cohort.map((partner) => partner?.vertical)).size !== 2 ||
+      !body.cohort.some((partner) => partner?.vertical === "real_estate") ||
+      !body.cohort.some((partner) => partner?.vertical === "retail") ||
+      body.cohort.some((partner) => !Array.isArray(partner?.evidence) || partner.evidence.length !== phases.length)
+    ) process.exit(1);
+  ' "$output" "$SHA" || fail "SAM-88 pilot evidence failed verification"
+  evidence_tmp="$(mktemp "$STATE_DIR/.last-validate-sam88-pilot.XXXXXX")"
+  register_temporary_path "$evidence_tmp"
+  install -m 0600 -o root -g root "$output" "$evidence_tmp"
+  mv -Tf "$evidence_tmp" "$SAM88_EVIDENCE"
+  rm -f -- "$output"
+  echo "staging control SAM-88 pilot readiness passed SHA=$SHA execution=not-executed evidence=$SAM88_EVIDENCE"
+}
+
 run_rollback() {
   load_state
   [ "$SHA" = "$STATE_OLD_SHA" ] ||
@@ -1906,5 +1953,6 @@ case "$ACTION" in
   uat-sam78) run_uat_sam78 ;;
   migrate-sam78|rollback-sam78-db) run_sam78_database_action ;;
   rehearse-sam87) run_sam87_rehearsal ;;
+  validate-sam88-pilot) run_sam88_pilot_readiness ;;
   rollback) run_rollback ;;
 esac

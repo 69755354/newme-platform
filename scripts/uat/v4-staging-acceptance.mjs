@@ -116,13 +116,25 @@ async function sam83(state) {
   const organizationId = state.organizations.retail;
   const location = await write(state.admin, "retail_locations", { organization_id: organizationId, code: `${state.marker}-wh`, name: state.marker, location_kind: "warehouse" }, "sam83_location"); state.ids.locations.push(location.id);
   const sku = await write(state.admin, "retail_skus", { organization_id: organizationId, sku: `${state.marker}-sku`, name: state.marker }, "sam83_sku"); state.ids.skus.push(sku.id);
+  const lead = await write(state.admin, "leads", { organization_id: organizationId, customer_name: state.marker, source: "other", stage: "won", quality: "high", assigned_to: state.actor.id, created_by: state.actor.id }, "sam83_lead"); state.ids.leads.push(lead.id);
+  const quotation = await write(state.admin, "quotations", { organization_id: organizationId, lead_id: lead.id, quote_no: `V4-${state.runId.replaceAll("-", "").slice(0, 16)}`, quotation_type: "retail", status: "accepted", subtotal: 10, total_amount: 10, valid_until: new Date(Date.now() + 86_400_000).toISOString(), created_by: state.actor.id }, "sam83_quotation"); state.ids.quotations.push(quotation.id);
+  const order = await write(state.admin, "retail_orders", { organization_id: organizationId, source_quotation_id: quotation.id, fulfillment_location_id: location.id, order_number: `${state.marker}-order`, total_amount: 10, created_by: state.actor.id }, "sam83_order"); state.ids.orders.push(order.id);
+  const orderItem = await write(state.admin, "retail_order_items", { organization_id: organizationId, order_id: order.id, sku_id: sku.id, quantity: 1, unit_price: 10 }, "sam83_order_item"); state.ids.orderItems.push(orderItem.id);
   const purchase = await write(state.admin, "retail_purchase_orders", { organization_id: organizationId, receiving_location_id: location.id, purchase_order_number: `${state.marker}-po`, supplier_name: state.marker, created_by: state.actor.id }, "sam83_purchase_order"); state.ids.purchaseOrders.push(purchase.id);
   const purchaseItem = await write(state.admin, "retail_purchase_order_items", { organization_id: organizationId, purchase_order_id: purchase.id, sku_id: sku.id, ordered_quantity: 1, unit_cost: 1 }, "sam83_purchase_item"); state.ids.purchaseItems.push(purchaseItem.id);
   const receipt = await write(state.admin, "retail_goods_receipts", { organization_id: organizationId, purchase_order_id: purchase.id, location_id: location.id, received_by: state.actor.id, idempotency_key: randomUUID() }, "sam83_receipt"); state.ids.receipts.push(receipt.id);
   const receiptItem = await write(state.admin, "retail_goods_receipt_items", { organization_id: organizationId, receipt_id: receipt.id, purchase_order_item_id: purchaseItem.id, sku_id: sku.id, received_quantity: 1 }, "sam83_receipt_item"); state.ids.receiptItems.push(receiptItem.id);
   const repeat = await state.admin.from("retail_goods_receipts").insert({ organization_id: organizationId, purchase_order_id: purchase.id, location_id: location.id, received_by: state.actor.id, idempotency_key: receipt.idempotency_key ?? randomUUID() });
   if (!repeat.error) fail("sam83_receipt_idempotency_missing");
-  return { status: "pass", procurement_receipt: "posted", receipt_idempotency: "verified", order_fulfillment_finance: "schema_and_fact_boundary_verified", marker_only: true };
+  const handoff = await write(state.admin, "retail_delivery_handoffs", { organization_id: organizationId, order_id: order.id, location_id: location.id, assigned_driver_id: state.actor.id, status: "completed", delivered_at: new Date().toISOString() }, "sam83_handoff"); state.ids.handoffs.push(handoff.id);
+  let financeConfirmationId;
+  for (const event_type of ["cash_collected", "cash_handover", "finance_confirmed"]) {
+    const event = await write(state.admin, "retail_cod_events", { organization_id: organizationId, order_id: order.id, handoff_id: handoff.id, idempotency_key: randomUUID(), event_type, amount: 10, actor_id: state.actor.id }, `sam83_${event_type}`);
+    state.ids.codEvents.push(event.id); if (event_type === "finance_confirmed") financeConfirmationId = event.id;
+  }
+  const allocation = await write(state.admin, "retail_finance_allocations", { organization_id: organizationId, order_id: order.id, finance_confirmation_id: financeConfirmationId, idempotency_key: randomUUID(), allocated_amount: 10, allocated_by: state.actor.id }, "sam83_finance_allocation"); state.ids.allocations.push(allocation.id);
+  const reconciliation = await write(state.admin, "retail_finance_reconciliations", { organization_id: organizationId, reconciliation_date: "2099-01-01", collected_amount: 10, allocated_amount: 10, status: "reconciled", completed_by: state.actor.id, completed_at: new Date().toISOString() }, "sam83_reconciliation"); state.ids.reconciliations.push(reconciliation.id);
+  return { status: "pass", order: "accepted", procurement_receipt: "posted", fulfillment: "completed", finance: "reconciled", receipt_idempotency: "verified", marker_only: true };
 }
 
 async function sam84(state) {
@@ -159,7 +171,7 @@ async function sam86(state) {
 async function cleanup(state) {
   const a = state.admin, i = state.ids;
   for (const [table, ids, label] of [
-    ["retail_goods_receipt_items", i.receiptItems, "receipt_items"], ["retail_goods_receipts", i.receipts, "receipts"], ["retail_purchase_order_items", i.purchaseItems, "purchase_items"], ["retail_purchase_orders", i.purchaseOrders, "purchase_orders"], ["retail_skus", i.skus, "skus"], ["retail_locations", i.locations, "locations"],
+    ["retail_finance_allocations", i.allocations, "allocations"], ["retail_finance_reconciliations", i.reconciliations, "reconciliations"], ["retail_cod_events", i.codEvents, "cod_events"], ["retail_delivery_handoffs", i.handoffs, "handoffs"], ["retail_order_items", i.orderItems, "order_items"], ["retail_orders", i.orders, "orders"], ["retail_goods_receipt_items", i.receiptItems, "receipt_items"], ["retail_goods_receipts", i.receipts, "receipts"], ["retail_purchase_order_items", i.purchaseItems, "purchase_items"], ["retail_purchase_orders", i.purchaseOrders, "purchase_orders"], ["quotations", i.quotations, "quotations"], ["leads", i.leads, "leads"], ["retail_skus", i.skus, "skus"], ["retail_locations", i.locations, "locations"],
     ["real_estate_listing_assets", i.assets, "listing_assets"], ["real_estate_listings", i.listings, "listings"], ["real_estate_properties", i.properties, "properties"], ["real_estate_parties", i.parties, "parties"],
   ]) await remove(a, table, ids, label);
   await remove(a, "membership_roles", i.membershipRoles, "membership_roles");
@@ -172,7 +184,7 @@ async function cleanup(state) {
 export async function runV4StagingAcceptance(env = process.env, dependencies = {}) {
   const config = validateEnvironment(env); const release = await releaseBoundary(config, dependencies); const runId = randomUUID();
   const supabase = dependencies.supabase ?? await import("@supabase/supabase-js");
-  const state = { config, supabase, runId, marker: `V4-UAT-${config.releaseSha.slice(0, 12)}-${runId.slice(0, 8)}`, admin: supabase.createClient(config.supabaseUrl, config.serviceKey, { auth: { autoRefreshToken: false, persistSession: false } }), organizations: {}, actor: null, ids: { organizations: [], auth: [], memberships: [], membershipRoles: [], parties: [], properties: [], listings: [], assets: [], locations: [], skus: [], purchaseOrders: [], purchaseItems: [], receipts: [], receiptItems: [] } };
+  const state = { config, supabase, runId, marker: `V4-UAT-${config.releaseSha.slice(0, 12)}-${runId.slice(0, 8)}`, admin: supabase.createClient(config.supabaseUrl, config.serviceKey, { auth: { autoRefreshToken: false, persistSession: false } }), organizations: {}, actor: null, ids: { organizations: [], auth: [], memberships: [], membershipRoles: [], parties: [], properties: [], listings: [], assets: [], locations: [], skus: [], leads: [], quotations: [], orders: [], orderItems: [], purchaseOrders: [], purchaseItems: [], receipts: [], receiptItems: [], handoffs: [], codEvents: [], allocations: [], reconciliations: [] } };
   const results = {};
   try { await prepare(state); results["SAM-81"] = await sam81(state); results["SAM-83"] = await sam83(state); results["SAM-84"] = await sam84(state); results["SAM-86"] = await sam86(state); const cleanupResult = await cleanup(state); return { ok: true, schema_version: 1, scope: "v4-staging-acceptance", run_id: runId, release, scenarios: results, cleanup: cleanupResult }; }
   catch (error) { await cleanup(state).catch(() => undefined); return { ok: false, schema_version: 1, scope: "v4-staging-acceptance", run_id: runId, release, scenarios: results, cleanup: { status: "attempted" }, error: cleanError(error) }; }

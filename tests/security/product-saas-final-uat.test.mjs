@@ -158,6 +158,12 @@ test("runner source pins required issue paths, markers, guards, and cleanup evid
     "new URL(inactiveTeam.location, state.config.baseUrl)",
     "@invalid.test",
     'report.cleanup = "verified"',
+    'await capture("contract workflow requests"',
+    '.from("contract_workflow_requests")',
+    'await capture("organization document sequences"',
+    '.from("organization_document_sequences")',
+    "contract_workflow_requests: await exactCount(",
+    "organization_document_sequences: await exactCount(",
   ]) {
     assert.ok(source.includes(contract), `runner is missing contract marker: ${contract}`);
   }
@@ -180,6 +186,11 @@ test("runner source pins required issue paths, markers, guards, and cleanup evid
     source,
     /from\("membership_roles"\)[\s\S]*\.delete\(\)[\s\S]*\.in\("membership_id", organizationMembershipIds\)/,
   );
+  const workflowCleanup = source.indexOf('await capture("contract workflow requests"');
+  const sequenceCleanup = source.indexOf('await capture("organization document sequences"');
+  const identityCleanup = source.indexOf('await capture("auth identity"');
+  assert.ok(workflowCleanup >= 0 && workflowCleanup < identityCleanup);
+  assert.ok(sequenceCleanup >= 0 && sequenceCleanup < identityCleanup);
 });
 
 test("customer exit UAT proves export, freeze, closure, idempotency, retention, and exact cleanup", async () => {

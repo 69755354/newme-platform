@@ -1823,6 +1823,21 @@ async function cleanup(state) {
     if (error) fail("could not delete discovered marked leads");
   });
 
+  await capture("contract workflow requests", async () => {
+    const { error } = await state.admin
+      .from("contract_workflow_requests")
+      .delete()
+      .eq("organization_id", state.organizationId);
+    if (error) fail("could not delete exact marked contract workflow requests");
+  });
+  await capture("organization document sequences", async () => {
+    const { error } = await state.admin
+      .from("organization_document_sequences")
+      .delete()
+      .eq("organization_id", state.organizationId);
+    if (error) fail("could not delete exact marked organization document sequences");
+  });
+
   const discovered = await listAllAuthUsers(state.admin).catch((error) => {
     errors.push(`discover marked auth users: ${safeMessage(error)}`);
     return [];
@@ -1966,6 +1981,18 @@ async function cleanup(state) {
     auth_users: remainingAuth,
     profiles: await exactCount(state.admin, "profiles", "id", [...state.userIds]),
     organizations: await exactCount(state.admin, "organizations", "id", [state.organizationId]),
+    contract_workflow_requests: await exactCount(
+      state.admin,
+      "contract_workflow_requests",
+      "organization_id",
+      [state.organizationId],
+    ),
+    organization_document_sequences: await exactCount(
+      state.admin,
+      "organization_document_sequences",
+      "organization_id",
+      [state.organizationId],
+    ),
     memberships: await exactCount(state.admin, "memberships", "organization_id", [state.organizationId]),
     support_sessions: await exactCount(
       state.admin,

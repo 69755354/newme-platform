@@ -19,15 +19,18 @@ WITH expected(regprocedure) AS (
     ,('v4_actor_has_capability(uuid,uuid,text,text)')
     ,('v4_actor_has_organization_role(uuid,uuid,text[])')
     ,('v4_allocate_payment_for_organization(uuid,uuid,jsonb,text)')
+    ,('v4_approve_commercial_action(uuid,text)')
     ,('v4_approve_platform_action(uuid,text)')
     ,('v4_cancel_tenant_file_upload(uuid,uuid,text,text)')
     ,('v4_confirm_payment_for_organization(uuid,uuid,text)')
     ,('v4_convert_quotation_for_organization(uuid,uuid,jsonb,text)')
     ,('v4_create_contract_for_organization(uuid,jsonb,text)')
+    ,('v4_get_commercial_summary(uuid)')
     ,('v4_import_leads_for_organization(uuid,jsonb,uuid,text)')
     ,('v4_invite_organization_member(uuid,uuid,text,text)')
     ,('v4_register_tenant_file(uuid,text,uuid,text,text,text,bigint,text,text)')
     ,('v4_replace_kpi_targets(uuid,text,jsonb,text)')
+    ,('v4_request_commercial_action(uuid,text,jsonb,text)')
     ,('v4_request_platform_action_approval(text,text,jsonb,text)')
   -- END AUTHENTICATED_SECURITY_DEFINER_ALLOWLIST
 ),

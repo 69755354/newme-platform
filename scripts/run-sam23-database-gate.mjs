@@ -235,6 +235,7 @@ async function main() {
       "supabase/migrations/20260804193000_sam20_synthetic_support_cleanup_boundary.sql",
       "supabase/migrations/20260805000000_sam78_product_saas_synthetic_cleanup_boundary.sql",
       "supabase/migrations/20260805010000_sam78_v4_exit_digest_contract.sql",
+      "supabase/migrations/20260805190000_v4_commercial_control_plane.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
       "supabase/rollback/20260801202728_organization_customer_exit_lifecycle_rollback.sql",
@@ -247,6 +248,7 @@ async function main() {
       "supabase/rollback/20260804193000_sam20_synthetic_support_cleanup_boundary_rollback.sql",
       "supabase/rollback/20260805000000_sam78_product_saas_synthetic_cleanup_boundary_rollback.sql",
       "supabase/rollback/20260805010000_sam78_v4_exit_digest_contract_rollback.sql",
+      "supabase/rollback/20260805190000_v4_commercial_control_plane_rollback.sql",
       "scripts/uat/sam78-staging-migration-verify.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
@@ -268,6 +270,8 @@ async function main() {
       "tests/database/v4-tenant-lifecycle-closure-prelude.sql",
       "tests/database/v4-platform-staff-role-mapping-prelude.sql",
       "tests/database/v4-tenant-lifecycle-rollback-verify.sql",
+      "tests/database/v4-commercial-control-plane.sql",
+      "tests/database/v4-commercial-control-plane-rollback-verify.sql",
       "tests/database/sam20-synthetic-support-cleanup-boundary.sql",
       "tests/database/sam78-product-saas-synthetic-cleanup-boundary.sql",
       "tests/database/sam78-product-saas-synthetic-cleanup-rollback-verify.sql",
@@ -643,6 +647,15 @@ async function main() {
       ]),
       "sam78_v4_exit_digest_contract_apply",
     );
+    if (SAM78_GATE_PHASE === "apply" || SAM78_GATE_PHASE === "rollback") {
+      requireSuccess(
+        psql(container, [
+          "-f",
+          "/work/supabase/migrations/20260805190000_v4_commercial_control_plane.sql",
+        ]),
+        "v4_commercial_control_plane_apply",
+      );
+    }
     requireSuccess(
       verifySam78Live(container, "apply", "post"),
       "v4_tenant_live_verify_apply_post",
@@ -748,6 +761,17 @@ async function main() {
         psql(container, ["-f", "v4-tenant-workflow-concurrency-cleanup.sql"]),
         "v4_tenant_workflow_concurrency_cleanup",
       );
+      requireSuccess(
+        psql(container, [
+          "-f",
+          "/work/supabase/migrations/20260805190000_v4_commercial_control_plane.sql",
+        ]),
+        "v4_commercial_control_plane_apply",
+      );
+      requireSuccess(
+        psql(container, ["-f", "v4-commercial-control-plane.sql"]),
+        "v4_commercial_control_plane_fixture",
+      );
       if (SAM78_GATE_PHASE === "fixture") {
         process.stdout.write(`${JSON.stringify({
           status: "passed",
@@ -784,6 +808,33 @@ async function main() {
     ) {
       throw new Error("sam20_synthetic_support_cleanup_rollback_not_fail_closed");
     }
+    const deniedSam79CommercialRollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260805190000_v4_commercial_control_plane_rollback.sql",
+    ]);
+    if (
+      deniedSam79CommercialRollback.status === 0
+      || !combined(deniedSam79CommercialRollback).includes(
+        "v4_commercial_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error("v4_commercial_control_plane_rollback_not_fail_closed");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260805190000_v4_commercial_control_plane_rollback.sql",
+        ],
+        "test",
+      ),
+      "v4_commercial_control_plane_rollback",
+    );
+    requireSuccess(
+      psql(container, ["-f", "v4-commercial-control-plane-rollback-verify.sql"]),
+      "v4_commercial_control_plane_rollback_verify",
+    );
     const deniedSam78V4ExitDigestRollback = psql(container, [
       "-f",
       "/work/supabase/rollback/20260805010000_sam78_v4_exit_digest_contract_rollback.sql",

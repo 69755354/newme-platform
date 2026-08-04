@@ -251,6 +251,12 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold text-foreground tracking-tight">
           {t("settings.title")}
         </h1>
+        <a
+          href="/settings/commercial"
+          className="mt-2 inline-flex text-sm font-medium text-copper-400 hover:text-copper-300"
+        >
+          Commercial control plane
+        </a>
         <div className="flex gap-1 mt-3 border-b border-border/50">
           <button
             onClick={() => setActiveTab("data")}

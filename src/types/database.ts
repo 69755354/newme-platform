@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=b998a332d8e19d0254875d19925d41555f9efc3428b5d150a3a28e83b29449ff
+// Migration fingerprint: sha256=7cd1522a8d4859d71b84b292e105e7fb15b537474fb0f3f34d16c183dfcdd7e1
 export type Json =
   | string
   | number
@@ -7,9 +7,96 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+type GeneratedTable<Row, RequiredInsert extends keyof Row = never> = {
+  Row: Row
+  Insert: Partial<Row> & Pick<Row, RequiredInsert>
+  Update: Partial<Row>
+  Relationships: []
+}
+
+type CommercialPlanVersionRow = {
+  id: string; plan_key: string; version: number; display_name: string
+  paid_seat_limit: number; organization_limit: number | null
+  included_entitlements: Json; effective_from: string; effective_until: string | null
+  is_active: boolean; created_at: string
+}
+type OrganizationSubscriptionRow = {
+  id: string; organization_id: string; plan_version_id: string; lifecycle_state: string
+  invoice_mode: string; paid_seat_limit: number; trial_ends_at: string | null
+  grace_ends_at: string | null; current_period_start: string
+  current_period_end: string | null; version: number; created_at: string; updated_at: string
+}
+type CommercialEntitlementRow = {
+  id: string; organization_id: string; entitlement_key: string; enabled: boolean
+  numeric_limit: number | null; source: string; source_ref: string
+  created_at: string; updated_at: string
+}
+type PaidSeatAllocationRow = {
+  id: string; organization_id: string; membership_id: string; status: string
+  allocation_key: string; allocated_at: string; released_at: string | null; created_at: string
+}
+type CommercialSeatEventRow = {
+  id: string; organization_id: string; allocation_id: string; delta: number
+  seats_before: number; seats_after: number; event_key: string
+  actor_platform_staff_id: string | null; created_at: string
+}
+type CommercialUsageEventRow = {
+  id: string; organization_id: string; metric_key: string; quantity: number
+  idempotency_key: string; source: string; period_start: string; period_end: string
+  metadata: Json; created_at: string
+}
+type CommercialInvoiceReferenceRow = {
+  id: string; organization_id: string; invoice_ref: string; source: string; status: string
+  amount_minor: number; currency: string; due_at: string | null; paid_at: string | null
+  metadata: Json; created_at: string; updated_at: string
+}
+type CommercialActionRequestRow = {
+  id: string; organization_id: string; action_key: string; payload: Json; payload_hash: string
+  status: string; requested_by_platform_staff_id: string
+  approved_by_platform_staff_id: string | null; request_key: string
+  execution_key: string | null; execution_result: Json | null; requested_at: string
+  approved_at: string | null; consumed_at: string | null; expires_at: string
+}
+type CommercialActionEventRow = {
+  id: string; request_id: string; organization_id: string; actor_platform_staff_id: string
+  event_type: string; event_key: string; metadata: Json; created_at: string
+}
+type CommercialStateEventRow = {
+  id: string; organization_id: string; subscription_id: string; from_state: string
+  to_state: string; reason: string; action_request_id: string | null; created_at: string
+}
+type CommercialMigrationSnapshotRow = {
+  organization_id: string; plan_key: string; billable_seat_limit: number
+  organization_status: string; captured_at: string
+}
+
 export type Database = {
   public: {
     Tables: {
+      commercial_action_events: GeneratedTable<CommercialActionEventRow,
+        "request_id" | "organization_id" | "actor_platform_staff_id" | "event_type" | "event_key">
+      commercial_action_requests: GeneratedTable<CommercialActionRequestRow,
+        "organization_id" | "action_key" | "payload" | "payload_hash"
+        | "requested_by_platform_staff_id" | "request_key">
+      commercial_entitlements: GeneratedTable<CommercialEntitlementRow,
+        "organization_id" | "entitlement_key" | "source" | "source_ref">
+      commercial_invoice_references: GeneratedTable<CommercialInvoiceReferenceRow,
+        "organization_id" | "invoice_ref" | "status" | "amount_minor" | "currency">
+      commercial_migration_org_snapshots: GeneratedTable<CommercialMigrationSnapshotRow,
+        "organization_id" | "plan_key" | "billable_seat_limit" | "organization_status">
+      commercial_plan_versions: GeneratedTable<CommercialPlanVersionRow,
+        "plan_key" | "version" | "display_name" | "paid_seat_limit" | "effective_from">
+      commercial_seat_events: GeneratedTable<CommercialSeatEventRow,
+        "organization_id" | "allocation_id" | "delta" | "seats_before" | "seats_after" | "event_key">
+      commercial_state_events: GeneratedTable<CommercialStateEventRow,
+        "organization_id" | "subscription_id" | "from_state" | "to_state" | "reason">
+      commercial_usage_events: GeneratedTable<CommercialUsageEventRow,
+        "organization_id" | "metric_key" | "quantity" | "idempotency_key"
+        | "source" | "period_start" | "period_end">
+      organization_subscriptions: GeneratedTable<OrganizationSubscriptionRow,
+        "organization_id" | "plan_version_id" | "paid_seat_limit">
+      paid_seat_allocations: GeneratedTable<PaidSeatAllocationRow,
+        "organization_id" | "membership_id" | "allocation_key">
       activities: {
         Row: {
           ai_generated: boolean | null
@@ -5951,6 +6038,45 @@ export type Database = {
       }
     }
     Functions: {
+      v4_approve_commercial_action: {
+        Args: { p_event_key: string; p_request_id: string }
+        Returns: Json
+      }
+      v4_commercial_payload_hash: { Args: { p_payload: Json }; Returns: string }
+      v4_execute_commercial_action: {
+        Args: { p_execution_key: string; p_request_id: string }
+        Returns: Json
+      }
+      v4_get_commercial_summary: {
+        Args: { p_organization_id: string }
+        Returns: Json
+      }
+      v4_reconcile_commercial_control_plane: {
+        Args: { p_organization_id: string }
+        Returns: Json
+      }
+      v4_record_commercial_usage: {
+        Args: {
+          p_idempotency_key: string
+          p_metadata?: Json
+          p_metric_key: string
+          p_organization_id: string
+          p_period_end: string
+          p_period_start: string
+          p_quantity: number
+          p_source: string
+        }
+        Returns: Json
+      }
+      v4_request_commercial_action: {
+        Args: {
+          p_action_key: string
+          p_organization_id: string
+          p_payload: Json
+          p_request_key: string
+        }
+        Returns: Json
+      }
       allocate_payment: {
         Args: {
           p_allocated_by: string

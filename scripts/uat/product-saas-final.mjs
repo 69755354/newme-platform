@@ -29,7 +29,7 @@ const ORGANIZATION_ROLE_BY_PROFILE = {
   finance: "finance",
   designer: "specialist",
 };
-export const LINEAR_IDS = ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61"];
+export const LINEAR_IDS = ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61", "SAM-79"];
 export const CUSTOMER_EXIT_RESULT_ID = "CUSTOMER-EXIT";
 export const REQUIRED_RESULT_IDS = [...LINEAR_IDS, CUSTOMER_EXIT_RESULT_ID];
 export const SAM13_CONTRACT_VERSION = 1;
@@ -323,6 +323,7 @@ function initializeState(config, runId) {
     archiveBatchIds: new Set(),
     platformStaffIds: new Set(),
     platformApprovalIds: new Set(),
+    commercialRequestIds: new Set(),
     supportSessionIds: new Set(),
     exitRequestIds: new Set(),
     sam13FixtureEmails: new Set(),
@@ -337,7 +338,7 @@ async function prepareFixtures(state) {
     name: `${state.markerText} organization`,
     industry_key: "real_estate",
     plan_key: "growth",
-    billable_seat_limit: 10,
+    billable_seat_limit: 20,
     status: "active",
   });
   if (organizationError) fail("could not create exact marked staging organization");
@@ -1139,33 +1140,136 @@ async function runSam61(state) {
   };
 }
 
-async function runCustomerExit(state) {
+async function ensureCommercialPlatformStaff(state) {
+  if (state.commercialPlatformStaff) return state.commercialPlatformStaff;
   const admin = state.actors.get("admin");
   const boss = state.actors.get("boss");
   const operatorStaffId = randomUUID();
   const approverStaffId = randomUUID();
-  const supportSessionId = randomUUID();
-  state.platformStaffIds.add(operatorStaffId);
-  state.platformStaffIds.add(approverStaffId);
-  state.supportSessionIds.add(supportSessionId);
-
-  const { error: staffError } = await state.admin.from("platform_staff").insert([
+  const { error } = await state.admin.from("platform_staff").insert([
     {
-      id: operatorStaffId,
-      user_id: admin.id,
-      staff_ref: `EXIT-${state.runId.slice(0, 8)}-OP`,
-      status: "active",
+      id: operatorStaffId, user_id: admin.id,
+      staff_ref: `SAM79-${state.runId.slice(0, 8)}-OP`, status: "active",
       role_key: "platform_ops",
     },
     {
-      id: approverStaffId,
-      user_id: boss.id,
-      staff_ref: `EXIT-${state.runId.slice(0, 8)}-APP`,
-      status: "active",
+      id: approverStaffId, user_id: boss.id,
+      staff_ref: `SAM79-${state.runId.slice(0, 8)}-APP`, status: "active",
       role_key: "platform_owner",
     },
   ]);
-  if (staffError) fail("could not create customer-exit platform staff fixtures");
+  if (error) fail("could not create SAM-79 platform staff fixtures");
+  state.platformStaffIds.add(operatorStaffId);
+  state.platformStaffIds.add(approverStaffId);
+  state.commercialPlatformStaff = { operatorStaffId, approverStaffId };
+  return state.commercialPlatformStaff;
+}
+
+async function runSam79(state) {
+  await ensureCommercialPlatformStaff(state);
+  const initial = await appRequest(
+    state, "admin", `/api/platform/commercial?organization_id=${state.organizationId}`,
+  );
+  expectStatus("SAM-79 commercial summary", initial, 200);
+  assert.equal(initial.payload?.subscription?.invoice_mode, "manual");
+  assert.equal(initial.payload?.subscription?.paid_seat_limit, 20);
+  assert.ok(initial.payload?.active_paid_seats <= 20);
+
+  const metricKey = `usage.sam79_uat_${state.runId.replaceAll("-", "_")}`;
+  const requested = await appRequest(state, "admin", "/api/platform/commercial", {
+    method: "POST",
+    body: {
+      organization_id: state.organizationId,
+      action_key: "entitlement.override",
+      payload: { entitlement_key: metricKey, enabled: true, numeric_limit: 3 },
+      request_key: `sam79-quota-${state.runId}`,
+    },
+  });
+  expectStatus("SAM-79 quota request", requested, 202);
+  assertUuid(requested.payload?.request_id, "SAM-79 quota request");
+  state.commercialRequestIds.add(requested.payload.request_id);
+  const approved = await appRequest(state, "boss", "/api/platform/commercial", {
+    method: "PATCH",
+    body: {
+      request_id: requested.payload.request_id,
+      approval_key: `sam79-quota-approve-${state.runId}`,
+      execution_key: `sam79-quota-execute-${state.runId}`,
+    },
+  });
+  expectStatus("SAM-79 quota approval", approved, 200);
+
+  const usageArgs = {
+    p_organization_id: state.organizationId,
+    p_metric_key: metricKey,
+    p_quantity: 2,
+    p_idempotency_key: `sam79-usage-${state.runId}`,
+    p_source: "product-saas-final",
+    p_period_start: "2099-01-01T00:00:00Z",
+    p_period_end: "2099-02-01T00:00:00Z",
+    p_metadata: { run_id: state.runId },
+  };
+  const firstUsage = await state.admin.rpc("v4_record_commercial_usage", usageArgs);
+  if (firstUsage.error) fail("SAM-79 usage write failed");
+  const repeatedUsage = await state.admin.rpc("v4_record_commercial_usage", usageArgs);
+  if (repeatedUsage.error || repeatedUsage.data?.idempotent !== true) {
+    fail("SAM-79 usage idempotency failed");
+  }
+  const overage = await state.admin.rpc("v4_record_commercial_usage", {
+    ...usageArgs,
+    p_quantity: 2,
+    p_idempotency_key: `sam79-overage-${state.runId}`,
+  });
+  if (!overage.error || !/commercial_quota_exceeded/.test(overage.error.message ?? "")) {
+    fail("SAM-79 quota overage was not rejected");
+  }
+
+  const invoiceRef = `SAM79-UAT-${state.runId}`;
+  const invoiceRequested = await appRequest(state, "admin", "/api/platform/commercial", {
+    method: "POST",
+    body: {
+      organization_id: state.organizationId,
+      action_key: "invoice.record",
+      payload: {
+        invoice_ref: invoiceRef, status: "open", amount_minor: 100,
+        currency: "AED", due_at: "2099-02-01T00:00:00Z", paid_at: null,
+        metadata: { run_id: state.runId },
+      },
+      request_key: `sam79-invoice-${state.runId}`,
+    },
+  });
+  expectStatus("SAM-79 invoice request", invoiceRequested, 202);
+  assertUuid(invoiceRequested.payload?.request_id, "SAM-79 invoice request");
+  state.commercialRequestIds.add(invoiceRequested.payload.request_id);
+  const invoiceApproved = await appRequest(state, "boss", "/api/platform/commercial", {
+    method: "PATCH",
+    body: {
+      request_id: invoiceRequested.payload.request_id,
+      approval_key: `sam79-invoice-approve-${state.runId}`,
+      execution_key: `sam79-invoice-execute-${state.runId}`,
+    },
+  });
+  expectStatus("SAM-79 invoice approval", invoiceApproved, 200);
+
+  const finalSummary = await appRequest(
+    state, "admin", `/api/platform/commercial?organization_id=${state.organizationId}`,
+  );
+  expectStatus("SAM-79 final summary", finalSummary, 200);
+  assert.ok(finalSummary.payload?.invoices?.some((invoice) => invoice.invoice_ref === invoiceRef));
+  return {
+    plan: finalSummary.payload.plan,
+    state: finalSummary.payload.subscription.state,
+    active_paid_seats: finalSummary.payload.active_paid_seats,
+    seat_limit: finalSummary.payload.subscription.paid_seat_limit,
+    usage_idempotency: "verified",
+    overage: "denied",
+    invoice_mode: "manual",
+  };
+}
+
+async function runCustomerExit(state) {
+  const { operatorStaffId, approverStaffId } = await ensureCommercialPlatformStaff(state);
+  const supportSessionId = randomUUID();
+  state.supportSessionIds.add(supportSessionId);
 
   const { error: supportError } = await state.admin.from("support_sessions").insert({
     id: supportSessionId,
@@ -1635,6 +1739,17 @@ async function cleanup(state) {
     if (error) fail("could not reopen exact marked organization for cleanup");
   });
 
+  for (const table of [
+    "commercial_action_events", "commercial_state_events", "commercial_usage_events",
+    "commercial_invoice_references", "commercial_action_requests", "commercial_seat_events",
+    "paid_seat_allocations", "commercial_entitlements", "organization_subscriptions",
+  ]) {
+    await capture(`commercial cleanup ${table}`, async () => {
+      const { error } = await state.admin.from(table).delete().eq("organization_id", state.organizationId);
+      if (error) fail(`could not delete exact ${table} rows`);
+    });
+  }
+
   for (const batchId of state.archiveBatchIds) {
     await capture("restore archive batch", async () => {
       const { error } = await state.admin.from("leads").update({
@@ -2024,6 +2139,33 @@ async function cleanup(state) {
       "approval_request_id",
       [...state.platformApprovalIds],
     ),
+    commercial_action_events: await exactCount(
+      state.admin, "commercial_action_events", "organization_id", [state.organizationId],
+    ),
+    commercial_state_events: await exactCount(
+      state.admin, "commercial_state_events", "organization_id", [state.organizationId],
+    ),
+    commercial_usage_events: await exactCount(
+      state.admin, "commercial_usage_events", "organization_id", [state.organizationId],
+    ),
+    commercial_invoice_references: await exactCount(
+      state.admin, "commercial_invoice_references", "organization_id", [state.organizationId],
+    ),
+    commercial_action_requests: await exactCount(
+      state.admin, "commercial_action_requests", "organization_id", [state.organizationId],
+    ),
+    commercial_seat_events: await exactCount(
+      state.admin, "commercial_seat_events", "organization_id", [state.organizationId],
+    ),
+    paid_seat_allocations: await exactCount(
+      state.admin, "paid_seat_allocations", "organization_id", [state.organizationId],
+    ),
+    commercial_entitlements: await exactCount(
+      state.admin, "commercial_entitlements", "organization_id", [state.organizationId],
+    ),
+    organization_subscriptions: await exactCount(
+      state.admin, "organization_subscriptions", "organization_id", [state.organizationId],
+    ),
     membership_roles: await exactCount(
       state.admin,
       "membership_roles",
@@ -2132,6 +2274,7 @@ export async function runProductSaasFinalUat(env = process.env, dependencies = {
     await recordIssue(report, "SAM-49", () => runSam49(state));
     await recordIssue(report, "SAM-61", () => runSam61(state));
     await recordIssue(report, "SAM-13", () => runSam13(state));
+    await recordIssue(report, "SAM-79", () => runSam79(state));
     await recordIssue(report, CUSTOMER_EXIT_RESULT_ID, () => runCustomerExit(state));
   } finally {
     try {

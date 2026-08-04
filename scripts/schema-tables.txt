@@ -6,6 +6,15 @@ audit_logs
 business_events
 capabilities
 chat_messages
+commercial_action_events
+commercial_action_requests
+commercial_entitlements
+commercial_invoice_references
+commercial_migration_org_snapshots
+commercial_plan_versions
+commercial_seat_events
+commercial_state_events
+commercial_usage_events
 contract_approvals
 contracts
 crm_daily_funnel_snapshot
@@ -30,7 +39,9 @@ notifications
 organization_exit_requests
 organization_lifecycle_requests
 organization_provisioning_requests
+organization_subscriptions
 organizations
+paid_seat_allocations
 payment_allocations
 payments
 pipeline_stages

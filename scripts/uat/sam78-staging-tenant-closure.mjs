@@ -110,7 +110,7 @@ async function runTwoOrganizationMatrix(config) {
       name: `[SAM78 ${runId}] organization ${index + 1}`,
       industry_key: index === 0 ? "real_estate" : "retail",
       plan_key: "growth",
-      billable_seat_limit: 10,
+      billable_seat_limit: 20,
       status: "active",
     })));
     if (orgError) fail("organization_fixture_create");
@@ -199,6 +199,13 @@ async function runTwoOrganizationMatrix(config) {
       await remove("audit_events", root.from("audit_events").delete().in("organization_id", organizationIds));
       await remove("activity_logs", root.from("activity_logs").delete().in("organization_id", organizationIds));
       await remove("activities", root.from("activities").delete().in("organization_id", organizationIds));
+      for (const table of [
+        "commercial_action_events", "commercial_state_events", "commercial_usage_events",
+        "commercial_invoice_references", "commercial_action_requests", "commercial_seat_events",
+        "paid_seat_allocations", "commercial_entitlements", "organization_subscriptions",
+      ]) {
+        await remove(table, root.from(table).delete().in("organization_id", organizationIds));
+      }
       await remove("leads", root.from("leads").delete().in("id", leadIds));
       if (membershipIds.length) {
         await remove("membership_roles", root.from("membership_roles").delete().in("membership_id", membershipIds));
@@ -217,6 +224,11 @@ async function runTwoOrganizationMatrix(config) {
     cleanupCounts.audit_logs = await count(root, "audit_logs", "organization_id", organizationIds);
     cleanupCounts.activity_logs = await count(root, "activity_logs", "organization_id", organizationIds);
     cleanupCounts.activities = await count(root, "activities", "organization_id", organizationIds);
+    for (const table of [
+      "commercial_action_events", "commercial_state_events", "commercial_usage_events",
+      "commercial_invoice_references", "commercial_action_requests", "commercial_seat_events",
+      "paid_seat_allocations", "commercial_entitlements", "organization_subscriptions",
+    ]) cleanupCounts[table] = await count(root, table, "organization_id", organizationIds);
     cleanupCounts.profiles = userId ? await count(root, "profiles", "id", [userId]) : 0;
     cleanupCounts.auth_users = userId ? await authUserCount(root, userId) : 0;
     if (cleanupErrors.length || Object.values(cleanupCounts).some((value) => value !== 0)) {

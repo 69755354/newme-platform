@@ -194,6 +194,18 @@
       ]
     },
     {
+      "regprocedure": "v4_approve_commercial_action(uuid,text)",
+      "owner": "product-saas",
+      "justification": "Binds a commercial change to a second independent authenticated platform approver before service-only execution.",
+      "expiry": "2026-11-03",
+      "linked_issue": "SAM-79",
+      "authorization_boundary": "Derives the approver from auth.uid, requires active platform_owner or platform_ops, rejects self-approval and locks one unexpired pending request.",
+      "test_evidence": [
+        "tests/database/v4-commercial-control-plane.sql",
+        "tests/security/sam79-commercial-control-plane.test.mjs"
+      ]
+    },
+    {
       "regprocedure": "v4_approve_platform_action(uuid,text)",
       "owner": "product-saas",
       "justification": "Binds an independent platform approval decision to the authenticated approver before server-only execution.",
@@ -254,6 +266,18 @@
       ]
     },
     {
+      "regprocedure": "v4_get_commercial_summary(uuid)",
+      "owner": "product-saas",
+      "justification": "Returns one organization commercial summary without granting authenticated callers direct access to control-plane mutation tables.",
+      "expiry": "2026-11-03",
+      "linked_issue": "SAM-79",
+      "authorization_boundary": "Requires commercial.read in the selected organization or an active platform staff identity and returns only that organization subscription, seats, entitlements, usage and invoice references.",
+      "test_evidence": [
+        "tests/database/v4-commercial-control-plane.sql",
+        "tests/security/sam79-commercial-control-plane.test.mjs"
+      ]
+    },
+    {
       "regprocedure": "v4_import_leads_for_organization(uuid,jsonb,uuid,text)",
       "owner": "product-saas",
       "justification": "Imports a bounded lead batch atomically without exposing a service-role database client to a browser-reachable route.",
@@ -299,6 +323,18 @@
       "test_evidence": [
         "tests/database/v4-tenant-lifecycle-closure.sql",
         "tests/security/v4-tenant-lifecycle-closure.test.mjs"
+      ]
+    },
+    {
+      "regprocedure": "v4_request_commercial_action(uuid,text,jsonb,text)",
+      "owner": "product-saas",
+      "justification": "Creates an immutable time-bounded commercial request whose payload hash and authenticated requester are fixed before approval.",
+      "expiry": "2026-11-03",
+      "linked_issue": "SAM-79",
+      "authorization_boundary": "Derives the requester from auth.uid, permits only active platform_owner or platform_ops, scopes the action to one existing organization and enforces idempotency payload equality.",
+      "test_evidence": [
+        "tests/database/v4-commercial-control-plane.sql",
+        "tests/security/sam79-commercial-control-plane.test.mjs"
       ]
     },
     {

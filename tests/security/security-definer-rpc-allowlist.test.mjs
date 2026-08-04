@@ -16,6 +16,10 @@ const sql = path.join(
   root,
   "supabase/security/check-authenticated-security-definer-rpc-allowlist.sql",
 );
+const runtimeGateMigration = path.join(
+  root,
+  "supabase/migrations/20260804153000_sam78_govern_v4_authenticated_rpcs.sql",
+);
 
 function run(args = []) {
   return spawnSync(process.execPath, [gate, ...args], {
@@ -40,7 +44,22 @@ function withManifest(mutator, callback) {
 test("SAM-67 governed SECURITY DEFINER RPC allowlist is internally consistent", () => {
   const result = run();
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /19 reviewed authenticated RPCs/);
+  assert.match(result.stdout, /26 reviewed authenticated RPCs/);
+});
+
+test("SAM-78 runtime promotion gate matches the governed authenticated RPC manifest", () => {
+  const data = JSON.parse(fs.readFileSync(manifest, "utf8"));
+  const migration = fs.readFileSync(runtimeGateMigration, "utf8");
+  assert.match(migration, /'gate_version', 'sam78-product-rpc-allowlist-v5'/);
+  for (const { regprocedure } of data.entries) {
+    assert.ok(
+      migration.includes(`('${regprocedure}')`),
+      `runtime promotion gate omits governed RPC ${regprocedure}`,
+    );
+  }
+  const runtimeEntries = [...migration.matchAll(/^\s*\('([^']+)'\),?$/gm)]
+    .map((match) => match[1]);
+  assert.deepEqual(runtimeEntries, data.entries.map(({ regprocedure }) => regprocedure));
 });
 
 test("SAM-67 gate fails closed when governance fields are missing", async (t) => {

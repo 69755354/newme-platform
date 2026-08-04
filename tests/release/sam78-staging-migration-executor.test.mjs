@@ -33,6 +33,12 @@ const paths = [
     migration: "supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql",
     rollback: "supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql",
   },
+  {
+    version: "20260804153000",
+    name: "sam78_govern_v4_authenticated_rpcs",
+    migration: "supabase/migrations/20260804153000_sam78_govern_v4_authenticated_rpcs.sql",
+    rollback: "supabase/rollback/20260804153000_sam78_govern_v4_authenticated_rpcs_rollback.sql",
+  },
 ];
 
 async function expectedHistory() {
@@ -65,12 +71,13 @@ test("SAM-78 plan uses the fixed staging owner and exact canonical history tip",
     manifest.map(({ version, name }) => `${version}_${name}.sql`),
     migrationFiles,
   );
-  assert.deepEqual(manifest.slice(-2), paths.map(({ version, name }) => ({ version, name })));
+  assert.deepEqual(manifest.slice(-paths.length), paths.map(({ version, name }) => ({ version, name })));
 });
 
 test("migration history manifest accepts CRLF but rejects header, order, row, and tip drift", async () => {
   const source = await read("scripts/uat/sam78-canonical-migration-history.txt");
-  assert.equal(parseMigrationHistoryManifest(source.replaceAll("\n", "\r\n")).length, 135);
+  const crlfSource = source.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n");
+  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 136);
   assert.throws(
     () => parseMigrationHistoryManifest(source.replace("# schema-version=1", "# schema-version=2")),
     /header mismatch/,
@@ -185,9 +192,10 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
     verifySql: await read("scripts/uat/sam78-staging-migration-verify.sql"),
   });
   const operations = sql.indexOf("DELETE FROM supabase_migrations.schema_migrations");
-  const newest = sql.indexOf("version = '20260803143000'", operations);
-  const oldest = sql.indexOf("version = '20260803100000'", newest + 1);
-  assert.ok(operations > 0 && newest > operations && oldest > newest);
+  const newest = sql.indexOf("version = '20260804153000'", operations);
+  const middle = sql.indexOf("version = '20260803143000'", newest + 1);
+  const oldest = sql.indexOf("version = '20260803100000'", middle + 1);
+  assert.ok(operations > 0 && newest > operations && middle > newest && oldest > middle);
   assert.match(sql, /v4_assert_tenant_closure_rollback_safe/);
   assert.match(sql, /SAM78 rollback history cleanup failed/);
   assert.equal(splitSqlStatements(sql).at(-1), "COMMIT");
@@ -202,12 +210,12 @@ test("plan, action, history, and verification drift fail closed before execution
   );
   assert.throws(
     () => buildTransactionSql({ action: "apply", plan: loaded.slice(0, 1), expectedHistory: history, verifySql: "SELECT 1;" }),
-    /exactly two versions/,
+    /exact SAM-78 versions/,
   );
   assert.throws(
     () => buildTransactionSql({
       action: "apply",
-      plan: [{ ...loaded[0], version: "20260803100001" }, loaded[1]],
+      plan: [{ ...loaded[0], version: "20260803100001" }, ...loaded.slice(1)],
       expectedHistory: history,
       verifySql: "SELECT 1;",
     }),

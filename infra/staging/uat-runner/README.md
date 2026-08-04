@@ -88,14 +88,14 @@ of these actions plus one full 40-character SHA:
   negative cases, and zero residue for every declared cleanup class. The
   validated, credential-free JSON operation record is atomically retained as
   root-only `0600` state at `last-uat-product-saas.json`.
-- `migrate-sam78 <SHA>` applies exactly migrations `20260803100000` and
-  `20260803143000` to the fixed staging project with the schema owner
+- `migrate-sam78 <SHA>` applies exactly migrations `20260803100000`,
+  `20260803143000`, and `20260804153000` to the fixed staging project with the schema owner
   `postgres.bfsiibofuzoglziltgyd`. Before opening a database connection it
   verifies the SHA-bound build artifact checksum, root-only `0600` pgpass and
   Supabase CA, a root-only explicit platform-staff role mapping, and commit
-  blobs for both migrations, both rollbacks, the live
+  blobs for all three migrations, all three rollbacks, the live
   verifier, and the complete canonical migration-history manifest. It strips
-  only each file's outer transaction boundary and applies both migrations plus
+  only each file's outer transaction boundary and applies all three migrations plus
   their exact `version`, `name`, and parsed `statements` rows in one bounded
   transaction. A nonblocking advisory lock, migration-history table lock,
   exact predecessor history, schema prestate, or live FK/RLS/ACL/backfill

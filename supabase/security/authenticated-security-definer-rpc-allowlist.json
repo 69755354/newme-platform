@@ -170,12 +170,84 @@
       ]
     },
     {
+      "regprocedure": "v4_actor_has_organization_role(uuid,uuid,text[])",
+      "owner": "product-saas",
+      "justification": "Provides the non-recursive organization-role predicate used by restrictive tenant policies and lifecycle authorization.",
+      "expiry": "2026-11-01",
+      "linked_issue": "SAM-78",
+      "authorization_boundary": "Authenticated callers may evaluate only auth.uid; service_role may evaluate an explicit actor, and only active accepted memberships with unrevoked organization roles qualify.",
+      "test_evidence": [
+        "tests/database/v4-tenant-lifecycle-closure.sql",
+        "tests/security/v4-tenant-lifecycle-closure.test.mjs"
+      ]
+    },
+    {
+      "regprocedure": "v4_allocate_payment_for_organization(uuid,uuid,jsonb,text)",
+      "owner": "product-saas",
+      "justification": "Allocates one tenant payment atomically through the capability boundary and validates every installment-plan target.",
+      "expiry": "2026-11-01",
+      "linked_issue": "SAM-78",
+      "authorization_boundary": "Requires an authenticated active member with payments.allocate in the requested active organization and rejects cross-organization or invalid allocation plans.",
+      "test_evidence": [
+        "tests/database/v4-tenant-lifecycle-closure.sql",
+        "tests/security/v4-tenant-lifecycle-closure.test.mjs"
+      ]
+    },
+    {
       "regprocedure": "v4_approve_platform_action(uuid,text)",
       "owner": "product-saas",
       "justification": "Binds an independent platform approval decision to the authenticated approver before server-only execution.",
       "expiry": "2026-11-01",
       "linked_issue": "SAM-78",
       "authorization_boundary": "Derives the approver from auth.uid, requires active platform_owner or platform_ops, rejects self-approval, locks the pending request and never accepts an approver UUID from the caller.",
+      "test_evidence": [
+        "tests/database/v4-tenant-lifecycle-closure.sql",
+        "tests/security/v4-tenant-lifecycle-closure.test.mjs"
+      ]
+    },
+    {
+      "regprocedure": "v4_cancel_tenant_file_upload(uuid,uuid,text,text)",
+      "owner": "product-saas",
+      "justification": "Cancels a pending tenant upload through an idempotent, organization-bound deletion workflow.",
+      "expiry": "2026-11-01",
+      "linked_issue": "SAM-78",
+      "authorization_boundary": "Requires storage.files.write in the active organization and either the original upload actor or storage.files.write_any before creating the deletion outbox request.",
+      "test_evidence": [
+        "tests/database/v4-tenant-lifecycle-closure.sql",
+        "tests/security/v4-tenant-lifecycle-closure.test.mjs"
+      ]
+    },
+    {
+      "regprocedure": "v4_confirm_payment_for_organization(uuid,uuid,text)",
+      "owner": "product-saas",
+      "justification": "Confirms one tenant payment through a bounded organization capability and idempotency boundary.",
+      "expiry": "2026-11-01",
+      "linked_issue": "SAM-78",
+      "authorization_boundary": "Requires an authenticated active member with payments.confirm in the requested active organization and locks only the matching organization payment.",
+      "test_evidence": [
+        "tests/database/v4-tenant-lifecycle-closure.sql",
+        "tests/security/v4-tenant-lifecycle-closure.test.mjs"
+      ]
+    },
+    {
+      "regprocedure": "v4_convert_quotation_for_organization(uuid,uuid,jsonb,text)",
+      "owner": "product-saas",
+      "justification": "Converts an accepted tenant quotation into its contract workflow atomically without cross-organization writes.",
+      "expiry": "2026-11-01",
+      "linked_issue": "SAM-78",
+      "authorization_boundary": "Requires quotations.convert in the active organization, validates the quotation and installment payload, and creates only organization-matching workflow rows.",
+      "test_evidence": [
+        "tests/database/v4-tenant-lifecycle-closure.sql",
+        "tests/security/v4-tenant-lifecycle-closure.test.mjs"
+      ]
+    },
+    {
+      "regprocedure": "v4_create_contract_for_organization(uuid,jsonb,text)",
+      "owner": "product-saas",
+      "justification": "Creates a tenant contract and dependent workflow rows atomically through the organization capability boundary.",
+      "expiry": "2026-11-01",
+      "linked_issue": "SAM-78",
+      "authorization_boundary": "Requires contracts.create in the active organization, validates bounded contract and installment payloads, and prevents cross-organization references.",
       "test_evidence": [
         "tests/database/v4-tenant-lifecycle-closure.sql",
         "tests/security/v4-tenant-lifecycle-closure.test.mjs"
@@ -212,6 +284,18 @@
       "expiry": "2026-11-01",
       "linked_issue": "SAM-78",
       "authorization_boundary": "Requires storage.files.write in an active organization and verifies that the referenced lead, contract or quotation belongs to that organization.",
+      "test_evidence": [
+        "tests/database/v4-tenant-lifecycle-closure.sql",
+        "tests/security/v4-tenant-lifecycle-closure.test.mjs"
+      ]
+    },
+    {
+      "regprocedure": "v4_replace_kpi_targets(uuid,text,jsonb,text)",
+      "owner": "product-saas",
+      "justification": "Replaces one organization's KPI target set atomically after validating the period, assignees and bounded payload.",
+      "expiry": "2026-11-01",
+      "linked_issue": "SAM-78",
+      "authorization_boundary": "Requires kpi.targets.manage in the active organization and accepts only active organization members as assignees.",
       "test_evidence": [
         "tests/database/v4-tenant-lifecycle-closure.sql",
         "tests/security/v4-tenant-lifecycle-closure.test.mjs"

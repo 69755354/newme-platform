@@ -98,6 +98,9 @@ jobs:
       - name: SAM-61 active-profile milestone guard
         run: npm run check:sam61-active-profile-database
 
+      - name: V4 migration rehearsal contract gate
+        run: npm run check:v4-migration-rehearsal
+
       - name: CRM regression contract
         run: python3 scripts/crm-regression.py --self-test
 

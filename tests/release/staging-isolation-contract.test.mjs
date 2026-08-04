@@ -218,6 +218,7 @@ test("staging builder emits an immutable standalone artifact without runtime sec
     /unset ANALYZE/,
     /npm run build -- --turbopack/,
     /manifest\.json/,
+    /tar --dereference -C "\$STANDALONE" -czf "\$ARTIFACT" \./,
     /sha256sum "\$ARTIFACT"/,
   ]) assert.match(build, pattern);
   assert.doesNotMatch(build, /npm run build -- --webpack/);

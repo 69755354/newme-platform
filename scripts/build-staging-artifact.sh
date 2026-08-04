@@ -162,6 +162,9 @@ chmod 0644 "$STANDALONE/manifest.json"
 
 ARTIFACT="$OUTPUT_DIR/$SHA.tar.gz"
 CHECKSUM="$ARTIFACT.sha256"
-tar -C "$STANDALONE" -czf "$ARTIFACT" .
+# Turbopack standalone output may contain internal package symlinks. Materialize
+# their contents so the immutable release archive contains only regular files
+# and directories and continues to satisfy the deployer's fail-closed policy.
+tar --dereference -C "$STANDALONE" -czf "$ARTIFACT" .
 sha256sum "$ARTIFACT" | awk '{print $1}' > "$CHECKSUM"
 echo "staging artifact built SHA=$SHA artifact=$ARTIFACT"

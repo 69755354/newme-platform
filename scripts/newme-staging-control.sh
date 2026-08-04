@@ -1606,7 +1606,7 @@ run_uat_v4() {
     const fs = require("fs");
     const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
     const scenarios = ["SAM-81", "SAM-83", "SAM-84", "SAM-86"];
-    const cleanup = ["organizations", "auth", "memberships", "membershipRoles", "parties", "properties", "listings", "assets", "locations", "skus", "purchaseOrders", "purchaseItems", "receipts", "receiptItems"];
+    const cleanup = ["organizations", "auth", "memberships", "membershipRoles", "parties", "properties", "listings", "assets", "locations", "skus", "leads", "quotations", "orders", "orderItems", "purchaseOrders", "purchaseItems", "receipts", "receiptItems", "handoffs", "codEvents", "allocations", "reconciliations"];
     if (
       body.ok !== true ||
       body.schema_version !== 1 ||
@@ -1617,6 +1617,9 @@ run_uat_v4() {
       scenarios.some((key) => body.scenarios?.[key]?.status !== "pass" || body.scenarios?.[key]?.marker_only !== true) ||
       body.scenarios?.["SAM-81"]?.external_publish_state !== "disabled" ||
       body.scenarios?.["SAM-83"]?.receipt_idempotency !== "verified" ||
+      body.scenarios?.["SAM-83"]?.order !== "accepted" ||
+      body.scenarios?.["SAM-83"]?.fulfillment !== "completed" ||
+      body.scenarios?.["SAM-83"]?.finance !== "reconciled" ||
       body.scenarios?.["SAM-84"]?.adapters !== "disabled" ||
       body.scenarios?.["SAM-86"]?.release_sha !== process.argv[2] ||
       body.cleanup?.status !== "verified" ||

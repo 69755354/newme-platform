@@ -34,7 +34,7 @@ test("one SHA-bound action integrates four V4 scenarios and strict cleanup", asy
     read("infra/staging/uat-runner/Dockerfile"), read("infra/staging/uat-runner/run.sh"), read("infra/staging/uat-runner/README.md"),
   ]);
   for (const scenario of ["SAM-81", "SAM-83", "SAM-84", "SAM-86"]) assert.match(runner, new RegExp(`"${scenario}"`));
-  for (const marker of ["V4_STAGING_ACCEPTANCE_ONLY", "V4_UAT_BASE_URL", "marker_only", "cleanup", "agent_gateway_adapter_registry", "receipt_idempotency", "release_sha"]) assert.match(runner, new RegExp(marker));
+  for (const marker of ["V4_STAGING_ACCEPTANCE_ONLY", "V4_UAT_BASE_URL", "marker_only", "cleanup", "agent_gateway_adapter_registry", "receipt_idempotency", "fulfillment", "finance", "release_sha"]) assert.match(runner, new RegExp(marker));
   assert.match(runner, /production_reference_detected/);
   assert.doesNotMatch(runner, /console\.log\(.*(?:SERVICE_ROLE|ANON_KEY|Bearer)/);
   for (const pattern of [

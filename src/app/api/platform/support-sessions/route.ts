@@ -59,6 +59,9 @@ function supportError(error: unknown): { code: string; status: number } {
 }
 
 function approvalStatus(message: string): number {
+  for (const [code, status] of CALLER_ERRORS) {
+    if (message.includes(code)) return status;
+  }
   if (message.includes("permission_required")
     || message.includes("platform_staff_required")) return 403;
   if (message.includes("not_found")

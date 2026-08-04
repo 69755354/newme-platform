@@ -64,6 +64,8 @@ test("support POST requests dual-session approval while revoke remains actor-bou
   assert.match(route, /parseSupportSessionApprovalRequest/);
   assert.match(route, /"v4_request_platform_action_approval"/);
   assert.match(route, /p_action_key: "support\.session\.start"/);
+  assert.match(route, /function approvalStatus\(message: string\): number \{[\s\S]*CALLER_ERRORS[\s\S]*message\.includes\(code\)[\s\S]*return status/);
+  assert.match(route, /\["support_expiry_invalid", 400\]/);
   assert.match(postRoute, /p_request_id: input\.idempotencyKey/);
   assert.match(route, /context\.supabase\.rpc/);
   assert.doesNotMatch(postRoute, /p_approver_user_id|p_actor_user_id|supabaseAdmin/);

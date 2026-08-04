@@ -25,6 +25,8 @@ readonly SAM68_EVIDENCE="$STATE_DIR/last-uat-sam68.json"
 readonly SAM54_EVIDENCE="$STATE_DIR/last-uat-sam54.json"
 readonly SAM78_EVIDENCE="$STATE_DIR/last-migrate-sam78.json"
 readonly SAM78_UAT_EVIDENCE="$STATE_DIR/last-uat-sam78.json"
+readonly SAM87_RUNNER="scripts/verify-staging-sam87-release-rehearsal.mjs"
+readonly SAM87_EVIDENCE="$STATE_DIR/last-rehearse-sam87.json"
 readonly STAGING_REF="bfsiibofuzoglziltgyd"
 readonly PRODUCTION_REF="vfopmpxlhwzpxqegayew"
 readonly SAM20_RUNNER="scripts/uat/sam20-lead-organization-isolation.mjs"
@@ -101,7 +103,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rehearse-sam87|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -109,7 +111,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rollback) ;;
+  build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rehearse-sam87|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -1728,6 +1730,114 @@ run_sam78_database_action() {
   echo "staging control SAM-78 database action passed SHA=$SHA action=$database_action evidence=$SAM78_EVIDENCE"
 }
 
+sam87_evidence_digest() {
+  local evidence="$1"
+  [ -f "$evidence" ] || return 1
+  [ ! -L "$evidence" ] || return 1
+  [ "$(stat -c '%u:%g:%a' "$evidence")" = "0:0:600" ] || return 1
+  /usr/bin/sha256sum "$evidence" | awk '{print $1}'
+}
+
+run_sam87_rehearsal() {
+  local previous previous_sha migration_delta artifact checksum artifact_sha256
+  local run_dir runner input output evidence_tmp
+  local product_digest sam78_digest sam68_digest sam54_digest
+  previous="$(readlink -f "$CURRENT" 2>/dev/null || true)"
+  [[ "$previous" =~ ^$RELEASES/[0-9a-f]{40}$ ]] ||
+    fail "SAM-87 requires a current immutable staging predecessor"
+  previous_sha="${previous##*/}"
+  [ "$previous_sha" != "$SHA" ] ||
+    fail "SAM-87 target must differ from the current staging predecessor"
+  verify_current_release "$previous_sha"
+
+  migration_delta="$(
+    git --git-dir="$REPOSITORY" diff --name-only "$previous_sha" "$SHA" -- supabase/migrations
+  )"
+  [ -z "$migration_delta" ] ||
+    fail "SAM-87 refuses a migration delta; complete the separately controlled migration compatibility rehearsal first"
+
+  if ! (run_build); then
+    fail "SAM-87 stopped before deployment because the SHA-bound build failed"
+  fi
+  artifact="$INCOMING/$SHA.tar.gz"
+  checksum="$artifact.sha256"
+  [ -f "$artifact" ] && [ -f "$checksum" ] ||
+    fail "SAM-87 immutable artifact evidence is missing after build"
+  artifact_sha256="$(tr -d '\r\n' < "$checksum")"
+  [[ "$artifact_sha256" =~ ^[0-9a-f]{64}$ ]] ||
+    fail "SAM-87 immutable artifact checksum is invalid"
+  [ "$(/usr/bin/sha256sum "$artifact" | awk '{print $1}')" = "$artifact_sha256" ] ||
+    fail "SAM-87 immutable artifact checksum does not match"
+
+  if ! (run_deploy); then
+    fail "SAM-87 stopped before UAT because the isolated candidate or deployment failed"
+  fi
+
+  # Each stage runs in a subshell so any fail-closed helper cannot bypass
+  # recovery. The controller's single lock keeps this sequence serialized.
+  for stage in run_uat_product_saas run_uat_sam78 run_uat_sam68 run_uat_sam54; do
+    if ! ("$stage"); then
+      if ! (run_rollback); then
+        fail "SAM-87 $stage failed and automatic rollback could not be verified"
+      fi
+      fail "SAM-87 $stage failed; automatic rollback restored $previous_sha"
+    fi
+  done
+  if ! (run_rollback); then
+    fail "SAM-87 release rehearsal rollback failed"
+  fi
+
+  product_digest="$(sam87_evidence_digest "$STATE_DIR/last-uat-product-saas.json")" ||
+    fail "SAM-87 Product/SaaS UAT evidence is missing or unsafe"
+  sam78_digest="$(sam87_evidence_digest "$SAM78_UAT_EVIDENCE")" ||
+    fail "SAM-87 SAM-78 UAT evidence is missing or unsafe"
+  sam68_digest="$(sam87_evidence_digest "$SAM68_EVIDENCE")" ||
+    fail "SAM-87 SAM-68 observation evidence is missing or unsafe"
+  sam54_digest="$(sam87_evidence_digest "$SAM54_EVIDENCE")" ||
+    fail "SAM-87 SAM-54 observation evidence is missing or unsafe"
+
+  run_dir="$(mktemp -d "/run/newme-staging-sam87-$SHA.XXXXXX")"
+  runner="$run_dir/verify-staging-sam87-release-rehearsal.mjs"
+  input="$run_dir/evidence-input.json"
+  output="$(mktemp "$STATE_DIR/.rehearse-sam87.XXXXXX")"
+  register_temporary_path "$run_dir"
+  register_temporary_path "$output"
+  copy_commit_blob "$SHA" "$SAM87_RUNNER" "$runner"
+  chown root:root "$run_dir" "$runner"
+  chmod 0700 "$run_dir"
+  chmod 0500 "$runner"
+  cat >"$input" <<EOF
+{"schemaVersion":1,"linearId":"SAM-87","target":"staging-only","releaseSha":"$SHA","previousReleaseSha":"$previous_sha","artifact":{"immutable":true,"sha256":"$artifact_sha256"},"migration":{"decision":"not_required_no_migration_delta","deltaPaths":[]},"candidate":{"port":3102,"health":200,"readiness":200},"uat":{"productSaasSha256":"$product_digest","sam78Sha256":"$sam78_digest","sam68Sha256":"$sam68_digest","sam54Sha256":"$sam54_digest"},"phases":[{"name":"frozen_sha","status":"passed"},{"name":"immutable_artifact","status":"passed"},{"name":"migration_compatibility","status":"passed"},{"name":"isolated_candidate","status":"passed"},{"name":"smoke_readiness","status":"passed"},{"name":"uat_product_saas","status":"passed"},{"name":"uat_sam78","status":"passed"},{"name":"observe_sam68","status":"passed"},{"name":"observe_sam54","status":"passed"},{"name":"rollback","status":"passed"}]}
+EOF
+  chown root:root "$input"
+  chmod 0400 "$input"
+  /usr/bin/env -i HOME="/root" PATH="/usr/bin:/bin" \
+    /usr/bin/node "$runner" "$input" >"$output" 2>&1 ||
+    fail "SAM-87 rehearsal evidence is incomplete"
+  /usr/bin/node -e '
+    const fs = require("fs");
+    const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    if (
+      body?.linearId !== "SAM-87" ||
+      body?.releaseSha !== process.argv[2] ||
+      body?.previousReleaseSha !== process.argv[3] ||
+      body?.target !== "staging-only" ||
+      body?.rollback?.status !== "passed" ||
+      body?.rollback?.restoredReleaseSha !== process.argv[3] ||
+      body?.safety?.productionTouched !== false ||
+      body?.safety?.databaseRollbackAttempted !== false ||
+      body?.safety?.automaticStopAndRollback !== true
+    ) process.exit(1);
+  ' "$output" "$SHA" "$previous_sha" ||
+    fail "SAM-87 rehearsal evidence failed verification"
+  evidence_tmp="$(mktemp "$STATE_DIR/.last-rehearse-sam87.XXXXXX")"
+  register_temporary_path "$evidence_tmp"
+  install -m 0600 -o root -g root "$output" "$evidence_tmp"
+  mv -Tf "$evidence_tmp" "$SAM87_EVIDENCE"
+  rm -f -- "$output"
+  echo "staging control SAM-87 rehearsal passed SHA=$SHA restored=$previous_sha evidence=$SAM87_EVIDENCE"
+}
+
 run_rollback() {
   load_state
   [ "$SHA" = "$STATE_OLD_SHA" ] ||
@@ -1783,5 +1893,6 @@ case "$ACTION" in
   uat-product-saas) run_uat_product_saas ;;
   uat-sam78) run_uat_sam78 ;;
   migrate-sam78|rollback-sam78-db) run_sam78_database_action ;;
+  rehearse-sam87) run_sam87_rehearsal ;;
   rollback) run_rollback ;;
 esac

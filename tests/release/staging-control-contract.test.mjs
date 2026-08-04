@@ -37,6 +37,7 @@ test("staging controller has one fixed command surface and strict SHA arity", as
     "uat-sam78",
     "migrate-sam78",
     "rollback-sam78-db",
+    "rehearse-sam87",
     "rollback",
   ]) assert.ok(control.includes(action), `missing fixed controller action ${action}`);
   assert.doesNotMatch(control, /\beval\b/);
@@ -714,6 +715,45 @@ test("rollback only accepts the direct previous compatible immutable release", a
     /"rolled_back"/,
   ]) assert.match(control, pattern);
   assert.doesNotMatch(control, /supabase\s+(?:db|migration|link)/);
+});
+
+test("SAM-87 serializes an exact-SHA staging canary and automatic recovery", async () => {
+  const [control, runner] = await Promise.all([
+    read("scripts/newme-staging-control.sh"),
+    read("scripts/verify-staging-sam87-release-rehearsal.mjs"),
+  ]);
+  for (const pattern of [
+    /SAM87_RUNNER="scripts\/verify-staging-sam87-release-rehearsal\.mjs"/,
+    /SAM87_EVIDENCE="\$STATE_DIR\/last-rehearse-sam87\.json"/,
+    /rehearse-sam87\) run_sam87_rehearsal/,
+    /SAM-87 requires a current immutable staging predecessor/,
+    /SAM-87 target must differ from the current staging predecessor/,
+    /git --git-dir="\$REPOSITORY" diff --name-only "\$previous_sha" "\$SHA" -- supabase\/migrations/,
+    /SAM-87 refuses a migration delta/,
+    /run_build/,
+    /run_deploy/,
+    /run_uat_product_saas run_uat_sam78 run_uat_sam68 run_uat_sam54/,
+    /if ! \(run_rollback\); then/,
+    /automatic rollback restored \$previous_sha/,
+    /"candidate":\{"port":3102,"health":200,"readiness":200\}/,
+    /sam87_evidence_digest/,
+    /install -m 0600 -o root -g root "\$output" "\$evidence_tmp"/,
+    /mv -Tf "\$evidence_tmp" "\$SAM87_EVIDENCE"/,
+  ]) assert.match(control, pattern);
+  assert.doesNotMatch(control, /rehearse-sam87[\s\S]*?(?:NEWME_PRODUCTION|\/opt\/newme\/current)/);
+  for (const pattern of [
+    /const PHASES = \[/,
+    /"frozen_sha"/,
+    /"immutable_artifact"/,
+    /"migration_compatibility"/,
+    /"isolated_candidate"/,
+    /"smoke_readiness"/,
+    /"rollback"/,
+    /not_required_no_migration_delta/,
+    /automaticStopAndRollback: true/,
+    /productionTouched: false/,
+    /databaseRollbackAttempted: false/,
+  ]) assert.match(runner, pattern);
 });
 
 test("SAM-20 rollback compatibility proof is staging-only, read-only, and fail-closed", async () => {

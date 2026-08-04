@@ -130,6 +130,19 @@ records only the mapping checksum, never its contents.
   an application-only rollback when the new release contains the SAM-20
   database contract and the predecessor does not; it never changes database
   migrations or policies.
+- `rehearse-sam87 <SHA>` is the staging-only exact-release canary/recovery
+  drill. It requires an immutable current predecessor and **refuses any
+  migration delta**: database migration compatibility must be separately
+  rehearsed and evidenced before this application rollback drill. It then
+  serially builds the SHA-bound artifact, verifies its checksum, deploys the
+  isolated `127.0.0.1:3102` candidate and live smoke/readiness path, runs the
+  Product/SaaS, tenant-closure and read-only observation suites, and rolls the
+  application back to the direct predecessor. A failed UAT/observation stage
+  triggers the same constrained rollback before the command fails. The final
+  root-only `last-rehearse-sam87.json` binds both release SHAs, the artifact
+  digest, no-migration decision, candidate port, ordered phases and the four
+  UAT/observation evidence digests. It never calls a production path and never
+  attempts database rollback.
 
 Every action shares one lock, verifies the canonical branch and installed
 controller blob, and rejects extra arguments. The canonical branch is the fixed

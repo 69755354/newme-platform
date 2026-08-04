@@ -304,6 +304,7 @@ test("SAM-20 database gate fails closed and CI runs the disposable apply/rollbac
   assert.match(runner, /database_type_unexpected_columns/);
   assert.match(runner, /sam20_rollback_without_environment/);
   assert.match(runner, /sam20_rollback_requires_staging_or_test/);
+  assert.match(runner, /"-h",\s*"127\.0\.0\.1"/);
   assert.match(runner, /finally \{/);
   assert.match(runner, /\["rm", "--force", container\]/);
   assert.match(rollback, /current_setting\('newme\.environment', true\)/);

@@ -80,6 +80,8 @@ function psql(docker, container, args, options = {}) {
     "ON_ERROR_STOP=1",
     "-U",
     "postgres",
+    "-h",
+    "127.0.0.1",
     "-d",
     DATABASE_NAME,
     ...args,
@@ -269,6 +271,8 @@ async function main() {
         "pg_isready",
         "-U",
         "postgres",
+        "-h",
+        "127.0.0.1",
         "-d",
         DATABASE_NAME,
       ]);

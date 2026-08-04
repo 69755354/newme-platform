@@ -26,7 +26,7 @@ function assertReleaseMetadataContract({
   ]) assert.ok(config.includes(token), `missing build metadata contract: ${token}`);
 
   const releaseExport = build.indexOf('export NEXT_PUBLIC_APP_VERSION="$SHA"');
-  const nextBuild = build.indexOf("npm run build -- --webpack");
+  const nextBuild = build.indexOf("npm run build -- --turbopack");
   const manifestWrite = build.indexOf('printf \'{"git_sha":"%s","created_at":"%s"}');
   assert.ok(releaseExport >= 0 && releaseExport < nextBuild);
   assert.ok(nextBuild < manifestWrite);

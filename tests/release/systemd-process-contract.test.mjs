@@ -88,6 +88,10 @@ test("installer replaces direct service sudo with the audited control boundary",
   assert.match(installer, /rm -f \/etc\/sudoers\.d\/ubuntu-nopasswd/);
   assert.match(sudoers, /NEWME_SERVICE_CONTROL/);
   assert.match(sudoers, /newme-service-control restart \*/);
+  assert.match(sudoers, /newme-service-control reset-failed \*/);
+  assert.match(sudoers, /newme-production-rollback status/);
+  assert.match(sudoers, /newme-production-rollback execute \*/);
+  assert.doesNotMatch(sudoers, /newme-service-control (?:start|stop|try-restart) \*/);
   assert.match(sudoers, /\/usr\/local\/sbin\/newme-deploy \*/);
   assert.doesNotMatch(sudoers, /\/opt\/newme\/deploy\/deploy\.sh/);
   assert.doesNotMatch(sudoers, /NOPASSWD:\s*ALL/);
@@ -97,7 +101,9 @@ test("installer replaces direct service sudo with the audited control boundary",
   assert.match(deploy, /release SHA must equal canonical main/);
   assert.match(deploy, /git@github\.com:69755354\/newme-platform\.git/);
   assert.match(deploy, /actions\/runs\/\$RUN_ID/);
-  assert.match(deploy, /\[ \"\$RUN_ID\" = \"manual\" \]/);
+  assert.match(deploy, /manual production deployment is disabled/);
+  assert.match(deploy, /main lacks the production service-control unit-token guard/);
+  assert.doesNotMatch(deploy, /manual_verified|CI_RUN_URL=\"manual\"/);
   assert.match(deploy, /worktree add --force/);
   assert.match(deploy, /bash \"\$WORKTREE\/scripts\/install-systemd-assets\.sh\"/);
   assert.doesNotMatch(deploy, /\/home\/ubuntu\/newme-platform/);

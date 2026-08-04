@@ -72,9 +72,38 @@ immutable_deploy_source=$(git --git-dir="$MIRROR" show \
   exit 65
 }
 
+readonly GITHUB_API_TOKEN_FILE=/etc/newme/github-actions-read.token
+[ -f "$GITHUB_API_TOKEN_FILE" ] && [ ! -L "$GITHUB_API_TOKEN_FILE" ] || {
+  echo "root-owned GitHub Actions read token is missing" >&2
+  exit 65
+}
+[ "$(stat -c '%U:%G' "$GITHUB_API_TOKEN_FILE")" = root:root ] || {
+  echo "GitHub Actions read token ownership is invalid" >&2
+  exit 65
+}
+case "$(stat -c '%a' "$GITHUB_API_TOKEN_FILE")" in
+  400|600) ;;
+  *) echo "GitHub Actions read token mode must be 0400 or 0600" >&2; exit 65 ;;
+esac
+IFS= read -r github_token < "$GITHUB_API_TOKEN_FILE" || true
+[[ "$github_token" =~ ^[A-Za-z0-9_]{20,512}$ ]] || {
+  echo "GitHub Actions read token format is invalid" >&2
+  exit 65
+}
+GITHUB_CURL_CONFIG="$(mktemp /run/newme-github-api.XXXXXX)"
+cleanup_github_config() {
+  rm -f -- "$GITHUB_CURL_CONFIG"
+}
+trap cleanup_github_config EXIT INT TERM
+chmod 0600 "$GITHUB_CURL_CONFIG"
+printf 'header = "Authorization: Bearer %s"\n' "$github_token" > "$GITHUB_CURL_CONFIG"
+unset github_token
 RUN_JSON="$(curl --fail --silent --show-error --max-time 15 \
+  --config "$GITHUB_CURL_CONFIG" \
   -H 'Accept: application/vnd.github+json' \
   "https://api.github.com/repos/69755354/newme-platform/actions/runs/$RUN_ID")"
+cleanup_github_config
+trap - EXIT INT TERM
 python3 -c '
 import json, sys
 expected_sha, expected_run, payload = sys.argv[1:]

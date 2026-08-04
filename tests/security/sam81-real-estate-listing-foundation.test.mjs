@@ -5,13 +5,14 @@ import test from "node:test";
 const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
 test("SAM-81 listing foundation is organization-bound, adapter-disabled and reversible", async () => {
-  const [migration, rollback, fixture, types, gate, workflow] = await Promise.all([
+  const [migration, rollback, fixture, types, gate, workflow, sam23Gate] = await Promise.all([
     read("supabase/migrations/20260805020000_sam81_real_estate_listing_foundation.sql"),
     read("supabase/rollback/20260805020000_sam81_real_estate_listing_foundation_rollback.sql"),
     read("tests/database/sam81-real-estate-listing-foundation.sql"),
     read("src/types/database.ts"),
     read("scripts/run-sam81-real-estate-database-gate.mjs"),
     read(".github/workflows/ci.yml"),
+    read("scripts/run-sam23-database-gate.mjs"),
   ]);
 
   for (const table of [
@@ -46,4 +47,7 @@ test("SAM-81 listing foundation is organization-bound, adapter-disabled and reve
   assert.match(gate, /"psql", "-X", "-v", "ON_ERROR_STOP=1", "-h", "127\.0\.0\.1", "-U", "postgres"/);
   assert.match(gate, /sam81_disposable_cleanup_failed/);
   assert.match(workflow, /SAM-81 real-estate listing foundation database gate/);
+  assert.match(sam23Gate, /20260805020000_sam81_real_estate_listing_foundation\.sql/);
+  assert.match(sam23Gate, /sam81_real_estate_listing_foundation_apply/);
+  assert.match(sam23Gate, /sam81_real_estate_listing_foundation_rollback_not_fail_closed/);
 });

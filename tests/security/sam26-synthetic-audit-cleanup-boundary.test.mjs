@@ -40,8 +40,10 @@ test("rollback restores strict immutability and is environment-guarded", async (
     "supabase/rollback/20260804165734_sam26_synthetic_audit_cleanup_boundary_rollback.sql",
   );
 
-  assert.match(rollback, /newme\.environment/);
-  assert.match(rollback, /NOT IN \('staging', 'test'\)/);
+  assert.match(
+    rollback,
+    /COALESCE\(current_setting\('newme\.environment', true\), ''\)[\s\S]*NOT IN \('staging', 'test'\)/,
+  );
   assert.match(rollback, /MESSAGE = 'immutable_record'/);
   assert.doesNotMatch(rollback, /fixture_scope|RETURN OLD/);
 });

@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=a52f2fbad2a6848d172fce63712909b1a982c9a0dc8660ac0c3898a7a8ce76e8
+// Migration fingerprint: sha256=a3e4a165282bd049e274d86e3c7d8eafb62dff4b5b9168f732c559b0d7214b37
 export type Json =
   | string
   | number
@@ -5124,6 +5124,310 @@ export type Database = {
           },
         ]
       }
+      real_estate_listing_assets: {
+        Row: {
+          asset_kind: string
+          asset_reference: string
+          created_at: string
+          created_by: string
+          id: string
+          listing_id: string
+          organization_id: string
+          verification_status: string
+        }
+        Insert: {
+          asset_kind: string
+          asset_reference: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          listing_id: string
+          organization_id: string
+          verification_status?: string
+        }
+        Update: {
+          asset_kind?: string
+          asset_reference?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          listing_id?: string
+          organization_id?: string
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "real_estate_listing_assets_organization_listing_fkey"
+            columns: ["organization_id", "listing_id"]
+            isOneToOne: false
+            referencedRelation: "real_estate_listings"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "real_estate_listing_assets_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      real_estate_listings: {
+        Row: {
+          asking_price: number
+          availability_status: string
+          created_at: string
+          created_by: string
+          currency_code: string
+          exclusivity: string
+          id: string
+          listing_reference: string
+          organization_id: string
+          owner_party_id: string
+          property_id: string
+          publish_state: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          asking_price: number
+          availability_status?: string
+          created_at?: string
+          created_by?: string
+          currency_code?: string
+          exclusivity?: string
+          id?: string
+          listing_reference: string
+          organization_id: string
+          owner_party_id: string
+          property_id: string
+          publish_state?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          asking_price?: number
+          availability_status?: string
+          created_at?: string
+          created_by?: string
+          currency_code?: string
+          exclusivity?: string
+          id?: string
+          listing_reference?: string
+          organization_id?: string
+          owner_party_id?: string
+          property_id?: string
+          publish_state?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "real_estate_listings_organization_owner_fkey"
+            columns: ["organization_id", "owner_party_id"]
+            isOneToOne: false
+            referencedRelation: "real_estate_parties"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "real_estate_listings_organization_property_fkey"
+            columns: ["organization_id", "property_id"]
+            isOneToOne: false
+            referencedRelation: "real_estate_properties"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "real_estate_listings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      real_estate_parties: {
+        Row: {
+          consent_status: string
+          created_at: string
+          created_by: string
+          display_name: string
+          id: string
+          makani_reference: string | null
+          normalized_email: string | null
+          organization_id: string
+          party_type: string
+          permit_reference: string | null
+          phone_e164: string | null
+          trakheesi_reference: string | null
+          updated_at: string
+          verification_status: string
+        }
+        Insert: {
+          consent_status?: string
+          created_at?: string
+          created_by?: string
+          display_name: string
+          id?: string
+          makani_reference?: string | null
+          normalized_email?: string | null
+          organization_id: string
+          party_type: string
+          permit_reference?: string | null
+          phone_e164?: string | null
+          trakheesi_reference?: string | null
+          updated_at?: string
+          verification_status?: string
+        }
+        Update: {
+          consent_status?: string
+          created_at?: string
+          created_by?: string
+          display_name?: string
+          id?: string
+          makani_reference?: string | null
+          normalized_email?: string | null
+          organization_id?: string
+          party_type?: string
+          permit_reference?: string | null
+          phone_e164?: string | null
+          trakheesi_reference?: string | null
+          updated_at?: string
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "real_estate_parties_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      real_estate_properties: {
+        Row: {
+          address_line: string
+          area_sqm: number | null
+          created_at: string
+          created_by: string
+          id: string
+          organization_id: string
+          owner_party_id: string
+          property_reference: string
+          property_type: string
+          status: string
+          unit_reference: string | null
+          updated_at: string
+        }
+        Insert: {
+          address_line: string
+          area_sqm?: number | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          organization_id: string
+          owner_party_id: string
+          property_reference: string
+          property_type: string
+          status?: string
+          unit_reference?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address_line?: string
+          area_sqm?: number | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          organization_id?: string
+          owner_party_id?: string
+          property_reference?: string
+          property_type?: string
+          status?: string
+          unit_reference?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "real_estate_properties_organization_owner_fkey"
+            columns: ["organization_id", "owner_party_id"]
+            isOneToOne: false
+            referencedRelation: "real_estate_parties"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "real_estate_properties_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      real_estate_viewings: {
+        Row: {
+          created_at: string
+          created_by: string
+          feedback: string | null
+          id: string
+          idempotency_key: string
+          lead_id: string
+          listing_id: string
+          organization_id: string
+          scheduled_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string
+          feedback?: string | null
+          id?: string
+          idempotency_key: string
+          lead_id: string
+          listing_id: string
+          organization_id: string
+          scheduled_at: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          feedback?: string | null
+          id?: string
+          idempotency_key?: string
+          lead_id?: string
+          listing_id?: string
+          organization_id?: string
+          scheduled_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "real_estate_viewings_organization_lead_fkey"
+            columns: ["organization_id", "lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "real_estate_viewings_organization_listing_fkey"
+            columns: ["organization_id", "listing_id"]
+            isOneToOne: false
+            referencedRelation: "real_estate_listings"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "real_estate_viewings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       roles: {
         Row: {
           can_write_business_data: boolean
@@ -6361,6 +6665,16 @@ export type Database = {
           organization_id: string | null
           reserved: number | null
           sku_id: string | null
+        }
+        Relationships: []
+      }
+      v_real_estate_listing_publish_readiness: {
+        Row: {
+          is_publish_ready: boolean | null
+          listing_id: string | null
+          organization_id: string | null
+          publish_state: string | null
+          status: string | null
         }
         Relationships: []
       }

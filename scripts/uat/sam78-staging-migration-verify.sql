@@ -43,6 +43,11 @@ DECLARE
     'public.v4_complete_shared_job(uuid,text,boolean,jsonb,text,text)',
     'public.v4_requeue_shared_dead_letter(uuid,text,uuid,uuid,text)'
   ]::text[];
+  sam81_relations constant text[] := ARRAY[
+    'real_estate_parties', 'real_estate_properties',
+    'real_estate_listings', 'real_estate_listing_assets',
+    'real_estate_viewings'
+  ]::text[];
   service_only_functions constant text[] := ARRAY[
     'public.v4_execute_approved_platform_action(uuid,text)',
     'public.v4_expire_support_sessions(text)',
@@ -96,6 +101,12 @@ BEGIN
     FOREACH relation_name IN ARRAY managed_relations || sam80_relations LOOP
       IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
         RAISE EXCEPTION 'SAM78 baseline verification found managed relation: %',
+          relation_name;
+      END IF;
+    END LOOP;
+    FOREACH relation_name IN ARRAY sam81_relations LOOP
+      IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
+        RAISE EXCEPTION 'SAM81 baseline verification found managed relation: %',
           relation_name;
       END IF;
     END LOOP;
@@ -407,6 +418,79 @@ BEGIN
       )) NOT ILIKE '%organization.customer_export.v4%'
     THEN
       RAISE EXCEPTION 'SAM78 V4 exit digest contract is missing';
+    END IF;
+  END IF;
+
+  IF action = 'apply' AND phase = 'pre' AND apply_mode = 'suffix'
+    AND active_start_version <= '20260805020000' THEN
+    FOREACH relation_name IN ARRAY sam81_relations LOOP
+      IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
+        RAISE EXCEPTION 'SAM81 suffix prestate is not clean: %', relation_name;
+      END IF;
+    END LOOP;
+  ELSE
+    FOREACH target_table_name IN ARRAY sam81_relations LOOP
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class relation
+        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'public' AND relation.relname = target_table_name
+          AND relation.relrowsecurity AND relation.relforcerowsecurity
+      ) THEN
+        RAISE EXCEPTION 'SAM81 FORCE RLS contract failed on %', target_table_name;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns column_row
+        WHERE column_row.table_schema = 'public'
+          AND column_row.table_name = target_table_name
+          AND column_row.column_name = 'organization_id'
+          AND column_row.is_nullable = 'NO'
+      ) THEN
+        RAISE EXCEPTION 'SAM81 organization column contract failed on %', target_table_name;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint constraint_row
+        JOIN pg_class relation ON relation.oid = constraint_row.conrelid
+        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'public' AND relation.relname = target_table_name
+          AND constraint_row.conname = target_table_name || '_organization_id_fkey'
+          AND constraint_row.contype = 'f' AND constraint_row.convalidated
+          AND constraint_row.confrelid = 'public.organizations'::regclass
+      ) THEN
+        RAISE EXCEPTION 'SAM81 organization FK contract failed on %', target_table_name;
+      END IF;
+      IF (
+        SELECT count(*)
+        FROM pg_policies policy
+        WHERE policy.schemaname = 'public' AND policy.tablename = target_table_name
+          AND policy.policyname = ANY (ARRAY[
+            'sam81_read', 'sam81_insert', 'sam81_update', 'sam81_delete'
+          ]::text[])
+      ) <> 4 THEN
+        RAISE EXCEPTION 'SAM81 policy contract failed on %', target_table_name;
+      END IF;
+      IF pg_catalog.has_table_privilege('anon',
+        format('public.%I', target_table_name), 'SELECT,INSERT,UPDATE,DELETE')
+        OR NOT pg_catalog.has_table_privilege('authenticated',
+          format('public.%I', target_table_name), 'SELECT,INSERT,UPDATE,DELETE')
+      THEN
+        RAISE EXCEPTION 'SAM81 table ACL contract failed on %', target_table_name;
+      END IF;
+    END LOOP;
+    IF to_regclass('public.v_real_estate_listing_publish_readiness') IS NULL
+      OR NOT EXISTS (
+        SELECT 1
+        FROM pg_class relation
+        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'public'
+          AND relation.relname = 'v_real_estate_listing_publish_readiness'
+          AND relation.relkind = 'v'
+          AND relation.reloptions @> ARRAY['security_invoker=true']::text[]
+      )
+    THEN
+      RAISE EXCEPTION 'SAM81 publish readiness view contract failed';
     END IF;
   END IF;
 

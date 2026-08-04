@@ -236,6 +236,7 @@ async function main() {
       "supabase/migrations/20260804193000_sam20_synthetic_support_cleanup_boundary.sql",
       "supabase/migrations/20260805000000_sam78_product_saas_synthetic_cleanup_boundary.sql",
       "supabase/migrations/20260805010000_sam78_v4_exit_digest_contract.sql",
+      "supabase/migrations/20260805020000_sam81_real_estate_listing_foundation.sql",
       "supabase/migrations/20260805190000_v4_commercial_control_plane.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
@@ -250,6 +251,7 @@ async function main() {
       "supabase/rollback/20260804193000_sam20_synthetic_support_cleanup_boundary_rollback.sql",
       "supabase/rollback/20260805000000_sam78_product_saas_synthetic_cleanup_boundary_rollback.sql",
       "supabase/rollback/20260805010000_sam78_v4_exit_digest_contract_rollback.sql",
+      "supabase/rollback/20260805020000_sam81_real_estate_listing_foundation_rollback.sql",
       "supabase/rollback/20260805190000_v4_commercial_control_plane_rollback.sql",
       "scripts/uat/sam78-staging-migration-verify.sql",
       "tests/database/sam23-organization-commercial-core.sql",
@@ -658,6 +660,13 @@ async function main() {
       ]),
       "sam78_v4_exit_digest_contract_apply",
     );
+    requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260805020000_sam81_real_estate_listing_foundation.sql",
+      ]),
+      "sam81_real_estate_listing_foundation_apply",
+    );
     if (SAM78_GATE_PHASE === "apply" || SAM78_GATE_PHASE === "rollback") {
       requireSuccess(
         psql(container, [
@@ -849,6 +858,27 @@ async function main() {
     requireSuccess(
       psql(container, ["-f", "v4-commercial-control-plane-rollback-verify.sql"]),
       "v4_commercial_control_plane_rollback_verify",
+    );
+    const deniedSam81Rollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260805020000_sam81_real_estate_listing_foundation_rollback.sql",
+    ]);
+    if (
+      deniedSam81Rollback.status === 0
+      || !combined(deniedSam81Rollback).includes("sam81_rollback_requires_staging_or_test")
+    ) {
+      throw new Error("sam81_real_estate_listing_foundation_rollback_not_fail_closed");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260805020000_sam81_real_estate_listing_foundation_rollback.sql",
+        ],
+        "test",
+      ),
+      "sam81_real_estate_listing_foundation_rollback",
     );
     const deniedSam78V4ExitDigestRollback = psql(container, [
       "-f",

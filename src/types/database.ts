@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=81db0074d0f61aed1eaaf1650d8bae1ee6942d3883f3ea8fa549f2d2b2765f87
+// Migration fingerprint: sha256=a52f2fbad2a6848d172fce63712909b1a982c9a0dc8660ac0c3898a7a8ce76e8
 export type Json =
   | string
   | number
@@ -5013,6 +5013,84 @@ export type Database = {
           },
         ]
       }
+      retail_orders: {
+        Row: { id: string; organization_id: string; source_quotation_id: string; fulfillment_location_id: string; order_number: string; status: string; currency: string; total_amount: number; created_by: string | null; created_at: string; updated_at: string }
+        Insert: { id?: string; organization_id: string; source_quotation_id: string; fulfillment_location_id: string; order_number: string; status?: string; currency?: string; total_amount: number; created_by?: string | null; created_at?: string; updated_at?: string }
+        Update: { status?: string; updated_at?: string }
+        Relationships: [
+          { foreignKeyName: "retail_orders_organization_quotation_fkey"; columns: ["organization_id", "source_quotation_id"]; isOneToOne: false; referencedRelation: "quotations"; referencedColumns: ["organization_id", "id"] },
+          { foreignKeyName: "retail_orders_organization_location_fkey"; columns: ["organization_id", "fulfillment_location_id"]; isOneToOne: false; referencedRelation: "retail_locations"; referencedColumns: ["organization_id", "id"] },
+        ]
+      }
+      retail_order_items: {
+        Row: { id: string; organization_id: string; order_id: string; sku_id: string; quantity: number; unit_price: number; created_at: string }
+        Insert: { id?: string; organization_id: string; order_id: string; sku_id: string; quantity: number; unit_price: number; created_at?: string }
+        Update: never
+        Relationships: [
+          { foreignKeyName: "retail_order_items_organization_order_fkey"; columns: ["organization_id", "order_id"]; isOneToOne: false; referencedRelation: "retail_orders"; referencedColumns: ["organization_id", "id"] },
+          { foreignKeyName: "retail_order_items_organization_sku_fkey"; columns: ["organization_id", "sku_id"]; isOneToOne: false; referencedRelation: "retail_skus"; referencedColumns: ["organization_id", "id"] },
+        ]
+      }
+      retail_purchase_orders: {
+        Row: { id: string; organization_id: string; receiving_location_id: string; purchase_order_number: string; supplier_name: string; status: string; created_by: string | null; created_at: string; updated_at: string }
+        Insert: { id?: string; organization_id: string; receiving_location_id: string; purchase_order_number: string; supplier_name: string; status?: string; created_by?: string | null; created_at?: string; updated_at?: string }
+        Update: { status?: string; updated_at?: string }
+        Relationships: [{ foreignKeyName: "retail_purchase_orders_organization_location_fkey"; columns: ["organization_id", "receiving_location_id"]; isOneToOne: false; referencedRelation: "retail_locations"; referencedColumns: ["organization_id", "id"] }]
+      }
+      retail_purchase_order_items: {
+        Row: { id: string; organization_id: string; purchase_order_id: string; sku_id: string; ordered_quantity: number; unit_cost: number; created_at: string }
+        Insert: { id?: string; organization_id: string; purchase_order_id: string; sku_id: string; ordered_quantity: number; unit_cost: number; created_at?: string }
+        Update: never
+        Relationships: [
+          { foreignKeyName: "retail_purchase_order_items_organization_purchase_order_fkey"; columns: ["organization_id", "purchase_order_id"]; isOneToOne: false; referencedRelation: "retail_purchase_orders"; referencedColumns: ["organization_id", "id"] },
+          { foreignKeyName: "retail_purchase_order_items_organization_sku_fkey"; columns: ["organization_id", "sku_id"]; isOneToOne: false; referencedRelation: "retail_skus"; referencedColumns: ["organization_id", "id"] },
+        ]
+      }
+      retail_goods_receipts: {
+        Row: { id: string; organization_id: string; purchase_order_id: string; location_id: string; idempotency_key: string; status: string; received_by: string; received_at: string; created_at: string }
+        Insert: { id?: string; organization_id: string; purchase_order_id: string; location_id: string; idempotency_key: string; status?: string; received_by: string; received_at?: string; created_at?: string }
+        Update: never
+        Relationships: [
+          { foreignKeyName: "retail_goods_receipts_organization_purchase_order_fkey"; columns: ["organization_id", "purchase_order_id"]; isOneToOne: false; referencedRelation: "retail_purchase_orders"; referencedColumns: ["organization_id", "id"] },
+          { foreignKeyName: "retail_goods_receipts_organization_location_fkey"; columns: ["organization_id", "location_id"]; isOneToOne: false; referencedRelation: "retail_locations"; referencedColumns: ["organization_id", "id"] },
+        ]
+      }
+      retail_goods_receipt_items: {
+        Row: { id: string; organization_id: string; receipt_id: string; purchase_order_item_id: string; sku_id: string; received_quantity: number; created_at: string }
+        Insert: { id?: string; organization_id: string; receipt_id: string; purchase_order_item_id: string; sku_id: string; received_quantity: number; created_at?: string }
+        Update: never
+        Relationships: [
+          { foreignKeyName: "retail_goods_receipt_items_organization_receipt_fkey"; columns: ["organization_id", "receipt_id"]; isOneToOne: false; referencedRelation: "retail_goods_receipts"; referencedColumns: ["organization_id", "id"] },
+          { foreignKeyName: "retail_goods_receipt_items_organization_sku_fkey"; columns: ["organization_id", "sku_id"]; isOneToOne: false; referencedRelation: "retail_skus"; referencedColumns: ["organization_id", "id"] },
+        ]
+      }
+      retail_delivery_handoffs: {
+        Row: { id: string; organization_id: string; order_id: string; location_id: string; assigned_driver_id: string; status: string; delivered_at: string | null; created_at: string; updated_at: string }
+        Insert: { id?: string; organization_id: string; order_id: string; location_id: string; assigned_driver_id: string; status?: string; delivered_at?: string | null; created_at?: string; updated_at?: string }
+        Update: { status?: string; delivered_at?: string | null; updated_at?: string }
+        Relationships: [{ foreignKeyName: "retail_delivery_handoffs_organization_order_fkey"; columns: ["organization_id", "order_id"]; isOneToOne: false; referencedRelation: "retail_orders"; referencedColumns: ["organization_id", "id"] }]
+      }
+      retail_cod_events: {
+        Row: { id: string; organization_id: string; order_id: string; handoff_id: string; idempotency_key: string; event_type: string; amount: number; currency: string; actor_id: string; occurred_at: string; created_at: string }
+        Insert: { id?: string; organization_id: string; order_id: string; handoff_id: string; idempotency_key: string; event_type: string; amount: number; currency?: string; actor_id: string; occurred_at?: string; created_at?: string }
+        Update: never
+        Relationships: [
+          { foreignKeyName: "retail_cod_events_organization_order_fkey"; columns: ["organization_id", "order_id"]; isOneToOne: false; referencedRelation: "retail_orders"; referencedColumns: ["organization_id", "id"] },
+          { foreignKeyName: "retail_cod_events_organization_handoff_fkey"; columns: ["organization_id", "handoff_id"]; isOneToOne: false; referencedRelation: "retail_delivery_handoffs"; referencedColumns: ["organization_id", "id"] },
+        ]
+      }
+      retail_finance_allocations: {
+        Row: { id: string; organization_id: string; order_id: string; finance_confirmation_id: string; idempotency_key: string; allocated_amount: number; allocated_by: string; allocated_at: string }
+        Insert: { id?: string; organization_id: string; order_id: string; finance_confirmation_id: string; idempotency_key: string; allocated_amount: number; allocated_by: string; allocated_at?: string }
+        Update: never
+        Relationships: [{ foreignKeyName: "retail_finance_allocations_organization_order_fkey"; columns: ["organization_id", "order_id"]; isOneToOne: false; referencedRelation: "retail_orders"; referencedColumns: ["organization_id", "id"] }]
+      }
+      retail_finance_reconciliations: {
+        Row: { id: string; organization_id: string; reconciliation_date: string; collected_amount: number; allocated_amount: number; status: string; completed_by: string | null; completed_at: string | null; created_at: string }
+        Insert: { id?: string; organization_id: string; reconciliation_date: string; collected_amount: number; allocated_amount: number; status?: string; completed_by?: string | null; completed_at?: string | null; created_at?: string }
+        Update: { collected_amount?: number; allocated_amount?: number; status?: string; completed_by?: string | null; completed_at?: string | null }
+        Relationships: []
+      }
       role_capabilities: {
         Row: {
           capability_id: string
@@ -6242,6 +6320,19 @@ export type Database = {
           organization_id: string | null
           pending_approvals: number | null
           unread_notifications: number | null
+        }
+        Relationships: []
+      }
+      retail_order_finance_summary: {
+        Row: {
+          allocated_amount: number | null
+          confirmed_cod_amount: number | null
+          fulfillment_location_id: string | null
+          order_id: string | null
+          organization_id: string | null
+          receivable_amount: number | null
+          status: string | null
+          total_amount: number | null
         }
         Relationships: []
       }

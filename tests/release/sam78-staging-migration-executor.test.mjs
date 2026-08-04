@@ -78,6 +78,12 @@ const paths = [
     rollback: "supabase/rollback/20260805120000_sam82_retail_catalog_inventory_pricing_rollback.sql",
   },
   {
+    version: "20260805130000",
+    name: "sam83_retail_order_procurement_fulfillment_finance",
+    migration: "supabase/migrations/20260805130000_sam83_retail_order_procurement_fulfillment_finance.sql",
+    rollback: "supabase/rollback/20260805130000_sam83_retail_order_procurement_fulfillment_finance_rollback.sql",
+  },
+  {
     version: "20260805190000",
     name: "v4_commercial_control_plane",
     migration: "supabase/migrations/20260805190000_v4_commercial_control_plane.sql",
@@ -118,7 +124,7 @@ test("SAM-78 plan uses the fixed staging owner and exact canonical history tip",
 test("migration history manifest accepts CRLF but rejects header, order, row, and tip drift", async () => {
   const source = await read("scripts/uat/sam78-canonical-migration-history.txt");
   const crlfSource = source.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n");
-  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 143);
+  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 144);
   assert.throws(
     () => parseMigrationHistoryManifest(source.replace("# schema-version=1", "# schema-version=2")),
     /header mismatch/,
@@ -234,7 +240,9 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
   });
   const operations = sql.indexOf("DELETE FROM supabase_migrations.schema_migrations");
   const newest = sql.indexOf("version = '20260805190000'", operations);
-  const exitDigest = sql.indexOf("version = '20260805010000'", newest + 1);
+  const sam83 = sql.indexOf("version = '20260805130000'", newest + 1);
+  const sam82 = sql.indexOf("version = '20260805120000'", sam83 + 1);
+  const exitDigest = sql.indexOf("version = '20260805010000'", sam82 + 1);
   const productCleanup = sql.indexOf("version = '20260805000000'", exitDigest + 1);
   const sam20Cleanup = sql.indexOf("version = '20260804193000'", productCleanup + 1);
   const sam80Operations = sql.indexOf("version = '20260804185311'", sam20Cleanup + 1);
@@ -243,7 +251,7 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
   const middle = sql.indexOf("version = '20260803143000'", governedRpc + 1);
   const oldest = sql.indexOf("version = '20260803100000'", middle + 1);
   assert.ok(
-    operations > 0 && newest > operations && exitDigest > newest && productCleanup > exitDigest
+    operations > 0 && newest > operations && sam83 > newest && sam82 > sam83 && exitDigest > sam82 && productCleanup > exitDigest
       && sam20Cleanup > productCleanup
       && sam80Operations > sam20Cleanup
       && sam26Cleanup > sam80Operations

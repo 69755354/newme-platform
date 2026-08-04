@@ -345,7 +345,7 @@ async function prepareFixtures(state) {
   for (const role of REQUIRED_ROLES) await createActor(state, role);
 }
 
-async function appRequest(state, role, path, { method = "GET", body } = {}) {
+async function appRequest(state, role, path, { method = "GET", body, headers = {} } = {}) {
   const actor = state.actors.get(role);
   if (!actor) fail(`missing ${role} fixture identity`);
   const response = await fetch(`${state.config.baseUrl}${path}`, {
@@ -356,6 +356,7 @@ async function appRequest(state, role, path, { method = "GET", body } = {}) {
       Authorization: `Bearer ${actor.token}`,
       "x-newme-organization-id": state.organizationId,
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...headers,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -722,6 +723,7 @@ async function runSam25(state) {
     `/api/quotations/${generated.payload.quote_id}/convert`,
     {
       method: "POST",
+      headers: { "Idempotency-Key": `sam25-draft-${state.runId}` },
       body: {
         installments: [{
           seq: 1,
@@ -747,7 +749,11 @@ async function runSam25(state) {
     state,
     "finance",
     `/api/quotations/${generated.payload.quote_id}/convert`,
-    { method: "POST", body: {} },
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": `sam25-finance-${state.runId}` },
+      body: {},
+    },
   );
   expectStatus("finance quotation conversion denial", financeConversion, 403);
   assert.equal(await countWhere(state, "contracts", "lead_id", lead.id), 0);
@@ -760,6 +766,7 @@ async function runSam25(state) {
     `/api/quotations/${generated.payload.quote_id}/convert`,
     {
       method: "POST",
+      headers: { "Idempotency-Key": `sam25-convert-${state.runId}` },
       body: {
         first_payment_due_date: firstDueDate,
         installments: [{
@@ -867,9 +874,13 @@ async function runSam25(state) {
     state,
     "operator",
     `/api/quotations/${generated.payload.quote_id}/convert`,
-    { method: "POST", body: {} },
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": `sam25-duplicate-${state.runId}` },
+      body: {},
+    },
   );
-  expectStatus("duplicate quotation conversion denial", duplicateConversion, 400);
+  expectStatus("duplicate quotation conversion denial", duplicateConversion, 409);
   assert.equal(
     await countWhere(state, "contracts", "lead_id", lead.id),
     duplicateBefore.contracts,
@@ -880,7 +891,7 @@ async function runSam25(state) {
     duplicateBefore.projects,
     "duplicate conversion created a project",
   );
-  recordNegative("duplicate_conversion", 400);
+  recordNegative("duplicate_conversion", 409);
 
   const paymentDate = new Date().toISOString().slice(0, 10);
   const zeroPayment = await appRequest(state, "finance", "/api/payments", {
@@ -1033,7 +1044,7 @@ async function runSam25(state) {
       { name: "hermes_unauthenticated", status: 401, writes: 0 },
       { name: "draft_conversion", status: 400, writes: 0 },
       { name: "finance_conversion", status: 403, writes: 0 },
-      { name: "duplicate_conversion", status: 400, writes: 0 },
+      { name: "duplicate_conversion", status: 409, writes: 0 },
       { name: "zero_amount_payment", status: 400, writes: 0 },
       { name: "operator_confirmation", status: 403, writes: 0 },
     ],
@@ -1207,7 +1218,7 @@ async function runCustomerExit(state) {
 
   const exported = await appRequest(state, "admin", "/api/organizations/export");
   expectStatus("customer export", exported, 200);
-  assert.equal(exported.payload?.contract_version, 1);
+  assert.equal(exported.payload?.contract_version, 2);
   assert.match(exported.payload?.data_sha256 ?? "", /^[0-9a-f]{64}$/);
   assert.equal(exported.payload?.data?.counts?.organizations, 1);
   assert.ok(exported.payload?.data?.counts?.memberships >= REQUIRED_ROLES.length);

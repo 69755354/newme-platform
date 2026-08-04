@@ -1319,7 +1319,7 @@ run_uat_product_saas() {
       ["hermes_unauthenticated", 401],
       ["draft_conversion", 400],
       ["finance_conversion", 403],
-      ["duplicate_conversion", 400],
+      ["duplicate_conversion", 409],
       ["zero_amount_payment", 400],
       ["operator_confirmation", 403],
     ]);

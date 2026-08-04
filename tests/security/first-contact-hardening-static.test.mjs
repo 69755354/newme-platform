@@ -25,13 +25,12 @@ test("stage endpoint enforces ownership, complete-contact gate, concurrency, and
 test("quality endpoint accepts assessment only after the first complete contact", async () => {
   const source = await read("src/app/api/leads/[id]/quality/route.ts");
   for (const token of [
-    "getAuthProfile",
+    "getRequestAuthContext",
     '.select(\'contact_time, contact_result\')',
     "isCompleteContact",
     ".some(isCompleteContact)",
   ]) assert.ok(source.includes(token), `missing quality protection: ${token}`);
-  assert.match(source, /headers\.get\("x-newme-organization-id"\)/);
-  assert.match(source, /createServerSupabase\(bearerToken, cookieHeader, organizationId\)/);
+  assert.match(source, /applyRequestAuthCookies\(context, NextResponse\.json/);
 });
 
 test("contact creation and editing are server-authorized and return stored rows", async () => {

@@ -50,6 +50,7 @@ test("quality selection never fails silently", async () => {
   assert.ok(process.includes("const [qualitySaveError, setQualitySaveError]"));
   assert.ok(process.includes("setQualitySaveError"));
   assert.ok(process.includes("qualitySaveError &&"));
+  assert.ok(process.includes("disabled={!contactsMet || qAssessed || qualitySetting !== null}"));
 });
 
 test("locked milestones explain the immediate prerequisite", async () => {

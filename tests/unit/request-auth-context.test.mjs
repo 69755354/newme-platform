@@ -32,3 +32,13 @@ test("high-risk impersonation route uses one context boundary and preserves refr
   assert.equal((route.match(/getRequestAuthContext\(/g) ?? []).length, 1);
   assert.match(route, /applyRequestAuthCookies\(context,/);
 });
+
+test("quality route uses one auth context, preserves refreshed cookies, and logs denied access", () => {
+  const route = source("src/app/api/leads/[id]/quality/route.ts");
+
+  assert.match(route, /getRequestAuthContext\(req\)/);
+  assert.doesNotMatch(route, /createServerSupabase/);
+  assert.doesNotMatch(route, /getAuthProfile/);
+  assert.match(route, /applyRequestAuthCookies\(context, NextResponse\.json/);
+  assert.match(route, /quality update lead was not visible to authenticated user/);
+});

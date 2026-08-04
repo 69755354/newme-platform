@@ -663,11 +663,11 @@ export default function LeadSalesProcess({
                           ) : (
                             <div className="flex gap-1.5 flex-wrap">
                               <button
-                                disabled={!contactsMet || qualitySetting !== null}
+                                disabled={!contactsMet || qAssessed || qualitySetting !== null}
                                 onClick={() => handleSetQuality("good")}
                                 className={cn(
                                   "text-[10px] px-2 py-1 rounded border transition-colors flex items-center gap-1",
-                                  contactsMet && qualitySetting === null
+                                  contactsMet && !qAssessed && qualitySetting === null
                                     ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
                                     : "border-border text-muted-foreground/30 cursor-not-allowed"
                                 )}
@@ -676,11 +676,11 @@ export default function LeadSalesProcess({
                                 {t("leadDetail.qualityGood") || "Good"}
                               </button>
                               <button
-                                disabled={!contactsMet || qualitySetting !== null}
+                                disabled={!contactsMet || qAssessed || qualitySetting !== null}
                                 onClick={() => handleSetQuality("normal")}
                                 className={cn(
                                   "text-[10px] px-2 py-1 rounded border transition-colors flex items-center gap-1",
-                                  contactsMet && qualitySetting === null
+                                  contactsMet && !qAssessed && qualitySetting === null
                                     ? "border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
                                     : "border-border text-muted-foreground/30 cursor-not-allowed"
                                 )}
@@ -689,11 +689,11 @@ export default function LeadSalesProcess({
                                 {t("leadDetail.qualityNormal") || "Normal"}
                               </button>
                               <button
-                                disabled={!contactsMet || qualitySetting !== null}
+                                disabled={!contactsMet || qAssessed || qualitySetting !== null}
                                 onClick={() => setShowQualityPoorReason(true)}
                                 className={cn(
                                   "text-[10px] px-2 py-1 rounded border transition-colors flex items-center gap-1",
-                                  contactsMet && qualitySetting === null
+                                  contactsMet && !qAssessed && qualitySetting === null
                                     ? "border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
                                     : "border-border text-muted-foreground/30 cursor-not-allowed"
                                 )}

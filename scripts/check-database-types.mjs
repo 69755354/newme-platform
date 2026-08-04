@@ -10,6 +10,9 @@ const provenancePrefix = "// Migration fingerprint: sha256=";
 const required = [
   "export type Database =",
   "audit_events:",
+  "agent_gateway_adapter_registry:",
+  "agent_gateway_commands:",
+  "agent_gateway_events:",
   "capabilities:",
   "memberships:",
   "membership_roles:",
@@ -73,6 +76,7 @@ const required = [
   "v4_transition_shared_work_item:",
   "v4_approve_platform_action:",
   "v4_approve_commercial_action:",
+  "v4_dispatch_agent_gateway_command:",
   "v4_allocate_payment_for_organization:",
   "v4_cancel_tenant_file_upload:",
   "v4_claim_tenant_file_deletions:",

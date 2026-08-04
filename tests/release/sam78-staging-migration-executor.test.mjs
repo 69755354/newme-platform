@@ -95,6 +95,12 @@ const paths = [
     migration: "supabase/migrations/20260805190000_v4_commercial_control_plane.sql",
     rollback: "supabase/rollback/20260805190000_v4_commercial_control_plane_rollback.sql",
   },
+  {
+    version: "20260806000000",
+    name: "sam84_controlled_agent_integration_gateway",
+    migration: "supabase/migrations/20260806000000_sam84_controlled_agent_integration_gateway.sql",
+    rollback: "supabase/rollback/20260806000000_sam84_controlled_agent_integration_gateway_rollback.sql",
+  },
 ];
 
 async function expectedHistory() {
@@ -130,7 +136,7 @@ test("SAM-78 plan uses the fixed staging owner and exact canonical history tip",
 test("migration history manifest accepts CRLF but rejects header, order, row, and tip drift", async () => {
   const source = await read("scripts/uat/sam78-canonical-migration-history.txt");
   const crlfSource = source.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n");
-  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 145);
+  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 146);
   assert.throws(
     () => parseMigrationHistoryManifest(source.replace("# schema-version=1", "# schema-version=2")),
     /header mismatch/,
@@ -245,7 +251,8 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
     verifySql: await read("scripts/uat/sam78-staging-migration-verify.sql"),
   });
   const operations = sql.indexOf("DELETE FROM supabase_migrations.schema_migrations");
-  const newest = sql.indexOf("version = '20260805190000'", operations);
+  const sam84 = sql.indexOf("version = '20260806000000'", operations);
+  const newest = sql.indexOf("version = '20260805190000'", sam84 + 1);
   const sam83 = sql.indexOf("version = '20260805130000'", newest + 1);
   const sam82 = sql.indexOf("version = '20260805120000'", sam83 + 1);
   const exitDigest = sql.indexOf("version = '20260805010000'", sam82 + 1);
@@ -257,7 +264,7 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
   const middle = sql.indexOf("version = '20260803143000'", governedRpc + 1);
   const oldest = sql.indexOf("version = '20260803100000'", middle + 1);
   assert.ok(
-    operations > 0 && newest > operations && sam83 > newest && sam82 > sam83 && exitDigest > sam82 && productCleanup > exitDigest
+    operations > 0 && sam84 > operations && newest > sam84 && sam83 > newest && sam82 > sam83 && exitDigest > sam82 && productCleanup > exitDigest
       && sam20Cleanup > productCleanup
       && sam80Operations > sam20Cleanup
       && sam26Cleanup > sam80Operations

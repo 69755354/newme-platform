@@ -28,7 +28,7 @@ async function main() {
       "--env", `POSTGRES_PASSWORD=${PASSWORD}`, "--env", `POSTGRES_DB=${DATABASE}`, IMAGE]);
     started = true;
     for (let attempt = 0; attempt < 60; attempt += 1) {
-      const result = spawnSync(docker, ["exec", container, "pg_isready", "-U", "postgres", "-d", DATABASE], {
+      const result = spawnSync(docker, ["exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", DATABASE], {
         cwd: ROOT, encoding: "utf8", env: process.env,
       });
       if (!result.error && result.status === 0) break;
@@ -46,7 +46,7 @@ async function main() {
       run(docker, ["cp", resolve(ROOT, path), `${container}:${destination}`]);
     }
     run(docker, ["exec", "-e", `PGPASSWORD=${PASSWORD}`, "-w", "/work/tests/database", container,
-      "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", DATABASE,
+      "psql", "-X", "-v", "ON_ERROR_STOP=1", "-h", "127.0.0.1", "-U", "postgres", "-d", DATABASE,
       "-f", "sam81-real-estate-listing-foundation.sql"]);
     process.stdout.write(`${JSON.stringify({
       status: "passed", image: IMAGE, organization_isolation: "verified",

@@ -42,6 +42,8 @@ test("SAM-81 listing foundation is organization-bound, adapter-disabled and reve
   assert.match(fixture, /sam81_rollback_residue/);
   assert.match(gate, /sam81-real-estate-listing-foundation\.sql/);
   assert.match(gate, /postgres:17-alpine@sha256:/);
+  assert.match(gate, /"pg_isready", "-h", "127\.0\.0\.1", "-U", "postgres"/);
+  assert.match(gate, /"psql", "-X", "-v", "ON_ERROR_STOP=1", "-h", "127\.0\.0\.1", "-U", "postgres"/);
   assert.match(gate, /sam81_disposable_cleanup_failed/);
   assert.match(workflow, /SAM-81 real-estate listing foundation database gate/);
 });

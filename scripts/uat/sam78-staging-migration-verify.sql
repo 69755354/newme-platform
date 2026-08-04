@@ -3,6 +3,9 @@ DECLARE
   action text := current_setting('newme.sam78_action', true);
   phase text := current_setting('newme.sam78_verify_phase', true);
   apply_mode text := current_setting('newme.sam78_apply_mode', true);
+  active_start_version text := current_setting(
+    'newme.sam78_active_start_version', true
+  );
   legacy_organization_id constant uuid :=
     '6bc3b06e-5c05-4f45-9f1f-e9ea03a3cdd1'::uuid;
   tenant_tables constant text[] := ARRAY[
@@ -62,6 +65,7 @@ BEGIN
   IF action NOT IN ('apply', 'rollback')
     OR phase NOT IN ('pre', 'post')
     OR apply_mode NOT IN ('full', 'suffix')
+    OR active_start_version !~ '^[0-9]{14}$'
     OR (action = 'rollback' AND apply_mode <> 'full')
   THEN
     RAISE EXCEPTION 'SAM78 live verification context is invalid';
@@ -264,7 +268,8 @@ BEGIN
     RAISE EXCEPTION 'SAM20 synthetic support cleanup boundary is missing';
   END IF;
 
-  IF action = 'apply' AND phase = 'pre' AND apply_mode = 'suffix' THEN
+  IF action = 'apply' AND phase = 'pre' AND apply_mode = 'suffix'
+    AND active_start_version <= '20260805000000' THEN
     IF to_regprocedure('public.product_saas_is_synthetic_organization(uuid)') IS NOT NULL
       OR to_regprocedure('public.product_saas_is_synthetic_exit_approval(uuid)') IS NOT NULL
       OR to_regprocedure('public.product_saas_is_synthetic_audit_log(uuid)') IS NOT NULL
@@ -292,6 +297,58 @@ BEGIN
     THEN
       RAISE EXCEPTION 'SAM78 Product/SaaS cleanup boundary is missing';
     END IF;
+  END IF;
+
+  IF action = 'apply' AND phase = 'pre' THEN
+    IF apply_mode = 'suffix' AND active_start_version = '20260805010000'
+      AND (
+        to_regprocedure(
+          'public.v4_complete_organization_customer_exit(uuid,uuid,uuid,text,text,text,text,text,text)'
+        ) IS NULL
+        OR pg_get_functiondef(to_regprocedure(
+          'public.v4_complete_organization_customer_exit(uuid,uuid,uuid,text,text,text,text,text,text)'
+        )) ILIKE '%v4_export_evidence_not_unique%'
+      )
+    THEN
+      RAISE EXCEPTION 'SAM78 V4 exit digest suffix prestate is invalid';
+    END IF;
+  ELSE
+    IF to_regprocedure(
+        'public.v4_complete_organization_customer_exit(uuid,uuid,uuid,text,text,text,text,text,text)'
+      ) IS NULL
+      OR pg_get_functiondef(to_regprocedure(
+        'public.v4_complete_organization_customer_exit(uuid,uuid,uuid,text,text,text,text,text,text)'
+      )) NOT ILIKE '%v4_export_evidence_not_unique%'
+      OR pg_get_functiondef(to_regprocedure(
+        'public.v4_complete_organization_customer_exit(uuid,uuid,uuid,text,text,text,text,text,text)'
+      )) NOT ILIKE '%organization_changed_after_export%'
+      OR pg_get_functiondef(to_regprocedure(
+        'public.v4_complete_organization_customer_exit(uuid,uuid,uuid,text,text,text,text,text,text)'
+      )) NOT ILIKE '%organization.customer_export.v4%'
+    THEN
+      RAISE EXCEPTION 'SAM78 V4 exit digest contract is missing';
+    END IF;
+  END IF;
+
+  function_oid := to_regprocedure(
+    'public.v4_complete_organization_customer_exit(uuid,uuid,uuid,text,text,text,text,text,text)'
+  );
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_proc function_row
+    CROSS JOIN LATERAL pg_catalog.aclexplode(
+      COALESCE(function_row.proacl, pg_catalog.acldefault('f', function_row.proowner))
+    ) privilege
+    WHERE function_row.oid = function_oid
+      AND privilege.grantee = 0
+      AND privilege.privilege_type = 'EXECUTE'
+  ) INTO public_can_execute;
+  IF public_can_execute
+    OR pg_catalog.has_function_privilege('anon', function_oid, 'EXECUTE')
+    OR pg_catalog.has_function_privilege('authenticated', function_oid, 'EXECUTE')
+    OR pg_catalog.has_function_privilege('service_role', function_oid, 'EXECUTE')
+  THEN
+    RAISE EXCEPTION 'SAM78 V4 exit completion direct EXECUTE surface drifted';
   END IF;
 
   FOREACH target_table_name IN ARRAY tenant_tables LOOP

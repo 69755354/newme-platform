@@ -59,6 +59,12 @@ const paths = [
     migration: "supabase/migrations/20260805000000_sam78_product_saas_synthetic_cleanup_boundary.sql",
     rollback: "supabase/rollback/20260805000000_sam78_product_saas_synthetic_cleanup_boundary_rollback.sql",
   },
+  {
+    version: "20260805010000",
+    name: "sam78_v4_exit_digest_contract",
+    migration: "supabase/migrations/20260805010000_sam78_v4_exit_digest_contract.sql",
+    rollback: "supabase/rollback/20260805010000_sam78_v4_exit_digest_contract_rollback.sql",
+  },
 ];
 
 async function expectedHistory() {
@@ -97,7 +103,7 @@ test("SAM-78 plan uses the fixed staging owner and exact canonical history tip",
 test("migration history manifest accepts CRLF but rejects header, order, row, and tip drift", async () => {
   const source = await read("scripts/uat/sam78-canonical-migration-history.txt");
   const crlfSource = source.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n");
-  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 139);
+  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 140);
   assert.throws(
     () => parseMigrationHistoryManifest(source.replace("# schema-version=1", "# schema-version=2")),
     /header mismatch/,
@@ -212,14 +218,16 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
     verifySql: await read("scripts/uat/sam78-staging-migration-verify.sql"),
   });
   const operations = sql.indexOf("DELETE FROM supabase_migrations.schema_migrations");
-  const newest = sql.indexOf("version = '20260805000000'", operations);
-  const sam20Cleanup = sql.indexOf("version = '20260804193000'", newest + 1);
+  const newest = sql.indexOf("version = '20260805010000'", operations);
+  const productCleanup = sql.indexOf("version = '20260805000000'", newest + 1);
+  const sam20Cleanup = sql.indexOf("version = '20260804193000'", productCleanup + 1);
   const sam26Cleanup = sql.indexOf("version = '20260804165734'", sam20Cleanup + 1);
   const governedRpc = sql.indexOf("version = '20260804153000'", sam26Cleanup + 1);
   const middle = sql.indexOf("version = '20260803143000'", governedRpc + 1);
   const oldest = sql.indexOf("version = '20260803100000'", middle + 1);
   assert.ok(
-    operations > 0 && newest > operations && sam20Cleanup > newest
+    operations > 0 && newest > operations && productCleanup > newest
+      && sam20Cleanup > productCleanup
       && sam26Cleanup > sam20Cleanup
       && governedRpc > sam26Cleanup
       && middle > governedRpc && oldest > middle,
@@ -241,7 +249,7 @@ test("apply accepts only an exact unapplied canonical suffix", async () => {
     verifySql: await read("scripts/uat/sam78-staging-migration-verify.sql"),
   });
   assert.match(sql, /newme\.sam78_apply_mode = 'suffix'/);
-  assert.match(sql, /20260805000000/);
+  assert.match(sql, /20260805010000/);
   assert.match(sql, /SAM78 applied migration prefix metadata mismatch/);
   assert.equal(
     (sql.match(/INSERT INTO supabase_migrations\.schema_migrations/g) ?? []).length,

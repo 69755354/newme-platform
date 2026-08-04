@@ -2214,6 +2214,211 @@ $$;
 
 RESET ROLE;
 SET ROLE authenticated;
+SET request.jwt.claim.sub = '78000000-0000-4000-8000-000000000014';
+SELECT set_config(
+  'v4.exit_prepare_approval_b',
+  public.v4_request_platform_action_approval(
+    'organization.exit.prepare', current_setting('v4.org_b'),
+    jsonb_build_object(
+      'organization_id', current_setting('v4.org_b')::uuid,
+      'idempotency_key', 'sam78-v4-exit-org-b',
+      'reason', 'Verify the V4 export and completion digest contract'
+    ),
+    'sam78-v4-exit-prepare-request-b'
+  ) ->> 'approval_request_id',
+  false
+);
+SET request.jwt.claim.sub = '78000000-0000-4000-8000-000000000015';
+SELECT public.v4_approve_platform_action(
+  current_setting('v4.exit_prepare_approval_b')::uuid,
+  'sam78-v4-exit-prepare-approve-b'
+);
+RESET ROLE;
+SET ROLE service_role;
+RESET request.jwt.claim.sub;
+SELECT public.v4_execute_approved_platform_action(
+  current_setting('v4.exit_prepare_approval_b')::uuid,
+  'sam78-v4-exit-prepare-execute-b'
+);
+SELECT set_config(
+  'v4.exit_export_digest_b',
+  public.v4_export_organization_customer_data(
+    current_setting('v4.org_b')::uuid,
+    '78000000-0000-4000-8000-000000000013',
+    'sam78-v4-export-before-exit-b'
+  ) ->> 'data_sha256',
+  false
+);
+
+RESET ROLE;
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '78000000-0000-4000-8000-000000000014';
+SELECT set_config(
+  'v4.exit_invalid_approval_b',
+  public.v4_request_platform_action_approval(
+    'organization.exit.complete', current_setting('v4.org_b'),
+    jsonb_build_object(
+      'organization_id', current_setting('v4.org_b')::uuid,
+      'idempotency_key', 'sam78-v4-exit-org-b',
+      'expected_export_sha256', repeat('f', 64),
+      'backup_evidence_ref', 'sam78-v4-backup-org-b',
+      'customer_confirmation_ref', 'sam78-v4-customer-org-b',
+      'retention_basis', 'sam78-v4-retention-org-b'
+    ),
+    'sam78-v4-exit-invalid-request-b'
+  ) ->> 'approval_request_id',
+  false
+);
+SET request.jwt.claim.sub = '78000000-0000-4000-8000-000000000015';
+SELECT public.v4_approve_platform_action(
+  current_setting('v4.exit_invalid_approval_b')::uuid,
+  'sam78-v4-exit-invalid-approve-b'
+);
+RESET ROLE;
+SET ROLE service_role;
+RESET request.jwt.claim.sub;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM public.v4_execute_approved_platform_action(
+      current_setting('v4.exit_invalid_approval_b')::uuid,
+      'sam78-v4-exit-invalid-execute-b'
+    );
+    RAISE EXCEPTION 'V4 exit accepted an export digest without exact audit evidence';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'v4_export_evidence_not_unique' THEN RAISE; END IF;
+  END;
+END
+$$;
+
+INSERT INTO public.audit_events (
+  organization_id, actor_user_id, action, target_type, target_id,
+  outcome, reason, request_id, metadata
+) VALUES (
+  current_setting('v4.org_b')::uuid,
+  '78000000-0000-4000-8000-000000000013',
+  'sam78.v4.export.drift.fixture', 'organization', current_setting('v4.org_b'),
+  'success', 'prove post-export organization drift is rejected',
+  'sam78-v4-exit-drift-event-b', '{}'::jsonb
+);
+RESET ROLE;
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '78000000-0000-4000-8000-000000000014';
+SELECT set_config(
+  'v4.exit_drift_approval_b',
+  public.v4_request_platform_action_approval(
+    'organization.exit.complete', current_setting('v4.org_b'),
+    jsonb_build_object(
+      'organization_id', current_setting('v4.org_b')::uuid,
+      'idempotency_key', 'sam78-v4-exit-org-b',
+      'expected_export_sha256', current_setting('v4.exit_export_digest_b'),
+      'backup_evidence_ref', 'sam78-v4-backup-org-b',
+      'customer_confirmation_ref', 'sam78-v4-customer-org-b',
+      'retention_basis', 'sam78-v4-retention-org-b'
+    ),
+    'sam78-v4-exit-drift-request-b'
+  ) ->> 'approval_request_id',
+  false
+);
+SET request.jwt.claim.sub = '78000000-0000-4000-8000-000000000015';
+SELECT public.v4_approve_platform_action(
+  current_setting('v4.exit_drift_approval_b')::uuid,
+  'sam78-v4-exit-drift-approve-b'
+);
+RESET ROLE;
+SET ROLE service_role;
+RESET request.jwt.claim.sub;
+DO $$
+BEGIN
+  BEGIN
+    PERFORM public.v4_execute_approved_platform_action(
+      current_setting('v4.exit_drift_approval_b')::uuid,
+      'sam78-v4-exit-drift-execute-b'
+    );
+    RAISE EXCEPTION 'V4 exit accepted organization changes after export';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'organization_changed_after_export' THEN RAISE; END IF;
+  END;
+END
+$$;
+SELECT set_config(
+  'v4.exit_export_digest_b',
+  public.v4_export_organization_customer_data(
+    current_setting('v4.org_b')::uuid,
+    '78000000-0000-4000-8000-000000000013',
+    'sam78-v4-export-after-drift-b'
+  ) ->> 'data_sha256',
+  false
+);
+
+RESET ROLE;
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '78000000-0000-4000-8000-000000000014';
+SELECT set_config(
+  'v4.exit_valid_approval_b',
+  public.v4_request_platform_action_approval(
+    'organization.exit.complete', current_setting('v4.org_b'),
+    jsonb_build_object(
+      'organization_id', current_setting('v4.org_b')::uuid,
+      'idempotency_key', 'sam78-v4-exit-org-b',
+      'expected_export_sha256', current_setting('v4.exit_export_digest_b'),
+      'backup_evidence_ref', 'sam78-v4-backup-org-b',
+      'customer_confirmation_ref', 'sam78-v4-customer-org-b',
+      'retention_basis', 'sam78-v4-retention-org-b'
+    ),
+    'sam78-v4-exit-valid-request-b'
+  ) ->> 'approval_request_id',
+  false
+);
+SET request.jwt.claim.sub = '78000000-0000-4000-8000-000000000015';
+SELECT public.v4_approve_platform_action(
+  current_setting('v4.exit_valid_approval_b')::uuid,
+  'sam78-v4-exit-valid-approve-b'
+);
+RESET ROLE;
+SET ROLE service_role;
+RESET request.jwt.claim.sub;
+SELECT set_config(
+  'v4.exit_complete_b',
+  public.v4_execute_approved_platform_action(
+    current_setting('v4.exit_valid_approval_b')::uuid,
+    'sam78-v4-exit-valid-execute-b'
+  )::text,
+  false
+);
+DO $$
+DECLARE
+  result jsonb := current_setting('v4.exit_complete_b')::jsonb;
+  replay jsonb;
+BEGIN
+  IF result ->> 'status' <> 'completed'
+    OR result ->> 'organization_status' <> 'closed'
+    OR result ->> 'export_sha256' <> current_setting('v4.exit_export_digest_b')
+    OR result ->> 'idempotent' <> 'false'
+  THEN RAISE EXCEPTION 'V4 export-to-complete result drifted'; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.organization_exit_requests
+    WHERE organization_id = current_setting('v4.org_b')::uuid
+      AND status = 'completed'
+      AND export_sha256 = current_setting('v4.exit_export_digest_b')
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.audit_events
+    WHERE organization_id = current_setting('v4.org_b')::uuid
+      AND action = 'organization.exit_completed'
+      AND metadata ->> 'export_sha256' = current_setting('v4.exit_export_digest_b')
+  ) THEN RAISE EXCEPTION 'V4 exit persistence or audit evidence drifted'; END IF;
+  replay := public.v4_execute_approved_platform_action(
+    current_setting('v4.exit_valid_approval_b')::uuid,
+    'sam78-v4-exit-valid-execute-b'
+  );
+  IF replay ->> 'idempotent' <> 'true' THEN
+    RAISE EXCEPTION 'V4 exit replay was not idempotent';
+  END IF;
+END
+$$;
+
+RESET ROLE;
+SET ROLE authenticated;
 SET request.jwt.claim.sub = '78000000-0000-4000-8000-000000000012';
 SELECT set_config(
   'request.headers',

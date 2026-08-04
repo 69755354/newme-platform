@@ -6,7 +6,7 @@ without adding Playwright, Chromium, SheetJS, or runner-only dependencies to
 the Next.js standalone release.
 
 The staging-only build service must create a fresh temporary Docker build
-context containing exactly these eight files from the exact checked-out SHA:
+context containing exactly these nine files from the exact checked-out SHA:
 
 - `infra/staging/uat-runner/Dockerfile`
 - `infra/staging/uat-runner/package.json`
@@ -16,6 +16,7 @@ context containing exactly these eight files from the exact checked-out SHA:
 - `scripts/verify-staging-sam70-xlsx.mjs`
 - `scripts/uat/sam23-organization-commercial-core.mjs`
 - `scripts/uat/product-saas-final.mjs`
+- `scripts/uat/sam78-staging-tenant-closure.mjs`
 
 It then builds:
 
@@ -88,6 +89,13 @@ of these actions plus one full 40-character SHA:
   negative cases, and zero residue for every declared cleanup class. The
   validated, credential-free JSON operation record is atomically retained as
   root-only `0600` state at `last-uat-product-saas.json`.
+- `uat-sam78 <SHA>` runs the exact SAM-78 tenant-closure runner. It first
+  requires the complete Product/SaaS lifecycle and cleanup result, then proves
+  one identity with two active memberships can switch selected organizations
+  without list, search, direct-ID or organization-row leakage. Only exact
+  fixture IDs are deleted; both fixture organizations, memberships, leads and
+  audit residue must be zero. The credential-free result is retained as
+  root-only `0600` state at `last-uat-sam78.json`.
 - `migrate-sam78 <SHA>` applies exactly migrations `20260803100000`,
   `20260803143000`, and `20260804153000` to the fixed staging project with the schema owner
   `postgres.bfsiibofuzoglziltgyd`. Before opening a database connection it

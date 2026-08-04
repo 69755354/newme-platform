@@ -24,6 +24,7 @@ readonly SAM23_EVIDENCE="$STATE_DIR/last-uat-sam23.json"
 readonly SAM68_EVIDENCE="$STATE_DIR/last-uat-sam68.json"
 readonly SAM54_EVIDENCE="$STATE_DIR/last-uat-sam54.json"
 readonly SAM78_EVIDENCE="$STATE_DIR/last-migrate-sam78.json"
+readonly SAM78_UAT_EVIDENCE="$STATE_DIR/last-uat-sam78.json"
 readonly STAGING_REF="bfsiibofuzoglziltgyd"
 readonly PRODUCTION_REF="vfopmpxlhwzpxqegayew"
 readonly SAM20_RUNNER="scripts/uat/sam20-lead-organization-isolation.mjs"
@@ -61,6 +62,7 @@ readonly SAM78_PGPASS="/etc/newme-staging/staging-migration.pgpass"
 readonly SAM78_CA="/etc/newme-staging/supabase-root-2021-ca.crt"
 readonly SAM78_PLATFORM_STAFF_ROLE_MAPPING="/etc/newme-staging/sam78-platform-staff-role-mapping.json"
 readonly PRODUCT_SAAS_RUNNER="scripts/uat/product-saas-final.mjs"
+readonly SAM78_UAT_RUNNER="scripts/uat/sam78-staging-tenant-closure.mjs"
 readonly UAT_IMAGE_PREFIX="newme-staging-uat"
 TEMPORARY_PATHS=()
 
@@ -85,7 +87,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|migrate-sam78|rollback-sam78-db|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -93,7 +95,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|migrate-sam78|rollback-sam78-db|rollback) ;;
+  build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -320,6 +322,8 @@ build_uat_image() {
     "$context/sam23-organization-commercial-core.mjs"
   copy_commit_blob "$SHA" "$PRODUCT_SAAS_RUNNER" \
     "$context/product-saas-final.mjs"
+  copy_commit_blob "$SHA" "$SAM78_UAT_RUNNER" \
+    "$context/sam78-staging-tenant-closure.mjs"
   docker build \
     --label "org.opencontainers.image.revision=$SHA" \
     --tag "$UAT_IMAGE_PREFIX:$SHA" \
@@ -1372,6 +1376,76 @@ run_uat_product_saas() {
   echo "staging control Product/SaaS UAT passed SHA=$SHA cleanup=verified evidence=$evidence"
 }
 
+run_uat_sam78() {
+  verify_current_release "$SHA"
+  command -v docker >/dev/null 2>&1 || fail "docker is required for staging UAT"
+  [ -r "$ENV_FILE" ] || fail "staging environment is missing"
+  [ "$(
+    docker image inspect "$UAT_IMAGE_PREFIX:$SHA" \
+      --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+  )" = "$SHA" ] || fail "staging UAT image provenance does not match"
+  local output rc evidence evidence_tmp
+  evidence="$SAM78_UAT_EVIDENCE"
+  rm -f -- "$evidence"
+  output="$(mktemp "$STATE_DIR/.uat-sam78.XXXXXX")"
+  register_temporary_path "$output"
+  rc=0
+  docker run \
+    --rm \
+    --init \
+    --ipc=host \
+    --network host \
+    --add-host staging.newme.ae:127.0.0.1 \
+    --read-only \
+    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=128m \
+    --tmpfs /runner/home:rw,nosuid,nodev,size=64m \
+    --env-file "$ENV_FILE" \
+    --env "SAM_UAT_SUITE=sam78" \
+    --env "SAM78_EXPECTED_RELEASE_SHA=$SHA" \
+    --env "SAM78_BASE_URL=http://127.0.0.1:3101" \
+    --env "SAM78_RELEASE_MANIFEST=/runner/release/manifest.json" \
+    --env "SAM78_UAT_CONFIRM=SAM78_STAGING_TENANT_CLOSURE_ONLY" \
+    --env "PRODUCT_UAT_RELEASE_SHA=$SHA" \
+    --env "PRODUCT_UAT_BASE_URL=https://staging.newme.ae" \
+    --env "PRODUCT_UAT_RELEASE_MANIFEST=/runner/release/manifest.json" \
+    --env "PRODUCT_UAT_CONFIRM=PRODUCT_SAAS_STAGING_ONLY" \
+    --mount "type=bind,src=$RELEASES/$SHA/manifest.json,dst=/runner/release/manifest.json,readonly" \
+    "$UAT_IMAGE_PREFIX:$SHA" >"$output" 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "SAM-78 staging tenant-closure UAT failed with status $rc"
+  node -e '
+    const fs = require("fs");
+    const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const requiredChecks = ["selected_org", "search", "direct_id", "organization_row"];
+    const zeroResidue = [
+      "auth_users", "profiles", "organizations", "memberships", "membership_roles",
+      "leads", "audit_events", "audit_logs", "activity_logs", "activities",
+    ];
+    if (
+      body.ok !== true ||
+      body.scope !== "sam78-staging-tenant-closure" ||
+      body.release?.project_ref !== process.argv[3] ||
+      body.release?.manifest_sha !== process.argv[2] ||
+      body.release?.health !== 200 ||
+      body.product_lifecycle?.status !== "pass" ||
+      body.product_lifecycle?.cleanup !== "verified" ||
+      body.product_lifecycle?.customer_exit !== "pass" ||
+      body.tenant_isolation?.status !== "pass" ||
+      body.tenant_isolation?.organizations !== 2 ||
+      body.tenant_isolation?.shared_identity_memberships !== 2 ||
+      requiredChecks.some((check) => !body.tenant_isolation?.checks?.includes(check)) ||
+      zeroResidue.some((key) => body.tenant_isolation?.cleanup_counts?.[key] !== 0) ||
+      body.cleanup !== "verified"
+    ) process.exit(1);
+  ' "$output" "$SHA" "$STAGING_REF" ||
+    fail "SAM-78 staging tenant-closure evidence is incomplete"
+  evidence_tmp="$(mktemp "$STATE_DIR/.last-uat-sam78.XXXXXX")"
+  register_temporary_path "$evidence_tmp"
+  install -m 0600 -o root -g root "$output" "$evidence_tmp"
+  mv -Tf "$evidence_tmp" "$evidence"
+  rm -f -- "$output"
+  echo "staging control SAM-78 tenant-closure UAT passed SHA=$SHA cleanup=verified evidence=$evidence"
+}
+
 run_sam78_database_action() {
   production_healthy || fail "production health is not green"
   staging_healthy || fail "staging health is not green"
@@ -1609,6 +1683,7 @@ case "$ACTION" in
   uat-sam68) run_uat_sam68 ;;
   uat-sam70) run_uat_sam70 ;;
   uat-product-saas) run_uat_product_saas ;;
+  uat-sam78) run_uat_sam78 ;;
   migrate-sam78|rollback-sam78-db) run_sam78_database_action ;;
   rollback) run_rollback ;;
 esac

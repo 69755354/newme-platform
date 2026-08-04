@@ -34,6 +34,7 @@ test("staging controller has one fixed command surface and strict SHA arity", as
     "uat-sam68",
     "uat-sam70",
     "uat-product-saas",
+    "uat-sam78",
     "migrate-sam78",
     "rollback-sam78-db",
     "rollback",
@@ -178,10 +179,10 @@ test("SAM-26 UAT image and runtime remain SHA-bound and disposable", async () =>
     /SAM26_EXPECTED_RELEASE_SHA=\$SHA/,
     /SAM26_RELEASE_MANIFEST=\/runner\/release\/manifest\.json/,
   ]) assert.match(control, pattern);
-  assert.equal((control.match(/--network host/g) ?? []).length, 6);
+  assert.equal((control.match(/--network host/g) ?? []).length, 7);
   assert.equal(
     (control.match(/--add-host staging\.newme\.ae:127\.0\.0\.1/g) ?? []).length,
-    3,
+    4,
   );
   assert.doesNotMatch(control, /docker\.sock/);
   assert.doesNotMatch(control, new RegExp(`--env[^\\n]*${"SUPABASE_SERVICE_ROLE_KEY"}=`));
@@ -635,6 +636,36 @@ test("Product/SaaS UAT is image-bound, staging-only, and verifies every issue an
   assert.match(control, /uat-sam70/);
   assert.doesNotMatch(control, /cat "\$ENV_FILE"/);
   assert.doesNotMatch(control, /cat "\$output"/);
+});
+
+test("SAM-78 tenant closure UAT composes lifecycle evidence with two-organization isolation", async () => {
+  const [control, dockerfile, runScript, readme] = await Promise.all([
+    read("scripts/newme-staging-control.sh"),
+    read("infra/staging/uat-runner/Dockerfile"),
+    read("infra/staging/uat-runner/run.sh"),
+    read("infra/staging/uat-runner/README.md"),
+  ]);
+  for (const pattern of [
+    /SAM78_UAT_RUNNER="scripts\/uat\/sam78-staging-tenant-closure\.mjs"/,
+    /copy_commit_blob "\$SHA" "\$SAM78_UAT_RUNNER"/,
+    /verify_current_release "\$SHA"/,
+    /SAM_UAT_SUITE=sam78/,
+    /SAM78_EXPECTED_RELEASE_SHA=\$SHA/,
+    /SAM78_BASE_URL=http:\/\/127\.0\.0\.1:3101/,
+    /SAM78_UAT_CONFIRM=SAM78_STAGING_TENANT_CLOSURE_ONLY/,
+    /body\.scope !== "sam78-staging-tenant-closure"/,
+    /body\.tenant_isolation\?\.organizations !== 2/,
+    /body\.tenant_isolation\?\.shared_identity_memberships !== 2/,
+    /zeroResidue\.some\(\(key\) => body\.tenant_isolation\?\.cleanup_counts\?\.\[key\] !== 0\)/,
+    /body\.product_lifecycle\?\.cleanup !== "verified"/,
+    /last-uat-sam78\.json/,
+  ]) assert.match(control, pattern);
+  assert.match(dockerfile, /COPY sam78-staging-tenant-closure\.mjs \/runner\/sam78-staging-tenant-closure\.mjs/);
+  assert.match(runScript, /sam78\)/);
+  assert.match(runScript, /exec node \/runner\/sam78-staging-tenant-closure\.mjs/);
+  assert.match(runScript, /SAM78_STAGING_TENANT_CLOSURE_ONLY/);
+  assert.match(readme, /uat-sam78 <SHA>/);
+  assert.doesNotMatch(control, /cat "\$ENV_FILE"|cat "\$output"/);
 });
 
 test("rollback only accepts the direct previous compatible immutable release", async () => {

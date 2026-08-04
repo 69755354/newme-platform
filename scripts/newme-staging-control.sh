@@ -56,6 +56,7 @@ readonly SAM78_MIGRATION_041853="supabase/migrations/20260804185311_sam80_shared
 readonly SAM78_MIGRATION_041930="supabase/migrations/20260804193000_sam20_synthetic_support_cleanup_boundary.sql"
 readonly SAM78_MIGRATION_050000="supabase/migrations/20260805000000_sam78_product_saas_synthetic_cleanup_boundary.sql"
 readonly SAM78_MIGRATION_050100="supabase/migrations/20260805010000_sam78_v4_exit_digest_contract.sql"
+readonly SAM82_MIGRATION_051200="supabase/migrations/20260805120000_sam82_retail_catalog_inventory_pricing.sql"
 readonly SAM79_MIGRATION_051900="supabase/migrations/20260805190000_v4_commercial_control_plane.sql"
 readonly SAM78_ROLLBACK_031000="supabase/rollback/20260803100000_v4_tenant_capability_boundary_rollback.sql"
 readonly SAM78_ROLLBACK_143000="supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql"
@@ -65,6 +66,7 @@ readonly SAM78_ROLLBACK_041853="supabase/rollback/20260804185311_sam80_shared_op
 readonly SAM78_ROLLBACK_041930="supabase/rollback/20260804193000_sam20_synthetic_support_cleanup_boundary_rollback.sql"
 readonly SAM78_ROLLBACK_050000="supabase/rollback/20260805000000_sam78_product_saas_synthetic_cleanup_boundary_rollback.sql"
 readonly SAM78_ROLLBACK_050100="supabase/rollback/20260805010000_sam78_v4_exit_digest_contract_rollback.sql"
+readonly SAM82_ROLLBACK_051200="supabase/rollback/20260805120000_sam82_retail_catalog_inventory_pricing_rollback.sql"
 readonly SAM79_ROLLBACK_051900="supabase/rollback/20260805190000_v4_commercial_control_plane_rollback.sql"
 readonly SAM78_PGPASS="/etc/newme-staging/staging-migration.pgpass"
 readonly SAM78_CA="/etc/newme-staging/supabase-root-2021-ca.crt"
@@ -1507,12 +1509,12 @@ run_sam78_database_action() {
     fail "SAM-78 build artifact checksum mismatch"
 
   local run_dir executor verify history_manifest
-  local migration_031000 migration_143000 migration_041530 migration_041657 migration_041853 migration_041930 migration_050000 migration_050100 migration_051900
-  local rollback_031000 rollback_143000 rollback_041530 rollback_041657 rollback_041853 rollback_041930 rollback_050000 rollback_050100 rollback_051900
+  local migration_031000 migration_143000 migration_041530 migration_041657 migration_041853 migration_041930 migration_050000 migration_050100 migration_051200 migration_051900
+  local rollback_031000 rollback_143000 rollback_041530 rollback_041657 rollback_041853 rollback_041930 rollback_050000 rollback_050100 rollback_051200 rollback_051900
   local output rc evidence_tmp
   local verify_blob history_manifest_blob
-  local migration_031000_blob migration_143000_blob migration_041530_blob migration_041657_blob migration_041853_blob migration_041930_blob migration_050000_blob migration_050100_blob migration_051900_blob
-  local rollback_031000_blob rollback_143000_blob rollback_041530_blob rollback_041657_blob rollback_041853_blob rollback_041930_blob rollback_050000_blob rollback_050100_blob rollback_051900_blob
+  local migration_031000_blob migration_143000_blob migration_041530_blob migration_041657_blob migration_041853_blob migration_041930_blob migration_050000_blob migration_050100_blob migration_051200_blob migration_051900_blob
+  local rollback_031000_blob rollback_143000_blob rollback_041530_blob rollback_041657_blob rollback_041853_blob rollback_041930_blob rollback_050000_blob rollback_050100_blob rollback_051200_blob rollback_051900_blob
   run_dir="$(mktemp -d "/run/newme-staging-sam78-$SHA.XXXXXX")"
   executor="$run_dir/run-staging-sam78-migrations.mjs"
   verify="$run_dir/sam78-staging-migration-verify.sql"
@@ -1525,6 +1527,7 @@ run_sam78_database_action() {
   migration_041930="$run_dir/20260804193000.sql"
   migration_050000="$run_dir/20260805000000.sql"
   migration_050100="$run_dir/20260805010000.sql"
+  migration_051200="$run_dir/20260805120000.sql"
   migration_051900="$run_dir/20260805190000.sql"
   rollback_031000="$run_dir/20260803100000.rollback.sql"
   rollback_143000="$run_dir/20260803143000.rollback.sql"
@@ -1534,6 +1537,7 @@ run_sam78_database_action() {
   rollback_041930="$run_dir/20260804193000.rollback.sql"
   rollback_050000="$run_dir/20260805000000.rollback.sql"
   rollback_050100="$run_dir/20260805010000.rollback.sql"
+  rollback_051200="$run_dir/20260805120000.rollback.sql"
   rollback_051900="$run_dir/20260805190000.rollback.sql"
   output="$(mktemp "$STATE_DIR/.sam78-database-action.XXXXXX")"
   register_temporary_path "$run_dir"
@@ -1550,6 +1554,7 @@ run_sam78_database_action() {
   copy_commit_blob "$SHA" "$SAM78_MIGRATION_041930" "$migration_041930"
   copy_commit_blob "$SHA" "$SAM78_MIGRATION_050000" "$migration_050000"
   copy_commit_blob "$SHA" "$SAM78_MIGRATION_050100" "$migration_050100"
+  copy_commit_blob "$SHA" "$SAM82_MIGRATION_051200" "$migration_051200"
   copy_commit_blob "$SHA" "$SAM79_MIGRATION_051900" "$migration_051900"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_031000" "$rollback_031000"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_143000" "$rollback_143000"
@@ -1559,6 +1564,7 @@ run_sam78_database_action() {
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_041930" "$rollback_041930"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_050000" "$rollback_050000"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_050100" "$rollback_050100"
+  copy_commit_blob "$SHA" "$SAM82_ROLLBACK_051200" "$rollback_051200"
   copy_commit_blob "$SHA" "$SAM79_ROLLBACK_051900" "$rollback_051900"
   verify_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_VERIFY")"
   history_manifest_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_HISTORY_MANIFEST")"
@@ -1570,6 +1576,7 @@ run_sam78_database_action() {
   migration_041930_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_041930")"
   migration_050000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_050000")"
   migration_050100_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_050100")"
+  migration_051200_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM82_MIGRATION_051200")"
   migration_051900_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM79_MIGRATION_051900")"
   rollback_031000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_031000")"
   rollback_143000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_143000")"
@@ -1579,16 +1586,17 @@ run_sam78_database_action() {
   rollback_041930_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_041930")"
   rollback_050000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_050000")"
   rollback_050100_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_050100")"
+  rollback_051200_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM82_ROLLBACK_051200")"
   rollback_051900_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM79_ROLLBACK_051900")"
 
   chown root:root "$run_dir" "$executor" "$verify" "$history_manifest" \
-    "$migration_031000" "$migration_143000" "$migration_041530" "$migration_041657" "$migration_041853" "$migration_041930" "$migration_050000" "$migration_050100" "$migration_051900" \
-    "$rollback_031000" "$rollback_143000" "$rollback_041530" "$rollback_041657" "$rollback_041853" "$rollback_041930" "$rollback_050000" "$rollback_050100" "$rollback_051900"
+    "$migration_031000" "$migration_143000" "$migration_041530" "$migration_041657" "$migration_041853" "$migration_041930" "$migration_050000" "$migration_050100" "$migration_051200" "$migration_051900" \
+    "$rollback_031000" "$rollback_143000" "$rollback_041530" "$rollback_041657" "$rollback_041853" "$rollback_041930" "$rollback_050000" "$rollback_050100" "$rollback_051200" "$rollback_051900"
   chmod 0700 "$run_dir"
   chmod 0500 "$executor"
   chmod 0400 "$verify" "$history_manifest" "$migration_031000" "$migration_143000" \
-    "$migration_041530" "$migration_041657" "$migration_041853" "$migration_041930" "$migration_050000" "$migration_050100" "$migration_051900" "$rollback_031000" "$rollback_143000" \
-    "$rollback_041530" "$rollback_041657" "$rollback_041853" "$rollback_041930" "$rollback_050000" "$rollback_050100" "$rollback_051900"
+    "$migration_041530" "$migration_041657" "$migration_041853" "$migration_041930" "$migration_050000" "$migration_050100" "$migration_051200" "$migration_051900" "$rollback_031000" "$rollback_143000" \
+    "$rollback_041530" "$rollback_041657" "$rollback_041853" "$rollback_041930" "$rollback_050000" "$rollback_050100" "$rollback_051200" "$rollback_051900"
 
   rc=0
   /usr/bin/env -i \
@@ -1621,6 +1629,8 @@ run_sam78_database_action() {
     SAM78_MIGRATION_050000_BLOB="$migration_050000_blob" \
     SAM78_MIGRATION_050100_PATH="$migration_050100" \
     SAM78_MIGRATION_050100_BLOB="$migration_050100_blob" \
+    SAM82_MIGRATION_051200_PATH="$migration_051200" \
+    SAM82_MIGRATION_051200_BLOB="$migration_051200_blob" \
     SAM79_MIGRATION_051900_PATH="$migration_051900" \
     SAM79_MIGRATION_051900_BLOB="$migration_051900_blob" \
     SAM78_ROLLBACK_031000_PATH="$rollback_031000" \
@@ -1639,6 +1649,8 @@ run_sam78_database_action() {
     SAM78_ROLLBACK_050000_BLOB="$rollback_050000_blob" \
     SAM78_ROLLBACK_050100_PATH="$rollback_050100" \
     SAM78_ROLLBACK_050100_BLOB="$rollback_050100_blob" \
+    SAM82_ROLLBACK_051200_PATH="$rollback_051200" \
+    SAM82_ROLLBACK_051200_BLOB="$rollback_051200_blob" \
     SAM79_ROLLBACK_051900_PATH="$rollback_051900" \
     SAM79_ROLLBACK_051900_BLOB="$rollback_051900_blob" \
     /usr/bin/node "$executor" >"$output" 2>&1 || rc=$?
@@ -1652,7 +1664,7 @@ run_sam78_database_action() {
     const versions = [
       "20260803100000", "20260803143000", "20260804153000",
       "20260804165734", "20260804185311", "20260804193000", "20260805000000",
-      "20260805010000", "20260805190000",
+      "20260805010000", "20260805120000", "20260805190000",
     ];
     const appliedVersionsAreValid = Array.isArray(body.appliedVersions)
       && body.appliedVersions.length > 0

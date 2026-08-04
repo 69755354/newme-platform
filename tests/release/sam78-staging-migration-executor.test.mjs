@@ -72,6 +72,12 @@ const paths = [
     rollback: "supabase/rollback/20260805010000_sam78_v4_exit_digest_contract_rollback.sql",
   },
   {
+    version: "20260805120000",
+    name: "sam82_retail_catalog_inventory_pricing",
+    migration: "supabase/migrations/20260805120000_sam82_retail_catalog_inventory_pricing.sql",
+    rollback: "supabase/rollback/20260805120000_sam82_retail_catalog_inventory_pricing_rollback.sql",
+  },
+  {
     version: "20260805190000",
     name: "v4_commercial_control_plane",
     migration: "supabase/migrations/20260805190000_v4_commercial_control_plane.sql",
@@ -105,17 +111,14 @@ test("SAM-78 plan uses the fixed staging owner and exact canonical history tip",
   const migrationFiles = (await readdir(new URL("supabase/migrations/", root)))
     .filter((name) => /^\d{14}_[a-z0-9][a-z0-9_]*\.sql$/.test(name))
     .sort();
-  assert.deepEqual(
-    manifest.map(({ version, name }) => `${version}_${name}.sql`),
-    migrationFiles,
-  );
+  assert.deepEqual(manifest.map(({ version, name }) => `${version}_${name}.sql`), migrationFiles);
   assert.deepEqual(manifest.slice(-paths.length), paths.map(({ version, name }) => ({ version, name })));
 });
 
 test("migration history manifest accepts CRLF but rejects header, order, row, and tip drift", async () => {
   const source = await read("scripts/uat/sam78-canonical-migration-history.txt");
   const crlfSource = source.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n");
-  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 142);
+  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 143);
   assert.throws(
     () => parseMigrationHistoryManifest(source.replace("# schema-version=1", "# schema-version=2")),
     /header mismatch/,

@@ -64,6 +64,7 @@ test("SAM-78 database actions are SHA-bound and verify provenance before executi
     /SAM78_MIGRATION_041930_BLOB="\$migration_041930_blob"/,
     /SAM78_MIGRATION_050000_BLOB="\$migration_050000_blob"/,
     /SAM78_MIGRATION_050100_BLOB="\$migration_050100_blob"/,
+    /SAM82_MIGRATION_051200_BLOB="\$migration_051200_blob"/,
     /SAM79_MIGRATION_051900_BLOB="\$migration_051900_blob"/,
     /SAM78_ROLLBACK_031000_BLOB="\$rollback_031000_blob"/,
     /SAM78_ROLLBACK_143000_BLOB="\$rollback_143000_blob"/,
@@ -73,6 +74,7 @@ test("SAM-78 database actions are SHA-bound and verify provenance before executi
     /SAM78_ROLLBACK_041930_BLOB="\$rollback_041930_blob"/,
     /SAM78_ROLLBACK_050000_BLOB="\$rollback_050000_blob"/,
     /SAM78_ROLLBACK_050100_BLOB="\$rollback_050100_blob"/,
+    /SAM82_ROLLBACK_051200_BLOB="\$rollback_051200_blob"/,
     /SAM79_ROLLBACK_051900_BLOB="\$rollback_051900_blob"/,
     /historyManifestBlob !== process\.argv\[5\]/,
     /buildArtifactSha256 !== process\.argv\[6\]/,
@@ -110,6 +112,7 @@ test("SAM-78 controller copies only commit-bound assets and redacts database out
     "$SAM78_MIGRATION_041930",
     "$SAM78_MIGRATION_050000",
     "$SAM78_MIGRATION_050100",
+    "$SAM82_MIGRATION_051200",
     "$SAM79_MIGRATION_051900",
     "$SAM78_ROLLBACK_031000",
     "$SAM78_ROLLBACK_143000",
@@ -119,6 +122,7 @@ test("SAM-78 controller copies only commit-bound assets and redacts database out
     "$SAM78_ROLLBACK_041930",
     "$SAM78_ROLLBACK_050000",
     "$SAM78_ROLLBACK_050100",
+    "$SAM82_ROLLBACK_051200",
     "$SAM79_ROLLBACK_051900",
   ]) assert.ok(control.includes(`copy_commit_blob "$SHA" "${source}"`), `missing exact copy for ${source}`);
   assert.match(control, /\/usr\/bin\/node "\$executor" >"\$output" 2>&1/);

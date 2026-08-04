@@ -13,8 +13,8 @@ EnvironmentFile=/etc/newme-staging/build.env
 Environment=NODE_OPTIONS=--max-old-space-size=768
 ExecStart=/opt/newme-staging/control/run-staging-build.sh %i
 TimeoutStartSec=60min
-MemoryHigh=1536M
-MemoryMax=1536M
+MemoryHigh=1792M
+MemoryMax=2048M
 MemorySwapMax=256M
 CPUQuota=100%
 IOWeight=10

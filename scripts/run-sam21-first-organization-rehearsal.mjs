@@ -32,7 +32,7 @@ const CANONICAL_ASSET_BLOBS = new Map([
   ],
   [
     "scripts/run-sam20-database-gate.mjs",
-    "079773c5355c2832a74f1e1b6bd34752e32f2ba5",
+    "01ab2db7c9a807d3bda9452164de49107b8f9018",
   ],
   [
     "scripts/run-sam22-database-gate.mjs",

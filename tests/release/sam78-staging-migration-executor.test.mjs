@@ -72,6 +72,12 @@ const paths = [
     rollback: "supabase/rollback/20260805010000_sam78_v4_exit_digest_contract_rollback.sql",
   },
   {
+    version: "20260805020000",
+    name: "sam81_real_estate_listing_foundation",
+    migration: "supabase/migrations/20260805020000_sam81_real_estate_listing_foundation.sql",
+    rollback: "supabase/rollback/20260805020000_sam81_real_estate_listing_foundation_rollback.sql",
+  },
+  {
     version: "20260805120000",
     name: "sam82_retail_catalog_inventory_pricing",
     migration: "supabase/migrations/20260805120000_sam82_retail_catalog_inventory_pricing.sql",

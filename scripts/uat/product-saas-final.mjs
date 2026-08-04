@@ -322,6 +322,7 @@ function initializeState(config, runId) {
     importBatchIds: new Set(),
     archiveBatchIds: new Set(),
     platformStaffIds: new Set(),
+    platformApprovalIds: new Set(),
     supportSessionIds: new Set(),
     exitRequestIds: new Set(),
     sam13FixtureEmails: new Set(),
@@ -1845,6 +1846,34 @@ async function cleanup(state) {
       .eq("organization_id", state.organizationId);
     if (error) fail("could not delete marked audit events");
   });
+  await capture("discover platform approvals", async () => {
+    const { data, error } = await state.admin
+      .from("platform_action_approvals")
+      .select("id")
+      .eq("target_key", state.organizationId);
+    if (error) fail("could not discover exact marked platform approvals");
+    for (const approval of data ?? []) {
+      if (UUID_PATTERN.test(approval.id ?? "")) {
+        state.platformApprovalIds.add(approval.id);
+      }
+    }
+  });
+  await capture("platform approval events", async () => {
+    if (state.platformApprovalIds.size === 0) return;
+    const { error } = await state.admin
+      .from("platform_action_approval_events")
+      .delete()
+      .in("approval_request_id", [...state.platformApprovalIds]);
+    if (error) fail("could not delete exact marked platform approval events");
+  });
+  await capture("platform approvals", async () => {
+    if (state.platformApprovalIds.size === 0) return;
+    const { error } = await state.admin
+      .from("platform_action_approvals")
+      .delete()
+      .in("id", [...state.platformApprovalIds]);
+    if (error) fail("could not delete exact marked platform approvals");
+  });
   await capture("support sessions", async () => {
     if (state.supportSessionIds.size === 0) return;
     const { error } = await state.admin
@@ -1944,6 +1973,18 @@ async function cleanup(state) {
       "platform_staff",
       "id",
       [...state.platformStaffIds],
+    ),
+    platform_action_approvals: await exactCount(
+      state.admin,
+      "platform_action_approvals",
+      "id",
+      [...state.platformApprovalIds],
+    ),
+    platform_action_approval_events: await exactCount(
+      state.admin,
+      "platform_action_approval_events",
+      "approval_request_id",
+      [...state.platformApprovalIds],
     ),
     membership_roles: await exactCount(
       state.admin,

@@ -53,11 +53,13 @@ readonly SAM78_MIGRATION_143000="supabase/migrations/20260803143000_v4_tenant_li
 readonly SAM78_MIGRATION_041530="supabase/migrations/20260804153000_sam78_govern_v4_authenticated_rpcs.sql"
 readonly SAM78_MIGRATION_041657="supabase/migrations/20260804165734_sam26_synthetic_audit_cleanup_boundary.sql"
 readonly SAM78_MIGRATION_041930="supabase/migrations/20260804193000_sam20_synthetic_support_cleanup_boundary.sql"
+readonly SAM78_MIGRATION_050000="supabase/migrations/20260805000000_sam78_product_saas_synthetic_cleanup_boundary.sql"
 readonly SAM78_ROLLBACK_031000="supabase/rollback/20260803100000_v4_tenant_capability_boundary_rollback.sql"
 readonly SAM78_ROLLBACK_143000="supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql"
 readonly SAM78_ROLLBACK_041530="supabase/rollback/20260804153000_sam78_govern_v4_authenticated_rpcs_rollback.sql"
 readonly SAM78_ROLLBACK_041657="supabase/rollback/20260804165734_sam26_synthetic_audit_cleanup_boundary_rollback.sql"
 readonly SAM78_ROLLBACK_041930="supabase/rollback/20260804193000_sam20_synthetic_support_cleanup_boundary_rollback.sql"
+readonly SAM78_ROLLBACK_050000="supabase/rollback/20260805000000_sam78_product_saas_synthetic_cleanup_boundary_rollback.sql"
 readonly SAM78_PGPASS="/etc/newme-staging/staging-migration.pgpass"
 readonly SAM78_CA="/etc/newme-staging/supabase-root-2021-ca.crt"
 readonly SAM78_PLATFORM_STAFF_ROLE_MAPPING="/etc/newme-staging/sam78-platform-staff-role-mapping.json"
@@ -1291,6 +1293,8 @@ run_uat_product_saas() {
       "support_sessions",
       "organization_exit_requests",
       "platform_staff",
+      "platform_action_approvals",
+      "platform_action_approval_events",
       "leads",
       "audit_logs",
       "activity_logs",
@@ -1497,12 +1501,12 @@ run_sam78_database_action() {
     fail "SAM-78 build artifact checksum mismatch"
 
   local run_dir executor verify history_manifest
-  local migration_031000 migration_143000 migration_041530 migration_041657 migration_041930
-  local rollback_031000 rollback_143000 rollback_041530 rollback_041657 rollback_041930
+  local migration_031000 migration_143000 migration_041530 migration_041657 migration_041930 migration_050000
+  local rollback_031000 rollback_143000 rollback_041530 rollback_041657 rollback_041930 rollback_050000
   local output rc evidence_tmp
   local verify_blob history_manifest_blob
-  local migration_031000_blob migration_143000_blob migration_041530_blob migration_041657_blob migration_041930_blob
-  local rollback_031000_blob rollback_143000_blob rollback_041530_blob rollback_041657_blob rollback_041930_blob
+  local migration_031000_blob migration_143000_blob migration_041530_blob migration_041657_blob migration_041930_blob migration_050000_blob
+  local rollback_031000_blob rollback_143000_blob rollback_041530_blob rollback_041657_blob rollback_041930_blob rollback_050000_blob
   run_dir="$(mktemp -d "/run/newme-staging-sam78-$SHA.XXXXXX")"
   executor="$run_dir/run-staging-sam78-migrations.mjs"
   verify="$run_dir/sam78-staging-migration-verify.sql"
@@ -1512,11 +1516,13 @@ run_sam78_database_action() {
   migration_041530="$run_dir/20260804153000.sql"
   migration_041657="$run_dir/20260804165734.sql"
   migration_041930="$run_dir/20260804193000.sql"
+  migration_050000="$run_dir/20260805000000.sql"
   rollback_031000="$run_dir/20260803100000.rollback.sql"
   rollback_143000="$run_dir/20260803143000.rollback.sql"
   rollback_041530="$run_dir/20260804153000.rollback.sql"
   rollback_041657="$run_dir/20260804165734.rollback.sql"
   rollback_041930="$run_dir/20260804193000.rollback.sql"
+  rollback_050000="$run_dir/20260805000000.rollback.sql"
   output="$(mktemp "$STATE_DIR/.sam78-database-action.XXXXXX")"
   register_temporary_path "$run_dir"
   register_temporary_path "$output"
@@ -1529,11 +1535,13 @@ run_sam78_database_action() {
   copy_commit_blob "$SHA" "$SAM78_MIGRATION_041530" "$migration_041530"
   copy_commit_blob "$SHA" "$SAM78_MIGRATION_041657" "$migration_041657"
   copy_commit_blob "$SHA" "$SAM78_MIGRATION_041930" "$migration_041930"
+  copy_commit_blob "$SHA" "$SAM78_MIGRATION_050000" "$migration_050000"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_031000" "$rollback_031000"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_143000" "$rollback_143000"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_041530" "$rollback_041530"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_041657" "$rollback_041657"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_041930" "$rollback_041930"
+  copy_commit_blob "$SHA" "$SAM78_ROLLBACK_050000" "$rollback_050000"
   verify_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_VERIFY")"
   history_manifest_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_HISTORY_MANIFEST")"
   migration_031000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_031000")"
@@ -1541,20 +1549,22 @@ run_sam78_database_action() {
   migration_041530_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_041530")"
   migration_041657_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_041657")"
   migration_041930_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_041930")"
+  migration_050000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_050000")"
   rollback_031000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_031000")"
   rollback_143000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_143000")"
   rollback_041530_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_041530")"
   rollback_041657_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_041657")"
   rollback_041930_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_041930")"
+  rollback_050000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_050000")"
 
   chown root:root "$run_dir" "$executor" "$verify" "$history_manifest" \
-    "$migration_031000" "$migration_143000" "$migration_041530" "$migration_041657" "$migration_041930" \
-    "$rollback_031000" "$rollback_143000" "$rollback_041530" "$rollback_041657" "$rollback_041930"
+    "$migration_031000" "$migration_143000" "$migration_041530" "$migration_041657" "$migration_041930" "$migration_050000" \
+    "$rollback_031000" "$rollback_143000" "$rollback_041530" "$rollback_041657" "$rollback_041930" "$rollback_050000"
   chmod 0700 "$run_dir"
   chmod 0500 "$executor"
   chmod 0400 "$verify" "$history_manifest" "$migration_031000" "$migration_143000" \
-    "$migration_041530" "$migration_041657" "$migration_041930" "$rollback_031000" "$rollback_143000" \
-    "$rollback_041530" "$rollback_041657" "$rollback_041930"
+    "$migration_041530" "$migration_041657" "$migration_041930" "$migration_050000" "$rollback_031000" "$rollback_143000" \
+    "$rollback_041530" "$rollback_041657" "$rollback_041930" "$rollback_050000"
 
   rc=0
   /usr/bin/env -i \
@@ -1581,6 +1591,8 @@ run_sam78_database_action() {
     SAM78_MIGRATION_041657_BLOB="$migration_041657_blob" \
     SAM78_MIGRATION_041930_PATH="$migration_041930" \
     SAM78_MIGRATION_041930_BLOB="$migration_041930_blob" \
+    SAM78_MIGRATION_050000_PATH="$migration_050000" \
+    SAM78_MIGRATION_050000_BLOB="$migration_050000_blob" \
     SAM78_ROLLBACK_031000_PATH="$rollback_031000" \
     SAM78_ROLLBACK_031000_BLOB="$rollback_031000_blob" \
     SAM78_ROLLBACK_143000_PATH="$rollback_143000" \
@@ -1591,6 +1603,8 @@ run_sam78_database_action() {
     SAM78_ROLLBACK_041657_BLOB="$rollback_041657_blob" \
     SAM78_ROLLBACK_041930_PATH="$rollback_041930" \
     SAM78_ROLLBACK_041930_BLOB="$rollback_041930_blob" \
+    SAM78_ROLLBACK_050000_PATH="$rollback_050000" \
+    SAM78_ROLLBACK_050000_BLOB="$rollback_050000_blob" \
     /usr/bin/node "$executor" >"$output" 2>&1 || rc=$?
   [ "$rc" -eq 0 ] ||
     fail "SAM-78 $database_action failed with status $rc; captured output is redacted"
@@ -1599,6 +1613,19 @@ run_sam78_database_action() {
     const lines = fs.readFileSync(process.argv[1], "utf8").trim().split(/\r?\n/);
     if (lines.length !== 1) process.exit(1);
     const body = JSON.parse(lines[0]);
+    const versions = [
+      "20260803100000", "20260803143000", "20260804153000",
+      "20260804165734", "20260804193000", "20260805000000",
+    ];
+    const appliedVersionsAreValid = Array.isArray(body.appliedVersions)
+      && body.appliedVersions.length > 0
+      && (
+        process.argv[4] === "rollback"
+          ? JSON.stringify(body.appliedVersions) === JSON.stringify(versions)
+          : JSON.stringify(body.appliedVersions) === JSON.stringify(
+              versions.slice(versions.length - body.appliedVersions.length)
+            )
+      );
     if (
       body.schemaVersion !== 1 ||
       body.linearId !== "SAM-78" ||
@@ -1612,10 +1639,8 @@ run_sam78_database_action() {
       body.platformStaffRoleMappingSha256 !== (
         process.argv[4] === "apply" ? process.argv[7] : null
       ) ||
-      JSON.stringify(body.versions) !== JSON.stringify([
-        "20260803100000", "20260803143000", "20260804153000",
-        "20260804165734", "20260804193000",
-      ])
+      JSON.stringify(body.versions) !== JSON.stringify(versions) ||
+      !appliedVersionsAreValid
     ) process.exit(1);
   ' "$output" "$SHA" "$STAGING_REF" "$database_action" \
     "$history_manifest_blob" "$expected_checksum" \

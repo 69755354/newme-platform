@@ -2,6 +2,7 @@ DO $sam78_live_verify$
 DECLARE
   action text := current_setting('newme.sam78_action', true);
   phase text := current_setting('newme.sam78_verify_phase', true);
+  apply_mode text := current_setting('newme.sam78_apply_mode', true);
   legacy_organization_id constant uuid :=
     '6bc3b06e-5c05-4f45-9f1f-e9ea03a3cdd1'::uuid;
   tenant_tables constant text[] := ARRAY[
@@ -58,11 +59,15 @@ DECLARE
   expected_activity_zero_count text;
   expected_session_zero_count text;
 BEGIN
-  IF action NOT IN ('apply', 'rollback') OR phase NOT IN ('pre', 'post') THEN
+  IF action NOT IN ('apply', 'rollback')
+    OR phase NOT IN ('pre', 'post')
+    OR apply_mode NOT IN ('full', 'suffix')
+    OR (action = 'rollback' AND apply_mode <> 'full')
+  THEN
     RAISE EXCEPTION 'SAM78 live verification context is invalid';
   END IF;
 
-  IF (action = 'apply' AND phase = 'pre')
+  IF (action = 'apply' AND phase = 'pre' AND apply_mode = 'full')
     OR (action = 'rollback' AND phase = 'post') THEN
     FOREACH relation_name IN ARRAY managed_relations LOOP
       IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
@@ -198,6 +203,36 @@ BEGIN
       ) <> expected_session_zero_count THEN
         RAISE EXCEPTION 'SAM78 rollback changed zero UUID session evidence';
       END IF;
+      IF to_regprocedure(
+          'public.product_saas_is_synthetic_organization(uuid)'
+        ) IS NOT NULL
+        OR to_regprocedure(
+          'public.product_saas_is_synthetic_exit_approval(uuid)'
+        ) IS NOT NULL
+        OR to_regprocedure(
+          'public.product_saas_is_synthetic_audit_log(uuid)'
+        ) IS NOT NULL
+        OR to_regprocedure(
+          'public.product_saas_is_synthetic_audit_event(uuid)'
+        ) IS NOT NULL
+        OR (
+          to_regprocedure('public.v4_reject_mutation()') IS NOT NULL
+          AND pg_get_functiondef(
+            to_regprocedure('public.v4_reject_mutation()')
+          )
+            ILIKE '%product_saas_is_synthetic_%'
+        )
+        OR (
+          to_regprocedure(
+            'public.v4_guard_platform_action_approval_update()'
+          ) IS NOT NULL
+          AND pg_get_functiondef(to_regprocedure(
+            'public.v4_guard_platform_action_approval_update()'
+          )) ILIKE '%product_saas_is_synthetic_%'
+        )
+      THEN
+        RAISE EXCEPTION 'SAM78 rollback retained Product/SaaS cleanup allowance';
+      END IF;
     END IF;
     RETURN;
   END IF;
@@ -211,22 +246,52 @@ BEGIN
   END LOOP;
 
   IF to_regprocedure('public.v4_reject_mutation()') IS NULL
-    OR pg_get_functiondef('public.v4_reject_mutation()'::regprocedure)
+    OR pg_get_functiondef(to_regprocedure('public.v4_reject_mutation()'))
       NOT ILIKE '%sam26-staging-uat%'
-    OR pg_get_functiondef('public.v4_reject_mutation()'::regprocedure)
+    OR pg_get_functiondef(to_regprocedure('public.v4_reject_mutation()'))
       NOT ILIKE '%current_user = ''service_role''%'
   THEN
     RAISE EXCEPTION 'SAM26 synthetic audit cleanup boundary is missing';
   END IF;
 
   IF to_regprocedure('public.sam20_is_synthetic_support_approval(uuid)') IS NULL
-    OR pg_get_functiondef('public.v4_reject_mutation()'::regprocedure)
+    OR pg_get_functiondef(to_regprocedure('public.v4_reject_mutation()'))
       NOT ILIKE '%platform_action_approval_events%'
-    OR pg_get_functiondef(
-      'public.v4_guard_platform_action_approval_update()'::regprocedure
-    ) NOT ILIKE '%sam20_is_synthetic_support_approval%'
+    OR pg_get_functiondef(to_regprocedure(
+      'public.v4_guard_platform_action_approval_update()'
+    )) NOT ILIKE '%sam20_is_synthetic_support_approval%'
   THEN
     RAISE EXCEPTION 'SAM20 synthetic support cleanup boundary is missing';
+  END IF;
+
+  IF action = 'apply' AND phase = 'pre' AND apply_mode = 'suffix' THEN
+    IF to_regprocedure('public.product_saas_is_synthetic_organization(uuid)') IS NOT NULL
+      OR to_regprocedure('public.product_saas_is_synthetic_exit_approval(uuid)') IS NOT NULL
+      OR to_regprocedure('public.product_saas_is_synthetic_audit_log(uuid)') IS NOT NULL
+      OR to_regprocedure('public.product_saas_is_synthetic_audit_event(uuid)') IS NOT NULL
+      OR pg_get_functiondef(to_regprocedure('public.v4_reject_mutation()'))
+        ILIKE '%product_saas_is_synthetic_%'
+      OR pg_get_functiondef(to_regprocedure(
+        'public.v4_guard_platform_action_approval_update()'
+      )) ILIKE '%product_saas_is_synthetic_%'
+    THEN
+      RAISE EXCEPTION 'SAM78 Product/SaaS cleanup suffix is already present';
+    END IF;
+  ELSE
+    IF to_regprocedure('public.product_saas_is_synthetic_organization(uuid)') IS NULL
+      OR to_regprocedure('public.product_saas_is_synthetic_exit_approval(uuid)') IS NULL
+      OR to_regprocedure('public.product_saas_is_synthetic_audit_log(uuid)') IS NULL
+      OR to_regprocedure('public.product_saas_is_synthetic_audit_event(uuid)') IS NULL
+      OR pg_get_functiondef(to_regprocedure('public.v4_reject_mutation()'))
+        NOT ILIKE '%product_saas_is_synthetic_audit_log%'
+      OR pg_get_functiondef(to_regprocedure('public.v4_reject_mutation()'))
+        NOT ILIKE '%product_saas_is_synthetic_audit_event%'
+      OR pg_get_functiondef(to_regprocedure(
+        'public.v4_guard_platform_action_approval_update()'
+      )) NOT ILIKE '%product_saas_is_synthetic_exit_approval%'
+    THEN
+      RAISE EXCEPTION 'SAM78 Product/SaaS cleanup boundary is missing';
+    END IF;
   END IF;
 
   FOREACH target_table_name IN ARRAY tenant_tables LOOP

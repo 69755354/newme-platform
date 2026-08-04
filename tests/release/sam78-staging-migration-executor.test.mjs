@@ -10,9 +10,11 @@ import {
   PLATFORM_STAFF_ROLE_MAPPING_FILE,
   STAGING_REF,
   buildTransactionSql,
+  parseAppliedMigrationPrefix,
   parseMigrationHistoryManifest,
   parsePlatformStaffRoleMapping,
   psqlInvocation,
+  psqlHistoryInvocation,
   splitSqlStatements,
   stripOuterTransaction,
 } from "../../scripts/run-staging-sam78-migrations.mjs";
@@ -50,6 +52,12 @@ const paths = [
     name: "sam20_synthetic_support_cleanup_boundary",
     migration: "supabase/migrations/20260804193000_sam20_synthetic_support_cleanup_boundary.sql",
     rollback: "supabase/rollback/20260804193000_sam20_synthetic_support_cleanup_boundary_rollback.sql",
+  },
+  {
+    version: "20260805000000",
+    name: "sam78_product_saas_synthetic_cleanup_boundary",
+    migration: "supabase/migrations/20260805000000_sam78_product_saas_synthetic_cleanup_boundary.sql",
+    rollback: "supabase/rollback/20260805000000_sam78_product_saas_synthetic_cleanup_boundary_rollback.sql",
   },
 ];
 
@@ -89,7 +97,7 @@ test("SAM-78 plan uses the fixed staging owner and exact canonical history tip",
 test("migration history manifest accepts CRLF but rejects header, order, row, and tip drift", async () => {
   const source = await read("scripts/uat/sam78-canonical-migration-history.txt");
   const crlfSource = source.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n");
-  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 138);
+  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 139);
   assert.throws(
     () => parseMigrationHistoryManifest(source.replace("# schema-version=1", "# schema-version=2")),
     /header mismatch/,
@@ -204,19 +212,67 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
     verifySql: await read("scripts/uat/sam78-staging-migration-verify.sql"),
   });
   const operations = sql.indexOf("DELETE FROM supabase_migrations.schema_migrations");
-  const newest = sql.indexOf("version = '20260804193000'", operations);
-  const sam26Cleanup = sql.indexOf("version = '20260804165734'", newest + 1);
+  const newest = sql.indexOf("version = '20260805000000'", operations);
+  const sam20Cleanup = sql.indexOf("version = '20260804193000'", newest + 1);
+  const sam26Cleanup = sql.indexOf("version = '20260804165734'", sam20Cleanup + 1);
   const governedRpc = sql.indexOf("version = '20260804153000'", sam26Cleanup + 1);
   const middle = sql.indexOf("version = '20260803143000'", governedRpc + 1);
   const oldest = sql.indexOf("version = '20260803100000'", middle + 1);
   assert.ok(
-    operations > 0 && newest > operations && sam26Cleanup > newest
+    operations > 0 && newest > operations && sam20Cleanup > newest
+      && sam26Cleanup > sam20Cleanup
       && governedRpc > sam26Cleanup
       && middle > governedRpc && oldest > middle,
   );
   assert.match(sql, /v4_assert_tenant_closure_rollback_safe/);
   assert.match(sql, /SAM78 rollback history cleanup failed/);
   assert.equal(splitSqlStatements(sql).at(-1), "COMMIT");
+});
+
+test("apply accepts only an exact unapplied canonical suffix", async () => {
+  const loaded = await plan();
+  const activePlan = loaded.slice(-1);
+  const sql = buildTransactionSql({
+    action: "apply",
+    plan: loaded,
+    activePlan,
+    expectedHistory: await expectedHistory(),
+    platformStaffRoleMapping: "{}",
+    verifySql: await read("scripts/uat/sam78-staging-migration-verify.sql"),
+  });
+  assert.match(sql, /newme\.sam78_apply_mode = 'suffix'/);
+  assert.match(sql, /20260805000000/);
+  assert.match(sql, /SAM78 applied migration prefix metadata mismatch/);
+  assert.equal(
+    (sql.match(/INSERT INTO supabase_migrations\.schema_migrations/g) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(
+    sql.slice(sql.indexOf("SET LOCAL newme.sam78_verify_phase = 'pre'")),
+    /CREATE TABLE public\.capabilities/,
+  );
+  assert.equal(parseAppliedMigrationPrefix(""), 0);
+  assert.equal(
+    parseAppliedMigrationPrefix(
+      loaded.slice(0, -1).map(({ version, name }) => `${version}\t${name}`).join("\n") + "\n",
+    ),
+    loaded.length - 1,
+  );
+  assert.throws(
+    () => parseAppliedMigrationPrefix(`${loaded[1].version}\t${loaded[1].name}\n`),
+    /not one exact canonical prefix/,
+  );
+  assert.throws(
+    () => buildTransactionSql({
+      action: "apply",
+      plan: loaded,
+      activePlan: loaded.slice(0, 1),
+      expectedHistory: [],
+      platformStaffRoleMapping: "{}",
+      verifySql: "SELECT 1;",
+    }),
+    /exact canonical suffix/,
+  );
 });
 
 test("plan, action, history, and verification drift fail closed before execution", async () => {
@@ -264,6 +320,11 @@ test("psql uses fixed owner, root-only secret path, and verify-full CA without s
   assert.ok(!invocation.args.includes(secretPath));
   assert.ok(!JSON.stringify(invocation.args).includes("password"));
   assert.ok(!JSON.stringify(invocation).includes("sam21-db.pgpass"));
+  const historyInvocation = psqlHistoryInvocation({ SAM78_PGPASS_PATH: secretPath });
+  assert.ok(historyInvocation.args.includes("--tuples-only"));
+  assert.ok(historyInvocation.args.includes("--no-align"));
+  assert.match(historyInvocation.args.at(-1), /schema_migrations/);
+  assert.ok(!JSON.stringify(historyInvocation.args).includes(secretPath));
 });
 
 test("live verifier covers exact pre/post FK, RLS, ACL, backfill, orphan, and rollback contracts", async () => {

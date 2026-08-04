@@ -104,6 +104,9 @@ jobs:
       - name: SAM-82 retail catalog inventory and pricing database gate
         run: npm run check:sam82-database
 
+      - name: SAM-83 retail order procurement fulfillment and finance database gate
+        run: npm run check:sam83-database
+
       - name: CRM regression contract
         run: python3 scripts/crm-regression.py --self-test
 

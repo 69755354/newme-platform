@@ -96,6 +96,14 @@ export const MIGRATIONS = Object.freeze([
     rollbackBlobEnv: "SAM82_ROLLBACK_051200_BLOB",
   }),
   Object.freeze({
+    version: "20260805130000",
+    name: "sam83_retail_order_procurement_fulfillment_finance",
+    migrationEnv: "SAM83_MIGRATION_051300_PATH",
+    migrationBlobEnv: "SAM83_MIGRATION_051300_BLOB",
+    rollbackEnv: "SAM83_ROLLBACK_051300_PATH",
+    rollbackBlobEnv: "SAM83_ROLLBACK_051300_BLOB",
+  }),
+  Object.freeze({
     version: "20260805190000",
     name: "v4_commercial_control_plane",
     migrationEnv: "SAM79_MIGRATION_051900_PATH",

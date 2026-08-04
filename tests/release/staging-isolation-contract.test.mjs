@@ -203,7 +203,7 @@ test("staging builder emits an immutable standalone artifact without runtime sec
     /NEWME_STAGING_BOUNDARY_MODE=build/,
     /NEWME_STAGING_PROJECT_REF="\$EXPECTED_REF"/,
     /NEWME_STANDALONE_BUILD=1/,
-    /NEWME_STAGING_LOW_MEMORY=1/,
+    /NEWME_STAGING_LOW_MEMORY=0/,
     /NEXT_PUBLIC_APP_VERSION="\$SHA"/,
     /NEWME_STAGING_BUILD_HEAP_MB:-896/,
     /build heap must stay between 768 and 1152 MiB/,
@@ -215,10 +215,12 @@ test("staging builder emits an immutable standalone artifact without runtime sec
     /npm test/,
     /npm run check:supply-chain -- --accept-known/,
     /\. "\$ENV_FILE"/,
-    /npm run build -- --webpack/,
+    /unset ANALYZE/,
+    /npm run build -- --turbopack/,
     /manifest\.json/,
     /sha256sum "\$ARTIFACT"/,
   ]) assert.match(build, pattern);
+  assert.doesNotMatch(build, /npm run build -- --webpack/);
   assert.doesNotMatch(build, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(build, /vfopmpxlhwzpxqegayew/);
 });

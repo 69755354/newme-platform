@@ -146,9 +146,10 @@ set -a
 set +a
 export NEWME_ISOLATED_BUILD=1
 export NEWME_STANDALONE_BUILD=1
-export NEWME_STAGING_LOW_MEMORY=1
+export NEWME_STAGING_LOW_MEMORY=0
 export NEXT_PUBLIC_APP_VERSION="$SHA"
-npm run build -- --webpack
+unset ANALYZE
+npm run build -- --turbopack
 
 STANDALONE="$ROOT/.next/standalone"
 [ -f "$STANDALONE/server.js" ] || fail "standalone server is missing"

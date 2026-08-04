@@ -116,6 +116,29 @@ case "$SAM_UAT_SUITE" in
     [[ "$PRODUCT_UAT_BASE_URL" != *"$PRODUCTION_REF"* ]] || exit 65
     exec node /runner/product-saas-final.mjs
     ;;
+  sam78)
+    : "${SAM78_EXPECTED_RELEASE_SHA:?missing expected release SHA}"
+    : "${SAM78_BASE_URL:?missing staging app URL}"
+    : "${SAM78_RELEASE_MANIFEST:?missing read-only release manifest}"
+    : "${SAM78_UAT_CONFIRM:?missing staging-only confirmation}"
+    [[ "$SAM78_EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+      echo "invalid expected release SHA" >&2
+      exit 64
+    }
+    [[ "$SAM78_BASE_URL" == "http://127.0.0.1:3101" ]] || {
+      echo "refusing non-loopback staging application URL" >&2
+      exit 65
+    }
+    [[ "$SAM78_RELEASE_MANIFEST" == "/runner/release/manifest.json" && -r "$SAM78_RELEASE_MANIFEST" ]] || {
+      echo "refusing missing or non-fixed release manifest" >&2
+      exit 65
+    }
+    [[ "$SAM78_UAT_CONFIRM" == "SAM78_STAGING_TENANT_CLOSURE_ONLY" ]] || {
+      echo "refusing missing staging-only confirmation" >&2
+      exit 65
+    }
+    exec node /runner/sam78-staging-tenant-closure.mjs
+    ;;
   *)
     echo "refusing unknown staging UAT suite" >&2
     exit 64

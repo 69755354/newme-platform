@@ -261,15 +261,19 @@ async function createOrganization() {
       name: `[SAM-26] ${runId}`,
       industry_key: "real_estate",
       status: "active",
+      plan_key: "growth",
+      billable_seat_limit: 20,
     },
   });
   const organizations = await restRows(
     "organizations",
-    `select=id,slug,status&id=eq.${encodeURIComponent(organizationId)}`,
+    `select=id,slug,status,plan_key,billable_seat_limit&id=eq.${encodeURIComponent(organizationId)}`,
   );
   assert.equal(organizations.length, 1, "SAM-26 organization must exist");
   assert.equal(organizations[0].slug, organizationSlug);
   assert.equal(organizations[0].status, "active");
+  assert.equal(organizations[0].plan_key, "growth");
+  assert.equal(organizations[0].billable_seat_limit, 20);
 }
 
 async function createUser(role) {

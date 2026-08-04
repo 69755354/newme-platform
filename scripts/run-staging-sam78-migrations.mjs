@@ -47,6 +47,14 @@ export const MIGRATIONS = Object.freeze([
     rollbackEnv: "SAM78_ROLLBACK_041530_PATH",
     rollbackBlobEnv: "SAM78_ROLLBACK_041530_BLOB",
   }),
+  Object.freeze({
+    version: "20260804165734",
+    name: "sam26_synthetic_audit_cleanup_boundary",
+    migrationEnv: "SAM78_MIGRATION_041657_PATH",
+    migrationBlobEnv: "SAM78_MIGRATION_041657_BLOB",
+    rollbackEnv: "SAM78_ROLLBACK_041657_PATH",
+    rollbackBlobEnv: "SAM78_ROLLBACK_041657_BLOB",
+  }),
 ]);
 
 function fail(message) {

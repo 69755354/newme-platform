@@ -39,6 +39,12 @@ const paths = [
     migration: "supabase/migrations/20260804153000_sam78_govern_v4_authenticated_rpcs.sql",
     rollback: "supabase/rollback/20260804153000_sam78_govern_v4_authenticated_rpcs_rollback.sql",
   },
+  {
+    version: "20260804165734",
+    name: "sam26_synthetic_audit_cleanup_boundary",
+    migration: "supabase/migrations/20260804165734_sam26_synthetic_audit_cleanup_boundary.sql",
+    rollback: "supabase/rollback/20260804165734_sam26_synthetic_audit_cleanup_boundary_rollback.sql",
+  },
 ];
 
 async function expectedHistory() {
@@ -77,7 +83,7 @@ test("SAM-78 plan uses the fixed staging owner and exact canonical history tip",
 test("migration history manifest accepts CRLF but rejects header, order, row, and tip drift", async () => {
   const source = await read("scripts/uat/sam78-canonical-migration-history.txt");
   const crlfSource = source.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n");
-  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 136);
+  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 137);
   assert.throws(
     () => parseMigrationHistoryManifest(source.replace("# schema-version=1", "# schema-version=2")),
     /header mismatch/,
@@ -192,10 +198,14 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
     verifySql: await read("scripts/uat/sam78-staging-migration-verify.sql"),
   });
   const operations = sql.indexOf("DELETE FROM supabase_migrations.schema_migrations");
-  const newest = sql.indexOf("version = '20260804153000'", operations);
-  const middle = sql.indexOf("version = '20260803143000'", newest + 1);
+  const newest = sql.indexOf("version = '20260804165734'", operations);
+  const governedRpc = sql.indexOf("version = '20260804153000'", newest + 1);
+  const middle = sql.indexOf("version = '20260803143000'", governedRpc + 1);
   const oldest = sql.indexOf("version = '20260803100000'", middle + 1);
-  assert.ok(operations > 0 && newest > operations && middle > newest && oldest > middle);
+  assert.ok(
+    operations > 0 && newest > operations && governedRpc > newest
+      && middle > governedRpc && oldest > middle,
+  );
   assert.match(sql, /v4_assert_tenant_closure_rollback_safe/);
   assert.match(sql, /SAM78 rollback history cleanup failed/);
   assert.equal(splitSqlStatements(sql).at(-1), "COMMIT");

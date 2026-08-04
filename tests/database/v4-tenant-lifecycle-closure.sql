@@ -479,9 +479,61 @@ BEGIN
 END
 $$;
 RESET ROLE;
-SET ROLE service_role;
 RESET request.jwt.claim.sub;
 RESET request.headers;
+INSERT INTO auth.users(id) VALUES ('78000000-0026-4000-8000-000000000026');
+INSERT INTO public.profiles(id, email, role, is_active) VALUES (
+  '78000000-0026-4000-8000-000000000026',
+  'sam26-1785832451012-e811cec8-admin@example.test',
+  'admin', true
+);
+INSERT INTO public.organizations(
+  id, slug, name, industry_key, plan_key, status,
+  data_region, timezone, billable_seat_limit
+) VALUES (
+  '78000000-2026-4000-8000-000000000026',
+  'sam26-1785832451012-e811cec8', 'SAM-26 audit cleanup fixture',
+  'real_estate', 'starter', 'active', 'UAE', 'Asia/Dubai', 6
+);
+INSERT INTO public.audit_logs(
+  id, organization_id, actor_id, action, details
+) VALUES (
+  '78000000-2126-4000-8000-000000000026',
+  '78000000-2026-4000-8000-000000000026',
+  '78000000-0026-4000-8000-000000000026',
+  'PAGE_VISIT',
+  '{"page":"/dashboard","fixture_scope":"sam26-staging-uat","fixture_run_id":"1785832451012-e811cec8"}'::jsonb
+);
+SET ROLE service_role;
+DELETE FROM public.audit_logs
+WHERE id = '78000000-2126-4000-8000-000000000026';
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.audit_logs
+    WHERE id = '78000000-2126-4000-8000-000000000026'
+  ) THEN RAISE EXCEPTION 'SAM-26 exact synthetic audit cleanup was rejected'; END IF;
+END
+$$;
+INSERT INTO public.audit_logs(
+  id, organization_id, actor_id, action, details
+) VALUES (
+  '78000000-2226-4000-8000-000000000026',
+  '78000000-2026-4000-8000-000000000026',
+  '78000000-0026-4000-8000-000000000026',
+  'PAGE_VISIT', '{"page":"/dashboard"}'::jsonb
+);
+DO $$
+BEGIN
+  BEGIN
+    DELETE FROM public.audit_logs
+    WHERE id = '78000000-2226-4000-8000-000000000026';
+    RAISE EXCEPTION 'unmarked service-role audit deletion accepted';
+  EXCEPTION WHEN insufficient_privilege THEN
+    IF SQLERRM <> 'immutable_record' THEN RAISE; END IF;
+  END;
+END
+$$;
 DO $$
 BEGIN
   IF NOT EXISTS (

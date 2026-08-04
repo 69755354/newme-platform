@@ -163,7 +163,7 @@ CREATE POLICY harness_profiles_read
   ON public.profiles FOR SELECT TO authenticated USING (true);
 CREATE POLICY harness_leads_all
   ON public.leads FOR ALL TO authenticated USING (true) WITH CHECK (true);
-GRANT SELECT ON public.profiles TO authenticated;
+GRANT SELECT ON public.profiles TO authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.leads
   TO authenticated, service_role;
 

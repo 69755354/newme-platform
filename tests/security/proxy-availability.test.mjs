@@ -347,6 +347,7 @@ test("server evidence writes survive the response and fail without blocking the 
   const response = await proxy.proxy(
     request("/dashboard", "GET", {
       "x-newme-organization-id": organizationId,
+      "x-newme-sam26-run-id": "1785832451012-e811cec8",
     }),
     { waitUntil: (promise) => { background = promise; } },
   );
@@ -381,6 +382,12 @@ test("server evidence writes survive the response and fail without blocking the 
     reports.map(({ type }) => type).sort(),
     ["activity_tracking_error", "audit_log_error"],
   );
-  assert.equal(JSON.parse(requests[1].init.body).organization_id, organizationId);
+  const auditBody = JSON.parse(requests[1].init.body);
+  assert.equal(auditBody.organization_id, organizationId);
+  assert.deepEqual(auditBody.details, {
+    page: "/dashboard",
+    fixture_scope: "sam26-staging-uat",
+    fixture_run_id: "1785832451012-e811cec8",
+  });
 });
 

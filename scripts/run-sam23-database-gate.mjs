@@ -231,6 +231,7 @@ async function main() {
       "supabase/migrations/20260802074500_fix_customer_export_notification_uuid.sql",
       "supabase/migrations/20260803100000_v4_tenant_capability_boundary.sql",
       "supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql",
+      "supabase/migrations/20260804165734_sam26_synthetic_audit_cleanup_boundary.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
       "supabase/rollback/20260801202728_organization_customer_exit_lifecycle_rollback.sql",
@@ -239,6 +240,7 @@ async function main() {
       "supabase/rollback/20260802074500_fix_customer_export_notification_uuid_rollback.sql",
       "supabase/rollback/20260803100000_v4_tenant_capability_boundary_rollback.sql",
       "supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql",
+      "supabase/rollback/20260804165734_sam26_synthetic_audit_cleanup_boundary_rollback.sql",
       "scripts/uat/sam78-staging-migration-verify.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
@@ -605,6 +607,13 @@ async function main() {
       "v4_tenant_lifecycle_closure_apply",
     );
     requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260804165734_sam26_synthetic_audit_cleanup_boundary.sql",
+      ]),
+      "sam26_synthetic_audit_cleanup_boundary_apply",
+    );
+    requireSuccess(
       verifySam78Live(container, "apply", "post"),
       "v4_tenant_live_verify_apply_post",
     );
@@ -725,6 +734,29 @@ async function main() {
     if (missingRollbackEnvironment.stdout.trim() !== "t") {
       throw new Error("v4_tenant_lifecycle_closure_missing_environment_probe_failed");
     }
+    const deniedSam26AuditRollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260804165734_sam26_synthetic_audit_cleanup_boundary_rollback.sql",
+    ]);
+    if (
+      deniedSam26AuditRollback.status === 0
+      || !combined(deniedSam26AuditRollback).includes(
+        "sam26_synthetic_audit_cleanup_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error("sam26_synthetic_audit_cleanup_rollback_not_fail_closed");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260804165734_sam26_synthetic_audit_cleanup_boundary_rollback.sql",
+        ],
+        "test",
+      ),
+      "sam26_synthetic_audit_cleanup_boundary_rollback",
+    );
     const deniedV4ClosureRollback = psql(container, [
       "-f",
       "/work/supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql",

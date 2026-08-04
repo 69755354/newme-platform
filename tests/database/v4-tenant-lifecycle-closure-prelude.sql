@@ -85,7 +85,8 @@ CREATE TABLE IF NOT EXISTS public.ad_spend (
 );
 CREATE TABLE IF NOT EXISTS public.audit_logs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  actor_id uuid, action text NOT NULL DEFAULT 'test'
+  actor_id uuid, action text NOT NULL DEFAULT 'test',
+  details jsonb NOT NULL DEFAULT '{}'::jsonb
 );
 CREATE TABLE IF NOT EXISTS public.business_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), lead_id uuid

@@ -24,6 +24,8 @@ const EXTERNAL_AUTHORIZED_API_PATHS = new Set([
 ]);
 const EXTERNAL_AUTHORIZED_API_PREFIXES = ["/api/cron/"];
 const AUTH_TIMEOUT_MS = 3_000;
+const SAM26_RUN_ID_PATTERN = /^\d{13}-[0-9a-f]{8}$/;
+const SAM26_FIXTURE_SCOPE = "sam26-staging-uat";
 
 type ActiveProfile = {
   role?: string | null;
@@ -269,6 +271,10 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
         }
       });
       const organizationId = getRequestedOrganizationId(request);
+      const sam26RunId = request.headers.get("x-newme-sam26-run-id");
+      const sam26FixtureDetails = sam26RunId && SAM26_RUN_ID_PATTERN.test(sam26RunId)
+        ? { fixture_scope: SAM26_FIXTURE_SCOPE, fixture_run_id: sam26RunId }
+        : {};
       const auditWrite = organizationId
         ? writeServerEvidence("audit_logs", "", "POST", {
         // NOTE: audit_logs.actor_id is the genuine column (NOT a business_events alias).
@@ -277,7 +283,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
         actor_id: user.id,
         organization_id: organizationId,
         action: "PAGE_VISIT",
-        details: { page: pathname },
+        details: { page: pathname, ...sam26FixtureDetails },
         ip_address: clientIp,
       }).then(({ error }) => {
         if (error) {

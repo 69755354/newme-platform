@@ -175,7 +175,7 @@ test("synthetic preparation template is valid and cannot claim execution", async
 test("all reusable evidence schemas are strict and discoverable", () => {
   assert.deepEqual(schemaNames, [
     "ephemeralClone", "mapping", "outboundDisable", "migration", "destruction",
-    "provenance", "serviceLevel", "restore", "load", "noisyNeighbor", "alert", "bundle", "sam85Bundle",
+    "provenance", "serviceLevel", "restore", "load", "noisyNeighbor", "alert", "bundle", "sam85Bundle", "sam85Preflight",
   ]);
   for (const [name, schema] of Object.entries(evidenceSchemas)) {
     assert.equal(schema.type, "object", `${name} must be an object schema`);

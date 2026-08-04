@@ -26,6 +26,8 @@ Before any snapshot is restored, record only references and digests, never crede
 
 STOP if approval is pending, expired, broader than the declared scope, contains credential values, names shared staging, or allows a production write route.
 
+Before any external clone action, validate that manifest with `node scripts/v4-rehearsal-kit/cli.mjs validate-sam85-preflight /approved/sam85/preflight.json`. A passing preflight authorizes only the next isolated-clone operation; it is not execution evidence and cannot be used to close SAM-85.
+
 ## 3. Outbound kill switches
 
 Before application access, block all five channel families at three layers:

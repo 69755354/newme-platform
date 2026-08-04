@@ -336,6 +336,69 @@ const sam85Bundle = object({
   destruction,
 });
 
+const sam85PreflightChannel = object({
+  channel: string({ enum: ["email", "messaging", "webhook", "portal", "payment"] }),
+  configurationDenyPlanned: boolean({ const: true }),
+  networkDenyPlanned: boolean({ const: true }),
+  runtimeDenyPlanned: boolean({ const: true }),
+});
+
+const sam85PreflightMigration = object({
+  migrationId: safeRef(),
+  forwardSha256: sha256(),
+  rollbackSha256: sha256(),
+  applyOrder: positiveInteger(),
+  rollbackOrder: positiveInteger(),
+});
+
+const sam85ExecutionPreflight = object({
+  contract: string({ const: "newme.v4.sam85-execution-preflight.v1" }),
+  schemaVersion: integer({ const: 1 }),
+  runId: safeRef(),
+  generatedAt: isoUtc(),
+  linearId: string({ const: "SAM-85" }),
+  claimsExecuted: boolean({ const: false }),
+  environmentClass: string({ const: "isolated-ephemeral-clone" }),
+  approval: object({
+    status: string({ const: "approved" }),
+    purposeCode: string({ const: "v4-migration-rehearsal" }),
+    approvalRef: safeRef(),
+    ownerRef: safeRef(),
+    operatorRef: safeRef(),
+    reviewerRef: safeRef(),
+    approvedAt: isoUtc(),
+    expiresAt: isoUtc(),
+  }),
+  source: object({
+    snapshotRef: safeRef(),
+    sha256: sha256(),
+    encrypted: boolean({ const: true }),
+    authoritative: boolean({ const: true }),
+  }),
+  release: object({ gitSha: sha1(), treeSha: sha1() }),
+  isolation: object({
+    sharedStaging: boolean({ const: false }),
+    productionWriteRoute: boolean({ const: false }),
+    cloneOnlyCredentials: boolean({ const: true }),
+    productionCredentialsDenied: boolean({ const: true }),
+    applicationAccessEnabled: boolean({ const: false }),
+  }),
+  masking: object({
+    mappingDigest: sha256(),
+    tokenKeyRef: safeRef(),
+    rawOutsideClone: boolean({ const: false }),
+  }),
+  outbound: array(sam85PreflightChannel, { minItems: 5, maxItems: 5 }),
+  migrations: array(sam85PreflightMigration, { minItems: 1 }),
+  destruction: object({
+    destroyBy: isoUtc(),
+    resources: array(object({
+      kind: string({ enum: ["database", "storage", "credentials", "logs", "exports", "access"] }),
+      resourceRef: safeRef(),
+    }), { minItems: 6, maxItems: 6 }),
+  }),
+});
+
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
   Object.freeze(value);
@@ -357,6 +420,7 @@ const rawSchemas = {
   alert,
   bundle,
   sam85Bundle,
+  sam85Preflight: sam85ExecutionPreflight,
 };
 
 for (const [name, schema] of Object.entries(rawSchemas)) {

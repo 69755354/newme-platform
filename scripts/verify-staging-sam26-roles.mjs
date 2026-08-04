@@ -20,6 +20,14 @@ const releaseManifestPath = process.env.SAM26_RELEASE_MANIFEST?.trim();
 const resolveStagingLocally = process.env.SAM26_RESOLVE_STAGING_LOCALLY === "1";
 
 const ROLES = ["admin", "boss", "operator", "sales", "finance", "designer"];
+const ORGANIZATION_ROLE_BY_PROFILE = {
+  admin: "org_admin",
+  boss: "org_owner",
+  operator: "operations",
+  sales: "sales_agent",
+  finance: "finance",
+  designer: "specialist",
+};
 const MANAGEMENT_ROLES = new Set(["admin", "boss", "operator"]);
 const PROTECTED_ROUTES = new Map([
   ["/team", new Set(["admin", "boss"])],
@@ -325,6 +333,29 @@ async function createUser(role) {
   );
   assert.equal(memberships.length, 1, `${role} membership must exist`);
   assert.equal(memberships[0].status, "active", `${role} membership must be active`);
+
+  const organizationRoles = await restRows(
+    "roles",
+    "select=id,role_key&scope=eq.organization"
+      + `&role_key=eq.${encodeURIComponent(ORGANIZATION_ROLE_BY_PROFILE[role])}`,
+  );
+  assert.equal(organizationRoles.length, 1, `${role} organization role must exist`);
+  await apiRequest("/rest/v1/membership_roles", {
+    method: "POST",
+    service: true,
+    body: {
+      organization_id: organizationId,
+      membership_id: memberships[0].id,
+      role_id: organizationRoles[0].id,
+    },
+  });
+  const membershipRoles = await restRows(
+    "membership_roles",
+    `select=id,organization_id,membership_id,role_id&membership_id=eq.${encodeURIComponent(memberships[0].id)}`
+      + `&role_id=eq.${encodeURIComponent(organizationRoles[0].id)}`,
+  );
+  assert.equal(membershipRoles.length, 1, `${role} organization role mapping must exist`);
+  assert.equal(membershipRoles[0].organization_id, organizationId);
   testUsers.set(role, { id: createdId, email, password });
 }
 

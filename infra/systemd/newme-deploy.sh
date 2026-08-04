@@ -52,6 +52,8 @@ rollback_source=$(git --git-dir="$MIRROR" show \
   "$MAIN_SHA:infra/systemd/newme-production-rollback.sh" 2>/dev/null || true)
 sudoers_source=$(git --git-dir="$MIRROR" show \
   "$MAIN_SHA:infra/sudoers/newme-platform" 2>/dev/null || true)
+immutable_deploy_source=$(git --git-dir="$MIRROR" show \
+  "$MAIN_SHA:scripts/deploy-immutable.sh" 2>/dev/null || true)
 [[ "$service_control_source" == *"only newme-platform.service can be controlled"* ]] || {
   echo "main lacks the production service-control unit-token guard" >&2
   exit 65
@@ -62,6 +64,11 @@ sudoers_source=$(git --git-dir="$MIRROR" show \
 }
 [[ "$sudoers_source" == *"/usr/local/sbin/newme-production-rollback"* ]] || {
   echo "main lacks the restricted production rollback sudo policy" >&2
+  exit 65
+}
+[[ "$immutable_deploy_source" == *'ROLLBACK="${NEWME_ROLLBACK_LINK:-/opt/newme/current.rollback}"'* ]] &&
+  [[ "$immutable_deploy_source" == *"protected_release=true"* ]] || {
+  echo "main lacks rollback-preserving immutable deployment" >&2
   exit 65
 }
 

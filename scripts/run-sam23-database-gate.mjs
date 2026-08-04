@@ -111,7 +111,7 @@ function verifySam78Live(container, action, phase) {
     container,
     [
       "-c",
-      `SET newme.sam78_action = '${action}'; SET newme.sam78_verify_phase = '${phase}'; SET newme.sam78_apply_mode = 'full'`,
+      `SET newme.sam78_action = '${action}'; SET newme.sam78_verify_phase = '${phase}'; SET newme.sam78_apply_mode = 'full'; SET newme.sam78_active_start_version = '20260803100000'`,
       "-f",
       "/work/scripts/uat/sam78-staging-migration-verify.sql",
     ],
@@ -234,6 +234,7 @@ async function main() {
       "supabase/migrations/20260804165734_sam26_synthetic_audit_cleanup_boundary.sql",
       "supabase/migrations/20260804193000_sam20_synthetic_support_cleanup_boundary.sql",
       "supabase/migrations/20260805000000_sam78_product_saas_synthetic_cleanup_boundary.sql",
+      "supabase/migrations/20260805010000_sam78_v4_exit_digest_contract.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
       "supabase/rollback/20260801202728_organization_customer_exit_lifecycle_rollback.sql",
@@ -245,6 +246,7 @@ async function main() {
       "supabase/rollback/20260804165734_sam26_synthetic_audit_cleanup_boundary_rollback.sql",
       "supabase/rollback/20260804193000_sam20_synthetic_support_cleanup_boundary_rollback.sql",
       "supabase/rollback/20260805000000_sam78_product_saas_synthetic_cleanup_boundary_rollback.sql",
+      "supabase/rollback/20260805010000_sam78_v4_exit_digest_contract_rollback.sql",
       "scripts/uat/sam78-staging-migration-verify.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
@@ -635,6 +637,13 @@ async function main() {
       "sam78_product_saas_synthetic_cleanup_boundary_apply",
     );
     requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260805010000_sam78_v4_exit_digest_contract.sql",
+      ]),
+      "sam78_v4_exit_digest_contract_apply",
+    );
+    requireSuccess(
       verifySam78Live(container, "apply", "post"),
       "v4_tenant_live_verify_apply_post",
     );
@@ -775,6 +784,29 @@ async function main() {
     ) {
       throw new Error("sam20_synthetic_support_cleanup_rollback_not_fail_closed");
     }
+    const deniedSam78V4ExitDigestRollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260805010000_sam78_v4_exit_digest_contract_rollback.sql",
+    ]);
+    if (
+      deniedSam78V4ExitDigestRollback.status === 0
+      || !combined(deniedSam78V4ExitDigestRollback).includes(
+        "sam78_v4_exit_digest_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error("sam78_v4_exit_digest_rollback_not_fail_closed");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260805010000_sam78_v4_exit_digest_contract_rollback.sql",
+        ],
+        "test",
+      ),
+      "sam78_v4_exit_digest_contract_rollback",
+    );
     const deniedSam78ProductCleanupRollback = psql(container, [
       "-f",
       "/work/supabase/rollback/20260805000000_sam78_product_saas_synthetic_cleanup_boundary_rollback.sql",

@@ -71,6 +71,14 @@ export const MIGRATIONS = Object.freeze([
     rollbackEnv: "SAM78_ROLLBACK_050000_PATH",
     rollbackBlobEnv: "SAM78_ROLLBACK_050000_BLOB",
   }),
+  Object.freeze({
+    version: "20260805010000",
+    name: "sam78_v4_exit_digest_contract",
+    migrationEnv: "SAM78_MIGRATION_050100_PATH",
+    migrationBlobEnv: "SAM78_MIGRATION_050100_BLOB",
+    rollbackEnv: "SAM78_ROLLBACK_050100_PATH",
+    rollbackBlobEnv: "SAM78_ROLLBACK_050100_BLOB",
+  }),
 ]);
 
 function fail(message) {
@@ -489,6 +497,7 @@ SET LOCAL newme.sam78_action = ${sqlLiteral(action)};
 SET LOCAL newme.sam78_apply_mode = ${sqlLiteral(
   activePlan.length === plan.length ? "full" : "suffix"
 )};
+SET LOCAL newme.sam78_active_start_version = ${sqlLiteral(activePlan[0].version)};
 ${action === "apply" ? `SET LOCAL newme.platform_staff_role_mapping = ${sqlLiteral(platformStaffRoleMapping)};` : ""}
 LOCK TABLE supabase_migrations.schema_migrations IN SHARE ROW EXCLUSIVE MODE;
 ${historyPreflight(

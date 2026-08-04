@@ -136,3 +136,4 @@
 20260802074500	fix_customer_export_notification_uuid
 20260803100000	v4_tenant_capability_boundary
 20260803143000	v4_tenant_lifecycle_closure
+20260804153000	sam78_govern_v4_authenticated_rpcs

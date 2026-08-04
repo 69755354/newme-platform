@@ -39,6 +39,14 @@ export const MIGRATIONS = Object.freeze([
     rollbackEnv: "SAM78_ROLLBACK_143000_PATH",
     rollbackBlobEnv: "SAM78_ROLLBACK_143000_BLOB",
   }),
+  Object.freeze({
+    version: "20260804153000",
+    name: "sam78_govern_v4_authenticated_rpcs",
+    migrationEnv: "SAM78_MIGRATION_041530_PATH",
+    migrationBlobEnv: "SAM78_MIGRATION_041530_BLOB",
+    rollbackEnv: "SAM78_ROLLBACK_041530_PATH",
+    rollbackBlobEnv: "SAM78_ROLLBACK_041530_BLOB",
+  }),
 ]);
 
 function fail(message) {
@@ -386,7 +394,7 @@ export function buildTransactionSql({
   action, plan, expectedHistory, verifySql, platformStaffRoleMapping,
 }) {
   if (!['apply', 'rollback'].includes(action)) fail("action must be apply or rollback");
-  if (!Array.isArray(plan) || plan.length !== MIGRATIONS.length) fail("migration plan must contain exactly two versions");
+  if (!Array.isArray(plan) || plan.length !== MIGRATIONS.length) fail("migration plan must contain the exact SAM-78 versions");
   if (plan.some((item, index) => item.version !== MIGRATIONS[index].version || item.name !== MIGRATIONS[index].name)) {
     fail("migration plan version or name drift");
   }

@@ -63,6 +63,14 @@ export const MIGRATIONS = Object.freeze([
     rollbackEnv: "SAM78_ROLLBACK_041930_PATH",
     rollbackBlobEnv: "SAM78_ROLLBACK_041930_BLOB",
   }),
+  Object.freeze({
+    version: "20260805000000",
+    name: "sam78_product_saas_synthetic_cleanup_boundary",
+    migrationEnv: "SAM78_MIGRATION_050000_PATH",
+    migrationBlobEnv: "SAM78_MIGRATION_050000_BLOB",
+    rollbackEnv: "SAM78_ROLLBACK_050000_PATH",
+    rollbackBlobEnv: "SAM78_ROLLBACK_050000_BLOB",
+  }),
 ]);
 
 function fail(message) {
@@ -286,7 +294,7 @@ export function parsePlatformStaffRoleMapping(text) {
     left.localeCompare(right))));
 }
 
-function historyPreflight(plan, action, expectedHistory) {
+function historyPreflight(plan, action, expectedHistory, appliedPrefix = []) {
   const versions = plan.map((item) => sqlLiteral(item.version)).join(", ");
   const prefixes = plan.map((item) => `version LIKE ${sqlLiteral(`${item.version}%`)}`).join(" OR ");
   const exactMetadata = plan.map((item) => `(${metadataPredicate(item)})`).join(" OR ");
@@ -295,6 +303,13 @@ function historyPreflight(plan, action, expectedHistory) {
     ? expectedHistory.slice(0, -plan.length)
     : expectedHistory;
   const expectedValues = historyValues(expectedRows);
+  const appliedPrefixAssertion = appliedPrefix.length === 0
+    ? ""
+    : "  IF (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE "
+      + appliedPrefix.map((item) => "(" + metadataPredicate(item) + ")").join(" OR ")
+      + ") <> " + String(appliedPrefix.length) + " THEN\n"
+      + "    RAISE EXCEPTION 'SAM78 applied migration prefix metadata mismatch';\n"
+      + "  END IF;";
   return `
 DO $sam78_preflight$
 DECLARE
@@ -363,6 +378,7 @@ BEGIN
   IF (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version IN (${versions})) <> ${expected} THEN
     RAISE EXCEPTION 'SAM78 migration history metadata mismatch';
   END IF;
+${appliedPrefixAssertion}
 END
 $sam78_preflight$;`;
 }
@@ -407,12 +423,25 @@ function historyVerification(plan, action, expectedHistory) {
 }
 
 export function buildTransactionSql({
-  action, plan, expectedHistory, verifySql, platformStaffRoleMapping,
+  action, plan, activePlan = plan, expectedHistory, verifySql,
+  platformStaffRoleMapping,
 }) {
   if (!['apply', 'rollback'].includes(action)) fail("action must be apply or rollback");
   if (!Array.isArray(plan) || plan.length !== MIGRATIONS.length) fail("migration plan must contain the exact SAM-78 versions");
   if (plan.some((item, index) => item.version !== MIGRATIONS[index].version || item.name !== MIGRATIONS[index].name)) {
     fail("migration plan version or name drift");
+  }
+  if (!Array.isArray(activePlan) || activePlan.length === 0) {
+    fail("active migration plan cannot be empty");
+  }
+  const activeStart = plan.length - activePlan.length;
+  if (activeStart < 0 || activePlan.some((item, index) =>
+    item.version !== plan[activeStart + index]?.version
+    || item.name !== plan[activeStart + index]?.name)) {
+    fail("active migration plan must be one exact canonical suffix");
+  }
+  if (action === "rollback" && activePlan.length !== plan.length) {
+    fail("rollback must cover the complete SAM-78 plan");
   }
   if (!Array.isArray(expectedHistory) || expectedHistory.length <= plan.length) {
     fail("canonical migration history manifest is incomplete");
@@ -426,7 +455,7 @@ export function buildTransactionSql({
   if (action === "apply" && typeof platformStaffRoleMapping !== "string") {
     fail("platform staff role mapping is required for apply");
   }
-  const ordered = action === "apply" ? plan : [...plan].reverse();
+  const ordered = action === "apply" ? activePlan : [...activePlan].reverse();
   const operations = ordered.map((item) => {
     if (action === "apply") {
       return `${executeStatements(item.statements)}
@@ -457,13 +486,18 @@ END
 $sam78_advisory_lock$;
 SET LOCAL newme.environment = 'staging';
 SET LOCAL newme.sam78_action = ${sqlLiteral(action)};
+SET LOCAL newme.sam78_apply_mode = ${sqlLiteral(
+  activePlan.length === plan.length ? "full" : "suffix"
+)};
 ${action === "apply" ? `SET LOCAL newme.platform_staff_role_mapping = ${sqlLiteral(platformStaffRoleMapping)};` : ""}
 LOCK TABLE supabase_migrations.schema_migrations IN SHARE ROW EXCLUSIVE MODE;
-${historyPreflight(plan, action, expectedHistory)}
+${historyPreflight(
+  activePlan, action, expectedHistory, plan.slice(0, activeStart)
+)}
 SET LOCAL newme.sam78_verify_phase = 'pre';
 ${verifySql.trim()}
 ${operations}
-${historyVerification(plan, action, expectedHistory)}
+${historyVerification(activePlan, action, expectedHistory)}
 SET LOCAL newme.sam78_verify_phase = 'post';
 ${verifySql.trim()}
 COMMIT;
@@ -562,6 +596,65 @@ export function psqlInvocation(env) {
   };
 }
 
+export function parseAppliedMigrationPrefix(text) {
+  if (typeof text !== "string" || text.length > 16_384) {
+    fail("applied migration history output is invalid");
+  }
+  const rows = text.trim() === "" ? [] : text.trim().split(/\r?\n/);
+  if (rows.length > MIGRATIONS.length) {
+    fail("applied migration history contains duplicate target rows");
+  }
+  rows.forEach((row, index) => {
+    const expected = `${MIGRATIONS[index]?.version}\t${MIGRATIONS[index]?.name}`;
+    if (row !== expected) {
+      fail("applied migration history is not one exact canonical prefix");
+    }
+  });
+  return rows.length;
+}
+
+export function psqlHistoryInvocation(env) {
+  const invocation = psqlInvocation(env);
+  const versions = MIGRATIONS.map(({ version }) => sqlLiteral(version)).join(", ");
+  return {
+    ...invocation,
+    args: [
+      "--no-psqlrc", "--quiet", "--set", "ON_ERROR_STOP=1",
+      "--tuples-only", "--no-align", "--field-separator", "\t",
+      "--host", DATABASE_HOST, "--port", DATABASE_PORT,
+      "--username", DATABASE_USER, "--dbname", DATABASE_NAME,
+      "--command",
+      `SELECT version, name FROM supabase_migrations.schema_migrations WHERE version IN (${versions}) ORDER BY version`,
+    ],
+  };
+}
+
+async function detectAppliedMigrationPrefix(env) {
+  const invocation = psqlHistoryInvocation(env);
+  const output = await new Promise((resolve, reject) => {
+    const child = spawn(invocation.command, invocation.args, {
+      env: invocation.env,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    let stdout = "";
+    const timer = setTimeout(() => child.kill("SIGKILL"), 30_000);
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+      if (stdout.length > 16_384) child.kill("SIGKILL");
+    });
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(stdout);
+      else reject(new Error(
+        `SAM78_FAIL_CLOSED: migration history query failed code=${code ?? "null"} signal=${signal ?? "none"}; output redacted`,
+      ));
+    });
+  });
+  return parseAppliedMigrationPrefix(output);
+}
+
 async function runPsql(sql, env) {
   const invocation = psqlInvocation(env);
   await new Promise((resolve, reject) => {
@@ -596,12 +689,24 @@ export async function main(env = process.env) {
   }
   const plan = await loadPlan(env);
   const expectedHistory = await loadExpectedHistory(env);
+  const appliedPrefixCount = await detectAppliedMigrationPrefix(env);
+  if (action === "apply" && ![0, plan.length - 1, plan.length].includes(appliedPrefixCount)) {
+    fail("apply only accepts a clean baseline or the exact five-migration predecessor");
+  }
+  if (action === "apply" && appliedPrefixCount === plan.length) {
+    fail("all SAM-78 migrations are already applied");
+  }
+  if (action === "rollback" && appliedPrefixCount !== plan.length) {
+    fail("rollback requires the complete SAM-78 migration plan to be applied");
+  }
+  const activePlan = action === "apply" ? plan.slice(appliedPrefixCount) : plan;
   const platformStaffRoleMapping = action === "apply"
     ? await loadPlatformStaffRoleMapping(env)
     : undefined;
   const sql = buildTransactionSql({
     action,
     plan,
+    activePlan,
     expectedHistory,
     platformStaffRoleMapping,
     verifySql: await readFile(env.SAM78_VERIFY_SQL_PATH, "utf8"),
@@ -615,6 +720,7 @@ export async function main(env = process.env) {
     action,
     status: "passed",
     versions: MIGRATIONS.map(({ version }) => version),
+    appliedVersions: activePlan.map(({ version }) => version),
     history: "verified",
     historyManifestBlob: env.SAM78_HISTORY_MANIFEST_BLOB,
     buildArtifactSha256: env.SAM78_BUILD_ARTIFACT_SHA256,

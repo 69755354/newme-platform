@@ -111,7 +111,7 @@ function verifySam78Live(container, action, phase) {
     container,
     [
       "-c",
-      `SET newme.sam78_action = '${action}'; SET newme.sam78_verify_phase = '${phase}'`,
+      `SET newme.sam78_action = '${action}'; SET newme.sam78_verify_phase = '${phase}'; SET newme.sam78_apply_mode = 'full'`,
       "-f",
       "/work/scripts/uat/sam78-staging-migration-verify.sql",
     ],
@@ -233,6 +233,7 @@ async function main() {
       "supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql",
       "supabase/migrations/20260804165734_sam26_synthetic_audit_cleanup_boundary.sql",
       "supabase/migrations/20260804193000_sam20_synthetic_support_cleanup_boundary.sql",
+      "supabase/migrations/20260805000000_sam78_product_saas_synthetic_cleanup_boundary.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
       "supabase/rollback/20260801120000_commercial_p0_seat_role_integrity_rollback.sql",
       "supabase/rollback/20260801202728_organization_customer_exit_lifecycle_rollback.sql",
@@ -243,6 +244,7 @@ async function main() {
       "supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql",
       "supabase/rollback/20260804165734_sam26_synthetic_audit_cleanup_boundary_rollback.sql",
       "supabase/rollback/20260804193000_sam20_synthetic_support_cleanup_boundary_rollback.sql",
+      "supabase/rollback/20260805000000_sam78_product_saas_synthetic_cleanup_boundary_rollback.sql",
       "scripts/uat/sam78-staging-migration-verify.sql",
       "tests/database/sam23-organization-commercial-core.sql",
       "tests/database/sam23-organization-commercial-rollback-verify.sql",
@@ -265,6 +267,8 @@ async function main() {
       "tests/database/v4-platform-staff-role-mapping-prelude.sql",
       "tests/database/v4-tenant-lifecycle-rollback-verify.sql",
       "tests/database/sam20-synthetic-support-cleanup-boundary.sql",
+      "tests/database/sam78-product-saas-synthetic-cleanup-boundary.sql",
+      "tests/database/sam78-product-saas-synthetic-cleanup-rollback-verify.sql",
     ]) {
       await copyFixture(container, relativePath);
     }
@@ -624,6 +628,13 @@ async function main() {
       "sam20_synthetic_support_cleanup_boundary_apply",
     );
     requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260805000000_sam78_product_saas_synthetic_cleanup_boundary.sql",
+      ]),
+      "sam78_product_saas_synthetic_cleanup_boundary_apply",
+    );
+    requireSuccess(
       verifySam78Live(container, "apply", "post"),
       "v4_tenant_live_verify_apply_post",
     );
@@ -643,6 +654,10 @@ async function main() {
       requireSuccess(
         psql(container, ["-f", "sam20-synthetic-support-cleanup-boundary.sql"]),
         "sam20_synthetic_support_cleanup_boundary_fixture",
+      );
+      requireSuccess(
+        psql(container, ["-f", "sam78-product-saas-synthetic-cleanup-boundary.sql"]),
+        "sam78_product_saas_synthetic_cleanup_boundary_fixture",
       );
       requireSuccess(
         psql(container, ["-f", "v4-tenant-workflow-concurrency-prelude.sql"]),
@@ -760,6 +775,33 @@ async function main() {
     ) {
       throw new Error("sam20_synthetic_support_cleanup_rollback_not_fail_closed");
     }
+    const deniedSam78ProductCleanupRollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260805000000_sam78_product_saas_synthetic_cleanup_boundary_rollback.sql",
+    ]);
+    if (
+      deniedSam78ProductCleanupRollback.status === 0
+      || !combined(deniedSam78ProductCleanupRollback).includes(
+        "sam78_product_saas_cleanup_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error("sam78_product_saas_cleanup_rollback_not_fail_closed");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260805000000_sam78_product_saas_synthetic_cleanup_boundary_rollback.sql",
+        ],
+        "test",
+      ),
+      "sam78_product_saas_synthetic_cleanup_boundary_rollback",
+    );
+    requireSuccess(
+      psql(container, ["-f", "sam78-product-saas-synthetic-cleanup-rollback-verify.sql"]),
+      "sam78_product_saas_synthetic_cleanup_boundary_rollback_verify",
+    );
     requireSuccess(
       psql(
         container,
@@ -1195,6 +1237,7 @@ async function main() {
       v4_product_catalog_isolation: "verified",
       v4_tenant_lifecycle_closure: "verified",
       sam20_synthetic_support_cleanup: "verified",
+      sam78_product_saas_synthetic_cleanup: "verified",
       fixture_cleanup: "verified",
     })}\n`);
   } finally {

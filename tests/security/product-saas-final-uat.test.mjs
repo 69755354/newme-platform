@@ -142,6 +142,8 @@ test("runner source pins required issue paths, markers, guards, and cleanup evid
     "audit_logs",
     "activity_logs",
     "activities by user",
+    "platform_action_approvals",
+    "platform_action_approval_events",
     "payment_allocations",
     "contract_approvals",
     "pipeline_notifications",
@@ -303,6 +305,16 @@ test("SAM-25 stages one positive pipeline, six zero-write negatives, and exact c
   assert.match(
     source,
     /negativeMatrix,\s*\[\s*\{ name: "hermes_unauthenticated", status: 401, writes: 0 \}[\s\S]*\{ name: "operator_confirmation", status: 403, writes: 0 \}/,
+  );
+  assert.ok(
+    source.indexOf('await capture("platform approval events"') <
+      source.indexOf('await capture("platform approvals"'),
+    "platform approval events must be deleted before platform approvals",
+  );
+  assert.ok(
+    source.indexOf('await capture("platform approvals"') <
+      source.indexOf('await capture("platform staff"'),
+    "platform approvals must be deleted before platform staff",
   );
   assert.ok(
     source.indexOf('await capture("payment allocations"') <

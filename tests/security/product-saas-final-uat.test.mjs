@@ -150,7 +150,7 @@ test("runner source pins required issue paths, markers, guards, and cleanup evid
     "user_session_daily",
     "x-newme-organization-id",
     'plan_key: "growth"',
-    "billable_seat_limit: 10",
+    "billable_seat_limit: 20",
     "ORGANIZATION_ROLE_BY_PROFILE",
     '.from("membership_roles")',
     "tenant_id: state.organizationId",
@@ -253,7 +253,7 @@ test("SAM-13 staging contract dynamically covers A-D without a new controller ac
   ]);
   assert.deepEqual(
     LINEAR_IDS,
-    ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61"],
+    ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61", "SAM-79"],
   );
 
   const [source, controller] = await Promise.all([

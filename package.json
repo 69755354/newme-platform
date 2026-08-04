@@ -24,6 +24,7 @@
     "check:db-static": "node scripts/check-db-static.mjs",
     "check:sam20-database": "node scripts/run-sam20-database-gate.mjs",
     "check:sam23-database": "node scripts/run-sam23-database-gate.mjs",
+    "check:sam79": "node --test tests/security/sam79-commercial-control-plane.test.mjs",
     "check:sam61-active-profile-database": "node scripts/run-sam61-active-profile-database-gate.mjs",
     "check:security": "npm run check:supabase-boundaries && npm run check:definer-rpc-allowlist && npm run check:db-static && npm run check:e2e-secrets && npm run check:e2e-artifacts",
     "check:workflows": "bash scripts/check-workflows-yaml.sh",

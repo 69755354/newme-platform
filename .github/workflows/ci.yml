@@ -92,6 +92,9 @@ jobs:
       - name: SAM-23 organization commercial core database gate
         run: npm run check:sam23-database
 
+      - name: SAM-79 commercial control plane contract
+        run: npm run check:sam79
+
       - name: SAM-61 active-profile milestone guard
         run: npm run check:sam61-active-profile-database
 

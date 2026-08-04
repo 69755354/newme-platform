@@ -27,6 +27,7 @@ readonly SAM78_EVIDENCE="$STATE_DIR/last-migrate-sam78.json"
 readonly SAM78_UAT_EVIDENCE="$STATE_DIR/last-uat-sam78.json"
 readonly SAM87_RUNNER="scripts/verify-staging-sam87-release-rehearsal.mjs"
 readonly SAM87_EVIDENCE="$STATE_DIR/last-rehearse-sam87.json"
+readonly SAM87_COLD_RECOVERY_EVIDENCE="$STATE_DIR/last-cold-recover-sam87.json"
 readonly SAM88_RUNNER="scripts/verify-staging-sam88-design-partner-pilot.mjs"
 readonly SAM88_MANIFEST="$STATE_DIR/sam88-design-partner-pilot-manifest.json"
 readonly SAM88_EVIDENCE="$STATE_DIR/last-validate-sam88-pilot.json"
@@ -108,7 +109,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rehearse-sam87|validate-sam88-pilot|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|cold-recover-sam87|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rehearse-sam87|validate-sam88-pilot|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -116,7 +117,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rehearse-sam87|validate-sam88-pilot|rollback) ;;
+  build|deploy|cold-recover-sam87|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rehearse-sam87|validate-sam88-pilot|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -383,6 +384,98 @@ run_deploy() {
   production_healthy || fail "production health changed after staging deploy"
   write_state "$old_sha" "$SHA" "$CANONICAL_SHA" "deployed"
   echo "staging control deploy passed SHA=$SHA previous=$old_sha"
+}
+
+require_sam78_apply_evidence() {
+  [ -f "$SAM78_EVIDENCE" ] ||
+    fail "SAM-87 cold recovery requires completed SAM-78 migration evidence"
+  [ ! -L "$SAM78_EVIDENCE" ] ||
+    fail "SAM-78 migration evidence must not be a symlink"
+  [ "$(stat -c '%u:%g:%a' "$SAM78_EVIDENCE")" = "0:0:600" ] ||
+    fail "SAM-78 migration evidence must be root:root mode 0600"
+  /usr/bin/node -e '
+    const fs = require("fs");
+    const lines = fs.readFileSync(process.argv[1], "utf8").trim().split(/\r?\n/);
+    const versions = [
+      "20260803100000", "20260803143000", "20260804153000",
+      "20260804165734", "20260804185311", "20260804193000", "20260805000000",
+      "20260805010000", "20260805020000", "20260805120000", "20260805130000",
+      "20260805190000", "20260806000000",
+    ];
+    if (lines.length !== 1) process.exit(1);
+    const body = JSON.parse(lines[0]);
+    if (
+      body?.schemaVersion !== 1 ||
+      body?.linearId !== "SAM-78" ||
+      body?.releaseSha !== process.argv[2] ||
+      body?.projectRef !== "bfsiibofuzoglziltgyd" ||
+      body?.action !== "apply" ||
+      body?.status !== "passed" ||
+      body?.history !== "verified" ||
+      JSON.stringify(body?.versions) !== JSON.stringify(versions) ||
+      JSON.stringify(body?.appliedVersions) !== JSON.stringify(versions)
+    ) process.exit(1);
+  ' "$SAM78_EVIDENCE" "$SHA" ||
+    fail "SAM-78 migration evidence is incomplete for cold recovery"
+}
+
+require_sam87_cold_recovery_state() {
+  [ -L "$CURRENT" ] ||
+    fail "SAM-87 cold recovery requires a dangling current staging symlink"
+  [ ! -e "$CURRENT" ] ||
+    fail "SAM-87 cold recovery refuses a resolvable current staging release"
+  local stale_target
+  stale_target="$(readlink "$CURRENT")"
+  [[ "$stale_target" =~ ^$RELEASES/[0-9a-f]{40}$ ]] ||
+    fail "SAM-87 cold recovery refuses an unexpected current symlink target"
+  [ ! -e "$STATE_FILE" ] ||
+    fail "SAM-87 cold recovery refuses an existing rollback state"
+  find "$RELEASES" -mindepth 1 -maxdepth 1 -print -quit | grep -q . &&
+    fail "SAM-87 cold recovery requires an empty immutable release directory"
+  local incoming expected_incoming entry_count artifact checksum
+  artifact="$INCOMING/$SHA.tar.gz"
+  checksum="$artifact.sha256"
+  incoming="$(find "$INCOMING" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)"
+  expected_incoming="$(printf '%s\n%s' "$SHA.tar.gz" "$SHA.tar.gz.sha256")"
+  entry_count="$(printf '%s\n' "$incoming" | sed '/^$/d' | wc -l | tr -d ' ')"
+  [ "$entry_count" = "2" ] ||
+    fail "SAM-87 cold recovery requires only its exact build artifact pair"
+  [ "$incoming" = "$expected_incoming" ] ||
+    fail "SAM-87 cold recovery rejects stale or foreign build artifacts"
+  [ -f "$artifact" ] && [ ! -L "$artifact" ] ||
+    fail "SAM-87 cold recovery requires an exact SHA-bound build artifact"
+  [ -f "$checksum" ] && [ ! -L "$checksum" ] ||
+    fail "SAM-87 cold recovery requires an exact SHA-bound artifact checksum"
+  staging_healthy ||
+    fail "SAM-87 cold recovery requires the existing staging process to remain healthy until candidate validation"
+}
+
+run_sam87_cold_recovery() {
+  production_healthy || fail "production health is not green"
+  require_sam87_cold_recovery_state
+  require_sam78_apply_evidence
+  local artifact checksum artifact_sha256 unit evidence_tmp
+  artifact="$INCOMING/$SHA.tar.gz"
+  checksum="$artifact.sha256"
+  artifact_sha256="$(tr -d '\r\n' < "$checksum")"
+  [[ "$artifact_sha256" =~ ^[0-9a-f]{64}$ ]] ||
+    fail "SAM-87 cold recovery artifact checksum is invalid"
+  [ "$(/usr/bin/sha256sum "$artifact" | awk '{print $1}')" = "$artifact_sha256" ] ||
+    fail "SAM-87 cold recovery artifact checksum does not match"
+  unit="newme-staging-deploy@$SHA.service"
+  systemctl start "$unit"
+  verify_unit_success "$unit"
+  verify_current_release "$SHA"
+  production_healthy || fail "production health changed after staging cold recovery"
+  evidence_tmp="$(mktemp "$STATE_DIR/.last-cold-recover-sam87.XXXXXX")"
+  register_temporary_path "$evidence_tmp"
+  cat >"$evidence_tmp" <<EOF
+{"schemaVersion":1,"linearId":"SAM-87","target":"staging-only","releaseSha":"$SHA","artifactSha256":"$artifact_sha256","previousRelease":null,"rollback":"not_available_cold_recovery","migrationEvidence":"verified","status":"passed"}
+EOF
+  chown root:root "$evidence_tmp"
+  chmod 0600 "$evidence_tmp"
+  mv -Tf "$evidence_tmp" "$SAM87_COLD_RECOVERY_EVIDENCE"
+  echo "staging control SAM-87 cold recovery passed SHA=$SHA rollback=not_available"
 }
 
 run_uat() {
@@ -1938,6 +2031,7 @@ run_rollback() {
 case "$ACTION" in
   build) run_build ;;
   deploy) run_deploy ;;
+  cold-recover-sam87) run_sam87_cold_recovery ;;
   uat) run_uat ;;
   uat-sam20) run_uat_sam20 ;;
   reconcile-sam21) run_reconcile_sam21 ;;

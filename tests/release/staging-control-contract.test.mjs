@@ -22,6 +22,7 @@ test("staging controller has one fixed command surface and strict SHA arity", as
   for (const action of [
     "build",
     "deploy",
+    "cold-recover-sam87",
     "uat",
     "uat-sam20",
     "reconcile-sam21",
@@ -754,6 +755,38 @@ test("SAM-87 serializes an exact-SHA staging canary and automatic recovery", asy
     /productionTouched: false/,
     /databaseRollbackAttempted: false/,
   ]) assert.match(runner, pattern);
+});
+
+test("SAM-87 cold recovery accepts only the recorded dangling-release failure state", async () => {
+  const control = await read("scripts/newme-staging-control.sh");
+  const cold = control.slice(
+    control.indexOf("run_sam87_cold_recovery()"),
+    control.indexOf("\nrun_uat()"),
+  );
+  for (const pattern of [
+    /readonly SAM87_COLD_RECOVERY_EVIDENCE="\$STATE_DIR\/last-cold-recover-sam87\.json"/,
+    /cold-recover-sam87\) run_sam87_cold_recovery/,
+    /\[ -L "\$CURRENT" \] \|\|[\s\S]*?requires a dangling current staging symlink/,
+    /\[ ! -e "\$CURRENT" \] \|\|[\s\S]*?refuses a resolvable current staging release/,
+    /\[ ! -e "\$STATE_FILE" \] \|\|[\s\S]*?refuses an existing rollback state/,
+    /find "\$RELEASES" -mindepth 1 -maxdepth 1 -print -quit[\s\S]*?requires an empty immutable release directory/,
+    /find "\$INCOMING" -mindepth 1 -maxdepth 1 -printf '%f\\n' \| LC_ALL=C sort/,
+    /expected_incoming="\$\(printf '%s\\n%s' "\$SHA\.tar\.gz" "\$SHA\.tar\.gz\.sha256"\)"/,
+    /requires only its exact build artifact pair/,
+    /rejects stale or foreign build artifacts/,
+    /require_sam78_apply_evidence/,
+    /body\?\.action !== "apply"/,
+    /JSON\.stringify\(body\?\.appliedVersions\) !== JSON\.stringify\(versions\)/,
+    /systemctl start "\$unit"/,
+    /verify_unit_success "\$unit"/,
+    /verify_current_release "\$SHA"/,
+    /"previousRelease":null/,
+    /"rollback":"not_available_cold_recovery"/,
+    /mv -Tf "\$evidence_tmp" "\$SAM87_COLD_RECOVERY_EVIDENCE"/,
+  ]) assert.match(control, pattern);
+  assert.doesNotMatch(cold, /write_state\(/);
+  assert.doesNotMatch(cold, /(?:rollback-sam78-db|run_sam78_database_action)/);
+  assert.doesNotMatch(cold, /(?:NEWME_PRODUCTION|\/opt\/newme\/current)/);
 });
 
 test("SAM-20 rollback compatibility proof is staging-only, read-only, and fail-closed", async () => {

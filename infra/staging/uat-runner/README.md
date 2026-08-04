@@ -31,6 +31,16 @@ of these actions plus one full 40-character SHA:
   the eight exact blobs at the canonical staging SHA.
 - `deploy <SHA>` starts the fixed staging deploy unit and atomically records the
   direct immutable predecessor in root-only state.
+- `cold-recover-sam87 <SHA>` is a one-time staging-only recovery action for the
+  exact damaged state where `current` is a dangling immutable-release symlink,
+  both `releases/` and `incoming/` are empty, and no normal rollback state
+  exists. It requires an already verified, SHA-bound SAM-78 migration-apply
+  record and a matching build artifact, validates the isolated candidate through
+  the normal deploy unit, then promotes it. It records `previousRelease: null`
+  and `rollback: not_available_cold_recovery`; it never creates normal rollback
+  state, runs a migration, or accepts a resolvable current release. Any failed
+  candidate leaves no fabricated predecessor and stops staging rather than
+  pointing `current` at an unverified directory.
 - `uat <SHA>` runs that exact image with only the staging environment file and
   injects `SAM26_EXPECTED_RELEASE_SHA=<SHA>`.
 - `uat-sam20 <SHA>` runs the fixed SAM-20 runner blob from the same current

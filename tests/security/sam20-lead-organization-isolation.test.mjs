@@ -208,6 +208,7 @@ test("SAM-20 UAT uses the canonical release manifest and verifies every fixture 
   for (const fixture of [
     "organizations",
     "memberships",
+    "membership_roles",
     "leads",
     "platform_staff",
     "support_sessions",
@@ -223,6 +224,27 @@ test("SAM-20 UAT uses the canonical release manifest and verifies every fixture 
   assert.match(uat, /cleanupCounts,/);
   assert.match(uat, /from\("user_session_daily"\)\.delete\(\)\.in\("user_id", users\)/);
   assert.match(uat, /from\("audit_logs"\)\.delete\(\)\.in\("actor_id", users\)/);
+  assert.match(
+    uat,
+    /createMembership\(organizationA, userA\.id, "sales_agent"\)/,
+  );
+  assert.match(
+    uat,
+    /createMembership\(organizationB, userB\.id, "sales_agent"\)/,
+  );
+  assert.match(
+    uat,
+    /createMembership\(organizationA, companyAdminUser\.id, "org_admin"\)/,
+  );
+  assert.match(
+    uat,
+    /from\("membership_roles"\)[\s\S]*\.insert\(\{[\s\S]*organization_id: organizationId,[\s\S]*membership_id: membership\.id,[\s\S]*role_id: role\.id/,
+  );
+  assert.match(
+    uat,
+    /from\("membership_roles"\)\.delete\(\)\.in\("organization_id", organizationIds\)/,
+  );
+  assert.match(uat, /typeof error\.message === "string"/);
   assert.doesNotMatch(uat, /cleanup: 0/);
 });
 

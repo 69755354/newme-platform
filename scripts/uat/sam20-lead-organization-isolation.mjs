@@ -20,6 +20,14 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function errorMessage(error) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && typeof error.message === "string") {
+    return error.message;
+  }
+  return String(error);
+}
+
 async function jsonResponse(response) {
   const body = await response.json().catch(() => null);
   return { response, body };
@@ -114,6 +122,7 @@ async function main() {
   const cleanupCounts = {
     organizations: 0,
     memberships: 0,
+    membership_roles: 0,
     leads: 0,
     platform_staff: 0,
     support_sessions: 0,
@@ -160,14 +169,43 @@ async function main() {
     return id;
   }
 
-  async function createMembership(organizationId, userId) {
-    const { error } = await admin.from("memberships").insert({
+  async function createMembership(organizationId, userId, roleKey) {
+    const { data: membership, error } = await admin.from("memberships").insert({
       organization_id: organizationId,
       user_id: userId,
       status: "active",
       accepted_at: new Date().toISOString(),
-    });
+    }).select("id").single();
     if (error) throw new Error(`create_membership_failed:${error.message}`);
+
+    const { data: role, error: roleError } = await admin
+      .from("roles")
+      .select("id")
+      .eq("scope", "organization")
+      .eq("role_key", roleKey)
+      .single();
+    if (roleError || !role?.id) {
+      throw new Error(`resolve_membership_role_failed:${roleKey}:${roleError?.message ?? "missing_role"}`);
+    }
+
+    const { data: membershipRole, error: membershipRoleError } = await admin
+      .from("membership_roles")
+      .insert({
+        organization_id: organizationId,
+        membership_id: membership.id,
+        role_id: role.id,
+      })
+      .select("organization_id, membership_id, role_id")
+      .single();
+    if (membershipRoleError) {
+      throw new Error(`create_membership_role_failed:${roleKey}:${membershipRoleError.message}`);
+    }
+    assert(
+      membershipRole.organization_id === organizationId
+        && membershipRole.membership_id === membership.id
+        && membershipRole.role_id === role.id,
+      `membership_role_verification_failed:${roleKey}`,
+    );
   }
 
   async function createLead(organizationId, userId, label) {
@@ -195,9 +233,9 @@ async function main() {
     const companyAdminUser = await createUser("company-admin", "admin");
     const organizationA = await createOrganization("org-a");
     const organizationB = await createOrganization("org-b");
-    await createMembership(organizationA, userA.id);
-    await createMembership(organizationB, userB.id);
-    await createMembership(organizationA, companyAdminUser.id);
+    await createMembership(organizationA, userA.id, "sales_agent");
+    await createMembership(organizationB, userB.id, "sales_agent");
+    await createMembership(organizationA, companyAdminUser.id, "org_admin");
     const leadA = await createLead(organizationA, userA.id, "lead-a");
     const leadB = await createLead(organizationB, userB.id, "lead-b");
 
@@ -476,9 +514,7 @@ async function main() {
         const result = await operation();
         if (result?.error) throw result.error;
       } catch (error) {
-        cleanupErrors.push(
-          `${label}:${error instanceof Error ? error.message : String(error)}`,
-        );
+        cleanupErrors.push(`${label}:${errorMessage(error)}`);
       }
     }
 
@@ -491,9 +527,7 @@ async function main() {
           cleanupErrors.push(`${label}:count=${result.count}`);
         }
       } catch (error) {
-        cleanupErrors.push(
-          `${label}:${error instanceof Error ? error.message : String(error)}`,
-        );
+        cleanupErrors.push(`${label}:${errorMessage(error)}`);
       }
     }
 
@@ -516,6 +550,8 @@ async function main() {
         admin.from("platform_staff").delete().in("id", staffIds));
     }
     if (organizationIds.length > 0) {
+      await cleanupStep("membership_roles", () =>
+        admin.from("membership_roles").delete().in("organization_id", organizationIds));
       await cleanupStep("memberships", () =>
         admin.from("memberships").delete().in("organization_id", organizationIds));
       await cleanupStep("organizations", () =>
@@ -539,6 +575,10 @@ async function main() {
         .in("id", organizationIds));
       await verifyZero("memberships", () => admin
         .from("memberships")
+        .select("id", { count: "exact", head: true })
+        .in("organization_id", organizationIds));
+      await verifyZero("membership_roles", () => admin
+        .from("membership_roles")
         .select("id", { count: "exact", head: true })
         .in("organization_id", organizationIds));
     }
@@ -593,11 +633,7 @@ async function main() {
   }
 
   if (executionError || cleanupErrors.length > 0) {
-    const reason = executionError instanceof Error
-      ? executionError.message
-      : executionError === null
-        ? "none"
-        : String(executionError);
+    const reason = executionError === null ? "none" : errorMessage(executionError);
     throw new Error(
       `execution=${reason};cleanup=${cleanupErrors.length === 0 ? "0" : cleanupErrors.join("|")}`,
     );

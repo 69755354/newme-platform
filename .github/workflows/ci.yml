@@ -110,6 +110,9 @@ jobs:
       - name: SAM-81 real-estate listing foundation database gate
         run: npm run check:sam81-real-estate-database
 
+      - name: SAM-84 controlled agent gateway database gate
+        run: npm run check:sam84-database
+
       - name: CRM regression contract
         run: python3 scripts/crm-regression.py --self-test
 

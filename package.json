@@ -30,6 +30,7 @@
     "check:sam82-database": "node scripts/run-sam82-database-gate.mjs",
     "check:sam83-database": "node scripts/run-sam83-database-gate.mjs",
     "check:sam81-real-estate-database": "node scripts/run-sam81-real-estate-database-gate.mjs",
+    "check:sam84-database": "node scripts/run-sam84-database-gate.mjs",
     "check:security": "npm run check:supabase-boundaries && npm run check:definer-rpc-allowlist && npm run check:db-static && npm run check:e2e-secrets && npm run check:e2e-artifacts",
     "check:workflows": "bash scripts/check-workflows-yaml.sh",
     "lint:baseline": "node scripts/check-lint-baseline.mjs",

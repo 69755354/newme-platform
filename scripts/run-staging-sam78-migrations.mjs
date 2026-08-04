@@ -119,6 +119,14 @@ export const MIGRATIONS = Object.freeze([
     rollbackEnv: "SAM79_ROLLBACK_051900_PATH",
     rollbackBlobEnv: "SAM79_ROLLBACK_051900_BLOB",
   }),
+  Object.freeze({
+    version: "20260806000000",
+    name: "sam84_controlled_agent_integration_gateway",
+    migrationEnv: "SAM84_MIGRATION_060000_PATH",
+    migrationBlobEnv: "SAM84_MIGRATION_060000_BLOB",
+    rollbackEnv: "SAM84_ROLLBACK_060000_PATH",
+    rollbackBlobEnv: "SAM84_ROLLBACK_060000_BLOB",
+  }),
 ]);
 
 function fail(message) {

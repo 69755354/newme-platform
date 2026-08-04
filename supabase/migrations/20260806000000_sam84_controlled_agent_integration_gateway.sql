@@ -180,9 +180,10 @@ BEGIN
   IF command_row.id IS NOT NULL THEN
     IF command_row.command_key <> p_command_key
       OR command_row.payload_sha256 <> p_payload_sha256
-      OR command_row.event_signature <> p_event_signature
-      OR command_row.credential_fingerprint <> p_credential_fingerprint
     THEN RAISE EXCEPTION 'agent_gateway_idempotency_mismatch'; END IF;
+    -- Correlation, signature, and credential fingerprint are fresh per HTTP
+    -- attempt; this deterministic key binds the semantic command and returns
+    -- the immutable original result on a legitimate retry.
     RETURN jsonb_build_object(
       'command_id', command_row.id, 'status', command_row.status,
       'risk_level', command_row.risk_level, 'approval_id', command_row.approval_id,

@@ -59,7 +59,13 @@ export function buildAgentGatewayDispatch({ actorUserId, organizationId, input, 
   const correlationId = randomUUID();
   const idempotencyKey = `agt_${hmacHex(key, canonicalizeAgentGatewayPayload({ actorUserId, organizationId, commandKey: input.command, payloadSha256 })).slice(0, 56)}`;
   const credentialExpiresAt = new Date(now.getTime() + CREDENTIAL_TTL_SECONDS * 1000).toISOString();
-  const credentialFingerprint = sha256(canonicalizeAgentGatewayPayload({ actorUserId, organizationId, commandKey: input.command, correlationId, credentialExpiresAt }));
+  // Mint only an opaque short-lived delegation credential. Its raw value is
+  // deliberately discarded: disabled adapters cannot receive it and storage
+  // retains only a non-reversible fingerprint.
+  const credentialToken = hmacHex(key, canonicalizeAgentGatewayPayload({
+    actorUserId, organizationId, commandKey: input.command, correlationId, credentialExpiresAt,
+  }));
+  const credentialFingerprint = sha256(credentialToken);
   const eventSignature = hmacHex(key, canonicalizeAgentGatewayPayload({
     actorUserId, organizationId, commandKey: input.command, riskLevel: policy.riskLevel,
     requiredCapability: policy.capability, accessMode: policy.accessMode, channel: "server_agent_gateway",

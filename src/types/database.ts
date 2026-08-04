@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=a3e4a165282bd049e274d86e3c7d8eafb62dff4b5b9168f732c559b0d7214b37
+// Migration fingerprint: sha256=a3715c86d9665c08990bca4fe8636a27d8a313ca0b176197699af225acd705ea
 export type Json =
   | string
   | number
@@ -69,10 +69,29 @@ type CommercialMigrationSnapshotRow = {
   organization_id: string; plan_key: string; billable_seat_limit: number
   organization_status: string; captured_at: string
 }
+type AgentGatewayCommandRow = {
+  id: string; organization_id: string; actor_user_id: string; command_key: string; risk_level: string
+  required_capability: string | null; access_mode: string; channel: string; correlation_id: string
+  idempotency_key: string; payload: Json; payload_sha256: string; event_signature: string
+  credential_fingerprint: string; credential_expires_at: string; approval_id: string | null
+  adapter_state: string; status: string; created_at: string
+}
+type AgentGatewayEventRow = {
+  id: string; command_id: string; organization_id: string; actor_user_id: string; correlation_id: string
+  event_type: string; event_signature: string; metadata: Json; created_at: string
+}
+type AgentGatewayAdapterRow = { adapter_key: string; enabled: boolean; created_at: string }
 
 export type Database = {
   public: {
     Tables: {
+      agent_gateway_adapter_registry: GeneratedTable<AgentGatewayAdapterRow, "adapter_key">
+      agent_gateway_commands: GeneratedTable<AgentGatewayCommandRow,
+        "organization_id" | "actor_user_id" | "command_key" | "risk_level" | "access_mode"
+        | "channel" | "correlation_id" | "idempotency_key" | "payload_sha256" | "event_signature"
+        | "credential_fingerprint" | "credential_expires_at" | "status">
+      agent_gateway_events: GeneratedTable<AgentGatewayEventRow,
+        "command_id" | "organization_id" | "actor_user_id" | "correlation_id" | "event_type" | "event_signature">
       commercial_action_events: GeneratedTable<CommercialActionEventRow,
         "request_id" | "organization_id" | "actor_platform_staff_id" | "event_type" | "event_key">
       commercial_action_requests: GeneratedTable<CommercialActionRequestRow,
@@ -7099,6 +7118,15 @@ export type Database = {
       }
     }
     Functions: {
+      v4_dispatch_agent_gateway_command: {
+        Args: {
+          p_access_mode: string; p_actor_user_id: string; p_channel: string; p_command_key: string
+          p_correlation_id: string; p_credential_expires_at: string; p_credential_fingerprint: string
+          p_event_signature: string; p_idempotency_key: string; p_organization_id: string; p_payload: Json
+          p_payload_sha256: string; p_required_capability: string | null; p_risk_level: string
+        }
+        Returns: Json
+      }
       v4_approve_commercial_action: {
         Args: { p_event_key: string; p_request_id: string }
         Returns: Json

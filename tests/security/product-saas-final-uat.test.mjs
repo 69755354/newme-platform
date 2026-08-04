@@ -191,6 +191,11 @@ test("runner source pins required issue paths, markers, guards, and cleanup evid
   const identityCleanup = source.indexOf('await capture("auth identity"');
   assert.ok(workflowCleanup >= 0 && workflowCleanup < identityCleanup);
   assert.ok(sequenceCleanup >= 0 && sequenceCleanup < identityCleanup);
+  assert.match(
+    source,
+    /async function exactCount[\s\S]*\.select\(column, \{ count: "exact", head: true \}\)/,
+    "cleanup verification must select the supplied key for composite-key tables",
+  );
 });
 
 test("customer exit UAT proves export, freeze, closure, idempotency, retention, and exact cleanup", async () => {

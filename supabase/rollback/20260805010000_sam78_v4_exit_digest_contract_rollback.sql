@@ -2,7 +2,8 @@ BEGIN;
 
 DO $$
 BEGIN
-  IF current_setting('newme.environment', true) NOT IN ('staging', 'test') THEN
+  IF COALESCE(current_setting('newme.environment', true), '')
+    NOT IN ('staging', 'test') THEN
     RAISE EXCEPTION 'sam78_v4_exit_digest_rollback_requires_staging_or_test';
   END IF;
 END

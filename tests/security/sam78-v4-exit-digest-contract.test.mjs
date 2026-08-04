@@ -22,6 +22,10 @@ test("SAM-78 V4 exit completion preserves the exported digest and rejects later 
   assert.match(migration, /FROM PUBLIC, anon, authenticated, service_role/);
   assert.doesNotMatch(migration, /GRANT EXECUTE/);
   assert.match(rollback, /sam78_v4_exit_digest_rollback_requires_staging_or_test/);
+  assert.match(
+    rollback,
+    /COALESCE\(current_setting\('newme\.environment', true\), ''\)[\s\S]*NOT IN \('staging', 'test'\)/,
+  );
   assert.match(rollback, /complete_organization_customer_exit/);
   assert.match(fixture, /sam78-v4-export-before-exit-b/);
   assert.match(fixture, /V4 export-to-complete result drifted/);

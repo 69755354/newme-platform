@@ -8,6 +8,7 @@ import { Inbox, ListTodo, Clock, AlertTriangle, BarChart3, User } from "lucide-r
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { SharedOperationsPanel } from "@/components/SharedOperationsPanel";
 
 interface InboxItem {
   id: string
@@ -167,6 +168,8 @@ export default function WorkbenchPage() {
           {t("workbench.subtitle") || "Your daily pipeline at a glance"}
         </p>
       </div>
+
+      <SharedOperationsPanel />
 
       {/* Card grid */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">

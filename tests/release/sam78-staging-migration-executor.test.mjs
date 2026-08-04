@@ -48,6 +48,12 @@ const paths = [
     rollback: "supabase/rollback/20260804165734_sam26_synthetic_audit_cleanup_boundary_rollback.sql",
   },
   {
+    version: "20260804185311",
+    name: "sam80_shared_operational_services",
+    migration: "supabase/migrations/20260804185311_sam80_shared_operational_services.sql",
+    rollback: "supabase/rollback/20260804185311_sam80_shared_operational_services_rollback.sql",
+  },
+  {
     version: "20260804193000",
     name: "sam20_synthetic_support_cleanup_boundary",
     migration: "supabase/migrations/20260804193000_sam20_synthetic_support_cleanup_boundary.sql",
@@ -109,7 +115,7 @@ test("SAM-78 plan uses the fixed staging owner and exact canonical history tip",
 test("migration history manifest accepts CRLF but rejects header, order, row, and tip drift", async () => {
   const source = await read("scripts/uat/sam78-canonical-migration-history.txt");
   const crlfSource = source.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n");
-  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 141);
+  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 142);
   assert.throws(
     () => parseMigrationHistoryManifest(source.replace("# schema-version=1", "# schema-version=2")),
     /header mismatch/,
@@ -228,14 +234,16 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
   const exitDigest = sql.indexOf("version = '20260805010000'", newest + 1);
   const productCleanup = sql.indexOf("version = '20260805000000'", exitDigest + 1);
   const sam20Cleanup = sql.indexOf("version = '20260804193000'", productCleanup + 1);
-  const sam26Cleanup = sql.indexOf("version = '20260804165734'", sam20Cleanup + 1);
+  const sam80Operations = sql.indexOf("version = '20260804185311'", sam20Cleanup + 1);
+  const sam26Cleanup = sql.indexOf("version = '20260804165734'", sam80Operations + 1);
   const governedRpc = sql.indexOf("version = '20260804153000'", sam26Cleanup + 1);
   const middle = sql.indexOf("version = '20260803143000'", governedRpc + 1);
   const oldest = sql.indexOf("version = '20260803100000'", middle + 1);
   assert.ok(
     operations > 0 && newest > operations && exitDigest > newest && productCleanup > exitDigest
       && sam20Cleanup > productCleanup
-      && sam26Cleanup > sam20Cleanup
+      && sam80Operations > sam20Cleanup
+      && sam26Cleanup > sam80Operations
       && governedRpc > sam26Cleanup
       && middle > governedRpc && oldest > middle,
   );
@@ -343,9 +351,10 @@ test("psql uses fixed owner, root-only secret path, and verify-full CA without s
 });
 
 test("live verifier covers exact pre/post FK, RLS, ACL, backfill, orphan, and rollback contracts", async () => {
-  const [verify, migration] = await Promise.all([
+  const [verify, migration, sam80Migration] = await Promise.all([
     read("scripts/uat/sam78-staging-migration-verify.sql"),
     read("supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql"),
+    read("supabase/migrations/20260804185311_sam80_shared_operational_services.sql"),
   ]);
   for (const evidence of [
     "newme.sam78_verify_phase",
@@ -361,7 +370,7 @@ test("live verifier covers exact pre/post FK, RLS, ACL, backfill, orphan, and ro
     "v4_assert_tenant_closure_rollback_safe",
   ]) assert.ok(verify.includes(evidence), `missing live verifier evidence: ${evidence}`);
 
-  const normalizedMigration = migration.replaceAll(/\s+/g, "");
+  const normalizedMigration = `${migration}\n${sam80Migration}`.replaceAll(/\s+/g, "");
   const verifierSignatures = new Set(
     [...verify.matchAll(/'(public\.v4_[a-z0-9_]+\([^']+\))'/g)]
       .map((match) => match[1]),

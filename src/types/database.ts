@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=7cd1522a8d4859d71b84b292e105e7fb15b537474fb0f3f34d16c183dfcdd7e1
+// Migration fingerprint: sha256=31efc2310c54496445b6b55a2568c3368eadbbf09f98f50066bc417a9c581d54
 export type Json =
   | string
   | number
@@ -4828,6 +4828,375 @@ export type Database = {
         }
         Relationships: []
       }
+      shared_approval_requests: {
+        Row: {
+          action_key: string
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          decision_reason_code: string | null
+          expires_at: string
+          id: string
+          idempotency_key: string
+          organization_id: string
+          payload: Json
+          payload_sha256: string
+          requested_by: string
+          resource_id: string | null
+          resource_type: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          action_key: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_reason_code?: string | null
+          expires_at: string
+          id?: string
+          idempotency_key: string
+          organization_id: string
+          payload?: Json
+          payload_sha256?: string
+          requested_by: string
+          resource_id?: string | null
+          resource_type: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          action_key?: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_reason_code?: string | null
+          expires_at?: string
+          id?: string
+          idempotency_key?: string
+          organization_id?: string
+          payload?: Json
+          payload_sha256?: string
+          requested_by?: string
+          resource_id?: string | null
+          resource_type?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      shared_jobs: {
+        Row: {
+          attempts: number
+          completed_at: string | null
+          created_at: string
+          error_code: string | null
+          id: string
+          idempotency_key: string
+          input_file_id: string | null
+          kind: string
+          lease_expires_at: string | null
+          leased_by: string | null
+          max_attempts: number
+          next_attempt_at: string
+          organization_id: string
+          output_file_id: string | null
+          parameters: Json
+          requested_by: string
+          result_counts: Json
+          result_sha256: string | null
+          started_at: string | null
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          completed_at?: string | null
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          idempotency_key: string
+          input_file_id?: string | null
+          kind: string
+          lease_expires_at?: string | null
+          leased_by?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          organization_id: string
+          output_file_id?: string | null
+          parameters?: Json
+          requested_by: string
+          result_counts?: Json
+          result_sha256?: string | null
+          started_at?: string | null
+          state?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          completed_at?: string | null
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          idempotency_key?: string
+          input_file_id?: string | null
+          kind?: string
+          lease_expires_at?: string | null
+          leased_by?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          organization_id?: string
+          output_file_id?: string | null
+          parameters?: Json
+          requested_by?: string
+          result_counts?: Json
+          result_sha256?: string | null
+          started_at?: string | null
+          state?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      shared_notifications: {
+        Row: {
+          attempts: number
+          channel: string
+          created_at: string
+          dedupe_key: string
+          delivered_at: string | null
+          id: string
+          organization_id: string
+          payload: Json
+          read_at: string | null
+          recipient_user_id: string
+          source_event_id: string | null
+          state: string
+          template_key: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          channel?: string
+          created_at?: string
+          dedupe_key: string
+          delivered_at?: string | null
+          id?: string
+          organization_id: string
+          payload?: Json
+          read_at?: string | null
+          recipient_user_id: string
+          source_event_id?: string | null
+          state?: string
+          template_key: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          channel?: string
+          created_at?: string
+          dedupe_key?: string
+          delivered_at?: string | null
+          id?: string
+          organization_id?: string
+          payload?: Json
+          read_at?: string | null
+          recipient_user_id?: string
+          source_event_id?: string | null
+          state?: string
+          template_key?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      shared_outbox: {
+        Row: {
+          aggregate_id: string | null
+          aggregate_type: string
+          attempts: number
+          created_at: string
+          dedupe_key: string
+          delivered_at: string | null
+          event_type: string
+          id: string
+          last_error_code: string | null
+          lease_expires_at: string | null
+          leased_by: string | null
+          max_attempts: number
+          next_attempt_at: string
+          organization_id: string
+          payload: Json
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          aggregate_id?: string | null
+          aggregate_type: string
+          attempts?: number
+          created_at?: string
+          dedupe_key: string
+          delivered_at?: string | null
+          event_type: string
+          id?: string
+          last_error_code?: string | null
+          lease_expires_at?: string | null
+          leased_by?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          organization_id: string
+          payload?: Json
+          state?: string
+          updated_at?: string
+        }
+        Update: {
+          aggregate_id?: string | null
+          aggregate_type?: string
+          attempts?: number
+          created_at?: string
+          dedupe_key?: string
+          delivered_at?: string | null
+          event_type?: string
+          id?: string
+          last_error_code?: string | null
+          lease_expires_at?: string | null
+          leased_by?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          organization_id?: string
+          payload?: Json
+          state?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      shared_report_snapshots: {
+        Row: {
+          created_at: string
+          generated_by_job_id: string
+          id: string
+          metrics: Json
+          organization_id: string
+          period_end: string
+          period_start: string
+          report_key: string
+          source_sha256: string
+        }
+        Insert: {
+          created_at?: string
+          generated_by_job_id: string
+          id?: string
+          metrics: Json
+          organization_id: string
+          period_end: string
+          period_start: string
+          report_key: string
+          source_sha256: string
+        }
+        Update: {
+          created_at?: string
+          generated_by_job_id?: string
+          id?: string
+          metrics?: Json
+          organization_id?: string
+          period_end?: string
+          period_start?: string
+          report_key?: string
+          source_sha256?: string
+        }
+        Relationships: []
+      }
+      shared_timeline_events: {
+        Row: {
+          actor_user_id: string | null
+          created_at: string
+          event_type: string
+          id: string
+          metadata: Json
+          organization_id: string
+          request_id: string
+          resource_id: string | null
+          resource_type: string
+          visibility: string
+        }
+        Insert: {
+          actor_user_id?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          metadata?: Json
+          organization_id: string
+          request_id: string
+          resource_id?: string | null
+          resource_type: string
+          visibility?: string
+        }
+        Update: {
+          actor_user_id?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          metadata?: Json
+          organization_id?: string
+          request_id?: string
+          resource_id?: string | null
+          resource_type?: string
+          visibility?: string
+        }
+        Relationships: []
+      }
+      shared_work_items: {
+        Row: {
+          assignee_user_id: string | null
+          completed_at: string | null
+          created_at: string
+          created_by: string
+          details: string | null
+          due_at: string | null
+          id: string
+          idempotency_key: string
+          organization_id: string
+          priority: string
+          source_id: string | null
+          source_type: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assignee_user_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          created_by: string
+          details?: string | null
+          due_at?: string | null
+          id?: string
+          idempotency_key: string
+          organization_id: string
+          priority?: string
+          source_id?: string | null
+          source_type?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assignee_user_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string
+          details?: string | null
+          due_at?: string | null
+          id?: string
+          idempotency_key?: string
+          organization_id?: string
+          priority?: string
+          source_id?: string | null
+          source_type?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       support_sessions: {
         Row: {
           approved_at: string | null
@@ -5617,6 +5986,17 @@ export type Database = {
       }
     }
     Views: {
+      v4_shared_operations_summary: {
+        Row: {
+          active_jobs: number | null
+          dead_letters: number | null
+          open_work_items: number | null
+          organization_id: string | null
+          pending_approvals: number | null
+          unread_notifications: number | null
+        }
+        Relationships: []
+      }
       lead_alerts: {
         Row: {
           alert_message: string | null
@@ -6315,6 +6695,101 @@ export type Database = {
           p_organization_id: string
           p_request_id: string
         }
+        Returns: Json
+      }
+      v4_claim_shared_jobs: {
+        Args: { p_batch_size: number; p_lease_seconds: number; p_worker_id: string }
+        Returns: Json
+      }
+      v4_claim_shared_outbox: {
+        Args: { p_batch_size: number; p_lease_seconds: number; p_worker_id: string }
+        Returns: Json
+      }
+      v4_complete_shared_job: {
+        Args: {
+          p_error_code: string | null
+          p_job_id: string
+          p_result_counts: Json
+          p_result_sha256: string | null
+          p_succeeded: boolean
+          p_worker_id: string
+        }
+        Returns: Json
+      }
+      v4_complete_shared_outbox: {
+        Args: {
+          p_error_code: string | null
+          p_outbox_id: string
+          p_succeeded: boolean
+          p_worker_id: string
+        }
+        Returns: Json
+      }
+      v4_create_shared_job: {
+        Args: {
+          p_idempotency_key: string
+          p_input_file_id: string | null
+          p_kind: string
+          p_organization_id: string
+          p_parameters: Json
+        }
+        Returns: Json
+      }
+      v4_create_shared_work_item: {
+        Args: {
+          p_assignee_user_id: string | null
+          p_details: string | null
+          p_due_at: string | null
+          p_idempotency_key: string
+          p_organization_id: string
+          p_priority: string
+          p_source_id: string | null
+          p_source_type: string | null
+          p_title: string
+        }
+        Returns: Json
+      }
+      v4_decide_shared_approval: {
+        Args: {
+          p_approval_id: string
+          p_decision: string
+          p_organization_id: string
+          p_reason_code: string
+        }
+        Returns: Json
+      }
+      v4_mark_shared_notification_read: {
+        Args: { p_notification_id: string; p_organization_id: string }
+        Returns: Json
+      }
+      v4_requeue_shared_dead_letter: {
+        Args: {
+          p_actor_user_id: string
+          p_organization_id: string
+          p_queue_kind: string
+          p_record_id: string
+          p_request_id: string
+        }
+        Returns: Json
+      }
+      v4_request_shared_approval: {
+        Args: {
+          p_action_key: string
+          p_expires_at: string
+          p_idempotency_key: string
+          p_organization_id: string
+          p_payload: Json
+          p_resource_id: string | null
+          p_resource_type: string
+        }
+        Returns: Json
+      }
+      v4_shared_payload_is_safe: {
+        Args: { p_depth?: number; p_payload: Json }
+        Returns: boolean
+      }
+      v4_transition_shared_work_item: {
+        Args: { p_organization_id: string; p_status: string; p_work_item_id: string }
         Returns: Json
       }
       v4_actor_has_capability: {

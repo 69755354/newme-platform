@@ -15,6 +15,7 @@ test("repository CI runs pull-request validation on a disposable hosted runner",
   assert.doesNotMatch(workflow, /^\s+(?:push|workflow_run):/m);
   assert.match(workflow, /^\s+runs-on: ubuntu-24\.04$/m);
   assert.match(workflow, /^\s+timeout-minutes: 30$/m);
+  assert.match(workflow, /^\s+run: npm test -- --test-concurrency=1$/m);
   assert.doesNotMatch(workflow, /Notify Telegram|TELEGRAM_BOT_TOKEN/);
 });
 

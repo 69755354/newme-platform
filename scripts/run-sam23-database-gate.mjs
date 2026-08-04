@@ -232,6 +232,7 @@ async function main() {
       "supabase/migrations/20260803100000_v4_tenant_capability_boundary.sql",
       "supabase/migrations/20260803143000_v4_tenant_lifecycle_closure.sql",
       "supabase/migrations/20260804165734_sam26_synthetic_audit_cleanup_boundary.sql",
+      "supabase/migrations/20260804185311_sam80_shared_operational_services.sql",
       "supabase/migrations/20260804193000_sam20_synthetic_support_cleanup_boundary.sql",
       "supabase/migrations/20260805000000_sam78_product_saas_synthetic_cleanup_boundary.sql",
       "supabase/migrations/20260805010000_sam78_v4_exit_digest_contract.sql",
@@ -245,6 +246,7 @@ async function main() {
       "supabase/rollback/20260803100000_v4_tenant_capability_boundary_rollback.sql",
       "supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql",
       "supabase/rollback/20260804165734_sam26_synthetic_audit_cleanup_boundary_rollback.sql",
+      "supabase/rollback/20260804185311_sam80_shared_operational_services_rollback.sql",
       "supabase/rollback/20260804193000_sam20_synthetic_support_cleanup_boundary_rollback.sql",
       "supabase/rollback/20260805000000_sam78_product_saas_synthetic_cleanup_boundary_rollback.sql",
       "supabase/rollback/20260805010000_sam78_v4_exit_digest_contract_rollback.sql",
@@ -273,6 +275,8 @@ async function main() {
       "tests/database/v4-commercial-control-plane.sql",
       "tests/database/v4-commercial-control-plane-rollback-verify.sql",
       "tests/database/sam20-synthetic-support-cleanup-boundary.sql",
+      "tests/database/sam80-shared-operational-services.sql",
+      "tests/database/sam80-shared-operational-services-rollback-verify.sql",
       "tests/database/sam78-product-saas-synthetic-cleanup-boundary.sql",
       "tests/database/sam78-product-saas-synthetic-cleanup-rollback-verify.sql",
     ]) {
@@ -629,6 +633,13 @@ async function main() {
     requireSuccess(
       psql(container, [
         "-f",
+        "/work/supabase/migrations/20260804185311_sam80_shared_operational_services.sql",
+      ]),
+      "sam80_shared_operational_services_apply",
+    );
+    requireSuccess(
+      psql(container, [
+        "-f",
         "/work/supabase/migrations/20260804193000_sam20_synthetic_support_cleanup_boundary.sql",
       ]),
       "sam20_synthetic_support_cleanup_boundary_apply",
@@ -676,6 +687,10 @@ async function main() {
       requireSuccess(
         psql(container, ["-f", "sam20-synthetic-support-cleanup-boundary.sql"]),
         "sam20_synthetic_support_cleanup_boundary_fixture",
+      );
+      requireSuccess(
+        psql(container, ["-f", "sam80-shared-operational-services.sql"]),
+        "sam80_shared_operational_services_fixture",
       );
       requireSuccess(
         psql(container, ["-f", "sam78-product-saas-synthetic-cleanup-boundary.sql"]),
@@ -895,6 +910,33 @@ async function main() {
         "test",
       ),
       "sam20_synthetic_support_cleanup_boundary_rollback",
+    );
+    const deniedSam80Rollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260804185311_sam80_shared_operational_services_rollback.sql",
+    ]);
+    if (
+      deniedSam80Rollback.status === 0
+      || !combined(deniedSam80Rollback).includes(
+        "sam80_shared_services_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error("sam80_shared_operational_services_rollback_not_fail_closed");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260804185311_sam80_shared_operational_services_rollback.sql",
+        ],
+        "test",
+      ),
+      "sam80_shared_operational_services_rollback",
+    );
+    requireSuccess(
+      psql(container, ["-f", "sam80-shared-operational-services-rollback-verify.sql"]),
+      "sam80_shared_operational_services_rollback_verify",
     );
     const deniedSam26AuditRollback = psql(container, [
       "-f",

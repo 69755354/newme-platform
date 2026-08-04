@@ -472,6 +472,39 @@ export function validateSam85RehearsalBundle(bundle, options = {}) {
   });
 }
 
+export function validateSam85ExecutionPreflight(preflight) {
+  scanSensitiveMaterial(preflight);
+  validateSchema(preflight, evidenceSchemas.sam85Preflight);
+  scanEvidenceAuthenticity(preflight);
+
+  const approvedAt = timestamp(preflight.approval.approvedAt, "preflight_approval_timestamp_invalid", "$.approval.approvedAt");
+  const expiresAt = timestamp(preflight.approval.expiresAt, "preflight_expiry_timestamp_invalid", "$.approval.expiresAt");
+  const destroyBy = timestamp(preflight.destruction.destroyBy, "preflight_destroy_timestamp_invalid", "$.destruction.destroyBy");
+  if (!(approvedAt < expiresAt && expiresAt === destroyBy)) {
+    fail("preflight_approval_window_invalid", "$.approval");
+  }
+  exactSet(preflight.outbound.map((entry) => entry.channel), REQUIRED_CHANNELS, "preflight_outbound_channel_set_invalid", "$.outbound");
+  exactSet(preflight.destruction.resources.map((entry) => entry.kind), REQUIRED_DESTRUCTION, "preflight_destruction_resource_set_invalid", "$.destruction.resources");
+  unique(preflight.destruction.resources.map((entry) => entry.resourceRef), "preflight_destruction_resource_duplicate", "$.destruction.resources");
+  unique(preflight.migrations.map((entry) => entry.migrationId), "preflight_migration_duplicate", "$.migrations");
+  const count = preflight.migrations.length;
+  exactSet(preflight.migrations.map((entry) => entry.applyOrder), Array.from({ length: count }, (_, index) => index + 1), "preflight_migration_apply_order_invalid", "$.migrations");
+  exactSet(preflight.migrations.map((entry) => entry.rollbackOrder), Array.from({ length: count }, (_, index) => index + 1), "preflight_migration_rollback_order_invalid", "$.migrations");
+  for (const [index, entry] of preflight.migrations.entries()) {
+    if (entry.rollbackOrder !== count - entry.applyOrder + 1) {
+      fail("preflight_migration_rollback_not_reverse_order", `$.migrations[${index}]`);
+    }
+  }
+  return Object.freeze({
+    contract: preflight.contract,
+    schemaVersion: 1,
+    status: "authorized-preflight",
+    claimsExecuted: false,
+    runId: preflight.runId,
+    linearId: preflight.linearId,
+  });
+}
+
 export function validatePreparationBundle(bundle, options = {}) {
   scanSensitiveMaterial(bundle);
   validateSchema(bundle, evidenceSchemas.bundle);

@@ -7,6 +7,7 @@ import {
   V4ValidationError,
   validateEvidenceDocument,
   validatePreparationBundle,
+  validateSam85ExecutionPreflight,
   validateSam85RehearsalBundle,
 } from "./validators.mjs";
 
@@ -21,6 +22,7 @@ function usage() {
     "  node scripts/v4-rehearsal-kit/cli.mjs validate-evidence <bundle-json-file>",
     "  node scripts/v4-rehearsal-kit/cli.mjs validate-sam85-template <bundle-json-file>",
     "  node scripts/v4-rehearsal-kit/cli.mjs validate-sam85-evidence <bundle-json-file>",
+    "  node scripts/v4-rehearsal-kit/cli.mjs validate-sam85-preflight <approved-preflight-json-file>",
     `schema names: ${schemaNames.join(", ")}`,
   ].join("\n");
 }
@@ -56,6 +58,9 @@ export async function runCli(args) {
     return validateSam85RehearsalBundle(await readAggregateJson(rest[0]), {
       expectedMode: command === "validate-sam85-template" ? "template" : "evidence",
     });
+  }
+  if (command === "validate-sam85-preflight" && rest.length === 1) {
+    return validateSam85ExecutionPreflight(await readAggregateJson(rest[0]));
   }
   const error = new V4ValidationError("usage_invalid");
   error.exitCode = 64;

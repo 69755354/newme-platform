@@ -44,6 +44,7 @@ node scripts/v4-rehearsal-kit/cli.mjs validate-document mapping <aggregate-json-
 node scripts/v4-rehearsal-kit/cli.mjs validate-evidence <aggregate-evidence-bundle.json>
 node scripts/v4-rehearsal-kit/cli.mjs validate-sam85-template scripts/v4-rehearsal-kit/examples/synthetic-sam85-template.json
 node scripts/v4-rehearsal-kit/cli.mjs validate-sam85-evidence <aggregate-sam85-evidence.json>
+node scripts/v4-rehearsal-kit/cli.mjs validate-sam85-preflight <approved-preflight-json-file>
 ```
 
 `validate-template` accepts only `mode: "template"`, `evidenceState: "target"`, `environmentClass: "synthetic-local"`, `claimsExecuted: false` and `not_executed` sections.
@@ -51,6 +52,8 @@ node scripts/v4-rehearsal-kit/cli.mjs validate-sam85-evidence <aggregate-sam85-e
 `validate-evidence` accepts only `mode: "evidence"`, an executed evidence state and a non-synthetic environment. Unlike template mode, it rejects homogeneous 40/64-character hexadecimal SHA/digest placeholders and placeholder-style references. It requires strict calendar-valid UTC timestamps; approved clone chronology; outbound deny evidence after clone creation and before application access; destruction before the approved retention deadline; passed forward/reverse migration and reconciliation; a verified provenance chain; measured SLO, restore, load, p95/error-rate noisy-neighbor and alert facts; positive safe concurrency; and cross-contract SHA/run-ID agreement. A structurally valid rehearsal that misses a measured threshold returns `acceptanceStatus: "failed"`; it is not relabelled as passed.
 
 `validate-sam85-evidence` narrows the same fail-closed rules to SAM-85: approved isolated clone, masking manifest, all five outbound denials, ordered forward/reverse assets, bounded backfill, aggregate quarantine, count/hash reconciliation and all six destruction/revocation proofs. It rejects synthetic execution evidence by default and cannot accept shared staging or production as an environment class.
+
+`validate-sam85-preflight` is the required execution-entry check. It accepts no credentials, no customer data and no execution claim. It requires an approved, time-bounded, encrypted authoritative source reference; an isolated clone with no shared-staging or production-write route; clone-only credentials; application access initially disabled; a mapping/token-key reference; all five planned three-layer outbound denials; ordered forward/reverse asset digests; and six destruction targets. It only authorizes the next external step; it does not create a clone or prove execution.
 
 ## SAM-85 execution handoff
 

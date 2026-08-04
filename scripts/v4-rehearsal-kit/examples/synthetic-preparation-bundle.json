@@ -1,0 +1,395 @@
+{
+  "contract": "newme.v4.rehearsal-preparation-bundle.v1",
+  "schemaVersion": 1,
+  "mode": "template",
+  "evidenceState": "target",
+  "environmentClass": "synthetic-local",
+  "runId": "v4-synthetic-preparation-001",
+  "generatedAt": "2026-08-03T00:00:00.000Z",
+  "linearIds": ["SAM-85", "SAM-86"],
+  "claimsExecuted": false,
+  "clone": {
+    "contract": "newme.v4.ephemeral-clone-manifest.v1",
+    "schemaVersion": 1,
+    "runId": "v4-synthetic-preparation-001",
+    "executionStatus": "not_executed",
+    "cloneRef": "clone-synthetic-001",
+    "environmentClass": "isolated-ephemeral-clone",
+    "sourceSnapshot": {
+      "snapshotRef": "snapshot-approved-ref-placeholder",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "encrypted": true
+    },
+    "approval": {
+      "status": "pending",
+      "purposeCode": "v4-migration-rehearsal",
+      "scopeRef": "scope-approved-placeholder",
+      "ownerRef": "owner-role-placeholder",
+      "accessRefs": ["operator-role-placeholder", "reviewer-role-placeholder"],
+      "approvedAt": null,
+      "expiresAt": "2026-08-10T00:00:00.000Z"
+    },
+    "networkBoundary": {
+      "isolated": true,
+      "sharedStaging": false,
+      "productionWriteRoute": false
+    },
+    "maskingBeforeApplicationAccess": true,
+    "credentialPolicy": {
+      "cloneOnly": true,
+      "productionCredentialsDenied": true,
+      "credentialRefs": ["clone-db-credential-ref", "clone-app-credential-ref"]
+    },
+    "retention": {
+      "destroyBy": "2026-08-10T00:00:00.000Z"
+    },
+    "execution": {
+      "createdAt": null,
+      "maskedAt": null,
+      "applicationAccessEnabledAt": null
+    }
+  },
+  "mapping": {
+    "contract": "newme.v4.mapping-and-masking.v1",
+    "schemaVersion": 1,
+    "runId": "v4-synthetic-preparation-001",
+    "executionStatus": "not_executed",
+    "mappingDigest": "c1ec0b7f247628bfe99e932e738bc38475c73a48a0807e33a34d30ac7af69c2d",
+    "aggregateOnly": true,
+    "rawSamplesIncluded": false,
+    "tables": [
+      {
+        "sourceTable": "legacy_leads",
+        "targetTable": "leads",
+        "fields": [
+          {
+            "sourceField": "id",
+            "targetField": "id",
+            "sensitivity": "identifier",
+            "transformation": "tokenize",
+            "preserveJoinKey": true,
+            "preserveSemantic": true
+          },
+          {
+            "sourceField": "email",
+            "targetField": "contact_email",
+            "sensitivity": "email",
+            "transformation": "tokenize",
+            "preserveJoinKey": false,
+            "preserveSemantic": true
+          },
+          {
+            "sourceField": "amount",
+            "targetField": "amount",
+            "sensitivity": "financial",
+            "transformation": "copy",
+            "preserveJoinKey": false,
+            "preserveSemantic": true
+          }
+        ]
+      }
+    ]
+  },
+  "outboundDisable": {
+    "contract": "newme.v4.outbound-disable.v1",
+    "schemaVersion": 1,
+    "runId": "v4-synthetic-preparation-001",
+    "executionStatus": "not_executed",
+    "productionEndpointsPresent": false,
+    "productionCredentialsPresent": false,
+    "channels": [
+      {
+        "channel": "email",
+        "enabled": false,
+        "controls": ["configuration-deny", "network-deny", "runtime-deny"],
+        "verification": { "status": "not_executed", "checkedAt": null, "evidenceDigest": null }
+      },
+      {
+        "channel": "messaging",
+        "enabled": false,
+        "controls": ["configuration-deny", "network-deny", "runtime-deny"],
+        "verification": { "status": "not_executed", "checkedAt": null, "evidenceDigest": null }
+      },
+      {
+        "channel": "webhook",
+        "enabled": false,
+        "controls": ["configuration-deny", "network-deny", "runtime-deny"],
+        "verification": { "status": "not_executed", "checkedAt": null, "evidenceDigest": null }
+      },
+      {
+        "channel": "portal",
+        "enabled": false,
+        "controls": ["configuration-deny", "network-deny", "runtime-deny"],
+        "verification": { "status": "not_executed", "checkedAt": null, "evidenceDigest": null }
+      },
+      {
+        "channel": "payment",
+        "enabled": false,
+        "controls": ["configuration-deny", "network-deny", "runtime-deny"],
+        "verification": { "status": "not_executed", "checkedAt": null, "evidenceDigest": null }
+      }
+    ]
+  },
+  "migration": {
+    "contract": "newme.v4.migration-rehearsal-evidence.v1",
+    "schemaVersion": 1,
+    "runId": "v4-synthetic-preparation-001",
+    "executionStatus": "not_executed",
+    "releaseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mappingDigest": "c1ec0b7f247628bfe99e932e738bc38475c73a48a0807e33a34d30ac7af69c2d",
+    "migrations": [
+      {
+        "migrationId": "v4-forward-001",
+        "forwardSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "rollbackSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "applyOrder": 1,
+        "rollbackOrder": 2,
+        "applyStatus": "not_executed",
+        "rollbackStatus": "not_executed"
+      },
+      {
+        "migrationId": "v4-forward-002",
+        "forwardSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+        "rollbackSha256": "6666666666666666666666666666666666666666666666666666666666666666",
+        "applyOrder": 2,
+        "rollbackOrder": 1,
+        "applyStatus": "not_executed",
+        "rollbackStatus": "not_executed"
+      }
+    ],
+    "backfills": [
+      {
+        "jobRef": "legacy-leads-backfill",
+        "sourceCount": 100,
+        "migratedCount": 98,
+        "quarantinedCount": 2,
+        "batchCount": 10,
+        "checkpointCount": 10,
+        "status": "not_executed"
+      }
+    ],
+    "quarantine": {
+      "aggregateOnly": true,
+      "rawRecordsRetained": false,
+      "total": 2,
+      "aggregateDigest": "7777777777777777777777777777777777777777777777777777777777777777",
+      "reasons": [
+        { "reasonCode": "unknown-owner", "count": 1 },
+        { "reasonCode": "duplicate-identifier", "count": 1 }
+      ]
+    },
+    "reconciliation": [
+      {
+        "entity": "leads",
+        "sourceCount": 100,
+        "targetCount": 98,
+        "quarantinedCount": 2,
+        "projection": "masked-stable-business-fields",
+        "beforeDigest": "8888888888888888888888888888888888888888888888888888888888888888",
+        "afterDigest": "8888888888888888888888888888888888888888888888888888888888888888",
+        "status": "not_executed"
+      }
+    ]
+  },
+  "destruction": {
+    "contract": "newme.v4.destruction-proof.v1",
+    "schemaVersion": 1,
+    "runId": "v4-synthetic-preparation-001",
+    "executionStatus": "not_executed",
+    "retainAggregateEvidenceOnly": true,
+    "rawDataRetained": false,
+    "resources": [
+      { "kind": "database", "resourceRef": "clone-database-ref", "status": "pending", "completedAt": null, "evidenceDigest": null },
+      { "kind": "storage", "resourceRef": "clone-storage-ref", "status": "pending", "completedAt": null, "evidenceDigest": null },
+      { "kind": "credentials", "resourceRef": "clone-credentials-ref", "status": "pending", "completedAt": null, "evidenceDigest": null },
+      { "kind": "logs", "resourceRef": "clone-logs-ref", "status": "pending", "completedAt": null, "evidenceDigest": null },
+      { "kind": "exports", "resourceRef": "clone-exports-ref", "status": "pending", "completedAt": null, "evidenceDigest": null },
+      { "kind": "access", "resourceRef": "clone-access-ref", "status": "pending", "completedAt": null, "evidenceDigest": null }
+    ],
+    "verifiedByRef": null,
+    "verifiedAt": null
+  },
+  "provenance": {
+    "contract": "newme.v4.release-provenance.v1",
+    "schemaVersion": 1,
+    "runId": "v4-synthetic-preparation-001",
+    "executionStatus": "not_executed",
+    "source": {
+      "repositoryRef": "69755354/newme-platform",
+      "gitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "treeSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "artifact": {
+      "artifactRef": "artifact-placeholder",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "immutable": true
+    },
+    "manifest": {
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "gitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "treeSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "runtime": {
+      "environmentRef": "clone-runtime-placeholder",
+      "releaseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "buildId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "artifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "manifestSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "observedAt": null
+    },
+    "chainStatus": "planned"
+  },
+  "serviceLevel": {
+    "contract": "newme.v4.service-level-evidence.v1",
+    "schemaVersion": 1,
+    "runId": "v4-synthetic-preparation-001",
+    "executionStatus": "not_executed",
+    "serviceRef": "newme-v4-runtime",
+    "tenantScopeRef": "synthetic-aggregate-tenant-scope",
+    "window": {
+      "startedAt": "2026-08-03T00:00:00.000Z",
+      "endedAt": "2026-08-03T01:00:00.000Z",
+      "totalMinutes": 60
+    },
+    "availability": {
+      "objectivePercent": 99,
+      "measuredPercent": 100,
+      "goodMinutes": 60
+    },
+    "latency": {
+      "statistic": "p95",
+      "objectiveMs": 500,
+      "measuredMs": 0
+    },
+    "errorBudget": {
+      "totalMinutes": 0.6,
+      "consumedMinutes": 0,
+      "remainingMinutes": 0.6,
+      "breached": false
+    },
+    "recoveryTargets": {
+      "rpoSeconds": 300,
+      "rtoSeconds": 900
+    },
+    "decision": "undetermined"
+  },
+  "restore": {
+    "contract": "newme.v4.restore-evidence.v1",
+    "schemaVersion": 1,
+    "runId": "v4-synthetic-preparation-001",
+    "executionStatus": "not_executed",
+    "isolated": true,
+    "productionWriteRoute": false,
+    "environmentRef": "isolated-restore-placeholder",
+    "backupRef": "backup-placeholder",
+    "backupMetadataDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "pitrMetadataDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "timeline": {
+      "recoveryPointAt": null,
+      "failurePointAt": null,
+      "restoreStartedAt": null,
+      "restoreCompletedAt": null
+    },
+    "measured": {
+      "rpoSeconds": 0,
+      "rtoSeconds": 0
+    },
+    "targets": {
+      "rpoSeconds": 300,
+      "rtoSeconds": 900
+    },
+    "validation": {
+      "counts": { "leads": 0 },
+      "beforeDigest": "9999999999999999999999999999999999999999999999999999999999999999",
+      "afterDigest": "9999999999999999999999999999999999999999999999999999999999999999"
+    },
+    "status": "not_executed"
+  },
+  "load": {
+    "contract": "newme.v4.load-evidence.v1",
+    "schemaVersion": 1,
+    "runId": "v4-synthetic-preparation-001",
+    "executionStatus": "not_executed",
+    "releaseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "aggregateOnly": true,
+    "rawSamplesIncluded": false,
+    "dataset": {
+      "shapeDigest": "abababababababababababababababababababababababababababababababab",
+      "tenants": 2,
+      "recordsByEntity": { "leads": 100 }
+    },
+    "profile": {
+      "durationSeconds": 60,
+      "concurrency": 10,
+      "requests": 600
+    },
+    "thresholds": {
+      "maxP95Ms": 500,
+      "maxErrorRatePercent": 1
+    },
+    "latencyMs": {
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0
+    },
+    "throughputPerSecond": 10,
+    "errors": {
+      "count": 0,
+      "ratePercent": 0
+    },
+    "status": "not_executed"
+  },
+  "noisyNeighbor": {
+    "contract": "newme.v4.noisy-neighbor-evidence.v1",
+    "schemaVersion": 1,
+    "runId": "v4-synthetic-preparation-001",
+    "executionStatus": "not_executed",
+    "releaseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "stressedTenantRef": "tenant-a-placeholder",
+    "collateralTenantRefs": ["tenant-b-placeholder"],
+    "maxAllowedP95ImpactPercent": 20,
+    "maxAllowedErrorRateDeltaPercent": 1,
+    "observations": [
+      {
+        "tenantRef": "tenant-b-placeholder",
+        "baselineP95Ms": 100,
+        "concurrentP95Ms": 100,
+        "impactPercent": 0,
+        "errorRateDeltaPercent": 0
+      }
+    ],
+    "crossTenantLeakageCount": 0,
+    "capacityDecision": {
+      "decision": "undetermined",
+      "maxSafeConcurrency": 0,
+      "rationaleCode": "awaiting-measured-load-evidence"
+    }
+  },
+  "alert": {
+    "contract": "newme.v4.alert-evidence.v1",
+    "schemaVersion": 1,
+    "runId": "v4-synthetic-preparation-001",
+    "executionStatus": "not_executed",
+    "releaseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "alertRuleRef": "alert-rule-placeholder",
+    "tenantScopeRef": "synthetic-aggregate-tenant-scope",
+    "ownerRef": "alert-owner-role-placeholder",
+    "routeRef": "alert-route-placeholder",
+    "stimulusRef": "synthetic-stimulus-placeholder",
+    "severity": "high",
+    "timeline": {
+      "triggeredAt": null,
+      "deliveredAt": null,
+      "acknowledgedAt": null
+    },
+    "deliveryLatencyMs": 0,
+    "maxDeliveryLatencyMs": 60000,
+    "payloadRedacted": true,
+    "secretsIncluded": false,
+    "piiIncluded": false,
+    "tenantSafe": true,
+    "status": "not_executed"
+  }
+}

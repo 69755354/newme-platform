@@ -34,6 +34,7 @@
     "check:e2e-secrets": "node scripts/check-e2e-secrets.mjs",
     "check:e2e-artifacts": "node scripts/check-e2e-artifact-isolation.mjs",
     "check:supply-chain": "node scripts/check-supply-chain.mjs",
+    "check:v4-rehearsal-kit": "node --test tests/v4-rehearsal-kit.test.mjs && node scripts/v4-rehearsal-kit/cli.mjs validate-template scripts/v4-rehearsal-kit/examples/synthetic-preparation-bundle.json",
     "check:pre-release": "bash scripts/check-pre-release.sh",
     "check:staging-boundaries": "bash scripts/check-staging-boundaries.sh",
     "verify:sam66:local": "node scripts/verify-local-sam66-auth-regression.mjs"

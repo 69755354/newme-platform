@@ -9,6 +9,7 @@ import { useAuthRedirect } from "@/hooks/useAuthRedirect";
 import { DashboardErrorBoundary } from "@/components/DashboardErrorBoundary";
 import { DashboardTopBar } from "@/components/dashboard/DashboardTopBar";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
+import { OrganizationContextSwitcher } from "@/components/OrganizationContextSwitcher";
 
 // ─── Component ───
 
@@ -52,6 +53,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             handleLogout={handleLogout}
           />
         )}
+        <OrganizationContextSwitcher />
         {/*
           T2-1 (Taskboard): 统一滚动策略 — page-scroll container.
 

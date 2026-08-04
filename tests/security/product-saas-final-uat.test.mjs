@@ -228,6 +228,8 @@ test("customer exit UAT proves export, freeze, closure, idempotency, retention, 
   for (const contract of [
     '"CUSTOMER-EXIT"',
     'const customerExit = body.results?.["CUSTOMER-EXIT"]?.evidence',
+    'exit_request_id: preparedExecution.payload.exit_request_id',
+    'customerExit?.exit_request_id',
     'customerExit?.organization_status !== "closed"',
     'customerExit?.active_memberships !== 0',
     'customerExit?.support_session_status !== "revoked"',

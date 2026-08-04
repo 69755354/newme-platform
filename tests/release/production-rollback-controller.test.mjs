@@ -54,6 +54,16 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   assert.match(deploy, /infra\/sudoers\/newme-platform/);
   assert.match(deploy, /scripts\/deploy-immutable\.sh/);
   assert.match(deploy, /main lacks rollback-preserving immutable deployment/);
+  assert.match(deploy, /GITHUB_API_TOKEN_FILE=\/etc\/newme\/github-actions-read\.token/);
+  assert.match(deploy, /\[ ! -L "\$GITHUB_API_TOKEN_FILE" \]/);
+  assert.match(deploy, /stat -c '%U:%G'/);
+  assert.match(deploy, /400\|600/);
+  assert.match(deploy, /mktemp \/run\/newme-github-api/);
+  assert.match(deploy, /chmod 0600 "\$GITHUB_CURL_CONFIG"/);
+  assert.match(deploy, /--config "\$GITHUB_CURL_CONFIG"/);
+  assert.match(deploy, /unset github_token/);
+  assert.match(deploy, /cleanup_github_config/);
+  assert.doesNotMatch(deploy, /curl[^\n]*\$github_token/);
   assert.match(deploy, /NEWME_MANUAL_VERIFICATION=0/);
   assert.doesNotMatch(deploy, /manual_verified|CI_RUN_URL="manual"/);
 

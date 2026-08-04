@@ -7,13 +7,14 @@ const workflow = await readFile(
   "utf8",
 );
 
-test("repository CI limits automatic runs to staging self-hosted pull requests", () => {
+test("repository CI runs pull-request validation on a disposable hosted runner", () => {
   assert.match(
     workflow,
     /^on:\s*\n\s+pull_request:\s*\n\s+branches:\s*\n\s+- agent\/saas-staging-isolation\s*\n\s+workflow_dispatch:/m,
   );
   assert.doesNotMatch(workflow, /^\s+(?:push|workflow_run):/m);
-  assert.match(workflow, /^\s+runs-on: \[self-hosted, staging-ci\]$/m);
+  assert.match(workflow, /^\s+runs-on: ubuntu-24\.04$/m);
+  assert.match(workflow, /^\s+timeout-minutes: 30$/m);
   assert.doesNotMatch(workflow, /Notify Telegram|TELEGRAM_BOT_TOKEN/);
 });
 

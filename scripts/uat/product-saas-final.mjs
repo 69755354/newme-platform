@@ -1292,7 +1292,7 @@ async function runCustomerExit(state) {
   expectStatus("closed organization customer access", deniedAfterClose, [401, 403]);
 
   return {
-    exit_request_id: prepared.payload.exit_request_id,
+    exit_request_id: preparedExecution.payload.exit_request_id,
     export_sha256: exported.payload.data_sha256,
     organization_status: organization.data.status,
     active_memberships: activeMemberships.count,

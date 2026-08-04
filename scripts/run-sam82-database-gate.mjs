@@ -33,7 +33,7 @@ function psql(container, args, label, environmentName) {
   if (environmentName) environment.push("-e", `PGOPTIONS=-cnewme.environment=${environmentName}`);
   const result = command([
     "exec", ...environment, "-w", "/work/tests/database", container,
-    "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", database, ...args,
+    "psql", "-X", "-v", "ON_ERROR_STOP=1", "-h", "127.0.0.1", "-U", "postgres", "-d", database, ...args,
   ]);
   requireSuccess(result, label);
   return result;
@@ -58,7 +58,9 @@ async function main() {
     started = true;
 
     for (let attempt = 0; attempt < 60; attempt += 1) {
-      const ready = command(["exec", container, "pg_isready", "-U", "postgres", "-d", database]);
+      // The image starts a Unix-socket-only temporary server while initdb runs.
+      // TCP proves the final listener is available before any migration executes.
+      const ready = command(["exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", database]);
       if (!ready.error && ready.status === 0) break;
       if (attempt === 59) throw new Error("sam82_postgres_not_ready");
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
@@ -74,7 +76,7 @@ async function main() {
 
     const denied = command([
       "exec", "-e", `PGPASSWORD=${password}`, "-w", "/work/tests/database", container,
-      "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", database,
+      "psql", "-X", "-v", "ON_ERROR_STOP=1", "-h", "127.0.0.1", "-U", "postgres", "-d", database,
       "-f", `/work/supabase/rollback/${rollback}`,
     ]);
     if (!denied.error && denied.status === 0) throw new Error("sam82_rollback_outside_test_allowed");

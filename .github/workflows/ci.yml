@@ -101,6 +101,9 @@ jobs:
       - name: V4 migration rehearsal contract gate
         run: npm run check:v4-migration-rehearsal
 
+      - name: SAM-82 retail catalog inventory and pricing database gate
+        run: npm run check:sam82-database
+
       - name: CRM regression contract
         run: python3 scripts/crm-regression.py --self-test
 

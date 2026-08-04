@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=31efc2310c54496445b6b55a2568c3368eadbbf09f98f50066bc417a9c581d54
+// Migration fingerprint: sha256=81db0074d0f61aed1eaaf1650d8bae1ee6942d3883f3ea8fa549f2d2b2765f87
 export type Json =
   | string
   | number
@@ -4765,6 +4765,254 @@ export type Database = {
           },
         ]
       }
+      retail_inventory_movements: {
+        Row: {
+          blocked_delta: number
+          created_at: string
+          created_by: string | null
+          damaged_delta: number
+          id: string
+          idempotency_key: string
+          in_transit_delta: number
+          location_id: string
+          movement_type: string
+          occurred_at: string
+          on_hand_delta: number
+          organization_id: string
+          reference_id: string
+          reference_type: string
+          reserved_delta: number
+          sku_id: string
+        }
+        Insert: {
+          blocked_delta?: number
+          created_at?: string
+          created_by?: string | null
+          damaged_delta?: number
+          id?: string
+          idempotency_key: string
+          in_transit_delta?: number
+          location_id: string
+          movement_type: string
+          occurred_at?: string
+          on_hand_delta?: number
+          organization_id: string
+          reference_id?: string
+          reference_type?: string
+          reserved_delta?: number
+          sku_id: string
+        }
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "retail_inventory_movements_organization_location_fkey"
+            columns: ["organization_id", "location_id"]
+            isOneToOne: false
+            referencedRelation: "retail_locations"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "retail_inventory_movements_organization_sku_fkey"
+            columns: ["organization_id", "sku_id"]
+            isOneToOne: false
+            referencedRelation: "retail_skus"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
+      retail_locations: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          location_kind: string
+          name: string
+          organization_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: string
+          location_kind: string
+          name: string
+          organization_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          location_kind?: string
+          name?: string
+          organization_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "retail_locations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      retail_price_book_items: {
+        Row: {
+          created_at: string
+          effective_from: string
+          effective_until: string | null
+          id: string
+          max_discount_percent: number
+          organization_id: string
+          price_book_id: string
+          sku_id: string
+          unit_price: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          effective_from?: string
+          effective_until?: string | null
+          id?: string
+          max_discount_percent?: number
+          organization_id: string
+          price_book_id: string
+          sku_id: string
+          unit_price: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          effective_from?: string
+          effective_until?: string | null
+          id?: string
+          max_discount_percent?: number
+          organization_id?: string
+          price_book_id?: string
+          sku_id?: string
+          unit_price?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "retail_price_book_items_organization_price_book_fkey"
+            columns: ["organization_id", "price_book_id"]
+            isOneToOne: false
+            referencedRelation: "retail_price_books"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "retail_price_book_items_organization_sku_fkey"
+            columns: ["organization_id", "sku_id"]
+            isOneToOne: false
+            referencedRelation: "retail_skus"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
+      retail_price_books: {
+        Row: {
+          created_at: string
+          currency: string
+          id: string
+          name: string
+          organization_id: string
+          status: string
+          updated_at: string
+          vat_rate: number
+        }
+        Insert: {
+          created_at?: string
+          currency?: string
+          id?: string
+          name: string
+          organization_id: string
+          status?: string
+          updated_at?: string
+          vat_rate?: number
+        }
+        Update: {
+          created_at?: string
+          currency?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          status?: string
+          updated_at?: string
+          vat_rate?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "retail_price_books_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      retail_skus: {
+        Row: {
+          barcode: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          product_id: string | null
+          sku: string
+          unit: string
+          updated_at: string
+          variant_attributes: Json
+        }
+        Insert: {
+          barcode?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          organization_id: string
+          product_id?: string | null
+          sku: string
+          unit?: string
+          updated_at?: string
+          variant_attributes?: Json
+        }
+        Update: {
+          barcode?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          product_id?: string | null
+          sku?: string
+          unit?: string
+          updated_at?: string
+          variant_attributes?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "retail_skus_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "retail_skus_organization_product_fkey"
+            columns: ["organization_id", "product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
       role_capabilities: {
         Row: {
           capability_id: string
@@ -5994,6 +6242,34 @@ export type Database = {
           organization_id: string | null
           pending_approvals: number | null
           unread_notifications: number | null
+        }
+        Relationships: []
+      }
+      retail_effective_prices: {
+        Row: {
+          currency: string | null
+          effective_from: string | null
+          effective_until: string | null
+          max_discount_percent: number | null
+          organization_id: string | null
+          price_book_id: string | null
+          sku_id: string | null
+          unit_price: number | null
+          vat_rate: number | null
+        }
+        Relationships: []
+      }
+      retail_inventory_balances: {
+        Row: {
+          available: number | null
+          blocked: number | null
+          damaged: number | null
+          in_transit: number | null
+          location_id: string | null
+          on_hand: number | null
+          organization_id: string | null
+          reserved: number | null
+          sku_id: string | null
         }
         Relationships: []
       }

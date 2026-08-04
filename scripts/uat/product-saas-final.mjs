@@ -2084,7 +2084,7 @@ async function exactCount(admin, table, column, values) {
   if (values.length === 0) return 0;
   const { count, error } = await admin
     .from(table)
-    .select("id", { count: "exact", head: true })
+    .select(column, { count: "exact", head: true })
     .in(column, values);
   if (error || count === null) fail(`could not verify ${table} cleanup`);
   return count;

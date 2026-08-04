@@ -18,7 +18,7 @@ const sql = path.join(
 );
 const runtimeGateMigration = path.join(
   root,
-  "supabase/migrations/20260804153000_sam78_govern_v4_authenticated_rpcs.sql",
+  "supabase/migrations/20260805190000_v4_commercial_control_plane.sql",
 );
 
 function run(args = []) {
@@ -44,20 +44,26 @@ function withManifest(mutator, callback) {
 test("SAM-67 governed SECURITY DEFINER RPC allowlist is internally consistent", () => {
   const result = run();
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /26 reviewed authenticated RPCs/);
+  const { entries } = JSON.parse(fs.readFileSync(manifest, "utf8"));
+  assert.match(result.stdout, new RegExp(`${entries.length} reviewed authenticated RPCs`));
 });
 
 test("SAM-78 runtime promotion gate matches the governed authenticated RPC manifest", () => {
   const data = JSON.parse(fs.readFileSync(manifest, "utf8"));
   const migration = fs.readFileSync(runtimeGateMigration, "utf8");
-  assert.match(migration, /'gate_version', 'sam78-product-rpc-allowlist-v5'/);
+  assert.match(migration, /'gate_version', 'sam79-commercial-rpc-allowlist-v6'/);
   for (const { regprocedure } of data.entries) {
     assert.ok(
       migration.includes(`('${regprocedure}')`),
       `runtime promotion gate omits governed RPC ${regprocedure}`,
     );
   }
-  const runtimeEntries = [...migration.matchAll(/^\s*\('([^']+)'\),?$/gm)]
+  const gateStart = migration.indexOf("CREATE OR REPLACE FUNCTION public.security_definer_rpc_allowlist_gate()");
+  const expectedStart = migration.indexOf("WITH expected(regprocedure) AS (", gateStart);
+  const expectedEnd = migration.indexOf("), actual AS (", expectedStart);
+  assert.ok(gateStart >= 0 && expectedStart > gateStart && expectedEnd > expectedStart);
+  const expectedBlock = migration.slice(expectedStart, expectedEnd);
+  const runtimeEntries = [...expectedBlock.matchAll(/^\s*\('([^']+)'\),?$/gm)]
     .map((match) => match[1]);
   assert.deepEqual(runtimeEntries, data.entries.map(({ regprocedure }) => regprocedure));
 });

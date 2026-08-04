@@ -11,6 +11,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { toast } from "sonner";
 import SubNavTabs from "@/components/SubNavTabs";
 import KpiManagement from "./kpi-management";
+import { CommercialControlPlane } from "./commercial/commercial-control-plane";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
@@ -100,7 +101,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"data" | "kpi" | "password">("data");
+  const [activeTab, setActiveTab] = useState<"data" | "kpi" | "password" | "commercial">("data");
 
   // Filters
   const [stageFilter, setStageFilter] = useState<string>("all");
@@ -251,12 +252,6 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold text-foreground tracking-tight">
           {t("settings.title")}
         </h1>
-        <a
-          href="/settings/commercial"
-          className="mt-2 inline-flex text-sm font-medium text-copper-400 hover:text-copper-300"
-        >
-          Commercial control plane
-        </a>
         <div className="flex gap-1 mt-3 border-b border-border/50">
           <button
             onClick={() => setActiveTab("data")}
@@ -288,6 +283,16 @@ export default function SettingsPage() {
           >
             {t("settingsTab.password")}
           </button>
+          <button
+            onClick={() => setActiveTab("commercial")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "commercial"
+                ? "border-copper-500 text-copper-400"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Commercial
+          </button>
         </div>
       </div>
 
@@ -295,6 +300,8 @@ export default function SettingsPage() {
         <KpiManagement />
       ) : activeTab === "password" ? (
         <PasswordChange />
+      ) : activeTab === "commercial" ? (
+        <CommercialControlPlane />
       ) : (
       <>
       {/* ═══════ Original data management content ═══════ */}

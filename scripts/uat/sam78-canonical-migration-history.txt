@@ -141,3 +141,4 @@
 20260804193000	sam20_synthetic_support_cleanup_boundary
 20260805000000	sam78_product_saas_synthetic_cleanup_boundary
 20260805010000	sam78_v4_exit_digest_contract
+20260805190000	v4_commercial_control_plane

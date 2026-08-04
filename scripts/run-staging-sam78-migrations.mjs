@@ -56,6 +56,14 @@ export const MIGRATIONS = Object.freeze([
     rollbackBlobEnv: "SAM78_ROLLBACK_041657_BLOB",
   }),
   Object.freeze({
+    version: "20260804185311",
+    name: "sam80_shared_operational_services",
+    migrationEnv: "SAM78_MIGRATION_041853_PATH",
+    migrationBlobEnv: "SAM78_MIGRATION_041853_BLOB",
+    rollbackEnv: "SAM78_ROLLBACK_041853_PATH",
+    rollbackBlobEnv: "SAM78_ROLLBACK_041853_BLOB",
+  }),
+  Object.freeze({
     version: "20260804193000",
     name: "sam20_synthetic_support_cleanup_boundary",
     migrationEnv: "SAM78_MIGRATION_041930_PATH",

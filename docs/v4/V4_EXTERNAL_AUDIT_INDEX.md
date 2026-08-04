@@ -37,7 +37,7 @@ Project: [NewMe V4 SaaS — Real Estate and Retail](https://linear.app/samnewme/
 | [SAM-77](https://linear.app/samnewme/issue/SAM-77/v4-01-lock-requirements-sources-and-architecture) | In Progress | Requirements, sources and architecture lock | PR #254, source registry, ownership/license decision and M0 status |
 | [SAM-78](https://linear.app/samnewme/issue/SAM-78/v4-02-deliver-tenant-identity-and-isolation-foundation) | Done (evidence-conflicted) | Tenant identity and isolation | PR #255, its incomplete-scope comment, live Done status and M1 progress conflict |
 | [SAM-79](https://linear.app/samnewme/issue/SAM-79/v4-03-deliver-commercial-control-plane) | Backlog | Commercial control plane | V4-PF-005..008 and G3 |
-| [SAM-80](https://linear.app/samnewme/issue/SAM-80/v4-04-deliver-shared-workflow-and-operational-services) | Backlog | Shared operational services | V4-PF-009..012 and G1/G5/G6 |
+| [SAM-80](https://linear.app/samnewme/issue/SAM-80/v4-04-deliver-shared-workflow-and-operational-services) | In Progress | Shared operational services | V4-PF-009..012 and G1/G5/G6 |
 | [SAM-81](https://linear.app/samnewme/issue/SAM-81/v4-05-deliver-real-estate-commercial-slice) | Backlog | Real-estate commercial slice | V4-RE-001..008, V4-PILOT-001 and G4 |
 | [SAM-82](https://linear.app/samnewme/issue/SAM-82/v4-06-deliver-retail-catalog-inventory-and-pricing) | Backlog | Retail catalog, inventory and pricing | V4-RT-001..005 and G4 |
 | [SAM-83](https://linear.app/samnewme/issue/SAM-83/v4-07-deliver-retail-orders-procurement-delivery-and-finance) | Backlog | Retail order-to-finance | V4-RT-006..009 and G4 |

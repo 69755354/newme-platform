@@ -28,6 +28,7 @@ import {
   Briefcase,
   BarChart3,
   Settings,
+  ListTodo,
 } from "lucide-react";
 
 export interface NavItem {
@@ -48,6 +49,7 @@ export const MGMT_NAV: NavItem[] = [
   { href: "/products",  labelKey: "mgmtProducts", icon: Package },
   { href: "/team",      labelKey: "mgmtTeam", icon: UsersRound },
   { href: "/projects",  labelKey: "mgmtProjects", icon: Briefcase },
+  { href: "/workbench", labelKey: "mgmtOperations", icon: ListTodo },
   { href: "/settings",  labelKey: "mgmtSettings", icon: Settings },
 ];
 

@@ -23,6 +23,26 @@ DECLARE
     'organization_document_sequences', 'contract_workflow_requests',
     'platform_action_approvals', 'platform_action_approval_events'
   ]::text[];
+  sam80_relations constant text[] := ARRAY[
+    'shared_work_items', 'shared_approval_requests', 'shared_timeline_events',
+    'shared_notifications', 'shared_outbox', 'shared_jobs',
+    'shared_report_snapshots', 'v4_shared_operations_summary'
+  ]::text[];
+  sam80_client_functions constant text[] := ARRAY[
+    'public.v4_create_shared_work_item(uuid,text,text,text,uuid,timestamptz,text,uuid,text)',
+    'public.v4_transition_shared_work_item(uuid,uuid,text)',
+    'public.v4_request_shared_approval(uuid,text,text,uuid,jsonb,timestamptz,text)',
+    'public.v4_decide_shared_approval(uuid,uuid,text,text)',
+    'public.v4_create_shared_job(uuid,text,jsonb,uuid,text)',
+    'public.v4_mark_shared_notification_read(uuid,uuid)'
+  ]::text[];
+  sam80_service_functions constant text[] := ARRAY[
+    'public.v4_claim_shared_outbox(integer,text,integer)',
+    'public.v4_complete_shared_outbox(uuid,text,boolean,text)',
+    'public.v4_claim_shared_jobs(integer,text,integer)',
+    'public.v4_complete_shared_job(uuid,text,boolean,jsonb,text,text)',
+    'public.v4_requeue_shared_dead_letter(uuid,text,uuid,uuid,text)'
+  ]::text[];
   service_only_functions constant text[] := ARRAY[
     'public.v4_execute_approved_platform_action(uuid,text)',
     'public.v4_expire_support_sessions(text)',
@@ -73,7 +93,7 @@ BEGIN
 
   IF (action = 'apply' AND phase = 'pre' AND apply_mode = 'full')
     OR (action = 'rollback' AND phase = 'post') THEN
-    FOREACH relation_name IN ARRAY managed_relations LOOP
+    FOREACH relation_name IN ARRAY managed_relations || sam80_relations LOOP
       IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
         RAISE EXCEPTION 'SAM78 baseline verification found managed relation: %',
           relation_name;
@@ -248,6 +268,66 @@ BEGIN
       RAISE EXCEPTION 'SAM78 applied contract is missing relation: %', relation_name;
     END IF;
   END LOOP;
+
+  IF action = 'apply' AND phase = 'pre' AND apply_mode = 'suffix'
+    AND active_start_version <= '20260804185311' THEN
+    FOREACH relation_name IN ARRAY sam80_relations LOOP
+      IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
+        RAISE EXCEPTION 'SAM80 shared operations suffix is already present: %',
+          relation_name;
+      END IF;
+    END LOOP;
+    FOREACH function_signature IN ARRAY
+      sam80_client_functions || sam80_service_functions LOOP
+      IF to_regprocedure(function_signature) IS NOT NULL THEN
+        RAISE EXCEPTION 'SAM80 shared operations function is already present: %',
+          function_signature;
+      END IF;
+    END LOOP;
+  ELSE
+    FOREACH relation_name IN ARRAY sam80_relations LOOP
+      IF to_regclass(format('public.%I', relation_name)) IS NULL THEN
+        RAISE EXCEPTION 'SAM80 shared operations relation is missing: %',
+          relation_name;
+      END IF;
+      IF relation_name <> 'v4_shared_operations_summary' AND NOT EXISTS (
+        SELECT 1
+        FROM pg_class relation
+        JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = 'public'
+          AND relation.relname = relation_name
+          AND relation.relrowsecurity
+          AND relation.relforcerowsecurity
+      ) THEN
+        RAISE EXCEPTION 'SAM80 shared operations RLS is not forced: %',
+          relation_name;
+      END IF;
+      IF pg_catalog.has_table_privilege('anon', format('public.%I', relation_name),
+        'SELECT,INSERT,UPDATE,DELETE') THEN
+        RAISE EXCEPTION 'SAM80 shared operations anon table privilege drifted: %',
+          relation_name;
+      END IF;
+    END LOOP;
+    FOREACH function_signature IN ARRAY sam80_client_functions LOOP
+      function_oid := to_regprocedure(function_signature);
+      IF function_oid IS NULL
+        OR pg_catalog.has_function_privilege('anon', function_oid, 'EXECUTE')
+        OR NOT pg_catalog.has_function_privilege('authenticated', function_oid, 'EXECUTE')
+      THEN
+        RAISE EXCEPTION 'SAM80 client function ACL failed: %', function_signature;
+      END IF;
+    END LOOP;
+    FOREACH function_signature IN ARRAY sam80_service_functions LOOP
+      function_oid := to_regprocedure(function_signature);
+      IF function_oid IS NULL
+        OR pg_catalog.has_function_privilege('anon', function_oid, 'EXECUTE')
+        OR pg_catalog.has_function_privilege('authenticated', function_oid, 'EXECUTE')
+        OR NOT pg_catalog.has_function_privilege('service_role', function_oid, 'EXECUTE')
+      THEN
+        RAISE EXCEPTION 'SAM80 service function ACL failed: %', function_signature;
+      END IF;
+    END LOOP;
+  END IF;
 
   IF to_regprocedure('public.v4_reject_mutation()') IS NULL
     OR pg_get_functiondef(to_regprocedure('public.v4_reject_mutation()'))

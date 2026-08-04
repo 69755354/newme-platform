@@ -89,8 +89,8 @@ jobs:
       - name: SAM-20 disposable database apply and rollback gate
         run: npm run check:sam20-database
 
-      - name: SAM-23 organization commercial core database gate
-        run: npm run check:sam23-database
+      - name: SAM-23 and SAM-80 commercial operations database gate
+        run: npm run check:sam80-database
 
       - name: SAM-79 commercial control plane contract
         run: npm run check:sam79
@@ -117,7 +117,10 @@ jobs:
         run: npm run typecheck
 
       - name: Repository tests
-        run: npm test
+        # The suite contains multiple disposable PostgreSQL harnesses. Serialize
+        # test files so hosted-runner memory pressure cannot stop one database
+        # while another harness is applying or rolling back its schema.
+        run: npm test -- --test-concurrency=1
 
       - name: Release hygiene regression
         run: node --test tests/release/*.test.mjs

@@ -209,7 +209,7 @@ test("SAM-26 UAT image and runtime remain SHA-bound and disposable", async () =>
     /SAM26_EXPECTED_RELEASE_SHA=\$SHA/,
     /SAM26_RELEASE_MANIFEST=\/runner\/release\/manifest\.json/,
   ]) assert.match(control, pattern);
-  assert.equal((control.match(/--network host/g) ?? []).length, 7);
+  assert.equal((control.match(/--network host/g) ?? []).length, 8);
   assert.equal(
     (control.match(/--add-host staging\.newme\.ae:127\.0\.0\.1/g) ?? []).length,
     4,

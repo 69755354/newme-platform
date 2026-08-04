@@ -25,6 +25,8 @@ readonly SAM68_EVIDENCE="$STATE_DIR/last-uat-sam68.json"
 readonly SAM54_EVIDENCE="$STATE_DIR/last-uat-sam54.json"
 readonly SAM78_EVIDENCE="$STATE_DIR/last-migrate-sam78.json"
 readonly SAM78_UAT_EVIDENCE="$STATE_DIR/last-uat-sam78.json"
+readonly V4_ACCEPTANCE_RUNNER="scripts/uat/v4-staging-acceptance.mjs"
+readonly V4_ACCEPTANCE_EVIDENCE="$STATE_DIR/last-uat-v4-acceptance.json"
 readonly SAM87_RUNNER="scripts/verify-staging-sam87-release-rehearsal.mjs"
 readonly SAM87_EVIDENCE="$STATE_DIR/last-rehearse-sam87.json"
 readonly SAM87_COLD_RECOVERY_EVIDENCE="$STATE_DIR/last-cold-recover-sam87.json"
@@ -109,7 +111,7 @@ fail() {
 }
 
 usage() {
-  echo "usage: newme-staging-control build|deploy|cold-recover-sam87|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rehearse-sam87|validate-sam88-pilot|rollback <40-character-sha>" >&2
+  echo "usage: newme-staging-control build|deploy|cold-recover-sam87|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|uat-v4|migrate-sam78|rollback-sam78-db|rehearse-sam87|validate-sam88-pilot|rollback <40-character-sha>" >&2
   exit 64
 }
 
@@ -117,7 +119,7 @@ usage() {
 readonly ACTION="$1"
 readonly SHA="$2"
 case "$ACTION" in
-  build|deploy|cold-recover-sam87|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|migrate-sam78|rollback-sam78-db|rehearse-sam87|validate-sam88-pilot|rollback) ;;
+  build|deploy|cold-recover-sam87|uat|uat-sam20|reconcile-sam21|uat-sam21|uat-sam22|uat-sam23|uat-sam27|uat-sam52|uat-sam54|uat-sam68|uat-sam70|uat-product-saas|uat-sam78|uat-v4|migrate-sam78|rollback-sam78-db|rehearse-sam87|validate-sam88-pilot|rollback) ;;
   *) usage ;;
 esac
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || usage
@@ -346,6 +348,8 @@ build_uat_image() {
     "$context/product-saas-final.mjs"
   copy_commit_blob "$SHA" "$SAM78_UAT_RUNNER" \
     "$context/sam78-staging-tenant-closure.mjs"
+  copy_commit_blob "$SHA" "$V4_ACCEPTANCE_RUNNER" \
+    "$context/v4-staging-acceptance.mjs"
   docker build \
     --label "org.opencontainers.image.revision=$SHA" \
     --tag "$UAT_IMAGE_PREFIX:$SHA" \
@@ -1562,6 +1566,72 @@ run_uat_sam78() {
   echo "staging control SAM-78 tenant-closure UAT passed SHA=$SHA cleanup=verified evidence=$evidence"
 }
 
+# The V4 acceptance action is intentionally one runner rather than four
+# loosely coupled commands.  It keeps the exact release/image provenance,
+# marker-only fixture scope and residue verification in one atomic evidence
+# record.  The controller never prints the runner output or staging env.
+run_uat_v4() {
+  verify_current_release "$SHA"
+  command -v docker >/dev/null 2>&1 || fail "docker is required for staging UAT"
+  [ -r "$ENV_FILE" ] || fail "staging environment is missing"
+  [ "$(
+    docker image inspect "$UAT_IMAGE_PREFIX:$SHA" \
+      --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+  )" = "$SHA" ] || fail "staging UAT image provenance does not match"
+  local output rc evidence_tmp
+  rm -f -- "$V4_ACCEPTANCE_EVIDENCE"
+  output="$(mktemp "$STATE_DIR/.uat-v4.XXXXXX")"
+  register_temporary_path "$output"
+  rc=0
+  docker run \
+    --rm \
+    --init \
+    --network host \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m \
+    --tmpfs /runner/home:rw,nosuid,nodev,size=64m \
+    --env-file "$ENV_FILE" \
+    --env "HOME=/runner/home" \
+    --env "SAM_UAT_SUITE=v4-acceptance" \
+    --env "V4_UAT_RELEASE_SHA=$SHA" \
+    --env "V4_UAT_BASE_URL=http://127.0.0.1:3101" \
+    --env "V4_UAT_RELEASE_MANIFEST=/runner/release/manifest.json" \
+    --env "V4_UAT_CONFIRM=V4_STAGING_ACCEPTANCE_ONLY" \
+    --mount "type=bind,src=$RELEASES/$SHA/manifest.json,dst=/runner/release/manifest.json,readonly" \
+    "$UAT_IMAGE_PREFIX:$SHA" >"$output" 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "V4 staging acceptance runner failed with status $rc"
+  node -e '
+    const fs = require("fs");
+    const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const scenarios = ["SAM-81", "SAM-83", "SAM-84", "SAM-86"];
+    const cleanup = ["organizations", "auth", "memberships", "membershipRoles", "parties", "properties", "listings", "assets", "locations", "skus", "purchaseOrders", "purchaseItems", "receipts", "receiptItems"];
+    if (
+      body.ok !== true ||
+      body.schema_version !== 1 ||
+      body.scope !== "v4-staging-acceptance" ||
+      body.release?.project_ref !== process.argv[3] ||
+      body.release?.release_sha !== process.argv[2] ||
+      body.release?.health !== 200 ||
+      scenarios.some((key) => body.scenarios?.[key]?.status !== "pass" || body.scenarios?.[key]?.marker_only !== true) ||
+      body.scenarios?.["SAM-81"]?.external_publish_state !== "disabled" ||
+      body.scenarios?.["SAM-83"]?.receipt_idempotency !== "verified" ||
+      body.scenarios?.["SAM-84"]?.adapters !== "disabled" ||
+      body.scenarios?.["SAM-86"]?.release_sha !== process.argv[2] ||
+      body.cleanup?.status !== "verified" ||
+      cleanup.some((key) => body.cleanup?.counts?.[key] !== 0)
+    ) process.exit(1);
+  ' "$output" "$SHA" "$STAGING_REF" ||
+    fail "V4 staging acceptance evidence or cleanup is incomplete"
+  evidence_tmp="$(mktemp "$STATE_DIR/.last-uat-v4.XXXXXX")"
+  register_temporary_path "$evidence_tmp"
+  install -m 0600 -o root -g root "$output" "$evidence_tmp"
+  mv -Tf "$evidence_tmp" "$V4_ACCEPTANCE_EVIDENCE"
+  rm -f -- "$output"
+  echo "staging control V4 acceptance passed SHA=$SHA cleanup=verified evidence=$V4_ACCEPTANCE_EVIDENCE"
+}
+
 run_sam78_database_action() {
   production_healthy || fail "production health is not green"
   staging_healthy || fail "staging health is not green"
@@ -2045,6 +2115,7 @@ case "$ACTION" in
   uat-sam70) run_uat_sam70 ;;
   uat-product-saas) run_uat_product_saas ;;
   uat-sam78) run_uat_sam78 ;;
+  uat-v4) run_uat_v4 ;;
   migrate-sam78|rollback-sam78-db) run_sam78_database_action ;;
   rehearse-sam87) run_sam87_rehearsal ;;
   validate-sam88-pilot) run_sam88_pilot_readiness ;;

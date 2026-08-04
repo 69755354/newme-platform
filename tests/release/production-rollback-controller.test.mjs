@@ -32,8 +32,9 @@ test("production rollback controller is immutable, atomic, and fail-closed", asy
 });
 
 test("production deploy and sudo policy require the versioned rollback boundary", async () => {
-  const [deploy, rollback, sudoers, installer] = await Promise.all([
+  const [deploy, immutableDeploy, rollback, sudoers, installer] = await Promise.all([
     read("infra/systemd/newme-deploy.sh"),
+    read("scripts/deploy-immutable.sh"),
     read("infra/systemd/newme-production-rollback.sh"),
     read("infra/sudoers/newme-platform"),
     read("scripts/install-systemd-assets.sh"),
@@ -51,8 +52,21 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   assert.match(deploy, /infra\/systemd\/newme-production-rollback\.sh/);
   assert.match(deploy, /main lacks the protected production rollback controller/);
   assert.match(deploy, /infra\/sudoers\/newme-platform/);
+  assert.match(deploy, /scripts\/deploy-immutable\.sh/);
+  assert.match(deploy, /main lacks rollback-preserving immutable deployment/);
   assert.match(deploy, /NEWME_MANUAL_VERIFICATION=0/);
   assert.doesNotMatch(deploy, /manual_verified|CI_RUN_URL="manual"/);
+
+  assert.match(immutableDeploy, /ROLLBACK=.*current\.rollback/);
+  assert.match(immutableDeploy, /PREVIOUS_ROLLBACK/);
+  assert.match(immutableDeploy, /restore_rollback_link/);
+  assert.match(immutableDeploy, /ROLLBACK_CHANGED/);
+  assert.match(immutableDeploy, /protected_release=true/);
+  assert.match(immutableDeploy, /chmod -R a-w "\$STAGE"/);
+  assert.match(immutableDeploy, /newme-production-rollback/);
+  const rollbackSwitch = immutableDeploy.lastIndexOf('mv -Tf "$ROLLBACK_NEXT" "$ROLLBACK"');
+  const currentSwitch = immutableDeploy.lastIndexOf('mv -Tf "$CURRENT_NEXT" "$CURRENT"');
+  assert.ok(rollbackSwitch >= 0 && currentSwitch > rollbackSwitch);
 
   assert.match(sudoers, /NEWME_PRODUCTION_RECOVERY/);
   assert.match(sudoers, /newme-production-rollback status/);

@@ -10,6 +10,7 @@ PREFLIGHT_SHA="$(RELEASE_SHA="$SHA" bash "$ROOT/scripts/verify-release-preflight
 
 RELEASES="${NEWME_RELEASES_ROOT:-/opt/newme/releases}"
 CURRENT="${NEWME_CURRENT_LINK:-/opt/newme/current}"
+ROLLBACK="${NEWME_ROLLBACK_LINK:-/opt/newme/current.rollback}"
 LOCK="${NEWME_DEPLOY_LOCK:-/run/lock/newme-deploy.lock}"
 CONTROL="${NEWME_SERVICE_CONTROL:-/usr/local/sbin/newme-service-control}"
 RUNTIME_ENV="${NEWME_RUNTIME_ENV:-/etc/newme/newme-runtime.env}"
@@ -18,7 +19,9 @@ ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 STAGE="$RELEASES/.staging-$ID"
 RELEASE="$RELEASES/$SHA"
 CURRENT_NEXT="$CURRENT.next-$ID"
+ROLLBACK_NEXT="$ROLLBACK.next-$ID"
 PREVIOUS="$(readlink -f "$CURRENT" 2>/dev/null || true)"
+PREVIOUS_ROLLBACK="$(readlink -f "$ROLLBACK" 2>/dev/null || true)"
 PREVIOUS_BUILD="$(tr -d '\r\n' < "$CURRENT/.next/BUILD_ID" 2>/dev/null || true)"
 EVIDENCE_DIR="${NEWME_EVIDENCE_DIR:-$ROOT/.audit}"
 EVIDENCE_FILE="$EVIDENCE_DIR/deploy-$ID.json"
@@ -27,6 +30,7 @@ PID=""
 PGID=""
 READINESS_CONFIG=""
 SWITCHED=0
+ROLLBACK_CHANGED=0
 CREATED_RELEASE=0
 
 fail() { echo "deploy failed: $*" >&2; return 1; }
@@ -46,6 +50,16 @@ stop_candidate() {
   fi
 }
 
+restore_rollback_link() {
+  if [ -n "$PREVIOUS_ROLLBACK" ] && [ -d "$PREVIOUS_ROLLBACK" ]; then
+    ln -s "$PREVIOUS_ROLLBACK" "$ROLLBACK_NEXT"
+    mv -Tf "$ROLLBACK_NEXT" "$ROLLBACK"
+  else
+    rm -f -- "$ROLLBACK"
+  fi
+  ROLLBACK_CHANGED=0
+}
+
 rollback_release() {
   [ "$SWITCHED" -eq 1 ] || return 0
   if [ -z "$PREVIOUS" ] || [ ! -d "$PREVIOUS" ]; then
@@ -54,6 +68,7 @@ rollback_release() {
   fi
   ln -s "$PREVIOUS" "$CURRENT_NEXT"
   mv -Tf "$CURRENT_NEXT" "$CURRENT"
+  restore_rollback_link
   "$CONTROL" restart "deploy:$ID:rollback"
   curl -fsS --max-time 10 http://127.0.0.1:3001/api/health >/dev/null
   SWITCHED=0
@@ -65,11 +80,18 @@ cleanup() {
   stop_candidate || rc=1
   [ -n "$READINESS_CONFIG" ] && rm -f -- "$READINESS_CONFIG" 2>/dev/null || true
   rm -f -- "$CURRENT_NEXT" 2>/dev/null || true
+  rm -f -- "$ROLLBACK_NEXT" 2>/dev/null || true
   [ -n "$STAGE" ] && [ -d "$STAGE" ] && rm -rf -- "$STAGE" || true
   if [ "$rc" -ne 0 ] && [ "$SWITCHED" -eq 1 ]; then
     rollback_release || rc=2
   fi
-  if [ "$rc" -ne 0 ] && [ "$CREATED_RELEASE" -eq 1 ] && [ "$(readlink -f "$CURRENT" 2>/dev/null || true)" != "$RELEASE" ]; then
+  if [ "$rc" -ne 0 ] && [ "$SWITCHED" -eq 0 ] && [ "$ROLLBACK_CHANGED" -eq 1 ]; then
+    restore_rollback_link || rc=2
+  fi
+  if [ "$rc" -ne 0 ] &&
+    [ "$CREATED_RELEASE" -eq 1 ] &&
+    [ "$(readlink -f "$CURRENT" 2>/dev/null || true)" != "$RELEASE" ] &&
+    [ "$(readlink -f "$ROLLBACK" 2>/dev/null || true)" != "$RELEASE" ]; then
     rm -rf -- "$RELEASE" || rc=2
   fi
   exit "$rc"
@@ -85,7 +107,7 @@ case "$PREVIOUS" in "$RELEASES"/*) ;; *) fail "current is not an immutable relea
 [ ! -e "$RELEASE" ] || { fail "release already exists"; exit 1; }
 [ -r "$PREVIOUS/.env.local" ] || { fail "current release environment is missing"; exit 1; }
 
-for asset in /etc/systemd/system/newme-platform.service "$RUNTIME_ENV" /usr/local/libexec/newme/newme-readiness.sh /usr/local/sbin/newme-service-control /etc/cron.d/newme-observability /etc/logrotate.d/newme-forensic; do
+for asset in /etc/systemd/system/newme-platform.service "$RUNTIME_ENV" /usr/local/libexec/newme/newme-readiness.sh /usr/local/sbin/newme-service-control /usr/local/sbin/newme-production-rollback /etc/cron.d/newme-observability /etc/logrotate.d/newme-forensic; do
   [ -e "$asset" ] || { fail "missing versioned release asset: $asset"; exit 1; }
 done
 FRAGMENT="$(systemctl show newme-platform.service -p FragmentPath --value 2>/dev/null || true)"
@@ -132,10 +154,19 @@ done
 [ "$FAILURE" != cleanup ] || { fail "injected cleanup failure"; exit 1; }
 stop_candidate || { fail "candidate cleanup failed"; exit 1; }
 
-if [ "$(id -u)" -eq 0 ]; then chown -R ubuntu:ubuntu "$STAGE"; fi
+printf 'protected_release=true\ngit_sha=%s\nbuild_id=%s\ncreated_at_utc=%s\n' \
+  "$SHA" "$BUILD" "$(date -u +%Y%m%dT%H%M%SZ)" > "$STAGE/.newme-protect"
+if [ "$(id -u)" -eq 0 ]; then
+  chown -R ubuntu:ubuntu "$STAGE"
+  chown root:root "$STAGE/.newme-protect"
+fi
+chmod -R a-w "$STAGE"
 mv "$STAGE" "$RELEASE"
 STAGE=""
 CREATED_RELEASE=1
+ln -s "$PREVIOUS" "$ROLLBACK_NEXT"
+mv -Tf "$ROLLBACK_NEXT" "$ROLLBACK"
+ROLLBACK_CHANGED=1
 ln -s "$RELEASE" "$CURRENT_NEXT"
 mv -Tf "$CURRENT_NEXT" "$CURRENT"
 SWITCHED=1
@@ -192,9 +223,11 @@ with open(path, "w", encoding="utf-8") as handle:
 PY
 
 SWITCHED=0
+ROLLBACK_CHANGED=0
 CREATED_RELEASE=0
 for old in "$RELEASES"/*; do
   [ -d "$old" ] || continue
-  [ "$old" = "$TARGET" ] || [ "$old" = "$PREVIOUS" ] || rm -rf -- "$old" || { fail "old release cleanup failed"; exit 1; }
+  ROLLBACK_TARGET="$(readlink -f "$ROLLBACK" 2>/dev/null || true)"
+  [ "$old" = "$TARGET" ] || [ "$old" = "$ROLLBACK_TARGET" ] || rm -rf -- "$old" || { fail "old release cleanup failed"; exit 1; }
 done
 echo "deployed SHA=$SHA BUILD_ID=$BUILD evidence=$EVIDENCE_FILE status=awaiting_uat"

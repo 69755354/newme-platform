@@ -139,6 +139,17 @@ case "$SAM_UAT_SUITE" in
     }
     exec node /runner/sam78-staging-tenant-closure.mjs
     ;;
+  v4-acceptance)
+    : "${V4_UAT_RELEASE_SHA:?missing expected release SHA}"
+    : "${V4_UAT_BASE_URL:?missing staging app URL}"
+    : "${V4_UAT_RELEASE_MANIFEST:?missing read-only release manifest}"
+    : "${V4_UAT_CONFIRM:?missing staging-only confirmation}"
+    [[ "$V4_UAT_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid expected release SHA" >&2; exit 64; }
+    [[ "$V4_UAT_BASE_URL" == "http://127.0.0.1:3101" ]] || { echo "refusing non-loopback staging application URL" >&2; exit 65; }
+    [[ "$V4_UAT_RELEASE_MANIFEST" == "/runner/release/manifest.json" && -r "$V4_UAT_RELEASE_MANIFEST" ]] || { echo "refusing missing or non-fixed release manifest" >&2; exit 65; }
+    [[ "$V4_UAT_CONFIRM" == "V4_STAGING_ACCEPTANCE_ONLY" ]] || { echo "refusing missing staging-only confirmation" >&2; exit 65; }
+    exec node /runner/v4-staging-acceptance.mjs
+    ;;
   *)
     echo "refusing unknown staging UAT suite" >&2
     exit 64

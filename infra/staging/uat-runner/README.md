@@ -6,7 +6,7 @@ without adding Playwright, Chromium, SheetJS, or runner-only dependencies to
 the Next.js standalone release.
 
 The staging-only build service must create a fresh temporary Docker build
-context containing exactly these nine files from the exact checked-out SHA:
+context containing exactly these ten files from the exact checked-out SHA:
 
 - `infra/staging/uat-runner/Dockerfile`
 - `infra/staging/uat-runner/package.json`
@@ -17,6 +17,7 @@ context containing exactly these nine files from the exact checked-out SHA:
 - `scripts/uat/sam23-organization-commercial-core.mjs`
 - `scripts/uat/product-saas-final.mjs`
 - `scripts/uat/sam78-staging-tenant-closure.mjs`
+- `scripts/uat/v4-staging-acceptance.mjs`
 
 It then builds:
 
@@ -28,7 +29,7 @@ The repository-owned `/usr/local/sbin/newme-staging-control` accepts exactly one
 of these actions plus one full 40-character SHA:
 
 - `build <SHA>` starts the fixed staging build unit and builds this image from
-  the eight exact blobs at the canonical staging SHA.
+  the exact canonical UAT blobs at the canonical staging SHA.
 - `deploy <SHA>` starts the fixed staging deploy unit and atomically records the
   direct immutable predecessor in root-only state.
 - `cold-recover-sam87 <SHA>` is a one-time staging-only recovery action for the
@@ -106,6 +107,14 @@ of these actions plus one full 40-character SHA:
   fixture IDs are deleted; both fixture organizations, memberships, leads and
   audit residue must be zero. The credential-free result is retained as
   root-only `0600` state at `last-uat-sam78.json`.
+- `uat-v4 <SHA>` runs one SHA-bound, loopback-only acceptance runner for the
+  V4 real-estate listing boundary (SAM-81), retail procurement/receipt fact
+  boundary (SAM-83), controlled agent gateway levels L0--L4 and disabled
+  adapters (SAM-84), and release-bound health/readiness evidence (SAM-86).
+  It creates only exact marker-scoped synthetic records, accepts no production
+  reference or non-loopback base URL, and retains only a credential-free
+  root-only `0600` JSON result at `last-uat-v4-acceptance.json`. A failed
+  scenario attempts its exact-ID cleanup and cannot produce a passing record.
 - `migrate-sam78 <SHA>` applies exactly migrations `20260803100000`,
   `20260803143000`, and `20260804153000` to the fixed staging project with the schema owner
   `postgres.bfsiibofuzoglziltgyd`. Before opening a database connection it

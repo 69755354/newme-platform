@@ -79,6 +79,8 @@ test("staging UAT runner uses pinned and fail-closed browser dependencies", asyn
   assert.match(sam26Script, new RegExp(`const PRODUCTION_REF = "${productionRef}"`));
   assert.match(sam26Script, /await createOrganization\(\)/);
   assert.match(sam26Script, /organization_id: organizationId/);
+  assert.match(sam26Script, /plan_key: "growth"/);
+  assert.match(sam26Script, /billable_seat_limit: 20/);
   assert.match(sam26Script, /admin: "org_admin"/);
   assert.match(sam26Script, /boss: "org_owner"/);
   assert.match(sam26Script, /operator: "operations"/);

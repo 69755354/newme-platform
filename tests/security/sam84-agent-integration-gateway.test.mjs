@@ -5,7 +5,9 @@ import {
   AGENT_GATEWAY_POLICIES,
   AgentGatewayError,
   buildAgentGatewayDispatch,
+  serializeAgentGatewayPayloadForPostgres,
 } from "../../src/lib/agent-gateway-core.mjs";
+import { createHash } from "node:crypto";
 
 const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 const actor = "11111111-1111-4111-8111-111111111111";
@@ -44,6 +46,18 @@ test("SAM-84 server constructs authoritative context, signature and five-minute 
   assert.equal(first.credentialExpiresAt, "2026-08-06T00:05:00.000Z");
   assert.notEqual(first.correlationId, replay.correlationId);
   assert.notEqual(first.eventSignature, replay.eventSignature);
+});
+
+test("SAM-84 hashes the exact PostgreSQL JSONB text representation", () => {
+  const payload = { z: [true, null, { bb: "synthetic", a: 1 }], aa: { b: 2, a: "x" } };
+  const postgresText = '{"z": [true, null, {"a": 1, "bb": "synthetic"}], "aa": {"a": "x", "b": 2}}';
+  assert.equal(serializeAgentGatewayPayloadForPostgres(payload), postgresText);
+  const result = dispatch("agent.tenant.summary", payload);
+  assert.equal(result.payloadSha256, createHash("sha256").update(postgresText).digest("hex"));
+  assert.throws(
+    () => serializeAgentGatewayPayloadForPostgres({ value: Number.NaN }),
+    (error) => error instanceof AgentGatewayError && error.code === "agent_payload_invalid",
+  );
 });
 
 test("SAM-84 rejects client authority, unknown commands, oversized payloads and missing signing key", () => {

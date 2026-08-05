@@ -34,6 +34,29 @@ export function canonicalizeAgentGatewayPayload(value) {
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalizeAgentGatewayPayload(value[key])}`).join(",")}}`;
 }
 
+// PostgreSQL jsonb renders objects in length-then-byte key order, with a
+// space after object separators. The gateway stores JSONB but verifies a
+// SHA-256 supplied by the server route, so the hash input must match the
+// database representation exactly. Keep this separate from the compact
+// canonical form used for HMAC/idempotency bindings.
+function comparePostgresJsonbKeys(left, right) {
+  const leftBytes = Buffer.from(left, "utf8");
+  const rightBytes = Buffer.from(right, "utf8");
+  return leftBytes.length - rightBytes.length || Buffer.compare(leftBytes, rightBytes);
+}
+
+export function serializeAgentGatewayPayloadForPostgres(value) {
+  if (value === null || typeof value === "boolean" || typeof value === "number") {
+    if (typeof value === "number" && !Number.isFinite(value)) throw new AgentGatewayError("agent_payload_invalid");
+    return JSON.stringify(value);
+  }
+  if (typeof value === "string") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(serializeAgentGatewayPayloadForPostgres).join(", ")}]`;
+  if (!isPlainObject(value)) throw new AgentGatewayError("agent_payload_invalid");
+  return `{${Object.keys(value).sort(comparePostgresJsonbKeys).map((key) =>
+    `${JSON.stringify(key)}: ${serializeAgentGatewayPayloadForPostgres(value[key])}`).join(", ")}}`;
+}
+
 function requireSigningKey(value) {
   if (typeof value !== "string" || value.length < 32) {
     throw new AgentGatewayError("agent_gateway_signing_unavailable", 503);
@@ -55,7 +78,7 @@ export function buildAgentGatewayDispatch({ actorUserId, organizationId, input, 
   const payloadCanonical = canonicalizeAgentGatewayPayload(input.payload);
   if (Buffer.byteLength(payloadCanonical, "utf8") > MAX_PAYLOAD_BYTES) throw new AgentGatewayError("agent_payload_too_large");
   const key = requireSigningKey(signingKey);
-  const payloadSha256 = sha256(payloadCanonical);
+  const payloadSha256 = sha256(serializeAgentGatewayPayloadForPostgres(input.payload));
   const correlationId = randomUUID();
   const idempotencyKey = `agt_${hmacHex(key, canonicalizeAgentGatewayPayload({ actorUserId, organizationId, commandKey: input.command, payloadSha256 })).slice(0, 56)}`;
   const credentialExpiresAt = new Date(now.getTime() + CREDENTIAL_TTL_SECONDS * 1000).toISOString();

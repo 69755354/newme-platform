@@ -244,6 +244,29 @@ test("apply is one bounded transaction with try-lock, history lock, and pre/post
   assert.doesNotMatch(sql, /ON CONFLICT\s+ON CONSTRAINT\s+schema_migrations/i);
 });
 
+test("audited staging gap omits only its active rows from predecessor history", async () => {
+  const loaded = await plan();
+  const applied = loaded.filter(({ version }) => KNOWN_STAGING_APPLIED_VERSIONS.includes(version));
+  const { activePlan: activeVersions } = resolveStagingApplyPlan(applied);
+  const activePlan = loaded.filter(({ version }) =>
+    activeVersions.some((item) => item.version === version));
+  const sql = buildTransactionSql({
+    action: "apply",
+    plan: loaded,
+    activePlan,
+    expectedHistory: await expectedHistory(),
+    platformStaffRoleMapping: "{}",
+    verifySql: await read("scripts/uat/sam78-staging-migration-verify.sql"),
+  });
+  assert.match(sql, /newme\.sam78_apply_mode = 'known_gap'/);
+  assert.match(sql, /20260804185311/);
+  assert.match(sql, /20260803100000/);
+  assert.doesNotMatch(
+    sql.slice(sql.indexOf("DO $sam78_preflight$"), sql.indexOf("SET LOCAL newme.sam78_verify_phase = 'pre'")),
+    /\('20260804185311', 'sam80_shared_operational_services'\)/,
+  );
+});
+
 test("rollback reverses the exact plan and verifies the applied prestate", async () => {
   const loaded = await plan();
   const sql = buildTransactionSql({

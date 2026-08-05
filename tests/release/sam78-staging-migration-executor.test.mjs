@@ -468,6 +468,7 @@ test("live verifier covers exact pre/post FK, RLS, ACL, backfill, orphan, and ro
     "'full', 'suffix', 'known_gap'",
     "known-gap prestate already contains missing migration relation",
     "SAM79 paid-seat trigger record-shape fix is missing",
+    "to_regclass('supabase_migrations.schema_migrations') IS NOT NULL",
   ]) assert.ok(verify.includes(evidence), `missing live verifier evidence: ${evidence}`);
 
   const normalizedMigration = `${migration}\n${sam80Migration}`.replaceAll(/\s+/g, "");

@@ -408,21 +408,11 @@ require_sam78_apply_evidence() {
       "20260805010000", "20260805020000", "20260805120000", "20260805130000",
       "20260805190000", "20260806000000", "20260806010000",
     ];
-    const alreadyAppliedVersions = [
-      "20260803100000", "20260803143000", "20260804153000",
-      "20260804165734", "20260804193000", "20260805000000", "20260805010000",
-    ];
-    const appliedVersions = [
-      "20260804185311", "20260805020000", "20260805120000",
-      "20260805130000", "20260805190000", "20260806000000", "20260806010000",
-    ];
     if (lines.length !== 1) process.exit(1);
     const body = JSON.parse(lines[0]);
-    const cleanBaselineEvidenceIsValid = JSON.stringify(body?.alreadyAppliedVersions) === JSON.stringify([]) &&
-      JSON.stringify(body?.appliedVersions) === JSON.stringify(versions);
-    const knownGapEvidenceIsValid =
-      JSON.stringify(body?.alreadyAppliedVersions) === JSON.stringify(alreadyAppliedVersions) &&
-      JSON.stringify(body?.appliedVersions) === JSON.stringify(appliedVersions);
+    const appliedHistoryIsValid = Array.isArray(body?.alreadyAppliedVersions) &&
+      Array.isArray(body?.appliedVersions) &&
+      JSON.stringify([...body.alreadyAppliedVersions, ...body.appliedVersions]) === JSON.stringify(versions);
     if (
       body?.schemaVersion !== 1 ||
       body?.linearId !== "SAM-78" ||
@@ -432,7 +422,7 @@ require_sam78_apply_evidence() {
       body?.status !== "passed" ||
       body?.history !== "verified" ||
       JSON.stringify(body?.versions) !== JSON.stringify(versions) ||
-      !(cleanBaselineEvidenceIsValid || knownGapEvidenceIsValid)
+      !appliedHistoryIsValid
     ) process.exit(1);
   ' "$SAM78_EVIDENCE" "$SHA" ||
     fail "SAM-78 migration evidence is incomplete for cold recovery"
@@ -1898,20 +1888,10 @@ run_sam78_database_action() {
       "20260804165734", "20260804185311", "20260804193000", "20260805000000",
       "20260805010000", "20260805020000", "20260805120000", "20260805130000", "20260805190000", "20260806000000", "20260806010000",
     ];
-    const alreadyAppliedVersions = [
-      "20260803100000", "20260803143000", "20260804153000",
-      "20260804165734", "20260804193000", "20260805000000", "20260805010000",
-    ];
-    const gapAppliedVersions = [
-      "20260804185311", "20260805020000", "20260805120000",
-      "20260805130000", "20260805190000", "20260806000000", "20260806010000",
-    ];
-    const applyEvidenceIsValid = process.argv[4] === "apply" && (
-      (JSON.stringify(body.alreadyAppliedVersions) === JSON.stringify([])
-        && JSON.stringify(body.appliedVersions) === JSON.stringify(versions))
-      || (JSON.stringify(body.alreadyAppliedVersions) === JSON.stringify(alreadyAppliedVersions)
-        && JSON.stringify(body.appliedVersions) === JSON.stringify(gapAppliedVersions))
-    );
+    const applyEvidenceIsValid = process.argv[4] === "apply"
+      && Array.isArray(body.alreadyAppliedVersions)
+      && Array.isArray(body.appliedVersions)
+      && JSON.stringify([...body.alreadyAppliedVersions, ...body.appliedVersions]) === JSON.stringify(versions);
     const rollbackEvidenceIsValid = process.argv[4] === "rollback"
       && JSON.stringify(body.alreadyAppliedVersions) === JSON.stringify(versions)
       && JSON.stringify(body.appliedVersions) === JSON.stringify(versions);

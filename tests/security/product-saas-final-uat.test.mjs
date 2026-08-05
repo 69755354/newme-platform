@@ -35,6 +35,13 @@ test("validates the exact staging-only environment", () => {
   assert.equal(config.baseUrl, "https://staging.newme.ae");
 });
 
+test("cleanup failure telemetry is bounded and never serializes fixture state", async () => {
+  const source = await readFile("scripts/uat/product-saas-final.mjs", "utf8");
+  assert.match(source, /cleanup_operation_failed:\$\{stage\}/);
+  assert.match(source, /cleanup_residue_detected:\$\{residue\}/);
+  assert.doesNotMatch(source, /cleanup was not exact: \$\{JSON\.stringify/);
+});
+
 test("fails closed when confirmation, project, SHA, manifest, or URL drifts", () => {
   for (const patch of [
     { PRODUCT_UAT_CONFIRM: "yes" },

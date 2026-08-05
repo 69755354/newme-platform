@@ -234,7 +234,7 @@ async function sam86(state) {
   if (health.status !== 200 || healthBody?.status !== "ok" || ready.status !== 200 || readyBody?.status !== "ready" || readyBody?.release_sha !== state.config.releaseSha) fail("sam86_runtime_provenance_invalid");
   const latencyMs = Date.now() - started;
   if (latencyMs > 3000) fail("sam86_readiness_timeout");
-  return { status: "pass", health: 200, readiness: 200, release_sha: state.config.releaseSha, latency_ms: latencyMs, evidence: "runtime_only_no_secrets" };
+  return { status: "pass", health: 200, readiness: 200, release_sha: state.config.releaseSha, latency_ms: latencyMs, evidence: "runtime_only_no_secrets", marker_only: true };
 }
 
 async function cleanup(state) {

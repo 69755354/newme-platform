@@ -6,6 +6,13 @@ import { logger } from "@/lib/logger";
 import { NextResponse } from "next/server";
 
 const LEGACY_COOKIE_NAMES = ["sb-access-token", "sb-refresh-token"];
+const PRIVATE_NO_STORE = "private, no-store, max-age=0, must-revalidate";
+
+function applyPrivateNoStore(response: NextResponse) {
+  response.headers.set("Cache-Control", PRIVATE_NO_STORE);
+  response.headers.set("Vary", "Cookie, Authorization");
+  return response;
+}
 
 function clearSessionCookies(response: NextResponse) {
   const names = getSupabaseCookieNames();
@@ -33,7 +40,7 @@ export async function GET(request: Request) {
     const refreshAttempted = getRefreshAttempted(supabase);
     const refreshFailure = getRefreshFailure(supabase);
     const respond = (body: Record<string, unknown>, init?: ResponseInit) => {
-      const response = NextResponse.json(body, init);
+      const response = applyPrivateNoStore(NextResponse.json(body, init));
       for (const cookie of refreshedCookies) {
         response.cookies.set(
           cookie.name,
@@ -115,6 +122,8 @@ export async function GET(request: Request) {
     });
   } catch (err) {
     logger.error({ request_id: requestId, operation: "auth_me", err });
-    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+    return applyPrivateNoStore(
+      NextResponse.json({ error: "internal_error" }, { status: 500 }),
+    );
   }
 }

@@ -96,7 +96,19 @@ jobs:
         run: npm run check:sam79
 
       - name: SAM-61 active-profile milestone guard
-        run: npm run check:sam61-active-profile-database
+        run: |
+          set -Eeuo pipefail
+          output="$(mktemp)"
+          trap 'rm -f -- "$output"' EXIT
+          if npm run check:sam61-active-profile-database 2>&1 | tee "$output"; then
+            exit 0
+          fi
+          if ! grep -Fq 'database system is shutting down' "$output"; then
+            exit 1
+          fi
+          echo 'Retrying once after the hosted disposable PostgreSQL container shut down during startup.' >&2
+          sleep 2
+          npm run check:sam61-active-profile-database
 
       - name: V4 migration rehearsal contract gate
         run: npm run check:v4-migration-rehearsal

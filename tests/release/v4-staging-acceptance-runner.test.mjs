@@ -37,6 +37,7 @@ test("one SHA-bound action integrates four V4 scenarios and strict cleanup", asy
   for (const marker of ["V4_STAGING_ACCEPTANCE_ONLY", "V4_UAT_BASE_URL", "marker_only", "cleanup", "agent_gateway_adapter_registry", "receipt_idempotency", "fulfillment", "finance", "release_sha"]) assert.match(runner, new RegExp(marker));
   assert.match(runner, /plan_key: "growth", billable_seat_limit: 20/);
   assert.doesNotMatch(runner, /plan_key: "growth", billable_seat_limit: 5/);
+  assert.match(runner, /normalized_email: `\$\{state\.marker\}@invalid\.test`\.toLowerCase\(\)/);
   assert.match(runner, /production_reference_detected/);
   assert.doesNotMatch(runner, /console\.log\(.*(?:SERVICE_ROLE|ANON_KEY|Bearer)/);
   for (const pattern of [

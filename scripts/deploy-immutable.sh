@@ -23,9 +23,9 @@ ROLLBACK_NEXT="$ROLLBACK.next-$ID"
 PREVIOUS="$(readlink -f "$CURRENT" 2>/dev/null || true)"
 PREVIOUS_ROLLBACK="$(readlink -f "$ROLLBACK" 2>/dev/null || true)"
 PREVIOUS_BUILD="$(tr -d '\r\n' < "$CURRENT/.next/BUILD_ID" 2>/dev/null || true)"
-EVIDENCE_DIR="${NEWME_EVIDENCE_DIR:-$ROOT/.audit}"
-EVIDENCE_FILE="$EVIDENCE_DIR/deploy-$ID.json"
-REGRESSION_FILE="$EVIDENCE_DIR/crm-regression-$ID.json"
+EVIDENCE_DIR="${NEWME_EVIDENCE_DIR:-}"
+EVIDENCE_FILE=""
+REGRESSION_FILE=""
 PID=""
 PGID=""
 READINESS_CONFIG=""
@@ -180,7 +180,14 @@ grep -Fqx "{\"git_sha\":\"$SHA\",\"build_id\":\"$BUILD\"}" "$TARGET/manifest.jso
 curl -fsS --max-time 10 http://127.0.0.1:3001/api/health >/dev/null || { fail "post-switch health failed"; exit 1; }
 bash "$TARGET/scripts/check-smoke.sh" http://127.0.0.1:3001
 bash "$TARGET/scripts/check-logs.sh" "2 minutes ago"
-mkdir -p "$EVIDENCE_DIR"
+if [ -z "$EVIDENCE_DIR" ]; then
+  EVIDENCE_DIR="$TARGET/.audit"
+  install -d -o root -g root -m 0700 "$EVIDENCE_DIR"
+else
+  mkdir -p "$EVIDENCE_DIR"
+fi
+EVIDENCE_FILE="$EVIDENCE_DIR/deploy-$ID.json"
+REGRESSION_FILE="$EVIDENCE_DIR/crm-regression-$ID.json"
 CRM_REGRESSION_RESULT_FILE="$REGRESSION_FILE" bash "$TARGET/scripts/deploy-verify.sh" --no-git
 
 python3 - "$EVIDENCE_FILE" "$SHA" "$BUILD" "$PREVIOUS" "$PREVIOUS_BUILD" <<'PY'

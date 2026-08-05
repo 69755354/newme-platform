@@ -83,10 +83,10 @@ if uat_status == "fail":
 else:
     if not actor.strip():
         fail("authenticated UAT actor is required")
-    if cleanup not in {"not_required", "archived_verified"}:
+    if cleanup not in {"not_required", "archived_verified", "removed_verified"}:
         fail("fixture cleanup status is invalid")
-    if fixtures and cleanup != "archived_verified":
-        fail("fixture IDs require archived_verified cleanup")
+    if fixtures and cleanup not in {"archived_verified", "removed_verified"}:
+        fail("fixture IDs require verified cleanup")
     evidence["uat"] = {
         "status": "pass",
         "actor": actor.strip(),

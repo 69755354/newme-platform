@@ -59,7 +59,7 @@ test("failed UAT is recorded and leaves release incomplete", async () => {
   assert.equal((await evidence(path)).release_status, "uat_failed");
 });
 
-test("fixture IDs require archived_verified cleanup", async () => {
+test("fixture IDs reject unverified cleanup", async () => {
   const path = await fixture();
   const result = finalize(path, {
     UAT_FIXTURE_IDS: "fixture-1",
@@ -78,6 +78,18 @@ test("passing authenticated UAT with exact cleanup completes release", async () 
   assert.equal(result.status, 0, result.stderr);
   const resultEvidence = await evidence(path);
   assert.deepEqual(resultEvidence.uat.fixture_ids, ["fixture-1", "fixture-2"]);
+  assert.equal(resultEvidence.release_status, "complete");
+});
+
+test("physically removed synthetic fixtures are recorded truthfully", async () => {
+  const path = await fixture();
+  const result = finalize(path, {
+    UAT_FIXTURE_IDS: "fixture-1,fixture-2",
+    FIXTURE_CLEANUP_STATUS: "removed_verified",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const resultEvidence = await evidence(path);
+  assert.equal(resultEvidence.uat.cleanup_status, "removed_verified");
   assert.equal(resultEvidence.release_status, "complete");
 });
 

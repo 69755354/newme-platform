@@ -89,7 +89,7 @@ DECLARE
 BEGIN
   IF action NOT IN ('apply', 'rollback')
     OR phase NOT IN ('pre', 'post')
-    OR apply_mode NOT IN ('full', 'suffix')
+    OR apply_mode NOT IN ('full', 'suffix', 'known_gap')
     OR active_start_version !~ '^[0-9]{14}$'
     OR (action = 'rollback' AND apply_mode <> 'full')
   THEN
@@ -269,6 +269,21 @@ BEGIN
         RAISE EXCEPTION 'SAM78 rollback retained Product/SaaS cleanup allowance';
       END IF;
     END IF;
+    RETURN;
+  END IF;
+
+  -- The audited staging database already has this exact non-contiguous V4
+  -- history. Its metadata is checked by the executor; here we additionally
+  -- reject any schema artifact from the six migrations which must still be
+  -- absent before the controlled gap application. Post-verification below
+  -- remains the complete V4 contract after all six have committed.
+  IF action = 'apply' AND phase = 'pre' AND apply_mode = 'known_gap' THEN
+    FOREACH relation_name IN ARRAY sam80_relations || sam81_relations LOOP
+      IF to_regclass(format('public.%I', relation_name)) IS NOT NULL THEN
+        RAISE EXCEPTION 'SAM78 known-gap prestate already contains missing migration relation: %',
+          relation_name;
+      END IF;
+    END LOOP;
     RETURN;
   END IF;
 

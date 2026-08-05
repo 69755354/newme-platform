@@ -85,6 +85,12 @@ test("SAM-78 database actions are SHA-bound and verify provenance before executi
     /historyManifestBlob !== process\.argv\[5\]/,
     /buildArtifactSha256 !== process\.argv\[6\]/,
     /body\.platformStaffRoleMappingSha256 !==/,
+    /const alreadyAppliedVersions = \[/,
+    /const gapAppliedVersions = \[/,
+    /cleanBaselineEvidenceIsValid/,
+    /knownGapEvidenceIsValid/,
+    /JSON\.stringify\(body\.alreadyAppliedVersions\) === JSON\.stringify\(\[\]\)/,
+    /JSON\.stringify\(body\.appliedVersions\) === JSON\.stringify\(gapAppliedVersions\)/,
   ]) assert.match(control, pattern);
 
   const artifactGate = control.indexOf("SAM-78 build artifact checksum mismatch");
@@ -776,7 +782,9 @@ test("SAM-87 cold recovery accepts only the recorded dangling-release failure st
     /rejects stale or foreign build artifacts/,
     /require_sam78_apply_evidence/,
     /body\?\.action !== "apply"/,
-    /JSON\.stringify\(body\?\.appliedVersions\) !== JSON\.stringify\(versions\)/,
+    /cleanBaselineEvidenceIsValid/,
+    /knownGapEvidenceIsValid/,
+    /!\(cleanBaselineEvidenceIsValid \|\| knownGapEvidenceIsValid\)/,
     /systemctl start "\$unit"/,
     /verify_unit_success "\$unit"/,
     /verify_current_release "\$SHA"/,

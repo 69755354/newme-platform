@@ -6,11 +6,13 @@ import {
   CA_FILE,
   CANONICAL_BASE_SHA,
   DATABASE_USER,
+  KNOWN_STAGING_APPLIED_VERSIONS,
   MIGRATIONS,
   PLATFORM_STAFF_ROLE_MAPPING_FILE,
   STAGING_REF,
   buildTransactionSql,
-  parseAppliedMigrationPrefix,
+  parseAppliedMigrationSet,
+  resolveStagingApplyPlan,
   parseMigrationHistoryManifest,
   parsePlatformStaffRoleMapping,
   psqlInvocation,
@@ -276,9 +278,21 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
   assert.equal(splitSqlStatements(sql).at(-1), "COMMIT");
 });
 
-test("apply accepts only an exact unapplied canonical suffix", async () => {
+test("apply accepts the exact audited non-contiguous staging history and applies only its canonical gaps", async () => {
   const loaded = await plan();
-  const activePlan = loaded.slice(-1);
+  const knownApplied = loaded.filter(({ version }) => KNOWN_STAGING_APPLIED_VERSIONS.includes(version));
+  const activePlan = loaded.filter(({ version }) => !KNOWN_STAGING_APPLIED_VERSIONS.includes(version));
+  assert.deepEqual(
+    activePlan.map(({ version }) => version),
+    [
+      "20260804185311",
+      "20260805020000",
+      "20260805120000",
+      "20260805130000",
+      "20260805190000",
+      "20260806000000",
+    ],
+  );
   const sql = buildTransactionSql({
     action: "apply",
     plan: loaded,
@@ -287,38 +301,44 @@ test("apply accepts only an exact unapplied canonical suffix", async () => {
     platformStaffRoleMapping: "{}",
     verifySql: await read("scripts/uat/sam78-staging-migration-verify.sql"),
   });
-  assert.match(sql, /newme\.sam78_apply_mode = 'suffix'/);
-  assert.match(sql, /20260805190000/);
-  assert.match(sql, /SAM78 applied migration prefix metadata mismatch/);
+  assert.match(sql, /newme\.sam78_apply_mode = 'known_gap'/);
+  assert.match(sql, /20260804185311/);
+  assert.match(sql, /20260806000000/);
+  assert.match(sql, /SAM78 known applied migration metadata mismatch/);
   assert.equal(
     (sql.match(/INSERT INTO supabase_migrations\.schema_migrations/g) ?? []).length,
-    1,
+    activePlan.length,
   );
   assert.doesNotMatch(
     sql.slice(sql.indexOf("SET LOCAL newme.sam78_verify_phase = 'pre'")),
     /CREATE TABLE public\.capabilities/,
   );
-  assert.equal(parseAppliedMigrationPrefix(""), 0);
-  assert.equal(
-    parseAppliedMigrationPrefix(
-      loaded.slice(0, -1).map(({ version, name }) => `${version}\t${name}`).join("\n") + "\n",
-    ),
-    loaded.length - 1,
+  assert.deepEqual(parseAppliedMigrationSet("").map(({ version }) => version), []);
+  assert.deepEqual(
+    parseAppliedMigrationSet(
+      knownApplied.map(({ version, name }) => `${version}\t${name}`).join("\n") + "\n",
+    ).map(({ version }) => version),
+    KNOWN_STAGING_APPLIED_VERSIONS,
+  );
+  assert.deepEqual(
+    resolveStagingApplyPlan(knownApplied).activePlan.map(({ version }) => version),
+    activePlan.map(({ version }) => version),
   );
   assert.throws(
-    () => parseAppliedMigrationPrefix(`${loaded[1].version}\t${loaded[1].name}\n`),
-    /not one exact canonical prefix/,
+    () => resolveStagingApplyPlan([loaded[1]]),
+    /exact known staging migration set/,
   );
+  const manifest = await expectedHistory();
   assert.throws(
     () => buildTransactionSql({
       action: "apply",
       plan: loaded,
       activePlan: loaded.slice(0, 1),
-      expectedHistory: [],
+      expectedHistory: manifest,
       platformStaffRoleMapping: "{}",
       verifySql: "SELECT 1;",
     }),
-    /exact canonical suffix/,
+    /exact known staging migration set/,
   );
 });
 
@@ -392,6 +412,8 @@ test("live verifier covers exact pre/post FK, RLS, ACL, backfill, orphan, and ro
     "has_function_privilege",
     "search_path=pg_catalog, public, pg_temp",
     "v4_assert_tenant_closure_rollback_safe",
+    "'full', 'suffix', 'known_gap'",
+    "known-gap prestate already contains missing migration relation",
   ]) assert.ok(verify.includes(evidence), `missing live verifier evidence: ${evidence}`);
 
   const normalizedMigration = `${migration}\n${sam80Migration}`.replaceAll(/\s+/g, "");

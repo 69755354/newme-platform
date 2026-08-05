@@ -129,6 +129,20 @@ export const MIGRATIONS = Object.freeze([
   }),
 ]);
 
+// This is the only non-contiguous V4 state accepted for the existing staging
+// project. These migrations were applied by the earlier, independently
+// audited staging rollout. The controller may add the canonical missing set,
+// but it must reject every other partial, reordered, or polluted state.
+export const KNOWN_STAGING_APPLIED_VERSIONS = Object.freeze([
+  "20260803100000",
+  "20260803143000",
+  "20260804153000",
+  "20260804165734",
+  "20260804193000",
+  "20260805000000",
+  "20260805010000",
+]);
+
 function fail(message) {
   throw new Error(`SAM78_FAIL_CLOSED: ${message}`);
 }
@@ -350,21 +364,22 @@ export function parsePlatformStaffRoleMapping(text) {
     left.localeCompare(right))));
 }
 
-function historyPreflight(plan, action, expectedHistory, appliedPrefix = []) {
-  const versions = plan.map((item) => sqlLiteral(item.version)).join(", ");
+function historyPreflight(plan, activePlan, action, expectedHistory, alreadyAppliedPlan = []) {
+  const canonicalVersions = plan.map((item) => sqlLiteral(item.version)).join(", ");
+  const activeVersions = activePlan.map((item) => sqlLiteral(item.version)).join(", ");
   const prefixes = plan.map((item) => `version LIKE ${sqlLiteral(`${item.version}%`)}`).join(" OR ");
-  const exactMetadata = plan.map((item) => `(${metadataPredicate(item)})`).join(" OR ");
-  const expected = action === "apply" ? 0 : plan.length;
+  const exactMetadata = activePlan.map((item) => `(${metadataPredicate(item)})`).join(" OR ");
+  const expected = action === "apply" ? 0 : activePlan.length;
   const expectedRows = action === "apply"
-    ? expectedHistory.slice(0, -plan.length)
+    ? [...expectedHistory.slice(0, -plan.length), ...alreadyAppliedPlan]
     : expectedHistory;
   const expectedValues = historyValues(expectedRows);
-  const appliedPrefixAssertion = appliedPrefix.length === 0
+  const alreadyAppliedAssertion = alreadyAppliedPlan.length === 0
     ? ""
     : "  IF (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE "
-      + appliedPrefix.map((item) => "(" + metadataPredicate(item) + ")").join(" OR ")
-      + ") <> " + String(appliedPrefix.length) + " THEN\n"
-      + "    RAISE EXCEPTION 'SAM78 applied migration prefix metadata mismatch';\n"
+      + alreadyAppliedPlan.map((item) => "(" + metadataPredicate(item) + ")").join(" OR ")
+      + ") <> " + String(alreadyAppliedPlan.length) + " THEN\n"
+      + "    RAISE EXCEPTION 'SAM78 known applied migration metadata mismatch';\n"
       + "  END IF;";
   return `
 DO $sam78_preflight$
@@ -421,7 +436,7 @@ BEGIN
   END IF;
   SELECT count(*) INTO polluted_count
   FROM supabase_migrations.schema_migrations
-  WHERE (${prefixes}) AND version NOT IN (${versions});
+  WHERE (${prefixes}) AND version NOT IN (${canonicalVersions});
   IF polluted_count <> 0 THEN
     RAISE EXCEPTION 'SAM78 polluted migration version detected';
   END IF;
@@ -431,10 +446,10 @@ BEGIN
   IF exact_count <> ${expected} THEN
     RAISE EXCEPTION 'SAM78 migration history is not in the required ${action} state';
   END IF;
-  IF (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version IN (${versions})) <> ${expected} THEN
+  IF (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE version IN (${activeVersions})) <> ${expected} THEN
     RAISE EXCEPTION 'SAM78 migration history metadata mismatch';
   END IF;
-${appliedPrefixAssertion}
+${alreadyAppliedAssertion}
 END
 $sam78_preflight$;`;
 }
@@ -490,11 +505,20 @@ export function buildTransactionSql({
   if (!Array.isArray(activePlan) || activePlan.length === 0) {
     fail("active migration plan cannot be empty");
   }
-  const activeStart = plan.length - activePlan.length;
-  if (activeStart < 0 || activePlan.some((item, index) =>
-    item.version !== plan[activeStart + index]?.version
-    || item.name !== plan[activeStart + index]?.name)) {
-    fail("active migration plan must be one exact canonical suffix");
+  const activeVersions = new Set(activePlan.map(({ version }) => version));
+  if (activeVersions.size !== activePlan.length || activePlan.some((item, index) =>
+    item.version !== plan.find(({ version }) => version === item.version)?.version
+    || item.name !== plan.find(({ version }) => version === item.version)?.name
+    || (index > 0 && activePlan[index - 1].version >= item.version))) {
+    fail("active migration plan must be an ordered canonical subset");
+  }
+  const alreadyAppliedPlan = plan.filter(({ version }) => !activeVersions.has(version));
+  if (action === "apply" && !(
+    alreadyAppliedPlan.length === 0
+    || (alreadyAppliedPlan.length === KNOWN_STAGING_APPLIED_VERSIONS.length
+      && alreadyAppliedPlan.every((item, index) => item.version === KNOWN_STAGING_APPLIED_VERSIONS[index]))
+  )) {
+    fail("apply only accepts the clean baseline or the exact known staging migration set");
   }
   if (action === "rollback" && activePlan.length !== plan.length) {
     fail("rollback must cover the complete SAM-78 plan");
@@ -543,13 +567,13 @@ $sam78_advisory_lock$;
 SET LOCAL newme.environment = 'staging';
 SET LOCAL newme.sam78_action = ${sqlLiteral(action)};
 SET LOCAL newme.sam78_apply_mode = ${sqlLiteral(
-  activePlan.length === plan.length ? "full" : "suffix"
+  activePlan.length === plan.length ? "full" : "known_gap"
 )};
 SET LOCAL newme.sam78_active_start_version = ${sqlLiteral(activePlan[0].version)};
 ${action === "apply" ? `SET LOCAL newme.platform_staff_role_mapping = ${sqlLiteral(platformStaffRoleMapping)};` : ""}
 LOCK TABLE supabase_migrations.schema_migrations IN SHARE ROW EXCLUSIVE MODE;
 ${historyPreflight(
-  activePlan, action, expectedHistory, plan.slice(0, activeStart)
+  plan, activePlan, action, expectedHistory, alreadyAppliedPlan
 )}
 SET LOCAL newme.sam78_verify_phase = 'pre';
 ${verifySql.trim()}
@@ -653,7 +677,7 @@ export function psqlInvocation(env) {
   };
 }
 
-export function parseAppliedMigrationPrefix(text) {
+export function parseAppliedMigrationSet(text) {
   if (typeof text !== "string" || text.length > 16_384) {
     fail("applied migration history output is invalid");
   }
@@ -661,13 +685,44 @@ export function parseAppliedMigrationPrefix(text) {
   if (rows.length > MIGRATIONS.length) {
     fail("applied migration history contains duplicate target rows");
   }
+  const applied = [];
   rows.forEach((row, index) => {
-    const expected = `${MIGRATIONS[index]?.version}\t${MIGRATIONS[index]?.name}`;
-    if (row !== expected) {
-      fail("applied migration history is not one exact canonical prefix");
+    const match = /^(\d{14})\t([a-z0-9][a-z0-9_]*)$/.exec(row);
+    const item = match && MIGRATIONS.find(({ version }) => version === match[1]);
+    if (!item || item.name !== match[2] || (index > 0 && rows[index - 1] >= row)) {
+      fail("applied migration history is not an ordered canonical set");
     }
+    if (applied.some(({ version }) => version === item.version)) {
+      fail("applied migration history contains duplicate target rows");
+    }
+    applied.push(item);
   });
-  return rows.length;
+  return applied;
+}
+
+export function resolveStagingApplyPlan(appliedPlan) {
+  if (!Array.isArray(appliedPlan)) fail("applied migration plan is invalid");
+  const canonicalApplied = MIGRATIONS.filter(({ version }) =>
+    appliedPlan.some((item) => item?.version === version));
+  if (canonicalApplied.length !== appliedPlan.length
+    || canonicalApplied.some((item, index) => item.version !== appliedPlan[index].version
+      || item.name !== appliedPlan[index].name)) {
+    fail("applied migration history is not an ordered canonical set");
+  }
+  if (canonicalApplied.length === MIGRATIONS.length) {
+    fail("all SAM-78 migrations are already applied");
+  }
+  const isClean = canonicalApplied.length === 0;
+  const isKnownStagingSet = canonicalApplied.length === KNOWN_STAGING_APPLIED_VERSIONS.length
+    && canonicalApplied.every((item, index) => item.version === KNOWN_STAGING_APPLIED_VERSIONS[index]);
+  if (!isClean && !isKnownStagingSet) {
+    fail("apply only accepts the clean baseline or the exact known staging migration set");
+  }
+  return {
+    appliedPlan: canonicalApplied,
+    activePlan: MIGRATIONS.filter(({ version }) =>
+      !canonicalApplied.some((item) => item.version === version)),
+  };
 }
 
 export function psqlHistoryInvocation(env) {
@@ -686,7 +741,7 @@ export function psqlHistoryInvocation(env) {
   };
 }
 
-async function detectAppliedMigrationPrefix(env) {
+async function detectAppliedMigrationSet(env) {
   const invocation = psqlHistoryInvocation(env);
   const output = await new Promise((resolve, reject) => {
     const child = spawn(invocation.command, invocation.args, {
@@ -709,7 +764,7 @@ async function detectAppliedMigrationPrefix(env) {
       ));
     });
   });
-  return parseAppliedMigrationPrefix(output);
+  return parseAppliedMigrationSet(output);
 }
 
 async function runPsql(sql, env) {
@@ -746,17 +801,13 @@ export async function main(env = process.env) {
   }
   const plan = await loadPlan(env);
   const expectedHistory = await loadExpectedHistory(env);
-  const appliedPrefixCount = await detectAppliedMigrationPrefix(env);
-  if (action === "apply" && ![0, plan.length - 1, plan.length].includes(appliedPrefixCount)) {
-    fail("apply only accepts a clean baseline or the exact five-migration predecessor");
-  }
-  if (action === "apply" && appliedPrefixCount === plan.length) {
-    fail("all SAM-78 migrations are already applied");
-  }
-  if (action === "rollback" && appliedPrefixCount !== plan.length) {
+  const detectedAppliedPlan = await detectAppliedMigrationSet(env);
+  if (action === "rollback" && detectedAppliedPlan.length !== plan.length) {
     fail("rollback requires the complete SAM-78 migration plan to be applied");
   }
-  const activePlan = action === "apply" ? plan.slice(appliedPrefixCount) : plan;
+  const { appliedPlan, activePlan } = action === "apply"
+    ? resolveStagingApplyPlan(detectedAppliedPlan)
+    : { appliedPlan: detectedAppliedPlan, activePlan: plan };
   const platformStaffRoleMapping = action === "apply"
     ? await loadPlatformStaffRoleMapping(env)
     : undefined;
@@ -778,6 +829,7 @@ export async function main(env = process.env) {
     status: "passed",
     versions: MIGRATIONS.map(({ version }) => version),
     appliedVersions: activePlan.map(({ version }) => version),
+    alreadyAppliedVersions: appliedPlan.map(({ version }) => version),
     history: "verified",
     historyManifestBlob: env.SAM78_HISTORY_MANIFEST_BLOB,
     buildArtifactSha256: env.SAM78_BUILD_ARTIFACT_SHA256,

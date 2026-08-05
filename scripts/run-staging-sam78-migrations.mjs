@@ -603,7 +603,7 @@ END $sam78_deleted$;`;
   const applyMode = action === "apply"
     ? (activePlan.length === plan.length
       ? "full"
-      : (alreadyAppliedIsKnownStagingSet ? "known_gap" : "canonical_prefix"))
+      : (alreadyAppliedIsKnownStagingSet ? "known_gap" : "suffix"))
     : "rollback";
   return `BEGIN;
 SET LOCAL lock_timeout = '5s';

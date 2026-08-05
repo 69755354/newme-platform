@@ -14,6 +14,14 @@ test("refresh_token_not_found is an expected invalid-session failure", () => {
     classifyRefreshFailure(400, { error: "invalid_grant", message: "Invalid refresh token" }),
     "invalid_refresh_token",
   );
+  assert.equal(
+    classifyRefreshFailure(400, {
+      code: 400,
+      error_code: "validation_failed",
+      msg: "Refresh token is not valid",
+    }),
+    "invalid_refresh_token",
+  );
 });
 
 test("unexpected refresh responses remain upstream failures", () => {

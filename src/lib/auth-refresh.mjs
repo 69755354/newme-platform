@@ -1,11 +1,15 @@
 export function classifyRefreshFailure(status, payload) {
-  const code = payload && typeof payload.code === "string" ? payload.code : "";
-  const message = payload && typeof payload.message === "string" ? payload.message : "";
+  const values = payload && typeof payload === "object"
+    ? [payload.code, payload.error_code, payload.error, payload.message, payload.msg]
+        .filter((value) => typeof value === "string")
+        .map((value) => value.toLowerCase())
+    : [];
+  const details = values.join(" ");
 
   if (
-    code === "refresh_token_not_found" ||
-    code === "invalid_grant" ||
-    /invalid refresh token|refresh token not found/i.test(message)
+    values.includes("refresh_token_not_found") ||
+    values.includes("invalid_grant") ||
+    /invalid refresh token|refresh token (?:is )?not valid|refresh token not found/.test(details)
   ) {
     return "invalid_refresh_token";
   }

@@ -2,8 +2,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
+import {
+  applyRequestAuthCookies,
+  getRequestAuthContext,
+  RequestAuthError,
+  requestAuthErrorResponse,
+} from "@/lib/request-auth-context";
 import { calculateQuotation, CalculateResult } from "../../../../lib/quotation-engine";
 import { DEVICE_CATALOG } from "@/lib/device-catalog";
 import { logger, genReqId } from "@/lib/logger";
@@ -60,33 +64,33 @@ async function generateQuoteNo(supabase: any): Promise<string> {
 export async function POST(request: NextRequest) {
   const request_id = genReqId();
   try {
-    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(bearerToken, cookieHeader);
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
-    if (authErr || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const context = await getRequestAuthContext(request);
+    const { supabase, user } = context;
+    const respond = (body: Record<string, unknown>, init?: ResponseInit) =>
+      applyRequestAuthCookies(context, NextResponse.json(body, init));
 
     const body = await request.json();
     const { lead_id, devices, discount_rate, notes } = body;
 
     if (!lead_id) {
-      return NextResponse.json({ error: "lead_id is required" }, { status: 400 });
+      return respond({ error: "lead_id is required" }, { status: 400 });
     }
 
     // Ownership check: caller must have access to this lead (admin/boss bypass).
     // Verified before any service_role write.
-    const profile = await getAuthProfile(bearerToken, cookieHeader);
-    if (!profile) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!(await canAccessLead(lead_id, profile, bearerToken, cookieHeader))) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!["admin", "boss", "operator"].includes(context.role)) {
+      const { data: accessibleLead } = await supabase
+        .from("leads")
+        .select("id, assigned_to")
+        .eq("id", lead_id)
+        .maybeSingle();
+      if (!accessibleLead || accessibleLead.assigned_to !== user.id) {
+        return respond({ error: "Forbidden" }, { status: 403 });
+      }
     }
 
     if (!devices || typeof devices !== "object" || Object.keys(devices).length === 0) {
-      return NextResponse.json(
+      return respond(
         { error: "devices object is required with at least one device" },
         { status: 400 },
       );
@@ -95,7 +99,7 @@ export async function POST(request: NextRequest) {
     // Validate quantities
     for (const [key, val] of Object.entries(devices)) {
       if (typeof val !== "number" || val < 0) {
-        return NextResponse.json(
+        return respond(
           { error: `Invalid quantity for "${key}": must be a non-negative number` },
           { status: 400 },
         );
@@ -106,7 +110,7 @@ export async function POST(request: NextRequest) {
     // matching quotation-engine.ts lookup). Prevents silent skip → zero-total.
     const unknownDevices = Object.keys(devices).filter((id) => !VALID_DEVICE_IDS.has(id));
     if (unknownDevices.length > 0) {
-      return NextResponse.json(
+      return respond(
         { error: "Unknown device_ids", unknown_devices: unknownDevices },
         { status: 400 },
       );
@@ -124,7 +128,7 @@ export async function POST(request: NextRequest) {
     // CHECK > 0. Reject here (400) instead of letting convert hit a 500 later.
     // Catches all-qty-zero, all-skipped, and zero-price paths.
     if (calculation.total <= 0) {
-      return NextResponse.json(
+      return respond(
         { error: "Quotation total must be greater than zero" },
         { status: 400 },
       );
@@ -150,7 +154,7 @@ export async function POST(request: NextRequest) {
         },
         "[Quotation Generate] Lead not found",
       );
-      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+      return respond({ error: "Lead not found" }, { status: 404 });
     }
 
     // 3. Generate quote number
@@ -190,7 +194,7 @@ export async function POST(request: NextRequest) {
         },
         "[Quotation Generate] Failed to insert quotation",
       );
-      return NextResponse.json({ error: "Failed to save quotation" }, { status: 500 });
+      return respond({ error: "Failed to save quotation" }, { status: 500 });
     }
 
     // 5. Create activity (quote_sent)
@@ -268,7 +272,7 @@ export async function POST(request: NextRequest) {
     revalidatePath("/quotes");
     revalidatePath("/leads");
 
-    return NextResponse.json({
+    return respond({
       status: "ok",
       quote_id: quote.id,
       quote_no: quoteNo,
@@ -277,6 +281,7 @@ export async function POST(request: NextRequest) {
       valid_until: calculation.valid_until,
     });
   } catch (err: any) {
+    if (err instanceof RequestAuthError) return requestAuthErrorResponse(err);
     logger.error(
       {
         err,

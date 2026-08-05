@@ -2,8 +2,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { logger, genReqId } from "@/lib/logger";
-import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
-import { createServerSupabase } from "@/lib/supabase-server";
+import {
+  applyRequestAuthCookies,
+  getRequestAuthContext,
+  RequestAuthError,
+  requestAuthErrorResponse,
+} from "@/lib/request-auth-context";
 
 const METHODS = new Set(["phone", "whatsapp", "other"]);
 
@@ -14,32 +18,30 @@ export async function POST(
   const request_id = genReqId();
   const { id: leadId } = await params;
   try {
-    const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const cookieHeader = req.headers.get("cookie") ?? "";
-    const profile = await getAuthProfile(bearerToken, cookieHeader);
-    if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getRequestAuthContext(req);
+    const { supabase } = context;
+    const respond = (body: Record<string, unknown>, init?: ResponseInit) =>
+      applyRequestAuthCookies(context, NextResponse.json(body, init));
 
     const body = await req.json();
-    // bearerToken and cookieHeader already declared above
     const contactMethod = String(body?.contact_method ?? "").trim().toLowerCase();
     const contactResult = String(body?.contact_result ?? "").trim();
     const summary = String(body?.summary ?? "").trim();
     const contactTime = new Date(String(body?.contact_time ?? ""));
 
     if (!METHODS.has(contactMethod)) {
-      return NextResponse.json({ error: "Invalid contact_method" }, { status: 400 });
+      return respond({ error: "Invalid contact_method" }, { status: 400 });
     }
     if (Number.isNaN(contactTime.getTime())) {
-      return NextResponse.json({ error: "Invalid contact_time" }, { status: 400 });
+      return respond({ error: "Invalid contact_time" }, { status: 400 });
     }
     if (contactTime.getTime() > Date.now()) {
-      return NextResponse.json({ error: "contact_time cannot be in the future" }, { status: 400 });
+      return respond({ error: "contact_time cannot be in the future" }, { status: 400 });
     }
     if (!contactResult) {
-      return NextResponse.json({ error: "contact_result is required" }, { status: 400 });
+      return respond({ error: "contact_result is required" }, { status: 400 });
     }
 
-    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: lead, error: leadError } = await supabase
       .from("leads")
       .select("id, assigned_to")
@@ -47,16 +49,16 @@ export async function POST(
       .single();
 
     if (leadError || !lead) {
-      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+      return respond({ error: "Lead not found" }, { status: 404 });
     }
-    if (!isAdminOrBoss(profile) && lead.assigned_to !== profile.userId) {
-      return NextResponse.json({ error: "Forbidden: lead not assigned to you" }, { status: 403 });
+    if (!["admin", "boss", "operator"].includes(context.role) && lead.assigned_to !== context.user.id) {
+      return respond({ error: "Forbidden: lead not assigned to you" }, { status: 403 });
     }
 
     const contactFingerprint = createHash("sha256")
       .update(JSON.stringify([
         leadId,
-        profile.userId,
+        context.user.id,
         contactMethod,
         contactTime.toISOString(),
         contactResult,
@@ -74,14 +76,15 @@ export async function POST(
       p_idempotency_key: randomUUID(),
     });
     if (insertError || !contact) {
-      return NextResponse.json(
+      return respond(
         { error: insertError?.message ?? "Contact record could not be created" },
         { status: 400 },
       );
     }
 
-    return NextResponse.json({ success: true, contact });
+    return respond({ success: true, contact });
   } catch (error) {
+    if (error instanceof RequestAuthError) return requestAuthErrorResponse(error);
     logger.error(
       {
         err: error,

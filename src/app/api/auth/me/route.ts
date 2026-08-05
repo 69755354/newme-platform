@@ -32,6 +32,17 @@ export async function GET(request: Request) {
     const refreshedCookies = getRefreshedCookies(supabase);
     const refreshAttempted = getRefreshAttempted(supabase);
     const refreshFailure = getRefreshFailure(supabase);
+    const respond = (body: Record<string, unknown>, init?: ResponseInit) => {
+      const response = NextResponse.json(body, init);
+      for (const cookie of refreshedCookies) {
+        response.cookies.set(
+          cookie.name,
+          cookie.value,
+          cookie.options as Parameters<typeof response.cookies.set>[2],
+        );
+      }
+      return response;
+    };
 
     const {
       data: { user },
@@ -47,10 +58,10 @@ export async function GET(request: Request) {
           { request_id: requestId, operation: "auth_refresh", code: "refresh_upstream_failure" },
           "Refresh token upstream failure",
         );
-        return NextResponse.json({ error: "auth_unavailable" }, { status: 503 });
+        return respond({ error: "auth_unavailable" }, { status: 503 });
       }
 
-      const response = NextResponse.json(
+      const response = respond(
         refreshFailure || (refreshAttempted && refreshedCookies.length === 0)
           ? { success: false, error: { code: "UNAUTHORIZED", message: "Token refresh failed" } }
           : { error: "unauthorized" },
@@ -70,7 +81,7 @@ export async function GET(request: Request) {
         operation: "auth_me",
         err: new Error("missing environment: SUPABASE_URL or SERVICE_ROLE_KEY"),
       });
-      return NextResponse.json({ error: "internal_error" }, { status: 500 });
+      return respond({ error: "internal_error" }, { status: 500 });
     }
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
@@ -85,16 +96,16 @@ export async function GET(request: Request) {
 
     if (profileError) {
       logger.error({ request_id: requestId, operation: "auth_me", err: profileError });
-      return NextResponse.json({ error: "internal_error" }, { status: 500 });
+      return respond({ error: "internal_error" }, { status: 500 });
     }
 
     if (!profile || profile.is_active !== true) {
-      return NextResponse.json({ error: "inactive_account" }, { status: 401 });
+      return respond({ error: "inactive_account" }, { status: 401 });
     }
 
     const role = profile.role ?? "sales";
 
-    const response = NextResponse.json({
+    return respond({
       userId: user.id,
       email: user.email ?? null,
       role,
@@ -102,10 +113,6 @@ export async function GET(request: Request) {
       forcePasswordChange: profile.force_password_change ?? false,
       fullName: profile.full_name ?? null,
     });
-    for (const c of refreshedCookies) {
-      response.cookies.set(c.name, c.value, c.options as Parameters<typeof response.cookies.set>[2]);
-    }
-    return response;
   } catch (err) {
     logger.error({ request_id: requestId, operation: "auth_me", err });
     return NextResponse.json({ error: "internal_error" }, { status: 500 });

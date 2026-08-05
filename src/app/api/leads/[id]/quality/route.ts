@@ -5,6 +5,7 @@ import {
   applyRequestAuthCookies,
   getRequestAuthContext,
   RequestAuthError,
+  requestAuthErrorResponse,
 } from '@/lib/request-auth-context';
 import { isCompleteContact } from '@/lib/first-contact-gate.mjs';
 
@@ -158,7 +159,7 @@ export async function POST(
         },
         'quality update authentication boundary rejected request',
       );
-      return NextResponse.json({ error: e.code }, { status: e.status });
+      return requestAuthErrorResponse(e);
     }
     logger.error(
       {

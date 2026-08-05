@@ -41,5 +41,5 @@ test("Next API boundaries remain the authenticated Case path without Hono middle
   assert.match(leadsList, /getVisibleLeadOwnerIds\(leads \|\| \[\]\)/);
   assert.match(stageRoute, /Forbidden: lead not assigned to you/);
   assert.match(stageRoute, /Invalid stage/);
-  assert.match(stageRoute, /return NextResponse\.json\(\{ success: true/);
+  assert.match(stageRoute, /return respond\(\{ success: true/);
 });

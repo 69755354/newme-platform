@@ -81,22 +81,29 @@ test("V4 acceptance cleanup removes generated tenant defaults before fixture par
 });
 
 test("SAM-83 keeps finance facts append-only except for marker-scoped staging cleanup", async () => {
-  const [migration, rollback, executor, controller, history] = await Promise.all([
+  const [migration, caseFixMigration, rollback, caseFixRollback, executor, controller, history] = await Promise.all([
     read("supabase/migrations/20260806020000_sam83_v4_synthetic_cleanup_boundary.sql"),
+    read("supabase/migrations/20260806030000_sam83_v4_synthetic_cleanup_marker_case.sql"),
     read("supabase/rollback/20260806020000_sam83_v4_synthetic_cleanup_boundary_rollback.sql"),
+    read("supabase/rollback/20260806030000_sam83_v4_synthetic_cleanup_marker_case_rollback.sql"),
     read("scripts/run-staging-sam78-migrations.mjs"),
     read("scripts/newme-staging-control.sh"),
     read("scripts/uat/sam78-canonical-migration-history.txt"),
   ]);
   assert.match(migration, /TG_OP = 'DELETE'/);
   assert.match(migration, /current_user = 'service_role'/);
-  assert.match(migration, /organization\.slug ~\*/);
+  assert.doesNotMatch(migration, /organization\.slug ~\*/);
+  assert.match(caseFixMigration, /organization\.slug ~\*/);
   assert.match(migration, /\^v4-uat-\[0-9a-f\]\{12\}-\[0-9a-f\]\{8\}-\(real_estate\|retail\)\$/);
   assert.match(migration, /retail_sam83_fact_is_append_only/);
   assert.match(rollback, /sam83_v4_synthetic_cleanup_rollback_requires_staging_or_test/);
+  assert.match(caseFixRollback, /sam83_v4_synthetic_cleanup_marker_case_rollback_requires_staging_or_test/);
   assert.doesNotMatch(migration, /GRANT EXECUTE[\s\S]*authenticated/);
   for (const marker of [
-    'version: "20260806020000"', "SAM83_MIGRATION_060200_PATH",
-    "SAM83_ROLLBACK_060200_PATH", "20260806020000\tsam83_v4_synthetic_cleanup_boundary",
+    'version: "20260806020000"', 'version: "20260806030000"',
+    "SAM83_MIGRATION_060200_PATH", "SAM83_MIGRATION_060300_PATH",
+    "SAM83_ROLLBACK_060200_PATH", "SAM83_ROLLBACK_060300_PATH",
+    "20260806020000\tsam83_v4_synthetic_cleanup_boundary",
+    "20260806030000\tsam83_v4_synthetic_cleanup_marker_case",
   ]) assert.ok(`${executor}\n${controller}\n${history}`.includes(marker), `missing controlled migration marker ${marker}`);
 });

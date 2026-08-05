@@ -222,6 +222,8 @@ async function cleanup(state) {
     ["paid_seat_allocations", "paid_seat_allocations"],
     ["commercial_entitlements", "commercial_entitlements"],
     ["organization_subscriptions", "organization_subscriptions"],
+    ["retail_inventory_movements", "inventory_movements"],
+    ["retail_price_book_items", "price_book_items"],
   ]) await removeByOrganizations(a, table, i.organizations, label);
   for (const [table, ids, label] of [
     ["retail_finance_allocations", i.allocations, "allocations"], ["retail_finance_reconciliations", i.reconciliations, "reconciliations"], ["retail_cod_events", i.codEvents, "cod_events"], ["retail_delivery_handoffs", i.handoffs, "handoffs"], ["retail_order_items", i.orderItems, "order_items"], ["retail_orders", i.orders, "orders"], ["retail_goods_receipt_items", i.receiptItems, "receipt_items"], ["retail_goods_receipts", i.receipts, "receipts"], ["retail_purchase_order_items", i.purchaseItems, "purchase_items"], ["retail_purchase_orders", i.purchaseOrders, "purchase_orders"], ["quotations", i.quotations, "quotations"], ["leads", i.leads, "leads"], ["retail_skus", i.skus, "skus"], ["retail_locations", i.locations, "locations"],

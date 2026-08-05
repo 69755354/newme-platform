@@ -71,12 +71,15 @@ test("V4 acceptance cleanup removes generated tenant defaults before fixture par
   const cleanup = runner.slice(runner.indexOf("async function cleanup"));
   for (const table of [
     "user_session_daily", "commercial_seat_events", "paid_seat_allocations",
-    "commercial_entitlements", "organization_subscriptions",
+    "commercial_entitlements", "organization_subscriptions", "retail_inventory_movements",
+    "retail_price_book_items",
   ]) assert.match(cleanup, new RegExp(`\\["${table}"`));
   assert.match(cleanup, /removeByOrganizations\(a, table, i\.organizations, label\)/);
   assert.match(cleanup, /await remove\(a, "profiles", i\.auth, "profiles"\);/);
   assert.ok(cleanup.indexOf('"commercial_seat_events"') < cleanup.indexOf('"paid_seat_allocations"'));
   assert.ok(cleanup.indexOf('"paid_seat_allocations"') < cleanup.indexOf('"memberships"'));
+  assert.ok(cleanup.indexOf('"retail_inventory_movements"') < cleanup.indexOf('"retail_skus"'));
+  assert.ok(cleanup.indexOf('"retail_price_book_items"') < cleanup.indexOf('"retail_skus"'));
   assert.ok(cleanup.indexOf('"profiles"') < cleanup.lastIndexOf('"organizations"'));
 });
 

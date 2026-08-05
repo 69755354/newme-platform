@@ -95,7 +95,7 @@ async function createActor(state) {
   state.ids.memberships.push(membership.id);
   const { data: role, error: roleError } = await state.admin.from("roles").select("id").eq("scope", "organization").eq("role_key", "org_admin").single();
   if (roleError || !role?.id) fail("organization_admin_role_missing");
-  const { data: membershipRole, error: membershipRoleError } = await state.admin.from("membership_roles").insert({ membership_id: membership.id, role_id: role.id }).select("id").single();
+  const { data: membershipRole, error: membershipRoleError } = await state.admin.from("membership_roles").insert({ organization_id: state.organizations.real_estate, membership_id: membership.id, role_id: role.id }).select("id").single();
   if (membershipRoleError || !membershipRole?.id) fail("membership_role_fixture_create_failed");
   state.ids.membershipRoles.push(membershipRole.id);
   const { createClient } = state.supabase;

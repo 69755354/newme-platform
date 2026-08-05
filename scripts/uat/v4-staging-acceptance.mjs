@@ -69,6 +69,17 @@ async function remove(client, table, ids, label) {
   const { count, error: countError } = await client.from(table).select("id", { count: "exact", head: true }).in("id", values);
   if (countError || count !== 0) fail(`cleanup_${label}_residue`);
 }
+async function removeByOrganizations(client, table, organizationIds, label) {
+  const values = unique(organizationIds);
+  if (!values.length) return;
+  const { error } = await client.from(table).delete().in("organization_id", values);
+  if (error) fail(`cleanup_${label}_failed`);
+  const { count, error: countError } = await client
+    .from(table)
+    .select("id", { count: "exact", head: true })
+    .in("organization_id", values);
+  if (countError || count !== 0) fail(`cleanup_${label}_residue`);
+}
 
 async function createActor(state) {
   const email = `${state.marker}@invalid.test`;
@@ -170,12 +181,23 @@ async function sam86(state) {
 
 async function cleanup(state) {
   const a = state.admin, i = state.ids;
+  // Organization creation emits commercial defaults and sign-in can emit a
+  // session row. Delete those exact organization-scoped children before the
+  // membership and organization parents; no broad marker or tenant delete.
+  for (const [table, label] of [
+    ["user_session_daily", "session_daily"],
+    ["commercial_seat_events", "commercial_seat_events"],
+    ["paid_seat_allocations", "paid_seat_allocations"],
+    ["commercial_entitlements", "commercial_entitlements"],
+    ["organization_subscriptions", "organization_subscriptions"],
+  ]) await removeByOrganizations(a, table, i.organizations, label);
   for (const [table, ids, label] of [
     ["retail_finance_allocations", i.allocations, "allocations"], ["retail_finance_reconciliations", i.reconciliations, "reconciliations"], ["retail_cod_events", i.codEvents, "cod_events"], ["retail_delivery_handoffs", i.handoffs, "handoffs"], ["retail_order_items", i.orderItems, "order_items"], ["retail_orders", i.orders, "orders"], ["retail_goods_receipt_items", i.receiptItems, "receipt_items"], ["retail_goods_receipts", i.receipts, "receipts"], ["retail_purchase_order_items", i.purchaseItems, "purchase_items"], ["retail_purchase_orders", i.purchaseOrders, "purchase_orders"], ["quotations", i.quotations, "quotations"], ["leads", i.leads, "leads"], ["retail_skus", i.skus, "skus"], ["retail_locations", i.locations, "locations"],
     ["real_estate_listing_assets", i.assets, "listing_assets"], ["real_estate_listings", i.listings, "listings"], ["real_estate_properties", i.properties, "properties"], ["real_estate_parties", i.parties, "parties"],
   ]) await remove(a, table, ids, label);
   await remove(a, "membership_roles", i.membershipRoles, "membership_roles");
   await remove(a, "memberships", i.memberships, "memberships");
+  await remove(a, "profiles", i.auth, "profiles");
   for (const id of unique(i.organizations)) { const { error } = await a.from("organizations").delete().eq("id", id); if (error) fail("cleanup_organizations_failed"); }
   for (const id of unique(i.auth)) { const { error } = await a.auth.admin.deleteUser(id); if (error) fail("cleanup_auth_failed"); }
   return { status: "verified", counts: Object.fromEntries(Object.entries(i).map(([key, ids]) => [key, unique(ids).length === 0 ? 0 : 0])) };

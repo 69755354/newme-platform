@@ -107,6 +107,3 @@ BEGIN
   END IF;
 END;
 $$;
-
-
-

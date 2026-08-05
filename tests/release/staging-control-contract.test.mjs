@@ -703,6 +703,10 @@ test("SAM-78 tenant closure UAT composes lifecycle evidence with two-organizatio
     /SAM78_UAT_FAILURE_EVIDENCE="\$STATE_DIR\/last-uat-sam78-failure\.json"/,
     /scope: "sam78-staging-tenant-closure-failure"/,
     /runner_nonzero_without_allowlisted_code/,
+    /failure_kind: "UnknownError"/,
+    /runner_origin: null/,
+    /body\?\.failure\?\.runner_origin/,
+    /typeof origin === "string"/,
     /raw_sha256/,
     /root-only failure evidence was recorded/,
   ]) assert.match(control, pattern);

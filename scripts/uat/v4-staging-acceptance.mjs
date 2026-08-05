@@ -114,7 +114,7 @@ async function prepare(state) {
 
 async function sam81(state) {
   const organizationId = state.organizations.real_estate;
-  const party = await write(state.admin, "real_estate_parties", { organization_id: organizationId, party_type: "landlord", display_name: state.marker, normalized_email: `${state.marker}@invalid.test`, created_by: state.actor.id }, "sam81_party"); state.ids.parties.push(party.id);
+  const party = await write(state.admin, "real_estate_parties", { organization_id: organizationId, party_type: "landlord", display_name: state.marker, normalized_email: `${state.marker}@invalid.test`.toLowerCase(), created_by: state.actor.id }, "sam81_party"); state.ids.parties.push(party.id);
   const property = await write(state.admin, "real_estate_properties", { organization_id: organizationId, owner_party_id: party.id, property_reference: `${state.marker}-property`, property_type: "apartment", address_line: state.marker, status: "available", created_by: state.actor.id }, "sam81_property"); state.ids.properties.push(property.id);
   const listing = await write(state.admin, "real_estate_listings", { organization_id: organizationId, property_id: property.id, owner_party_id: party.id, listing_reference: `${state.marker}-listing`, asking_price: 1000000, status: "ready", created_by: state.actor.id }, "sam81_listing"); state.ids.listings.push(listing.id);
   for (const asset_kind of ["media", "document"]) { const asset = await write(state.admin, "real_estate_listing_assets", { organization_id: organizationId, listing_id: listing.id, asset_kind, asset_reference: `${state.marker}-${asset_kind}`, verification_status: "verified", created_by: state.actor.id }, `sam81_${asset_kind}`); state.ids.assets.push(asset.id); }

@@ -127,6 +127,14 @@ export const MIGRATIONS = Object.freeze([
     rollbackEnv: "SAM84_ROLLBACK_060000_PATH",
     rollbackBlobEnv: "SAM84_ROLLBACK_060000_BLOB",
   }),
+  Object.freeze({
+    version: "20260806010000",
+    name: "v4_fix_membership_paid_seat_trigger",
+    migrationEnv: "V4_MIGRATION_060100_PATH",
+    migrationBlobEnv: "V4_MIGRATION_060100_BLOB",
+    rollbackEnv: "V4_ROLLBACK_060100_PATH",
+    rollbackBlobEnv: "V4_ROLLBACK_060100_BLOB",
+  }),
 ]);
 
 // This is the only non-contiguous V4 state accepted for the existing staging

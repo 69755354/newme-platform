@@ -287,6 +287,23 @@ BEGIN
     RETURN;
   END IF;
 
+  IF action = 'apply' AND phase = 'post'
+    AND to_regclass('supabase_migrations.schema_migrations') IS NOT NULL THEN
+    IF EXISTS (
+      SELECT 1 FROM supabase_migrations.schema_migrations
+      WHERE version = '20260806010000'
+    ) THEN
+      IF to_regprocedure('public.v4_sync_membership_paid_seat()') IS NULL
+        OR pg_get_functiondef(to_regprocedure('public.v4_sync_membership_paid_seat()'))
+          NOT ILIKE '%IF TG_TABLE_NAME = ''memberships'' THEN%'
+        OR pg_get_functiondef(to_regprocedure('public.v4_sync_membership_paid_seat()'))
+          NOT ILIKE '%target_membership_id := COALESCE(NEW.id, OLD.id);%'
+      THEN
+        RAISE EXCEPTION 'SAM79 paid-seat trigger record-shape fix is missing';
+      END IF;
+    END IF;
+  END IF;
+
   -- Apply post-state and rollback pre-state are intentionally the same exact
   -- contract. A rollback cannot begin from a partial or unsafe deployment.
   FOREACH relation_name IN ARRAY managed_relations LOOP

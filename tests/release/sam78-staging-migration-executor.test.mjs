@@ -105,6 +105,12 @@ const paths = [
     migration: "supabase/migrations/20260806000000_sam84_controlled_agent_integration_gateway.sql",
     rollback: "supabase/rollback/20260806000000_sam84_controlled_agent_integration_gateway_rollback.sql",
   },
+  {
+    version: "20260806010000",
+    name: "v4_fix_membership_paid_seat_trigger",
+    migration: "supabase/migrations/20260806010000_v4_fix_membership_paid_seat_trigger.sql",
+    rollback: "supabase/rollback/20260806010000_v4_fix_membership_paid_seat_trigger_rollback.sql",
+  },
 ];
 
 async function expectedHistory() {
@@ -140,7 +146,7 @@ test("SAM-78 plan uses the fixed staging owner and exact canonical history tip",
 test("migration history manifest accepts CRLF but rejects header, order, row, and tip drift", async () => {
   const source = await read("scripts/uat/sam78-canonical-migration-history.txt");
   const crlfSource = source.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n");
-  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 146);
+  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 147);
   assert.throws(
     () => parseMigrationHistoryManifest(source.replace("# schema-version=1", "# schema-version=2")),
     /header mismatch/,
@@ -280,7 +286,7 @@ test("executor binds resolved staging versions to parsed SQL entries before gene
     loaded.filter(({ version }) => KNOWN_STAGING_APPLIED_VERSIONS.includes(version)),
   );
   const activePlan = bindMigrationPlanEntries(loaded, resolved.activePlan);
-  assert.equal(activePlan.length, 6);
+  assert.equal(activePlan.length, 7);
   assert.ok(activePlan.every((item) => Array.isArray(item.statements) && item.statements.length > 0));
   assert.throws(
     () => bindMigrationPlanEntries(loaded, [...resolved.activePlan].reverse()),
@@ -297,6 +303,7 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
     verifySql: await read("scripts/uat/sam78-staging-migration-verify.sql"),
   });
   const operations = sql.indexOf("DELETE FROM supabase_migrations.schema_migrations");
+  const paidSeatFix = sql.indexOf("version = '20260806010000'", operations);
   const sam84 = sql.indexOf("version = '20260806000000'", operations);
   const newest = sql.indexOf("version = '20260805190000'", sam84 + 1);
   const sam83 = sql.indexOf("version = '20260805130000'", newest + 1);
@@ -310,7 +317,7 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
   const middle = sql.indexOf("version = '20260803143000'", governedRpc + 1);
   const oldest = sql.indexOf("version = '20260803100000'", middle + 1);
   assert.ok(
-    operations > 0 && sam84 > operations && newest > sam84 && sam83 > newest && sam82 > sam83 && exitDigest > sam82 && productCleanup > exitDigest
+    operations > 0 && paidSeatFix > operations && sam84 > paidSeatFix && newest > sam84 && sam83 > newest && sam82 > sam83 && exitDigest > sam82 && productCleanup > exitDigest
       && sam20Cleanup > productCleanup
       && sam80Operations > sam20Cleanup
       && sam26Cleanup > sam80Operations
@@ -335,6 +342,7 @@ test("apply accepts the exact audited non-contiguous staging history and applies
       "20260805130000",
       "20260805190000",
       "20260806000000",
+      "20260806010000",
     ],
   );
   const sql = buildTransactionSql({
@@ -348,6 +356,7 @@ test("apply accepts the exact audited non-contiguous staging history and applies
   assert.match(sql, /newme\.sam78_apply_mode = 'known_gap'/);
   assert.match(sql, /20260804185311/);
   assert.match(sql, /20260806000000/);
+  assert.match(sql, /20260806010000/);
   assert.match(sql, /SAM78 known applied migration metadata mismatch/);
   assert.equal(
     (sql.match(/INSERT INTO supabase_migrations\.schema_migrations/g) ?? []).length,
@@ -458,6 +467,8 @@ test("live verifier covers exact pre/post FK, RLS, ACL, backfill, orphan, and ro
     "v4_assert_tenant_closure_rollback_safe",
     "'full', 'suffix', 'known_gap'",
     "known-gap prestate already contains missing migration relation",
+    "SAM79 paid-seat trigger record-shape fix is missing",
+    "to_regclass('supabase_migrations.schema_migrations') IS NOT NULL",
   ]) assert.ok(verify.includes(evidence), `missing live verifier evidence: ${evidence}`);
 
   const normalizedMigration = `${migration}\n${sam80Migration}`.replaceAll(/\s+/g, "");
@@ -471,4 +482,30 @@ test("live verifier covers exact pre/post FK, RLS, ACL, backfill, orphan, and ro
       `live verifier function signature is not canonical: ${signature}`,
     );
   }
+});
+
+test("paid-seat trigger fix and rollback are transaction-bounded and restore the exact predecessor body", async () => {
+  const [migration, rollback, predecessor] = await Promise.all([
+    read("supabase/migrations/20260806010000_v4_fix_membership_paid_seat_trigger.sql"),
+    read("supabase/rollback/20260806010000_v4_fix_membership_paid_seat_trigger_rollback.sql"),
+    read("supabase/migrations/20260805190000_v4_commercial_control_plane.sql"),
+  ]);
+  assert.deepEqual(splitSqlStatements(migration).map((statement) => statement.trim()).at(0), "BEGIN");
+  assert.deepEqual(splitSqlStatements(migration).map((statement) => statement.trim()).at(-1), "COMMIT");
+  assert.match(migration, /v4_paid_seat_trigger_predecessor_drift/);
+  assert.match(migration, /IF TG_TABLE_NAME = 'memberships' THEN/);
+  assert.match(migration, /target_membership_id := COALESCE\(NEW\.id, OLD\.id\)/);
+  assert.match(migration, /COALESCE\(NEW\.membership_id, OLD\.membership_id\)/);
+  assert.equal(splitSqlStatements(rollback).at(0).trim(), "BEGIN");
+  assert.equal(splitSqlStatements(rollback).at(-1).trim(), "COMMIT");
+  assert.match(rollback, /v4_paid_seat_trigger_rollback_requires_staging_or_test/);
+  assert.match(rollback, /v4_paid_seat_trigger_rollback_predecessor_drift/);
+  const predecessorStart = predecessor.indexOf("CREATE OR REPLACE FUNCTION public.v4_sync_membership_paid_seat()");
+  const predecessorEnd = predecessor.indexOf("$$;", predecessorStart) + 3;
+  const rollbackStart = rollback.indexOf("CREATE OR REPLACE FUNCTION public.v4_sync_membership_paid_seat()");
+  const rollbackEnd = rollback.indexOf("$$;", rollbackStart) + 3;
+  assert.equal(
+    rollback.slice(rollbackStart, rollbackEnd).replaceAll("\r\n", "\n"),
+    predecessor.slice(predecessorStart, predecessorEnd).replaceAll("\r\n", "\n"),
+  );
 });

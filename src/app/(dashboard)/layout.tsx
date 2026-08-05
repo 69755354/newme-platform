@@ -21,13 +21,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
   const roleLabel = isManagement
     ? t("nav.roleManagement")
-    : role === "sales"
-      ? t("nav.roleSales")
-      : role === "finance"
-        ? t("team.roleFinance")
-        : role === "designer"
-          ? t("team.roleDesigner")
-          : t("nav.platformTitle");
+    : t("nav.roleSales");
 
   return (
     <>

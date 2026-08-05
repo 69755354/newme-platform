@@ -42,6 +42,7 @@
 -- 400 has been rejecting them since 2026-07-06 04:39 UTC deploy of 3ae8fef).
 -- Safe to apply online.
 
+BEGIN;
 
 ALTER TABLE business_events DROP CONSTRAINT IF EXISTS chk_event_type;
 
@@ -67,3 +68,5 @@ ALTER TABLE business_events ADD CONSTRAINT chk_event_type
 
 -- Reload PostgREST schema cache so the next request sees the new CHECK.
 NOTIFY pgrst, 'reload schema';
+
+COMMIT;

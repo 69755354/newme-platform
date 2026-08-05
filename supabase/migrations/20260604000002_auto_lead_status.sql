@@ -1,7 +1,5 @@
 -- Auto-derive lead_status from last_contact_date
 -- 2026-06-04
-ALTER TABLE leads ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
-
 CREATE OR REPLACE FUNCTION derive_lead_status()
 RETURNS TRIGGER AS $$
 BEGIN

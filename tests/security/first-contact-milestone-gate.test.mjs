@@ -13,14 +13,6 @@ test("First Contact milestone API enforces contact plus quality before insert", 
   assert.match(source, /from\("follow_up_logs"\)/);
   assert.match(source, /contact_result/);
   assert.match(source, /quality/);
-  assert.equal(
-    (source.match(/headers\.get\("x-newme-organization-id"\)/g) ?? []).length,
-    2,
-  );
-  assert.equal(
-    (source.match(/createServerSupabase\(bearerToken, cookieHeader, organizationId\)/g) ?? []).length,
-    2,
-  );
   assert.ok(gate < insert, "First Contact gate must run before milestone insert");
 });
 

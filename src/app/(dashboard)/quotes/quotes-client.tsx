@@ -169,7 +169,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
     setError(null);
     let q = supabase
       .from("quotations")
-      .select("*, leads!quotations_lead_id_fkey(customer_name, phone)")
+      .select("*, leads(customer_name, phone)")
       .order("created_at", { ascending: false })
       .limit(500);
     const { data, error: err } = await q;

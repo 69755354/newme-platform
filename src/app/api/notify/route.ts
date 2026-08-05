@@ -1,8 +1,6 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { createIntegrationLogSinks } from "@/lib/integration-execution.mjs";
-import { genReqId, logger } from "@/lib/logger";
 import {
   createNotification,
   createNotificationsBulk,
@@ -18,12 +16,6 @@ import type { NotificationType } from "@/lib/notifications";
  * Validates auth + ownership before writing.
  */
 export async function POST(request: NextRequest) {
-  const requestId = genReqId();
-  const sinks = createIntegrationLogSinks({
-    logger,
-    requestId,
-    route: "/api/notify",
-  });
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
   const cookieHeader = request.headers.get("cookie") ?? "";
   const supabase = await createServerSupabase(bearerToken, cookieHeader);
@@ -597,12 +589,5 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Unknown notification type: ${type}` }, { status: 400 });
   }
 
-  await sinks.audit({
-    integration: "in_app_notification",
-    operation: "authenticated_notification_dispatch",
-    outcome: "success",
-    attempts: 1,
-    reason: null,
-  });
   return NextResponse.json({ success: true });
 }

@@ -7,9 +7,6 @@
 CREATE TABLE IF NOT EXISTS business_events (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   lead_id        UUID REFERENCES leads(id) ON DELETE CASCADE,
-  entity_type    TEXT NOT NULL DEFAULT 'lead',
-  entity_id      UUID,
-  created_by     UUID REFERENCES profiles(id),
   user_id        UUID REFERENCES profiles(id),
   event_type     TEXT NOT NULL,
   -- event_type values: stage_changed, note_added, followup_scheduled,
@@ -26,7 +23,6 @@ CREATE INDEX IF NOT EXISTS idx_business_events_type    ON business_events(event_
 CREATE INDEX IF NOT EXISTS idx_business_events_created ON business_events(created_at DESC);
 
 -- ═══════════════ 2. Attribution & UTM Columns ═══════════════
-ALTER TABLE leads ADD COLUMN IF NOT EXISTS rep_name        TEXT;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS source_platform  TEXT;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS source_channel   TEXT;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS campaign_id      TEXT;

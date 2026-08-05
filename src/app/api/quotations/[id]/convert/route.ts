@@ -2,7 +2,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { getRequestedOrganizationId } from "@/lib/organization-context";
 import { logger, genReqId } from "@/lib/logger";
 
 /**
@@ -18,11 +17,7 @@ export async function POST(
   const { id: quotationId } = await params;
   try {    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
   const cookieHeader = request.headers.get("cookie") ?? "";
-  const supabase = await createServerSupabase(
-    bearerToken,
-    cookieHeader,
-    getRequestedOrganizationId(request) ?? undefined,
-  );
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const {
       data: { user },
       error: authErr,
@@ -34,7 +29,7 @@ export async function POST(
     // Fetch quotation with lead info
     const { data: quote, error: quoteErr } = await supabase
       .from("quotations")
-      .select("*, leads!quotations_lead_id_fkey(id, customer_name, property_type, property_size_sqm, location, phone)")
+      .select("*, leads(id, customer_name, property_type, property_size_sqm, location, phone)")
       .eq("id", quotationId)
       .single();
 

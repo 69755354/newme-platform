@@ -2,7 +2,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { getRequestedOrganizationId } from "@/lib/organization-context";
 import { logger, genReqId } from "@/lib/logger";
 
 /**
@@ -19,11 +18,7 @@ export async function POST(
   try {
     const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
     const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(
-      bearerToken,
-      cookieHeader,
-      getRequestedOrganizationId(request) ?? undefined,
-    );
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const {
       data: { user },
       error: authErr,

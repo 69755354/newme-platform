@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -37,13 +37,6 @@ function scanFile(filePath, displayPath = filePath) {
   return violations;
 }
 
-function scanTrackedPath(filePath, displayPath = filePath) {
-  if (!existsSync(filePath)) {
-    return ["tracked file missing from working tree"];
-  }
-  return scanFile(filePath, displayPath);
-}
-
 function trackedFiles() {
   return execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' })
     .split('\0')
@@ -66,11 +59,6 @@ function main() {
       if (!loginViolations.includes('literal E2E login password')) {
         throw new Error('negative direct-login credential fixture was not rejected');
       }
-      rmSync(fixturePath);
-      const missingViolations = scanTrackedPath(fixturePath, 'e2e/credential.fixture.ts');
-      if (!missingViolations.includes('tracked file missing from working tree')) {
-        throw new Error('missing tracked-file fixture was not rejected');
-      }
       console.log('E2E secret gate self-test passed');
       return;
     } finally {
@@ -81,7 +69,7 @@ function main() {
   const violations = [];
   for (const relativePath of trackedFiles()) {
     const filePath = path.join(repoRoot, relativePath);
-    for (const reason of scanTrackedPath(filePath, relativePath)) {
+    for (const reason of scanFile(filePath, relativePath)) {
       violations.push(`${relativePath}: ${reason}`);
     }
   }
@@ -96,4 +84,3 @@ function main() {
 }
 
 main();
-

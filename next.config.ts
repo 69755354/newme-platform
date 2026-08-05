@@ -28,76 +28,15 @@ if (IS_PROD && !IS_ISOLATED && !IS_START && process.env.NEWME_ISOLATED_BUILD !==
 const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === "true",
 });
-const isStandaloneBuild = process.env.NEWME_STANDALONE_BUILD === "1";
-const isLowMemoryWebpackBuild = process.env.NEWME_STAGING_LOW_MEMORY === "1";
-const shouldUploadSentrySourceMaps = process.env.SENTRY_UPLOAD_SOURCEMAPS === "1"
-  && Boolean(process.env.SENTRY_AUTH_TOKEN);
-const stagingReleaseSha = process.env.NEXT_PUBLIC_APP_VERSION || "";
-if (isStandaloneBuild && !/^[0-9a-f]{40}$/.test(stagingReleaseSha)) {
-  throw new Error("staging standalone builds require an exact 40-character release SHA");
-}
 
 // Get git hash at build time
 const gitHash = process.env.NEXT_PUBLIC_APP_VERSION ||
   execSync("git rev-parse --short HEAD").toString().trim();
-const stagingReleaseMetadata = isStandaloneBuild ? stagingReleaseSha : "";
-
-export function getLocalSupabaseConnectOrigin(
-  nodeEnv = process.env.NODE_ENV,
-  rawSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL,
-): string | undefined {
-  if (nodeEnv === "production" || !rawSupabaseUrl) return undefined;
-  try {
-    const url = new URL(rawSupabaseUrl);
-    const isLoopback = url.hostname === "127.0.0.1" || url.hostname === "localhost";
-    if (
-      url.protocol !== "http:"
-      || !isLoopback
-      || !url.port
-      || url.username
-      || url.password
-      || url.pathname !== "/"
-      || url.search
-      || url.hash
-    ) {
-      return undefined;
-    }
-    return url.origin;
-  } catch {
-    return undefined;
-  }
-}
-
-export function buildContentSecurityPolicy(
-  nodeEnv = process.env.NODE_ENV,
-  rawSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL,
-): string {
-  const localSupabaseOrigin = getLocalSupabaseConnectOrigin(nodeEnv, rawSupabaseUrl);
-  const connectSources = [
-    "'self'",
-    "https://*.supabase.co",
-    "https://*.sentry.io",
-    "https://*.posthog.com",
-    "https://eu-assets.i.posthog.com",
-    ...(localSupabaseOrigin ? [localSupabaseOrigin] : []),
-  ];
-  return `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.supabase.co https://*.sentry.io https://*.posthog.com https://eu-assets.i.posthog.com; connect-src ${connectSources.join(" ")}; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data: https:; frame-src 'self' https://*.supabase.co; upgrade-insecure-requests`;
-}
 
 const nextConfig: NextConfig = {
-  output: isStandaloneBuild ? "standalone" : undefined,
-  experimental: isLowMemoryWebpackBuild
-    ? { webpackMemoryOptimizations: true }
-    : undefined,
   env: {
     NEXT_PUBLIC_APP_VERSION: gitHash,
-    NEWME_RELEASE_SHA: stagingReleaseMetadata,
-    NEWME_BUILD_ID: stagingReleaseMetadata,
-    NEWME_RELEASE_METADATA_REQUIRED: isStandaloneBuild ? "1" : "0",
   },
-  generateBuildId: isStandaloneBuild
-    ? async () => stagingReleaseSha
-    : undefined,
   poweredByHeader: false,
   async headers() {
     return [
@@ -106,7 +45,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Content-Security-Policy",
-            value: buildContentSecurityPolicy(),
+            value: "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.supabase.co https://*.sentry.io https://*.posthog.com; connect-src 'self' https://*.supabase.co https://*.sentry.io https://*.posthog.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data: https:; frame-src 'self' https://*.supabase.co; upgrade-insecure-requests",
           },
           { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
         ],
@@ -131,7 +70,7 @@ const nextConfig: NextConfig = {
   // Source maps handled by Sentry wrapper below
 };
 
-const configuredNext = isLowMemoryWebpackBuild || !shouldUploadSentrySourceMaps ? nextConfig : withSentryConfig(nextConfig, {
+const sentryConfig = withSentryConfig(nextConfig, {
   org: process.env.SENTRY_ORG || "newme-o4",
   project: process.env.SENTRY_PROJECT || "javascript-nextjs",
   authToken: process.env.SENTRY_AUTH_TOKEN,
@@ -150,4 +89,4 @@ const configuredNext = isLowMemoryWebpackBuild || !shouldUploadSentrySourceMaps 
   widenClientFileUpload: true,
 });
 
-export default withBundleAnalyzer(configuredNext);
+export default withBundleAnalyzer(sentryConfig);

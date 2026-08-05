@@ -24,7 +24,7 @@ export default async function QuotesPage() {
     const supabase = await createServerSupabase();
     const { data, error } = await supabase
       .from("quotations")
-      .select("*, leads!quotations_lead_id_fkey(customer_name, phone)")
+      .select("*, leads(customer_name, phone)")
       .order("created_at", { ascending: false })
       .limit(500);
     if (error) throw error;

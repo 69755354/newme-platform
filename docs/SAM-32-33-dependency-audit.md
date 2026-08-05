@@ -1,6 +1,6 @@
 # SAM-32/33 生产依赖闭环审计
 
-**审计基准**: staging candidate `b24b148` + dependency patch | **日期**: 2026-07-26 | **工具**: `npm audit`
+**审计基准**: main `a4f152d` | **日期**: 2026-07-23 | **工具**: `npm audit`
 
 ---
 
@@ -52,17 +52,17 @@
 
 | 属性 | 值 |
 |------|-----|
-| CVE | GHSA-qx2v-qp2m-jg93 / GHSA-6g55-p6wh-862q / GHSA-r28c-9q8g-f849 |
+| CVE | GHSA-qx2v-qp2m-jg93 / GHSA-6g55-p6wh-862q |
 | CWE | — |
 | CVSS | — |
-| 版本 | 8.4.31（next 16.2.12 内嵌；社区版需 8.5.18+） |
+| 版本 | 8.4.31（next 16.2.11 内嵌；社区版 8.5.15 已安全） |
 | 直接依赖 | ❌（next 内嵌副本，不可独立升级） |
-| 修复版本 | postcss 8.5.18+ / next 16.3.0+ |
+| 修复版本 | postcss 8.5.12+ / next 16.3.0+ |
 | 运行时路径 | Next.js SSR/SSG CSS 处理管线；每次页面渲染时处理 Tailwind CSS |
 
 **可利用性: 低**
 - GHSA-qx2v: XSS via `</style>` — 需要攻击者控制 CSS 输入。我们的 CSS 全部来自源码（Tailwind），非用户提交。
-- GHSA-6g55 / GHSA-r28c: Arbitrary file read/path traversal via `sourceMappingURL` — 需要攻击者向 CSS 注释注入恶意 source map URL。CSS 由 Tailwind 编译生成，无用户输入路径。
+- GHSA-6g55: Arbitrary file read via `sourceMappingURL` — 需要攻击者向 CSS 注释注入恶意 source map URL。CSS 由 Tailwind 编译生成，无用户输入路径。
 
 **处理**: 缓解而非修复。
 1. **WAF 层**: CSP `style-src 'self' 'unsafe-inline'` 阻止外部样式注入
@@ -76,7 +76,7 @@
 | CVE | GHSA-f88m-g3jw-g9cj |
 | CWE | — |
 | CVSS | — |
-| 版本 | 0.34.5（next 16.2.12 内嵌；需 0.35.0+） |
+| 版本 | 0.34.5（next 16.2.11 内嵌；需 0.35.0+） |
 | 直接依赖 | ❌（next 内嵌副本，不可独立升级） |
 | 修复版本 | sharp 0.35.0+ / next 16.3.0+ |
 | 运行时路径 | Next.js Image Optimization API (`next/image`)；用户上传图片时触发 sharp 处理 |
@@ -107,7 +107,7 @@
 }
 ```
 
-**结论: 不可行。** Next.js 16.2.12 在 `node_modules/next/postcss` 使用硬编码路径引用内嵌依赖，npm overrides 只对 `node_modules/next/node_modules/*` 有效，不影响 next 自身的 bundled deps。
+**结论: 不可行。** Next.js 16.2.11 在 `node_modules/next/postcss` 使用硬编码路径引用内嵌依赖，npm overrides 只对 `node_modules/next/node_modules/*` 有效，不影响 next 自身的 bundled deps。
 
 ---
 

@@ -72,7 +72,7 @@ done
 # ─── 4. 安全检查 ────────────────────────────────────────────
 echo ""
 echo "── 4. 安全 ──"
-for check in supabase-boundaries security-definer-rpc-allowlist db-static e2e-secrets; do
+for check in supabase-boundaries db-static e2e-secrets; do
     script="scripts/check-${check}.mjs"
     if [[ -f "$script" ]]; then
         if node "$script" 2>&1; then

@@ -1,4 +1,5 @@
 -- Correct SAM-10 RPC validation to use canonical Lead milestone keys.\n-- PostgreSQL functions must be replaced as a whole, so both definitions are repeated.
+BEGIN;
 
 CREATE OR REPLACE FUNCTION public.reopen_lead_milestone(
   p_lead_id uuid,
@@ -273,3 +274,4 @@ REVOKE ALL ON FUNCTION public.recomplete_lead_milestone(uuid, text, text) FROM a
 GRANT EXECUTE ON FUNCTION public.recomplete_lead_milestone(uuid, text, text) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
+COMMIT;

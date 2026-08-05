@@ -1,24 +1,4 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { createIntegrationLogSinks } from "./integration-execution.mjs";
-import { genReqId, logger } from "./logger";
-
-async function failNotificationOperation(operation: string, reason: string): Promise<never> {
-  const sinks = createIntegrationLogSinks({
-    logger,
-    requestId: genReqId(),
-    route: "notification_helper",
-  });
-  const event = {
-    integration: "in_app_notification",
-    operation,
-    outcome: "failure",
-    attempts: 1,
-    reason,
-  };
-  await sinks.audit(event);
-  await sinks.alert(event);
-  throw new Error(reason);
-}
 
 /**
  * Shared list of valid notification types.
@@ -59,7 +39,7 @@ export async function createNotification(params: {
   });
 
   if (error) {
-    return failNotificationOperation("single_insert", "notification_insert_failed");
+    console.error("[Notifications] Failed to create notification:", error);
   }
 }
 
@@ -87,7 +67,7 @@ export async function createNotificationsBulk(
 
   const { error } = await supabaseAdmin.from("notifications").insert(rows);
   if (error) {
-    return failNotificationOperation("bulk_insert", "notification_bulk_insert_failed");
+    console.error("[Notifications] Bulk insert failed:", error);
   }
 }
 
@@ -101,7 +81,8 @@ export async function getAdminUserIds(): Promise<string[]> {
     .in("role", ["admin", "boss"]);
 
   if (error || !data) {
-    return failNotificationOperation("admin_recipient_lookup", "notification_recipient_lookup_failed");
+    console.error("[Notifications] Failed to fetch admin user IDs:", error);
+    return [];
   }
   return data.map((p) => p.id);
 }
@@ -117,7 +98,8 @@ export async function getAllActiveUserIds(excludeUserId?: string): Promise<strin
     .eq("is_active", true);
 
   if (error || !data) {
-    return failNotificationOperation("active_recipient_lookup", "notification_recipient_lookup_failed");
+    console.error("[Notifications] Failed to fetch active user IDs:", error);
+    return [];
   }
 
   let ids = data.map((p) => p.id);

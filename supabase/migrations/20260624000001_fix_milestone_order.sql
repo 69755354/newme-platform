@@ -1,25 +1,6 @@
 -- 20260624000001_fix_milestone_order.sql
 -- P4: milestone 跳序校准
 
--- 0. 定义 milestone 顺序映射函数（生产手工建，此处补录）
-CREATE OR REPLACE FUNCTION public.milestone_order(key text)
-RETURNS integer
-LANGUAGE sql
-IMMUTABLE STRICT
-AS $function$
-  SELECT CASE key
-    WHEN 'new'          THEN 0
-    WHEN 'first_contact' THEN 1
-    WHEN 'basic_info'   THEN 2
-    WHEN 'requirements' THEN 3
-    WHEN 'drawings'     THEN 4
-    WHEN 'solution'     THEN 5
-    WHEN 'quotation'    THEN 6
-    WHEN 'meeting'      THEN 7
-    ELSE -1
-  END
-$function$;
-
 -- 1. 更新 check_milestone_order 触发器：添加 won/lost 阻断 + 首步保护
 CREATE OR REPLACE FUNCTION check_milestone_order()
 RETURNS TRIGGER AS $$

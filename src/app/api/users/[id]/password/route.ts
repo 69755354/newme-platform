@@ -2,12 +2,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import {
-  OrganizationMemberAdminError,
-  requireOrganizationMembership,
-  resolveOrganizationMemberAdminAccess,
-} from "@/lib/organization-member-admin";
-import { RequestAuthError } from "@/lib/request-auth-context";
 
 // GET /api/users/[id]/password — Admin/boss view password hint
 export async function GET(
@@ -16,8 +10,20 @@ export async function GET(
 ) {
   try {
     const { id: targetId } = await params;
-    const access = await resolveOrganizationMemberAdminAccess(request);
-    await requireOrganizationMembership(access.organizationId, targetId);
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
+    const { data: profile } = await supabaseAdmin
+      .from("profiles").select("role").eq("id", user.id).single();
+
+    if (!profile || !["admin", "boss"].includes(profile.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const { data: target, error } = await supabaseAdmin
       .from("profiles")
@@ -76,8 +82,12 @@ export async function PATCH(
       return NextResponse.json({ success: true });
     }
 
-    const access = await resolveOrganizationMemberAdminAccess(request);
-    await requireOrganizationMembership(access.organizationId, targetId);
+    const { data: profile } = await supabaseAdmin
+      .from("profiles").select("role").eq("id", user.id).single();
+
+    if (!profile || !["admin", "boss"].includes(profile.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const { error } = await supabaseAdmin.auth.admin.updateUserById(targetId, { password });
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
@@ -96,12 +106,6 @@ export async function PATCH(
 
     return NextResponse.json({ success: true });
   } catch (e: any) {
-    if (
-      e instanceof OrganizationMemberAdminError
-      || e instanceof RequestAuthError
-    ) {
-      return NextResponse.json({ error: e.code }, { status: e.status });
-    }
     return NextResponse.json({ error: e?.message || "Internal error" }, { status: 500 });
   }
 }

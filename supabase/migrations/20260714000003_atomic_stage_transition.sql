@@ -1,4 +1,5 @@
 -- Change a Lead stage and its audit note in one database transaction.
+BEGIN;
 
 CREATE OR REPLACE FUNCTION public.transition_lead_stage(
   p_lead_id uuid,
@@ -132,3 +133,4 @@ REVOKE ALL ON FUNCTION public.transition_lead_stage(uuid, text, text, text) FROM
 GRANT EXECUTE ON FUNCTION public.transition_lead_stage(uuid, text, text, text) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
+COMMIT;

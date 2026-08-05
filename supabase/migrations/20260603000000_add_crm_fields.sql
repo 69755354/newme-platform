@@ -27,7 +27,7 @@ ALTER TABLE leads ADD COLUMN IF NOT EXISTS days_since_last_contact INTEGER DEFAU
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason TEXT;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_price BOOLEAN DEFAULT false;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_competitor BOOLEAN DEFAULT false;
-ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_no_budget BOOLEAN DEFAULT false;
+ALTER TABLE TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_no_budget BOOLEAN DEFAULT false;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_project_cancelled BOOLEAN DEFAULT false;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_project_delayed BOOLEAN DEFAULT false;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_no_response BOOLEAN DEFAULT false;
@@ -94,8 +94,7 @@ CREATE POLICY "business_events_sales_create" ON business_events FOR INSERT
 
 -- ═══════════════ 更新 views ═══════════════
 -- 更新销售绩效视图，包含新字段
-DROP VIEW IF EXISTS sales_performance;
-CREATE VIEW sales_performance AS
+CREATE OR REPLACE VIEW sales_performance AS
 SELECT 
   p.id,
   p.full_name,

@@ -49,7 +49,7 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t } = useLanguage();
-  const nav = isManagement ? MGMT_NAV : role === "sales" ? SALES_NAV : [];
+  const nav = isManagement ? MGMT_NAV : SALES_NAV;
 
   const isItemActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";

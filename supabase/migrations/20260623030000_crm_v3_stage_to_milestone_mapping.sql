@@ -5,20 +5,6 @@
 -- 执行方式: 每次一篇SQL，通过 Management API 单条执行
 -- 已在 prod 2026-06-23 执行验证通过
 
-CREATE TABLE IF NOT EXISTS lead_milestones (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
-  milestone_key TEXT NOT NULL,
-  completed_by UUID REFERENCES profiles(id),
-  completed_at TIMESTAMPTZ DEFAULT now(),
-  notes TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-ALTER TABLE lead_milestones ENABLE ROW LEVEL SECURITY;
-ALTER TABLE leads ADD COLUMN IF NOT EXISTS current_milestone TEXT DEFAULT 'new';
-ALTER TABLE leads ADD COLUMN IF NOT EXISTS final_status TEXT;
-
 -- 1. first_contact (contacted, no_answered, fake → 无响应/首次联系)
 INSERT INTO lead_milestones (lead_id, milestone_key, completed_by, notes)
 SELECT l.id, 'first_contact', NULL, 'auto-migrated from stage=' || l.stage

@@ -6,6 +6,7 @@
 -- 目标: 全库 FOR ALL = 0
 -- ============================================================================
 
+BEGIN;
 
 -- ============================================================================
 -- 1. knx_designs (KNX 智能家居设计方案)
@@ -147,38 +148,36 @@ CREATE POLICY policy_lead_files_delete_admin
 -- 4. meta_tokens (Meta API 访问令牌 - 单例表)
 -- 用途：存储 Meta/Facebook API 的 access token
 -- 权限：admin/boss 全局 CRUD，operator/sales/finance/designer 只读
--- 注意：meta_tokens 表在生产/cleanroom 均不存在，条件化处理
 -- ============================================================================
 
-DO $$ BEGIN
-  IF to_regclass('public.meta_tokens') IS NOT NULL THEN
+DROP POLICY IF EXISTS "meta_tokens_admin" ON meta_tokens;
+DROP POLICY IF EXISTS meta_tokens_admin ON meta_tokens;
 
-    DROP POLICY IF EXISTS "meta_tokens_admin" ON meta_tokens;
-    DROP POLICY IF EXISTS meta_tokens_admin ON meta_tokens;
+-- SELECT: admin/boss/operator 可读取 token
+CREATE POLICY policy_meta_tokens_select_admin
+  ON meta_tokens FOR SELECT TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss','operator')));
 
-    EXECUTE 'CREATE POLICY policy_meta_tokens_select_admin
-      ON meta_tokens FOR SELECT TO authenticated
-      USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'',''operator'')))';
+-- SELECT: sales/finance/designer 可读取 token（用于 API 集成）
+CREATE POLICY policy_meta_tokens_select_authenticated
+  ON meta_tokens FOR SELECT TO authenticated
+  USING (true);
 
-    EXECUTE 'CREATE POLICY policy_meta_tokens_select_authenticated
-      ON meta_tokens FOR SELECT TO authenticated
-      USING (true)';
+-- INSERT: admin/boss 可设置 token
+CREATE POLICY policy_meta_tokens_insert_admin
+  ON meta_tokens FOR INSERT TO authenticated
+  WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss')));
 
-    EXECUTE 'CREATE POLICY policy_meta_tokens_insert_admin
-      ON meta_tokens FOR INSERT TO authenticated
-      WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'')))';
+-- UPDATE: admin/boss 可更新 token
+CREATE POLICY policy_meta_tokens_update_admin
+  ON meta_tokens FOR UPDATE TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss')))
+  WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss')));
 
-    EXECUTE 'CREATE POLICY policy_meta_tokens_update_admin
-      ON meta_tokens FOR UPDATE TO authenticated
-      USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'')))
-      WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'')))';
-
-    EXECUTE 'CREATE POLICY policy_meta_tokens_delete_admin
-      ON meta_tokens FOR DELETE TO authenticated
-      USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'')))';
-
-  END IF;
-END $$;
+-- DELETE: admin/boss 可删除 token
+CREATE POLICY policy_meta_tokens_delete_admin
+  ON meta_tokens FOR DELETE TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss')));
 
 -- ============================================================================
 -- 5. transfer_history (Lead 转移历史)
@@ -189,46 +188,40 @@ END $$;
 --       transfer_sales_insert (INSERT, authenticated)
 -- 缺失：SELECT admin/boss/operator/finance/designer, INSERT admin/boss/operator,
 --       UPDATE, DELETE
--- 注意：transfer_history 表在生产/cleanroom 均不存在，条件化处理
 -- ============================================================================
 
-DO $$ BEGIN
-  IF to_regclass('public.transfer_history') IS NOT NULL THEN
+DROP POLICY IF EXISTS "transfer_admin_all" ON transfer_history;
+DROP POLICY IF EXISTS transfer_admin_all ON transfer_history;
 
-    DROP POLICY IF EXISTS "transfer_admin_all" ON transfer_history;
-    DROP POLICY IF EXISTS transfer_admin_all ON transfer_history;
+-- SELECT: admin/boss/operator 可查看所有转移记录
+CREATE POLICY policy_transfer_history_select_admin
+  ON transfer_history FOR SELECT TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss','operator')));
 
-    EXECUTE 'CREATE POLICY policy_transfer_history_select_admin
-      ON transfer_history FOR SELECT TO authenticated
-      USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'',''operator'')))';
+-- SELECT: finance 可查看所有转移记录
+CREATE POLICY policy_transfer_history_select_finance
+  ON transfer_history FOR SELECT TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'finance'));
 
-    EXECUTE 'CREATE POLICY policy_transfer_history_select_finance
-      ON transfer_history FOR SELECT TO authenticated
-      USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = ''finance''))';
+-- SELECT: designer 可查看转移记录
+CREATE POLICY policy_transfer_history_select_designer
+  ON transfer_history FOR SELECT TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'designer'));
 
-    EXECUTE 'CREATE POLICY policy_transfer_history_select_designer
-      ON transfer_history FOR SELECT TO authenticated
-      USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = ''designer''))';
+-- INSERT: admin/boss/operator 可创建转移记录
+CREATE POLICY policy_transfer_history_insert_admin
+  ON transfer_history FOR INSERT TO authenticated
+  WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss','operator')));
 
-    EXECUTE 'CREATE POLICY policy_transfer_history_select_sales
-      ON transfer_history FOR SELECT TO authenticated
-      USING (
-        from_user_id = auth.uid() OR to_user_id = auth.uid()
-        OR EXISTS (SELECT 1 FROM leads WHERE id = transfer_history.lead_id AND assigned_to = auth.uid())
-      )';
+-- UPDATE: admin/boss 可更新转移记录（通常不需要，但保留管理权限）
+CREATE POLICY policy_transfer_history_update_admin
+  ON transfer_history FOR UPDATE TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss')))
+  WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss')));
 
-    EXECUTE 'CREATE POLICY policy_transfer_history_insert_admin
-      ON transfer_history FOR INSERT TO authenticated
-      WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'',''operator'')))';
+-- DELETE: admin/boss 可删除转移记录
+CREATE POLICY policy_transfer_history_delete_admin
+  ON transfer_history FOR DELETE TO authenticated
+  USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss')));
 
-    EXECUTE 'CREATE POLICY policy_transfer_history_update_admin
-      ON transfer_history FOR UPDATE TO authenticated
-      USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'')))
-      WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'')))';
-
-    EXECUTE 'CREATE POLICY policy_transfer_history_delete_admin
-      ON transfer_history FOR DELETE TO authenticated
-      USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'')))';
-
-  END IF;
-END $$;
+COMMIT;

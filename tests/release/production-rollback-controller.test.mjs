@@ -20,7 +20,9 @@ test("production rollback controller is immutable, atomic, and fail-closed", asy
   assert.match(source, /current and rollback are identical/);
   assert.match(source, /trap 'rc=\$\?; if \[ \$rc -ne 0 \]; then restore; fi; exit \$rc' EXIT/);
   assert.ok((source.match(/mv -Tf/g) ?? []).length >= 4);
-  assert.match(source, /newme-service-control restart "production rollback: \$reason"/);
+  assert.match(source, /safe_reason=\$\{reason\/\/\[\^A-Za-z0-9\._:/);
+  assert.match(source, /newme-service-control restart "production-rollback:\$safe_reason"/);
+  assert.match(source, /automatic-rollback-recovery:candidate-verification-failed/);
   assert.match(source, /"\$health" = 200/);
   assert.match(source, /"\$auth" = 401/);
   assert.match(source, /systemctl is-active newme-platform\.service/);

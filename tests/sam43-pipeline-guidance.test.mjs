@@ -67,7 +67,7 @@ test("SAM-43 applies the same active-role query policy everywhere", async () => 
 test("SAM-43 returns historical owner names only for visible Leads", () => {
   const route = read("src/app/api/leads/list/route.ts");
   const hook = read("src/app/(dashboard)/leads/_hooks/useLeadsData.ts");
-  const card = read("src/app/(dashboard)/leads/_components/LeadCard.tsx");
+  const mutations = read("src/app/(dashboard)/leads/_hooks/useLeadMutations.ts");
 
   assert.match(route, /const ownerIds = getVisibleLeadOwnerIds\(leads \|\| \[\]\)/);
   assert.match(route, /\.select\("id,full_name"\)\s*\.in\("id", ownerIds\)/);
@@ -75,7 +75,7 @@ test("SAM-43 returns historical owner names only for visible Leads", () => {
   assert.match(route, /ownerProfiles:/);
   assert.match(hook, /setOwnerProfiles/);
   assert.match(hook, /ownerProfiles\.forEach/);
-  assert.match(card, /userNameMap\[lead\.assigned_to\]/);
+  assert.match(mutations, /userNameMap\[oldLead\.assigned_to/);
 });
 
 test("SAM-43 localizes one prompt and treats pending quality as incomplete", () => {
@@ -120,6 +120,8 @@ test("SAM-43 makes project_status reproducible from repository migrations", () =
   assert.match(migration, /is_active = TRUE/i);
   assert.match(migration, /role IN \('sales', 'operator', 'boss'\)/i);
   assert.match(migration, /NEW\.assigned_to IS DISTINCT FROM OLD\.assigned_to/i);
+  assert.match(migration, /^BEGIN;/m);
+  assert.match(migration, /COMMIT;\s*$/m);
   assert.match(migration, /CREATE OR REPLACE FUNCTION/i);
   assert.match(migration, /DROP TRIGGER IF EXISTS/i);
   assert.match(migration, /SET search_path = pg_catalog, public, pg_temp/i);

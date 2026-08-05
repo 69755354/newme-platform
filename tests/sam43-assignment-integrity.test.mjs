@@ -26,16 +26,14 @@ test("SAM-43 chooses a deterministic eligible receiver or safely unassigns", asy
   const actionDelete = read("src/app/actions/team.ts");
   for (const source of [apiDelete, actionDelete]) {
     assert.match(source, /resolveActiveLeadReassignmentTarget/);
-    assert.match(source, /activeOrganizationMemberIds/);
-    assert.match(source, /\.in\(['"]id['"], memberIds\)/);
+    assert.match(source, /\.neq\(['"]id['"], (id|userId)\)/);
     assert.match(source, /\.update\(\{ assigned_to: reassignTo \}\)/);
-    assert.match(source, /\.eq\(['"]organization_id['"], access\.organizationId\)/);
-    assert.match(source, /if \((?:leadErr|leadsError|error)\)[\s\S]*throw new Error/);
+    assert.match(source, /if \(leadErr\) throw new Error/);
     assert.doesNotMatch(source, /role['"].*admin.*is_active/);
   }
 });
 
-test("SAM-43 team deletion only deactivates the organization membership after reassignment succeeds", () => {
+test("SAM-43 team deletion only deactivates after reassignment succeeds", () => {
   const sources = [
     read("src/app/api/users/[id]/route.ts"),
     read("src/app/actions/team.ts"),
@@ -43,19 +41,14 @@ test("SAM-43 team deletion only deactivates the organization membership after re
 
   for (const source of sources) {
     assert.doesNotMatch(source, /deleted_at/);
-    assert.match(source, /status: ['"]inactive['"]/);
-    assert.match(source, /if \((?:leadErr|leadsError|error)\)[\s\S]*throw new Error/);
-    assert.match(source, /requireOrganizationMembership/);
-    assert.doesNotMatch(source, /\.from\(['"]contracts['"]\)/);
-    assert.doesNotMatch(source, /\.update\(\{ is_active: false \}\)/);
-    assert.doesNotMatch(source, /ban_duration/);
+    assert.match(source, /\.update\(\{ is_active: false \}\)/);
+    assert.match(source, /if \(leadErr\) throw new Error/);
+    assert.match(source, /if \(contractErr\) throw new Error/);
+    assert.match(source, /if \(profileErr\) throw new Error/);
 
-    const membershipUpdate = source.indexOf("status: \"inactive\"") >= 0
-      ? source.indexOf("status: \"inactive\"")
-      : source.indexOf("status: 'inactive'");
-    assert.ok(
-      membershipUpdate > source.indexOf(".update({ assigned_to: reassignTo })"),
-    );
+    const profileUpdate = source.indexOf(".update({ is_active: false })");
+    assert.ok(profileUpdate > source.indexOf("if (leadErr) throw new Error"));
+    assert.ok(profileUpdate > source.indexOf("if (contractErr) throw new Error"));
   }
 });
 
@@ -63,9 +56,7 @@ test("SAM-43 preserves detail history without restoring inactive owners as candi
   const mutations = read("src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts");
   const data = read("src/app/(dashboard)/leads/[id]/useLeadDetailData.ts");
 
-  assert.match(data, /assignee:profiles!fk_leads_assigned_to\(id, full_name, email, role\)/);
-  assert.match(data, /assignee_profile: assigneeProfile/);
-  assert.match(mutations, /salesUsers\.find\(\(u\) => u\.id === newUserId\)/);
+  assert.match(mutations, /oldLead\.assignee_profile\?\.full_name/);
   assert.match(mutations, /if \(!newUser\)/);
   assert.match(data, /filterLeadTransferCandidateQuery\(/);
 });
@@ -116,17 +107,23 @@ test("SAM-43 enforces eligible assignment on both Lead inserts and reassignment 
 });
 
 
-test("SAM-43 organization deactivation preserves shared account access", () => {
+test("SAM-43 deactivation revokes Auth access before reporting success", () => {
   const sources = [
     read("src/app/api/users/[id]/route.ts"),
     read("src/app/actions/team.ts"),
   ];
 
   for (const source of sources) {
-    assert.match(source, /requireOrganizationMembership/);
-    assert.match(source, /status: ["']inactive["']/);
-    assert.match(source, /recovery_deadline/);
-    assert.doesNotMatch(source, /\.update\(\{ is_active: false \}\)/);
-    assert.doesNotMatch(source, /ban_duration/);
+    const profileUpdate = source.indexOf(".update({ is_active: false })");
+    const authRevoke = source.indexOf("supabaseAdmin.auth.admin.updateUserById");
+
+    assert.ok(profileUpdate >= 0);
+    assert.ok(authRevoke > profileUpdate);
+    assert.match(
+      source,
+      /supabaseAdmin\.auth\.admin\.updateUserById\(\s*(?:userId|id),\s*\{\s*ban_duration:\s*["']876000h["'],?\s*\}\s*\)/s,
+    );
+    assert.match(source, /if \(authErr\) throw new Error/);
+    assert.match(source, /Failed to revoke auth access/);
   }
 });

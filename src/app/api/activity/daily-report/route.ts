@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
 
   // Fetch user names from profiles
   const userIds = Array.from(userIdSet);
-  const userNameMap: Record<string, string> = {};
+  let userNameMap: Record<string, string> = {};
 
   if (userIds.length > 0) {
     const { data: profiles, error: profileErr } = await supabaseAdmin

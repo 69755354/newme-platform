@@ -191,7 +191,7 @@ export default function QuotationDetailPage() {
           .from("quotations")
           .select(
             `*,
-            leads!quotations_lead_id_fkey(id, customer_name, phone, email)`
+            leads(id, customer_name, phone, email)`
           )
           .eq("id", quotationId)
           .single();

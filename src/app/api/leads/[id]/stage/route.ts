@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { logger, genReqId } from "@/lib/logger";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
-import { evaluateFirstContactGate, isCompleteContact } from "@/modules/leads/first-contact-gate.mjs";
+import { evaluateFirstContactGate, isCompleteContact } from "@/lib/first-contact-gate.mjs";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 
 const VALID_STAGES = new Set([

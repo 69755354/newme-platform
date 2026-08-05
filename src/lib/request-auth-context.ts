@@ -8,7 +8,6 @@ import {
   getRefreshedCookies,
   type RefreshedCookie,
 } from "@/lib/supabase-server";
-import { getRequestedOrganizationId } from "@/lib/organization-context";
 
 const AUTH_TIMEOUT_MS = 3_000;
 
@@ -71,19 +70,12 @@ function isMissingProfile(error: unknown): boolean {
     && (error as { code?: unknown }).code === "PGRST116";
 }
 
-/**
- * Resolves exactly one explicit auth/session boundary for a route handler.
- *
- * Routes pass their Request instead of allowing auth helpers to implicitly
- * read next/headers cookies(). The returned client carries the same request
- * authorization for both getUser() and RLS-governed profile lookups.
- */
+/** Resolve one request-bound client for auth, authorization, and RLS queries. */
 export async function getRequestAuthContext(request: Request): Promise<RequestAuthContext> {
   const requestId = crypto.randomUUID();
   const supabase = await createServerSupabase(
     extractBearerToken(request),
     request.headers.get("cookie") ?? "",
-    getRequestedOrganizationId(request) ?? undefined,
   );
   const refreshedCookies = getRefreshedCookies(supabase);
 
@@ -101,8 +93,6 @@ export async function getRequestAuthContext(request: Request): Promise<RequestAu
     if (getRefreshFailure(supabase) === "upstream_error") {
       throw new RequestAuthError("auth_unavailable");
     }
-    // A failed, missing, or revoked refresh is always an authentication
-    // failure, never an infrastructure failure exposed to the caller.
     if (getRefreshAttempted(supabase) || getRefreshFailure(supabase)) {
       throw new RequestAuthError("unauthorized");
     }
@@ -145,7 +135,6 @@ export async function getRequestAuthContext(request: Request): Promise<RequestAu
   };
 }
 
-/** Applies refreshed session cookies to every response built from a context. */
 export function applyRequestAuthCookies(
   context: Pick<RequestAuthContext, "refreshedCookies">,
   response: NextResponse,

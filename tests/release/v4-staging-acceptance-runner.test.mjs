@@ -72,18 +72,24 @@ test("V4 acceptance cleanup removes generated tenant defaults before fixture par
   for (const table of [
     "user_session_daily", "commercial_seat_events", "paid_seat_allocations",
     "commercial_entitlements", "organization_subscriptions", "retail_inventory_movements",
-    "retail_price_book_items",
+    "retail_price_book_items", "shared_outbox",
   ]) assert.match(cleanup, new RegExp(`\\["${table}"`));
   assert.match(cleanup, /removeByOrganizations\(a, table, i\.organizations, label\)/);
   assert.match(cleanup, /removeByActors\(a, "agent_gateway_events", i\.auth, "agent_gateway_events"\)/);
   assert.match(cleanup, /removeByActors\(a, "agent_gateway_commands", i\.auth, "agent_gateway_commands"\)/);
+  assert.match(cleanup, /removeByProfileColumn\(a, "shared_timeline_events", "actor_user_id", i\.auth, "shared_timeline_events"\)/);
+  assert.match(cleanup, /removeByProfileColumn\(a, "shared_approval_requests", "requested_by", i\.auth, "shared_approval_requests"\)/);
+  assert.match(runner, /cleanup_profile_relation_not_allowlisted/);
   assert.match(cleanup, /await remove\(a, "profiles", i\.auth, "profiles"\);/);
   assert.ok(cleanup.indexOf('"commercial_seat_events"') < cleanup.indexOf('"paid_seat_allocations"'));
   assert.ok(cleanup.indexOf('"paid_seat_allocations"') < cleanup.indexOf('"memberships"'));
+  assert.ok(cleanup.indexOf('"shared_outbox"') < cleanup.lastIndexOf('"organizations"'));
   assert.ok(cleanup.indexOf('"retail_inventory_movements"') < cleanup.indexOf('"retail_skus"'));
   assert.ok(cleanup.indexOf('"retail_price_book_items"') < cleanup.indexOf('"retail_skus"'));
   assert.ok(cleanup.indexOf('"agent_gateway_events"') < cleanup.indexOf('"agent_gateway_commands"'));
   assert.ok(cleanup.indexOf('"agent_gateway_commands"') < cleanup.indexOf('"profiles"'));
+  assert.ok(cleanup.indexOf('"shared_timeline_events"') < cleanup.indexOf('"profiles"'));
+  assert.ok(cleanup.indexOf('"shared_approval_requests"') < cleanup.indexOf('"profiles"'));
   assert.ok(cleanup.indexOf('"profiles"') < cleanup.lastIndexOf('"organizations"'));
 });
 

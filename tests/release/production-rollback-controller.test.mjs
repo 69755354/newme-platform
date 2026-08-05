@@ -67,6 +67,11 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   assert.match(deploy, /cleanup_github_config/);
   assert.doesNotMatch(deploy, /curl[^\n]*\$github_token/);
   assert.match(deploy, /NEWME_MANUAL_VERIFICATION=0/);
+  assert.match(deploy, /FINALIZE_TARGET=.*readlink -f \/opt\/newme\/current/);
+  assert.match(deploy, /finalize SHA must equal the current immutable release/);
+  assert.match(deploy, /current release must contain exactly one deployment evidence file/);
+  assert.match(deploy, /evidence\.get\("git_sha"\) != expected_sha/);
+  assert.match(deploy, /evidence\.get\("release_status"\) != "awaiting_uat"/);
   assert.doesNotMatch(deploy, /manual_verified|CI_RUN_URL="manual"/);
 
   assert.match(immutableDeploy, /ROLLBACK=.*current\.rollback/);

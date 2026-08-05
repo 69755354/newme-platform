@@ -11,6 +11,53 @@ flock -n 9 || {
   exit 69
 }
 
+if [ "${1:-}" = "finalize" ]; then
+  FINALIZE_SHA=${2:-}
+  UAT_ACTOR=${3:-}
+  UAT_FIXTURE_IDS=${4:-}
+  FIXTURE_CLEANUP_STATUS=${5:-}
+  if [ "$#" -ne 5 ] || ! [[ "$FINALIZE_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+    ! [[ "$UAT_ACTOR" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+    echo "usage: newme-deploy finalize <current-sha> <uat-actor-uuid> <fixture-uuid-list> <not_required|archived_verified|removed_verified>" >&2
+    exit 64
+  fi
+  case "$FIXTURE_CLEANUP_STATUS" in
+    not_required) [ -z "$UAT_FIXTURE_IDS" ] || exit 64 ;;
+    archived_verified|removed_verified)
+      [[ "$UAT_FIXTURE_IDS" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(,[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})*$ ]] || exit 64
+      ;;
+    *) exit 64 ;;
+  esac
+  FINALIZE_TARGET="$(readlink -f /opt/newme/current 2>/dev/null || true)"
+  [ "$FINALIZE_TARGET" = "/opt/newme/releases/$FINALIZE_SHA" ] || {
+    echo "finalize SHA must equal the current immutable release" >&2
+    exit 65
+  }
+  mapfile -t EVIDENCE_FILES < <(find "$FINALIZE_TARGET/.audit" -maxdepth 1 -type f -name 'deploy-*.json' -print)
+  [ "${#EVIDENCE_FILES[@]}" -eq 1 ] || {
+    echo "current release must contain exactly one deployment evidence file" >&2
+    exit 65
+  }
+  EVIDENCE_FILE=${EVIDENCE_FILES[0]}
+  python3 - "$EVIDENCE_FILE" "$FINALIZE_SHA" <<'PY'
+import json
+import sys
+
+path, expected_sha = sys.argv[1:]
+with open(path, encoding="utf-8") as handle:
+    evidence = json.load(handle)
+if evidence.get("git_sha") != expected_sha or evidence.get("release_status") != "awaiting_uat":
+    raise SystemExit(65)
+PY
+  UAT_STATUS=pass \
+  UAT_ACTOR="$UAT_ACTOR" \
+  UAT_FIXTURE_IDS="$UAT_FIXTURE_IDS" \
+  FIXTURE_CLEANUP_STATUS="$FIXTURE_CLEANUP_STATUS" \
+    bash "$FINALIZE_TARGET/scripts/finalize-deploy-evidence.sh" "$EVIDENCE_FILE"
+  echo "finalized SHA=$FINALIZE_SHA evidence=$EVIDENCE_FILE status=complete"
+  exit 0
+fi
+
 SHA=${1:-}
 RUN_ID=${2:-}
 MIGRATION_STATUS=${3:-}

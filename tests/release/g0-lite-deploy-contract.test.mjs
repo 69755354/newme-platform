@@ -45,6 +45,12 @@ test("deploy evidence remains bound to CI, migration, UAT, and rollback", () => 
   assert.doesNotMatch(deploy, /(?:demo|fake)[_-]?(?:ci|sha|build|migration|uat)/i);
 });
 
+test("deployment evidence defaults to the immutable release instead of the temporary worktree", () => {
+  assert.match(deploy, /EVIDENCE_DIR="\$TARGET\/\.audit"/);
+  assert.doesNotMatch(deploy, /NEWME_EVIDENCE_DIR:-\$ROOT\/\.audit/);
+  assert.ok(deploy.indexOf('EVIDENCE_DIR="$TARGET/.audit"') < deploy.indexOf('python3 - "$EVIDENCE_FILE"'));
+});
+
 test("legacy Hermes authorization gates are not part of deployment", () => {
   assert.doesNotMatch(deploy, /verify-coding-auth\.py|\.hermes\/delegations|CONTROL_PLANE_AUTH/);
 });

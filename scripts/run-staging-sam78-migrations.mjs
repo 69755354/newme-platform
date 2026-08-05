@@ -167,6 +167,14 @@ export const MIGRATIONS = Object.freeze([
     rollbackEnv: "SAM82_ROLLBACK_060500_PATH",
     rollbackBlobEnv: "SAM82_ROLLBACK_060500_BLOB",
   }),
+  Object.freeze({
+    version: "20260806060000",
+    name: "sam78_product_saas_closed_cleanup_boundary",
+    migrationEnv: "SAM78_MIGRATION_060600_PATH",
+    migrationBlobEnv: "SAM78_MIGRATION_060600_BLOB",
+    rollbackEnv: "SAM78_ROLLBACK_060600_PATH",
+    rollbackBlobEnv: "SAM78_ROLLBACK_060600_BLOB",
+  }),
 ]);
 
 // This is the only non-contiguous V4 state accepted for the existing staging

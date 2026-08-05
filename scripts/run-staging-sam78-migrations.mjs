@@ -370,8 +370,14 @@ function historyPreflight(plan, activePlan, action, expectedHistory, alreadyAppl
   const prefixes = plan.map((item) => `version LIKE ${sqlLiteral(`${item.version}%`)}`).join(" OR ");
   const exactMetadata = activePlan.map((item) => `(${metadataPredicate(item)})`).join(" OR ");
   const expected = action === "apply" ? 0 : activePlan.length;
+  // A clean apply omits all V4 rows from the predecessor history. The one
+  // audited staging state already contains seven V4 rows, so omit precisely
+  // the active (still-missing) rows instead of assuming the V4 entries form a
+  // contiguous suffix in the history manifest. Every unrelated row remains
+  // required by the exact-set comparison below.
+  const activeVersionSet = new Set(activePlan.map(({ version }) => version));
   const expectedRows = action === "apply"
-    ? [...expectedHistory.slice(0, -plan.length), ...alreadyAppliedPlan]
+    ? expectedHistory.filter(({ version }) => !activeVersionSet.has(version))
     : expectedHistory;
   const expectedValues = historyValues(expectedRows);
   const alreadyAppliedAssertion = alreadyAppliedPlan.length === 0

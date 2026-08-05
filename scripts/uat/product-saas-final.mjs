@@ -2216,9 +2216,18 @@ async function cleanup(state) {
   for (const [table, column] of leadTables) {
     counts.lead_children += await countByLeadIds(state, table, column);
   }
-  if (errors.length > 0 || Object.values(counts).some((count) => count !== 0)) {
-    fail(`cleanup was not exact: ${JSON.stringify({ counts, errors })}`);
+  if (errors.length > 0) {
+    const stage = errors[0].split(":", 1)[0].toLowerCase()
+      .replaceAll(/[^a-z0-9]+/g, "_")
+      .replaceAll(/^_+|_+$/g, "")
+      .slice(0, 120) || "unknown";
+    fail(`cleanup_operation_failed:${stage}`);
   }
+  const residue = Object.entries(counts)
+    .filter(([, count]) => count !== 0)
+    .map(([table]) => table)
+    .join(":");
+  if (residue) fail(`cleanup_residue_detected:${residue}`);
   return counts;
 }
 

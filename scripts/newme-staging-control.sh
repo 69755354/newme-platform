@@ -25,6 +25,7 @@ readonly SAM68_EVIDENCE="$STATE_DIR/last-uat-sam68.json"
 readonly SAM54_EVIDENCE="$STATE_DIR/last-uat-sam54.json"
 readonly SAM78_EVIDENCE="$STATE_DIR/last-migrate-sam78.json"
 readonly SAM78_UAT_EVIDENCE="$STATE_DIR/last-uat-sam78.json"
+readonly SAM78_UAT_FAILURE_EVIDENCE="$STATE_DIR/last-uat-sam78-failure.json"
 readonly V4_ACCEPTANCE_RUNNER="scripts/uat/v4-staging-acceptance.mjs"
 readonly V4_ACCEPTANCE_EVIDENCE="$STATE_DIR/last-uat-v4-acceptance.json"
 readonly SAM87_RUNNER="scripts/verify-staging-sam87-release-rehearsal.mjs"
@@ -1386,7 +1387,7 @@ run_uat_product_saas() {
     docker image inspect "$UAT_IMAGE_PREFIX:$SHA" \
       --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
   )" = "$SHA" ] || fail "staging UAT image provenance does not match"
-  local output rc evidence evidence_tmp
+  local output rc evidence evidence_tmp failure_tmp
   evidence="$STATE_DIR/last-uat-product-saas.json"
   rm -f -- "$evidence"
   output="$(mktemp "$STATE_DIR/.uat-product-saas.XXXXXX")"
@@ -1544,7 +1545,30 @@ run_uat_sam78() {
     --env "PRODUCT_UAT_CONFIRM=PRODUCT_SAAS_STAGING_ONLY" \
     --mount "type=bind,src=$RELEASES/$SHA/manifest.json,dst=/runner/release/manifest.json,readonly" \
     "$UAT_IMAGE_PREFIX:$SHA" >"$output" 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] || fail "SAM-78 staging tenant-closure UAT failed with status $rc"
+  if [ "$rc" -ne 0 ]; then
+    failure_tmp="$(mktemp "$STATE_DIR/.last-uat-sam78-failure.XXXXXX")"
+    register_temporary_path "$failure_tmp"
+    /usr/bin/node - "$output" "$failure_tmp" "$SHA" "$rc" <<'NODE'
+const crypto = require("crypto");
+const fs = require("fs");
+const [output, destination, releaseSha, exitCode] = process.argv.slice(2);
+const raw = fs.readFileSync(output, "utf8");
+const matched = raw.match(/\b(?:SAM78|PRODUCT_SAAS)_FAIL_CLOSED:[a-z0-9_:-]{1,160}\b/);
+const evidence = {
+  schema_version: 1,
+  scope: "sam78-staging-tenant-closure-failure",
+  release_sha: releaseSha,
+  runner_exit: Number(exitCode),
+  failure_code: matched?.[0] ?? "runner_nonzero_without_allowlisted_code",
+  raw_sha256: crypto.createHash("sha256").update(raw).digest("hex"),
+};
+fs.writeFileSync(destination, `${JSON.stringify(evidence)}\n`, { mode: 0o600 });
+NODE
+    chown root:root "$failure_tmp"
+    chmod 0600 "$failure_tmp"
+    mv -Tf "$failure_tmp" "$SAM78_UAT_FAILURE_EVIDENCE"
+    fail "SAM-78 staging tenant-closure UAT failed with status $rc; root-only failure evidence was recorded"
+  fi
   node -e '
     const fs = require("fs");
     const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));

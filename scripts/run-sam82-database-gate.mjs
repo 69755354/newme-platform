@@ -11,6 +11,8 @@ const password = "sam82-disposable-only";
 const database = "sam82";
 const migration = "20260805120000_sam82_retail_catalog_inventory_pricing.sql";
 const rollback = "20260805120000_sam82_retail_catalog_inventory_pricing_rollback.sql";
+const cleanupMigration = "20260806050000_sam82_v4_synthetic_inventory_cleanup_boundary.sql";
+const cleanupRollback = "20260806050000_sam82_v4_synthetic_inventory_cleanup_boundary_rollback.sql";
 
 function command(args, options = {}) {
   const result = spawnSync(process.env.SAM82_DOCKER_BIN || "docker", args, {
@@ -68,7 +70,9 @@ async function main() {
 
     for (const source of [
       `supabase/migrations/${migration}`,
+      `supabase/migrations/${cleanupMigration}`,
       `supabase/rollback/${rollback}`,
+      `supabase/rollback/${cleanupRollback}`,
       "tests/database/sam82-retail-foundation.sql",
     ]) copy(container, source);
 

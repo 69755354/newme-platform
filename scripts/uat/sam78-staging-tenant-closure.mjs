@@ -22,6 +22,19 @@ function safeMessage(error) {
   return message.replaceAll(/Bearer\s+\S+/gi, "Bearer [REDACTED]").slice(0, 1000);
 }
 
+function failureDescriptor(error) {
+  const message = safeMessage(error);
+  const code = message.match(/(?:SAM78|PRODUCT_SAAS)_UAT_FAIL_CLOSED:\s*([a-z0-9_:-]{1,160})/i)?.[1]
+    ?? "unexpected_runner_error";
+  const kind = error instanceof Error && /^[A-Za-z][A-Za-z0-9]{0,48}$/.test(error.name)
+    ? error.name
+    : "UnknownError";
+  const runnerOrigin = error instanceof Error
+    ? error.stack?.match(/\/runner\/[a-z0-9-]+\.mjs:\d+:\d+/)?.[0] ?? null
+    : null;
+  return { code, kind, runner_origin: runnerOrigin };
+}
+
 export function validateEnvironment(env = process.env) {
   const config = {
     releaseSha: env.SAM78_EXPECTED_RELEASE_SHA,
@@ -263,7 +276,7 @@ async function main() {
   try {
     process.stdout.write(`${JSON.stringify(await runSam78StagingTenantClosure(), null, 2)}\n`);
   } catch (error) {
-    process.stderr.write(`${safeMessage(error)}\n`);
+    process.stdout.write(`${JSON.stringify({ ok: false, scope: SCOPE, failure: failureDescriptor(error) })}\n`);
     process.exitCode = 1;
   }
 }

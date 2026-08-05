@@ -1553,13 +1553,30 @@ const crypto = require("crypto");
 const fs = require("fs");
 const [output, destination, releaseSha, exitCode] = process.argv.slice(2);
 const raw = fs.readFileSync(output, "utf8");
-const matched = raw.match(/\b(?:SAM78|PRODUCT_SAAS)_FAIL_CLOSED:[a-z0-9_:-]{1,160}\b/);
+let runnerFailure = {
+  failure_code: "runner_nonzero_without_allowlisted_code",
+  failure_kind: "UnknownError",
+  runner_origin: null,
+};
+try {
+  const body = JSON.parse(raw);
+  const code = body?.failure?.code;
+  const kind = body?.failure?.kind;
+  const origin = body?.failure?.runner_origin;
+  if (
+    body?.ok === false &&
+    body?.scope === "sam78-staging-tenant-closure" &&
+    typeof code === "string" && /^[a-z0-9_:-]{1,160}$/.test(code) &&
+    typeof kind === "string" && /^[A-Za-z][A-Za-z0-9]{0,48}$/.test(kind) &&
+    (origin === null || (typeof origin === "string" && /^\/runner\/[a-z0-9-]+\.mjs:\d+:\d+$/.test(origin)))
+  ) runnerFailure = { failure_code: code, failure_kind: kind, runner_origin: origin };
+} catch {}
 const evidence = {
   schema_version: 1,
   scope: "sam78-staging-tenant-closure-failure",
   release_sha: releaseSha,
   runner_exit: Number(exitCode),
-  failure_code: matched?.[0] ?? "runner_nonzero_without_allowlisted_code",
+  ...runnerFailure,
   raw_sha256: crypto.createHash("sha256").update(raw).digest("hex"),
 };
 fs.writeFileSync(destination, `${JSON.stringify(evidence)}\n`, { mode: 0o600 });

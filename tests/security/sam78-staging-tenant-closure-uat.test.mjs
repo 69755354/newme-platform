@@ -99,6 +99,9 @@ test("SAM-78 live implementation binds selected organization and exact cleanup",
     'cleanupCounts.membership_roles',
     'root.auth.admin.deleteUser(userId)',
     'runProductSaasFinalUat',
+    'failureDescriptor',
+    'unexpected_runner_error',
+    'runner_origin',
   ]) assert.match(source, new RegExp(token.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   const forbiddenEnvRead = new RegExp(
     "console\\.log|process\\.env\\.(?:SUPABASE_SERVICE_ROLE_" +

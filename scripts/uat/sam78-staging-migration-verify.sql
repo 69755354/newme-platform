@@ -287,7 +287,10 @@ BEGIN
     RETURN;
   END IF;
 
-  IF action = 'apply' AND phase = 'post' THEN
+  IF action = 'apply' AND phase = 'post' AND EXISTS (
+    SELECT 1 FROM supabase_migrations.schema_migrations
+    WHERE version = '20260806010000'
+  ) THEN
     IF to_regprocedure('public.v4_sync_membership_paid_seat()') IS NULL
       OR pg_get_functiondef(to_regprocedure('public.v4_sync_membership_paid_seat()'))
         NOT ILIKE '%IF TG_TABLE_NAME = ''memberships'' THEN%'

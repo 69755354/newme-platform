@@ -143,6 +143,22 @@ export const KNOWN_STAGING_APPLIED_VERSIONS = Object.freeze([
   "20260805010000",
 ]);
 
+// These are SHA-256 fingerprints of the immutable `statements` arrays already
+// recorded in the one audited staging history. Three source files were
+// reformatted after their earlier controlled application, so comparing their
+// current source text to history would reject the valid database state. The
+// version, name, and these fixed fingerprints are all required; every newly
+// applied migration continues to use exact statement-array equality.
+export const KNOWN_STAGING_APPLIED_HISTORY_SHA256 = Object.freeze({
+  "20260803100000": "83f850a755f3eb7651cf9e1ef202bb791300b60978f373007dfcec1691297320",
+  "20260803143000": "ddd46bc1795c024789ecbf671279cf3aeb12d34ff3b106591a4cb43c812b6aad",
+  "20260804153000": "eadb11a239b9203d46de31a3f00a9a39496eda9e3d964d52642550a1490b6d7c",
+  "20260804165734": "a500bf378c6b26690fcc2c8e8f86cba17efbc7f48fd7e517e4e4dfdf5e75dd73",
+  "20260804193000": "e2697302ca08d851f63ee5055877f2e021ac4c0de1282c50b858c5464632bb93",
+  "20260805000000": "d33803a9e182532f5d084030eceb9aa562b22e3639bdb0a7a98c15cc715973c6",
+  "20260805010000": "0cc4c08a811562a95b4a6266ad076b83dfb7c159a39df3e2f25fb3fe3ea7c796",
+});
+
 function fail(message) {
   throw new Error(`SAM78_FAIL_CLOSED: ${message}`);
 }
@@ -332,6 +348,17 @@ function metadataPredicate(item) {
   ].join(" AND ");
 }
 
+function knownStagingMetadataPredicate(item) {
+  const fingerprint = KNOWN_STAGING_APPLIED_HISTORY_SHA256[item.version];
+  if (!fingerprint) fail(`missing audited staging history fingerprint for ${item.version}`);
+  return [
+    `version = ${sqlLiteral(item.version)}`,
+    `name IS NOT DISTINCT FROM ${sqlLiteral(item.name)}`,
+    "encode(extensions.digest(convert_to(array_to_string(statements, E'\\x1f'), 'UTF8'), 'sha256'), 'hex')"
+      + ` = ${sqlLiteral(fingerprint)}`,
+  ].join(" AND ");
+}
+
 function historyValues(rows) {
   if (!Array.isArray(rows) || rows.length === 0) fail("expected migration history is empty");
   return rows
@@ -383,7 +410,7 @@ function historyPreflight(plan, activePlan, action, expectedHistory, alreadyAppl
   const alreadyAppliedAssertion = alreadyAppliedPlan.length === 0
     ? ""
     : "  IF (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE "
-      + alreadyAppliedPlan.map((item) => "(" + metadataPredicate(item) + ")").join(" OR ")
+      + alreadyAppliedPlan.map((item) => "(" + knownStagingMetadataPredicate(item) + ")").join(" OR ")
       + ") <> " + String(alreadyAppliedPlan.length) + " THEN\n"
       + "    RAISE EXCEPTION 'SAM78 known applied migration metadata mismatch';\n"
       + "  END IF;";

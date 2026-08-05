@@ -112,6 +112,31 @@ async function prepare(state) {
   await createActor(state);
 }
 
+async function createRetailCodActor(state, suffix) {
+  const email = `${state.marker}-${suffix}@invalid.test`.toLowerCase();
+  const password = `${randomBytes(24).toString("base64url")}Aa1!`;
+  const { data, error } = await state.admin.auth.admin.createUser({
+    email, password, email_confirm: true,
+    app_metadata: { fixture_scope: "v4-staging-acceptance", run_id: state.runId },
+    user_metadata: { full_name: state.marker },
+  });
+  if (error || !data.user?.id) fail(`sam83_${suffix}_auth_create_failed`);
+  state.ids.auth.push(data.user.id);
+  const { error: profileError } = await state.admin
+    .from("profiles")
+    .update({ role: "admin", full_name: state.marker, email, is_active: true, force_password_change: false })
+    .eq("id", data.user.id);
+  if (profileError) fail(`sam83_${suffix}_profile_configure_failed`);
+  const { data: membership, error: membershipError } = await state.admin
+    .from("memberships")
+    .insert({ organization_id: state.organizations.retail, user_id: data.user.id, status: "active", accepted_at: new Date().toISOString() })
+    .select("id")
+    .single();
+  if (membershipError || !membership?.id) fail(`sam83_${suffix}_membership_create_failed`);
+  state.ids.memberships.push(membership.id);
+  return data.user.id;
+}
+
 async function sam81(state) {
   const organizationId = state.organizations.real_estate;
   const party = await write(state.admin, "real_estate_parties", { organization_id: organizationId, party_type: "landlord", display_name: state.marker, normalized_email: `${state.marker}@invalid.test`.toLowerCase(), created_by: state.actor.id }, "sam81_party"); state.ids.parties.push(party.id);
@@ -138,9 +163,12 @@ async function sam83(state) {
   const repeat = await state.admin.from("retail_goods_receipts").insert({ organization_id: organizationId, purchase_order_id: purchase.id, location_id: location.id, received_by: state.actor.id, idempotency_key: receipt.idempotency_key ?? randomUUID() });
   if (!repeat.error) fail("sam83_receipt_idempotency_missing");
   const handoff = await write(state.admin, "retail_delivery_handoffs", { organization_id: organizationId, order_id: order.id, location_id: location.id, assigned_driver_id: state.actor.id, status: "completed", delivered_at: new Date().toISOString() }, "sam83_handoff"); state.ids.handoffs.push(handoff.id);
+  const collectorId = await createRetailCodActor(state, "collector");
+  const handoverId = await createRetailCodActor(state, "handover");
+  const financeId = await createRetailCodActor(state, "finance");
   let financeConfirmationId;
-  for (const event_type of ["cash_collected", "cash_handover", "finance_confirmed"]) {
-    const event = await write(state.admin, "retail_cod_events", { organization_id: organizationId, order_id: order.id, handoff_id: handoff.id, idempotency_key: randomUUID(), event_type, amount: 10, actor_id: state.actor.id }, `sam83_${event_type}`);
+  for (const [event_type, actor_id] of [["cash_collected", collectorId], ["cash_handover", handoverId], ["finance_confirmed", financeId]]) {
+    const event = await write(state.admin, "retail_cod_events", { organization_id: organizationId, order_id: order.id, handoff_id: handoff.id, idempotency_key: randomUUID(), event_type, amount: 10, actor_id }, `sam83_${event_type}`);
     state.ids.codEvents.push(event.id); if (event_type === "finance_confirmed") financeConfirmationId = event.id;
   }
   const allocation = await write(state.admin, "retail_finance_allocations", { organization_id: organizationId, order_id: order.id, finance_confirmation_id: financeConfirmationId, idempotency_key: randomUUID(), allocated_amount: 10, allocated_by: state.actor.id }, "sam83_finance_allocation"); state.ids.allocations.push(allocation.id);

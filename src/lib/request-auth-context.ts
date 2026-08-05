@@ -1,4 +1,4 @@
-import type { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import {
@@ -8,6 +8,7 @@ import {
   getRefreshedCookies,
   type RefreshedCookie,
 } from "@/lib/supabase-server";
+import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
 
 const AUTH_TIMEOUT_MS = 3_000;
 
@@ -25,11 +26,18 @@ export type RequestAuthErrorCode =
 export class RequestAuthError extends Error {
   readonly status: 401 | 503;
   readonly code: RequestAuthErrorCode;
+  readonly clearSession: boolean;
+  readonly refreshedCookies: RefreshedCookie[];
 
-  constructor(code: RequestAuthErrorCode) {
+  constructor(
+    code: RequestAuthErrorCode,
+    options: { clearSession?: boolean; refreshedCookies?: RefreshedCookie[] } = {},
+  ) {
     super(code);
     this.name = "RequestAuthError";
     this.code = code;
+    this.clearSession = options.clearSession === true;
+    this.refreshedCookies = options.refreshedCookies ?? [];
     this.status = code === "auth_unavailable" || code === "profile_unavailable" ? 503 : 401;
   }
 }
@@ -86,17 +94,24 @@ export async function getRequestAuthContext(request: Request): Promise<RequestAu
     user = data.user;
     authError = error;
   } catch {
-    throw new RequestAuthError("auth_unavailable");
+    throw new RequestAuthError("auth_unavailable", { refreshedCookies });
   }
 
   if (!user || authError) {
-    if (getRefreshFailure(supabase) === "upstream_error") {
-      throw new RequestAuthError("auth_unavailable");
+    const refreshFailure = getRefreshFailure(supabase);
+    if (refreshFailure === "upstream_error") {
+      throw new RequestAuthError("auth_unavailable", { refreshedCookies });
     }
     if (getRefreshAttempted(supabase) || getRefreshFailure(supabase)) {
-      throw new RequestAuthError("unauthorized");
+      throw new RequestAuthError(
+        "unauthorized",
+        {
+          clearSession: refreshFailure === "invalid_refresh_token" || refreshFailure === "missing_refresh_token",
+          refreshedCookies,
+        },
+      );
     }
-    throw new RequestAuthError("unauthorized");
+    throw new RequestAuthError("unauthorized", { refreshedCookies });
   }
 
   let profile: ActiveProfile | null = null;
@@ -112,17 +127,17 @@ export async function getRequestAuthContext(request: Request): Promise<RequestAu
     profile = data;
     profileError = error;
   } catch {
-    throw new RequestAuthError("profile_unavailable");
+    throw new RequestAuthError("profile_unavailable", { refreshedCookies });
   }
 
   if (profileError) {
     if (isMissingProfile(profileError)) {
-      throw new RequestAuthError("inactive_account");
+      throw new RequestAuthError("inactive_account", { refreshedCookies });
     }
-    throw new RequestAuthError("profile_unavailable");
+    throw new RequestAuthError("profile_unavailable", { refreshedCookies });
   }
   if (!profile || profile.is_active !== true) {
-    throw new RequestAuthError("inactive_account");
+    throw new RequestAuthError("inactive_account", { refreshedCookies });
   }
 
   return {
@@ -133,6 +148,29 @@ export async function getRequestAuthContext(request: Request): Promise<RequestAu
     role: profile.role ?? "sales",
     refreshedCookies,
   };
+}
+
+export function requestAuthErrorResponse(error: RequestAuthError): NextResponse {
+  const response = NextResponse.json({ error: error.code }, { status: error.status });
+  for (const cookie of error.refreshedCookies) {
+    response.cookies.set(
+      cookie.name,
+      cookie.value,
+      cookie.options as Parameters<typeof response.cookies.set>[2],
+    );
+  }
+  if (error.clearSession) {
+    const names = getSupabaseCookieNames();
+    for (const name of [
+      names.authToken,
+      names.refreshToken,
+      "sb-access-token",
+      "sb-refresh-token",
+    ]) {
+      response.cookies.set(name, "", { path: "/", maxAge: 0 });
+    }
+  }
+  return response;
 }
 
 export function applyRequestAuthCookies(

@@ -1,28 +1,38 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabase-server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { canCompleteMilestone } from "@/lib/milestones";
-import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
+import {
+  applyRequestAuthCookies,
+  getRequestAuthContext,
+  RequestAuthError,
+  requestAuthErrorResponse,
+  type RequestAuthContext,
+} from "@/lib/request-auth-context";
 import { isAssessedQuality, isCompleteContact } from "@/lib/first-contact-gate.mjs";
 
 type AdminSupabaseClient = SupabaseClient<Database>;
+
+function createResponder(authContext: RequestAuthContext) {
+  return (body: Record<string, unknown>, init?: ResponseInit) =>
+    applyRequestAuthCookies(authContext, NextResponse.json(body, init));
+}
 
 export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-  const cookieHeader = req.headers.get("cookie") ?? "";
-  const supabase = await createServerSupabase(bearerToken, cookieHeader);
-
-  // 1. 鉴权 + 角色
-  const profile = await getAuthProfile(bearerToken, cookieHeader);
-  if (!profile) {
-    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  let authContext: RequestAuthContext;
+  try {
+    authContext = await getRequestAuthContext(req);
+  } catch (error) {
+    if (error instanceof RequestAuthError) return requestAuthErrorResponse(error);
+    throw error;
   }
+  const { supabase } = authContext;
+  const respond = createResponder(authContext);
 
   const leadId = (await context.params).id;
   const body = await req.json();
@@ -30,7 +40,7 @@ export async function POST(
   const normalizedNotes = String(notes ?? "").trim();
 
   if (!milestoneKey) {
-    return NextResponse.json({ error: "缺少 milestoneKey" }, { status: 400 });
+    return respond({ error: "缺少 milestoneKey" }, { status: 400 });
   }
 
   // 3. 校验 lead 存在
@@ -41,17 +51,17 @@ export async function POST(
     .single();
 
   if (leadError || !lead) {
-    return NextResponse.json({ error: "线索不存在" }, { status: 404 });
+    return respond({ error: "线索不存在" }, { status: 404 });
   }
 
   // 3.1 所有权校验：非管理员/主管仅能推进自己负责的线索 (rule_idor)
-  if (!isAdminOrBoss(profile) && lead.assigned_to !== profile.userId) {
-    return NextResponse.json({ error: "无权操作此线索" }, { status: 403 });
+  if (!["admin", "boss", "operator"].includes(authContext.role) && lead.assigned_to !== authContext.user.id) {
+    return respond({ error: "无权操作此线索" }, { status: 403 });
   }
 
   // 4. rule_007: won/lost lead 禁止完成任何里程碑
   if (lead.final_status === "won" || lead.final_status === "lost") {
-    return NextResponse.json(
+    return respond(
       { error: "已成交/失败的线索不能继续推进里程碑" },
       { status: 400 }
     );
@@ -64,7 +74,7 @@ export async function POST(
       .eq("lead_id", leadId);
 
     if (contactsError) {
-      return NextResponse.json(
+      return respond(
         { error: "查询联系记录失败", detail: contactsError.message },
         { status: 500 }
       );
@@ -72,7 +82,7 @@ export async function POST(
 
     const hasCompleteContact = (contacts ?? []).some(isCompleteContact);
     if (!hasCompleteContact || !isAssessedQuality(lead.quality)) {
-      return NextResponse.json(
+      return respond(
         { error: "请先添加1条完整联系记录并评估线索质量" },
         { status: 400 }
       );
@@ -87,14 +97,14 @@ export async function POST(
     .order("completed_at", { ascending: true });
 
   if (milestonesError) {
-    return NextResponse.json(
+    return respond(
       { error: "查询里程碑失败", detail: milestonesError.message },
       { status: 500 }
     );
   }
 
   if (!normalizedNotes) {
-    return NextResponse.json(
+    return respond(
       { error: "Milestone note is required" },
       { status: 400 },
     );
@@ -113,21 +123,21 @@ export async function POST(
         .from("lead_milestones")
         .update({
           notes: normalizedNotes,
-          completed_by: profile.userId,
+          completed_by: authContext.user.id,
           completed_at: new Date().toISOString(),
         })
         .eq("id", existingMilestone.id)
         .select()
         .single();
       if (confirmError || !confirmed) {
-        return NextResponse.json(
+        return respond(
           { error: confirmError?.message ?? "Failed to confirm First Contact" },
           { status: 500 },
         );
       }
-      return NextResponse.json({ success: true, milestone: confirmed, manualConfirmation: true });
+      return respond({ success: true, milestone: confirmed, manualConfirmation: true });
     }
-    return NextResponse.json({ success: true, milestone: existingMilestone, duplicate: true });
+    return respond({ success: true, milestone: existingMilestone, duplicate: true });
   }
 
   // 6. rule_006: only completed milestones participate in sequence checks.
@@ -137,7 +147,7 @@ export async function POST(
   const check = canCompleteMilestone(completedKeys, milestoneKey);
 
   if (!check.allowed) {
-    return NextResponse.json(
+    return respond(
       {
         error: check.reason ?? "里程碑顺序不合法 (rule_006)",
         current: lead.current_milestone,
@@ -162,10 +172,10 @@ export async function POST(
       const status = message.includes("Forbidden") ? 403
         : message.includes("not found") ? 404
         : 400;
-      return NextResponse.json({ error: message }, { status });
+      return respond({ error: message }, { status });
     }
 
-    return NextResponse.json({
+    return respond({
       success: true,
       result: recompleted,
       recompleted: true,
@@ -178,7 +188,7 @@ export async function POST(
     .insert({
       lead_id: leadId,
       milestone_key: milestoneKey,
-      completed_by: profile.userId,
+      completed_by: authContext.user.id,
       notes: normalizedNotes,
     })
     .select()
@@ -192,11 +202,11 @@ export async function POST(
       .eq("milestone_key", milestoneKey)
       .single();
     if (racedMilestone) {
-      return NextResponse.json({ success: true, milestone: racedMilestone, duplicate: true });
+      return respond({ success: true, milestone: racedMilestone, duplicate: true });
     }
   }
   if (insertError) {
-    return NextResponse.json(
+    return respond(
       { error: "写入里程碑失败", detail: insertError.message },
       { status: 500 }
     );
@@ -211,26 +221,29 @@ export async function POST(
       .eq("id", leadId);
 
     if (statusError) {
-      return NextResponse.json(
+      return respond(
         { error: "同步线索最终状态失败", detail: statusError.message },
         { status: 500 }
       );
     }
   }
 
-  return NextResponse.json({ success: true, milestone: inserted });
+  return respond({ success: true, milestone: inserted });
 }
 
 export async function PATCH(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-  const cookieHeader = req.headers.get("cookie") ?? "";
-  const profile = await getAuthProfile(bearerToken, cookieHeader);
-  if (!profile) {
-    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  let authContext: RequestAuthContext;
+  try {
+    authContext = await getRequestAuthContext(req);
+  } catch (error) {
+    if (error instanceof RequestAuthError) return requestAuthErrorResponse(error);
+    throw error;
   }
+  const { supabase } = authContext;
+  const respond = createResponder(authContext);
 
   const leadId = (await context.params).id;
   const body = await req.json().catch(() => ({}));
@@ -238,19 +251,18 @@ export async function PATCH(
   const reason = String(body?.reason ?? "").trim();
 
   if (!milestoneKey) {
-    return NextResponse.json({ error: "缺少 milestoneKey" }, { status: 400 });
+    return respond({ error: "缺少 milestoneKey" }, { status: 400 });
   }
   if (!reason) {
-    return NextResponse.json({ error: "Reopen reason is required" }, { status: 400 });
+    return respond({ error: "Reopen reason is required" }, { status: 400 });
   }
   if (reason.length > 1000) {
-    return NextResponse.json(
+    return respond(
       { error: "Reopen reason must be 1000 characters or fewer" },
       { status: 400 },
     );
   }
 
-  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const { data: lead, error: leadError } = await supabase
     .from("leads")
     .select("id, assigned_to")
@@ -258,10 +270,10 @@ export async function PATCH(
     .single();
 
   if (leadError || !lead) {
-    return NextResponse.json({ error: "线索不存在" }, { status: 404 });
+    return respond({ error: "线索不存在" }, { status: 404 });
   }
-  if (!isAdminOrBoss(profile) && lead.assigned_to !== profile.userId) {
-    return NextResponse.json({ error: "无权操作此线索" }, { status: 403 });
+  if (!["admin", "boss", "operator"].includes(authContext.role) && lead.assigned_to !== authContext.user.id) {
+    return respond({ error: "无权操作此线索" }, { status: 403 });
   }
 
   const { data, error } = await supabase.rpc("reopen_lead_milestone", {
@@ -275,8 +287,8 @@ export async function PATCH(
     const status = message.includes("Forbidden") ? 403
       : message.includes("not found") ? 404
       : 400;
-    return NextResponse.json({ error: message }, { status });
+    return respond({ error: message }, { status });
   }
 
-  return NextResponse.json({ success: true, result: data });
+  return respond({ success: true, result: data });
 }

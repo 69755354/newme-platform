@@ -8,9 +8,9 @@ test("stage endpoint enforces ownership, complete-contact gate, concurrency, and
   const source = await read("src/app/api/leads/[id]/stage/route.ts");
   const transition = await read("supabase/migrations/20260714000003_atomic_stage_transition.sql");
   for (const token of [
-    "getAuthProfile",
-    "isAdminOrBoss",
-    "lead.assigned_to !== profile.userId",
+    "getRequestAuthContext",
+    "applyRequestAuthCookies",
+    "lead.assigned_to !== context.user.id",
     '.from("follow_up_logs")',
     '.select("contact_time, contact_result")',
     "isCompleteContact",
@@ -38,10 +38,9 @@ test("contact creation and editing are server-authorized and return stored rows"
   const edit = await read("src/app/api/leads/[id]/contacts/[contactId]/route.ts");
   for (const [source, label] of [[create, "create"], [edit, "edit"]]) {
     for (const token of [
-      "getAuthProfile",
-      "isAdminOrBoss",
-      "createServerSupabase",
-      "lead.assigned_to !== profile.userId",
+      "getRequestAuthContext",
+      "applyRequestAuthCookies",
+      "lead.assigned_to !== context.user.id",
       ".select(",
       ".single()",
     ]) assert.ok(source.includes(token), `missing contact ${label} protection: ${token}`);

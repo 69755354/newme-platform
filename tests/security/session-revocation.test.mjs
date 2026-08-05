@@ -112,7 +112,8 @@ test("inactive users are denied at the direct protected lead-stage API boundary"
   assert.equal(isActiveProfile({ is_active: true }), true);
   assert.match(auth, /select\(["']role, is_active["']\)/);
   assert.match(auth, /isActiveProfile\(profile\)/);
-  assert.match(route, /if \(!profile\) return NextResponse\.json\(\{ error: "Unauthorized" \}, \{ status: 401 \}\)/);
+  assert.match(route, /getRequestAuthContext\(req\)/);
+  assert.match(route, /requestAuthErrorResponse\(error\)/);
 });
 
 test("the server proxy denies inactive sessions before protected APIs or pages", async () => {
@@ -149,24 +150,41 @@ test("real lead stage handler rejects an inactive old session before business ac
   let active = false;
   const supabase = createSupabaseMock(() => active);
   const nextServer = createNextServerMock();
-  const supabaseServer = { createServerSupabase: async () => supabase };
-  const leadAuth = loadTypeScriptModule("src/lib/lead-auth.ts", {
-    "@/lib/auth-profile.mjs": {
-      isActiveProfile: (profile) => profile?.is_active === true,
+  class MockRequestAuthError extends Error {
+    constructor(code) {
+      super(code);
+      this.code = code;
+      this.status = 401;
+    }
+  }
+  const requestAuth = {
+    applyRequestAuthCookies: (_context, response) => response,
+    async getRequestAuthContext() {
+      if (!active) throw new MockRequestAuthError("inactive_account");
+      return {
+        profile: { is_active: true, role: "sales" },
+        refreshedCookies: [],
+        role: "sales",
+        supabase,
+        user: { id: "user-1" },
+      };
     },
-    "@/lib/supabase-server": supabaseServer,
-  });
+    RequestAuthError: MockRequestAuthError,
+    requestAuthErrorResponse: (error) => nextServer.NextResponse.json(
+      { error: error.code },
+      { status: error.status },
+    ),
+  };
   const stage = loadTypeScriptModule("src/app/api/leads/[id]/stage/route.ts", {
     "@/lib/first-contact-gate.mjs": {
       evaluateFirstContactGate: () => ({ allowed: true, reasons: [] }),
       isCompleteContact: () => true,
     },
-    "@/lib/lead-auth": leadAuth,
     "@/lib/logger": {
       logger: { error: () => {}, info: () => {}, warn: () => {}, debug: () => {} },
       genReqId: () => "test-rid",
     },
-    "@/lib/supabase-server": supabaseServer,
+    "@/lib/request-auth-context": requestAuth,
     "@/shared/kanban/types": { PIPELINE_STAGES: [{ key: "new" }] },
     "next/server": nextServer,
   });
@@ -180,7 +198,7 @@ test("real lead stage handler rejects an inactive old session before business ac
 
   const inactiveResponse = await stage.PATCH(request(), params);
   assert.equal(inactiveResponse.status, 401);
-  assert.deepEqual(await inactiveResponse.json(), { error: "Unauthorized" });
+  assert.deepEqual(await inactiveResponse.json(), { error: "inactive_account" });
 
   active = true;
   const activeResponse = await stage.PATCH(request(), params);

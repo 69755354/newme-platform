@@ -379,7 +379,7 @@ test("apply accepts the exact audited non-contiguous staging history and applies
   );
   assert.throws(
     () => resolveStagingApplyPlan([loaded[1]]),
-    /exact known staging migration set/,
+    /exact known staging migration set, or a canonical applied prefix/,
   );
   const manifest = await expectedHistory();
   assert.throws(
@@ -391,7 +391,26 @@ test("apply accepts the exact audited non-contiguous staging history and applies
       platformStaffRoleMapping: "{}",
       verifySql: "SELECT 1;",
     }),
-    /exact known staging migration set/,
+    /exact known staging migration set, or a canonical applied prefix/,
+  );
+
+  const contiguousApplied = loaded.slice(0, -1);
+  const contiguousResolution = resolveStagingApplyPlan(contiguousApplied);
+  assert.deepEqual(
+    contiguousResolution.activePlan.map(({ version }) => version),
+    ["20260806010000"],
+  );
+  const incrementalSql = buildTransactionSql({
+    action: "apply",
+    plan: loaded,
+    activePlan: bindMigrationPlanEntries(loaded, contiguousResolution.activePlan),
+    expectedHistory: manifest,
+    platformStaffRoleMapping: "{}",
+    verifySql: "SELECT 1;",
+  });
+  assert.equal(
+    (incrementalSql.match(/INSERT INTO supabase_migrations\.schema_migrations/g) ?? []).length,
+    1,
   );
 });
 

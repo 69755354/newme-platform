@@ -2,12 +2,6 @@ import { createClient as _createSupabaseClient, type SupabaseClient } from "@sup
 import type { Database } from "@/types/database";
 import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
 import { parseAuthSessionCookie } from "@/lib/auth-cookie.mjs";
-import {
-  ORGANIZATION_CONTEXT_COOKIE,
-  ORGANIZATION_CONTEXT_HEADER,
-  parseOrganizationId,
-  readCookieValue,
-} from "@/lib/organization-context";
 
 interface AuthSession {
   access_token: string;
@@ -17,7 +11,6 @@ interface AuthSession {
 
 let _client: SupabaseClient<Database> | null = null;
 let _sessionToken: string | null = null;
-let _organizationId: string | null = null;
 
 function getAuthSession(): AuthSession | null {
   if (typeof document === "undefined") return null;
@@ -28,19 +21,13 @@ function getAuthSession(): AuthSession | null {
 export function createClient(): SupabaseClient<Database> {
   const session = getAuthSession();
   const nextToken = session?.access_token ?? null;
-  const nextOrganizationId = typeof document === "undefined"
-    ? null
-    : parseOrganizationId(
-      readCookieValue(document.cookie, ORGANIZATION_CONTEXT_COOKIE),
-    );
-  const contextChanged =
-    nextToken !== _sessionToken || nextOrganizationId !== _organizationId;
+  const tokenChanged = nextToken !== _sessionToken;
 
-  if (_client && !contextChanged) {
+  if (_client && !tokenChanged) {
     return _client;
   }
 
-  if (!_client || contextChanged) {
+  if (!_client || tokenChanged) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url || !key) {
@@ -63,21 +50,17 @@ export function createClient(): SupabaseClient<Database> {
       throw new Error("supabase client: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY required");
     }
 
-    const headers: Record<string, string> = nextToken
-      ? { Authorization: `Bearer ${nextToken}` }
-      : {};
-    if (nextOrganizationId) headers[ORGANIZATION_CONTEXT_HEADER] = nextOrganizationId;
-
     _client = _createSupabaseClient<Database>(url, key, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
         detectSessionInUrl: false,
       },
-      global: Object.keys(headers).length > 0 ? { headers } : undefined,
+      global: nextToken
+        ? { headers: { Authorization: `Bearer ${nextToken}` } }
+        : undefined,
     });
     _sessionToken = nextToken;
-    _organizationId = nextOrganizationId;
   }
 
   return _client;

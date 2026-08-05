@@ -2,31 +2,41 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const workflow = await readFile(
-  new URL("../../.github/workflows/ci.yml", import.meta.url),
-  "utf8",
-);
+const workflow = await readFile(new URL("../../.github/workflows/crm-ci.yml", import.meta.url), "utf8");
 
-test("repository CI limits automatic runs to staging self-hosted pull requests", () => {
-  assert.match(
-    workflow,
-    /^on:\s*\n\s+pull_request:\s*\n\s+branches:\s*\n\s+- agent\/saas-staging-isolation\s*\n\s+workflow_dispatch:/m,
-  );
-  assert.doesNotMatch(workflow, /^\s+(?:push|workflow_run):/m);
-  assert.match(workflow, /^\s+runs-on: \[self-hosted, staging-ci\]$/m);
-  assert.doesNotMatch(workflow, /Notify Telegram|TELEGRAM_BOT_TOKEN/);
+const shouldNotify = ({ eventName, upstreamEvent, branch, conclusion }) =>
+  eventName === "workflow_run" &&
+  upstreamEvent === "push" &&
+  branch === "main" &&
+  ["failure", "cancelled"].includes(conclusion);
+
+test("crm-ci scopes workflow_run to main push CI and preserves manual diagnostics", () => {
+  assert.match(workflow, /workflow_run/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /github\.event\.workflow_run\.event == 'push'/);
+  assert.match(workflow, /github\.event\.workflow_run\.head_branch == 'main'/);
+  assert.doesNotMatch(workflow, /Require upstream ci success/);
 });
 
-test("manual CI preserves quick and full validation levels", () => {
-  assert.match(workflow, /validation_level:/);
-  assert.match(workflow, /^\s+- quick$/m);
-  assert.match(workflow, /^\s+- full$/m);
-  assert.match(workflow, /inputs\.validation_level == 'full'/);
+test("PR and non-main cancelled runs do not enter the main-push notification path", () => {
+  assert.equal(shouldNotify({ eventName: "workflow_run", upstreamEvent: "pull_request", branch: "main", conclusion: "failure" }), false);
+  assert.equal(shouldNotify({ eventName: "workflow_run", upstreamEvent: "push", branch: "feature/x", conclusion: "cancelled" }), false);
+  assert.equal(shouldNotify({ eventName: "workflow_dispatch", upstreamEvent: undefined, branch: undefined, conclusion: undefined }), false);
 });
 
-test("the removed automatic crm-ci workflow does not return", async () => {
-  await assert.rejects(
-    readFile(new URL("../../.github/workflows/crm-ci.yml", import.meta.url)),
-    { code: "ENOENT" },
-  );
+test("main success stays quiet; main failure or cancellation has one non-fatal notification path", () => {
+  assert.equal(shouldNotify({ eventName: "workflow_run", upstreamEvent: "push", branch: "main", conclusion: "success" }), false);
+  assert.equal((workflow.match(/- name: Notify Telegram/g) || []).length, 1);
+  assert.match(workflow, /conclusion == 'failure'/);
+  assert.match(workflow, /conclusion == 'cancelled'/);
+  assert.match(workflow, /continue-on-error: true/);
+  assert.match(workflow, /curl --fail-with-body --silent --show-error/);
+  const notifyStep = workflow.slice(workflow.indexOf("      - name: Notify Telegram"));
+  const notifyRun = notifyStep.slice(notifyStep.indexOf("        run: |"));
+  assert.match(notifyStep, /UPSTREAM_MESSAGE:\s*\$\{\{ github\.event\.workflow_run\.head_commit\.message \}\}/);
+  assert.doesNotMatch(notifyRun, /\$\{\{ github\.event\.workflow_run\.head_commit\.message \}\}/);
+  assert.doesNotMatch(workflow, /--retry/);
+  assert.match(workflow, /::error::Telegram notification delivery failed/);
+  assert.equal(shouldNotify({ eventName: "workflow_run", upstreamEvent: "push", branch: "main", conclusion: "failure" }), true);
+  assert.equal(shouldNotify({ eventName: "workflow_run", upstreamEvent: "push", branch: "main", conclusion: "cancelled" }), true);
 });

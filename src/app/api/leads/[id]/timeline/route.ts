@@ -1,178 +1,166 @@
-import { NextRequest, NextResponse } from "next/server";
-import {
-  LeadOrganizationAccessError,
-  resolveLeadOrganizationAccess,
-} from "@/lib/lead-organization-access";
-import { RequestAuthError } from "@/lib/request-auth-context";
-
-interface TimelineEvent {
-  id: string;
-  event_type: string;
-  description: string | null;
-  created_at: string | null;
-  metadata: Record<string, unknown>;
-}
+// RBAC: user (authenticated)
+import { NextRequest, NextResponse } from "next/server"
+import { createServerSupabase } from "@/lib/supabase-server"
 
 export async function GET(
-  request: NextRequest,
-  context: { params: Promise<{ id: string }> },
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
-  const leadId = (await context.params).id;
-  let access;
   try {
-    access = await resolveLeadOrganizationAccess(
-      request,
-      "lead:read",
-      "lead_timeline",
-      leadId,
-    );
-  } catch (error) {
-    if (error instanceof LeadOrganizationAccessError) {
-      return NextResponse.json({ error: error.code }, { status: error.status });
+    const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = req.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-    if (error instanceof RequestAuthError) {
-      return NextResponse.json({ error: error.code }, { status: error.status });
+
+    const leadId = (await context.params).id
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single()
+
+    if (profileError || !profile?.role) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
+
+    // Authorization: management roles (admin/boss/operator/manager) may view any
+    // lead's timeline. Everyone else (e.g. sales) may only view leads assigned
+    // to them. Note: the leads owner column is `assigned_to`, NOT `owner_id`.
+    const MANAGEMENT_ROLES = ["admin", "boss", "operator", "manager"]
+    if (!MANAGEMENT_ROLES.includes(profile.role)) {
+      const { data: ownLead } = await supabase
+        .from("leads")
+        .select("id")
+        .eq("id", leadId)
+        .eq("assigned_to", user.id)
+        .maybeSingle()
+
+      if (!ownLead) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+      }
+    }
+
+    const { searchParams } = new URL(req.url)
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10))
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)))
+
+    const [milestonesRes, followUpsRes, tasksRes, documentsRes, chatRes, activitiesRes, businessEventsRes] = await Promise.all([
+      supabase.from("lead_milestones").select("*").eq("lead_id", leadId).not("completed_at", "is", null),
+      supabase.from("follow_up_logs").select("*").eq("lead_id", leadId),
+      supabase.from("tasks").select("*").eq("lead_id", leadId),
+      supabase.from("lead_documents").select("*").eq("lead_id", leadId),
+      supabase
+        .from("chat_messages")
+        .select("id, content, direction, created_at")
+        .eq("lead_id", leadId)
+        .order("created_at", { ascending: true })
+        .limit(200),
+      supabase.from("activities").select("*").eq("lead_id", leadId),
+      supabase.from("business_events").select("*").eq("lead_id", leadId),
+    ])
+
+    const events: Array<{
+      id: string
+      event_type: string
+      description: string | null
+      created_at: string | null
+      metadata: Record<string, unknown>
+    }> = []
+
+    for (const m of milestonesRes.data || []) {
+      events.push({
+        id: `milestone-${m.id}`,
+        event_type: "milestone",
+        description: m.milestone_key ?? null,
+        created_at: m.created_at,
+        metadata: m,
+      })
+    }
+
+    for (const f of followUpsRes.data || []) {
+      events.push({
+        id: `follow_up-${f.id}`,
+        event_type: "follow_up",
+        description: f.summary ?? null,
+        created_at: f.created_at,
+        metadata: f,
+      })
+    }
+
+    for (const t of tasksRes.data || []) {
+      events.push({
+        id: `task-${t.id}`,
+        event_type: "task",
+        description: t.title ?? null,
+        created_at: t.created_at,
+        metadata: t,
+      })
+    }
+
+    for (const d of documentsRes.data || []) {
+      events.push({
+        id: `document-${d.id}`,
+        event_type: "document",
+        description: d.file_name ?? null,
+        created_at: d.created_at,
+        metadata: d,
+      })
+    }
+
+    for (const c of chatRes.data || []) {
+      events.push({
+        id: `chat-${c.id}`,
+        event_type: "chat",
+        description: c.content ?? null,
+        created_at: c.created_at,
+        metadata: { direction: c.direction ?? "inbound" },
+      })
+    }
+
+    for (const a of activitiesRes.data || []) {
+      events.push({
+        id: `activity-${a.id}`,
+        event_type: "activity",
+        description: a.content ?? null,
+        created_at: a.created_at,
+        metadata: a,
+      })
+    }
+
+    for (const be of businessEventsRes.data || []) {
+      events.push({
+        id: `business_event-${be.id}`,
+        event_type: "business_event",
+        description: be.description ?? null,
+        created_at: be.created_at,
+        metadata: be,
+      })
+    }
+
+    events.sort(
+      (a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
+    )
+
+    const total = events.length
+    const offset = (page - 1) * limit
+    const paged = events.slice(offset, offset + limit)
+
+    return NextResponse.json({
+      events: paged,
+      total,
+      page,
+      limit,
+    })
+  } catch (err) {
+    console.error("[timeline] error:", err)
     return NextResponse.json(
-      { error: "lead_organization_access_unavailable" },
-      { status: 503 },
-    );
+      { error: "Internal Server Error" },
+      { status: 500 }
+    )
   }
-
-  const supabase = access.client;
-  let leadQuery = supabase
-    .from("leads")
-    .select("id")
-    .eq("id", leadId)
-    .eq("organization_id", access.organizationId);
-  if (
-    !access.supportSessionId
-    && !["admin", "boss", "operator", "manager"].includes(access.context.role)
-  ) {
-    leadQuery = leadQuery.eq("assigned_to", access.context.user.id);
-  }
-  const { data: visibleLead, error: leadError } = await leadQuery.maybeSingle();
-  if (leadError) {
-    return NextResponse.json({ error: "lead_lookup_failed" }, { status: 503 });
-  }
-  if (!visibleLead) {
-    return NextResponse.json({ error: "lead_not_found" }, { status: 404 });
-  }
-
-  const { searchParams } = new URL(request.url);
-  const page = Math.max(1, Number.parseInt(searchParams.get("page") ?? "1", 10));
-  const limit = Math.min(
-    100,
-    Math.max(1, Number.parseInt(searchParams.get("limit") ?? "20", 10)),
-  );
-
-  const results = await Promise.all([
-    supabase.from("lead_milestones").select("*").eq("lead_id", leadId).not("completed_at", "is", null),
-    supabase.from("follow_up_logs").select("*").eq("lead_id", leadId),
-    supabase.from("tasks").select("*").eq("lead_id", leadId),
-    supabase.from("lead_documents").select("*").eq("lead_id", leadId),
-    supabase
-      .from("chat_messages")
-      .select("id, content, direction, created_at")
-      .eq("lead_id", leadId)
-      .order("created_at", { ascending: true })
-      .limit(200),
-    supabase.from("activities").select("*").eq("lead_id", leadId),
-    supabase.from("business_events").select("*").eq("lead_id", leadId),
-  ]);
-  const failedResult = results.find((result) => result.error);
-  if (failedResult?.error) {
-    return NextResponse.json(
-      { error: "lead_timeline_fetch_failed" },
-      { status: 503 },
-    );
-  }
-
-  const milestones = results[0].data ?? [];
-  const followUps = results[1].data ?? [];
-  const tasks = results[2].data ?? [];
-  const documents = results[3].data ?? [];
-  const chats = results[4].data ?? [];
-  const activities = results[5].data ?? [];
-  const businessEvents = results[6].data ?? [];
-  const events: TimelineEvent[] = [];
-
-  for (const row of milestones) {
-    events.push({
-      id: `milestone-${row.id}`,
-      event_type: "milestone",
-      description: row.milestone_key ?? null,
-      created_at: row.created_at,
-      metadata: row,
-    });
-  }
-  for (const row of followUps) {
-    events.push({
-      id: `follow_up-${row.id}`,
-      event_type: "follow_up",
-      description: row.summary ?? null,
-      created_at: row.created_at,
-      metadata: row,
-    });
-  }
-  for (const row of tasks) {
-    events.push({
-      id: `task-${row.id}`,
-      event_type: "task",
-      description: row.title ?? null,
-      created_at: row.created_at,
-      metadata: row,
-    });
-  }
-  for (const row of documents) {
-    events.push({
-      id: `document-${row.id}`,
-      event_type: "document",
-      description: row.file_name ?? null,
-      created_at: row.created_at,
-      metadata: row,
-    });
-  }
-  for (const row of chats) {
-    events.push({
-      id: `chat-${row.id}`,
-      event_type: "chat",
-      description: row.content ?? null,
-      created_at: row.created_at,
-      metadata: { direction: row.direction ?? "inbound" },
-    });
-  }
-  for (const row of activities) {
-    events.push({
-      id: `activity-${row.id}`,
-      event_type: "activity",
-      description: row.content ?? null,
-      created_at: row.created_at,
-      metadata: row,
-    });
-  }
-  for (const row of businessEvents) {
-    events.push({
-      id: `business_event-${row.id}`,
-      event_type: "business_event",
-      description: row.description ?? null,
-      created_at: row.created_at,
-      metadata: row,
-    });
-  }
-
-  events.sort(
-    (left, right) =>
-      new Date(right.created_at ?? 0).getTime()
-      - new Date(left.created_at ?? 0).getTime(),
-  );
-  const offset = (page - 1) * limit;
-
-  return NextResponse.json({
-    organizationId: access.organizationId,
-    events: events.slice(offset, offset + limit),
-    total: events.length,
-    page,
-    limit,
-  });
 }

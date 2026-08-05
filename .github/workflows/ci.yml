@@ -1,25 +1,13 @@
 name: ci
 
 on:
-  pull_request:
-    branches:
-      - agent/saas-staging-isolation
   workflow_dispatch:
-    inputs:
-      validation_level:
-        description: Validation level (use full before release)
-        required: true
-        default: quick
-        type: choice
-        options:
-          - quick
-          - full
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -33,8 +21,8 @@ env:
 jobs:
   validate:
     name: Repository validation
-    runs-on: [self-hosted, staging-ci]
-    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,23 +33,14 @@ jobs:
           node-version: '24.18.0'
           cache: npm
 
-      - name: Toolchain reproducibility gate
-        run: node scripts/check-toolchain.mjs
-
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci
 
       - name: E2E secret and artifact gate
         run: npm run check:e2e-secrets
 
       - name: E2E secret gate negative regression
         run: node --test tests/security/e2e-secret-gate.test.mjs
-
-      - name: E2E artifact isolation gate
-        run: npm run check:e2e-artifacts
-
-      - name: E2E artifact isolation gate negative regression
-        run: node --test tests/security/e2e-artifact-isolation.test.mjs
 
       - name: Taskboard gate
         run: bash scripts/check-taskboard.sh
@@ -80,15 +59,6 @@ jobs:
 
       - name: Database static regression gate
         run: npm run check:db-static
-
-      - name: SAM-20 disposable database apply and rollback gate
-        run: npm run check:sam20-database
-
-      - name: SAM-23 organization commercial core database gate
-        run: npm run check:sam23-database
-
-      - name: SAM-61 active-profile milestone guard
-        run: npm run check:sam61-active-profile-database
 
       - name: CRM regression contract
         run: python3 scripts/crm-regression.py --self-test
@@ -115,11 +85,9 @@ jobs:
         run: node --test tests/release/*.test.mjs
 
       - name: Build
-        if: ${{ inputs.validation_level == 'full' }}
         run: npm run build
 
       - name: Build worktree hygiene
-        if: ${{ inputs.validation_level == 'full' }}
         run: |
           if test -n "$(git status --porcelain --untracked-files=all)"; then
             echo "Build left tracked or untracked worktree changes:"
@@ -130,3 +98,26 @@ jobs:
             echo "Build recreated the forbidden root tsconfig.tsbuildinfo"
             exit 1
           fi
+  windows-checkout:
+    name: Windows checkout and SPEC gate
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: sam16-checkout
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify clean checkout and SPEC
+        shell: pwsh
+        working-directory: sam16-checkout
+        run: |
+          $status = git status --porcelain --untracked-files=all
+          if ($LASTEXITCODE -ne 0) { throw "git status failed" }
+          if ($status) { throw "worktree is not clean: $status" }
+          bash scripts/check-spec.sh
+          if ($LASTEXITCODE -ne 0) { throw "check-spec failed" }

@@ -3,8 +3,6 @@ import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
 import { getCached, setCache } from "@/lib/api-cache"
 
-const PIPELINE_ROLES = new Set(["admin", "boss", "operator", "sales"])
-
 export async function GET(request: Request) {
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
   const cookieHeader = request.headers.get("cookie") ?? "";
@@ -29,12 +27,6 @@ export async function GET(request: Request) {
   }
 
   const role = profile.role
-  if (!role) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  }
-  if (!PIPELINE_ROLES.has(role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  }
   const userId = user.id
   const isSales = role === "sales"
 

@@ -6,3 +6,5 @@
 
 DROP POLICY IF EXISTS chat_messages_admin_all ON chat_messages;
 DROP POLICY IF EXISTS quotes_admin_all ON quotes;
+
+COMMIT;

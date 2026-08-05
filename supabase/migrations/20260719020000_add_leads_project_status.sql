@@ -1,4 +1,5 @@
 -- Keep fresh environments aligned with the existing production leads schema.
+BEGIN;
 
 ALTER TABLE public.leads
   ADD COLUMN IF NOT EXISTS project_status TEXT;
@@ -43,3 +44,5 @@ CREATE TRIGGER enforce_active_lead_insert_assignee
 REVOKE ALL ON FUNCTION public.enforce_active_lead_transfer_candidate() FROM PUBLIC;
 
 NOTIFY pgrst, 'reload schema';
+
+COMMIT;

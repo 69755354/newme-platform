@@ -14,6 +14,6 @@ test('quality route validates allowed quality values and poor reason', () => {
   assert.match(text, /poor_reason is required/);
   assert.match(text, /getRequestAuthContext\(req\)/);
   assert.match(text, /applyRequestAuthCookies\(context, NextResponse\.json/);
-  assert.doesNotMatch(text, /createServerClient/);
   assert.doesNotMatch(text, /createServerSupabase/);
+  assert.doesNotMatch(text, /createServerClient/);
 });

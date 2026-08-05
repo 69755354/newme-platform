@@ -110,16 +110,12 @@ export function useAuthRedirect() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Redirect only to routes each role is already authorized to use.
+  // Redirect sales users from /dashboard to /workbench
   useEffect(() => {
-    if (role === "sales" && pathname === "/dashboard") {
+    if (!role) return;
+    const isMgmt = role === "admin" || role === "boss" || role === "operator";
+    if (!isMgmt && pathname === "/dashboard") {
       router.replace("/workbench");
-    }
-    if (role === "finance" && pathname === "/dashboard") {
-      router.replace("/payments");
-    }
-    if (role === "designer" && pathname === "/dashboard") {
-      router.replace("/access-not-configured");
     }
   }, [role, pathname, router]);
 

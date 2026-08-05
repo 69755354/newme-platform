@@ -9,7 +9,7 @@ test("lead imports generate stable row fingerprints and ignore conflicts", async
   for (const token of [
     'createHash("sha256")',
     "import_fingerprint: importFingerprint(row)",
-    'onConflict: "organization_id,import_fingerprint"',
+    'onConflict: "import_fingerprint"',
     "ignoreDuplicates: true",
     "skipped_duplicates: skippedDuplicates",
   ]) assert.ok(source.includes(token), `missing idempotency evidence: ${token}`);
@@ -27,12 +27,11 @@ test("database enforces import fingerprint uniqueness without rewriting legacy r
   assert.equal(migration.includes("UPDATE public.leads"), false);
 });
 
-test("production conflict target is unique inside each organization", async () => {
+test("production conflict target is a full unique index", async () => {
   const repair = await read(
-    "supabase/migrations/20260730110000_sam22_two_organization_isolation.sql",
+    "supabase/migrations/20260716000000_fix_import_fingerprint_conflict.sql",
   );
   assert.ok(repair.includes("DROP INDEX IF EXISTS public.leads_import_fingerprint_unique"));
-  assert.ok(repair.includes("CREATE UNIQUE INDEX leads_organization_import_fingerprint_unique"));
-  assert.ok(repair.includes("organization_id, import_fingerprint"));
+  assert.ok(repair.includes("CREATE UNIQUE INDEX leads_import_fingerprint_unique"));
   assert.equal(repair.includes("WHERE import_fingerprint IS NOT NULL"), false);
 });

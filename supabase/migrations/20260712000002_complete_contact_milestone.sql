@@ -1,5 +1,6 @@
 -- Complete contacts create the First Contact milestone, not every follow-up.
 -- The same rule is used by the database stage gate: contact_time + non-blank result.
+BEGIN;
 
 CREATE OR REPLACE FUNCTION public.trg_auto_first_contact()
 RETURNS trigger
@@ -51,3 +52,4 @@ CREATE TRIGGER trg_after_followup_insert
   EXECUTE FUNCTION public.trg_auto_first_contact();
 
 NOTIFY pgrst, 'reload schema';
+COMMIT;

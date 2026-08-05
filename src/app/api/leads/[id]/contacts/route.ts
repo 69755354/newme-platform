@@ -39,8 +39,7 @@ export async function POST(
       return NextResponse.json({ error: "contact_result is required" }, { status: 400 });
     }
 
-    const organizationId = req.headers.get("x-newme-organization-id") ?? undefined;
-    const supabase = await createServerSupabase(bearerToken, cookieHeader, organizationId);
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const { data: lead, error: leadError } = await supabase
       .from("leads")
       .select("id, assigned_to")

@@ -55,27 +55,8 @@ TODO → IN_PROGRESS → REVIEW → DONE
 || task_M1_sam9_smoke | DONE | Hermes | 2026-07-19 |
 || task_M1_sam43_api_uat | DONE | Hermes | 2026-07-19 |
 | task_L0_auth_me_proxy_fix | DONE | Hermes (OC) | 2026-07-20 |
+| PROD-CONTACT-QUALITY-AUTH | REVIEW | Codex | 2026-08-05 |
 | task_SAM51_proxy_service_role_hardening | DONE | Hermes (OC) | 2026-07-20 |
-| SAAS-STAGING-ISOLATION | IN_PROGRESS | Codex | 2026-07-26 |
-| SAM-61 | IN_PROGRESS | Codex | 2026-07-26 |
-| SAM-13 | REVIEW | Codex | 2026-07-28 |
-| SAM-15 | REVIEW | Codex | 2026-07-28 |
-| SAM-66 | IN_PROGRESS | Codex | 2026-07-28 |
-| SAM-20 | REVIEW | Codex | 2026-07-30 |
-| SAM-21 | REVIEW | Codex | 2026-07-30 |
-| SAM-22 | REVIEW | Codex | 2026-07-30 |
-| SAM-23 | IN_PROGRESS | Codex | 2026-07-30 |
-| SAM-70 | IN_PROGRESS | Codex | 2026-07-30 |
-
-> `SAM-15` (2026-07-28): staging-local evidence: 23/23 focused execution tests plus taskboard, typecheck, security, lint-ratchet, and direct `npx next build` passed. Public liveness now returns only `{ status: "ok" }`; readiness authentication and bounded timeout are executed. CSP/HSTS, OAuth state replay rejection, and dynamic split-session cookies are covered. Status remains `REVIEW` pending live staging header and OAuth UAT; no production claim.
-
-> `SAM-20` (2026-07-30): additive organization/membership/support-audit model, Lead/Timeline organization boundary, shared API/UI context, and fail-closed write triggers are implemented. PostgreSQL 17 synthetic org A/B read/write denial and missing-context write denial passed locally; staging migration/deploy/UAT remain explicitly unexecuted pending the authorized staging window.
->
-> `SAM-22` (2026-07-30): implemented and locally verified the second synthetic organization isolation matrix across Lead reads/writes, async ingestion, Dashboard, organization-member administration, versioned migration/rollback, negative CI, and a marker-clean UAT runner. Disposable PostgreSQL apply/RLS/rollback passed; staging UAT remains intentionally unexecuted pending a separate authorization.
->
-> `SAM-21` (2026-07-30): implemented and locally verified a disposable first-organization migration rehearsal over the exact SAM-20/22 assets. Before/after aggregate counts, quotation value, Lead owners, history relationships, and document ownership remained identical; environment and fixture rollback guards, full rollback, old Lead read/write restoration, harness cleanup, and a PII-free read-only reconciliation contract passed. No staging or production database was accessed.
->
-> `SAM-23` (2026-07-30): delivered a repository-only, machine-verifiable customer-readiness and delivery-boundary contract. Focused contract tests passed 3/3; taskboard 18/18, security, typecheck, and lint baseline passed. The current Windows worktree full suite passed 431/460 with 26 failures outside the three SAM-23 changed paths and 3 skips; the SAM-23 tests were all green. The exact-toolchain gate rejected local Node 24.14.1 against pinned 24.18.0. The customer-onboarding baseline remains NO-GO: common-module organization keys, deterministic billable-seat implementation, the complete negative isolation matrix, and staging UAT are not complete. This unit does not change runtime code, schema, databases, environments, or Linear status.
 
 > M1 发布链（Linear 为真源）：**RELEASED 2026-07-20**。发布 SHA `49bbb26` → BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6~12 全链 Done：SAM-28 业务签收（森哥 2026-07-20）+ 技术签收（机器全量验收），SAM-12 发布记录出具。SAM-26 视觉/移动端留人工不拦发布；SAM-45/46 进 M2 backlog。
 >

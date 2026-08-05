@@ -1,4 +1,5 @@
 -- Fix CC-hallucinated columns: add missing columns, then add FKs
+BEGIN;
 
 -- 1. leads.poor_reason (Tanya's high-priority requirement)
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS poor_reason TEXT;
@@ -11,3 +12,4 @@ ALTER TABLE follow_up_logs DROP CONSTRAINT IF EXISTS fk_follow_up_logs_created_b
 ALTER TABLE follow_up_logs ADD CONSTRAINT fk_follow_up_logs_created_by FOREIGN KEY (created_by) REFERENCES profiles(id);
 
 NOTIFY pgrst, 'reload schema';
+COMMIT;

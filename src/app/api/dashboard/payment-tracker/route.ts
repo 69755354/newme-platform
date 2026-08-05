@@ -44,9 +44,9 @@ export async function GET(request: NextRequest) {
       .select(`
         id, contract_no, contract_amount, contract_date, status, sales_id,
         party_a_name, lead_id,
-        leads!contracts_lead_id_fkey!inner(customer_name, assigned_to),
-        installment_plans!installment_plans_contract_id_fkey(id, seq, amount, due_date, status, paid_amount),
-        payments!payments_contract_id_fkey(id, amount, confirmed, payment_date)
+        leads!inner(customer_name, assigned_to),
+        installment_plans(id, seq, amount, due_date, status, paid_amount),
+        payments(id, amount, confirmed, payment_date)
       `)
       .order("created_at", { ascending: false });
 

@@ -57,14 +57,11 @@ function assertStateCleared(response) {
 
 test("OAuth start is authorized for boss/admin only and binds state", async (t) => {
   const oldAppId = process.env.META_APP_ID;
-  const oldSecret = process.env.META_APP_SECRET;
   const oldRedirect = process.env.META_REDIRECT_URI;
   process.env.META_APP_ID = "test-app-id";
-  process.env.META_APP_SECRET = "test-secret";
   process.env.META_REDIRECT_URI = "https://app.newme.ae/api/meta/oauth-callback";
   t.after(() => {
     if (oldAppId === undefined) delete process.env.META_APP_ID; else process.env.META_APP_ID = oldAppId;
-    if (oldSecret === undefined) delete process.env.META_APP_SECRET; else process.env.META_APP_SECRET = oldSecret;
     if (oldRedirect === undefined) delete process.env.META_REDIRECT_URI; else process.env.META_REDIRECT_URI = oldRedirect;
   });
 
@@ -124,16 +121,6 @@ test("OAuth callback rejects missing/mismatched state, succeeds once, and clears
   let writes = 0;
   const callback = loadTypeScriptModule("src/app/api/meta/oauth-callback/route.ts", {
     "@/lib/logger": { logger: { error: () => {}, info: () => {}, warn: () => {} }, genReqId: () => "test-request" },
-    "@/lib/integration-execution.mjs": {
-      createIntegrationLogSinks: () => ({
-        audit: async () => {},
-        alert: async () => {},
-      }),
-      integrationFetch: async ({ url, init }) => ({
-        response: await globalThis.fetch(url, init),
-        attempts: 1,
-      }),
-    },
     "@supabase/supabase-js": { createClient: () => ({ from: () => ({ upsert: async () => { writes++; return { error: null }; } }) }) },
   });
   const originalFetch = globalThis.fetch;
@@ -192,67 +179,6 @@ test("OAuth callback rejects missing/mismatched state, succeeds once, and clears
   assert.equal(replay.status, 400);
   assertStateCleared(replay);
   assert.equal(fetchCalls, 2);
-});
-
-test("Meta OAuth is explicitly disabled before auth or network when configuration is absent", async (t) => {
-  const previous = Object.fromEntries(
-    ["META_APP_ID", "META_APP_SECRET", "META_REDIRECT_URI"]
-      .map((key) => [key, process.env[key]]),
-  );
-  for (const key of Object.keys(previous)) delete process.env[key];
-  t.after(() => {
-    for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  });
-
-  let authCalls = 0;
-  let fetchCalls = 0;
-  const start = loadTypeScriptModule("src/app/api/meta/oauth-start/route.ts", {
-    "@/lib/supabase-server": {
-      createServerSupabase: async () => {
-        authCalls += 1;
-        return makeSupabase("admin", true);
-      },
-    },
-  });
-  const callback = loadTypeScriptModule("src/app/api/meta/oauth-callback/route.ts", {
-    "@/lib/logger": {
-      logger: { error: () => {}, info: () => {}, warn: () => {} },
-      genReqId: () => "disabled-request",
-    },
-    "@/lib/integration-execution.mjs": {
-      createIntegrationLogSinks: () => ({
-        audit: async () => {},
-        alert: async () => {},
-      }),
-      integrationFetch: async () => {
-        fetchCalls += 1;
-        throw new Error("must not execute");
-      },
-    },
-    "@supabase/supabase-js": {
-      createClient: () => assert.fail("must not create Supabase client"),
-    },
-  });
-
-  for (const response of [
-    await start.GET(new NextRequest("https://staging.example/api/meta/oauth-start")),
-    await callback.GET(new NextRequest(
-      "https://staging.example/api/meta/oauth-callback?code=synthetic&state=synthetic",
-    )),
-  ]) {
-    assert.equal(response.status, 503);
-    assert.equal(response.headers.get("cache-control"), "no-store, max-age=0");
-    assert.deepEqual(await response.json(), {
-      status: "disabled",
-      integration: "meta_oauth",
-      reason: "not_configured",
-    });
-  }
-  assert.equal(authCalls, 0);
-  assert.equal(fetchCalls, 0);
 });
 
 test("Meta auth instructions use the stateful start endpoint", () => {

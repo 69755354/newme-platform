@@ -1,0 +1,48 @@
+name: crm-ci
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  hermes-contract:
+    name: Hermes CI webhook contract
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record upstream CI result
+        run: |
+          echo "crm-ci triggered by ${{ github.event_name }}"
+          echo "Upstream workflow: ${{ github.event.workflow_run.name }}"
+          echo "Conclusion: ${{ github.event.workflow_run.conclusion }}"
+
+      - name: Notify Telegram
+        if: >-
+          ${{ github.event_name == 'workflow_run' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          (github.event.workflow_run.conclusion == 'failure' ||
+          github.event.workflow_run.conclusion == 'cancelled') }}
+        continue-on-error: true
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          UPSTREAM_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
+        run: |
+          set -euo pipefail
+          MSG="ci ${UPSTREAM_CONCLUSION} — ${UPSTREAM_MESSAGE}"
+          if ! curl --fail-with-body --silent --show-error \
+            -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id=8459729760 \
+            --data-urlencode "text=${MSG}" \
+            -d disable_notification=true \
+            -o /dev/null -w "TG: %{http_code}\n"; then
+            echo "::error::Telegram notification delivery failed for main push CI"
+            exit 1
+          fi

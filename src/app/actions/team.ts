@@ -1,14 +1,8 @@
 'use server'
 
+import { createServerSupabase } from '@/lib/supabase-server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { finalizeTriggerCreatedUserProfile } from '@/lib/user-profile-provisioning'
 import { resolveActiveLeadReassignmentTarget } from '@/lib/lead-reassignment.mjs'
-import { cookies } from 'next/headers'
-import {
-  activeOrganizationMemberIds,
-  requireOrganizationMembership,
-  resolveOrganizationMemberAdminAccess,
-} from '@/lib/organization-member-admin'
 
 const VALID_ROLES = ['admin', 'boss', 'sales', 'designer', 'operator', 'finance']
 
@@ -20,18 +14,24 @@ interface AddTeamMemberInput {
   phone?: string
 }
 
-async function actionRequest(): Promise<Request> {
-  const cookieStore = await cookies()
-  return new Request('http://newme.internal/server-action', {
-    headers: { cookie: cookieStore.toString() },
-  })
-}
-
 /**
  * Add a new team member.
  */
 export async function addTeamMember(data: AddTeamMemberInput) {
-  const access = await resolveOrganizationMemberAdminAccess(await actionRequest())
+  const supabase = await createServerSupabase()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+
+  // Role check
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile?.role || !['admin', 'boss'].includes(profile.role)) {
+    throw new Error('Forbidden')
+  }
 
   // Validation
   if (!data.email || !data.password || !data.full_name || !data.role) {
@@ -55,30 +55,42 @@ export async function addTeamMember(data: AddTeamMemberInput) {
     throw new Error('Failed to create user')
   }
 
-  const profileResult = await finalizeTriggerCreatedUserProfile(authData.user.id, {
-    email: data.email,
-    fullName: data.full_name,
-    role: data.role,
-    phone: data.phone,
-  })
+  // Insert into public.profiles
+  const { error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .insert({
+      id: authData.user.id,
+      email: data.email,
+      full_name: data.full_name,
+      role: data.role,
+      phone: data.phone || null,
+      is_active: true,
+      force_password_change: true,
+    })
 
-  if (!profileResult.ok) {
+  if (profileError) {
     await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
     throw new Error('Failed to create profile')
   }
 
-  const { data: updatedMembership, error: membershipError } = await supabaseAdmin
-    .from('memberships')
-    .insert({
-      organization_id: access.organizationId,
-      user_id: authData.user.id,
-      status: 'active',
-      invited_by_membership_id: access.callerMembershipId,
-      accepted_at: new Date().toISOString(),
-    })
-  if (membershipError) {
-    await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
-    throw new Error(`Failed to create organization membership: ${membershipError.message}`)
+  // Notify admins about new team member
+  try {
+    const { getAdminUserIds, createNotificationsBulk } = await import('@/lib/notifications')
+    const adminIds = await getAdminUserIds()
+    if (adminIds.length > 0) {
+      await createNotificationsBulk(
+        adminIds.map((id) => ({
+          userId: id,
+          type: 'team_member_added',
+          title: `New team member: ${data.full_name}`,
+          body: `${data.full_name} added as ${data.role}`,
+          relatedId: authData.user.id,
+          relatedType: 'user',
+        }))
+      )
+    }
+  } catch {
+    // non-critical: ignore notification errors
   }
 
   return {
@@ -94,34 +106,35 @@ export async function addTeamMember(data: AddTeamMemberInput) {
  * Remove (soft-delete) a team member.
  */
 export async function removeTeamMember(userId: string) {
-  const access = await resolveOrganizationMemberAdminAccess(await actionRequest())
+  const supabase = await createServerSupabase()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+
+  // Role check
+  const { data: caller } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (!caller?.role || !['admin', 'boss'].includes(caller.role)) {
+    throw new Error('Forbidden')
+  }
 
   // Cannot delete self
-  if (access.context.user.id === userId) {
+  if (user.id === userId) {
     throw new Error('Cannot delete yourself')
   }
-  const membership = await requireOrganizationMembership(
-    access.organizationId,
-    userId,
-  )
 
-  const memberIds = (await activeOrganizationMemberIds(access.organizationId))
-    .filter((memberId) => memberId !== userId)
-  const reassignTo = memberIds.length === 0
-    ? null
-    : await resolveActiveLeadReassignmentTarget(
-        supabaseAdmin
-          .from('profiles')
-          .select('id,role,is_active')
-          .in('id', memberIds) as never,
-      )
+  const reassignTo = await resolveActiveLeadReassignmentTarget(
+    supabaseAdmin.from('profiles').select('id,role,is_active').neq('id', userId) as never,
+  )
   const logTarget = reassignTo ?? 'null (no eligible receiver available)'
 
   // Reassign leads assigned to this user
   const { data: orphanedLeads, error: orphanedLeadsErr } = await supabaseAdmin
     .from('leads')
     .select('id')
-    .eq('organization_id', access.organizationId)
     .eq('assigned_to', userId)
   if (orphanedLeadsErr) throw new Error(`Failed to load leads for reassignment: ${orphanedLeadsErr.message}`)
   if (orphanedLeads && orphanedLeads.length > 0) {
@@ -129,30 +142,40 @@ export async function removeTeamMember(userId: string) {
     const { error: leadErr } = await supabaseAdmin
       .from('leads')
       .update({ assigned_to: reassignTo })
-      .eq('organization_id', access.organizationId)
       .in('id', leadIds)
     if (leadErr) throw new Error(`Failed to reassign leads: ${leadErr.message}`)
     console.log(`[user-delete] Reassigned or unassigned ${leadIds.length} lead(s) from user ${userId} to ${logTarget}`)
   }
 
-  const now = new Date().toISOString()
-  const { data: updatedMembership, error: membershipError } = await supabaseAdmin
-    .from('memberships')
-    .update({
-      status: 'inactive',
-      deactivated_at: now,
-      recovery_deadline: new Date(Date.now() + 90 * 86400000).toISOString(),
-      updated_at: now,
-      version: membership.version + 1,
-    })
-    .eq('id', membership.id)
-    .eq('organization_id', access.organizationId)
-    .eq('version', membership.version)
+  // Reassign contracts where this user is sales_id
+  const { data: orphanedContracts, error: orphanedContractsErr } = await supabaseAdmin
+    .from('contracts')
     .select('id')
-    .maybeSingle()
-  if (membershipError || !updatedMembership) {
-    throw new Error(membershipError?.message || 'Membership changed concurrently')
+    .eq('sales_id', userId)
+  if (orphanedContractsErr) throw new Error(`Failed to load contracts for reassignment: ${orphanedContractsErr.message}`)
+  if (orphanedContracts && orphanedContracts.length > 0) {
+    const contractIds = orphanedContracts.map((c: any) => c.id)
+    const { error: contractErr } = await supabaseAdmin
+      .from('contracts')
+      .update({ sales_id: reassignTo })
+      .in('id', contractIds)
+    if (contractErr) throw new Error(`Failed to reassign contracts: ${contractErr.message}`)
+    console.log(`[user-delete] Reassigned ${contractIds.length} contract(s) from user ${userId} to ${logTarget}`)
   }
+
+  // Soft-delete: mark as inactive
+  const { error: profileErr } = await supabaseAdmin
+    .from('profiles')
+    .update({ is_active: false })
+    .eq('id', userId)
+
+  if (profileErr) throw new Error(profileErr.message)
+
+  const { error: authErr } = await supabaseAdmin.auth.admin.updateUserById(
+    userId,
+    { ban_duration: '876000h' },
+  )
+  if (authErr) throw new Error(`Failed to revoke auth access: ${authErr.message}`)
 
   return { success: true }
 }
@@ -165,15 +188,34 @@ export async function resetUserPassword(userId: string, password: string) {
     throw new Error('Password must be at least 6 characters')
   }
 
-  const access = await resolveOrganizationMemberAdminAccess(await actionRequest())
-  await requireOrganizationMembership(access.organizationId, userId)
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  const { createClient } = await import('@supabase/supabase-js')
+  const adminClient = createClient(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+
+  const supabase = await createServerSupabase()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Unauthorized')
+
+  // Role check: only admin/boss
+  const { data: profile } = await adminClient
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile || !['admin', 'boss'].includes(profile.role)) {
+    throw new Error('Forbidden')
+  }
 
   // Reset target user's password
-  const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { password })
+  const { error } = await adminClient.auth.admin.updateUserById(userId, { password })
   if (error) throw new Error(error.message)
 
   // Invalidate sessions by marking password change time
-  await supabaseAdmin
+  await adminClient
     .from('profiles')
     .update({ password_changed_at: new Date().toISOString() })
     .eq('id', userId)

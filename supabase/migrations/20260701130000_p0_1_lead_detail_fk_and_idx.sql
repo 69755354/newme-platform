@@ -3,6 +3,7 @@
 -- 配合 TASKBOARD P0-1 方案文档 §4：leads/[id] 详情页 embed JOIN 优化
 -- 命名遵循：FK = fk_<table>_<col>（PostgREST embed hint 友好）
 --         IDX = idx_<table>_<col(s)>
+BEGIN;
 
 -- =========================================================================
 -- A. 缺失的物理外键（子表 → profiles）
@@ -111,3 +112,5 @@ CREATE INDEX IF NOT EXISTS idx_profiles_role
 -- D. NOTIFY PostgREST 刷新 schema cache（让 embed hint 立即生效）
 -- =========================================================================
 NOTIFY pgrst, 'reload schema';
+
+COMMIT;

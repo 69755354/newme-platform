@@ -47,8 +47,8 @@ export async function GET(request: Request) {
   let q = supabase
     .from("contracts")
     .select(
-      `*, leads!contracts_lead_id_fkey(customer_name), profiles!contracts_sales_id_fkey(full_name, email),
-      installment_plans!installment_plans_contract_id_fkey(id, amount, due_date, status, paid_amount, seq)`,
+      `*, leads(customer_name), profiles!contracts_sales_id_fkey(full_name, email),
+      installment_plans(id, amount, due_date, status, paid_amount, seq)`,
       { count: "exact" }
     )
     .order("created_at", { ascending: false })
@@ -74,7 +74,7 @@ export async function GET(request: Request) {
   }
 
   const responseData = {
-    contracts: data ?? [],
+    contracts: (data ?? []) as any[],
     role,
     totalCount: count ?? 0,
   }

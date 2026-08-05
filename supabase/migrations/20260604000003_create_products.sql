@@ -2,13 +2,12 @@
 -- 2026-06-04
 CREATE TABLE IF NOT EXISTS products (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id   UUID,
+    tenant_id   UUID REFERENCES tenants(id),
     name        TEXT NOT NULL,
-    sku         TEXT NOT NULL UNIQUE,
+    sku         TEXT,
     category    TEXT DEFAULT 'general',
-    brand       TEXT,
     unit        TEXT DEFAULT 'pcs',
-    unit_price  NUMERIC NOT NULL DEFAULT 0,
+    unit_price  NUMERIC DEFAULT 0,
     description TEXT,
     is_active   BOOLEAN DEFAULT true,
     created_at  TIMESTAMPTZ DEFAULT now(),

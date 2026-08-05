@@ -38,7 +38,7 @@ export async function GET(request: Request) {
   const [paymentsResult, contractsResult] = await Promise.all([
     supabase
       .from("payments")
-      .select("*, contracts!payments_contract_id_fkey(contract_no, party_a_name)")
+      .select("*, contracts(contract_no, party_a_name)")
       .order("created_at", { ascending: false }),
     (async () => {
       let q = supabase

@@ -3,7 +3,6 @@ activity_logs
 ad_spend
 AS
 audit_logs
-audit_events
 business_events
 chat_messages
 contract_approvals
@@ -22,18 +21,14 @@ lead_milestones
 leads
 lead_workflow_stages
 meta_tokens
-memberships
 notifications
-organizations
 payment_allocations
 payments
-platform_staff
 products
 profiles
 projects
 quotations
 quotes
-support_sessions
 tasks
 transfer_history
 user_features

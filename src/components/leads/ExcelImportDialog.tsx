@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { cn } from "@/lib/utils";
-import { validateXlsxImportLimits } from "@/lib/xlsx-import-limits.mjs";
 
 interface Props {
   open: boolean;
@@ -140,12 +139,6 @@ export default function ExcelImportDialog({ open, onOpenChange, onImported }: Pr
       setError(t("leads.importError"));
       return;
     }
-    try {
-      validateXlsxImportLimits({ fileBytes: file.size });
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : t("leads.importError"));
-      return;
-    }
     setError(null);
     setFileName(file.name);
     setParsing(true);
@@ -155,7 +148,6 @@ export default function ExcelImportDialog({ open, onOpenChange, onImported }: Pr
       const wb = XLSX.read(data, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: "" });
-      validateXlsxImportLimits({ rowCount: rows.length });
 
       const res = await fetch("/api/leads/import/preview", {
         method: "POST",

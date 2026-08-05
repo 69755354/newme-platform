@@ -6,7 +6,7 @@ import type { Database } from "@/types/database";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { canCompleteMilestone } from "@/lib/milestones";
 import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
-import { isAssessedQuality, isCompleteContact } from "@/modules/leads/first-contact-gate.mjs";
+import { isAssessedQuality, isCompleteContact } from "@/lib/first-contact-gate.mjs";
 
 type AdminSupabaseClient = SupabaseClient<Database>;
 
@@ -16,8 +16,7 @@ export async function POST(
 ) {
   const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
   const cookieHeader = req.headers.get("cookie") ?? "";
-  const organizationId = req.headers.get("x-newme-organization-id") ?? undefined;
-  const supabase = await createServerSupabase(bearerToken, cookieHeader, organizationId);
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
 
   // 1. 鉴权 + 角色
   const profile = await getAuthProfile(bearerToken, cookieHeader);
@@ -251,8 +250,7 @@ export async function PATCH(
     );
   }
 
-  const organizationId = req.headers.get("x-newme-organization-id") ?? undefined;
-  const supabase = await createServerSupabase(bearerToken, cookieHeader, organizationId);
+  const supabase = await createServerSupabase(bearerToken, cookieHeader);
   const { data: lead, error: leadError } = await supabase
     .from("leads")
     .select("id, assigned_to")

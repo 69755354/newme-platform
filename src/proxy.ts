@@ -1,4 +1,4 @@
-import { NextResponse, NextRequest, type NextFetchEvent } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase-middleware";
 import { reportServerError } from "@/lib/report-server-error";
 import { isActiveProfile } from "@/lib/auth-profile.mjs";
@@ -6,7 +6,7 @@ import { isActiveProfile } from "@/lib/auth-profile.mjs";
 const PROTECTED_ROUTES: Record<string, string[]> = {
   "/settings": ["admin", "boss", "operator"],
   "/team": ["admin", "boss", "operator"],
-  "/pipeline": ["admin", "boss", "operator", "sales"],
+  "/pipeline": ["admin", "boss", "operator"],
 };
 
 const PUBLIC_API_PATHS = new Set([
@@ -66,63 +66,17 @@ function authUnavailable(request: NextRequest, isApiRequest: boolean) {
   return NextResponse.redirect(loginUrl);
 }
 
-function passwordChanged(request: NextRequest, isApiRequest: boolean) {
-  if (isApiRequest) {
-    return NextResponse.json({ error: "password_changed" }, { status: 401 });
-  }
-  const loginUrl = new URL("/login", request.url);
-  loginUrl.searchParams.set("reason", "password_changed");
-  return NextResponse.redirect(loginUrl);
-}
-
-// Track user activity 鈥?update last_active_at, but throttle to once per 5 min per user
+// Track user activity — update last_active_at, but throttle to once per 5 min per user
 const activityThrottle = new Map<string, number>();
 
-async function writeServerEvidence(
-  table: "profiles" | "audit_logs",
-  query: string,
-  method: "PATCH" | "POST",
-  body: Record<string, unknown>,
-) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const secretKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !secretKey) {
-    return { error: new Error("server evidence client is not configured") };
-  }
-
-  try {
-    const response = await fetch(
-      `${supabaseUrl}/rest/v1/${table}${query ? `?${query}` : ""}`,
-      {
-        method,
-        headers: {
-          apikey: secretKey,
-          "Content-Type": "application/json",
-          Prefer: "return=minimal",
-        },
-        body: JSON.stringify(body),
-      },
-    );
-    return {
-      error: response.ok
-        ? null
-        : new Error(`server evidence write returned HTTP ${response.status}`),
-    };
-  } catch (error) {
-    return {
-      error: error instanceof Error ? error : new Error("server evidence write failed"),
-    };
-  }
-}
-
-export async function proxy(request: NextRequest, event: NextFetchEvent) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isApiRequest = pathname.startsWith("/api/");
   const isPublicApiRequest = isApiRequest && (PUBLIC_API_PATHS.has(pathname) || pathname === SESSION_BOOTSTRAP_PATH);
   const protectedApiMutation = isProtectedApiMutation(request, pathname);
 
-  // P3_6 (PRD 搂鍏?6.5): legacy URL redirects 鈥?return early so we don't run auth.
-  // /command-center 鈫?/dashboard
+  // P3_6 (PRD §六 6.5): legacy URL redirects — return early so we don't run auth.
+  // /command-center → /dashboard
   // /quotations (only the bare path; /quotations/[id] stays)
   if (pathname === "/command-center" || pathname.startsWith("/command-center/")) {
     return NextResponse.redirect(new URL("/dashboard", request.url), 307);
@@ -155,13 +109,9 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   }
 
   // Use createMiddlewareClient to validate session (no service_role needed)
-  const authHeader = request.headers.get("authorization");
-  const bearerToken = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : undefined;
   let middlewareClient: Awaited<ReturnType<typeof createMiddlewareClient>>;
   try {
-    middlewareClient = await withAuthTimeout(createMiddlewareClient(request, bearerToken));
+    middlewareClient = await withAuthTimeout(createMiddlewareClient(request));
   } catch {
     return authUnavailable(request, isApiRequest);
   }
@@ -176,6 +126,27 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
     authInfrastructureFailed = true;
   }
 
+  // Fallback: also check Authorization Bearer header (for localhost/dev testing,
+  // where SSR cookies may fail to parse correctly)
+  let usedBearerFallback = false;
+  let bearerToken: string | undefined;
+  if (!user) {
+    const authHeader = request.headers.get("authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.slice(7);
+      bearerToken = token;
+      try {
+        const { data: authUser } = await withAuthTimeout(supabase.auth.getUser(token));
+        user = authUser?.user ?? null;
+        if (user) {
+          usedBearerFallback = true;
+        }
+      } catch {
+        authInfrastructureFailed = true;
+      }
+    }
+  }
+
   if (!user && protectedApiMutation) {
     return authInfrastructureFailed
       ? authUnavailable(request, true)
@@ -188,14 +159,52 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   // to become invalid when a profile is deactivated; every protected request
   // must still prove that its profile is active.
   if (user && !isPublicApiRequest) {
-    // `createMiddlewareClient` receives the bearer token above, so its
-    // authenticated Supabase client carries the same auth context into this
-    // RLS-protected query. Service-role credentials must never be used here.
-    const { data: profile, error: profileErr } = await withAuthTimeout(supabase
-      .from("profiles")
-      .select("role, is_active, password_changed_at")
-      .eq("id", user.id)
-      .single());
+    // SAM-51: When the user was resolved via the Bearer fallback above, the
+    // cookie-driven middleware client has no auth context for them, so a
+    // profiles query through it runs as anon and gets RLS-rejected (returning
+    // empty/inactive). Query profiles via the Supabase REST API with the
+    // service_role key to bypass RLS. createClient(url, service_role_key) is
+    // intentionally avoided — it 500s under the Edge Runtime.
+    let profile: ActiveProfile | null = null;
+    let profileErr: unknown = null;
+
+    if (usedBearerFallback) {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!supabaseUrl || !serviceRoleKey) {
+        profileErr = new Error("missing_service_role_env");
+      } else {
+        try {
+          const res = await withAuthTimeout(fetch(
+            `${supabaseUrl}/rest/v1/profiles?select=id,is_active,role,password_changed_at&id=eq.${user.id}`,
+            {
+              headers: {
+                apikey: serviceRoleKey,
+                Authorization: `Bearer ${serviceRoleKey}`,
+              },
+            },
+          ));
+          if (!res.ok) {
+            profileErr = new Error(`profiles_rest_${res.status}`);
+          } else {
+            const profiles = await res.json();
+            profile = Array.isArray(profiles) && profiles.length > 0
+              ? profiles[0]
+              : null;
+          }
+        } catch (err) {
+          profileErr = err;
+        }
+      }
+    } else {
+      const { data, error } = await withAuthTimeout(supabase
+        .from("profiles")
+        .select("role, is_active, password_changed_at")
+        .eq("id", user.id)
+        .single());
+      profile = data;
+      profileErr = error;
+    }
 
     if (profileErr) {
       return authUnavailable(request, isApiRequest);
@@ -211,7 +220,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
     activeProfile = profile;
   }
 
-  // Q6: Password reset session invalidation 鈥?if password was changed after the
+  // Q6: Password reset session invalidation — if password was changed after the
   // JWT was issued, force re-login so stale tokens can't be used.
   if (user) {
     try {
@@ -228,7 +237,12 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
               new Date(activeProfile.password_changed_at).getTime() / 1000,
             );
             if (changedAt > jwtIat) {
-              return passwordChanged(request, isApiRequest);
+              const loginUrl = new URL("/login", request.url);
+              loginUrl.searchParams.set(
+                "reason",
+                "password_changed",
+              );
+              return NextResponse.redirect(loginUrl);
             }
           }
         }
@@ -239,7 +253,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   }
 
   // Track activity: update last_active_at (throttled to once per 5 min)
-  // Also capture client IP for audit_log (x-forwarded-for 鈫?first IP)
+  // Also capture client IP for audit_log (x-forwarded-for → first IP)
   if (user && !pathname.startsWith("/_next") && !pathname.startsWith("/api")) {
     const now = Date.now();
     const last = activityThrottle.get(user.id) || 0;
@@ -249,12 +263,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
         || request.headers.get("x-real-ip")
         || "unknown";
       // Fire-and-forget: update profile activity + log IP audit
-      const profileWrite = writeServerEvidence(
-        "profiles",
-        `id=eq.${encodeURIComponent(user.id)}`,
-        "PATCH",
-        { last_active_at: new Date().toISOString() },
-      ).then(({ error }) => {
+      supabase.from("profiles").update({ last_active_at: new Date().toISOString() }).eq("id", user.id).then(({ error }) => {
         if (error) {
           // Production monitoring requirement - report server errors
           reportServerError({
@@ -267,7 +276,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
           console.error("Activity tracking error:", error.message);
         }
       });
-      const auditWrite = writeServerEvidence("audit_logs", "", "POST", {
+      supabase.from("audit_logs").insert({
         // NOTE: audit_logs.actor_id is the genuine column (NOT a business_events alias).
         // Migration 20260613000000_audit_logs.sql:6 declares it. Unlike business_events
         // (where actor_id was the wrong alias), audit_logs always used actor_id. Do NOT rename.
@@ -288,18 +297,15 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
           console.error("Audit log error:", error.message);
         }
       });
-      event.waitUntil(
-        Promise.allSettled([profileWrite, auditWrite]).then(() => undefined),
-      );
     }
   }
 
-  // No role check needed 鈥?pass through
+  // No role check needed — pass through
   if (!requiredRoles) {
     return getResponse();
   }
 
-  // Not logged in 鈥?redirect to login
+  // Not logged in — redirect to login
   if (!user) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
@@ -329,7 +335,7 @@ export const config = {
     "/projects/:path*",
     "/products/:path*",
     "/api/:path*",
-    // P3_6 (PRD 搂鍏?6.5): legacy URL redirects at the edge.
+    // P3_6 (PRD §六 6.5): legacy URL redirects at the edge.
     // /quotations has no :path* so /quotations/[id] stays reachable.
     "/command-center/:path*",
     "/quotations",
@@ -338,4 +344,3 @@ export const config = {
     "/",
   ],
 };
-

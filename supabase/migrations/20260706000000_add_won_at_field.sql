@@ -1,5 +1,6 @@
 -- DRAFT: pending Hermes audit and GPT approval. Do not apply yet.
 
+BEGIN;
 
 ALTER TABLE public.leads
   ADD COLUMN IF NOT EXISTS won_at timestamptz NULL;
@@ -41,3 +42,5 @@ CREATE TRIGGER trg_leads_set_won_at
 CREATE INDEX IF NOT EXISTS idx_leads_won_at
   ON public.leads(won_at)
   WHERE won_at IS NOT NULL;
+
+COMMIT;

@@ -1,11 +1,6 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
-import {
-  readXlsxImportJson,
-  validateXlsxImportLimits,
-} from "@/lib/xlsx-import-limits.mjs";
-import { validateXlsxImportRows } from "@/lib/xlsx-import-rows.mjs";
 
 // ─── Column mapping ───
 // Excel header text → snake_case field name
@@ -141,39 +136,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    let body: unknown;
-    try {
-      body = await readXlsxImportJson(request);
-    } catch (err: unknown) {
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : "Invalid import request" },
-        { status: err instanceof RangeError ? 413 : 400 },
-      );
-    }
-    const untrustedRows =
-      body && typeof body === "object" && !Array.isArray(body)
-        ? (body as { rows?: unknown }).rows
-        : undefined;
+    const body = await request.json();
+    const rawRows: Record<string, any>[] = body.rows || [];
 
-    if (!Array.isArray(untrustedRows) || untrustedRows.length === 0) {
+    if (!Array.isArray(rawRows) || rawRows.length === 0) {
       return NextResponse.json({ error: "No rows provided" }, { status: 400 });
-    }
-    try {
-      validateXlsxImportRows(untrustedRows);
-    } catch (err: unknown) {
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : "Import limit exceeded" },
-        { status: 413 },
-      );
-    }
-    const rawRows = untrustedRows as Record<string, unknown>[];
-    try {
-      validateXlsxImportLimits({ rowCount: rawRows.length });
-    } catch (err: unknown) {
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : "Import limit exceeded" },
-        { status: 413 },
-      );
     }
 
     const previews: PreviewRow[] = [];

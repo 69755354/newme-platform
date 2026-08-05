@@ -6,7 +6,7 @@ import {
   getRequestAuthContext,
   RequestAuthError,
 } from '@/lib/request-auth-context';
-import { isCompleteContact } from '@/modules/leads/first-contact-gate.mjs';
+import { isCompleteContact } from '@/lib/first-contact-gate.mjs';
 
 export async function POST(
   req: NextRequest,

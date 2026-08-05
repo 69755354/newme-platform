@@ -7,6 +7,7 @@
 -- 说明: 本 migration 为幂等的 — 先清理再重建所有策略
 -- ============================================================================
 
+BEGIN;
 
 -- ============================================================================
 -- 1. customers (客户)
@@ -272,3 +273,5 @@ CREATE POLICY policy_products_update_admin
 CREATE POLICY policy_products_delete_admin
   ON products FOR DELETE TO authenticated
   USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss')));
+
+COMMIT;

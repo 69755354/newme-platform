@@ -53,8 +53,8 @@ async function handleCron(request: Request) {
 
     for (const [assigneeId, assigneeTasks] of tasksByAssignee) {
       const count = assigneeTasks.length
-      const previewItems = assigneeTasks.slice(0, 5).map((t) => {
-        const name = t.leads?.[0]?.customer_name
+      const previewItems = assigneeTasks.slice(0, 5).map((t: any) => {
+        const name = t.leads?.customer_name
         return name ? `${t.title}（${name}）` : t.title
       })
       const preview = previewItems.join('；')

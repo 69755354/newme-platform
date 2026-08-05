@@ -11,6 +11,7 @@ import {
 import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
 
 const AUTH_TIMEOUT_MS = 3_000;
+const PRIVATE_NO_STORE = "private, no-store, max-age=0, must-revalidate";
 
 export type ActiveProfile = Pick<
   Database["public"]["Tables"]["profiles"]["Row"],
@@ -49,6 +50,12 @@ export interface RequestAuthContext {
   profile: ActiveProfile;
   role: string;
   refreshedCookies: RefreshedCookie[];
+}
+
+export function applyPrivateNoStore(response: NextResponse): NextResponse {
+  response.headers.set("Cache-Control", PRIVATE_NO_STORE);
+  response.headers.set("Vary", "Cookie, Authorization");
+  return response;
 }
 
 function extractBearerToken(request: Request): string | undefined {
@@ -151,7 +158,9 @@ export async function getRequestAuthContext(request: Request): Promise<RequestAu
 }
 
 export function requestAuthErrorResponse(error: RequestAuthError): NextResponse {
-  const response = NextResponse.json({ error: error.code }, { status: error.status });
+  const response = applyPrivateNoStore(
+    NextResponse.json({ error: error.code }, { status: error.status }),
+  );
   for (const cookie of error.refreshedCookies) {
     response.cookies.set(
       cookie.name,
@@ -177,6 +186,7 @@ export function applyRequestAuthCookies(
   context: Pick<RequestAuthContext, "refreshedCookies">,
   response: NextResponse,
 ): NextResponse {
+  applyPrivateNoStore(response);
   for (const cookie of context.refreshedCookies) {
     response.cookies.set(
       cookie.name,

@@ -415,13 +415,17 @@ function historyPreflight(plan, activePlan, action, expectedHistory, alreadyAppl
     ? expectedHistory.filter(({ version }) => !activeVersionSet.has(version))
     : expectedHistory;
   const expectedValues = historyValues(expectedRows);
-  const alreadyAppliedIsKnownStagingSet = alreadyAppliedPlan.length === KNOWN_STAGING_APPLIED_VERSIONS.length
-    && alreadyAppliedPlan.every((item, index) => item.version === KNOWN_STAGING_APPLIED_VERSIONS[index]);
   const alreadyAppliedAssertion = alreadyAppliedPlan.length === 0
     ? ""
     : "  IF (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE "
+      // A canonical prefix can contain both the historical statements whose
+      // audited fingerprints are immutable and later statements whose source
+      // must still match exactly. Select the predicate per migration rather
+      // than by the shape of the whole applied set.
       + alreadyAppliedPlan.map((item) => "(" + (
-        alreadyAppliedIsKnownStagingSet ? knownStagingMetadataPredicate(item) : metadataPredicate(item)
+        Object.hasOwn(KNOWN_STAGING_APPLIED_HISTORY_SHA256, item.version)
+          ? knownStagingMetadataPredicate(item)
+          : metadataPredicate(item)
       ) + ")").join(" OR ")
       + ") <> " + String(alreadyAppliedPlan.length) + " THEN\n"
       + "    RAISE EXCEPTION 'SAM78 known applied migration metadata mismatch';\n"

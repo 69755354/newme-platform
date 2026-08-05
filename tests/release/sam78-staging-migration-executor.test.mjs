@@ -413,6 +413,14 @@ test("apply accepts the exact audited non-contiguous staging history and applies
     1,
   );
   assert.match(incrementalSql, /newme\.sam78_apply_mode = 'suffix'/);
+  assert.match(
+    incrementalSql,
+    /83f850a755f3eb7651cf9e1ef202bb791300b60978f373007dfcec1691297320/,
+  );
+  assert.match(
+    incrementalSql,
+    /version = '20260805020000'[\s\S]*?statements IS NOT DISTINCT FROM ARRAY\[/,
+  );
 });
 
 test("plan, action, history, and verification drift fail closed before execution", async () => {

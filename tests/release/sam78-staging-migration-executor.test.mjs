@@ -123,6 +123,12 @@ const paths = [
     migration: "supabase/migrations/20260806030000_sam83_v4_synthetic_cleanup_marker_case.sql",
     rollback: "supabase/rollback/20260806030000_sam83_v4_synthetic_cleanup_marker_case_rollback.sql",
   },
+  {
+    version: "20260806040000",
+    name: "sam84_v4_synthetic_gateway_cleanup_boundary",
+    migration: "supabase/migrations/20260806040000_sam84_v4_synthetic_gateway_cleanup_boundary.sql",
+    rollback: "supabase/rollback/20260806040000_sam84_v4_synthetic_gateway_cleanup_boundary_rollback.sql",
+  },
 ];
 
 async function expectedHistory() {
@@ -158,7 +164,7 @@ test("SAM-78 plan uses the fixed staging owner and exact canonical history tip",
 test("migration history manifest accepts CRLF but rejects header, order, row, and tip drift", async () => {
   const source = await read("scripts/uat/sam78-canonical-migration-history.txt");
   const crlfSource = source.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n");
-  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 149);
+  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 150);
   assert.throws(
     () => parseMigrationHistoryManifest(source.replace("# schema-version=1", "# schema-version=2")),
     /header mismatch/,
@@ -298,7 +304,7 @@ test("executor binds resolved staging versions to parsed SQL entries before gene
     loaded.filter(({ version }) => KNOWN_STAGING_APPLIED_VERSIONS.includes(version)),
   );
   const activePlan = bindMigrationPlanEntries(loaded, resolved.activePlan);
-  assert.equal(activePlan.length, 9);
+  assert.equal(activePlan.length, 10);
   assert.ok(activePlan.every((item) => Array.isArray(item.statements) && item.statements.length > 0));
   assert.throws(
     () => bindMigrationPlanEntries(loaded, [...resolved.activePlan].reverse()),
@@ -315,6 +321,7 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
     verifySql: await read("scripts/uat/sam78-staging-migration-verify.sql"),
   });
   const operations = sql.indexOf("DELETE FROM supabase_migrations.schema_migrations");
+  const gatewayCleanupBoundary = sql.indexOf("version = '20260806040000'", operations);
   const syntheticCleanupCaseFix = sql.indexOf("version = '20260806030000'", operations);
   const syntheticCleanupFix = sql.indexOf("version = '20260806020000'", operations);
   const paidSeatFix = sql.indexOf("version = '20260806010000'", operations);
@@ -331,7 +338,7 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
   const middle = sql.indexOf("version = '20260803143000'", governedRpc + 1);
   const oldest = sql.indexOf("version = '20260803100000'", middle + 1);
   assert.ok(
-    operations > 0 && syntheticCleanupCaseFix > operations && syntheticCleanupFix > syntheticCleanupCaseFix && paidSeatFix > syntheticCleanupFix && sam84 > paidSeatFix && newest > sam84 && sam83 > newest && sam82 > sam83 && exitDigest > sam82 && productCleanup > exitDigest
+    operations > 0 && gatewayCleanupBoundary > operations && syntheticCleanupCaseFix > gatewayCleanupBoundary && syntheticCleanupFix > syntheticCleanupCaseFix && paidSeatFix > syntheticCleanupFix && sam84 > paidSeatFix && newest > sam84 && sam83 > newest && sam82 > sam83 && exitDigest > sam82 && productCleanup > exitDigest
       && sam20Cleanup > productCleanup
       && sam80Operations > sam20Cleanup
       && sam26Cleanup > sam80Operations
@@ -359,6 +366,7 @@ test("apply accepts the exact audited non-contiguous staging history and applies
       "20260806010000",
       "20260806020000",
       "20260806030000",
+      "20260806040000",
     ],
   );
   const sql = buildTransactionSql({
@@ -375,6 +383,7 @@ test("apply accepts the exact audited non-contiguous staging history and applies
   assert.match(sql, /20260806010000/);
   assert.match(sql, /20260806020000/);
   assert.match(sql, /20260806030000/);
+  assert.match(sql, /20260806040000/);
   assert.match(sql, /SAM78 known applied migration metadata mismatch/);
   assert.equal(
     (sql.match(/INSERT INTO supabase_migrations\.schema_migrations/g) ?? []).length,
@@ -385,6 +394,10 @@ test("apply accepts the exact audited non-contiguous staging history and applies
     /CREATE TABLE public\.capabilities/,
   );
   assert.deepEqual(parseAppliedMigrationSet("").map(({ version }) => version), []);
+  assert.deepEqual(
+    resolveStagingApplyPlan([]).activePlan.map(({ version }) => version),
+    MIGRATIONS.map(({ version }) => version),
+  );
   assert.deepEqual(
     parseAppliedMigrationSet(
       knownApplied.map(({ version, name }) => `${version}\t${name}`).join("\n") + "\n",
@@ -416,7 +429,7 @@ test("apply accepts the exact audited non-contiguous staging history and applies
   const contiguousResolution = resolveStagingApplyPlan(contiguousApplied);
   assert.deepEqual(
     contiguousResolution.activePlan.map(({ version }) => version),
-    ["20260806030000"],
+    ["20260806040000"],
   );
   const incrementalSql = buildTransactionSql({
     action: "apply",

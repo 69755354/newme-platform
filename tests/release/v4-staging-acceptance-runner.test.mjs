@@ -42,6 +42,10 @@ test("one SHA-bound action integrates four V4 scenarios and strict cleanup", asy
   assert.doesNotMatch(runner, /source: "other", stage: "won", quality: "high"/);
   assert.match(runner, /quotation_type: "standard", status: "accepted"/);
   assert.doesNotMatch(runner, /quotation_type: "retail"/);
+  assert.match(runner, /createRetailCodActor\(state, "collector"\)/);
+  assert.match(runner, /createRetailCodActor\(state, "handover"\)/);
+  assert.match(runner, /createRetailCodActor\(state, "finance"\)/);
+  assert.match(runner, /\["cash_collected", collectorId\], \["cash_handover", handoverId\], \["finance_confirmed", financeId\]/);
   assert.match(runner, /production_reference_detected/);
   assert.doesNotMatch(runner, /console\.log\(.*(?:SERVICE_ROLE|ANON_KEY|Bearer)/);
   for (const pattern of [

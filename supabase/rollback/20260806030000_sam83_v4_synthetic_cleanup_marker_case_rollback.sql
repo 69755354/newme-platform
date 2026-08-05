@@ -1,10 +1,13 @@
 BEGIN;
 
--- The SAM-83 financial facts are append-only for every normal caller.  The
--- V4 staging acceptance runner is the sole exception: it uses service_role
--- and organizations whose slug is generated from its exact V4-UAT marker.
--- This permits marker-only fixture cleanup without granting a general delete
--- path to authenticated or production actors.
+DO $$
+BEGIN
+  IF COALESCE(current_setting('newme.environment', true), '') NOT IN ('staging', 'test') THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'sam83_v4_synthetic_cleanup_marker_case_rollback_requires_staging_or_test';
+  END IF;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.retail_sam83_reject_mutation()
 RETURNS trigger
 LANGUAGE plpgsql

@@ -1,10 +1,8 @@
 BEGIN;
 
--- The SAM-83 financial facts are append-only for every normal caller.  The
--- V4 staging acceptance runner is the sole exception: it uses service_role
--- and organizations whose slug is generated from its exact V4-UAT marker.
--- This permits marker-only fixture cleanup without granting a general delete
--- path to authenticated or production actors.
+-- The first cleanup-boundary migration is already part of the immutable
+-- staging history.  The V4 runner's marker is uppercase, so use an
+-- explicitly case-insensitive match without widening the marker shape.
 CREATE OR REPLACE FUNCTION public.retail_sam83_reject_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -18,7 +16,7 @@ BEGIN
       SELECT 1
       FROM public.organizations AS organization
       WHERE organization.id = OLD.organization_id
-        AND organization.slug ~ '^v4-uat-[0-9a-f]{12}-[0-9a-f]{8}-(real_estate|retail)$'
+        AND organization.slug ~* '^v4-uat-[0-9a-f]{12}-[0-9a-f]{8}-(real_estate|retail)$'
         AND organization.name LIKE 'V4-UAT-%'
     )
   THEN

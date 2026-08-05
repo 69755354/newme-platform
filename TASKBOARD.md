@@ -56,7 +56,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 || task_M1_sam43_api_uat | DONE | Hermes | 2026-07-19 |
 | task_L0_auth_me_proxy_fix | DONE | Hermes (OC) | 2026-07-20 |
 | PROD-CONTACT-QUALITY-AUTH | DONE | Codex | 2026-08-05 |
-| PROD-AUTH-SESSION-HARDENING | IN_PROGRESS | Codex | 2026-08-06 |
+| PROD-AUTH-SESSION-HARDENING | DONE | Codex | 2026-08-06 |
 | task_SAM51_proxy_service_role_hardening | DONE | Hermes (OC) | 2026-07-20 |
 
 > M1 发布链（Linear 为真源）：**RELEASED 2026-07-20**。发布 SHA `49bbb26` → BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6~12 全链 Done：SAM-28 业务签收（森哥 2026-07-20）+ 技术签收（机器全量验收），SAM-12 发布记录出具。SAM-26 视觉/移动端留人工不拦发布；SAM-45/46 进 M2 backlog。

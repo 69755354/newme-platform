@@ -90,6 +90,7 @@ test("SAM-83 keeps finance facts append-only except for marker-scoped staging cl
   ]);
   assert.match(migration, /TG_OP = 'DELETE'/);
   assert.match(migration, /current_user = 'service_role'/);
+  assert.match(migration, /organization\.slug ~\*/);
   assert.match(migration, /\^v4-uat-\[0-9a-f\]\{12\}-\[0-9a-f\]\{8\}-\(real_estate\|retail\)\$/);
   assert.match(migration, /retail_sam83_fact_is_append_only/);
   assert.match(rollback, /sam83_v4_synthetic_cleanup_rollback_requires_staging_or_test/);

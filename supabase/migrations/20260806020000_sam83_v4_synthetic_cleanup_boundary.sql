@@ -18,7 +18,7 @@ BEGIN
       SELECT 1
       FROM public.organizations AS organization
       WHERE organization.id = OLD.organization_id
-        AND organization.slug ~ '^v4-uat-[0-9a-f]{12}-[0-9a-f]{8}-(real_estate|retail)$'
+        AND organization.slug ~* '^v4-uat-[0-9a-f]{12}-[0-9a-f]{8}-(real_estate|retail)$'
         AND organization.name LIKE 'V4-UAT-%'
     )
   THEN

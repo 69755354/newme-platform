@@ -95,6 +95,21 @@ async function removeByActors(client, table, actorIds, label) {
     .in("actor_user_id", values);
   if (countError || count !== 0) fail(`cleanup_${label}_residue`);
 }
+async function removeByProfileColumn(client, table, column, profileIds, label) {
+  if (![["shared_timeline_events", "actor_user_id"], ["shared_approval_requests", "requested_by"]]
+    .some(([allowedTable, allowedColumn]) => allowedTable === table && allowedColumn === column)) {
+    fail(`cleanup_profile_relation_not_allowlisted_${label}`);
+  }
+  const values = unique(profileIds);
+  if (!values.length) return;
+  const { error } = await client.from(table).delete().in(column, values);
+  if (error) fail(`cleanup_${label}_failed_${databaseErrorCode(error)}`);
+  const { count, error: countError } = await client
+    .from(table)
+    .select("id", { count: "exact", head: true })
+    .in(column, values);
+  if (countError || count !== 0) fail(`cleanup_${label}_residue`);
+}
 
 async function createActor(state) {
   const email = `${state.marker}@invalid.test`;
@@ -233,6 +248,7 @@ async function cleanup(state) {
     ["paid_seat_allocations", "paid_seat_allocations"],
     ["commercial_entitlements", "commercial_entitlements"],
     ["organization_subscriptions", "organization_subscriptions"],
+    ["shared_outbox", "shared_outbox"],
     ["retail_inventory_movements", "inventory_movements"],
     ["retail_price_book_items", "price_book_items"],
   ]) await removeByOrganizations(a, table, i.organizations, label);
@@ -242,6 +258,11 @@ async function cleanup(state) {
   ]) await remove(a, table, ids, label);
   await removeByActors(a, "agent_gateway_events", i.auth, "agent_gateway_events");
   await removeByActors(a, "agent_gateway_commands", i.auth, "agent_gateway_commands");
+  // SAM-84 can create approval/timeline records as a side effect of its
+  // policy commands.  Both are allowlisted profile references and must be
+  // removed before the synthetic profiles or auth users are deleted.
+  await removeByProfileColumn(a, "shared_timeline_events", "actor_user_id", i.auth, "shared_timeline_events");
+  await removeByProfileColumn(a, "shared_approval_requests", "requested_by", i.auth, "shared_approval_requests");
   await remove(a, "membership_roles", i.membershipRoles, "membership_roles");
   await remove(a, "memberships", i.memberships, "memberships");
   await remove(a, "profiles", i.auth, "profiles");

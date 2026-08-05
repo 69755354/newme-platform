@@ -7,6 +7,7 @@ import {
   CANONICAL_BASE_SHA,
   DATABASE_USER,
   KNOWN_STAGING_APPLIED_VERSIONS,
+  KNOWN_STAGING_APPLIED_HISTORY_SHA256,
   MIGRATIONS,
   PLATFORM_STAFF_ROLE_MAPPING_FILE,
   STAGING_REF,
@@ -265,6 +266,12 @@ test("audited staging gap omits only its active rows from predecessor history", 
     sql.slice(sql.indexOf("DO $sam78_preflight$"), sql.indexOf("SET LOCAL newme.sam78_verify_phase = 'pre'")),
     /\('20260804185311', 'sam80_shared_operational_services'\)/,
   );
+  assert.deepEqual(
+    Object.keys(KNOWN_STAGING_APPLIED_HISTORY_SHA256),
+    KNOWN_STAGING_APPLIED_VERSIONS,
+  );
+  assert.match(sql, /extensions\.digest\(convert_to\(array_to_string\(statements, E'\\x1f'\), 'UTF8'\), 'sha256'\)/);
+  assert.match(sql, /a500bf378c6b26690fcc2c8e8f86cba17efbc7f48fd7e517e4e4dfdf5e75dd73/);
 });
 
 test("rollback reverses the exact plan and verifies the applied prestate", async () => {

@@ -700,6 +700,11 @@ test("SAM-78 tenant closure UAT composes lifecycle evidence with two-organizatio
     /zeroResidue\.some\(\(key\) => body\.tenant_isolation\?\.cleanup_counts\?\.\[key\] !== 0\)/,
     /body\.product_lifecycle\?\.cleanup !== "verified"/,
     /last-uat-sam78\.json/,
+    /SAM78_UAT_FAILURE_EVIDENCE="\$STATE_DIR\/last-uat-sam78-failure\.json"/,
+    /scope: "sam78-staging-tenant-closure-failure"/,
+    /runner_nonzero_without_allowlisted_code/,
+    /raw_sha256/,
+    /root-only failure evidence was recorded/,
   ]) assert.match(control, pattern);
   assert.match(dockerfile, /COPY sam78-staging-tenant-closure\.mjs \/runner\/sam78-staging-tenant-closure\.mjs/);
   assert.match(runScript, /sam78\)/);
@@ -707,6 +712,7 @@ test("SAM-78 tenant closure UAT composes lifecycle evidence with two-organizatio
   assert.match(runScript, /SAM78_STAGING_TENANT_CLOSURE_ONLY/);
   assert.match(readme, /uat-sam78 <SHA>/);
   assert.doesNotMatch(control, /cat "\$ENV_FILE"|cat "\$output"/);
+  assert.doesNotMatch(control, /console\.log\(raw\)|process\.stdout\.write\(raw\)/);
 });
 
 test("rollback only accepts the direct previous compatible immutable release", async () => {

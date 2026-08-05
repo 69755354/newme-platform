@@ -38,6 +38,10 @@ test("one SHA-bound action integrates four V4 scenarios and strict cleanup", asy
   assert.match(runner, /plan_key: "growth", billable_seat_limit: 20/);
   assert.doesNotMatch(runner, /plan_key: "growth", billable_seat_limit: 5/);
   assert.match(runner, /normalized_email: `\$\{state\.marker\}@invalid\.test`\.toLowerCase\(\)/);
+  assert.match(runner, /source: "other", stage: "won", quality: "good"/);
+  assert.doesNotMatch(runner, /source: "other", stage: "won", quality: "high"/);
+  assert.match(runner, /quotation_type: "standard", status: "accepted"/);
+  assert.doesNotMatch(runner, /quotation_type: "retail"/);
   assert.match(runner, /production_reference_detected/);
   assert.doesNotMatch(runner, /console\.log\(.*(?:SERVICE_ROLE|ANON_KEY|Bearer)/);
   for (const pattern of [

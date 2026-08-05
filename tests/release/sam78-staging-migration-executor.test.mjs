@@ -12,6 +12,7 @@ import {
   PLATFORM_STAFF_ROLE_MAPPING_FILE,
   STAGING_REF,
   buildTransactionSql,
+  bindMigrationPlanEntries,
   parseAppliedMigrationSet,
   resolveStagingApplyPlan,
   parseMigrationHistoryManifest,
@@ -249,8 +250,7 @@ test("audited staging gap omits only its active rows from predecessor history", 
   const loaded = await plan();
   const applied = loaded.filter(({ version }) => KNOWN_STAGING_APPLIED_VERSIONS.includes(version));
   const { activePlan: activeVersions } = resolveStagingApplyPlan(applied);
-  const activePlan = loaded.filter(({ version }) =>
-    activeVersions.some((item) => item.version === version));
+  const activePlan = bindMigrationPlanEntries(loaded, activeVersions);
   const sql = buildTransactionSql({
     action: "apply",
     plan: loaded,
@@ -272,6 +272,20 @@ test("audited staging gap omits only its active rows from predecessor history", 
   );
   assert.match(sql, /extensions\.digest\(convert_to\(array_to_string\(statements, E'\\x1f'\), 'UTF8'\), 'sha256'\)/);
   assert.match(sql, /a500bf378c6b26690fcc2c8e8f86cba17efbc7f48fd7e517e4e4dfdf5e75dd73/);
+});
+
+test("executor binds resolved staging versions to parsed SQL entries before generation", async () => {
+  const loaded = await plan();
+  const resolved = resolveStagingApplyPlan(
+    loaded.filter(({ version }) => KNOWN_STAGING_APPLIED_VERSIONS.includes(version)),
+  );
+  const activePlan = bindMigrationPlanEntries(loaded, resolved.activePlan);
+  assert.equal(activePlan.length, 6);
+  assert.ok(activePlan.every((item) => Array.isArray(item.statements) && item.statements.length > 0));
+  assert.throws(
+    () => bindMigrationPlanEntries(loaded, [...resolved.activePlan].reverse()),
+    /ordered canonical subset/,
+  );
 });
 
 test("rollback reverses the exact plan and verifies the applied prestate", async () => {

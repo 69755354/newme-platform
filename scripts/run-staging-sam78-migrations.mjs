@@ -758,6 +758,22 @@ export function resolveStagingApplyPlan(appliedPlan) {
   };
 }
 
+export function bindMigrationPlanEntries(plan, resolvedPlan) {
+  if (!Array.isArray(plan) || !Array.isArray(resolvedPlan)) {
+    fail("migration plan binding inputs are invalid");
+  }
+  const resolvedVersions = new Set(resolvedPlan.map(({ version }) => version));
+  if (resolvedVersions.size !== resolvedPlan.length) {
+    fail("migration plan binding contains duplicate versions");
+  }
+  const bound = plan.filter(({ version }) => resolvedVersions.has(version));
+  if (bound.length !== resolvedPlan.length || bound.some((item, index) =>
+    item.version !== resolvedPlan[index].version || item.name !== resolvedPlan[index].name)) {
+    fail("migration plan binding is not an ordered canonical subset");
+  }
+  return bound;
+}
+
 export function psqlHistoryInvocation(env) {
   const invocation = psqlInvocation(env);
   const versions = MIGRATIONS.map(({ version }) => sqlLiteral(version)).join(", ");
@@ -838,9 +854,15 @@ export async function main(env = process.env) {
   if (action === "rollback" && detectedAppliedPlan.length !== plan.length) {
     fail("rollback requires the complete SAM-78 migration plan to be applied");
   }
-  const { appliedPlan, activePlan } = action === "apply"
+  const resolvedPlan = action === "apply"
     ? resolveStagingApplyPlan(detectedAppliedPlan)
     : { appliedPlan: detectedAppliedPlan, activePlan: plan };
+  const appliedPlan = action === "apply"
+    ? bindMigrationPlanEntries(plan, resolvedPlan.appliedPlan)
+    : resolvedPlan.appliedPlan;
+  const activePlan = action === "apply"
+    ? bindMigrationPlanEntries(plan, resolvedPlan.activePlan)
+    : resolvedPlan.activePlan;
   const platformStaffRoleMapping = action === "apply"
     ? await loadPlatformStaffRoleMapping(env)
     : undefined;

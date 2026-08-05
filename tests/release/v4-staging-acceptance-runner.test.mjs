@@ -87,14 +87,16 @@ test("V4 acceptance cleanup removes generated tenant defaults before fixture par
   assert.ok(cleanup.indexOf('"profiles"') < cleanup.lastIndexOf('"organizations"'));
 });
 
-test("SAM-83 and SAM-84 keep append-only facts except for marker-scoped staging cleanup", async () => {
-  const [migration, caseFixMigration, rollback, caseFixRollback, gatewayMigration, gatewayRollback, executor, controller, history] = await Promise.all([
+test("SAM-82, SAM-83, and SAM-84 keep append-only facts except for marker-scoped staging cleanup", async () => {
+  const [migration, caseFixMigration, rollback, caseFixRollback, gatewayMigration, gatewayRollback, inventoryMigration, inventoryRollback, executor, controller, history] = await Promise.all([
     read("supabase/migrations/20260806020000_sam83_v4_synthetic_cleanup_boundary.sql"),
     read("supabase/migrations/20260806030000_sam83_v4_synthetic_cleanup_marker_case.sql"),
     read("supabase/rollback/20260806020000_sam83_v4_synthetic_cleanup_boundary_rollback.sql"),
     read("supabase/rollback/20260806030000_sam83_v4_synthetic_cleanup_marker_case_rollback.sql"),
     read("supabase/migrations/20260806040000_sam84_v4_synthetic_gateway_cleanup_boundary.sql"),
     read("supabase/rollback/20260806040000_sam84_v4_synthetic_gateway_cleanup_boundary_rollback.sql"),
+    read("supabase/migrations/20260806050000_sam82_v4_synthetic_inventory_cleanup_boundary.sql"),
+    read("supabase/rollback/20260806050000_sam82_v4_synthetic_inventory_cleanup_boundary_rollback.sql"),
     read("scripts/run-staging-sam78-migrations.mjs"),
     read("scripts/newme-staging-control.sh"),
     read("scripts/uat/sam78-canonical-migration-history.txt"),
@@ -112,13 +114,20 @@ test("SAM-83 and SAM-84 keep append-only facts except for marker-scoped staging 
   assert.match(gatewayMigration, /organization\.slug ~\* '\^v4-uat-/);
   assert.match(gatewayMigration, /agent_gateway_record_immutable/);
   assert.match(gatewayRollback, /sam84_v4_synthetic_gateway_cleanup_boundary_rollback_requires_staging_or_test/);
+  assert.match(inventoryMigration, /TG_TABLE_NAME = 'retail_inventory_movements'/);
+  assert.match(inventoryMigration, /current_user = 'service_role'/);
+  assert.match(inventoryMigration, /organization\.slug ~\* '\^v4-uat-/);
+  assert.match(inventoryMigration, /retail_inventory_movement_is_append_only/);
+  assert.match(inventoryMigration, /GRANT SELECT \(id, slug, name\) ON TABLE public\.organizations TO service_role/);
+  assert.match(inventoryRollback, /sam82_v4_synthetic_inventory_cleanup_boundary_rollback_requires_staging_or_test/);
   assert.doesNotMatch(migration, /GRANT EXECUTE[\s\S]*authenticated/);
   for (const marker of [
-    'version: "20260806020000"', 'version: "20260806030000"', 'version: "20260806040000"',
-    "SAM83_MIGRATION_060200_PATH", "SAM83_MIGRATION_060300_PATH", "SAM84_MIGRATION_060400_PATH",
-    "SAM83_ROLLBACK_060200_PATH", "SAM83_ROLLBACK_060300_PATH", "SAM84_ROLLBACK_060400_PATH",
+    'version: "20260806020000"', 'version: "20260806030000"', 'version: "20260806040000"', 'version: "20260806050000"',
+    "SAM83_MIGRATION_060200_PATH", "SAM83_MIGRATION_060300_PATH", "SAM84_MIGRATION_060400_PATH", "SAM82_MIGRATION_060500_PATH",
+    "SAM83_ROLLBACK_060200_PATH", "SAM83_ROLLBACK_060300_PATH", "SAM84_ROLLBACK_060400_PATH", "SAM82_ROLLBACK_060500_PATH",
     "20260806020000\tsam83_v4_synthetic_cleanup_boundary",
     "20260806030000\tsam83_v4_synthetic_cleanup_marker_case",
     "20260806040000\tsam84_v4_synthetic_gateway_cleanup_boundary",
+    "20260806050000\tsam82_v4_synthetic_inventory_cleanup_boundary",
   ]) assert.ok(`${executor}\n${controller}\n${history}`.includes(marker), `missing controlled migration marker ${marker}`);
 });

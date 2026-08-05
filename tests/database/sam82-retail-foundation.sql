@@ -15,7 +15,9 @@ GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated, service_role;
 
 CREATE TABLE public.organizations (
   id uuid PRIMARY KEY,
-  status text NOT NULL DEFAULT 'active'
+  status text NOT NULL DEFAULT 'active',
+  slug text NOT NULL DEFAULT 'ordinary',
+  name text NOT NULL DEFAULT 'Ordinary'
 );
 CREATE TABLE public.products (
   id uuid PRIMARY KEY,
@@ -57,9 +59,9 @@ VALUES
 
 \i /work/supabase/migrations/20260805120000_sam82_retail_catalog_inventory_pricing.sql
 
-INSERT INTO public.organizations (id, status) VALUES
-  ('11111111-1111-1111-1111-111111111111', 'active'),
-  ('22222222-2222-2222-2222-222222222222', 'active');
+INSERT INTO public.organizations (id, status, slug, name) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'active', 'ordinary-retail', 'Ordinary retail'),
+  ('22222222-2222-2222-2222-222222222222', 'active', 'ordinary-other', 'Ordinary other');
 INSERT INTO public.products (id, organization_id) VALUES
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '11111111-1111-1111-1111-111111111111');
 
@@ -154,6 +156,43 @@ BEGIN
     RAISE EXCEPTION 'sam82_zero_price_allowed';
   EXCEPTION WHEN check_violation THEN NULL;
   END;
+END;
+$$;
+
+\i /work/supabase/migrations/20260806050000_sam82_v4_synthetic_inventory_cleanup_boundary.sql
+
+GRANT DELETE ON public.retail_inventory_movements TO service_role;
+
+SET ROLE service_role;
+DO $$
+BEGIN
+  BEGIN
+    DELETE FROM public.retail_inventory_movements
+    WHERE organization_id = '11111111-1111-1111-1111-111111111111';
+    RAISE EXCEPTION 'sam82_ordinary_ledger_delete_allowed';
+  EXCEPTION WHEN sqlstate '55000' THEN NULL;
+  END;
+END;
+$$;
+RESET ROLE;
+
+UPDATE public.organizations
+SET slug = 'v4-uat-0123456789ab-0123abcd-retail', name = 'V4-UAT-retail-cleanup'
+WHERE id = '11111111-1111-1111-1111-111111111111';
+
+SET ROLE service_role;
+DELETE FROM public.retail_inventory_movements
+WHERE organization_id = '11111111-1111-1111-1111-111111111111';
+RESET ROLE;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.retail_inventory_movements
+    WHERE organization_id = '11111111-1111-1111-1111-111111111111'
+  ) THEN
+    RAISE EXCEPTION 'sam82_marker_ledger_cleanup_failed';
+  END IF;
 END;
 $$;
 

@@ -600,6 +600,11 @@ DO $sam78_deleted$ BEGIN
   END IF;
 END $sam78_deleted$;`;
   }).join("\n");
+  const applyMode = action === "apply"
+    ? (activePlan.length === plan.length
+      ? "full"
+      : (alreadyAppliedIsKnownStagingSet ? "known_gap" : "canonical_prefix"))
+    : "rollback";
   return `BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '15min';
@@ -615,9 +620,7 @@ END
 $sam78_advisory_lock$;
 SET LOCAL newme.environment = 'staging';
 SET LOCAL newme.sam78_action = ${sqlLiteral(action)};
-SET LOCAL newme.sam78_apply_mode = ${sqlLiteral(
-  activePlan.length === plan.length ? "full" : "known_gap"
-)};
+SET LOCAL newme.sam78_apply_mode = ${sqlLiteral(applyMode)};
 SET LOCAL newme.sam78_active_start_version = ${sqlLiteral(activePlan[0].version)};
 ${action === "apply" ? `SET LOCAL newme.platform_staff_role_mapping = ${sqlLiteral(platformStaffRoleMapping)};` : ""}
 LOCK TABLE supabase_migrations.schema_migrations IN SHARE ROW EXCLUSIVE MODE;

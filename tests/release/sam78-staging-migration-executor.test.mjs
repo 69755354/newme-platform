@@ -412,6 +412,7 @@ test("apply accepts the exact audited non-contiguous staging history and applies
     (incrementalSql.match(/INSERT INTO supabase_migrations\.schema_migrations/g) ?? []).length,
     1,
   );
+  assert.match(incrementalSql, /newme\.sam78_apply_mode = 'canonical_prefix'/);
 });
 
 test("plan, action, history, and verification drift fail closed before execution", async () => {

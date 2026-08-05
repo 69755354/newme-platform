@@ -26,6 +26,10 @@ function cleanError(error) {
     .replace(/[A-Za-z0-9._%+-]+@invalid\.test/gi, "[fixture-email]")
     .slice(0, 240);
 }
+function databaseErrorCode(error) {
+  const code = String(error?.code ?? "unknown");
+  return /^[A-Za-z0-9_]{1,32}$/.test(code) ? code : "unknown";
+}
 function unique(values) { return [...new Set(values.filter(Boolean))]; }
 
 export function validateEnvironment(env = process.env) {
@@ -65,7 +69,7 @@ async function remove(client, table, ids, label) {
   const values = unique(ids);
   if (!values.length) return;
   const { error } = await client.from(table).delete().in("id", values);
-  if (error) fail(`cleanup_${label}_failed`);
+  if (error) fail(`cleanup_${label}_failed_${databaseErrorCode(error)}`);
   const { count, error: countError } = await client.from(table).select("id", { count: "exact", head: true }).in("id", values);
   if (countError || count !== 0) fail(`cleanup_${label}_residue`);
 }

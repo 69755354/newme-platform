@@ -415,10 +415,14 @@ function historyPreflight(plan, activePlan, action, expectedHistory, alreadyAppl
     ? expectedHistory.filter(({ version }) => !activeVersionSet.has(version))
     : expectedHistory;
   const expectedValues = historyValues(expectedRows);
+  const alreadyAppliedIsKnownStagingSet = alreadyAppliedPlan.length === KNOWN_STAGING_APPLIED_VERSIONS.length
+    && alreadyAppliedPlan.every((item, index) => item.version === KNOWN_STAGING_APPLIED_VERSIONS[index]);
   const alreadyAppliedAssertion = alreadyAppliedPlan.length === 0
     ? ""
     : "  IF (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE "
-      + alreadyAppliedPlan.map((item) => "(" + knownStagingMetadataPredicate(item) + ")").join(" OR ")
+      + alreadyAppliedPlan.map((item) => "(" + (
+        alreadyAppliedIsKnownStagingSet ? knownStagingMetadataPredicate(item) : metadataPredicate(item)
+      ) + ")").join(" OR ")
       + ") <> " + String(alreadyAppliedPlan.length) + " THEN\n"
       + "    RAISE EXCEPTION 'SAM78 known applied migration metadata mismatch';\n"
       + "  END IF;";
@@ -554,12 +558,16 @@ export function buildTransactionSql({
     fail("active migration plan must be an ordered canonical subset");
   }
   const alreadyAppliedPlan = plan.filter(({ version }) => !activeVersions.has(version));
+  const alreadyAppliedIsKnownStagingSet = alreadyAppliedPlan.length === KNOWN_STAGING_APPLIED_VERSIONS.length
+    && alreadyAppliedPlan.every((item, index) => item.version === KNOWN_STAGING_APPLIED_VERSIONS[index]);
+  const alreadyAppliedIsCanonicalPrefix = alreadyAppliedPlan.every((item, index) =>
+    item.version === plan[index].version && item.name === plan[index].name);
   if (action === "apply" && !(
     alreadyAppliedPlan.length === 0
-    || (alreadyAppliedPlan.length === KNOWN_STAGING_APPLIED_VERSIONS.length
-      && alreadyAppliedPlan.every((item, index) => item.version === KNOWN_STAGING_APPLIED_VERSIONS[index]))
+    || alreadyAppliedIsKnownStagingSet
+    || alreadyAppliedIsCanonicalPrefix
   )) {
-    fail("apply only accepts the clean baseline or the exact known staging migration set");
+    fail("apply only accepts the clean baseline, exact known staging migration set, or a canonical applied prefix");
   }
   if (action === "rollback" && activePlan.length !== plan.length) {
     fail("rollback must cover the complete SAM-78 plan");
@@ -756,8 +764,10 @@ export function resolveStagingApplyPlan(appliedPlan) {
   const isClean = canonicalApplied.length === 0;
   const isKnownStagingSet = canonicalApplied.length === KNOWN_STAGING_APPLIED_VERSIONS.length
     && canonicalApplied.every((item, index) => item.version === KNOWN_STAGING_APPLIED_VERSIONS[index]);
-  if (!isClean && !isKnownStagingSet) {
-    fail("apply only accepts the clean baseline or the exact known staging migration set");
+  const isCanonicalPrefix = canonicalApplied.every((item, index) =>
+    item.version === MIGRATIONS[index].version && item.name === MIGRATIONS[index].name);
+  if (!isClean && !isKnownStagingSet && !isCanonicalPrefix) {
+    fail("apply only accepts the clean baseline, exact known staging migration set, or a canonical applied prefix");
   }
   return {
     appliedPlan: canonicalApplied,

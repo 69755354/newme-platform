@@ -22,7 +22,7 @@ const command = fileURLToPath(
 );
 const projectRef = "bfsiibofuzoglziltgyd";
 const passingBody = JSON.stringify({
-  gate_version: "sam78-product-rpc-allowlist-v5",
+  gate_version: "sam79-commercial-rpc-allowlist-v6",
   violations: [],
 });
 
@@ -105,7 +105,7 @@ test("live gate accepts the exact version with zero violations", async () => {
     const result = await runGate(directory);
     assert.match(
       result.stdout,
-      /staging live security gate passed.*sam78-product-rpc-allowlist-v5/,
+      /staging live security gate passed.*sam79-commercial-rpc-allowlist-v6/,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -116,7 +116,7 @@ test("live gate fails closed on HTTP errors, stale versions, and violations", as
   const cases = [
     {
       body: JSON.stringify({
-        gate_version: "sam78-product-rpc-allowlist-v5",
+        gate_version: "sam79-commercial-rpc-allowlist-v6",
         violations: [],
       }),
       code: "403",
@@ -129,7 +129,7 @@ test("live gate fails closed on HTTP errors, stale versions, and violations", as
     },
     {
       body: JSON.stringify({
-        gate_version: "sam78-product-rpc-allowlist-v5",
+        gate_version: "sam79-commercial-rpc-allowlist-v6",
         violations: [{ violation: "anon_execute", regprocedure: "unsafe()" }],
       }),
       code: "200",
@@ -262,7 +262,7 @@ test("staging deploy binds and runs the live gate before promotion", async () =>
     assert.doesNotMatch(install, obsolete);
   }
 
-  assert.match(runner, /GATE_VERSION="sam78-product-rpc-allowlist-v5"/);
+  assert.match(runner, /GATE_VERSION="sam79-commercial-rpc-allowlist-v6"/);
   assert.match(runner, /printf 'header = "apikey: %s"/);
   assert.match(runner, /curl \\\r?\n\s+--config -/);
   assert.doesNotMatch(runner, /Authorization: Bearer/);

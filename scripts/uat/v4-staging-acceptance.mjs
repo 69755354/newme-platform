@@ -84,6 +84,17 @@ async function removeByOrganizations(client, table, organizationIds, label) {
     .in("organization_id", values);
   if (countError || count !== 0) fail(`cleanup_${label}_residue`);
 }
+async function removeByActors(client, table, actorIds, label) {
+  const values = unique(actorIds);
+  if (!values.length) return;
+  const { error } = await client.from(table).delete().in("actor_user_id", values);
+  if (error) fail(`cleanup_${label}_failed_${databaseErrorCode(error)}`);
+  const { count, error: countError } = await client
+    .from(table)
+    .select("id", { count: "exact", head: true })
+    .in("actor_user_id", values);
+  if (countError || count !== 0) fail(`cleanup_${label}_residue`);
+}
 
 async function createActor(state) {
   const email = `${state.marker}@invalid.test`;
@@ -229,6 +240,8 @@ async function cleanup(state) {
     ["retail_finance_allocations", i.allocations, "allocations"], ["retail_finance_reconciliations", i.reconciliations, "reconciliations"], ["retail_cod_events", i.codEvents, "cod_events"], ["retail_delivery_handoffs", i.handoffs, "handoffs"], ["retail_order_items", i.orderItems, "order_items"], ["retail_orders", i.orders, "orders"], ["retail_goods_receipt_items", i.receiptItems, "receipt_items"], ["retail_goods_receipts", i.receipts, "receipts"], ["retail_purchase_order_items", i.purchaseItems, "purchase_items"], ["retail_purchase_orders", i.purchaseOrders, "purchase_orders"], ["quotations", i.quotations, "quotations"], ["leads", i.leads, "leads"], ["retail_skus", i.skus, "skus"], ["retail_locations", i.locations, "locations"],
     ["real_estate_listing_assets", i.assets, "listing_assets"], ["real_estate_listings", i.listings, "listings"], ["real_estate_properties", i.properties, "properties"], ["real_estate_parties", i.parties, "parties"],
   ]) await remove(a, table, ids, label);
+  await removeByActors(a, "agent_gateway_events", i.auth, "agent_gateway_events");
+  await removeByActors(a, "agent_gateway_commands", i.auth, "agent_gateway_commands");
   await remove(a, "membership_roles", i.membershipRoles, "membership_roles");
   await remove(a, "memberships", i.memberships, "memberships");
   await remove(a, "profiles", i.auth, "profiles");

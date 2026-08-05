@@ -75,11 +75,15 @@ test("V4 acceptance cleanup removes generated tenant defaults before fixture par
     "retail_price_book_items",
   ]) assert.match(cleanup, new RegExp(`\\["${table}"`));
   assert.match(cleanup, /removeByOrganizations\(a, table, i\.organizations, label\)/);
+  assert.match(cleanup, /removeByActors\(a, "agent_gateway_events", i\.auth, "agent_gateway_events"\)/);
+  assert.match(cleanup, /removeByActors\(a, "agent_gateway_commands", i\.auth, "agent_gateway_commands"\)/);
   assert.match(cleanup, /await remove\(a, "profiles", i\.auth, "profiles"\);/);
   assert.ok(cleanup.indexOf('"commercial_seat_events"') < cleanup.indexOf('"paid_seat_allocations"'));
   assert.ok(cleanup.indexOf('"paid_seat_allocations"') < cleanup.indexOf('"memberships"'));
   assert.ok(cleanup.indexOf('"retail_inventory_movements"') < cleanup.indexOf('"retail_skus"'));
   assert.ok(cleanup.indexOf('"retail_price_book_items"') < cleanup.indexOf('"retail_skus"'));
+  assert.ok(cleanup.indexOf('"agent_gateway_events"') < cleanup.indexOf('"agent_gateway_commands"'));
+  assert.ok(cleanup.indexOf('"agent_gateway_commands"') < cleanup.indexOf('"profiles"'));
   assert.ok(cleanup.indexOf('"profiles"') < cleanup.lastIndexOf('"organizations"'));
 });
 

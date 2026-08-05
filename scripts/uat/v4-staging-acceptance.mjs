@@ -95,7 +95,7 @@ async function createActor(state) {
 
 async function prepare(state) {
   for (const industry of ["real_estate", "retail"]) {
-    const organization = await write(state.admin, "organizations", { id: randomUUID(), slug: `${state.marker}-${industry}`, name: state.marker, industry_key: industry, plan_key: "growth", billable_seat_limit: 5, status: "active" }, `organization_${industry}`);
+    const organization = await write(state.admin, "organizations", { id: randomUUID(), slug: `${state.marker}-${industry}`, name: state.marker, industry_key: industry, plan_key: "growth", billable_seat_limit: 20, status: "active" }, `organization_${industry}`);
     state.organizations[industry] = organization.id; state.ids.organizations.push(organization.id);
   }
   await createActor(state);

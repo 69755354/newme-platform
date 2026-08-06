@@ -30,6 +30,15 @@ function databaseErrorCode(error) {
   const code = String(error?.code ?? "unknown");
   return /^[A-Za-z0-9_]{1,32}$/.test(code) ? code : "unknown";
 }
+function httpFailureCode(response, label) {
+  const status = Number.isInteger(response?.status) && response.status >= 100 && response.status <= 599
+    ? String(response.status)
+    : "unknown";
+  const code = typeof response?.body?.error === "string" && /^[a-z0-9_]{1,64}$/i.test(response.body.error)
+    ? response.body.error
+    : "none";
+  return `${label}_${status}_${code}`;
+}
 function unique(values) { return [...new Set(values.filter(Boolean))]; }
 
 export function validateEnvironment(env = process.env) {
@@ -458,7 +467,7 @@ async function sam80(state) {
     api("/api/operations/jobs?limit=100", requester.token),
   ]);
   if (timeline.status !== 200 || !Array.isArray(timeline.body?.data)) fail("sam80_timeline_read_failed");
-  if (summary.status !== 200 || !summary.body?.data) fail("sam80_summary_read_failed");
+  if (summary.status !== 200 || !summary.body?.data) fail(httpFailureCode(summary, "sam80_summary_read_failed"));
   if (jobs.status !== 200 || !Array.isArray(jobs.body?.data)) fail("sam80_jobs_read_failed");
   if (!jobs.body.data.some((row) => row?.id === job.body.data.id)) fail("sam80_report_job_visibility_failed");
   return { status: "pass", independent_approval: "verified", tenant_isolation: "verified", report_job: "queued", marker_only: true };

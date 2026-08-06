@@ -53,6 +53,7 @@ test("SAM-82 cleanup remains exact-ID and ordered below append-only facts", asyn
     "support_sessions", "audit_events", "audit_logs", "lead_milestones", "notifications",
   ]) assert.ok(organizationCleanup.includes(`\"${table}\"`), `missing ${table}`);
   assert.match(organizationCleanup, /removeByOrganizations\(state\.admin, table, state\.ids\.organizations, label\)/);
+  assert.match(runner, /\.select\("organization_id", \{ count: "exact", head: true \}\)\n    \.in\("organization_id", values\)/);
   assert.ok(organizationCleanup.indexOf('"commercial_action_events"') < organizationCleanup.indexOf('"commercial_action_requests"'));
   assert.ok(organizationCleanup.indexOf('"tenant_file_deletion_outbox"') < organizationCleanup.indexOf('"tenant_file_objects"'));
   assert.ok(cleanup.indexOf("await removeKnownOrganizationChildren(state)") < cleanup.indexOf("cleanup_organizations_failed"));

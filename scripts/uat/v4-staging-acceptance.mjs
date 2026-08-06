@@ -89,7 +89,7 @@ async function removeByOrganizations(client, table, organizationIds, label) {
   if (error) fail(`cleanup_${label}_failed`);
   const { count, error: countError } = await client
     .from(table)
-    .select("id", { count: "exact", head: true })
+    .select("organization_id", { count: "exact", head: true })
     .in("organization_id", values);
   if (countError || count !== 0) fail(`cleanup_${label}_residue`);
 }

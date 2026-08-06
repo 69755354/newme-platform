@@ -19,6 +19,8 @@ test("SAM-80 creates requester and approver identities inside the SHA-bound runn
   assert.doesNotMatch(source, /SAM80_REQUESTER_TOKEN|SAM80_APPROVER_TOKEN|SAM80_ORGANIZATION_ID/);
   assert.match(source, /sam80_independent_approval_gate_failed/);
   assert.match(source, /sam80_cross_organization_gate_failed/);
+  assert.match(source, /job\.status !== 202/);
+  assert.doesNotMatch(source, /job\.status !== 201/);
   assert.match(source, /sam80_report_job_failed/);
   assert.match(controller, /const scenarios = \["SAM-80", "SAM-81", "SAM-82", "SAM-83", "SAM-84", "SAM-86"\]/);
 });

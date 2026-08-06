@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { resolveOrganizationAuthorization } from "@/lib/organization-authorization";
 import { errorResponse, jsonResponse } from "@/lib/shared-operations";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
     ]);
     if (workItems.error) throw workItems.error;
     if (approvals.error) throw approvals.error;
-    const { count: deadLetters, error: deadLettersError } = await access.context.supabase
+    const { count: deadLetters, error: deadLettersError } = await supabaseAdmin
       .from("shared_outbox").select("id", { count: "exact", head: true })
       .eq("organization_id", access.organizationId).eq("state", "dead_letter");
     if (deadLettersError) throw deadLettersError;

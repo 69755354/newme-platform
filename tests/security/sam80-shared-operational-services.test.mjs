@@ -8,6 +8,7 @@ const worker = await readFile("src/lib/shared-operations-worker.ts", "utf8");
 const uat = await readFile("scripts/uat/sam80-shared-operational-services.mjs", "utf8");
 const page = await readFile("src/components/SharedOperationsPanel.tsx", "utf8");
 const workbench = await readFile("src/app/(dashboard)/workbench/page.tsx", "utf8");
+const summaryRoute = await readFile("src/app/api/operations/summary/route.ts", "utf8");
 
 test("SAM-80 tenant tables are FORCE RLS and organization-bound", () => {
   for (const table of ["shared_work_items", "shared_approval_requests", "shared_timeline_events", "shared_notifications", "shared_outbox", "shared_jobs", "shared_report_snapshots"]) {
@@ -59,4 +60,12 @@ test("SAM-80 UI exposes work, approvals, jobs, notifications and timeline", () =
     assert.match(page, new RegExp(marker));
   }
   assert.match(workbench, /<SharedOperationsPanel \/>/);
+});
+
+test("SAM-80 summary exposes only a tenant-scoped dead-letter aggregate", () => {
+  assert.match(summaryRoute, /resolveOrganizationAuthorization\(request, "shared\.operations\.read"\)/);
+  assert.match(summaryRoute, /supabaseAdmin\s*\.from\("shared_outbox"\)/);
+  assert.match(summaryRoute, /select\("id", \{ count: "exact", head: true \}\)/);
+  assert.match(summaryRoute, /\.eq\("organization_id", access\.organizationId\)\.eq\("state", "dead_letter"\)/);
+  assert.doesNotMatch(summaryRoute, /select\("\*"\)/);
 });

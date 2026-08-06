@@ -15,7 +15,7 @@ INSERT INTO public.organizations(
   '78000000-1000-4000-8000-000000000010',
   'product-saas-11111111-1111-4111-8111-111111111111',
   '[PRODUCT-UAT 11111111-1111-4111-8111-111111111111] organization',
-  'real_estate', 'growth', 10, 'active', 'uae', 'Asia/Dubai'
+  'real_estate', 'growth', 20, 'active', 'uae', 'Asia/Dubai'
 );
 INSERT INTO public.memberships(
   id, organization_id, user_id, status, accepted_at

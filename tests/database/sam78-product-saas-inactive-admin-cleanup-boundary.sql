@@ -8,7 +8,7 @@ INSERT INTO public.organizations(id,slug,name,industry_key,plan_key,billable_sea
   ('78000000-8000-4000-8000-000000000010',
    'product-saas-88888888-8888-4888-8888-888888888888',
    '[PRODUCT-UAT 88888888-8888-4888-8888-888888888888] organization',
-   'real_estate','growth',10,'active','uae','Asia/Dubai');
+   'real_estate','growth',20,'active','uae','Asia/Dubai');
 INSERT INTO public.memberships(id,organization_id,user_id,status,accepted_at) VALUES
   ('78000000-8000-4000-8000-000000000011','78000000-8000-4000-8000-000000000010',
    '78000000-8000-4000-8000-000000000001','inactive',now());

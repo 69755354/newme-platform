@@ -9,9 +9,9 @@ production deployment.
 | Field | Verified value |
 | --- | --- |
 | Staging project ref | `bfsiibofuzoglziltgyd` |
-| Current staging release | `683e841e7b5c684b5cebdb05dbc17b7ae35c6929` |
-| Direct application rollback release | `a673bd1f3103e9cde6693daa12aa87a0ec0def38` |
-| Release manifest | `git_sha=683e841e7b5c684b5cebdb05dbc17b7ae35c6929` |
+| Current staging release | `83c4b6f3a14bb248db263ba8d727e00f6c0b70fe` |
+| Direct application rollback release | `683e841e7b5c684b5cebdb05dbc17b7ae35c6929` |
+| Release manifest | `git_sha=83c4b6f3a14bb248db263ba8d727e00f6c0b70fe` |
 | Release health | `/api/health` returned `200` / `status=ok` |
 | Protected production read-only health check | `127.0.0.1:3001/api/health` returned `status=ok` |
 
@@ -34,8 +34,11 @@ The cleanup correction was merged by PR #376. Its exact pre-merge head
 `31102534969` (`Repository validation`), including database gates, typecheck,
 repository tests and release hygiene. PR #378 then recorded the immutable audit
 index; its exact pre-merge head `a3d81fc85ee471f5cdf32c311f9628a8c32ffed5`
-passed rerun attempt 2 of GitHub Actions run `31105064081`. Its merge commit,
-`683e841e7b5c684b5cebdb05dbc17b7ae35c6929`, is the currently deployed staging
+passed rerun attempt 2 of GitHub Actions run `31105064081`. The final evidence
+record was then merged by PR #379: its exact pre-merge head
+`133002cc064eca54b128a010046061b5d165375b` passed GitHub Actions run
+`31106890948`. Its merge commit,
+`83c4b6f3a14bb248db263ba8d727e00f6c0b70fe`, is the currently deployed staging
 release.
 
 The controller-run `uat-v4` report for the deployed release has `ok=true`,
@@ -44,6 +47,7 @@ bounded staging outcomes:
 
 | Scenario | Verified outcome |
 | --- | --- |
+| SAM-78 | two-organization tenant closure; selected-context, search, direct-ID and organization-row checks passed; lifecycle/customer exit cleanup verified |
 | SAM-79 | plan/lifecycle, paid-seat limit, entitlements/usage, manual invoice reference and independent approval verified |
 | SAM-80 | tenant isolation and independent approval verified; report job queued |
 | SAM-81 | listing publish-readiness verified; external publish remained disabled |
@@ -52,20 +56,21 @@ bounded staging outcomes:
 | SAM-84 | L0/L1/L2=`200`, L3=`202`, L4=`403`; adapters disabled and route idempotency exercised |
 | SAM-86 | health/readiness=`200`, release SHA matched, readiness latency=`58ms` |
 
-The current release passed two separate SHA-bound controller UAT reports:
-`product-saas-final` (SAM-11/13/25/35/49/61/79 and customer exit) and
-`v4-staging-acceptance` (SAM-80/81/82/83/84/86). Both reported `ok=true`,
+The current release passed three separate SHA-bound controller UAT reports:
+`sam78-staging-tenant-closure` (SAM-78), `product-saas-final`
+(SAM-11/13/25/35/49/61/79 and customer exit), and
+`v4-staging-acceptance` (SAM-80/81/82/83/84/86). Each reported `ok=true`,
 HTTP 200 and `cleanup=verified`. All UAT-generated organizations, identities,
 memberships, commercial, shared-operation, real-estate, retail and finance
-records were removed by exact generated IDs. Both reports record zero residue
-for every tracked fixture collection. Neither truncates tables nor performs
+records were removed by exact generated IDs. Each report records zero residue
+for every tracked fixture collection. None truncates tables nor performs
 marker-wide or tenant-wide deletion.
 
 ## Capacity and rollback record
 
 Before each build, deploy and UAT, controller preflight required at least 15
-GiB available and at most 75% disk use. After the current product and V4 UAT
-reports, staging had `16,393,138,176` bytes available at `73%` use. The
+GiB available and at most 75% disk use. After the current SAM-78, product and
+V4 UAT reports, staging had `16,215,953,408` bytes available at `74%` use. The
 targeted retention cleanup retained the current and direct rollback releases,
 retained their SHA-bound UAT images, and removed only individually verified
 non-current/non-previous releases and zero-container-reference UAT image tags.

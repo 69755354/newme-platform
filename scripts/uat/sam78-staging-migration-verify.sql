@@ -693,6 +693,34 @@ BEGIN
     RAISE EXCEPTION 'SAM78 SECURITY DEFINER search_path contract failed';
   END IF;
 
+  IF (action = 'apply' AND phase = 'post')
+    OR (action = 'rollback' AND phase = 'pre') THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_policies policy
+      WHERE policy.schemaname = 'public'
+        AND policy.tablename = 'organizations'
+        AND policy.policyname = 'sam78_organizations_selected_context_read'
+        AND policy.permissive = 'RESTRICTIVE'
+        AND policy.roles = ARRAY['authenticated']::name[]
+        AND policy.cmd = 'SELECT'
+        AND policy.qual LIKE '%product_organization_context%'
+    ) THEN
+      RAISE EXCEPTION 'SAM78 selected organization read policy contract failed';
+    END IF;
+  ELSIF (
+    (action = 'apply' AND phase = 'pre')
+    OR (action = 'rollback' AND phase = 'post')
+  ) AND EXISTS (
+    SELECT 1
+    FROM pg_policies policy
+    WHERE policy.schemaname = 'public'
+      AND policy.tablename = 'organizations'
+      AND policy.policyname = 'sam78_organizations_selected_context_read'
+  ) THEN
+    RAISE EXCEPTION 'SAM78 selected organization read policy rollback failed';
+  END IF;
+
   IF action = 'rollback' AND phase = 'pre' THEN
     PERFORM set_config(
       'newme.sam78_activity_zero_count',

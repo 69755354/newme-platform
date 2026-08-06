@@ -242,6 +242,7 @@ async function main() {
       "supabase/migrations/20260806090000_sam78_product_saas_billable_seat_cleanup_boundary.sql",
       "supabase/migrations/20260806100000_sam78_product_saas_inactive_exit_approval_cleanup_boundary.sql",
       "supabase/migrations/20260806110000_sam78_product_saas_exit_staff_ref_cleanup_boundary.sql",
+      "supabase/migrations/20260806120000_sam78_organizations_selected_context_read_boundary.sql",
       "supabase/migrations/20260805020000_sam81_real_estate_listing_foundation.sql",
       "supabase/migrations/20260805190000_v4_commercial_control_plane.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
@@ -263,6 +264,7 @@ async function main() {
       "supabase/rollback/20260806090000_sam78_product_saas_billable_seat_cleanup_boundary_rollback.sql",
       "supabase/rollback/20260806100000_sam78_product_saas_inactive_exit_approval_cleanup_boundary_rollback.sql",
       "supabase/rollback/20260806110000_sam78_product_saas_exit_staff_ref_cleanup_boundary_rollback.sql",
+      "supabase/rollback/20260806120000_sam78_organizations_selected_context_read_boundary_rollback.sql",
       "supabase/rollback/20260805020000_sam81_real_estate_listing_foundation_rollback.sql",
       "supabase/rollback/20260805190000_v4_commercial_control_plane_rollback.sql",
       "scripts/uat/sam78-staging-migration-verify.sql",
@@ -276,6 +278,7 @@ async function main() {
       "tests/database/multitenant-auth-activity-context.sql",
       "tests/database/organization-lifecycle-cascade-context.sql",
       "tests/database/v4-tenant-capability-boundary.sql",
+      "tests/database/sam78-organizations-selected-context-read.sql",
       "tests/database/v4-tenant-capability-expand-compatibility.sql",
       "tests/database/v4-tenant-capability-rollback-guard.sql",
       "tests/database/v4-tenant-capability-rollback-guard-cleanup.sql",
@@ -717,6 +720,17 @@ async function main() {
         "/work/supabase/migrations/20260806110000_sam78_product_saas_exit_staff_ref_cleanup_boundary.sql",
       ]),
       "sam78_product_saas_exit_staff_ref_cleanup_boundary_apply",
+    );
+    requireSuccess(
+      psql(container, [
+        "-f",
+        "/work/supabase/migrations/20260806120000_sam78_organizations_selected_context_read_boundary.sql",
+      ]),
+      "sam78_organizations_selected_context_read_boundary_apply",
+    );
+    requireSuccess(
+      psql(container, ["-f", "sam78-organizations-selected-context-read.sql"]),
+      "sam78_organizations_selected_context_read_fixture",
     );
     requireSuccess(
       psql(container, [
@@ -1163,6 +1177,29 @@ async function main() {
     ) {
       throw new Error("v4_tenant_capability_expand_rollback_fail_closed_contract_failed");
     }
+    const deniedSam78OrganizationReadRollback = psql(container, [
+      "-f",
+      "/work/supabase/rollback/20260806120000_sam78_organizations_selected_context_read_boundary_rollback.sql",
+    ]);
+    if (
+      deniedSam78OrganizationReadRollback.status === 0
+      || !combined(deniedSam78OrganizationReadRollback).includes(
+        "sam78_organizations_selected_context_read_rollback_requires_staging_or_test",
+      )
+    ) {
+      throw new Error("sam78_organizations_selected_context_read_rollback_not_fail_closed");
+    }
+    requireSuccess(
+      psql(
+        container,
+        [
+          "-f",
+          "/work/supabase/rollback/20260806120000_sam78_organizations_selected_context_read_boundary_rollback.sql",
+        ],
+        "test",
+      ),
+      "sam78_organizations_selected_context_read_rollback",
+    );
     requireSuccess(
       psql(
         container,

@@ -2,17 +2,33 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile("scripts/uat/sam80-shared-operational-services.mjs", "utf8");
+const source = await readFile("scripts/uat/v4-staging-acceptance.mjs", "utf8");
+const controller = await readFile("scripts/newme-staging-control.sh", "utf8");
 
-test("SAM-80 staging runner never accepts production or unbound releases", () => {
+test("SAM-80 staging acceptance never accepts production or unbound releases", () => {
   assert.match(source, /\^\[0-9a-f\]\{40\}\$/);
-  assert.match(source, /manifest\.git_sha !== expectedSha/);
-  assert.match(source, /health\.status !== 200/);
+  assert.match(source, /manifest\?\.git_sha !== config\.releaseSha/);
+  assert.match(source, /response\.status !== 200/);
 });
 
-test("SAM-80 staging runner uses exact identifiers for reverse cleanup", () => {
-  assert.match(source, /created = \{/);
-  assert.match(source, /\.in\("id", ids\)/);
-  assert.match(source, /cleanup_residue_detected/);
-  assert.doesNotMatch(source, /truncate|delete\(\)\.neq/i);
+test("SAM-80 creates requester and approver identities inside the SHA-bound runner", () => {
+  assert.match(source, /createOrganizationActor\(state, \{/);
+  assert.match(source, /roleKey: "sales_agent", suffix: "sam80-requester"/);
+  assert.match(source, /state\.actor\.token/);
+  assert.match(source, /signInWithPassword/);
+  assert.doesNotMatch(source, /SAM80_REQUESTER_TOKEN|SAM80_APPROVER_TOKEN|SAM80_ORGANIZATION_ID/);
+  assert.match(source, /sam80_independent_approval_gate_failed/);
+  assert.match(source, /sam80_cross_organization_gate_failed/);
+  assert.match(source, /sam80_report_job_failed/);
+  assert.match(controller, /const scenarios = \["SAM-80", "SAM-81", "SAM-82", "SAM-83", "SAM-84", "SAM-86"\]/);
+});
+
+test("SAM-80 staging acceptance uses exact identifiers and dependency-ordered cleanup", () => {
+  const cleanup = source.slice(source.indexOf("async function cleanup"));
+  for (const table of ["shared_report_snapshots", "shared_notifications", "shared_outbox", "shared_timeline_events", "shared_approval_requests", "shared_jobs", "shared_work_items"]) assert.match(cleanup, new RegExp(`"${table}"`));
+  assert.match(source, /\.in\("id", values\)/);
+  assert.match(source, /collectSam80Cleanup\(state\)/);
+  assert.doesNotMatch(cleanup, /truncate|delete\(\)\.neq/i);
+  assert.ok(cleanup.indexOf('"shared_report_snapshots"') < cleanup.indexOf('"shared_work_items"'));
+  assert.ok(cleanup.indexOf('"shared_work_items"') < cleanup.indexOf('"memberships"'));
 });

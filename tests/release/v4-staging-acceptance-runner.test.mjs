@@ -28,13 +28,13 @@ test("V4 acceptance environment is exact staging-only and fail closed", () => {
   }
 });
 
-test("one SHA-bound action integrates four V4 scenarios and strict cleanup", async () => {
+test("one SHA-bound action integrates six V4 scenarios and strict cleanup", async () => {
   const [runner, controller, dockerfile, shell, readme] = await Promise.all([
     read("scripts/uat/v4-staging-acceptance.mjs"), read("scripts/newme-staging-control.sh"),
     read("infra/staging/uat-runner/Dockerfile"), read("infra/staging/uat-runner/run.sh"), read("infra/staging/uat-runner/README.md"),
   ]);
-  for (const scenario of ["SAM-81", "SAM-83", "SAM-84", "SAM-86"]) assert.match(runner, new RegExp(`"${scenario}"`));
-  for (const marker of ["V4_STAGING_ACCEPTANCE_ONLY", "V4_UAT_BASE_URL", "marker_only", "cleanup", "agent_gateway_adapter_registry", "receipt_idempotency", "fulfillment", "finance", "release_sha"]) assert.match(runner, new RegExp(marker));
+  for (const scenario of ["SAM-80", "SAM-81", "SAM-82", "SAM-83", "SAM-84", "SAM-86"]) assert.match(runner, new RegExp(`"${scenario}"`));
+  for (const marker of ["V4_STAGING_ACCEPTANCE_ONLY", "V4_UAT_BASE_URL", "marker_only", "cleanup", "agent_gateway_adapter_registry", "receipt_idempotency", "fulfillment", "finance", "release_sha", "sales_agent", "independent_approval", "report_job"]) assert.match(runner, new RegExp(marker));
   assert.match(runner, /evidence: "runtime_only_no_secrets", marker_only: true/);
   assert.match(runner, /plan_key: "growth", billable_seat_limit: 20/);
   assert.doesNotMatch(runner, /plan_key: "growth", billable_seat_limit: 5/);
@@ -58,6 +58,9 @@ test("one SHA-bound action integrates four V4 scenarios and strict cleanup", asy
     /V4_UAT_RELEASE_SHA=\$SHA/,
     /V4_UAT_BASE_URL=http:\/\/127\.0\.0\.1:3101/,
     /body\.cleanup\?\.status !== "verified"/,
+    /body\.scenarios\?\.\["SAM-80"\]\?\.independent_approval !== "verified"/,
+    /body\.scenarios\?\.\["SAM-80"\]\?\.tenant_isolation !== "verified"/,
+    /body\.scenarios\?\.\["SAM-80"\]\?\.report_job !== "queued"/,
     /body\.scenarios\?\.\["SAM-84"\]\?\.adapters !== "disabled"/,
     /install -m 0600 -o root -g root "\$output" "\$evidence_tmp"/,
   ]) assert.match(controller, pattern);
@@ -72,7 +75,7 @@ test("V4 acceptance cleanup removes generated tenant defaults before fixture par
   const cleanup = runner.slice(runner.indexOf("async function cleanup"));
   for (const table of [
     "user_session_daily", "commercial_seat_events", "paid_seat_allocations",
-    "commercial_entitlements", "organization_subscriptions", "retail_inventory_movements",
+    "commercial_entitlements", "organization_subscriptions", "shared_report_snapshots", "shared_notifications", "shared_outbox", "shared_timeline_events", "shared_approval_requests", "shared_jobs", "shared_work_items", "retail_inventory_movements",
     "retail_price_book_items", "shared_outbox",
   ]) assert.match(cleanup, new RegExp(`\\["${table}"`));
   assert.match(cleanup, /removeByOrganizations\(a, table, i\.organizations, label\)/);
@@ -87,6 +90,9 @@ test("V4 acceptance cleanup removes generated tenant defaults before fixture par
   assert.ok(cleanup.indexOf('"shared_outbox"') < cleanup.lastIndexOf('"organizations"'));
   assert.ok(cleanup.indexOf('"retail_inventory_movements"') < cleanup.indexOf('"retail_skus"'));
   assert.ok(cleanup.indexOf('"retail_price_book_items"') < cleanup.indexOf('"retail_skus"'));
+  assert.ok(cleanup.indexOf('"retail_inventory_movements"') < cleanup.indexOf('"retail_price_book_items"'));
+  assert.ok(cleanup.indexOf('"retail_price_book_items"') < cleanup.indexOf('"retail_price_books"'));
+  assert.ok(cleanup.indexOf('"retail_price_books"') < cleanup.indexOf('"retail_skus"'));
   assert.ok(cleanup.indexOf('"agent_gateway_events"') < cleanup.indexOf('"agent_gateway_commands"'));
   assert.ok(cleanup.indexOf('"agent_gateway_commands"') < cleanup.indexOf('"profiles"'));
   assert.ok(cleanup.indexOf('"shared_timeline_events"') < cleanup.indexOf('"profiles"'));
@@ -137,4 +143,26 @@ test("SAM-82, SAM-83, and SAM-84 keep append-only facts except for marker-scoped
     "20260806040000\tsam84_v4_synthetic_gateway_cleanup_boundary",
     "20260806050000\tsam82_v4_synthetic_inventory_cleanup_boundary",
   ]) assert.ok(`${executor}\n${controller}\n${history}`.includes(marker), `missing controlled migration marker ${marker}`);
+});
+
+test("SAM-82 is part of the SHA-bound V4 action with exact-ID retail cleanup", async () => {
+  const [runner, controller] = await Promise.all([
+    read("scripts/uat/v4-staging-acceptance.mjs"),
+    read("scripts/newme-staging-control.sh"),
+  ]);
+  for (const token of [
+    'results["SAM-82"] = await sam82(state)',
+    'topology: "verified"', 'sku_resolver: "verified"',
+    'inventory_ledger: "verified"', 'price_resolution: "verified"', 'rls_acl: "verified"',
+    'sam82_duplicate_idempotency_allowed', 'sam82_mutable_ledger_allowed',
+    'sam82_cross_organization_read_allowed', 'sam82_sales_inventory_write_allowed',
+    '["retail_inventory_movements", i.inventoryMovements, "inventory_movements"]',
+    '["retail_price_book_items", i.priceBookItems, "price_book_items"]',
+    '["retail_price_books", i.priceBooks, "price_books"]',
+  ]) assert.ok(runner.includes(token), `missing ${token}`);
+  for (const token of [
+    'const scenarios = ["SAM-80", "SAM-81", "SAM-82", "SAM-83", "SAM-84", "SAM-86"];',
+    'body.scenarios?.["SAM-82"]?.inventory_ledger !== "verified"',
+    '"inventoryMovements"', '"priceBookItems"', '"priceBooks"',
+  ]) assert.ok(controller.includes(token), `missing ${token}`);
 });

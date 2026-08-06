@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   CONFIRMATION,
   CUSTOMER_EXIT_RESULT_ID,
+  failureCode,
   FIXED_MANIFEST_PATH,
   LINEAR_IDS,
   NON_MANAGEMENT_ROLES,
@@ -40,6 +41,26 @@ test("cleanup failure telemetry is bounded and never serializes fixture state", 
   assert.match(source, /cleanup_operation_failed:\$\{stage\}/);
   assert.match(source, /cleanup_residue_detected:\$\{residue\}/);
   assert.doesNotMatch(source, /cleanup was not exact: \$\{JSON\.stringify/);
+});
+
+test("fixture and cleanup failures use fixed evidence codes", () => {
+  assert.equal(
+    failureCode(new Error("PRODUCT_SAAS_UAT_FAIL_CLOSED: could not create exact marked staging organization")),
+    "organization_fixture_create_failed",
+  );
+  assert.equal(
+    failureCode(new Error("PRODUCT_SAAS_UAT_FAIL_CLOSED: cleanup_operation_failed:audit_events")),
+    "cleanup_operation_failed:audit_events",
+  );
+  assert.equal(failureCode(new Error("unexpected upstream error")), "runner_fail_closed");
+});
+
+test("runner serializes prepare and cleanup failures without raw exception messages", async () => {
+  const source = await readFile("scripts/uat/product-saas-final.mjs", "utf8");
+  assert.match(source, /report\.failure = \{ stage: "prepare", code: failureCode\(error\) \}/);
+  assert.match(source, /report\.failure = \{ stage: "cleanup", code: failureCode\(error\) \}/);
+  assert.match(source, /if \(prepared && Object\.keys\(report\.results\)\.length !== REQUIRED_RESULT_IDS\.length\)/);
+  assert.doesNotMatch(source, /failure: \{[^}]*safeMessage/);
 });
 
 test("fails closed when confirmation, project, SHA, manifest, or URL drifts", () => {

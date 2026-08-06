@@ -29,6 +29,7 @@ readonly SAM78_UAT_FAILURE_EVIDENCE="$STATE_DIR/last-uat-sam78-failure.json"
 readonly PRODUCT_SAAS_UAT_FAILURE_EVIDENCE="$STATE_DIR/last-uat-product-saas-failure.json"
 readonly V4_ACCEPTANCE_RUNNER="scripts/uat/v4-staging-acceptance.mjs"
 readonly V4_ACCEPTANCE_EVIDENCE="$STATE_DIR/last-uat-v4-acceptance.json"
+readonly V4_ACCEPTANCE_FAILURE_EVIDENCE="$STATE_DIR/last-uat-v4-acceptance-failure.json"
 readonly SAM87_RUNNER="scripts/verify-staging-sam87-release-rehearsal.mjs"
 readonly SAM87_EVIDENCE="$STATE_DIR/last-rehearse-sam87.json"
 readonly SAM87_COLD_RECOVERY_EVIDENCE="$STATE_DIR/last-cold-recover-sam87.json"
@@ -1704,7 +1705,7 @@ run_uat_v4() {
     docker image inspect "$UAT_IMAGE_PREFIX:$SHA" \
       --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
   )" = "$SHA" ] || fail "staging UAT image provenance does not match"
-  local output rc evidence_tmp
+  local output rc evidence_tmp failure_tmp
   rm -f -- "$V4_ACCEPTANCE_EVIDENCE"
   output="$(mktemp "$STATE_DIR/.uat-v4.XXXXXX")"
   register_temporary_path "$output"
@@ -1727,7 +1728,61 @@ run_uat_v4() {
     --env "V4_UAT_CONFIRM=V4_STAGING_ACCEPTANCE_ONLY" \
     --mount "type=bind,src=$RELEASES/$SHA/manifest.json,dst=/runner/release/manifest.json,readonly" \
     "$UAT_IMAGE_PREFIX:$SHA" >"$output" 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] || fail "V4 staging acceptance runner failed with status $rc"
+  if [ "$rc" -ne 0 ]; then
+    failure_tmp="$(mktemp "$STATE_DIR/.last-uat-v4-acceptance-failure.XXXXXX")"
+    register_temporary_path "$failure_tmp"
+    /usr/bin/node - "$output" "$failure_tmp" "$SHA" "$rc" <<'NODE'
+const crypto = require("crypto");
+const fs = require("fs");
+const [output, destination, releaseSha, exitCode] = process.argv.slice(2);
+const raw = fs.readFileSync(output, "utf8");
+const scenarioIds = new Set(["SAM-80", "SAM-81", "SAM-82", "SAM-83", "SAM-84", "SAM-86"]);
+let diagnostic = {
+  output_kind: "unparseable",
+  failed_scenarios: [],
+  cleanup_status: null,
+  failure_code: null,
+};
+try {
+  const body = JSON.parse(raw);
+  if (
+    body?.ok === false &&
+    body?.schema_version === 1 &&
+    body?.scope === "v4-staging-acceptance" &&
+    body?.release?.project_ref === "bfsiibofuzoglziltgyd" &&
+    body?.release?.release_sha === releaseSha &&
+    body?.scenarios && typeof body.scenarios === "object"
+  ) {
+    diagnostic = {
+      output_kind: "v4_staging_acceptance_report",
+      failed_scenarios: Object.entries(body.scenarios)
+        .filter(([id, result]) => scenarioIds.has(id) && result?.status === "fail")
+        .map(([id]) => id)
+        .sort(),
+      cleanup_status: ["verified", "attempted", "failed", "not-run"].includes(body?.cleanup?.status)
+        ? body.cleanup.status
+        : null,
+      failure_code: typeof body.error === "string" && /^V4_STAGING_UAT_FAIL_CLOSED:[a-z0-9_.:-]{1,160}$/i.test(body.error)
+        ? body.error
+        : null,
+    };
+  }
+} catch {}
+const evidence = {
+  schema_version: 1,
+  scope: "v4-staging-acceptance-failure",
+  release_sha: releaseSha,
+  runner_exit: Number(exitCode),
+  ...diagnostic,
+  raw_sha256: crypto.createHash("sha256").update(raw).digest("hex"),
+};
+fs.writeFileSync(destination, `${JSON.stringify(evidence)}\n`, { mode: 0o600 });
+NODE
+    chown root:root "$failure_tmp"
+    chmod 0600 "$failure_tmp"
+    mv -Tf "$failure_tmp" "$V4_ACCEPTANCE_FAILURE_EVIDENCE"
+    fail "V4 staging acceptance runner failed with status $rc; root-only failure evidence was recorded"
+  fi
   node -e '
     const fs = require("fs");
     const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));

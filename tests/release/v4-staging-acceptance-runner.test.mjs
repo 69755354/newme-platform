@@ -53,6 +53,7 @@ test("one SHA-bound action integrates six V4 scenarios and strict cleanup", asyn
   for (const pattern of [
     /V4_ACCEPTANCE_RUNNER="scripts\/uat\/v4-staging-acceptance\.mjs"/,
     /V4_ACCEPTANCE_EVIDENCE="\$STATE_DIR\/last-uat-v4-acceptance\.json"/,
+    /V4_ACCEPTANCE_FAILURE_EVIDENCE="\$STATE_DIR\/last-uat-v4-acceptance-failure\.json"/,
     /uat-v4\) run_uat_v4/,
     /SAM_UAT_SUITE=v4-acceptance/,
     /V4_UAT_RELEASE_SHA=\$SHA/,
@@ -63,7 +64,11 @@ test("one SHA-bound action integrates six V4 scenarios and strict cleanup", asyn
     /body\.scenarios\?\.\["SAM-80"\]\?\.report_job !== "queued"/,
     /body\.scenarios\?\.\["SAM-84"\]\?\.adapters !== "disabled"/,
     /install -m 0600 -o root -g root "\$output" "\$evidence_tmp"/,
+    /scope: "v4-staging-acceptance-failure"/,
+    /raw_sha256: crypto\.createHash\("sha256"\)/,
+    /root-only failure evidence was recorded/,
   ]) assert.match(controller, pattern);
+  assert.doesNotMatch(controller, /console\.log\(raw\)/);
   assert.match(dockerfile, /COPY v4-staging-acceptance\.mjs \/runner\/v4-staging-acceptance\.mjs/);
   assert.match(shell, /v4-acceptance\)/);
   assert.match(shell, /exec node \/runner\/v4-staging-acceptance\.mjs/);

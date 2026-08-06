@@ -6,8 +6,8 @@ INSERT INTO auth.users(id) VALUES
   ('78000000-1000-4000-8000-000000000001'),
   ('78000000-1000-4000-8000-000000000002');
 INSERT INTO public.profiles(id, email, role, is_active) VALUES
-  ('78000000-1000-4000-8000-000000000001', 'product-saas-11111111-1111-4111-8111-111111111111-admin@invalid.test', 'admin', true),
-  ('78000000-1000-4000-8000-000000000002', 'product-saas-11111111-1111-4111-8111-111111111111-boss@invalid.test', 'boss', true);
+  ('78000000-1000-4000-8000-000000000001', 'product-saas-11111111-1111-4111-8111-111111111111-admin@invalid.test', 'admin', false),
+  ('78000000-1000-4000-8000-000000000002', 'product-saas-11111111-1111-4111-8111-111111111111-boss@invalid.test', 'boss', false);
 INSERT INTO public.organizations(
   id, slug, name, industry_key, plan_key, billable_seat_limit,
   status, data_region, timezone

@@ -447,7 +447,7 @@ async function sam80(state) {
   const job = await api("/api/operations/jobs", requester.token, {
     method: "POST", body: JSON.stringify({ kind: "operations_report", parameters: { report_scope: "daily" }, idempotency_key: `${state.marker}-sam80-report` }),
   });
-  if (job.status !== 201 || !UUID.test(job.body?.data?.id ?? "")) fail("sam80_report_job_failed");
+  if (job.status !== 202 || !UUID.test(job.body?.data?.id ?? "")) fail("sam80_report_job_failed");
   state.ids.sharedJobs.push(job.body.data.id);
   const crossOrganization = await api("/api/operations/work-items", requester.token, {
     headers: { "x-newme-organization-id": "00000000-0000-4000-8000-000000000001" },

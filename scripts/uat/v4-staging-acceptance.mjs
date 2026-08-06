@@ -525,6 +525,39 @@ async function collectRetailInventoryCleanup(state) {
   i.inventoryMovements.push(...(data ?? []).map((row) => row.id));
 }
 
+async function removeKnownOrganizationChildren(state) {
+  // These tables are the versioned V4 organization-owned graph.  The exact
+  // organization UUIDs were created by this invocation, so this is neither a
+  // marker sweep nor a tenant-wide delete. Keep child-before-parent ordering.
+  for (const [table, label] of [
+    ["commercial_action_events", "commercial_action_events"],
+    ["commercial_action_requests", "commercial_action_requests"],
+    ["commercial_state_events", "commercial_state_events"],
+    ["commercial_usage_events", "commercial_usage_events"],
+    ["commercial_invoice_references", "commercial_invoice_references"],
+    ["commercial_migration_org_snapshots", "commercial_migration_org_snapshots"],
+    ["tenant_file_deletion_outbox", "tenant_file_deletion_outbox"],
+    ["tenant_file_objects", "tenant_file_objects"],
+    ["contract_workflow_requests", "contract_workflow_requests"],
+    ["organization_document_sequences", "organization_document_sequences"],
+    ["organization_lifecycle_requests", "organization_lifecycle_requests"],
+    ["organization_exit_requests", "organization_exit_requests"],
+    ["organization_provisioning_requests", "organization_provisioning_requests"],
+    ["support_sessions", "support_sessions"], ["audit_events", "audit_events"],
+    ["crm_daily_funnel_snapshot", "crm_daily_funnel_snapshot"],
+    ["activities", "activities"], ["activity_logs", "activity_logs"],
+    ["ad_spend", "ad_spend"], ["audit_logs", "audit_logs"],
+    ["business_events", "business_events"], ["chat_messages", "chat_messages"],
+    ["customers", "customers"], ["follow_up_logs", "follow_up_logs"],
+    ["knx_designs", "knx_designs"], ["kpi_targets", "kpi_targets"],
+    ["lead_assignment_state", "lead_assignment_state"],
+    ["lead_deletion_requests", "lead_deletion_requests"], ["lead_files", "lead_files"],
+    ["lead_milestones", "lead_milestones"], ["lead_mutation_requests", "lead_mutation_requests"],
+    ["lead_workflow_stages", "lead_workflow_stages"], ["notifications", "notifications"],
+    ["quotes", "quotes"], ["transfer_history", "transfer_history"],
+  ]) await removeByOrganizations(state.admin, table, state.ids.organizations, label);
+}
+
 async function sam86(state) {
   const started = Date.now();
   const health = await fetch(`${state.config.baseUrl}/api/health`, { cache: "no-store", redirect: "manual" });
@@ -543,6 +576,7 @@ async function cleanup(state) {
   // membership and organization parents; no broad marker or tenant delete.
   await collectSam80Cleanup(state);
   await collectRetailInventoryCleanup(state);
+  await removeKnownOrganizationChildren(state);
   for (const [table, label] of [
     ["user_session_daily", "session_daily"],
     ["commercial_seat_events", "commercial_seat_events"],

@@ -457,7 +457,10 @@ async function sam80(state) {
     api("/api/operations/timeline?limit=100", requester.token), api("/api/operations/summary", requester.token),
     api("/api/operations/jobs?limit=100", requester.token),
   ]);
-  if (timeline.status !== 200 || !Array.isArray(timeline.body?.data) || summary.status !== 200 || !summary.body?.data || jobs.status !== 200 || !Array.isArray(jobs.body?.data) || !jobs.body.data.some((row) => row?.id === job.body.data.id)) fail("sam80_operations_read_gate_failed");
+  if (timeline.status !== 200 || !Array.isArray(timeline.body?.data)) fail("sam80_timeline_read_failed");
+  if (summary.status !== 200 || !summary.body?.data) fail("sam80_summary_read_failed");
+  if (jobs.status !== 200 || !Array.isArray(jobs.body?.data)) fail("sam80_jobs_read_failed");
+  if (!jobs.body.data.some((row) => row?.id === job.body.data.id)) fail("sam80_report_job_visibility_failed");
   return { status: "pass", independent_approval: "verified", tenant_isolation: "verified", report_job: "queued", marker_only: true };
 }
 

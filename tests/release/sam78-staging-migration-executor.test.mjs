@@ -11,6 +11,7 @@ import {
   MIGRATIONS,
   PLATFORM_STAFF_ROLE_MAPPING_FILE,
   STAGING_REF,
+  buildAlreadyAppliedVerificationSql,
   buildTransactionSql,
   bindMigrationPlanEntries,
   parseAppliedMigrationSet,
@@ -483,6 +484,17 @@ test("apply accepts the exact audited non-contiguous staging history and applies
     /exact known staging migration set, or a canonical applied prefix/,
   );
   const manifest = await expectedHistory();
+  const completeResolution = resolveStagingApplyPlan(loaded);
+  assert.deepEqual(completeResolution.activePlan, []);
+  const alreadyAppliedSql = buildAlreadyAppliedVerificationSql({
+    plan: loaded,
+    expectedHistory: manifest,
+    verifySql: "SELECT 1;",
+  });
+  assert.match(alreadyAppliedSql, /newme\.sam78_apply_mode = 'suffix'/);
+  assert.match(alreadyAppliedSql, /newme\.sam78_active_start_version = '20260806120000'/);
+  assert.match(alreadyAppliedSql, /newme\.sam78_verify_phase = 'post'/);
+  assert.equal((alreadyAppliedSql.match(/INSERT INTO supabase_migrations\.schema_migrations/g) ?? []).length, 0);
   assert.throws(
     () => buildTransactionSql({
       action: "apply",

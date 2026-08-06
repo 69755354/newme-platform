@@ -630,6 +630,64 @@ function historyVerification(plan, action, expectedHistory) {
   END $sam78_history_verify$;`;
 }
 
+export function buildAlreadyAppliedVerificationSql({ plan, expectedHistory, verifySql }) {
+  if (!Array.isArray(plan) || plan.length !== MIGRATIONS.length) {
+    fail("migration plan must contain the exact SAM-78 versions");
+  }
+  if (plan.some((item, index) => item.version !== MIGRATIONS[index].version || item.name !== MIGRATIONS[index].name)) {
+    fail("migration plan version or name drift");
+  }
+  if (!Array.isArray(expectedHistory) || expectedHistory.length <= plan.length) {
+    fail("canonical migration history manifest is incomplete");
+  }
+  if (typeof verifySql !== "string" || !verifySql.trim()) fail("verification SQL is empty");
+  const expectedValues = historyValues(expectedHistory);
+  const metadata = plan.map((item) => "(" + (
+    Object.hasOwn(KNOWN_STAGING_APPLIED_HISTORY_SHA256, item.version)
+      ? knownStagingMetadataPredicate(item)
+      : metadataPredicate(item)
+  ) + ")").join(" OR ");
+  const finalVersion = plan.at(-1).version;
+  return `BEGIN;
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '15min';
+SET LOCAL newme.environment = 'staging';
+SET LOCAL newme.sam78_action = 'apply';
+SET LOCAL newme.sam78_apply_mode = 'suffix';
+SET LOCAL newme.sam78_active_start_version = ${sqlLiteral(finalVersion)};
+LOCK TABLE supabase_migrations.schema_migrations IN SHARE ROW EXCLUSIVE MODE;
+DO $sam78_already_applied_history$
+DECLARE
+  missing_count integer;
+  extra_count integer;
+BEGIN
+  IF (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE ${metadata}) <> ${plan.length} THEN
+    RAISE EXCEPTION 'SAM78 already-applied migration metadata mismatch';
+  END IF;
+  SELECT count(*) INTO missing_count
+  FROM (
+    SELECT expected.version, expected.name
+    FROM (VALUES ${expectedValues}) AS expected(version, name)
+    EXCEPT
+    SELECT version, name FROM supabase_migrations.schema_migrations
+  ) missing;
+  SELECT count(*) INTO extra_count
+  FROM (
+    SELECT version, name FROM supabase_migrations.schema_migrations
+    EXCEPT
+    SELECT expected.version, expected.name
+    FROM (VALUES ${expectedValues}) AS expected(version, name)
+  ) extra;
+  IF missing_count <> 0 OR extra_count <> 0 THEN
+    RAISE EXCEPTION 'SAM78 complete migration history verification failed';
+  END IF;
+END $sam78_already_applied_history$;
+SET LOCAL newme.sam78_verify_phase = 'post';
+${verifySql.trim()}
+COMMIT;
+`;
+}
+
 export function buildTransactionSql({
   action, plan, activePlan = plan, expectedHistory, verifySql,
   platformStaffRoleMapping,
@@ -853,9 +911,6 @@ export function resolveStagingApplyPlan(appliedPlan) {
       || item.name !== appliedPlan[index].name)) {
     fail("applied migration history is not an ordered canonical set");
   }
-  if (canonicalApplied.length === MIGRATIONS.length) {
-    fail("all SAM-78 migrations are already applied");
-  }
   const isClean = canonicalApplied.length === 0;
   const isKnownStagingSet = canonicalApplied.length === KNOWN_STAGING_APPLIED_VERSIONS.length
     && canonicalApplied.every((item, index) => item.version === KNOWN_STAGING_APPLIED_VERSIONS[index]);
@@ -979,14 +1034,17 @@ export async function main(env = process.env) {
   const platformStaffRoleMapping = action === "apply"
     ? await loadPlatformStaffRoleMapping(env)
     : undefined;
-  const sql = buildTransactionSql({
-    action,
-    plan,
-    activePlan,
-    expectedHistory,
-    platformStaffRoleMapping,
-    verifySql: await readFile(env.SAM78_VERIFY_SQL_PATH, "utf8"),
-  });
+  const verifySql = await readFile(env.SAM78_VERIFY_SQL_PATH, "utf8");
+  const sql = action === "apply" && activePlan.length === 0
+    ? buildAlreadyAppliedVerificationSql({ plan, expectedHistory, verifySql })
+    : buildTransactionSql({
+      action,
+      plan,
+      activePlan,
+      expectedHistory,
+      platformStaffRoleMapping,
+      verifySql,
+    });
   await runPsql(sql, env);
   process.stdout.write(`${JSON.stringify({
     schemaVersion: 1,

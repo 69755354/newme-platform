@@ -27,6 +27,8 @@ Determine whether the NewMe V4 plan is source-traceable, internally consistent, 
 | A13 | Governance package validator | `skills/newme-v4-delivery/scripts/validate-governance.mjs` | Are all required documents, issue IDs, gates, references, templates and validation paths present? |
 | A14 | Reusable templates | `skills/newme-v4-delivery/assets/` | Do work-package, PR, Linear closeout and release-evidence templates capture every mandatory field? |
 | A15 | Validator regression suite | `skills/newme-v4-delivery/scripts/validate-scripts.test.mjs` | Do positive templates pass and malformed IDs, non-zero residue and secret-shaped evidence fail closed? |
+| A16 | Staging commercial acceptance record | `docs/v4/V4_STAGING_COMMERCIAL_ACCEPTANCE.md` | Is one exact staging release bound to build, migration, CI, UAT, cleanup, capacity and rollback evidence without promotion to production? |
+| A17 | Production Go/No-Go record | `docs/v4/V4_PRODUCTION_GO_NO_GO.md` | Does the production decision remain fail-closed when staging is positive but production gates are absent? |
 
 ## 3. Linear audit objects
 
@@ -49,6 +51,10 @@ Project: [NewMe V4 SaaS — Real Estate and Retail](https://linear.app/samnewme/
 
 Linear is live state. The auditor must record the query timestamp and must not substitute this repository snapshot for current status.
 
+The Linear connector used during the 2026-08-06 staging acceptance required
+reauthentication. No Linear state was created, edited or inferred; this table
+remains a historical snapshot until a fresh authenticated query is recorded.
+
 ## 4. Immutable Git evidence
 
 | Evidence | Reference |
@@ -68,6 +74,10 @@ Linear is live state. The auditor must record the query timestamp and must not s
 | Second-audit exact head | `8dbab48898757640326b5f316e62a8ca6e6573f7` |
 | Second-audit exact-head CI | [run 30777227710](https://github.com/69755354/newme-platform/actions/runs/30777227710), job `91574892604`, success |
 | Independent second reviews | Hermes review `4840962516`; OpenCode/GLM-5.2 review `4840970662` |
+| V4 staging cleanup correction PR | [#376](https://github.com/69755354/newme-platform/pull/376) |
+| V4 staging cleanup exact-head CI | [run 31102534969](https://github.com/69755354/newme-platform/actions/runs/31102534969), head `77abe85d55d305acceacf254e7daa598c57d7b50`, success |
+| Staging commercial acceptance release | `a673bd1f3103e9cde6693daa12aa87a0ec0def38` |
+| Staging acceptance and production decision | `docs/v4/V4_STAGING_COMMERCIAL_ACCEPTANCE.md`; `docs/v4/V4_PRODUCTION_GO_NO_GO.md` |
 
 The immutable rows above bind each completed audit to the commit actually reviewed. The live PR head is intentionally not self-referenced from the commit that would create that head; auditors must read the current head from [PR #256](https://github.com/69755354/newme-platform/pull/256) and bind any later verdict to that exact SHA and its CI run.
 

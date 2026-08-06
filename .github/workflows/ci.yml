@@ -34,9 +34,9 @@ jobs:
   validate:
     name: Repository validation
     # Repository validation uses only disposable/example credentials and a
-    # disposable PostgreSQL container.  It must not depend on the staging host
-    # being reachable or on that host's Docker socket policy.
-    runs-on: ubuntu-24.04
+    # disposable PostgreSQL container. It runs on the dedicated staging CI
+    # runner, but must not reach the staging application or database.
+    runs-on: [self-hosted, staging-ci]
     timeout-minutes: 30
     steps:
       - name: Checkout

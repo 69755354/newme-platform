@@ -1731,8 +1731,8 @@ run_uat_v4() {
   node -e '
     const fs = require("fs");
     const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const scenarios = ["SAM-81", "SAM-83", "SAM-84", "SAM-86"];
-    const cleanup = ["organizations", "auth", "memberships", "membershipRoles", "parties", "properties", "listings", "assets", "locations", "skus", "leads", "quotations", "orders", "orderItems", "purchaseOrders", "purchaseItems", "receipts", "receiptItems", "handoffs", "codEvents", "allocations", "reconciliations"];
+    const scenarios = ["SAM-80", "SAM-81", "SAM-82", "SAM-83", "SAM-84", "SAM-86"];
+    const cleanup = ["organizations", "auth", "memberships", "membershipRoles", "parties", "properties", "listings", "assets", "locations", "skus", "priceBooks", "priceBookItems", "inventoryMovements", "leads", "quotations", "orders", "orderItems", "purchaseOrders", "purchaseItems", "receipts", "receiptItems", "handoffs", "codEvents", "allocations", "reconciliations"];
     if (
       body.ok !== true ||
       body.schema_version !== 1 ||
@@ -1742,6 +1742,14 @@ run_uat_v4() {
       body.release?.health !== 200 ||
       scenarios.some((key) => body.scenarios?.[key]?.status !== "pass" || body.scenarios?.[key]?.marker_only !== true) ||
       body.scenarios?.["SAM-81"]?.external_publish_state !== "disabled" ||
+      body.scenarios?.["SAM-80"]?.independent_approval !== "verified" ||
+      body.scenarios?.["SAM-80"]?.tenant_isolation !== "verified" ||
+      body.scenarios?.["SAM-80"]?.report_job !== "queued" ||
+      body.scenarios?.["SAM-82"]?.topology !== "verified" ||
+      body.scenarios?.["SAM-82"]?.sku_resolver !== "verified" ||
+      body.scenarios?.["SAM-82"]?.inventory_ledger !== "verified" ||
+      body.scenarios?.["SAM-82"]?.price_resolution !== "verified" ||
+      body.scenarios?.["SAM-82"]?.rls_acl !== "verified" ||
       body.scenarios?.["SAM-83"]?.receipt_idempotency !== "verified" ||
       body.scenarios?.["SAM-83"]?.order !== "accepted" ||
       body.scenarios?.["SAM-83"]?.fulfillment !== "completed" ||

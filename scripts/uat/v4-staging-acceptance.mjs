@@ -14,7 +14,7 @@ export const STAGING_REF = "bfsiibofuzoglziltgyd";
 export const PRODUCTION_REF = "vfopmpxlhwzpxqegayew";
 export const CONFIRMATION = "V4_STAGING_ACCEPTANCE_ONLY";
 export const FIXED_MANIFEST = "/runner/release/manifest.json";
-export const SCENARIOS = ["SAM-81", "SAM-83", "SAM-84", "SAM-86"];
+export const SCENARIOS = ["SAM-80", "SAM-81", "SAM-82", "SAM-83", "SAM-84", "SAM-86"];
 const SHA = /^[0-9a-f]{40}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -134,6 +134,40 @@ async function createActor(state) {
   state.actor = { id: data.user.id, token: signed.session.access_token };
 }
 
+async function createOrganizationActor(state, { organizationId, roleKey, suffix }) {
+  const email = `${state.marker}-${suffix}@invalid.test`.toLowerCase();
+  const password = `${randomBytes(24).toString("base64url")}Aa1!`;
+  const { data, error } = await state.admin.auth.admin.createUser({
+    email, password, email_confirm: true,
+    app_metadata: { fixture_scope: "v4-staging-acceptance", run_id: state.runId },
+    user_metadata: { full_name: state.marker },
+  });
+  if (error || !data.user?.id) fail(`fixture_${suffix}_auth_create_failed`);
+  state.ids.auth.push(data.user.id);
+  const { error: profileError } = await state.admin.from("profiles")
+    .update({ role: "admin", full_name: state.marker, email, is_active: true, force_password_change: false })
+    .eq("id", data.user.id);
+  if (profileError) fail(`fixture_${suffix}_profile_configure_failed`);
+  const { data: membership, error: membershipError } = await state.admin.from("memberships")
+    .insert({ organization_id: organizationId, user_id: data.user.id, status: "active", accepted_at: new Date().toISOString() })
+    .select("id").single();
+  if (membershipError || !membership?.id) fail(`fixture_${suffix}_membership_create_failed`);
+  state.ids.memberships.push(membership.id);
+  const { data: role, error: roleError } = await state.admin.from("roles").select("id")
+    .eq("scope", "organization").eq("role_key", roleKey).single();
+  if (roleError || !role?.id) fail(`fixture_${suffix}_role_missing`);
+  const { data: membershipRole, error: membershipRoleError } = await state.admin.from("membership_roles")
+    .insert({ organization_id: organizationId, membership_id: membership.id, role_id: role.id }).select("id").single();
+  if (membershipRoleError || !membershipRole?.id) fail(`fixture_${suffix}_membership_role_create_failed`);
+  state.ids.membershipRoles.push(membershipRole.id);
+  const { createClient } = state.supabase;
+  const { data: signed, error: signError } = await createClient(state.config.supabaseUrl, state.config.anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  }).auth.signInWithPassword({ email, password });
+  if (signError || !signed.session?.access_token) fail(`fixture_${suffix}_signin_failed`);
+  return { id: data.user.id, token: signed.session.access_token };
+}
+
 async function prepare(state) {
   for (const industry of ["real_estate", "retail"]) {
     const organization = await write(state.admin, "organizations", { id: randomUUID(), slug: `${state.marker}-${industry}`, name: state.marker, industry_key: industry, plan_key: "growth", billable_seat_limit: 20, status: "active" }, `organization_${industry}`);
@@ -166,6 +200,147 @@ async function createRetailCodActor(state, suffix) {
   state.ids.memberships.push(membership.id);
   return data.user.id;
 }
+
+async function createRetailCapabilityActor(state, suffix, roleKey) {
+  const email = `${state.marker}-${suffix}@invalid.test`.toLowerCase();
+  const password = `${randomBytes(24).toString("base64url")}Aa1!`;
+  const { data, error } = await state.admin.auth.admin.createUser({
+    email, password, email_confirm: true,
+    app_metadata: { fixture_scope: "v4-staging-acceptance", run_id: state.runId },
+    user_metadata: { full_name: state.marker },
+  });
+  if (error || !data.user?.id) fail(`sam82_${suffix}_auth_create_failed`);
+  state.ids.auth.push(data.user.id);
+  const { error: profileError } = await state.admin
+    .from("profiles")
+    .update({ role: "admin", full_name: state.marker, email, is_active: true, force_password_change: false })
+    .eq("id", data.user.id);
+  if (profileError) fail(`sam82_${suffix}_profile_configure_failed`);
+  const { data: membership, error: membershipError } = await state.admin
+    .from("memberships")
+    .insert({ organization_id: state.organizations.retail, user_id: data.user.id, status: "active", accepted_at: new Date().toISOString() })
+    .select("id")
+    .single();
+  if (membershipError || !membership?.id) fail(`sam82_${suffix}_membership_create_failed`);
+  state.ids.memberships.push(membership.id);
+  const { data: role, error: roleError } = await state.admin
+    .from("roles")
+    .select("id")
+    .eq("scope", "organization")
+    .eq("role_key", roleKey)
+    .single();
+  if (roleError || !role?.id) fail(`sam82_${suffix}_role_missing`);
+  const { data: membershipRole, error: membershipRoleError } = await state.admin
+    .from("membership_roles")
+    .insert({ organization_id: state.organizations.retail, membership_id: membership.id, role_id: role.id })
+    .select("id")
+    .single();
+  if (membershipRoleError || !membershipRole?.id) fail(`sam82_${suffix}_membership_role_create_failed`);
+  state.ids.membershipRoles.push(membershipRole.id);
+  const { createClient } = state.supabase;
+  const client = createClient(state.config.supabaseUrl, state.config.anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: signed, error: signError } = await client.auth.signInWithPassword({ email, password });
+  if (signError || !signed.session?.access_token) fail(`sam82_${suffix}_signin_failed`);
+  return { id: data.user.id, client };
+}
+
+async function sam82(state) {
+  const organizationId = state.organizations.retail;
+  const manager = await createRetailCapabilityActor(state, "inventory-manager", "operations");
+  const sales = await createRetailCapabilityActor(state, "inventory-sales", "sales_agent");
+  const location = await write(manager.client, "retail_locations", {
+    organization_id: organizationId, code: `${state.marker}-wh`, name: state.marker, location_kind: "warehouse",
+  }, "sam82_location");
+  state.ids.locations.push(location.id);
+  const sku = await write(manager.client, "retail_skus", {
+    organization_id: organizationId, sku: `${state.marker}-sku`, name: state.marker,
+  }, "sam82_sku");
+  state.ids.skus.push(sku.id);
+  const priceBook = await write(manager.client, "retail_price_books", {
+    organization_id: organizationId, name: `${state.marker}-aed`, currency: "AED", vat_rate: 5, status: "active",
+  }, "sam82_price_book");
+  state.ids.priceBooks.push(priceBook.id);
+  const priceBookItem = await write(manager.client, "retail_price_book_items", {
+    organization_id: organizationId, price_book_id: priceBook.id, sku_id: sku.id,
+    unit_price: 10, max_discount_percent: 15, effective_from: new Date(Date.now() - 60_000).toISOString(),
+  }, "sam82_price_book_item");
+  state.ids.priceBookItems.push(priceBookItem.id);
+  const idempotencyKey = randomUUID();
+  const receive = await write(manager.client, "retail_inventory_movements", {
+    organization_id: organizationId, location_id: location.id, sku_id: sku.id,
+    idempotency_key: idempotencyKey, movement_type: "receive", on_hand_delta: 12,
+  }, "sam82_receive");
+  const reserve = await write(manager.client, "retail_inventory_movements", {
+    organization_id: organizationId, location_id: location.id, sku_id: sku.id,
+    idempotency_key: randomUUID(), movement_type: "reserve", on_hand_delta: -2, reserved_delta: 2,
+  }, "sam82_reserve");
+  state.ids.inventoryMovements.push(receive.id, reserve.id);
+
+  const { data: balance, error: balanceError } = await manager.client
+    .from("retail_inventory_balances")
+    .select("on_hand,reserved,available")
+    .eq("organization_id", organizationId)
+    .eq("location_id", location.id)
+    .eq("sku_id", sku.id)
+    .single();
+  if (balanceError || Number(balance?.on_hand) !== 10 || Number(balance?.reserved) !== 2 || Number(balance?.available) !== 8) {
+    fail("sam82_inventory_balance_invalid");
+  }
+  const { data: price, error: priceError } = await manager.client
+    .from("retail_effective_prices")
+    .select("unit_price,max_discount_percent,currency,vat_rate")
+    .eq("organization_id", organizationId)
+    .eq("price_book_id", priceBook.id)
+    .eq("sku_id", sku.id)
+    .single();
+  if (priceError || Number(price?.unit_price) !== 10 || Number(price?.max_discount_percent) !== 15 || price?.currency !== "AED" || Number(price?.vat_rate) !== 5) {
+    fail("sam82_effective_price_invalid");
+  }
+
+  const duplicate = await manager.client.from("retail_inventory_movements").insert({
+    organization_id: organizationId, location_id: location.id, sku_id: sku.id,
+    idempotency_key: idempotencyKey, movement_type: "receive", on_hand_delta: 1,
+  });
+  if (!duplicate.error) fail("sam82_duplicate_idempotency_allowed");
+  const immutable = await state.admin.from("retail_inventory_movements")
+    .update({ on_hand_delta: 99 })
+    .eq("id", receive.id);
+  if (!immutable.error) fail("sam82_mutable_ledger_allowed");
+  const zeroPrice = await manager.client.from("retail_price_book_items").insert({
+    organization_id: organizationId, price_book_id: priceBook.id, sku_id: sku.id,
+    unit_price: 0, max_discount_percent: 0, effective_from: new Date().toISOString(),
+  });
+  if (!zeroPrice.error) fail("sam82_zero_price_allowed");
+  const excessiveDiscount = await manager.client.from("retail_price_book_items").insert({
+    organization_id: organizationId, price_book_id: priceBook.id, sku_id: sku.id,
+    unit_price: 1, max_discount_percent: 101, effective_from: new Date().toISOString(),
+  });
+  if (!excessiveDiscount.error) fail("sam82_excessive_discount_allowed");
+  const salesWrite = await sales.client.from("retail_inventory_movements").insert({
+    organization_id: organizationId, location_id: location.id, sku_id: sku.id,
+    idempotency_key: randomUUID(), movement_type: "receive", on_hand_delta: 1,
+  });
+  if (!salesWrite.error) fail("sam82_sales_inventory_write_allowed");
+  const crossOrganizationRead = await state.actor.client
+    .from("retail_locations")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("id", location.id);
+  if (crossOrganizationRead.error || (crossOrganizationRead.data ?? []).length !== 0) fail("sam82_cross_organization_read_allowed");
+  const crossOrganizationWrite = await state.actor.client.from("retail_skus").insert({
+    organization_id: organizationId, sku: `${state.marker}-cross-org`, name: state.marker,
+  });
+  if (!crossOrganizationWrite.error) fail("sam82_cross_organization_catalog_write_allowed");
+
+  return {
+    status: "pass", topology: "verified", sku_resolver: "verified",
+    inventory_ledger: "verified", price_resolution: "verified", rls_acl: "verified",
+    marker_only: true,
+  };
+}
+
 
 async function sam81(state) {
   const organizationId = state.organizations.real_estate;
@@ -226,6 +401,96 @@ async function sam84(state) {
   return { status: "pass", risk_levels: outcomes, adapters: "disabled", replay: "route_idempotency_exercised", marker_only: true };
 }
 
+async function sam80(state) {
+  const organizationId = state.organizations.real_estate;
+  const requester = await createOrganizationActor(state, {
+    organizationId, roleKey: "sales_agent", suffix: "sam80-requester",
+  });
+  const api = async (path, token, init = {}) => {
+    const response = await fetch(`${state.config.baseUrl}${path}`, {
+      ...init,
+      headers: {
+        "content-type": "application/json", authorization: `Bearer ${token}`,
+        "x-newme-organization-id": organizationId, ...(init.headers ?? {}),
+      },
+    });
+    return { status: response.status, body: await response.json().catch(() => null) };
+  };
+  const unauthenticated = await api("/api/operations/summary", "invalid");
+  if (unauthenticated.status !== 401) fail("sam80_unauthenticated_gate_failed");
+  const workKey = `${state.marker}-sam80-work`;
+  const work = await api("/api/operations/work-items", requester.token, {
+    method: "POST", body: JSON.stringify({ title: state.marker, priority: "normal", idempotency_key: workKey }),
+  });
+  if (work.status !== 201 || !UUID.test(work.body?.data?.id ?? "")) fail("sam80_work_create_failed");
+  state.ids.sharedWorkItems.push(work.body.data.id);
+  const replay = await api("/api/operations/work-items", requester.token, {
+    method: "POST", body: JSON.stringify({ title: state.marker, priority: "normal", idempotency_key: workKey }),
+  });
+  if (replay.status !== 201 || replay.body?.data?.id !== work.body.data.id) fail("sam80_work_idempotency_failed");
+  const approval = await api("/api/operations/approvals", requester.token, {
+    method: "POST", body: JSON.stringify({
+      action_key: "work.complete", resource_type: "shared_work_item", resource_id: work.body.data.id,
+      payload: { marker_code: state.runId }, idempotency_key: `${state.marker}-sam80-approval`,
+    }),
+  });
+  if (approval.status !== 201 || !UUID.test(approval.body?.data?.id ?? "")) fail("sam80_approval_request_failed");
+  state.ids.sharedApprovals.push(approval.body.data.id);
+  const selfDecision = await api(`/api/operations/approvals/${approval.body.data.id}`, requester.token, {
+    method: "PATCH", body: JSON.stringify({ decision: "approved", reason_code: "uat_approve" }),
+  });
+  if (selfDecision.status !== 403 && selfDecision.status !== 404) fail("sam80_independent_approval_gate_failed");
+  const decision = await api(`/api/operations/approvals/${approval.body.data.id}`, state.actor.token, {
+    method: "PATCH", body: JSON.stringify({ decision: "approved", reason_code: "uat_approve" }),
+  });
+  if (decision.status !== 200 || decision.body?.data?.status !== "approved") fail("sam80_approval_decision_failed");
+  const job = await api("/api/operations/jobs", requester.token, {
+    method: "POST", body: JSON.stringify({ kind: "operations_report", parameters: { report_scope: "daily" }, idempotency_key: `${state.marker}-sam80-report` }),
+  });
+  if (job.status !== 201 || !UUID.test(job.body?.data?.id ?? "")) fail("sam80_report_job_failed");
+  state.ids.sharedJobs.push(job.body.data.id);
+  const crossOrganization = await api("/api/operations/work-items", requester.token, {
+    headers: { "x-newme-organization-id": "00000000-0000-4000-8000-000000000001" },
+  });
+  if (crossOrganization.status !== 403) fail("sam80_cross_organization_gate_failed");
+  const [timeline, summary, jobs] = await Promise.all([
+    api("/api/operations/timeline?limit=100", requester.token), api("/api/operations/summary", requester.token),
+    api("/api/operations/jobs?limit=100", requester.token),
+  ]);
+  if (timeline.status !== 200 || !Array.isArray(timeline.body?.data) || summary.status !== 200 || !summary.body?.data || jobs.status !== 200 || !Array.isArray(jobs.body?.data) || !jobs.body.data.some((row) => row?.id === job.body.data.id)) fail("sam80_operations_read_gate_failed");
+  return { status: "pass", independent_approval: "verified", tenant_isolation: "verified", report_job: "queued", marker_only: true };
+}
+
+async function collectSam80Cleanup(state) {
+  const organizationId = state.organizations.real_estate;
+  const i = state.ids;
+  const resourceIds = unique([...i.sharedWorkItems, ...i.sharedApprovals, ...i.sharedJobs]);
+  if (resourceIds.length > 0) {
+    const { data: events, error: eventsError } = await state.admin.from("shared_timeline_events").select("id")
+      .eq("organization_id", organizationId).in("resource_id", resourceIds);
+    if (eventsError) fail("sam80_cleanup_event_discovery_failed");
+    i.sharedTimelineEvents.push(...(events ?? []).map((row) => row.id));
+    const { data: outbox, error: outboxError } = await state.admin.from("shared_outbox").select("id")
+      .eq("organization_id", organizationId).in("aggregate_id", resourceIds);
+    if (outboxError) fail("sam80_cleanup_outbox_discovery_failed");
+    i.sharedOutbox.push(...(outbox ?? []).map((row) => row.id));
+  }
+  const timelineIds = unique(i.sharedTimelineEvents);
+  if (timelineIds.length > 0) {
+    const { data: notifications, error } = await state.admin.from("shared_notifications").select("id")
+      .eq("organization_id", organizationId).in("source_event_id", timelineIds);
+    if (error) fail("sam80_cleanup_notification_discovery_failed");
+    i.sharedNotifications.push(...(notifications ?? []).map((row) => row.id));
+  }
+  const jobIds = unique(i.sharedJobs);
+  if (jobIds.length > 0) {
+    const { data: reports, error } = await state.admin.from("shared_report_snapshots").select("id")
+      .eq("organization_id", organizationId).in("generated_by_job_id", jobIds);
+    if (error) fail("sam80_cleanup_report_discovery_failed");
+    i.sharedReports.push(...(reports ?? []).map((row) => row.id));
+  }
+}
+
 async function sam86(state) {
   const started = Date.now();
   const health = await fetch(`${state.config.baseUrl}/api/health`, { cache: "no-store", redirect: "manual" });
@@ -242,17 +507,25 @@ async function cleanup(state) {
   // Organization creation emits commercial defaults and sign-in can emit a
   // session row. Delete those exact organization-scoped children before the
   // membership and organization parents; no broad marker or tenant delete.
+  await collectSam80Cleanup(state);
   for (const [table, label] of [
     ["user_session_daily", "session_daily"],
     ["commercial_seat_events", "commercial_seat_events"],
     ["paid_seat_allocations", "paid_seat_allocations"],
     ["commercial_entitlements", "commercial_entitlements"],
     ["organization_subscriptions", "organization_subscriptions"],
-    ["shared_outbox", "shared_outbox"],
-    ["retail_inventory_movements", "inventory_movements"],
-    ["retail_price_book_items", "price_book_items"],
   ]) await removeByOrganizations(a, table, i.organizations, label);
   for (const [table, ids, label] of [
+    ["shared_report_snapshots", i.sharedReports, "shared_reports"],
+    ["shared_notifications", i.sharedNotifications, "shared_notifications"],
+    ["shared_outbox", i.sharedOutbox, "shared_outbox"],
+    ["shared_timeline_events", i.sharedTimelineEvents, "shared_timeline_events"],
+    ["shared_approval_requests", i.sharedApprovals, "shared_approvals"],
+    ["shared_jobs", i.sharedJobs, "shared_jobs"],
+    ["shared_work_items", i.sharedWorkItems, "shared_work_items"],
+  ]) await remove(a, table, ids, label);
+  for (const [table, ids, label] of [
+    ["retail_inventory_movements", i.inventoryMovements, "inventory_movements"], ["retail_price_book_items", i.priceBookItems, "price_book_items"], ["retail_price_books", i.priceBooks, "price_books"],
     ["retail_finance_allocations", i.allocations, "allocations"], ["retail_finance_reconciliations", i.reconciliations, "reconciliations"], ["retail_cod_events", i.codEvents, "cod_events"], ["retail_delivery_handoffs", i.handoffs, "handoffs"], ["retail_order_items", i.orderItems, "order_items"], ["retail_orders", i.orders, "orders"], ["retail_goods_receipt_items", i.receiptItems, "receipt_items"], ["retail_goods_receipts", i.receipts, "receipts"], ["retail_purchase_order_items", i.purchaseItems, "purchase_items"], ["retail_purchase_orders", i.purchaseOrders, "purchase_orders"], ["quotations", i.quotations, "quotations"], ["leads", i.leads, "leads"], ["retail_skus", i.skus, "skus"], ["retail_locations", i.locations, "locations"],
     ["real_estate_listing_assets", i.assets, "listing_assets"], ["real_estate_listings", i.listings, "listings"], ["real_estate_properties", i.properties, "properties"], ["real_estate_parties", i.parties, "parties"],
   ]) await remove(a, table, ids, label);
@@ -274,9 +547,9 @@ async function cleanup(state) {
 export async function runV4StagingAcceptance(env = process.env, dependencies = {}) {
   const config = validateEnvironment(env); const release = await releaseBoundary(config, dependencies); const runId = randomUUID();
   const supabase = dependencies.supabase ?? await import("@supabase/supabase-js");
-  const state = { config, supabase, runId, marker: `V4-UAT-${config.releaseSha.slice(0, 12)}-${runId.slice(0, 8)}`, admin: supabase.createClient(config.supabaseUrl, config.serviceKey, { auth: { autoRefreshToken: false, persistSession: false } }), organizations: {}, actor: null, ids: { organizations: [], auth: [], memberships: [], membershipRoles: [], parties: [], properties: [], listings: [], assets: [], locations: [], skus: [], leads: [], quotations: [], orders: [], orderItems: [], purchaseOrders: [], purchaseItems: [], receipts: [], receiptItems: [], handoffs: [], codEvents: [], allocations: [], reconciliations: [] } };
+  const state = { config, supabase, runId, marker: `V4-UAT-${config.releaseSha.slice(0, 12)}-${runId.slice(0, 8)}`, admin: supabase.createClient(config.supabaseUrl, config.serviceKey, { auth: { autoRefreshToken: false, persistSession: false } }), organizations: {}, actor: null, ids: { organizations: [], auth: [], memberships: [], membershipRoles: [], sharedWorkItems: [], sharedApprovals: [], sharedTimelineEvents: [], sharedNotifications: [], sharedOutbox: [], sharedJobs: [], sharedReports: [], parties: [], properties: [], listings: [], assets: [], locations: [], skus: [], priceBooks: [], priceBookItems: [], inventoryMovements: [], leads: [], quotations: [], orders: [], orderItems: [], purchaseOrders: [], purchaseItems: [], receipts: [], receiptItems: [], handoffs: [], codEvents: [], allocations: [], reconciliations: [] } };
   const results = {};
-  try { await prepare(state); results["SAM-81"] = await sam81(state); results["SAM-83"] = await sam83(state); results["SAM-84"] = await sam84(state); results["SAM-86"] = await sam86(state); const cleanupResult = await cleanup(state); return { ok: true, schema_version: 1, scope: "v4-staging-acceptance", run_id: runId, release, scenarios: results, cleanup: cleanupResult }; }
+  try { await prepare(state); results["SAM-80"] = await sam80(state); results["SAM-81"] = await sam81(state); results["SAM-82"] = await sam82(state); results["SAM-83"] = await sam83(state); results["SAM-84"] = await sam84(state); results["SAM-86"] = await sam86(state); const cleanupResult = await cleanup(state); return { ok: true, schema_version: 1, scope: "v4-staging-acceptance", run_id: runId, release, scenarios: results, cleanup: cleanupResult }; }
   catch (error) { await cleanup(state).catch(() => undefined); return { ok: false, schema_version: 1, scope: "v4-staging-acceptance", run_id: runId, release, scenarios: results, cleanup: { status: "attempted" }, error: cleanError(error) }; }
 }
 

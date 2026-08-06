@@ -238,6 +238,7 @@ async function main() {
       "supabase/migrations/20260805010000_sam78_v4_exit_digest_contract.sql",
       "supabase/migrations/20260806060000_sam78_product_saas_closed_cleanup_boundary.sql",
       "supabase/migrations/20260806070000_sam78_product_saas_inactive_audit_cleanup_boundary.sql",
+      "supabase/migrations/20260806080000_sam78_product_saas_inactive_admin_cleanup_boundary.sql",
       "supabase/migrations/20260805020000_sam81_real_estate_listing_foundation.sql",
       "supabase/migrations/20260805190000_v4_commercial_control_plane.sql",
       "supabase/rollback/20260730231446_sam23_organization_owned_commercial_core_rollback.sql",
@@ -255,6 +256,7 @@ async function main() {
       "supabase/rollback/20260805010000_sam78_v4_exit_digest_contract_rollback.sql",
       "supabase/rollback/20260806060000_sam78_product_saas_closed_cleanup_boundary_rollback.sql",
       "supabase/rollback/20260806070000_sam78_product_saas_inactive_audit_cleanup_boundary_rollback.sql",
+      "supabase/rollback/20260806080000_sam78_product_saas_inactive_admin_cleanup_boundary_rollback.sql",
       "supabase/rollback/20260805020000_sam81_real_estate_listing_foundation_rollback.sql",
       "supabase/rollback/20260805190000_v4_commercial_control_plane_rollback.sql",
       "scripts/uat/sam78-staging-migration-verify.sql",
@@ -286,6 +288,7 @@ async function main() {
       "tests/database/sam78-product-saas-synthetic-cleanup-boundary.sql",
       "tests/database/sam78-product-saas-closed-cleanup-boundary.sql",
       "tests/database/sam78-product-saas-inactive-audit-cleanup-boundary.sql",
+      "tests/database/sam78-product-saas-inactive-admin-cleanup-boundary.sql",
       "tests/database/sam78-product-saas-synthetic-cleanup-rollback-verify.sql",
     ]) {
       await copyFixture(container, relativePath);
@@ -683,6 +686,13 @@ async function main() {
     requireSuccess(
       psql(container, [
         "-f",
+        "/work/supabase/migrations/20260806080000_sam78_product_saas_inactive_admin_cleanup_boundary.sql",
+      ]),
+      "sam78_product_saas_inactive_admin_cleanup_boundary_apply",
+    );
+    requireSuccess(
+      psql(container, [
+        "-f",
         "/work/supabase/migrations/20260805020000_sam81_real_estate_listing_foundation.sql",
       ]),
       "sam81_real_estate_listing_foundation_apply",
@@ -732,6 +742,10 @@ async function main() {
       requireSuccess(
         psql(container, ["-f", "sam78-product-saas-inactive-audit-cleanup-boundary.sql"]),
         "sam78_product_saas_inactive_audit_cleanup_boundary_fixture",
+      );
+      requireSuccess(
+        psql(container, ["-f", "sam78-product-saas-inactive-admin-cleanup-boundary.sql"]),
+        "sam78_product_saas_inactive_admin_cleanup_boundary_fixture",
       );
       requireSuccess(
         psql(container, ["-f", "v4-tenant-workflow-concurrency-prelude.sql"]),

@@ -50,6 +50,24 @@ export function fail(message) {
   throw new Error(`PRODUCT_SAAS_UAT_FAIL_CLOSED: ${message}`);
 }
 
+export function failureCode(error) {
+  const message = error instanceof Error ? error.message : "";
+  const known = [
+    ["could not create exact marked staging organization", "organization_fixture_create_failed"],
+    ["could not create exact marked", "identity_fixture_create_failed"],
+    ["could not configure", "profile_fixture_configure_failed"],
+    ["could not create", "fixture_create_failed"],
+    ["could not resolve", "fixture_role_resolution_failed"],
+    ["could not map", "fixture_role_mapping_failed"],
+    ["could not authenticate", "fixture_authentication_failed"],
+  ];
+  for (const [needle, code] of known) {
+    if (message.includes(needle)) return code;
+  }
+  const cleanup = message.match(/PRODUCT_SAAS_UAT_FAIL_CLOSED: (cleanup_(?:operation_failed|residue_detected):[a-z0-9_:.-]{1,160})$/);
+  return cleanup ? cleanup[1] : "runner_fail_closed";
+}
+
 function required(env, name) {
   const value = env[name];
   if (!value) fail(`missing required environment variable ${name}`);
@@ -2272,19 +2290,28 @@ export async function runProductSaasFinalUat(env = process.env, dependencies = {
     results: {},
     cleanup: "not-run",
     cleanupCounts: null,
+    failure: null,
   };
   const state = initializeState(config, runId);
-  let cleanupError;
+  let prepared = false;
   try {
     await prepareFixtures(state);
-    await recordIssue(report, "SAM-11", () => runSam11(state));
-    await recordIssue(report, "SAM-25", () => runSam25(state));
-    await recordIssue(report, "SAM-35", () => runSam35(state));
-    await recordIssue(report, "SAM-49", () => runSam49(state));
-    await recordIssue(report, "SAM-61", () => runSam61(state));
-    await recordIssue(report, "SAM-13", () => runSam13(state));
-    await recordIssue(report, "SAM-79", () => runSam79(state));
-    await recordIssue(report, CUSTOMER_EXIT_RESULT_ID, () => runCustomerExit(state));
+    prepared = true;
+  } catch (error) {
+    report.ok = false;
+    report.failure = { stage: "prepare", code: failureCode(error) };
+  }
+  try {
+    if (prepared) {
+      await recordIssue(report, "SAM-11", () => runSam11(state));
+      await recordIssue(report, "SAM-25", () => runSam25(state));
+      await recordIssue(report, "SAM-35", () => runSam35(state));
+      await recordIssue(report, "SAM-49", () => runSam49(state));
+      await recordIssue(report, "SAM-61", () => runSam61(state));
+      await recordIssue(report, "SAM-13", () => runSam13(state));
+      await recordIssue(report, "SAM-79", () => runSam79(state));
+      await recordIssue(report, CUSTOMER_EXIT_RESULT_ID, () => runCustomerExit(state));
+    }
   } finally {
     try {
       report.cleanupCounts = await cleanup(state);
@@ -2292,11 +2319,10 @@ export async function runProductSaasFinalUat(env = process.env, dependencies = {
     } catch (error) {
       report.ok = false;
       report.cleanup = "failed";
-      cleanupError = error;
+      report.failure = { stage: "cleanup", code: failureCode(error) };
     }
   }
-  if (cleanupError) throw cleanupError;
-  if (Object.keys(report.results).length !== REQUIRED_RESULT_IDS.length) {
+  if (prepared && Object.keys(report.results).length !== REQUIRED_RESULT_IDS.length) {
     fail("not every required Product/SaaS acceptance result was produced");
   }
   return report;

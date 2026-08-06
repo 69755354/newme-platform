@@ -1428,6 +1428,8 @@ let diagnostic = {
   output_kind: "unparseable",
   cleanup: null,
   failed_result_ids: [],
+  failure_stage: null,
+  failure_code: null,
 };
 try {
   const body = JSON.parse(raw);
@@ -1440,6 +1442,8 @@ try {
       output_kind: "product_saas_report",
       cleanup: ["verified", "failed", "not-run"].includes(body.cleanup) ? body.cleanup : null,
       failed_result_ids: failedResultIds,
+      failure_stage: ["prepare", "cleanup"].includes(body?.failure?.stage) ? body.failure.stage : null,
+      failure_code: typeof body?.failure?.code === "string" && /^[a-z0-9_:-]{1,160}$/.test(body.failure.code) ? body.failure.code : null,
     };
   }
 } catch {}

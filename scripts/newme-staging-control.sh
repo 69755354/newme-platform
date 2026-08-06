@@ -24,6 +24,7 @@ readonly SAM23_EVIDENCE="$STATE_DIR/last-uat-sam23.json"
 readonly SAM68_EVIDENCE="$STATE_DIR/last-uat-sam68.json"
 readonly SAM54_EVIDENCE="$STATE_DIR/last-uat-sam54.json"
 readonly SAM78_EVIDENCE="$STATE_DIR/last-migrate-sam78.json"
+readonly SAM78_DATABASE_FAILURE_EVIDENCE="$STATE_DIR/last-migrate-sam78-failure.json"
 readonly SAM78_UAT_EVIDENCE="$STATE_DIR/last-uat-sam78.json"
 readonly SAM78_UAT_FAILURE_EVIDENCE="$STATE_DIR/last-uat-sam78-failure.json"
 readonly PRODUCT_SAAS_UAT_FAILURE_EVIDENCE="$STATE_DIR/last-uat-product-saas-failure.json"
@@ -1877,7 +1878,7 @@ run_sam78_database_action() {
   local run_dir executor verify history_manifest
   local migration_031000 migration_143000 migration_041530 migration_041657 migration_041853 migration_041930 migration_050000 migration_050100 migration_050200 migration_051200 migration_051300 migration_051900 migration_060000 migration_060100 migration_060200 migration_060300 migration_060400 migration_060500 migration_060600 migration_060700 migration_060800 migration_060900 migration_061000 migration_061100 migration_061200
   local rollback_031000 rollback_143000 rollback_041530 rollback_041657 rollback_041853 rollback_041930 rollback_050000 rollback_050100 rollback_050200 rollback_051200 rollback_051300 rollback_051900 rollback_060000 rollback_060100 rollback_060200 rollback_060300 rollback_060400 rollback_060500 rollback_060600 rollback_060700 rollback_060800 rollback_060900 rollback_061000 rollback_061100 rollback_061200
-  local output rc evidence_tmp
+  local output rc evidence_tmp failure_tmp
   local verify_blob history_manifest_blob
   local migration_031000_blob migration_143000_blob migration_041530_blob migration_041657_blob migration_041853_blob migration_041930_blob migration_050000_blob migration_050100_blob migration_050200_blob migration_051200_blob migration_051300_blob migration_051900_blob migration_060000_blob migration_060100_blob migration_060200_blob migration_060300_blob migration_060400_blob migration_060500_blob migration_060600_blob migration_060700_blob migration_060800_blob migration_060900_blob migration_061000_blob migration_061100_blob migration_061200_blob
   local rollback_031000_blob rollback_143000_blob rollback_041530_blob rollback_041657_blob rollback_041853_blob rollback_041930_blob rollback_050000_blob rollback_050100_blob rollback_050200_blob rollback_051200_blob rollback_051300_blob rollback_051900_blob rollback_060000_blob rollback_060100_blob rollback_060200_blob rollback_060300_blob rollback_060400_blob rollback_060500_blob rollback_060600_blob rollback_060700_blob rollback_060800_blob rollback_060900_blob rollback_061000_blob rollback_061100_blob rollback_061200_blob
@@ -2170,8 +2171,35 @@ run_sam78_database_action() {
     SAM78_ROLLBACK_061200_PATH="$rollback_061200" \
     SAM78_ROLLBACK_061200_BLOB="$rollback_061200_blob" \
     /usr/bin/node "$executor" >"$output" 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] ||
-    fail "SAM-78 $database_action failed with status $rc; captured output is redacted"
+  if [ "$rc" -ne 0 ]; then
+    failure_tmp="$(mktemp "$STATE_DIR/.last-migrate-sam78-failure.XXXXXX")"
+    register_temporary_path "$failure_tmp"
+    /usr/bin/node - "$output" "$failure_tmp" "$SHA" "$database_action" "$rc" <<'NODE'
+const crypto = require("crypto");
+const fs = require("fs");
+const [output, destination, releaseSha, action, exitCode] = process.argv.slice(2);
+const raw = fs.readFileSync(output, "utf8");
+const message = raw.trim();
+const failureCode = (
+  /^SAM78_FAIL_CLOSED:[a-z0-9_. ,:-]{1,200}$/i.test(message) ||
+  /^psql failed code=(?:[0-9]+|null) signal=[A-Za-z0-9_-]+; output redacted$/.test(message)
+) ? message : "runner_nonzero_without_allowlisted_code";
+const evidence = {
+  schema_version: 1,
+  scope: "sam78-staging-migration-failure",
+  release_sha: releaseSha,
+  action,
+  runner_exit: Number(exitCode),
+  failure_code: failureCode,
+  raw_sha256: crypto.createHash("sha256").update(raw).digest("hex"),
+};
+fs.writeFileSync(destination, `${JSON.stringify(evidence)}\n`, { mode: 0o600 });
+NODE
+    chown root:root "$failure_tmp"
+    chmod 0600 "$failure_tmp"
+    mv -Tf "$failure_tmp" "$SAM78_DATABASE_FAILURE_EVIDENCE"
+    fail "SAM-78 $database_action failed with status $rc; root-only failure evidence was recorded"
+  fi
   /usr/bin/node -e '
     const fs = require("fs");
     const lines = fs.readFileSync(process.argv[1], "utf8").trim().split(/\r?\n/);

@@ -50,7 +50,7 @@ test("SAM-82 cleanup remains exact-ID and ordered below append-only facts", asyn
   for (const table of [
     "commercial_action_events", "commercial_action_requests", "commercial_state_events",
     "tenant_file_deletion_outbox", "tenant_file_objects", "organization_provisioning_requests",
-    "support_sessions", "audit_events", "audit_logs", "lead_milestones", "notifications",
+    "support_sessions", "audit_events", "audit_logs", "shared_outbox", "lead_milestones", "notifications",
   ]) assert.ok(organizationCleanup.includes(`\"${table}\"`), `missing ${table}`);
   assert.match(organizationCleanup, /removeByOrganizations\(state\.admin, table, state\.ids\.organizations, label\)/);
   assert.match(runner, /\.select\("organization_id", \{ count: "exact", head: true \}\)\n    \.in\("organization_id", values\)/);

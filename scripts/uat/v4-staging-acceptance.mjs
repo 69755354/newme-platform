@@ -548,6 +548,10 @@ async function removeKnownOrganizationChildren(state) {
     ["activities", "activities"], ["activity_logs", "activity_logs"],
     ["ad_spend", "ad_spend"], ["audit_logs", "audit_logs"],
     ["business_events", "business_events"], ["chat_messages", "chat_messages"],
+    // Organization provisioning can append an outbox event without exposing
+    // its ID to the scenario. Scope this cleanup to the UUIDs created by the
+    // current invocation before deleting the organization parents.
+    ["shared_outbox", "shared_outbox_by_organization"],
     ["customers", "customers"], ["follow_up_logs", "follow_up_logs"],
     ["knx_designs", "knx_designs"], ["kpi_targets", "kpi_targets"],
     ["lead_assignment_state", "lead_assignment_state"],

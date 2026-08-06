@@ -31,10 +31,10 @@ INSERT INTO public.platform_staff(
 ) VALUES
   ('78000000-1000-4000-8000-000000000021',
     '78000000-1000-4000-8000-000000000001', 'active',
-    'EXIT-11111111-OP', 'platform_ops'),
+    'SAM79-11111111-OP', 'platform_ops'),
   ('78000000-1000-4000-8000-000000000022',
     '78000000-1000-4000-8000-000000000002', 'active',
-    'EXIT-11111111-APP', 'platform_owner');
+    'SAM79-11111111-APP', 'platform_owner');
 INSERT INTO public.platform_action_approvals(
   id, action_key, target_key, payload, payload_hash, status,
   requested_by_platform_staff_id, approved_by_platform_staff_id,

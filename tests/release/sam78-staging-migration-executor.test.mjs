@@ -165,6 +165,12 @@ const paths = [
     migration: "supabase/migrations/20260806100000_sam78_product_saas_inactive_exit_approval_cleanup_boundary.sql",
     rollback: "supabase/rollback/20260806100000_sam78_product_saas_inactive_exit_approval_cleanup_boundary_rollback.sql",
   },
+  {
+    version: "20260806110000",
+    name: "sam78_product_saas_exit_staff_ref_cleanup_boundary",
+    migration: "supabase/migrations/20260806110000_sam78_product_saas_exit_staff_ref_cleanup_boundary.sql",
+    rollback: "supabase/rollback/20260806110000_sam78_product_saas_exit_staff_ref_cleanup_boundary_rollback.sql",
+  },
 ];
 
 async function expectedHistory() {
@@ -200,7 +206,7 @@ test("SAM-78 plan uses the fixed staging owner and exact canonical history tip",
 test("migration history manifest accepts CRLF but rejects header, order, row, and tip drift", async () => {
   const source = await read("scripts/uat/sam78-canonical-migration-history.txt");
   const crlfSource = source.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n");
-  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 156);
+  assert.equal(parseMigrationHistoryManifest(crlfSource).length, 157);
   assert.throws(
     () => parseMigrationHistoryManifest(source.replace("# schema-version=1", "# schema-version=2")),
     /header mismatch/,
@@ -340,7 +346,7 @@ test("executor binds resolved staging versions to parsed SQL entries before gene
     loaded.filter(({ version }) => KNOWN_STAGING_APPLIED_VERSIONS.includes(version)),
   );
   const activePlan = bindMigrationPlanEntries(loaded, resolved.activePlan);
-  assert.equal(activePlan.length, 16);
+  assert.equal(activePlan.length, 17);
   assert.ok(activePlan.every((item) => Array.isArray(item.statements) && item.statements.length > 0));
   assert.throws(
     () => bindMigrationPlanEntries(loaded, [...resolved.activePlan].reverse()),
@@ -357,6 +363,7 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
     verifySql: await read("scripts/uat/sam78-staging-migration-verify.sql"),
   });
   const operations = sql.indexOf("DELETE FROM supabase_migrations.schema_migrations");
+  const exitStaffRefCleanupBoundary = sql.indexOf("version = '20260806110000'", operations);
   const inactiveExitApprovalCleanupBoundary = sql.indexOf("version = '20260806100000'", operations);
   const billableSeatCleanupBoundary = sql.indexOf("version = '20260806090000'", operations);
   const inactiveAdminCleanupBoundary = sql.indexOf("version = '20260806080000'", operations);
@@ -380,7 +387,7 @@ test("rollback reverses the exact plan and verifies the applied prestate", async
   const middle = sql.indexOf("version = '20260803143000'", governedRpc + 1);
   const oldest = sql.indexOf("version = '20260803100000'", middle + 1);
   assert.ok(
-    operations > 0 && inactiveExitApprovalCleanupBoundary > operations && billableSeatCleanupBoundary > inactiveExitApprovalCleanupBoundary && inactiveAdminCleanupBoundary > billableSeatCleanupBoundary && inactiveAuditCleanupBoundary > inactiveAdminCleanupBoundary && closedProductCleanupBoundary > inactiveAuditCleanupBoundary && inventoryCleanupBoundary > closedProductCleanupBoundary && gatewayCleanupBoundary > inventoryCleanupBoundary && syntheticCleanupCaseFix > gatewayCleanupBoundary && syntheticCleanupFix > syntheticCleanupCaseFix && paidSeatFix > syntheticCleanupFix && sam84 > paidSeatFix && newest > sam84 && sam83 > newest && sam82 > sam83 && exitDigest > sam82 && productCleanup > exitDigest
+    operations > 0 && exitStaffRefCleanupBoundary > operations && inactiveExitApprovalCleanupBoundary > exitStaffRefCleanupBoundary && billableSeatCleanupBoundary > inactiveExitApprovalCleanupBoundary && inactiveAdminCleanupBoundary > billableSeatCleanupBoundary && inactiveAuditCleanupBoundary > inactiveAdminCleanupBoundary && closedProductCleanupBoundary > inactiveAuditCleanupBoundary && inventoryCleanupBoundary > closedProductCleanupBoundary && gatewayCleanupBoundary > inventoryCleanupBoundary && syntheticCleanupCaseFix > gatewayCleanupBoundary && syntheticCleanupFix > syntheticCleanupCaseFix && paidSeatFix > syntheticCleanupFix && sam84 > paidSeatFix && newest > sam84 && sam83 > newest && sam82 > sam83 && exitDigest > sam82 && productCleanup > exitDigest
       && sam20Cleanup > productCleanup
       && sam80Operations > sam20Cleanup
       && sam26Cleanup > sam80Operations
@@ -415,6 +422,7 @@ test("apply accepts the exact audited non-contiguous staging history and applies
       "20260806080000",
       "20260806090000",
       "20260806100000",
+      "20260806110000",
     ],
   );
   const sql = buildTransactionSql({
@@ -482,7 +490,7 @@ test("apply accepts the exact audited non-contiguous staging history and applies
   const contiguousResolution = resolveStagingApplyPlan(contiguousApplied);
   assert.deepEqual(
     contiguousResolution.activePlan.map(({ version }) => version),
-    ["20260806100000"],
+    ["20260806110000"],
   );
   const incrementalSql = buildTransactionSql({
     action: "apply",

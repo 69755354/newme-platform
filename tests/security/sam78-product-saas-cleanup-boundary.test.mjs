@@ -5,11 +5,13 @@ import test from "node:test";
 const read = (path) => readFile(new URL("../../" + path, import.meta.url), "utf8");
 
 test("SAM-78 Product/SaaS cleanup remains exact, service-only, and reversible", async () => {
-  const [migration, rollback, inactiveCleanupMigration, inactiveCleanupRollback, runner, controller, databaseGate] = await Promise.all([
+  const [migration, rollback, inactiveCleanupMigration, inactiveCleanupRollback, staffRefCleanupMigration, staffRefCleanupRollback, runner, controller, databaseGate] = await Promise.all([
     read("supabase/migrations/20260805000000_sam78_product_saas_synthetic_cleanup_boundary.sql"),
     read("supabase/rollback/20260805000000_sam78_product_saas_synthetic_cleanup_boundary_rollback.sql"),
     read("supabase/migrations/20260806100000_sam78_product_saas_inactive_exit_approval_cleanup_boundary.sql"),
     read("supabase/rollback/20260806100000_sam78_product_saas_inactive_exit_approval_cleanup_boundary_rollback.sql"),
+    read("supabase/migrations/20260806110000_sam78_product_saas_exit_staff_ref_cleanup_boundary.sql"),
+    read("supabase/rollback/20260806110000_sam78_product_saas_exit_staff_ref_cleanup_boundary_rollback.sql"),
     read("scripts/uat/product-saas-final.mjs"),
     read("scripts/newme-staging-control.sh"),
     read("scripts/run-sam23-database-gate.mjs"),
@@ -81,6 +83,15 @@ test("SAM-78 Product/SaaS cleanup remains exact, service-only, and reversible", 
   assert.match(inactiveCleanupRollback, /requester_profile\.is_active IS TRUE/);
   assert.match(inactiveCleanupRollback, /approver_profile\.is_active IS TRUE/);
   assert.match(inactiveCleanupRollback, /actor_profile\.is_active IS TRUE/);
+
+  assert.match(staffRefCleanupMigration, /requester\.staff_ref = 'SAM79-'/);
+  assert.match(staffRefCleanupMigration, /approver\.staff_ref = 'SAM79-'/);
+  assert.doesNotMatch(staffRefCleanupMigration, /staff_ref = 'EXIT-'/);
+  assert.doesNotMatch(staffRefCleanupMigration, /profile\.is_active IS TRUE/);
+  assert.match(staffRefCleanupRollback, /staff_ref = 'EXIT-'/);
+  assert.doesNotMatch(staffRefCleanupRollback, /profile\.is_active IS TRUE/);
+  assert.match(staffRefCleanupMigration, /REVOKE ALL ON FUNCTION public\.product_saas_is_synthetic_exit_approval[\s\S]*FROM PUBLIC, anon, authenticated/);
+  assert.match(staffRefCleanupMigration, /GRANT EXECUTE ON FUNCTION public\.product_saas_is_synthetic_exit_approval[\s\S]*TO service_role/);
 
   assert.ok(
     runner.indexOf('await capture("platform approval events"') <

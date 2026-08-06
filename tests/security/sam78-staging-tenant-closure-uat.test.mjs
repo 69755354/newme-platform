@@ -7,6 +7,7 @@ import {
   FIXED_MANIFEST_PATH,
   SCOPE,
   STAGING_PROJECT_REF,
+  failureDescriptor,
   runSam78StagingTenantClosure,
   validateEnvironment,
 } from "../../scripts/uat/sam78-staging-tenant-closure.mjs";
@@ -82,6 +83,17 @@ test("SAM-78 report rejects lifecycle or cleanup shortcuts", async () => {
       /product_lifecycle_prerequisite_failed/,
     );
   }
+});
+
+test("SAM-78 failure evidence retains its own fail-closed code without raw runner output", () => {
+  const descriptor = failureDescriptor(new Error("SAM78_FAIL_CLOSED:fixture_cleanup_failed:audit_events:PGRST301"));
+  assert.equal(descriptor.code, "fixture_cleanup_failed:audit_events:PGRST301");
+  assert.equal(descriptor.kind, "Error");
+  assert.equal(descriptor.runner_origin, null);
+  assert.equal(
+    failureDescriptor(new Error("PRODUCT_SAAS_UAT_FAIL_CLOSED: cleanup_operation_failed:audit_events")).code,
+    "cleanup_operation_failed:audit_events",
+  );
 });
 
 test("SAM-78 live implementation binds selected organization and exact cleanup", async () => {

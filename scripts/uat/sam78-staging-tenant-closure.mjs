@@ -22,9 +22,9 @@ function safeMessage(error) {
   return message.replaceAll(/Bearer\s+\S+/gi, "Bearer [REDACTED]").slice(0, 1000);
 }
 
-function failureDescriptor(error) {
+export function failureDescriptor(error) {
   const message = safeMessage(error);
-  const code = message.match(/(?:SAM78|PRODUCT_SAAS)_UAT_FAIL_CLOSED:\s*([a-z0-9_:-]{1,160})/i)?.[1]
+  const code = message.match(/(?:SAM78(?:_UAT)?|PRODUCT_SAAS_UAT)_FAIL_CLOSED:\s*([a-z0-9_:-]{1,160})/i)?.[1]
     ?? "unexpected_runner_error";
   const kind = error instanceof Error && /^[A-Za-z][A-Za-z0-9]{0,48}$/.test(error.name)
     ? error.name

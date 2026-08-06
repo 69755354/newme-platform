@@ -48,6 +48,7 @@ test("SAM-78 database actions are SHA-bound and verify provenance before executi
   const control = await read("scripts/newme-staging-control.sh");
   for (const pattern of [
     /readonly SAM78_EXECUTOR="scripts\/run-staging-sam78-migrations\.mjs"/,
+    /SAM78_DATABASE_FAILURE_EVIDENCE="\$STATE_DIR\/last-migrate-sam78-failure\.json"/,
     /readonly SAM78_VERIFY="scripts\/uat\/sam78-staging-migration-verify\.sql"/,
     /readonly SAM78_HISTORY_MANIFEST="scripts\/uat\/sam78-canonical-migration-history\.txt"/,
     /readonly SAM78_PGPASS="\/etc\/newme-staging\/staging-migration\.pgpass"/,
@@ -147,9 +148,12 @@ test("SAM-78 controller copies only commit-bound assets and redacts database out
     "$V4_ROLLBACK_060100",
   ]) assert.ok(control.includes(`copy_commit_blob "$SHA" "${source}"`), `missing exact copy for ${source}`);
   assert.match(control, /\/usr\/bin\/node "\$executor" >"\$output" 2>&1/);
-  assert.match(control, /captured output is redacted/);
+  assert.match(control, /scope: "sam78-staging-migration-failure"/);
+  assert.match(control, /runner_nonzero_without_allowlisted_code/);
+  assert.match(control, /root-only failure evidence was recorded/);
   assert.doesNotMatch(control, /echo .*\$output/);
   assert.doesNotMatch(control, /cat .*\$output/);
+  assert.doesNotMatch(control, /console\.log\(raw\)|process\.stdout\.write\(raw\)/);
   assert.match(control, /install -m 0600 -o root -g root "\$output" "\$evidence_tmp"/);
 });
 

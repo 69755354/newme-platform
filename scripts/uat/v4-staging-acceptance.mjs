@@ -333,13 +333,21 @@ async function sam82(state) {
     idempotency_key: randomUUID(), movement_type: "receive", on_hand_delta: 1,
   });
   if (!salesWrite.error) fail("sam82_sales_inventory_write_allowed");
-  const crossOrganizationRead = await state.actor.client
+  const { createClient } = state.supabase;
+  const crossOrganizationClient = createClient(state.config.supabaseUrl, state.config.anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: {
+      authorization: `Bearer ${state.actor.token}`,
+      "x-newme-organization-id": organizationId,
+    } },
+  });
+  const crossOrganizationRead = await crossOrganizationClient
     .from("retail_locations")
     .select("id")
     .eq("organization_id", organizationId)
     .eq("id", location.id);
   if (crossOrganizationRead.error || (crossOrganizationRead.data ?? []).length !== 0) fail("sam82_cross_organization_read_allowed");
-  const crossOrganizationWrite = await state.actor.client.from("retail_skus").insert({
+  const crossOrganizationWrite = await crossOrganizationClient.from("retail_skus").insert({
     organization_id: organizationId, sku: `${state.marker}-cross-org`, name: state.marker,
   });
   if (!crossOrganizationWrite.error) fail("sam82_cross_organization_catalog_write_allowed");

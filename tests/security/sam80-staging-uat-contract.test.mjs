@@ -42,3 +42,11 @@ test("SAM-82 retail fixtures bind the authenticated client to its organization",
   assert.match(source, /createRetailCapabilityActor\(state, suffix, roleKey\)/);
   assert.match(source, /global: \{ headers: \{ "x-newme-organization-id": state\.organizations\.retail \} \}/);
 });
+
+test("SAM-82 cross-organization checks use a bearer-bound client", () => {
+  assert.match(source, /const crossOrganizationClient = createClient\(state\.config\.supabaseUrl, state\.config\.anonKey/);
+  assert.match(source, /authorization: `Bearer \$\{state\.actor\.token\}`/);
+  assert.match(source, /crossOrganizationClient\s*\.from\("retail_locations"\)/);
+  assert.match(source, /crossOrganizationClient\.from\("retail_skus"\)/);
+  assert.doesNotMatch(source, /state\.actor\.client/);
+});

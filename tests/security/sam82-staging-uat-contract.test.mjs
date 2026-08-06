@@ -46,6 +46,11 @@ test("SAM-83 fixture keys cannot collide with the preceding SAM-82 fixture", asy
 test("SAM-82 cleanup remains exact-ID and ordered below append-only facts", async () => {
   const runner = await read("scripts/uat/v4-staging-acceptance.mjs");
   const cleanup = runner.slice(runner.indexOf("async function cleanup"));
+  const discovery = runner.slice(runner.indexOf("async function collectRetailInventoryCleanup"), runner.indexOf("async function sam86"));
+  assert.match(discovery, /\.from\("retail_inventory_movements"\)\.select\("id"\)/);
+  assert.match(discovery, /\.in\("organization_id", organizationIds\)\.in\("sku_id", skuIds\)/);
+  assert.match(discovery, /cleanup_retail_inventory_discovery_failed/);
+  assert.ok(cleanup.indexOf("await collectRetailInventoryCleanup(state)") < cleanup.indexOf('"retail_inventory_movements"'));
   for (const token of [
     '["retail_inventory_movements", i.inventoryMovements, "inventory_movements"]',
     '["retail_price_book_items", i.priceBookItems, "price_book_items"]',

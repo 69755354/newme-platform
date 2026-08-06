@@ -512,6 +512,19 @@ async function collectSam80Cleanup(state) {
   }
 }
 
+async function collectRetailInventoryCleanup(state) {
+  const i = state.ids;
+  const skuIds = unique(i.skus);
+  const organizationIds = unique(i.organizations);
+  if (!skuIds.length || !organizationIds.length) return;
+  // SAM-83 receipt and order transitions append inventory facts. Discover only
+  // rows that reference this run's immutable SKU IDs before deleting parents.
+  const { data, error } = await state.admin.from("retail_inventory_movements").select("id")
+    .in("organization_id", organizationIds).in("sku_id", skuIds);
+  if (error) fail("cleanup_retail_inventory_discovery_failed");
+  i.inventoryMovements.push(...(data ?? []).map((row) => row.id));
+}
+
 async function sam86(state) {
   const started = Date.now();
   const health = await fetch(`${state.config.baseUrl}/api/health`, { cache: "no-store", redirect: "manual" });
@@ -529,6 +542,7 @@ async function cleanup(state) {
   // session row. Delete those exact organization-scoped children before the
   // membership and organization parents; no broad marker or tenant delete.
   await collectSam80Cleanup(state);
+  await collectRetailInventoryCleanup(state);
   for (const [table, label] of [
     ["user_session_daily", "session_daily"],
     ["commercial_seat_events", "commercial_seat_events"],

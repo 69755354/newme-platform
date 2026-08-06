@@ -37,3 +37,8 @@ test("SAM-80 staging acceptance uses exact identifiers and dependency-ordered cl
   assert.ok(cleanup.indexOf('"shared_report_snapshots"') < cleanup.indexOf('"shared_work_items"'));
   assert.ok(cleanup.indexOf('"shared_work_items"') < cleanup.indexOf('"memberships"'));
 });
+
+test("SAM-82 retail fixtures bind the authenticated client to its organization", () => {
+  assert.match(source, /createRetailCapabilityActor\(state, suffix, roleKey\)/);
+  assert.match(source, /global: \{ headers: \{ "x-newme-organization-id": state\.organizations\.retail \} \}/);
+});

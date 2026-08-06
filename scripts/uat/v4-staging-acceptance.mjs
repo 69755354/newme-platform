@@ -249,6 +249,7 @@ async function createRetailCapabilityActor(state, suffix, roleKey) {
   const { createClient } = state.supabase;
   const client = createClient(state.config.supabaseUrl, state.config.anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { "x-newme-organization-id": state.organizations.retail } },
   });
   const { data: signed, error: signError } = await client.auth.signInWithPassword({ email, password });
   if (signError || !signed.session?.access_token) fail(`sam82_${suffix}_signin_failed`);

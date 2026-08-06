@@ -37,6 +37,12 @@ test("SAM-82 runner validates deterministic retail facts and denies unsafe paths
   ]) assert.ok(runner.includes(token), `missing ${token}`);
 });
 
+test("SAM-83 fixture keys cannot collide with the preceding SAM-82 fixture", async () => {
+  const runner = await read("scripts/uat/v4-staging-acceptance.mjs");
+  assert.match(runner, /\$\{state\.marker\}-sam83-wh/);
+  assert.match(runner, /\$\{state\.marker\}-sam83-sku/);
+});
+
 test("SAM-82 cleanup remains exact-ID and ordered below append-only facts", async () => {
   const runner = await read("scripts/uat/v4-staging-acceptance.mjs");
   const cleanup = runner.slice(runner.indexOf("async function cleanup"));

@@ -373,8 +373,8 @@ async function sam81(state) {
 
 async function sam83(state) {
   const organizationId = state.organizations.retail;
-  const location = await write(state.admin, "retail_locations", { organization_id: organizationId, code: `${state.marker}-wh`, name: state.marker, location_kind: "warehouse" }, "sam83_location"); state.ids.locations.push(location.id);
-  const sku = await write(state.admin, "retail_skus", { organization_id: organizationId, sku: `${state.marker}-sku`, name: state.marker }, "sam83_sku"); state.ids.skus.push(sku.id);
+  const location = await write(state.admin, "retail_locations", { organization_id: organizationId, code: `${state.marker}-sam83-wh`, name: `${state.marker} SAM83`, location_kind: "warehouse" }, "sam83_location"); state.ids.locations.push(location.id);
+  const sku = await write(state.admin, "retail_skus", { organization_id: organizationId, sku: `${state.marker}-sam83-sku`, name: `${state.marker} SAM83` }, "sam83_sku"); state.ids.skus.push(sku.id);
   const lead = await write(state.admin, "leads", { organization_id: organizationId, customer_name: state.marker, source: "other", stage: "won", quality: "good", assigned_to: state.actor.id, created_by: state.actor.id }, "sam83_lead"); state.ids.leads.push(lead.id);
   const quotation = await write(state.admin, "quotations", { organization_id: organizationId, lead_id: lead.id, quote_no: `V4-${state.runId.replaceAll("-", "").slice(0, 16)}`, quotation_type: "standard", status: "accepted", subtotal: 10, total_amount: 10, valid_until: new Date(Date.now() + 86_400_000).toISOString(), created_by: state.actor.id }, "sam83_quotation"); state.ids.quotations.push(quotation.id);
   const order = await write(state.admin, "retail_orders", { organization_id: organizationId, source_quotation_id: quotation.id, fulfillment_location_id: location.id, order_number: `${state.marker}-order`, total_amount: 10, created_by: state.actor.id }, "sam83_order"); state.ids.orders.push(order.id);

@@ -741,10 +741,12 @@ test("Product/SaaS UAT records only redacted structured failure evidence before 
 test("rollback only accepts the direct previous compatible immutable release", async () => {
   const control = await read("scripts/newme-staging-control.sh");
   for (const pattern of [
-    /\[ "\$SHA" = "\$STATE_OLD_SHA" \]/,
+    /local rollback_target="\$\{1:-\$SHA\}"/,
+    /\[ "\$rollback_target" = "\$STATE_OLD_SHA" \]/,
     /rollback target is not the recorded direct previous release/,
     /\[ "\$STATE_NEW_SHA" = "\$CANONICAL_SHA" \]/,
     /verify_current_release "\$STATE_NEW_SHA"/,
+    /wait_for_staging_health/,
     /verify_release "\$STATE_OLD_SHA"/,
     /\$STATE_NEW_SHA:\$SAM20_MIGRATION/,
     /\$STATE_OLD_SHA:\$SAM20_MIGRATION/,
@@ -774,7 +776,8 @@ test("SAM-87 serializes an exact-SHA staging canary and automatic recovery", asy
     /run_build/,
     /run_deploy/,
     /run_uat_product_saas run_uat_sam78 run_uat_sam68 run_uat_sam54/,
-    /if ! \(run_rollback\); then/,
+    /if ! \(run_rollback "\$previous_sha"\); then/,
+    /run_rollback "\$previous_sha"/,
     /automatic rollback restored \$previous_sha/,
     /"candidate":\{"port":3102,"health":200,"readiness":200\}/,
     /sam87_evidence_digest/,

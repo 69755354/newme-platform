@@ -197,6 +197,15 @@ staging_healthy() {
     grep -Eq '"status"[[:space:]]*:[[:space:]]*"(ok|healthy)"'
 }
 
+wait_for_staging_health() {
+  local attempt
+  for ((attempt = 1; attempt <= 5; attempt += 1)); do
+    staging_healthy && return 0
+    sleep 1
+  done
+  return 1
+}
+
 manifest_sha() {
   node -e '
     const fs = require("fs");
@@ -2193,13 +2202,13 @@ run_sam87_rehearsal() {
   # recovery. The controller's single lock keeps this sequence serialized.
   for stage in run_uat_product_saas run_uat_sam78 run_uat_sam68 run_uat_sam54; do
     if ! ("$stage"); then
-      if ! (run_rollback); then
+      if ! (run_rollback "$previous_sha"); then
         fail "SAM-87 $stage failed and automatic rollback could not be verified"
       fi
       fail "SAM-87 $stage failed; automatic rollback restored $previous_sha"
     fi
   done
-  if ! (run_rollback); then
+  if ! (run_rollback "$previous_sha"); then
     fail "SAM-87 release rehearsal rollback failed"
   fi
 
@@ -2299,8 +2308,9 @@ run_sam88_pilot_readiness() {
 }
 
 run_rollback() {
+  local rollback_target="${1:-$SHA}"
   load_state
-  [ "$SHA" = "$STATE_OLD_SHA" ] ||
+  [ "$rollback_target" = "$STATE_OLD_SHA" ] ||
     fail "rollback target is not the recorded direct previous release"
   [ "$STATE_NEW_SHA" = "$CANONICAL_SHA" ] ||
     fail "canonical staging head moved after the recorded deploy"
@@ -2324,11 +2334,11 @@ run_rollback() {
   ln -s "$RELEASES/$STATE_OLD_SHA" "$next"
   mv -Tf "$next" "$CURRENT"
   systemctl restart newme-staging.service
-  if ! staging_healthy || ! production_healthy; then
+  if ! wait_for_staging_health || ! production_healthy; then
     ln -s "$RELEASES/$STATE_NEW_SHA" "$failed_next"
     mv -Tf "$failed_next" "$CURRENT"
     systemctl restart newme-staging.service
-    staging_healthy || fail "rollback failed and the deployed release could not be restored"
+    wait_for_staging_health || fail "rollback failed and the deployed release could not be restored"
     fail "rollback target failed health and the deployed release was restored"
   fi
   verify_current_release "$STATE_OLD_SHA"

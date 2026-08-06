@@ -114,6 +114,8 @@ function psql(container, args, options = {}) {
     "ON_ERROR_STOP=1",
     "-U",
     "postgres",
+    "-h",
+    "127.0.0.1",
     "-d",
     DATABASE,
     ...args,
@@ -183,6 +185,8 @@ async function main() {
         "pg_isready",
         "-U",
         "postgres",
+        "-h",
+        "127.0.0.1",
         "-d",
         DATABASE,
       ], { timeout: 10_000 });

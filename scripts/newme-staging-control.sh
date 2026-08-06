@@ -26,6 +26,7 @@ readonly SAM54_EVIDENCE="$STATE_DIR/last-uat-sam54.json"
 readonly SAM78_EVIDENCE="$STATE_DIR/last-migrate-sam78.json"
 readonly SAM78_UAT_EVIDENCE="$STATE_DIR/last-uat-sam78.json"
 readonly SAM78_UAT_FAILURE_EVIDENCE="$STATE_DIR/last-uat-sam78-failure.json"
+readonly PRODUCT_SAAS_UAT_FAILURE_EVIDENCE="$STATE_DIR/last-uat-product-saas-failure.json"
 readonly V4_ACCEPTANCE_RUNNER="scripts/uat/v4-staging-acceptance.mjs"
 readonly V4_ACCEPTANCE_EVIDENCE="$STATE_DIR/last-uat-v4-acceptance.json"
 readonly SAM87_RUNNER="scripts/verify-staging-sam87-release-rehearsal.mjs"
@@ -1412,11 +1413,55 @@ run_uat_product_saas() {
     --env "PRODUCT_UAT_CONFIRM=PRODUCT_SAAS_STAGING_ONLY" \
     --mount "type=bind,src=$RELEASES/$SHA/manifest.json,dst=/runner/release/manifest.json,readonly" \
     "$UAT_IMAGE_PREFIX:$SHA" >"$output" 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] || fail "Product/SaaS staging UAT failed with status $rc"
+  if [ "$rc" -ne 0 ]; then
+    failure_tmp="$(mktemp "$STATE_DIR/.last-uat-product-saas-failure.XXXXXX")"
+    register_temporary_path "$failure_tmp"
+    /usr/bin/node - "$output" "$failure_tmp" "$SHA" "$rc" <<'NODE'
+const crypto = require("crypto");
+const fs = require("fs");
+const [output, destination, releaseSha, exitCode] = process.argv.slice(2);
+const raw = fs.readFileSync(output, "utf8");
+const allowedIds = new Set([
+  "SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61", "SAM-79", "CUSTOMER-EXIT",
+]);
+let diagnostic = {
+  output_kind: "unparseable",
+  cleanup: null,
+  failed_result_ids: [],
+};
+try {
+  const body = JSON.parse(raw);
+  if (body?.scope === "product-saas-final" && body?.ok === false && body?.results && typeof body.results === "object") {
+    const failedResultIds = Object.entries(body.results)
+      .filter(([id, result]) => allowedIds.has(id) && result?.status === "fail")
+      .map(([id]) => id)
+      .sort();
+    diagnostic = {
+      output_kind: "product_saas_report",
+      cleanup: ["verified", "failed", "not-run"].includes(body.cleanup) ? body.cleanup : null,
+      failed_result_ids: failedResultIds,
+    };
+  }
+} catch {}
+const evidence = {
+  schema_version: 1,
+  scope: "product-saas-final-failure",
+  release_sha: releaseSha,
+  runner_exit: Number(exitCode),
+  ...diagnostic,
+  raw_sha256: crypto.createHash("sha256").update(raw).digest("hex"),
+};
+fs.writeFileSync(destination, `${JSON.stringify(evidence)}\n`, { mode: 0o600 });
+NODE
+    chown root:root "$failure_tmp"
+    chmod 0600 "$failure_tmp"
+    mv -Tf "$failure_tmp" "$PRODUCT_SAAS_UAT_FAILURE_EVIDENCE"
+    fail "Product/SaaS staging UAT failed with status $rc; root-only failure evidence was recorded"
+  fi
   node -e '
     const fs = require("fs");
     const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const requiredIssues = ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61", "CUSTOMER-EXIT"];
+    const requiredIssues = ["SAM-11", "SAM-13", "SAM-25", "SAM-35", "SAM-49", "SAM-61", "SAM-79", "CUSTOMER-EXIT"];
     const zeroResidue = [
       "auth_users",
       "profiles",

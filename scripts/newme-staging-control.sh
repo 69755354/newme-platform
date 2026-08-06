@@ -79,6 +79,7 @@ readonly SAM82_MIGRATION_060500="supabase/migrations/20260806050000_sam82_v4_syn
 readonly SAM78_MIGRATION_060600="supabase/migrations/20260806060000_sam78_product_saas_closed_cleanup_boundary.sql"
 readonly SAM78_MIGRATION_060700="supabase/migrations/20260806070000_sam78_product_saas_inactive_audit_cleanup_boundary.sql"
 readonly SAM78_MIGRATION_060800="supabase/migrations/20260806080000_sam78_product_saas_inactive_admin_cleanup_boundary.sql"
+readonly SAM78_MIGRATION_060900="supabase/migrations/20260806090000_sam78_product_saas_billable_seat_cleanup_boundary.sql"
 readonly SAM78_ROLLBACK_031000="supabase/rollback/20260803100000_v4_tenant_capability_boundary_rollback.sql"
 readonly SAM78_ROLLBACK_143000="supabase/rollback/20260803143000_v4_tenant_lifecycle_closure_rollback.sql"
 readonly SAM78_ROLLBACK_041530="supabase/rollback/20260804153000_sam78_govern_v4_authenticated_rpcs_rollback.sql"
@@ -100,6 +101,7 @@ readonly SAM82_ROLLBACK_060500="supabase/rollback/20260806050000_sam82_v4_synthe
 readonly SAM78_ROLLBACK_060600="supabase/rollback/20260806060000_sam78_product_saas_closed_cleanup_boundary_rollback.sql"
 readonly SAM78_ROLLBACK_060700="supabase/rollback/20260806070000_sam78_product_saas_inactive_audit_cleanup_boundary_rollback.sql"
 readonly SAM78_ROLLBACK_060800="supabase/rollback/20260806080000_sam78_product_saas_inactive_admin_cleanup_boundary_rollback.sql"
+readonly SAM78_ROLLBACK_060900="supabase/rollback/20260806090000_sam78_product_saas_billable_seat_cleanup_boundary_rollback.sql"
 readonly SAM78_PGPASS="/etc/newme-staging/staging-migration.pgpass"
 readonly SAM78_CA="/etc/newme-staging/supabase-root-2021-ca.crt"
 readonly SAM78_PLATFORM_STAFF_ROLE_MAPPING="/etc/newme-staging/sam78-platform-staff-role-mapping.json"
@@ -422,7 +424,7 @@ require_sam78_apply_evidence() {
       "20260803100000", "20260803143000", "20260804153000",
       "20260804165734", "20260804185311", "20260804193000", "20260805000000",
       "20260805010000", "20260805020000", "20260805120000", "20260805130000",
-      "20260805190000", "20260806000000", "20260806010000", "20260806020000", "20260806030000", "20260806040000", "20260806050000", "20260806060000", "20260806070000", "20260806080000",
+      "20260805190000", "20260806000000", "20260806010000", "20260806020000", "20260806030000", "20260806040000", "20260806050000", "20260806060000", "20260806070000", "20260806080000", "20260806090000",
     ];
     if (lines.length !== 1) process.exit(1);
     const body = JSON.parse(lines[0]);
@@ -1795,12 +1797,12 @@ run_sam78_database_action() {
     fail "SAM-78 build artifact checksum mismatch"
 
   local run_dir executor verify history_manifest
-  local migration_031000 migration_143000 migration_041530 migration_041657 migration_041853 migration_041930 migration_050000 migration_050100 migration_050200 migration_051200 migration_051300 migration_051900 migration_060000 migration_060100 migration_060200 migration_060300 migration_060400 migration_060500 migration_060600 migration_060700 migration_060800
-  local rollback_031000 rollback_143000 rollback_041530 rollback_041657 rollback_041853 rollback_041930 rollback_050000 rollback_050100 rollback_050200 rollback_051200 rollback_051300 rollback_051900 rollback_060000 rollback_060100 rollback_060200 rollback_060300 rollback_060400 rollback_060500 rollback_060600 rollback_060700 rollback_060800
+  local migration_031000 migration_143000 migration_041530 migration_041657 migration_041853 migration_041930 migration_050000 migration_050100 migration_050200 migration_051200 migration_051300 migration_051900 migration_060000 migration_060100 migration_060200 migration_060300 migration_060400 migration_060500 migration_060600 migration_060700 migration_060800 migration_060900
+  local rollback_031000 rollback_143000 rollback_041530 rollback_041657 rollback_041853 rollback_041930 rollback_050000 rollback_050100 rollback_050200 rollback_051200 rollback_051300 rollback_051900 rollback_060000 rollback_060100 rollback_060200 rollback_060300 rollback_060400 rollback_060500 rollback_060600 rollback_060700 rollback_060800 rollback_060900
   local output rc evidence_tmp
   local verify_blob history_manifest_blob
-  local migration_031000_blob migration_143000_blob migration_041530_blob migration_041657_blob migration_041853_blob migration_041930_blob migration_050000_blob migration_050100_blob migration_050200_blob migration_051200_blob migration_051300_blob migration_051900_blob migration_060000_blob migration_060100_blob migration_060200_blob migration_060300_blob migration_060400_blob migration_060500_blob migration_060600_blob migration_060700_blob migration_060800_blob
-  local rollback_031000_blob rollback_143000_blob rollback_041530_blob rollback_041657_blob rollback_041853_blob rollback_041930_blob rollback_050000_blob rollback_050100_blob rollback_050200_blob rollback_051200_blob rollback_051300_blob rollback_051900_blob rollback_060000_blob rollback_060100_blob rollback_060200_blob rollback_060300_blob rollback_060400_blob rollback_060500_blob rollback_060600_blob rollback_060700_blob rollback_060800_blob
+  local migration_031000_blob migration_143000_blob migration_041530_blob migration_041657_blob migration_041853_blob migration_041930_blob migration_050000_blob migration_050100_blob migration_050200_blob migration_051200_blob migration_051300_blob migration_051900_blob migration_060000_blob migration_060100_blob migration_060200_blob migration_060300_blob migration_060400_blob migration_060500_blob migration_060600_blob migration_060700_blob migration_060800_blob migration_060900_blob
+  local rollback_031000_blob rollback_143000_blob rollback_041530_blob rollback_041657_blob rollback_041853_blob rollback_041930_blob rollback_050000_blob rollback_050100_blob rollback_050200_blob rollback_051200_blob rollback_051300_blob rollback_051900_blob rollback_060000_blob rollback_060100_blob rollback_060200_blob rollback_060300_blob rollback_060400_blob rollback_060500_blob rollback_060600_blob rollback_060700_blob rollback_060800_blob rollback_060900_blob
   run_dir="$(mktemp -d "/run/newme-staging-sam78-$SHA.XXXXXX")"
   executor="$run_dir/run-staging-sam78-migrations.mjs"
   verify="$run_dir/sam78-staging-migration-verify.sql"
@@ -1826,6 +1828,7 @@ run_sam78_database_action() {
   migration_060600="$run_dir/20260806060000.sql"
   migration_060700="$run_dir/20260806070000.sql"
   migration_060800="$run_dir/20260806080000.sql"
+  migration_060900="$run_dir/20260806090000.sql"
   rollback_031000="$run_dir/20260803100000.rollback.sql"
   rollback_143000="$run_dir/20260803143000.rollback.sql"
   rollback_041530="$run_dir/20260804153000.rollback.sql"
@@ -1847,6 +1850,7 @@ run_sam78_database_action() {
   rollback_060600="$run_dir/20260806060000.rollback.sql"
   rollback_060700="$run_dir/20260806070000.rollback.sql"
   rollback_060800="$run_dir/20260806080000.rollback.sql"
+  rollback_060900="$run_dir/20260806090000.rollback.sql"
   output="$(mktemp "$STATE_DIR/.sam78-database-action.XXXXXX")"
   register_temporary_path "$run_dir"
   register_temporary_path "$output"
@@ -1875,6 +1879,7 @@ run_sam78_database_action() {
   copy_commit_blob "$SHA" "$SAM78_MIGRATION_060600" "$migration_060600"
   copy_commit_blob "$SHA" "$SAM78_MIGRATION_060700" "$migration_060700"
   copy_commit_blob "$SHA" "$SAM78_MIGRATION_060800" "$migration_060800"
+  copy_commit_blob "$SHA" "$SAM78_MIGRATION_060900" "$migration_060900"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_031000" "$rollback_031000"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_143000" "$rollback_143000"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_041530" "$rollback_041530"
@@ -1896,6 +1901,7 @@ run_sam78_database_action() {
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_060600" "$rollback_060600"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_060700" "$rollback_060700"
   copy_commit_blob "$SHA" "$SAM78_ROLLBACK_060800" "$rollback_060800"
+  copy_commit_blob "$SHA" "$SAM78_ROLLBACK_060900" "$rollback_060900"
   verify_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_VERIFY")"
   history_manifest_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_HISTORY_MANIFEST")"
   migration_031000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_031000")"
@@ -1919,6 +1925,7 @@ run_sam78_database_action() {
   migration_060600_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_060600")"
   migration_060700_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_060700")"
   migration_060800_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_060800")"
+  migration_060900_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_MIGRATION_060900")"
   rollback_031000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_031000")"
   rollback_143000_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_143000")"
   rollback_041530_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_041530")"
@@ -1940,15 +1947,16 @@ run_sam78_database_action() {
   rollback_060600_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_060600")"
   rollback_060700_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_060700")"
   rollback_060800_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_060800")"
+  rollback_060900_blob="$(git --git-dir="$REPOSITORY" rev-parse "$SHA:$SAM78_ROLLBACK_060900")"
 
   chown root:root "$run_dir" "$executor" "$verify" "$history_manifest" \
-    "$migration_031000" "$migration_143000" "$migration_041530" "$migration_041657" "$migration_041853" "$migration_041930" "$migration_050000" "$migration_050100" "$migration_050200" "$migration_051200" "$migration_051300" "$migration_051900" "$migration_060000" "$migration_060100" "$migration_060200" "$migration_060300" "$migration_060400" "$migration_060500" "$migration_060600" "$migration_060700" "$migration_060800" \
-    "$rollback_031000" "$rollback_143000" "$rollback_041530" "$rollback_041657" "$rollback_041853" "$rollback_041930" "$rollback_050000" "$rollback_050100" "$rollback_050200" "$rollback_051200" "$rollback_051300" "$rollback_051900" "$rollback_060000" "$rollback_060100" "$rollback_060200" "$rollback_060300" "$rollback_060400" "$rollback_060500" "$rollback_060600" "$rollback_060700" "$rollback_060800"
+    "$migration_031000" "$migration_143000" "$migration_041530" "$migration_041657" "$migration_041853" "$migration_041930" "$migration_050000" "$migration_050100" "$migration_050200" "$migration_051200" "$migration_051300" "$migration_051900" "$migration_060000" "$migration_060100" "$migration_060200" "$migration_060300" "$migration_060400" "$migration_060500" "$migration_060600" "$migration_060700" "$migration_060800" "$migration_060900" \
+    "$rollback_031000" "$rollback_143000" "$rollback_041530" "$rollback_041657" "$rollback_041853" "$rollback_041930" "$rollback_050000" "$rollback_050100" "$rollback_050200" "$rollback_051200" "$rollback_051300" "$rollback_051900" "$rollback_060000" "$rollback_060100" "$rollback_060200" "$rollback_060300" "$rollback_060400" "$rollback_060500" "$rollback_060600" "$rollback_060700" "$rollback_060800" "$rollback_060900"
   chmod 0700 "$run_dir"
   chmod 0500 "$executor"
   chmod 0400 "$verify" "$history_manifest" "$migration_031000" "$migration_143000" \
-    "$migration_041530" "$migration_041657" "$migration_041853" "$migration_041930" "$migration_050000" "$migration_050100" "$migration_050200" "$migration_051200" "$migration_051300" "$migration_051900" "$migration_060000" "$migration_060100" "$migration_060200" "$migration_060300" "$migration_060400" "$migration_060500" "$migration_060600" "$migration_060700" "$migration_060800" "$rollback_031000" "$rollback_143000" \
-    "$rollback_041530" "$rollback_041657" "$rollback_041853" "$rollback_041930" "$rollback_050000" "$rollback_050100" "$rollback_050200" "$rollback_051200" "$rollback_051300" "$rollback_051900" "$rollback_060000" "$rollback_060100" "$rollback_060200" "$rollback_060300" "$rollback_060400" "$rollback_060500" "$rollback_060600" "$rollback_060700" "$rollback_060800"
+    "$migration_041530" "$migration_041657" "$migration_041853" "$migration_041930" "$migration_050000" "$migration_050100" "$migration_050200" "$migration_051200" "$migration_051300" "$migration_051900" "$migration_060000" "$migration_060100" "$migration_060200" "$migration_060300" "$migration_060400" "$migration_060500" "$migration_060600" "$migration_060700" "$migration_060800" "$migration_060900" "$rollback_031000" "$rollback_143000" \
+    "$rollback_041530" "$rollback_041657" "$rollback_041853" "$rollback_041930" "$rollback_050000" "$rollback_050100" "$rollback_050200" "$rollback_051200" "$rollback_051300" "$rollback_051900" "$rollback_060000" "$rollback_060100" "$rollback_060200" "$rollback_060300" "$rollback_060400" "$rollback_060500" "$rollback_060600" "$rollback_060700" "$rollback_060800" "$rollback_060900"
 
   rc=0
   /usr/bin/env -i \
@@ -2007,6 +2015,8 @@ run_sam78_database_action() {
     SAM78_MIGRATION_060700_BLOB="$migration_060700_blob" \
     SAM78_MIGRATION_060800_PATH="$migration_060800" \
     SAM78_MIGRATION_060800_BLOB="$migration_060800_blob" \
+    SAM78_MIGRATION_060900_PATH="$migration_060900" \
+    SAM78_MIGRATION_060900_BLOB="$migration_060900_blob" \
     SAM78_ROLLBACK_031000_PATH="$rollback_031000" \
     SAM78_ROLLBACK_031000_BLOB="$rollback_031000_blob" \
     SAM78_ROLLBACK_143000_PATH="$rollback_143000" \
@@ -2049,6 +2059,8 @@ run_sam78_database_action() {
     SAM78_ROLLBACK_060700_BLOB="$rollback_060700_blob" \
     SAM78_ROLLBACK_060800_PATH="$rollback_060800" \
     SAM78_ROLLBACK_060800_BLOB="$rollback_060800_blob" \
+    SAM78_ROLLBACK_060900_PATH="$rollback_060900" \
+    SAM78_ROLLBACK_060900_BLOB="$rollback_060900_blob" \
     /usr/bin/node "$executor" >"$output" 2>&1 || rc=$?
   [ "$rc" -eq 0 ] ||
     fail "SAM-78 $database_action failed with status $rc; captured output is redacted"
@@ -2060,7 +2072,7 @@ run_sam78_database_action() {
     const versions = [
       "20260803100000", "20260803143000", "20260804153000",
       "20260804165734", "20260804185311", "20260804193000", "20260805000000",
-      "20260805010000", "20260805020000", "20260805120000", "20260805130000", "20260805190000", "20260806000000", "20260806010000", "20260806020000", "20260806030000", "20260806040000", "20260806050000", "20260806060000", "20260806070000", "20260806080000",
+      "20260805010000", "20260805020000", "20260805120000", "20260805130000", "20260805190000", "20260806000000", "20260806010000", "20260806020000", "20260806030000", "20260806040000", "20260806050000", "20260806060000", "20260806070000", "20260806080000", "20260806090000",
     ];
     const applyEvidenceIsValid = process.argv[4] === "apply"
       && Array.isArray(body.alreadyAppliedVersions)

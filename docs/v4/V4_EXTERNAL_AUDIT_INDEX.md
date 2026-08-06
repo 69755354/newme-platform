@@ -77,9 +77,11 @@ remains a historical snapshot until a fresh authenticated query is recorded.
 | V4 staging cleanup correction PR | [#376](https://github.com/69755354/newme-platform/pull/376) |
 | V4 staging cleanup exact-head CI | [run 31102534969](https://github.com/69755354/newme-platform/actions/runs/31102534969), head `77abe85d55d305acceacf254e7daa598c57d7b50`, success |
 | Audit-index exact-head CI | [run 31105064081](https://github.com/69755354/newme-platform/actions/runs/31105064081), rerun attempt 2, head `a3d81fc85ee471f5cdf32c311f9628a8c32ffed5`, success |
-| Current staging commercial acceptance release | `683e841e7b5c684b5cebdb05dbc17b7ae35c6929` |
-| Product/SaaS staging UAT | `product-saas-final`, `ok=true`, project `bfsiibofuzoglziltgyd`, exact release `683e841e7b5c684b5cebdb05dbc17b7ae35c6929`, cleanup verified |
-| V4 staging UAT | `v4-staging-acceptance`, `ok=true`, project `bfsiibofuzoglziltgyd`, exact release `683e841e7b5c684b5cebdb05dbc17b7ae35c6929`, cleanup verified |
+| Final-evidence exact-head CI | [run 31106890948](https://github.com/69755354/newme-platform/actions/runs/31106890948), head `133002cc064eca54b128a010046061b5d165375b`, success |
+| Current staging commercial acceptance release | `83c4b6f3a14bb248db263ba8d727e00f6c0b70fe` |
+| SAM-78 staging UAT | `sam78-staging-tenant-closure`, `ok=true`, project `bfsiibofuzoglziltgyd`, exact release `83c4b6f3a14bb248db263ba8d727e00f6c0b70fe`, cleanup verified |
+| Product/SaaS staging UAT | `product-saas-final`, `ok=true`, project `bfsiibofuzoglziltgyd`, exact release `83c4b6f3a14bb248db263ba8d727e00f6c0b70fe`, cleanup verified |
+| V4 staging UAT | `v4-staging-acceptance`, `ok=true`, project `bfsiibofuzoglziltgyd`, exact release `83c4b6f3a14bb248db263ba8d727e00f6c0b70fe`, cleanup verified |
 | Staging acceptance and production decision | `docs/v4/V4_STAGING_COMMERCIAL_ACCEPTANCE.md`; `docs/v4/V4_PRODUCTION_GO_NO_GO.md` |
 
 The immutable rows above bind each completed audit to the commit actually reviewed. The live PR head is intentionally not self-referenced from the commit that would create that head; auditors must read the current head from [PR #256](https://github.com/69755354/newme-platform/pull/256) and bind any later verdict to that exact SHA and its CI run.

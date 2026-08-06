@@ -719,6 +719,22 @@ test("SAM-78 tenant closure UAT composes lifecycle evidence with two-organizatio
   assert.doesNotMatch(control, /console\.log\(raw\)|process\.stdout\.write\(raw\)/);
 });
 
+test("Product/SaaS UAT records only redacted structured failure evidence before stopping", async () => {
+  const control = await read("scripts/newme-staging-control.sh");
+  for (const pattern of [
+    /PRODUCT_SAAS_UAT_FAILURE_EVIDENCE="\$STATE_DIR\/last-uat-product-saas-failure\.json"/,
+    /scope: "product-saas-final-failure"/,
+    /output_kind: "unparseable"/,
+    /output_kind: "product_saas_report"/,
+    /failed_result_ids/,
+    /raw_sha256/,
+    /"SAM-79"/,
+    /root-only failure evidence was recorded/,
+  ]) assert.match(control, pattern);
+  assert.doesNotMatch(control, /cat "\$ENV_FILE"|cat "\$output"/);
+  assert.doesNotMatch(control, /console\.log\(raw\)|process\.stdout\.write\(raw\)/);
+});
+
 test("rollback only accepts the direct previous compatible immutable release", async () => {
   const control = await read("scripts/newme-staging-control.sh");
   for (const pattern of [

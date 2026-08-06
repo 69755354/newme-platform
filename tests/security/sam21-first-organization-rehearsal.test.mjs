@@ -16,6 +16,7 @@ test("SAM-21 runner is disposable and pins the reviewed SAM-20/22 assets", async
   assert.ok(runner.includes("scripts/uat/sam20-lead-organization-isolation.mjs"));
   assert.ok(runner.includes("scripts/uat/sam22-two-organization-isolation.mjs"));
   assert.ok(runner.includes('command(["rm", "--force", container])'));
+  assert.ok(runner.includes('"-h",\n    "127.0.0.1"'));
   assert.equal(runner.includes("SUPABASE_SERVICE_ROLE_KEY"), false);
   assert.equal(runner.includes("NEXT_PUBLIC_SUPABASE_URL"), false);
   assert.equal(runner.includes("app.newme.ae"), false);

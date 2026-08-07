@@ -1,9 +1,11 @@
 # NewMe V4 前端渐进改造增量包
 
 状态：规划增量；不构成已实现、已上线或可商用声明
-证据锁定时间：2026-08-03（Asia/Shanghai）
+初始证据锁定时间：2026-08-03（Asia/Shanghai）
+最终上游复核时间：2026-08-04（Asia/Shanghai）
 目标仓库：`69755354/newme-platform`
-上游事实基线：`715fa4bf4a97869077371b16c3094d8599d7e344`
+PR #256 治理合并基线：`715fa4bf4a97869077371b16c3094d8599d7e344`
+当前 canonical 基线：`agent/saas-staging-isolation@858a4ccb51697b4b4499252bfa3c22963381847e`
 
 ## 1. 边界与依赖
 
@@ -11,7 +13,7 @@
 
 本包的生效前提是：
 
-1. 候选提交必须以 `715fa4bf4a97869077371b16c3094d8599d7e344` 为祖先，并保留下面列出的 `docs/v4/` blob；
+1. 本次文档候选必须以 `858a4ccb51697b4b4499252bfa3c22963381847e` 为 exact base，并继续保留 `715fa4bf4a97869077371b16c3094d8599d7e344` 作为已合并 PR #256 的治理祖先及下面列出的 `docs/v4/` blob；
 2. 每个前端工作包引用上游 V4 ID、对应 Linear 工作包和确切实现基线；
 3. UI 可见性不被当作授权，状态变更仍由 #256 定义的服务端、RLS、审批、幂等、审计与事件边界执行；
 4. 本包与上游治理基线发生冲突时，以 `V4_REQUIREMENTS_TRACEABILITY.md` 的 ID 表为准；已知 PRD 标题冲突由机器 registry 显式登记，不在实现 PR 中静默改写。
@@ -20,11 +22,14 @@
 
 ## 2. 上游事实锁
 
-2026-08-03 锁定的上游 Git 事实：
+2026-08-04 最终三方复核的上游 Git 事实：
 
 | 项目 | 已验证事实 |
 |---|---|
-| canonical commit | `715fa4bf4a97869077371b16c3094d8599d7e344`；最终候选必须证明它是祖先 |
+| PR #256 final head | `80f19cc67d26bb592ec8f440fdb965eb224f8b6a`；13/13 首审意见实质关闭；同头 Repository validation run `30787252676` success |
+| PR #256 merge baseline | `715fa4bf4a97869077371b16c3094d8599d7e344` |
+| current canonical | `agent/saas-staging-isolation@858a4ccb51697b4b4499252bfa3c22963381847e` |
+| frontend package origin | PR #258 final head `44933b7f64b26738a2afbdda9c5505bcb38de60a`，merge `3bf92e72a1ea02f0ada65b94f29bcaa07ad8019e`，exact tree `3b5742dd33950291ae9a1e0535fcf89433d2397e`，同头 CI run `30810593095` success |
 | 追踪矩阵 | tracked path `docs/v4/V4_REQUIREMENTS_TRACEABILITY.md`，blob `e1d83d0042381cef0eefdf5d3e080f97686c65a0` |
 | V4 PRD | tracked path `docs/v4/V4_SAAS_PRD.md`，blob `13b11dce1c816a3e5ee2a3524f3591b61f9bb739` |
 | 交付计划 | tracked path `docs/v4/V4_DELIVERY_OPERATIONS_PLAN.md`，blob `16eb82e31aa485a033c7fe844fef3a9582eee5a1` |
@@ -46,16 +51,16 @@
 - **目标**：本包要求的 V4 前端行为，尚未声称实现。
 - **延期**：首批前端切片不实现的能力。
 
-特别说明：#256 当前文本把 `AxonAIconsultancies/real-estate` 记为不可读。本次在当前执行环境中运行只读 `git ls-remote --heads` 成功返回：
+特别说明：#256 最终基线文本把 `AxonAIconsultancies/real-estate` 记为不可读。2026-08-03 初始研究在当时执行环境中运行只读 `git ls-remote --heads` 成功返回：
 
 - `master` → `53d1fa06169a9179f13068f147cafb1d20f919b7`
 - `feature/department-workflows` → `34d89e60ab16c3dac4f2250e2b427e768ed700a6`
 
-这只证明当前环境在 2026-08-03 能读取这两个远端分支引用；不证明代码所有权、许可证、部署状态、生产状态或某个交付包与远端提交等价。该差异应在 #256 的后续治理修订中处理，本包不修改上游文件。
+这只证明当时环境在 2026-08-03 能读取这两个远端分支引用；不证明代码所有权、许可证、部署状态、生产状态或某个交付包与远端提交等价。该快照差异不再阻塞已合并 #256 或本次文档复核，但代码/资产复用仍受 G0 所有权与许可证证据约束。
 
 ## 4. 当前前端证据摘要
 
-对 `C:\tmp\newme-v4-governance-f2bd657` 当前本机基线的只读扫描得到：
+2026-08-03 对 `C:\tmp\newme-v4-governance-f2bd657` 的历史只读扫描得到以下事实；它不等价于 2026-08-04 的 current canonical `858a4ccb51697b4b4499252bfa3c22963381847e`：
 
 - 27 个 `page.tsx` 页面路由，其中 24 个位于 dashboard 路由组；
 - 18 个 `src/components/ui/*.tsx` UI 原语；
@@ -88,9 +93,9 @@
 
 ## 6. 工具与插件能力核对
 
-本会话可调用 Product Design、内置浏览器和 Sites 能力。Product Design 用于现状审查与既有设计语言约束；浏览器用于打开并截图真实页面；Sites 没有启用，因为本任务不构建、不预览、不发布站点。
+2026-08-04 最终复核确认已安装 GitHub、Linear、Product Design、浏览器和 Sites 等能力。本次只使用 GitHub 完成 canonical/PR/CI 证据绑定，并使用 Linear 写入对应问题的证据评论；不重新运行 Product Design、浏览器或 Sites 流程。
 
-推荐插件清单中的 Figma、PostHog 等能力对本次只读研究与文档交付不是必要条件：现有源码和实际页面已提供足够设计证据，指标仅定义埋点契约而不查询生产分析。因此没有提出插件安装请求。
+推荐插件中的 Figma、PostHog 等能力不能直接补足本次文档事实核对、Draft PR 或 Linear 评论，现有已安装能力已覆盖交付，因此无需安装新插件。
 
 ## 7. 决策摘要
 

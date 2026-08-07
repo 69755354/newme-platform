@@ -1,18 +1,21 @@
 # NewMe V4 前端来源与竞品模式登记
 
-状态：2026-08-03 研究锁；只记录本包实际使用的来源。每个官方来源的 canonical `source_id`、`accessed_at`、URL 与精确 locator 由 `contracts/research-source-registry.v1.json` 锁定；本页中的 `OFF` 不再是不可解析的泛标签。
+状态：2026-08-03 研究锁；2026-08-04 仅对 NewMe canonical、PR #256、PR #258 与 Linear 状态做最终来源复核，不扩展竞品研究。每个官方来源的 canonical `source_id`、`accessed_at`、URL 与精确 locator 仍由 `contracts/research-source-registry.v1.json` 锁定；本页中的 `OFF` 不再是不可解析的泛标签。
+最终来源复核日期：2026-08-04（Asia/Shanghai）
 原则：采纳工作模式与交互原理，不复制品牌视觉、页面布局或受版权保护资产
 
 ## 1. NewMe 与上游治理
 
 | 来源 | 状态 | 本包用途 |
 |---|---|---|
-| [PR #256](https://github.com/69755354/newme-platform/pull/256) | 2026-08-03 锁定时 OPEN/Draft，head `8dbab488…`，Repository validation SUCCESS | V4 产品边界、V4 IDs、M0–M8、G0–G8、交付/迁移/事件/证据规则 |
-| `C:\tmp\newme-v4-governance-f2bd657\docs\v4` | 5 个文件 Git blob 与 PR #256 head 远端树逐一一致 | 只读建立 FE 增量映射；不复制为新 canonical 文档 |
-| `C:\tmp\newme-v4-governance-f2bd657\src` | 本次只读源扫描 | 当前路由、组件、token、导航、workbench、lead detail、event/API 兼容面 |
+| [PR #256](https://github.com/69755354/newme-platform/pull/256) | 2026-08-04 复核为 MERGED；final head `80f19cc67d26bb592ec8f440fdb965eb224f8b6a`，merge `715fa4bf4a97869077371b16c3094d8599d7e344`，13/13 首审意见实质关闭，同头 CI run `30787252676` success | V4 产品边界、V4 IDs、M0–M8、G0–G8、交付/迁移/事件/证据规则 |
+| `agent/saas-staging-isolation@858a4ccb51697b4b4499252bfa3c22963381847e` | 2026-08-04 GitHub current canonical exact ref | 本次文档 PR 的 exact base；不自动证明 staging/production 状态 |
+| [PR #258](https://github.com/69755354/newme-platform/pull/258) | frontend package final head `44933b7f64b26738a2afbdda9c5505bcb38de60a`，merge `3bf92e72a1ea02f0ada65b94f29bcaa07ad8019e`，exact tree `3b5742dd33950291ae9a1e0535fcf89433d2397e`，同头 CI run `30810593095` success | 当前 canonical 中本包的直接来源 |
+| `C:\tmp\newme-v4-governance-f2bd657\docs\v4` | 2026-08-03 历史镜像；当时 5 个 blob 与 PR #256 审计 head 一致 | 历史三方核对输入，不作为 2026-08-04 live canonical |
+| `C:\tmp\newme-v4-governance-f2bd657\src` | 2026-08-03 历史只读源扫描；本次未重跑 runtime source audit | 路由、组件、token、导航、workbench、lead detail、event/API 兼容面的历史基线 |
 | `https://app.newme.ae/login` | 浏览器实际打开并截图；未通过登录审查完整 dashboard | 认证页可见视觉证据；不用于声称登录后运行状态 |
 
-当前源码事实绑定本机工作树快照，不自动等价于 production release。截图只证明锁定时可见页面。
+2026-08-03 源码扫描事实绑定历史本机工作树快照，不自动等价于 2026-08-04 canonical、staging 或 production release。截图只证明锁定时可见页面。
 
 ## 2. 用户提供的垂直来源
 
@@ -59,9 +62,9 @@
 
 URL：[AxonAIconsultancies/real-estate](https://github.com/AxonAIconsultancies/real-estate)
 
-本次 `git ls-remote --heads` 在当前环境成功读取 `master@53d1fa06169a9179f13068f147cafb1d20f919b7` 与 `feature/department-workflows@34d89e60ab16c3dac4f2250e2b427e768ed700a6`。这与 #256 中“当前 connector 不可读”的快照冲突。
+2026-08-03 初始研究的 `git ls-remote --heads` 在当时环境成功读取 `master@53d1fa06169a9179f13068f147cafb1d20f919b7` 与 `feature/department-workflows@34d89e60ab16c3dac4f2250e2b427e768ed700a6`。这与 #256 中“当前 connector 不可读”的快照冲突；2026-08-04 最终来源复核未重新查询该仓库或任何竞品来源。
 
-仍未验证：仓库许可证/所有权、交付包与某提交的对应关系、运行环境、生产数据、CI 与部署。因此 G0 完成前仍只复用 domain semantics。
+仍未验证：仓库许可证/所有权、交付包与某提交的对应关系、运行环境、生产数据、CI 与部署。因此即使 #256 已合并，代码/资产复用仍只限 domain semantics，直到 G0 所需证据存在。
 
 ## 3. 官方产品模式
 

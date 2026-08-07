@@ -1,7 +1,8 @@
 # NewMe V4 前端渐进改造开发与发布计划
 
-状态：建议计划；不代表 Linear/Git 已创建或更新
-依赖：[PR #256](https://github.com/69755354/newme-platform/pull/256) 合并或等价治理基线生效
+状态：建议计划；不代表运行时 UI 已实现或发布
+治理基线：[PR #256](https://github.com/69755354/newme-platform/pull/256) final head `80f19cc67d26bb592ec8f440fdb965eb224f8b6a` 已合并为 `715fa4bf4a97869077371b16c3094d8599d7e344`
+最终上游复核：2026-08-04；current canonical `agent/saas-staging-isolation@858a4ccb51697b4b4499252bfa3c22963381847e`
 
 ## 1. 交付约束
 
@@ -20,7 +21,7 @@
 输出：本增量包评审、FE ID 映射、现状事件/页面基线、指标字典、feature flag 命名、设计 QA 清单。
 退出：
 
-- #256 合并或等价基线明确；
+- #256 final head `80f19cc67d26bb592ec8f440fdb965eb224f8b6a` 已合并，13/13 首审意见实质关闭，且 current canonical `858a4ccb51697b4b4499252bfa3c22963381847e` 保留其治理祖先；
 - Axon 可读性差异在上游登记，所有权/许可证仍未验证则只复用 domain semantics；
 - FE-001..022 均映射到 V4 ID、工作包和验收；
 - 不把当前源码/截图提升为生产能力声明。
@@ -146,8 +147,8 @@ FE-WP-01 同时交付 S24 平台控制面壳层与 C01 状态组件；FE-WP-07 �
 
 ### 分支
 
-- #256 未合并前，本包只作为独立本地文档，不把实现建立在其未合并文件上。
-- 合并后，从当时确定的 V4 integration base 建立 `codex/v4-fe-<slice>` 短期分支；不能默认以 production `main` 为目标。
+- #256 已合并；后续前端切片必须从执行时重新查询的 `agent/saas-staging-isolation` exact SHA 建立 `codex/v4-fe-<slice>` 短期分支。
+- 本次文档修订使用 `858a4ccb51697b4b4499252bfa3c22963381847e` 作为 exact base；不能默认以 production `main` 为目标。
 - 一个分支只承载一个可独立验收/回滚的 FE-WP 子切片。
 
 ### PR 契约
@@ -258,7 +259,7 @@ FE-WP-01 同时交付 S24 平台控制面壳层与 C01 状态组件；FE-WP-07 �
 
 | 风险 | 影响 | 最小控制 |
 |---|---|---|
-| #256 未合并或 V4 ID 变化 | 本包映射失效 | 实现前重新锁定上游 SHA；本包独立 PR 更新 |
+| #256 合并后 `docs/v4`、V4 ID 或 canonical SHA 漂移 | 本包映射失效 | 实现前重新锁定上游 SHA/blob；通过独立文档 PR 更新，不静默改写实现 |
 | Axon ownership/license 未验证 | 不可复用代码/资产 | 只用 domain semantics；完成 G0 前不导入代码/媒体 |
 | 现有事件缺统一 tenant/actor/schema | work item 错归属/不可审计 | 服务端 compatibility adapter、quarantine、负向测试 |
 | 队列把多个列表简单合并 | 重复和噪音更严重 | dedupe key、reason、expiry、策略版本与反馈 |

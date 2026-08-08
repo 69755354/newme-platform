@@ -41,6 +41,8 @@ test("SAM-60/SAM-68 contracts", async () => {
   assert.match(ready, /Cache-Control": "no-store, max-age=0"/);
   assert.match(helper, /x-newme-readiness-token/);
   assert.match(helper, /mktemp|chmod 600|--config/);
+  assert.match(helper, /legacy readiness fallback used/);
+  assert.match(helper, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(helper, /curl[^\n]*-H[^\n]*x-newme-readiness-token/);
   assert.doesNotMatch(deploy, /curl[^\n]*-H[^\n]*x-newme-readiness-token/);
   assert.match(unit, /EnvironmentFile=\/etc\/newme\/newme-runtime\.env/);

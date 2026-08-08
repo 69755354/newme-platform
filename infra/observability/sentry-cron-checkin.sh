@@ -8,39 +8,91 @@ SENTRY_DSN_FILE="${SENTRY_DSN_FILE:-/home/ubuntu/.hermes/credentials/sentry-dsn.
 SENTRY_CHECKIN_ENVIRONMENT="${SENTRY_CHECKIN_ENVIRONMENT:-production}"
 CHECKIN_ID="${CHECKIN_ID:-}"
 
+# SENTRY_DSN may arrive as an exported service environment variable. Keep the
+# value available to this sourced library, but never pass a private DSN to curl
+# or any other child process through its environment.
+export -n SENTRY_DSN 2>/dev/null || true
+
 read_env_value() {
   local key="$1" file="$2"
   [ -r "$file" ] || return 1
-  awk -F= -v wanted="$key" '
-    $1 == wanted { value = substr($0, index($0, "=") + 1) }
-    END { if (value != "") print value }
-  ' "$file" | tr -d '\r'
+  python3 - "$file" "$key" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+wanted = sys.argv[2]
+key_pattern = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+try:
+    values = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            raise ValueError
+        parsed_key, value = line.split("=", 1)
+        parsed_key = parsed_key.strip()
+        value = value.strip()
+        if not key_pattern.fullmatch(parsed_key) or parsed_key in values:
+            raise ValueError
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        values[parsed_key] = value
+    value = values.get(wanted, "")
+    if not value:
+        raise ValueError
+except (OSError, UnicodeError, ValueError):
+    raise SystemExit(1)
+print(value)
+PY
 }
 
 resolve_sentry_dsn() {
+  export -n SENTRY_DSN 2>/dev/null || true
   if [ -z "${SENTRY_DSN:-}" ] && [ -r "$SENTRY_DSN_FILE" ]; then
     SENTRY_DSN="$(tr -d '\r\n' < "$SENTRY_DSN_FILE")"
+    export -n SENTRY_DSN 2>/dev/null || true
   fi
   if [ -z "${SENTRY_DSN:-}" ]; then
     SENTRY_DSN="$(read_env_value SENTRY_DSN "$SENTRY_ENV_FILE" || true)"
+    export -n SENTRY_DSN 2>/dev/null || true
   fi
   if [ -z "${SENTRY_DSN:-}" ]; then
     SENTRY_DSN="$(read_env_value NEXT_PUBLIC_SENTRY_DSN "$SENTRY_ENV_FILE" || true)"
+    export -n SENTRY_DSN 2>/dev/null || true
   fi
   SENTRY_DSN="${SENTRY_DSN%\"}"
   SENTRY_DSN="${SENTRY_DSN#\"}"
-  [ -n "$SENTRY_DSN" ] && ! printf '%s' "$SENTRY_DSN" | grep -q '\.\.\.'
+  export -n SENTRY_DSN 2>/dev/null || true
+  [ -n "$SENTRY_DSN" ] && [[ "$SENTRY_DSN" != *...* ]]
 }
 
 parse_dsn() {
-  resolve_sentry_dsn || { echo "sentry check-in DSN is unavailable" >&2; return 1; }
-  SENTRY_KEY="$(printf '%s' "$SENTRY_DSN" | sed -n 's|https://\([^@]*\)@.*|\1|p')"
-  SENTRY_HOST="$(printf '%s' "$SENTRY_DSN" | sed -n 's|https://[^@]*@\([^/]*\).*|\1|p')"
-  SENTRY_PROJECT_ID="$(printf '%s' "$SENTRY_DSN" | sed -n 's|.*/\([0-9][0-9]*\)$|\1|p')"
-  [ -n "$SENTRY_KEY" ] && [ -n "$SENTRY_HOST" ] && [ -n "$SENTRY_PROJECT_ID" ] || {
-    echo "sentry check-in DSN is malformed" >&2
+  local xtrace_was_on=0
+  case "$-" in
+    *x*) xtrace_was_on=1; set +x ;;
+  esac
+  if ! resolve_sentry_dsn; then
+    echo "sentry check-in DSN is unavailable" >&2
+    [ "$xtrace_was_on" -eq 0 ] || set -x
     return 1
-  }
+  fi
+  local dsn_pattern='^https://([0-9a-f]{32})(:[0-9a-f]{32})?@([a-z0-9-]+[.]ingest([.][a-z0-9-]+)*[.]sentry[.]io)/([0-9]+)/*$'
+  if [[ ! "$SENTRY_DSN" =~ $dsn_pattern ]]; then
+    echo "sentry check-in DSN is malformed" >&2
+    [ "$xtrace_was_on" -eq 0 ] || set -x
+    return 1
+  fi
+  # A private Sentry DSN contains public:secret userinfo. Cron ingestion accepts
+  # only the public project key in the path, never the private DSN password.
+  SENTRY_KEY="${BASH_REMATCH[1]}"
+  SENTRY_HOST="${BASH_REMATCH[3]}"
+  SENTRY_PROJECT_ID="${BASH_REMATCH[5]}"
+  [ "$xtrace_was_on" -eq 0 ] || set -x
 }
 
 new_checkin_id() {

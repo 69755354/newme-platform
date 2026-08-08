@@ -174,6 +174,18 @@ export interface BusinessEventEmbed {
   operator?: { id: string; full_name: string | null } | null;
 }
 
+export interface TransferHistoryEmbed {
+  id: string;
+  from_user_id: string | null;
+  to_user_id: string;
+  reason: string | null;
+  created_at: string | null;
+  transferred_by: string;
+  from_user?: { id: string; full_name: string | null } | null;
+  to_user?: { id: string; full_name: string | null } | null;
+  operator?: { id: string; full_name: string | null } | null;
+}
+
 /** tasks row shape returned by embed (subset) */
 export interface TaskEmbed {
   id: string;

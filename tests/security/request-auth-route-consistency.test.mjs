@@ -12,6 +12,7 @@ const routes = new Map([
   ["src/app/api/leads/[id]/notes/route.ts", 1],
   ["src/app/api/leads/[id]/quality/route.ts", 1],
   ["src/app/api/leads/[id]/stage/route.ts", 1],
+  ["src/app/api/leads/[id]/transfer-history/route.ts", 1],
   ["src/app/api/quotations/generate/route.ts", 1],
 ]);
 

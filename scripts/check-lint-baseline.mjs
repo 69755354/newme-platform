@@ -15,12 +15,21 @@ const ignoreArgs = [
 ];
 
 function runEslintJson() {
-  const res = spawnSync('npx', ['eslint', '.', '--format', 'json', ...ignoreArgs], {
+  const windowsNpxCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js');
+  const command = process.platform === 'win32' ? process.execPath : 'npx';
+  const args = process.platform === 'win32'
+    ? [windowsNpxCli, 'eslint', '.', '--format', 'json', ...ignoreArgs]
+    : ['eslint', '.', '--format', 'json', ...ignoreArgs];
+  const res = spawnSync(command, args, {
     cwd: root,
     encoding: 'utf8',
     maxBuffer: 1024 * 1024 * 80,
   });
-  if (!res.stdout.trim()) {
+  if (res.error) {
+    console.error(`eslint could not start: ${res.error.message}`);
+    process.exit(1);
+  }
+  if (!(res.stdout ?? '').trim()) {
     console.error(res.stderr || 'eslint produced no JSON output');
     process.exit(res.status || 1);
   }
@@ -30,9 +39,9 @@ function rel(filePath) {
   return path.relative(root, filePath).replaceAll(path.sep, '/');
 }
 function fingerprint(message) {
-  const normalizedRoot = root.replace(/\\\\/g, '/');
+  const normalizedRoot = root.replace(/\\/g, '/');
   return message
-    .replace(/\\\\/g, '/')
+    .replace(/\\/g, '/')
     .replaceAll(normalizedRoot, '<root>')
     .replace(/\/home\/runner\/work\/[^/]+\/[^/]+/g, '<root>')
     .replace(/\/workspace\/[^/]+/g, '<root>')

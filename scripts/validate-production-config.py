@@ -10,7 +10,6 @@ import json
 import re
 import sys
 import urllib.error
-import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -95,13 +94,10 @@ def classify_supabase_key(value: str) -> tuple[str, str]:
 
 def validate_sentry_dsn(release: dict[str, str]) -> None:
     dsn = release.get("SENTRY_DSN") or release.get("NEXT_PUBLIC_SENTRY_DSN") or ""
-    parsed = urllib.parse.urlsplit(dsn)
-    if (
-        parsed.scheme != "https"
-        or not parsed.username
-        or not parsed.hostname
-        or not parsed.hostname.endswith(".sentry.io")
-        or not re.fullmatch(r"/\d+", parsed.path)
+    if not re.fullmatch(
+        r"https://[0-9a-f]{32}(?::[0-9a-f]{32})?@"
+        r"[a-z0-9-]+\.ingest(?:\.[a-z0-9-]+)*\.sentry\.io/[0-9]+/*",
+        dsn,
     ):
         raise ConfigError("release Sentry DSN is missing or malformed")
 

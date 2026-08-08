@@ -14,7 +14,9 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let q = supabaseAdmin.from("kpi_targets").select("*, profiles(full_name)");
+  let q = supabaseAdmin
+    .from("kpi_targets")
+    .select("*, profiles!kpi_targets_assigned_to_fkey(full_name)");
   if (period) q = q.eq("period", period);
 
   const { data, error } = await q.order("assigned_to", { ascending: true, nullsFirst: true });

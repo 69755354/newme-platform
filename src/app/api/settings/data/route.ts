@@ -38,7 +38,10 @@ export async function GET(request: Request) {
   if (cached) return NextResponse.json(cached)
 
   const kpiPromise = period
-    ? supabase.from("kpi_targets").select("*, profiles(full_name)").eq("period", period)
+    ? supabase
+        .from("kpi_targets")
+        .select("*, profiles!kpi_targets_assigned_to_fkey(full_name)")
+        .eq("period", period)
     : Promise.resolve({ data: [], error: null })
 
   const profilesQuery = supabase

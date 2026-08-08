@@ -1,4 +1,4 @@
-# 2026-07-30 — LLM 身份三连错
+# [deepseek-v4-pro + glm-5.2] 2026-07-30 — LLM 身份三连错
 
 **LLM:** deepseek-v4-pro（session 20260730_073509，telegram；同批另有 glm-5.2 会话 20260730_040016）
 

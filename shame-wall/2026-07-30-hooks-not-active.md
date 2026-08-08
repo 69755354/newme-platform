@@ -1,4 +1,4 @@
-# 2026-07-30 — hook 未激活却报已生效
+# [deepseek-v4-pro] 2026-07-30 — hook 未激活却报已生效
 
 **LLM:** deepseek-v4-pro（session 20260730_073509，telegram）
 

@@ -1,4 +1,4 @@
-# 2026-07-03 — 需求/UI 不一致晚发现
+# [deepseek-v4-pro] 2026-07-03 — 需求/UI 不一致晚发现
 
 **LLM:** deepseek-v4-pro（session 20260703_035832，telegram）
 

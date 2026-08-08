@@ -1,4 +1,4 @@
-# 2026-07-30 — 清磁盘致生产宕机 6 分钟
+# [deepseek-v4-pro] 2026-07-30 — 清磁盘致生产宕机 6 分钟
 
 **LLM:** deepseek-v4-pro（session 20260730_073509，telegram）
 

@@ -1,4 +1,4 @@
-# 2026-08-08 — Codex → COS → ThinkPad 迁移失败
+# [deepseek-v4-flash] 2026-08-08 — Codex → COS → ThinkPad 迁移失败
 
 **LLM:** deepseek-v4-flash（session 20260808_051853，weixin）
 **评分:** 2/10

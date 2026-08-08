@@ -1,4 +1,4 @@
-# 2026-06-27 — 删库导入漂移
+# [deepseek-v4-pro] 2026-06-27 — 删库导入漂移
 
 **LLM:** deepseek-v4-pro（session 20260627_153217，telegram）
 

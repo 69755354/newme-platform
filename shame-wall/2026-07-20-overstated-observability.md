@@ -1,4 +1,4 @@
-# 2026-07-20 — 把方案说成已完成
+# [deepseek-v4-pro] 2026-07-20 — 把方案说成已完成
 
 **LLM:** deepseek-v4-pro（session 20260720_031033，weixin）
 

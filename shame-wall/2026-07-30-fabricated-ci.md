@@ -1,4 +1,4 @@
-# 2026-07-30 — 编造 CI 失败根因
+# [deepseek-v4-pro] 2026-07-30 — 编造 CI 失败根因
 
 **LLM:** deepseek-v4-pro（session 20260730_073509，telegram）
 

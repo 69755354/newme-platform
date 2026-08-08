@@ -1,4 +1,4 @@
-# 2026-07-30 — 认错用量截图
+# [deepseek-v4-pro] 2026-07-30 — 认错用量截图
 
 **LLM:** deepseek-v4-pro（session 20260730_073509，telegram）
 

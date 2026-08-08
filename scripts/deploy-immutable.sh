@@ -179,7 +179,9 @@ grep -Fqx "{\"git_sha\":\"$SHA\",\"build_id\":\"$BUILD\"}" "$TARGET/manifest.jso
 [ "$(tr -d '\r\n' < "$TARGET/.next/BUILD_ID")" = "$BUILD" ] || { fail "BUILD_ID mismatch"; exit 1; }
 curl -fsS --max-time 10 http://127.0.0.1:3001/api/health >/dev/null || { fail "post-switch health failed"; exit 1; }
 bash "$TARGET/scripts/check-smoke.sh" http://127.0.0.1:3001
-bash "$TARGET/scripts/check-logs.sh" "2 minutes ago"
+INVOCATION_ID="$(systemctl show newme-platform.service -p InvocationID --value)"
+[[ "$INVOCATION_ID" =~ ^[0-9a-f]{32}$ ]] || { fail "service invocation id missing"; exit 1; }
+NEWME_INVOCATION_ID="$INVOCATION_ID" bash "$TARGET/scripts/check-logs.sh" "2 minutes ago"
 if [ -z "$EVIDENCE_DIR" ]; then
   EVIDENCE_DIR="$TARGET/.audit"
   install -d -o root -g root -m 0700 "$EVIDENCE_DIR"

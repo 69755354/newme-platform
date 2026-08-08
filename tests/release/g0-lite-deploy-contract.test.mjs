@@ -8,15 +8,18 @@ import { fileURLToPath } from "node:url";
 const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const deploy = await readFile(join(repoRoot, "scripts", "deploy-immutable.sh"), "utf8");
 
-function executableIndex(pattern) {
-  return deploy.split("\n").findIndex((line) => !line.trimStart().startsWith("#") && pattern.test(line));
+function executableIndex(source, pattern) {
+  return source.split("\n").findIndex((line) => !line.trimStart().startsWith("#") && pattern.test(line));
 }
 
 test("release preflight runs before build or service mutations", () => {
-  const preflight = executableIndex(/verify-release-preflight\.sh/);
+  const mainStart = deploy.indexOf("\nwrite_deploy_state prepared\n");
+  assert.notEqual(mainStart, -1, "deploy must expose an unambiguous main execution boundary");
+  const main = deploy.slice(mainStart);
+  const preflight = executableIndex(main, /verify-release-preflight\.sh/);
   assert.notEqual(preflight, -1, "deploy must invoke verify-release-preflight.sh");
   for (const [name, pattern] of [["dependency install", /npm ci/], ["build", /npm run build/], ["service", /\$CONTROL.*restart/]]) {
-    const mutation = executableIndex(pattern);
+    const mutation = executableIndex(main, pattern);
     assert.notEqual(mutation, -1, `deploy must contain ${name}`);
     assert.ok(preflight < mutation, `preflight must run before ${name}`);
   }

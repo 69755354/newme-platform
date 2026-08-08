@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
+import json
 import re
 import sys
 import urllib.error
@@ -67,6 +70,29 @@ def require_api_key(values: dict[str, str], key: str) -> str:
     return value
 
 
+def classify_supabase_key(value: str) -> tuple[str, str]:
+    if value.startswith("sb_publishable_"):
+        return ("publishable", "opaque")
+    if value.startswith("sb_secret_"):
+        return ("service", "opaque")
+    parts = value.split(".")
+    if len(parts) != 3:
+        raise ConfigError("Supabase credential type is unrecognized")
+    try:
+        padding = "=" * (-len(parts[1]) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(parts[1] + padding))
+    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ConfigError("Supabase credential type is unrecognized") from exc
+    if not isinstance(payload, dict):
+        raise ConfigError("Supabase credential type is unrecognized")
+    role = payload.get("role")
+    if role == "anon":
+        return ("publishable", "legacy_jwt")
+    if role == "service_role":
+        return ("service", "legacy_jwt")
+    raise ConfigError("Supabase credential role is not allowed")
+
+
 def validate_sentry_dsn(release: dict[str, str]) -> None:
     dsn = release.get("SENTRY_DSN") or release.get("NEXT_PUBLIC_SENTRY_DSN") or ""
     parsed = urllib.parse.urlsplit(dsn)
@@ -80,10 +106,13 @@ def validate_sentry_dsn(release: dict[str, str]) -> None:
         raise ConfigError("release Sentry DSN is missing or malformed")
 
 
-def rest_probe(label: str, url: str, key: str) -> None:
+def rest_probe(label: str, url: str, key: str, key_format: str) -> None:
+    headers = {"apikey": key}
+    if key_format == "legacy_jwt":
+        headers["Authorization"] = f"Bearer {key}"
     request = urllib.request.Request(
         f"{url}/rest/v1/profiles?select=id&limit=1",
-        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        headers=headers,
         method="GET",
     )
     status = 0
@@ -113,11 +142,17 @@ def main() -> int:
         service_key = require_api_key(release, "SUPABASE_SERVICE_ROLE_KEY")
         if publishable_key == service_key:
             raise ConfigError("publishable and service Supabase credentials are identical")
+        publishable_role, publishable_format = classify_supabase_key(publishable_key)
+        service_role, service_format = classify_supabase_key(service_key)
+        if publishable_role != "publishable":
+            raise ConfigError("release NEXT_PUBLIC_SUPABASE_ANON_KEY is not publishable")
+        if service_role != "service":
+            raise ConfigError("release SUPABASE_SERVICE_ROLE_KEY is not server-only")
         validate_sentry_dsn(release)
         print("CONFIG_VALIDATION=PASS")
         if args.network:
-            rest_probe("publishable", EXPECTED_SUPABASE_URL, publishable_key)
-            rest_probe("service", EXPECTED_SUPABASE_URL, service_key)
+            rest_probe("publishable", EXPECTED_SUPABASE_URL, publishable_key, publishable_format)
+            rest_probe("service", EXPECTED_SUPABASE_URL, service_key, service_format)
         return 0
     except (ConfigError, OSError, UnicodeError) as exc:
         print(f"production config validation failed: {exc}", file=sys.stderr)

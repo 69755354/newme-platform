@@ -82,10 +82,15 @@ test("installer replaces direct service sudo with the audited control boundary",
     read("infra/systemd/newme-deploy.sh"),
   ]);
   assert.match(installer, /infra\/sudoers\/newme-platform/);
-  assert.match(installer, /visudo -cf \/etc\/sudoers\.d\/newme-platform/);
+  assert.match(installer, /install_control_sudoers\(\)/);
+  assert.match(installer, /visudo -cf "\$temporary"/);
+  assert.match(installer, /mv -Tf "\$temporary" "\$dest"/);
+  assert.match(installer, /sync -f "\$directory"/);
+  assert.match(installer, /^visudo -c\r?$/m);
   assert.match(installer, /\/etc\/sudoers\.d\/newme-platform/);
   assert.match(installer, /\/etc\/sudoers\.d\/ubuntu-nopasswd/);
-  assert.match(installer, /rm -f \/etc\/sudoers\.d\/ubuntu-nopasswd/);
+  assert.match(installer, /rm -f -- \/etc\/sudoers\.d\/ubuntu-nopasswd/);
+  assert.match(installer, /sync -f \/etc\/sudoers\.d/);
   assert.match(sudoers, /NEWME_SERVICE_CONTROL/);
   assert.match(sudoers, /newme-service-control restart \*/);
   assert.match(sudoers, /newme-service-control reset-failed \*/);

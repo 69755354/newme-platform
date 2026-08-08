@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import {
   createPinoHooks,
   sanitizeSentryEvent,
+  sanitizeSentryTransaction,
   sanitizeValue,
   serializeErr,
 } from "../../src/lib/observability.mjs";
@@ -88,6 +89,23 @@ test("handles arrays, circular references and bounded values", () => {
   assert.equal(output.nested.nested.nested.nested.nested.nested, "[Truncated]");
 });
 
+test("redacts assignment-style secrets and Basic authorization in free text", () => {
+  for (const [input, leaked] of [
+    ["secret=server-value", /server-value/],
+    ["apiKey: client-value", /client-value/],
+    ["x-monitoring-secret=monitor-value", /monitor-value/],
+    ["authorization=Basic dXNlcjpwYXNz", /dXNlcjpwYXNz/],
+    ["Basic dXNlcjpwYXNz", /dXNlcjpwYXNz/],
+    ['password="alpha beta"', /alpha|beta/],
+    ["secret=alpha,beta", /alpha|beta/],
+    ["authorization=Basic dXNlcjpwYXNz more", /dXNlcjpwYXNz|more/],
+  ]) {
+    const output = sanitizeValue(input);
+    assert.doesNotMatch(output, leaked, input);
+    assert.match(output, /\[REDACTED\]/, input);
+  }
+});
+
 test("preserves safe tracking fields and filters health/readiness noise", () => {
   const event = {
     transaction: "/api/leads/123",
@@ -101,6 +119,17 @@ test("preserves safe tracking fields and filters health/readiness noise", () => 
   assert.equal(output.tags.code, "PGRST116");
   assert.equal(output.request.headers.authorization, "[REDACTED]");
   assert.equal(sanitizeSentryEvent({ transaction: "/api/ready" }), null);
+});
+
+test("monitoring reports reach Sentry while their transactions remain filtered", () => {
+  for (const event of [
+    { transaction: "/api/monitoring/report", message: "frontend report" },
+    { request: { url: "https://app.newme.ae/api/monitoring/report" }, message: "frontend report" },
+    { tags: { route: "/api/monitoring/report" }, message: "frontend report" },
+  ]) {
+    assert.notEqual(sanitizeSentryEvent(event), null);
+    assert.equal(sanitizeSentryTransaction(event), null);
+  }
 });
 
 test("Sentry configs declare release, environment, build tag and PII policy", async () => {

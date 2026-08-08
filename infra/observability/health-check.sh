@@ -3,34 +3,64 @@
 set -u -o pipefail
 
 ALERT_SCRIPT="${HERMES_ALERT_STATE_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert-state-v1.sh}"
+LOADAVG_FILE="${LOADAVG_FILE:-/proc/loadavg}"
 HOSTNAME_VALUE="$(hostname)"
 TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 ALERTS=""
 
-DISK_PCT="$(df -P / | awk 'NR == 2 { gsub(/%/, "", $5); print $5 }')"
-if [ "$DISK_PCT" -gt 90 ]; then
-  ALERTS="${ALERTS}[DISK_CRITICAL] root filesystem ${DISK_PCT}%\n"
-elif [ "$DISK_PCT" -gt 80 ]; then
-  ALERTS="${ALERTS}[DISK_WARN] root filesystem ${DISK_PCT}%\n"
+add_alert() {
+  ALERTS="${ALERTS}[$1] $2\n"
+}
+
+DISK_PCT="unknown"
+if disk_value="$(df -P / 2>/dev/null | awk 'NR == 2 { gsub(/%/, "", $5); print $5; found=1 } END { if (!found) exit 1 }')" &&
+  [[ "$disk_value" =~ ^[0-9]+$ ]]; then
+  DISK_PCT="$disk_value"
+  if [ "$DISK_PCT" -gt 90 ]; then
+    add_alert DISK_CRITICAL "root filesystem ${DISK_PCT}%"
+  elif [ "$DISK_PCT" -gt 80 ]; then
+    add_alert DISK_WARN "root filesystem ${DISK_PCT}%"
+  fi
+else
+  add_alert PROBE_ERROR "disk metric collection failed"
 fi
 
-MEM_PCT="$(free | awk '/Mem:/ { printf "%.0f", $3 / $2 * 100 }')"
-if [ "$MEM_PCT" -gt 85 ]; then
-  ALERTS="${ALERTS}[MEM_CRITICAL] memory ${MEM_PCT}%\n"
-elif [ "$MEM_PCT" -gt 75 ]; then
-  ALERTS="${ALERTS}[MEM_WARN] memory ${MEM_PCT}%\n"
+MEM_PCT="unknown"
+if mem_value="$(free 2>/dev/null | awk '/^Mem:/ && $2 > 0 { printf "%.0f", $3 / $2 * 100; found=1 } END { if (!found) exit 1 }')" &&
+  [[ "$mem_value" =~ ^[0-9]+$ ]]; then
+  MEM_PCT="$mem_value"
+  if [ "$MEM_PCT" -gt 85 ]; then
+    add_alert MEM_CRITICAL "memory ${MEM_PCT}%"
+  elif [ "$MEM_PCT" -gt 75 ]; then
+    add_alert MEM_WARN "memory ${MEM_PCT}%"
+  fi
+else
+  add_alert PROBE_ERROR "memory metric collection failed"
 fi
 
-CPU_LOAD="$(uptime | awk -F'load average:' '{ print $2 }' | awk -F',' '{ print $1 }' | xargs)"
-CORES="$(nproc)"
-CPU_PCT="$(awk -v load="$CPU_LOAD" -v cores="$CORES" 'BEGIN { printf "%.0f", load / cores * 100 }')"
-if [ "$CPU_PCT" -gt 90 ]; then
-  ALERTS="${ALERTS}[CPU_CRITICAL] load ${CPU_LOAD} (${CPU_PCT}%)\n"
+CPU_LOAD="unknown"
+CPU_PCT="unknown"
+if cpu_load_value="$(awk 'NR == 1 && $1 ~ /^[0-9]+([.][0-9]+)?$/ { print $1; found=1 } END { if (!found) exit 1 }' "$LOADAVG_FILE" 2>/dev/null)" &&
+  core_value="$(nproc 2>/dev/null)" && [[ "$core_value" =~ ^[1-9][0-9]*$ ]] &&
+  cpu_pct_value="$(awk -v load_value="$cpu_load_value" -v cores="$core_value" 'BEGIN { printf "%.0f", load_value / cores * 100 }')" &&
+  [[ "$cpu_pct_value" =~ ^[0-9]+$ ]]; then
+  CPU_LOAD="$cpu_load_value"
+  CPU_PCT="$cpu_pct_value"
+  if [ "$CPU_PCT" -gt 90 ]; then
+    add_alert CPU_CRITICAL "load ${CPU_LOAD} (${CPU_PCT}%)"
+  fi
+else
+  add_alert PROBE_ERROR "CPU metric collection failed"
 fi
 
-PROC_COUNT="$(ps aux | wc -l)"
-if [ "$PROC_COUNT" -gt 500 ]; then
-  ALERTS="${ALERTS}[PROC_WARN] process count ${PROC_COUNT}\n"
+PROC_COUNT="unknown"
+if proc_value="$(ps aux 2>/dev/null | wc -l)" && [[ "$proc_value" =~ ^[0-9]+$ ]]; then
+  PROC_COUNT="$proc_value"
+  if [ "$PROC_COUNT" -gt 500 ]; then
+    add_alert PROC_WARN "process count ${PROC_COUNT}"
+  fi
+else
+  add_alert PROBE_ERROR "process metric collection failed"
 fi
 
 if ! curl -sf --max-time 5 http://127.0.0.1:3001/api/health >/dev/null 2>&1; then
@@ -63,7 +93,7 @@ if [ "$probe_status" -eq 0 ]; then
   echo "[$TIMESTAMP] $HOSTNAME_VALUE OK disk=${DISK_PCT}% mem=${MEM_PCT}% cpu=${CPU_PCT}% proc=${PROC_COUNT}"
 else
   summary="$(printf '%b' "$ALERTS" | sed -n '1p')"
-  printf '[$TIMESTAMP] %s ALERTS:\n%b' "$HOSTNAME_VALUE" "$ALERTS"
+  printf '[%s] %s ALERTS:\n%b' "$TIMESTAMP" "$HOSTNAME_VALUE" "$ALERTS"
   record_alert failure "$summary" || alert_status=$?
 fi
 

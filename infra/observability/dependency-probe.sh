@@ -23,10 +23,39 @@ add_alert() {
 read_release_value() {
   local key="$1"
   [ -r "$RELEASE_ENV" ] || return 1
-  awk -F= -v wanted="$key" '
-    $1 == wanted { value = substr($0, index($0, "=") + 1) }
-    END { if (value != "") print value }
-  ' "$RELEASE_ENV" | tr -d '\r' | sed 's/^"//; s/"$//'
+  python3 - "$RELEASE_ENV" "$key" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+wanted = sys.argv[2]
+key_pattern = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+try:
+    values = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            raise ValueError
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key_pattern.fullmatch(key) or key in values:
+            raise ValueError
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        values[key] = value
+    value = values.get(wanted, "")
+    if not value:
+        raise ValueError
+except (OSError, UnicodeError, ValueError):
+    raise SystemExit(1)
+print(value)
+PY
 }
 
 record_alert() {
@@ -81,14 +110,56 @@ if [ -n "$ANON_KEY" ] && [ "$ANON_KEY" = "$SERVICE_KEY" ]; then
   add_alert SUPABASE_KEY "publishable and service credentials are identical"
 fi
 
+classify_key() {
+  local expected="$1" key="$2"
+  case "$expected:$key" in
+    publishable:sb_publishable_*) printf 'opaque\n'; return 0 ;;
+    service:sb_secret_*) printf 'opaque\n'; return 0 ;;
+  esac
+  printf '%s' "$key" | python3 -c '
+import base64
+import json
+import sys
+
+expected = sys.argv[1]
+value = sys.stdin.read()
+parts = value.split(".")
+if len(parts) != 3:
+    raise SystemExit(1)
+try:
+    payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+except Exception:
+    raise SystemExit(1)
+if not isinstance(payload, dict):
+    raise SystemExit(1)
+role = payload.get("role")
+allowed = {"publishable": "anon", "service": "service_role"}
+if role != allowed[expected]:
+    raise SystemExit(1)
+print("legacy_jwt")
+' "$expected"
+}
+
+ANON_KIND=""
+SERVICE_KIND=""
+if [[ "$ANON_KEY" =~ ^[A-Za-z0-9._-]{20,2048}$ ]]; then
+  ANON_KIND="$(classify_key publishable "$ANON_KEY")" || add_alert SUPABASE_KEY "publishable credential has the wrong role or type"
+fi
+if [[ "$SERVICE_KEY" =~ ^[A-Za-z0-9._-]{20,2048}$ ]]; then
+  SERVICE_KIND="$(classify_key service "$SERVICE_KEY")" || add_alert SUPABASE_KEY "service credential has the wrong role or type"
+fi
+
 probe_rest_key() {
-  local label="$1" key="$2" http_code="" curl_status=0
+  local label="$1" key="$2" key_kind="$3" http_code="" curl_status=0
   if ! CURL_CONFIG="$(mktemp "${TMPDIR:-/tmp}/newme-dependency-curl.XXXXXX")"; then
     add_alert SUPABASE_DEPENDENCY "${label} probe could not create a protected curl config"
     return 1
   fi
   chmod 600 "$CURL_CONFIG"
-  printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$key" "$key" > "$CURL_CONFIG"
+  printf 'header = "apikey: %s"\n' "$key" > "$CURL_CONFIG"
+  if [ "$key_kind" = legacy_jwt ]; then
+    printf 'header = "Authorization: Bearer %s"\n' "$key" >> "$CURL_CONFIG"
+  fi
   http_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
     --config "$CURL_CONFIG" \
     "${SUPABASE_URL}/rest/v1/profiles?select=id&limit=1" 2>/dev/null)" || curl_status=$?
@@ -101,8 +172,8 @@ probe_rest_key() {
 }
 
 if [ "$SUPABASE_URL" = "$EXPECTED_SUPABASE_URL" ]; then
-  [[ "$ANON_KEY" =~ ^[A-Za-z0-9._-]{20,2048}$ ]] && probe_rest_key publishable "$ANON_KEY"
-  [[ "$SERVICE_KEY" =~ ^[A-Za-z0-9._-]{20,2048}$ ]] && probe_rest_key service "$SERVICE_KEY"
+  [ -z "$ANON_KIND" ] || probe_rest_key publishable "$ANON_KEY" "$ANON_KIND"
+  [ -z "$SERVICE_KIND" ] || probe_rest_key service "$SERVICE_KEY" "$SERVICE_KIND"
 fi
 
 probe_status=0
@@ -114,7 +185,7 @@ if [ "$probe_status" -eq 0 ]; then
   echo "[$TIMESTAMP] dependency boundary OK (release, service, publishable key, service key)"
 else
   summary="$(printf '%b' "$ALERTS" | sed -n '1p')"
-  printf '[$TIMESTAMP] dependency probe ALERTS:\n%b' "$ALERTS"
+  printf '[%s] dependency probe ALERTS:\n%b' "$TIMESTAMP" "$ALERTS"
   record_alert failure "$summary" || alert_status=$?
 fi
 

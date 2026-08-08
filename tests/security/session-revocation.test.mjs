@@ -144,6 +144,9 @@ test("login and the dashboard guard require an active /api/auth/me result", asyn
   assert.match(login, /\/auth\/v1\/logout/);
   assert.match(authMe, /profile(?:\?\.)?\.is_active !== true/);
   assert.match(authMe, /status: 401/);
+  assert.doesNotMatch(authMe, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.doesNotMatch(authMe, /@supabase\/supabase-js/);
+  assert.match(authMe, /await supabase\s*\.from\("profiles"\)/s);
   assert.match(hook, /data\.isActive !== true/);
 });
 
@@ -207,47 +210,10 @@ test("real lead stage handler rejects an inactive old session before business ac
   assert.deepEqual(await activeResponse.json(), { error: "A valid idempotency key is required" });
 });
 
-test("real auth-me handler rejects an inactive old token and accepts an active profile", async (t) => {
-  // route.ts:29-33 reads these at request time and returns 500 if absent.
-  // Save/restore to avoid polluting other tests in the suite.
-  const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const prevKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  process.env.NEXT_PUBLIC_SUPABASE_URL = "http://test.supabase.local";
-  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
-  t.after(() => {
-    if (prevUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-    else process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl;
-    if (prevKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-    else process.env.SUPABASE_SERVICE_ROLE_KEY = prevKey;
-  });
-
+test("real auth-me handler rejects an inactive old token and accepts an active profile", async () => {
   let active = false;
   const supabase = createSupabaseMock(() => active);
   const nextServer = createNextServerMock();
-
-  // After 2026-07-20 3rd hotfix, /api/auth/me uses service_role admin client
-  // (createClient from @supabase/supabase-js) for profiles lookup.
-  // The test must mock createClient to simulate admin profile responses.
-  const mockCreateClient = () => ({
-    from(table) {
-      assert.equal(table, "profiles");
-      return {
-        select() {
-          return {
-            eq() {
-              return {
-                async single() {
-                  return active
-                    ? { data: { role: "admin", is_active: true, force_password_change: false, full_name: "Test User", email: "test@example.com" }, error: null }
-                    : { data: { role: "sales", is_active: false, force_password_change: false, full_name: "Inactive User", email: "test@example.com" }, error: null };
-                },
-              };
-            },
-          };
-        },
-      };
-    },
-  });
 
   const authMe = loadTypeScriptModule("src/app/api/auth/me/route.ts", {
     "@/lib/supabase-server": { createServerSupabase: async () => supabase, getRefreshedCookies: () => [], getRefreshAttempted: () => false, getRefreshFailure: () => undefined },
@@ -256,7 +222,6 @@ test("real auth-me handler rejects an inactive old token and accepts an active p
     },
     "@/lib/logger": { logger: { error: () => {}, info: () => {}, warn: () => {} } },
     "next/server": nextServer,
-    "@supabase/supabase-js": { createClient: mockCreateClient },
   });
   const request = () => new Request("http://localhost/api/auth/me", {
     headers: { Authorization: "Bearer old-access-token" },

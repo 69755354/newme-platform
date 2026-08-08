@@ -173,16 +173,19 @@ test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives au
   const parsedClient = await server.createServerSupabase(undefined, wireCookieHeader);
   assert.equal(capturedHeaders.Authorization, "Bearer access token");
 
-  const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const previousServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  process.env.NEXT_PUBLIC_SUPABASE_URL = "http://test.supabase.local";
-  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
-  t.after(() => {
-    if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-    else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
-    if (previousServiceKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-    else process.env.SUPABASE_SERVICE_ROLE_KEY = previousServiceKey;
-  });
+  parsedClient.from = (table) => {
+    assert.equal(table, "profiles");
+    return {
+      select: () => ({
+        eq: () => ({
+          single: async () => ({
+            data: { role: "sales", is_active: true, force_password_change: false, full_name: "Owner", email: "owner@example.com" },
+            error: null,
+          }),
+        }),
+      }),
+    };
+  };
 
   const authMe = loadTypeScriptModule("src/app/api/auth/me/route.ts", {
     "@/lib/supabase-server": {
@@ -193,20 +196,6 @@ test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives au
     },
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
     "@/lib/logger": { logger: { error: () => {}, info: () => {}, warn: () => {} } },
-    "@supabase/supabase-js": {
-      createClient: () => ({
-        from: () => ({
-          select: () => ({
-            eq: () => ({
-              single: async () => ({
-                data: { role: "sales", is_active: true, force_password_change: false, full_name: "Owner", email: "owner@example.com" },
-                error: null,
-              }),
-            }),
-          }),
-        }),
-      }),
-    },
     "next/server": createCookieResponseMock(),
   });
   const authResponse = await authMe.GET(new Request("http://localhost/api/auth/me", {

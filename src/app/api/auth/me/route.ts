@@ -1,5 +1,4 @@
 // RBAC: user (authenticated)
-import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase, getRefreshedCookies, getRefreshAttempted, getRefreshFailure } from "@/lib/supabase-server";
 import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
 import { logger } from "@/lib/logger";
@@ -80,22 +79,9 @@ export async function GET(request: Request) {
       return response;
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!supabaseUrl || !serviceRoleKey) {
-      logger.error({
-        request_id: requestId,
-        operation: "auth_me",
-        err: new Error("missing environment: SUPABASE_URL or SERVICE_ROLE_KEY"),
-      });
-      return respond({ error: "internal_error" }, { status: 500 });
-    }
-
-    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-
-    const { data: profile, error: profileError } = await adminClient
+    // Read the current user's own profile through RLS. Authentication must not
+    // depend on a privileged service-role key that can be rotated independently.
+    const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("role, is_active, force_password_change, full_name, email")
       .eq("id", user.id)

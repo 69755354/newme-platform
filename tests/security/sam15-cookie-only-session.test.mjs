@@ -139,6 +139,55 @@ test("configured public origin is accepted behind a reverse proxy and other orig
   assert.equal(rejected.status, 403);
 });
 
+test("production host remains available when mutable site configuration drifts", async (t) => {
+  const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
+  const session = loadTypeScriptModule("src/app/api/auth/session/route.ts", {
+    "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
+    "next/server": createCookieResponseMock(),
+  });
+  const previousSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  process.env.NEXT_PUBLIC_SITE_URL = "https://wrong.example/path";
+  t.after(() => {
+    if (previousSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = previousSiteUrl;
+  });
+
+  const request = (origin) => new Request("https://app.newme.ae/api/auth/session", {
+    body: JSON.stringify({ access_token: "access-token", refresh_token: "refresh-token", expires_in: 3600 }),
+    headers: { "content-type": "application/json", host: "app.newme.ae", origin },
+    method: "POST",
+  });
+  assert.equal((await session.POST(request("https://app.newme.ae"))).status, 200);
+  assert.equal((await session.POST(request("https://wrong.example"))).status, 403);
+});
+
+test("caller-supplied forwarded host cannot weaken the production Origin boundary", async (t) => {
+  const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
+  const session = loadTypeScriptModule("src/app/api/auth/session/route.ts", {
+    "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
+    "next/server": createCookieResponseMock(),
+  });
+  const previousSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  process.env.NEXT_PUBLIC_SITE_URL = "https://attacker.example";
+  t.after(() => {
+    if (previousSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = previousSiteUrl;
+  });
+
+  const response = await session.POST(new Request("http://127.0.0.1:3001/api/auth/session", {
+    body: JSON.stringify({ access_token: "access-token", refresh_token: "refresh-token", expires_in: 3600 }),
+    headers: {
+      "content-type": "application/json",
+      host: "app.newme.ae",
+      origin: "https://attacker.example",
+      "x-forwarded-host": "attacker.example",
+    },
+    method: "POST",
+  }));
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "invalid_origin" });
+});
+
 test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives auth-cookie loss", async (t) => {
   const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
   const nextServer = createCookieResponseMock();

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Detect recent production 5xx responses on the authentication boundary."""
+"""Detect recent production 429/5xx responses on the login boundary."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-AUTH_PATHS = {"/api/auth/me", "/api/auth/session"}
+AUTH_PATHS = {"/login", "/api/auth/me", "/api/auth/session"}
 DEFAULT_LOG = Path("/var/log/nginx/access.log")
 DEFAULT_WINDOW_SECONDS = 600
 DEFAULT_MAX_BYTES = 8 * 1024 * 1024
@@ -106,6 +106,7 @@ def main() -> int:
 
     oldest: datetime | None = None
     counts: Counter[str] = Counter()
+    status_counts: Counter[int] = Counter()
     for line in lines:
         match = ACCESS_PATTERN.search(line)
         if not match:
@@ -119,19 +120,25 @@ def main() -> int:
             continue
         path = match.group(10).decode("utf-8", errors="replace")
         status = int(match.group(11))
-        if path in AUTH_PATHS and 500 <= status < 600:
+        if path in AUTH_PATHS and (status == 429 or 500 <= status < 600):
             counts[path] += 1
+            status_counts[status] += 1
 
     if offset and (oldest is None or oldest > window_start):
         emit({"status": "probe_error", "reason": "window_truncated"}, error=True)
         return 2
 
     total = sum(counts.values())
+    auth_429 = status_counts[429]
+    auth_5xx = sum(count for status, count in status_counts.items() if 500 <= status < 600)
     emit(
         {
-            "status": "auth_5xx" if total else "ok",
-            "auth_5xx": total,
+            "status": "auth_failures" if total else "ok",
+            "auth_failures": total,
+            "auth_429": auth_429,
+            "auth_5xx": auth_5xx,
             "paths": {path: counts[path] for path in sorted(AUTH_PATHS)},
+            "status_codes": {str(status): status_counts[status] for status in sorted(status_counts)},
             "window_seconds": args.window_seconds,
         }
     )

@@ -54,6 +54,8 @@ case "$action" in
       mv -Tf /opt/newme/current.restore /opt/newme/current
       ln -sfn "releases/$(basename "$old_rollback")" /opt/newme/current.rollback.restore
       mv -Tf /opt/newme/current.rollback.restore /opt/newme/current.rollback
+      /usr/local/sbin/newme-service-control reset-failed \
+        "automatic-rollback-recovery:reset-before-restart" || true
       /usr/local/sbin/newme-service-control restart \
         "automatic-rollback-recovery:candidate-verification-failed" || true
     }
@@ -65,6 +67,8 @@ case "$action" in
     mv -Tf /opt/newme/rollback.previous-current /opt/newme/current.rollback
     safe_reason=${reason//[^A-Za-z0-9._:\/@+-]/-}
     safe_reason=${safe_reason:0:160}
+    /usr/local/sbin/newme-service-control reset-failed \
+      "production-rollback:reset-before-restart"
     /usr/local/sbin/newme-service-control restart "production-rollback:$safe_reason"
 
     health=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 \

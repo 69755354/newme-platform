@@ -73,17 +73,28 @@ export function serializeErr(error, seen = new WeakSet(), depth = 0) {
   return { kind: "Unknown", value: sanitizeValue(error) };
 }
 
-export function createPinoHooks() {
+export function createPinoHooks(reportError) {
   return {
-    logMethod(inputArgs, method) {
+    logMethod(inputArgs, method, level) {
+      let originalError;
       for (let index = 0; index < inputArgs.length; index += 1) {
         const value = inputArgs[index];
         if (!value || typeof value !== "object") continue;
+        if (originalError === undefined && value.err instanceof Error) originalError = value.err;
         const sanitized = sanitizeValue(value);
         if (value.err !== undefined) sanitized.err = serializeErr(value.err);
         inputArgs[index] = sanitized;
       }
       method.apply(this, inputArgs);
+      if (level >= 50 && typeof reportError === "function") {
+        const context = inputArgs.find((value) => value && typeof value === "object") || {};
+        const message = inputArgs.find((value) => typeof value === "string") || "server error";
+        try {
+          reportError({ message: scrubText(message), context, error: originalError });
+        } catch {
+          // Observability transport must never break the request path.
+        }
+      }
     },
   };
 }

@@ -40,10 +40,11 @@ test("SAM-60/SAM-68 contracts", async () => {
   assert.match(ready, /export const dynamic = "force-dynamic"/);
   assert.match(ready, /export const revalidate = 0/);
   assert.match(ready, /Cache-Control": "no-store, max-age=0"/);
-  assert.match(helper, /x-newme-readiness-token/);
+  assert.match(helper, /\/api\/health/);
+  assert.match(helper, /\/api\/auth\/session/);
+  assert.match(helper, /Origin: https:\/\/app\.newme\.ae/);
   assert.match(helper, /mktemp|chmod 600|--config/);
-  assert.match(helper, /legacy readiness fallback used/);
-  assert.match(helper, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.doesNotMatch(helper, /\/api\/ready|SUPABASE_SERVICE_ROLE_KEY|NEXT_PUBLIC_SUPABASE/);
   assert.doesNotMatch(helper, /curl[^\n]*-H[^\n]*x-newme-readiness-token/);
   assert.doesNotMatch(deploy, /curl[^\n]*-H[^\n]*x-newme-readiness-token/);
   assert.match(deploy, /InvocationID/);

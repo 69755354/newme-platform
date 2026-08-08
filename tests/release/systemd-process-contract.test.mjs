@@ -21,8 +21,8 @@ test("both versioned units directly supervise the immutable Next.js release", as
     assert.match(unit, /^KillMode=control-group$/m);
     assert.match(unit, /^Restart=always$/m);
     assert.match(unit, /^SuccessExitStatus=143 SIGTERM$/m);
-    assert.match(unit, /^StartLimitIntervalSec=60$/m);
-    assert.match(unit, /^StartLimitBurst=5$/m);
+    assert.match(unit, /^StartLimitIntervalSec=300$/m);
+    assert.match(unit, /^StartLimitBurst=3$/m);
     assert.match(unit, /^ExecStartPost=\+\/usr\/local\/libexec\/newme\/newme-readiness\.sh$/m);
     assert.match(unit, /^ExecStopPost=\+\/usr\/local\/libexec\/newme\/newme-forensic\.sh$/m);
   }

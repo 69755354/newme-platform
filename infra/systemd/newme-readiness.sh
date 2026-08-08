@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-set -u
-TOKEN="$(sed -n 's/^NEWME_READINESS_TOKEN=//p' /etc/newme/newme-runtime.env 2>/dev/null || true)"
-[ -n "$TOKEN" ] || exit 1
+set -u -o pipefail
 CONFIG="$(mktemp /run/newme-readiness.XXXXXX)"
 chmod 600 "$CONFIG"
 trap 'rm -f -- "$CONFIG"' EXIT
-printf 'header = "x-newme-readiness-token: %s"\n' "$TOKEN" >"$CONFIG"
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 --config "$CONFIG" http://127.0.0.1:3001/api/ready || true)"
-  [ "$code" = 200 ] && exit 0
-  sleep 2
-done
+cat >"$CONFIG" <<'EOF'
+header = "Host: app.newme.ae"
+header = "Origin: https://app.newme.ae"
+header = "Content-Type: application/json"
+EOF
 
-# Compatibility only for a pre-hotfix release whose readiness route still
-# depends on SUPABASE_SERVICE_ROLE_KEY. This keeps the old process available
-# while the immutable auth-recovery release is built; new releases must pass
-# the protected /api/ready probe above.
-LEGACY_READY_SOURCE=/opt/newme/current/src/app/api/ready/route.ts
-if grep -Fq SUPABASE_SERVICE_ROLE_KEY "$LEGACY_READY_SOURCE" 2>/dev/null; then
-  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:3001/api/health || true)"
-  if [ "$code" = 200 ]; then
-    logger -t newme-readiness 'legacy readiness fallback used; service key rotation required'
+# Process supervision tests local liveness and the production Origin boundary.
+# Supabase availability is checked before a release switch and continuously by
+# dependency-probe.sh; an upstream outage must not trigger a restart storm.
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  health_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 \
+    http://127.0.0.1:3001/api/health 2>/dev/null || true)"
+  session_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 \
+    --config "$CONFIG" -X POST --data '{}' \
+    http://127.0.0.1:3001/api/auth/session 2>/dev/null || true)"
+  if [ "$health_code" = 200 ] && [ "$session_code" = 400 ]; then
     exit 0
   fi
-fi
+  sleep 2
+done
+logger -t newme-readiness "local startup verification failed health=${health_code:-000} session=${session_code:-000}"
 exit 1

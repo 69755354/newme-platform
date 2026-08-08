@@ -69,6 +69,7 @@ rollback_release() {
   ln -s "$PREVIOUS" "$CURRENT_NEXT"
   mv -Tf "$CURRENT_NEXT" "$CURRENT"
   restore_rollback_link
+  "$CONTROL" reset-failed "deploy:$ID:reset-before-rollback"
   "$CONTROL" restart "deploy:$ID:rollback"
   curl -fsS --max-time 10 http://127.0.0.1:3001/api/health >/dev/null
   SWITCHED=0
@@ -107,23 +108,28 @@ case "$PREVIOUS" in "$RELEASES"/*) ;; *) fail "current is not an immutable relea
 [ ! -e "$RELEASE" ] || { fail "release already exists"; exit 1; }
 [ -r "$PREVIOUS/.env.local" ] || { fail "current release environment is missing"; exit 1; }
 
-for asset in /etc/systemd/system/newme-platform.service "$RUNTIME_ENV" /usr/local/libexec/newme/newme-readiness.sh /usr/local/sbin/newme-service-control /usr/local/sbin/newme-production-rollback /etc/cron.d/newme-observability /etc/logrotate.d/newme-forensic; do
+for asset in /etc/systemd/system/newme-platform.service "$RUNTIME_ENV" /usr/local/libexec/newme/newme-readiness.sh /usr/local/sbin/newme-service-control /usr/local/sbin/newme-production-rollback /etc/cron.d/newme-observability /etc/logrotate.d/newme-forensic /etc/nginx/sites-enabled/newme-platform /opt/hermes-scripts/observability/health-check.sh /opt/hermes-scripts/observability/login-probe.sh /opt/hermes-scripts/observability/dependency-probe.sh /opt/hermes-scripts/observability/l0-composite-probe.sh; do
   [ -e "$asset" ] || { fail "missing versioned release asset: $asset"; exit 1; }
 done
 FRAGMENT="$(systemctl show newme-platform.service -p FragmentPath --value 2>/dev/null || true)"
 DROP_INS="$(systemctl show newme-platform.service -p DropInPaths --value 2>/dev/null || true)"
 [ "$FRAGMENT" = /etc/systemd/system/newme-platform.service ] || { fail "unexpected FragmentPath"; exit 1; }
 [ -z "$DROP_INS" ] || { fail "legacy drop-in ownership remains"; exit 1; }
-grep -Fq /opt/hermes-scripts/observability/health-check.sh /etc/cron.d/newme-observability || { fail "cron drift"; exit 1; }
+grep -Fqx '*/2 * * * * ubuntu /usr/bin/flock -n /run/lock/newme-observability-l0.lock /opt/hermes-scripts/observability/l0-composite-probe.sh' /etc/cron.d/newme-observability || { fail "cron drift"; exit 1; }
 
 [ "$FAILURE" != build ] || { fail "injected build failure"; exit 1; }
 mkdir -p "$STAGE"
 git -C "$ROOT" archive "$SHA" | tar -x -C "$STAGE"
 install -m 0600 "$PREVIOUS/.env.local" "$STAGE/.env.local"
+python3 "$STAGE/scripts/validate-production-config.py" \
+  --release-env "$STAGE/.env.local" \
+  --runtime-env "$RUNTIME_ENV" \
+  --network
 cd "$STAGE"
 npm ci --no-audit --no-fund
 [ -x node_modules/.bin/next ] || { fail "next missing"; exit 1; }
-NODE_OPTIONS="${NODE_OPTIONS:---max_old_space_size=2048}" npm run build
+NEXT_PUBLIC_APP_VERSION="$SHA" SENTRY_RELEASE="$SHA" \
+  NODE_OPTIONS="${NODE_OPTIONS:---max_old_space_size=2048}" npm run build
 BUILD="$(tr -d '\r\n' < .next/BUILD_ID)"
 [ -n "$BUILD" ] || { fail "BUILD_ID missing"; exit 1; }
 printf '{"git_sha":"%s","build_id":"%s"}\n' "$SHA" "$BUILD" > manifest.json
@@ -137,6 +143,7 @@ set +a
 READINESS_CONFIG="$(mktemp "${TMPDIR:-/tmp}/newme-readiness.XXXXXX")"
 chmod 600 "$READINESS_CONFIG"
 printf 'header = "x-newme-readiness-token: %s"\n' "$NEWME_READINESS_TOKEN" >"$READINESS_CONFIG"
+printf 'header = "Host: app.newme.ae"\nheader = "Origin: https://app.newme.ae"\nheader = "Content-Type: application/json"\n' >>"$READINESS_CONFIG"
 setsid node node_modules/next/dist/bin/next start -p 3002 >"/tmp/newme-candidate-$ID.log" 2>&1 &
 PID=$!
 PGID=$PID
@@ -147,6 +154,13 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 [ "$ready" -eq 1 ] || { fail "candidate readiness failed"; exit 1; }
+session_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
+  --config "$READINESS_CONFIG" -X POST --data '{}' \
+  http://127.0.0.1:3002/api/auth/session || true)"
+[ "$session_code" = 400 ] || { fail "candidate production Origin boundary returned $session_code"; exit 1; }
+auth_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
+  http://127.0.0.1:3002/api/auth/me || true)"
+[ "$auth_code" = 401 ] || { fail "candidate anonymous auth boundary returned $auth_code"; exit 1; }
 for route in / /api/health; do
   code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:3002$route" || true)"
   case "$code" in 2??|3??) ;; *) fail "candidate $route returned $code"; exit 1;; esac
@@ -172,6 +186,7 @@ mv -Tf "$CURRENT_NEXT" "$CURRENT"
 SWITCHED=1
 [ "$FAILURE" != switch ] || { fail "injected switch failure"; exit 1; }
 
+"$CONTROL" reset-failed "deploy:$ID:reset-before-switch"
 "$CONTROL" restart "deploy:$ID:switch"
 TARGET="$(readlink -f "$CURRENT")"
 [ "$TARGET" = "$RELEASE" ] || { fail "release symlink mismatch"; exit 1; }
@@ -179,6 +194,7 @@ grep -Fqx "{\"git_sha\":\"$SHA\",\"build_id\":\"$BUILD\"}" "$TARGET/manifest.jso
 [ "$(tr -d '\r\n' < "$TARGET/.next/BUILD_ID")" = "$BUILD" ] || { fail "BUILD_ID mismatch"; exit 1; }
 curl -fsS --max-time 10 http://127.0.0.1:3001/api/health >/dev/null || { fail "post-switch health failed"; exit 1; }
 bash "$TARGET/scripts/check-smoke.sh" http://127.0.0.1:3001
+bash /opt/hermes-scripts/observability/l0-composite-probe.sh
 INVOCATION_ID="$(systemctl show newme-platform.service -p InvocationID --value)"
 [[ "$INVOCATION_ID" =~ ^[0-9a-f]{32}$ ]] || { fail "service invocation id missing"; exit 1; }
 NEWME_INVOCATION_ID="$INVOCATION_ID" bash "$TARGET/scripts/check-logs.sh" "2 minutes ago"

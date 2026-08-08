@@ -3,9 +3,6 @@
 # no users or business data.
 set -euo pipefail
 
-source /opt/hermes-scripts/observability/sentry-cron-checkin.sh
-sentry_checkin_start "login-probe"
-
 SITE_URL="${SITE_URL:-http://localhost:3001}"
 SITE_ORIGIN="${SITE_ORIGIN:-https://app.newme.ae}"
 ALERT_SCRIPT="${HERMES_ALERT_STATE_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert-state-v1.sh}"
@@ -37,7 +34,6 @@ fail_probe() {
   local alert_status=0
   echo "[$TIMESTAMP] $code: $summary"
   record_alert failure "$summary" || alert_status=$?
-  sentry_checkin_finish "login-probe" 1
   if [ "$alert_status" -ne 0 ]; then
     echo "[$TIMESTAMP] alert transport remains pending" >&2
   fi
@@ -63,15 +59,15 @@ if [ "$SESSION_CODE" != "400" ]; then
     "valid-origin session probe expected HTTP 400 and received $SESSION_CODE"
 fi
 
-# 3. Detect real traffic that reached either authentication endpoint and
-# returned 5xx. This closes the blind spot where an anonymous auth/me request
-# was 401 while every signed-in user received 500.
+# 3. Detect real traffic that reached the login boundary and returned either
+# 429 or 5xx. This covers shared-proxy rate limiting as well as handled server
+# errors that leave an anonymous auth/me probe at 401.
 AUTH_LOG_STATUS=0
 AUTH_LOG_RESULT=$(python3 "$AUTH_LOG_PROBE" \
   --window-seconds "$AUTH_LOG_WINDOW_SECONDS" 2>&1) || AUTH_LOG_STATUS=$?
 case "$AUTH_LOG_STATUS" in
   0) ;;
-  1) fail_probe "AUTH_5XX_PROBE_FAIL" "recent auth endpoint 5xx detected" ;;
+  1) fail_probe "AUTH_TRAFFIC_PROBE_FAIL" "recent login-boundary 429/5xx detected: $AUTH_LOG_RESULT" ;;
   *) fail_probe "AUTH_LOG_PROBE_ERROR" "auth access-log probe unavailable: $AUTH_LOG_RESULT" ;;
 esac
 
@@ -86,11 +82,9 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
 
   if [ "$AUTH_CODE" = "401" ]; then
     if ! record_alert recovery "login probe recovered"; then
-      sentry_checkin_finish "login-probe" 1
       exit 1
     fi
-    sentry_checkin_finish "login-probe" 0
-    echo "[$TIMESTAMP] login boundary OK (health 200, session/origin 400, auth/me 401, auth 5xx 0, attempt $((attempt + 1)))"
+    echo "[$TIMESTAMP] login boundary OK (health 200, session/origin 400, auth/me 401, auth 429/5xx 0, attempt $((attempt + 1)))"
     exit 0
   fi
 

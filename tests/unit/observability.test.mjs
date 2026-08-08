@@ -29,6 +29,22 @@ test("real pino output recursively redacts nested context and preserves safe fie
   assert.equal(parsed.values[0].token, "[REDACTED]");
 });
 
+test("pino error hook reports sanitized context without reporting info logs", () => {
+  let output = "";
+  const reports = [];
+  const stream = { write: (chunk) => { output += chunk; } };
+  const logger = pino({ base: null, hooks: createPinoHooks((payload) => reports.push(payload)) }, stream);
+  logger.info({ token: "info-secret" }, "not reported");
+  const error = new Error("token=server-secret person@example.com");
+  logger.error({ err: error, headers: { authorization: "Bearer auth-secret" }, code: "AUTH_500" }, "login failed");
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].message, "login failed");
+  assert.equal(reports[0].error, error);
+  assert.equal(reports[0].context.headers.authorization, "[REDACTED]");
+  assert.doesNotMatch(JSON.stringify(reports[0].context), /auth-secret|server-secret|person@example\.com/);
+  assert.equal(output.trim().split("\n").length, 2);
+});
+
 test("serializes database Error causes without leaking sensitive text", () => {
   const cause = new Error("query failed for person@example.com");
   cause.code = "PGRST116";

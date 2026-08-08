@@ -1,7 +1,28 @@
 import pino from "pino";
+import * as Sentry from "@sentry/nextjs";
 import { createPinoHooks, serializeErr } from "./observability.mjs";
 
 const isProd = process.env.NODE_ENV === "production";
+
+function reportProductionError(payload: {
+  message: string;
+  context: Record<string, unknown>;
+  error?: Error;
+}) {
+  const route = typeof payload.context.route === "string" ? payload.context.route : "";
+  if (/\/api\/(?:health|ready|monitoring\/report)(?:[/?#]|$)/i.test(route)) return;
+  const tags = Object.fromEntries(
+    ["route", "operation", "code", "request_id"]
+      .filter((key) => typeof payload.context[key] === "string")
+      .map((key) => [key, String(payload.context[key]).slice(0, 200)]),
+  );
+  const captureContext = { level: "error" as const, tags, extra: { log: payload.context } };
+  if (payload.error instanceof Error) {
+    Sentry.captureException(payload.error, captureContext);
+  } else {
+    Sentry.captureMessage(payload.message, captureContext);
+  }
+}
 
 export const logger = pino({
   level: process.env.LOG_LEVEL || (isProd ? "info" : "debug"),
@@ -17,10 +38,11 @@ export const logger = pino({
     service: process.env.SERVICE_NAME || "newme-crm",
     environment: process.env.NODE_ENV || "development",
     release_sha:
-      process.env.BUILD_ID ||
+      process.env.SENTRY_RELEASE ||
       process.env.VERCEL_GIT_COMMIT_SHA ||
+      process.env.NEXT_PUBLIC_APP_VERSION ||
       "unknown",
-    build_id: process.env.BUILD_ID || "unknown",
+    build_id: process.env.BUILD_ID || process.env.NEXT_PUBLIC_APP_VERSION || "unknown",
   },
   redact: {
     paths: [
@@ -33,7 +55,7 @@ export const logger = pino({
     ],
     censor: "[REDACTED]",
   },
-  hooks: createPinoHooks(),
+  hooks: createPinoHooks(isProd ? reportProductionError : undefined),
   serializers: { err: serializeErr },
 });
 

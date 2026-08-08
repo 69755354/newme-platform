@@ -6,7 +6,7 @@ const root = new URL("../../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("SAM-60/SAM-68 contracts", async () => {
-  const [deploy, installer, rollback, productionRollback, health, ready, helper, unit] = await Promise.all([
+  const [deploy, installer, rollback, productionRollback, health, ready, helper, unit, logCheck] = await Promise.all([
     read("scripts/deploy-immutable.sh"),
     read("scripts/install-systemd-assets.sh"),
     read("scripts/rollback-systemd-assets.sh"),
@@ -15,6 +15,7 @@ test("SAM-60/SAM-68 contracts", async () => {
     read("src/app/api/ready/route.ts"),
     read("infra/systemd/newme-readiness.sh"),
     read("infra/systemd/newme-platform.service"),
+    read("scripts/check-logs.sh"),
   ]);
 
   for (const pattern of [/flock -n/, /npm ci/, /git -C .* archive/, /FragmentPath/, /opt\/newme\/releases/, /mv -Tf/, /rollback_release/]) {
@@ -45,6 +46,9 @@ test("SAM-60/SAM-68 contracts", async () => {
   assert.match(helper, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(helper, /curl[^\n]*-H[^\n]*x-newme-readiness-token/);
   assert.doesNotMatch(deploy, /curl[^\n]*-H[^\n]*x-newme-readiness-token/);
+  assert.match(deploy, /InvocationID/);
+  assert.match(deploy, /NEWME_INVOCATION_ID/);
+  assert.match(logCheck, /_SYSTEMD_INVOCATION_ID/);
   assert.match(unit, /EnvironmentFile=\/etc\/newme\/newme-runtime\.env/);
   assert.equal((unit.match(/^ExecStopPost=/gm) || []).length, 1);
   assert.match(unit, /WorkingDirectory=\/opt\/newme\/current/);

@@ -27,6 +27,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SALES_CAPABLE_ROLES = {"sales", "operator", "boss"}
 
 
+def is_unregistered_api_key(status: int, body: str) -> bool:
+    """Recognize only the explicit Supabase revoked/unregistered-key response."""
+    return status == 401 and "Unregistered API key" in body
+
+
 def eligible_reassignment_profiles(profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return only active profiles that can own sales cases."""
     return [
@@ -96,6 +101,9 @@ def run_contract_self_test() -> int:
 
     profiles_by_id = {profile["id"]: profile for profile in profiles}
     assert historical_owner_name(leads[0], profiles_by_id) == "Departed Sales"
+    assert is_unregistered_api_key(401, '{"message":"Unregistered API key"}')
+    assert not is_unregistered_api_key(403, '{"message":"Unregistered API key"}')
+    assert not is_unregistered_api_key(401, '{"message":"Unauthorized"}')
 
     print("contract self-test passed")
     return 0
@@ -120,17 +128,22 @@ class Regression:
         base_url: str,
         supabase_url: str,
         service_key: str,
+        publishable_key: str,
         result_file: Path,
         verbose: bool,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.supabase_url = supabase_url.rstrip("/")
         self.service_key = service_key
+        self.publishable_key = publishable_key
+        self.db_key = service_key
         self.result_file = result_file
         self.verbose = verbose
         self.passed = 0
         self.failed = 0
         self.errors: list[str] = []
+        self.warnings: list[str] = []
+        self.degraded_service_key = False
 
     def check(self, name: str, condition: bool, detail: str = "") -> bool:
         if condition:
@@ -141,9 +154,25 @@ class Regression:
         return False
 
     def request(self, request: urllib.request.Request, timeout: int = 10) -> Any:
+        request.add_header("apikey", self.db_key)
+        request.add_header("Authorization", f"Bearer {self.db_key}")
+        return urllib.request.urlopen(request, timeout=timeout)
+
+    def service_key_state(self) -> tuple[str, str]:
+        url = f"{self.supabase_url}/rest/v1/profiles?select=id&limit=1"
+        request = urllib.request.Request(url)
         request.add_header("apikey", self.service_key)
         request.add_header("Authorization", f"Bearer {self.service_key}")
-        return urllib.request.urlopen(request, timeout=timeout)
+        try:
+            with urllib.request.urlopen(request, timeout=10):
+                return "registered", ""
+        except urllib.error.HTTPError as error:
+            body = error.read().decode(errors="replace")
+            if is_unregistered_api_key(error.code, body):
+                return "unregistered", body
+            return "error", f"HTTP {error.code}: {body[:200]}"
+        except Exception as error:  # noqa: BLE001 - preserve exact gate failure
+            return "error", str(error)
 
     def http_get(
         self, path: str, expected_statuses: tuple[int, ...] = (200,)
@@ -195,9 +224,25 @@ class Regression:
         print(f"模式: {mode}")
 
         self.run_application_checks()
-        profiles = self.run_database_checks()
-        self.run_activity_checks()
-        self.run_integrity_checks(profiles)
+        service_key_state, service_key_detail = self.service_key_state()
+        if service_key_state == "unregistered":
+            self.degraded_service_key = True
+            self.db_key = self.publishable_key
+            self.warnings.append(
+                "production service key is unregistered; privileged regression checks deferred until rotation"
+            )
+            ok, data = self.db_query("profiles", "id", 1)
+            self.check("Supabase public API connectivity", ok, str(data)[:100])
+            self.run_auth_recovery_source_checks()
+        else:
+            self.check(
+                "service key is registered",
+                service_key_state == "registered",
+                service_key_detail,
+            )
+            profiles = self.run_database_checks()
+            self.run_activity_checks()
+            self.run_integrity_checks(profiles)
         self.run_source_checks()
         self.write_result()
 
@@ -215,6 +260,20 @@ class Regression:
         if self.verbose:
             print(f"CRM regression passed: {self.passed} checks")
         return 0
+
+    def run_auth_recovery_source_checks(self) -> None:
+        auth_me = PROJECT_ROOT / "src/app/api/auth/me/route.ts"
+        ready = PROJECT_ROOT / "src/app/api/ready/route.ts"
+        auth_source = auth_me.read_text(encoding="utf-8") if auth_me.is_file() else ""
+        ready_source = ready.read_text(encoding="utf-8") if ready.is_file() else ""
+        self.check(
+            "auth/me is independent of the service key",
+            bool(auth_source) and "SUPABASE_SERVICE_ROLE_KEY" not in auth_source,
+        )
+        self.check(
+            "readiness is independent of the service key",
+            bool(ready_source) and "SUPABASE_SERVICE_ROLE_KEY" not in ready_source,
+        )
 
     def run_application_checks(self) -> None:
         ok, status, _ = self.http_get("/api/health")
@@ -339,6 +398,8 @@ class Regression:
             "fail": self.failed,
             "total": self.passed + self.failed,
             "errors": self.errors,
+            "warnings": self.warnings,
+            "degraded_service_key": self.degraded_service_key,
             "timestamp": datetime.now().isoformat(),
         }
         self.result_file.parent.mkdir(parents=True, exist_ok=True)
@@ -387,6 +448,7 @@ def main() -> int:
     try:
         supabase_url = env["NEXT_PUBLIC_SUPABASE_URL"]
         service_key = env["SUPABASE_SERVICE_ROLE_KEY"]
+        publishable_key = env["NEXT_PUBLIC_SUPABASE_ANON_KEY"]
     except KeyError as error:
         raise RuntimeError(f"missing required environment variable: {error.args[0]}") from error
 
@@ -403,6 +465,7 @@ def main() -> int:
         base_url=args.base_url,
         supabase_url=supabase_url,
         service_key=service_key,
+        publishable_key=publishable_key,
         result_file=args.result_file,
         verbose=args.verbose,
     )

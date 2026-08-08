@@ -28,6 +28,6 @@ test("task detail fields are persisted through the typed contract", async () => 
 test("tasks due_at remains required by the generated production contract", async () => {
   const database = await readFile(new URL("src/types/database.ts", root), "utf8");
   const tasksSection = database.slice(database.indexOf("      tasks: {"), database.indexOf("      transfer_history:"));
-  assert.match(tasksSection, /due_at: string\n/);
+  assert.match(tasksSection, /due_at: string\r?\n/);
   assert.doesNotMatch(tasksSection, /due_at: string \| null/);
 });

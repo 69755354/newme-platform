@@ -18,7 +18,7 @@
     "check:smoke": "bash scripts/check-smoke.sh",
     "check:logs": "bash scripts/check-logs.sh",
     "check:release": "npm run check:schema-refs && npm run check:route-files && npm run check:smoke && npm run check:logs",
-    "test": "node --test tests/**/*.test.mjs",
+    "test": "node --test \"tests/**/*.test.mjs\"",
     "check:supabase-boundaries": "node scripts/check-supabase-boundaries.mjs",
     "check:definer-rpc-allowlist": "node scripts/check-security-definer-rpc-allowlist.mjs",
     "check:db-static": "node scripts/check-db-static.mjs",

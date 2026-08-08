@@ -366,6 +366,17 @@ done
 [ "$FAILURE" != cleanup ] || { fail "injected cleanup failure"; exit 1; }
 stop_candidate || { fail "candidate cleanup failed"; exit 1; }
 
+HOST_LOADAVG_FILE=/proc/loadavg \
+HOST_LOAD_READER= \
+HOST_LOAD_NPROC_BIN=/usr/bin/nproc \
+HOST_LOAD_AWK_BIN=/usr/bin/awk \
+HOST_LOAD_SLEEP_BIN=/usr/bin/sleep \
+HOST_LOAD_SETTLE_INTERVAL_SECONDS=10 \
+HOST_LOAD_SETTLE_TIMEOUT_SECONDS=120 \
+HOST_LOAD_SETTLE_REQUIRED_SAMPLES=2 \
+HOST_LOAD_SETTLE_THRESHOLD_PCT=90 \
+  bash "$ROOT/scripts/wait-for-host-load.sh"
+
 printf 'protected_release=true\ngit_sha=%s\nbuild_id=%s\ncreated_at_utc=%s\n' \
   "$SHA" "$BUILD" "$(date -u +%Y%m%dT%H%M%SZ)" > "$STAGE/.newme-protect"
 if [ "$(id -u)" -eq 0 ]; then

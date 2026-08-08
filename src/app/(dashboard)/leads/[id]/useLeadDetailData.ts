@@ -7,7 +7,7 @@
  *   - the lead row (with creator/assignee/follow_ups/milestones/business_events/next_task embeds)
  *   - activities, chat_messages, v_lead_trace (3 independent queries)
  *   - sales users list (for reassignment dropdown)
- *   - transfer history (derived from business_events embed)
+ *   - transfer history (caller-RLS server route plus business_events)
  *   - projectInfoDraft (seeded from the lead row on fetch)
  *
  * P0-1 fetchData is preserved verbatim: 2 parallel Promise.allSettled batches,
@@ -30,9 +30,14 @@ import type {
   LeadMilestone,
   LeadTrace,
   SalesUser,
+  TransferHistoryEmbed,
 } from "./types";
 import { projectDraftFromLead } from "./utils";
 import { filterLeadTransferCandidateQuery } from "@/lib/lead-transfer-candidates.mjs";
+import {
+  buildTransferProfileNameMap,
+  describeLeadTransferEvent,
+} from "@/lib/lead-transfer-history.mjs";
 
 /* ─── Types ─── */
 export interface ProjectInfoDraft {
@@ -176,6 +181,16 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         .limit(1)
         .maybeSingle();
 
+      // Historical identities are fetched through a server boundary. The API
+      // keeps the caller's RLS session for the Lead, history, and profile reads
+      // and revalidates sales ownership before returning the response.
+      const transferHistoryPromise = fetch(`/api/leads/${leadId}/transfer-history`, {
+        cache: "no-store",
+      }).then(async (response) => {
+        if (!response.ok) throw new Error(`transfer history returned ${response.status}`);
+        return response.json() as Promise<{ transfers: TransferHistoryEmbed[] }>;
+      });
+
       // Run Batch 1 + Batch 2 in parallel. allSettled so a single failed
       //   sub-query does NOT abort the rest (matches original per-query
       //   console.warn behaviour — only lead main failure was fatal).
@@ -185,9 +200,10 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         chatMessagesPromise,
         leadTracePromise,
         nextTaskPromise,
+        transferHistoryPromise,
       ]);
 
-      const [leadRes, activitiesRes, chatRes, traceRes, nextTaskRes] = settled;
+      const [leadRes, activitiesRes, chatRes, traceRes, nextTaskRes, transferHistoryRes] = settled;
 
       // ─── Rejection logging (network errors) ───────────────────────────
       // for...of so TS narrows PromiseSettledResult properly.
@@ -254,26 +270,41 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         );
       }
       if (l?.business_events) {
+        const canonicalTransfers = transferHistoryRes.status === "fulfilled"
+          ? transferHistoryRes.value.transfers ?? []
+          : [];
+        const transferProfileNames = buildTransferProfileNameMap(canonicalTransfers);
         setEvents(l.business_events.map((event) => ({
           id: event.id,
           event_type: event.event_type,
-          description: event.description ?? "",
+          description: describeLeadTransferEvent(event, transferProfileNames),
           event_data: event.event_data ?? null,
           created_at: event.created_at ?? "",
           user_id: event.user_id ?? null,
           operator: event.operator ?? null,
         })));
-        const transfers = l.business_events.filter(
-          (ev) => ev.event_type === "transfer"
-        );
-        if (transfers.length > 0) setTransferHistory(transfers.map((event) => ({
-          id: event.id,
-          event_type: event.event_type,
-          description: event.description ?? "",
-          event_data: event.event_data ?? null,
-          created_at: event.created_at ?? "",
-          user_id: event.user_id ?? null,
-          operator: event.operator ?? null,
+        setTransferHistory(canonicalTransfers.map((transfer) => ({
+          id: transfer.id,
+          event_type: "transfer",
+          description: describeLeadTransferEvent(
+            {
+              event_type: "transfer",
+              description: "Lead reassigned",
+              event_data: {
+                from_user_id: transfer.from_user_id,
+                to_user_id: transfer.to_user_id,
+              },
+            },
+            transferProfileNames,
+          ),
+          event_data: {
+            from_user_id: transfer.from_user_id,
+            to_user_id: transfer.to_user_id,
+            reason: transfer.reason,
+          },
+          created_at: transfer.created_at ?? "",
+          user_id: transfer.transferred_by,
+          operator: transfer.operator ?? null,
         })));
       }
       // ─── Independent queries from Batch 2 — soft-error handling ──────

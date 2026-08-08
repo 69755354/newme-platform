@@ -265,7 +265,7 @@ os.stat = lambda path: _AssetMetadata() if path == _asset else _real_stat(path)
 });
 
 test("production deploy and sudo policy require the versioned rollback boundary", async () => {
-  const [deploy, immutableDeploy, rollback, sudoers, installer, assetRollback, finalizer] = await Promise.all([
+  const [deploy, immutableDeploy, rollback, sudoers, installer, assetRollback, finalizer, hostLoadHelper] = await Promise.all([
     read("infra/systemd/newme-deploy.sh"),
     read("scripts/deploy-immutable.sh"),
     read("infra/systemd/newme-production-rollback.sh"),
@@ -273,6 +273,7 @@ test("production deploy and sudo policy require the versioned rollback boundary"
     read("scripts/install-systemd-assets.sh"),
     read("scripts/rollback-systemd-assets.sh"),
     read("scripts/finalize-deploy-evidence.sh"),
+    read("scripts/wait-for-host-load.sh"),
   ]);
 
   assert.match(deploy, /manual production deployment is disabled/);
@@ -357,6 +358,17 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   const rollbackSwitch = immutableDeploy.lastIndexOf('mv -Tf "$ROLLBACK_NEXT" "$ROLLBACK"');
   const currentSwitch = immutableDeploy.lastIndexOf('mv -Tf "$CURRENT_NEXT" "$CURRENT"');
   assert.ok(rollbackSwitch >= 0 && currentSwitch > rollbackSwitch);
+  const candidateStop = immutableDeploy.indexOf('stop_candidate || { fail "candidate cleanup failed"; exit 1; }');
+  const hostLoadSettle = immutableDeploy.indexOf('bash "$ROOT/scripts/wait-for-host-load.sh"', candidateStop);
+  const firstReleaseMutation = immutableDeploy.indexOf("printf 'protected_release=true", candidateStop);
+  const postSwitchComposite = immutableDeploy.indexOf("bash /opt/hermes-scripts/observability/l0-composite-probe.sh");
+  assert.ok(candidateStop >= 0 && hostLoadSettle > candidateStop);
+  assert.ok(firstReleaseMutation > hostLoadSettle && postSwitchComposite > firstReleaseMutation);
+  assert.match(immutableDeploy, /HOST_LOAD_SETTLE_INTERVAL_SECONDS=10[\s\S]*HOST_LOAD_SETTLE_TIMEOUT_SECONDS=120[\s\S]*HOST_LOAD_SETTLE_REQUIRED_SAMPLES=2[\s\S]*HOST_LOAD_SETTLE_THRESHOLD_PCT=90/);
+  assert.match(immutableDeploy, /HOST_LOADAVG_FILE=\/proc\/loadavg[\s\S]*HOST_LOAD_READER=[\s\S]*HOST_LOAD_NPROC_BIN=\/usr\/bin\/nproc[\s\S]*HOST_LOAD_AWK_BIN=\/usr\/bin\/awk[\s\S]*HOST_LOAD_SLEEP_BIN=\/usr\/bin\/sleep/);
+  assert.match(hostLoadHelper, /^#!\/usr\/bin\/env bash/);
+  assert.match(hostLoadHelper, /HOST_LOAD_SETTLE_REQUIRED_SAMPLES/);
+  assert.match(hostLoadHelper, /normalized load remained above/);
 
   assert.match(sudoers, /NEWME_PRODUCTION_RECOVERY/);
   assert.match(sudoers, /newme-production-rollback status/);

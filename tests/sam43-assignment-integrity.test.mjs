@@ -52,13 +52,34 @@ test("SAM-43 team deletion only deactivates after reassignment succeeds", () => 
   }
 });
 
-test("SAM-43 preserves detail history without restoring inactive owners as candidates", () => {
+test("SAM-43 preserves transfer history atomically without restoring inactive owners as candidates", () => {
   const mutations = read("src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts");
   const data = read("src/app/(dashboard)/leads/[id]/useLeadDetailData.ts");
+  const route = read("src/app/api/leads/[id]/assignment/route.ts");
+  const historyRoute = read("src/app/api/leads/[id]/transfer-history/route.ts");
+  const migration = read("supabase/migrations/20260723140000_atomic_lead_reassignment.sql");
 
-  assert.match(mutations, /oldLead\.assignee_profile\?\.full_name/);
   assert.match(mutations, /if \(!newUser\)/);
+  assert.match(mutations, /fetch\(`\/api\/leads\/\$\{leadId\}\/assignment`/);
+  assert.match(mutations, /expectedUpdatedAt: oldLead\.updated_at/);
+  assert.match(mutations, /idempotencyKey: crypto\.randomUUID\(\)/);
   assert.match(data, /filterLeadTransferCandidateQuery\(/);
+  assert.match(data, /fetch\(`\/api\/leads\/\$\{leadId\}\/transfer-history`/);
+  assert.match(data, /description: describeLeadTransferEvent\(/);
+  assert.match(historyRoute, /runAuthorizedLeadTransferRead\(\{/);
+  assert.match(historyRoute, /\.from\("leads"\)[\s\S]*\.select\("id, assigned_to"\)[\s\S]*\.eq\("id", leadId\)[\s\S]*\.maybeSingle\(\)/);
+  assert.match(historyRoute, /revalidateAccess:[\s\S]*\.eq\("assigned_to", context\.user\.id\)/);
+  assert.doesNotMatch(historyRoute, /supabaseAdmin/);
+  const authorizationGate = historyRoute.indexOf("runAuthorizedLeadTransferRead({");
+  const privilegedRead = historyRoute.indexOf('const { data: transfers');
+  assert.ok(authorizationGate >= 0);
+  assert.ok(privilegedRead >= 0);
+  assert.ok(authorizationGate < privilegedRead);
+  assert.match(historyRoute, /\.from\("transfer_history"\)[\s\S]*\.eq\("lead_id", leadId\)/);
+  assert.match(historyRoute, /\.from\("profiles"\)[\s\S]*\.in\("id", profileIds\)/);
+  assert.match(route, /rpc\("reassign_lead_atomic"/);
+  assert.match(migration, /INSERT INTO public\.transfer_history/);
+  assert.match(migration, /p_lead_id, v_lead\.assigned_to, p_new_assignee, v_reason, v_actor_id/);
 });
 
 test("SAM-43 exposes only eligible Settings targets while the database rejects invalid assignments", () => {
@@ -121,7 +142,7 @@ test("SAM-43 deactivation revokes Auth access before reporting success", () => {
     assert.ok(authRevoke > profileUpdate);
     assert.match(
       source,
-      /supabaseAdmin\.auth\.admin\.updateUserById\(\s*(?:userId|id),\s*\{\s*ban_duration:\s*["']876000h["'],?\s*\}\s*\)/s,
+      /supabaseAdmin\.auth\.admin\.updateUserById\(\s*(?:userId|id),\s*\{\s*ban_duration:\s*["']876000h["'],?\s*\},?\s*\)/s,
     );
     assert.match(source, /if \(authErr\) throw new Error/);
     assert.match(source, /Failed to revoke auth access/);

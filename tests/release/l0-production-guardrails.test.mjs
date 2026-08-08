@@ -174,6 +174,7 @@ test("the no-cost composite Sentry monitor preserves independent Hermes alerts",
   assert.match(composite, /sentry_checkin_start "\$MONITOR_SLUG"/);
   assert.match(composite, /sentry_checkin_finish "\$MONITOR_SLUG" "\$probe_status"/);
   assert.match(sentry, /\/api\/\$\{SENTRY_PROJECT_ID\}\/cron\/\$\{monitor_slug\}\/\$\{SENTRY_KEY\}\//);
+  assert.match(sentry, /SENTRY_KEY="\$\{BASH_REMATCH\[1\]\}"/);
   assert.match(sentry, /\[ "\$http_code" != 202 \]/);
   assert.doesNotMatch(sentry, /Authorization: DSN/);
   assert.match(cron, /^\*\/2 .*l0-composite-probe\.sh$/m);

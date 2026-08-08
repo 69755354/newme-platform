@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const script = fileURLToPath(new URL("../../scripts/validate-production-config.py", import.meta.url));
 const publishableKey = `sb_publishable_${"a".repeat(40)}`;
 const serviceKey = `sb_secret_${"b".repeat(40)}`;
+const sentryPublicKey = "d".repeat(32);
 
 function legacyKey(role) {
   const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -20,6 +21,8 @@ function fixture({
   duplicate = false,
   publishable = publishableKey,
   service = serviceKey,
+  sentryDsn = `https://${sentryPublicKey}@o1.ingest.sentry.io/12345`,
+  sentryLine,
 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "newme-production-config-"));
   const release = join(dir, ".env.local");
@@ -28,7 +31,7 @@ function fixture({
     "NEXT_PUBLIC_SUPABASE_URL=https://vfopmpxlhwzpxqegayew.supabase.co",
     `NEXT_PUBLIC_SUPABASE_ANON_KEY=${publishable}`,
     `SUPABASE_SERVICE_ROLE_KEY=${service}`,
-    "NEXT_PUBLIC_SENTRY_DSN=https://publickey@o1.ingest.sentry.io/12345",
+    sentryLine ?? `NEXT_PUBLIC_SENTRY_DSN=${sentryDsn}`,
     "",
   ].join("\n"));
   writeFileSync(runtime, [
@@ -78,4 +81,36 @@ test("production config validator accepts correctly placed legacy Supabase JWT r
   const result = run(fixture({ publishable: legacyKey("anon"), service: legacyKey("service_role") }));
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^CONFIG_VALIDATION=PASS$/m);
+});
+
+test("production config validator accepts public and private Sentry DSNs but rejects malformed project keys", () => {
+  const privateSecret = "e".repeat(32);
+  const privateDsn = `https://${sentryPublicKey}:${privateSecret}@o1.ingest.de.sentry.io/12345`;
+  const accepted = run(fixture({ sentryDsn: privateDsn }));
+  assert.equal(accepted.status, 0, accepted.stderr);
+  assert.doesNotMatch(`${accepted.stdout}\n${accepted.stderr}`, new RegExp(privateSecret));
+
+  const quotedExport = run(fixture({
+    sentryLine: ` export SENTRY_DSN = '${privateDsn}' `,
+  }));
+  assert.equal(quotedExport.status, 0, quotedExport.stderr);
+  assert.doesNotMatch(`${quotedExport.stdout}\n${quotedExport.stderr}`, new RegExp(privateSecret));
+
+  const malformedSecret = "f".repeat(32);
+  for (const sentryDsn of [
+    "https://not-a-project-key@o1.ingest.sentry.io/12345",
+    `https://${sentryPublicKey}@example.test/12345`,
+    `https://${sentryPublicKey}@o1.ingest.sentry.io/not-numeric`,
+    `https://${sentryPublicKey}@o1.ingest.sentry.io:443/12345`,
+    `https://${sentryPublicKey}@o1.ingest.sentry.io/\u0661\u0662\u0663\u0664\u0665`,
+    `https://${sentryPublicKey}:${malformedSecret}@o1.ingest.sentry.io\uFF0F12345`,
+  ]) {
+    const rejected = run(fixture({ sentryDsn }));
+    assert.equal(rejected.status, 1);
+    assert.match(rejected.stderr, /release Sentry DSN is missing or malformed/);
+    assert.doesNotMatch(
+      `${rejected.stdout}\n${rejected.stderr}`,
+      new RegExp(`${sentryPublicKey}|${privateSecret}|${malformedSecret}`),
+    );
+  }
 });

@@ -40,6 +40,7 @@ MANAGED=(
   /etc/hermes/observability/hermes-alert-v1.env
   /opt/hermes-scripts/observability/health-check.sh
   /opt/hermes-scripts/observability/login-probe.sh
+  /opt/hermes-scripts/observability/auth-log-probe.py
   /opt/hermes-scripts/observability/hermes-alert-notifier-v1.sh
   /opt/hermes-scripts/observability/hermes-alert-state-v1.sh
   /opt/hermes-scripts/observability/incident-capture.sh
@@ -100,7 +101,7 @@ chown root:adm /var/log/newme-forensic/newme-forensic.log
 chmod 0640 /var/log/newme-forensic/newme-forensic.log
 
 OBS=/opt/hermes-scripts/observability
-for a in health-check.sh login-probe.sh hermes-alert-notifier-v1.sh hermes-alert-state-v1.sh incident-capture.sh incident-review.sh newme-service-health.py sentry-cron-checkin.sh sentry-release.sh supabase-pool-monitor.sh; do
+for a in health-check.sh login-probe.sh auth-log-probe.py hermes-alert-notifier-v1.sh hermes-alert-state-v1.sh incident-capture.sh incident-review.sh newme-service-health.py sentry-cron-checkin.sh sentry-release.sh supabase-pool-monitor.sh; do
   install -D -o root -g root -m 0755 "$ROOT/infra/observability/$a" "$OBS/$a"
 done
 [ -e /etc/hermes/observability/hermes-alert-v1.env ] || install -D -o root -g root -m 0640 "$ROOT/infra/observability/hermes-alert-v1.env.example" /etc/hermes/observability/hermes-alert-v1.env
@@ -112,7 +113,8 @@ DROP_INS="$(systemctl show newme-platform.service -p DropInPaths --value)"
 [ -z "$DROP_INS" ]
 grep -Fqx '/var/log/newme-forensic/newme-forensic.log {' /etc/logrotate.d/newme-forensic
 grep -Fq /opt/hermes-scripts/observability/health-check.sh /etc/cron.d/newme-observability
-grep -Fq /opt/hermes-scripts/observability/login-probe.sh /etc/cron.d/newme-observability
+grep -Fqx '*/2 * * * * ubuntu /usr/bin/flock -n /run/lock/newme-observability-login.lock /opt/hermes-scripts/observability/login-probe.sh' /etc/cron.d/newme-observability
+test -x /opt/hermes-scripts/observability/auth-log-probe.py
 test -x /usr/local/sbin/newme-deploy
 test -x /usr/local/sbin/newme-production-rollback
 case "$(git --git-dir=/opt/newme/repository.git remote get-url origin)" in

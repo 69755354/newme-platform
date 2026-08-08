@@ -1,15 +1,16 @@
-#!/bin/bash
-# login-probe.sh — NewMe CRM 登录拨测
-# 路径: /opt/hermes-scripts/observability/login-probe.sh
-# crontab: */2 * * * * /bin/bash /opt/hermes-scripts/observability/login-probe.sh
-# 依赖: curl
-# 需要: TEST_EMAIL, TEST_PASSWORD 环境变量 (或用 Supabase anon key 创建 session)
+#!/usr/bin/env bash
+# Production login-boundary probe. It uses no employee credentials and creates
+# no users or business data.
 set -euo pipefail
+
 source /opt/hermes-scripts/observability/sentry-cron-checkin.sh
 sentry_checkin_start "login-probe"
 
 SITE_URL="${SITE_URL:-http://localhost:3001}"
+SITE_ORIGIN="${SITE_ORIGIN:-https://app.newme.ae}"
 ALERT_SCRIPT="${HERMES_ALERT_STATE_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert-state-v1.sh}"
+AUTH_LOG_PROBE="${AUTH_LOG_PROBE:-/opt/hermes-scripts/observability/auth-log-probe.py}"
+AUTH_LOG_WINDOW_SECONDS="${AUTH_LOG_WINDOW_SECONDS:-600}"
 MAX_RETRIES=2
 TIMEOUT=10
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -30,47 +31,73 @@ record_alert() {
   return "$status"
 }
 
-# ─── 1. Health endpoint ───
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "${SITE_URL}/api/health" 2>/dev/null || echo "000")
-
-if [ "$HTTP_CODE" = "000" ]; then
-  echo "[$TIMESTAMP] 🔔 HEALTH_DOWN: ${SITE_URL} 不可达 (连接超时)"
-  record_alert failure "health endpoint unavailable"
+fail_probe() {
+  local code="$1"
+  local summary="$2"
+  local alert_status=0
+  echo "[$TIMESTAMP] $code: $summary"
+  record_alert failure "$summary" || alert_status=$?
   sentry_checkin_finish "login-probe" 1
+  if [ "$alert_status" -ne 0 ]; then
+    echo "[$TIMESTAMP] alert transport remains pending" >&2
+  fi
   exit 1
+}
+
+# 1. Basic application liveness must be exactly HTTP 200.
+HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" \
+  "${SITE_URL}/api/health" 2>/dev/null) || HEALTH_CODE="000"
+if [ "$HEALTH_CODE" != "200" ]; then
+  fail_probe "HEALTH_PROBE_FAIL" "health endpoint returned HTTP $HEALTH_CODE"
 fi
 
-if [ "$HTTP_CODE" -ge 500 ]; then
-  echo "[$TIMESTAMP] 🔔 HEALTH_5XX: ${SITE_URL}/api/health 返回 HTTP $HTTP_CODE"
-  record_alert failure "health endpoint returned HTTP $HTTP_CODE"
-  sentry_checkin_finish "login-probe" 1
-  exit 1
+# 2. A valid production Origin must reach body validation. HTTP 403 here is
+# the exact failure mode caused by a bad NEXT_PUBLIC_SITE_URL runtime value.
+SESSION_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" \
+  -X POST "${SITE_URL}/api/auth/session" \
+  -H "Origin: ${SITE_ORIGIN}" \
+  -H "Content-Type: application/json" \
+  --data '{}' 2>/dev/null) || SESSION_CODE="000"
+if [ "$SESSION_CODE" != "400" ]; then
+  fail_probe "SESSION_ORIGIN_PROBE_FAIL" \
+    "valid-origin session probe expected HTTP 400 and received $SESSION_CODE"
 fi
 
-# ─── 2. Auth 链路拨测 (带重试) ───
+# 3. Detect real traffic that reached either authentication endpoint and
+# returned 5xx. This closes the blind spot where an anonymous auth/me request
+# was 401 while every signed-in user received 500.
+AUTH_LOG_STATUS=0
+AUTH_LOG_RESULT=$(python3 "$AUTH_LOG_PROBE" \
+  --window-seconds "$AUTH_LOG_WINDOW_SECONDS" 2>&1) || AUTH_LOG_STATUS=$?
+case "$AUTH_LOG_STATUS" in
+  0) ;;
+  1) fail_probe "AUTH_5XX_PROBE_FAIL" "recent auth endpoint 5xx detected" ;;
+  *) fail_probe "AUTH_LOG_PROBE_ERROR" "auth access-log probe unavailable: $AUTH_LOG_RESULT" ;;
+esac
+
+# 4. The anonymous auth boundary must remain a bounded 401. Retry transport
+# failures, while authenticated 5xx responses are covered by the log probe.
 attempt=0
 last_error=""
-while [ $attempt -le $MAX_RETRIES ]; do
+while [ "$attempt" -le "$MAX_RETRIES" ]; do
   AUTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" \
     "${SITE_URL}/api/auth/me" \
-    -H "Content-Type: application/json" 2>/dev/null || echo "000")
+    -H "Content-Type: application/json" 2>/dev/null) || AUTH_CODE="000"
 
-  # 401=服务正常(未认证), 200=正常响应, 307=重定向(也是正常的)
-  case "$AUTH_CODE" in
-    200|401|307)
-      record_alert recovery "login probe recovered"
-      sentry_checkin_finish "login-probe" 0
-      echo "[$TIMESTAMP] 💓 登录链路 OK (auth/me HTTP $AUTH_CODE, 第$((attempt+1))次)"
-      exit 0
-      ;;
-  esac
+  if [ "$AUTH_CODE" = "401" ]; then
+    if ! record_alert recovery "login probe recovered"; then
+      sentry_checkin_finish "login-probe" 1
+      exit 1
+    fi
+    sentry_checkin_finish "login-probe" 0
+    echo "[$TIMESTAMP] login boundary OK (health 200, session/origin 400, auth/me 401, auth 5xx 0, attempt $((attempt + 1)))"
+    exit 0
+  fi
 
-  [ "$AUTH_CODE" = "000" ] && last_error="连接超时" || last_error="HTTP $AUTH_CODE"
+  [ "$AUTH_CODE" = "000" ] && last_error="connection timeout" || last_error="HTTP $AUTH_CODE"
   attempt=$((attempt + 1))
-  [ $attempt -le $MAX_RETRIES ] && sleep 2
+  [ "$attempt" -le "$MAX_RETRIES" ] && sleep 2
 done
 
-sentry_checkin_finish "login-probe" 1
-echo "[$TIMESTAMP] 🔔 LOGIN_PROBE_FAIL: ${SITE_URL}/api/auth/me $last_error (重试${MAX_RETRIES}次后仍失败)"
-record_alert failure "auth probe failed: $last_error"
-exit 1
+fail_probe "AUTH_ME_PROBE_FAIL" \
+  "anonymous auth/me failed after $MAX_RETRIES retries: $last_error"

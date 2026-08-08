@@ -98,6 +98,10 @@ grep -Fq /opt/hermes-scripts/observability/health-check.sh /etc/cron.d/newme-obs
 mkdir -p "$STAGE"
 git -C "$ROOT" archive "$SHA" | tar -x -C "$STAGE"
 install -m 0600 "$PREVIOUS/.env.local" "$STAGE/.env.local"
+# Inject current git SHA for health endpoint (inlined at Next.js build time)
+grep -q '^NEXT_PUBLIC_APP_VERSION=' "$STAGE/.env.local" \
+  && sed -i "s/^NEXT_PUBLIC_APP_VERSION=.*/NEXT_PUBLIC_APP_VERSION=$SHA/" "$STAGE/.env.local" \
+  || printf 'NEXT_PUBLIC_APP_VERSION=%s\n' "$SHA" >> "$STAGE/.env.local"
 cd "$STAGE"
 npm ci --no-audit --no-fund
 [ -x node_modules/.bin/next ] || { fail "next missing"; exit 1; }

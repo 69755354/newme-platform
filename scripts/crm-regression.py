@@ -25,6 +25,11 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SALES_CAPABLE_ROLES = {"sales", "operator", "boss"}
+KPI_ASSIGNEE_EMBED = "profiles!kpi_targets_assigned_to_fkey(full_name)"
+KPI_ROUTE_FILES = (
+    PROJECT_ROOT / "src/app/api/kpi/targets/route.ts",
+    PROJECT_ROOT / "src/app/api/settings/data/route.ts",
+)
 
 
 def is_unregistered_api_key(status: int, body: str) -> bool:
@@ -53,6 +58,14 @@ def historical_owner_name(
     if not owner:
         return None
     return owner.get("full_name") or owner.get("email") or owner_id
+
+
+def uses_explicit_kpi_assignee_embed(path: Path) -> bool:
+    """Reject the ambiguous profiles embed when kpi_targets has two profile FKs."""
+    if not path.is_file():
+        return False
+    source = path.read_text(encoding="utf-8")
+    return KPI_ASSIGNEE_EMBED in source and "profiles(full_name)" not in source
 
 
 def run_contract_self_test() -> int:
@@ -104,6 +117,7 @@ def run_contract_self_test() -> int:
     assert is_unregistered_api_key(401, '{"message":"Unregistered API key"}')
     assert not is_unregistered_api_key(403, '{"message":"Unregistered API key"}')
     assert not is_unregistered_api_key(401, '{"message":"Unauthorized"}')
+    assert all(uses_explicit_kpi_assignee_embed(path) for path in KPI_ROUTE_FILES)
 
     print("contract self-test passed")
     return 0
@@ -312,6 +326,17 @@ class Regression:
             f"候选数={len(candidates)}",
         )
 
+        ok, data = self.db_query(
+            "kpi_targets",
+            f"id,{KPI_ASSIGNEE_EMBED}",
+            1,
+        )
+        self.check(
+            "kpi_targets assigned_to profile relationship is unambiguous",
+            ok,
+            str(data)[:200],
+        )
+
         ok, count = self.db_count("leads")
         self.check("leads 表可访问", ok and isinstance(count, int), str(count))
         self.check("有线索数据", isinstance(count, int) and count > 0, f"共 {count}")
@@ -391,6 +416,12 @@ class Regression:
                 "PAGE_VISIT" in content or "audit_logs" in content,
             )
         self.check("unread-count route.ts 存在", unread_route.is_file())
+
+        for route_file in KPI_ROUTE_FILES:
+            self.check(
+                f"{route_file.relative_to(PROJECT_ROOT)} uses explicit KPI assignee relationship",
+                uses_explicit_kpi_assignee_embed(route_file),
+            )
 
     def write_result(self) -> None:
         result = {

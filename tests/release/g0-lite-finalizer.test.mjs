@@ -15,7 +15,12 @@ async function fixture() {
     ci: { run_id: "123", run_url: "https://github.com/69755354/newme-platform/actions/runs/123", head_sha: gitSha, conclusion: "success" },
     migration: { status: "not_required", ids: "" },
     uat: { status: "pending", actor: "", completed_at: "", fixture_ids: [], cleanup_status: "pending" },
-    rollback: { git_sha: "b".repeat(40), build_id: "build-old", backup_dir: ".next.backup.1" },
+    rollback: {
+      git_sha: "b".repeat(40),
+      build_id: "build-old",
+      backup_dir: ".next.backup.1",
+      asset_backup: "/var/backups/newme-systemd-assets/test-fixture",
+    },
     build: { status: "pass" },
     systemd: { status: "pass" },
     smoke: { status: "pass" },
@@ -55,8 +60,24 @@ test("missing authenticated actor cannot complete release", async () => {
 test("failed UAT is recorded and leaves release incomplete", async () => {
   const path = await fixture();
   const result = finalize(path, { UAT_STATUS: "fail" });
-  assert.notEqual(result.status, 0);
+  assert.equal(result.status, 0, result.stderr);
   assert.equal((await evidence(path)).release_status, "uat_failed");
+});
+
+test("matching failed UAT retry is idempotent and cannot be promoted", async () => {
+  const path = await fixture();
+  const overrides = { UAT_STATUS: "fail" };
+  const first = finalize(path, overrides);
+  assert.equal(first.status, 0, first.stderr);
+  const failed = await evidence(path);
+
+  const retry = finalize(path, overrides);
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.deepEqual(await evidence(path), failed);
+
+  const promote = finalize(path, { UAT_STATUS: "pass" });
+  assert.notEqual(promote.status, 0);
+  assert.deepEqual(await evidence(path), failed);
 });
 
 test("fixture IDs reject unverified cleanup", async () => {
@@ -98,4 +119,23 @@ test("no-fixture UAT accepts not_required cleanup", async () => {
   const result = finalize(path);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual((await evidence(path)).uat.fixture_ids, []);
+});
+
+test("matching completion retry is idempotent and a mismatched retry fails closed", async () => {
+  const path = await fixture();
+  const overrides = {
+    UAT_FIXTURE_IDS: "fixture-1",
+    FIXTURE_CLEANUP_STATUS: "removed_verified",
+  };
+  const first = finalize(path, overrides);
+  assert.equal(first.status, 0, first.stderr);
+  const completed = await evidence(path);
+
+  const retry = finalize(path, overrides);
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.deepEqual(await evidence(path), completed);
+
+  const mismatch = finalize(path, { ...overrides, UAT_ACTOR: "different actor" });
+  assert.notEqual(mismatch.status, 0);
+  assert.deepEqual(await evidence(path), completed);
 });

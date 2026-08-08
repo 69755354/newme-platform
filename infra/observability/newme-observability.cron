@@ -1,4 +1,3 @@
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-*/5 * * * * ubuntu /usr/bin/flock -n /run/lock/newme-observability-health.lock /opt/hermes-scripts/observability/health-check.sh
-*/2 * * * * ubuntu /usr/bin/flock -n /run/lock/newme-observability-login.lock /opt/hermes-scripts/observability/login-probe.sh
+*/2 * * * * ubuntu /usr/bin/flock -n /run/lock/newme-observability-l0.lock /opt/hermes-scripts/observability/l0-composite-probe.sh

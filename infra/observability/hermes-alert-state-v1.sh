@@ -14,7 +14,14 @@ ALERT_KEY="${1:?alert key is required}"
 EVENT="${2:?event must be failure or recovery}"
 SUMMARY="${3:-}"
 STATE_DIR="${HERMES_ALERT_STATE_DIR:-${XDG_STATE_HOME:-${HOME:-/home/ubuntu}/.local/state}/hermes-alert-v1}"
-THRESHOLD="${HERMES_ALERT_THRESHOLD:-2}"
+case "$ALERT_KEY" in
+  login-probe|dependency-probe|l0-composite-sentry)
+    THRESHOLD="${HERMES_L0_ALERT_THRESHOLD:-1}"
+    ;;
+  *)
+    THRESHOLD="${HERMES_ALERT_THRESHOLD:-2}"
+    ;;
+esac
 NOTIFIER="${HERMES_ALERT_NOTIFIER:-/opt/hermes-scripts/observability/hermes-alert-notifier-v1.sh}"
 
 case "$EVENT" in

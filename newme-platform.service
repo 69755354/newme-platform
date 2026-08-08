@@ -2,8 +2,8 @@
 Description=NewMe Business Platform (Next.js)
 Wants=network-online.target
 After=network-online.target
-StartLimitIntervalSec=60
-StartLimitBurst=5
+StartLimitIntervalSec=300
+StartLimitBurst=3
 
 [Service]
 Type=simple

@@ -17,7 +17,7 @@ export async function reportServerError(payload: ServerErrorPayload): Promise<vo
 
   try {
     const { message, stack, type = "server", url = "" } = payload;
-    const origin = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    const origin = `http://127.0.0.1:${process.env.PORT || "3001"}`;
 
     await fetch(`${origin}/api/monitoring/report`, {
       method: "POST",

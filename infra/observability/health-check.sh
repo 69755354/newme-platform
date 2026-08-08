@@ -1,84 +1,101 @@
-#!/bin/bash
-# health-check.sh — NewMe 基础设施监控
-# 路径: /opt/hermes-scripts/observability/health-check.sh
-# crontab: */5 * * * * /bin/bash /opt/hermes-scripts/observability/health-check.sh
-# 依赖: curl, bc (apt-get install -y bc)
-set -euo pipefail
-source /opt/hermes-scripts/observability/sentry-cron-checkin.sh
-sentry_checkin_start "health-check"
+#!/usr/bin/env bash
+# Production host and service health probe.
+set -u -o pipefail
 
 ALERT_SCRIPT="${HERMES_ALERT_STATE_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert-state-v1.sh}"
-HOSTNAME=$(hostname)
-TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+LOADAVG_FILE="${LOADAVG_FILE:-/proc/loadavg}"
+HOSTNAME_VALUE="$(hostname)"
+TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 ALERTS=""
 
-# ─── 1. 磁盘使用率 ───
-DISK_PCT=$(df -h / | awk 'NR==2 {gsub(/%/,""); print $5}')
-if [ "$DISK_PCT" -gt 90 ]; then
-  ALERTS="${ALERTS}[DISK_CRITICAL] / 使用率 ${DISK_PCT}% (阈值 90%)\n"
-elif [ "$DISK_PCT" -gt 80 ]; then
-  ALERTS="${ALERTS}[DISK_WARN] / 使用率 ${DISK_PCT}% (阈值 80%)\n"
+add_alert() {
+  ALERTS="${ALERTS}[$1] $2\n"
+}
+
+DISK_PCT="unknown"
+if disk_value="$(df -P / 2>/dev/null | awk 'NR == 2 { gsub(/%/, "", $5); print $5; found=1 } END { if (!found) exit 1 }')" &&
+  [[ "$disk_value" =~ ^[0-9]+$ ]]; then
+  DISK_PCT="$disk_value"
+  if [ "$DISK_PCT" -gt 90 ]; then
+    add_alert DISK_CRITICAL "root filesystem ${DISK_PCT}%"
+  elif [ "$DISK_PCT" -gt 80 ]; then
+    add_alert DISK_WARN "root filesystem ${DISK_PCT}%"
+  fi
+else
+  add_alert PROBE_ERROR "disk metric collection failed"
 fi
 
-# ─── 2. 内存使用率 ───
-MEM_PCT=$(free | awk '/Mem:/ {printf "%.0f", $3/$2*100}')
-if [ "$MEM_PCT" -gt 85 ]; then
-  ALERTS="${ALERTS}[MEM_CRITICAL] 内存使用率 ${MEM_PCT}% (阈值 85%)\n"
-elif [ "$MEM_PCT" -gt 75 ]; then
-  ALERTS="${ALERTS}[MEM_WARN] 内存使用率 ${MEM_PCT}% (阈值 75%)\n"
+MEM_PCT="unknown"
+if mem_value="$(free 2>/dev/null | awk '/^Mem:/ && $2 > 0 { printf "%.0f", $3 / $2 * 100; found=1 } END { if (!found) exit 1 }')" &&
+  [[ "$mem_value" =~ ^[0-9]+$ ]]; then
+  MEM_PCT="$mem_value"
+  if [ "$MEM_PCT" -gt 85 ]; then
+    add_alert MEM_CRITICAL "memory ${MEM_PCT}%"
+  elif [ "$MEM_PCT" -gt 75 ]; then
+    add_alert MEM_WARN "memory ${MEM_PCT}%"
+  fi
+else
+  add_alert PROBE_ERROR "memory metric collection failed"
 fi
 
-# ─── 3. CPU 负载 (1min) ───
-CPU_LOAD=$(uptime | awk -F'load average:' '{print $2}' | awk -F',' '{print $1}' | xargs)
-CORES=$(nproc)
-CPU_PCT=$(echo "scale=0; $CPU_LOAD / $CORES * 100" | bc)
-if [ "$CPU_PCT" -gt 90 ]; then
-  ALERTS="${ALERTS}[CPU_CRITICAL] 负载 ${CPU_LOAD} (${CORES}核, ${CPU_PCT}%)\n"
+CPU_LOAD="unknown"
+CPU_PCT="unknown"
+if cpu_load_value="$(awk 'NR == 1 && $1 ~ /^[0-9]+([.][0-9]+)?$/ { print $1; found=1 } END { if (!found) exit 1 }' "$LOADAVG_FILE" 2>/dev/null)" &&
+  core_value="$(nproc 2>/dev/null)" && [[ "$core_value" =~ ^[1-9][0-9]*$ ]] &&
+  cpu_pct_value="$(awk -v load_value="$cpu_load_value" -v cores="$core_value" 'BEGIN { printf "%.0f", load_value / cores * 100 }')" &&
+  [[ "$cpu_pct_value" =~ ^[0-9]+$ ]]; then
+  CPU_LOAD="$cpu_load_value"
+  CPU_PCT="$cpu_pct_value"
+  if [ "$CPU_PCT" -gt 90 ]; then
+    add_alert CPU_CRITICAL "load ${CPU_LOAD} (${CPU_PCT}%)"
+  fi
+else
+  add_alert PROBE_ERROR "CPU metric collection failed"
 fi
 
-# ─── 4. 进程数 ───
-PROC_COUNT=$(ps aux | wc -l)
-if [ "$PROC_COUNT" -gt 500 ]; then
-  ALERTS="${ALERTS}[PROC_WARN] 进程数 ${PROC_COUNT} (阈值 500)\n"
+PROC_COUNT="unknown"
+if proc_value="$(ps aux 2>/dev/null | wc -l)" && [[ "$proc_value" =~ ^[0-9]+$ ]]; then
+  PROC_COUNT="$proc_value"
+  if [ "$PROC_COUNT" -gt 500 ]; then
+    add_alert PROC_WARN "process count ${PROC_COUNT}"
+  fi
+else
+  add_alert PROBE_ERROR "process metric collection failed"
 fi
 
-# ─── 5. 服务健康检查 ───
-if ! curl -sf --max-time 5 http://localhost:3001/api/health > /dev/null 2>&1; then
-  ALERTS="${ALERTS}[SERVICE_DOWN] newme-platform:3001 无响应 (5s 超时)\n"
+if ! curl -sf --max-time 5 http://127.0.0.1:3001/api/health >/dev/null 2>&1; then
+  ALERTS="${ALERTS}[SERVICE_DOWN] newme-platform:3001 unavailable\n"
 fi
 
-# ─── 6. Hermes 三服务检查 ───
-for svc in hermes-bridge hermes-dashboard hermes-worker; do
-  if ! systemctl is-active --quiet "$svc" 2>/dev/null; then
-    ALERTS="${ALERTS}[HERMES_DOWN] $svc 服务未运行\n"
+for service in hermes-bridge hermes-dashboard hermes-worker; do
+  if ! systemctl is-active --quiet "$service" 2>/dev/null; then
+    ALERTS="${ALERTS}[HERMES_DOWN] ${service} inactive\n"
   fi
 done
 
 record_alert() {
-  local event="$1"
-  local summary="$2"
-  local transition=""
-  local status=0
-  transition="$(bash "$ALERT_SCRIPT" "health-check" "$event" "$summary" 2>&1)" || status=$?
+  local event="$1" summary="$2" transition="" status=0
+  transition="$(bash "$ALERT_SCRIPT" health-check "$event" "$summary" 2>&1)" || status=$?
   printf '%s\n' "$transition"
   if printf '%s' "$transition" | grep -q 'capture=1'; then
-    /opt/hermes-scripts/observability/incident-capture.sh "health-check" "$summary" &
+    /opt/hermes-scripts/observability/incident-capture.sh health-check "$summary" &
   fi
-  if [ "$status" -ne 0 ]; then
-    echo "[$TIMESTAMP] ALERT_STATE_FAILED: retry will occur on the next run" >&2
-  fi
+  [ "$status" -eq 0 ] || echo "[$TIMESTAMP] ALERT_STATE_FAILED: retry pending" >&2
   return "$status"
 }
 
-# ─── 输出 ───
-if [ -z "$ALERTS" ]; then
-  record_alert recovery "health checks recovered"
-  echo "[$TIMESTAMP] 💓 $HOSTNAME OK | disk=${DISK_PCT}% mem=${MEM_PCT}% cpu=${CPU_PCT}% proc=${PROC_COUNT}"
+probe_status=0
+[ -z "$ALERTS" ] || probe_status=1
+
+alert_status=0
+if [ "$probe_status" -eq 0 ]; then
+  record_alert recovery "health checks recovered" || alert_status=$?
+  echo "[$TIMESTAMP] $HOSTNAME_VALUE OK disk=${DISK_PCT}% mem=${MEM_PCT}% cpu=${CPU_PCT}% proc=${PROC_COUNT}"
 else
-  echo "[$TIMESTAMP] 🔔 $HOSTNAME ALERTS:"
-  echo -e "$ALERTS"
-  record_alert failure "$(echo -e "$ALERTS" | head -1)"
+  summary="$(printf '%b' "$ALERTS" | sed -n '1p')"
+  printf '[%s] %s ALERTS:\n%b' "$TIMESTAMP" "$HOSTNAME_VALUE" "$ALERTS"
+  record_alert failure "$summary" || alert_status=$?
 fi
 
-sentry_checkin_finish "health-check" $?
-exit 0
+[ "$alert_status" -eq 0 ] || exit "$alert_status"
+exit "$probe_status"

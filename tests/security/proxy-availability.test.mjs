@@ -88,3 +88,55 @@ test("a stalled auth dependency returns a bounded unavailable response for a bus
 
   assert.deepEqual(await proxy.proxy(request("/api/leads/a/stage")), { body: { error: "auth_unavailable" }, status: 503 });
 });
+
+test("Bearer authentication reads the caller profile through RLS without a service key", async (t) => {
+  const previousFetch = globalThis.fetch;
+  const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const previousAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const previousService = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://project.supabase.co";
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "publishable-key";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "must-not-be-used";
+  let requestHeaders;
+  globalThis.fetch = async (_url, init) => {
+    requestHeaders = init.headers;
+    return {
+      ok: true,
+      json: async () => [{ id: "user-1", role: "sales", is_active: true, password_changed_at: null }],
+    };
+  };
+  t.after(() => {
+    globalThis.fetch = previousFetch;
+    for (const [key, value] of [
+      ["NEXT_PUBLIC_SUPABASE_URL", previousUrl],
+      ["NEXT_PUBLIC_SUPABASE_ANON_KEY", previousAnon],
+      ["SUPABASE_SERVICE_ROLE_KEY", previousService],
+    ]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  const proxy = loadProxy({
+    "next/server": nextServer(),
+    "@/lib/supabase-middleware": {
+      createMiddlewareClient: async () => ({
+        supabase: {
+          auth: {
+            getUser: async (token) => ({ data: { user: token === "user-token" ? { id: "user-1" } : null } }),
+          },
+        },
+        getResponse: () => ({ status: 200 }),
+      }),
+    },
+    "@/lib/report-server-error": { reportServerError: async () => {} },
+    "@/lib/auth-profile.mjs": { isActiveProfile: (profile) => profile?.is_active === true },
+  });
+  const apiRequest = request("/api/leads", "GET");
+  apiRequest.headers = new Headers({ Authorization: "Bearer user-token" });
+
+  assert.deepEqual(await proxy.proxy(apiRequest), { status: 200 });
+  assert.equal(requestHeaders.apikey, "publishable-key");
+  assert.equal(requestHeaders.Authorization, "Bearer user-token");
+  assert.notEqual(requestHeaders.apikey, process.env.SUPABASE_SERVICE_ROLE_KEY);
+});

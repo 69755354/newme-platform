@@ -18,7 +18,7 @@ function run(log, extraArgs = []) {
   );
 }
 
-test("auth access-log probe detects only recent auth-boundary 5xx", () => {
+test("auth access-log probe detects recent login-boundary 5xx", () => {
   const dir = mkdtempSync(join(tmpdir(), "newme-auth-log-probe-"));
   const log = join(dir, "access.log");
   writeFileSync(log, [
@@ -33,9 +33,29 @@ test("auth access-log probe detects only recent auth-boundary 5xx", () => {
   const result = run(log);
   assert.equal(result.status, 1, result.stderr);
   const payload = JSON.parse(result.stdout);
-  assert.equal(payload.status, "auth_5xx");
+  assert.equal(payload.status, "auth_failures");
+  assert.equal(payload.auth_failures, 2);
   assert.equal(payload.auth_5xx, 2);
-  assert.deepEqual(payload.paths, { "/api/auth/me": 1, "/api/auth/session": 1 });
+  assert.equal(payload.auth_429, 0);
+  assert.deepEqual(payload.paths, { "/api/auth/me": 1, "/api/auth/session": 1, "/login": 0 });
+});
+
+test("auth access-log probe treats shared-proxy 429 responses as login failures", () => {
+  const dir = mkdtempSync(join(tmpdir(), "newme-auth-log-rate-limit-"));
+  const log = join(dir, "access.log");
+  writeFileSync(log, [
+    '172.64.1.1 - - [08/Aug/2026:09:58:00 +0000] "GET /login HTTP/2.0" 429 12 "-" "test"',
+    '172.64.1.1 - - [08/Aug/2026:09:59:00 +0000] "POST /api/auth/session HTTP/2.0" 429 12 "-" "test"',
+    "",
+  ].join("\n"));
+
+  const result = run(log);
+  assert.equal(result.status, 1, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.auth_failures, 2);
+  assert.equal(payload.auth_429, 2);
+  assert.equal(payload.auth_5xx, 0);
+  assert.deepEqual(payload.status_codes, { 429: 2 });
 });
 
 test("auth access-log probe is green for bounded auth responses", () => {
@@ -49,6 +69,7 @@ test("auth access-log probe is green for bounded auth responses", () => {
   const result = run(log);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).auth_5xx, 0);
+  assert.equal(JSON.parse(result.stdout).auth_429, 0);
 });
 
 test("auth access-log probe fails closed when its log is unavailable", () => {
@@ -58,8 +79,9 @@ test("auth access-log probe fails closed when its log is unavailable", () => {
   assert.equal(JSON.parse(result.stderr).status, "probe_error");
 });
 
-test("login monitor probes valid Origin, scans auth 5xx, and runs every two minutes", () => {
+test("composite monitor runs the login boundary probe every two minutes", () => {
   const loginProbe = read("infra/observability/login-probe.sh");
+  const composite = read("infra/observability/l0-composite-probe.sh");
   const cron = read("infra/observability/newme-observability.cron");
   const installer = read("scripts/install-systemd-assets.sh");
 
@@ -67,6 +89,10 @@ test("login monitor probes valid Origin, scans auth 5xx, and runs every two minu
   assert.match(loginProbe, /SESSION_CODE.*!= "400"/s);
   assert.match(loginProbe, /auth-log-probe\.py/);
   assert.match(loginProbe, /AUTH_LOG_STATUS/);
-  assert.match(cron, /^\*\/2 .*login-probe\.sh$/m);
+  assert.match(loginProbe, /429\/5xx/);
+  assert.match(composite, /LOGIN_PROBE=.*login-probe\.sh/);
+  assert.match(cron, /^\*\/2 .*l0-composite-probe\.sh$/m);
+  assert.doesNotMatch(cron, /^\*\/2 .*login-probe\.sh$/m);
   assert.match(installer, /auth-log-probe\.py/);
+  assert.match(installer, /l0-composite-probe\.sh/);
 });

@@ -159,28 +159,26 @@ export async function proxy(request: NextRequest) {
   // to become invalid when a profile is deactivated; every protected request
   // must still prove that its profile is active.
   if (user && !isPublicApiRequest) {
-    // SAM-51: When the user was resolved via the Bearer fallback above, the
-    // cookie-driven middleware client has no auth context for them, so a
-    // profiles query through it runs as anon and gets RLS-rejected (returning
-    // empty/inactive). Query profiles via the Supabase REST API with the
-    // service_role key to bypass RLS. createClient(url, service_role_key) is
-    // intentionally avoided — it 500s under the Edge Runtime.
+    // When the user was resolved via the Bearer fallback, query their own
+    // profile with that same JWT. The profiles self-select RLS policy is the
+    // authorization boundary, so login and request authentication never
+    // depend on an independently rotated service-role key.
     let profile: ActiveProfile | null = null;
     let profileErr: unknown = null;
 
     if (usedBearerFallback) {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (!supabaseUrl || !serviceRoleKey) {
-        profileErr = new Error("missing_service_role_env");
+      const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !publishableKey || !bearerToken) {
+        profileErr = new Error("missing_user_scoped_profile_env");
       } else {
         try {
           const res = await withAuthTimeout(fetch(
             `${supabaseUrl}/rest/v1/profiles?select=id,is_active,role,password_changed_at&id=eq.${user.id}`,
             {
               headers: {
-                apikey: serviceRoleKey,
-                Authorization: `Bearer ${serviceRoleKey}`,
+                apikey: publishableKey,
+                Authorization: `Bearer ${bearerToken}`,
               },
             },
           ));

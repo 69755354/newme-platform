@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import {
   createPinoHooks,
   sanitizeSentryEvent,
+  sanitizeSentryTransaction,
   sanitizeValue,
   serializeErr,
 } from "../../src/lib/observability.mjs";
@@ -27,6 +28,22 @@ test("real pino output recursively redacts nested context and preserves safe fie
   assert.equal(parsed.values[0].email, "[REDACTED]");
   assert.equal(parsed.values[0].phone, "[REDACTED]");
   assert.equal(parsed.values[0].token, "[REDACTED]");
+});
+
+test("pino error hook reports sanitized context without reporting info logs", () => {
+  let output = "";
+  const reports = [];
+  const stream = { write: (chunk) => { output += chunk; } };
+  const logger = pino({ base: null, hooks: createPinoHooks((payload) => reports.push(payload)) }, stream);
+  logger.info({ token: "info-secret" }, "not reported");
+  const error = new Error("token=server-secret person@example.com");
+  logger.error({ err: error, headers: { authorization: "Bearer auth-secret" }, code: "AUTH_500" }, "login failed");
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].message, "login failed");
+  assert.equal(reports[0].error, error);
+  assert.equal(reports[0].context.headers.authorization, "[REDACTED]");
+  assert.doesNotMatch(JSON.stringify(reports[0].context), /auth-secret|server-secret|person@example\.com/);
+  assert.equal(output.trim().split("\n").length, 2);
 });
 
 test("serializes database Error causes without leaking sensitive text", () => {
@@ -72,6 +89,23 @@ test("handles arrays, circular references and bounded values", () => {
   assert.equal(output.nested.nested.nested.nested.nested.nested, "[Truncated]");
 });
 
+test("redacts assignment-style secrets and Basic authorization in free text", () => {
+  for (const [input, leaked] of [
+    ["secret=server-value", /server-value/],
+    ["apiKey: client-value", /client-value/],
+    ["x-monitoring-secret=monitor-value", /monitor-value/],
+    ["authorization=Basic dXNlcjpwYXNz", /dXNlcjpwYXNz/],
+    ["Basic dXNlcjpwYXNz", /dXNlcjpwYXNz/],
+    ['password="alpha beta"', /alpha|beta/],
+    ["secret=alpha,beta", /alpha|beta/],
+    ["authorization=Basic dXNlcjpwYXNz more", /dXNlcjpwYXNz|more/],
+  ]) {
+    const output = sanitizeValue(input);
+    assert.doesNotMatch(output, leaked, input);
+    assert.match(output, /\[REDACTED\]/, input);
+  }
+});
+
 test("preserves safe tracking fields and filters health/readiness noise", () => {
   const event = {
     transaction: "/api/leads/123",
@@ -85,6 +119,17 @@ test("preserves safe tracking fields and filters health/readiness noise", () => 
   assert.equal(output.tags.code, "PGRST116");
   assert.equal(output.request.headers.authorization, "[REDACTED]");
   assert.equal(sanitizeSentryEvent({ transaction: "/api/ready" }), null);
+});
+
+test("monitoring reports reach Sentry while their transactions remain filtered", () => {
+  for (const event of [
+    { transaction: "/api/monitoring/report", message: "frontend report" },
+    { request: { url: "https://app.newme.ae/api/monitoring/report" }, message: "frontend report" },
+    { tags: { route: "/api/monitoring/report" }, message: "frontend report" },
+  ]) {
+    assert.notEqual(sanitizeSentryEvent(event), null);
+    assert.equal(sanitizeSentryTransaction(event), null);
+  }
 });
 
 test("Sentry configs declare release, environment, build tag and PII policy", async () => {

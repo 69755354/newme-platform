@@ -221,7 +221,7 @@ export async function GET(req: NextRequest) {
     const overdueEndIso = new Date(Math.min(end.getTime(), Date.now())).toISOString();
     let overdueTasksQuery = supabase.from("tasks")
       .select("lead_id, due_at, leads!inner(assigned_to)")
-      .neq("status", "done").not("lead_id", "is", null)
+      .eq("status", "pending").not("lead_id", "is", null)
       .gte("due_at", startIso).lt("due_at", overdueEndIso);
     if (isSalesScope) overdueTasksQuery = overdueTasksQuery.eq("leads.assigned_to", user.id);
     const { data: overdueTasks } = await overdueTasksQuery;
@@ -380,7 +380,7 @@ export async function GET(req: NextRequest) {
       const { data: openTasks } = await supabase.from("tasks")
         .select("lead_id, due_at")
         .in("lead_id", relevantIds)
-        .neq("status", "done")
+        .eq("status", "pending")
         .order("due_at", { ascending: true });
       for (const task of openTasks ?? []) {
         const leadId = task.lead_id as string | null;

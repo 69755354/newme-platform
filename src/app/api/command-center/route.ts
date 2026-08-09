@@ -85,7 +85,7 @@ export async function GET(request: Request) {
       supabase
         .from('tasks')
         .select('*', { count: 'exact', head: true })
-        .is('completed_at', null)
+        .eq('status', 'pending')
         .lt('due_at', new Date().toISOString()),
       // Q8: Today's Follow-ups — leads whose next_followup_date is today (server local timezone).
       //     Column is DATE, so compare against a local YYYY-MM-DD string.

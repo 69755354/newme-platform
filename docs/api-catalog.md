@@ -94,6 +94,7 @@
 | POST | `/api/quotations/generate` | — | `src/app/api/quotations/generate/route.ts` |
 | GET | `/api/settings/data` | — | `src/app/api/settings/data/route.ts` |
 | GET | `/api/tasks` | — | `src/app/api/tasks/route.ts` |
+| POST | `/api/tasks` | — | `src/app/api/tasks/route.ts` |
 | PATCH | `/api/tasks` | — | `src/app/api/tasks/route.ts` |
 | GET | `/api/tasks/:id` | — | `src/app/api/tasks/[id]/route.ts` |
 | PATCH | `/api/tasks/:id` | — | `src/app/api/tasks/[id]/route.ts` |

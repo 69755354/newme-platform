@@ -144,13 +144,13 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 || `src/app/actions/contracts.ts` | Contracts server actions (approveContract, revokeContract) | 171 | 🟢 P2 mutations core |
 || `src/app/actions/team.ts` | Team server actions (addTeamMember, removeTeamMember, resetUserPassword) | — | 🟢 P2 mutations low |
 || `src/app/actions/payments.ts` | Payments server actions (createPayment, confirmPayment, allocatePayment) | — | 🟢 P2 mutations low |
-|| `src/app/actions/tasks.ts` | Tasks server actions (updateTask, updateTaskStatus) | — | 🟢 P2 mutations low |
+|| `src/app/api/tasks/route.ts` | Tasks BFF API (assigned list, successor create, batch status update) | — | 🟢 P2 reads + mutations |
 || `src/app/actions/settings.ts` | Settings server actions (assignLead, bulkAssignLeads, bulkUnassignLeads, transferAllLeads) | 115 | 🟢 P2 mutations settings |
 || `src/app/api/pipeline/list/route.ts` | Pipeline BFF API (leads + role + salesUsers) | — | 🟢 P2 reads |
 || `src/app/api/contracts/list/route.ts` | Contracts BFF API (contracts + joins + pagination) | — | 🟢 P2 reads |
 || `src/app/api/settings/data/route.ts` | Settings BFF API (leads + profiles + kpiTargets) | — | 🟢 P2 reads |
 || `src/app/api/tasks/list/route.ts` | Tasks BFF API (tasks + filters + pagination) | — | 🟢 P2 reads |
-|| `src/app/api/tasks/[id]/route.ts` | Task Detail BFF API | — | 🟢 P2 reads |
+|| `src/app/api/tasks/[id]/route.ts` | Task Detail BFF API | — | 🟢 P2 reads + mutations |
 || `src/app/api/team/list/route.ts` | Team BFF API (userId + role) | — | 🟢 P2 reads |
 || `src/app/api/payments/list/route.ts` | Payments BFF API (payments + contracts summary) | — | 🟢 P2 reads |
 || `src/app/api/workbench/route.ts` | Workbench BFF API (6 并行查询 + 30s cache) | — | 🟢 P1-F |

@@ -5,7 +5,7 @@ const cases = [
   ['src/app/api/leads/[id]/quality/route.ts', ['getRequestAuthContext', 'assigned_to', '403']],
   ['src/app/api/contracts/[id]/route.ts', ['auth.getUser', 'sales_id', '403']],
   ['src/app/api/payments/[id]/confirm/route.ts', ['auth.getUser', 'admin', 'finance']],
-  ['src/app/api/tasks/[id]/route.ts', ['auth.getUser', 'assignee_id', '404']],
+  ['src/app/api/tasks/[id]/route.ts', ['getRequestAuthContext', 'assignee_id', '404']],
   ['src/app/actions/pipeline.ts', ['auth.getUser', 'assigned_to', 'Forbidden']],
   ['src/app/actions/settings.ts', ['auth.getUser', 'admin', 'operator']],
 ];

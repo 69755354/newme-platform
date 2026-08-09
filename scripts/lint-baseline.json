@@ -851,16 +851,6 @@
       "message": "Unexpected any. Specify a different type."
     },
     {
-      "file": "src/app/actions/tasks.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "message": "Unexpected any. Specify a different type."
-    },
-    {
-      "file": "src/app/actions/tasks.ts",
-      "ruleId": "@typescript-eslint/no-explicit-any",
-      "message": "Unexpected any. Specify a different type."
-    },
-    {
       "file": "src/app/actions/team.ts",
       "ruleId": "@typescript-eslint/no-explicit-any",
       "message": "Unexpected any. Specify a different type."

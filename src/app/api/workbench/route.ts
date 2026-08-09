@@ -94,7 +94,7 @@ export async function GET(request: Request) {
       .from("tasks")
       .select(taskCols)
       .eq("assignee_id", user.id)
-      .is("completed_at", null)
+      .eq("status", "pending")
       .order("due_at", { ascending: true })
       .limit(20),
 
@@ -103,7 +103,7 @@ export async function GET(request: Request) {
       .from("tasks")
       .select(taskCols)
       .eq("assignee_id", user.id)
-      .is("completed_at", null)
+      .eq("status", "pending")
       .lt("due_at", nowIso)
       .order("due_at", { ascending: true })
       .limit(20),
@@ -213,7 +213,7 @@ export async function GET(request: Request) {
     .from("tasks")
     .select("id,lead_id,title,due_at,assignee_id,status")
     .eq("assignee_id", user.id)
-    .neq("status", "done")
+    .eq("status", "pending")
     .gte("due_at", tomorrowBounds.startIso)
     .lte("due_at", tomorrowBounds.endIso)
     .order("due_at", { ascending: true })

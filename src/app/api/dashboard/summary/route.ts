@@ -248,7 +248,7 @@ export async function GET(request: Request) {
         .from("tasks")
         .select("id", { count: "exact", head: true })
         .eq("assignee_id", userId)
-        .is("completed_at", null)
+        .eq("status", "pending")
         .lt("due_at", new Date().toISOString());
       return count || 0;
     }
@@ -261,7 +261,7 @@ export async function GET(request: Request) {
       const { count } = await supabase
         .from("tasks")
         .select("id", { count: "exact", head: true })
-        .is("completed_at", null)
+        .eq("status", "pending")
         .lt("due_at", new Date().toISOString());
       return count || 0;
     }
@@ -271,7 +271,7 @@ export async function GET(request: Request) {
     let q = supabase
       .from("tasks")
       .select("lead_id, due_at, leads!inner(*)")
-      .is("completed_at", null)
+      .eq("status", "pending")
       .gte("due_at", todayStart.toISOString())
       .lt("due_at", tomorrowStart.toISOString());
     if (isSales && userId) {
@@ -286,7 +286,7 @@ export async function GET(request: Request) {
       .select(
         "lead_id, due_at, leads!inner(id, customer_name, quotation_value, last_contact_date, phone, final_status)"
       )
-      .is("completed_at", null)
+      .eq("status", "pending")
       .lt("due_at", new Date().toISOString())
       .order("due_at", { ascending: true })
       .limit(5);

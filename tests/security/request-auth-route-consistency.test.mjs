@@ -14,9 +14,12 @@ const routes = new Map([
   ["src/app/api/leads/[id]/stage/route.ts", 1],
   ["src/app/api/leads/[id]/transfer-history/route.ts", 1],
   ["src/app/api/quotations/generate/route.ts", 1],
+  ["src/app/api/tasks/route.ts", 3],
+  ["src/app/api/tasks/[id]/route.ts", 2],
+  ["src/app/api/tasks/list/route.ts", 1],
 ]);
 
-test("lead mutation routes reuse exactly one auth client per handler", async () => {
+test("request-scoped mutation routes reuse exactly one auth client per handler", async () => {
   for (const [path, handlerCount] of routes) {
     const source = await readFile(new URL(path, root), "utf8");
     assert.equal(

@@ -16,7 +16,6 @@
     "client-side-supabase-mutation:src/app/actions/payments.ts": 3,
     "client-side-supabase-mutation:src/app/actions/pipeline.ts": 8,
     "client-side-supabase-mutation:src/app/actions/settings.ts": 6,
-    "client-side-supabase-mutation:src/app/actions/tasks.ts": 6,
     "client-side-supabase-mutation:src/app/actions/team.ts": 11,
     "client-side-supabase-mutation:src/components/QuickCreateLeadDialog.tsx": 2,
     "client-side-supabase-mutation:src/lib/tasks.ts": 1,

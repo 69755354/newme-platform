@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { ErrorState } from "@/components/ui/error-state";
-import { updateTask, updateTaskStatus } from "@/app/actions/tasks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,14 +15,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Calendar, Clock, User, CheckCircle2, XCircle, Loader2, Save, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Clock, CheckCircle2, XCircle, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { fmtDubai } from "@/lib/utils";
+import {
+  taskMutationMatchesReadback,
+  TASK_FOLLOWUP_CONFLICT_CODE,
+  type CanonicalTaskStatus,
+  type TaskMutationExpectation,
+} from "@/lib/task-followup-conflict";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 /* ─── Types ─── */
 interface Task {
   id: string;
+  lead_id: string | null;
   title: string;
   description: string | null;
   status: string;
@@ -40,10 +46,14 @@ interface ProfileInfo {
 }
 
 /* ─── Constants ─── */
-const STATUS_OPTIONS = [
+const STATUS_OPTIONS: ReadonlyArray<{
+  value: CanonicalTaskStatus;
+  label: string;
+  icon: typeof Clock;
+  color: string;
+}> = [
   { value: "pending", label: "Pending", icon: Clock, color: "text-amber-400" },
-  { value: "in_progress", label: "In Progress", icon: Loader2, color: "text-blue-400" },
-  { value: "done", label: "Done", icon: CheckCircle2, color: "text-emerald-400" },
+  { value: "completed", label: "Done", icon: CheckCircle2, color: "text-emerald-400" },
   { value: "cancelled", label: "Cancelled", icon: XCircle, color: "text-muted-foreground" },
 ];
 
@@ -66,6 +76,36 @@ function formatDateForInput(d: string | null): string {
   return date.toISOString().slice(0, 16);
 }
 
+interface TaskMutationPayload {
+  data?: Task;
+  error?: string;
+  code?: string;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function futureDateTimeLocal(): string {
+  const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const local = new Date(future.getTime() - future.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function isTaskStatus(value: string): value is CanonicalTaskStatus {
+  return STATUS_OPTIONS.some((option) => option.value === value);
+}
+
+async function patchTask(taskId: string, body: TaskMutationExpectation) {
+  const response = await fetch(`/api/tasks/${taskId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({})) as TaskMutationPayload;
+  return { response, payload };
+}
+
 /* ─── Component ─── */
 export default function TaskDetailPage() {
   const params = useParams();
@@ -85,15 +125,13 @@ export default function TaskDetailPage() {
 
   // Save state
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-
-  // Profile name lookup
-  const profileNameMap: Record<string, string> = {};
-  profiles.forEach((p) => {
-    if (p.id && p.full_name) profileNameMap[p.id] = p.full_name;
-  });
+  const [blockedMutation, setBlockedMutation] = useState<TaskMutationExpectation | null>(null);
+  const [successorId, setSuccessorId] = useState("");
+  const [successorTitle, setSuccessorTitle] = useState("Follow up");
+  const [successorDueAt, setSuccessorDueAt] = useState(futureDateTimeLocal);
 
   /* ─── Fetch profiles and task from BFF API ─── */
-  const fetchTask = async () => {
+  const fetchTask = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -108,7 +146,7 @@ export default function TaskDetailPage() {
       // Fetch single task detail
       const taskRes = await fetch(`/api/tasks/${taskId}`);
       if (!taskRes.ok) {
-        const err = await taskRes.json().catch(() => ({}));
+        const err = await taskRes.json().catch(() => ({})) as { error?: string };
         throw new Error(err.error || "Failed to load task");
       }
 
@@ -132,11 +170,15 @@ export default function TaskDetailPage() {
       setError("Failed to load task. Please retry.");
     }
     setLoading(false);
-  };
+  }, [taskId]);
 
   useEffect(() => {
-    if (taskId) fetchTask();
-  }, [taskId]);
+    if (!taskId) return;
+    const timer = window.setTimeout(() => {
+      void fetchTask();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchTask, taskId]);
 
   /* ─── Save task ─── */
   const handleSave = async () => {
@@ -151,25 +193,34 @@ export default function TaskDetailPage() {
     setSaveState("saving");
 
     try {
-      await updateTask(task.id, {
+      const mutation = {
         title: editTitle.trim(),
         description: editDescription.trim() || null,
         priority: editPriority || null,
         assignee_id: editAssignedTo || null,
         due_at: new Date(editDueAt).toISOString(),
-      });
+      } satisfies TaskMutationExpectation;
+      const { response, payload } = await patchTask(task.id, mutation);
+      if (!response.ok) {
+        if (response.status === 409 && payload.code === TASK_FOLLOWUP_CONFLICT_CODE) {
+          setBlockedMutation(mutation);
+          setSuccessorId((current) => current || window.crypto.randomUUID());
+        }
+        throw new Error(payload.error || "Failed to save task");
+      }
+      if (!payload.data || payload.data.id !== task.id || !taskMutationMatchesReadback(payload.data, mutation)) {
+        throw new Error("Task save readback failed");
+      }
 
+      setTask(payload.data);
       setSaveState("saved");
       toast.success("Task saved successfully");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to save task:", err);
       setSaveState("error");
-      toast.error(err.message || "Failed to save task");
+      toast.error(errorMessage(err, "Failed to save task"));
       return;
     }
-
-    // Refresh task data
-    await fetchTask();
 
     setTimeout(() => setSaveState("idle"), 2000);
   };
@@ -181,20 +232,84 @@ export default function TaskDetailPage() {
     setSaveState("saving");
 
     try {
-      await updateTaskStatus(task.id, newStatus);
+      if (!isTaskStatus(newStatus)) {
+        throw new Error("Invalid task status");
+      }
+      const mutation = { status: newStatus } satisfies TaskMutationExpectation;
+      const { response, payload } = await patchTask(task.id, mutation);
+      if (!response.ok) {
+        if (response.status === 409 && payload.code === TASK_FOLLOWUP_CONFLICT_CODE) {
+          setBlockedMutation(mutation);
+          setSuccessorId((current) => current || window.crypto.randomUUID());
+        }
+        throw new Error(payload.error || "Failed to update task status");
+      }
+      if (!payload.data || payload.data.id !== task.id || !taskMutationMatchesReadback(payload.data, mutation)) {
+        throw new Error("Task status readback failed");
+      }
 
+      setTask(payload.data);
+      setBlockedMutation(null);
       setSaveState("saved");
       toast.success(`Status changed to ${newStatus.replace("_", " ")}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to update status:", err);
       setSaveState("error");
-      toast.error(err.message || "Failed to update status");
+      toast.error(errorMessage(err, "Failed to update status"));
       return;
     }
 
-    await fetchTask();
-
     setTimeout(() => setSaveState("idle"), 2000);
+  };
+
+  const handleCreateSuccessorAndRetry = async () => {
+    if (!task?.lead_id || !blockedMutation) return;
+    if (!successorTitle.trim() || !successorDueAt) {
+      toast.error("Follow-up title and due date are required");
+      return;
+    }
+
+    const taskId = successorId || window.crypto.randomUUID();
+    setSuccessorId(taskId);
+    setSaveState("saving");
+    try {
+      const createResponse = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: taskId,
+          lead_id: task.lead_id,
+          title: successorTitle.trim(),
+          due_at: new Date(successorDueAt).toISOString(),
+        }),
+      });
+      const created = await createResponse.json().catch(() => ({})) as TaskMutationPayload;
+      if (!createResponse.ok || created.data?.id !== taskId || created.data.status !== "pending") {
+        throw new Error(created.error || "Failed to create follow-up task");
+      }
+
+      const retry = await patchTask(task.id, blockedMutation);
+      if (
+        !retry.response.ok
+        || retry.payload.data?.id !== task.id
+        || !taskMutationMatchesReadback(retry.payload.data, blockedMutation)
+      ) {
+        throw new Error(retry.payload.error || "Follow-up was created, but the original update must be retried");
+      }
+
+      setTask(retry.payload.data);
+      setBlockedMutation(null);
+      setSuccessorId("");
+      setSuccessorTitle("Follow up");
+      setSuccessorDueAt(futureDateTimeLocal());
+      setSaveState("saved");
+      toast.success("Follow-up created and task updated");
+      setTimeout(() => setSaveState("idle"), 2000);
+    } catch (err: unknown) {
+      console.error("Failed to create successor task:", err);
+      setSaveState("error");
+      toast.error(errorMessage(err, "Failed to create follow-up task"));
+    }
   };
 
   if (loading) {
@@ -303,6 +418,41 @@ export default function TaskDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {blockedMutation && (
+        <Card className="border-amber-500/50">
+          <CardHeader>
+            <CardTitle className="text-base text-amber-300">A pending follow-up is required</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Create the next follow-up before applying this task update. The new task stays pending for this lead.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="successor_title">Next follow-up</Label>
+              <Input
+                id="successor_title"
+                value={successorTitle}
+                onChange={(event) => setSuccessorTitle(event.target.value)}
+                maxLength={200}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="successor_due_at">Due date & time</Label>
+              <Input
+                id="successor_due_at"
+                type="datetime-local"
+                value={successorDueAt}
+                onChange={(event) => setSuccessorDueAt(event.target.value)}
+              />
+            </div>
+            <Button onClick={handleCreateSuccessorAndRetry} disabled={saveState === "saving"}>
+              {saveState === "saving" && <Loader2 className="size-4 animate-spin" />}
+              Create follow-up and retry
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Edit form */}
       <Card>

@@ -218,14 +218,13 @@ CREATE INDEX my_index ON leads(assigned_to);  -- 禁止！
 | lead_id | UUID | → leads(id) CASCADE | crm_v3_new_tables |
 | title | TEXT | NOT NULL | crm_v3_new_tables |
 | description | TEXT | | crm_v3_new_tables |
-| status | TEXT | DEFAULT 'pending', CHECK(pending/in_progress/done/cancelled) | crm_v3_new_tables |
+| status | TEXT | DEFAULT 'pending', CHECK(pending/completed/cancelled) | crm_v3_new_tables |
 | priority | TEXT | DEFAULT 'medium', CHECK(low/medium/high/urgent) | crm_v3_new_tables |
-| assigned_to | UUID | → profiles(id) | crm_v3_new_tables |
-| due_at | TIMESTAMPTZ | | crm_v3_new_tables, relax_tasks_due_check |
+| assignee_id | UUID | → profiles(id) | crm_v3_new_tables |
+| due_at | TIMESTAMPTZ | NOT NULL | crm_v3_new_tables, relax_tasks_due_check |
 | completed_at | TIMESTAMPTZ | | crm_v3_new_tables |
-| created_by | UUID | → profiles(id) | crm_v3_new_tables |
+| source | TEXT | CHECK(manual/follow_up/cron/system) | crm_v3_new_tables |
 | created_at | TIMESTAMPTZ | DEFAULT now() | crm_v3_new_tables |
-| updated_at | TIMESTAMPTZ | DEFAULT now() | crm_v3_new_tables |
 
 ### follow_up_logs
 | 字段 | 类型 | 约束 | 来源 |

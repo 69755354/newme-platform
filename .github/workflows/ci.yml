@@ -2,6 +2,16 @@ name: ci
 
 on:
   workflow_dispatch:
+    inputs:
+      release_final:
+        description: Require every tracked TASKBOARD row to be complete
+        required: false
+        default: false
+        type: boolean
+  pull_request:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -37,13 +47,13 @@ jobs:
         run: npm ci
 
       - name: E2E secret and artifact gate
-        run: npm run check:e2e-secrets
+        run: npm run check:e2e-secrets && npm run check:e2e-artifacts
 
       - name: E2E secret gate negative regression
         run: node --test tests/security/e2e-secret-gate.test.mjs
 
       - name: Taskboard gate
-        run: bash scripts/check-taskboard.sh
+        run: npm run check:taskboard
 
       - name: Route file gate
         run: npm run check:route-files
@@ -84,6 +94,12 @@ jobs:
       - name: Release hygiene regression
         run: node --test tests/release/*.test.mjs
 
+      - name: Install production smoke browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Production anonymous browser smoke
+        run: npx playwright test --config=playwright.production-smoke.config.ts
+
       - name: Build
         run: npm run build
 
@@ -111,6 +127,11 @@ jobs:
           path: sam16-checkout
           fetch-depth: 0
           persist-credentials: false
+          sparse-checkout: |
+            crm-v3/SPEC.md
+            scripts/check-spec.sh
+            scripts/run-bash.mjs
+          sparse-checkout-cone-mode: false
 
       - name: Verify clean checkout and SPEC
         shell: pwsh
@@ -119,5 +140,58 @@ jobs:
           $status = git status --porcelain --untracked-files=all
           if ($LASTEXITCODE -ne 0) { throw "git status failed" }
           if ($status) { throw "worktree is not clean: $status" }
-          bash scripts/check-spec.sh
+          node scripts/run-bash.mjs scripts/check-spec.sh
           if ($LASTEXITCODE -ne 0) { throw "check-spec failed" }
+
+  taskboard-completion:
+    name: Release-final taskboard completion
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_final }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require completed taskboard
+        run: npm run check:taskboard:complete
+
+  local-database:
+    name: Narrow task follow-up database contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_TELEMETRY_DISABLED: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.113.0
+
+      - name: Verify pinned local CLI
+        run: |
+          test "$(supabase --version)" = "2.113.0"
+          test -f supabase/ci-local/supabase/config.toml
+          node supabase/ci-local/verify-provenance.mjs
+
+      - name: Start local database and replay narrowed contract
+        run: |
+          supabase db start --workdir supabase/ci-local
+          supabase db reset --local --workdir supabase/ci-local --yes
+          node supabase/ci-local/verify-reset.mjs
+          supabase db reset --local --workdir supabase/ci-local --yes
+          node supabase/ci-local/verify-reset.mjs
+
+      - name: Run isolated database tests
+        run: |
+          test_output="$(supabase test db --local --workdir supabase/ci-local supabase/ci-local/supabase/tests/database 2>&1)"
+          printf '%s\n' "$test_output"
+          printf '%s\n' "$test_output" | node scripts/verify-pgtap-output.mjs
+
+      - name: Stop local database
+        if: always()
+        run: supabase stop --project-id newme-ci-task-followup-v1 --no-backup

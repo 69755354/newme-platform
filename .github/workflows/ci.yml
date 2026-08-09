@@ -127,6 +127,11 @@ jobs:
           path: sam16-checkout
           fetch-depth: 0
           persist-credentials: false
+          sparse-checkout: |
+            crm-v3/SPEC.md
+            scripts/check-spec.sh
+            scripts/run-bash.mjs
+          sparse-checkout-cone-mode: false
 
       - name: Verify clean checkout and SPEC
         shell: pwsh

@@ -11,6 +11,10 @@ test("CI runs on pull requests, main pushes, and manual dispatch", async () => {
   assert.match(workflow, /^  push:\s*\n    branches:\s*\n      - main\s*$/m);
   assert.match(workflow, /windows-checkout:[\s\S]*?if: \$\{\{ github\.event_name == 'pull_request' \}\}/);
   assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
+  assert.match(
+    workflow,
+    /sparse-checkout: \|\s*\n\s*crm-v3\/SPEC\.md\s*\n\s*scripts\/check-spec\.sh\s*\n\s*scripts\/run-bash\.mjs\s*\n\s*sparse-checkout-cone-mode: false/,
+  );
   assert.match(workflow, /node scripts\/run-bash\.mjs scripts\/check-spec\.sh/);
   assert.match(workflow, /npx playwright install --with-deps chromium/);
   assert.match(

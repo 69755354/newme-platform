@@ -13,6 +13,7 @@ if (process.env.CI && !process.env.E2E_BASE_URL) {
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: /production-anonymous\.spec\.ts/,
   timeout: 30000,
   expect: { timeout: 10000 },
   fullyParallel: false,

@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 const repoRoot = process.cwd();
 const normalized = (value) => value.replaceAll(path.sep, '/');
 const artifactPath = /(^|\/)(e2e\/\.auth\/|playwright-report\/|test-results\/|blob-report\/|e2e-results\.json$|e2e\/.*(?:storage[-_]?state|auth[-_]?state|session).*(?:\.json|\.zip)$)/i;
-const e2eSourcePath = /(^|\/)(e2e\/|playwright\.config\.[cm]?[jt]s$)/i;
+const e2eSourcePath = /(^|\/)(e2e\/|playwright(?:\.[A-Za-z0-9_-]+)*\.config\.[cm]?[jt]s$)/i;
 const textSourcePath = /\.(?:[cm]?[jt]sx?|json|ya?ml|env)$/i;
 const passwordLiteral = /\b(?:password|passwd|pwd)\b\s*[:=]\s*(['"`])(?=.{6,}\1)/i;
 const directLoginPasswordLiteral = /\blogin(?:AndSaveState)?\s*\(\s*[^,\n]+,\s*[^,\n]+,\s*(['"`])(?=.{6,}\1)/i;
+const passwordInputLiteral = /\b(?:getByLabel|getByPlaceholder)\(\s*(['"`])[^'"`]*(?:password|passwd|pwd)[^'"`]*\1[^)]*\)\s*\.fill\(\s*(['"`])(?=.{6,}\2)/i;
 const jwtLikeToken = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/;
+const opaqueSupabaseSecret = /\bsb_secret_[A-Za-z0-9_-]{16,}\b/;
 const privateKey = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/;
 
 function scanFile(filePath, displayPath = filePath) {
@@ -32,13 +34,21 @@ function scanFile(filePath, displayPath = filePath) {
   if (e2eSourcePath.test(relativePath) && directLoginPasswordLiteral.test(content)) {
     violations.push('literal E2E login password');
   }
+  if (e2eSourcePath.test(relativePath) && passwordInputLiteral.test(content)) {
+    violations.push('literal E2E password input');
+  }
   if (jwtLikeToken.test(content)) violations.push('JWT-like session token');
+  if (opaqueSupabaseSecret.test(content)) violations.push('opaque Supabase secret key');
   if (privateKey.test(content)) violations.push('private key material');
   return violations;
 }
 
-function trackedFiles() {
-  return execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' })
+function candidateFiles() {
+  return execFileSync(
+    'git',
+    ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+    { encoding: 'utf8' },
+  )
     .split('\0')
     .filter(Boolean);
 }
@@ -59,6 +69,39 @@ function main() {
       if (!loginViolations.includes('literal E2E login password')) {
         throw new Error('negative direct-login credential fixture was not rejected');
       }
+      writeFileSync(
+        fixturePath,
+        "await page.getByLabel('Password').fill('example-credential');\n",
+      );
+      const inputViolations = scanFile(
+        fixturePath,
+        'playwright.production-smoke.config.ts',
+      );
+      if (!inputViolations.includes('literal E2E password input')) {
+        throw new Error('negative password-input fixture was not rejected');
+      }
+      writeFileSync(
+        fixturePath,
+        "await page.getByPlaceholder('Password').fill('example-credential');\n",
+      );
+      const placeholderViolations = scanFile(
+        fixturePath,
+        'e2e/credential.fixture.ts',
+      );
+      if (!placeholderViolations.includes('literal E2E password input')) {
+        throw new Error('negative password-placeholder fixture was not rejected');
+      }
+      writeFileSync(
+        fixturePath,
+        `export const apiKey = "${['sb', 'secret', 'examplecredentialvalue'].join('_')}";\n`,
+      );
+      const opaqueSecretViolations = scanFile(
+        fixturePath,
+        'playwright.production-smoke.config.ts',
+      );
+      if (!opaqueSecretViolations.includes('opaque Supabase secret key')) {
+        throw new Error('negative opaque Supabase secret fixture was not rejected');
+      }
       console.log('E2E secret gate self-test passed');
       return;
     } finally {
@@ -67,8 +110,9 @@ function main() {
   }
 
   const violations = [];
-  for (const relativePath of trackedFiles()) {
+  for (const relativePath of candidateFiles()) {
     const filePath = path.join(repoRoot, relativePath);
+    if (!existsSync(filePath) || !statSync(filePath).isFile()) continue;
     for (const reason of scanFile(filePath, relativePath)) {
       violations.push(`${relativePath}: ${reason}`);
     }

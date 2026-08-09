@@ -17,7 +17,27 @@ function matchingLineCount(source, text) {
   return source.split(/\r?\n/).filter((line) => line.includes(text)).length;
 }
 
-export function runTaskboardCheck({ projectRoot = defaultProjectRoot, log = console.log } = {}) {
+const UNFINISHED_STATUSES = new Set(["TODO", "IN_PROGRESS", "REVIEW", "BLOCKED"]);
+
+function findUnfinishedRows(taskboard) {
+  const rows = [];
+  for (const [index, line] of taskboard.split(/\r?\n/).entries()) {
+    if (!line.startsWith("|")) continue;
+    const status = line
+      .split("|")
+      .slice(1, -1)
+      .map((cell) => cell.trim().replace(/^⚠️\s*/u, ""))
+      .find((cell) => UNFINISHED_STATUSES.has(cell));
+    if (status) rows.push({ line: index + 1, status, source: line });
+  }
+  return rows;
+}
+
+export function runTaskboardCheck({
+  projectRoot = defaultProjectRoot,
+  log = console.log,
+  requireComplete = false,
+} = {}) {
   const result = { pass: 0, fail: 0, warn: 0 };
   const pass = (message) => {
     result.pass += 1;
@@ -128,13 +148,49 @@ export function runTaskboardCheck({ projectRoot = defaultProjectRoot, log = cons
   else if (t1_12 === "❌") fail("TASKBOARD.md marks T1-12 not started");
   else warn("TASKBOARD.md marks T1-12 partial or malformed — manual verification pending");
 
-  log(`PASS: ${result.pass} FAIL: ${result.fail} WARN: ${result.warn}`);
-  if (result.fail > 0) log(`TASKBOARD GATE: ${result.fail} task(s) incomplete. DEPLOY BLOCKED.`);
-  else log("All tasks complete. Safe to deploy.");
+  const unfinishedRows = findUnfinishedRows(taskboard);
+  if (unfinishedRows.length > 0) {
+    log("Tracked unfinished TASKBOARD rows:");
+    for (const row of unfinishedRows) {
+      log(`  UNFINISHED line=${row.line} status=${row.status} ${row.source}`);
+    }
+  }
 
-  return { ...result, exitCode: result.fail > 0 ? 1 : 0 };
+  log(
+    `PASS: ${result.pass} FAIL: ${result.fail} WARN: ${result.warn} ` +
+      `UNFINISHED: ${unfinishedRows.length}`,
+  );
+
+  let exitCode = 0;
+  if (result.fail > 0) {
+    log(`TASKBOARD EVIDENCE GATE: ${result.fail} code-evidence check(s) failed.`);
+    exitCode = 1;
+  } else if (requireComplete && unfinishedRows.length > 0) {
+    log(
+      `TASKBOARD COMPLETION GATE: ${unfinishedRows.length} unfinished row(s). ` +
+        "RELEASE FINALIZATION BLOCKED.",
+    );
+    exitCode = 1;
+  } else if (unfinishedRows.length > 0) {
+    log(
+      `Taskboard evidence checks passed with ${unfinishedRows.length} tracked unfinished row(s). ` +
+        "Release-final completion remains blocked.",
+    );
+  } else {
+    log("Taskboard evidence checks passed; no unfinished rows.");
+  }
+
+  return { ...result, exitCode };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  process.exitCode = runTaskboardCheck().exitCode;
+  const args = process.argv.slice(2);
+  if (args.length > 1 || (args.length === 1 && args[0] !== "--require-complete")) {
+    console.error("Usage: node scripts/check-taskboard.mjs [--require-complete]");
+    process.exitCode = 64;
+  } else {
+    process.exitCode = runTaskboardCheck({
+      requireComplete: args[0] === "--require-complete",
+    }).exitCode;
+  }
 }

@@ -46,7 +46,13 @@ jobs:
           github.event.workflow_run.head_branch == 'main' &&
           (github.event.workflow_run.conclusion == 'failure' ||
           github.event.workflow_run.conclusion == 'cancelled') }}
-        continue-on-error: true
+        # No continue-on-error. The reviewed revision had one, which made the
+        # `exit 1` below decorative: a non-2xx Telegram response — expired bot
+        # token, revoked chat, rate limit, missing secret — annotated the log and
+        # left the job green. That is the same failure this workflow exists to
+        # fix, one layer down: the alert that says main CI is broken silently
+        # failing to be delivered. If the channel cannot deliver, this job is red,
+        # because an alerting path that cannot alert is an outage.
         env:
           TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}

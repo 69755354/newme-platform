@@ -20,17 +20,40 @@
 -- stops being usable, every audit attribution survives, and the whole change is
 -- reversible from rollback_l0_20260811.sql.
 --
--- Why deactivation is sufficient, not cosmetic — the credential is dead at both
--- authentication boundaries:
---   * src/app/api/auth/login/route.ts:198 — isActiveProfile() fails, the route
---     returns 403 inactive_account, AND revokeIssuedToken() revokes upstream the
---     token the password grant just minted, so no session is ever established.
---   * src/proxy.ts:214 — any pre-existing token is rejected on every protected
---     request (401 inactive_account for /api/*, redirect for pages).
---   * src/app/api/auth/me/route.ts:97 — is_active !== true returns 401, so the
---     public refresh path cannot launder an old token either.
--- force_password_change is set as well, so even a future re-activation cannot
--- reach a dashboard on the published password.
+-- CORRECTED 2026-08-11 after a second independent review. The revision above
+-- carried this claim, and it was false:
+--
+--     "Why deactivation is sufficient, not cosmetic — the credential is dead at
+--      both authentication boundaries"
+--
+-- followed by three Next.js call sites (login/route.ts:198, proxy.ts:214,
+-- auth/me/route.ts:97). All three are real and all three are checks inside the
+-- application process. NEXT_PUBLIC_SUPABASE_URL and the publishable anon key are
+-- shipped to every browser by design, so a holder of the published password can
+-- skip the application entirely: POST /auth/v1/token?grant_type=password mints a
+-- valid access token, and GET /rest/v1/<table> is then evaluated by PostgREST
+-- against the table policies — which checked `role in ('admin','boss','operator')`
+-- out of public.profiles and never checked is_active. Flipping two profile
+-- columns closed the app paths and left the data path open.
+--
+-- What this file actually achieves, stated without overreach:
+--   * the three Next.js paths above refuse the account, and login additionally
+--     revokes upstream the token its password grant just minted;
+--   * force_password_change is set, so a future re-activation cannot reach a
+--     dashboard on the published password;
+--   * every audit attribution survives, and the change is reversible.
+--
+-- What it does NOT achieve, and what closes each gap:
+--   * the Auth identity is not banned and its sessions are not revoked. That is
+--     a production Auth mutation with its own authorisation; the procedure and
+--     its postconditions are supabase/preflight/f02-credential-cutover.md, and
+--     until it has been performed with evidence, F-02 stays open on TASKBOARD.
+--   * direct PostgREST access as this identity is refused by the restrictive
+--     session boundary in 20260813000000_session_revocation_boundary.sql, which
+--     makes is_active and auth.users.banned_until conditions of every policy on
+--     every authenticated-reachable table. That is verified behaviourally in
+--     supabase/replay/10_assert_release_contracts.sql, not asserted here.
+-- Do not read this file as evidence that the published credential is dead.
 --
 -- The route that publishes the password cannot recreate the account in
 -- production: src/app/api/dev/setup/route.ts:7 returns 403 when

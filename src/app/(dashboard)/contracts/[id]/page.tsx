@@ -78,6 +78,32 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
   other: "Other",
 };
 
+/**
+ * The transitions set_contract_status() permits, keyed by the CURRENT status
+ * (supabase/migrations/20260812000000_money_actor_identity_and_atomicity.sql:1076).
+ *
+ * This grid used to offer nine buttons regardless of the contract's state, two of
+ * which — 'approved' and 'pending_ceo' — would have been an approval-chain bypass
+ * if the PATCH route had written what it was sent, and two of which — 'signed' and
+ * 'cancelled' — are not in the contracts_status_check CHECK constraint at all, so
+ * they could only ever have produced an error. The approval statuses are reached
+ * through the Approve / Reject buttons above, which call approve_contract().
+ *
+ * Anything not listed here is refused by the routine with 22023 → HTTP 400, so
+ * this map is a usability boundary, not the security boundary.
+ */
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft: ["pending_admin"],
+  rejected: ["pending_admin", "draft"],
+  approved: ["active", "terminated"],
+  active: ["completed", "suspended", "terminated"],
+  suspended: ["terminated"],
+  revoking: ["terminated"],
+};
+
+/** Transitions set_contract_status() requires a reason for (22023 without one). */
+const STATUS_REASON_REQUIRED = new Set(["terminated"]);
+
 export default function ContractDetailPage() {
   const { loading: roleLoading, blocked } = useRequireRole([
     "admin", "boss", "sales", "finance", "operator",
@@ -96,6 +122,7 @@ export default function ContractDetailPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [statusReason, setStatusReason] = useState("");
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectNotes, setRejectNotes] = useState("");
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
@@ -260,20 +287,26 @@ export default function ContractDetailPage() {
   /* ── Status change ── */
   function changeStatus(newStatus: string) {
     if (!canManage) return;
+    if (!allowedTransitions.includes(newStatus)) return;
     setPendingStatus(newStatus);
+    setStatusReason("");
     setConfirmDialogOpen(true);
   }
 
   async function confirmStatusChange() {
     if (!pendingStatus) return;
     const newStatus = pendingStatus;
+    const reason = statusReason.trim();
+    // set_contract_status() raises 22023 without one; asking here is cheaper than
+    // a round trip that can only fail.
+    if (STATUS_REASON_REQUIRED.has(newStatus) && reason === "") return;
     setConfirmDialogOpen(false);
     setActing(true);
     try {
       const res = await fetch(`/api/contracts/${contractId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: newStatus, ...(reason ? { reason } : {}) }),
       });
       if (res.ok) {
         toast.success(t("contracts.statusUpdated") || "Status updated");
@@ -287,6 +320,7 @@ export default function ContractDetailPage() {
     } finally {
       setActing(false);
       setPendingStatus(null);
+      setStatusReason("");
     }
   }
 
@@ -319,7 +353,11 @@ export default function ContractDetailPage() {
   const showUploadButton =
     canManage && ["draft", "pending_admin", "pending_ceo"].includes(contract.status);
 
-  const showStatusActions = canManage && contract.status !== "completed" && contract.status !== "terminated";
+  // Only the transitions the routine will accept from where this contract is now.
+  // 'completed' and 'terminated' are terminal, so they fall out of the map rather
+  // than being special-cased.
+  const allowedTransitions = STATUS_TRANSITIONS[contract.status] ?? [];
+  const showStatusActions = canManage && allowedTransitions.length > 0;
 
   return (
     <DashboardScrollContainer className="space-y-5 max-w-5xl">
@@ -516,17 +554,13 @@ export default function ContractDetailPage() {
               <h2 className="text-sm font-semibold text-foreground">{t("contracts.changeStatus") || "Change Status"}</h2>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {["draft", "signed", "pending_admin", "pending_ceo", "approved", "active", "completed", "terminated", "cancelled"].map((s) => (
+              {allowedTransitions.map((s) => (
                 <Button
                   key={s}
                   size="sm" variant="outline"
-                  disabled={acting || contract.status === s}
+                  disabled={acting}
                   onClick={() => changeStatus(s)}
-                  className={`text-xs h-7 ${
-                    contract.status === s
-                      ? "border-copper-500/50 text-copper-400 bg-copper-500/10"
-                      : "border-border/40 text-muted-foreground hover:text-foreground"
-                  }`}
+                  className="text-xs h-7 border-border/40 text-muted-foreground hover:text-foreground"
                 >
                   {STATUS_LABELS[s] || s}
                 </Button>
@@ -698,11 +732,28 @@ export default function ContractDetailPage() {
                 : confirmStatusMessage}
             </DialogDescription>
           </DialogHeader>
+          {pendingStatus && STATUS_REASON_REQUIRED.has(pendingStatus) && (
+            <Textarea
+              value={statusReason}
+              onChange={(event) => setStatusReason(event.target.value)}
+              placeholder={t("contracts.terminateReasonPrompt")}
+              aria-label={t("contracts.terminateReasonPrompt")}
+              rows={4}
+            />
+          )}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={acting} onClick={() => setConfirmDialogOpen(false)}>
               {t("common.cancel")}
             </Button>
-            <Button type="button" disabled={acting || !pendingStatus} onClick={confirmStatusChange}>
+            <Button
+              type="button"
+              disabled={
+                acting ||
+                !pendingStatus ||
+                (STATUS_REASON_REQUIRED.has(pendingStatus) && statusReason.trim() === "")
+              }
+              onClick={confirmStatusChange}
+            >
               {t("common.confirm")}
             </Button>
           </DialogFooter>

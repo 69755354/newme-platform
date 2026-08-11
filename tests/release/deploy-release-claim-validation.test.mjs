@@ -16,11 +16,14 @@
  * function's only dependency is $SHA, so it runs standalone with no filesystem,
  * no network and nothing to mutate.
  *
- * The wrapper's own GitHub-API event check is exercised the same way, because the
- * two layers must agree about what a valid claim looks like: a `pull_request` run
- * of the ci workflow is green with a strictly smaller set of jobs than a main
- * push (the release-final jobs are gated on the event), so accepting one records
- * an incomplete gate set as a complete one.
+ * The wrapper's own GitHub-API check is exercised the same way, because the two
+ * layers must agree about what a valid claim looks like. The reviewed revision of
+ * that check accepted exactly one run shape — a green `push` run on main — and
+ * that shape structurally cannot contain "Release-final taskboard completion",
+ * which ci.yml gates on `workflow_dispatch && inputs.release_final`. So the gate
+ * was not weak, it was unsatisfiable, and it recorded itself as satisfied. Both
+ * layers now require a release-final dispatch, and the wrapper additionally
+ * measures every job named in infra/release/required-jobs.json.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -56,7 +59,7 @@ const VALID_CLAIM = {
   CI_RUN_URL: `https://github.com/69755354/newme-platform/actions/runs/${RUN_ID}`,
   CI_HEAD_SHA: RELEASE_SHA,
   CI_CONCLUSION: "success",
-  CI_EVENT: "push",
+  CI_EVENT: "workflow_dispatch",
   MIGRATION_STATUS: "not_required",
   MIGRATION_IDS: "",
 };
@@ -142,15 +145,16 @@ test("a non-success conclusion is rejected", () => {
   }
 });
 
-test("only events that run the full gate set are accepted", () => {
+test("only the event that can run the full gate set is accepted", () => {
   // A pull_request run tests the merge commit and skips the release-final jobs;
-  // workflow_run/schedule/repository_dispatch prove nothing about this SHA.
-  for (const event of ["pull_request", "pull_request_target", "workflow_run", "schedule", "repository_dispatch", "merge_group", "release", ""]) {
-    assertRejected({ CI_EVENT: event }, /CI_EVENT (must be 'push' or 'workflow_dispatch'|is required)/);
+  // workflow_run/schedule/repository_dispatch prove nothing about this SHA. And
+  // `push` — accepted by this function until this revision — cannot contain the
+  // release-final taskboard job at all, so it cannot satisfy the required set the
+  // wrapper measures.
+  for (const event of ["push", "pull_request", "pull_request_target", "workflow_run", "schedule", "repository_dispatch", "merge_group", "release", ""]) {
+    assertRejected({ CI_EVENT: event }, /CI_EVENT (must be 'workflow_dispatch'|is required)/);
   }
-  for (const event of ["push", "workflow_dispatch"]) {
-    assert.equal(validate({ CI_EVENT: event }).accepted, true, `${event} must be accepted`);
-  }
+  assert.equal(validate({ CI_EVENT: "workflow_dispatch" }).accepted, true);
 });
 
 test("the archived run URL cannot point at a different run than the claim", () => {
@@ -256,43 +260,223 @@ test("the guard runs before the deploy touches anything", () => {
   assert.match(lines[callIndex], /exit 64/);
 });
 
-test("the wrapper's GitHub-API check requires a successful main-branch push of ci", () => {
-  // The wrapper is the layer that can actually re-measure the claim. Its check is
-  // an inline python3 program; run it with fixture payloads instead of trusting
-  // that the comment above it describes what it does.
+/**
+ * The wrapper's re-measurement of the claim, lifted out and run against fixture
+ * API payloads. It is an inline python3 program; running it is the only way to
+ * know what it checks, because a regex over shell text cannot tell a check from a
+ * comment about a check.
+ */
+const MANIFEST = JSON.parse(readFileSync(path.join(ROOT, "infra/release/required-jobs.json"), "utf8"));
+
+function wrapperCheck() {
   const wrapper = readFileSync(WRAPPER, "utf8");
   const start = wrapper.indexOf("python3 -c '");
   assert.notEqual(start, -1, "the wrapper no longer verifies the run via the GitHub API");
   const body = wrapper.slice(start + "python3 -c '".length);
   const program = body.slice(0, body.indexOf("\n' "));
   assert.ok(program.includes("json.loads"), "extracted the wrong block from the wrapper");
-
   const programFile = path.join(TMP, "wrapper-check.py");
   writeFileSync(programFile, program);
+  return (run, jobs, manifest = MANIFEST) =>
+    spawnSync(
+      "python3",
+      [programFile, RELEASE_SHA, RUN_ID, JSON.stringify(run), JSON.stringify(jobs), JSON.stringify(manifest)],
+      { encoding: "utf8" },
+    );
+}
 
-  const good = {
-    id: Number(RUN_ID),
-    head_sha: RELEASE_SHA,
-    name: "ci",
+const GOOD_RUN = {
+  id: Number(RUN_ID),
+  head_sha: RELEASE_SHA,
+  name: "ci",
+  status: "completed",
+  conclusion: "success",
+  event: "workflow_dispatch",
+  head_branch: "main",
+};
+
+/** The job list a release-final dispatch of ci actually produces. */
+function jobList(overrides = []) {
+  const jobs = MANIFEST.required_jobs.map((entry) => ({
+    name: entry.name,
+    status: "completed",
     conclusion: "success",
-    event: "push",
-    head_branch: "main",
-  };
-  const check = (run) =>
-    spawnSync("python3", [programFile, RELEASE_SHA, RUN_ID, JSON.stringify(run)], { encoding: "utf8" }).status;
+    head_sha: RELEASE_SHA,
+  }));
+  for (const override of overrides) {
+    const index = jobs.findIndex((job) => job.name === override.name);
+    if (index === -1) jobs.push(override);
+    else if (override.drop) jobs.splice(index, 1);
+    else jobs[index] = { ...jobs[index], ...override };
+  }
+  return { total_count: jobs.length, jobs };
+}
 
-  assert.equal(check(good), 0, "a successful main-branch push run of ci must be accepted");
+test("the wrapper requires a release-final main dispatch of ci", () => {
+  const check = wrapperCheck();
+  const status = (run, jobs = jobList()) => check(run, jobs).status;
+
+  assert.equal(status(GOOD_RUN), 0, check(GOOD_RUN).stderr);
 
   // Each of these was accepted before: the check looked at id, head_sha, name and
   // conclusion only, so a green pull_request run on any topic branch passed.
-  assert.equal(check({ ...good, event: "pull_request" }), 65, "a pull_request run skips the release-final jobs");
-  assert.equal(check({ ...good, event: "workflow_run" }), 65);
-  assert.equal(check({ ...good, event: "schedule" }), 65);
-  assert.equal(check({ ...good, head_branch: "agent/prod-l0-taskboard-closure" }), 65, "a topic-branch run is not main evidence");
-  assert.equal(check({ ...good, conclusion: "failure" }), 65);
-  assert.equal(check({ ...good, conclusion: null }), 65, "an in-progress run has no conclusion");
-  assert.equal(check({ ...good, head_sha: OTHER_SHA }), 65);
-  assert.equal(check({ ...good, name: "crm-ci" }), 65, "a different workflow is a different gate set");
-  assert.equal(check({ ...good, id: 1 }), 65, "the run must be the one named in the claim");
-  assert.equal(check({}), 65, "a payload missing every field must not be accepted");
+  assert.equal(status({ ...GOOD_RUN, event: "pull_request" }), 65, "a pull_request run skips the release-final jobs");
+  assert.equal(status({ ...GOOD_RUN, event: "push" }), 65, "a push run cannot contain the release-final jobs");
+  assert.equal(status({ ...GOOD_RUN, event: "workflow_run" }), 65);
+  assert.equal(status({ ...GOOD_RUN, event: "schedule" }), 65);
+  assert.equal(status({ ...GOOD_RUN, head_branch: "agent/prod-l0-taskboard-closure" }), 65, "a topic-branch run is not main evidence");
+  assert.equal(status({ ...GOOD_RUN, conclusion: "failure" }), 65);
+  assert.equal(status({ ...GOOD_RUN, conclusion: null }), 65, "an in-progress run has no conclusion");
+  assert.equal(status({ ...GOOD_RUN, status: "in_progress" }), 65);
+  assert.equal(status({ ...GOOD_RUN, head_sha: OTHER_SHA }), 65);
+  assert.equal(status({ ...GOOD_RUN, name: "crm-ci" }), 65, "a different workflow is a different gate set");
+  assert.equal(status({ ...GOOD_RUN, id: 1 }), 65, "the run must be the one named in the claim");
+  assert.equal(status({}), 65, "a payload missing every field must not be accepted");
+});
+
+test("the wrapper requires every job in the release manifest to have concluded success", () => {
+  const check = wrapperCheck();
+
+  // The whole point of the change: a run can be green with a required job absent
+  // or skipped, because a skipped job does not make a run anything but green.
+  for (const name of MANIFEST.required_jobs.map((entry) => entry.name)) {
+    const absent = check(GOOD_RUN, jobList([{ name, drop: true }]));
+    assert.equal(absent.status, 65, `a run without ${name} was accepted`);
+    assert.match(absent.stderr, new RegExp(`required job\\(s\\) absent from the run: ${name}`));
+
+    for (const conclusion of ["skipped", "failure", "cancelled", "timed_out", "neutral", "stale", null]) {
+      const bad = check(GOOD_RUN, jobList([{ name, conclusion }]));
+      assert.equal(bad.status, 65, `${name} concluding ${conclusion} was accepted`);
+    }
+
+    const running = check(GOOD_RUN, jobList([{ name, status: "in_progress", conclusion: null }]));
+    assert.equal(running.status, 65);
+    assert.match(running.stderr, /has not completed/);
+  }
+});
+
+test("the wrapper refuses job lists it cannot fully judge", () => {
+  const check = wrapperCheck();
+
+  // A paginated list would otherwise be judged on its first page.
+  const paginated = jobList();
+  paginated.total_count = paginated.jobs.length + 1;
+  assert.match(check(GOOD_RUN, paginated).stderr, /paginated/);
+  assert.equal(check(GOOD_RUN, paginated).status, 65);
+
+  assert.equal(check(GOOD_RUN, { total_count: 0, jobs: [] }).status, 65);
+  assert.equal(check(GOOD_RUN, {}).status, 65);
+
+  // A job from a different commit, and a duplicate required job, are both
+  // states where "success" is about something other than this release.
+  assert.match(
+    check(GOOD_RUN, jobList([{ name: "Repository validation", head_sha: OTHER_SHA }])).stderr,
+    /ran against a different commit/,
+  );
+  const duplicated = jobList();
+  duplicated.jobs.push({ ...duplicated.jobs[0], conclusion: "success" });
+  duplicated.total_count = duplicated.jobs.length;
+  assert.match(check(GOOD_RUN, duplicated).stderr, /appears twice/);
+
+  // A non-required job that failed still means this commit is not green.
+  const extra = jobList([{ name: "Some future job", status: "completed", conclusion: "failure", head_sha: RELEASE_SHA }]);
+  assert.equal(check(GOOD_RUN, extra).status, 65);
+  // ...but one that was skipped by its own `if:` is fine.
+  const skippedExtra = jobList([{ name: "Some future job", status: "completed", conclusion: "skipped", head_sha: RELEASE_SHA }]);
+  assert.equal(check(GOOD_RUN, skippedExtra).status, 0, check(GOOD_RUN, skippedExtra).stderr);
+});
+
+test("the wrapper refuses a manifest that has been emptied or loosened", () => {
+  const check = wrapperCheck();
+
+  // The manifest is read from the release mirror at the SHA being deployed, so
+  // this is the shape of "someone shipped a commit that turns the gate off".
+  assert.equal(check(GOOD_RUN, jobList(), { ...MANIFEST, required_jobs: [] }).status, 65);
+  assert.equal(check(GOOD_RUN, jobList(), { ...MANIFEST, required_jobs: [{ why: "no name" }] }).status, 65);
+  assert.equal(
+    check(GOOD_RUN, jobList(), { ...MANIFEST, tolerated_conclusions: ["success", "skipped"] }).status,
+    65,
+    "a manifest that tolerates skipped required jobs must be refused",
+  );
+  const duplicatedRequirement = {
+    ...MANIFEST,
+    required_jobs: [...MANIFEST.required_jobs, MANIFEST.required_jobs[0]],
+  };
+  assert.equal(check(GOOD_RUN, jobList(), duplicatedRequirement).status, 65);
+});
+
+test("the wrapper enforces taskboard completion and remote migration history before it stages anything", () => {
+  // Two claims CI structurally cannot make about production: that the board is
+  // complete in the tree being deployed, and that production's recorded migration
+  // history is the history this release contains. Both were unenforced in the
+  // canonical path — scripts/deploy.sh checked the board, and scripts/deploy.sh is
+  // not the canonical path.
+  const wrapper = readFileSync(WRAPPER, "utf8");
+  const lines = wrapper.split(/\r?\n/);
+  const at = (pattern) => lines.findIndex((line) => pattern.test(line));
+
+  const taskboard = at(/check-taskboard\.mjs" --require-complete/);
+  const remoteHistory = at(/verify-remote-migration-history\.mjs/);
+  const assets = at(/install-systemd-assets\.sh"/);
+  const immutable = at(/deploy-immutable\.sh" "\$SHA"/);
+
+  assert.notEqual(taskboard, -1, "the wrapper does not require a complete taskboard");
+  assert.notEqual(remoteHistory, -1, "the wrapper does not verify the remote migration history");
+  assert.ok(taskboard < assets, "the taskboard gate must run before assets are installed");
+  assert.ok(remoteHistory < assets, "the history gate must run before assets are installed");
+  assert.ok(assets < immutable);
+
+  // Both abort, and abort with the wrapper's precondition status.
+  assert.match(wrapper, /TASKBOARD\.md at canonical main is not complete; deployment is blocked" >&2\n\s*exit 65/);
+  assert.match(wrapper, /production migration history does not match the release being deployed" >&2\n\s*exit 65/);
+
+  // The connection string is a credential: root-owned, not group- or
+  // world-readable, and handed over as a path, never as a value.
+  assert.match(wrapper, /MIGRATION_DB_URL_FILE=\/etc\/newme\/migration-db\.url/);
+  assert.match(wrapper, /stat -c '%U:%G' "\$MIGRATION_DB_URL_FILE"\)" = root:root/);
+  assert.match(wrapper, /migration database URL file mode must be 0400 or 0600/);
+  assert.match(wrapper, /--url-file "\$MIGRATION_DB_URL_FILE"/);
+  assert.doesNotMatch(wrapper, /--url[= ]postgres/);
+
+  // The claim on the command line decides which direction is re-measured, so a
+  // not_required deployment cannot quietly carry unapplied migrations.
+  assert.match(wrapper, /applied_verified\) MIGRATION_HISTORY_ARGS\+=\(--require-applied "\$MIGRATION_IDS"\)/);
+  assert.match(wrapper, /not_required\)\s+MIGRATION_HISTORY_ARGS\+=\(--require-no-pending\)/);
+
+  // The required-jobs manifest comes from the mirror at the SHA being deployed,
+  // not from anywhere on the host.
+  assert.match(wrapper, /git --git-dir="\$MIRROR" show \\\n\s*"\$MAIN_SHA:infra\/release\/required-jobs\.json"/);
+  assert.match(wrapper, /main does not carry infra\/release\/required-jobs\.json/);
+});
+
+test("every required job exists in ci.yml and can run on a release-final dispatch", () => {
+  // A manifest naming a job that does not exist would be unsatisfiable — the
+  // exact defect this replaces, in a new place.
+  const ci = readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
+  const lines = ci.split(/\r?\n/);
+
+  for (const { name } of MANIFEST.required_jobs) {
+    const index = lines.findIndex((line) => line.trim() === `name: ${name}`);
+    assert.notEqual(index, -1, `ci.yml has no job named "${name}"`);
+    // The `if:` belonging to this job, if any, sits in the lines that follow its
+    // name until the next job's two-space key.
+    let condition = "";
+    for (let i = index + 1; i < lines.length; i += 1) {
+      if (/^ {2}\S/.test(lines[i])) break;
+      const match = /^\s{4}if:\s*(.*)$/.exec(lines[i]);
+      if (match) condition = match[1];
+    }
+    if (condition) {
+      assert.match(
+        condition,
+        /workflow_dispatch/,
+        `"${name}" is gated on ${condition}, which a release-final dispatch cannot satisfy`,
+      );
+    }
+  }
+
+  // And the reverse direction for the one job that proves release_final: it must
+  // stay dispatch-gated, or its presence stops being proof of anything.
+  const taskboard = lines.findIndex((line) => line.trim() === "name: Release-final taskboard completion");
+  assert.match(lines[taskboard + 1], /if: .*workflow_dispatch.*inputs\.release_final/);
 });

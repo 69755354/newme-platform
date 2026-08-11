@@ -14,8 +14,10 @@
 --
 -- Anything the migrations need that is NOT platform-provided belongs in
 -- supabase/migrations/, not here. See
--- supabase/migrations/00000000000001_baseline_undeclared_production_objects.sql
+-- supabase/migrations/20260806000000_baseline_undeclared_production_objects.sql
 -- for objects that exist in production but were never declared in a migration.
+-- (That file is numbered AFTER the applied history, not before it: the applied
+-- history is immutable, so a baseline cannot be back-dated into it.)
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------

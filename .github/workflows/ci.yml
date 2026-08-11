@@ -116,14 +116,20 @@ jobs:
           fi
   windows-checkout:
     name: Windows checkout and SPEC gate
-    if: ${{ github.event_name == 'pull_request' }}
+    # PR runs, plus the release-final dispatch that infra/release/required-jobs.json
+    # gates production on. It was previously pull_request-only, which made it
+    # impossible for a release-final run to carry it: the canonical deploy would
+    # have had to require a job that could not exist in the run it accepts.
+    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.release_final) }}
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
+      # On a dispatch there is no pull_request context, so this falls back to the
+      # dispatched SHA rather than checking out an empty ref.
       - name: Checkout exact PR head
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           path: sam16-checkout
           fetch-depth: 0
           persist-credentials: false
@@ -226,8 +232,26 @@ jobs:
       PGPORT: '5432'
       PGUSER: postgres
     steps:
+      # fetch-depth: 0 is load-bearing, not hygiene. The history gate below
+      # cross-checks supabase/migration-history-baseline.sha256 against the
+      # BASE_COMMIT recorded in its own header using `git ls-tree` and `git show`;
+      # without full history that commit is absent and the gate FAILS rather than
+      # downgrading itself to a warning.
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.0'
+
+      # Runs before anything is replayed: if applied history has been edited,
+      # renamed or deleted, every replay result below is measuring a history that
+      # production does not have.
+      - name: Migration history immutability and forward-only gate
+        run: npm run check:migration-history
 
       - name: Install psql client
         run: |
@@ -247,14 +271,20 @@ jobs:
           createdb replay
           MODE=branch PGDATABASE=replay bash scripts/replay-migrations.sh
 
-      # Informational, and deliberately not gating: the full history does not
-      # replay from empty. See the header of scripts/replay-migrations.sh — the
-      # directory is a partial record of a database that was partly built by hand,
-      # and repairing it needs a schema baseline taken by an operator who holds
-      # credentials. This step keeps the evidence reproducible on every run and
-      # will show movement when that baseline lands.
-      - name: Full migration history replay (informational)
-        continue-on-error: true
+      # Gating, and not informational. The reviewed revision ran this step with
+      # continue-on-error: true, which meant the job was green whatever it
+      # printed — a step whose result is discarded is not evidence, and this
+      # repository has already booked that pattern as F-05.
+      #
+      # The full history still does not replay from empty; that debt predates the
+      # branch and cannot be paid without a schema baseline taken by an operator
+      # who holds credentials. So what is gated is not "the history replays" but
+      # "the history fails exactly where supabase/replay/history-replay-expectation.txt
+      # says it fails": same file, same count applied before it. A branch that
+      # makes it fail earlier — the shape of an accidental edit to applied
+      # history — turns this step red, and so does a branch that fixes it without
+      # updating the expectation.
+      - name: Full migration history replay against the recorded failure point
         run: |
           createdb history
           MODE=history PGDATABASE=history bash scripts/replay-migrations.sh

@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=3055748d6941bee98c096c23e530d965e0c71036e4e1d90561fbb72c90054c29
+// Migration fingerprint: sha256=85b8e26bc8000aea2e9e8d432686693945f676c2a0fee5064048ef1c81dd16a0
 export type Json =
   | string
   | number
@@ -4108,6 +4108,30 @@ export type Database = {
           p_note: string
           p_idempotency_key: string
         }
+        Returns: Json
+      }
+      // The money routines of
+      // supabase/migrations/20260812000000_money_actor_identity_and_atomicity.sql.
+      // Declared here rather than regenerated because that migration has not been
+      // applied to the linked project: `supabase gen types` reads the live schema,
+      // and running it now would describe the schema this release replaces. The
+      // migration fingerprint on line 1 is what binds this file to that migration
+      // set, and supabase/replay/10_assert_release_contracts.sql is what checks the
+      // signatures against a replayed schema.
+      create_contract: {
+        Args: { p_payload: Json }
+        Returns: Json
+      }
+      convert_quotation_to_contract: {
+        Args: { p_quotation_id: string; p_payload?: Json }
+        Returns: Json
+      }
+      set_contract_status: {
+        Args: { p_contract_id: string; p_status: string; p_reason?: string }
+        Returns: Json
+      }
+      revoke_contract: {
+        Args: { p_contract_id: string; p_reason: string; p_supersede?: boolean }
         Returns: Json
       }
     }

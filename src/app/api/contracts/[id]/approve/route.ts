@@ -2,18 +2,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
 
 /**
  * POST /api/contracts/[id]/approve
  * Approves or rejects a contract via the two-step approval workflow.
  *
- * Steps:
- *   admin_review — only admin / operator
- *   ceo_review   — only boss
+ * Steps, decided by approve_contract() from the contract's status:
+ *   pending_admin → admin_review — only admin / operator
+ *   pending_ceo   → ceo_review   — only boss
  *
- * The actual mutation is delegated to the RPC `approve_contract` which
- * updates both the `contract_approvals` row and the parent `contracts`
- * record atomically.
+ * The routine settles the pending row for that step, opens the next one, and
+ * moves the contract, all in one transaction with the row held FOR UPDATE.
  */
 export async function POST(
   request: NextRequest,
@@ -35,21 +35,16 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // ── Fetch user role ────────────────────────────────────────────────
-    const { data: profile, error: profileErr } = await supabase
+    // ── Fetch the actor's display name for the notification ────────────
+    // Authorization is NOT decided here. approve_contract() derives the step from
+    // the contract's own status and checks the caller's role against that step
+    // with money_actor(), which reads the actor from the JWT subject. This read is
+    // for the notification body only, and a missing profile is not a decision.
+    const { data: profile } = await supabase
       .from("profiles")
-      .select("role, full_name")
+      .select("full_name")
       .eq("id", user.id)
       .single();
-
-    if (profileErr || !profile?.role) {
-      return NextResponse.json(
-        { error: "Profile not found" },
-        { status: 403 }
-      );
-    }
-
-    const userRole = profile.role;
 
     // ── Parse & validate body ──────────────────────────────────────────
     const body = await request.json();
@@ -65,67 +60,13 @@ export async function POST(
       );
     }
 
-    // ── Determine current approval step ────────────────────────────────
-    // Fetch the pending approval record for this contract (if any).
-    const { data: pendingApproval, error: approvalFetchErr } =
-      await supabase
-        .from("contract_approvals")
-        .select("id, step, status")
-        .eq("contract_id", contractId)
-        .eq("status", "pending")
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-    if (approvalFetchErr) {
-      logger.error(
-        {
-          err: approvalFetchErr,
-          request_id,
-          operation: "contract_approve",
-          user_id: user.id,
-          contract_id: contractId,
-        },
-        "[API Approve] Failed to fetch pending approval",
-      );
-      return NextResponse.json(
-        { error: "Failed to determine approval step" },
-        { status: 500 }
-      );
-    }
-
-    if (!pendingApproval) {
-      return NextResponse.json(
-        { error: "No pending approval found for this contract" },
-        { status: 400 }
-      );
-    }
-
-    const currentStep = pendingApproval.step as string;
-
-    // ── Role-based access control ──────────────────────────────────────
-    if (currentStep === "admin_review") {
-      if (!["admin", "operator"].includes(userRole)) {
-        return NextResponse.json(
-          { error: "Only admin or operator can approve the admin_review step" },
-          { status: 403 }
-        );
-      }
-    } else if (currentStep === "ceo_review") {
-      if (userRole !== "boss") {
-        return NextResponse.json(
-          { error: "Only boss can approve the ceo_review step" },
-          { status: 403 }
-        );
-      }
-    } else {
-      return NextResponse.json(
-        { error: `Unknown approval step: ${currentStep}` },
-        { status: 400 }
-      );
-    }
-
     // ── Call RPC ───────────────────────────────────────────────────────
+    // The step is decided by the routine from the contract's status, inside the
+    // transaction that settles it. This route used to read the EARLIEST pending
+    // contract_approvals row instead: the append-only approve_contract left
+    // 'admin_review' pending forever, so after the first approval every later
+    // decision was still routed to the admin_review step and ceo_review was
+    // unreachable — a two-step approval chain that only ever ran step one.
     const { data: rpcResult, error: rpcErr } = await supabase.rpc(
       "approve_contract",
       {
@@ -137,21 +78,25 @@ export async function POST(
     );
 
     if (rpcErr) {
-      logger.error(
+      const failure = moneyRpcFailure(rpcErr, "Approval failed");
+      const log = failure.status >= 500 ? logger.error : logger.warn;
+      log(
         {
           err: rpcErr,
           request_id,
           operation: "contract_approve",
           user_id: user.id,
           contract_id: contractId,
+          error_code: rpcErr.code,
+          http_status: failure.status,
         },
-        "[API Approve] RPC failed",
+        "[API Approve] approve_contract refused the request",
       );
-      return NextResponse.json(
-        { error: rpcErr.message || "Approval RPC failed" },
-        { status: 500 }
-      );
+      return NextResponse.json(failure.body, { status: failure.status });
     }
+
+    const decision = rpcResult as { step: string; new_status: string };
+    const currentStep = decision.step;
 
     // ── Send notification on success ───────────────────────────────────
     try {
@@ -176,7 +121,7 @@ export async function POST(
           contract_no: contractInfo?.contract_no,
           action,
           step: currentStep,
-          approver_name: profile.full_name || "Unknown",
+          approver_name: profile?.full_name || "Unknown",
           target_user_id: contractInfo?.sales_id,
         }),
       });

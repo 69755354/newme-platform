@@ -65,3 +65,133 @@ values
    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
   ('2026-99', 'collection',  50000.00, null,
    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+
+-- ---------------------------------------------------------------------------
+-- Money-path identities.
+--
+-- The F-09 findings are about WHO a routine believes it is acting for, so the
+-- fixture needs more than one role and more than one owner: an impersonation
+-- test needs a real target to impersonate, and an ownership test needs a real
+-- colleague to steal from.
+--
+-- 99999999 is a privileged account that is switched off. It exists because
+-- money_actor's is_active check is the database half of the revocation boundary,
+-- and testing that needs an identity which is privileged and disabled at once.
+-- ---------------------------------------------------------------------------
+insert into auth.users (id, email, email_confirmed_at, created_at)
+values
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'replay-boss@example.invalid',     now(), now()),
+  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'replay-sales1@example.invalid',   now(), now()),
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'replay-sales2@example.invalid',   now(), now()),
+  ('ffffffff-ffff-ffff-ffff-ffffffffffff', 'replay-finance@example.invalid',  now(), now()),
+  ('99999999-9999-9999-9999-999999999999', 'replay-disabled@example.invalid', now(), now())
+on conflict (id) do nothing;
+
+insert into public.profiles (id, email, role, is_active, full_name)
+values
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'replay-boss@example.invalid',     'boss',    true,  'Replay boss'),
+  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'replay-sales1@example.invalid',   'sales',   true,  'Replay sales one'),
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'replay-sales2@example.invalid',   'sales',   true,  'Replay sales two'),
+  ('ffffffff-ffff-ffff-ffff-ffffffffffff', 'replay-finance@example.invalid',  'finance', true,  'Replay finance'),
+  ('99999999-9999-9999-9999-999999999999', 'replay-disabled@example.invalid', 'admin',   false, 'Replay disabled admin')
+on conflict (id) do update
+   set role = excluded.role, is_active = excluded.is_active, full_name = excluded.full_name;
+
+-- ---------------------------------------------------------------------------
+-- One lead per contract, because idx_contracts_one_active_per_lead permits only
+-- one non-terminal contract per lead — the same index create_contract's
+-- duplicate pre-check mirrors.
+-- ---------------------------------------------------------------------------
+insert into public.leads (id, assigned_to, stage, customer_name)
+values
+  ('11111111-1111-1111-1111-111111111111', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C1'),
+  ('22222222-2222-2222-2222-222222222222', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'new', 'Replay lead free'),
+  ('33333333-3333-3333-3333-333333333333', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'new', 'Replay lead other sales'),
+  ('44444444-4444-4444-4444-444444444444', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C2'),
+  ('55555555-5555-5555-5555-555555555555', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C3'),
+  ('66666666-6666-6666-6666-666666666666', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'new', 'Replay lead Q1'),
+  ('77777777-7777-7777-7777-777777777777', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C4'),
+  ('88888888-8888-8888-8888-888888888888', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'new', 'Replay lead Q2')
+on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Contracts.
+--
+-- C3's contract_no is deliberately NEW-<today>-007: it is the seed for
+-- next_contract_no and it is also the exact shape that broke the old
+-- count(*)-based numbering. With one contract already dated today, count(*) = 1
+-- produces NEW-<today>-001 — a number that can already exist — while the highest
+-- number issued today is 7. The next number must be 008.
+-- ---------------------------------------------------------------------------
+insert into public.contracts (
+  id, lead_id, sales_id, created_by, contract_no, contract_date, contract_amount,
+  party_a_name, status, first_payment_status
+) values
+  ('c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1', '11111111-1111-1111-1111-111111111111',
+   'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+   'REPLAY-C1', current_date, 100000.00, 'Replay party A', 'pending_admin', 'unpaid'),
+  ('c2c2c2c2-c2c2-c2c2-c2c2-c2c2c2c2c2c2', '44444444-4444-4444-4444-444444444444',
+   'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+   'REPLAY-C2', current_date, 100000.00, 'Replay party A', 'draft', 'unpaid'),
+  ('c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3', '55555555-5555-5555-5555-555555555555',
+   'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+   'NEW-' || to_char(current_date, 'YYYYMMDD') || '-007', current_date, 100000.00,
+   'Replay party A', 'active', 'unpaid'),
+  ('c4c4c4c4-c4c4-c4c4-c4c4-c4c4c4c4c4c4', '77777777-7777-7777-7777-777777777777',
+   'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+   'REPLAY-C4', current_date, 100000.00, 'Replay party A', 'active', 'unpaid')
+on conflict (id) do nothing;
+
+-- C1 is mid-approval: one pending admin_review row, which is what
+-- approve_contract has to settle instead of leaving behind.
+insert into public.contract_approvals (id, contract_id, step, status)
+values ('a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1',
+        'c1c1c1c1-c1c1-c1c1-c1c1-c1c1c1c1c1c1', 'admin_review', 'pending')
+on conflict (id) do nothing;
+
+-- C3's schedule, plus one plan on C4 so that a cross-contract allocation has a
+-- real plan id from the wrong contract to aim at.
+insert into public.installment_plans (id, contract_id, seq, amount, due_date, status)
+values
+  ('91111111-1111-1111-1111-111111111111', 'c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3', 1, 50000.00, current_date,      'pending'),
+  ('92222222-2222-2222-2222-222222222222', 'c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3', 2, 50000.00, current_date + 30, 'pending'),
+  ('94444444-4444-4444-4444-444444444444', 'c4c4c4c4-c4c4-c4c4-c4c4-c4c4c4c4c4c4', 1, 50000.00, current_date,      'pending')
+on conflict (id) do nothing;
+
+-- One unconfirmed payment to confirm, and one already-confirmed payment whose
+-- columns must be frozen against a direct write.
+insert into public.payments (id, contract_id, amount, payment_date, confirmed, created_by)
+values
+  ('d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1', 'c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3',
+   60000.00, current_date, false, 'cccccccc-cccc-cccc-cccc-cccccccccccc'),
+  ('d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2', 'c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3',
+   10000.00, current_date, true,  'cccccccc-cccc-cccc-cccc-cccccccccccc')
+on conflict (id) do nothing;
+
+update public.payments
+   set confirmed_by = 'ffffffff-ffff-ffff-ffff-ffffffffffff', confirmed_at = now()
+ where id = 'd2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2';
+
+-- The two cascade targets that confirm_payment was silently skipping.
+insert into public.projects (id, name, contract_id, lead_id, sales_id, contract_amount, paid_amount)
+values ('99991111-1111-1111-1111-111111111111', 'Replay project C3',
+        'c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3', '55555555-5555-5555-5555-555555555555',
+        'cccccccc-cccc-cccc-cccc-cccccccccccc', 100000.00, 0)
+on conflict (id) do nothing;
+
+insert into public.kpi_targets (period, target_type, target_amount, actual_amount, assigned_to, set_by)
+values (to_char(current_date, 'YYYY-MM'), 'collection', 500000.00, 0,
+        'cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+on conflict (period, target_type, assigned_to) do nothing;
+
+-- Quotations: one accepted and owned by sales1 (the conversion happy path), one
+-- accepted and owned by sales2 (the non-owner refusal), one still a draft.
+insert into public.quotations (id, lead_id, quote_no, status, subtotal, total_amount, created_by)
+values
+  ('b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1', '66666666-6666-6666-6666-666666666666',
+   'REPLAY-Q1', 'accepted', 80000.00, 80000.00, 'cccccccc-cccc-cccc-cccc-cccccccccccc'),
+  ('b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2', '88888888-8888-8888-8888-888888888888',
+   'REPLAY-Q2', 'accepted', 80000.00, 80000.00, 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'),
+  ('b3b3b3b3-b3b3-b3b3-b3b3-b3b3b3b3b3b3', '22222222-2222-2222-2222-222222222222',
+   'REPLAY-Q3', 'draft',    80000.00, 80000.00, 'cccccccc-cccc-cccc-cccc-cccccccccccc')
+on conflict (id) do nothing;

@@ -275,41 +275,128 @@ RUN_JSON="$(curl --fail --silent --show-error --max-time 15 \
   --config "$GITHUB_CURL_CONFIG" \
   -H 'Accept: application/vnd.github+json' \
   "https://api.github.com/repos/69755354/newme-platform/actions/runs/$RUN_ID")"
+# The run object says nothing about which jobs ran. A run is green when nothing
+# that ran failed, and a job skipped by its `if:` condition does not make it
+# anything else — so the required set has to be read off the jobs endpoint.
+JOBS_JSON="$(curl --fail --silent --show-error --max-time 20 \
+  --config "$GITHUB_CURL_CONFIG" \
+  -H 'Accept: application/vnd.github+json' \
+  "https://api.github.com/repos/69755354/newme-platform/actions/runs/$RUN_ID/jobs?per_page=100&filter=latest")"
 cleanup_github_config
 trap - EXIT HUP INT TERM
+
+# The required set travels with the release: read from the root-owned mirror at
+# the canonical main SHA, never from a host-local copy.
+REQUIRED_JOBS_JSON="$(git --git-dir="$MIRROR" show \
+  "$MAIN_SHA:infra/release/required-jobs.json" 2>/dev/null || true)"
+[ -n "$REQUIRED_JOBS_JSON" ] || {
+  echo "main does not carry infra/release/required-jobs.json" >&2
+  exit 65
+}
+
 python3 -c '
 import json, sys
-expected_sha, expected_run, payload = sys.argv[1:]
-run = json.loads(payload)
-# The error message below has always said "successful main run", but the check
-# never established either half of that. A `pull_request` run of the ci workflow
-# reports head_sha = the PR head commit, name = "ci" and conclusion = "success",
-# so a green run on any topic branch satisfied every condition and was accepted
-# as main-branch evidence. That matters beyond provenance: .github/workflows
-# gates the release-final jobs on
-#     if: github.event_name == "workflow_dispatch" && inputs.release_final
-# so a pull_request run is green with a strictly smaller set of jobs than a main
-# push. An incomplete gate set was being recorded as a complete one.
-#
-# event and head_branch are now part of the claim.
-if (
-    str(run.get("id")) != expected_run
-    or run.get("head_sha") != expected_sha
-    or run.get("name") != "ci"
-    or run.get("conclusion") != "success"
-    or run.get("event") != "push"
-    or run.get("head_branch") != "main"
-):
+expected_sha, expected_run, run_payload, jobs_payload, required_payload = sys.argv[1:]
+
+
+def refuse(reason):
+    sys.stderr.write("release evidence refused: %s\n" % reason)
     raise SystemExit(65)
-' "$SHA" "$RUN_ID" "$RUN_JSON" || {
-  echo "GitHub Actions evidence is not a successful main-branch push run of the ci workflow" >&2
+
+
+try:
+    run = json.loads(run_payload)
+    jobs_response = json.loads(jobs_payload)
+    manifest = json.loads(required_payload)
+except ValueError as exc:
+    refuse("a GitHub API or manifest payload was not JSON (%s)" % exc)
+
+required = manifest.get("required_jobs")
+tolerated = manifest.get("tolerated_conclusions")
+if not isinstance(required, list) or not required:
+    refuse("the required-jobs manifest lists no jobs")
+if tolerated != ["success"]:
+    refuse("the required-jobs manifest tolerates conclusions other than success")
+required_names = []
+for entry in required:
+    name = entry.get("name") if isinstance(entry, dict) else None
+    if not isinstance(name, str) or not name:
+        refuse("the required-jobs manifest has an entry without a job name")
+    required_names.append(name)
+if len(set(required_names)) != len(required_names):
+    refuse("the required-jobs manifest lists a job twice")
+
+# ---------------------------------------------------------------------------
+# The run
+# ---------------------------------------------------------------------------
+# The reviewed revision required event == "push" on main. That is not merely
+# narrow, it is unsatisfiable together with the required set below: the
+# "Release-final taskboard completion" job is gated on
+#     if: github.event_name == "workflow_dispatch" && inputs.release_final
+# so no push run can ever contain it. The comment there also claimed a push run
+# has a larger job set than a pull_request run, which was the opposite of true.
+#
+# The runs API does not expose workflow_dispatch inputs, so release_final cannot
+# be read directly. The presence of that job in the job list IS the proof.
+if str(run.get("id")) != expected_run:
+    refuse("the run is not the one named in the claim")
+if run.get("head_sha") != expected_sha:
+    refuse("the run head_sha is not the release SHA")
+if run.get("name") != manifest.get("workflow"):
+    refuse("a different workflow is a different gate set")
+if run.get("status") != "completed":
+    refuse("the run has not completed")
+if run.get("conclusion") != "success":
+    refuse("the run did not conclude success")
+if run.get("event") != manifest.get("event"):
+    refuse("the run event %r is not %r" % (run.get("event"), manifest.get("event")))
+if run.get("head_branch") != manifest.get("head_branch"):
+    refuse("the run is not from %r" % manifest.get("head_branch"))
+
+# ---------------------------------------------------------------------------
+# The jobs
+# ---------------------------------------------------------------------------
+jobs = jobs_response.get("jobs")
+total = jobs_response.get("total_count")
+if not isinstance(jobs, list) or not jobs:
+    refuse("the run reported no jobs")
+if total != len(jobs):
+    # Fail closed rather than silently gating on the first page: a run large
+    # enough to paginate would otherwise be judged on a subset of its jobs.
+    refuse("the job list is paginated (%s of %s returned); this gate reads one page" % (len(jobs), total))
+
+seen = {}
+for job in jobs:
+    name = job.get("name")
+    if not isinstance(name, str):
+        refuse("a job in the run has no name")
+    if job.get("head_sha") not in (None, expected_sha):
+        refuse("job %r ran against a different commit" % name)
+    conclusion = job.get("conclusion")
+    if name in required_names:
+        if name in seen:
+            refuse("required job %r appears twice in the job list" % name)
+        if job.get("status") != "completed":
+            refuse("required job %r has not completed" % name)
+        if conclusion not in tolerated:
+            refuse("required job %r concluded %r" % (name, conclusion))
+        seen[name] = conclusion
+    elif conclusion not in ("success", "skipped", None):
+        # A non-required job that failed still means this commit is not green.
+        refuse("job %r concluded %r" % (name, conclusion))
+
+missing = [name for name in required_names if name not in seen]
+if missing:
+    refuse("required job(s) absent from the run: %s" % ", ".join(missing))
+' "$SHA" "$RUN_ID" "$RUN_JSON" "$JOBS_JSON" "$REQUIRED_JOBS_JSON" || {
+  echo "GitHub Actions evidence is not a release-final main dispatch of ci with every required job green" >&2
   exit 65
 }
 CI_RUN_URL="https://github.com/69755354/newme-platform/actions/runs/$RUN_ID"
 CI_CONCLUSION=success
 # Recorded and re-validated downstream by deploy-immutable.sh, which cannot see
 # the API response.
-CI_EVENT=push
+CI_EVENT=workflow_dispatch
 
 mkdir -p -m 0700 "$WORKTREE_ROOT"
 install -d -o root -g root -m 0700 "$STATE_ROOT"
@@ -488,6 +575,64 @@ git --git-dir="$MIRROR" branch -f main "$MAIN_SHA"
 rmdir "$WORKTREE"
 git --git-dir="$MIRROR" worktree add --force "$WORKTREE" main >/dev/null
 chown -R root:root "$WORKTREE"
+
+# ---------------------------------------------------------------------------
+# Two host-side gates that CI structurally cannot provide
+# ---------------------------------------------------------------------------
+# Both run against the root-owned worktree at the canonical main SHA, before any
+# asset is installed and before the release is staged, and both abort the
+# deployment. Neither can be satisfied by a claim on the command line.
+NODE_BIN="$(command -v node || true)"
+[ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ] || {
+  echo "node is required to gate this deployment and was not found" >&2
+  exit 65
+}
+
+# TASKBOARD completion. The required GitHub job proves it for the dispatched SHA;
+# this proves it for the tree that is actually about to be deployed, using the
+# checker committed to that same tree. AGENTS.md makes an unfinished board a
+# deploy blocker, and until this revision nothing in the canonical path enforced
+# that — scripts/deploy.sh Step 0 did, and scripts/deploy.sh is not the canonical
+# path.
+"$NODE_BIN" "$WORKTREE/scripts/check-taskboard.mjs" --require-complete || {
+  echo "TASKBOARD.md at canonical main is not complete; deployment is blocked" >&2
+  exit 65
+}
+
+# Remote migration history. The replay job proves the migrations in this tree run
+# and do what they claim; it cannot prove that production's recorded history is
+# the same history. A renamed or rewritten applied migration — the defect that
+# rejected the reviewed revision of this branch — is invisible to every other
+# gate here.
+readonly MIGRATION_DB_URL_FILE=/etc/newme/migration-db.url
+[ -f "$MIGRATION_DB_URL_FILE" ] && [ ! -L "$MIGRATION_DB_URL_FILE" ] || {
+  echo "root-owned migration database URL file is missing" >&2
+  exit 65
+}
+[ "$(stat -c '%U:%G' "$MIGRATION_DB_URL_FILE")" = root:root ] || {
+  echo "migration database URL file ownership is invalid" >&2
+  exit 65
+}
+case "$(stat -c '%a' "$MIGRATION_DB_URL_FILE")" in
+  400|600) ;;
+  *) echo "migration database URL file mode must be 0400 or 0600" >&2; exit 65 ;;
+esac
+# The URL is read by the script from the file descriptor, never passed as an
+# argument and never echoed: a connection string is a credential.
+MIGRATION_HISTORY_ARGS=(
+  "$WORKTREE/scripts/verify-remote-migration-history.mjs"
+  --url-file "$MIGRATION_DB_URL_FILE"
+  --migrations-dir "$WORKTREE/supabase/migrations"
+  --modules-dir "$LIVE_RELEASE/node_modules"
+)
+case "$MIGRATION_STATUS" in
+  applied_verified) MIGRATION_HISTORY_ARGS+=(--require-applied "$MIGRATION_IDS") ;;
+  not_required)     MIGRATION_HISTORY_ARGS+=(--require-no-pending) ;;
+esac
+"$NODE_BIN" "${MIGRATION_HISTORY_ARGS[@]}" || {
+  echo "production migration history does not match the release being deployed" >&2
+  exit 65
+}
 
 # Systemd, sudo and observability assets are part of the immutable release
 # boundary. Refresh them only from the verified root-owned main worktree.

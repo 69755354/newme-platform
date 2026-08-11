@@ -289,8 +289,15 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   const releaseLock = "exec 9>/run/lock/newme-production-release.lock";
   assert.equal([deploy, rollback].filter((source) => source.includes(releaseLock)).length, 2);
   assert.match(deploy, /run\.get\("head_sha"\) != expected_sha/);
-  assert.match(deploy, /run\.get\("name"\) != "ci"/);
+  // The workflow name, event and branch now come from the required-jobs manifest
+  // read out of the mirror at the SHA being deployed, so they are versioned with
+  // the release instead of hardcoded here. What the manifest requires, and that
+  // every job in it concluded success, is executed in
+  // tests/release/deploy-release-claim-validation.test.mjs.
+  assert.match(deploy, /run\.get\("name"\) != manifest\.get\("workflow"\)/);
   assert.match(deploy, /run\.get\("conclusion"\) != "success"/);
+  assert.match(deploy, /"\$MAIN_SHA:infra\/release\/required-jobs\.json"/);
+  assert.match(deploy, /actions\/runs\/\$RUN_ID\/jobs\?per_page=100&filter=latest/);
   assert.match(deploy, /infra\/systemd\/newme-production-rollback\.sh/);
   assert.match(deploy, /main lacks the protected production rollback controller/);
   assert.match(deploy, /infra\/sudoers\/newme-platform/);

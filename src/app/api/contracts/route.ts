@@ -3,12 +3,29 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
-import type { Database } from "@/types/database";
+import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+import type { Database, Json } from "@/types/database";
 
 /**
  * POST /api/contracts
- * Creates a contract with installment plans.
+ * Creates a contract with its installment schedule and its first approval row.
  * Requires authentication via session cookie.
+ *
+ * One call to create_contract(jsonb), which does all three inserts in a single
+ * transaction as the definer. What this replaces:
+ *
+ *   - a duplicate pre-check read through the CALLER's client, so a sales user
+ *     could not see a colleague's contract on the same lead and got a 500 from
+ *     idx_contracts_one_active_per_lead instead of the intended 409;
+ *   - a contract number derived from a caller-visible COUNT, which for the same
+ *     reason produced a number that already existed;
+ *   - three separate transactions, where a failed installment insert returned
+ *     HTTP 200 with `warning` (a signed contract with no payment schedule) and a
+ *     failed contract_approvals insert was only logged (a contract that can
+ *     never be approved), both reported as success.
+ *
+ * The direct inserts are also refused now: trg_guard_contracts_write raises
+ * 42501 for any INSERT arriving as the `authenticated` role.
  */
 export async function POST(request: NextRequest) {
   const request_id = genReqId();
@@ -40,151 +57,58 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Valid amount is required" }, { status: 400 });
     }
 
-    // P0-1: Prevent duplicate contracts for the same lead
-    const { data: existing } = await supabase
-      .from("contracts")
-      .select("id, contract_no")
-      .eq("lead_id", lead_id)
-      .neq("status", "archived")
-      .limit(1);
-    if (existing && existing.length > 0) {
-      logger.error(
-        {
-          request_id,
-          operation: "contract_create",
-          user_id: user.id,
-          lead_id,
-          existing_contract_no: existing[0].contract_no,
-        },
-        "[API Contracts] Duplicate prevented",
-      );
-      return NextResponse.json(
-        {
-          error: "Contract already exists for this lead",
-          existing_contract_id: existing[0].id,
-          existing_contract_no: existing[0].contract_no,
-        },
-        { status: 409 }
-      );
-    }
+    // seq defaults to position, not 1: `inst.seq || 1` gave every installment
+    // seq 1 when the client omitted it, and installment_plans has a UNIQUE
+    // (contract_id, seq).
+    const schedule = Array.isArray(installments)
+      ? installments.map((inst: any, index: number) => ({
+          seq: Number.isFinite(inst?.seq) ? inst.seq : index + 1,
+          amount: Number.isFinite(inst?.amount) ? inst.amount : 0,
+          due_date: inst?.due_date || null,
+          description: typeof inst?.description === "string" ? inst.description : "",
+        }))
+      : [];
 
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
-
-    const { count } = await supabase
-      .from("contracts")
-      .select("id", { count: "exact", head: true })
-      .gte("created_at", now.toISOString().slice(0, 10));
-    const seq = String((count ?? 0) + 1).padStart(3, "0");
-    const contractNo = `NEW-${dateStr}-${seq}`;
-
-    const { data: contract, error: contractErr } = await supabase
-      .from("contracts")
-      .insert({
+    const { data: created, error: rpcErr } = await supabase.rpc("create_contract", {
+      p_payload: {
+        // The claim is checked against the token subject inside money_actor():
+        // a mismatching actor_id raises 42501 rather than being trusted.
+        actor_id: user.id,
         lead_id,
-        sales_id: user.id,
-        created_by: user.id,
-        contract_no: contractNo,
-        contract_date: now.toISOString().slice(0, 10),
-        contract_amount: amount,
-        currency: currency || "AED",
-        party_a_name: party_a_name || "Unknown",
+        amount,
+        currency: currency || null,
+        party_a_name: party_a_name || null,
         party_a_contact: party_a_contact || null,
-        party_b_name: party_b_name || "NewMe Smart Home FZCO",
-        status: "draft",
+        party_b_name: party_b_name || null,
         first_payment_due_date: first_payment_due_date || null,
-      })
-      .select("id")
-      .single();
+        installments: schedule,
+      } as Json,
+    });
 
-    if (contractErr) {
-      // P0-1b: DB-level unique violation → 409
-      if (contractErr.code === "23505") {
-        logger.error(
-          {
-            err: contractErr,
-            request_id,
-            operation: "contract_create",
-            user_id: user.id,
-            lead_id,
-            error_code: contractErr.code,
-          },
-          "[API Contracts] Duplicate prevented (DB)",
-        );
-        return NextResponse.json(
-          { error: "Contract already exists for this lead" },
-          { status: 409 }
-        );
-      }
-      logger.error(
+    if (rpcErr) {
+      const failure = moneyRpcFailure(rpcErr, "Failed to create contract");
+      const log = failure.status >= 500 ? logger.error : logger.warn;
+      log(
         {
-          err: contractErr,
+          err: rpcErr,
           request_id,
           operation: "contract_create",
           user_id: user.id,
           lead_id,
+          error_code: rpcErr.code,
+          http_status: failure.status,
         },
-        "[API Contracts] Insert failed",
+        "[API Contracts] create_contract refused the request",
       );
-      return NextResponse.json({ error: "Failed to create contract" }, { status: 500 });
+      return NextResponse.json(failure.body, { status: failure.status });
     }
 
-    if (installments && Array.isArray(installments) && installments.length > 0) {
-      const installmentRows = installments.map((inst: any) => ({
-        contract_id: contract.id,
-        seq: inst.seq || 1,
-        amount: inst.amount || 0,
-        due_date: inst.due_date || now.toISOString().slice(0, 10),
-        description: inst.description || "",
-        status: "pending",
-      }));
-
-      const { error: instErr } = await supabase
-        .from("installment_plans")
-        .insert(installmentRows);
-
-      if (instErr) {
-        logger.error(
-          {
-            err: instErr,
-            request_id,
-            operation: "contract_create",
-            user_id: user.id,
-            lead_id,
-            contract_id: contract.id,
-          },
-          "[API Contracts] Installment insert failed",
-        );
-        return NextResponse.json({
-          id: contract.id,
-          contract_no: contractNo,
-          warning: "Contract created but installment plans failed",
-        });
-      }
-    }
-
-    // Create first approval record (admin_review step)
-    const { error: approvalErr } = await supabase
-      .from("contract_approvals")
-      .insert({
-        contract_id: contract.id,
-        step: "admin_review",
-        status: "pending",
-        notes: { source: "auto_created" },
-      });
-
-    if (approvalErr) {
-      logger.error(
-        {
-          err: approvalErr,
-          request_id,
-          operation: "contract_create",
-          user_id: user.id,
-          contract_id: contract.id,
-        },
-        "[API Contracts] Approval record insert failed",
-      );
-    }
+    const contract = created as {
+      id: string;
+      contract_no: string;
+      status: string;
+      installments_count: number;
+    };
 
     // Notify admins that contract is pending approval
     try {
@@ -194,7 +118,7 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           type: "contract_pending_approval",
           contract_id: contract.id,
-          contract_no: contractNo,
+          contract_no: contract.contract_no,
           lead_id,
           amount,
         }),
@@ -215,7 +139,15 @@ export async function POST(request: NextRequest) {
     revalidatePath("/contracts");
     revalidatePath("/leads");
 
-    return NextResponse.json({ id: contract.id, contract_no: contractNo });
+    return NextResponse.json(
+      {
+        id: contract.id,
+        contract_no: contract.contract_no,
+        status: contract.status,
+        installments_count: contract.installments_count,
+      },
+      { status: 201 },
+    );
   } catch (err: any) {
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
     logger.error(

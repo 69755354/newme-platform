@@ -1,0 +1,62 @@
+{
+  "_comment": [
+    "The set of GitHub Actions jobs that must have concluded 'success' before",
+    "infra/systemd/newme-deploy.sh will deploy a commit to production.",
+    "",
+    "Why a manifest and not a list inside the wrapper: the wrapper reads this file",
+    "out of the root-owned release mirror at the canonical main SHA being deployed",
+    "(`git --git-dir=/opt/newme/repository.git show <main-sha>:infra/release/required-jobs.json`),",
+    "so the required set is versioned with the release it gates and cannot be",
+    "loosened on the host without changing main. A local edit to this file in a",
+    "working copy has no effect on a deployment.",
+    "",
+    "Why job conclusions and not the run conclusion: a workflow run is 'success'",
+    "when none of the jobs that RAN failed. Jobs skipped by an `if:` condition do",
+    "not make the run anything other than green, so 'run.conclusion == success'",
+    "answers 'nothing that ran failed', never 'everything that had to run, ran'.",
+    "The reviewed revision of the wrapper checked only the run, and additionally",
+    "required event == 'push' — while 'Release-final taskboard completion' is",
+    "gated on `github.event_name == 'workflow_dispatch' && inputs.release_final`.",
+    "So the one run shape it accepted was structurally incapable of containing the",
+    "one job that proves the taskboard was complete. It was not a weak gate, it",
+    "was an unsatisfiable one, recorded as satisfied.",
+    "",
+    "'Release-final taskboard completion' is therefore load-bearing twice over:",
+    "it runs `npm run check:taskboard:complete` at the release SHA, and because it",
+    "exists in the job list at all, it is the proof that the dispatch carried",
+    "release_final = true. The runs API does not expose workflow_dispatch inputs,",
+    "so this is the only way to establish that from the API."
+  ],
+  "workflow": "ci",
+  "event": "workflow_dispatch",
+  "head_branch": "main",
+  "required_jobs": [
+    {
+      "name": "Repository validation",
+      "why": "taskboard, spec, lint, supply-chain, database-types, typecheck, unit tests, release hygiene, production smoke and build"
+    },
+    {
+      "name": "Windows checkout and SPEC gate",
+      "why": "the SPEC gate under a case-insensitive filesystem and CRLF checkout; reachable on a release-final dispatch since this revision"
+    },
+    {
+      "name": "Release-final taskboard completion",
+      "why": "every tracked TASKBOARD row complete at this SHA, and the structural proof that release_final was true"
+    },
+    {
+      "name": "Narrow task follow-up database contract",
+      "why": "pgTAP contract under supabase/ci-local, with the reset verified twice"
+    },
+    {
+      "name": "Migration replay and release contracts",
+      "why": "migration history immutability, negative control, full branch replay with behaviour assertions, rollback state assertions, recorded history failure point"
+    }
+  ],
+  "tolerated_conclusions": ["success"],
+  "notes": [
+    "tolerated_conclusions is exhaustive on purpose: 'skipped', 'neutral' and",
+    "'stale' are refused for a required job, and no job in the run may have",
+    "concluded anything other than success or skipped. A required job that is",
+    "absent from the run is refused by name."
+  ]
+}

@@ -1,113 +1,124 @@
--- Rollback companion for the five L0 audit migrations dated 20260811.
+-- Rollback companion for the six L0 audit migrations dated 20260811.
+--
+-- ROLLS_BACK: 20260811100000_f08_audit_logs_actor_identity.sql
+-- ROLLS_BACK: 20260811100100_f06_profiles_revocation_columns.sql
+-- ROLLS_BACK: 20260811100200_f10_meta_tokens_drop_permissive_select.sql
+-- ROLLS_BACK: 20260811100300_f02_remove_default_credential_admin.sql
+-- ROLLS_BACK: 20260811100400_f09_money_authorization_phase1.sql
+-- ROLLS_BACK: 20260811100500_kpi_targets_atomic_replace.sql
 --
 -- Not a migration: the Supabase CLI only applies files whose name begins with a
 -- 14-digit timestamp, so this file is inert until an operator runs it
 -- explicitly. Same convention as rollback_crm_v3.sql and rollback_p0_10.sql.
 --
--- Covers, newest first:
---   20260811100500_kpi_targets_atomic_replace.sql
---   20260811100400_f09_money_authorization_phase1.sql
---   20260811100300_f02_remove_default_credential_admin.sql
---   20260811100200_f10_meta_tokens_drop_permissive_select.sql
---   20260811100100_f06_profiles_revocation_columns.sql
---   20260811100000_f08_audit_logs_actor_identity.sql
+-- ============================================================================
+-- A rollback does not reopen a vulnerability
+-- ============================================================================
+-- The reviewed revision of this file did. It executed cleanly, the replay gate
+-- went green, and what it actually did was:
 --
--- Every one is reversible by construction: no DROP TABLE, no DROP COLUMN, no
--- DELETE. The only data change in the set is a two-column UPDATE on a single
--- profiles row, restored below.
+--   * re-enable dev@newme.ae — a credential published in a public git history —
+--     by setting is_active = true, force_password_change = false;
+--   * re-grant select/insert/update/delete on meta_tokens to authenticated and
+--     select to anon, and recreate `using (true)`, making the plaintext Meta Ads
+--     token readable by every logged-in user again;
+--   * re-grant UPDATE on all of public.profiles to authenticated, restoring
+--     self-writable is_active / force_password_change / email;
+--   * recreate policy_audit_logs_insert_authenticated with `with check (true)`,
+--     restoring audit-actor forgery;
+--   * grant EXECUTE on the three money routines to PUBLIC and anon.
 --
--- NOT covered, deliberately:
---   20260630210000_baseline_undeclared_production_objects.sql — every statement
---   in it is CREATE/ADD ... IF NOT EXISTS against objects that already exist in
---   production, so it has nothing to revert. Dropping meta_tokens or the two
---   profiles columns would destroy production data, not undo a change.
+-- Every one of those is a step an operator would take at 3am during an incident,
+-- expecting to undo a deployment. None of them is required in order to undo a
+-- deployment. The vulnerabilities predate the release; reverting the release does
+-- not require restoring them, and a file that restores them is not a rollback,
+-- it is a re-exploit with a reassuring filename.
 --
--- Executed by scripts/replay-migrations.sh after a successful forward replay, so
--- "reversible" here is a tested property, not a claim in a comment.
+-- So this file reverts what can be reverted without weakening the system, and
+-- for the rest it says plainly that there is nothing to revert. The result is
+-- verified, not asserted: scripts/replay-migrations.sh runs
+-- supabase/replay/20_assert_post_rollback.sql immediately after this file and
+-- fails the job if the post-rollback state has any of those holes open.
+--
+-- ============================================================================
+-- What an app-only rollback costs, and what to do instead
+-- ============================================================================
+-- If the application is rolled back to the previous release while the database
+-- keeps the tightened grants, two flows behave differently:
+--
+--   * The old client-side profile writes (email, is_active) fail with 42501
+--     instead of succeeding. That is the F-06 fix working; the old UI paths that
+--     depended on them are the takeover vector, not a feature.
+--   * The old Meta Ads panel reads meta_tokens directly and now gets no rows.
+--     The replacement path is the server-side route; if the panel must work
+--     during the rollback window, disable it rather than re-granting the table.
+--
+-- If a security control genuinely has to be lifted — for example the published
+-- credential has to be usable for one authenticated operator action because no
+-- replacement admin exists yet — that is a separate, individually authorised
+-- change with its own approval and its own audit entry. It is deliberately NOT
+-- available here as SQL to paste, because the whole failure mode this file now
+-- guards against is a hole being reopened by someone following a runbook.
 --
 -- Sections are independent — run the whole file, or only the section for the
 -- migration being reverted.
 
 begin;
 
+-- ── F-09 · money routine ACL ────────────────────────────────────────────────
+-- 20260811100400 replaced "EXECUTE held through PUBLIC, plus anon" with explicit
+-- grants to authenticated and service_role. Reverting it would mean handing
+-- anonymous callers the ability to approve contracts and confirm payments.
+--
+-- Nothing to do. The forward migration's whole effect was to close that, and the
+-- routines' own callers (the Next.js routes) authenticate before calling, so the
+-- explicit grants are sufficient for the previous release as well.
+
+-- ── F-02 · dev@newme.ae ─────────────────────────────────────────────────────
+-- 20260811100300 set is_active = false and force_password_change = true on the
+-- profile of a published credential.
+--
+-- Nothing to do. Re-enabling it is not part of reverting a deployment. Note also
+-- that flipping those two columns never disabled the Auth identity or revoked
+-- its sessions — see supabase/preflight/f02-credential-cutover.md — so there is
+-- less here to revert than the previous revision of this file implied.
+
+-- ── F-10 · meta_tokens exposure ─────────────────────────────────────────────
+-- 20260811100200 dropped the `using (true)` SELECT policy and the table grants
+-- that let every authenticated user read a plaintext third-party access token.
+--
+-- Nothing to do. See "What an app-only rollback costs" above for the panel.
+
+-- ── F-06 · profiles UPDATE grant ────────────────────────────────────────────
+-- 20260811100100 added password_changed_at / force_password_change and replaced
+-- the table-level UPDATE grant with a column-level one.
+--
+-- The columns are additive and are left in place: dropping a column destroys
+-- data and is not a revert. The grant is left tightened.
+
+-- ── F-08 · audit actor identity ─────────────────────────────────────────────
+-- 20260811100000 replaced the `with check (true)` audit INSERT policy with a
+-- server-only one.
+--
+-- Nothing to do. Restoring actor forgery is not a rollback step. activity_logs
+-- and user_session_daily keep the server_only policy that
+-- 20260723130000_lock_definer_boundaries.sql defines, which is the state a
+-- fully-migrated database was already in.
+
 -- ── KPI atomic replace ──────────────────────────────────────────────────────
--- Only safe together with reverting src/app/api/kpi/targets/route.ts, which is
--- the function's only caller; reverting the route restores the delete-then-insert
--- pair, and with it the data-loss window this migration closed.
+-- This one IS reverted: it is a function, its removal opens nothing, and its
+-- only caller is src/app/api/kpi/targets/route.ts. Reverting the route without
+-- reverting the function is harmless; reverting the function without reverting
+-- the route makes POST /api/kpi/targets fail closed with 42883 rather than
+-- silently falling back to the delete-then-insert pair that could lose a
+-- period's targets. Failing closed is the intended behaviour of the pair.
 drop function if exists public.replace_kpi_targets(text, jsonb, uuid);
 
--- ── F-09 ────────────────────────────────────────────────────────────────────
--- Restore the pre-migration ACL: EXECUTE held through PUBLIC, plus the anon
--- grant. This deliberately re-opens anonymous execution of the money routines;
--- only run it if the explicit role grants are what broke something.
-grant execute on function public.confirm_payment(uuid, uuid)               to public;
-grant execute on function public.approve_contract(uuid, uuid, text, text)  to public;
-grant execute on function public.allocate_payment(uuid, jsonb, uuid)       to public;
-grant execute on function public.confirm_payment(uuid, uuid)               to anon;
-grant execute on function public.approve_contract(uuid, uuid, text, text)  to anon;
-grant execute on function public.allocate_payment(uuid, jsonb, uuid)       to anon;
-revoke execute on function public.confirm_payment(uuid, uuid)              from authenticated, service_role;
-revoke execute on function public.approve_contract(uuid, uuid, text, text) from authenticated, service_role;
-revoke execute on function public.allocate_payment(uuid, jsonb, uuid)      from authenticated, service_role;
-
--- ── F-02 ────────────────────────────────────────────────────────────────────
--- Re-enable dev@newme.ae. Restores the account to the state the forward
--- migration found it in: active, no forced password change. This re-arms a
--- published credential — do not run it without a replacement plan.
-do $$
-declare
-  dev_id uuid;
-begin
-  select id into dev_id from auth.users where email = 'dev@newme.ae';
-  if dev_id is null then
-    raise notice 'dev@newme.ae absent - nothing to restore';
-    return;
-  end if;
-  update public.profiles
-     set is_active             = true,
-         force_password_change = false,
-         updated_at            = now()
-   where id = dev_id;
-  raise notice 'dev@newme.ae re-enabled - published credential is live again';
-end $$;
-
--- ── F-10 ────────────────────────────────────────────────────────────────────
--- Restore the table grants and the permissive SELECT policy. This makes the
--- plaintext Meta Ads token readable by every authenticated user again.
-grant select, insert, update, delete on public.meta_tokens to authenticated;
-grant select on public.meta_tokens to anon;
-drop policy if exists policy_meta_tokens_select_authenticated on public.meta_tokens;
-create policy policy_meta_tokens_select_authenticated
-  on public.meta_tokens for select to authenticated
-  using (true);
-
--- ── F-06 ────────────────────────────────────────────────────────────────────
--- Restore the table-level UPDATE grant. This re-opens self-writable
--- password_changed_at / is_active / force_password_change / email.
-revoke update on public.profiles from authenticated;
-grant update on public.profiles to authenticated;
-
--- ── F-08 ────────────────────────────────────────────────────────────────────
--- Restore the unconstrained audit INSERT policy, i.e. actor forgery, and remove
--- the server-only policies the forward migration guarantees. Reverting this also
--- requires reverting the src/proxy.ts change in the same commit, which is what
--- reintroduces the caller-scoped PAGE_VISIT write that needed the permissive
--- policy in the first place.
-drop policy if exists policy_audit_logs_insert_server_only on public.audit_logs;
-create policy policy_audit_logs_insert_authenticated
-  on public.audit_logs for insert to authenticated
-  with check (true);
-
--- activity_logs and user_session_daily are restored to the server_only policy
--- that 20260723130000_lock_definer_boundaries.sql defines, NOT to a permissive
--- one: `with check (false)` is the state the forward migration found in a
--- fully-migrated database, so recreating anything looser would not be a
--- rollback. Where 20260723130000 has not been applied these tables had no
--- authenticated INSERT policy at all, and dropping is the correct revert; both
--- shapes are covered by leaving the server_only policy in place.
---
--- Nothing to do here — the forward migration's effect on these two tables is
--- either a no-op or a tightening that must not be undone. Left explicit so the
--- omission is visibly deliberate.
+-- idx_kpi_targets_one_unassigned_per_period_type is NOT dropped. It is an
+-- integrity constraint on business data, the old delete-then-insert route does
+-- not violate it in normal operation, and dropping it would re-permit the
+-- duplicate unassigned targets that make every KPI view double-count. If the old
+-- route ever does hit it, it fails with 23505 instead of silently corrupting the
+-- period, which is the better of the two outcomes.
 
 commit;

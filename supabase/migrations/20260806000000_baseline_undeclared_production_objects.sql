@@ -13,9 +13,21 @@
 -- narrowest SQL type consistent with how the migrations and routes use the
 -- column was chosen.
 --
--- Placement: immediately after 20260601000000_init.sql, which creates the leads
--- and profiles tables these statements extend, and before the first migration
--- that references any of them.
+-- NO_ROLLBACK: every statement is CREATE/ADD ... IF NOT EXISTS against objects
+-- that already exist in production, so there is no change to revert. A companion
+-- would have to drop meta_tokens and two profiles columns, which would destroy
+-- production data rather than undo anything this file did.
+--
+-- Placement: at the END of the history, not next to the migrations that need
+-- these objects. An earlier revision of this branch dated it 20260601010000, to
+-- sit just after 20260601000000_init.sql where it would repair a from-empty
+-- replay. That is a history rewrite — it inserts a file into the middle of a
+-- sequence production has already applied, so a fresh database applies the set
+-- in an order production never did. Forward-only wins: the file is dated after
+-- the last applied migration (20260805202917), and the consequence is that it
+-- does NOT repair the from-empty replay. That debt stays recorded in
+-- supabase/replay/history-replay-expectation.txt and on the task board, where it
+-- belongs, instead of being papered over by a backdated filename.
 --
 -- Every statement is IF NOT EXISTS, so against production this migration is a
 -- no-op: it changes nothing, it only stops the migration set from lying about

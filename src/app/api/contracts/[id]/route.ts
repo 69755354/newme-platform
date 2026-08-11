@@ -1,7 +1,9 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
 
 /**
  * GET /api/contracts/[id]
@@ -130,6 +132,96 @@ export async function GET(
         contract_id: contractId,
       },
       "[API Contracts Detail] Error",
+    );
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+/**
+ * PATCH /api/contracts/[id]
+ * Body: { status: string, reason?: string }
+ *
+ * The contract page has been PATCHing this route since it was written
+ * (src/app/(dashboard)/contracts/[id]/page.tsx:273) against a module that
+ * exported only GET, so every status change from that page was a 405 — no status
+ * button on the contract detail page has ever worked.
+ *
+ * The handler does not write the status; set_contract_status() does, and it
+ * accepts only the transitions in its table. That distinction is the whole point:
+ * a handler that wrote `body.status` onto the row would have turned the page's
+ * status grid into an approval-chain bypass, because 'approved' and 'pending_ceo'
+ * were among the buttons. Those two statuses belong to approve_contract() and are
+ * rejected here with 400.
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const request_id = genReqId();
+  const { id: contractId } = await params;
+  try {
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabase.auth.getUser();
+    if (authErr || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const { status, reason } = body as { status?: unknown; reason?: unknown };
+
+    if (typeof status !== "string" || status.trim() === "") {
+      return NextResponse.json({ error: "status is required" }, { status: 400 });
+    }
+    if (reason !== undefined && reason !== null && typeof reason !== "string") {
+      return NextResponse.json({ error: "reason must be a string" }, { status: 400 });
+    }
+
+    const { data: result, error: rpcErr } = await supabase.rpc("set_contract_status", {
+      p_contract_id: contractId,
+      p_status: status,
+      // Required for 'terminated' and ignored otherwise; the routine, not this
+      // route, decides which transitions need one.
+      p_reason: typeof reason === "string" && reason.trim() !== "" ? reason.trim() : undefined,
+    });
+
+    if (rpcErr) {
+      const failure = moneyRpcFailure(rpcErr, "Failed to update contract status");
+      const log = failure.status >= 500 ? logger.error : logger.warn;
+      log(
+        {
+          err: rpcErr,
+          request_id,
+          operation: "contract_set_status",
+          user_id: user.id,
+          contract_id: contractId,
+          requested_status: status,
+          error_code: rpcErr.code,
+          http_status: failure.status,
+        },
+        "[API Contracts Detail] set_contract_status refused the request",
+      );
+      return NextResponse.json(failure.body, { status: failure.status });
+    }
+
+    revalidatePath("/contracts");
+
+    return NextResponse.json(result);
+  } catch (err: unknown) {
+    const message =
+      process.env.NODE_ENV === "production" ? "Internal server error" : (err as Error).message;
+    logger.error(
+      {
+        err,
+        request_id,
+        operation: "contract_set_status",
+        contract_id: contractId,
+      },
+      "[API Contracts Detail] PATCH Error",
     );
     return NextResponse.json({ error: message }, { status: 500 });
   }

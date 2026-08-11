@@ -32,6 +32,7 @@
     "lint:baseline:negative": "node tests/lint-baseline-negative.test.mjs",
     "generate:database-types": "supabase gen types typescript --project-id \"$SUPABASE_PROJECT_REF\" > src/types/database.ts && node scripts/check-database-types.mjs --stamp",
     "check:database-types": "node scripts/check-database-types.mjs",
+    "check:migration-history": "node scripts/check-migration-history.mjs",
     "check:e2e-secrets": "node scripts/check-e2e-secrets.mjs",
     "check:e2e-artifacts": "node scripts/check-e2e-artifact-isolation.mjs",
     "check:supply-chain": "node scripts/check-supply-chain.mjs",

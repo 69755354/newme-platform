@@ -2,13 +2,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { logger, genReqId } from "@/lib/logger";
+import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+import type { Json } from "@/types/database";
 
 /**
  * POST /api/quotations/[id]/convert
  * Convert an accepted quotation into a draft contract.
- * Sets quotation status to 'contract_created' and links back via contract_id.
+ *
+ * One call to convert_quotation_to_contract(uuid, jsonb). The routine takes the
+ * quotation FOR UPDATE, re-checks status / contract_id / total / ownership inside
+ * that transaction, creates the contract, its installment schedule and its
+ * pending admin_review row, links the quotation and marks the lead won — all or
+ * nothing.
+ *
+ * What this replaces, all of it live before this release:
+ *
+ *   - seven transactions with hand-written compensation. The compensating delete
+ *     and the claim release are themselves separate transactions and can fail,
+ *     which is how orphan contracts and quotations stuck in 'contract_created'
+ *     with no contract appeared;
+ *   - a claim-by-conditional-update used as a mutual exclusion primitive, which
+ *     mutated the quotation's status before anything had been created;
+ *   - a service_role COUNT to derive contract_no (the caller-visible count
+ *     produced numbers that already existed), with a ten-attempt retry loop in
+ *     the route. next_contract_no() is now the single counter for all creation
+ *     paths;
+ *   - the ownership check as a separate statement from the write.
+ *
+ * The direct inserts would be refused now in any case:
+ * trg_guard_contracts_write and trg_guard_installment_plans_write raise 42501 for
+ * an INSERT arriving as the `authenticated` role.
+ *
+ * The bookkeeping AFTER the conversion — project, activity, notification — is
+ * still separate, still non-fatal, and still reported in `warnings`: those rows
+ * are derived, and destroying a committed contract because an activity insert
+ * failed is the behaviour this release removes, not one to keep.
  */
 export async function POST(
   request: NextRequest,
@@ -16,9 +45,10 @@ export async function POST(
 ) {
   const request_id = genReqId();
   const { id: quotationId } = await params;
-  try {    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-  const cookieHeader = request.headers.get("cookie") ?? "";
-  const supabase = await createServerSupabase(bearerToken, cookieHeader);
+  try {
+    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
+    const cookieHeader = request.headers.get("cookie") ?? "";
+    const supabase = await createServerSupabase(bearerToken, cookieHeader);
     const {
       data: { user },
       error: authErr,
@@ -27,326 +57,112 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Fetch quotation with lead info
-    const { data: quote, error: quoteErr } = await supabase
-      .from("quotations")
-      .select("*, leads(id, customer_name, property_type, property_size_sqm, location, phone)")
-      .eq("id", quotationId)
-      .single();
-
-    if (quoteErr || !quote) {
-      return NextResponse.json(
-        { error: "Quotation not found" },
-        { status: 404 }
-      );
-    }
-
-    // Only accepted quotations can be converted
-    if (quote.status !== "accepted") {
-      return NextResponse.json(
-        { error: "Only accepted quotations can be converted", current_status: quote.status },
-        { status: 400 }
-      );
-    }
-
-    // Zero-total quotations cannot be converted: contract_amount would violate
-    // the DB CHECK (contracts_contract_amount_check). Pre-check as 400 instead
-    // of letting the insert below fail with a 500.
-    if (!(quote.total_amount > 0)) {
-      return NextResponse.json(
-        { error: "Quotation total must be greater than zero to convert" },
-        { status: 400 }
-      );
-    }
-
-    // Check if contract already created from this quotation
-    if (quote.contract_id) {
-      return NextResponse.json(
-        { error: "Contract already created from this quotation", contract_id: quote.contract_id },
-        { status: 409 }
-      );
-    }
-
-    // Fetch user role
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    const isAdmin =
-      profile?.role && ["admin", "boss", "operator"].includes(profile.role);
-
-    // Sales can only convert their own quotations
-    if (!isAdmin && quote.created_by !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const now = new Date();
-    const contractDate = now.toISOString().slice(0, 10);
-    const dateStr = contractDate.replace(/-/g, "");
-
     // Parse optional body for overrides
     const body = await request.json().catch(() => ({}));
-    const installments = body.installments || [];
+    const installments = Array.isArray(body.installments) ? body.installments : [];
 
-    // Claim the quotation BEFORE creating anything, with a conditional update.
-    //
-    // The `quote.contract_id` check above is a read, and the write that acted on
-    // it came at the very end of the request, so two concurrent POSTs both read
-    // contract_id = null and both created a contract for the same quotation —
-    // duplicate contracts, duplicate approval records, duplicate projects, and a
-    // lead marked won twice. Rows matched is the interlock: exactly one caller
-    // can move the quotation out of 'accepted', and the loser gets 409. Also
-    // covers the sequential retry case, where the first attempt failed after
-    // creating a contract.
-    const { data: claimed, error: claimErr } = await supabase
-      .from("quotations")
-      .update({ status: "contract_created", updated_at: new Date().toISOString() })
-      .eq("id", quotationId)
-      .eq("status", "accepted")
-      .is("contract_id", null)
-      .select("id");
+    // seq defaults to position: `inst.seq` omitted used to become 1 for every
+    // row, and installment_plans has a UNIQUE (contract_id, seq).
+    const schedule = installments.map(
+      (inst: { seq?: number; amount?: number; due_date?: string; description?: string }, index: number) => ({
+        seq: Number.isFinite(inst?.seq) ? inst.seq : index + 1,
+        amount: Number.isFinite(inst?.amount) ? inst.amount : 0,
+        due_date: inst?.due_date || null,
+        description: typeof inst?.description === "string" ? inst.description : "",
+      }),
+    );
 
-    if (claimErr) {
-      logger.error(
-        { err: claimErr, request_id, operation: "quotation_convert", user_id: user.id, quotation_id: quotationId },
-        "[Quotation Convert] Quotation claim failed",
-      );
-      return NextResponse.json({ error: "Failed to convert quotation" }, { status: 500 });
-    }
-    if (!claimed || claimed.length === 0) {
-      return NextResponse.json(
-        { error: "Quotation is already being converted or is no longer accepted" },
-        { status: 409 },
-      );
-    }
-
-    // Release the claim if we cannot finish. Without this, a failure would leave
-    // the quotation permanently stuck in 'contract_created' with no contract.
-    const releaseClaim = async () => {
-      const { error } = await supabase
-        .from("quotations")
-        .update({ status: "accepted", updated_at: new Date().toISOString() })
-        .eq("id", quotationId)
-        .is("contract_id", null);
-      if (error) {
-        logger.error(
-          { err: error, request_id, operation: "quotation_convert", quotation_id: quotationId },
-          "[Quotation Convert] CRITICAL: quotation claim could not be released",
-        );
-      }
-    };
-
-    // Contract number. The sequence was counted through the CALLER's RLS client:
-    //
-    //     await supabase.from("contracts").select("id", {count: "exact", head: true})
-    //
-    // policy_contracts_select_sales restricts a sales user to their own rows, so
-    // the count excluded every contract their colleagues created that day. The
-    // number generated was therefore one that already existed, contract_no is
-    // UNIQUE (20260605000000_newme_crm_v22_complete.sql:79), and the insert died
-    // with 23505 → 500 "Failed to create contract". Not a race: a deterministic
-    // failure for any non-admin converting on a day when someone else had already
-    // signed a contract.
-    //
-    // Counting on service_role sees every row, and the retry loop handles the
-    // genuine concurrent-insert race that UNIQUE is there to catch.
-    const { count: sameDayCount, error: countErr } = await supabaseAdmin
-      .from("contracts")
-      .select("id", { count: "exact", head: true })
-      .eq("contract_date", contractDate);
-
-    if (countErr) {
-      logger.error(
-        { err: countErr, request_id, operation: "quotation_convert", quotation_id: quotationId },
-        "[Quotation Convert] Contract number sequence read failed",
-      );
-      await releaseClaim();
-      return NextResponse.json({ error: "Failed to create contract" }, { status: 500 });
-    }
-
-    const MAX_CONTRACT_NO_ATTEMPTS = 10;
-    let contract: { id: string; contract_no: string } | null = null;
-    let contractErr: { code?: string; message?: string } | null = null;
-
-    for (let attempt = 0; attempt < MAX_CONTRACT_NO_ATTEMPTS; attempt += 1) {
-      const seq = String((sameDayCount ?? 0) + 1 + attempt).padStart(3, "0");
-      const { data, error } = await supabase
-        .from("contracts")
-        .insert({
-          lead_id: quote.lead_id,
-          quotation_id: quote.id,
-          sales_id: quote.created_by,
-          created_by: user.id,
-          contract_no: `NEW-${dateStr}-${seq}`,
-          contract_date: contractDate,
-          contract_amount: quote.total_amount,
-          currency: quote.currency || "AED",
-          party_a_name: quote.leads?.customer_name || "Unknown",
-          party_b_name: "NewMe Smart Home FZCO",
-          status: "draft",
-          first_payment_due_date: body.first_payment_due_date || null,
-        })
-        .select("id, contract_no")
-        .single();
-
-      if (!error) {
-        contract = data;
-        contractErr = null;
-        break;
-      }
-      contractErr = error;
-      // 23505 = unique_violation: another contract took this number. Any other
-      // error is not going to be fixed by trying a different number.
-      if (error.code !== "23505") break;
-    }
-
-    if (!contract) {
-      logger.error(
-        {
-          err: contractErr,
-          request_id,
-          operation: "quotation_convert",
-          user_id: user.id,
-          quotation_id: quotationId,
-        },
-        "[Quotation Convert] Contract insert failed",
-      );
-      await releaseClaim();
-      return NextResponse.json(
-        { error: "Failed to create contract" },
-        { status: 500 }
-      );
-    }
-
-    // Undo the contract on a fatal failure below. The five writes that follow are
-    // five separate transactions, so there is no rollback to fall back on: the
-    // previous implementation discarded every one of their errors, awaiting them
-    // without inspecting the result, and returned `success: true` regardless. A
-    // failed installment insert produced a signed-value contract with no payment
-    // schedule; a failed contract_approvals insert produced a contract that could
-    // never be approved; a failed quotations update left contract_id NULL, so the
-    // duplicate-conversion guard never armed and the next POST created a second
-    // contract. All three reported success.
-    //
-    // Compensation runs on service_role because `authenticated` has no DELETE
-    // policy on contracts — this removes a row created moments ago by this same
-    // request, and nothing else.
-    const deleteContract = async () => {
-      const { error } = await supabaseAdmin.from("contracts").delete().eq("id", contract.id);
-      if (error) {
-        logger.error(
-          { err: error, request_id, operation: "quotation_convert", contract_id: contract.id },
-          "[Quotation Convert] CRITICAL: contract compensation delete failed; orphan contract left behind",
-        );
-      }
-    };
-    const abort = async (stage: string, err: unknown) => {
-      logger.error(
-        {
-          err,
-          request_id,
-          operation: "quotation_convert",
-          stage,
-          user_id: user.id,
-          quotation_id: quotationId,
-          contract_id: contract.id,
-        },
-        `[Quotation Convert] ${stage} failed; rolling back conversion`,
-      );
-      await deleteContract();
-      await releaseClaim();
-      return NextResponse.json({ error: "Failed to convert quotation" }, { status: 500 });
-    };
-
-    // Installment plans, if provided. A contract whose payment schedule silently
-    // failed to materialise is a money defect, so this is fatal.
-    if (installments.length > 0) {
-      const rows = installments.map((inst: { seq: number; amount: number; due_date: string; description?: string }) => ({
-        contract_id: contract.id,
-        seq: inst.seq,
-        amount: inst.amount,
-        due_date: inst.due_date,
-        description: inst.description || "",
-        status: "pending",
-      }));
-      const { error: instErr } = await supabase
-        .from("installment_plans")
-        .insert(rows);
-      if (instErr) return abort("installment_plans_insert", instErr);
-    }
-
-    // First approval record. Without it the contract is unapprovable, so fatal.
-    const { error: approvalErr } = await supabase.from("contract_approvals").insert({
-      contract_id: contract.id,
-      step: "admin_review",
-      status: "pending",
-      notes: { source: "quotation", quotation_id: quote.id, quote_no: quote.quote_no },
+    const { data: converted, error: rpcErr } = await supabase.rpc("convert_quotation_to_contract", {
+      p_quotation_id: quotationId,
+      p_payload: {
+        // Checked against the token subject by money_actor(); a mismatch is 42501.
+        actor_id: user.id,
+        first_payment_due_date: body.first_payment_due_date || null,
+        installments: schedule,
+      } as Json,
     });
-    if (approvalErr) return abort("contract_approvals_insert", approvalErr);
 
-    // Link the contract onto the claimed quotation. This is what makes the
-    // conversion idempotent for every later request, so it is fatal too.
-    const { error: linkErr } = await supabase
-      .from("quotations")
-      .update({
-        contract_id: contract.id,
-        status: "contract_created",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", quotationId);
-    if (linkErr) return abort("quotation_link", linkErr);
+    if (rpcErr) {
+      const failure = moneyRpcFailure(rpcErr, "Failed to convert quotation");
+      const log = failure.status >= 500 ? logger.error : logger.warn;
+      log(
+        {
+          err: rpcErr,
+          request_id,
+          operation: "quotation_convert",
+          user_id: user.id,
+          quotation_id: quotationId,
+          error_code: rpcErr.code,
+          http_status: failure.status,
+        },
+        "[Quotation Convert] convert_quotation_to_contract refused the request",
+      );
+      return NextResponse.json(failure.body, { status: failure.status });
+    }
 
-    // Past this point the conversion is committed and must not be undone: the
-    // contract exists and the quotation points at it. The remaining writes are
-    // derived bookkeeping — a failure is reported to the caller rather than
-    // swallowed, and rather than destroying a valid contract.
+    const conversion = converted as {
+      contract_id: string;
+      contract_no: string;
+      quotation_status: string;
+      installments_count: number;
+    };
+
+    // ── Committed. Everything below is derived bookkeeping ──────────────
     const warnings: string[] = [];
     const noteFailure = (stage: string, err: unknown) => {
       warnings.push(stage);
       logger.error(
-        { err, request_id, operation: "quotation_convert", stage, contract_id: contract.id },
+        { err, request_id, operation: "quotation_convert", stage, contract_id: conversion.contract_id },
         `[Quotation Convert] ${stage} failed after the conversion committed`,
       );
     };
 
-    // Update lead final_status to won
-    if (quote.lead_id) {
-      const { error } = await supabase
-        .from("leads")
-        .update({ final_status: "won", updated_at: new Date().toISOString() })
-        .eq("id", quote.lead_id);
-      if (error) noteFailure("lead_final_status", error);
+    const { data: quote, error: quoteReadErr } = await supabase
+      .from("quotations")
+      .select("id, quote_no, lead_id, created_by, total_amount, leads(customer_id, customer_name, property_type, property_size_sqm, location)")
+      .eq("id", quotationId)
+      .single();
+
+    if (quoteReadErr || !quote) {
+      // The conversion happened; only the follow-up rows are affected.
+      noteFailure("quotation_read_back", quoteReadErr);
+    } else {
+      const lead = quote.leads as {
+        customer_id?: string | null;
+        customer_name?: string | null;
+        property_type?: string | null;
+        property_size_sqm?: number | null;
+        location?: string | null;
+      } | null;
+
+      // on_lead_won() creates a project only for a lead that has no contract yet,
+      // and the conversion above created one in the same transaction that marked
+      // the lead won — so the trigger returned early and this is the project row.
+      const projectName = `${lead?.customer_name || "Client"} - ${lead?.property_type || "Smart Home"}`;
+      const { error: projectErr } = await supabase.from("projects").insert({
+        lead_id: quote.lead_id,
+        contract_id: conversion.contract_id,
+        sales_id: quote.created_by,
+        customer_id: lead?.customer_id || null,
+        name: projectName,
+        property_type: lead?.property_type || null,
+        property_size: lead?.property_size_sqm || null,
+        location: lead?.location || null,
+        phase: "design",
+        status: "active",
+        contract_amount: quote.total_amount,
+      });
+      if (projectErr) noteFailure("project_insert", projectErr);
+
+      const { error: activityErr } = await supabase.from("activities").insert({
+        lead_id: quote.lead_id,
+        type: "note",
+        content: `合同 ${conversion.contract_no} 已从报价 ${quote.quote_no} 自动创建，待审批`,
+        ai_generated: true,
+        user_id: user.id,
+      });
+      if (activityErr) noteFailure("activity_insert", activityErr);
     }
-
-    // Create project for won lead
-    const lead = quote.leads as any;
-    const projectName = `${lead?.customer_name || "Client"} - ${lead?.property_type || "Smart Home"}`;
-    const { error: projectErr } = await supabase.from("projects").insert({
-      lead_id: quote.lead_id,
-      contract_id: contract.id,
-      sales_id: quote.created_by,
-      customer_id: lead?.customer_id || null,
-      name: projectName,
-      property_type: lead?.property_type || null,
-      property_size: lead?.property_size_sqm || null,
-      location: lead?.location || null,
-      phase: "design",
-      status: "active",
-      contract_amount: quote.total_amount,
-    });
-    if (projectErr) noteFailure("project_insert", projectErr);
-
-    // Log activity
-    const { error: activityErr } = await supabase.from("activities").insert({
-      lead_id: quote.lead_id,
-      type: "note",
-      content: `合同 ${contract.contract_no} 已从报价 ${quote.quote_no} 自动创建，待审批`,
-      ai_generated: true,
-      user_id: user.id,
-    });
-    if (activityErr) noteFailure("activity_insert", activityErr);
 
     // Notify admins
     try {
@@ -357,9 +173,9 @@ export async function POST(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             type: "contract_pending_approval",
-            contract_id: contract.id,
-            lead_id: quote.lead_id,
-            amount: quote.total_amount,
+            contract_id: conversion.contract_id,
+            lead_id: quote?.lead_id ?? null,
+            amount: quote?.total_amount ?? null,
           }),
         }
       );
@@ -374,9 +190,10 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      contract_id: contract.id,
-      contract_no: contract.contract_no,
-      quotation_status: "contract_created",
+      contract_id: conversion.contract_id,
+      contract_no: conversion.contract_no,
+      quotation_status: conversion.quotation_status,
+      installments_count: conversion.installments_count,
       ...(warnings.length > 0 ? { warnings } : {}),
     });
   } catch (err: unknown) {

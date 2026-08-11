@@ -106,10 +106,16 @@ validate_release_claims() {
 
   # Wrong-event claims: a pull_request run tests the merge commit, not this SHA,
   # and a workflow_run/schedule run proves nothing about it either.
-  case "$event" in
-    push|workflow_dispatch) ;;
-    *) echo "CI_EVENT must be 'push' or 'workflow_dispatch' (got: $event)" >&2; return 1 ;;
-  esac
+  #
+  # `push` was accepted here until this revision, and that made the two layers
+  # disagree in the direction that mattered. infra/release/required-jobs.json
+  # requires the "Release-final taskboard completion" job, which .github/workflows/ci.yml
+  # gates on `github.event_name == 'workflow_dispatch' && inputs.release_final`,
+  # so a push run cannot carry the required set at all. Accepting `push` here
+  # meant this layer would archive as complete a claim the wrapper can no longer
+  # produce.
+  [ "$event" = workflow_dispatch ] ||
+    { echo "CI_EVENT must be 'workflow_dispatch' (got: $event)" >&2; return 1; }
 
   # Values are the ones infra/systemd/newme-deploy.sh accepts on its command
   # line, so the two layers cannot disagree about what a valid claim looks like.
@@ -539,8 +545,11 @@ evidence = {
         "conclusion": os.environ["CI_CONCLUSION"],
         "event": os.environ["CI_EVENT"],
         # validate_release_claims() has already proved: run_url names run_id,
-        # head_sha == the deployed SHA, conclusion == success, event is push or
+        # head_sha == the deployed SHA, conclusion == success, event is
         # workflow_dispatch, and migration status/ids agree with each other.
+        # infra/systemd/newme-deploy.sh additionally proved, against the GitHub
+        # API, that every job in infra/release/required-jobs.json concluded
+        # success for this run.
         "claims_validated": True,
     },
     "migration": {

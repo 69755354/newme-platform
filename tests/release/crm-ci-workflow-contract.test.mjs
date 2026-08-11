@@ -24,12 +24,18 @@ test("PR and non-main cancelled runs do not enter the main-push notification pat
   assert.equal(shouldNotify({ eventName: "workflow_dispatch", upstreamEvent: undefined, branch: undefined, conclusion: undefined }), false);
 });
 
-test("main success stays quiet; main failure or cancellation has one non-fatal notification path", () => {
+test("main success stays quiet; main failure or cancellation notifies, and a failed delivery is fatal", () => {
   assert.equal(shouldNotify({ eventName: "workflow_run", upstreamEvent: "push", branch: "main", conclusion: "success" }), false);
   assert.equal((workflow.match(/- name: Notify Telegram/g) || []).length, 1);
   assert.match(workflow, /conclusion == 'failure'/);
   assert.match(workflow, /conclusion == 'cancelled'/);
-  assert.match(workflow, /continue-on-error: true/);
+  // The reviewed revision had continue-on-error: true here and this test
+  // asserted it, which made the step's own `exit 1` unreachable as a job result.
+  // An alerting path that cannot deliver is an outage, not a warning, so a
+  // non-2xx Telegram response now fails the job.
+  // Anchored to the YAML key: the comment above records the removed setting and
+  // must not be what satisfies the assertion.
+  assert.doesNotMatch(workflow, /^\s*continue-on-error\s*:/m);
   assert.match(workflow, /curl --fail-with-body --silent --show-error/);
   const notifyStep = workflow.slice(workflow.indexOf("      - name: Notify Telegram"));
   const notifyRun = notifyStep.slice(notifyStep.indexOf("        run: |"));

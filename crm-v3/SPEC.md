@@ -864,3 +864,39 @@ Changed paths: scripts/deploy.sh, scripts/deploy-immutable.sh, scripts/install-s
 Path consistency: systemd, next.config.ts, installer, deploy preflight and release tests all require /opt/newme/current to be an atomic symlink into /opt/newme/releases/<sha>; the historical /home/ubuntu/newme-platform mutable root is not a release target.
 
 Unified main integration coverage: infra/observability/hermes-alert-notifier-v1.sh, infra/observability/hermes-alert-state-v1.sh, infra/observability/newme-service-health.py, infra/systemd/newme-forensic.sh, infra/systemd/newme-readiness.sh, infra/systemd/newme-service-control.sh, scripts/install-systemd-assets.sh, scripts/rollback-systemd-assets.sh, scripts/systemd-recovery-drill.sh, sentry.client.config.ts, sentry.edge.config.ts, sentry.server.config.ts, src/app/api/auth/session/route.ts, src/lib/supabase-cookie-names.ts.
+
+
+## 登录延迟修复与服务端 password grant — 2026-08-11
+
+本节记录 `scripts/check-spec.sh` 报告的 9 项未覆盖路径的实现事实与边界。它不代表已部署：本轮改动截至写时仅有本地门禁证据（typecheck clean、`npm test` 376/373 pass/0 fail/3 skipped、`check:security` 107 findings 无超基线、`check:workflows` 3/3、`check:release` smoke 14/14、build exit 0），生产登录耗时尚未实测。
+
+### 行为变更（更正 SAM-44 对 `src/app/login/page.tsx` 的描述）
+
+SAM-44 记录的登录实现为“浏览器请求 Supabase token 后再调 `/api/auth/me`”。该描述已过时。旧实现由**浏览器直连 GoTrue** 做 password grant，因此登录会离开 Cloudflare 边缘、向 Auth 区付一次冷 TLS 握手，随后再串行 `/api/auth/session` 与 `/api/auth/me` —— 共 3 次串行往返才渲染 dashboard。已测分层：Node 1.8ms / nginx+TLS 6ms / 过 Cloudflare 60-65ms / 生产→Supabase 45-48ms。
+
+新实现把 grant 与 active-profile 门禁收到服务端，浏览器只发 1 次同源请求（走已建立的边缘连接），服务器侧走热连接完成 grant + profile 读取。
+
+安全边界是加强而非交换：浏览器不再接触裸 access/refresh token；未通过 active 门禁的 profile 根本不会拿到任何 cookie，且其刚签发的 token 在响应返回前已向上游 `/auth/v1/logout` 注销；上游失败文本（可能回引提交的密码）既不转发也不入日志，所有被拒凭据返回同一泛化错误。
+
+把鉴权收到服务端会把全部用户汇入单一 origin IP，从而把 GoTrue 的 per-IP 爆破保护塌缩成一个桶。因此该端点必须自带替代边界（见 `src/lib/rate-limit.ts`）。
+
+### 路径覆盖索引
+
+| 路径 | 实际职责 | 权限、安全与部署/回滚边界 |
+| --- | --- | --- |
+| `src/app/api/auth/login/route.ts` | 服务端 password grant 端点（本轮新增）。顺序固定为：content-type → origin → 配置 → body 解析 → 限流 → GoTrue `grant_type=password` → 用**刚签发的用户 token** 经 RLS 读 profiles → active 门禁 → 写会话 cookie。上游 5xx 返 503 `auth_unavailable`，其他非 2xx 一律返 401 `invalid_credentials`。 | 属 `PUBLIC_API_PATHS`（pre-authentication 端点无法要求已有会话），因此自带 origin 校验与限流。profile 门禁使用用户自身 token 而非任何特权 key，鉴权边界仍是 profiles 自查 RLS。**active 门禁必须早于 cookie 签发**（由 `tests/security/session-revocation.test.mjs` 断言顺序）；被拒请求零 `Set-Cookie`。认证回归须阻断发布并回滚到上一已验证 release。 |
+| `src/lib/session-cookies.ts` | 会话 cookie 契约的唯一来源（本轮新增）：`sb-<ref>-auth-token` 为脚本可读（`httpOnly:false`，仅含 access_token 与 expires_at），`sb-<ref>-refresh-token` 为 `httpOnly:true`；两者均 `sameSite:"strict"` + `secure:true`。同时提供 `expectedSessionOrigin`（生产 host 不因 `x-forwarded-host` 被削弱）与 `normalizeExpiresIn`。 | 两个端点各自手写 `Set-Cookie` 是最终会漏掉 `secure`、或漏掉 refresh 半边 `httpOnly` 的成因，故 login 与 session 两个 route 均只能经 `applySessionCookies(`，且均不得直接调 `cookies.set(`（`tests/security/sam15-boundaries.test.mjs` 循环断言）。该模块用 `import type { NextResponse }`，因此无运行时 `next/server` 依赖。 |
+| `src/lib/rate-limit.ts` | 进程内固定窗口限流器（本轮新增）。`clientIdentifier` 依次读 `cf-connecting-ip` → `x-forwarded-for` 首段 → `x-real-ip`。login 端点应用每 IP 20/5min 与每账号 8/15min（账号键大小写归一）。超限返 429 带 `Retry-After`，且**不转发上游**。 | 这是服务端鉴权后替代 GoTrue per-IP 保护的必要边界，不是可选优化。**已知作用域限制：计数器在单 Node 进程内存中**，`MAX_TRACKED_KEYS=10000` 为内存兜底；多进程/多实例部署必须先改为共享存储，否则实际上限被进程数放大。 |
+| `src/lib/session-identity.ts` | 客户端会话身份读取（本轮新增），故意拆成两个入口：`readSessionIdentity()` 始终发起真实 `/api/auth/me`（仅做 in-flight 去重），`peekSessionIdentity()` 允许复用 60s 内缓存，仅供分析用途；`forgetSessionIdentity()` 在登出时清除。 | **鉴权路径永不读缓存**：`readSessionIdentity` 函数体不得出现 `lastActive`，`useAuthRedirect.ts` 只能用 `readSessionIdentity()` 且不得用 `peekSessionIdentity`（`tests/security/session-revocation.test.mjs` 断言）。缓存身份用于路由准入会让已停用账号在缓存窗口内继续通过。 |
+| `src/components/PostHogProviderInner.tsx` | 分析身份识别改为 `await peekSessionIdentity()`，不再自行 `fetch("/api/auth/me")`，消除挂载时与 `useAuthRedirect` 的重复并发往返（2 次 → 1 次）。 | 该组件不得直接 `fetch(`（断言）；它只消费分析用身份，不构成任何授权判断。 |
+| `e2e/production-anonymous.spec.ts` | 匿名生产发布边界 E2E：断言 `/api/health` 200 且 `status:"ok"`、`/` 307 → `/dashboard`、未认证 `/api/auth/me` 的拒绝行为，且页面无浏览器错误。 | 仅覆盖匿名可达面，不使用任何登录凭据；通过不等于登录态 UAT 通过（SAM-43 门禁不可由此替代）。 |
+| `playwright.production-smoke.config.ts` | 匿名生产 smoke 的 Playwright 配置：**强制 base URL 为 loopback HTTP 且端口为显式非特权端口**，否则构造期直接 throw；并绑定 `E2E_EXPECTED_SHA`。 | 该 fail-closed 约束是防止把生产域名当作 smoke 目标的边界，不得放宽为任意 origin。 |
+| `scripts/check-schema-refs.py` | 当 `.from("table")` 的字面表引用不在 `scripts/schema-tables.txt` 评审清单中时失败（含多行调用）。 | 属 `check:release` 链的一环；它防止引用未经验证的表名（对应 Freeze Rule 6），失败必须阻断发布而非加白。 |
+| `src/components/MetaPixel.tsx` | Meta Pixel 客户端加载器，按 `NO_PIXEL_PATHS` 排除全部登录后与内部路径（含 `/login`、`/change-password` 及各业务页）。 | 该排除列表是不向第三方像素泄露内部路径与登录态浏览行为的边界；新增内部路由时必须同步加入排除列表。 |
+
+### 验证边界
+
+- 本节路径清单来自本地 `scripts/check-spec.sh` 输出（9 项未覆盖，hard limit 5）。其中 4 项（`e2e/production-anonymous.spec.ts`、`playwright.production-smoke.config.ts`、`scripts/check-schema-refs.py`、`src/components/MetaPixel.tsx`）为本轮之前既存的文档欠账，一并补齐。
+- 本轮同时更正了 4 个把**旧行为**钉成必要条件的安全门禁：其一钉住了 F-07 漏洞本身，其三钉住了 3 次往返的客户端舞步。断言均迁至属性新位置，无一被削弱，其三被加强（解析式精确 `PUBLIC_API_PATHS` allowlist、gate-before-cookie 顺序、鉴权不读缓存）。
+- `supabase/migrations/20260811100*.sql` 共 5 个迁移已写入但**未应用**（F-02/F-06/F-08/F-09/F-10）。阻塞原因为 Supabase MCP 连接只读。未应用前不得把相关发现写成已修复。
+- 生产登录耗时未实测，TASKBOARD 相关行保持 `REVIEW`。没有部署后的实测证据，不得关闭本轮性能事项。

@@ -15,7 +15,7 @@
 -- notices against ASSERT_TOTAL below, so an assertion file that stops early
 -- fails the job instead of passing quietly.
 --
--- ASSERT_TOTAL: 221
+-- ASSERT_TOTAL: 239
 -- ============================================================================
 
 create temp table assert_log (name text, passed boolean not null);
@@ -37,7 +37,7 @@ create temp table assert_log (name text, passed boolean not null);
 -- of raising is what makes one marker per assertion possible.
 --
 -- Both branches write to assert_log, so the self-check at the foot of this file
--- can prove from inside the database that all 221 assertions were reached —
+-- can prove from inside the database that all 239 assertions were reached —
 -- a claim no amount of log scraping can make.
 create or replace function pg_temp.assert(condition boolean, assertion_name text)
 returns void
@@ -2781,12 +2781,298 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- K7 · the two role holes: no role at all, and 'operator' on the money surface
+--      (P1-1, P1-9)
+-- ---------------------------------------------------------------------------
+-- P1-1: profiles.role is nullable, and money_actor() rejected a role with
+-- `not (v_role = any (p_allowed_roles))`. For a NULL role that expression is NULL,
+-- not true, so the `if not (...) then raise` never fired and a profile with no role
+-- was accepted for every money operation. The fix is its own refusal, before the
+-- membership test can be reached with a NULL left-hand side, and the review asked
+-- for it to be tested across every money RPC — so all eight are probed here, not a
+-- representative one.
+--
+-- P1-9: confirm_payment() and allocate_payment() allowed 'operator' while the
+-- routes, the server actions and the RBAC headers all said admin/boss/finance, and
+-- an operator session really did confirm and allocate through the RPC. The rule
+-- kept is the documented one; the routines were narrowed to it.
+--
+-- Every probe below states the boundary that refused it, not just the SQLSTATE:
+-- 'actor has no role and may not perform this operation' and 'role operator may
+-- not perform this operation' are distinct messages from distinct branches, and a
+-- generic 42501 (an RLS refusal, an ownership refusal, a missing grant) does not
+-- satisfy these assertions. Each probe runs inside a REPLAY_ROLLBACK envelope,
+-- because against the un-remediated floor several of these calls SUCCEED — that is
+-- the finding — and a control run must not carry their writes into later
+-- assertions.
+create or replace function pg_temp.refused_with(p_state text, p_msg text, p_needle text)
+returns boolean
+language sql
+as $$ select p_state = '42501' and p_msg like '%' || p_needle || '%' $$;
+
+-- The money row signature. Both blocks below take it after their setup and again
+-- after their refusals, so "nothing moved" is a comparison rather than a claim.
+-- Only columns the un-remediated floor also has are read: voided_at is new in this
+-- release, and reading it here would make the control run fail on a missing column
+-- instead of on the role hole it is supposed to expose.
+create or replace function pg_temp.money_row_signature()
+returns text
+language sql
+as $$
+  select format('contracts=%s payments=%s confirmed=%s allocations=%s approvals=%s plans=%s',
+    (select count(*) from public.contracts),
+    (select count(*) from public.payments),
+    (select count(*) from public.payments where confirmed),
+    (select count(*) from public.payment_allocations),
+    (select count(*) from public.contract_approvals),
+    (select count(*) from public.installment_plans))
+$$;
+
+select pg_temp.assert_eval($q$
+  (select is_active and role is null
+     from public.profiles where id = '0b0b0b0b-0b0b-0b0b-0b0b-0b0b0b0b0b0b')
+$q$, 'money-roleless-fixture-is-active-with-no-role');
+select pg_temp.assert_eval($q$
+  (select is_active and role = 'operator'
+     from public.profiles where id = '0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a')
+$q$, 'money-operator-fixture-is-active-with-the-operator-role');
+
+-- All eight money RPCs an authenticated session can call. What each probe claims is
+-- not "this request was otherwise valid" but "this request reached money_actor()
+-- and money_actor() is what turned it away", which is why every one of them matches
+-- the message and not just the sqlstate.
+--
+-- Two of the eight decide something before they decide the role: set_contract_status()
+-- and approve_contract() load the contract first and answer 'contract not found'
+-- (P0002) for an unknown id, and approve_contract() picks which role list applies
+-- from the contract's status — 'pending_admin' means admin|operator, 'pending_ceo'
+-- means boss, and anything else is refused as not awaiting approval before a role is
+-- ever considered. So these probes need a contract that really is awaiting admin
+-- review, and C1 is already 'approved' by section F. The setup below builds one
+-- through the permitted path — an admin creates it, an admin submits it — rather
+-- than writing contracts.status directly, which the transition trigger refuses.
+-- Whether the setup worked is its own assertion: a refusal that came from
+-- 'contract not found' carries a different sqlstate but would still be a refusal,
+-- and vacuity here would be invisible without saying so out loud.
+do $$
+declare
+  v_state    text[] := '{}';
+  v_msg      text[] := '{}';
+  v_setup    uuid   := null;
+  v_pending  boolean := false;
+  v_before   text   := null;
+  v_after    text   := null;
+  v_needle   text   := 'has no role and may not perform this operation';
+begin
+  begin
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    begin
+      v_setup := (public.create_contract(jsonb_build_object(
+        'lead_id',      '0c0c0c0c-0c0c-0c0c-0c0c-0c0c0c0c0c0c',
+        'amount',       100000,
+        'party_a_name', 'Replay party A')) ->> 'id')::uuid;
+      perform public.set_contract_status(v_setup, 'pending_admin', 'replay K7 setup');
+    exception when others then v_setup := null;
+    end;
+    reset role;
+    select status = 'pending_admin' into v_pending
+      from public.contracts where id = v_setup;
+    v_before := pg_temp.money_row_signature();
+
+    perform pg_temp.act_as('0b0b0b0b-0b0b-0b0b-0b0b-0b0b0b0b0b0b');
+    set local role authenticated;
+
+    begin
+      perform public.confirm_payment('d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1',
+                                     '0b0b0b0b-0b0b-0b0b-0b0b-0b0b0b0b0b0b');
+      v_state := v_state || '00000'; v_msg := v_msg || 'not refused at all';
+    exception when others then v_state := v_state || sqlstate; v_msg := v_msg || sqlerrm;
+    end;
+    begin
+      perform public.allocate_payment('d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2',
+        '[{"plan_id": "91111111-1111-1111-1111-111111111111", "amount": 10000}]'::jsonb,
+        '0b0b0b0b-0b0b-0b0b-0b0b-0b0b0b0b0b0b');
+      v_state := v_state || '00000'; v_msg := v_msg || 'not refused at all';
+    exception when others then v_state := v_state || sqlstate; v_msg := v_msg || sqlerrm;
+    end;
+    begin
+      perform public.void_payment('d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2', 'replay role probe');
+      v_state := v_state || '00000'; v_msg := v_msg || 'not refused at all';
+    exception when others then v_state := v_state || sqlstate; v_msg := v_msg || sqlerrm;
+    end;
+    begin
+      perform public.create_contract(jsonb_build_object(
+        'lead_id',      '0d0d0d0d-0d0d-0d0d-0d0d-0d0d0d0d0d0d',
+        'amount',       100000,
+        'party_a_name', 'Replay party A'));
+      v_state := v_state || '00000'; v_msg := v_msg || 'not refused at all';
+    exception when others then v_state := v_state || sqlstate; v_msg := v_msg || sqlerrm;
+    end;
+    begin
+      perform public.approve_contract(v_setup, '0b0b0b0b-0b0b-0b0b-0b0b-0b0b0b0b0b0b', 'approve');
+      v_state := v_state || '00000'; v_msg := v_msg || 'not refused at all';
+    exception when others then v_state := v_state || sqlstate; v_msg := v_msg || sqlerrm;
+    end;
+    begin
+      perform public.convert_quotation_to_contract('b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1', '{}'::jsonb);
+      v_state := v_state || '00000'; v_msg := v_msg || 'not refused at all';
+    exception when others then v_state := v_state || sqlstate; v_msg := v_msg || sqlerrm;
+    end;
+    begin
+      perform public.set_contract_status(v_setup, 'pending_admin', 'replay role probe');
+      v_state := v_state || '00000'; v_msg := v_msg || 'not refused at all';
+    exception when others then v_state := v_state || sqlstate; v_msg := v_msg || sqlerrm;
+    end;
+    begin
+      perform public.revoke_contract(v_setup, 'replay role probe');
+      v_state := v_state || '00000'; v_msg := v_msg || 'not refused at all';
+    exception when others then v_state := v_state || sqlstate; v_msg := v_msg || sqlerrm;
+    end;
+
+    -- After reset role on purpose: the read must not run as `authenticated`, or an
+    -- RLS policy could hide a row a refused call actually wrote and turn the
+    -- comparison into two equal, equally blind counts.
+    reset role;
+    v_after := pg_temp.money_row_signature();
+    raise exception 'REPLAY_ROLLBACK';
+  exception
+    when others then
+      if sqlerrm <> 'REPLAY_ROLLBACK' then
+        reset role;
+        perform pg_temp.absorb(sqlstate, sqlerrm);
+      end if;
+  end;
+
+  perform pg_temp.assert(v_pending,
+                         'money-roleless-probe-setup-produced-a-contract-awaiting-approval');
+  perform pg_temp.assert(pg_temp.refused_with(v_state[1], v_msg[1], v_needle),
+                         'money-roleless-refused-by-confirm-payment');
+  perform pg_temp.assert(pg_temp.refused_with(v_state[2], v_msg[2], v_needle),
+                         'money-roleless-refused-by-allocate-payment');
+  perform pg_temp.assert(pg_temp.refused_with(v_state[3], v_msg[3], v_needle),
+                         'money-roleless-refused-by-void-payment');
+  perform pg_temp.assert(pg_temp.refused_with(v_state[4], v_msg[4], v_needle),
+                         'money-roleless-refused-by-create-contract');
+  perform pg_temp.assert(pg_temp.refused_with(v_state[5], v_msg[5], v_needle),
+                         'money-roleless-refused-by-approve-contract');
+  perform pg_temp.assert(pg_temp.refused_with(v_state[6], v_msg[6], v_needle),
+                         'money-roleless-refused-by-convert-quotation');
+  perform pg_temp.assert(pg_temp.refused_with(v_state[7], v_msg[7], v_needle),
+                         'money-roleless-refused-by-set-contract-status');
+  perform pg_temp.assert(pg_temp.refused_with(v_state[8], v_msg[8], v_needle),
+                         'money-roleless-refused-by-revoke-contract');
+  perform pg_temp.assert(v_before is not null and v_after = v_before,
+                         'money-roleless-refusals-changed-no-money-rows');
+end
+$$;
+
+-- The operator, on the surface the documented rule reserves for admin, boss and
+-- finance — and then on the surface the product rule really does give them.
+do $$
+declare
+  v_state   text[] := '{}';
+  v_msg     text[] := '{}';
+  v_setup   uuid   := null;
+  v_pending boolean := false;
+  v_before  text   := null;
+  v_after   text   := null;
+  v_approve text   := '00000';
+  v_moved   text   := null;
+  v_needle  text   := 'role operator may not perform this operation';
+begin
+  begin
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    begin
+      v_setup := (public.create_contract(jsonb_build_object(
+        'lead_id',      '0c0c0c0c-0c0c-0c0c-0c0c-0c0c0c0c0c0c',
+        'amount',       100000,
+        'party_a_name', 'Replay party A')) ->> 'id')::uuid;
+      perform public.set_contract_status(v_setup, 'pending_admin', 'replay K7 setup');
+    exception when others then v_setup := null;
+    end;
+    reset role;
+    select status = 'pending_admin' into v_pending
+      from public.contracts where id = v_setup;
+    v_before := pg_temp.money_row_signature();
+
+    perform pg_temp.act_as('0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a');
+    set local role authenticated;
+
+    begin
+      perform public.confirm_payment('d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1',
+                                     '0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a');
+      v_state := v_state || '00000'; v_msg := v_msg || 'not refused at all';
+    exception when others then v_state := v_state || sqlstate; v_msg := v_msg || sqlerrm;
+    end;
+    begin
+      perform public.allocate_payment('d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2',
+        '[{"plan_id": "91111111-1111-1111-1111-111111111111", "amount": 10000}]'::jsonb,
+        '0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a');
+      v_state := v_state || '00000'; v_msg := v_msg || 'not refused at all';
+    exception when others then v_state := v_state || sqlstate; v_msg := v_msg || sqlerrm;
+    end;
+    begin
+      perform public.void_payment('d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2', 'replay role probe');
+      v_state := v_state || '00000'; v_msg := v_msg || 'not refused at all';
+    exception when others then v_state := v_state || sqlstate; v_msg := v_msg || sqlerrm;
+    end;
+
+    reset role;
+    v_after := pg_temp.money_row_signature();
+
+    -- The positive control, and it has to come after the comparison because it is
+    -- the one call that is supposed to change something. The setup contract is
+    -- pending_admin, whose step is admin_review, and the product rule for that step
+    -- is admin OR operator. Without this, the three refusals above would prove
+    -- nothing about the settlement rule — they could just mean "an operator can do
+    -- nothing".
+    --
+    -- The resulting status is read, not just the absence of an error: the
+    -- pre-remediation approve_contract() returns success for a contract id that
+    -- matches no row, so "did not raise" is a verdict the floor can satisfy while
+    -- approving nothing.
+    perform pg_temp.act_as('0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a');
+    set local role authenticated;
+    begin
+      perform public.approve_contract(v_setup, '0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a', 'approve');
+    exception when others then v_approve := sqlstate || ' ' || sqlerrm;
+    end;
+
+    reset role;
+    select status into v_moved from public.contracts where id = v_setup;
+    raise exception 'REPLAY_ROLLBACK';
+  exception
+    when others then
+      if sqlerrm <> 'REPLAY_ROLLBACK' then
+        reset role;
+        perform pg_temp.absorb(sqlstate, sqlerrm);
+      end if;
+  end;
+
+  perform pg_temp.assert(v_pending,
+                         'money-operator-probe-setup-produced-a-contract-awaiting-approval');
+  perform pg_temp.assert(pg_temp.refused_with(v_state[1], v_msg[1], v_needle),
+                         'money-operator-refused-by-confirm-payment');
+  perform pg_temp.assert(pg_temp.refused_with(v_state[2], v_msg[2], v_needle),
+                         'money-operator-refused-by-allocate-payment');
+  perform pg_temp.assert(pg_temp.refused_with(v_state[3], v_msg[3], v_needle),
+                         'money-operator-refused-by-void-payment');
+  perform pg_temp.assert(v_before is not null and v_after = v_before,
+                         'money-operator-refusals-changed-no-money-rows');
+  perform pg_temp.assert(v_approve = '00000' and v_moved = 'pending_ceo',
+                         'money-operator-still-approves-where-the-product-rule-allows-it');
+end
+$$;
+
 -- ============================================================================
 -- Self-check: every assertion above ran.
 -- ============================================================================
 -- In MODE=branch "ran" and "passed" are the same number, because a failure would
 -- already have raised. In MODE=control they are not, and the distinction is the
--- whole point: the ledger below is the in-database proof that all 221 assertions
+-- whole point: the ledger below is the in-database proof that all 239 assertions
 -- were REACHED. A DO block that died on an unclassified SQL error takes its
 -- remaining assertions out of the ledger, so the count comes up short and the
 -- control run fails here rather than in a log-scraping heuristic. Reported
@@ -2801,13 +3087,13 @@ begin
   select count(*), count(*) filter (where assert_log.passed), count(*) filter (where not assert_log.passed)
     into total, passed, failed
     from assert_log;
-  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=221', total, passed, failed;
-  if total <> 221 then
-    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 221', total
+  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=239', total, passed, failed;
+  if total <> 239 then
+    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 239', total
       using errcode = '22000';
   end if;
-  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 221 then
-    raise exception 'assertion file passed % of 221 assertions', passed
+  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 239 then
+    raise exception 'assertion file passed % of 239 assertions', passed
       using errcode = '22000';
   end if;
   if exists (select 1 from assert_log group by name having count(*) > 1) then

@@ -98,6 +98,34 @@ on conflict (id) do update
    set role = excluded.role, is_active = excluded.is_active, full_name = excluded.full_name;
 
 -- ---------------------------------------------------------------------------
+-- Two more identities, one for each role hole round 3 found.
+--
+-- 0a0a is an operator. 'operator' is a real value of profiles_role_check, the
+-- product rule allows it on the approval surface, and the documented rule does
+-- NOT allow it on the settlement surface — so proving P1-9 needs an identity that
+-- is refused by confirm/allocate/void and still accepted by approve_contract,
+-- otherwise "refused" could just mean "operator can do nothing".
+--
+-- 0b0b has no role at all. profiles.role is nullable and a CHECK constraint is
+-- satisfied by NULL, so this is a row production can already hold; and because
+-- `not (NULL = any (array[...]))` is NULL rather than true, money_actor's role
+-- test did not fire for it (P1-1). is_active is true on purpose: a refusal must be
+-- attributable to the missing role and not to the account being switched off.
+-- ---------------------------------------------------------------------------
+insert into auth.users (id, email, email_confirmed_at, created_at)
+values
+  ('0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a', 'replay-operator@example.invalid', now(), now()),
+  ('0b0b0b0b-0b0b-0b0b-0b0b-0b0b0b0b0b0b', 'replay-roleless@example.invalid', now(), now())
+on conflict (id) do nothing;
+
+insert into public.profiles (id, email, role, is_active, full_name)
+values
+  ('0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a', 'replay-operator@example.invalid', 'operator', true, 'Replay operator'),
+  ('0b0b0b0b-0b0b-0b0b-0b0b-0b0b0b0b0b0b', 'replay-roleless@example.invalid', null,       true, 'Replay roleless')
+on conflict (id) do update
+   set role = excluded.role, is_active = excluded.is_active, full_name = excluded.full_name;
+
+-- ---------------------------------------------------------------------------
 -- One lead per contract, because idx_contracts_one_active_per_lead permits only
 -- one non-terminal contract per lead — the same index create_contract's
 -- duplicate pre-check mirrors.
@@ -111,7 +139,14 @@ values
   ('55555555-5555-5555-5555-555555555555', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C3'),
   ('66666666-6666-6666-6666-666666666666', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'new', 'Replay lead Q1'),
   ('77777777-7777-7777-7777-777777777777', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C4'),
-  ('88888888-8888-8888-8888-888888888888', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'new', 'Replay lead Q2')
+  ('88888888-8888-8888-8888-888888888888', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'new', 'Replay lead Q2'),
+  -- Two leads reserved for the role-hole probes, and reserved is the point: those
+  -- probes have to create a contract through create_contract(), which refuses a
+  -- lead that already carries a non-terminal one. Every other lead above has been
+  -- used by an earlier section by then, so a probe that borrowed one would fail on
+  -- 23505 and say nothing about roles.
+  ('0c0c0c0c-0c0c-0c0c-0c0c-0c0c0c0c0c0c', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'won', 'Replay lead K7 setup'),
+  ('0d0d0d0d-0d0d-0d0d-0d0d-0d0d0d0d0d0d', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'won', 'Replay lead K7 probe')
 on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------------------

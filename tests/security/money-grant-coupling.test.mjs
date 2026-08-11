@@ -145,6 +145,93 @@ test("every money table with a caller-scoped write has a replay assertion keepin
   }
 });
 
+/**
+ * The role list each money routine is actually installed with.
+ *
+ * Migrations are read in filename order and the LAST definition of the routine
+ * wins, because that is what applying them in order leaves in the database — the
+ * round-3 migration replaces bodies the round-2 migration created, and reading the
+ * first match would assert against a function no longer installed.
+ */
+async function installedRoleLists(routine) {
+  const dir = path.join(ROOT, "supabase/migrations");
+  const files = (await readdir(dir)).filter((f) => f.endsWith(".sql")).sort();
+  let roles = null;
+  let source = null;
+  for (const file of files) {
+    const sql = await readFile(path.join(dir, file), "utf8");
+    const definition = new RegExp(
+      `create or replace function public\\.${routine}\\s*\\(([\\s\\S]*?)\\n\\$\\$;`,
+      "g",
+    );
+    for (const match of sql.matchAll(definition)) {
+      const actor = /money_actor\(\s*[^,]+,\s*array\[([^\]]*)\]/.exec(match[1]);
+      if (!actor) continue;
+      roles = actor[1]
+        .split(",")
+        .map((r) => r.trim().replace(/^'|'$/g, ""))
+        .filter(Boolean);
+      source = `${file}`;
+    }
+  }
+  return { roles, source };
+}
+
+/**
+ * P1-9. The settlement rule was written down in four places that disagreed: the
+ * route handlers and the RBAC header said admin/boss/finance, this page offered the
+ * Confirm and Allocate buttons to `operator` as well, and confirm_payment() and
+ * allocate_payment() accepted 'operator' — so an operator who was shown a button
+ * that "did nothing" could still settle money by calling the RPC directly.
+ *
+ * The database is now the authority and this test is the coupling: the page's
+ * constant has to equal the routines' own lists, so narrowing one without the other
+ * is a red test rather than a silent re-divergence. What the database refuses is
+ * proved in supabase/replay/10_assert_release_contracts.sql (the
+ * money-operator-refused-by-* assertions); what a JS file cannot check there is
+ * whether the UI still agrees.
+ */
+test("the settlement roles in the payments UI equal the roles the settlement routines accept", async () => {
+  const page = await readFile(path.join(ROOT, "src/app/(dashboard)/payments/page.tsx"), "utf8");
+
+  const declared = /const SETTLEMENT_ROLES = \[([^\]]*)\]/.exec(page);
+  assert.ok(declared, "src/app/(dashboard)/payments/page.tsx must declare SETTLEMENT_ROLES");
+  const uiRoles = declared[1]
+    .split(",")
+    .map((r) => r.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean);
+
+  assert.ok(!uiRoles.includes("operator"), "the settlement surface is not an operator surface");
+
+  for (const routine of ["confirm_payment", "allocate_payment", "void_payment"]) {
+    const { roles, source } = await installedRoleLists(routine);
+    assert.ok(roles, `no installed definition of ${routine} passes a role list to money_actor()`);
+    assert.deepEqual(
+      [...roles].sort(),
+      [...uiRoles].sort(),
+      `${routine} (last defined in ${source}) accepts ${roles.join("/")} but the payments page offers the buttons to ${uiRoles.join("/")}`,
+    );
+  }
+
+  // The constant proves nothing if the buttons are still gated on the recording
+  // rule. `isPrivileged` stays — it is the correct rule for recording a payment and
+  // for seeing every payment — so the check is that the two settlement actions moved
+  // off it, not that it is gone. Each action is found by its handler and the guard is
+  // read from the JSX conditional immediately above it.
+  const lines = page.split(/\r?\n/);
+  for (const handler of ["handleConfirm(payment.id)", "openAllocateDialog(payment)"]) {
+    const at = lines.findIndex((line) => line.includes(handler));
+    assert.ok(at !== -1, `the payments page no longer calls ${handler}`);
+    const guard = lines.slice(Math.max(0, at - 6), at).join(" ");
+    assert.match(guard, /canSettle/, `${handler} is not gated on canSettle: ${guard.trim()}`);
+    assert.doesNotMatch(
+      guard,
+      /isPrivileged/,
+      `${handler} is still gated on the recording rule: ${guard.trim()}`,
+    );
+  }
+});
+
 test("the replay asserts anon cannot execute the money routines", async () => {
   const assertions = await readFile(
     new URL("supabase/replay/10_assert_release_contracts.sql", `file://${ROOT}/`),

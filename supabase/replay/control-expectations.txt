@@ -262,3 +262,30 @@ fail session-identity-without-a-profile-refused-by-a-definer-money-rpc
 fail session-identity-without-a-profile-refused-on-a-zero-row-statement
 fail session-boundary-verdict-is-no-session-without-claims
 fail session-assert-refuses-a-request-with-no-identity
+
+# K7 · the two role holes (P1-1 NULL role, P1-9 operator on the money surface).
+# The two fixture rows and the two "nothing moved" comparisons hold against the
+# floor — the floor has no money_actor() to reach, so nothing moves there either;
+# they are corroboration, not the finding. Everything else fails against the floor,
+# including the two setup assertions: the floor's create_contract() has neither the
+# payload contract nor set_contract_status() to submit with, so it cannot even
+# produce a contract awaiting approval, and each refusal assertion additionally
+# requires the exact refusal message rather than a bare 42501.
+pass money-roleless-fixture-is-active-with-no-role
+pass money-operator-fixture-is-active-with-the-operator-role
+fail money-roleless-probe-setup-produced-a-contract-awaiting-approval
+fail money-roleless-refused-by-confirm-payment
+fail money-roleless-refused-by-allocate-payment
+fail money-roleless-refused-by-void-payment
+fail money-roleless-refused-by-create-contract
+fail money-roleless-refused-by-approve-contract
+fail money-roleless-refused-by-convert-quotation
+fail money-roleless-refused-by-set-contract-status
+fail money-roleless-refused-by-revoke-contract
+pass money-roleless-refusals-changed-no-money-rows
+fail money-operator-probe-setup-produced-a-contract-awaiting-approval
+fail money-operator-refused-by-confirm-payment
+fail money-operator-refused-by-allocate-payment
+fail money-operator-refused-by-void-payment
+pass money-operator-refusals-changed-no-money-rows
+fail money-operator-still-approves-where-the-product-rule-allows-it

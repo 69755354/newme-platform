@@ -148,6 +148,34 @@ export function checkGateRecord({
   return problems;
 }
 
+/**
+ * Who may have written the record, as a pure function of the two stat results, so
+ * a test can assert both answers without being root and without a deploy host.
+ * `enforce` is false only where the platform does not report POSIX ownership at
+ * all (Windows reports uid 0 and synthetic modes for every file, so believing it
+ * would turn this check into a rubber stamp there); the deploy host is Linux and
+ * runs this as root, where it is always enforced.
+ */
+export function checkOwnership({
+  recordStat,
+  stateRootStat,
+  enforce = typeof process.getuid === "function",
+}) {
+  const problems = [];
+  if (!enforce) return problems;
+  if (!recordStat || recordStat.uid !== 0 || recordStat.gid !== 0) {
+    problems.push("the gate record is not owned by root:root");
+  }
+  if (!recordStat || (recordStat.mode & 0o7777) !== 0o600) {
+    problems.push("the gate record mode must be 0600");
+  }
+  if (!stateRootStat) problems.push("the deploy-state directory is missing");
+  else if (stateRootStat.uid !== 0 || (stateRootStat.mode & 0o7777) !== 0o700) {
+    problems.push("the deploy-state directory is not root-owned 0700");
+  }
+  return problems;
+}
+
 function parseArgs(argv) {
   const options = {
     record: null,
@@ -214,18 +242,15 @@ function checkLocation(options) {
   }
   if (stat.isSymbolicLink()) problems.push("the gate record is a symlink");
   else if (!stat.isFile()) problems.push("the gate record is not a regular file");
-  if (process.getuid) {
-    if (stat.uid !== 0 || stat.gid !== 0) problems.push("the gate record is not owned by root:root");
-    if ((stat.mode & 0o7777) !== 0o600) problems.push("the gate record mode must be 0600");
+  let stateRootStat = null;
+  if (typeof process.getuid === "function") {
     try {
-      const dir = fs.lstatSync(stateRoot);
-      if (dir.uid !== 0 || (dir.mode & 0o7777) !== 0o700) {
-        problems.push("the deploy-state directory is not root-owned 0700");
-      }
+      stateRootStat = fs.lstatSync(stateRoot);
     } catch {
-      problems.push("the deploy-state directory is missing");
+      stateRootStat = null;
     }
   }
+  problems.push(...checkOwnership({ recordStat: stat, stateRootStat }));
   return { problems, stat };
 }
 

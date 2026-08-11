@@ -29,7 +29,12 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { REQUIRED_GATES, DEFAULT_MAX_AGE_SECONDS } from "../../scripts/verify-deploy-gate-record.mjs";
+import {
+  REQUIRED_GATES,
+  DEFAULT_MAX_AGE_SECONDS,
+  checkGateRecord,
+  checkOwnership,
+} from "../../scripts/verify-deploy-gate-record.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const GUARD = path.join(REPO, "scripts/verify-deploy-gate-record.mjs");
@@ -87,6 +92,39 @@ function runGuard({ record, root, expectSha = SHA, nowMs = NOW_MS, extra = [] })
   }
 }
 
+/**
+ * The guard also requires the record to be root:root 0600 inside a root-owned 0700
+ * directory. A test runner is not root, and a temporary directory is neither
+ * root-owned nor 0700, so the accept path cannot be produced end-to-end here. It is
+ * asserted in two halves instead, and neither half is allowed to be vacuous:
+ *
+ *   * the content half runs as a process and must produce exactly the host
+ *     permission problems and nothing else — that is the record itself being
+ *     accepted, stated as a refusal we can attribute line by line;
+ *   * the permission half is asserted directly on checkOwnership() with the stat
+ *     results a real deploy host produces.
+ *
+ * The end-to-end accept path was executed as root against a root-owned 0700
+ * /var/lib/newme/deploy-state in a throwaway Linux container; see the P1-10 row in
+ * TASKBOARD.md. It printed "4 required gate(s) accounted for".
+ */
+const PERMISSION_PROBLEMS = [
+  "the gate record is not owned by root:root",
+  "the gate record mode must be 0600",
+  "the deploy-state directory is not root-owned 0700",
+];
+/** True where the platform reports no POSIX ownership, or where we really are root. */
+const CAN_PRODUCE_ROOT_OWNED = typeof process.getuid !== "function" || process.getuid() === 0;
+
+/** The guard's own problem lines, without the trailing count line. */
+function problemLines(stderr) {
+  return stderr
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("deploy gate record: "))
+    .map((line) => line.slice("deploy gate record: ".length))
+    .filter((line) => !/^refusing to install the control plane: /.test(line));
+}
+
 // ---------------------------------------------------------------------------
 // 1 · Behaviour of the precondition
 // ---------------------------------------------------------------------------
@@ -95,8 +133,52 @@ test("a record written after every gate passed, for this exact release, is accep
   const root = stateRoot();
   const record = writeRecord(root, validLines());
   const result = runGuard({ record, root });
-  assert.equal(result.code, 0, result.stderr);
-  assert.match(result.stdout, new RegExp(`${REQUIRED_GATES.length} required gate\\(s\\) accounted for`));
+  if (CAN_PRODUCE_ROOT_OWNED) {
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, new RegExp(`${REQUIRED_GATES.length} required gate\\(s\\) accounted for`));
+  } else {
+    // Nothing about the record was rejected: every remaining objection is about
+    // the test host's permissions, which the deploy host satisfies.
+    assert.deepEqual(problemLines(result.stderr), PERMISSION_PROBLEMS, result.stderr);
+    assert.equal(result.code, 1);
+  }
+  // The content half, with no host in it at all.
+  assert.deepEqual(
+    checkGateRecord({
+      text: `${validLines().join("\n")}\n`,
+      expectSha: SHA,
+      mtimeMs: NOW_MS,
+      nowMs: NOW_MS,
+    }),
+    [],
+  );
+});
+
+test("the permission half of the guard accepts a real deploy host and refuses a writable one", () => {
+  const rootOwnedRecord = { uid: 0, gid: 0, mode: 0o100600 };
+  const rootOwnedDir = { uid: 0, gid: 0, mode: 0o40700 };
+  assert.deepEqual(
+    checkOwnership({ recordStat: rootOwnedRecord, stateRootStat: rootOwnedDir, enforce: true }),
+    [],
+  );
+  assert.deepEqual(
+    checkOwnership({
+      recordStat: { uid: 1001, gid: 1001, mode: 0o100644 },
+      stateRootStat: { uid: 1001, gid: 1001, mode: 0o40755 },
+      enforce: true,
+    }),
+    PERMISSION_PROBLEMS,
+  );
+  // A group-readable record in the right directory is still a refusal: the record
+  // must not be readable or writable by anything but root.
+  assert.deepEqual(
+    checkOwnership({ recordStat: { uid: 0, gid: 0, mode: 0o100640 }, stateRootStat: rootOwnedDir, enforce: true }),
+    ["the gate record mode must be 0600"],
+  );
+  assert.deepEqual(
+    checkOwnership({ recordStat: rootOwnedRecord, stateRootStat: null, enforce: true }),
+    ["the deploy-state directory is missing"],
+  );
 });
 
 test("the f37c203 outcome — no record at all — is a refusal, not a default-allow", () => {
@@ -116,8 +198,19 @@ test("a record for another release cannot be reused for this one", () => {
 
 test("a record left behind by an earlier deployment of the same SHA is stale, not evidence", () => {
   const root = stateRoot();
+  // A record just inside the window is not stale. Asserted on the content half,
+  // because the process half would also object to the test host's permissions.
   const fresh = writeRecord(root, validLines(), { ageSeconds: DEFAULT_MAX_AGE_SECONDS - 60 });
-  assert.equal(runGuard({ record: fresh, root }).code, 0);
+  assert.deepEqual(
+    checkGateRecord({
+      text: fs.readFileSync(fresh, "utf8"),
+      expectSha: SHA,
+      mtimeMs: NOW_MS - (DEFAULT_MAX_AGE_SECONDS - 60) * 1000,
+      nowMs: NOW_MS,
+    }),
+    [],
+  );
+  assert.deepEqual(problemLines(runGuard({ record: fresh, root }).stderr).filter((line) => /window/.test(line)), []);
 
   const stale = writeRecord(root, validLines(), {
     ageSeconds: DEFAULT_MAX_AGE_SECONDS + 60,

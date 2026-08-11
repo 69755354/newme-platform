@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { logger } from "@/lib/logger";
 
 // POST /api/auth/change-password
 export async function POST(request: NextRequest) {
@@ -25,20 +26,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
     }
 
-    // Get user email
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("email")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile?.email) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 400 });
+    // Verify the old password against the AUTH identity, never against
+    // public.profiles.email.
+    //
+    // profiles.email was a self-writable column, so reading the address from
+    // there made this route an account-takeover primitive: PATCH your own
+    // profiles.email to a victim's address, then POST here with that victim's
+    // password as `oldPassword`. signInWithPassword would succeed against the
+    // victim's credentials while updateUserById below reset the password of
+    // *this* session's user — a password oracle that also let an attacker
+    // confirm a guessed credential for any account.
+    //
+    // user.email comes from supabase.auth.getUser(), i.e. from the JWT verified
+    // upstream, and cannot be influenced by anything the caller can write.
+    // 20260811100100_f06_profiles_revocation_columns.sql also removes the
+    // profiles.email grant, so both halves of the chain are closed.
+    if (!user.email) {
+      return NextResponse.json({ error: "Account has no email identity" }, { status: 400 });
     }
 
-    // Verify old password
     const { error: signInErr } = await supabase.auth.signInWithPassword({
-      email: profile.email,
+      email: user.email,
       password: oldPassword,
     });
 
@@ -72,7 +80,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true });
+    // Old-token revocation. password_changed_at is only enforced by the request
+    // gates (src/proxy.ts, /api/auth/me) and those compare against the access
+    // token's iat — a refresh token issued before the change still mints fresh
+    // tokens. Revoke this user's refresh tokens upstream so tokens minted from
+    // the old credential genuinely die. The caller's own session dies too, which
+    // is the intended behaviour: after changing a password you sign in again.
+    const accessToken =
+      bearerToken ?? (await supabase.auth.getSession()).data.session?.access_token;
+    let sessionsRevoked = false;
+    if (accessToken) {
+      const { error: signOutErr } = await supabaseAdmin.auth.admin.signOut(
+        accessToken,
+        "global",
+      );
+      sessionsRevoked = !signOutErr;
+      if (signOutErr) {
+        // Not fatal: the password is already changed, and password_changed_at is
+        // set so the iat gates still reject the old access token until it
+        // expires. Surfaced so an operator can force revocation out of band.
+        logger.error(
+          { operation: "auth_change_password", code: "global_signout_failed" },
+          "Global sign-out failed after password change",
+        );
+      }
+    }
+
+    return NextResponse.json({ success: true, sessionsRevoked });
   } catch (e: any) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }

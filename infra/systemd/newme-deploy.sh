@@ -281,19 +281,35 @@ python3 -c '
 import json, sys
 expected_sha, expected_run, payload = sys.argv[1:]
 run = json.loads(payload)
+# The error message below has always said "successful main run", but the check
+# never established either half of that. A `pull_request` run of the ci workflow
+# reports head_sha = the PR head commit, name = "ci" and conclusion = "success",
+# so a green run on any topic branch satisfied every condition and was accepted
+# as main-branch evidence. That matters beyond provenance: .github/workflows
+# gates the release-final jobs on
+#     if: github.event_name == "workflow_dispatch" && inputs.release_final
+# so a pull_request run is green with a strictly smaller set of jobs than a main
+# push. An incomplete gate set was being recorded as a complete one.
+#
+# event and head_branch are now part of the claim.
 if (
     str(run.get("id")) != expected_run
     or run.get("head_sha") != expected_sha
     or run.get("name") != "ci"
     or run.get("conclusion") != "success"
+    or run.get("event") != "push"
+    or run.get("head_branch") != "main"
 ):
     raise SystemExit(65)
 ' "$SHA" "$RUN_ID" "$RUN_JSON" || {
-  echo "GitHub Actions evidence is not a successful main run" >&2
+  echo "GitHub Actions evidence is not a successful main-branch push run of the ci workflow" >&2
   exit 65
 }
 CI_RUN_URL="https://github.com/69755354/newme-platform/actions/runs/$RUN_ID"
 CI_CONCLUSION=success
+# Recorded and re-validated downstream by deploy-immutable.sh, which cannot see
+# the API response.
+CI_EVENT=push
 
 mkdir -p -m 0700 "$WORKTREE_ROOT"
 install -d -o root -g root -m 0700 "$STATE_ROOT"
@@ -496,6 +512,7 @@ CI_RUN_ID="$RUN_ID" \
 CI_RUN_URL="$CI_RUN_URL" \
 CI_HEAD_SHA="$SHA" \
 CI_CONCLUSION="$CI_CONCLUSION" \
+CI_EVENT="$CI_EVENT" \
 NEWME_MANUAL_VERIFICATION=0 \
 MIGRATION_STATUS="$MIGRATION_STATUS" \
 MIGRATION_IDS="$MIGRATION_IDS" \

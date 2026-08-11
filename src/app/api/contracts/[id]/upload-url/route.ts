@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import { resolveReleaseScript } from "@/lib/release-script";
 
 /**
  * POST /api/contracts/[id]/upload-url
@@ -87,18 +88,31 @@ export async function POST(
     // Build the COS object key with version prefix
     const key = `contracts/${contractId}/${uploadVersion}_${safeFilename}`;
 
-    // Run cos-presign.py to generate the pre-signed PUT URL
+    // Run cos-presign.py to generate the pre-signed PUT URL.
+    // The presigner ships inside the running release; see resolveReleaseScript
+    // for why the absolute /home/ubuntu path it used before was wrong.
+    const presigner = resolveReleaseScript("scripts/cos-presign.py");
+    if (!presigner) {
+      console.error("[Contract Upload] presigner missing from release at", process.cwd());
+      return NextResponse.json({ error: "Presigner unavailable" }, { status: 500 });
+    }
+
     const presignResult = await new Promise<string>((resolve, reject) => {
       execFile(
         "python3",
-        ["/home/ubuntu/newme-platform/scripts/cos-presign.py", "--put", key],
+        [presigner, "--put", key],
         {
+          // Pass only what scripts/cos-presign.py reads. Spreading process.env
+          // handed a subprocess SUPABASE_SERVICE_ROLE_KEY and every other secret
+          // in the runtime environment — the same defect already fixed in
+          // /api/cos/download-url as F-25, still present here.
           env: {
-            ...process.env,
-            COS_SECRET_ID: process.env.COS_SECRET_ID,
-            COS_SECRET_KEY: process.env.COS_SECRET_KEY,
-            COS_BUCKET: process.env.COS_BUCKET,
-            COS_REGION: process.env.COS_REGION,
+            PATH: process.env.PATH ?? "",
+            COS_SECRET_ID: process.env.COS_SECRET_ID ?? "",
+            COS_SECRET_KEY: process.env.COS_SECRET_KEY ?? "",
+            COS_BUCKET: process.env.COS_BUCKET ?? "",
+            COS_REGION: process.env.COS_REGION ?? "",
+            NODE_ENV: process.env.NODE_ENV,
           },
           timeout: 5000,
           encoding: "utf-8",

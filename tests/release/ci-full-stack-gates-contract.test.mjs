@@ -41,6 +41,39 @@ test("ordinary CI and release-final taskboard modes are distinct", async () => {
   assert.match(shell, /exec node "\$SCRIPT_DIR\/check-taskboard\.mjs" "\$@"/);
 });
 
+test("migration replay job gates on a negative control and never reaches production", async () => {
+  const workflow = await readFile(new URL(".github/workflows/ci.yml", ROOT), "utf8");
+  const start = workflow.indexOf("  migration-replay:");
+  assert.notEqual(start, -1, "ci.yml must define the migration-replay job");
+  const job = workflow.slice(start);
+
+  // A throwaway service container, not a linked project.
+  assert.match(job, /image: postgres:17/);
+  assert.match(job, /POSTGRES_HOST_AUTH_METHOD: trust/);
+  assert.doesNotMatch(
+    job,
+    /\bsecrets\.|SUPABASE_ACCESS_TOKEN|SUPABASE_DB_PASSWORD|supabase\s+link|--linked|PGPASSWORD/i,
+  );
+
+  // The control step must come before the gating replay: assertions that hold
+  // against the un-remediated floor prove nothing, and running them second would
+  // let a vacuous gate report green first.
+  const control = job.indexOf("MODE=control");
+  const branch = job.indexOf("MODE=branch");
+  const history = job.indexOf("MODE=history");
+  assert.notEqual(control, -1, "the negative control step must exist");
+  assert.notEqual(branch, -1, "the gating replay step must exist");
+  assert.ok(control < branch, "the negative control must run before the gating replay");
+
+  // control and branch gate; history is evidence only, and must be the only
+  // continue-on-error step in the job.
+  assert.equal(job.match(/continue-on-error: true/g)?.length, 1);
+  assert.ok(history > branch, "the informational history replay must run last");
+  const informationalStep = job.indexOf("      - name: Full migration history replay");
+  assert.notEqual(informationalStep, -1);
+  assert.doesNotMatch(job.slice(0, informationalStep), /continue-on-error/);
+});
+
 test("local database job is pinned, isolated, repeatable, and has no remote credential path", async () => {
   const workflow = await readFile(new URL(".github/workflows/ci.yml", ROOT), "utf8");
   const start = workflow.indexOf("  local-database:");

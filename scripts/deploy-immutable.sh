@@ -45,6 +45,96 @@ CANDIDATE_REMOVAL_VERIFIED=1
 
 fail() { echo "deploy failed: $*" >&2; return 1; }
 
+# ── Release-claim validation ────────────────────────────────────────────────
+#
+# The evidence file written at the end of this script records a CI result and a
+# migration result. Everything else in that file is MEASURED here — the release
+# manifest, BUILD_ID, systemd invocation id, health, smoke, logs, regression —
+# but the ci.* and migration.* blocks were read straight out of the environment
+# and serialised verbatim:
+#
+#     "ci":        { "run_id": os.environ["CI_RUN_ID"], ...
+#                    "conclusion": os.environ["CI_CONCLUSION"] },
+#     "migration": { "status": os.environ["MIGRATION_STATUS"], ... }
+#
+# Nothing checked that CI_HEAD_SHA was the SHA being deployed, that
+# CI_CONCLUSION said success, that CI_RUN_URL pointed at CI_RUN_ID, or that a
+# MIGRATION_STATUS of "applied" came with any migration ids. So
+# `CI_CONCLUSION=success CI_HEAD_SHA=$(git rev-parse HEAD~20) MIGRATION_STATUS=applied`
+# produced a fully green, permanently archived audit record for a release whose
+# CI had never run — the exact false-green class this repo already booked as
+# F-05. Presence was enforced only incidentally, by KeyError.
+#
+# The canonical wrapper, infra/systemd/newme-deploy.sh, does query the GitHub API
+# and check the run's id, head_sha, name and conclusion — that part of the review
+# finding is refuted for that entry point. But this script is also the target of
+# scripts/deploy.sh, which passes nothing but environment variables and performs
+# no verification at all. Every check below therefore has to exist here, at the
+# layer that actually writes the record.
+#
+# These claims cannot be re-measured here (no network, by design), so they are
+# validated for internal consistency and for agreement with the SHA actually
+# being deployed. A claim that cannot be checked is not accepted as a default:
+# every variable is required, and the deploy aborts before it touches anything.
+validate_release_claims() {
+  local run_id="${CI_RUN_ID:-}" run_url="${CI_RUN_URL:-}" head_sha="${CI_HEAD_SHA:-}"
+  local conclusion="${CI_CONCLUSION:-}" event="${CI_EVENT:-}"
+  local migration_status="${MIGRATION_STATUS:-}" migration_ids="${MIGRATION_IDS:-}"
+
+  [ -n "$run_id" ]           || { echo "CI_RUN_ID is required" >&2; return 1; }
+  [ -n "$run_url" ]          || { echo "CI_RUN_URL is required" >&2; return 1; }
+  [ -n "$head_sha" ]         || { echo "CI_HEAD_SHA is required" >&2; return 1; }
+  [ -n "$conclusion" ]       || { echo "CI_CONCLUSION is required" >&2; return 1; }
+  [ -n "$event" ]            || { echo "CI_EVENT is required" >&2; return 1; }
+  [ -n "$migration_status" ] || { echo "MIGRATION_STATUS is required" >&2; return 1; }
+
+  [[ "$run_id" =~ ^[0-9]+$ ]] ||
+    { echo "CI_RUN_ID must be a numeric GitHub run id" >&2; return 1; }
+
+  # The URL must name the same run id, so the archived link cannot point at a
+  # different (green) run than the one being claimed.
+  [[ "$run_url" =~ ^https://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/actions/runs/${run_id}(/job/[0-9]+)?$ ]] ||
+    { echo "CI_RUN_URL must be the github.com actions run URL for CI_RUN_ID" >&2; return 1; }
+
+  # The claim has to be about the commit being deployed. This is the check whose
+  # absence made every other one decorative.
+  [ "$head_sha" = "$SHA" ] ||
+    { echo "CI_HEAD_SHA does not match the release SHA being deployed" >&2; return 1; }
+
+  [ "$conclusion" = success ] ||
+    { echo "CI_CONCLUSION must be 'success' (got: $conclusion)" >&2; return 1; }
+
+  # Wrong-event claims: a pull_request run tests the merge commit, not this SHA,
+  # and a workflow_run/schedule run proves nothing about it either.
+  case "$event" in
+    push|workflow_dispatch) ;;
+    *) echo "CI_EVENT must be 'push' or 'workflow_dispatch' (got: $event)" >&2; return 1 ;;
+  esac
+
+  # Values are the ones infra/systemd/newme-deploy.sh accepts on its command
+  # line, so the two layers cannot disagree about what a valid claim looks like.
+  case "$migration_status" in
+    applied_verified)
+      [ -n "$migration_ids" ] ||
+        { echo "MIGRATION_STATUS=applied_verified requires MIGRATION_IDS" >&2; return 1; }
+      [[ "$migration_ids" =~ ^[0-9A-Za-z_.-]+(,[0-9A-Za-z_.-]+)*$ ]] ||
+        { echo "MIGRATION_IDS must be a comma-separated list of migration ids" >&2; return 1; }
+      ;;
+    not_required)
+      [ -z "$migration_ids" ] ||
+        { echo "MIGRATION_STATUS=not_required must not carry MIGRATION_IDS" >&2; return 1; }
+      ;;
+    *)
+      echo "MIGRATION_STATUS must be 'applied_verified' or 'not_required' (got: $migration_status)" >&2
+      return 1
+      ;;
+  esac
+}
+
+# Validated before any staging directory, symlink, service action or asset
+# backup exists, so a bad claim costs nothing.
+validate_release_claims || { echo "deploy failed: release claims rejected" >&2; exit 64; }
+
 load_pending_asset_backup() {
   local pending_sha="" pending_backup="" pending_previous="" pending_previous_rollback=""
   [ -d "$STATE_ROOT" ] && [ ! -L "$STATE_ROOT" ] || return 1
@@ -447,6 +537,11 @@ evidence = {
         "run_url": os.environ["CI_RUN_URL"],
         "head_sha": os.environ["CI_HEAD_SHA"],
         "conclusion": os.environ["CI_CONCLUSION"],
+        "event": os.environ["CI_EVENT"],
+        # validate_release_claims() has already proved: run_url names run_id,
+        # head_sha == the deployed SHA, conclusion == success, event is push or
+        # workflow_dispatch, and migration status/ids agree with each other.
+        "claims_validated": True,
     },
     "migration": {
         "status": os.environ["MIGRATION_STATUS"],

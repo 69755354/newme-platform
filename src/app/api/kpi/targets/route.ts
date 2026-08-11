@@ -57,31 +57,30 @@ export async function POST(request: NextRequest) {
   }
 
   const rows = targets.map(t => ({
-    period,
     target_type: t.target_type,
     target_amount: t.target_amount,
     assigned_to: t.assigned_to || null,
     notes: t.notes || null,
-    set_by: user.id,
   }));
 
-  // Delete-then-insert strategy: upsert with nullable assigned_to is broken
-  // because SQL NULL != NULL in the unique constraint, so duplicates accumulate.
-  // Step 1: delete all existing targets for this period
-  const { error: delError } = await supabaseAdmin
-    .from("kpi_targets")
-    .delete()
-    .eq("period", period);
-  if (delError) {
-    const msg = process.env.NODE_ENV === "production" ? "Internal server error" : delError.message;
-    return NextResponse.json({ error: msg }, { status: 500 });
-  }
-
-  // Step 2: insert fresh rows
-  const { data, error } = await supabaseAdmin
-    .from("kpi_targets")
-    .insert(rows)
-    .select();
+  // Delete-then-insert is the right strategy — an upsert cannot be used because
+  // assigned_to is nullable and NULL never equals NULL in the unique constraint,
+  // so duplicates accumulate. But it has to happen in ONE transaction.
+  //
+  // This used to be two PostgREST calls, i.e. two transactions: delete the
+  // period, then insert the new rows. Any failure of the second (a target_type
+  // CHECK violation, a NUMERIC(12,2) overflow, an unknown assigned_to, a dropped
+  // connection) left the delete committed and the period EMPTY, with no copy of
+  // what had been there and no restore path. One malformed row from the settings
+  // UI wiped every target for the month.
+  //
+  // replace_kpi_targets does both statements in a single transaction, so a bad
+  // row now rolls the delete back and the existing targets survive.
+  const { data, error } = await supabaseAdmin.rpc("replace_kpi_targets", {
+    p_period: period,
+    p_rows: rows,
+    p_set_by: user.id,
+  });
 
   if (error) {
     const msg = process.env.NODE_ENV === "production" ? "Internal server error" : error.message;

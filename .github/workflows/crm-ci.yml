@@ -1,11 +1,24 @@
 name: crm-ci
 
+# The hermes-contract job below is gated on `workflow_dispatch` or
+# `workflow_run`, but `workflow_run` was never a trigger for this workflow — the
+# triggers were workflow_dispatch, pull_request and push. So on every pull
+# request and every push to main the workflow started, evaluated the job
+# condition to false, skipped the only job, and reported success. The Telegram
+# notification step, whose entire purpose is to alert on a FAILED main-branch CI
+# run, was gated on `workflow_run` as well and could therefore never execute:
+# main CI has been failing silently for as long as this file has existed, behind
+# a green check mark.
+#
+# The triggers now match what the job actually consumes. `pull_request` and
+# `push` are removed rather than left in place: a workflow that can only ever
+# report a skipped job is a false green, and this repository has already paid for
+# that pattern once (F-05).
 on:
   workflow_dispatch:
-  pull_request:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
 
 permissions: {}
 

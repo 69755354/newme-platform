@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LanguageProvider, useLanguage } from "@/lib/i18n/LanguageContext";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 
 /**
  * Sign-in is a single same-origin request to POST /api/auth/login.
@@ -78,8 +79,10 @@ function LoginPageInner() {
         return;
       }
 
-      const redirectTo = searchParams.get("redirect") || "/dashboard";
-      router.push(redirectTo);
+      // Same-origin paths only. `redirect` is attacker-supplied, and an open
+      // redirect on the sign-in page hands a freshly authenticated user to a
+      // credential-harvesting page on the strength of our own domain.
+      router.push(safeRedirectPath(searchParams.get("redirect")));
       router.refresh();
     } catch {
       setError(t("login.networkError"));

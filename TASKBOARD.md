@@ -77,6 +77,22 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | PROD-L0-AUDIT-FIX-F07-F15-F25-F04 | REVIEW | Claude | 2026-08-11 |
 | PROD-FALSE-GREEN-GATE-RETARGET | REVIEW | Claude | 2026-08-11 |
 | PROD-L0-DB-MIGRATIONS-F02-F06-F08-F09-F10 | BLOCKED | Claude | 2026-08-11 |
+| PROD-L0-MIGRATION-REPLAY-GATE | REVIEW | Claude | 2026-08-11 |
+| PROD-MIGRATION-HISTORY-UNREPLAYABLE | BLOCKED | Claude | 2026-08-11 |
+| PROD-DEPLOY-RELEASE-CLAIM-VALIDATION | REVIEW | Claude | 2026-08-11 |
+| PROD-CI-CRM-HERMES-FALSE-GREEN | REVIEW | Claude | 2026-08-11 |
+| PROD-L0-OPEN-REDIRECT-SESSION-CHAIN | REVIEW | Claude | 2026-08-11 |
+| PROD-AUTH-LIMITER-EVICTION-BYPASS | REVIEW | Claude | 2026-08-11 |
+| PROD-RELEASE-SCRIPT-FAIL-CLOSED | REVIEW | Claude | 2026-08-11 |
+| PROD-KPI-TARGETS-ATOMIC-REPLACE | REVIEW | Claude | 2026-08-11 |
+| PROD-QUOTATION-CONVERT-ATOMICITY | REVIEW | Claude | 2026-08-11 |
+| PROD-COS-SCRIPT-RELEASE-DRIFT | REVIEW | Claude | 2026-08-11 |
+| PROD-AUTH-OLD-TOKEN-REVOCATION | REVIEW | Claude | 2026-08-11 |
+| PROD-F09-MONEY-AUTHORIZATION-PHASE2 | TODO | Claude | 2026-08-11 |
+| PROD-F02-DEV-SETUP-CREDENTIAL-REMOVAL | TODO | Claude | 2026-08-11 |
+| PROD-AUTH-ADMIN-RESET-GLOBAL-REVOCATION | TODO | Claude | 2026-08-11 |
+| PROD-DEPLOY-TASKBOARD-GATE-MISSING | TODO | Claude | 2026-08-11 |
+| PROD-PROXY-ACTIVITY-THROTTLE-UNBOUNDED | TODO | Claude | 2026-08-11 |
 
 > M1 发布链（Linear 为真源）：**RELEASED 2026-07-20**。发布 SHA `49bbb26` → BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6~12 全链 Done：SAM-28 业务签收（森哥 2026-07-20）+ 技术签收（机器全量验收），SAM-12 发布记录出具。SAM-26 视觉/移动端留人工不拦发布；SAM-45/46 进 M2 backlog。
 >
@@ -106,7 +122,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | PROD-L0-AUDIT-FIX-F07-F15-F25-F04 | src/app/api/kpi/targets/route.ts, src/app/api/cos/download-url/route.ts, src/app/(dashboard)/settings/page.tsx | MODIFY | F-15 / F-25 / F-07 客户端半边；`npm test` 0 fail + `check:security` 无超基线 | ⚠️ | 待部署 |
 | PROD-L0-AUDIT-FIX-F07-F15-F25-F04 | .github/workflows/crm-ci.yml, .github/workflows/test-ci.yml | MODIFY | F-04：`npm run check:workflows` PASS 3/3 | ⚠️ | 待部署 |
 | PROD-FALSE-GREEN-GATE-RETARGET | tests/security/{password-change-session,sam15-boundaries,sam15-cookie-only-session,session-revocation}.test.mjs | MODIFY | F-05 子项：原断言把**漏洞实现**和**3 次往返客户端舞步**钉成了必要条件。验收：断言已迁至属性新位置且**未被削弱**（新增：解析式精确 allowlist、gate-before-cookie 顺序、鉴权不读缓存） | ⚠️ | 待部署 |
-| PROD-L0-DB-MIGRATIONS-F02-F06-F08-F09-F10 | supabase/migrations/20260811100*.sql | CREATE | 5 个迁移文件已写入但**未应用**。阻塞原因：Supabase MCP 连接为只读（`ERROR: 25006: cannot execute DELETE in a read-only transaction`）。解阻：移除 MCP 配置的 `--read-only`（无需交接任何密钥） | ❌ | — |
+| PROD-L0-DB-MIGRATIONS-F02-F06-F08-F09-F10 | supabase/migrations/20260811100*.sql | CREATE | 5 个迁移文件已写入但**未应用**。阻塞原因（2026-08-11 更新）：`supabase-prod` MCP 已断开且需交互式 OAuth，本会话无任何线上库通道；此前记录的 `--read-only` 只是同一阻塞的更早形态。已可离线证明的部分：`MODE=branch` 在一次性 `postgres:17` 上应用 → 幂等重入 → 52 条行为/目录断言 → rollback 全通，`MODE=control` 证明其中 17 条断言在未修复姿态下必失败。解阻：运维授权 MCP 或由运维本人应用迁移 | ❌ | — |
 
 > **PROD-LOGIN-LATENCY-SERVER-GRANT 根因**（用户报告"登录特别慢"）：旧 `src/app/login/page.tsx:67` 由**浏览器直连 GoTrue** 做 password grant —— 离开 Cloudflare 边缘、向 Auth 区付一次冷 TLS 握手，随后再串行 `/api/auth/session` 与 `/api/auth/me`，共 3 次串行往返。已测分层：Node 1.8ms / nginx+TLS 6ms / 过 Cloudflare 60-65ms / 生产→Supabase 45-48ms。现为 1 次浏览器往返（走已建立的边缘连接），grant + profile 鉴权在服务器侧走热连接。
 >
@@ -117,6 +133,37 @@ TODO → IN_PROGRESS → REVIEW → DONE
 > **本地实测（运行中构建）**：415 错误 content-type、403 外域 origin、403 伪造 `X-Forwarded-Host`、503 未配置 fail-closed、405 GET，且**任何被拒请求零 `Set-Cookie`**。
 >
 > **本次未做（用户明确暂缓，需本人点头）**：仓库转 private、git 历史清除 `deploy-backup-*.json`/`.next.backup/`、origin 防火墙限定 Cloudflare 段、凭证轮换。
+
+---
+
+## L0 独立复审收口（PR #397 maintainer comment）— 2026-08-11（Claude）
+
+> 事实源：代码看 git，事实看线上。**本轮无任何线上库证据**：`supabase-prod` MCP 已断开且需交互式 OAuth。所有复现均基于源码 + `src/types/database.ts`（由生产生成）+ `docs/rls-explorer.md`。生产未被修改：未应用迁移、未部署、未重启/reload、未改生产数据或控制面。
+>
+> 复审意见按“原始证据”对待而非结论：逐条复现后分为 confirmed / refuted / insufficient-evidence，见本节末尾。
+
+| # | File | Operation | Verification | Status | Done Date |
+|---|------|-----------|-------------|--------|-----------|
+| PROD-L0-MIGRATION-REPLAY-GATE | scripts/replay-migrations.sh, supabase/replay/*.sql, .github/workflows/ci.yml | CREATE | `migration-replay` job（`postgres:17` service container，trust 认证，无任何 secret）先跑 `MODE=control` 再跑 `MODE=branch`，两者均为门禁；`MODE=history` 为 `continue-on-error: true` 的信息性最后一步。`MODE=branch` = floor → 7 个迁移 → fixtures → 再次应用（幂等）→ 52 条断言（文件自校验 `ASSERT_TOTAL: 52`）→ rollback 伴随文件。`MODE=control` 要求 `CONTROL_MUST_FAIL` 17 条断言全部失败（本地实测 23 OK / 29 fail，证明断言文件跑完而非首条即中止）。契约由 tests/release/ci-full-stack-gates-contract.test.mjs 断言（control 早于 branch、job 内仅一处 `continue-on-error`、无 secrets/`PGPASSWORD`/`supabase link`/`--linked`） | ⚠️ | 待 CI 绿 |
+| PROD-MIGRATION-HISTORY-UNREPLAYABLE | supabase/migrations/（110 个文件） | AUDIT | 新发现，**未修**。`MODE=history` 从空库在第 9 个文件 `20260604000002_auto_lead_status.sql` 停止（`column "metadata" does not exist`）。四类已确证成因：`1780601210_workflow_stages.sql` 10 位 epoch 前缀不匹配 CLI 的 `^[0-9]{14}_` 故从未被看见（本轮改名 `20260604192650_`，并加 `_wf_stages_pre_existing` 首次创建判定，确保改名不回写生产行）；`20260603000000_add_crm_fields.sql` 含 `ALTER TABLE TABLE`，CLI 单文件单事务故从未在任何环境应用（改为墓碑）；`20260604000002` 从不存在的 `leads.metadata` 回填；`meta_tokens` / `profiles.password_changed_at` / `profiles.force_password_change` / `leads.rep_name` 无迁移声明（新增 `20260601010000_baseline_undeclared_production_objects.sql` 全 `IF NOT EXISTS`）。另：`supabase/seed.sql` 首条为 `UPDATE ... LIMIT`（PostgreSQL 不支持），故该文件从未生效，本轮改为 `WHERE id IN (SELECT ... LIMIT 20)` | ❌ | — |
+| PROD-DEPLOY-RELEASE-CLAIM-VALIDATION | scripts/deploy-immutable.sh, infra/systemd/newme-deploy.sh | MODIFY | `validate_release_claims()` 在任何 mkdir/symlink/服务动作之前 `exit 64`：要求 6 个声明变量全部非空、`CI_RUN_ID` 为数字、`CI_RUN_URL` 必须指向同一 run id 的 github.com 路径、`CI_HEAD_SHA == $SHA`、`CI_CONCLUSION == success`、`CI_EVENT ∈ {push, workflow_dispatch}`、`applied_verified` 必带合法 `MIGRATION_IDS` 而 `not_required` 必不带。canonical wrapper 的 GitHub API 校验加入 `event=push` 与 `head_branch=main`（原先任一分支的绿色 `pull_request` run 都被当作 main 证据，而 release-final 作业以 `github.event_name` 为条件 → 更小的门禁集被记成完整门禁）。验收：tests/release/deploy-release-claim-validation.test.mjs 11/11，**直接执行**被抽出的 shell 函数与 wrapper 内联校验块（含 manual_verified 旁路被拒） | ⚠️ | 待部署 |
+| PROD-CI-CRM-HERMES-FALSE-GREEN | .github/workflows/crm-ci.yml | MODIFY | `hermes-contract` job 与 Telegram 失败告警均以 `workflow_run` 为条件，而该 workflow 的触发器只有 workflow_dispatch/pull_request/push —— 于是每次 PR 与 main push 都跳过唯一 job 并报 success，失败告警永不可能执行。触发器改为 `workflow_dispatch` + `workflow_run(workflows: [ci], types: [completed])`，`pull_request`/`push` 删除而非保留。验收：`npm run check:workflows` 3/3 | ⚠️ | 待 CI 绿 |
+| PROD-L0-OPEN-REDIRECT-SESSION-CHAIN | src/lib/safe-redirect.ts, src/app/login/page.tsx | CREATE+MODIFY | `?redirect=` 未净化即为开放重定向，且 `sb-<ref>-auth-token` 为脚本可读，跳转目标能取得刚建立的会话上下文。验收：tests/unit/l0-auth-hardening.test.mjs 中 `safeRedirectPath` 断言拒绝任意 scheme 绝对 URL（含 `javascript:`/`data:`/`vbscript:`/`file:`）、`//evil`、`///evil`、`/\evil`、`\\evil`、控制字符、非字符串、空白、超长（>512），保留同源 path+query+hash，兜底 `/dashboard` | ⚠️ | 待部署 |
+| PROD-AUTH-LIMITER-EVICTION-BYPASS | src/lib/rate-limit.ts | MODIFY | 原实现用 `Map` + `MAX_TRACKED_KEYS=10000` 上限，攻击者只要发足量不同 key 就能把自己的计数条目挤掉从而清零限流。改为固定 `SLOT_COUNT=16384` 的 `Int32Array`/`Float64Array` + sha256 分槽 + 饱和自增，不再有可被冲刷的条目。验收：tests/unit/l0-auth-hardening.test.mjs 断言 40000 个不同 key 之后原 key **仍被拒**、1MB key 不崩、窗口边界精确（`windowMs - 1` 拒 / `windowMs` 放）、持续洪泛不回绕 | ⚠️ | 待部署 |
+| PROD-RELEASE-SCRIPT-FAIL-CLOSED | src/lib/release-script.ts | CREATE | 上一版对空输入 fail-open 返回 `process.cwd()`，且用前缀包含判断而非 `path.relative` 归一。现拒绝空串/纯空白/非字符串/绝对路径/含 `..` 段/逃出仓库根/目录（`statSync().isFile()`）。验收：tests/unit/l0-auth-hardening.test.mjs 断言 `""`、`"   "`、`"."`、`"./"`、`"scripts"`、`"scripts/"`、`/home/ubuntu/newme-platform/scripts/cos-presign.py`、traversal 全部返回 `null`，`scripts/replay-migrations.sh` 正常解析 | ⚠️ | 待部署 |
+| PROD-KPI-TARGETS-ATOMIC-REPLACE | src/app/api/kpi/targets/route.ts, supabase/migrations/20260811100500_kpi_targets_atomic_replace.sql | MODIFY+CREATE | 原为两次 PostgREST 调用即两个事务：先 `delete().eq("period")` 再 `insert(rows)`。第二步任意失败（`target_type` CHECK、`NUMERIC(12,2)` 溢出、未知 `assigned_to`、连接中断）都会留下**已提交的删除**与空白周期，且无副本无恢复路径 —— settings UI 一行畸形数据即可清空整月目标。改为单事务 SECURITY DEFINER `replace_kpi_targets(p_period, p_rows, p_set_by)`（`search_path` 固定、仅 `service_role` 可 EXECUTE）。验收：replay 断言 `kpi-fixture-period-seeded` / `kpi-failed-replace-preserves-period`（坏 `target_type` 回滚后既有 2 行仍在）/ `kpi-empty-replace-preserves-period` / `kpi-successful-replace-replaces-period` / `kpi-authenticated-cannot-execute` / `kpi-anon-cannot-execute` | ⚠️ | 待部署 |
+| PROD-QUOTATION-CONVERT-ATOMICITY | src/app/api/quotations/[id]/convert/route.ts | MODIFY | 两个缺陷。**并发**：`quote.contract_id` 只是读，写在请求最末，两个并发 POST 都读到 null → 同一报价生成两份合同、两份审批、两个项目、lead 被判定 won 两次。现改为先做条件更新抢占（`.eq("status","accepted").is("contract_id", null)`），以匹配行数为互锁，输者返 409；后续任一步失败则 `releaseClaim()` 把状态放回 `accepted`，避免永久卡在 `contract_created` 而无合同。**确定性失败**：合同号序号原先用调用者 RLS client 计数，`policy_contracts_select_sales` 只让销售看到自己的行，因此 count 漏掉同事当天的合同 → 生成已存在的号 → `contract_no` UNIQUE 触发 23505 → 500；非 admin 只要当天有他人签约就必然失败。现用 `supabaseAdmin` 计数并对 23505 重试（`MAX_CONTRACT_NO_ATTEMPTS=10`）。验收：`npm test` 0 fail + check:security 无超基线 | ⚠️ | 待部署 |
+| PROD-COS-SCRIPT-RELEASE-DRIFT | src/app/api/cos/download-url/route.ts, src/app/api/contracts/[id]/upload-url/route.ts, src/app/api/dashboard/ads-roi/import/route.ts | MODIFY | 三处外部脚本调用原先按绝对/固定路径找 `scripts/cos-presign.py`、`scripts/parse-ad-spend.py`，与 immutable release 树漂移（回滚后仍指向新脚本，或指向 release 之外的路径）。改为经 `resolveReleaseScript()` 在**当前运行 release 内**解析，解析失败即 fail-closed；子进程环境只传脚本实际读取的变量，不再整体 spread `process.env` | ⚠️ | 待部署 |
+| PROD-AUTH-OLD-TOKEN-REVOCATION | src/app/api/auth/change-password/route.ts, src/app/api/auth/logout/route.ts, src/app/api/auth/me/route.ts | MODIFY | `password_changed_at` 只由请求 token 的 `iat` 判定，改密前签发的 **refresh token 仍能换出 iat=now 的新 access token** 从而通过 proxy 门禁。change-password 现调 `supabaseAdmin.auth.admin.signOut(..., "global")`；logout 原先丢弃 `signOut()` 结果并一律返 `{ok:true}`，现用 `scope:"global"` 并以 502 + `revoked:false` 区分未真正吊销；`/api/auth/me` 的 refresh 路径补上 `password_changed_at` 比对 | ⚠️ | 待部署 |
+| PROD-F09-MONEY-AUTHORIZATION-PHASE2 | supabase/migrations/（未来）, src/app/api/** | TODO | Phase 1 只把三个 SECURITY DEFINER 资金例程的 EXECUTE 从 PUBLIC 收到 `authenticated`（`anon` 不再可调）。真正的授权边界仍是表级 DML 直授 `authenticated` + RLS —— 收紧表级 grant 必须先把资金写入全部迁到 service_role 或 definer 例程，否则即 42501 停摆（这正是被否掉的 leg-2）。tests/security/money-grant-coupling.test.mjs 内置 tripwire：一旦调用者作用域的资金写入清零，必须同一 commit 内改测试与 replay 断言 | ⏳ | — |
+| PROD-F02-DEV-SETUP-CREDENTIAL-REMOVAL | src/app/api/dev/setup/route.ts | TODO | `DEV_EMAIL`/`DEV_PASSWORD` 硬编码在公开仓库中。该路由在 `NODE_ENV === "production"` 或 `NEXT_PUBLIC_DEV_MODE !== "true"` 时返 403，故无法在生产重建账号；但凭证仍在源码与 git 历史里。属源码改动，不属迁移。与用户暂缓的“git 历史清除/凭证轮换”相关，需本人点头 | ⏳ | — |
+| PROD-AUTH-ADMIN-RESET-GLOBAL-REVOCATION | src/app/api/users/[id]/password/route.ts | TODO | 管理员为他人重置密码时无法做全局吊销：`auth.admin.signOut` 需要目标用户自己的 JWT。目前只靠 `password_changed_at` + proxy 门禁，refresh token 在 access token 过期前仍可用一次。需改用 GoTrue admin API 的 session 撤销端点或等价方案 | ⏳ | — |
+| PROD-DEPLOY-TASKBOARD-GATE-MISSING | scripts/deploy.sh, scripts/deploy-immutable.sh | TODO | AGENTS.md 声称 “`scripts/deploy.sh` Step 0 运行 `check-taskboard.sh`，任一 ❌ 即中止部署”。实测 `scripts/deploy.sh` 只有 4 行 `exec`，`deploy-immutable.sh` 与 canonical wrapper 均**不调用**该门禁 —— 文档与实现不一致（与本轮修的 false-green 同类）。未擅自在生产部署路径新增硬门禁：一行补丁即可（`bash "$ROOT/scripts/check-taskboard.sh" || exit 64` 置于 claim 校验之后），但会立刻按设计阻断当前带 ❌ 的部署，须运维决定 | ⏳ | — |
+| PROD-PROXY-ACTIVITY-THROTTLE-UNBOUNDED | src/proxy.ts | TODO | 信息性：`activityThrottle` 是以 user id 为键、永不淘汰的 `Map`，随累计活跃用户数单调增长（每条目约几十字节，非攻击者可控放大，故非 P0/P1）。与限流器同类问题，应改为固定槽位或带 TTL 的结构 | ⏳ | — |
+
+> **复审逐条结论（confirmed / refuted / insufficient）**：F-09 资金授权 leg-2 会造成停摆 → **confirmed**（已删除该 leg）；F-02 删除不可逆且毁证据 → **confirmed**（改停用 + 互锁 + 可回滚）；F-06 profile-email/改密接管链 → **confirmed**（列级 grant + 改密只用 `user.email`）；F-08 审计/会话可伪造插入 → **confirmed**（三表 `with check (false)` + 移除 proxy 的 PAGE_VISIT 调用者写入）；F-10 Meta token 明文可读 → **confirmed**（drop policy + revoke `anon`/`authenticated`，`service_role` 保留）；限流器可被冲刷 → **confirmed**；开放重定向 + 脚本可读 token → **confirmed**；旧 token 吊销缺口 → **confirmed**；KPI delete-then-insert 数据丢失 → **confirmed**；COS 脚本 release 漂移 → **confirmed**；Hermes CI 不可达 → **confirmed**；迁移未被 CI 演练 → **confirmed**（且更严重：整个历史不可重放）；canonical deploy 接受不完整/错误 event 的声明 → **partially refuted**：`infra/systemd/newme-deploy.sh` 确实查了 GitHub API（复审说“完全不查”不成立），但它漏了 `event`/`head_branch`，且 `scripts/deploy.sh` → `deploy-immutable.sh` 这条路径当时确实零校验 —— 两处均已修。
+>
+> **insufficient evidence（无线上通道，未确认也未否认）**：五个 L0 迁移是否已被他人手工应用于生产；生产 `pg_policies`/`information_schema.role_table_grants` 的当前真实姿态是否与 `docs/rls-explorer.md` 一致；`20260723130000_lock_definer_boundaries.sql` 是否已在生产生效（源码显示它应已关闭三表 INSERT，但 rls-explorer 显示宽松 policy 仍在——二者矛盾，需线上核对）。
 
 ---
 

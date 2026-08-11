@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=0832014b3f5ef5746324cebff8278c53d8a0c60b70cc5f1625b73459fc054321
+// Migration fingerprint: sha256=3055748d6941bee98c096c23e530d965e0c71036e4e1d90561fbb72c90054c29
 export type Json =
   | string
   | number
@@ -4043,6 +4043,21 @@ export type Database = {
           }
       milestone_order: { Args: { milestone: string }; Returns: number }
       next_quote_no: { Args: never; Returns: string }
+      replace_kpi_targets: {
+        Args: { p_period: string; p_rows: Json; p_set_by: string }
+        Returns: {
+          actual_amount: number
+          assigned_to: string | null
+          created_at: string | null
+          id: string
+          notes: string | null
+          period: string
+          set_by: string | null
+          target_amount: number
+          target_type: string
+          updated_at: string | null
+        }[]
+      }
       reassign_lead: {
         Args: { p_lead_id: string; p_new_sales: string; p_reason?: string }
         Returns: boolean

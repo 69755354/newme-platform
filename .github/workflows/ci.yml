@@ -195,3 +195,66 @@ jobs:
       - name: Stop local database
         if: always()
         run: supabase stop --project-id newme-ci-task-followup-v1 --no-backup
+
+  migration-replay:
+    name: Migration replay and release contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The job above exercises four migrations under supabase/ci-local. The other
+    # 106 in supabase/migrations/ — including every L0 security migration — had
+    # never been executed anywhere except production. This job executes them
+    # against a throwaway database and then asserts, at the behaviour level, that
+    # they do what they claim.
+    #
+    # No Supabase CLI and no Docker-in-Docker: a postgres service container plus
+    # the psql client that ubuntu-latest already ships. No secrets are referenced,
+    # and the only database reachable from this job is the service container.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends postgresql-client
+          psql --version
+
+      # Negative control first. If the assertions hold against the un-remediated
+      # floor they prove nothing, and the gate below would be theatre.
+      - name: Negative control (assertions must fail without the migrations)
+        run: |
+          createdb control
+          MODE=control PGDATABASE=control bash scripts/replay-migrations.sh
+
+      - name: Replay branch migrations and assert release contracts
+        run: |
+          createdb replay
+          MODE=branch PGDATABASE=replay bash scripts/replay-migrations.sh
+
+      # Informational, and deliberately not gating: the full history does not
+      # replay from empty. See the header of scripts/replay-migrations.sh — the
+      # directory is a partial record of a database that was partly built by hand,
+      # and repairing it needs a schema baseline taken by an operator who holds
+      # credentials. This step keeps the evidence reproducible on every run and
+      # will show movement when that baseline lands.
+      - name: Full migration history replay (informational)
+        continue-on-error: true
+        run: |
+          createdb history
+          MODE=history PGDATABASE=history bash scripts/replay-migrations.sh

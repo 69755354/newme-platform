@@ -89,6 +89,14 @@ export async function POST(request: Request) {
   if (!email || !password) {
     return respond({ error: "invalid_request" }, { status: 400 });
   }
+  // Bound the credential fields before they reach the limiter or upstream. The
+  // account limiter key is derived from `email`, and the password is forwarded
+  // to the grant endpoint; neither should accept a megabyte of caller-controlled
+  // input. RFC 5321 caps an address at 254 octets, and no legitimate password is
+  // longer than bcrypt's own 72-byte input limit by more than a wide margin.
+  if (email.length > 254 || password.length > 1024) {
+    return respond({ error: "invalid_request" }, { status: 400 });
+  }
 
   const ip = clientIdentifier(request);
   const ipLimit = consumeRateLimit(`login:ip:${ip}`, PER_IP_LIMIT);

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { getAuthProfile, canAccessLead, isAdminOrBoss } from "@/lib/lead-auth";
+import { resolveReleaseScript } from "@/lib/release-script";
 
 /** Service-role client used only to map a COS key back to its owning lead. */
 function getSupabaseAdmin(): SupabaseClient | null {
@@ -140,10 +141,18 @@ export async function POST(request: NextRequest) {
 
     const expireSec = typeof expires === "number" && expires > 0 ? expires : 3600;
 
+    // The presigner ships inside the running release; see resolveReleaseScript
+    // for why an absolute /home/ubuntu path was wrong.
+    const presigner = resolveReleaseScript("scripts/cos-presign.py");
+    if (!presigner) {
+      console.error("[COS Download] presigner missing from release at", process.cwd());
+      return NextResponse.json({ error: "Presigner unavailable" }, { status: 500 });
+    }
+
     const result = await new Promise<string>((resolve, reject) => {
       execFile(
         "python3",
-        ["/home/ubuntu/newme-platform/scripts/cos-presign.py", key, String(expireSec)],
+        [presigner, key, String(expireSec)],
         {
           // F-25: pass only what scripts/cos-presign.py actually reads
           // (COS_SECRET_ID/COS_SECRET_KEY/COS_BUCKET/COS_REGION) plus PATH for

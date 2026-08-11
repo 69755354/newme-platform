@@ -254,17 +254,15 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // Track activity: update last_active_at (throttled to once per 5 min)
-  // Also capture client IP for audit_log (x-forwarded-for → first IP)
+  // Track activity: update last_active_at (throttled to once per 5 min).
+  // The client-IP capture that used to accompany this existed only to populate
+  // the audit row below; see the note there.
   if (user && !pathname.startsWith("/_next") && !pathname.startsWith("/api")) {
     const now = Date.now();
     const last = activityThrottle.get(user.id) || 0;
     if (now - last > 300_000) {
       activityThrottle.set(user.id, now);
-      const clientIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-        || request.headers.get("x-real-ip")
-        || "unknown";
-      // Fire-and-forget: update profile activity + log IP audit
+      // Fire-and-forget: update profile activity.
       supabase.from("profiles").update({ last_active_at: new Date().toISOString() }).eq("id", user.id).then(({ error }) => {
         if (error) {
           // Production monitoring requirement - report server errors
@@ -278,27 +276,19 @@ export async function proxy(request: NextRequest) {
           console.error("Activity tracking error:", error.message);
         }
       });
-      supabase.from("audit_logs").insert({
-        // NOTE: audit_logs.actor_id is the genuine column (NOT a business_events alias).
-        // Migration 20260613000000_audit_logs.sql:6 declares it. Unlike business_events
-        // (where actor_id was the wrong alias), audit_logs always used actor_id. Do NOT rename.
-        actor_id: user.id,
-        action: "PAGE_VISIT",
-        details: { page: pathname },
-        ip_address: clientIp,
-      }).then(({ error }) => {
-        if (error) {
-          // Production monitoring requirement - report server errors
-          reportServerError({
-            message: error.message,
-            type: "audit_log_error",
-            url: pathname,
-          }).catch(() => {
-            // Silent fail to prevent circular reporting
-          });
-          console.error("Audit log error:", error.message);
-        }
-      });
+      // The PAGE_VISIT insert into audit_logs that used to sit here has been
+      // removed. It wrote to audit_logs with the CALLER'S OWN RLS client, which
+      // is why the table needed a permissive `WITH CHECK (true)` INSERT policy
+      // for `authenticated` — and that policy let any user forge an audit entry
+      // under any actor_id (F-08). audit_logs is now server-write-only
+      // (20260811100000_f08_audit_logs_actor_identity.sql), matching the
+      // "server-owned evidence, never browser-submitted facts" rule that
+      // 20260723130000_lock_definer_boundaries.sql already set.
+      //
+      // Nothing read these rows: they were page telemetry, not audit evidence.
+      // last_active_at above still carries the activity signal. If page-visit
+      // telemetry is wanted back, it has to be written server-side with
+      // supabaseAdmin — the service-role key must not enter this runtime.
     }
   }
 

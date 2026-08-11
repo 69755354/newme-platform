@@ -424,20 +424,70 @@ test("middleware passes the explicit Cookie header and writes custom refresh coo
   assert.deepEqual(getResponse().cookiesSet, refreshedCookies);
 });
 
-test("same-origin logout clears dynamic and legacy cookies", async () => {
-  const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
+const LOGOUT_COOKIE_NAMES = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
+
+function loadLogout(signOut) {
+  const calls = [];
   const logout = loadTypeScriptModule("src/app/api/auth/logout/route.ts", {
     "@/lib/supabase-server": {
-      createServerSupabase: async () => ({ auth: { signOut: async () => ({ error: null }) } }),
+      createServerSupabase: async () => ({
+        auth: {
+          signOut: async (options) => {
+            calls.push(options);
+            return signOut();
+          },
+        },
+      }),
     },
-    "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
+    "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => LOGOUT_COOKIE_NAMES },
+    "@/lib/logger": { logger: { error: () => {}, warn: () => {}, info: () => {} } },
     "next/server": createCookieResponseMock(),
   });
-  const response = await logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
-  assert.equal(response.status, 200);
+  return { logout, calls };
+}
+
+function assertCookiesCleared(response) {
   assert.deepEqual(
     response.cookiesSet.map((cookie) => cookie.name),
-    [names.authToken, names.refreshToken, "sb-access-token", "sb-refresh-token"],
+    [LOGOUT_COOKIE_NAMES.authToken, LOGOUT_COOKIE_NAMES.refreshToken, "sb-access-token", "sb-refresh-token"],
   );
   assert.ok(response.cookiesSet.every((cookie) => cookie.value === "" && cookie.options.maxAge === 0));
+}
+
+test("same-origin logout clears dynamic and legacy cookies", async () => {
+  const { logout, calls } = loadLogout(() => ({ error: null }));
+  const response = await logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { ok: true, revoked: true });
+  assertCookiesCleared(response);
+
+  // Anything less than a global sign-out leaves every other copy of the refresh
+  // token minting access tokens after the user believes they signed out.
+  assert.deepEqual(calls, [{ scope: "global" }]);
+});
+
+test("a failed upstream revocation is reported, not answered with ok:true", async () => {
+  // The old implementation discarded the signOut() result and always returned
+  // { ok: true }: a silent upstream failure was indistinguishable from a real
+  // sign-out, and the refresh token stayed valid.
+  const { logout } = loadLogout(() => ({ error: { message: "upstream unavailable" } }));
+  const response = await logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
+  assert.equal(response.status, 502);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.revoked, false);
+
+  // Cookies still go: leaving a live session in the browser because the upstream
+  // call failed would be strictly worse than reporting the failure.
+  assertCookiesCleared(response);
+});
+
+test("a thrown revocation still clears cookies and never claims success", async () => {
+  const { logout } = loadLogout(() => {
+    throw new Error("network down");
+  });
+  const response = await logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
+  assert.equal(response.status, 500);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.revoked, false);
+  assertCookiesCleared(response);
 });

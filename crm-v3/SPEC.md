@@ -900,3 +900,33 @@ SAM-44 记录的登录实现为“浏览器请求 Supabase token 后再调 `/api
 - 本轮同时更正了 4 个把**旧行为**钉成必要条件的安全门禁：其一钉住了 F-07 漏洞本身，其三钉住了 3 次往返的客户端舞步。断言均迁至属性新位置，无一被削弱，其三被加强（解析式精确 `PUBLIC_API_PATHS` allowlist、gate-before-cookie 顺序、鉴权不读缓存）。
 - `supabase/migrations/20260811100*.sql` 共 5 个迁移已写入但**未应用**（F-02/F-06/F-08/F-09/F-10）。阻塞原因为 Supabase MCP 连接只读。未应用前不得把相关发现写成已修复。
 - 生产登录耗时未实测，TASKBOARD 相关行保持 `REVIEW`。没有部署后的实测证据，不得关闭本轮性能事项。
+
+## L0 复审收口：迁移可重放门禁、发布声明校验与开放重定向 — 2026-08-11
+
+本节记录独立复审（PR #397）后新增/修改的路径。它同样不代表已部署，也不代表迁移已应用：证据仅为本地与 GitHub CI 门禁。
+
+### 本轮行为变更（摘要）
+
+- **迁移目录不是可重放历史**（新发现，未修）。`MODE=history` 从空库重放 `supabase/migrations/` 时在第 9 个文件（`20260604000002_auto_lead_status.sql`，`column "metadata" does not exist`）停止。已确证的四类成因：10 位 epoch 文件名（`1780601210_workflow_stages.sql`）被 Supabase CLI 完全忽略而其表在线上存在（本轮改名为 `20260604192650_workflow_stages.sql`，并加首次创建判定，改名不得回写生产行）；`20260603000000_add_crm_fields.sql` 含 `ALTER TABLE TABLE` 语法错误且 CLI 单文件单事务，故从未在任何环境应用（本轮改为墓碑）；`20260604000002` 从不存在的 `leads.metadata` 回填；`meta_tokens`、`profiles.password_changed_at`、`profiles.force_password_change`、`leads.rep_name` 无任何迁移声明（本轮新增 `20260601010000_baseline_undeclared_production_objects.sql`，全部 `IF NOT EXISTS` 声明）。修复其余约 100 个文件需线上 schema 真相，且其中若干含会改写生产行的 backfill，属运维任务，不在本分支猜测。
+- **F-02 由删除改为停用**：不再 `delete from auth.users`/`profiles`，改为 `is_active=false` + `force_password_change=true` + 最后特权账号互锁，1514 条 `audit_logs.actor_id` 归属全部保留，且可由 `supabase/migrations/rollback_l0_20260811.sql` 逆转。
+- **F-09 只改函数权限**：EXECUTE 经 PUBLIC 泄漏给 `anon` 是缺陷本身；对 `contracts`/`payments`/`installment_plans`/`contract_approvals`/`quotations` 的表级 REVOKE 已删除——大量写入走调用者自身 client（Postgres 角色 `authenticated`），照原样发布会造成资金路径全线 42501 停摆。
+- **发布声明校验**：`scripts/deploy-immutable.sh` 写入的永久证据里 `ci.*`/`migration.*` 原为环境变量直接串行化，无任何校验；现新增 `validate_release_claims()`，在任何 mkdir/symlink/服务动作之前 `exit 64`。
+
+### 路径覆盖索引
+
+| 路径 | 实际职责 | 权限、安全与部署/回滚边界 |
+| --- | --- | --- |
+| `src/lib/safe-redirect.ts` | 登录后跳转目标的唯一净化入口：仅接受同源绝对路径（保留 query/hash），拒绝任意 scheme 的绝对 URL、`//host`、`///host`、反斜杠 authority、`FORBIDDEN_CHARS` 覆盖的控制字符、非字符串，以及超过 `MAX_REDIRECT_LENGTH=512` 的输入；兜底为 `DEFAULT_REDIRECT="/dashboard"`。 | `?redirect=` 由攻击者控制，未净化即为开放重定向；配合脚本可读的 `sb-<ref>-auth-token` cookie，跳转目标能取得刚建立的会话上下文，因此这是会话令牌链的一环而非 UX 细节。负向断言在 `tests/unit/l0-auth-hardening.test.mjs`，任何放宽都必须先改该文件。 |
+| `src/lib/release-script.ts` | 把仓库相对路径解析为发布树内的真实文件；`null` 表示拒绝。拒绝空串/纯空白/非字符串、绝对路径、任何含 `..` 的路径段、解析后逃出仓库根的路径，以及目录（`statSync().isFile()`）。 | 修订记录（2026-08-11）：上一版对空输入 fail-open 返回 `process.cwd()`，且用前缀包含判断而非 `path.relative` 归一。它是脚本执行前的 fail-closed 边界，只能返回仓库内既存文件；`scripts/cos-presign.py`、`scripts/parse-ad-spend.py` 均在版本控制内，故属可解析目标——本函数负责路径边界，不负责授权。 |
+| `scripts/replay-migrations.sh` | 一次性迁移重放，三种模式：`MODE=branch`（门禁）floor → 本分支 7 个迁移 → fixtures → 再次应用（幂等）→ 52 条契约断言 → rollback 伴随文件；`MODE=control`（门禁）floor + fixtures **不含**迁移，要求 `CONTROL_MUST_FAIL` 中 17 条断言全部失败（负向对照，已抓到 3 条空转的 F-10 断言）；`MODE=history`（信息性）从空库按序重放全部 14 位迁移并报告首个失败点。另含文件名 lint：非 14 位且非 `rollback_` 前缀即硬失败。 | 只连接 `PGDATABASE` 指向的一次性库，且目标库已有应用表时拒绝启动；不读任何密钥，CI 用 `postgres:17` service container + trust 认证。它**不是**生产迁移工具，也不证明生产已应用。`rollback_*.sql` 不匹配 CLI 的 `^[0-9]{14}_` 规则，因此永不被自动应用，只能由运维显式执行。 |
+| `infra/systemd/newme-deploy.sh` | 唯一 canonical 部署入口（root，systemd）。查询 GitHub API 后要求 run 的 `id`/`head_sha`/`name=ci`/`conclusion=success`/`event=push`/`head_branch=main` 全部匹配，再把声明以环境变量传给 `scripts/deploy-immutable.sh` 复核。 | 修订记录（2026-08-11）：原检查只比对 `id`/`head_sha`/`name`/`conclusion`，因此**任一分支上绿色的 `pull_request` run 都被当作 main 证据**；而 release-final 作业以 `github.event_name` 为条件，故 `pull_request` run 的门禁集严格更小——不完整门禁被记成完整门禁。`event` 与 `head_branch` 现为声明的一部分（`tests/release/deploy-release-claim-validation.test.mjs` 直接执行该校验块与 `validate_release_claims()`）。GitHub token 只经 `--config` 文件传入 curl 且随即 `unset`，不得出现在命令行。 |
+
+`supabase/replay/01_floor_schema.sql`、`supabase/replay/05_seed_behaviour_fixtures.sql`、`supabase/replay/10_assert_release_contracts.sql`、`supabase/migrations/20260601010000_baseline_undeclared_production_objects.sql`、`supabase/migrations/20260811100500_kpi_targets_atomic_replace.sql`、`supabase/migrations/rollback_l0_20260811.sql` 属同一门禁资产：floor 复现**未修复的线上姿态**（含 `meta_tokens` 的宽松 policy 与 grant），fixtures 建立行为断言所需数据，断言文件以 `has_table_privilege`/`has_column_privilege`/`has_function_privilege` 与 `set local role authenticated` 的真实执行验证边界，并自校验断言总数为 52。
+
+### 验证边界
+
+- 无线上数据库证据：`supabase-prod` MCP 需要交互式 OAuth，本会话不可用。所有结论来自源码、`src/types/database.ts`（由生产生成）与 `docs/rls-explorer.md`，未执行任何生产查询、迁移、部署或重启。
+- 5 个 L0 迁移加本轮新增的 3 个（baseline / KPI 原子替换 / rollback 伴随）**仍未应用于生产**。`MODE=branch` 通过只证明它们在一次性库上可应用、幂等、可回滚且行为断言成立。
+- `MODE=history` 不通过且以 `continue-on-error: true` 运行，属于可复现证据而非门禁；把它变成门禁需要运维先用线上 schema 压平 baseline。
+- `src/types/database.ts` 正常由生产 schema 生成，但本轮**手工补入** `replace_kpi_targets` 的 `Args`/`Returns`：该函数由本轮迁移创建、生产尚不存在，不手工补入则 `supabaseAdmin.rpc("replace_kpi_targets", ...)` 无法通过 `typecheck`。迁移应用后下一次 `npm run generate:database-types` 会以生产真相覆盖它；在此之前该条目是**声明而非观测**。指纹已按新的 `supabase/migrations/` 内容重新 stamp。
+- AGENTS.md 声称 `scripts/deploy.sh` Step 0 运行 `check-taskboard.sh`。当前 `scripts/deploy.sh` 只有 4 行 `exec`，`deploy-immutable.sh` 与 canonical wrapper 均不调用该门禁——文档与实现不一致，作为发现记录，未擅自在生产部署路径新增硬门禁。

@@ -136,6 +136,14 @@ fail money-create-contract-is-atomic-for-a-sales-caller
 fail money-create-contract-issues-a-counter-based-number
 fail money-create-contract-refuses-second-active-contract-for-a-lead
 fail money-create-contract-refuses-non-positive-amount
+# P1-4, the lead-ownership rule. On the floor create_contract() does not exist at
+# all, so the refusal probe gets 42883 instead of 42501 and the manager positive
+# control gets no result — both load-bearing. The two "nothing was written" halves
+# pass on the floor for the honest reason that no call could write anything.
+fail money-create-contract-refuses-a-lead-assigned-to-another-salesperson
+pass money-create-contract-ownership-refusal-wrote-no-contract
+fail money-create-contract-still-allows-a-manager-on-that-lead
+pass money-create-contract-manager-fixture-was-rolled-back
 fail money-convert-quotation-refuses-non-owner-sales
 fail money-convert-quotation-refuses-unaccepted-quotation
 fail money-convert-quotation-is-atomic-for-the-owner

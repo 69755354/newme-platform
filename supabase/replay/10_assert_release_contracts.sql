@@ -15,7 +15,7 @@
 -- notices against ASSERT_TOTAL below, so an assertion file that stops early
 -- fails the job instead of passing quietly.
 --
--- ASSERT_TOTAL: 239
+-- ASSERT_TOTAL: 243
 -- ============================================================================
 
 create temp table assert_log (name text, passed boolean not null);
@@ -37,7 +37,7 @@ create temp table assert_log (name text, passed boolean not null);
 -- of raising is what makes one marker per assertion possible.
 --
 -- Both branches write to assert_log, so the self-check at the foot of this file
--- can prove from inside the database that all 239 assertions were reached —
+-- can prove from inside the database that all 243 assertions were reached —
 -- a claim no amount of log scraping can make.
 create or replace function pg_temp.assert(condition boolean, assertion_name text)
 returns void
@@ -1087,6 +1087,85 @@ begin
   end;
   reset role;
   perform pg_temp.assert(v_state = '22023', 'money-create-contract-refuses-non-positive-amount');
+end
+$$;
+
+-- The check create_contract never had (P1-4): it accepted any lead UUID, so a
+-- sales user could sign a colleague's lead — and since a lead has exactly one
+-- active-contract slot (idx_contracts_one_active_per_lead), doing so also took
+-- that colleague's slot away.
+--
+-- 33333333 belongs to sales2 and still carries no contract at this point: the only
+-- earlier statement aiming at it was the direct INSERT that trg_guard_contracts_write
+-- refused. Three refusals now live in this routine and they must not be confused
+-- with one another, so the message is matched and not only the sqlstate: 'lead not
+-- found' is P0002, the duplicate pre-check is 23505, and this one is 42501.
+do $$
+declare
+  v_state    text := '00000';
+  v_msg      text := '';
+  v_after    integer;
+  v_mgr_st   text := '00000';
+  v_mgr      jsonb;
+  v_mgr_row  boolean := false;
+begin
+  -- The positive control runs FIRST, inside a rollback envelope. The rule is "the
+  -- assignee OR a manager", so an admin must still be able to act on this lead;
+  -- without it, a create_contract() that refused everyone would satisfy the refusal
+  -- below. It runs first because if the ownership check is ever removed, the sales
+  -- call succeeds and takes the lead's only active-contract slot — and then this
+  -- block would die on the duplicate pre-check re-raised out of absorb() instead of
+  -- failing the named assertion that is supposed to catch exactly that.
+  begin
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    v_mgr := public.create_contract(jsonb_build_object(
+      'lead_id',      '33333333-3333-3333-3333-333333333333',
+      'amount',       '90000',
+      'party_a_name', 'Replay manager on another lead'));
+    reset role;
+    v_mgr_row := (select status = 'draft'
+                       and sales_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+                    from public.contracts where id = (v_mgr ->> 'id')::uuid);
+    raise exception 'REPLAY_ROLLBACK';
+  exception
+    when others then
+      reset role;
+      if sqlerrm <> 'REPLAY_ROLLBACK' then
+        v_mgr_st := sqlstate;
+        perform pg_temp.absorb(sqlstate, sqlerrm);
+      end if;
+  end;
+
+  begin
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    perform public.create_contract(jsonb_build_object(
+      'lead_id',      '33333333-3333-3333-3333-333333333333',
+      'amount',       '90000',
+      'party_a_name', 'Replay another salespersons lead'));
+  exception when others then v_state := sqlstate; v_msg := sqlerrm;
+  end;
+  reset role;
+  -- Read as superuser, after `reset role`: policy_contracts_select_sales would hide
+  -- a row created for sales2 from any authenticated reader, and a hidden row counts
+  -- as zero — which would make this assertion pass while the contract exists.
+  select count(*) into v_after from public.contracts
+   where lead_id = '33333333-3333-3333-3333-333333333333';
+
+  perform pg_temp.assert(
+    v_state = '42501' and v_msg like '%only the assigned salesperson or a manager%',
+    'money-create-contract-refuses-a-lead-assigned-to-another-salesperson');
+  perform pg_temp.assert(v_after = 0,
+    'money-create-contract-ownership-refusal-wrote-no-contract');
+  perform pg_temp.assert(v_mgr_st = '00000' and v_mgr_row,
+    'money-create-contract-still-allows-a-manager-on-that-lead');
+  -- Both calls together left the lead exactly as the fixture had it: the manager's
+  -- contract was rolled back and the sales call wrote nothing.
+  perform pg_temp.assert(
+    (select count(*) = 0 from public.contracts
+      where lead_id = '33333333-3333-3333-3333-333333333333'),
+    'money-create-contract-manager-fixture-was-rolled-back');
 end
 $$;
 
@@ -3072,7 +3151,7 @@ $$;
 -- ============================================================================
 -- In MODE=branch "ran" and "passed" are the same number, because a failure would
 -- already have raised. In MODE=control they are not, and the distinction is the
--- whole point: the ledger below is the in-database proof that all 239 assertions
+-- whole point: the ledger below is the in-database proof that all 243 assertions
 -- were REACHED. A DO block that died on an unclassified SQL error takes its
 -- remaining assertions out of the ledger, so the count comes up short and the
 -- control run fails here rather than in a log-scraping heuristic. Reported
@@ -3087,13 +3166,13 @@ begin
   select count(*), count(*) filter (where assert_log.passed), count(*) filter (where not assert_log.passed)
     into total, passed, failed
     from assert_log;
-  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=239', total, passed, failed;
-  if total <> 239 then
-    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 239', total
+  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=243', total, passed, failed;
+  if total <> 243 then
+    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 243', total
       using errcode = '22000';
   end if;
-  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 239 then
-    raise exception 'assertion file passed % of 239 assertions', passed
+  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 243 then
+    raise exception 'assertion file passed % of 243 assertions', passed
       using errcode = '22000';
   end if;
   if exists (select 1 from assert_log group by name having count(*) > 1) then

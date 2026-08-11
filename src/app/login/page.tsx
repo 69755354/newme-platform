@@ -7,46 +7,31 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LanguageProvider, useLanguage } from "@/lib/i18n/LanguageContext";
-import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const COOKIE_NAMES = getSupabaseCookieNames(SUPABASE_URL);
+/**
+ * Sign-in is a single same-origin request to POST /api/auth/login.
+ *
+ * It used to be three serial round trips from the browser: a password grant sent
+ * straight to Supabase Auth (leaving the CDN edge and paying a cold TLS
+ * handshake to the Auth region), then /api/auth/session to exchange the tokens
+ * for cookies, then /api/auth/me to check the profile was active. The server now
+ * does all three over warm origin-to-Supabase connections, so the browser pays
+ * one round trip on a connection it already has open.
+ *
+ * The browser therefore never handles a raw token, and a rejected profile never
+ * receives a cookie at all: the server revokes its token before responding.
+ */
 
-function clearBrowserSession() {
-  for (const name of [
-    COOKIE_NAMES.authToken,
-    COOKIE_NAMES.refreshToken,
-    "sb-access-token",
-    "sb-refresh-token",
-  ]) {
-    document.cookie = `${name}=; path=/; max-age=0; SameSite=Strict; Secure`;
-  }
-}
-
-async function revokeRejectedSession(accessToken: string) {
+/**
+ * A rejected login must not leave a usable browser session behind. The refresh
+ * half is httpOnly, so only the server can clear it.
+ */
+async function clearStaleSession() {
   try {
-    await fetch("/api/auth/logout", {
-      credentials: "same-origin",
-      method: "POST",
-    });
+    await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
   } catch {
-    // External revoke remains the fallback when same-origin cleanup fails.
+    // The server-side active-profile gate still rejects any stale token.
   }
-
-  try {
-    await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
-      method: "POST",
-      headers: {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${accessToken}`,
-      },
-    });
-  } catch {
-    // The server-side profile gate still rejects the token if Auth logout fails.
-  }
-
-  clearBrowserSession();
 }
 
 function LoginPageInner() {
@@ -58,61 +43,37 @@ function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  function messageFor(code: unknown): string {
+    switch (code) {
+      case "rate_limited":
+        return t("login.rateLimited");
+      case "inactive_account":
+        return t("login.inactiveAccount");
+      case "auth_unavailable":
+        return t("login.unavailable");
+      default:
+        // Never distinguish a wrong password from an unknown address.
+        return t("login.failed");
+    }
+  }
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
 
     try {
-      const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      const res = await fetch("/api/auth/login", {
         method: "POST",
-        headers: {
-          "apikey": SUPABASE_ANON_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-          gotrue_meta_security: {},
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        setError(data.error_description || data.msg || t("login.failed"));
-        setLoading(false);
-        return;
-      }
-
-      // Let the same-origin server establish the controlled cookie session first.
-      const sessionRes = await fetch("/api/auth/session", {
-        method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          access_token: data.access_token,
-          refresh_token: data.refresh_token,
-          expires_in: data.expires_in,
-        }),
+        body: JSON.stringify({ email, password }),
       });
-      if (!sessionRes.ok) {
-        await revokeRejectedSession(data.access_token);
-        throw new Error(t("login.failed"));
-      }
+      const data = await res.json().catch(() => null);
 
-      // Validate the cookie-backed session at the server boundary. Inactive
-      // profiles are rejected before the user is allowed into the app.
-      let activeCheck: Response;
-      try {
-        activeCheck = await fetch("/api/auth/me");
-      } catch (error) {
-        await revokeRejectedSession(data.access_token);
-        throw error;
-      }
-      const activeData = await activeCheck.json().catch(() => null);
-      if (!activeCheck.ok || activeData?.isActive !== true) {
-        await revokeRejectedSession(data.access_token);
-        setError(t("login.failed"));
+      if (!res.ok || data?.ok !== true || data?.isActive !== true) {
+        await clearStaleSession();
+        setError(messageFor(data?.error));
         setLoading(false);
         return;
       }
@@ -120,8 +81,8 @@ function LoginPageInner() {
       const redirectTo = searchParams.get("redirect") || "/dashboard";
       router.push(redirectTo);
       router.refresh();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t("login.networkError"));
+    } catch {
+      setError(t("login.networkError"));
       setLoading(false);
     }
   }
@@ -143,6 +104,7 @@ function LoginPageInner() {
               <Input
                 id="email"
                 type="email"
+                autoComplete="username"
                 placeholder="you@newme.ae"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -155,6 +117,7 @@ function LoginPageInner() {
               <Input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

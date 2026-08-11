@@ -64,22 +64,15 @@ export async function PATCH(
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
+    // F-07: this endpoint is an admin/boss RESET path only. Self-service change
+    // must prove ownership of the current password, which /api/auth/change-password
+    // does via signInWithPassword before updating. Without that proof, anyone
+    // holding a live session could permanently take over the account.
     if (targetId === "change-password") {
-      const { error } = await supabaseAdmin.auth.admin.updateUserById(user.id, { password });
-      if (error) return NextResponse.json({ error: error.message || "Update failed" }, { status: 400 });
-
-      const { error: profileErr } = await supabaseAdmin
-        .from("profiles")
-        .update({ password_changed_at: new Date().toISOString() })
-        .eq("id", user.id);
-
-      if (profileErr) {
-        return NextResponse.json(
-          { error: "Password changed but audit timestamp could not be recorded. Please contact admin." },
-          { status: 500 }
-        );
-      }
-      return NextResponse.json({ success: true });
+      return NextResponse.json(
+        { error: "Use POST /api/auth/change-password with oldPassword and newPassword" },
+        { status: 400 }
+      );
     }
 
     const { data: profile } = await supabaseAdmin

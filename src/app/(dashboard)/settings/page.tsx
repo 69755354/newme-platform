@@ -47,12 +47,18 @@ function PasswordChange() {
       toast.error(t("settings.passwordTooShort"));
       return;
     }
+    // F-07: the old password is proof of ownership. Never change a password
+    // without it — a stolen session must not be enough to seize the account.
+    if (!current) {
+      toast.error(t("settings.currentPassword"));
+      return;
+    }
     setSaving(true);
     try {
-      const res = await fetch("/api/users/change-password/password", {
-        method: "PATCH",
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: newPass }),
+        body: JSON.stringify({ oldPassword: current, newPassword: newPass }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
@@ -69,6 +75,13 @@ function PasswordChange() {
     <div className="max-w-md space-y-4">
       <h3 className="text-lg font-semibold text-foreground">{t("settings.changePassword")}</h3>
       <div className="space-y-3">
+        <div>
+          <label className="text-sm text-muted-foreground">{t("settings.currentPassword")}</label>
+          <input type="password" value={current} onChange={e => setCurrent(e.target.value)}
+            autoComplete="current-password"
+            className="w-full mt-1 bg-muted/50 border border-border/50 rounded-lg px-3 py-2 text-sm"
+            placeholder={t("settings.currentPasswordPlaceholder")} />
+        </div>
         <div>
           <label className="text-sm text-muted-foreground">{t("settings.newPassword")}</label>
           <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)}

@@ -145,7 +145,18 @@ export async function POST(request: NextRequest) {
         "python3",
         ["/home/ubuntu/newme-platform/scripts/cos-presign.py", key, String(expireSec)],
         {
-          env: { ...process.env },
+          // F-25: pass only what scripts/cos-presign.py actually reads
+          // (COS_SECRET_ID/COS_SECRET_KEY/COS_BUCKET/COS_REGION) plus PATH for
+          // interpreter resolution. Handing over the whole parent environment
+          // also handed over SUPABASE_SERVICE_ROLE_KEY and every other secret.
+          env: {
+            PATH: process.env.PATH ?? "",
+            COS_SECRET_ID: process.env.COS_SECRET_ID ?? "",
+            COS_SECRET_KEY: process.env.COS_SECRET_KEY ?? "",
+            COS_BUCKET: process.env.COS_BUCKET ?? "",
+            COS_REGION: process.env.COS_REGION ?? "",
+            NODE_ENV: process.env.NODE_ENV,
+          },
           timeout: 5000,
           encoding: "utf-8",
         },

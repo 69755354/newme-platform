@@ -10,6 +10,10 @@ const PROTECTED_ROUTES: Record<string, string[]> = {
 };
 
 const PUBLIC_API_PATHS = new Set([
+  // Pre-authentication by definition: the password grant is what creates a
+  // session, so it can never require one. It rate-limits and origin-checks
+  // itself, and never sets cookies for a profile that fails the active gate.
+  "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/me",
 ]);

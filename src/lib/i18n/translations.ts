@@ -353,6 +353,8 @@ export const translations = {
       transferAll: "Transfer All",
       // Password change
       changePassword: "Change Password",
+      currentPassword: "Current Password",
+      currentPasswordPlaceholder: "Enter your current password",
       newPassword: "New Password",
       newPasswordPlaceholder: "At least 6 characters",
       confirmPassword: "Confirm Password",
@@ -950,6 +952,9 @@ export const translations = {
       signingIn: "Signing in...",
       failed: "Login failed",
       networkError: "Network error",
+      rateLimited: "Too many attempts. Please wait and try again.",
+      inactiveAccount: "This account is disabled. Contact an administrator.",
+      unavailable: "Sign-in is temporarily unavailable. Please try again.",
     },
     changePassword: {
       title: "Change Password",
@@ -1859,6 +1864,8 @@ export const translations = {
       transferAll: "执行转移",
       // Password change
       changePassword: "修改密码",
+      currentPassword: "当前密码",
+      currentPasswordPlaceholder: "请输入当前密码",
       newPassword: "新密码",
       newPasswordPlaceholder: "至少6个字符",
       confirmPassword: "确认密码",
@@ -2456,6 +2463,9 @@ export const translations = {
       signingIn: "登录中...",
       failed: "登录失败",
       networkError: "网络错误",
+      rateLimited: "尝试次数过多，请稍后再试。",
+      inactiveAccount: "该账号已停用，请联系管理员。",
+      unavailable: "登录服务暂时不可用，请重试。",
     },
     changePassword: {
       title: "修改密码",

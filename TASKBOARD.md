@@ -70,6 +70,13 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | PROD-L0-FULL-STACK-TEST-GATES | DONE | Codex | 2026-08-09 |
 | PROD-DEPLOY-EVIDENCE-PERSISTENCE | DONE | Codex | 2026-08-06 |
 | task_SAM51_proxy_service_role_hardening | DONE | Hermes (OC) | 2026-07-20 |
+| PROD-LOGIN-LATENCY-SERVER-GRANT | REVIEW | Claude | 2026-08-11 |
+| PROD-SESSION-COOKIE-CONTRACT | REVIEW | Claude | 2026-08-11 |
+| PROD-AUTH-LOGIN-RATE-LIMIT | REVIEW | Claude | 2026-08-11 |
+| PROD-AUTH-ME-CLIENT-DEDUP | REVIEW | Claude | 2026-08-11 |
+| PROD-L0-AUDIT-FIX-F07-F15-F25-F04 | REVIEW | Claude | 2026-08-11 |
+| PROD-FALSE-GREEN-GATE-RETARGET | REVIEW | Claude | 2026-08-11 |
+| PROD-L0-DB-MIGRATIONS-F02-F06-F08-F09-F10 | BLOCKED | Claude | 2026-08-11 |
 
 > M1 发布链（Linear 为真源）：**RELEASED 2026-07-20**。发布 SHA `49bbb26` → BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6~12 全链 Done：SAM-28 业务签收（森哥 2026-07-20）+ 技术签收（机器全量验收），SAM-12 发布记录出具。SAM-26 视觉/移动端留人工不拦发布；SAM-45/46 进 M2 backlog。
 >
@@ -78,6 +85,38 @@ TODO → IN_PROGRESS → REVIEW → DONE
 > `task_P0_hotfix_audit_trail`: `20260706000005_add_leads_archived.sql` adds `leads_archived` as the 20th allowed event type, closing the archive audit gap.
 >
 > `task_L0_auth_me_proxy_fix` (热修 #2, 2026-07-20): CRM 全员无法登录。根因：`login/page.tsx:82-84` 用 Bearer 头调 `/api/auth/me`（cookies 尚未写入）；`proxy.ts` 的 Bearer fallback 鉴权了 user 但未传播给 supabase client，导致下游 profiles RLS（proxy.ts:77）以未鉴权 client 跑 → 返回 `inactive_account` → 登录页撤销刚创建的 session。修复：把 `/api/auth/me` 加入 `PUBLIC_API_PATHS`（一行）。安全性已复核：route handler `src/app/api/auth/me/route.ts` 用 service_role admin client 自查 profiles（L35-37）+ 主动拒绝未鉴权（L25-26）+ 主动拒绝 inactive（L45-47），proxy 的 RLS 复核对本端点冗余。tsc + eslint 双绿。待部署后用 Bearer curl 验收 200 + isActive:true。
+
+---
+
+## L0 登录延迟 + 安全审计修复 — 2026-08-11（Claude）
+
+> 事实源：代码看 git（工作区 diff），事实看线上。所有行为 REVIEW 而非 DONE：本地门禁已全绿，但**尚未部署到生产**，未取得生产实测证据。部署 + 浏览器实测登录耗时后才可改 DONE。
+>
+> 本地门禁快照（全绿）：`typecheck` clean；`lint:baseline` PASS（407 errors，无新增）；`npm test` 376 tests / 373 pass / 0 fail / 3 skipped；`check:release` PASS（smoke 14/14）；`check:security` PASS（107 findings，无规则/文件超基线）；`check:workflows` PASS 3/3；`npm run build` exit=0。
+
+| # | File | Operation | Verification | Status | Done Date |
+|---|------|-----------|-------------|--------|-----------|
+| PROD-LOGIN-LATENCY-SERVER-GRANT | src/app/api/auth/login/route.ts | CREATE | file exists + 含 `grant_type=password` + `isActiveProfile(profile)` 出现在 `applySessionCookies(` 之前（由 tests/security/session-revocation.test.mjs 断言）+ tests/security/auth-login-endpoint.test.mjs 17/17 pass | ⚠️ | 待部署 |
+| PROD-LOGIN-LATENCY-SERVER-GRANT | src/app/login/page.tsx | MODIFY | 含 `fetch("/api/auth/login"` 且 **不含** `auth/v1/`、`access_token`、`NEXT_PUBLIC_SUPABASE`、`document.cookie =`（tests/security/sam15-boundaries.test.mjs）—— 3 次浏览器串行往返 → 1 次 | ⚠️ | 待部署 |
+| PROD-LOGIN-LATENCY-SERVER-GRANT | src/proxy.ts | MODIFY | `PUBLIC_API_PATHS` 精确等于 `["/api/auth/login","/api/auth/logout","/api/auth/me"]`（解析式断言，非正则；tests/security/session-revocation.test.mjs） | ⚠️ | 待部署 |
+| PROD-SESSION-COOKIE-CONTRACT | src/lib/session-cookies.ts | CREATE | file exists + `httpOnly: false` 仅用于 auth-token、`httpOnly: true` 用于 refresh-token、两者 `sameSite: "strict"` + `secure: true`；login 与 session 两个 route 均调 `applySessionCookies(` 且均不直接调 `cookies.set(`（sam15-boundaries.test.mjs 循环断言） | ⚠️ | 待部署 |
+| PROD-AUTH-LOGIN-RATE-LIMIT | src/lib/rate-limit.ts | CREATE | file exists + `clientIdentifier` 优先读 `cf-connecting-ip`；验收：每账号 8/15min（大小写不绕过）+ 每 IP 20/5min + 429 带 `Retry-After` + 被限流请求**不转发上游**（auth-login-endpoint.test.mjs） | ⚠️ | 待部署 |
+| PROD-AUTH-ME-CLIENT-DEDUP | src/lib/session-identity.ts | CREATE | `readSessionIdentity` 函数体**不含** `lastActive`（鉴权永不读缓存）；useAuthRedirect.ts 只用 `readSessionIdentity()` 且不用 `peekSessionIdentity`；PostHogProviderInner.tsx 不含 `fetch(`—— 挂载时 2 次 `/api/auth/me` → 1 次 | ⚠️ | 待部署 |
+| PROD-L0-AUDIT-FIX-F07-F15-F25-F04 | src/app/api/users/[id]/password/route.ts | MODIFY | F-07：自改密码路径无 `updateUserById`（返 400 指向 change-password）；验证端 `signInWithPassword` 位置早于 `updateUserById`；无裸 `createClient(`（tests/security/password-change-session.test.mjs 4/4） | ⚠️ | 待部署 |
+| PROD-L0-AUDIT-FIX-F07-F15-F25-F04 | src/app/api/kpi/targets/route.ts, src/app/api/cos/download-url/route.ts, src/app/(dashboard)/settings/page.tsx | MODIFY | F-15 / F-25 / F-07 客户端半边；`npm test` 0 fail + `check:security` 无超基线 | ⚠️ | 待部署 |
+| PROD-L0-AUDIT-FIX-F07-F15-F25-F04 | .github/workflows/crm-ci.yml, .github/workflows/test-ci.yml | MODIFY | F-04：`npm run check:workflows` PASS 3/3 | ⚠️ | 待部署 |
+| PROD-FALSE-GREEN-GATE-RETARGET | tests/security/{password-change-session,sam15-boundaries,sam15-cookie-only-session,session-revocation}.test.mjs | MODIFY | F-05 子项：原断言把**漏洞实现**和**3 次往返客户端舞步**钉成了必要条件。验收：断言已迁至属性新位置且**未被削弱**（新增：解析式精确 allowlist、gate-before-cookie 顺序、鉴权不读缓存） | ⚠️ | 待部署 |
+| PROD-L0-DB-MIGRATIONS-F02-F06-F08-F09-F10 | supabase/migrations/20260811100*.sql | CREATE | 5 个迁移文件已写入但**未应用**。阻塞原因：Supabase MCP 连接为只读（`ERROR: 25006: cannot execute DELETE in a read-only transaction`）。解阻：移除 MCP 配置的 `--read-only`（无需交接任何密钥） | ❌ | — |
+
+> **PROD-LOGIN-LATENCY-SERVER-GRANT 根因**（用户报告"登录特别慢"）：旧 `src/app/login/page.tsx:67` 由**浏览器直连 GoTrue** 做 password grant —— 离开 Cloudflare 边缘、向 Auth 区付一次冷 TLS 握手，随后再串行 `/api/auth/session` 与 `/api/auth/me`，共 3 次串行往返。已测分层：Node 1.8ms / nginx+TLS 6ms / 过 Cloudflare 60-65ms / 生产→Supabase 45-48ms。现为 1 次浏览器往返（走已建立的边缘连接），grant + profile 鉴权在服务器侧走热连接。
+>
+> **安全是加强而非交换**：浏览器再也不接触裸 token；inactive profile 根本不会拿到 cookie，其刚签发的 token 在响应返回前已向上游 `/auth/v1/logout` 注销；上游失败文本（可能回引提交的密码）既不转发也不入日志，已由测试断言。
+>
+> **新增攻面已限定**：把鉴权收到服务端会把所有用户汇入单一 origin IP，把 GoTrue 的 per-IP 爆破保护塌缩成一个桶 —— 因此必须自带 PROD-AUTH-LOGIN-RATE-LIMIT 作为替代边界。**已知作用域限制**：计数器在单 Node 进程内存里；多进程部署必须改为共享存储。
+>
+> **本地实测（运行中构建）**：415 错误 content-type、403 外域 origin、403 伪造 `X-Forwarded-Host`、503 未配置 fail-closed、405 GET，且**任何被拒请求零 `Set-Cookie`**。
+>
+> **本次未做（用户明确暂缓，需本人点头）**：仓库转 private、git 历史清除 `deploy-backup-*.json`/`.next.backup/`、origin 防火墙限定 Cloudflare 段、凭证轮换。
 
 ---
 

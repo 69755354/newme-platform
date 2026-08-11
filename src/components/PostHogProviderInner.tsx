@@ -3,13 +3,14 @@
 import posthog from "posthog-js";
 import { PostHogProvider } from "posthog-js/react";
 import { useEffect, useState } from "react";
+import { peekSessionIdentity } from "@/lib/session-identity";
 
 async function identifyUser() {
   if (typeof window === "undefined") return;
   try {
-    const response = await fetch("/api/auth/me", { credentials: "same-origin" });
-    if (!response.ok) return;
-    const session = await response.json();
+    // Analytics is not an authorization decision, so reuse the session read the
+    // dashboard already performed rather than adding a second round trip.
+    const session = await peekSessionIdentity();
     if (session?.userId) {
       posthog.identify(session.userId, {
         email: session.email || "",

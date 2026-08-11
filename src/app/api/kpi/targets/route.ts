@@ -14,7 +14,11 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let q = supabaseAdmin
+  // F-15: read through the caller's RLS client. kpi_targets SELECT policies
+  // already grant admin/boss/operator every row and restrict sales to their own
+  // (or unassigned) targets, so this closes the service_role bypass without
+  // changing what an authorized user sees.
+  let q = supabase
     .from("kpi_targets")
     .select("*, profiles!kpi_targets_assigned_to_fkey(full_name)");
   if (period) q = q.eq("period", period);

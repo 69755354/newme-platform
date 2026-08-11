@@ -929,4 +929,5 @@ SAM-44 记录的登录实现为“浏览器请求 Supabase token 后再调 `/api
 - 5 个 L0 迁移加本轮新增的 3 个（baseline / KPI 原子替换 / rollback 伴随）**仍未应用于生产**。`MODE=branch` 通过只证明它们在一次性库上可应用、幂等、可回滚且行为断言成立。
 - `MODE=history` 不通过且以 `continue-on-error: true` 运行，属于可复现证据而非门禁；把它变成门禁需要运维先用线上 schema 压平 baseline。
 - `src/types/database.ts` 正常由生产 schema 生成，但本轮**手工补入** `replace_kpi_targets` 的 `Args`/`Returns`：该函数由本轮迁移创建、生产尚不存在，不手工补入则 `supabaseAdmin.rpc("replace_kpi_targets", ...)` 无法通过 `typecheck`。迁移应用后下一次 `npm run generate:database-types` 会以生产真相覆盖它；在此之前该条目是**声明而非观测**。指纹已按新的 `supabase/migrations/` 内容重新 stamp。
+- `crm-ci.yml` 的 `workflow_run` 修复在本 PR 上**无法观测**：GitHub 只从默认分支读取 `workflow_run` 触发器定义，`hermes-contract` 另有 `head_branch == 'main'` 条件。故本 PR 的 `ci` 成功不触发 `crm-ci`，`gh run list --workflow crm-ci.yml` 对本 PR head 无 run —— 这是预期，不是回归。真实证据须在合入 main 后的首次 main push 取得。本轮未 dispatch `crm-ci`：该 workflow 会向外部 Hermes 端点投递 webhook，属对外动作。
 - AGENTS.md 声称 `scripts/deploy.sh` Step 0 运行 `check-taskboard.sh`。当前 `scripts/deploy.sh` 只有 4 行 `exec`，`deploy-immutable.sh` 与 canonical wrapper 均不调用该门禁——文档与实现不一致，作为发现记录，未擅自在生产部署路径新增硬门禁。

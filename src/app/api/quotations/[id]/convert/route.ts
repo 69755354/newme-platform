@@ -34,10 +34,24 @@ import type { Json } from "@/types/database";
  * trg_guard_contracts_write and trg_guard_installment_plans_write raise 42501 for
  * an INSERT arriving as the `authenticated` role.
  *
- * The bookkeeping AFTER the conversion — project, activity, notification — is
- * still separate, still non-fatal, and still reported in `warnings`: those rows
- * are derived, and destroying a committed contract because an activity insert
- * failed is the behaviour this release removes, not one to keep.
+ * Two round-3 findings changed the contract of this route.
+ *
+ * P1-5 — the installment schedule is REQUIRED and explicit. The dialog used to
+ * POST with no body at all; this route turned that into `installments: []`, and
+ * the routine created a contract with an approval row and no schedule, which no
+ * entrypoint could then repair. The schedule is now validated here (shape, count,
+ * positive amounts, unique sequence numbers) and again by the routine against the
+ * quotation total, which this route deliberately does not read: a validation that
+ * needs the authoritative total belongs in the same transaction as the write.
+ * Every failure is a 400 before anything is written.
+ *
+ * P1-6 — the project and activity rows are written by the routine, inside the
+ * conversion's transaction. They used to be written here, after the commit, with
+ * failure downgraded to a `warnings` entry and HTTP 200; a retry then hit
+ * "quotation is already converted", so a conversion that lost its project row
+ * could not be repaired. Re-posting the same request now reaches the routine's
+ * idempotent branch, which creates whatever is missing and reports it as
+ * `finalized`. This route no longer writes derived rows at all.
  */
 export async function POST(
   request: NextRequest,
@@ -57,20 +71,59 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Parse optional body for overrides
-    const body = await request.json().catch(() => ({}));
-    const installments = Array.isArray(body.installments) ? body.installments : [];
+    const body = await request.json().catch(() => null);
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: "A JSON body with an installments array is required", code: "installments_required" },
+        { status: 400 },
+      );
+    }
+
+    // The schedule is required. A missing or empty array used to become a
+    // zero-installment contract; it is now a refusal before any write.
+    if (!Array.isArray(body.installments) || body.installments.length === 0) {
+      return NextResponse.json(
+        {
+          error: "A conversion needs an installment schedule with at least one entry",
+          code: "installments_required",
+        },
+        { status: 400 },
+      );
+    }
 
     // seq defaults to position: `inst.seq` omitted used to become 1 for every
     // row, and installment_plans has a UNIQUE (contract_id, seq).
-    const schedule = installments.map(
-      (inst: { seq?: number; amount?: number; due_date?: string; description?: string }, index: number) => ({
-        seq: Number.isFinite(inst?.seq) ? inst.seq : index + 1,
-        amount: Number.isFinite(inst?.amount) ? inst.amount : 0,
-        due_date: inst?.due_date || null,
-        description: typeof inst?.description === "string" ? inst.description : "",
-      }),
-    );
+    const schedule: { seq: number; amount: number; due_date: string | null; description: string }[] = [];
+    const seen = new Set<number>();
+    for (const [index, raw] of body.installments.entries()) {
+      const inst = (raw ?? {}) as {
+        seq?: unknown;
+        amount?: unknown;
+        due_date?: unknown;
+        description?: unknown;
+      };
+      const seq = Number.isInteger(inst.seq) && (inst.seq as number) > 0 ? (inst.seq as number) : index + 1;
+      const amount = typeof inst.amount === "number" ? inst.amount : Number(inst.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json(
+          { error: `Installment ${index + 1} needs a positive amount`, code: "installment_amount_invalid" },
+          { status: 400 },
+        );
+      }
+      if (seen.has(seq)) {
+        return NextResponse.json(
+          { error: `Installment sequence ${seq} appears twice`, code: "installment_seq_duplicate" },
+          { status: 400 },
+        );
+      }
+      seen.add(seq);
+      schedule.push({
+        seq,
+        amount,
+        due_date: typeof inst.due_date === "string" && inst.due_date ? inst.due_date : null,
+        description: typeof inst.description === "string" ? inst.description : "",
+      });
+    }
 
     const { data: converted, error: rpcErr } = await supabase.rpc("convert_quotation_to_contract", {
       p_quotation_id: quotationId,
@@ -105,66 +158,30 @@ export async function POST(
       contract_no: string;
       quotation_status: string;
       installments_count: number;
+      already_converted?: boolean;
+      finalized?: string[] | null;
     };
 
-    // ── Committed. Everything below is derived bookkeeping ──────────────
-    const warnings: string[] = [];
-    const noteFailure = (stage: string, err: unknown) => {
-      warnings.push(stage);
-      logger.error(
-        { err, request_id, operation: "quotation_convert", stage, contract_id: conversion.contract_id },
-        `[Quotation Convert] ${stage} failed after the conversion committed`,
+    // ── Committed, contract + schedule + approval + project + activity ──
+    // Nothing derived is written here any more (P1-6). A retry of this exact
+    // request reaches the routine's idempotent branch and reports what it had to
+    // recreate, so a repair is a re-POST rather than an operator's SQL.
+    if (conversion.already_converted) {
+      logger.info(
+        {
+          request_id,
+          operation: "quotation_convert",
+          user_id: user.id,
+          quotation_id: quotationId,
+          contract_id: conversion.contract_id,
+          finalized: conversion.finalized ?? [],
+        },
+        "[Quotation Convert] already converted; the routine finalized the missing derived rows",
       );
-    };
-
-    const { data: quote, error: quoteReadErr } = await supabase
-      .from("quotations")
-      .select("id, quote_no, lead_id, created_by, total_amount, leads(customer_id, customer_name, property_type, property_size_sqm, location)")
-      .eq("id", quotationId)
-      .single();
-
-    if (quoteReadErr || !quote) {
-      // The conversion happened; only the follow-up rows are affected.
-      noteFailure("quotation_read_back", quoteReadErr);
-    } else {
-      const lead = quote.leads as {
-        customer_id?: string | null;
-        customer_name?: string | null;
-        property_type?: string | null;
-        property_size_sqm?: number | null;
-        location?: string | null;
-      } | null;
-
-      // on_lead_won() creates a project only for a lead that has no contract yet,
-      // and the conversion above created one in the same transaction that marked
-      // the lead won — so the trigger returned early and this is the project row.
-      const projectName = `${lead?.customer_name || "Client"} - ${lead?.property_type || "Smart Home"}`;
-      const { error: projectErr } = await supabase.from("projects").insert({
-        lead_id: quote.lead_id,
-        contract_id: conversion.contract_id,
-        sales_id: quote.created_by,
-        customer_id: lead?.customer_id || null,
-        name: projectName,
-        property_type: lead?.property_type || null,
-        property_size: lead?.property_size_sqm || null,
-        location: lead?.location || null,
-        phase: "design",
-        status: "active",
-        contract_amount: quote.total_amount,
-      });
-      if (projectErr) noteFailure("project_insert", projectErr);
-
-      const { error: activityErr } = await supabase.from("activities").insert({
-        lead_id: quote.lead_id,
-        type: "note",
-        content: `合同 ${conversion.contract_no} 已从报价 ${quote.quote_no} 自动创建，待审批`,
-        ai_generated: true,
-        user_id: user.id,
-      });
-      if (activityErr) noteFailure("activity_insert", activityErr);
     }
 
-    // Notify admins
+    // Notify admins. Best-effort by design: this is an outbound call, not part of
+    // the conversion's graph.
     try {
       await fetch(
         `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/notify`,
@@ -174,8 +191,7 @@ export async function POST(
           body: JSON.stringify({
             type: "contract_pending_approval",
             contract_id: conversion.contract_id,
-            lead_id: quote?.lead_id ?? null,
-            amount: quote?.total_amount ?? null,
+            lead_id: null,
           }),
         }
       );
@@ -194,7 +210,10 @@ export async function POST(
       contract_no: conversion.contract_no,
       quotation_status: conversion.quotation_status,
       installments_count: conversion.installments_count,
-      ...(warnings.length > 0 ? { warnings } : {}),
+      already_converted: conversion.already_converted ?? false,
+      ...(conversion.finalized && conversion.finalized.length > 0
+        ? { finalized: conversion.finalized }
+        : {}),
     });
   } catch (err: unknown) {
     const message =

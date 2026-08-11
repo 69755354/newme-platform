@@ -91,6 +91,14 @@ interface InstallmentPlan {
 
 // ─── Page Component ──────────────────────────────────────────────────
 
+/**
+ * The roles confirm_payment() and allocate_payment() accept.
+ *
+ * A named constant so tests/security/money-grant-coupling.test.mjs can hold it
+ * against the routines' own role lists instead of against a second copy of them.
+ */
+const SETTLEMENT_ROLES = ["admin", "boss", "finance"];
+
 export default function PaymentsPage() {
   const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss", "finance", "operator"]);
   const supabase = createClient();
@@ -152,7 +160,19 @@ export default function PaymentsPage() {
 
   // ─── Helpers ─────────────────────────────────────────────────────
 
+  // Two different rules, and conflating them was round-3 finding P1-9.
+  //
+  // `isPrivileged` is the RECORDING and VISIBILITY rule: these roles may record a
+  // payment against any contract and see every payment. `canSettle` is the MONEY
+  // rule: confirming a payment and allocating it to installments is admin, boss or
+  // finance only. That is what src/app/actions/payments.ts enforces and what
+  // confirm_payment() / allocate_payment() enforce since
+  // supabase/migrations/20260814000000_l0_round3_authorization_and_integrity.sql.
+  // The buttons used to be gated on `isPrivileged`, so an operator was offered a
+  // Confirm button the action rejected — and, before the migration narrowed the
+  // routine's role list, an operator calling the RPC directly succeeded.
   const isPrivileged = role && ["admin", "boss", "finance", "operator"].includes(role);
+  const canSettle = role != null && SETTLEMENT_ROLES.includes(role);
 
   const methodLabel = (m: string) => {
     const map: Record<string, string> = {
@@ -492,7 +512,7 @@ export default function PaymentsPage() {
 
                         {/* Action Buttons */}
                         <div className="flex items-center gap-2 shrink-0 ml-2">
-                          {!payment.confirmed && isPrivileged && (
+                          {!payment.confirmed && canSettle && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -504,7 +524,7 @@ export default function PaymentsPage() {
                               {confirmingId === payment.id ? "..." : t("payments.confirm")}
                             </Button>
                           )}
-                          {payment.confirmed && isPrivileged && (
+                          {payment.confirmed && canSettle && (
                             <Button
                               size="sm"
                               variant="outline"

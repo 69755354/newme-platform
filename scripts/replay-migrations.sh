@@ -10,19 +10,25 @@
 #   MODE=branch   (default, gating)
 #       supabase/replay/01_floor_schema.sql, then only the migrations this branch
 #       adds or changes, then fixtures, then a re-apply against those fixtures,
-#       then supabase/replay/10_assert_release_contracts.sql, then the rollback
-#       companion. This is the executable proof that the L0 migrations apply, do
-#       what they claim at the behaviour level, are idempotent, and are
-#       reversible.
+#       then supabase/replay/10_assert_release_contracts.sql, then
+#       supabase/replay/15_concurrency_two_session.sh with EXPECT=consistent,
+#       then the rollback companion. This is the executable proof that the L0
+#       migrations apply, do what they claim at the behaviour level, hold up under
+#       two concurrent writers, are idempotent, and are reversible.
 #
 #   MODE=control  (gating)
 #       The floor and the fixtures, WITHOUT the migrations, then the same
-#       assertion file. Requires that every assertion in CONTROL_MUST_FAIL below
-#       fails. This is the negative control: it proves the assertions detect the
-#       un-remediated state instead of passing against anything. It has already
-#       earned its place — it caught three F-10 assertions that were passing
-#       vacuously because the floor had no meta_tokens table for the migration to
-#       act on.
+#       assertion file with `replay.collect = on`, then exact marker accounting
+#       against supabase/replay/control-expectations.txt: every assertion declared
+#       load-bearing must emit exactly one `ASSERT_FAIL <name>`, every assertion
+#       declared floor-passing must emit exactly one `ASSERT_OK <name>`, and the
+#       run must contain no unclassified SQL error. This is the negative control:
+#       it proves the assertions detect the un-remediated state instead of passing
+#       against anything. It has already earned its place — it caught three F-10
+#       assertions that were passing vacuously because the floor had no
+#       meta_tokens table for the migration to act on. It then runs
+#       supabase/replay/15_concurrency_two_session.sh with EXPECT=lost, which
+#       requires the floor to actually lose a concurrent allocation.
 #
 #   MODE=history  (gating)
 #       Every 14-digit migration in supabase/migrations/, from empty, in order.
@@ -100,126 +106,36 @@ BRANCH_MIGRATIONS=()
 ROLLBACK_COMPANIONS=()
 
 # ---------------------------------------------------------------------------
-# MODE=control expectations: assertions that MUST fail when the migrations are
-# not applied.
+# MODE=control expectations live in supabase/replay/control-expectations.txt,
+# one declared verdict per assertion, and are enforced by
+# scripts/control-marker-accounting.mjs.
 #
-# This is now the complete complement: of the 131 assertions in
-# 10_assert_release_contracts.sql, exactly 31 hold against the un-remediated
-# floor, and every one of the other 100 is listed here. The 31 that are absent are
-# absent for a stated reason, not by omission — they are the F-09 leg-2 outage
-# detectors (`authenticated` must KEEP its table grants), the F-02 "do not delete
-# the identity" assertions, the last_active_at write the previous release needs,
-# the two policies that were already closed before this branch, and the handful of
-# positive money-path behaviours the pre-remediation routines got right in the
-# simple case. Anything that could regress silently is on this list.
+# They used to be a 176-name bash array here, checked by "this name appears in the
+# assertion file" plus "no ASSERT_OK line was seen for it". Round-3 finding P1-12:
+# the second half is satisfied by an assertion that never executed, and 78 of them
+# never executed — against the un-remediated floor a DO block that hits
+# undefined_function aborts and silences every assertion below it. The gate
+# reported "100 load-bearing assertions all fail without their migration" over a
+# log with 87 assertion-specific markers and 40 unclassified SQL errors.
 #
-# The reviewed head listed 17 of 29, which meant twelve assertions could have been
-# tautologies without the control noticing. If you add an assertion and the
-# control does not complain, check whether it belongs here before assuming it is
-# one of the 28.
+# The accounting is now one marker per assertion in both directions, and the
+# accounting logic itself is mutation-tested by
+# tests/release/control-marker-accounting.test.mjs — the previous gate was
+# untested shell, which is why nobody noticed it was counting absences.
 # ---------------------------------------------------------------------------
-CONTROL_MUST_FAIL=(
-  baseline-profiles-revocation-columns-exist
-  f09-anon-cannot-execute-confirm-payment
-  f09-anon-cannot-execute-approve-contract
-  f09-anon-cannot-execute-allocate-payment
-  f06-authenticated-cannot-update-email
-  f06-authenticated-cannot-update-password-changed-at
-  f06-authenticated-cannot-update-force-password-change
-  f06-authenticated-cannot-update-is-active
-  f06-authenticated-cannot-update-role
-  f08-permissive-audit-insert-policy-is-gone
-  f08-audit-insert-closed-for-authenticated
-  f08-activity-insert-closed-for-authenticated
-  f08-session-insert-closed-for-authenticated
-  f08-authenticated-cannot-forge-audit-row
-  f08-authenticated-cannot-append-self-attributed-audit-row
-  f10-permissive-select-policy-is-gone
-  f10-authenticated-has-no-select-grant
-  f10-anon-has-no-select-grant
-  f10-authenticated-cannot-read-meta-tokens
-  f02-account-neutralised
-  kpi-replace-function-exists
-  kpi-service-role-can-execute
-  kpi-authenticated-cannot-execute
-  kpi-anon-cannot-execute
-  kpi-definer-with-pinned-search-path
-  kpi-unassigned-target-is-unique-per-period-and-type
-  kpi-fixture-period-seeded
-  kpi-failed-replace-preserves-period
-  kpi-empty-replace-preserves-period
-  kpi-replace-refuses-duplicate-unassigned-keys
-  kpi-duplicate-key-replace-preserves-period
-  kpi-replace-holds-a-period-scoped-advisory-lock
-  kpi-replace-lock-key-is-derived-from-the-period
-  kpi-successful-replace-replaces-period
-  money-actor-definer-with-pinned-search-path
-  money-counters-table-unreachable-by-end-user-roles
-  money-next-contract-no-unreachable-by-end-user-roles
-  money-write-guards-installed-and-enabled
-  money-routines-are-security-definer
-  money-lead-won-trigger-kept-definer-and-pinned-search-path
-  money-contract-no-seeded-from-highest-issued-number
-  money-contract-no-increments-under-repeat-calls
-  money-actor-returns-session-subject-for-end-user-call
-  money-actor-refuses-claimed-id-that-is-not-the-session
-  money-actor-refuses-inactive-account
-  money-actor-refuses-disallowed-role
-  money-actor-requires-an-actor-id-in-a-server-context
-  f09-confirm-payment-refuses-impersonated-confirmer
-  f09-confirm-payment-refuses-unauthorised-role
-  f09-confirm-payment-succeeds-for-finance-as-itself
-  money-confirm-payment-updates-project-paid-amount
-  money-confirm-payment-increments-kpi-actual-amount
-  money-confirm-payment-refuses-second-confirmation
-  f09-allocate-payment-refuses-impersonated-allocator
-  money-allocate-payment-refuses-plan-from-another-contract
-  money-allocate-payment-leaves-the-other-contract-untouched
-  money-allocate-payment-resets-de-allocated-plans
-  money-allocate-payment-refuses-total-over-payment-amount
-  f09-approve-contract-refuses-impersonated-approver
-  f09-approve-contract-impersonation-left-the-contract-unapproved
-  f09-approve-contract-refuses-sales-role
-  money-approve-contract-admin-step-settles-pending-row-and-opens-ceo-review
-  money-approve-contract-ceo-step-settles-and-approves
-  money-approve-contract-raises-instead-of-returning-error-json
-  money-approve-contract-rejects-unknown-action
-  money-create-contract-is-atomic-for-a-sales-caller
-  money-create-contract-issues-a-counter-based-number
-  money-create-contract-refuses-second-active-contract-for-a-lead
-  money-create-contract-refuses-non-positive-amount
-  money-convert-quotation-refuses-non-owner-sales
-  money-convert-quotation-refuses-unaccepted-quotation
-  money-convert-quotation-is-atomic-for-the-owner
-  money-convert-quotation-refuses-second-conversion
-  money-direct-contract-insert-refused
-  money-direct-contract-status-update-refused
-  money-direct-contract-amount-update-refused
-  money-direct-payment-insert-preconfirmed-refused
-  money-direct-payment-confirmation-refused
-  money-confirmed-payment-amount-immutable
-  money-direct-contract-approval-insert-refused
-  money-direct-payment-allocation-insert-refused
-  money-direct-installment-plan-delete-refused
-  money-set-contract-status-permits-owner-submission-for-approval
-  money-set-contract-status-refuses-approval-chain-transition
-  money-revoke-contract-requires-a-manager
-  session-predicates-are-definer-with-pinned-search-path
-  session-predicates-not-executable-by-anon
-  session-boundary-covers-every-authenticated-reachable-table
-  session-boundary-policies-are-restrictive-and-scoped-to-authenticated
-  session-inactive-admin-identity-reads-no-contracts
-  session-inactive-identity-reads-no-profile-row
-  session-inactive-identity-cannot-write-its-own-profile
-  session-banned-identity-reads-no-contracts
-  session-ban-fixture-was-rolled-back
-  session-token-issued-before-password-change-reads-nothing
-  session-token-issued-after-password-change-still-reads
-  session-claim-set-without-iat-is-refused
-  session-stale-token-still-reads-its-own-profile-row
-  session-stale-token-cannot-enumerate-other-profiles
-  session-password-change-fixture-was-rolled-back
-)
+CONTROL_EXPECTATIONS="$REPLAY_DIR/control-expectations.txt"
+CONTROL_ACCOUNTING="$ROOT/scripts/control-marker-accounting.mjs"
+
+# ---------------------------------------------------------------------------
+# The one behaviour no assertion in 10_assert_release_contracts.sql can reach:
+# a lost update needs two sessions, and that file runs in one. Round-3 finding
+# P1-7 was reproduced by hand and fixed with row locks in allocate_payment(); the
+# reproduction now lives in supabase/replay/15_concurrency_two_session.sh and is
+# required to come out CONSISTENT in MODE=branch and LOST in MODE=control, so
+# deleting the `for update` again turns the gate red instead of going unnoticed.
+# ---------------------------------------------------------------------------
+CONCURRENCY_GATE="$REPLAY_DIR/15_concurrency_two_session.sh"
+
 PSQL=(psql --no-psqlrc --quiet --no-align --tuples-only -v ON_ERROR_STOP=1)
 
 # Migration files are applied with --single-transaction, because that is what the
@@ -495,81 +411,61 @@ if [ "$MODE" = control ]; then
   "${PSQL[@]}" -f "$REPLAY_DIR/05_seed_behaviour_fixtures.sql" >/dev/null \
     || fail "behaviour fixtures did not load onto the floor"
 
-  # ON_ERROR_STOP is deliberately OFF here. Against the un-remediated floor the
-  # assertion file is expected to error repeatedly — a missing column makes
-  # has_column_privilege() raise, a successful forgery makes its DO block raise —
-  # and the run has to continue so that every expectation can be checked, not
-  # just the first one.
-  echo "== assertions against the un-remediated floor =="
-  control_output="$(psql --no-psqlrc --quiet \
-    -f "$REPLAY_DIR/10_assert_release_contracts.sql" 2>&1 || true)"
+  # ON_ERROR_STOP is deliberately OFF here, and the assertion file is switched into
+  # collect mode: against the un-remediated floor a failed assertion is the
+  # EXPECTED result, so pg_temp.assert() records it and returns instead of raising,
+  # and pg_temp.absorb() does the same for a measurement the floor cannot even
+  # take. Without that, one early failure abandoned the rest of its DO block and
+  # took every assertion below it out of the accounting — round-3 P1-12.
+  #
+  # The switch is set on the database, not through PGOPTIONS, so it survives
+  # whatever wrapper psql is invoked through and applies to exactly one throwaway
+  # database. MODE=branch never sets it, so the gate still raises on the first
+  # broken invariant.
+  "${PSQL[@]}" -c "alter database \"$PGDATABASE\" set replay.collect = 'on'" >/dev/null \
+    || fail "could not switch $PGDATABASE into assertion collect mode"
 
-  # -----------------------------------------------------------------------
-  # Three checks, not one. The reviewed head had only the second, which is
-  # satisfiable by accident: "no line matching ASSERT_OK <name>" is also true
-  # when there is no assertion called <name> at all, so a renamed or misspelled
-  # entry in CONTROL_MUST_FAIL passed the control forever while proving nothing.
-  # -----------------------------------------------------------------------
+  echo "== assertions against the un-remediated floor (collect mode) =="
   assertion_file="$REPLAY_DIR/10_assert_release_contracts.sql"
+  control_log="$(mktemp)"
+  # shellcheck disable=SC2064
+  trap "rm -f '$control_log'" EXIT
+  psql --no-psqlrc --quiet -f "$assertion_file" > "$control_log" 2>&1 || true
 
-  # 1 · every name listed here must actually exist as an assertion.
-  missing_names=()
-  for name in "${CONTROL_MUST_FAIL[@]}"; do
-    grep -qF "'$name'" "$assertion_file" || missing_names+=("$name")
-  done
-  if [ "${#missing_names[@]}" -gt 0 ]; then
-    printf 'listed in CONTROL_MUST_FAIL but not defined in the assertion file: %s\n' "${missing_names[@]}" >&2
-    fail "${#missing_names[@]} control expectation(s) name an assertion that does not exist, so they can never fail and never prove anything"
+  # -----------------------------------------------------------------------
+  # Exact marker accounting. Every check the previous version made is subsumed,
+  # and the ones it was missing — one marker per assertion, no duplicates, no
+  # unclassified SQL errors, verdicts matched in both directions — are the point.
+  #
+  # It lives in a separate module because the accounting logic is what was wrong
+  # last time, and shell is not testable: tests/release/control-marker-accounting.test.mjs
+  # mutation-tests it with dropped markers, duplicated markers, injected SQL
+  # errors, renamed assertions and a tampered ledger, and requires each of those
+  # to be rejected.
+  # -----------------------------------------------------------------------
+  [ -f "$CONTROL_EXPECTATIONS" ] || fail "missing $CONTROL_EXPECTATIONS"
+  [ -f "$CONTROL_ACCOUNTING" ] || fail "missing $CONTROL_ACCOUNTING"
+  command -v node >/dev/null 2>&1 || fail "node not found on PATH; the control accounting needs it"
+
+  if ! node "$CONTROL_ACCOUNTING" \
+      --assertions "$assertion_file" \
+      --expectations "$CONTROL_EXPECTATIONS" \
+      --log "$control_log"; then
+    echo "--- control run log ---" >&2
+    cat "$control_log" >&2
+    fail "the negative control did not account for every assertion"
   fi
 
-  # 2 · none of them may hold against the un-remediated floor.
-  passed_anyway=()
-  for name in "${CONTROL_MUST_FAIL[@]}"; do
-    if printf '%s\n' "$control_output" | grep -q "ASSERT_OK $name\$"; then
-      passed_anyway+=("$name")
-    fi
-  done
-  if [ "${#passed_anyway[@]}" -gt 0 ]; then
-    printf 'passed without its migration: %s\n' "${passed_anyway[@]}" >&2
-    fail "${#passed_anyway[@]} assertion(s) hold against the un-remediated floor, so they prove nothing"
-  fi
+  # The second half of the negative control, and the only one that needs two
+  # sessions: without allocate_payment()'s row locks the floor must actually lose
+  # an update. If it does not, the branch-mode "serialized" result is not evidence
+  # of anything the floor did not already do.
+  echo "== two-session concurrency against the un-remediated floor =="
+  [ -f "$CONCURRENCY_GATE" ] || fail "missing $CONCURRENCY_GATE"
+  EXPECT=lost bash "$CONCURRENCY_GATE" \
+    || fail "the un-remediated floor did not reproduce the lost update recorded as P1-7"
 
-  # 3 · the marker the other two checks depend on must be observable. If the
-  # assertion file failed to run, or the ASSERT_OK format changed, check 2
-  # becomes vacuously true and the control turns into a rubber stamp.
-  control_ok="$(printf '%s\n' "$control_output" \
-    | grep -oE 'ASSERT_OK [a-z0-9][a-z0-9-]*' | sort -u | wc -l | tr -d ' ')"
-  [ "$control_ok" -gt 0 ] || {
-    printf '%s\n' "$control_output" >&2
-    fail "the control run produced no ASSERT_OK markers at all, so 'did not pass' proves nothing about any assertion"
-  }
-
-  # 4 · every assertion is accounted for. listed-as-must-fail + observed-to-pass
-  # has to equal the declared total, which makes the control complete rather than
-  # merely non-empty: a new assertion that fails against the floor and is NOT
-  # listed above changes the total without changing either term, and lands here.
-  # That is the hole the reviewed head had — twelve assertions were neither listed
-  # nor passing, so any one of them could have been a tautology unnoticed.
-  declared_total="$(grep -m1 -oE '^-- ASSERT_TOTAL: [0-9]+' "$assertion_file" | grep -oE '[0-9]+')"
-  [ -n "$declared_total" ] || fail "$assertion_file declares no ASSERT_TOTAL"
-  accounted=$(( ${#CONTROL_MUST_FAIL[@]} + control_ok ))
-  if [ "$accounted" -ne "$declared_total" ]; then
-    printf 'must-fail listed : %s\npassed on floor  : %s\ndeclared total   : %s\n' \
-      "${#CONTROL_MUST_FAIL[@]}" "$control_ok" "$declared_total" >&2
-    # Diagnostic only, and scraped rather than parsed, so it can carry a stray
-    # string literal. The counts above are the authority; this is the shortlist to
-    # look at first.
-    printf 'candidates to classify (scraped from the file, may include non-assertion literals):\n' >&2
-    grep -oE "'[a-z0-9][a-z0-9-]*'\);" "$assertion_file" | tr -d "');" | sort -u \
-      | grep -vxF -f <(printf '%s\n' "${CONTROL_MUST_FAIL[@]}" | sort -u) \
-      | grep -vxF -f <(printf '%s\n' "$control_output" \
-          | grep -oE 'ASSERT_OK [a-z0-9][a-z0-9-]*' | sed 's/^ASSERT_OK //' | sort -u) >&2 || true
-    fail "the control accounts for $accounted of $declared_total assertions; an assertion that neither passes against the floor nor is declared load-bearing proves nothing either way"
-  fi
-
-  echo "== control OK: ${#CONTROL_MUST_FAIL[@]} load-bearing assertions all fail without their migration =="
-  echo "   ($control_ok of $declared_total passed against the floor, which is how we know the file ran;"
-  echo "    ${#CONTROL_MUST_FAIL[@]} + $control_ok = $declared_total, so every assertion is accounted for)"
+  echo "== control OK =="
   exit 0
 fi
 
@@ -633,6 +529,19 @@ printf '%s\n' "$assert_output"
 observed="$(printf '%s\n' "$assert_output" | grep -c 'ASSERT_OK ' || true)"
 [ "$observed" = "$expected" ] || \
   fail "expected $expected assertions to report ASSERT_OK, saw $observed"
+
+# ---------------------------------------------------------------------------
+# The two-session gate. It runs here, after the single-session assertions and
+# before the rollback, because it is the only check in this harness that needs
+# the migrations applied AND two concurrent transactions: allocate_payment()'s
+# lost update (P1-7) is invisible to any test that runs in one session. It stages
+# its own rows on the fixture contract and removes them again, so what follows
+# sees the state the fixtures left.
+# ---------------------------------------------------------------------------
+echo "== two-session concurrency (allocate_payment) =="
+[ -f "$CONCURRENCY_GATE" ] || fail "missing $CONCURRENCY_GATE"
+EXPECT=consistent bash "$CONCURRENCY_GATE" \
+  || fail "concurrent allocations to one installment plan are not serialized"
 
 # ---------------------------------------------------------------------------
 # Down migration, then the state it leaves behind.

@@ -79,15 +79,22 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
 };
 
 /**
- * The transitions set_contract_status() permits, keyed by the CURRENT status
- * (supabase/migrations/20260812000000_money_actor_identity_and_atomicity.sql:1076).
+ * The transitions set_contract_status() permits, keyed by the CURRENT status.
  *
- * This grid used to offer nine buttons regardless of the contract's state, two of
+ * The graph itself lives in the database, as
+ * public.contract_transition_is_allowed(from, to)
+ * (supabase/migrations/20260814000000_l0_round3_authorization_and_integrity.sql),
+ * and set_contract_status() additionally restricts the statuses IT may set to the
+ * six below — 'approved' and 'pending_ceo' belong to approve_contract(),
+ * 'superseded' and 'revoking' to revoke_contract(). This grid is that
+ * intersection, and tests/security/money-route-rpc-coupling.test.mjs recomputes it
+ * from the SQL so the two cannot drift.
+ *
+ * The grid used to offer nine buttons regardless of the contract's state, two of
  * which — 'approved' and 'pending_ceo' — would have been an approval-chain bypass
  * if the PATCH route had written what it was sent, and two of which — 'signed' and
  * 'cancelled' — are not in the contracts_status_check CHECK constraint at all, so
- * they could only ever have produced an error. The approval statuses are reached
- * through the Approve / Reject buttons above, which call approve_contract().
+ * they could only ever have produced an error.
  *
  * Anything not listed here is refused by the routine with 22023 → HTTP 400, so
  * this map is a usability boundary, not the security boundary.
@@ -97,7 +104,7 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   rejected: ["pending_admin", "draft"],
   approved: ["active", "terminated"],
   active: ["completed", "suspended", "terminated"],
-  suspended: ["terminated"],
+  suspended: ["active", "terminated"],
   revoking: ["terminated"],
 };
 

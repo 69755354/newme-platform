@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
 import type { Json } from "@/types/database";
 
 interface AllocationItem {
@@ -101,20 +102,21 @@ export async function POST(
     });
 
     if (rpcErr) {
-      logger.error(
+      const failure = moneyRpcFailure(rpcErr, "Failed to allocate payment");
+      const log = failure.status >= 500 ? logger.error : logger.warn;
+      log(
         {
           err: rpcErr,
           request_id,
           operation: "payment_allocate",
           user_id: user.id,
           payment_id: paymentId,
+          error_code: rpcErr.code,
+          http_status: failure.status,
         },
-        "[API Payments Allocate] RPC failed",
+        "[API Payments Allocate] allocate_payment refused the request",
       );
-      return NextResponse.json(
-        { error: rpcErr.message || "Failed to allocate payment" },
-        { status: 500 }
-      );
+      return NextResponse.json(failure.body, { status: failure.status });
     }
 
     return NextResponse.json({ data: result });

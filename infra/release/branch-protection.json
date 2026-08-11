@@ -1,0 +1,104 @@
+{
+  "_comment": [
+    "The branch protection this repository's main branch is MISSING, written down",
+    "exactly, so that applying it is a mechanical step rather than a judgement call.",
+    "",
+    "Round-3 finding P1-13: live metadata shows main has no required status checks,",
+    "no required pull request reviews and no rulesets. Draft status on a pull request",
+    "is not branch protection — it stops a merge button, not a push.",
+    "",
+    "THIS FILE IS NOT APPLIED BY ANYTHING IN THIS REPOSITORY, AND MUST NOT BE.",
+    "Writing branch protection is a control-plane mutation on the GitHub repository:",
+    "it needs an administrative token, it changes who can merge what, and it is",
+    "outside the authorization this code round has. It is recorded here, and the",
+    "TASKBOARD row that tracks it stays unfinished, until an operator with that",
+    "authorization applies it deliberately. tests/release/branch-protection-contract.test.mjs",
+    "asserts that no script in the repository writes it.",
+    "",
+    "Why the contexts are job names and not 'workflow / job': for GitHub Actions the",
+    "check run that a protection rule matches is created per job and named with the",
+    "job's `name:`, so 'Repository validation' is the context. A context that does",
+    "not correspond to a job which actually runs on a pull_request event blocks every",
+    "pull request forever — which is why `required_status_checks.contexts` below is",
+    "restricted to the pull_request-reachable jobs and is verified against",
+    ".github/workflows/ci.yml by the contract test.",
+    "",
+    "Relationship to infra/release/required-jobs.json: that manifest is what",
+    "infra/systemd/newme-deploy.sh requires of a release-final workflow_dispatch run",
+    "on main BEFORE it will deploy. This file is what GitHub must require of a pull",
+    "request BEFORE it can reach main. The deploy manifest is therefore a superset:",
+    "it additionally names 'Release-final taskboard completion', which is",
+    "dispatch-only by design and can never run on a pull request. Putting that job",
+    "in the contexts below would deadlock every pull request; leaving it out of the",
+    "deploy manifest would let an incomplete taskboard reach production. Both",
+    "directions are asserted by the contract test."
+  ],
+  "branch": "main",
+  "api": "PUT /repos/{owner}/{repo}/branches/main/protection",
+  "authorization": "requires a repository-admin token; not granted to this code round",
+  "protection": {
+    "required_status_checks": {
+      "strict": true,
+      "contexts": [
+        "Repository validation",
+        "Windows checkout and SPEC gate",
+        "Narrow task follow-up database contract",
+        "Migration replay and release contracts"
+      ]
+    },
+    "enforce_admins": true,
+    "required_pull_request_reviews": {
+      "required_approving_review_count": 1,
+      "dismiss_stale_reviews": true,
+      "require_code_owner_reviews": false
+    },
+    "required_linear_history": true,
+    "allow_force_pushes": false,
+    "allow_deletions": false,
+    "block_creations": false,
+    "required_conversation_resolution": true,
+    "restrictions": null
+  },
+  "not_required": [
+    {
+      "context": "test",
+      "workflow": ".github/workflows/test-ci.yml",
+      "why": [
+        "It is a single `run: echo ok` step. It runs on every pull request and every",
+        "push to main and it is always green, because there is nothing in it that can",
+        "fail. Requiring it would add a context that proves the runner started and",
+        "nothing else, and reading it as CI evidence is the specific mistake the",
+        "review calls out. It is left in place because the F-04 workflow-YAML gate",
+        "tracks it, and it is named here so that 'why is this check not required'",
+        "has a written answer instead of being an oversight."
+      ]
+    },
+    {
+      "context": "Release-final taskboard completion",
+      "workflow": ".github/workflows/ci.yml",
+      "why": [
+        "Gated on `github.event_name == 'workflow_dispatch' && inputs.release_final`,",
+        "so it cannot run for a pull request and would block every merge if required.",
+        "It is required at the other boundary instead — infra/release/required-jobs.json,",
+        "checked by the deploy wrapper against the release-final run it is handed."
+      ]
+    },
+    {
+      "context": "Hermes CI webhook contract",
+      "workflow": ".github/workflows/crm-ci.yml",
+      "why": [
+        "crm-ci runs on `workflow_run` after ci completes, which produces check runs",
+        "against the default branch rather than the pull request head, so it can never",
+        "satisfy a pull-request protection rule. Recorded in TASKBOARD as the crm-ci",
+        "observation boundary."
+      ]
+    }
+  ],
+  "verification": [
+    "After an authorized operator applies this file:",
+    "  gh api /repos/{owner}/{repo}/branches/main/protection",
+    "must report the same four contexts, strict = true, enforce_admins = true and",
+    "required_approving_review_count = 1. Until that output exists, the TASKBOARD row",
+    "stays unfinished — a written intention is not a configured branch."
+  ]
+}

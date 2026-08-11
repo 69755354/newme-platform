@@ -22,7 +22,7 @@
 -- security hole". The ASSERT_OK count is cross-checked against ASSERT_TOTAL, so
 -- a file that stops early cannot pass quietly.
 --
--- ASSERT_TOTAL: 30
+-- ASSERT_TOTAL: 47
 -- ============================================================================
 
 create temp table if not exists post_rollback_assert_log (name text);
@@ -118,17 +118,28 @@ select pg_temp.assert((select count(*) = 0
                          and coalesce(qual, 'true') <> 'false'), 'f10-post-rollback-no-readable-select-policy');
 
 -- Behaviour, as the role a browser session actually runs as.
+--
+-- The SQLSTATE is captured and asserted rather than swallowed by a
+-- `when insufficient_privilege then null` handler. Two reasons, both from the
+-- round-3 review: a denied path has to name the boundary that denied it, and an
+-- assertion whose marker does not depend on the measurement is a tautology. Here
+-- the distinction is real — 42501 means the grant is gone, while a rollback that
+-- left the grant and relied on a policy would return zero rows and no error at
+-- all, which this now fails on.
 do $$
+declare
+  v_state text := '00000';
 begin
   begin
     perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
     set local role authenticated;
     perform count(*) from public.meta_tokens;
-    raise exception 'authenticated read meta_tokens after rollback' using errcode = '22000';
   exception
-    when insufficient_privilege then null;
+    when others then v_state := sqlstate;
   end;
-  perform pg_temp.assert(true, 'f10-post-rollback-authenticated-cannot-read-meta-tokens');
+  reset role;
+  perform pg_temp.assert(v_state = '42501',
+                         'f10-post-rollback-authenticated-cannot-read-meta-tokens');
 end
 $$;
 
@@ -156,18 +167,28 @@ select pg_temp.assert((select bool_and(coalesce(with_check, 'true') = 'false') f
 select pg_temp.assert((select bool_and(coalesce(with_check, 'true') = 'false') from pg_policies where schemaname = 'public' and tablename = 'activity_logs' and cmd = 'INSERT' and 'authenticated' = any(roles)), 'f08-post-rollback-activity-insert-closed-for-authenticated');
 select pg_temp.assert((select bool_and(coalesce(with_check, 'true') = 'false') from pg_policies where schemaname = 'public' and tablename = 'user_session_daily' and cmd = 'INSERT' and 'authenticated' = any(roles)), 'f08-post-rollback-session-insert-closed-for-authenticated');
 
+-- The behaviour behind those three policy assertions, with the SQLSTATE carried
+-- out of the subtransaction and asserted. 42501 is the boundary either way here —
+-- a `with_check false` policy violation and a missing INSERT grant both raise it,
+-- and the three assertions above say which of the two is in force — but a
+-- rollback that left the row insertable would raise nothing at all, and that is
+-- the case an `exception when insufficient_privilege then null` handler followed
+-- by assert(true) cannot report.
 do $$
+declare
+  v_state text := '00000';
 begin
   begin
     perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
     set local role authenticated;
     insert into public.audit_logs (actor_id, action, details)
     values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'FORGED_AFTER_ROLLBACK', '{}');
-    raise exception 'authenticated forged an audit row after rollback' using errcode = '22000';
   exception
-    when insufficient_privilege then null;
+    when others then v_state := sqlstate;
   end;
-  perform pg_temp.assert(true, 'f08-post-rollback-authenticated-cannot-forge-audit-row');
+  reset role;
+  perform pg_temp.assert(v_state = '42501',
+                         'f08-post-rollback-authenticated-cannot-forge-audit-row');
 end
 $$;
 
@@ -248,43 +269,196 @@ select pg_temp.assert((select count(*) = 5
                                         'trg_guard_contract_approvals_write',
                                         'trg_guard_payment_allocations_write')), 'money-post-rollback-all-five-write-guards-enabled');
 
--- Behaviour: a direct PostgREST-shaped insert into contracts is still refused.
--- The sqlstate AND the guard's own message are pinned. Both matter: an unrelated
--- schema change (a new NOT NULL column, say) would fail with a different state,
--- and — since 20260813000000 — a deactivated or stale-token identity is refused
--- with the same 42501 by the restrictive session boundary. This assertion is
--- about the write guard, so it acts as an active identity holding a current
--- token and requires the guard's message; otherwise it could pass while the
--- guard was gone.
+-- ============================================================================
+-- The contract phase is rolled back, and ONLY the contract phase
+-- ============================================================================
+-- This is the part of the rollback story that is a rollback. 20260815000000
+-- flipped public.money_release_mode to 'strict'; its companion puts it back to
+-- 'compat', which is the state 20260814000000 seeded and the posture production
+-- has today. While the mode is 'compat' the previous release (f37c203 / 81956f2)
+-- can create contracts and confirm payments through PostgREST with the caller's
+-- own token, which is what makes an application-only revert possible at all.
+--
+-- Stated rather than buried, because it is the honest cost: these two assertions
+-- prove that a browser session CAN write a contract directly after a rollback.
+-- They are not a security invariant — they are the compatibility invariant, and
+-- the sections after them are what keeps the revert from being a hole.
+select pg_temp.assert(public.money_direct_write_mode() = 'compat',
+                      'money-post-rollback-release-mode-is-compat');
+
 do $$
 declare
-  v_state text;
-  v_msg   text := '';
+  v_status_state text := '00000';
+  v_status       text := 'unset';
+  v_insert_state text := '00000';
+  v_insert_msg   text := '';
+  v_inserted     boolean := false;
+begin
+  begin
+    -- The previous release's status write: a direct UPDATE from a browser
+    -- session. Under 'strict' this is the 42501 that
+    -- money-direct-contract-status-update-refused asserts in the forward file.
+    begin
+      perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+      set local role authenticated;
+      update public.contracts set status = 'completed'
+       where id = 'c4c4c4c4-c4c4-c4c4-c4c4-c4c4c4c4c4c4';
+      v_status := (select status from public.contracts
+                    where id = 'c4c4c4c4-c4c4-c4c4-c4c4-c4c4c4c4c4c4');
+    exception when others then v_status_state := sqlstate;
+    end;
+    reset role;
+
+    -- And the previous release's contract insert, which is the statement
+    -- money-direct-contract-insert-refused proves is closed under 'strict'.
+    -- On a lead of its own: idx_contracts_one_active_per_lead permits one
+    -- non-terminal contract per lead, and the forward assertions have already
+    -- used the seeded leads, so a shared one would fail with 23505 and say
+    -- nothing about the release mode.
+    insert into public.leads (id, assigned_to, stage, customer_name)
+    values ('12121212-1212-1212-1212-121212121212',
+            'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay post-rollback lead');
+    begin
+      perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+      set local role authenticated;
+      insert into public.contracts (lead_id, sales_id, created_by, contract_no,
+                                    contract_amount, party_a_name, status)
+      values ('12121212-1212-1212-1212-121212121212',
+              'cccccccc-cccc-cccc-cccc-cccccccccccc',
+              'cccccccc-cccc-cccc-cccc-cccccccccccc',
+              'REPLAY-POST-ROLLBACK-1', 1, 'x', 'draft');
+      v_inserted := exists (select 1 from public.contracts
+                             where contract_no = 'REPLAY-POST-ROLLBACK-1');
+    exception when others then v_insert_state := sqlstate; v_insert_msg := sqlerrm;
+    end;
+    reset role;
+
+    raise exception 'REPLAY_ROLLBACK';
+  exception
+    when others then
+      if sqlerrm <> 'REPLAY_ROLLBACK' then raise; end if;
+  end;
+
+  perform pg_temp.assert(v_status_state = '00000' and v_status = 'completed',
+                         'money-post-rollback-previous-release-can-write-a-contract-status');
+  -- The diagnostic carries the SQLSTATE and message, which the assertion's
+  -- boolean cannot; the assertion carries the measurement, which the diagnostic
+  -- cannot. Both, in that order — a marker that reads `assert(true, ...)` after
+  -- an `if ... raise` is load-bearing only for as long as nobody moves it.
+  if not (v_insert_state = '00000' and v_inserted) then
+    raise notice 'the compatibility window did not accept the previous release''s contract insert: sqlstate %, %',
+      v_insert_state, v_insert_msg;
+  end if;
+  perform pg_temp.assert(v_insert_state = '00000' and v_inserted,
+                         'money-post-rollback-previous-release-can-insert-a-contract');
+  perform pg_temp.assert((select status = 'active' from public.contracts
+                          where id = 'c4c4c4c4-c4c4-c4c4-c4c4-c4c4c4c4c4c4')
+                         and not exists (select 1 from public.contracts
+                                          where contract_no = 'REPLAY-POST-ROLLBACK-1'),
+                         'money-post-rollback-compat-fixture-was-rolled-back');
+end
+$$;
+
+-- ============================================================================
+-- What the compatibility window does NOT stand down
+-- ============================================================================
+-- DELETE on the five money tables. No release of this application has ever
+-- deleted a contract, payment, installment plan, approval or allocation from a
+-- browser session, so refusing it costs no compatibility and the refusal is
+-- unconditional in both modes. It was the P1-2 defect: the guards covered INSERT
+-- and UPDATE only, and `authenticated` held DELETE on payments, so a session
+-- deleted a confirmed payment while every derived total kept its money.
+select pg_temp.assert(not (has_table_privilege('authenticated', 'public.contracts', 'delete')
+                        or has_table_privilege('authenticated', 'public.payments', 'delete')
+                        or has_table_privilege('authenticated', 'public.installment_plans', 'delete')
+                        or has_table_privilege('authenticated', 'public.contract_approvals', 'delete')
+                        or has_table_privilege('authenticated', 'public.payment_allocations', 'delete')),
+                      'money-post-rollback-delete-privilege-still-gone-on-all-five-tables');
+
+do $$
+declare
+  v_del_state  text := '00000';
+  v_del_msg    text := '';
+  v_void_state text := '00000';
+  v_void_msg   text := '';
+begin
+  begin
+    -- Granted back on purpose: the trigger, not the GRANT, is what is under test
+    -- here, and a future migration that re-grants the privilege still meets it.
+    grant delete on public.payments to authenticated;
+    begin
+      perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+      set local role authenticated;
+      delete from public.payments where id = 'd2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2';
+    exception when others then v_del_state := sqlstate; v_del_msg := sqlerrm;
+    end;
+    reset role;
+
+    -- The void columns are new in this release, so no version of the application
+    -- writes them: standing them down would buy nothing and cost the reversal's
+    -- integrity.
+    begin
+      perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+      set local role authenticated;
+      update public.payments set voided_at = now(), void_reason = 'not through the reversal'
+       where id = 'd2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2';
+    exception when others then v_void_state := sqlstate; v_void_msg := sqlerrm;
+    end;
+    reset role;
+
+    raise exception 'REPLAY_ROLLBACK';
+  exception
+    when others then
+      if sqlerrm <> 'REPLAY_ROLLBACK' then raise; end if;
+  end;
+
+  perform pg_temp.assert(v_del_state = '42501'
+                         and v_del_msg like '%reverse the payment through void_payment() instead%',
+                         'money-post-rollback-payment-delete-still-refused-by-the-guard');
+  perform pg_temp.assert(v_void_state = '42501'
+                         and v_void_msg like '%a payment is voided through void_payment()%',
+                         'money-post-rollback-void-columns-still-refused');
+  perform pg_temp.assert((select count(*) = 1 from public.payments
+                          where id = 'd2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2'
+                            and voided_at is null),
+                         'money-post-rollback-the-payment-is-still-there-and-not-voided');
+end
+$$;
+
+-- The reversal that makes the DELETE refusal reasonable has to survive too: if
+-- void_payment() went away, "payments are not deleted" would mean "a mistaken
+-- confirmation can never be undone".
+select pg_temp.assert(to_regprocedure('public.void_payment(uuid, text)') is not null
+                      and has_function_privilege('authenticated', to_regprocedure('public.void_payment(uuid, text)'), 'execute')
+                      and not has_function_privilege('anon', to_regprocedure('public.void_payment(uuid, text)'), 'execute'),
+                      'money-post-rollback-void-payment-still-present-with-its-acl');
+
+do $$
+declare v_state text := '00000'; v_msg text := '';
 begin
   begin
     perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
     set local role authenticated;
-    insert into public.contracts (contract_no, lead_id, sales_id, created_by, contract_amount, status)
-    values ('NEW-19700101-9999', null, 'cccccccc-cccc-cccc-cccc-cccccccccccc',
-            'cccccccc-cccc-cccc-cccc-cccccccccccc', 1, 'draft');
-    v_state := '00000';
-  exception
-    when others then v_state := sqlstate; v_msg := sqlerrm;
+    perform public.void_payment('d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2', 'sales should not be able to');
+  exception when others then v_state := sqlstate; v_msg := sqlerrm;
   end;
   reset role;
-
-  if v_state = '00000' then
-    raise exception 'authenticated inserted a contract directly after rollback' using errcode = '22000';
-  elsif v_state <> '42501' then
-    raise exception 'direct contract insert was refused with sqlstate % rather than 42501, so this assertion is not exercising the write guard', v_state
-      using errcode = '22000';
-  elsif v_msg not like '%direct insert is not permitted%' then
-    raise exception 'direct contract insert was refused by something other than the write guard (%), so this assertion is not exercising the guard', v_msg
-      using errcode = '22000';
-  end if;
-  perform pg_temp.assert(true, 'money-post-rollback-direct-contract-insert-refused');
+  perform pg_temp.assert(v_state = '42501' and v_msg like '%role sales may not perform this operation%',
+                         'money-post-rollback-void-payment-still-refuses-a-sales-caller');
 end
 $$;
+
+-- The contract status graph lives in a function and a trigger, not in the mode,
+-- so the reproduced 'completed' -> 'revoking' hole stays closed after a revert.
+select pg_temp.assert(to_regprocedure('public.contract_transition_is_allowed(text, text)') is not null
+                      and not public.contract_transition_is_allowed('completed', 'revoking')
+                      and not public.contract_transition_is_allowed('terminated', 'active')
+                      and public.contract_transition_is_allowed('active', 'completed'),
+                      'money-post-rollback-transition-graph-survives');
+select pg_temp.assert((select tgenabled = 'O' from pg_trigger
+                       where tgrelid = 'public.contracts'::regclass
+                         and tgname = 'trg_guard_contract_transition'),
+                      'money-post-rollback-transition-trigger-still-enabled');
 
 -- ============================================================================
 -- The session revocation boundary survives the revert
@@ -322,6 +496,114 @@ end
 $$;
 
 -- ============================================================================
+-- The class-28 write boundary survives the revert  (P0-1)
+-- ============================================================================
+-- 20260814000000 is NO_ROLLBACK for this reason. The 20260813000000 policies
+-- close PostgREST; they do not close a SECURITY DEFINER routine, because RLS does
+-- not apply inside one — which is how a deactivated, banned or password-changed
+-- identity holding a still-valid access token could confirm a payment or convert
+-- a quotation. The closure is a BEFORE ... FOR EACH STATEMENT trigger on every
+-- ordinary table in `public`, and it has nothing to do with the release mode.
+--
+-- Coverage is computed, not listed, so a table a rollback leaves behind cannot
+-- fall outside it unnoticed.
+do $$
+declare
+  v_tables  int;
+  v_missing text[];
+begin
+  select count(*) into v_tables
+    from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
+   where ns.nspname = 'public' and c.relkind = 'r' and not c.relispartition;
+
+  select coalesce(array_agg(c.relname order by c.relname), '{}')
+    into v_missing
+    from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
+   where ns.nspname = 'public' and c.relkind = 'r' and not c.relispartition
+     and not exists (
+       select 1 from pg_trigger t
+        where t.tgrelid = c.oid
+          and t.tgname = 'trg_require_current_session'
+          and not t.tgisinternal
+          -- BEFORE (2) | INSERT (4) | DELETE (8) | UPDATE (16), statement-level.
+          and t.tgtype = 30
+          and t.tgenabled = 'O');
+
+  -- The notice names the tables; the assertion is the count, so the marker fails
+  -- with the measurement rather than passing next to it.
+  if coalesce(array_length(v_missing, 1), 0) > 0 then
+    raise notice 'public tables with no session write boundary after rollback: %', v_missing;
+  end if;
+  perform pg_temp.assert(v_tables >= 10, 'session-post-rollback-boundary-had-tables-to-cover');
+  perform pg_temp.assert(coalesce(array_length(v_missing, 1), 0) = 0,
+                         'session-post-rollback-boundary-covers-every-public-table');
+end
+$$;
+
+-- And by behaviour, on both surfaces, using the published credential the F-02
+-- migration deactivated — the identity the whole finding is about. A generic
+-- 42501 would not be enough: src/lib/money-rpc.mjs maps class 28 to a 401 that
+-- tells the holder to re-authenticate, so the SQLSTATE is part of the closure and
+-- is asserted as such.
+do $$
+declare
+  v_rpc     text := '00000';
+  v_rpc_msg text := '';
+  v_tbl     text := '00000';
+begin
+  begin
+    perform pg_temp.act_as('dddddddd-dddd-dddd-dddd-dddddddddddd');
+    set local role authenticated;
+    perform public.convert_quotation_to_contract('b3b3b3b3-b3b3-b3b3-b3b3-b3b3b3b3b3b3', '{}'::jsonb);
+  exception when others then v_rpc := sqlstate; v_rpc_msg := sqlerrm;
+  end;
+  reset role;
+
+  begin
+    perform pg_temp.act_as('dddddddd-dddd-dddd-dddd-dddddddddddd');
+    set local role authenticated;
+    update public.profiles set last_active_at = now()
+     where id = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+  exception when others then v_tbl := sqlstate;
+  end;
+  reset role;
+
+  perform pg_temp.assert(v_rpc = '28003' and v_rpc_msg like '%this account is deactivated%',
+                         'session-post-rollback-deactivated-identity-refused-inside-a-definer-rpc');
+  perform pg_temp.assert(v_tbl = '28003',
+                         'session-post-rollback-deactivated-identity-cannot-write-an-ordinary-table');
+end
+$$;
+
+-- The verdict function itself, and the one state it must NOT refuse: a statement
+-- with no end-user identity is a trusted server path (a service_role token has no
+-- `sub`, psql has no request settings), so the trigger lets it through. If that
+-- stopped being true, every server-side write in the previous release would fail.
+do $$
+declare v_state text := '00000'; v_rows int := 0;
+begin
+  perform set_config('request.jwt.claims', '', true);
+  begin
+    perform public.assert_current_session();
+  exception when others then v_state := sqlstate;
+  end;
+  begin
+    update public.profiles set last_active_at = now()
+     where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    get diagnostics v_rows = row_count;
+    raise exception 'REPLAY_ROLLBACK';
+  exception
+    when others then
+      if sqlerrm <> 'REPLAY_ROLLBACK' then raise; end if;
+  end;
+  perform pg_temp.assert(v_state = '28001',
+                         'session-post-rollback-assert-still-refuses-a-request-with-no-identity');
+  perform pg_temp.assert(v_rows = 1,
+                         'session-post-rollback-server-paths-are-still-allowed-to-write');
+end
+$$;
+
+-- ============================================================================
 -- Self-check: every assertion above ran.
 -- ============================================================================
 do $$
@@ -329,8 +611,8 @@ declare
   total int;
 begin
   select count(*) into total from post_rollback_assert_log;
-  if total <> 30 then
-    raise exception 'post-rollback assertion file ran % assertions, ASSERT_TOTAL says 30', total
+  if total <> 47 then
+    raise exception 'post-rollback assertion file ran % assertions, ASSERT_TOTAL says 47', total
       using errcode = '22000';
   end if;
   raise notice 'all % post-rollback assertions passed', total;

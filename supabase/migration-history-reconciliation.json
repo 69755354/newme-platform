@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "Redacted, read-only baseline of the migration history production recorded, plus",
+    "the explicit mapping of differences an operator has reconciled against it.",
+    "",
+    "STATUS: NOT CAPTURED. capture is null and rows is empty, which is what an",
+    "uncaptured baseline looks like. In this state the file accepts nothing: every",
+    "difference scripts/verify-remote-migration-history.mjs measures is reported and",
+    "the deploy gate refuses. That is the intended state until an operator runs the",
+    "capture, because production content equivalence has not been demonstrated.",
+    "",
+    "Fill it by running, from the release, against production:",
+    "  node scripts/capture-remote-migration-history.mjs \\",
+    "    --url-file /etc/newme/migration-db.url \\",
+    "    --out supabase/migration-history-reconciliation.json",
+    "That is a read-only capture; it is still an authorised production action and is",
+    "not performed by any code round.",
+    "",
+    "rows[] carries version, name, statement_count and a server-computed",
+    "statements_sha256 only. Never statement text, never business data, never an",
+    "identity. accepted[] entries must restate the observation they explain and are",
+    "re-matched against production on every run; an acceptance that matches nothing",
+    "is a refusal of its own. Rules and procedure:",
+    "supabase/preflight/migration-history-reconciliation.md"
+  ],
+  "capture": null,
+  "rows": [],
+  "accepted": []
+}

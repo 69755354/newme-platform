@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
 
 /**
  * POST /api/payments/[id]/confirm
@@ -68,20 +69,25 @@ export async function POST(
     });
 
     if (rpcErr) {
-      logger.error(
+      // Every refusal confirm_payment() raises is a decision with a SQLSTATE:
+      // 42501 for the role rule, 22023 for a second confirmation or a voided
+      // payment, class 28 for a session the boundary no longer accepts. Reporting
+      // all of them as 500 told the client "we broke" and invited a retry.
+      const failure = moneyRpcFailure(rpcErr, "Failed to confirm payment");
+      const log = failure.status >= 500 ? logger.error : logger.warn;
+      log(
         {
           err: rpcErr,
           request_id,
           operation: "payment_confirm",
           user_id: user.id,
           payment_id: paymentId,
+          error_code: rpcErr.code,
+          http_status: failure.status,
         },
-        "[API Payments Confirm] RPC failed",
+        "[API Payments Confirm] confirm_payment refused the request",
       );
-      return NextResponse.json(
-        { error: rpcErr.message || "Failed to confirm payment" },
-        { status: 500 }
-      );
+      return NextResponse.json(failure.body, { status: failure.status });
     }
 
     revalidatePath("/contracts");

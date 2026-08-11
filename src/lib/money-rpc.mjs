@@ -12,6 +12,18 @@
  *   22023  the request is invalid, or the transition is not allowed   → 400
  *   23505  it already exists (duplicate lead, converted quotation)    → 409
  *   P0002  the row does not exist                                     → 404
+ *   28xxx  the SESSION itself is refused                              → 401
+ *
+ * Class 28 is `invalid_authorization_specification`, and it is what
+ * public.assert_current_session() raises from inside every SECURITY DEFINER money
+ * routine and from trg_require_current_session on every ordinary public table
+ * (supabase/migrations/20260814000000_l0_round3_authorization_and_integrity.sql).
+ * The distinction from 403 matters to the client: 403 means "you may not do this",
+ * 28xxx means "this session is no longer a session" — deactivated, banned, minted
+ * before the last credential change, or owing a password change — and the only
+ * useful response is to re-authenticate. The whole class maps to 401, including
+ * codes this table does not enumerate, because an unrecognised class-28 code is
+ * still a refusal and must not degrade to a 500 that a client might retry.
  *
  * Anything else is a database failure rather than a decision, and is reported as
  * 500 WITHOUT its message: an unmapped error can be a constraint violation or an
@@ -32,14 +44,30 @@ export const MONEY_RPC_STATUS = Object.freeze({
   "22023": 400,
   "23505": 409,
   P0002: 404,
+  // class 28 · invalid_authorization_specification — the session, not the action
+  "28000": 401,
+  "28001": 401,
+  "28002": 401,
+  "28003": 401,
+  "28004": 401,
+  "28005": 401,
+  "28006": 401,
 });
+
+/** True for any SQLSTATE in class 28, enumerated above or not. */
+function isSessionBoundaryCode(code) {
+  return /^28[0-9A-Z]{3}$/.test(code);
+}
 
 /** The HTTP status for an RPC error, or 500 when the code is not one we raise. */
 export function moneyRpcStatus(error) {
   const code = error && typeof error.code === "string" ? error.code : "";
-  return Object.prototype.hasOwnProperty.call(MONEY_RPC_STATUS, code)
-    ? MONEY_RPC_STATUS[code]
-    : 500;
+  if (Object.prototype.hasOwnProperty.call(MONEY_RPC_STATUS, code)) {
+    return MONEY_RPC_STATUS[code];
+  }
+  // Fail closed on the class rather than the code: a class-28 SQLSTATE this table
+  // does not list is still the session boundary refusing the session.
+  return isSessionBoundaryCode(code) ? 401 : 500;
 }
 
 /**

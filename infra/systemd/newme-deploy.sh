@@ -171,6 +171,7 @@ readonly WORKTREE_ROOT="/var/lib/newme/deploy-worktrees"
 readonly LEGACY_EVIDENCELESS_BASELINE="945d1b5e0615c963c19e116483fcc8c4253d03ea"
 ASSET_BACKUP_RECORD=""
 ASSET_BACKUP=""
+GATE_RECORD=""
 DEPLOY_STATE_RECORD=""
 DEPLOY_STATE=""
 DEPLOY_SUCCEEDED=0
@@ -491,9 +492,20 @@ clear_matching_pending_asset_record() {
   esac
   rm -f -- "$PENDING_ASSET_RECORD"
 }
+# The gate record is evidence about one installer invocation, not a durable fact.
+# It is removed as soon as the installer returns and on every exit path, so it can
+# never be found later by an installer this wrapper did not gate.
+remove_gate_record() {
+  [ -n "$GATE_RECORD" ] || return 0
+  case "$GATE_RECORD" in
+    "$STATE_ROOT"/deploy-gates.*) rm -f -- "$GATE_RECORD" ;;
+  esac
+  GATE_RECORD=""
+}
 cleanup() {
   rc=$?
   trap - EXIT HUP INT TERM
+  remove_gate_record
   load_deploy_state || DEPLOY_STATE="unknown"
   if [ "$DEPLOY_STATE" = "complete=$SHA" ]; then
     DEPLOY_SUCCEEDED=1
@@ -604,6 +616,14 @@ NODE_BIN="$(command -v node || true)"
 # the same history. A renamed or rewritten applied migration — the defect that
 # rejected the reviewed revision of this branch — is invisible to every other
 # gate here.
+#
+# The gate reads version, name, a statement count and a server-computed
+# fingerprint, and compares them against the captured baseline in
+# supabase/migration-history-reconciliation.json. Content that cannot be measured,
+# a row recorded with no statements, and any difference the baseline's `accepted`
+# list does not explicitly account for are all refusals — including on the first
+# deploy, where the baseline is uncaptured and therefore explains nothing. That is
+# deliberate: see supabase/preflight/migration-history-reconciliation.md.
 readonly MIGRATION_DB_URL_FILE=/etc/newme/migration-db.url
 [ -f "$MIGRATION_DB_URL_FILE" ] && [ ! -L "$MIGRATION_DB_URL_FILE" ] || {
   echo "root-owned migration database URL file is missing" >&2
@@ -624,6 +644,7 @@ MIGRATION_HISTORY_ARGS=(
   --url-file "$MIGRATION_DB_URL_FILE"
   --migrations-dir "$WORKTREE/supabase/migrations"
   --modules-dir "$LIVE_RELEASE/node_modules"
+  --history-fixture "$WORKTREE/supabase/migration-history-reconciliation.json"
 )
 case "$MIGRATION_STATUS" in
   applied_verified) MIGRATION_HISTORY_ARGS+=(--require-applied "$MIGRATION_IDS") ;;
@@ -638,7 +659,34 @@ esac
 # boundary. Refresh them only from the verified root-owned main worktree.
 ASSET_BACKUP_RECORD="$(mktemp "$STATE_ROOT/systemd-assets-backup.XXXXXX")"
 chmod 0600 "$ASSET_BACKUP_RECORD"
-NEWME_ASSET_BACKUP_RECORD="$ASSET_BACKUP_RECORD" bash "$WORKTREE/scripts/install-systemd-assets.sh"
+
+# The bootstrap precondition (round-3 P1-10). The installer replaces the control
+# plane, including this wrapper, so it must not accept the word of a wrapper that
+# checked nothing — and production still runs the old f37c203 one, which passes no
+# CI_EVENT and runs none of the gates above. This record is that evidence: written
+# only here, after every gate has passed, bound to this SHA and this run, and
+# verified by scripts/verify-deploy-gate-record.mjs inside the installer before it
+# touches anything. A wrapper that does not write it cannot install.
+GATE_RECORD="$(mktemp "$STATE_ROOT/deploy-gates.XXXXXX")"
+chmod 0600 "$GATE_RECORD"
+cat > "$GATE_RECORD" <<EOF
+sha=$SHA
+event=$CI_EVENT
+run=$RUN_ID
+gate=canonical-main-verified
+gate=github-required-jobs-green
+gate=taskboard-complete
+gate=remote-migration-history
+EOF
+sync -f "$STATE_ROOT"
+
+# The installer is invoked with the record still in place; cleanup() removes it on
+# every exit path, and it is removed here as soon as the installer returns.
+NEWME_ASSET_BACKUP_RECORD="$ASSET_BACKUP_RECORD" \
+NEWME_DEPLOY_GATE_RECORD="$GATE_RECORD" \
+NEWME_NODE_BIN="$NODE_BIN" \
+  bash "$WORKTREE/scripts/install-systemd-assets.sh"
+remove_gate_record
 load_asset_backup_from_record || { echo "installer did not return a valid asset backup" >&2; exit 65; }
 DEPLOY_STATE_RECORD="$(mktemp "$STATE_ROOT/deploy-state.XXXXXX")"
 chmod 0600 "$DEPLOY_STATE_RECORD"

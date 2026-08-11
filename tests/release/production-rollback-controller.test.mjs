@@ -443,11 +443,42 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   const pendingPublish = installer.indexOf('ln -- "$PENDING_TMP" "$PENDING_RECORD"');
   const firstRuntimeMutation = installer.indexOf('install -D -o root -g root -m 0644 "$UNIT"');
   const globalVisudo = installer.search(/^visudo -c\r?$/m);
-  assert.ok(controlInstallOrder.at(-1) < pendingPublish);
-  assert.ok(installer.indexOf("rm -f -- /etc/sudoers.d/ubuntu-nopasswd") < pendingPublish);
-  assert.ok(installer.indexOf("sync -f /etc/sudoers.d") < pendingPublish);
-  assert.ok(globalVisudo >= 0 && globalVisudo < pendingPublish);
+  const failureTrap = installer.search(/^trap rollback_on_error EXIT\r?$/m);
+  const backupPointer = installer.indexOf('printf \'%s\\n\' "$BACKUP" > "$NEWME_ASSET_BACKUP_RECORD"');
+  // Round-3 P1-10 inverted this ordering deliberately. The control plane used to go
+  // in before the failure trap and before either recovery pointer existed, so a
+  // failure part-way through replacing newme-deploy/newme-production-rollback left
+  // no way back — and the paths were not in the remembered set either. The
+  // invariant these assertions protect is unchanged: no runtime asset is touched
+  // until the whole recovery plane is live. What changed is that the control plane
+  // is now inside the open transaction rather than in front of it.
+  assert.ok(failureTrap >= 0 && failureTrap < controlInstallOrder[0]);
+  assert.ok(backupPointer >= 0 && backupPointer < controlInstallOrder[0]);
+  assert.ok(pendingPublish >= 0 && pendingPublish < controlInstallOrder[0]);
+  assert.ok(controlInstallOrder.at(-1) < firstRuntimeMutation);
+  assert.ok(installer.indexOf("rm -f -- /etc/sudoers.d/ubuntu-nopasswd") > pendingPublish);
+  assert.ok(installer.indexOf("rm -f -- /etc/sudoers.d/ubuntu-nopasswd") < firstRuntimeMutation);
+  assert.ok(installer.indexOf("sync -f /etc/sudoers.d") < firstRuntimeMutation);
+  assert.ok(globalVisudo >= 0 && globalVisudo > pendingPublish && globalVisudo < firstRuntimeMutation);
   assert.ok(pendingPublish < firstRuntimeMutation);
+  // And the control-plane paths, which the round-3 review found were installed
+  // without ever being backed up, must now be in the remembered set.
+  const controlPlaneStart = installer.indexOf("CONTROL_PLANE=(");
+  const controlPlaneSet = installer.slice(controlPlaneStart, installer.indexOf("\n)", controlPlaneStart));
+  assert.ok(controlPlaneStart >= 0);
+  for (const managedPath of [
+    "/usr/local/sbin/newme-deploy",
+    "/usr/local/sbin/newme-production-rollback",
+    "/usr/local/sbin/newme-service-control",
+    "/usr/local/libexec/newme/newme-install-systemd-assets",
+    "/usr/local/libexec/newme/newme-rollback-systemd-assets",
+    "/etc/sudoers.d/newme-platform",
+    "/etc/sudoers.d/ubuntu-nopasswd",
+  ]) {
+    assert.ok(controlPlaneSet.includes(managedPath), `${managedPath} is not remembered`);
+  }
+  assert.match(installer, /for p in "\$\{MANAGED\[@\]\}" "\$\{CONTROL_PLANE\[@\]\}"/);
+  assert.ok(installer.indexOf('do remember "$p"; done') < failureTrap);
   assert.match(finalizer, /os\.fsync\(handle\.fileno\(\)\)/);
   assert.match(finalizer, /os\.replace\(temporary, path\)/);
   assert.match(finalizer, /os\.fsync\(directory_fd\)/);

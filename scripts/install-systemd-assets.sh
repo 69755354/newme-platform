@@ -33,6 +33,44 @@ install -d -o root -g root -m 0700 "$STATE_ROOT"
 [ "$(stat -c '%a' "$STATE_ROOT")" = 700 ] || exit 65
 PENDING_RECORD="$STATE_ROOT/systemd-assets.pending"
 PRODUCTION_ROLLBACK_PENDING="$STATE_ROOT/production-rollback.pending"
+
+# ---------------------------------------------------------------------------
+# The bootstrap precondition (round-3 P1-10)
+# ---------------------------------------------------------------------------
+# Production still runs the old f37c203 wrapper, which passes no CI_EVENT and runs
+# none of the taskboard, remote-history or job-level gates — yet it calls this
+# script, and this script replaces the whole control plane. So the gate cannot live
+# only in the wrapper: the installer has to demand the evidence itself, before it
+# does anything at all. Nothing below this point may mutate the host until the
+# release's own wrapper has proved every gate ran for this exact SHA.
+#
+# This is deliberately the first thing after the state directory is validated: the
+# unresolved-transaction recovery below restarts the service, and the control plane
+# install after it is only reversible because of the backup taken for it. Neither
+# may happen on the word of a wrapper that checked nothing.
+if [ "$MODE" = install ]; then
+  GATE_RECORD="${NEWME_DEPLOY_GATE_RECORD:-}"
+  [ -n "$GATE_RECORD" ] || {
+    echo "no deploy gate record was passed: this release's control plane may only be installed by a wrapper that has run its gates (see infra/release/control-plane-bootstrap.md)" >&2
+    exit 78
+  }
+  case "$GATE_RECORD" in
+    "$STATE_ROOT"/deploy-gates.*) ;;
+    *) echo "the deploy gate record must be in the protected persistent deploy-state directory" >&2; exit 64 ;;
+  esac
+  GATE_NODE_BIN="${NEWME_NODE_BIN:-$(command -v node || true)}"
+  [ -n "$GATE_NODE_BIN" ] && [ -x "$GATE_NODE_BIN" ] || {
+    echo "node is required to verify the deploy gate record" >&2
+    exit 65
+  }
+  "$GATE_NODE_BIN" "$ROOT/scripts/verify-deploy-gate-record.mjs" \
+    --record "$GATE_RECORD" \
+    --expect-sha "$SOURCE_SHA" \
+    --state-root "$STATE_ROOT" || {
+    echo "the deploy gate record does not prove this release's preconditions were checked" >&2
+    exit 78
+  }
+fi
 if [ "$MODE" = install ] && { [ -e "$PRODUCTION_ROLLBACK_PENDING" ] || [ -L "$PRODUCTION_ROLLBACK_PENDING" ]; }; then
   echo "an unresolved production rollback must be recovered before installing assets" >&2
   exit 75
@@ -207,7 +245,23 @@ MANAGED=(
   /opt/hermes-scripts/observability/sentry-release.sh
   /opt/hermes-scripts/observability/supabase-pool-monitor.sh
 )
-for p in "${MANAGED[@]}" /etc/systemd/system/newme-platform.service.d/forensic.conf /etc/systemd/system/newme-platform.service.d/restart-always.conf /etc/newme/newme-runtime.env; do remember "$p"; done
+# The control plane itself. Round-3 P1-10: these were installed before the backup
+# existed and were not in the backup set, so a deployment that replaced the deploy
+# wrapper could not put the previous one back — "forward-only" was a description of
+# a missing rollback, not a property worth having. They are remembered first and
+# installed after the transaction is open, so the pre-deploy control plane is
+# restorable by scripts/rollback-systemd-assets.sh like every other managed path.
+CONTROL_PLANE=(
+  /usr/local/libexec/newme/newme-install-systemd-assets
+  /usr/local/libexec/newme/newme-rollback-systemd-assets
+  /usr/local/sbin/newme-service-control
+  /usr/local/sbin/newme-production-rollback
+  /usr/local/sbin/newme-deploy
+  /etc/sudoers.d/newme-platform
+  # Removed unconditionally below; without it in the set the removal is one-way.
+  /etc/sudoers.d/ubuntu-nopasswd
+)
+for p in "${MANAGED[@]}" "${CONTROL_PLANE[@]}" /etc/systemd/system/newme-platform.service.d/forensic.conf /etc/systemd/system/newme-platform.service.d/restart-always.conf /etc/newme/newme-runtime.env; do remember "$p"; done
 
 if [ "$MODE" = snapshot ]; then
   SNAPSHOT_RECORD="${NEWME_ASSET_SNAPSHOT_RECORD:-}"
@@ -224,19 +278,6 @@ if [ "$MODE" = snapshot ]; then
   echo "snapshot=$BACKUP"
   exit 0
 fi
-
-# The recovery control plane is forward-only. Install every dependency before
-# the controller that consumes it, and atomically replace each executable. No
-# versioned runtime asset is mutated until the complete recovery plane is live.
-install_control_script "$ROOT/scripts/install-systemd-assets.sh" /usr/local/libexec/newme/newme-install-systemd-assets
-install_control_script "$ROOT/scripts/rollback-systemd-assets.sh" /usr/local/libexec/newme/newme-rollback-systemd-assets
-install_control_script "$ROOT/infra/systemd/newme-service-control.sh" /usr/local/sbin/newme-service-control
-install_control_script "$ROOT/infra/systemd/newme-production-rollback.sh" /usr/local/sbin/newme-production-rollback
-install_control_script "$ROOT/infra/systemd/newme-deploy.sh" /usr/local/sbin/newme-deploy
-install_control_sudoers "$ROOT/infra/sudoers/newme-platform" /etc/sudoers.d/newme-platform
-rm -f -- /etc/sudoers.d/ubuntu-nopasswd
-sync -f /etc/sudoers.d
-visudo -c
 
 INSTALL_COMMITTED=0
 PENDING_TMP=""
@@ -296,6 +337,21 @@ rm -f -- "$PENDING_TMP"
 PENDING_TMP=""
 sync -f "$BACKUP"
 sync -f "$STATE_ROOT"
+
+# The recovery control plane is installed inside the open transaction — after the
+# backup, the failure trap and both recovery pointers exist, and never before them.
+# Install every dependency before the controller that consumes it, and atomically
+# replace each executable. No versioned runtime asset is mutated until the complete
+# recovery plane is live.
+install_control_script "$ROOT/scripts/install-systemd-assets.sh" /usr/local/libexec/newme/newme-install-systemd-assets
+install_control_script "$ROOT/scripts/rollback-systemd-assets.sh" /usr/local/libexec/newme/newme-rollback-systemd-assets
+install_control_script "$ROOT/infra/systemd/newme-service-control.sh" /usr/local/sbin/newme-service-control
+install_control_script "$ROOT/infra/systemd/newme-production-rollback.sh" /usr/local/sbin/newme-production-rollback
+install_control_script "$ROOT/infra/systemd/newme-deploy.sh" /usr/local/sbin/newme-deploy
+install_control_sudoers "$ROOT/infra/sudoers/newme-platform" /etc/sudoers.d/newme-platform
+rm -f -- /etc/sudoers.d/ubuntu-nopasswd
+sync -f /etc/sudoers.d
+visudo -c
 
 install -D -o root -g root -m 0644 "$UNIT" /etc/systemd/system/newme-platform.service
 install -D -o root -g root -m 0755 "$ROOT/infra/systemd/newme-forensic.sh" /usr/local/libexec/newme/newme-forensic.sh

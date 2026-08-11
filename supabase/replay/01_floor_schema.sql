@@ -123,6 +123,21 @@ create table public.leads (
   -- conversion, so a floor without it cannot exercise either.
   final_status  text,
   customer_name text,
+  -- The columns the conversion path actually reads. on_lead_won() reads
+  -- new.customer_id, new.property_type, new.property_size_sqm and new.location
+  -- (20260812000000:1278-1310, and the same four in 20260624000003 before it),
+  -- and convert_quotation_to_contract() carries them into the project row. The
+  -- floor did not have them, so the conversion probe failed with
+  -- `record "v_lead" has no field "customer_id"` — a floor artefact that stood
+  -- between the harness and the behaviour under test.
+  --
+  -- Sources: 20260601000000_init.sql:47-51 (property_type, property_size_sqm,
+  -- location) and 20260605000000_newme_crm_v22_complete.sql:186 (customer_id);
+  -- all four are present in the production-generated src/types/database.ts.
+  customer_id       uuid,
+  property_type     text,
+  property_size_sqm integer,
+  location          text,
   created_at    timestamptz default now(),
   updated_at    timestamptz default now()
 );
@@ -154,9 +169,21 @@ create table public.contracts (
   file_metadata          jsonb,
   sealed_file_url        text,
   sealed_file_metadata   jsonb,
-  status                 text          not null default 'draft'
-    check (status in ('draft', 'pending_admin', 'pending_ceo', 'approved', 'rejected',
-                      'active', 'completed', 'terminated', 'suspended', 'cancelled', 'archived')),
+  -- Byte-for-byte the domain the last migration to touch it declares
+  -- (20260612000002_contract_pipeline_fix.sql:69-75), named the same way so an
+  -- assertion can address it. The floor previously invented this list: it added
+  -- 'cancelled' and 'archived' (which appear only in the partial-index predicate
+  -- below, not in the constraint) and omitted 'revoking' and 'superseded' — the
+  -- two statuses revoke_contract() writes. The result was that the P1-8 transition
+  -- probe failed with 23514 from a floor-only constraint instead of exercising the
+  -- transition graph, so the floor was hiding the finding rather than reproducing
+  -- it.
+  status                 text          not null default 'draft',
+  constraint contracts_status_check check (status in (
+    'draft', 'pending_admin', 'pending_ceo', 'approved',
+    'active', 'revoking', 'superseded', 'suspended',
+    'completed', 'terminated', 'rejected'
+  )),
   approval_status        text        default 'none',
   first_payment_status   text          not null default 'unpaid',
   first_payment_due_date date,
@@ -258,8 +285,48 @@ create table public.projects (
   contract_amount numeric(12, 2),
   paid_amount     numeric(12, 2) default 0,
   status          text        default 'active',
+  -- 20260601000000_init.sql:108-120 plus
+  -- 20260605000000_newme_crm_v22_complete.sql:226 (customer_id). These are the
+  -- columns on_lead_won() and convert_quotation_to_contract() write; the floor
+  -- carried only the money ones, so the project insert could not be executed at
+  -- all and the conversion's atomicity was untestable.
+  customer_id     uuid,
+  property_type   text,
+  property_size   integer,
+  location        text,
+  phase           text        default 'design',
   created_at      timestamptz default now(),
   updated_at      timestamptz default now()
+);
+
+-- 20260601000000_init.sql:157-169 plus the 20260605000000_newme_crm_v22_complete.sql
+-- :200-213 additions (contract_id, quotation_id, metadata and the widened type
+-- domain). convert_quotation_to_contract() and on_lead_won() both write an
+-- activity row, so without this table the conversion path is not executable at
+-- all and P1-6's atomicity claim cannot be measured.
+create table public.activities (
+  id           uuid primary key default extensions.uuid_generate_v4(),
+  lead_id      uuid references public.leads (id) on delete cascade,
+  customer_id  uuid,
+  project_id   uuid references public.projects (id),
+  user_id      uuid references public.profiles (id),
+  contract_id  uuid references public.contracts (id),
+  quotation_id uuid references public.quotations (id),
+  type         text not null,
+  content      text,
+  ai_generated boolean     default false,
+  duration     integer,
+  is_completed boolean     default true,
+  due_at       timestamptz,
+  priority     text        default 'normal',
+  metadata     jsonb,
+  created_at   timestamptz default now(),
+  constraint activities_type_check check (type in (
+    'call', 'whatsapp', 'wechat', 'email', 'meeting', 'sms', 'note', 'task',
+    'quote_sent', 'follow_up', 'stage_change', 'quality_change',
+    'contract_signed', 'payment_received', 'site_visit', 'cad_review'
+  )),
+  constraint activities_priority_check check (priority in ('low', 'normal', 'high', 'urgent'))
 );
 
 alter table public.contracts           enable row level security;
@@ -269,6 +336,7 @@ alter table public.installment_plans   enable row level security;
 alter table public.contract_approvals  enable row level security;
 alter table public.payment_allocations enable row level security;
 alter table public.projects            enable row level security;
+alter table public.activities          enable row level security;
 
 -- Ten call sites write these tables with the CALLER'S client, so `authenticated`
 -- holds table privileges on all of them. This is exactly what the reviewed
@@ -280,6 +348,7 @@ grant select, insert, update, delete on public.installment_plans   to authentica
 grant select, insert, update, delete on public.contract_approvals  to authenticated;
 grant select, insert, update, delete on public.payment_allocations to authenticated;
 grant select, insert, update, delete on public.projects            to authenticated;
+grant select, insert, update, delete on public.activities          to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- The pre-remediation RLS on the money tables, as the migrations define it.
@@ -334,6 +403,21 @@ create policy quotations_sales_update on public.quotations for update to authent
 
 create policy projects_admin_all on public.projects for all to authenticated
   using (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'boss', 'operator')));
+
+-- 20260630200000_rls_policy_remediation.sql:670-731, reduced to the two shapes the
+-- money paths exercise: managers see and write everything, a salesperson sees and
+-- writes activities on their own lead.
+create policy policy_activities_select_admin on public.activities for select to authenticated
+  using (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'boss', 'operator')));
+create policy policy_activities_select_sales on public.activities for select to authenticated
+  using (exists (select 1 from public.leads l where l.id = activities.lead_id and l.assigned_to = auth.uid()));
+create policy policy_activities_insert_admin on public.activities for insert to authenticated
+  with check (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'boss', 'operator')));
+create policy policy_activities_insert_sales on public.activities for insert to authenticated
+  with check (
+    user_id = auth.uid()
+    and exists (select 1 from public.leads l where l.id = activities.lead_id and l.assigned_to = auth.uid())
+  );
 
 -- ---------------------------------------------------------------------------
 -- Money routines — the REAL pre-remediation bodies.

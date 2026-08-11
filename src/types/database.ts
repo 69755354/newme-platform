@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=85b8e26bc8000aea2e9e8d432686693945f676c2a0fee5064048ef1c81dd16a0
+// Migration fingerprint: sha256=a9066f620047fea53b5deb49a1409ea90414b533a4a5d69cbe96d8453122332c
 export type Json =
   | string
   | number
@@ -4132,6 +4132,14 @@ export type Database = {
       }
       revoke_contract: {
         Args: { p_contract_id: string; p_reason: string; p_supersede?: boolean }
+        Returns: Json
+      }
+      // The reversal added by
+      // supabase/migrations/20260814000000_l0_round3_authorization_and_integrity.sql.
+      // Same reason for hand-declaring it: that migration is not applied to the
+      // linked project either, so generated types would not contain it.
+      void_payment: {
+        Args: { p_payment_id: string; p_reason: string }
         Returns: Json
       }
     }

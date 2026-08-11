@@ -29,9 +29,24 @@ import { MONEY_RPC_STATUS, moneyRpcFailure, moneyRpcStatus } from "../../src/lib
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const MIGRATION = "supabase/migrations/20260812000000_money_actor_identity_and_atomicity.sql";
+// 20260814000000 REPLACES set_contract_status(), revoke_contract(), create_contract(),
+// convert_quotation_to_contract(), confirm_payment() and allocate_payment(), and adds
+// the class-28 session boundary. Anything that reads only the older file is reading a
+// body the database no longer has, which is exactly the false-green this file exists
+// to prevent — so the effective definition is always the LAST one to define a routine.
+const ROUND3 = "supabase/migrations/20260814000000_l0_round3_authorization_and_integrity.sql";
 const CONTRACT_PAGE = "src/app/(dashboard)/contracts/[id]/page.tsx";
 
 const read = (rel) => readFile(path.join(ROOT, rel), "utf8");
+
+/** The migrations that define money routines, in application order. */
+const MONEY_MIGRATIONS = [MIGRATION, ROUND3];
+
+/** Concatenated in application order, for "is this raised anywhere" questions. */
+async function moneySql() {
+  const parts = await Promise.all(MONEY_MIGRATIONS.map(read));
+  return parts.join("\n");
+}
 
 /* ─── the mapper, executed ────────────────────────────────────────────── */
 
@@ -40,6 +55,30 @@ test("money_rpc: each SQLSTATE the routines raise maps to the HTTP status it mea
   assert.equal(moneyRpcStatus({ code: "22023" }), 400, "not a permitted transition / bad input → 400");
   assert.equal(moneyRpcStatus({ code: "23505" }), 409, "already exists → 409");
   assert.equal(moneyRpcStatus({ code: "P0002" }), 404, "row not found → 404");
+});
+
+test("money_rpc: every class-28 SQLSTATE is 401, enumerated or not", () => {
+  // assert_current_session() raises 28001..28006, and 28000 for a verdict it does
+  // not recognise. All of them mean "re-authenticate", not "you may not do this",
+  // and none of them may degrade to a retryable 500.
+  for (const code of ["28000", "28001", "28002", "28003", "28004", "28005", "28006"]) {
+    assert.equal(moneyRpcStatus({ code }), 401, `${code} must be 401`);
+  }
+  // Fail closed on the class: a class-28 code nobody enumerated is still a refusal.
+  assert.equal(moneyRpcStatus({ code: "28P01" }), 401, "an unlisted class-28 code must still be 401");
+  // And the boundary of the rule: 28 must be the CLASS, not a prefix match.
+  assert.equal(moneyRpcStatus({ code: "2800" }), 500, "a short code is not a SQLSTATE");
+  assert.equal(moneyRpcStatus({ code: "28000 " }), 500, "a padded code is not a SQLSTATE");
+});
+
+test("money_rpc: a session refusal relays the boundary's own reason", () => {
+  const failure = moneyRpcFailure(
+    { code: "28005", message: "session boundary: this access token predates the last credential change" },
+    "Failed to confirm payment",
+  );
+  assert.equal(failure.status, 401);
+  assert.equal(failure.body.code, "28005");
+  assert.match(failure.body.error, /predates the last credential change/);
 });
 
 test("money_rpc: an unrecognised failure is 500 and never quotes the database message", () => {
@@ -77,12 +116,41 @@ test("money_rpc: a mapped refusal with an empty message falls back rather than r
   assert.equal(failure.body.code, "42501");
 });
 
-test("money_rpc: the mapper is not vacuous — the migration raises every code it maps", async () => {
-  const sql = await read(MIGRATION);
+test("money_rpc: the mapper is not vacuous — a migration raises every code it maps", async () => {
+  const sql = await moneySql();
   for (const code of Object.keys(MONEY_RPC_STATUS)) {
     assert.ok(
       new RegExp(`errcode\\s*=\\s*'${code}'`, "i").test(sql),
-      `${MIGRATION} raises no ${code}, so mapping it is dead code`,
+      `no money migration raises ${code}, so mapping it is dead code`,
+    );
+  }
+});
+
+/**
+ * The SQL with its migration-time `do $tag$ ... $tag$;` blocks removed.
+ *
+ * Those blocks raise too — the catalog-driven installer of
+ * trg_require_current_session raises 22000 if it matches no tables — but they run
+ * once, at migration time, in front of an operator. Only the routines a route can
+ * call have to have an HTTP status.
+ */
+function withoutDoBlocks(sql) {
+  return sql.replace(/\bdo \$([a-z_]*)\$[\s\S]*?\$\1\$\s*;/g, "");
+}
+
+test("money_rpc: and the other direction — every code the routines raise is mapped", async () => {
+  const sql = withoutDoBlocks(await moneySql());
+  const raised = new Set(
+    [...sql.matchAll(/errcode\s*=\s*'([0-9A-Z]{5})'/g)].map((m) => m[1]),
+  );
+  assert.ok(raised.size > 0, "parsed no errcodes out of the money migrations — the parser has drifted");
+  for (const code of raised) {
+    // 23514 (check violation) and 40001 (serialization failure) are raised BY
+    // PostgreSQL, not by the routines; everything a routine raises on purpose is a
+    // decision and must have a status, or a refusal reaches the client as a 500.
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(MONEY_RPC_STATUS, code) || moneyRpcStatus({ code }) !== 500,
+      `the money routines raise ${code} on purpose but moneyRpcStatus() answers 500 for it`,
     );
   }
 });
@@ -185,12 +253,13 @@ function routineSignatures(sql) {
 }
 
 test("every money route passes exactly the arguments its routine declares", async () => {
-  const sql = await read(MIGRATION);
-  const signatures = routineSignatures(sql);
+  // Concatenated in application order, so a routine redefined by 20260814000000
+  // overwrites the 20260812000000 signature — which is what PostgREST will see.
+  const signatures = routineSignatures(await moneySql());
 
   for (const route of ROUTES) {
     const params = signatures.get(route.rpc);
-    assert.ok(params, `${route.rpc}() is not defined in ${MIGRATION}`);
+    assert.ok(params, `${route.rpc}() is defined in no money migration`);
 
     const src = await read(route.file);
     const call = src.slice(src.search(new RegExp(`\\.rpc\\(\\s*\\n?\\s*["']${route.rpc}["']`)));
@@ -244,25 +313,38 @@ test("PATCH does not write the status itself — the routine decides the transit
 
 /* ─── the UI grid vs the routine's transition table ───────────────────── */
 
-/** from-status → sorted allowed target statuses, parsed out of set_contract_status(). */
+/**
+ * from-status → allowed target statuses reachable through set_contract_status().
+ *
+ * Two artifacts, both in 20260814000000: the transition GRAPH, which is the whole
+ * lifecycle including the statuses only approve_contract() and revoke_contract()
+ * may set, and set_contract_status()'s own whitelist of statuses it will set. The
+ * buttons are the intersection. Parsing the graph out of the SQL rather than
+ * restating it here is the point — a pair added to the database with no button, or
+ * a button with no pair, is a drift this test reports.
+ */
 function transitionsFromMigration(sql) {
-  const body = sql.slice(
-    sql.indexOf("create or replace function public.set_contract_status("),
-    sql.indexOf("create or replace function public.revoke_contract("),
+  const graphStart = sql.indexOf("create or replace function public.contract_transition_is_allowed(");
+  assert.ok(graphStart >= 0, "contract_transition_is_allowed() not found");
+  const graphBody = sql.slice(graphStart, sql.indexOf("$$;", graphStart));
+  const pairs = [...graphBody.matchAll(/\(\s*'([a-z_]+)'\s*,\s*'([a-z_]+)'\s*\)/g)].map((m) => [m[1], m[2]]);
+  assert.ok(pairs.length > 0, "parsed no pairs out of the transition graph — the parser has drifted");
+
+  const setterStart = sql.indexOf("create or replace function public.set_contract_status(");
+  assert.ok(setterStart >= 0, "set_contract_status() not found");
+  const setterBody = sql.slice(setterStart, sql.indexOf("$$;", setterStart));
+  const whitelist = setterBody.match(/p_status not in \(([^)]*)\)/);
+  assert.ok(whitelist, "set_contract_status() no longer declares the statuses it may set");
+  const settable = new Set(
+    whitelist[1].split(",").map((s) => s.trim().replace(/^'|'$/g, "")).filter(Boolean),
   );
-  assert.ok(body.length > 0, "set_contract_status() not found in the migration");
+  assert.ok(settable.size > 0, "parsed an empty settable-status list");
+
   const table = new Map();
-  const branch = /(?:if|elsif) p_status = '([a-z_]+)' and v_contract\.status (?:= '([a-z_]+)'|in \(([^)]*)\))/g;
-  let match;
-  while ((match = branch.exec(body)) !== null) {
-    const [, target, single, list] = match;
-    const froms = single
-      ? [single]
-      : list.split(",").map((s) => s.trim().replace(/^'|'$/g, "")).filter(Boolean);
-    for (const from of froms) {
-      if (!table.has(from)) table.set(from, new Set());
-      table.get(from).add(target);
-    }
+  for (const [from, to] of pairs) {
+    if (!settable.has(to)) continue;
+    if (!table.has(from)) table.set(from, new Set());
+    table.get(from).add(to);
   }
   return table;
 }
@@ -282,7 +364,7 @@ function transitionsFromPage(tsx) {
 }
 
 test("the contract page offers exactly the transitions set_contract_status() accepts", async () => {
-  const [sql, page] = await Promise.all([read(MIGRATION), read(CONTRACT_PAGE)]);
+  const [sql, page] = await Promise.all([read(ROUND3), read(CONTRACT_PAGE)]);
   const routine = transitionsFromMigration(sql);
   const ui = transitionsFromPage(page);
 
@@ -323,7 +405,7 @@ test("the approval-chain statuses are not in the page's grid", async () => {
 });
 
 test("the page requires a reason for exactly the transitions the routine requires one for", async () => {
-  const [sql, page] = await Promise.all([read(MIGRATION), read(CONTRACT_PAGE)]);
+  const [sql, page] = await Promise.all([read(ROUND3), read(CONTRACT_PAGE)]);
   const required = new Set(
     [...page.matchAll(/const STATUS_REASON_REQUIRED = new Set\(\[([^\]]*)\]\)/g)]
       .flatMap((m) => m[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")))

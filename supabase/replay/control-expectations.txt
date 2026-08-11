@@ -1,0 +1,264 @@
+# ============================================================================
+# MODE=control expectations — one line per assertion, in assertion-file order
+# ============================================================================
+# scripts/replay-migrations.sh MODE=control applies supabase/replay/01_floor_schema.sql
+# and the behaviour fixtures WITHOUT the branch migrations, then runs
+# supabase/replay/10_assert_release_contracts.sql with `replay.collect = on` and
+# hands the log to scripts/control-marker-accounting.mjs together with this file.
+#
+#   fail  the assertion is load-bearing: it MUST emit exactly one
+#         `ASSERT_FAIL <name>` against the un-remediated floor. If it passes
+#         there, it is a tautology and proves nothing about the migration.
+#
+#   pass  the assertion holds against the floor by design, and the reason is one
+#         of four:
+#           - an outage detector (F-09 / F-10 leg 2: `authenticated` and
+#             service_role must KEEP grants the reviewed revision revoked, which
+#             would have taken ten call sites offline);
+#           - an F-02 "do not delete the identity" invariant;
+#           - a fixture precondition, describing the seed rather than the release;
+#           - the paired half of a behaviour assertion — "the refusal left the row
+#             alone", "the fixture was rolled back", "the unrelated lock was not
+#             taken". On the floor the action under test does not happen at all, so
+#             nothing changed; the load-bearing half of the pair is the SQLSTATE.
+#
+# Why this file exists at all, rather than a list inside the shell script
+# ----------------------------------------------------------------------
+# Round-3 finding P1-12. The control used to check two things: that each declared
+# name appeared somewhere in the assertion file, and that no `ASSERT_OK <name>`
+# line was observed for it. The second is satisfied by an assertion that never
+# ran — and 78 of them never ran, because a DO block that hit undefined_function
+# against the floor aborted and silenced every assertion below it. CI reported
+# "100 load-bearing assertions all fail without their migration" while the log
+# held 87 assertion-specific failure markers and 40 unclassified SQL errors.
+#
+# The accounting is now exact and one-to-one in both directions: this file and the
+# assertion file must declare the same set of names, every name must produce
+# exactly one marker, every marker must match its declared verdict, and the
+# control log must contain no unclassified SQL error at all. The gate itself is
+# mutation-tested by tests/release/control-marker-accounting.test.mjs.
+#
+# Adding an assertion means adding a line here. There is no default: an
+# undeclared name fails the run, and so does a declared name with no assertion.
+# ============================================================================
+pass baseline-meta-tokens-exists
+fail baseline-profiles-revocation-columns-exist
+pass f09-authenticated-can-execute-confirm-payment
+pass f09-authenticated-can-execute-approve-contract
+pass f09-authenticated-can-execute-allocate-payment
+pass f09-service-role-can-execute-confirm-payment
+fail f09-anon-cannot-execute-confirm-payment
+fail f09-anon-cannot-execute-approve-contract
+fail f09-anon-cannot-execute-allocate-payment
+pass f09-authenticated-retains-contracts-insert
+pass f09-authenticated-retains-contracts-update
+pass f09-authenticated-retains-payments-insert
+pass f09-authenticated-retains-installment-plans-insert
+pass f09-authenticated-retains-contract-approvals-insert
+pass f09-authenticated-retains-quotations-update
+pass f06-authenticated-can-update-last-active-at
+pass f06-authenticated-can-update-updated-at
+pass f06-authenticated-retains-profiles-select
+fail f06-authenticated-cannot-update-email
+fail f06-authenticated-cannot-update-password-changed-at
+fail f06-authenticated-cannot-update-force-password-change
+fail f06-authenticated-cannot-update-is-active
+fail f06-authenticated-cannot-update-role
+fail f08-permissive-audit-insert-policy-is-gone
+pass f08-permissive-activity-insert-policy-is-gone
+pass f08-permissive-session-insert-policy-is-gone
+fail f08-audit-insert-closed-for-authenticated
+fail f08-activity-insert-closed-for-authenticated
+fail f08-session-insert-closed-for-authenticated
+fail f08-authenticated-cannot-forge-audit-row
+fail f08-authenticated-cannot-append-self-attributed-audit-row
+fail f10-permissive-select-policy-is-gone
+fail f10-authenticated-has-no-select-grant
+fail f10-anon-has-no-select-grant
+pass f10-service-role-retains-select
+pass f10-service-role-retains-insert
+pass f10-service-role-retains-update
+fail f10-authenticated-cannot-read-meta-tokens
+pass f02-identity-not-deleted
+pass f02-profile-not-deleted
+fail f02-account-neutralised
+pass f02-audit-attribution-survives
+pass f02-other-privileged-account-untouched
+fail kpi-replace-function-exists
+fail kpi-service-role-can-execute
+fail kpi-authenticated-cannot-execute
+fail kpi-anon-cannot-execute
+fail kpi-definer-with-pinned-search-path
+fail kpi-unassigned-target-is-unique-per-period-and-type
+pass kpi-fixture-period-seeded
+fail kpi-invalid-target-type-refused-by-a-check-constraint
+pass kpi-failed-replace-preserves-period
+fail kpi-empty-row-set-refused-as-an-invalid-parameter
+pass kpi-empty-replace-preserves-period
+fail kpi-replace-refuses-duplicate-unassigned-keys
+pass kpi-duplicate-key-replace-preserves-period
+fail kpi-replace-holds-a-period-scoped-advisory-lock
+pass kpi-replace-lock-key-is-derived-from-the-period
+fail kpi-successful-replace-replaces-period
+fail money-actor-definer-with-pinned-search-path
+fail money-counters-table-unreachable-by-end-user-roles
+fail money-next-contract-no-unreachable-by-end-user-roles
+fail money-write-guards-installed-and-enabled
+fail money-routines-are-security-definer
+fail money-lead-won-trigger-kept-definer-and-pinned-search-path
+fail money-contract-no-seeded-from-highest-issued-number
+fail money-contract-no-increments-under-repeat-calls
+fail money-actor-returns-session-subject-for-end-user-call
+fail money-actor-refuses-claimed-id-that-is-not-the-session
+fail money-actor-refuses-inactive-account
+fail money-actor-refuses-disallowed-role
+fail money-actor-requires-an-actor-id-in-a-server-context
+fail f09-confirm-payment-refuses-impersonated-confirmer
+fail f09-confirm-payment-refuses-unauthorised-role
+fail f09-confirm-payment-succeeds-for-finance-as-itself
+fail money-confirm-payment-updates-project-paid-amount
+fail money-confirm-payment-increments-kpi-actual-amount
+fail money-confirm-payment-refuses-second-confirmation
+fail f09-allocate-payment-refuses-impersonated-allocator
+fail money-allocate-payment-refuses-plan-from-another-contract
+fail money-allocate-payment-leaves-the-other-contract-untouched
+pass money-allocate-payment-binds-and-recomputes-plans
+fail money-allocate-payment-resets-de-allocated-plans
+fail money-allocate-payment-refuses-total-over-payment-amount
+fail f09-approve-contract-refuses-impersonated-approver
+pass f09-approve-contract-impersonation-left-the-contract-unapproved
+fail f09-approve-contract-refuses-sales-role
+fail money-approve-contract-admin-step-settles-pending-row-and-opens-ceo-review
+fail money-approve-contract-ceo-step-settles-and-approves
+fail money-approve-contract-raises-instead-of-returning-error-json
+fail money-approve-contract-rejects-unknown-action
+fail money-create-contract-is-atomic-for-a-sales-caller
+fail money-create-contract-issues-a-counter-based-number
+fail money-create-contract-refuses-second-active-contract-for-a-lead
+fail money-create-contract-refuses-non-positive-amount
+fail money-convert-quotation-refuses-non-owner-sales
+fail money-convert-quotation-refuses-unaccepted-quotation
+fail money-convert-quotation-is-atomic-for-the-owner
+fail money-convert-quotation-writes-the-project-row-in-the-transaction
+fail money-convert-quotation-writes-the-activity-row-in-the-transaction
+fail money-convert-quotation-retry-repairs-the-missing-derived-row
+fail money-convert-quotation-retry-creates-no-second-contract
+fail money-convert-quotation-refuses-a-missing-schedule-by-name
+fail money-convert-quotation-refuses-a-schedule-that-does-not-total-the-quotation
+fail money-convert-quotation-refuses-a-non-positive-installment
+pass money-convert-quotation-writes-nothing-when-the-schedule-is-refused
+fail money-direct-contract-insert-refused
+fail money-direct-contract-status-update-refused
+fail money-direct-contract-amount-update-refused
+pass money-direct-contract-file-url-update-still-allowed
+pass money-direct-contract-sales-reassignment-refused
+pass money-direct-payment-insert-unconfirmed-still-allowed
+fail money-direct-payment-insert-preconfirmed-refused
+fail money-direct-payment-confirmation-refused
+fail money-confirmed-payment-amount-immutable
+pass money-confirmed-payment-notes-still-editable
+fail money-direct-contract-approval-insert-refused
+fail money-direct-payment-allocation-insert-refused
+fail money-direct-installment-plan-delete-refused
+fail money-set-contract-status-permits-owner-submission-for-approval
+fail money-set-contract-status-refuses-approval-chain-transition
+fail money-revoke-contract-requires-a-manager
+fail session-predicates-are-definer-with-pinned-search-path
+fail session-predicates-not-executable-by-anon
+fail session-boundary-covers-every-authenticated-reachable-table
+fail session-boundary-policies-are-restrictive-and-scoped-to-authenticated
+pass session-active-current-token-reads-own-contracts
+pass session-active-admin-identity-reads-contracts
+fail session-inactive-admin-identity-reads-no-contracts
+fail session-inactive-identity-reads-no-profile-row
+fail session-inactive-identity-cannot-write-its-own-profile
+pass session-ban-fixture-had-rows-to-lose
+fail session-banned-identity-reads-no-contracts
+pass session-ban-fixture-was-rolled-back
+fail session-token-issued-before-password-change-reads-nothing
+fail session-token-issued-after-password-change-still-reads
+fail session-claim-set-without-iat-is-refused
+fail session-stale-token-still-reads-its-own-profile-row
+fail session-stale-token-cannot-enumerate-other-profiles
+fail session-password-change-fixture-was-rolled-back
+fail money-release-mode-is-strict-after-the-contract-phase
+fail money-release-mode-reader-is-definer
+fail money-direct-write-discriminator-is-security-invoker
+fail money-direct-write-discriminator-is-false-in-a-server-context
+fail money-release-mode-is-readable-by-authenticated
+fail money-release-mode-is-not-settable-by-authenticated
+fail money-release-mode-is-not-readable-by-anon
+fail money-release-mode-table-is-unreachable-by-authenticated
+fail money-write-is-direct-sees-a-browser-session
+fail money-direct-write-discriminator-is-true-for-a-browser-session
+fail money-release-mode-cannot-be-widened-by-an-admin-session
+fail money-release-mode-fixture-entered-compat
+fail money-compat-window-still-lets-the-previous-release-write-a-status
+fail money-payment-delete-refused-even-in-compat-mode
+fail money-void-columns-refused-even-in-compat-mode
+fail money-release-mode-fixture-was-rolled-back
+pass money-compat-window-fixture-was-rolled-back
+fail money-contracts-delete-privilege-is-gone
+fail money-payments-delete-privilege-is-gone
+fail money-installment-plans-delete-privilege-is-gone
+fail money-contract-approvals-delete-privilege-is-gone
+fail money-payment-allocations-delete-privilege-is-gone
+pass money-delete-fixture-had-an-allocation-to-lose
+fail money-direct-contract-delete-refused-by-the-guard
+fail money-direct-payment-delete-refused-by-the-guard
+fail money-direct-installment-plan-delete-refused-by-the-guard
+fail money-direct-contract-approval-delete-refused-by-the-guard
+fail money-direct-payment-allocation-delete-refused-by-the-guard
+pass money-delete-refusals-left-every-contract-in-place
+pass money-delete-refusals-left-every-allocation-in-place
+fail money-delete-grant-fixture-was-rolled-back
+fail money-void-payment-executable-by-authenticated
+fail money-void-payment-not-executable-by-anon
+fail money-void-payment-is-definer-with-pinned-search-path
+fail money-void-payment-refuses-a-sales-caller
+fail money-void-payment-refusal-left-the-payment-confirmed
+fail money-void-payment-requires-a-reason
+fail money-void-payment-reports-a-missing-payment-as-not-found
+fail money-void-fixture-had-a-confirmed-allocated-payment
+fail money-void-payment-succeeds-for-finance-as-itself
+fail money-void-payment-releases-the-allocations
+fail money-void-payment-recomputes-the-installment-plan
+fail money-void-payment-recomputes-the-project-paid-amount
+fail money-void-payment-reverses-the-collection-kpi
+fail money-void-payment-recomputes-first-payment-status
+fail money-void-payment-returns-the-recomputed-contract-total
+fail money-void-payment-keeps-an-auditable-row
+fail money-void-payment-refuses-a-second-void
+fail money-void-payment-cannot-be-undone-by-a-direct-write
+fail money-void-fixture-was-rolled-back
+fail money-transition-graph-is-immutable
+fail money-transition-graph-closes-the-completed-to-revoking-hole
+fail money-transition-graph-makes-completed-terminal
+fail money-transition-graph-makes-terminated-and-superseded-terminal
+fail money-transition-graph-refuses-a-null-status
+fail money-transition-graph-still-permits-the-working-lifecycle
+fail money-transition-trigger-is-a-before-row-update-trigger
+fail money-set-contract-status-completes-an-active-contract-for-a-manager
+fail money-revoke-contract-refuses-a-completed-contract
+fail money-set-contract-status-refuses-to-leave-a-terminal-status
+fail money-transition-trigger-refuses-an-illegal-transition-from-a-trusted-writer
+fail money-transition-refusals-left-the-contract-completed
+pass money-transition-fixture-was-rolled-back
+pass session-write-boundary-had-tables-to-cover
+fail session-write-boundary-covers-every-public-table
+fail session-assert-current-session-is-definer-with-pinned-search-path
+fail session-boundary-verdict-not-executable-by-anon
+fail session-boundary-verdict-is-ok-for-a-current-session
+fail session-current-session-reaches-past-the-boundary-on-a-definer-rpc
+fail session-current-session-reaches-past-the-boundary-on-an-ordinary-table
+fail session-stale-token-refused-by-a-definer-money-rpc
+fail session-stale-token-refused-on-an-ordinary-table-write
+fail session-forced-password-change-refused-by-a-definer-money-rpc
+fail session-forced-password-change-refused-on-an-ordinary-table-write
+fail session-banned-identity-refused-by-a-definer-money-rpc
+fail session-banned-identity-refused-on-an-ordinary-table-write
+fail session-deactivated-identity-refused-by-a-definer-money-rpc
+fail session-identity-without-a-profile-refused-by-a-definer-money-rpc
+fail session-identity-without-a-profile-refused-on-a-zero-row-statement
+fail session-boundary-verdict-is-no-session-without-claims
+fail session-assert-refuses-a-request-with-no-identity

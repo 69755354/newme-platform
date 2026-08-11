@@ -34,8 +34,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      # fetch-depth: 0 is load-bearing here too: tests/release/migration-history-gate.test.mjs
+      # verifies supabase/migration-history-baseline.sha256 against the base commit
+      # in git, and refuses to pass when that commit is absent from the clone. A
+      # shallow checkout makes the immutability proof unverifiable, and the gate
+      # fails closed rather than reporting an unverified manifest as OK.
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

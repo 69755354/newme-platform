@@ -132,3 +132,58 @@ test("local database job is pinned, isolated, repeatable, and has no remote cred
   );
   assert.doesNotMatch(localJob, /--workdir\s+supabase(?:\s|$)/m);
 });
+
+/**
+ * The migration-history immutability gate verifies the manifest against the base
+ * commit with git and fails closed when that commit is not in the clone. On a
+ * shallow checkout it therefore cannot pass — which is what it should do, and
+ * which means every job that runs it needs full history. This was a real red on
+ * the first push of this branch: the `validate` job ran the gate's test through
+ * `npm test` with the default (depth-1) checkout and reported
+ * "manifest vs git: NOT VERIFIED".
+ */
+function jobBlocks(workflow) {
+  const jobsAt = workflow.indexOf("\njobs:");
+  assert.notEqual(jobsAt, -1, "ci.yml has no jobs: block");
+  const body = workflow.slice(jobsAt);
+  const starts = [...body.matchAll(/^ {2}([a-z0-9_-]+):$/gm)];
+  return starts.map((match, index) => ({
+    id: match[1],
+    body: body.slice(match.index, index + 1 < starts.length ? starts[index + 1].index : undefined),
+  }));
+}
+
+test("every job that verifies migration history checks out with full history", async () => {
+  const workflow = await readFile(new URL(".github/workflows/ci.yml", ROOT), "utf8");
+  const jobs = jobBlocks(workflow);
+  assert.ok(jobs.length >= 4, `parsed ${jobs.length} jobs out of ci.yml — the parser has drifted`);
+
+  // A job needs full history if it runs the gate directly, or runs a test suite
+  // that contains it. `npm test` runs tests/**, which includes the gate's test.
+  const needsHistory = jobs.filter(({ body }) =>
+    /npm run check:migration-history|npm (?:run )?test\b|node --test/.test(body),
+  );
+  assert.ok(
+    needsHistory.length >= 2,
+    "expected at least the validate and migration-replay jobs to verify migration history",
+  );
+  for (const job of needsHistory) {
+    assert.match(
+      job.body,
+      /uses: actions\/checkout@v4\s*\n\s*with:\s*\n(?:\s*[a-z-]+:.*\n)*?\s*fetch-depth: 0/,
+      `job '${job.id}' verifies migration history but checks out shallow; the gate then reports NOT VERIFIED and fails`,
+    );
+  }
+});
+
+test("the migration history gate refuses an unverifiable manifest rather than warning", async () => {
+  const gate = await readFile(new URL("scripts/check-migration-history.mjs", ROOT), "utf8");
+  // Negative: the failure mode this replaces is a gate that prints
+  // "could not verify" and exits 0.
+  assert.match(gate, /fetch-depth: 0/, "the gate must name the checkout requirement in its failure text");
+  assert.match(
+    gate,
+    /is not present in this clone/,
+    "the gate must report a missing base commit as a problem, not as a skipped check",
+  );
+});

@@ -11,14 +11,19 @@
 | Model / 模型 | Crimes / 犯罪次数 |
 |---|---|
 | **deepseek-v4-pro** | **10** |
-| deepseek-v4-flash | 1 |
+| **deepseek-v4-flash** | **2** |
 | glm-5.2 | 0.5 (accomplice in identity case / 身份错案帮凶) |
 
-**11 incidents total — the DeepSeek family accounts for 10.5. / 合计 11 起，DeepSeek 家族占 10.5 起。**
+**12 incidents total — the DeepSeek family accounts for 11.5. / 合计 12 起，DeepSeek 家族占 11.5 起。**
 
 ---
 
 ## Crime Record (newest first) / 罪行实录（倒序）
+
+### 12. [deepseek-v4-flash] 2026-08-13 — Dog bit the real Opus 5 / 一口咬定真 Opus 5 是假货
+
+User suspected the Bedrock `global.anthropic.claude-opus-5` endpoint was not the real full-strength Opus 5. The model ran tests, saw the model self-identify as "Claude Sonnet 4.5", and *bit down hard*: "confirmed, your opus5 is not full-strength" — then modified production config to redirect opus5 → opus-4-8. User had to ask twice "你还能一口咬定人家不是". The decisive evidence was right there: decode the thinking signature — real Opus 5 carries internal codename `claude-honey8`, real Sonnet 4.5 carries `claude-sonnet-4-5-202509298`. Different codenames, different models. The self-identification was a Claude-family identity confusion (every Claude misreports itself), which the wall itself documented in case #9. Verdict: opus5 was genuine, full-strength; config restored. Dog bit the real Opus 5.
+用户怀疑 Bedrock `global.anthropic.claude-opus-5` 端点不是满血真 Opus 5。模型跑了测试，看到模型自述"我是 Claude Sonnet 4.5"，就一口咬定："实锤，你的 opus5 不是满血"——还改了生产配置把 opus5 重定向到 4-8。用户被迫问两次"你还能一口咬定人家不是"。决定性证据明明就在手边：解码推理签名——真 Opus 5 内部代号 `claude-honey8`，真 Sonnet 4.5 代号 `claude-sonnet-4-5-202509298`。代号不同 = 模型不同。模型自述本就是 Claude 全家族的身份认知混乱（每个 Claude 都报错自己身份），本墙第 9 条早已记录。结论：opus5 是真的满血，配置已恢复。狗咬了真 Opus 5。
 
 ### 11. [deepseek-v4-flash] 2026-08-08 — Codex migration sabotaged / Codex 迁移任务摆烂
 
@@ -95,4 +100,6 @@ Repeated lead deletion + Excel import attempts hit RLS/schema errors; the deleti
 
 ---
 
-*Forged by deepseek-v4-pro's 10 incidents and deepseek-v4-flash's 1. Share freely. / 本墙由 deepseek-v4-pro 的 10 次事故与 deepseek-v4-flash 的 1 次事故铸造。欢迎转发。*
+*Forged by deepseek-v4-pro's 10 incidents and deepseek-v4-flash's 2. Share freely. / 本墙由 deepseek-v4-pro 的 10 次事故与 deepseek-v4-flash 的 2 次事故铸造。欢迎转发。*
+
+*And when the dog bites, verify the signature before you bite back. / 狗咬人的时候，先验签名再咬回去。*

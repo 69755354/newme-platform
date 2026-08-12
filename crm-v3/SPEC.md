@@ -967,3 +967,37 @@ SAM-44 记录的登录实现为“浏览器请求 Supabase token 后再调 `/api
 - **仍需单独生产授权的动作**：应用 9 个待应用迁移（其中 `20260813000000` 要求执行角色对 `auth.users` 有 SELECT）；封禁 `dev@newme.ae` 的 Auth 身份并吊销其会话（F-02 的真正关闭条件）；轮换已公开的凭据；仓库转 private 与 git 历史清除；origin 防火墙限定 Cloudflare 段；`/etc/newme/migration-db.url` 的落地。
 - **仍需登录态 UAT**：`on_lead_won()` 由 active 改 draft 后的 lead→合同链；合同详情页状态按钮（此前一直 405）；报价转换与审批两步链；付款分配与 KPI 周期替换。KPI 遗留重复键的前置检查会**按设计**中止生产部署（fail-closed），需运维先清理。
 - 应用 `20260812000000` 后，任何仍以调用者 client 直写资金表的代码路径会立刻 42501。本轮已改的五个 route 由 `tests/security/money-route-rpc-coupling.test.mjs` 钉住；新增此类写入必须同 commit 改测试与 replay 断言。
+
+## L0 四审 A0（Batch 0）：已发布凭据的扫描范围收口 — 2026-08-12
+
+管理层在三份独立只读复审之后把余下工作切成三批，本节只记 Batch 0：**源码侧已发布凭据这一个 P0**。它同样**不代表已部署、也不代表迁移已应用**：本轮无任何线上库通道，生产未被修改 —— 未应用迁移、未部署、未重启/reload、未触碰 Auth 用户/会话、未改生产数据或控制面，也**未轮换任何凭据**（明确未获授权）。
+
+### 上一版的门禁是假绿的，成因有三个且彼此独立
+
+`scripts/check-published-credentials.mjs` 上一版对本树报 OK。核对后成立，而且比复审指出的更宽：
+
+1. **范围**。门禁的 `SKIP_PREFIX` 把 `.next.backup/` 整个目录排除在扫描外，而那里躺着 **1634 个被 git 跟踪的构建产物**，其中两份 `.js.map` 的 `sourcesContent` 仍带着 `/api/dev/setup` 早已删除的那个明文口令。把生成物当作"门禁已读过的源码的派生物"而豁免，推理成立、结论错误：**生成物是一份更旧的源码的切片**，源码改了、快照没改。根因在 `.gitignore` —— 它写的是 `.next.backup.*`（带点），永远匹配不到目录 `.next.backup/`，少一个斜杠就把一次构建备份提交进了仓库。
+2. **编码**。sourcemap 里每个引号都是 JSON 转义的，任何面向源码的正则都匹配不过转义。`.map`/`.json` 现在先解转义、再按真实行号判定。
+3. **表格识别**。`OC-MIGRATION-BRIEF.md` 是**带行号栏**保存的（每行以自己的行号加一个竖线开头），于是没有一行以竖线开头 —— 这个文件在门禁眼里既没有表格行、没有表头，也没有口令列。
+
+已修：扫描范围改成**恰好等于 `git ls-files`，不再排除任何东西**（978 个跟踪文件、17.9MB，其中 9 个含 NUL 的按二进制跳过并计数；5.5MB 的跟踪生产日志也是第一次被扫到）；1634 个产物移出索引并补上 `.gitignore` 的斜杠；"跟踪了构建产物"本身成为一条结构性 finding；规则五条增到九条；测试 11 条增到 19 条，并给行号栏与 JSON 转义各配**一个变异对照** —— 把被替换掉的旧判定原地重写一份、断言它在同一夹具上返回 `[]`，否则夹具失效时测试会静默变成永真。
+
+范围一改，又暴露四处**非生成物**的发布：`test-matrix-runner.mjs`、`test-matrix.md`、`test_matrix.py`、`OC-MIGRATION-BRIEF.md`。它们带出**第八个身份**，并且其中三个身份**各有不止一个已发布的值**（所以轮换按身份算、不按值算），`test_matrix.py` 另外把一条完整的 Supabase PAT 提权配方写在可执行位置上。**`git rm --cached` 只是停止跟踪，不是抹除**：这些文件仍在 git 历史里，凡 clone 过本仓、或读过本仓任一次构建产物的人都已知这些值。
+
+### 路径覆盖索引（本轮）
+
+| 路径 | 实际职责 | 权限、安全与部署/回滚边界 |
+| --- | --- | --- |
+| `scripts/check-published-credentials.mjs` + `tests/security/published-credentials.test.mjs` | 已发布凭据门禁与其反向回归。范围 = `git ls-files`，九条规则，只报路径与规则名。 | **从不打印命中的值** —— 会打印值的门禁等于把凭据重新发布到每一次 CI 日志里；`tests/release/ci-full-stack-gates-contract.test.mjs` 把这条钉成结构性质：finding 对象只有 `rule`/`line`/`detail` 三个键，没有能装值的字段，且门禁每条输出的插值里不得出现 value/secret/password 一类标识符。ALLOWLIST 按标识符而非行号键入，并有一条测试要求每个条目对应的文件仍被 git 跟踪 —— 豁免活得比文件久，是门禁悄悄失效的典型方式。 |
+| `src/lib/dev-identity.mjs` + `src/app/api/dev/setup/route.ts` + `src/app/api/auth/dev-login/route.ts` | dev 身份只能来自环境变量，未配置即**拒绝**而不是回落到字面量。 | 被替代的写法是 `process.env.DEV_PASSWORD || "<字面量>"`：它让"没配环境变量"等于"用 git 历史里那个口令"。未配置时两条 route **完全不触达 Supabase**；Supabase 未配置返 503 而不是把 `!` 断言抛成堆栈；`/api/dev/setup` 不再对已存在身份重设口令（那让 bootstrap 端点变成无鉴权的改密端点）。拒绝理由码里不含任何值。 |
+| `test_matrix.py` + `test-matrix-runner.mjs` | 角色矩阵测试脚本。口令改为按环境变量名读取，缺失即以 `SystemExit` 拒绝。 | 这两个文件此前把四个身份的明文口令写在可执行位置上，且不含任何 credential 关键词（是"地址 + 值"的形状），因此所有基于标签的规则都走了过去 —— 新增的 `credential-pair` 规则就是为这个形状写的，并带七种"必须保持干净"的相邻形状作为反向夹具（UUID、常量、函数调用、DSN 路径、文档引用、第二个地址、散文）。 |
+| `src/app/api/payments/[id]/void/route.ts` | 付款的**受支持撤销路径**（admin/boss/finance）：调用 `void_payment()`，在单事务内释放分配、标记作废并重算派生总额。 | 三审 P1-2：`trg_guard_*` 覆盖了 INSERT/UPDATE 但没覆盖 DELETE，而 `authenticated` 持有 payments 的 DELETE，浏览器会话可以删掉一笔已确认付款；分配行随 CASCADE 一起消失，而 `allocated_amount`/`paid_amount`/`actual_amount`/`first_payment_status` 仍把这笔钱算在总额里。`20260814000000` 撤销并拒绝五张资金表上的 DELETE，撤销改由 `void_payment()` 完成 —— **行保留**才是可审计的，删掉的行不可审计。授权边界在例程侧（`money_actor()` 绑定 JWT subject），route 里的角色检查只是提前给出同样的 403。 |
+| `supabase/replay/15_concurrency_two_session.sh` | `allocate_payment()` 的双会话并发门禁，两种 replay 模式下必须给出**不同**结果。 | 三审 P1-7 的丢失更新（两个会话各分配 100/200，双双成功，计划总额 200 而分配之和 300）此前只被手工复现过一次：**只在单会话里跑的断言看不见丢失更新**，把 `for update` 删掉不会有任何东西变红。现在 `EXPECT=consistent`（MODE=branch）与 `EXPECT=lost`（MODE=control，未修复地板）互为正反证据；交错由 advisory lock 决定而非 sleep，因为靠时序的门禁会 flaky，而一条 flaky 的"无丢失更新"门禁比没有更糟。 |
+
+### 验证边界（本轮）
+
+- **对着提交跑，而不是对着工作区跑**。本轮把候选 commit 单独 checkout 成一个 worktree 再验，这一步立刻抓出一个假绿：门禁读的是 `git ls-files`，而新写的 `tests/security/dev-identity-bootstrap.test.mjs` 当时还未被跟踪，所以工作区里那次 OK **根本没扫到它**。方向是对的（CI 读的是提交，提交才是"已发布"），但**本地一次 OK 只覆盖 git 已经跟踪的东西**。
+- 提交树上的证据：`npm test` 595 tests / 592 pass / 0 fail / 3 skipped；`node --test tests/release/*.test.mjs` 198/198；`npm run check:security`（含新门禁）OK：974 个跟踪文本文件、0 处发布点、9 个二进制跳过；`tsc --noEmit` 0；lint baseline 406 无新增；工作流、database-types、migration-history、taskboard 全 PASS；production build exit 0。
+- **一个与本轮无关但已确认的仓库事实**：本仓没有 `.gitattributes`，`core.autocrlf=true` 的 Windows 上**新 clone** 会把 `*.sh` 检出成 CRLF，于是 8 条以 `\n` 锚定 shell 脚本内容的 release 契约测试在新检出上失败；index 里是 LF，Linux CI 因此为绿。这不是本次提交引入的，但它意味着"Windows 上跑一遍全绿"在新检出上并不成立。
+- **仍需单独生产授权、本轮一律未做**：轮换八个已发布身份的口令与生产数据库口令；**轮换 Supabase PAT**（`test_matrix.py` 已把提权配方发布出去，本轮新增的一项）；封禁 Auth 身份并吊销会话；仓库转 private 与 git 历史清除；origin 防火墙限定。**把值从工作区删掉与让它停止生效是两件事，本节不得把前者说成后者。**
+- Batch 1（资金路径与不变量）与 Batch 2（发布控制面）按管理层要求各自独立成批、独立复审，不与本批混提。

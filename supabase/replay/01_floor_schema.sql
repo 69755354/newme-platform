@@ -144,6 +144,39 @@ create table public.leads (
 
 alter table public.leads enable row level security;
 
+-- The floor enabled RLS on leads and carried no policies, which is not the state
+-- the release starts from: 20260630200000_rls_policy_remediation.sql:178-220 is
+-- applied in production and gives every authenticated role a way in. With RLS on
+-- and no policy, `authenticated` cannot read a single lead — and because
+-- policy_quotations_select_sales and its floor equivalent reach leads to decide
+-- visibility, a session could not see, let alone write, a quotation either. Any
+-- probe that measures what an end-user session can do to a lead or a quotation was
+-- therefore passing against a table nobody could touch. Reproduced while writing
+-- the B5 probes: as the owning salesperson, with a current session,
+-- `select count(*) from leads where id = <their own lead>` returned 0.
+--
+-- Copied from that migration, in the floor's style. Verbatim in meaning, including
+-- the part that matters for B5: the sales UPDATE policies carry a USING clause and
+-- no WITH CHECK, so the release lets a salesperson write any column of a row they
+-- own — which is what makes a guard, not a policy, the right place to protect a
+-- derived or structural field.
+create policy policy_leads_select_admin on public.leads for select to authenticated
+  using (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin','boss','operator')));
+create policy policy_leads_select_sales on public.leads for select to authenticated
+  using (assigned_to = auth.uid());
+create policy policy_leads_insert_admin on public.leads for insert to authenticated
+  with check (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin','boss','operator')));
+create policy policy_leads_insert_sales on public.leads for insert to authenticated
+  with check (assigned_to = auth.uid() or assigned_to is null);
+create policy policy_leads_update_admin on public.leads for update to authenticated
+  using (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin','boss','operator')));
+create policy policy_leads_update_sales on public.leads for update to authenticated
+  using (assigned_to = auth.uid());
+create policy policy_leads_delete_admin on public.leads for delete to authenticated
+  using (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin','boss')));
+create policy policy_leads_delete_sales on public.leads for delete to authenticated
+  using (assigned_to = auth.uid());
+
 -- Column names, nullability and the status CHECK come from the committed,
 -- production-generated src/types/database.ts plus the migrations that widened the
 -- status domain (20260612000000_contract_pipeline_v1.sql onward). The names
@@ -790,3 +823,175 @@ grant select on public.meta_tokens to anon, authenticated;
 -- is a literal placeholder, not a token.
 insert into public.meta_tokens (access_token, expires_at)
 values ('NOT-A-REAL-TOKEN-replay-fixture', now() + interval '60 days');
+
+-- ---------------------------------------------------------------------------
+-- Round 4 · the objects the round-4 findings act on
+-- ---------------------------------------------------------------------------
+-- Three findings could not be measured at all against the floor as it stood,
+-- and "the assertion did not fail" was therefore worth nothing:
+--
+--   A1  Every authenticated SECURITY DEFINER routine must assert the calling
+--       session at entry. The floor carried only the money routines, all of
+--       which reach the boundary through money_actor(). The routine the finding
+--       actually names — record_lead_note_atomic(), whose idempotent-replay
+--       branch RETURNS before any DML, so the statement trigger installed by
+--       20260814000000 never fires — was absent, so a catalog-driven gate had
+--       nothing outside the money surface to cover and the early-return hole was
+--       unreachable. It is carried here verbatim from
+--       20260723140000_atomic_lead_reassignment.sql:201-259, an already-applied
+--       migration, together with the two tables it needs.
+--
+--   B6  Quotation conversion does not upsert the customer or record the won
+--       business event. The floor had neither public.customers nor
+--       public.business_events, so on_lead_won()'s customer branch could not run
+--       and "the conversion left customer_id null" was not observable.
+--
+--   B7  leads.quotation_value is what on_lead_won() keys the automation off;
+--       without it that path is dead code here.
+--
+-- Everything below is the PRE-remediation state, taken from the already-applied
+-- migrations named against each object. Nothing here anticipates the fix.
+-- ---------------------------------------------------------------------------
+
+-- 20260605000000_newme_crm_v22_complete.sql, public.customers, plus the columns
+-- on_lead_won() writes. Only those columns are declared; this is a floor.
+create table public.customers (
+  id                    uuid primary key default extensions.uuid_generate_v4(),
+  lead_id               uuid references public.leads (id),
+  name                  text not null,
+  phone                 text,
+  email                 text,
+  address               text,
+  total_contract_amount numeric(12, 2) default 0,
+  last_activity_at      timestamptz,
+  created_at            timestamptz default now(),
+  updated_at            timestamptz default now()
+);
+
+-- 20260601000000_init.sql, public.business_events: the append-only business
+-- timeline. The 'won' row is the event B6 says conversion never writes.
+create table public.business_events (
+  id          uuid primary key default extensions.uuid_generate_v4(),
+  lead_id     uuid references public.leads (id) on delete cascade,
+  user_id     uuid references public.profiles (id),
+  event_type  text not null,
+  description text,
+  event_data  jsonb       default '{}',
+  created_at  timestamptz default now()
+);
+
+-- src/types/database.ts, follow_up_logs. record_lead_note_atomic() writes one
+-- row here per note.
+create table public.follow_up_logs (
+  id           uuid primary key default extensions.uuid_generate_v4(),
+  lead_id      uuid not null references public.leads (id) on delete cascade,
+  user_id      uuid references public.profiles (id),
+  created_by   uuid references public.profiles (id),
+  contact_type text        not null default 'call',
+  contact_time timestamptz not null default now(),
+  summary      text        not null default '',
+  result       text,
+  no_answer    boolean     not null default false,
+  created_at   timestamptz default now()
+);
+
+-- 20260723140000_atomic_lead_reassignment.sql:3-12, verbatim.
+create table public.lead_mutation_requests (
+  id              uuid primary key default gen_random_uuid(),
+  actor_id        uuid not null references public.profiles (id),
+  operation       text not null,
+  idempotency_key uuid not null,
+  lead_id         uuid not null references public.leads (id),
+  response        jsonb not null,
+  created_at      timestamptz not null default now(),
+  unique (actor_id, operation, idempotency_key)
+);
+
+alter table public.customers              enable row level security;
+alter table public.business_events        enable row level security;
+alter table public.follow_up_logs         enable row level security;
+alter table public.lead_mutation_requests enable row level security;
+
+-- The pre-remediation grants. lead_mutation_requests is deliberately
+-- unreachable (20260723140000:15) — the routine writes it as the definer.
+grant select, insert, update on public.customers       to authenticated;
+grant select, insert         on public.business_events to authenticated;
+grant select, insert, update on public.follow_up_logs  to authenticated;
+revoke all on table public.lead_mutation_requests from public, anon, authenticated;
+
+-- The columns on_lead_won() and record_lead_note_atomic() read and write that
+-- the floor's leads table did not declare. quotation_value is
+-- 20260612000000_contract_pipeline_v1.sql; phone and email are
+-- 20260601000000_init.sql; last_contact_date is
+-- 20260605000000_newme_crm_v22_complete.sql.
+alter table public.leads
+  add column if not exists phone             text,
+  add column if not exists email             text,
+  add column if not exists quotation_value   numeric(12, 2),
+  add column if not exists last_contact_date date;
+
+-- 20260723140000_atomic_lead_reassignment.sql:201-259, verbatim, including the
+-- REVOKE/GRANT pair. This is the routine A1 names: the FOUND branch returns the
+-- recorded response before the first INSERT, so nothing on that path is covered
+-- by the statement trigger 20260814000000 installs, and a session that has been
+-- deactivated, banned, forced to change its password or is carrying a token
+-- older than the last password change is served normally.
+CREATE OR REPLACE FUNCTION public.record_lead_note_atomic(
+  p_lead_id uuid,
+  p_note text,
+  p_idempotency_key uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $fn$
+DECLARE
+  v_actor_id uuid := auth.uid();
+  v_actor_role text;
+  v_lead public.leads%ROWTYPE;
+  v_note text := btrim(coalesce(p_note, ''));
+  v_note_id uuid;
+  v_response jsonb;
+BEGIN
+  IF v_actor_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+  IF p_idempotency_key IS NULL OR v_note = '' OR char_length(v_note) > 4000 THEN
+    RAISE EXCEPTION 'INVALID_NOTE_REQUEST';
+  END IF;
+
+  SELECT role INTO v_actor_role FROM public.profiles WHERE id = v_actor_id;
+  IF coalesce(v_actor_role, '') NOT IN ('admin', 'boss', 'operator', 'sales', 'user', 'salesperson') THEN
+    RAISE EXCEPTION 'FORBIDDEN_NOTE';
+  END IF;
+
+  SELECT response INTO v_response
+  FROM public.lead_mutation_requests
+  WHERE actor_id = v_actor_id AND operation = 'lead_note' AND idempotency_key = p_idempotency_key;
+  IF FOUND THEN
+    RETURN v_response || jsonb_build_object('idempotent_replay', true);
+  END IF;
+
+  SELECT * INTO v_lead FROM public.leads WHERE id = p_lead_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'LEAD_NOT_FOUND';
+  END IF;
+  IF v_actor_role NOT IN ('admin', 'boss', 'operator') AND v_lead.assigned_to IS DISTINCT FROM v_actor_id THEN
+    RAISE EXCEPTION 'FORBIDDEN_NOTE';
+  END IF;
+
+  INSERT INTO public.follow_up_logs (lead_id, user_id, contact_type, summary, contact_time, no_answer)
+  VALUES (p_lead_id, v_actor_id, 'note', v_note, now(), false)
+  RETURNING id INTO v_note_id;
+
+  UPDATE public.leads SET last_contact_date = current_date, updated_at = now() WHERE id = p_lead_id;
+  v_response := jsonb_build_object('lead_id', p_lead_id, 'note_id', v_note_id);
+  INSERT INTO public.lead_mutation_requests (actor_id, operation, idempotency_key, lead_id, response)
+  VALUES (v_actor_id, 'lead_note', p_idempotency_key, p_lead_id, v_response);
+  RETURN v_response;
+END;
+$fn$;
+
+REVOKE EXECUTE ON FUNCTION public.record_lead_note_atomic(uuid, text, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.record_lead_note_atomic(uuid, text, uuid) TO authenticated;

@@ -297,3 +297,128 @@ fail money-operator-refused-by-allocate-payment
 fail money-operator-refused-by-void-payment
 pass money-operator-refusals-changed-no-money-rows
 fail money-operator-still-approves-where-the-product-rule-allows-it
+
+# A1 · the session boundary at SECURITY DEFINER entry (20260816000000).
+# The seven catalog assertions and the four revoked-state behaviour probes are the
+# finding: on the un-remediated floor every one of them fails, and the four the
+# probes measured — deactivated, banned, stale-token, forced-password-change — are
+# served with `idempotent_replay: true`. Four lines are `pass` and each is a
+# paired half rather than a tautology: three say a CURRENT session is still served
+# on the branch its revoked counterpart above must be refused on, and the
+# trigger-function line is a regression guard for the EXECUTE revoke against a
+# floor that carries no end-user-reachable trigger function to begin with.
+fail a1-entry-guard-function-exists
+fail a1-entry-guard-is-security-definer-with-a-pinned-search-path
+fail a1-every-definer-routine-asserts-the-session-at-entry
+fail a1-entry-boundary-covered-a-plausible-number-of-routines
+fail a1-entry-boundary-exemptions-each-carry-a-reason
+fail a1-entry-boundary-exemption-list-is-short
+fail a1-entry-boundary-exemption-table-is-unreachable-by-end-user-roles
+pass a1-trigger-functions-are-off-the-end-user-rpc-surface
+fail a1-idempotent-replay-branch-refuses-a-deactivated-session
+fail a1-idempotent-replay-branch-refuses-a-banned-session
+fail a1-idempotent-replay-branch-refuses-a-stale-token-session
+fail a1-idempotent-replay-branch-refuses-a-forced-password-change-session
+fail a1-normal-branch-refuses-a-deactivated-session
+fail a1-a-refused-normal-branch-request-wrote-no-follow-up-log-row
+fail a1-error-branch-refuses-before-it-reports-whether-the-lead-exists
+pass a1-error-branch-still-reports-lead-not-found-to-a-current-session
+pass a1-idempotent-replay-branch-still-serves-a-current-session
+pass a1-normal-branch-still-writes-for-a-current-session
+fail a1-a-second-unrelated-definer-routine-also-refuses-at-entry
+fail a1-that-second-routine-still-answers-a-current-session
+
+# B2/B3/B4/B5/B6/B7/B10 · the money and business-integrity batch (20260817000000).
+# 43 lines, and 40 of them are `fail`: the floor has no request key, no derived
+# first-payment status, no schedule validator, no lead-won finalizer and no credit
+# identity, so every catalog assertion and every behaviour probe above detects it.
+# The behaviour probes are two nested subtransactions each (the inner one around
+# the call under test, so a measurement AFTER a refusal is still reachable), which
+# is why a probe can report both the SQLSTATE and what the refusal left behind.
+#
+# Three lines are `pass`, and none of them is a tautology dressed up as coverage:
+#
+#   b3-no-non-positive-money-row-exists — a data invariant, not a schema claim. It
+#     holds on the floor because the fixtures seed no negative row; it exists to
+#     catch a later migration that re-adds one of the amount constraints NOT VALID
+#     over dirty data. The load-bearing halves are the three constraint lines and
+#     b3-the-positive-amount-constraints-are-validated directly above it.
+#
+#   b6-no-lead-carries-two-won-events — a table-wide invariant, and it passes on
+#     the floor vacuously: that floor writes no 'won' event on the conversion path
+#     at all, which IS finding B6. The load-bearing half is
+#     b6-the-conversion-records-exactly-one-won-event, which fails here.
+#
+#   b5-a-crossed-link-writes-nothing-on-the-foreign-contract — the paired half of
+#     b5-a-crossed-conversion-link-is-refused. On the floor the refusal never
+#     happens, so of course nothing was written; the SQLSTATE line is the finding.
+#
+# b4-an-exact-schedule-is-stored-as-sent is the positive control for B4 and is
+# `fail` here only because the floor has no create_contract(jsonb) to call at all
+# (recorded as ASSERT_UNMEASURABLE [42883] in the run). Against the release minus
+# only 20260817000000 it passes on both sides, which is what a control is for.
+fail b3-a-payment-amount-must-be-positive
+fail b3-an-allocated-amount-must-be-positive
+fail b3-an-installment-amount-must-be-positive
+pass b3-no-non-positive-money-row-exists
+fail b3-the-positive-amount-constraints-are-validated
+fail b3-a-request-key-is-unique-per-creator
+fail b2-the-first-payment-derivation-is-a-stable-invoker-function
+fail b2-the-first-payment-derivation-is-not-reachable-by-anon
+fail b2-every-contract-agrees-with-the-derivation
+fail b4-the-schedule-validator-is-an-immutable-invoker-function
+fail b5-a-before-update-row-guard-is-installed-on-quotations
+fail b6-the-lead-won-finalizer-exists-and-is-security-definer
+fail b6-the-lead-won-finalizer-is-not-an-end-user-rpc
+pass b6-no-lead-carries-two-won-events
+fail b7-a-payment-records-the-salesperson-it-credited
+fail b7-the-credit-identity-references-a-profile
+fail b7-every-confirmed-payment-carries-a-credit-identity
+fail b2-first-payment-status-is-refused-from-a-session
+fail b2-first-payment-status-follows-an-allocation
+fail b2-first-payment-status-follows-a-void
+fail b2-first-payment-status-is-partial-for-a-short-allocation
+fail b3-a-negative-payment-is-refused
+fail b3-a-payment-without-a-request-key-is-refused
+fail b3-a-keyed-payment-is-recorded-as-sent
+fail b3-the-same-request-twice-is-one-payment
+fail b3-a-request-key-cannot-be-rewritten
+fail b4-a-contract-without-a-schedule-is-refused
+fail b4-a-schedule-that-does-not-total-is-refused
+fail b4-a-duplicate-installment-position-is-refused
+fail b4-a-non-positive-installment-is-refused-by-name
+fail b4-an-exact-schedule-is-stored-as-sent
+fail b5-the-conversion-link-is-refused-from-a-session
+fail b5-a-crossed-conversion-link-is-refused
+pass b5-a-crossed-link-writes-nothing-on-the-foreign-contract
+fail b6-the-conversion-creates-the-customer-and-links-the-lead
+fail b6-the-conversion-records-exactly-one-won-event
+fail b6-the-conversion-puts-that-customer-on-the-project-and-the-contract
+fail b10-a-conversion-schedule-must-equal-the-quotation-exactly
+fail b7-saving-a-period-preserves-what-was-collected
+fail b7-a-period-cannot-be-saved-in-a-way-that-drops-collected-amounts
+fail b7-confirming-a-payment-records-who-was-credited
+fail b7-a-void-debits-the-recorded-creditor-not-the-current-owner
+fail b7-the-credit-identity-is-refused-from-a-session
+
+# A3 · 20260817120000_admin_reset_session_revocation.sql. All seventeen are
+# load-bearing: the floor has no revoke_user_sessions(), so the catalog probes
+# cannot be measured at all and every behaviour probe reports the SQLSTATE of a
+# missing function instead of the refusal it is looking for.
+fail a3-revocation-rpc-exists
+fail a3-revocation-rpc-is-a-volatile-definer-with-a-pinned-search-path
+fail a3-revocation-rpc-carries-the-definer-entry-guard
+fail a3-authenticated-cannot-execute-the-revocation-rpc
+fail a3-anon-cannot-execute-the-revocation-rpc
+fail a3-service-role-can-execute-the-revocation-rpc
+fail a3-the-revocation-removes-every-session-of-the-target
+fail a3-the-revocation-removes-every-refresh-token-of-the-target
+fail a3-a-refresh-token-with-no-session-is-removed-too
+fail a3-the-revocation-reports-the-rows-it-removed
+fail a3-a-second-revocation-is-a-verified-no-op
+fail a3-another-identity-keeps-its-sessions
+fail a3-every-revocation-writes-a-server-owned-audit-row
+fail a3-an-authenticated-session-is-refused-by-the-grant
+fail a3-a-call-carrying-an-end-user-identity-is-refused
+fail a3-an-unknown-target-is-refused
+fail a3-a-null-target-is-refused

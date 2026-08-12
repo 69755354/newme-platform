@@ -30,12 +30,22 @@
 -- Ordering requirement, and how it is enforced
 -- --------------------------------------------
 -- `supabase db push` applies every pending migration in one run, so pushing this
--- file together with 20260814000000 collapses the compatibility window to zero.
--- The window is a deployment procedure, not a property of the SQL, and the
+-- file together with the expand phase collapses the compatibility window to
+-- zero. The window is a deployment procedure, not a property of the SQL, and the
 -- procedure is written down in supabase/preflight/expand-contract-rollback.md:
--- push up to 20260814000000, deploy the candidate release, verify, and only then
--- push this file. tests/release/expand-contract-rollback-contract.test.mjs holds
+-- apply the expand phase, deploy the candidate release, verify, and only then
+-- apply this file. tests/release/expand-contract-rollback-contract.test.mjs holds
 -- the two artifacts to each other so the document cannot drift from the SQL.
+--
+-- The split is executable from this exact tree, with no file moved and no history
+-- rewritten: infra/release/release-manifest.json names this file as the release's
+-- one `deferred_contract` migration and every other pending file as
+-- `required_for_app`, and scripts/db-phase-push.mjs applies one named phase after
+-- checking each file's SHA-256 against that manifest. This file therefore carries
+-- the HIGHEST version in the release, so the expand phase is also a contiguous
+-- prefix of the pending set and no ordering hazard is left for an operator who
+-- reaches for the CLI instead. scripts/check-release-manifest.mjs is the gate
+-- that keeps all of that true as migrations are added.
 --
 -- The replay harness applies both, because the gate's job is to prove the strict
 -- posture is real and that the companion returns to the compatible one. Read
@@ -56,7 +66,7 @@ begin
 
   insert into public.money_release_mode (id, direct_write_mode, reason, changed_at)
   values ('only', 'strict',
-          'contract phase 20260815000000: the candidate release is live and writes '
+          'contract phase 20260818000000: the candidate release is live and writes '
           || 'money rows only through the RPCs, so direct end-user writes are refused',
           now())
   on conflict (id) do update

@@ -60,14 +60,74 @@ export async function POST(request: NextRequest) {
     // seq defaults to position, not 1: `inst.seq || 1` gave every installment
     // seq 1 when the client omitted it, and installment_plans has a UNIQUE
     // (contract_id, seq).
-    const schedule = Array.isArray(installments)
-      ? installments.map((inst: any, index: number) => ({
-          seq: Number.isFinite(inst?.seq) ? inst.seq : index + 1,
-          amount: Number.isFinite(inst?.amount) ? inst.amount : 0,
-          due_date: inst?.due_date || null,
-          description: typeof inst?.description === "string" ? inst.description : "",
-        }))
-      : [];
+    //
+    // The schedule is validated here as well as in assert_installment_schedule(),
+    // and the duplication is deliberate. The database is the authority — it refuses
+    // the same cases with 22023 for every caller, not just this route — but what it
+    // cannot do is tell the client WHICH field of its payload was wrong before the
+    // contract number is drawn. What this replaces is worse than a poor message: a
+    // non-array `installments` became `[]` and a non-numeric amount became 0, so a
+    // client that sent a malformed schedule got a signed contract with no payment
+    // schedule, or one that did not add up, and HTTP 201.
+    if (!Array.isArray(installments) || installments.length === 0) {
+      return NextResponse.json(
+        { error: "A contract needs an installment schedule: installments must be a non-empty array", code: "INVALID_SCHEDULE" },
+        { status: 400 },
+      );
+    }
+
+    const schedule = installments.map((inst: any, index: number) => ({
+      seq: Number.isFinite(inst?.seq) ? Number(inst.seq) : index + 1,
+      amount: Number.isFinite(inst?.amount) ? Number(inst.amount) : NaN,
+      due_date: inst?.due_date || null,
+      description: typeof inst?.description === "string" ? inst.description : "",
+    }));
+
+    const seen = new Set<number>();
+    for (const [index, inst] of schedule.entries()) {
+      const position = index + 1;
+      if (!Number.isFinite(inst.amount) || inst.amount <= 0) {
+        return NextResponse.json(
+          { error: `Installment ${position} needs a positive amount`, code: "INVALID_SCHEDULE" },
+          { status: 400 },
+        );
+      }
+      if (!Number.isInteger(inst.seq) || inst.seq <= 0) {
+        return NextResponse.json(
+          { error: `Installment ${position} has an invalid position`, code: "INVALID_SCHEDULE" },
+          { status: 400 },
+        );
+      }
+      if (seen.has(inst.seq)) {
+        return NextResponse.json(
+          { error: `Installment position ${inst.seq} appears more than once`, code: "INVALID_SCHEDULE" },
+          { status: 400 },
+        );
+      }
+      seen.add(inst.seq);
+      if (inst.due_date !== null && Number.isNaN(Date.parse(String(inst.due_date)))) {
+        return NextResponse.json(
+          { error: `Installment ${position} has an invalid due date`, code: "INVALID_SCHEDULE" },
+          { status: 400 },
+        );
+      }
+    }
+
+    // Compared in cents. 0.1 + 0.2 !== 0.3 in this language, and a schedule that
+    // is off by a rounding error is exactly the case the client is most likely to
+    // send, so summing the floats and comparing to `amount` would reject valid
+    // schedules and accept invalid ones by turns.
+    const scheduledCents = schedule.reduce((sum, inst) => sum + Math.round(inst.amount * 100), 0);
+    const contractCents = Math.round(amount * 100);
+    if (scheduledCents !== contractCents) {
+      return NextResponse.json(
+        {
+          error: `The installment schedule totals ${(scheduledCents / 100).toFixed(2)} but the contract totals ${(contractCents / 100).toFixed(2)}`,
+          code: "INVALID_SCHEDULE",
+        },
+        { status: 400 },
+      );
+    }
 
     const { data: created, error: rpcErr } = await supabase.rpc("create_contract", {
       p_payload: {
@@ -225,8 +285,20 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * PUT /api/contracts — update contract fields including first_payment_status
- * Body: { id: string, first_payment_status?: string, first_payment_due_date?: string }
+ * PUT /api/contracts — update the first payment's DUE DATE.
+ * Body: { id: string, first_payment_due_date?: string }
+ *
+ * first_payment_status is no longer accepted. It is derived from confirmed,
+ * unvoided allocations against the first installment by
+ * contract_first_payment_status(), and confirm_payment(), allocate_payment() and
+ * void_payment() are the only writers; trg_guard_contracts_write raises 42501 for
+ * anyone else, so sending it here would produce a 500 rather than an update.
+ *
+ * It used to be writable by the contract's own salesperson, which is finding B2:
+ * "the customer paid the deposit" was a field a salesperson could type rather than
+ * a fact derived from the money received, and every report built on it inherited
+ * that. The request is refused with 409 rather than ignored, because a client that
+ * believes it set the status and is told "success" is the failure mode being fixed.
  */
 export async function PUT(request: NextRequest) {
   const request_id = genReqId();
@@ -267,10 +339,14 @@ export async function PUT(request: NextRequest) {
 
     const updates: Database["public"]["Tables"]["contracts"]["Update"] = {};
     if (first_payment_status !== undefined) {
-      if (!["unpaid", "partial", "paid"].includes(first_payment_status)) {
-        return NextResponse.json({ error: "Invalid first_payment_status" }, { status: 400 });
-      }
-      updates.first_payment_status = first_payment_status;
+      return NextResponse.json(
+        {
+          error:
+            "first_payment_status is derived from confirmed payments and cannot be set directly; confirm or allocate a payment instead",
+          code: "DERIVED_FIELD",
+        },
+        { status: 409 },
+      );
     }
     if (first_payment_due_date !== undefined) {
       updates.first_payment_due_date = first_payment_due_date;

@@ -2,6 +2,12 @@ import { NextResponse, NextRequest } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase-middleware";
 import { reportServerError } from "@/lib/report-server-error";
 import { isActiveProfile } from "@/lib/auth-profile.mjs";
+import {
+  FORCED_SESSION_ERROR,
+  FORCED_SESSION_REDIRECT_PATH,
+  isForcedPasswordChange,
+  isForcedSessionAllowedPath,
+} from "@/lib/forced-password-change.mjs";
 
 const PROTECTED_ROUTES: Record<string, string[]> = {
   "/settings": ["admin", "boss", "operator"],
@@ -32,6 +38,7 @@ type ActiveProfile = {
   role?: string | null;
   is_active?: boolean | null;
   password_changed_at?: string | null;
+  force_password_change?: boolean | null;
 };
 
 function isExternalAuthorizedApi(pathname: string): boolean {
@@ -178,7 +185,7 @@ export async function proxy(request: NextRequest) {
       } else {
         try {
           const res = await withAuthTimeout(fetch(
-            `${supabaseUrl}/rest/v1/profiles?select=id,is_active,role,password_changed_at&id=eq.${user.id}`,
+            `${supabaseUrl}/rest/v1/profiles?select=id,is_active,role,password_changed_at,force_password_change&id=eq.${user.id}`,
             {
               headers: {
                 apikey: publishableKey,
@@ -201,7 +208,7 @@ export async function proxy(request: NextRequest) {
     } else {
       const { data, error } = await withAuthTimeout(supabase
         .from("profiles")
-        .select("role, is_active, password_changed_at")
+        .select("role, is_active, password_changed_at, force_password_change")
         .eq("id", user.id)
         .single());
       profile = data;
@@ -220,6 +227,20 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
     activeProfile = profile;
+
+    // A2: a forced session may change its password, look at itself and leave.
+    // Everything else — reads included, and every service-role route with it —
+    // is refused here, before the request reaches a handler. The exceptions live
+    // in one list in src/lib/forced-password-change.mjs so this boundary and
+    // getRequestAuthContext() cannot disagree about what they are.
+    if (isForcedPasswordChange(profile) && !isForcedSessionAllowedPath(pathname)) {
+      if (isApiRequest) {
+        return NextResponse.json({ error: FORCED_SESSION_ERROR }, { status: 403 });
+      }
+      const changeUrl = new URL(FORCED_SESSION_REDIRECT_PATH, request.url);
+      changeUrl.searchParams.set("reason", FORCED_SESSION_ERROR);
+      return NextResponse.redirect(changeUrl);
+    }
   }
 
   // Q6: Password reset session invalidation — if password was changed after the
@@ -326,6 +347,16 @@ export const config = {
     "/quotes/:path*",
     "/projects/:path*",
     "/products/:path*",
+    // A2: /payments, /tasks and /workbench are authenticated pages under
+    // src/app/(dashboard) that this matcher never listed, so no edge check ran
+    // for them — neither the forced-password-change refusal added below nor the
+    // older is_active revocation boundary. Server actions POST to the page's own
+    // path, so an unlisted page was also an unchecked action entry point.
+    // tests/security/forced-password-change-boundary.test.mjs asserts that every
+    // page under (dashboard) is covered, so a new page cannot reopen this.
+    "/payments/:path*",
+    "/tasks/:path*",
+    "/workbench/:path*",
     "/api/:path*",
     // P3_6 (PRD §六 6.5): legacy URL redirects at the edge.
     // /quotations has no :path* so /quotations/[id] stays reachable.

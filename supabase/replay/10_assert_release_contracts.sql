@@ -15,7 +15,7 @@
 -- notices against ASSERT_TOTAL below, so an assertion file that stops early
 -- fails the job instead of passing quietly.
 --
--- ASSERT_TOTAL: 243
+-- ASSERT_TOTAL: 323
 -- ============================================================================
 
 create temp table assert_log (name text, passed boolean not null);
@@ -37,7 +37,7 @@ create temp table assert_log (name text, passed boolean not null);
 -- of raising is what makes one marker per assertion possible.
 --
 -- Both branches write to assert_log, so the self-check at the foot of this file
--- can prove from inside the database that all 243 assertions were reached —
+-- can prove from inside the database that all 323 assertions were reached —
 -- a claim no amount of log scraping can make.
 create or replace function pg_temp.assert(condition boolean, assertion_name text)
 returns void
@@ -1122,7 +1122,12 @@ begin
     v_mgr := public.create_contract(jsonb_build_object(
       'lead_id',      '33333333-3333-3333-3333-333333333333',
       'amount',       '90000',
-      'party_a_name', 'Replay manager on another lead'));
+      'party_a_name', 'Replay manager on another lead',
+      -- B4: every create_contract() call now needs a schedule that adds up. This
+      -- one is a positive control for the ownership rule, so it has to be a
+      -- request that is valid in every other respect.
+      'installments', jsonb_build_array(
+        jsonb_build_object('seq', '1', 'amount', '90000'))));
     reset role;
     v_mgr_row := (select status = 'draft'
                        and sales_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -1501,17 +1506,39 @@ end
 $$;
 
 -- Recording an unconfirmed payment is a legitimate direct write
--- (src/app/api/payments/route.ts:70) and must keep working; the guard only pins
--- created_by to the session identity.
+-- (src/app/api/payments/route.ts) and must keep working; the guard pins created_by
+-- to the session identity and, since B3, requires the request's idempotency key.
+--
+-- The key is sent through dynamic SQL, and only where the column exists, because
+-- this assertion is one of the ones that must hold on BOTH sides. Naming
+-- request_key statically made it fail against the un-remediated floor with 42703
+-- — not because the floor refuses the write, which is the claim, but because the
+-- harness was handing that floor a column it does not have. It also took the
+-- assertion below with it, which needs this row to exist before it can try to
+-- confirm it. A negative control has to speak the floor's schema.
 do $$
-declare v_state text := '00000';
+declare
+  v_state text := '00000';
+  v_keyed boolean := exists (
+    select 1 from pg_attribute
+     where attrelid = 'public.payments'::regclass
+       and attname = 'request_key' and not attisdropped);
 begin
   begin
     perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
     set local role authenticated;
-    insert into public.payments (id, contract_id, amount, payment_date, created_by)
-    values ('d3d3d3d3-d3d3-d3d3-d3d3-d3d3d3d3d3d3', 'c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3',
-            1000.00, current_date, 'cccccccc-cccc-cccc-cccc-cccccccccccc');
+    if v_keyed then
+      execute $i$
+        insert into public.payments (id, contract_id, amount, payment_date, created_by, request_key)
+        values ('d3d3d3d3-d3d3-d3d3-d3d3-d3d3d3d3d3d3', 'c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3',
+                1000.00, current_date, 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+                '3d3d3d3d-0000-4000-8000-000000000001') $i$;
+    else
+      execute $i$
+        insert into public.payments (id, contract_id, amount, payment_date, created_by)
+        values ('d3d3d3d3-d3d3-d3d3-d3d3-d3d3d3d3d3d3', 'c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3',
+                1000.00, current_date, 'cccccccc-cccc-cccc-cccc-cccccccccccc') $i$;
+    end if;
   exception when others then v_state := sqlstate;
   end;
   reset role;
@@ -2951,7 +2978,12 @@ begin
       v_setup := (public.create_contract(jsonb_build_object(
         'lead_id',      '0c0c0c0c-0c0c-0c0c-0c0c-0c0c0c0c0c0c',
         'amount',       100000,
-        'party_a_name', 'Replay party A')) ->> 'id')::uuid;
+        'party_a_name', 'Replay party A',
+        -- B4: a schedule that adds up, because this is a setup call that must
+        -- succeed; the named assertion below is what fails if it does not.
+        'installments', jsonb_build_array(
+          jsonb_build_object('seq', '1', 'amount', 40000),
+          jsonb_build_object('seq', '2', 'amount', 60000)))) ->> 'id')::uuid;
       perform public.set_contract_status(v_setup, 'pending_admin', 'replay K7 setup');
     exception when others then v_setup := null;
     end;
@@ -3068,7 +3100,12 @@ begin
       v_setup := (public.create_contract(jsonb_build_object(
         'lead_id',      '0c0c0c0c-0c0c-0c0c-0c0c-0c0c0c0c0c0c',
         'amount',       100000,
-        'party_a_name', 'Replay party A')) ->> 'id')::uuid;
+        'party_a_name', 'Replay party A',
+        -- B4: a schedule that adds up, because this is a setup call that must
+        -- succeed; the named assertion below is what fails if it does not.
+        'installments', jsonb_build_array(
+          jsonb_build_object('seq', '1', 'amount', 40000),
+          jsonb_build_object('seq', '2', 'amount', 60000)))) ->> 'id')::uuid;
       perform public.set_contract_status(v_setup, 'pending_admin', 'replay K7 setup');
     exception when others then v_setup := null;
     end;
@@ -3147,11 +3184,1488 @@ end
 $$;
 
 -- ============================================================================
+-- A1 · The session boundary at SECURITY DEFINER entry
+--     (20260816000000_l0_round4_definer_entry_boundary.sql)
+-- ============================================================================
+-- Round 3 put the boundary on table statements. Round 4 found that a routine
+-- which answers WITHOUT issuing a statement never reaches it. Measured against
+-- this exact floor before the migration existed, record_lead_note_atomic() on its
+-- idempotent-replay branch returned `idempotent_replay: true` to a deactivated,
+-- a banned, a stale-token and a forced-password-change session, and its error
+-- branch told a forced session whether an arbitrary lead id exists (P0001
+-- LEAD_NOT_FOUND). Both are below, as the states they must now refuse.
+--
+-- Two kinds of assertion, because either alone is worth little. The catalog ones
+-- say every definer routine installed HERE carries the guard, which is the claim
+-- that has to hold in production where routines this repo never declared also
+-- live. The behaviour ones execute all three branches of the routine the finding
+-- names, because "the text contains a PERFORM" is not the same as "the request
+-- was refused".
+-- ----------------------------------------------------------------------------
+
+select pg_temp.assert_eval($q$ to_regprocedure('public.assert_current_session_at_entry()') is not null $q$,
+  'a1-entry-guard-function-exists');
+
+select pg_temp.assert_eval($q$ (select p.prosecdef and p.proconfig::text like '%search_path=pg_catalog, public, pg_temp%'
+    from pg_proc p where p.oid = to_regprocedure('public.assert_current_session_at_entry()')) $q$,
+  'a1-entry-guard-is-security-definer-with-a-pinned-search-path');
+
+-- The gate itself. Deliberately not restricted to plpgsql: a `sql`-language
+-- definer function cannot be given a PERFORM, so if this query carried the
+-- transform's language filter, adding one would create an uncovered routine that
+-- the gate still called covered.
+select pg_temp.assert_eval($q$ (select count(*) = 0
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    join pg_language l on l.oid = p.prolang
+   where n.nspname = 'public' and p.prosecdef and p.prorettype <> 'trigger'::regtype
+     and p.oid::regprocedure::text not in (select routine from public.definer_entry_boundary_exemptions)
+     and (l.lanname <> 'plpgsql'
+          or p.prosrc !~* '(^|\n)[ \t]*begin[ \t]*\r?\n[ \t]*perform[ \t]+public\.assert_current_session_at_entry\(\);')) $q$,
+  'a1-every-definer-routine-asserts-the-session-at-entry');
+
+-- A gate that covers nothing passes trivially. The floor plus this branch install
+-- fourteen; ten is a floor low enough to survive a legitimate refactor and high
+-- enough that an empty transform fails here.
+select pg_temp.assert_eval($q$ (select count(*) >= 10
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    join pg_language l on l.oid = p.prolang
+   where n.nspname = 'public' and p.prosecdef and l.lanname = 'plpgsql'
+     and p.prorettype <> 'trigger'::regtype
+     and p.prosrc ~* '(^|\n)[ \t]*begin[ \t]*\r?\n[ \t]*perform[ \t]+public\.assert_current_session_at_entry\(\);') $q$,
+  'a1-entry-boundary-covered-a-plausible-number-of-routines');
+
+-- Every exemption is the boundary's own machinery or an RLS predicate that must
+-- return a verdict rather than raise. An exemption with no stated reason is how
+-- the next routine gets excused.
+select pg_temp.assert_eval($q$ (select count(*) = 0 from public.definer_entry_boundary_exemptions
+   where reason is null or char_length(btrim(reason)) < 30) $q$,
+  'a1-entry-boundary-exemptions-each-carry-a-reason');
+
+select pg_temp.assert_eval($q$ (select count(*) between 1 and 8 from public.definer_entry_boundary_exemptions) $q$,
+  'a1-entry-boundary-exemption-list-is-short');
+
+select pg_temp.assert_eval($q$ not (
+       has_table_privilege('authenticated', 'public.definer_entry_boundary_exemptions', 'select')
+    or has_table_privilege('authenticated', 'public.definer_entry_boundary_exemptions', 'insert')
+    or has_table_privilege('anon',          'public.definer_entry_boundary_exemptions', 'select')) $q$,
+  'a1-entry-boundary-exemption-table-is-unreachable-by-end-user-roles');
+
+-- A trigger function holds EXECUTE only because CREATE FUNCTION grants it to
+-- PUBLIC. Held, it lets a session evaluate a money guard outside any trigger
+-- context; taken back, nothing changes, because the trigger machinery does not
+-- consult it. None of the sixteen RPC names src/ calls is a trigger function.
+-- This one also passes on the un-remediated floor, which carries no trigger
+-- function that an end-user role can reach — it is a regression guard for the
+-- revoke, not a reproduction of the finding.
+select pg_temp.assert_eval($q$ (select count(*) = 0 from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.prorettype = 'trigger'::regtype
+     and (has_function_privilege('authenticated', p.oid, 'execute')
+          or has_function_privilege('anon', p.oid, 'execute'))) $q$,
+  'a1-trigger-functions-are-off-the-end-user-rpc-surface');
+
+-- ----------------------------------------------------------------------------
+-- The behaviour matrix: three branches × four revoked states, plus the control
+-- case in each branch, because a boundary that refuses everyone is not a fix.
+--
+-- Each probe is one subtransaction containing both the state change that sets it
+-- up and the call. Whichever way it ends — the routine refuses, the routine
+-- serves and REPLAY_ROLLBACK is raised deliberately, or the setup itself cannot
+-- run on this floor — the subtransaction aborts and the profile and auth rows are
+-- restored without a restore statement that could fail on its own.
+--
+-- The default state '00000' means "the request was served". It is what an
+-- unmeasurable probe also reports, so no probe can pass by not running, and the
+-- unmeasurable case is separately narrated through absorb(): fatal in
+-- MODE=branch, a recorded ASSERT_UNMEASURABLE in MODE=control.
+-- ----------------------------------------------------------------------------
+do $$
+declare
+  v_actor      uuid := 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  v_lead       uuid := '22222222-2222-2222-2222-222222222222';
+  v_replay_key uuid := 'aaaa1111-2222-3333-4444-555566667777';
+  v_missing    uuid := '00000000-0000-0000-0000-0000000000ff';
+  v_state      text[] := array['00000','00000','00000','00000','00000','00000','00000'];
+  v_msg        text[] := array['','','','','','',''];
+  v_replayed   boolean := false;
+  v_wrote      boolean := false;
+  v_leaked     bigint  := 0;
+  v_out        jsonb;
+begin
+  -- 1 · deactivated, on the idempotent-replay branch (the reproduced hole)
+  begin
+    update public.profiles set is_active = false where id = v_actor;
+    perform pg_temp.act_as(v_actor);
+    set local role authenticated;
+    perform public.record_lead_note_atomic(v_lead, 'replayed note', v_replay_key);
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state[1] := sqlstate; v_msg[1] := sqlerrm;
+      if left(sqlstate, 2) <> '28' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+    end if;
+  end;
+
+  -- 2 · deactivated, on the normal branch: the same state, the writing path. The
+  -- row count is taken inside the subtransaction, before it aborts, so "served"
+  -- is distinguishable from "refused" by its effect and not only by its SQLSTATE.
+  begin
+    update public.profiles set is_active = false where id = v_actor;
+    perform pg_temp.act_as(v_actor);
+    set local role authenticated;
+    perform public.record_lead_note_atomic(v_lead, 'a fresh note from a revoked session', gen_random_uuid());
+    reset role;
+    select count(*) into v_leaked from public.follow_up_logs
+     where summary = 'a fresh note from a revoked session';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state[5] := sqlstate; v_msg[5] := sqlerrm;
+      if left(sqlstate, 2) <> '28' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+    end if;
+  end;
+
+  -- 3 · banned
+  begin
+    update auth.users set banned_until = now() + interval '1 day' where id = v_actor;
+    perform pg_temp.act_as(v_actor);
+    set local role authenticated;
+    perform public.record_lead_note_atomic(v_lead, 'replayed note', v_replay_key);
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state[2] := sqlstate; v_msg[2] := sqlerrm;
+      if left(sqlstate, 2) <> '28' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+    end if;
+  end;
+
+  -- 4 · a token older than the last password change
+  begin
+    update public.profiles set password_changed_at = now() where id = v_actor;
+    perform pg_temp.act_as(v_actor, interval '-10 minutes');
+    set local role authenticated;
+    perform public.record_lead_note_atomic(v_lead, 'replayed note', v_replay_key);
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state[3] := sqlstate; v_msg[3] := sqlerrm;
+      if left(sqlstate, 2) <> '28' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+    end if;
+  end;
+
+  -- 5 · a password change is required
+  begin
+    update public.profiles set force_password_change = true where id = v_actor;
+    perform pg_temp.act_as(v_actor);
+    set local role authenticated;
+    perform public.record_lead_note_atomic(v_lead, 'replayed note', v_replay_key);
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state[4] := sqlstate; v_msg[4] := sqlerrm;
+      if left(sqlstate, 2) <> '28' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+    end if;
+  end;
+
+  -- 6 · the error branch, in the same forced state. Before the fix this reported
+  -- P0001 LEAD_NOT_FOUND, which tells a revoked session whether a lead exists.
+  begin
+    update public.profiles set force_password_change = true where id = v_actor;
+    perform pg_temp.act_as(v_actor);
+    set local role authenticated;
+    perform public.record_lead_note_atomic(v_missing, 'note on a missing lead', gen_random_uuid());
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state[6] := sqlstate; v_msg[6] := sqlerrm;
+      if left(sqlstate, 2) <> '28' and sqlstate <> 'P0001' then
+        perform pg_temp.absorb(sqlstate, sqlerrm);
+      end if;
+    end if;
+  end;
+
+  -- 7 · the control cases. A current session must be untouched on every branch,
+  -- and these are NOT rolled back: the write is the evidence.
+  begin
+    perform pg_temp.act_as(v_actor);
+    set local role authenticated;
+    v_out := public.record_lead_note_atomic(v_lead, 'replayed note', v_replay_key);
+    v_replayed := coalesce((v_out ->> 'idempotent_replay')::boolean, false);
+    v_out := public.record_lead_note_atomic(v_lead, 'a genuinely new note', gen_random_uuid());
+    v_wrote := (v_out ? 'note_id') and (v_out ->> 'idempotent_replay') is null;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    perform pg_temp.absorb(sqlstate, sqlerrm);
+  end;
+
+  -- 8 · and the error branch still reports the business error to a live session.
+  begin
+    perform pg_temp.act_as(v_actor);
+    set local role authenticated;
+    perform public.record_lead_note_atomic(v_missing, 'note on a missing lead', gen_random_uuid());
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    v_state[7] := sqlstate; v_msg[7] := sqlerrm;
+  end;
+
+  perform pg_temp.assert(v_state[1] = '28003',
+    'a1-idempotent-replay-branch-refuses-a-deactivated-session');
+  perform pg_temp.assert(v_state[2] = '28004',
+    'a1-idempotent-replay-branch-refuses-a-banned-session');
+  perform pg_temp.assert(v_state[3] = '28005',
+    'a1-idempotent-replay-branch-refuses-a-stale-token-session');
+  perform pg_temp.assert(v_state[4] = '28006',
+    'a1-idempotent-replay-branch-refuses-a-forced-password-change-session');
+  perform pg_temp.assert(v_state[5] = '28003',
+    'a1-normal-branch-refuses-a-deactivated-session');
+  perform pg_temp.assert(v_leaked = 0,
+    'a1-a-refused-normal-branch-request-wrote-no-follow-up-log-row');
+  perform pg_temp.assert(v_state[6] = '28006' and v_msg[6] not like '%LEAD_NOT_FOUND%',
+    'a1-error-branch-refuses-before-it-reports-whether-the-lead-exists');
+  perform pg_temp.assert(v_state[7] = 'P0001' and v_msg[7] like '%LEAD_NOT_FOUND%',
+    'a1-error-branch-still-reports-lead-not-found-to-a-current-session');
+  perform pg_temp.assert(v_replayed,
+    'a1-idempotent-replay-branch-still-serves-a-current-session');
+  perform pg_temp.assert(v_wrote,
+    'a1-normal-branch-still-writes-for-a-current-session');
+end
+$$;
+
+-- One routine proves the branch; the guard has to be general. next_quote_no()
+-- shares nothing with the lead routines but the boundary.
+do $$
+declare
+  v_actor uuid := 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  v_state text := '00000';
+  v_live  text := '';
+begin
+  begin
+    update public.profiles set is_active = false where id = v_actor;
+    perform pg_temp.act_as(v_actor);
+    set local role authenticated;
+    perform public.next_quote_no();
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state := sqlstate;
+      if left(sqlstate, 2) <> '28' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+    end if;
+  end;
+
+  begin
+    perform pg_temp.act_as(v_actor);
+    set local role authenticated;
+    v_live := public.next_quote_no();
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    perform pg_temp.absorb(sqlstate, sqlerrm);
+  end;
+
+  perform pg_temp.assert(v_state = '28003',
+    'a1-a-second-unrelated-definer-routine-also-refuses-at-entry');
+  perform pg_temp.assert(v_live <> '',
+    'a1-that-second-routine-still-answers-a-current-session');
+end
+$$;
+
+-- ============================================================================
+-- B2 · B3 · B4 · B5 · B6 · B7 · B10 — money and business integrity
+--     (20260817000000_l0_round4_money_and_business_integrity.sql)
+-- ============================================================================
+-- Every assertion below was reproduced first, against this exact floor plus the
+-- twelve branch migrations that precede the file, with the file itself moved
+-- aside. The measured pre-fix behaviour, one line per finding:
+--
+--   B2a  update contracts set first_payment_status = 'paid'  →  00000, value 'paid'
+--   B2b  allocate the whole first installment  →  plan 'paid', contract 'unpaid'
+--   B3a  a payment of -100.00, then confirmed  →  the collection KPI fell to 39900
+--   B3b  the same creation request twice       →  two rows of 7000.00
+--   B4a  create_contract with installments []  →  a contract with no schedule
+--   B4b  a 40000 schedule on a 100000 contract →  accepted
+--   B5w  the owner repoints quotations.contract_id at a foreign contract → 1 row
+--   B5r  converting on that crossed link  →  an approval and an activity written
+--                                            against the other salesperson's contract
+--   B6   converting an accepted quotation →  no customer, leads.customer_id NULL,
+--                                           no 'won' event, project.customer_id NULL
+--   B7a  saving the period's targets unchanged  →  60000.00 collected became 0.00
+--   B7b  reassign the contract, then void       →  the credit debited from the new
+--                                                  owner, the real creditor untouched
+--   B7c  a replacement set that drops a pair holding 12345.00 → the row deleted
+--   B10  a 79999.99 schedule against an 80000.00 quotation  →  accepted
+--
+-- The same probes on the same database with the file applied return 42501, 22023,
+-- 23514, 23505 or the corrected value, and each one is an assertion here.
+--
+-- Two shapes, for the reason the A1 section gives: the catalog and data assertions
+-- state the invariant the whole table has to satisfy — including rows this repo
+-- never created — and the behaviour probes execute the actual statement, because a
+-- constraint that exists is not the same as a request that was refused.
+--
+-- The behaviour probes share one structure, and it is worth reading once:
+--
+--     begin                          -- the envelope
+--       begin                        -- the call under test
+--         <statement or routine call>
+--       exception when others then v_state := sqlstate; v_msg := sqlerrm;
+--       end;
+--       reset role;                  -- measure with full visibility, not the
+--       <take every measurement>     --   session's, so "nothing was written" is
+--       raise exception 'REPLAY_ROLLBACK';  --   a reading and not an RLS artefact
+--     exception when others then
+--       if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(...); end if;
+--     end;
+--     perform pg_temp.assert(...);   -- outside, or assert_log rolls back with it
+--
+-- Two nested subtransactions, not one, and that is the point. The inner one
+-- absorbs the refusal so the measurement AFTER it is still reachable: a probe that
+-- only wrapped the call could never tell a refusal that left nothing behind from a
+-- refusal that left half a contract, because its own rollback would have cleaned
+-- up either way. The outer one hands the fixtures to the next probe — and to the
+-- rollback companions — in the state 05_seed_behaviour_fixtures.sql left them, in
+-- MODE=control too, where the floor accepts what the release refuses.
+--
+-- The default '00000' means "the request was served", which is also what an
+-- unmeasurable probe reports, so no probe can pass by not running. States that
+-- neither the floor nor the release can explain reach absorb(): fatal in
+-- MODE=branch, a recorded ASSERT_UNMEASURABLE in MODE=control.
+-- ----------------------------------------------------------------------------
+
+-- ── B3 · the constraints, and that nothing survived them ────────────────────
+select pg_temp.assert_eval($q$ (select count(*) = 1 from pg_constraint
+   where conrelid = 'public.payments'::regclass and conname = 'payments_amount_positive'
+     and contype = 'c' and pg_get_constraintdef(oid) ilike '%amount > (0)%') $q$,
+  'b3-a-payment-amount-must-be-positive');
+
+select pg_temp.assert_eval($q$ (select count(*) = 1 from pg_constraint
+   where conrelid = 'public.payment_allocations'::regclass
+     and conname = 'payment_allocations_amount_positive'
+     and contype = 'c' and pg_get_constraintdef(oid) ilike '%amount_allocated > (0)%') $q$,
+  'b3-an-allocated-amount-must-be-positive');
+
+select pg_temp.assert_eval($q$ (select count(*) = 1 from pg_constraint
+   where conrelid = 'public.installment_plans'::regclass
+     and conname = 'installment_plans_amount_positive'
+     and contype = 'c' and pg_get_constraintdef(oid) ilike '%amount > (0)%') $q$,
+  'b3-an-installment-amount-must-be-positive');
+
+-- A data invariant, and one of the few assertions here that passes against the
+-- pre-fix release too — measured: it does. That is not a weakness, it is what the
+-- assertion is for. The fixtures contain no non-positive money row, so what this
+-- can catch is not the finding but its regression: a grandfathered row surviving a
+-- restore, or someone re-adding the constraints NOT VALID to get a migration
+-- through. The refusal itself is measured by b3-a-negative-payment-is-refused.
+select pg_temp.assert_eval($q$ (select count(*) = 0 from (
+     select 1 from public.payments where amount <= 0
+     union all select 1 from public.payment_allocations where amount_allocated <= 0
+     union all select 1 from public.installment_plans where amount <= 0) s) $q$,
+  'b3-no-non-positive-money-row-exists');
+
+-- All three, and all three validated. Counting only the un-validated ones would be
+-- satisfied by three constraints that do not exist: measured against the pre-fix
+-- release, "no un-validated constraint" passed while there was nothing to validate.
+select pg_temp.assert_eval($q$ (select count(*) = 3 and count(*) filter (where convalidated) = 3
+    from pg_constraint
+   where conrelid in ('public.payments'::regclass, 'public.payment_allocations'::regclass,
+                      'public.installment_plans'::regclass)
+     and contype = 'c'
+     and conname in ('payments_amount_positive', 'payment_allocations_amount_positive',
+                     'installment_plans_amount_positive')) $q$,
+  'b3-the-positive-amount-constraints-are-validated');
+
+-- Per creator and partial, so two people may legitimately hold the same key and
+-- the historic rows that have none are not forced into one bucket.
+select pg_temp.assert_eval($q$ (select count(*) = 1 from pg_indexes
+   where schemaname = 'public' and tablename = 'payments' and indexname = 'idx_payments_request_key'
+     and indexdef ilike '%unique%' and indexdef ilike '%(created_by, request_key)%'
+     and indexdef ilike '%where (request_key is not null)%') $q$,
+  'b3-a-request-key-is-unique-per-creator');
+
+-- ── B2 · the derivation, and that the stored column agrees with it ──────────
+select pg_temp.assert_eval($q$ (select not p.prosecdef and p.provolatile = 's'
+    from pg_proc p where p.oid = to_regprocedure('public.contract_first_payment_status(uuid)')) $q$,
+  'b2-the-first-payment-derivation-is-a-stable-invoker-function');
+
+select pg_temp.assert_eval($q$ not has_function_privilege('anon',
+    to_regprocedure('public.contract_first_payment_status(uuid)'), 'execute') $q$,
+  'b2-the-first-payment-derivation-is-not-reachable-by-anon');
+
+-- The reconciliation §3 performs, stated as an invariant rather than as a claim
+-- about what the UPDATE touched. Every contract in the database, not the fixtures.
+select pg_temp.assert_eval($q$ (select count(*) = 0 from public.contracts c
+   where coalesce(c.first_payment_status, '') is distinct from public.contract_first_payment_status(c.id)) $q$,
+  'b2-every-contract-agrees-with-the-derivation');
+
+-- ── B4 / B10 · the validator ────────────────────────────────────────────────
+select pg_temp.assert_eval($q$ (select not p.prosecdef and p.provolatile = 'i'
+    from pg_proc p
+   where p.oid = to_regprocedure('public.assert_installment_schedule(jsonb, numeric, text)')) $q$,
+  'b4-the-schedule-validator-is-an-immutable-invoker-function');
+
+-- ── B5 · the conversion link is guarded on the write side ───────────────────
+select pg_temp.assert_eval($q$ (select count(*) = 1 from pg_trigger t
+   where t.tgrelid = 'public.quotations'::regclass and t.tgname = 'trg_guard_quotations_write'
+     and not t.tgisinternal and (t.tgtype & 1) = 1 and (t.tgtype & 2) = 2
+     and (t.tgtype & 16) = 16) $q$,
+  'b5-a-before-update-row-guard-is-installed-on-quotations');
+
+-- ── B6 · the finalizer ──────────────────────────────────────────────────────
+select pg_temp.assert_eval($q$ (select p.prosecdef
+    from pg_proc p
+   where p.oid = to_regprocedure('public.finalize_lead_won(uuid, numeric, uuid, text, jsonb)')) $q$,
+  'b6-the-lead-won-finalizer-exists-and-is-security-definer');
+
+-- It takes a lead id and decides nothing about who may finalise that lead; its two
+-- callers do, each after locking the lead and checking ownership. Reachable as an
+-- RPC it would let any session declare an arbitrary lead won, create its customer
+-- and write its 'won' event under the definer's rights — and the entry assertion
+-- 20260816000000 adds would not stop that, because a current session is still a
+-- session.
+select pg_temp.assert_eval($q$ not (
+       has_function_privilege('authenticated',
+         to_regprocedure('public.finalize_lead_won(uuid, numeric, uuid, text, jsonb)'), 'execute')
+    or has_function_privilege('anon',
+         to_regprocedure('public.finalize_lead_won(uuid, numeric, uuid, text, jsonb)'), 'execute')) $q$,
+  'b6-the-lead-won-finalizer-is-not-an-end-user-rpc');
+
+-- Once per lead is the property the shared finalizer exists to hold. Stated over
+-- the whole table so a second writer appearing anywhere fails here.
+--
+-- It passes against the pre-fix release, and vacuously: that release wrote no 'won'
+-- event on the conversion path at all, which is the finding. What this guards is the
+-- other direction — two owners of the event writing one each. The event being
+-- written is measured by b6-the-conversion-records-exactly-one-won-event.
+select pg_temp.assert_eval($q$ (select count(*) = 0 from (
+     select lead_id from public.business_events
+      where event_type = 'won' and lead_id is not null
+      group by lead_id having count(*) > 1) d) $q$,
+  'b6-no-lead-carries-two-won-events');
+
+-- ── B7 · the credit identity ────────────────────────────────────────────────
+select pg_temp.assert_eval($q$ (select count(*) = 1 from information_schema.columns
+   where table_schema = 'public' and table_name = 'payments' and column_name = 'credited_to'
+     and data_type = 'uuid') $q$,
+  'b7-a-payment-records-the-salesperson-it-credited');
+
+select pg_temp.assert_eval($q$ (select count(*) = 1 from pg_constraint
+   where conrelid = 'public.payments'::regclass and contype = 'f'
+     and confrelid = 'public.profiles'::regclass
+     and (select attname from pg_attribute
+           where attrelid = 'public.payments'::regclass and attnum = conkey[1]) = 'credited_to') $q$,
+  'b7-the-credit-identity-references-a-profile');
+
+-- The backfill §2 performs, restricted to what it can know: a confirmed, unvoided
+-- payment on a contract that has a salesperson.
+select pg_temp.assert_eval($q$ (select count(*) = 0 from public.payments p
+   join public.contracts c on c.id = p.contract_id
+  where coalesce(p.confirmed, false) and p.voided_at is null
+    and c.sales_id is not null and p.credited_to is null) $q$,
+  'b7-every-confirmed-payment-carries-a-credit-identity');
+
+-- ----------------------------------------------------------------------------
+-- The behaviour probes.
+-- ----------------------------------------------------------------------------
+
+-- B2 · the column is not writable by the contract's owner (reproduced: it was)
+do $$
+declare
+  v_state text := '00000';
+  v_value text := '(not measured)';
+begin
+  begin
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    begin
+      update public.contracts set first_payment_status = 'paid'
+       where id = 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6';
+    exception when others then v_state := sqlstate;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select first_payment_status into v_value from public.contracts
+     where id = 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_state = '42501' and v_value = 'unpaid',
+    'b2-first-payment-status-is-refused-from-a-session');
+end
+$$;
+
+-- B2 · allocation is the third writer the release had forgotten, and a void puts
+-- the derived value back. Read-after-write, both directions, one envelope.
+do $$
+declare
+  v_after_a text := '(not measured)';
+  v_after_v text := '(not measured)';
+  v_plan    text := '(not measured)';
+begin
+  begin
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    perform public.confirm_payment('d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6',
+                                   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    perform public.allocate_payment('d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6',
+      '[{"plan_id": "96666666-6666-6666-6666-666666666666", "amount": 40000}]'::jsonb,
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select first_payment_status into v_after_a from public.contracts
+     where id = 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6';
+    select status into v_plan from public.installment_plans
+     where id = '96666666-6666-6666-6666-666666666666';
+
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    perform public.void_payment('d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6', 'replay b2 probe');
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select first_payment_status into v_after_v from public.contracts
+     where id = 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_plan = 'paid' and v_after_a = 'paid',
+    'b2-first-payment-status-follows-an-allocation');
+  -- Both readings, not just the second one: pre-fix the allocation never moved the
+  -- column off 'unpaid', so 'unpaid' after the void was a pass for the wrong reason
+  -- — measured, before this was tightened. The assertion is the transition.
+  perform pg_temp.assert(v_after_a = 'paid' and v_after_v = 'unpaid',
+    'b2-first-payment-status-follows-a-void');
+end
+$$;
+
+-- B2 · and it says 'partial', not 'paid', when the allocation is short.
+do $$
+declare v_fp text := '(not measured)';
+begin
+  begin
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    perform public.confirm_payment('d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6',
+                                   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    perform public.allocate_payment('d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6',
+      '[{"plan_id": "96666666-6666-6666-6666-666666666666", "amount": 15000}]'::jsonb,
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select first_payment_status into v_fp from public.contracts
+     where id = 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_fp = 'partial',
+    'b2-first-payment-status-is-partial-for-a-short-allocation');
+end
+$$;
+
+-- B3 · a payment of -100.00 (reproduced: accepted, confirmed, and it moved the
+-- collection KPI down by 100)
+do $$
+declare
+  v_state text := '00000';
+  v_rows  bigint := -1;
+begin
+  begin
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    begin
+      insert into public.payments (contract_id, amount, payment_date, created_by, request_key)
+      values ('c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6', -100.00, current_date,
+              'cccccccc-cccc-cccc-cccc-cccccccccccc', '0b3b3b30-0000-4000-8000-000000000001');
+    exception when others then v_state := sqlstate;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select count(*) into v_rows from public.payments where amount = -100.00;
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_state = '23514' and v_rows = 0,
+    'b3-a-negative-payment-is-refused');
+end
+$$;
+
+-- B3 · and a payment with no idempotency key at all, once the release is strict.
+do $$
+declare
+  v_state text := '00000';
+  v_msg   text := '';
+  v_rows  bigint := -1;
+begin
+  begin
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    begin
+      insert into public.payments (contract_id, amount, payment_date, created_by)
+      values ('c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6', 11.00, current_date,
+              'cccccccc-cccc-cccc-cccc-cccccccccccc');
+    exception when others then v_state := sqlstate; v_msg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select count(*) into v_rows from public.payments where amount = 11.00;
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_state = '22023' and v_msg like '%request_key%' and v_rows = 0,
+    'b3-a-payment-without-a-request-key-is-refused');
+end
+$$;
+
+-- B3 · the request boundary itself: the same request twice is one payment, the
+-- accepted one is exactly what was sent, and the key cannot be edited afterwards.
+do $$
+declare
+  v_first  text := '(not measured)';
+  v_second text := '(not measured)';
+  v_edit   text := '(not measured)';
+  v_rows   bigint := -1;
+  v_stored boolean := false;
+  v_key    uuid := '0b3b3b30-0000-4000-8000-00000000000b';
+begin
+  begin
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+
+    v_first := '00000';
+    begin
+      insert into public.payments (id, contract_id, amount, payment_date, created_by, request_key)
+      values ('0b3b0000-0000-4000-8000-000000000001', 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6',
+              7000.00, current_date, 'cccccccc-cccc-cccc-cccc-cccccccccccc', v_key);
+    exception when others then v_first := sqlstate;
+    end;
+
+    v_second := '00000';
+    begin
+      insert into public.payments (id, contract_id, amount, payment_date, created_by, request_key)
+      values ('0b3b0000-0000-4000-8000-000000000002', 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6',
+              7000.00, current_date, 'cccccccc-cccc-cccc-cccc-cccccccccccc', v_key);
+    exception when others then v_second := sqlstate;
+    end;
+
+    v_edit := '00000';
+    begin
+      update public.payments set request_key = '0b3b3b30-0000-4000-8000-0000000000ff'
+       where id = '0b3b0000-0000-4000-8000-000000000001';
+    exception when others then v_edit := sqlstate;
+    end;
+
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select count(*) into v_rows from public.payments
+     where contract_id = 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6' and amount = 7000.00;
+    -- Its own subtransaction: on the floor the column does not exist, and this
+    -- measurement must fail as this assertion rather than as the whole block.
+    begin
+      select request_key = v_key and not coalesce(confirmed, false) and voided_at is null
+        into v_stored
+        from public.payments where id = '0b3b0000-0000-4000-8000-000000000001';
+    exception when others then v_stored := false;
+    end;
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_first = '00000' and coalesce(v_stored, false),
+    'b3-a-keyed-payment-is-recorded-as-sent');
+  perform pg_temp.assert(v_second = '23505' and v_rows = 1,
+    'b3-the-same-request-twice-is-one-payment');
+  perform pg_temp.assert(v_edit = '42501',
+    'b3-a-request-key-cannot-be-rewritten');
+end
+$$;
+
+-- B4 · a contract with no schedule at all (reproduced: created, zero installments)
+do $$
+declare
+  v_state text := '00000';
+  v_msg   text := '';
+  v_rows  bigint := -1;
+begin
+  begin
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    begin
+      perform public.create_contract(jsonb_build_object(
+        'lead_id',      '0c0c0c0c-0c0c-0c0c-0c0c-0c0c0c0c0c0c',
+        'amount',       100000,
+        'party_a_name', 'Replay B4 no schedule',
+        'installments', '[]'::jsonb));
+    exception when others then v_state := sqlstate; v_msg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select count(*) into v_rows from public.contracts
+     where lead_id = '0c0c0c0c-0c0c-0c0c-0c0c-0c0c0c0c0c0c';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_state = '22023'
+                         and v_msg like '%needs an installment schedule%'
+                         and v_rows = 0,
+    'b4-a-contract-without-a-schedule-is-refused');
+end
+$$;
+
+-- B4 · a schedule that does not add up (reproduced: a 40000 schedule on a 100000
+-- contract, accepted). The row count taken after the refusal, inside the envelope,
+-- is the atomicity half: nothing may be left behind.
+do $$
+declare
+  v_state text := '00000';
+  v_msg   text := '';
+  v_rows  bigint := -1;
+begin
+  begin
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    begin
+      perform public.create_contract(jsonb_build_object(
+        'lead_id',      '0d0d0d0d-0d0d-0d0d-0d0d-0d0d0d0d0d0d',
+        'amount',       100000,
+        'party_a_name', 'Replay B4 short schedule',
+        'installments', jsonb_build_array(jsonb_build_object('seq', 1, 'amount', 40000))));
+    exception when others then v_state := sqlstate; v_msg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select count(*) into v_rows from public.contracts
+     where lead_id = '0d0d0d0d-0d0d-0d0d-0d0d-0d0d0d0d0d0d';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(
+    v_state = '22023'
+    and v_msg like '%totals 40000.00 but the contract totals 100000.00%'
+    and v_rows = 0,
+    'b4-a-schedule-that-does-not-total-is-refused');
+end
+$$;
+
+-- B4 · two installments claiming the same position
+do $$
+declare v_state text := '00000'; v_msg text := '';
+begin
+  begin
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    begin
+      perform public.create_contract(jsonb_build_object(
+        'lead_id',      '0d0d0d0d-0d0d-0d0d-0d0d-0d0d0d0d0d0d',
+        'amount',       100000,
+        'party_a_name', 'Replay B4 duplicate seq',
+        'installments', jsonb_build_array(
+          jsonb_build_object('seq', 1, 'amount', 50000),
+          jsonb_build_object('seq', 1, 'amount', 50000))));
+    exception when others then v_state := sqlstate; v_msg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_state = '22023' and v_msg like '%seq 1 appears more than once%',
+    'b4-a-duplicate-installment-position-is-refused');
+end
+$$;
+
+-- B4 · a zero installment. The new CHECK constraint would refuse the row anyway,
+-- but at the constraint it is a 23514 raised from inside a definer routine; the
+-- caller deserves to be told which installment and why.
+do $$
+declare v_state text := '00000'; v_msg text := '';
+begin
+  begin
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    begin
+      perform public.create_contract(jsonb_build_object(
+        'lead_id',      '0d0d0d0d-0d0d-0d0d-0d0d-0d0d0d0d0d0d',
+        'amount',       100000,
+        'party_a_name', 'Replay B4 zero installment',
+        'installments', jsonb_build_array(
+          jsonb_build_object('seq', 1, 'amount', 100000),
+          jsonb_build_object('seq', 2, 'amount', 0))));
+    exception when others then v_state := sqlstate; v_msg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_state = '22023'
+                         and v_msg like '%installment 2 needs a positive amount%',
+    'b4-a-non-positive-installment-is-refused-by-name');
+end
+$$;
+
+-- B4 · the positive control, and the read-after-write. A schedule that adds up is
+-- stored exactly as sent — same count, same positions, same total. Without this the
+-- four refusals above would also be satisfied by a validator that refuses
+-- everything.
+--
+-- This one is expected to pass against the pre-fix release as well, and does: the
+-- old code stored a correct schedule correctly. An assertion that failed on both
+-- sides of the fix would not be a control.
+do $$
+declare
+  v_id    uuid;
+  v_state text := '00000';
+  v_count bigint := -1;
+  v_total numeric := -1;
+  v_seqs  text := '';
+begin
+  begin
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    v_id := (public.create_contract(jsonb_build_object(
+      'lead_id',      '0d0d0d0d-0d0d-0d0d-0d0d-0d0d0d0d0d0d',
+      'amount',       100000,
+      'party_a_name', 'Replay B4 exact schedule',
+      'installments', jsonb_build_array(
+        jsonb_build_object('seq', 1, 'amount', 30000),
+        jsonb_build_object('seq', 2, 'amount', 70000)))) ->> 'id')::uuid;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select count(*), coalesce(sum(amount), 0), string_agg(seq::text, ',' order by seq)
+      into v_count, v_total, v_seqs
+      from public.installment_plans where contract_id = v_id;
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state := sqlstate;
+      perform pg_temp.absorb(sqlstate, sqlerrm);
+    end if;
+  end;
+  perform pg_temp.assert(v_state = '00000' and v_count = 2
+                         and v_total = 100000.00 and v_seqs = '1,2',
+    'b4-an-exact-schedule-is-stored-as-sent');
+end
+$$;
+
+-- B5 · the write half (reproduced: one row updated, the link repointed at another
+-- salesperson's contract). policy_quotations_update_sales carries a USING clause
+-- and no WITH CHECK — 20260630200000_rls_policy_remediation.sql:546-548 — so RLS
+-- permits the row; a guard, not a policy, is what can refuse the column.
+do $$
+declare
+  v_state text := '00000';
+  v_link  uuid;
+  v_read  boolean := false;
+begin
+  begin
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    begin
+      update public.quotations set contract_id = 'c5c5c5c5-c5c5-c5c5-c5c5-c5c5c5c5c5c5'
+       where id = 'b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6';
+    exception when others then v_state := sqlstate;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select true, contract_id into v_read, v_link from public.quotations
+     where id = 'b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_state = '42501' and v_read and v_link is null,
+    'b5-the-conversion-link-is-refused-from-a-session');
+end
+$$;
+
+-- B5 · the read half, measured independently of the write guard: the link is
+-- crossed here by the harness superuser, the way a bad historic row would be, so
+-- the assertion is about what the conversion DOES with a crossed link and not about
+-- the guard that now prevents one being made.
+-- (Reproduced: success: true, already_converted: true, and then an approval and an
+-- activity written against the other salesperson's contract.)
+do $$
+declare
+  v_state     text := '00000';
+  v_msg       text := '';
+  v_approvals bigint := -1;
+  v_activity  bigint := -1;
+begin
+  begin
+    update public.quotations set contract_id = 'c5c5c5c5-c5c5-c5c5-c5c5-c5c5c5c5c5c5'
+     where id = 'b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6';
+    begin
+      perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+      set local role authenticated;
+      perform public.convert_quotation_to_contract('b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6',
+                                                   '{}'::jsonb);
+    exception when others then v_state := sqlstate; v_msg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select count(*) into v_approvals from public.contract_approvals
+     where contract_id = 'c5c5c5c5-c5c5-c5c5-c5c5-c5c5c5c5c5c5';
+    select count(*) into v_activity from public.activities
+     where lead_id = '0e0e0e0e-0e0e-0e0e-0e0e-0e0e0e0e0e0e';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_state = '22023' and v_msg like '%crossed link%',
+    'b5-a-crossed-conversion-link-is-refused');
+  perform pg_temp.assert(v_approvals = 0 and v_activity = 0,
+    'b5-a-crossed-link-writes-nothing-on-the-foreign-contract');
+end
+$$;
+
+-- B6 · the conversion's lead-won side effects (reproduced: none of them happened,
+-- because on_lead_won() returns early once a contract exists and the conversion
+-- creates the contract before it marks the lead won).
+do $$
+declare
+  v_state     text := '00000';
+  v_lead      uuid := '0e0e0e0e-0e0e-0e0e-0e0e-0e0e0e0e0e0e';
+  v_customer  uuid;
+  v_cust_rows bigint := -1;
+  v_won       bigint := -1;
+  v_project   uuid;
+  v_contract  uuid;
+  v_final     text := '';
+begin
+  begin
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    perform public.convert_quotation_to_contract('b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6',
+      jsonb_build_object('installments',
+        jsonb_build_array(jsonb_build_object('seq', 1, 'amount', 80000))));
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select customer_id, final_status into v_customer, v_final
+      from public.leads where id = v_lead;
+    select count(*) into v_cust_rows from public.customers where lead_id = v_lead;
+    select count(*) into v_won from public.business_events
+     where lead_id = v_lead and event_type = 'won';
+    select customer_id into v_project from public.projects where lead_id = v_lead;
+    select customer_id into v_contract from public.contracts
+     where lead_id = v_lead order by created_at desc limit 1;
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state := sqlstate;
+      perform pg_temp.absorb(sqlstate, sqlerrm);
+    end if;
+  end;
+  perform pg_temp.assert(v_state = '00000' and v_customer is not null
+                         and v_cust_rows = 1 and v_final = 'won',
+    'b6-the-conversion-creates-the-customer-and-links-the-lead');
+  perform pg_temp.assert(v_won = 1,
+    'b6-the-conversion-records-exactly-one-won-event');
+  perform pg_temp.assert(v_project is not null and v_project = v_customer
+                         and v_contract = v_customer,
+    'b6-the-conversion-puts-that-customer-on-the-project-and-the-contract');
+end
+$$;
+
+-- B10 · one cent (reproduced: a 79999.99 schedule against an 80000.00 quotation,
+-- accepted, because the old check allowed 0.01 of slack per installment).
+do $$
+declare
+  v_state text := '00000';
+  v_msg   text := '';
+  v_link  uuid;
+begin
+  begin
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    begin
+      perform public.convert_quotation_to_contract('b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6',
+        jsonb_build_object('installments', jsonb_build_array(
+          jsonb_build_object('seq', 1, 'amount', 40000.00),
+          jsonb_build_object('seq', 2, 'amount', 39999.99))));
+    exception when others then v_state := sqlstate; v_msg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select contract_id into v_link from public.quotations
+     where id = 'b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(
+    v_state = '22023'
+    and v_msg like '%totals 79999.99 but the quotation totals 80000.00%'
+    and v_link is null,
+    'b10-a-conversion-schedule-must-equal-the-quotation-exactly');
+end
+$$;
+
+-- B7 · saving the period's targets keeps what was collected (reproduced: 60000.00
+-- became 0.00, from the UPDATE the finance UI issues on every edit).
+--
+-- On a period of its own, created inside the envelope. replace_kpi_targets() deletes
+-- the whole period and re-inserts the payload, so a probe on the current period
+-- would be measuring whatever every earlier assertion in this file left there.
+do $$
+declare
+  v_state  text := '00000';
+  v_before numeric := -1;
+  v_after  numeric := -1;
+begin
+  begin
+    insert into public.kpi_targets (period, target_type, target_amount, actual_amount,
+                                    assigned_to, set_by)
+    values ('2026-97', 'collection', 500000.00, 60000.00,
+            'cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
+           ('2026-97', 'collection', 500000.00, 0.00,
+            'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    select actual_amount into v_before from public.kpi_targets
+     where period = '2026-97' and target_type = 'collection'
+       and assigned_to = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+
+    -- The ordinary "set this month's targets" save: same numbers, no actuals,
+    -- because actuals are not something a UI sends.
+    perform * from public.replace_kpi_targets('2026-97',
+      jsonb_build_array(
+        jsonb_build_object('target_type', 'collection', 'target_amount', 500000,
+                           'assigned_to', 'cccccccc-cccc-cccc-cccc-cccccccccccc'),
+        jsonb_build_object('target_type', 'collection', 'target_amount', 500000,
+                           'assigned_to', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee')),
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+
+    select actual_amount into v_after from public.kpi_targets
+     where period = '2026-97' and target_type = 'collection'
+       and assigned_to = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state := sqlstate;
+      perform pg_temp.absorb(sqlstate, sqlerrm);
+    end if;
+  end;
+  perform pg_temp.assert(v_state = '00000' and v_before = 60000.00 and v_after = 60000.00,
+    'b7-saving-a-period-preserves-what-was-collected');
+end
+$$;
+
+-- B7 · and it refuses to drop a pair that still holds collections, rather than
+-- deleting the record of them (reproduced: the row, and its 12345.00, deleted).
+do $$
+declare
+  v_state text := '00000';
+  v_msg   text := '';
+  v_rows  bigint := -1;
+begin
+  begin
+    insert into public.kpi_targets (period, target_type, target_amount, actual_amount,
+                                    assigned_to, set_by)
+    values ('2026-96', 'collection', 500000.00, 0.00,
+            'cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
+           ('2026-96', 'collection', 500000.00, 12345.00,
+            'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    begin
+      perform * from public.replace_kpi_targets('2026-96',
+        jsonb_build_array(jsonb_build_object('target_type', 'collection',
+          'target_amount', 500000, 'assigned_to', 'cccccccc-cccc-cccc-cccc-cccccccccccc')),
+        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    exception when others then v_state := sqlstate; v_msg := sqlerrm;
+    end;
+    select count(*) into v_rows from public.kpi_targets
+     where period = '2026-96' and target_type = 'collection'
+       and assigned_to = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee' and actual_amount = 12345.00;
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_state = '22023'
+                         and v_msg like '%already hold collected amounts%'
+                         and v_rows = 1,
+    'b7-a-period-cannot-be-saved-in-a-way-that-drops-collected-amounts');
+end
+$$;
+
+-- B7 · the credit and its reversal name the same person (reproduced: the void
+-- debited whoever owned the contract at void time, so a reassignment between the
+-- confirmation and the reversal took money off the wrong salesperson and left the
+-- original credit standing).
+--
+-- Measured as differences, not as absolute amounts: the fixtures' current-period
+-- rows are shared with the rest of this file, and the finding is about who moved.
+do $$
+declare
+  v_state     text := '00000';
+  v_credited  uuid;
+  v_c1_before numeric := -1;
+  v_c1_after  numeric := -1;
+  v_c2_before numeric := -1;
+  v_c2_after  numeric := -1;
+  v_debited   text := '';
+  v_period    text := to_char(current_date, 'YYYY-MM');
+begin
+  begin
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    perform public.confirm_payment('d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6',
+                                   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+
+    select credited_to into v_credited from public.payments
+     where id = 'd6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6';
+    select actual_amount into v_c1_before from public.kpi_targets
+     where period = v_period and target_type = 'collection'
+       and assigned_to = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    select actual_amount into v_c2_before from public.kpi_targets
+     where period = v_period and target_type = 'collection'
+       and assigned_to = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+
+    -- The contract changes hands, the way a manager legitimately reassigns one.
+    update public.contracts set sales_id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+     where id = 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6';
+
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    v_debited := coalesce(public.void_payment('d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6',
+                                              'replay b7 probe') ->> 'debited_from', '');
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+
+    select actual_amount into v_c1_after from public.kpi_targets
+     where period = v_period and target_type = 'collection'
+       and assigned_to = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    select actual_amount into v_c2_after from public.kpi_targets
+     where period = v_period and target_type = 'collection'
+       and assigned_to = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state := sqlstate;
+      perform pg_temp.absorb(sqlstate, sqlerrm);
+    end if;
+  end;
+  perform pg_temp.assert(v_state = '00000'
+                         and v_credited = 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    'b7-confirming-a-payment-records-who-was-credited');
+  perform pg_temp.assert(v_debited = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+                         and v_c1_after = v_c1_before - 40000.00
+                         and v_c2_after = v_c2_before,
+    'b7-a-void-debits-the-recorded-creditor-not-the-current-owner');
+end
+$$;
+
+-- B7 · and the credit identity is not something a session can write, or a
+-- salesperson could pre-assign a colleague's collection to themselves.
+do $$
+declare
+  v_state text := '00000';
+  v_value uuid;
+  v_read  boolean := false;
+begin
+  begin
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    begin
+      update public.payments set credited_to = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+       where id = 'd6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6';
+    exception when others then v_state := sqlstate;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    begin
+      select true, credited_to into v_read, v_value from public.payments
+       where id = 'd6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6';
+    exception when others then v_read := false;
+    end;
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_state = '42501' and v_read and v_value is null,
+    'b7-the-credit-identity-is-refused-from-a-session');
+end
+$$;
+
+-- ============================================================================
+-- A3 · Administrator password reset is bound to a VERIFIED session revocation
+--     (20260817120000_admin_reset_session_revocation.sql)
+-- ============================================================================
+-- Round 4 said the reset route "does not globally revoke sessions", so "a pre-reset
+-- refresh token can mint a fresh access token". The claim about the route is right
+-- and the claim about the outcome is not: measured against a real GoTrue v2.195.0
+-- (scripts/gotrue-revocation-drill.sh), an admin password update already deletes
+-- the target's sessions, the pre-reset refresh token comes back 400
+-- refresh_token_not_found, and no fresh access token is minted. The route was
+-- inheriting a guarantee it never asked for and could not observe: auth is not in
+-- PostgREST's exposed schemas, both outcomes are a 200, and the platform upgrades
+-- GoTrue on its own schedule.
+--
+-- So the release does not inherit it. revoke_user_sessions() deletes whatever is
+-- left, verifies that nothing remains, and raises otherwise; the two reset paths
+-- call it and fail closed. What the assertions below prove is that boundary, on a
+-- faithful copy of GoTrue's session tables (supabase/replay/00_platform_bootstrap.sql
+-- carries the real column types and both ON DELETE CASCADE foreign keys, read out
+-- of that live GoTrue).
+--
+-- What the harness cannot prove, stated rather than papered over: the harness runs
+-- as its own superuser, so it says nothing about whether the migration owner has
+-- DELETE on auth.sessions in production. That is why the migration itself refuses
+-- to install without the privilege (section 3 of the file) instead of trusting a
+-- green replay.
+-- ----------------------------------------------------------------------------
+
+select pg_temp.assert_eval($q$ to_regprocedure('public.revoke_user_sessions(uuid, text)') is not null $q$,
+  'a3-revocation-rpc-exists');
+
+select pg_temp.assert_eval($q$ (select p.prosecdef and p.provolatile = 'v'
+    and p.proconfig::text like '%search_path=pg_catalog, public, pg_temp%'
+    from pg_proc p where p.oid = to_regprocedure('public.revoke_user_sessions(uuid, text)')) $q$,
+  'a3-revocation-rpc-is-a-volatile-definer-with-a-pinned-search-path');
+
+-- The A1 sweep covers this function generically; naming it here is the check that
+-- the release's newest definer routine did not arrive after the sweep had run.
+select pg_temp.assert_eval($q$ (select p.prosrc ~* '(^|\n)[ \t]*begin[ \t]*\r?\n[ \t]*perform[ \t]+public\.assert_current_session_at_entry\(\);'
+    from pg_proc p where p.oid = to_regprocedure('public.revoke_user_sessions(uuid, text)')) $q$,
+  'a3-revocation-rpc-carries-the-definer-entry-guard');
+
+-- Default privileges in schema public grant EXECUTE on new functions to all three
+-- PostgREST roles, so "we never granted it" is not the same as "they cannot call
+-- it". The migration revokes; this is the readback.
+select pg_temp.assert_eval($q$ not has_function_privilege('authenticated', 'public.revoke_user_sessions(uuid, text)', 'execute') $q$,
+  'a3-authenticated-cannot-execute-the-revocation-rpc');
+select pg_temp.assert_eval($q$ not has_function_privilege('anon', 'public.revoke_user_sessions(uuid, text)', 'execute') $q$,
+  'a3-anon-cannot-execute-the-revocation-rpc');
+select pg_temp.assert_eval($q$ has_function_privilege('service_role', 'public.revoke_user_sessions(uuid, text)', 'execute') $q$,
+  'a3-service-role-can-execute-the-revocation-rpc');
+
+-- ----------------------------------------------------------------------------
+-- The behaviour probe: two live sessions, three refresh tokens, one bystander.
+--
+-- The third token is the legacy shape — a refresh token whose session_id is null,
+-- which GoTrue wrote before auth.sessions existed and which no cascade can reach.
+-- The bystander is the blast radius: a revocation that signs out the whole company
+-- would satisfy every "the target's sessions are gone" assertion.
+--
+-- One subtransaction, so the fixture rows and the audit rows the function writes
+-- are rolled back by the deliberate REPLAY_ROLLBACK rather than by a cleanup
+-- statement that could fail on its own. Every counter starts at -1, which no
+-- passing assertion accepts, so a probe that could not run reports as a failure
+-- under its own name instead of passing quietly.
+-- ----------------------------------------------------------------------------
+do $$
+declare
+  v_target        uuid := 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  v_other         uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  v_first         jsonb;
+  v_second        jsonb;
+  v_s_before      int := -1;
+  v_t_before      int := -1;
+  v_legacy_before int := -1;
+  v_s_after       int := -1;
+  v_t_after       int := -1;
+  v_legacy_after  int := -1;
+  v_other_s       int := -1;
+  v_other_t       int := -1;
+  v_audit         int := -1;
+  v_audit_server  int := -1;
+begin
+  begin
+    perform set_config('request.jwt.claims', '', true);
+
+    insert into auth.sessions (id, user_id, created_at, not_after)
+    values ('a3a30001-0000-4000-8000-000000000001', v_target, now(), now() + interval '1 day'),
+           ('a3a30001-0000-4000-8000-000000000002', v_target, now(), now() + interval '1 day'),
+           ('a3a30001-0000-4000-8000-000000000003', v_other,  now(), now() + interval '1 day');
+
+    insert into auth.refresh_tokens (token, user_id, revoked, session_id)
+    values ('a3-target-session-token-1', v_target::text, false, 'a3a30001-0000-4000-8000-000000000001'),
+           ('a3-target-session-token-2', v_target::text, false, 'a3a30001-0000-4000-8000-000000000002'),
+           ('a3-target-legacy-token',    v_target::text, false, null),
+           ('a3-other-session-token',    v_other::text,  false, 'a3a30001-0000-4000-8000-000000000003');
+
+    select count(*) into v_s_before from auth.sessions where user_id = v_target;
+    select count(*) into v_t_before from auth.refresh_tokens where user_id = v_target::text;
+    select count(*) into v_legacy_before from auth.refresh_tokens
+     where user_id = v_target::text and session_id is null;
+
+    v_first := public.revoke_user_sessions(v_target, 'replay a3 probe');
+
+    select count(*) into v_s_after from auth.sessions where user_id = v_target;
+    select count(*) into v_t_after from auth.refresh_tokens where user_id = v_target::text;
+    select count(*) into v_legacy_after from auth.refresh_tokens
+     where user_id = v_target::text and session_id is null;
+    select count(*) into v_other_s from auth.sessions where user_id = v_other;
+    select count(*) into v_other_t from auth.refresh_tokens where user_id = v_other::text;
+
+    -- Called twice on purpose: the reset route retries, and a boundary that only
+    -- reports success the first time is a boundary the route cannot depend on.
+    v_second := public.revoke_user_sessions(v_target, 'replay a3 second call');
+
+    select count(*), count(*) filter (where actor_id is null)
+      into v_audit, v_audit_server
+      from public.audit_logs
+     where action = 'SESSION_REVOCATION' and target_id::text = v_target::text;
+
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+
+  perform pg_temp.assert(v_s_before = 2 and v_s_after = 0,
+    'a3-the-revocation-removes-every-session-of-the-target');
+  perform pg_temp.assert(v_t_before = 3 and v_t_after = 0,
+    'a3-the-revocation-removes-every-refresh-token-of-the-target');
+  perform pg_temp.assert(v_legacy_before = 1 and v_legacy_after = 0,
+    'a3-a-refresh-token-with-no-session-is-removed-too');
+  perform pg_temp.assert(v_first ->> 'verified' = 'true'
+                         and (v_first ->> 'sessions_deleted')::int = 2
+                         and (v_first ->> 'refresh_tokens_deleted')::int = 3,
+    'a3-the-revocation-reports-the-rows-it-removed');
+  perform pg_temp.assert(v_second ->> 'verified' = 'true'
+                         and (v_second ->> 'sessions_deleted')::int = 0
+                         and (v_second ->> 'refresh_tokens_deleted')::int = 0,
+    'a3-a-second-revocation-is-a-verified-no-op');
+  perform pg_temp.assert(v_s_after = 0 and v_other_s = 1 and v_other_t = 1,
+    'a3-another-identity-keeps-its-sessions');
+  perform pg_temp.assert(v_audit = 2 and v_audit_server = 2,
+    'a3-every-revocation-writes-a-server-owned-audit-row');
+end
+$$;
+
+-- Two locks, not one. The GRANT is what stops a browser session; the identity
+-- check inside the function is what stops the same call arriving from a trusted
+-- role while carrying an end-user identity — a definer wrapper, a future GRANT, or
+-- a psql session with claims set. Revoking another identity's sessions is not an
+-- end-user action under any circumstances.
+do $$
+declare
+  v_grant_state text := '00000';
+  v_grant_msg   text := '(not measured)';
+  v_id_state    text := '00000';
+  v_id_msg      text := '(not measured)';
+begin
+  begin
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    begin
+      perform public.revoke_user_sessions('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid);
+    exception when others then v_grant_state := sqlstate; v_grant_msg := sqlerrm;
+    end;
+    reset role;
+
+    begin
+      perform public.revoke_user_sessions('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid);
+    exception when others then v_id_state := sqlstate; v_id_msg := sqlerrm;
+    end;
+    perform set_config('request.jwt.claims', '', true);
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(pg_temp.refused_with(v_grant_state, v_grant_msg, 'permission denied for function'),
+    'a3-an-authenticated-session-is-refused-by-the-grant');
+  perform pg_temp.assert(pg_temp.refused_with(v_id_state, v_id_msg, 'server-only boundary'),
+    'a3-a-call-carrying-an-end-user-identity-is-refused');
+end
+$$;
+
+-- The two arguments it must refuse. An unknown target is not a no-op: reporting
+-- "verified, 0 rows" for an identity that does not exist would let a reset path
+-- that mistyped the id believe it had revoked something.
+do $$
+declare
+  v_unknown_state text := '00000';
+  v_unknown_msg   text := '(not measured)';
+  v_null_state    text := '00000';
+begin
+  perform set_config('request.jwt.claims', '', true);
+  begin
+    perform public.revoke_user_sessions('00000000-0000-0000-0000-00000000a3a3'::uuid);
+  exception when others then v_unknown_state := sqlstate; v_unknown_msg := sqlerrm;
+  end;
+  begin
+    perform public.revoke_user_sessions(null::uuid);
+  exception when others then v_null_state := sqlstate;
+  end;
+  perform pg_temp.assert(v_unknown_state = '22023' and v_unknown_msg like '%identity that does not exist%',
+    'a3-an-unknown-target-is-refused');
+  perform pg_temp.assert(v_null_state = '22004',
+    'a3-a-null-target-is-refused');
+end
+$$;
+
+-- ============================================================================
 -- Self-check: every assertion above ran.
 -- ============================================================================
 -- In MODE=branch "ran" and "passed" are the same number, because a failure would
 -- already have raised. In MODE=control they are not, and the distinction is the
--- whole point: the ledger below is the in-database proof that all 243 assertions
+-- whole point: the ledger below is the in-database proof that all 323 assertions
 -- were REACHED. A DO block that died on an unclassified SQL error takes its
 -- remaining assertions out of the ledger, so the count comes up short and the
 -- control run fails here rather than in a log-scraping heuristic. Reported
@@ -3166,13 +4680,13 @@ begin
   select count(*), count(*) filter (where assert_log.passed), count(*) filter (where not assert_log.passed)
     into total, passed, failed
     from assert_log;
-  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=243', total, passed, failed;
-  if total <> 243 then
-    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 243', total
+  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=323', total, passed, failed;
+  if total <> 323 then
+    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 323', total
       using errcode = '22000';
   end if;
-  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 243 then
-    raise exception 'assertion file passed % of 243 assertions', passed
+  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 323 then
+    raise exception 'assertion file passed % of 323 assertions', passed
       using errcode = '22000';
   end if;
   if exists (select 1 from assert_log group by name having count(*) > 1) then

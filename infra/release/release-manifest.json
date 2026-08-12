@@ -1,0 +1,167 @@
+{
+  "$comment": [
+    "The exact migration set of this release, split into the two phases the",
+    "expand/contract procedure applies separately, with a content hash for each",
+    "file. This is the artifact that makes the split executable from the exact",
+    "tree: scripts/db-phase-push.mjs applies one named phase and nothing else, and",
+    "scripts/check-release-manifest.mjs keeps the manifest equal to the directory.",
+    "",
+    "Round-4 review C6 asked for `required_for_app` and `deferred_contract` sets",
+    "that the claimed, remote and pending sets must exactly equal, plus runtime",
+    "posture checks; C7 asked for a tested exact-hash phase tool that records",
+    "correct migration history without moving files or rewriting history.",
+    "",
+    "hash_algorithm: sha256 over the file's UTF-8 content with CRLF normalised to",
+    "LF, which is also the text the phase tool sends to the server, so the hash",
+    "covers exactly what is executed and does not depend on the checkout's line",
+    "endings. Regenerate with: node scripts/check-release-manifest.mjs --stamp",
+    "",
+    "Nothing here asserts that anything has been applied. See",
+    "supabase/preflight/expand-contract-rollback.md §7."
+  ],
+  "release": "l0-money-authorization",
+  "base_commit": "81956f2ff3bffe89389ac3185e8b271805333374",
+  "production_stamp": "20260805202917",
+  "hash_algorithm": "sha256-crlf-normalised",
+  "required_for_app": [
+    {
+      "version": "20260806000000",
+      "file": "20260806000000_baseline_undeclared_production_objects.sql",
+      "sha256": "bfda194ad162742c762a98a086d89f69e38426a6d03077a1c76fe895ff84ce2f"
+    },
+    {
+      "version": "20260811100000",
+      "file": "20260811100000_f08_audit_logs_actor_identity.sql",
+      "sha256": "20a895ec678e2e3450a0fa4bc56f3aeca88f98f10935f30148867a0dce6c8b20"
+    },
+    {
+      "version": "20260811100100",
+      "file": "20260811100100_f06_profiles_revocation_columns.sql",
+      "sha256": "3c90ff24cda53803f15fda5a12111f3e84a08815b4ff3d5fbf87b92ca62a81ab"
+    },
+    {
+      "version": "20260811100200",
+      "file": "20260811100200_f10_meta_tokens_drop_permissive_select.sql",
+      "sha256": "6b6d7eb2648d3c6b40ca2dd46530dcdf360cedbec46b75640d25f4006b45a8ab"
+    },
+    {
+      "version": "20260811100300",
+      "file": "20260811100300_f02_remove_default_credential_admin.sql",
+      "sha256": "f7f1afabf9e61951d14da3a29206b4ecc021a57c3c775a6cccd76345100ffdf4"
+    },
+    {
+      "version": "20260811100400",
+      "file": "20260811100400_f09_money_authorization_phase1.sql",
+      "sha256": "009136c7443bcf194098318af93259b4d8ce6a8777a1b8530ffdb50b447b8dbe"
+    },
+    {
+      "version": "20260811100500",
+      "file": "20260811100500_kpi_targets_atomic_replace.sql",
+      "sha256": "28b54409c39f138f9eaa8c5213b26b9160a8056f5db733ef113e4aaf4f1e529f"
+    },
+    {
+      "version": "20260812000000",
+      "file": "20260812000000_money_actor_identity_and_atomicity.sql",
+      "sha256": "41c52e96cedd4d96750f79df3a47a62a3f184439d49d1c0a36f2ef4f63341392"
+    },
+    {
+      "version": "20260813000000",
+      "file": "20260813000000_session_revocation_boundary.sql",
+      "sha256": "525e9d329933dd223b3e42f0456a8c8875528b1ec1ca587c75587fc0f243d2ed"
+    },
+    {
+      "version": "20260813100000",
+      "file": "20260813100000_payment_request_key_idempotency.sql",
+      "sha256": "f43e6f7a97b55380763d73d40f214be92e1fa18b5608f72b99ae4dc2c5592d63"
+    },
+    {
+      "version": "20260814000000",
+      "file": "20260814000000_l0_round3_authorization_and_integrity.sql",
+      "sha256": "b9c0e1fd307650d793738b6e2966e563e514f18b9bc0eb471b44b8602f63d652"
+    },
+    {
+      "version": "20260816000000",
+      "file": "20260816000000_l0_round4_definer_entry_boundary.sql",
+      "sha256": "d70619e2506f6e5d9ea06e3aed88d426aa96f2af21f796a1e1fd0da41ab25074"
+    },
+    {
+      "version": "20260817000000",
+      "file": "20260817000000_l0_round4_money_and_business_integrity.sql",
+      "sha256": "9fba78164efeca2a91ebbb366388f85bf2562ea00d54eaa1a92cad1ade3d424a"
+    },
+    {
+      "version": "20260817120000",
+      "file": "20260817120000_admin_reset_session_revocation.sql",
+      "sha256": "482f2efac47ece7f8c9c016c602eda6c566827bc77f990d6364ef45b68ae5f72"
+    }
+  ],
+  "deferred_contract": [
+    {
+      "version": "20260818000000",
+      "file": "20260818000000_money_direct_write_contract_phase.sql",
+      "sha256": "3a1146c9bf58533f64ebf53f4f5c759deeca9c349a0e25f70752bb9ee3523bee"
+    }
+  ],
+  "posture": {
+    "required_for_app": {
+      "$comment": "State 2 of supabase/preflight/expand-contract-rollback.md §2: the schema the candidate needs is present and the release mode is still the compatible one, because the previous release is still the deployed one. One posture claim is deliberately NOT here: whether the migration owner can actually clear auth.sessions/auth.refresh_tokens. A predicate for it would have to name the DML privilege, which this gate forbids in a posture query for good reason, and 20260817120000 asserts it at apply time instead — so the phase push fails on the migration rather than passing the apply and failing the readback.",
+      "predicates": [
+        {
+          "name": "release-mode-row-is-compat",
+          "sql": "select coalesce((select direct_write_mode = 'compat' from public.money_release_mode where id = 'only'), false)",
+          "expect": true
+        },
+        {
+          "name": "mode-function-reports-compat",
+          "sql": "select public.money_direct_write_mode() = 'compat'",
+          "expect": true
+        },
+        {
+          "name": "money-rpcs-are-installed",
+          "sql": "select count(*) = 7 from (values ('create_contract'),('approve_contract'),('revoke_contract'),('confirm_payment'),('allocate_payment'),('void_payment'),('convert_quotation_to_contract')) as r(n) where exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = r.n)",
+          "expect": true
+        },
+        {
+          "name": "write-guards-are-installed",
+          "sql": "select count(*) = 4 from (values ('trg_guard_contracts_write'),('trg_guard_payments_write'),('trg_guard_quotations_write'),('trg_guard_contract_transition')) as t(n) where exists (select 1 from pg_trigger g where not g.tgisinternal and g.tgname = t.n)",
+          "expect": true
+        },
+        {
+          "name": "gate-function-is-security-invoker",
+          "sql": "select not p.prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'money_direct_write_is_blocked'",
+          "expect": true
+        },
+        {
+          "name": "mode-function-is-security-definer",
+          "sql": "select p.prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'money_direct_write_mode'",
+          "expect": true
+        },
+        {
+          "name": "session-revocation-rpc-is-server-only",
+          "sql": "select has_function_privilege('service_role', 'public.revoke_user_sessions(uuid, text)', 'execute') and not has_function_privilege('authenticated', 'public.revoke_user_sessions(uuid, text)', 'execute') and not has_function_privilege('anon', 'public.revoke_user_sessions(uuid, text)', 'execute')",
+          "expect": true
+        }
+      ]
+    },
+    "deferred_contract": {
+      "$comment": "State 4: direct end-user money writes are refused. This is past the rollback boundary for the previous release; see §5.",
+      "predicates": [
+        {
+          "name": "release-mode-row-is-strict",
+          "sql": "select coalesce((select direct_write_mode = 'strict' from public.money_release_mode where id = 'only'), false)",
+          "expect": true
+        },
+        {
+          "name": "mode-function-reports-strict",
+          "sql": "select public.money_direct_write_mode() = 'strict'",
+          "expect": true
+        },
+        {
+          "name": "write-guards-are-still-installed",
+          "sql": "select count(*) = 4 from (values ('trg_guard_contracts_write'),('trg_guard_payments_write'),('trg_guard_quotations_write'),('trg_guard_contract_transition')) as t(n) where exists (select 1 from pg_trigger g where not g.tgisinternal and g.tgname = t.n)",
+          "expect": true
+        }
+      ]
+    }
+  }
+}

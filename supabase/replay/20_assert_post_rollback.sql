@@ -22,7 +22,7 @@
 -- security hole". The ASSERT_OK count is cross-checked against ASSERT_TOTAL, so
 -- a file that stops early cannot pass quietly.
 --
--- ASSERT_TOTAL: 47
+-- ASSERT_TOTAL: 50
 -- ============================================================================
 
 create temp table if not exists post_rollback_assert_log (name text);
@@ -272,7 +272,7 @@ select pg_temp.assert((select count(*) = 5
 -- ============================================================================
 -- The contract phase is rolled back, and ONLY the contract phase
 -- ============================================================================
--- This is the part of the rollback story that is a rollback. 20260815000000
+-- This is the part of the rollback story that is a rollback. 20260818000000
 -- flipped public.money_release_mode to 'strict'; its companion puts it back to
 -- 'compat', which is the state 20260814000000 seeded and the posture production
 -- has today. While the mode is 'compat' the previous release (f37c203 / 81956f2)
@@ -356,6 +356,85 @@ begin
                          and not exists (select 1 from public.contracts
                                           where contract_no = 'REPLAY-POST-ROLLBACK-1'),
                          'money-post-rollback-compat-fixture-was-rolled-back');
+end
+$$;
+
+-- The two refusals round 4 added — contracts.first_payment_status (B2) and
+-- quotations.contract_id (B5) — are gated on money_direct_write_is_blocked(), so
+-- they must stand down here for exactly the same reason the two above do. This is
+-- not a restatement of the assertions in the forward file: those measure the
+-- refusal under 'strict', and a guard gated on money_write_is_direct() alone would
+-- satisfy every one of them while breaking the previous release from the moment the
+-- expand phase applied. trg_guard_quotations_write was first written that way.
+-- supabase/preflight/expand-contract-rollback.md §2 lists both as state-4 refusals.
+do $$
+declare
+  v_fps_state  text := '00000';
+  v_fps_msg    text := '';
+  v_fps        text := '(not measured)';
+  v_link_state text := '00000';
+  v_link_msg   text := '';
+  v_link       uuid;
+begin
+  begin
+    -- The previous release's PUT /api/contracts, which writes this column
+    -- directly (src/app/api/contracts/route.ts:341 at PR base 81956f2).
+    begin
+      perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+      set local role authenticated;
+      update public.contracts set first_payment_status = 'paid'
+       where id = 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6';
+      v_fps := (select first_payment_status from public.contracts
+                 where id = 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6');
+    exception when others then v_fps_state := sqlstate; v_fps_msg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+
+    -- And the previous release's conversion, which links the quotation to the
+    -- contract it just created with a direct UPDATE
+    -- (src/app/api/quotations/[id]/convert/route.ts:173 at the same base).
+    begin
+      perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+      set local role authenticated;
+      update public.quotations set contract_id = 'c5c5c5c5-c5c5-c5c5-c5c5-c5c5c5c5c5c5'
+       where id = 'b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6';
+      v_link := (select contract_id from public.quotations
+                  where id = 'b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6');
+    exception when others then v_link_state := sqlstate; v_link_msg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+
+    raise exception 'REPLAY_ROLLBACK';
+  exception
+    when others then
+      reset role;
+      perform set_config('request.jwt.claims', '', true);
+      if sqlerrm <> 'REPLAY_ROLLBACK' then raise; end if;
+  end;
+
+  if not (v_fps_state = '00000' and v_fps = 'paid') then
+    raise notice 'the compatibility window did not accept the previous release''s first_payment_status write: sqlstate %, %',
+      v_fps_state, v_fps_msg;
+  end if;
+  perform pg_temp.assert(v_fps_state = '00000' and v_fps = 'paid',
+                         'money-post-rollback-previous-release-can-write-first-payment-status');
+
+  if not (v_link_state = '00000'
+          and v_link = 'c5c5c5c5-c5c5-c5c5-c5c5-c5c5c5c5c5c5'::uuid) then
+    raise notice 'the compatibility window did not accept the previous release''s conversion link: sqlstate %, %',
+      v_link_state, v_link_msg;
+  end if;
+  perform pg_temp.assert(v_link_state = '00000'
+                         and v_link = 'c5c5c5c5-c5c5-c5c5-c5c5-c5c5c5c5c5c5'::uuid,
+                         'money-post-rollback-previous-release-can-write-the-conversion-link');
+
+  perform pg_temp.assert((select first_payment_status = 'unpaid' from public.contracts
+                           where id = 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6')
+                         and (select contract_id is null from public.quotations
+                               where id = 'b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6'),
+                         'money-post-rollback-round4-compat-fixture-was-rolled-back');
 end
 $$;
 
@@ -611,8 +690,8 @@ declare
   total int;
 begin
   select count(*) into total from post_rollback_assert_log;
-  if total <> 47 then
-    raise exception 'post-rollback assertion file ran % assertions, ASSERT_TOTAL says 47', total
+  if total <> 50 then
+    raise exception 'post-rollback assertion file ran % assertions, ASSERT_TOTAL says 50', total
       using errcode = '22000';
   end if;
   raise notice 'all % post-rollback assertions passed', total;

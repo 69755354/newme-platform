@@ -214,11 +214,37 @@ export async function resetUserPassword(userId: string, password: string) {
   const { error } = await adminClient.auth.admin.updateUserById(userId, { password })
   if (error) throw new Error(error.message)
 
-  // Invalidate sessions by marking password change time
-  await adminClient
+  // A3 · the same two writes, in the same order, as
+  // src/app/api/users/[id]/password/route.ts — this server action is the second
+  // administrator reset path and had the same gap. password_changed_at is what the
+  // restrictive session policy compares an access token's `iat` against;
+  // force_password_change makes the target replace the password the administrator
+  // chose. The result of the update was previously not even read, so a failure
+  // here was reported to the caller as a successful reset.
+  const { error: profileError } = await adminClient
     .from('profiles')
-    .update({ password_changed_at: new Date().toISOString() })
+    .update({ password_changed_at: new Date().toISOString(), force_password_change: true })
     .eq('id', userId)
+
+  if (profileError) {
+    throw new Error(
+      'Password changed but the revocation timestamp could not be recorded; treat the account as still signed in',
+    )
+  }
+
+  // Fail closed: no verified revocation, no successful reset. See the migration
+  // 20260817120000_admin_reset_session_revocation.sql for why an inherited GoTrue
+  // side effect is not enough.
+  const { data: revocation, error: revokeError } = await adminClient.rpc('revoke_user_sessions', {
+    p_user_id: userId,
+    p_reason: 'admin_password_reset',
+  })
+
+  if (revokeError || (revocation as { verified?: boolean } | null)?.verified !== true) {
+    throw new Error(
+      "Password changed, but the target's existing sessions could not be verifiably revoked; retry or ban the identity in Supabase Auth before relying on this reset",
+    )
+  }
 
   return { success: true }
 }

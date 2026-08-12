@@ -230,3 +230,85 @@ values
   ('b3b3b3b3-b3b3-b3b3-b3b3-b3b3b3b3b3b3', '22222222-2222-2222-2222-222222222222',
    'REPLAY-Q3', 'draft',    80000.00, 80000.00, 'cccccccc-cccc-cccc-cccc-cccccccccccc')
 on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Round 4 fixtures
+-- ---------------------------------------------------------------------------
+
+-- A1. A recorded lead-note request, so record_lead_note_atomic() can be called
+-- on its idempotent-replay branch — the branch that RETURNS before the first
+-- INSERT and therefore never reaches the statement trigger. Without this row the
+-- early-return path is not reachable and the finding is not measurable.
+insert into public.lead_mutation_requests (actor_id, operation, idempotency_key, lead_id, response)
+values ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'lead_note',
+        'aaaa1111-2222-3333-4444-555566667777', '22222222-2222-2222-2222-222222222222',
+        jsonb_build_object('lead_id', '22222222-2222-2222-2222-222222222222',
+                           'note_id', '99990000-0000-0000-0000-000000000001'))
+on conflict (actor_id, operation, idempotency_key) do nothing;
+
+-- B6. A quotation on a lead with NO customer row and NO customer_id, owned by
+-- sales1 and accepted, so a conversion has to create the customer, set
+-- leads.customer_id and record the won business event. REPLAY-Q1 cannot be used
+-- for this: the other conversion assertions consume it.
+insert into public.leads (id, assigned_to, stage, customer_name, phone, email,
+                          property_type, property_size_sqm, location, quotation_value)
+values ('0e0e0e0e-0e0e-0e0e-0e0e-0e0e0e0e0e0e', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+        'new', 'Replay lead B6', '+971500000006', 'b6@example.invalid',
+        'villa', 420, 'Replay District', 80000.00)
+on conflict (id) do nothing;
+
+insert into public.quotations (id, lead_id, quote_no, status, subtotal, total_amount, created_by)
+values ('b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6', '0e0e0e0e-0e0e-0e0e-0e0e-0e0e0e0e0e0e',
+        'REPLAY-Q6', 'accepted', 80000.00, 80000.00,
+        'cccccccc-cccc-cccc-cccc-cccccccccccc')
+on conflict (id) do nothing;
+
+-- B5. A second lead + contract that belongs to nobody in the conversion under
+-- test, so "an already-converted quotation whose contract_id points at another
+-- lead's contract" is constructible. The contract is created directly here
+-- because the fixtures load before the guards care about the mode — the same way
+-- every other contract fixture is seeded.
+insert into public.leads (id, assigned_to, stage, customer_name)
+values ('0f0f0f0f-0f0f-0f0f-0f0f-0f0f0f0f0f0f', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+        'new', 'Replay lead B5 foreign')
+on conflict (id) do nothing;
+
+insert into public.contracts (id, lead_id, sales_id, created_by, contract_no,
+                              contract_amount, party_a_name, status)
+values ('c5c5c5c5-c5c5-c5c5-c5c5-c5c5c5c5c5c5', '0f0f0f0f-0f0f-0f0f-0f0f-0f0f0f0f0f0f',
+        'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+        'REPLAY-B5-FOREIGN', 55000.00, 'Replay lead B5 foreign', 'draft')
+on conflict (id) do nothing;
+
+-- B3. A confirmed payment whose amount is positive, plus the installment plan it
+-- was allocated to, on a contract of its own — so the "a negative payment cannot
+-- be created and cannot be confirmed" probes have somewhere to write that does
+-- not disturb the C3 chain the other money assertions measure.
+insert into public.leads (id, assigned_to, stage, customer_name)
+values ('0909a0a0-0909-0909-0909-090909090909', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+        'won', 'Replay lead B3')
+on conflict (id) do nothing;
+
+insert into public.contracts (id, lead_id, sales_id, created_by, contract_no,
+                              contract_amount, party_a_name, status)
+values ('c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6', '0909a0a0-0909-0909-0909-090909090909',
+        'cccccccc-cccc-cccc-cccc-cccccccccccc', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+        'REPLAY-B3', 100000.00, 'Replay lead B3', 'active')
+on conflict (id) do nothing;
+
+insert into public.installment_plans (id, contract_id, seq, amount, due_date, status)
+values ('96666666-6666-6666-6666-666666666666', 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6',
+        1, 40000.00, current_date, 'pending')
+on conflict (id) do nothing;
+
+insert into public.payments (id, contract_id, amount, payment_date, confirmed, created_by)
+values ('d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6', 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6',
+        40000.00, current_date, false, 'cccccccc-cccc-cccc-cccc-cccccccccccc')
+on conflict (id) do nothing;
+
+-- B7. A collection KPI target for sales2 in the current period, so a void that
+-- credits the wrong salesperson has a second row it could wrongly move.
+insert into public.kpi_targets (period, target_type, target_amount, actual_amount, assigned_to, set_by)
+values (to_char(current_date, 'YYYY-MM'), 'collection', 500000.00, 0,
+        'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+on conflict (period, target_type, assigned_to) do nothing;

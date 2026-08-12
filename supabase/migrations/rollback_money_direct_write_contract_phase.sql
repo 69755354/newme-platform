@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Rollback companion: return to the compatibility window
 -- ============================================================================
--- ROLLS_BACK: 20260815000000_money_direct_write_contract_phase.sql
+-- ROLLS_BACK: 20260818000000_money_direct_write_contract_phase.sql
 --
 -- The name deliberately does not match ^[0-9]{14}_ so the Supabase CLI will never
 -- apply it. It is run by hand, by an operator, at a rollback.

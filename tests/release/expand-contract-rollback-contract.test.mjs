@@ -34,16 +34,23 @@ const ROOT = path.resolve(import.meta.dirname, "../..");
 const read = (rel) => readFileSync(path.join(ROOT, rel), "utf8");
 
 const DOC_PATH = "supabase/preflight/expand-contract-rollback.md";
-const EXPAND_LAST = "20260814000000_l0_round3_authorization_and_integrity.sql";
-const CONTRACT_FILE = "20260815000000_money_direct_write_contract_phase.sql";
+/**
+ * The expand-phase file that installs the write guards and the release-mode gate.
+ * It is not the last file of the expand phase any more — round 4 added two
+ * migrations that sort after the contract phase — so it is named for what it
+ * declares, not for its position.
+ */
+const GUARDS_FILE = "20260814000000_l0_round3_authorization_and_integrity.sql";
+const CONTRACT_FILE = "20260818000000_money_direct_write_contract_phase.sql";
+const MANIFEST_PATH = "infra/release/release-manifest.json";
 const COMPANION = "rollback_money_direct_write_contract_phase.sql";
 /** The production stamp the replay's history phase stops at. */
 const PRODUCTION_STAMP = "20260805202917";
 
 const doc = read(DOC_PATH);
-const expandSql = read(`supabase/migrations/${EXPAND_LAST}`);
+const expandSql = read(`supabase/migrations/${GUARDS_FILE}`);
 /**
- * The expand phase is ten files, and a routine's signature is declared in
+ * The expand phase is several files, and a routine's signature is declared in
  * whichever of them last touched it — approve_contract() in 20260812000000,
  * void_payment() in 20260814000000. Signature and predicate lookups are made
  * against the whole set, because "the expand phase declares this" is the claim.
@@ -95,11 +102,119 @@ test("the documented expand set is the real pending migration set", () => {
     expected,
     "the expand list in the document must be every pending migration except the contract phase, in order",
   );
-  assert.equal(expected[expected.length - 1], EXPAND_LAST, "the expand phase must end at 20260814000000");
+  assert.ok(
+    expected.includes(GUARDS_FILE),
+    "the migration that installs the write guards and seeds the mode row must be in the expand phase",
+  );
   assert.deepEqual(fence("contract"), [CONTRACT_FILE]);
 
   // And the document has to say why the split cannot be left to the tooling.
   assert.match(doc, /supabase db push` applies every pending migration in one\s*\n?run/);
+});
+
+test("the two phases in the document are the two phases in the release manifest", () => {
+  // The split is executable only because something machine-readable defines it.
+  // Round-4 review C7 refused the previous answer — an operator moving the
+  // contract-phase file out of supabase/migrations/ for the duration of the first
+  // push — so the phases now live in infra/release/release-manifest.json and
+  // scripts/db-phase-push.mjs applies one of them. The document and the manifest
+  // must therefore say the same thing.
+  const manifest = JSON.parse(read(MANIFEST_PATH));
+  const required = manifest.required_for_app.map((entry) => entry.file);
+  const deferred = manifest.deferred_contract.map((entry) => entry.file);
+
+  assert.deepEqual(fence("expand"), required, "the document's expand list is not the manifest's required_for_app");
+  assert.deepEqual(fence("contract"), deferred, "the document's contract list is not the manifest's deferred_contract");
+  assert.deepEqual(deferred, [CONTRACT_FILE]);
+
+  // The contract phase is the highest version in the release. That is what makes
+  // the expand set a contiguous prefix again: an operator who uses the CLI cannot
+  // apply the contract phase before the round-4 migrations, and production's
+  // application order is the version order the replay harness tests.
+  const afterContract = readdirSync(path.join(ROOT, "supabase/migrations"))
+    .filter((name) => /^\d{14}_.*\.sql$/.test(name))
+    .filter((name) => name.slice(0, 14) > CONTRACT_FILE.slice(0, 14));
+  assert.deepEqual(
+    afterContract,
+    [],
+    "a migration sorts after the contract phase: either renumber it below 20260818000000 or the phase split stops being a prefix",
+  );
+
+  // And the document must give the operator the tool, not a file-moving ritual.
+  assert.match(doc, /How the split is executed: a manifest, not a moved file/);
+  assert.match(doc, /node scripts\/db-phase-push\.mjs --phase required_for_app/);
+  assert.match(doc, /node scripts\/db-phase-push\.mjs --phase deferred_contract/);
+  assert.doesNotMatch(
+    doc,
+    /moves the contract-phase file out of/,
+    "moving files between the reviewed tree and the applied tree is what C7 refused",
+  );
+  assert.match(doc, /Do \*\*not\*\* use\s*\r?\n?\s*`supabase db push`/);
+
+  // §6.1 query 3 tells the operator which version to expect as the newest at
+  // state 2. That expectation is the first thing an added migration makes wrong.
+  const newestRequired = [...required].sort().at(-1).slice(0, 14);
+  assert.match(
+    doc,
+    new RegExp(`expect ${newestRequired} first`),
+    "§6.1 query 3 must expect the highest required_for_app version as the newest",
+  );
+  // …and §6.3 the contract phase itself.
+  assert.match(doc, new RegExp(`expect ${CONTRACT_FILE.slice(0, 14)}$`, "m"));
+});
+
+test("the round-4 refusals the document calls mode-gated are mode-gated in the SQL", () => {
+  // The compatibility window is only as true as the gate each new refusal sits
+  // behind. trg_guard_quotations_write was first written against
+  // money_write_is_direct() — role only — which would have refused the previous
+  // release's `update quotations set contract_id` from the moment the expand phase
+  // applied, i.e. before any deploy and again after an application-only rollback.
+  const round4 = read("supabase/migrations/20260817000000_l0_round4_money_and_business_integrity.sql");
+
+  const quotations = /create or replace function public\.guard_quotations_write\(\)[\s\S]*?\n\$\$;/.exec(round4);
+  assert.ok(quotations, "guard_quotations_write() must exist in the round-4 migration");
+  assert.match(quotations[0], /if not public\.money_direct_write_is_blocked\(\) then\s*\r?\n\s*return new;/);
+  assert.doesNotMatch(
+    quotations[0],
+    /if not public\.money_write_is_direct\(\) then/,
+    "a role-only gate here closes the compatibility window for quotation conversion",
+  );
+
+  // first_payment_status joins the protected set, but only in strict mode: the
+  // check has to sit after the early return, not before it.
+  const contracts = /create or replace function public\.guard_contracts_write\(\)[\s\S]*?\n\$\$;/.exec(round4);
+  assert.ok(contracts, "guard_contracts_write() must exist in the round-4 migration");
+  assert.ok(
+    contracts[0].indexOf("money_direct_write_is_blocked") <
+      contracts[0].indexOf("new.first_payment_status is distinct from old.first_payment_status"),
+    "the first_payment_status refusal must be inside the strict-mode branch",
+  );
+
+  // Both are listed as state-4 refusals in the writer table, not as unconditional.
+  assert.match(doc, /\| `src\/app\/api\/contracts\/route\.ts:341` \(PUT\) \| `contracts` \| UPDATE `first_payment_status` \|/);
+  assert.match(doc, /\| `src\/app\/api\/quotations\/\[id\]\/convert\/route\.ts:173` \| `quotations` \| UPDATE `contract_id` \|/);
+});
+
+test("the positive-amount constraints are disclosed as an unconditional change", () => {
+  // A validated CHECK is the one thing in the expand phase that can abort the push
+  // itself, so the document has to say so and has to point at the preflight.
+  const round4 = read("supabase/migrations/20260817000000_l0_round4_money_and_business_integrity.sql");
+  for (const name of [
+    "payments_amount_positive",
+    "payment_allocations_amount_positive",
+    "installment_plans_amount_positive",
+  ]) {
+    assert.match(round4, new RegExp(`add constraint ${name} check`), `${name} must be added by the SQL`);
+    assert.ok(doc.includes(name), `§3 must name ${name}`);
+    assert.doesNotMatch(
+      round4,
+      new RegExp(`add constraint ${name} check[^;]*not valid`, "i"),
+      `${name} must be validated, which is what makes the push abort rather than defer`,
+    );
+  }
+  assert.match(round4, /refusing to add the positive-amount constraints/);
+  assert.match(doc, /the migration\s*\r?\n?\s*fails if production holds a violating row/);
+  assert.match(doc, /scan-money-invariants\.sql/);
 });
 
 test("the status graph in the document is the graph in the SQL", () => {
@@ -242,7 +357,7 @@ test("every path the document cites exists", () => {
 });
 
 test("the contract-phase migration points at this document and this test", () => {
-  // The header of 20260815000000 promises both artifacts by name. If either moves,
+  // The header of the contract phase promises both artifacts by name. If either moves,
   // the promise becomes a dead reference in a file an operator reads at a
   // deployment.
   assert.match(contractSql, new RegExp(DOC_PATH.replace(/\//g, "\\/")));

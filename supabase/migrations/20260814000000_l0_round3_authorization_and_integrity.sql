@@ -9,7 +9,7 @@
 -- undoes the fix. The part of 20260812000000 that DID need a way back — the
 -- direct-write refusal that the previous release's application depends on — is
 -- separated out below into an expand phase (this file, compatibility default) and
--- a contract phase (20260815000000, which does have a companion). See §0.
+-- a contract phase (20260818000000, which does have a companion). See §0.
 --
 -- Forward-only: this file modifies no applied migration. It redefines functions
 -- introduced by 20260812000000 and 20260813000000 (neither of which has been
@@ -138,7 +138,7 @@
 --                            modes.
 --   deploy                   the candidate application, which writes money rows
 --                            only through the RPCs.
---   contract (20260815000000) mode = 'strict'. Direct end-user money writes are
+--   contract (20260818000000) mode = 'strict'. Direct end-user money writes are
 --                            refused. This is the point after which the previous
 --                            release can no longer write, and it is therefore a
 --                            separate, separately reversible step.

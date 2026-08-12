@@ -105,6 +105,50 @@ create table if not exists auth.identities (
   primary key (provider_id, provider)
 );
 
+-- GoTrue's session store. Column set, types and the two foreign keys are taken
+-- from a live GoTrue v2.195.0 (public.ecr.aws/supabase/gotrue:v2.195.0) that ran
+-- its own migrations against public.ecr.aws/supabase/postgres:17.6.1.158, read
+-- back out of pg_attribute and pg_constraint. Three details matter to
+-- 20260817120000 and are therefore faithful rather than convenient:
+--
+--   * refresh_tokens.user_id is varchar(255) holding the user's UUID as text,
+--     not a uuid column, so a predicate over it has to cast;
+--   * refresh_tokens.session_id -> sessions.id is ON DELETE CASCADE, so
+--     deleting a session removes its refresh tokens (confdeltype = 'c');
+--   * sessions.user_id -> users.id is ON DELETE CASCADE.
+--
+-- `aal` is auth.aal_level on the platform, an enum this release never reads;
+-- modelling it as text keeps the bootstrap from inventing a type the migrations
+-- do not depend on.
+create table if not exists auth.sessions (
+  id            uuid primary key,
+  user_id       uuid        not null references auth.users (id) on delete cascade,
+  created_at    timestamptz,
+  updated_at    timestamptz,
+  factor_id     uuid,
+  aal           text,
+  not_after     timestamptz,
+  refreshed_at  timestamp,
+  user_agent    text,
+  ip            inet,
+  tag           text
+);
+create index if not exists sessions_user_id_idx on auth.sessions using btree (user_id);
+
+create table if not exists auth.refresh_tokens (
+  instance_id uuid,
+  id          bigserial primary key,
+  token       varchar(255) unique,
+  user_id     varchar(255),
+  revoked     boolean,
+  created_at  timestamptz,
+  updated_at  timestamptz,
+  parent      varchar(255),
+  session_id  uuid references auth.sessions (id) on delete cascade
+);
+create index if not exists refresh_tokens_session_id_revoked_idx
+  on auth.refresh_tokens using btree (session_id, revoked);
+
 -- GoTrue's request-scoped claim accessors. On the platform these read the JWT
 -- that PostgREST puts into the request settings; the harness sets the same
 -- settings with SET LOCAL, so caller-scoped RLS behaves identically.

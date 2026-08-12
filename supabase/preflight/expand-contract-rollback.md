@@ -43,7 +43,7 @@ So the guards are gated on one row:
 * `public.money_direct_write_is_blocked()` is SECURITY INVOKER on purpose: it has
   to see the *calling* role, because the guards must stand down for
   `service_role` and for the migration itself and must not for a browser session.
-* `20260815000000_money_direct_write_contract_phase.sql` flips the row to
+* `20260818000000_money_direct_write_contract_phase.sql` flips the row to
   `'strict'`. That is the whole contract phase.
 * `rollback_money_direct_write_contract_phase.sql` puts it back to `'compat'`.
   Its name deliberately does not match `^[0-9]{14}_`, so the Supabase CLI never
@@ -52,11 +52,11 @@ So the guards are gated on one row:
 The compatibility window is therefore a **deployment procedure, not a property of
 the SQL**. `supabase db push` applies every pending migration in one run, so
 pushing both files together collapses the window to zero. §4 is the ordering that
-keeps it open.
+keeps it open, and `scripts/db-phase-push.mjs` is what executes it.
 
 ### The two pushes
 
-Expand phase — apply these eleven, in this order (they are the pending set on this
+Expand phase — apply these fourteen, in this order (they are the pending set on this
 branch, and `scripts/replay-migrations.sh` applies exactly them plus the contract
 phase):
 
@@ -72,21 +72,93 @@ phase):
 20260813000000_session_revocation_boundary.sql
 20260813100000_payment_request_key_idempotency.sql
 20260814000000_l0_round3_authorization_and_integrity.sql
+20260816000000_l0_round4_definer_entry_boundary.sql
+20260817000000_l0_round4_money_and_business_integrity.sql
+20260817120000_admin_reset_session_revocation.sql
 ```
-
-`20260813100000` is in the expand phase, and is numbered below `20260814000000` so
-that it is, because it is additive only: a nullable `payments.request_key` and a
-partial unique index on `(created_by, request_key) where request_key is not null`.
-The previous release never sets that column, so every row it writes leaves the key
-null, falls outside the index predicate, and collides with nothing. The candidate
-release needs the column present before it is deployed, because its payment
-recording boundary writes the key on every insert.
 
 Contract phase — one file, pushed only after §4 step 6 passes:
 
 ```contract
-20260815000000_money_direct_write_contract_phase.sql
+20260818000000_money_direct_write_contract_phase.sql
 ```
+
+### How the split is executed: a manifest, not a moved file
+
+The split is **not** `supabase db push`, and it is **not** an operator moving the
+contract-phase file out of `supabase/migrations/` for the duration of the first
+push. Moving files makes the tree that was reviewed and the tree that was applied
+two different things, and it leaves the release unrecoverable if the operator is
+interrupted between the two pushes. It is done instead with two committed
+artifacts:
+
+* [`infra/release/release-manifest.json`](../../infra/release/release-manifest.json)
+  names every pending migration in exactly one phase — `required_for_app` (the
+  thirteen above) or `deferred_contract` (the one above) — with the SHA-256 of each
+  file and the runtime posture each phase must produce.
+* [`scripts/db-phase-push.mjs`](../../scripts/db-phase-push.mjs) applies one named
+  phase and nothing else:
+
+```text
+node scripts/db-phase-push.mjs --phase required_for_app  --url-file <file> --plan
+node scripts/db-phase-push.mjs --phase required_for_app  --url-file <file> --apply
+node scripts/db-phase-push.mjs --phase deferred_contract --url-file <file> --apply
+```
+
+  `--plan` runs every precondition and the hash check and writes nothing. Each
+  migration is applied in **one transaction** containing its SQL and its
+  `supabase_migrations.schema_migrations` row, with the file's own `begin;` /
+  `commit;` skipped so that the file cannot end the tool's transaction. After
+  applying, the tool reads every history row back, fingerprints its recorded
+  content server-side and compares it with the file, and then measures the phase's
+  posture predicates in a READ ONLY transaction.
+
+  It refuses, before writing anything: a manifest that does not match the tree, a
+  file whose hash is not the manifest's, `deferred_contract` while any
+  `required_for_app` migration is unapplied (this is C6's claim, enforced instead
+  of asserted), `required_for_app` once the contract phase is already recorded, a
+  version recorded under a different name, a file that sorts at or before the
+  newest recorded version, a database with no migration-history table, and a
+  connection string passed as an argument instead of in a file.
+
+Two gates keep that honest. `scripts/check-release-manifest.mjs` (CI, and
+`npm test`) requires the manifest's two phases to be **exactly** the pending set
+of `supabase/migrations/`, with matching hashes: a migration added and not
+classified fails CI rather than being left out of the expand push.
+`scripts/phase-tool-drill.sh` (CI job `migration-replay`) runs the whole procedure
+against throwaway databases and asserts the refusals as hard as the successes —
+history-less database refused, contract-before-expand refused, expand applied and
+read back, re-run a no-op, contract applied, expand-after-contract refused,
+`--verify-only` at state 4, and an interruption in which the twelfth migration
+fails after altering tables: eleven stay applied, nothing is recorded for the
+twelfth, and a column it added earlier in the same file is gone.
+
+The contract phase also carries the **highest** version in the release, so the
+expand set is a contiguous prefix of the pending set. That is deliberate:
+
+* an operator who reaches for the CLI anyway cannot apply the contract phase
+  early without applying it last, and `supabase db push` from this tree applies
+  the phases in the right order even though it collapses the window;
+* `supabase_migrations.schema_migrations` records the two phases in version
+  order, so the application order in production is the order
+  `scripts/replay-migrations.sh` replays and asserts. §6.1 query 3 expects
+  `20260817120000` as the newest version at state 2 and `20260818000000` at
+  state 4.
+
+What none of this proves: the tool is not the Supabase CLI, and the statement
+array it records is split by this repository's own parser
+(`splitStatements`). For the history rows **production already has**, written by
+the CLI, content equivalence with the local files remains unproven — round-4
+finding C4 — and `scripts/verify-remote-migration-history.mjs` reports those rows
+as differences rather than passes.
+
+Neither round-4 file may depend on the contract phase, and neither does: the mode
+row is seeded by `20260814000000`, which precedes both, and everything either file
+adds consults `money_direct_write_is_blocked()` at write time rather than at apply
+time. Their own backfills (`contracts.first_payment_status`,
+`payments.credited_to`) run as the migration role, for which
+`money_write_is_direct()` is false, so the guards stand down for them in either
+mode.
 
 ---
 
@@ -98,10 +170,10 @@ production now. **C** = the candidate release on this branch.
 | State | Schema | `direct_write_mode` | P works? | C works? |
 | --- | --- | --- | --- | --- |
 | 1 · today | base, stamp `20260805202917` | table does not exist | yes | **no** — the RPCs it calls do not all exist yet |
-| 2 · expand applied | + the eleven files | `compat` | yes, with the four deliberate exceptions in §3 | yes |
-| 3 · candidate deployed | + the eleven files | `compat` | yes (this is the overlap window) | yes |
-| 4 · contract applied | + all twelve | `strict` | **no** — its direct money writes are refused | yes |
-| 5 · companion run | + all twelve | `compat` | yes, as in state 2 | yes |
+| 2 · expand applied | + the fourteen files | `compat` | yes, with the seven deliberate exceptions in §3 | yes |
+| 3 · candidate deployed | + the fourteen files | `compat` | yes (this is the overlap window) | yes |
+| 4 · contract applied | + all fifteen | `strict` | **no** — its direct money writes are refused | yes |
+| 5 · companion run | + all fifteen | `compat` | yes, as in state 2 | yes |
 
 State 3 is the rollback boundary: both releases work against the same schema, so
 the application can be rolled back without touching the database. State 5 is how
@@ -122,14 +194,27 @@ is refused in state 4 and accepted in states 2, 3 and 5:
 | `src/app/api/quotations/[id]/convert/route.ts:147` | `installment_plans` | INSERT |
 | `src/app/api/quotations/[id]/convert/route.ts:164` | `contract_approvals` | INSERT |
 | `src/app/api/contracts/[id]/revoke/route.ts:92` | `contracts` | UPDATE `status` |
+| `src/app/api/contracts/route.ts:341` (PUT) | `contracts` | UPDATE `first_payment_status` |
+| `src/app/api/quotations/[id]/convert/route.ts:173` | `quotations` | UPDATE `contract_id` |
+
+The last two rows were added in round 4 and are the reason this table is not a
+round-3 artifact: `20260817000000` puts `contracts.first_payment_status` into
+`trg_guard_contracts_write`'s protected set (finding B2 — the column was a claim a
+salesperson could type) and installs `trg_guard_quotations_write` on
+`quotations.contract_id` (finding B5 — the conversion link was writable by the
+quotation's owner). Both new refusals are gated on
+`money_direct_write_is_blocked()`, i.e. direct **and** strict, so both behave like
+every other row here: refused in state 4, accepted in states 2, 3 and 5. Gating
+`trg_guard_quotations_write` on `money_write_is_direct()` alone — which is how it
+was first written — would have refused the previous release's conversion from the
+moment the expand phase applied, closing the compatibility window for that path
+before any deploy had happened.
 
 Not affected in any state, and checked rather than assumed:
 
-* `src/app/api/contracts/route.ts:355` (PATCH) sets only `first_payment_status`
-  and `first_payment_due_date`. `trg_guard_contracts_write` covers status,
-  amount, number, ownership and dates; these two columns are not in it, and the
-  transition trigger is `before update of status`, which this statement does not
-  set.
+* `src/app/api/contracts/route.ts:341` (PUT) also sets `first_payment_due_date`.
+  That column is in no guard's protected set, so a request that sets only the due
+  date keeps working in every state, including state 4.
 * `src/app/api/contracts/[id]/confirm-upload/route.ts:101` sets `file_url` and
   `file_metadata` only.
 * `src/app/api/contracts/[id]/approve/route.ts` already calls
@@ -152,7 +237,7 @@ Not affected in any state, and checked rather than assumed:
 
 ## 3 · What the expand phase changes for the previous release anyway
 
-Four things take effect the moment the expand phase applies, before any
+Seven things take effect the moment the expand phase applies, before any
 application deploy, and are **not** gated on `direct_write_mode`. They are listed
 here because "backwards compatible" must not be claimed more broadly than it is
 true.
@@ -220,6 +305,51 @@ true.
    release. See `f02-credential-cutover.md`; the Auth identity itself stays open
    until that action is authorised, and F-02 stays open on TASKBOARD until then.
 
+5. **Money amounts must be positive, for every writer including
+   `service_role`.** `20260817000000` adds three validated CHECK constraints:
+   `payments_amount_positive` (`amount > 0`), `payment_allocations_amount_positive`
+   (`amount_allocated > 0`) and `installment_plans_amount_positive` (`amount > 0`).
+   This is finding B3 — a payment of `-100` was inserted and confirmed, and
+   confirmation *subtracted* it from `projects.paid_amount` and
+   `kpi_targets.actual_amount`, so a salesperson could reduce their own recorded
+   collections.
+
+   Because the constraints are validated rather than `NOT VALID`, **the migration
+   fails if production holds a violating row.** It does not skip the constraint and
+   it does not repair the data: a `DO` block counts the violations first and raises
+   `22000` with the three counts (counts only, never rows) so the push aborts
+   before any DDL. Run `supabase/preflight/scan-money-invariants.sql` against
+   production *before* step 2 to learn whether that will happen. The count-only
+   form of that script is safe for anyone who may run these verification queries;
+   its `-v detail=on` form prints real customer money and is for an operator
+   entitled to see it. A violating row is a money correction and a business
+   decision, not something a deployment fixes.
+
+   Neither release writes a non-positive amount from a working path — the previous
+   release's payment route rejects `amount <= 0` before inserting — so this
+   constrains what a client could forge, not what either application does.
+
+6. **The session boundary reaches inside the SECURITY DEFINER routines.**
+   `20260816000000` injects `assert_current_session_at_entry()` at the entry of
+   every authenticated definer routine, so a revoked session is refused at the
+   entry rather than at whichever table the routine happens to touch first, and is
+   refused even in a routine that touches none. It fires only when `auth.uid()` is
+   not null, so `service_role` and `psql` are unaffected, and for a healthy session
+   it changes nothing. The same file revokes `EXECUTE` on the trigger functions
+   from `PUBLIC`, `anon` and `authenticated` — they were callable directly only
+   because `CREATE FUNCTION` grants `EXECUTE` to `PUBLIC`; neither release calls
+   one.
+
+7. **Two columns are recomputed from the ledger for existing rows.**
+   `20260817000000` reconciles `contracts.first_payment_status` with
+   `contract_first_payment_status()` (confirmed, unvoided allocations against the
+   first installment) and backfills `payments.credited_to` from the contract's
+   current `sales_id`. Both run as the migration role, so the guards stand down for
+   them. This is a data change, not a schema change, and the previous release
+   *displays* it: a contract whose first payment was marked `paid` without a
+   confirmed payment behind it will read `unpaid` or `partial` afterwards. That is
+   the correction B2 is about, and it is visible before the candidate deploys.
+
 **Signatures are preserved.** The routines the previous release already calls keep
 their exact argument lists, so its RPC calls continue to resolve:
 
@@ -238,11 +368,22 @@ passes its own `user.id` at every call site, so this is not a compatibility
 break for it — but a client that passed someone else's id would now be refused,
 which is the point.
 
-**No destructive DDL.** The expand set adds three nullable columns
-(`payments.voided_at`, `payments.voided_by`, `payments.void_reason`) and drops no
-column, table, view or routine the previous release reads. There is no new NOT
-NULL and no new CHECK constraint on an existing money column, so the previous
-release's INSERTs remain shape-compatible.
+**No destructive DDL.** The expand set adds five nullable columns
+(`payments.voided_at`, `payments.voided_by`, `payments.void_reason` from
+`20260814000000`; `payments.request_key` and `payments.credited_to` from
+`20260817000000`), one table (`public.definer_entry_boundary_exemptions`, RLS on
+and granted to nobody) and one partial unique index
+(`idx_payments_request_key on payments (created_by, request_key) where request_key
+is not null`). It drops no column, table, view or routine either release reads.
+
+There is **no new NOT NULL** on an existing money column. The three new CHECK
+constraints are item 5 above, and they are the only new constraint that can refuse
+a write either release makes; `credited_to` carries an FK to `profiles (id)`, which
+the backfill satisfies by construction because it copies `contracts.sales_id`.
+`request_key` is nullable precisely so the previous release's four-column payment
+INSERT stays shape-compatible in states 2, 3 and 5 — the guard requires it only in
+strict mode, and the unique index is partial, so the historic rows and the previous
+release's rows (which have none) cannot collide with each other.
 
 ---
 
@@ -260,9 +401,15 @@ Read §5 before starting: the point of no return is step 7, not step 8.
      depends on.
    * A verified point-in-time recovery target exists for the production project,
      and its timestamp is recorded next to this checklist.
-2. **[AUTHORISED ACTION] Apply the expand phase.** Push the eleven files in §1.
-   `20260815000000` must **not** be in the pending set for this push — check
-   before, not after.
+2. **[AUTHORISED ACTION] Apply the expand phase.** Apply the fourteen files in §1
+   with
+   `node scripts/db-phase-push.mjs --phase required_for_app --url-file <file> --apply`,
+   from the exact reviewed tree. Run it once with `--plan` first and read the
+   `to apply` list: the fourteen, and `20260818000000` absent. Do **not** use
+   `supabase db push`, which would apply the contract phase in the same run (§1,
+   "How the split is executed"). `supabase/preflight/scan-money-invariants.sql`
+   must have been run first: §3 item 5 aborts this push if a non-positive money row
+   exists.
 3. **Verify state 2, read-only.** §6.1. If `direct_write_mode` is anything other
    than `compat`, stop: the contract phase has been applied early and the
    previous release is already broken. Run the companion (§5) before continuing.
@@ -279,9 +426,12 @@ Read §5 before starting: the point of no return is step 7, not step 8.
    application must be the writer; a `psql` insert proves nothing about the
    candidate. The compatibility window is open for as long as this takes, so
    there is no time pressure on this step.
-7. **[AUTHORISED ACTION] Apply the contract phase.** Push
-   `20260815000000_money_direct_write_contract_phase.sql`. **After this step an
-   application-only rollback no longer works** (§5).
+7. **[AUTHORISED ACTION] Apply the contract phase.** Apply
+   `20260818000000_money_direct_write_contract_phase.sql` with
+   `node scripts/db-phase-push.mjs --phase deferred_contract --url-file <file> --apply`.
+   It refuses if any `required_for_app` migration is still unapplied, and its
+   posture check is what proves the mode is `strict` afterwards. **After this step
+   an application-only rollback no longer works** (§5).
 8. **Verify state 4, read-only.** §6.3.
 9. **Record it.** TASKBOARD rows for the migration application and the deployment
    move to ✅ only with the output of §6.1–§6.3 attached, and only for the steps
@@ -293,7 +443,7 @@ Read §5 before starting: the point of no return is step 7, not step 8.
 
 | Failing at | Recovery | Database action |
 | --- | --- | --- |
-| step 2 (expand push) | the push is transactional per file; a file that fails leaves the earlier ones applied | re-run after fixing, or restore to the recorded PITR target |
+| step 2 (expand push) | one transaction per file, and the history row commits with it: a file that fails leaves the earlier ones applied and records nothing for itself, so the phase is re-runnable after the cause is fixed (drilled by `scripts/phase-tool-drill.sh` step 9) | re-run the same phase, or restore to the recorded PITR target |
 | step 4 (previous release misbehaves in state 2) | none needed for the money tables — the mode is already `compat`. If §3 item 1 or 2 is the cause, it is a deliberate change, so the decision is roll forward or PITR | none, or PITR |
 | step 6 (candidate misbehaves in state 3) | redeploy the previous release. This is the reason the window exists | **none** |
 | step 8 (candidate misbehaves in state 4) | run `rollback_money_direct_write_contract_phase.sql`, then redeploy the previous release | one UPDATE on one row |
@@ -339,13 +489,24 @@ select id, direct_write_mode, changed_at from public.money_release_mode;
 
 -- 2. the contract phase is NOT applied
 select count(*) from supabase_migrations.schema_migrations
- where version = '20260815000000';
+ where version = '20260818000000';
 -- expect 0
 
 -- 3. the expand set is applied, and is the newest
 select version from supabase_migrations.schema_migrations
  order by version desc limit 3;
--- expect 20260814000000 first
+-- expect 20260817120000 first, then 20260817000000, then 20260816000000 —
+-- 20260818000000 is absent because it is the contract phase, which is applied
+-- separately (§1, "How the split is executed")
+
+-- 3b. the positive-amount constraints landed (§3 item 5)
+select conrelid::regclass::text as tbl, conname, convalidated
+  from pg_constraint
+ where conname in ('payments_amount_positive',
+                   'payment_allocations_amount_positive',
+                   'installment_plans_amount_positive')
+ order by 1;
+-- expect three rows, convalidated = true for each
 
 -- 4. the gate function fails closed and reads the calling role
 select p.proname, p.prosecdef
@@ -399,6 +560,21 @@ select p.proname, p.proacl is null as acl_is_null
         or exists (select 1 from aclexplode(p.proacl) a
                     where a.grantee = 0 and a.privilege_type = 'EXECUTE'));
 -- expect zero rows
+
+-- 9. the definer entry boundary covers every definer routine (§3 item 6). This is
+--    the same predicate 20260816000000 §5 asserts at apply time, re-read after.
+select count(*) as uncovered
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  join pg_language l on l.oid = p.prolang
+ where n.nspname = 'public'
+   and p.prosecdef
+   and p.prorettype <> 'trigger'::regtype
+   and p.oid::regprocedure::text not in
+         (select routine from public.definer_entry_boundary_exemptions)
+   and (l.lanname <> 'plpgsql'
+        or p.prosrc !~* '(^|\n)[ \t]*begin[ \t]*\r?\n[ \t]*perform[ \t]+public\.assert_current_session_at_entry\(\);');
+-- expect 0
 ```
 
 ### 6.2 · After the candidate deploy (expect state 3)
@@ -433,9 +609,19 @@ select direct_write_mode, reason from public.money_release_mode where id = 'only
 -- expect strict
 
 select count(*) from supabase_migrations.schema_migrations
- where version = '20260815000000';
+ where version = '20260818000000';
 -- expect 1
+
+-- and it is the newest recorded version, because it is the highest in the release
+select version from supabase_migrations.schema_migrations
+ order by version desc limit 1;
+-- expect 20260818000000
 ```
+
+`node scripts/db-phase-push.mjs --phase deferred_contract --url-file <file>
+--verify-only` re-measures the first two of these from the manifest and writes
+nothing; it is the machine-checked form of this section, not a replacement for
+reading the output.
 
 Then re-run 6.1 queries 4–8: the contract phase changes one row and must change
 nothing else. Do **not** verify strict mode by attempting a direct write from a

@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=c0f27b0f1f3e26a5e342729d948a31888aa1caa42ca8f38aef1587aec638b597
+// Migration fingerprint: sha256=ca7f116beb89cb52c49b380f4fd2b282c17ec0a7768a111cfc94c9c35c8a0004
 export type Json =
   | string
   | number
@@ -2436,6 +2436,7 @@ export type Database = {
           contract_id: string
           created_at: string | null
           created_by: string | null
+          credited_to: string | null
           currency: string | null
           id: string
           installment_plan_id: string | null
@@ -2447,6 +2448,9 @@ export type Database = {
           reference_no: string | null
           request_key: string | null
           updated_at: string | null
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
           amount: number
@@ -2456,6 +2460,7 @@ export type Database = {
           contract_id: string
           created_at?: string | null
           created_by?: string | null
+          credited_to?: string | null
           currency?: string | null
           id?: string
           installment_plan_id?: string | null
@@ -2467,6 +2472,9 @@ export type Database = {
           reference_no?: string | null
           request_key?: string | null
           updated_at?: string | null
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
           amount?: number
@@ -2476,6 +2484,7 @@ export type Database = {
           contract_id?: string
           created_at?: string | null
           created_by?: string | null
+          credited_to?: string | null
           currency?: string | null
           id?: string
           installment_plan_id?: string | null
@@ -2487,6 +2496,9 @@ export type Database = {
           reference_no?: string | null
           request_key?: string | null
           updated_at?: string | null
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Relationships: [
           {
@@ -4143,6 +4155,15 @@ export type Database = {
       // linked project either, so generated types would not contain it.
       void_payment: {
         Args: { p_payment_id: string; p_reason: string }
+        Returns: Json
+      }
+      // Added by
+      // supabase/migrations/20260817120000_admin_reset_session_revocation.sql, and
+      // hand-declared for the same reason. Callable by service_role only: the two
+      // administrator password-reset paths are the only callers, and a typed entry
+      // here is what keeps a future caller from inventing different argument names.
+      revoke_user_sessions: {
+        Args: { p_user_id: string; p_reason?: string }
         Returns: Json
       }
     }

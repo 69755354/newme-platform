@@ -265,12 +265,26 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24.18.0'
+          cache: npm
+
+      # The two-phase applier below talks to the service container through `pg`,
+      # which is a devDependency; npm ci is what makes it the locked version
+      # rather than whatever a bare `npm install pg` resolves to at run time.
+      - name: Install dependencies
+        run: npm ci
 
       # Runs before anything is replayed: if applied history has been edited,
       # renamed or deleted, every replay result below is measuring a history that
       # production does not have.
       - name: Migration history immutability and forward-only gate
         run: npm run check:migration-history
+
+      # The release manifest is the answer to "which pending migrations does the
+      # candidate need, and which one is deliberately deferred". If it no longer
+      # equals the pending set in the tree, byte for byte, the documented
+      # expand/contract split is describing a release that does not exist.
+      - name: Release phase manifest gate
+        run: npm run check:release-manifest
 
       - name: Install psql client
         run: |
@@ -289,6 +303,19 @@ jobs:
         run: |
           createdb replay
           MODE=branch PGDATABASE=replay bash scripts/replay-migrations.sh
+
+      # The deployment procedure in supabase/preflight/expand-contract-rollback.md
+      # is executed by scripts/db-phase-push.mjs, and not by the Supabase CLI's
+      # bulk push, so the tool is release-critical: it decides what is applied and what
+      # is written into supabase_migrations.schema_migrations. This drill runs the
+      # whole documented procedure against throwaway databases and asserts the
+      # refusals as hard as the successes — including that an interrupted migration
+      # rolls back whole and records nothing, which is the property that makes a
+      # failed phase resumable rather than a half-applied release.
+      - name: Two-phase applier drill (exact-hash phase push and history)
+        run: |
+          createdb phase
+          PGDATABASE=phase bash scripts/phase-tool-drill.sh
 
       # Gating, and not informational. The reviewed revision ran this step with
       # continue-on-error: true, which meant the job was green whatever it

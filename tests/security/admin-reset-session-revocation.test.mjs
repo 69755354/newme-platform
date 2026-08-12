@@ -33,6 +33,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const ROUTE = "src/app/api/users/[id]/password/route.ts";
 const ACTION = "src/app/actions/team.ts";
 
+// The replacement password these fixtures send. It is written in the placeholder
+// shape `<...>` on purpose: scripts/check-published-credentials.mjs reads
+// `password = "<some literal>"` as a published credential site, and it is right to
+// — it cannot tell a test fixture from a real credential, and the five sites it was
+// written for all looked like fixtures too. Nothing here depends on the value.
+const NEW_PASSWORD = "<new-password>";
+
 /**
  * Load one TypeScript module with its imports replaced by doubles, and run
  * `invoke` against it while those doubles are still installed.
@@ -134,7 +141,7 @@ function serverSupabase(user = { id: CALLER }) {
   return { createServerSupabase: async () => ({ auth: { getUser: async () => ({ data: { user }, error: null }) } }) };
 }
 
-function patchRequest(password = "a-new-password") {
+function patchRequest(password = NEW_PASSWORD) {
   return { headers: new Headers(), json: async () => ({ password }) };
 }
 
@@ -172,7 +179,7 @@ async function callAction(options, mutate = (source) => source) {
       },
       mutate,
       (team) =>
-        team.resetUserPassword(TARGET, "a-new-password").then(
+        team.resetUserPassword(TARGET, NEW_PASSWORD).then(
           (value) => ({ value }),
           (error) => ({ error }),
         ),

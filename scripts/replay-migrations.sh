@@ -136,6 +136,18 @@ CONTROL_ACCOUNTING="$ROOT/scripts/control-marker-accounting.mjs"
 # ---------------------------------------------------------------------------
 CONCURRENCY_GATE="$REPLAY_DIR/15_concurrency_two_session.sh"
 
+# ---------------------------------------------------------------------------
+# The same argument for round-4 finding B3. Sequentially, "the same payment
+# request twice is one payment" is a uniqueness rule and the assertion file
+# measures it. Concurrently it is a claim about an index: two overlapping
+# transactions carrying one request key must not both produce a payment, and
+# nothing a single session does can distinguish an index from a
+# SELECT-then-INSERT in application code that happens to work when unraced.
+# Required UNIQUE in MODE=branch and DUPLICATE in MODE=control, so dropping
+# idx_payments_request_key turns the gate red.
+# ---------------------------------------------------------------------------
+REQUEST_KEY_GATE="$REPLAY_DIR/16_concurrency_request_key.sh"
+
 PSQL=(psql --no-psqlrc --quiet --no-align --tuples-only -v ON_ERROR_STOP=1)
 
 # Migration files are applied with --single-transaction, because that is what the
@@ -465,6 +477,15 @@ if [ "$MODE" = control ]; then
   EXPECT=lost bash "$CONCURRENCY_GATE" \
     || fail "the un-remediated floor did not reproduce the lost update recorded as P1-7"
 
+  # And the same for the request key: on the floor there is no index to block on,
+  # so the second submission of one request commits while the first is still open
+  # and the contract ends up with the payment twice. If that ever stops happening,
+  # the branch-mode "unique" result stops being evidence.
+  echo "== two-session request-key idempotency against the un-remediated floor =="
+  [ -f "$REQUEST_KEY_GATE" ] || fail "missing $REQUEST_KEY_GATE"
+  EXPECT=duplicate bash "$REQUEST_KEY_GATE" \
+    || fail "the un-remediated floor did not reproduce the duplicated payment request recorded as B3"
+
   echo "== control OK =="
   exit 0
 fi
@@ -542,6 +563,11 @@ echo "== two-session concurrency (allocate_payment) =="
 [ -f "$CONCURRENCY_GATE" ] || fail "missing $CONCURRENCY_GATE"
 EXPECT=consistent bash "$CONCURRENCY_GATE" \
   || fail "concurrent allocations to one installment plan are not serialized"
+
+echo "== two-session request-key idempotency (payments) =="
+[ -f "$REQUEST_KEY_GATE" ] || fail "missing $REQUEST_KEY_GATE"
+EXPECT=unique bash "$REQUEST_KEY_GATE" \
+  || fail "two concurrent submissions of one payment request are not collapsed to one payment"
 
 # ---------------------------------------------------------------------------
 # Down migration, then the state it leaves behind.

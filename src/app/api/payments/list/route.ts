@@ -1,7 +1,6 @@
 // RBAC: user (authenticated)
 import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
-import { getCached, setCache } from "@/lib/api-cache"
 
 export async function GET(request: Request) {
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
@@ -29,10 +28,6 @@ export async function GET(request: Request) {
   const role = profile.role
   const userId = user.id
 
-  const cacheKey = `payments:list:${role}:${userId}`
-  const cached = getCached(cacheKey)
-  if (cached) return NextResponse.json(cached)
-
   const isSales = role === "sales"
 
   const [paymentsResult, contractsResult] = await Promise.all([
@@ -51,6 +46,10 @@ export async function GET(request: Request) {
     })(),
   ])
 
+  if (paymentsResult.error || contractsResult.error) {
+    return NextResponse.json({ error: "Failed to fetch payments" }, { status: 500 })
+  }
+
   const responseData = {
     payments: (paymentsResult.data ?? []) as any[],
     contracts: (contractsResult.data ?? []) as any[],
@@ -58,6 +57,7 @@ export async function GET(request: Request) {
     userId,
   }
 
-  setCache(cacheKey, responseData, 30)
-  return NextResponse.json(responseData)
+  return NextResponse.json(responseData, {
+    headers: { "Cache-Control": "private, no-store, max-age=0, must-revalidate" },
+  })
 }

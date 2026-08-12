@@ -4,6 +4,11 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import {
+  PAYMENT_PAGE_ROLES,
+  PAYMENT_UI_METHODS,
+  paymentAmountMinorUnits,
+} from "@/lib/payment-idempotency.mjs";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -100,7 +105,7 @@ interface InstallmentPlan {
 const SETTLEMENT_ROLES = ["admin", "boss", "finance"];
 
 export default function PaymentsPage() {
-  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss", "finance", "operator"]);
+  const { loading: roleLoading, blocked } = useRequireRole([...PAYMENT_PAGE_ROLES]);
   const supabase = createClient();
   const { t } = useLanguage();
 
@@ -165,24 +170,23 @@ export default function PaymentsPage() {
 
   // Two different rules, and conflating them was round-3 finding P1-9.
   //
-  // `isPrivileged` is the RECORDING and VISIBILITY rule: these roles may record a
-  // payment against any contract and see every payment. `canSettle` is the MONEY
+  // The page role list is the RECORDING and VISIBILITY rule. `canSettle` is the MONEY
   // rule: confirming a payment and allocating it to installments is admin, boss or
   // finance only. That is what src/app/actions/payments.ts enforces and what
   // confirm_payment() / allocate_payment() enforce since
   // supabase/migrations/20260814000000_l0_round3_authorization_and_integrity.sql.
-  // The buttons used to be gated on `isPrivileged`, so an operator was offered a
+  // The buttons used to be gated on the broader recording rule, so an operator was offered a
   // Confirm button the action rejected — and, before the migration narrowed the
   // routine's role list, an operator calling the RPC directly succeeded.
-  const isPrivileged = role && ["admin", "boss", "finance", "operator"].includes(role);
   const canSettle = role != null && SETTLEMENT_ROLES.includes(role);
 
   const methodLabel = (m: string) => {
     const map: Record<string, string> = {
       bank_transfer: t("payments.methodBankTransfer"),
       cash: t("payments.methodCash"),
-      check: t("payments.methodCheck"),
-      online: t("payments.methodOnline"),
+      cheque: t("payments.methodCheck"),
+      card: "Card",
+      other: "Other",
     };
     return map[m] || m;
   };
@@ -234,8 +238,8 @@ export default function PaymentsPage() {
     e.preventDefault();
     setRecSaving(true);
 
-    const amount = parseFloat(recAmount);
-    if (isNaN(amount) || amount <= 0) {
+    const amountMinor = paymentAmountMinorUnits(recAmount);
+    if (amountMinor === null) {
       toast.error(t("payments.validAmount"));
       setRecSaving(false);
       return;
@@ -250,7 +254,7 @@ export default function PaymentsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contract_id: recContractId,
-          amount,
+          amount: amountMinor / 100,
           payment_date: recDate,
           payment_method: recMethod,
           reference_no: recRefNo || null,
@@ -639,10 +643,11 @@ export default function PaymentsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="bank_transfer">{t("payments.methodBankTransfer")}</SelectItem>
-                  <SelectItem value="cash">{t("payments.methodCash")}</SelectItem>
-                  <SelectItem value="check">{t("payments.methodCheck")}</SelectItem>
-                  <SelectItem value="online">{t("payments.methodOnline")}</SelectItem>
+                  {PAYMENT_UI_METHODS.map((method) => (
+                    <SelectItem key={method} value={method}>
+                      {methodLabel(method)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

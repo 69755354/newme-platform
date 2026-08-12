@@ -22,7 +22,20 @@ export const PAYMENT_IDEMPOTENCY_KEY_PATTERN =
  * only, enforced by confirm_payment() and allocate_payment(). Conflating the two
  * lists was round-3 finding P1-9, so they stay separate lists in separate places.
  */
-export const PAYMENT_RECORDING_ROLES = ["admin", "boss", "finance", "operator"];
+export const PAYMENT_RECORDING_ROLES = Object.freeze(["admin", "boss", "finance", "operator"]);
+
+/** Every role that may reach the dashboard; sales is narrowed to owned contracts. */
+export const PAYMENT_PAGE_ROLES = Object.freeze([...PAYMENT_RECORDING_ROLES, "sales"]);
+
+/** The exact values accepted by payments_payment_method_check in PostgreSQL. */
+export const PAYMENT_METHODS = Object.freeze(["bank_transfer", "cash", "cheque", "card", "other"]);
+
+/** Methods offered by the current form. Every member must also be a DB value. */
+export const PAYMENT_UI_METHODS = PAYMENT_METHODS;
+
+export function isPaymentMethod(value) {
+  return typeof value === "string" && PAYMENT_METHODS.includes(value);
+}
 
 /**
  * The key a recording request carries, or null if it carries none we can use.
@@ -34,9 +47,10 @@ export const PAYMENT_RECORDING_ROLES = ["admin", "boss", "finance", "operator"];
  * closes, not a fix for it.
  */
 export function readIdempotencyKey({ body, headerValue } = {}) {
-  const fromBody = body && typeof body.idempotencyKey === "string" ? body.idempotencyKey : "";
-  const fromHeader = typeof headerValue === "string" ? headerValue : "";
-  const candidate = (fromBody || fromHeader).trim();
+  const fromBody = body && typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
+  const fromHeader = typeof headerValue === "string" ? headerValue.trim() : "";
+  if (fromBody && fromHeader && fromBody.toLowerCase() !== fromHeader.toLowerCase()) return null;
+  const candidate = (fromBody || fromHeader).toLowerCase();
   return PAYMENT_IDEMPOTENCY_KEY_PATTERN.test(candidate) ? candidate : null;
 }
 
@@ -47,15 +61,43 @@ export function readIdempotencyKey({ body, headerValue } = {}) {
  * same payment. Returns null for anything that is not a finite number, so a
  * malformed amount can never compare equal to a stored one.
  */
-function minorUnits(value) {
-  const asNumber = typeof value === "string" ? Number(value) : value;
-  if (typeof asNumber !== "number" || !Number.isFinite(asNumber)) return null;
-  return Math.round(asNumber * 100);
+export function paymentAmountMinorUnits(value) {
+  let minor;
+  if (typeof value === "string") {
+    const match = /^(\d{1,10})(?:\.(\d{1,2}))?$/.exec(value.trim());
+    if (!match) return null;
+    const whole = BigInt(match[1]);
+    const fraction = BigInt((match[2] ?? "").padEnd(2, "0"));
+    minor = whole * 100n + fraction;
+  } else if (typeof value === "number" && Number.isFinite(value)) {
+    const scaled = value * 100;
+    const rounded = Math.round(scaled);
+    const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4;
+    if (Math.abs(scaled - rounded) > tolerance) return null;
+    minor = BigInt(rounded);
+  } else {
+    return null;
+  }
+
+  // public.payments.amount is numeric(12,2): ten whole digits and two decimals.
+  if (minor <= 0n || minor > 999_999_999_999n) return null;
+  return Number(minor);
 }
 
 /** Empty and absent are the same thing here, because the route stores `|| null`. */
 function orNull(value) {
   return value === undefined || value === null || value === "" ? null : value;
+}
+
+function isCalendarDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function optionalText(value) {
+  if (value === undefined || value === null || value === "") return { ok: true, value: null };
+  return typeof value === "string" ? { ok: true, value } : { ok: false, value: null };
 }
 
 /**
@@ -71,11 +113,55 @@ export function paymentIntentOf(source) {
   const row = source ?? {};
   return {
     contract_id: orNull(row.contract_id),
-    amount: minorUnits(row.amount),
+    amount: paymentAmountMinorUnits(row.amount),
     payment_date: typeof row.payment_date === "string" ? row.payment_date.slice(0, 10) : null,
     payment_method: orNull(row.payment_method),
     reference_no: orNull(row.reference_no),
     notes: orNull(row.notes),
+  };
+}
+
+/**
+ * Validate and canonicalise the caller-owned fields before touching PostgreSQL.
+ * In particular, values such as 1.005 are refused instead of being rounded by
+ * numeric(12,2) after the idempotency comparison has remembered a different
+ * number.
+ */
+export function validatePaymentRecordInput(source) {
+  const row = source ?? {};
+  const contractId = typeof row.contract_id === "string" ? row.contract_id.trim() : "";
+  if (!contractId) return { ok: false, error: "contract_id is required" };
+
+  const amountMinor = typeof row.amount === "number" ? paymentAmountMinorUnits(row.amount) : null;
+  if (amountMinor === null) {
+    return { ok: false, error: "Amount must be positive and have at most two decimal places" };
+  }
+
+  const paymentDate = typeof row.payment_date === "string" ? row.payment_date.trim() : "";
+  if (!isCalendarDate(paymentDate)) {
+    return { ok: false, error: "payment_date must be a valid YYYY-MM-DD date" };
+  }
+
+  if (!isPaymentMethod(row.payment_method)) {
+    return { ok: false, error: "Unsupported payment_method" };
+  }
+
+  const reference = optionalText(row.reference_no);
+  const notes = optionalText(row.notes);
+  if (!reference.ok || !notes.ok) {
+    return { ok: false, error: "reference_no and notes must be text when provided" };
+  }
+
+  return {
+    ok: true,
+    intent: {
+      contract_id: contractId,
+      amount: amountMinor / 100,
+      payment_date: paymentDate,
+      payment_method: row.payment_method,
+      reference_no: reference.value,
+      notes: notes.value,
+    },
   };
 }
 
@@ -130,6 +216,52 @@ export function resolveSpentKey({ stored, requested }) {
   return paymentIntentsMatch(stored, requested)
     ? { outcome: "replay", status: 200, code: null }
     : { outcome: "mismatch", status: 409, code: "IDEMPOTENCY_KEY_REUSED" };
+}
+
+/**
+ * Execute the insert/read-back idempotency protocol. Keeping the database calls
+ * here lets tests run the same query construction and result mapping used by the
+ * route instead of only grepping the route source.
+ */
+export async function recordPaymentWithKey({ supabase, creatorId, requestKey, intent }) {
+  const { data: inserted, error: insertError } = await supabase
+    .from("payments")
+    .insert({
+      ...intent,
+      created_by: creatorId,
+      confirmed: false,
+      request_key: requestKey,
+    })
+    .select("id, amount")
+    .single();
+
+  if (!insertError) {
+    return { outcome: "created", status: 201, payment: inserted, code: null, error: null };
+  }
+
+  if (!isRequestKeyConflict(insertError)) {
+    return { outcome: "failed", status: 500, payment: null, code: null, error: insertError };
+  }
+
+  const { data: existing, error: lookupError } = await supabase
+    .from("payments")
+    .select("id, amount, contract_id, payment_date, payment_method, reference_no, notes")
+    .eq("created_by", creatorId)
+    .eq("request_key", requestKey)
+    .maybeSingle();
+
+  if (lookupError) {
+    return {
+      outcome: "opaque",
+      status: 409,
+      payment: null,
+      code: "DUPLICATE_REQUEST",
+      error: lookupError,
+    };
+  }
+
+  const verdict = resolveSpentKey({ stored: existing, requested: intent });
+  return { ...verdict, payment: existing ?? null, error: null };
 }
 
 /**

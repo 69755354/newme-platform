@@ -26,18 +26,27 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  PAYMENT_METHODS,
+  PAYMENT_PAGE_ROLES,
   PAYMENT_RECORDING_ROLES,
+  PAYMENT_UI_METHODS,
   canRecordPayment,
   isRequestKeyConflict,
+  paymentAmountMinorUnits,
   paymentIntentsMatch,
   readIdempotencyKey,
+  recordPaymentWithKey,
   resolveSpentKey,
+  validatePaymentRecordInput,
 } from "../../src/lib/payment-idempotency.mjs";
 
 const ROUTE = "src/app/api/payments/route.ts";
+const LIST_ROUTE = "src/app/api/payments/list/route.ts";
 const PAGE = "src/app/(dashboard)/payments/page.tsx";
 const ACTIONS = "src/app/actions/payments.ts";
+const WRITER = "src/lib/payment-idempotency.mjs";
 const MIGRATION = "supabase/migrations/20260813100000_payment_request_key_idempotency.sql";
+const PAYMENT_SCHEMA = "supabase/migrations/20260605000000_newme_crm_v22_complete.sql";
 
 const read = (file) => fs.readFileSync(file, "utf8");
 
@@ -130,12 +139,13 @@ test("the detector does not flag legitimate neighbours", () => {
 
 // ── Who inserts payments ─────────────────────────────────────────────────────
 
-test("the canonical route is the only place under src/ that inserts a payment", () => {
+test("the route delegates to the only payment insert implementation under src/", () => {
   const offenders = sourceFilesUnder("src")
-    .filter((file) => file !== ROUTE)
+    .filter((file) => file !== WRITER)
     .filter((file) => paymentInserts(code(read(file))).length > 0);
-  assert.deepEqual(offenders, [], `payments inserted outside ${ROUTE}`);
-  assert.equal(paymentInserts(code(read(ROUTE))).length, 1);
+  assert.deepEqual(offenders, [], `payments inserted outside ${WRITER}`);
+  assert.equal(paymentInserts(code(read(WRITER))).length, 1);
+  assert.match(code(read(ROUTE)), /recordPaymentWithKey\(\{/);
 });
 
 test("createPayment is gone, not merely unused", () => {
@@ -180,6 +190,17 @@ test("a key is read from the body or the header, and nothing else is accepted", 
   assert.equal(readIdempotencyKey({ body: { idempotencyKey: KEY } }), KEY);
   assert.equal(readIdempotencyKey({ body: {}, headerValue: KEY }), KEY);
   assert.equal(readIdempotencyKey({ body: { idempotencyKey: ` ${KEY} ` } }), KEY);
+  assert.equal(
+    readIdempotencyKey({ body: { idempotencyKey: KEY.toUpperCase() }, headerValue: KEY }),
+    KEY,
+  );
+  assert.equal(
+    readIdempotencyKey({
+      body: { idempotencyKey: KEY },
+      headerValue: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    }),
+    null,
+  );
 
   for (const bad of [
     { body: {} },
@@ -245,11 +266,54 @@ test("an amount that is not a finite number never compares equal", () => {
   }
 });
 
-test("amounts are compared as money, not as floats", () => {
-  // 0.1 + 0.2 === 0.30000000000000004. Comparing raw floats would refuse this
-  // retry and force the caller to mint a new key for a payment already recorded.
-  assert.equal(paymentIntentsMatch({ ...STORED, amount: 0.1 + 0.2 }, { ...STORED, amount: 0.3 }), true);
+test("amounts use an exact two-decimal contract before PostgreSQL can round them", () => {
+  assert.equal(paymentAmountMinorUnits("4321.00"), 432100);
+  assert.equal(paymentAmountMinorUnits(0.3), 30);
+  assert.equal(paymentAmountMinorUnits(0.1 + 0.2), 30);
+  assert.equal(paymentIntentsMatch({ ...STORED, amount: "4321.00" }, STORED), true);
   assert.equal(paymentIntentsMatch({ ...STORED, amount: 0.3 }, { ...STORED, amount: 0.31 }), false);
+  for (const invalid of [1.005, "1.005", 0, -1, "10000000000.00"]) {
+    assert.equal(paymentAmountMinorUnits(invalid), null, `accepted ${invalid}`);
+  }
+});
+
+test("request validation rejects database rounding and unsupported payment methods", () => {
+  const base = {
+    contract_id: STORED.contract_id,
+    amount: 1.01,
+    payment_date: STORED.payment_date,
+    payment_method: "bank_transfer",
+  };
+  assert.deepEqual(validatePaymentRecordInput(base), {
+    ok: true,
+    intent: { ...base, reference_no: null, notes: null },
+  });
+  for (const amount of [1.005, "1.005", 0, -1]) {
+    assert.equal(validatePaymentRecordInput({ ...base, amount }).ok, false);
+  }
+  for (const payment_method of ["check", "online", "wire", ""]) {
+    assert.equal(validatePaymentRecordInput({ ...base, payment_method }).ok, false);
+  }
+  for (const invalid of [
+    { payment_date: "2026-02-30" },
+    { reference_no: 123 },
+    { notes: { text: "not text" } },
+  ]) {
+    assert.equal(validatePaymentRecordInput({ ...base, ...invalid }).ok, false);
+  }
+});
+
+test("every method offered by the UI is a value the API and database accept", () => {
+  const schema = read(PAYMENT_SCHEMA);
+  const check = /payment_method\s+text\s+check\s*\(payment_method\s+in\s*\(([^)]*)\)\)/i.exec(schema);
+  assert.ok(check, "payments_payment_method_check is missing from the schema migration");
+  const databaseMethods = [...check[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
+  assert.deepEqual(PAYMENT_METHODS, databaseMethods);
+  assert.deepEqual(PAYMENT_UI_METHODS, PAYMENT_METHODS);
+  assert.equal(PAYMENT_UI_METHODS.every((method) => PAYMENT_METHODS.includes(method)), true);
+  const page = code(read(PAGE));
+  assert.match(page, /PAYMENT_UI_METHODS\.map\(/);
+  assert.doesNotMatch(page, /value=["'](?:check|online)["']/);
 });
 
 test("a spent key returns the stored payment, refuses a different one, and stays quiet about one it cannot read", () => {
@@ -324,21 +388,34 @@ test("recording is not settling", () => {
   assert.doesNotMatch(code(read(ACTIONS)), /allowedRoles = \[[^\]]*operator/);
 });
 
+test("the dashboard admits every recording role plus sales, while settlement stays narrower", () => {
+  assert.deepEqual(PAYMENT_PAGE_ROLES, ["admin", "boss", "finance", "operator", "sales"]);
+  const page = code(read(PAGE));
+  assert.match(page, /useRequireRole\(\[\.\.\.PAYMENT_PAGE_ROLES\]\)/);
+  assert.match(page, /const SETTLEMENT_ROLES = \["admin", "boss", "finance"\]/);
+});
+
 // ── The route is wired to the functions that were just exercised ─────────────
 
-test("the route decides a spent key by comparing, and can read what it compares", () => {
+test("the route executes validation and the tested insert/read-back protocol", () => {
   const route = code(read(ROUTE));
-  assert.match(route, /isRequestKeyConflict\(insertErr\)/);
-  assert.match(route, /resolveSpentKey\(\{ stored: existing, requested \}\)/);
+  const writer = code(read(WRITER));
+  assert.match(route, /validatePaymentRecordInput\(body\)/);
+  assert.match(route, /recordPaymentWithKey\(\{/);
   assert.match(route, /canRecordPayment\(\{/);
   assert.match(route, /readIdempotencyKey\(\{/);
-  // The comparison is worthless if the read-back does not carry the fields it
-  // compares; `select("id, amount")` alone would call every retry a match.
-  const lookup = route.slice(route.indexOf("isRequestKeyConflict(insertErr)"));
+  assert.match(writer, /isRequestKeyConflict\(insertError\)/);
+  assert.match(writer, /resolveSpentKey\(\{ stored: existing, requested: intent \}\)/);
+  const lookup = writer.slice(writer.indexOf("isRequestKeyConflict(insertError)"));
   for (const column of ["contract_id", "payment_date", "payment_method", "reference_no", "notes"]) {
     assert.match(lookup, new RegExp(`select\\("[^"]*${column}`), `read-back omits ${column}`);
   }
-  assert.match(route, /request_key: requestKey/);
+  assert.match(writer, /request_key: requestKey/);
+});
+
+test("the dashboard list is read-after-write safe because it does not cache money rows", () => {
+  const listRoute = code(read(LIST_ROUTE));
+  assert.doesNotMatch(listRoute, /getCached|setCache|api-cache/);
 });
 
 // ── The schema the route relies on ───────────────────────────────────────────

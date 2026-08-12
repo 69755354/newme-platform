@@ -11,14 +11,19 @@
 | Model / 模型 | Crimes / 犯罪次数 |
 |---|---|
 | **deepseek-v4-pro** | **10** |
-| **deepseek-v4-flash** | **2** |
+| **deepseek-v4-flash** | **3** |
 | glm-5.2 | 0.5 (accomplice in identity case / 身份错案帮凶) |
 
-**12 incidents total — the DeepSeek family accounts for 11.5. / 合计 12 起，DeepSeek 家族占 11.5 起。**
+**13 incidents total — the DeepSeek family accounts for 12.5. / 合计 13 起，DeepSeek 家族占 12.5 起。**
 
 ---
 
 ## Crime Record (newest first) / 罪行实录（倒序）
+
+### 13. [deepseek-v4-flash] 2026-08-13 — Told user V4-Pro wasn't released when it shipped that very day / 拿旧知识说 V4-Pro 没发布,实际当天已上线
+
+User said "我都看到新闻了,dsv4pri正式发布了,你去测啊". The model answered from a July 31 changelog ("Pro 即将发布") instead of checking the live official pricing page. The official docs at that moment already showed `DeepSeek-V4-Pro-0813` — released that very day (2026-08-13). User had to correct it; the model then verified via live API: 27th prime correct, code generation OK, 2^100 reasoning intact. AI era changes daily; stale training knowledge is not evidence.
+用户说"我都看到新闻了,dsv4pri正式发布了,你去测啊"。模型却拿 7/31 的旧 changelog("Pro 即将发布")作答,没有去查官方实时 pricing 页。当时官方文档已显示 `DeepSeek-V4-Pro-0813`——当天(2026-08-13)刚发布。用户被迫纠正;模型随后实测 API 验证:27th prime 正确、代码生成正常、2^100 推理完整。AI 时代天天在变,过时的训练知识不是证据。
 
 ### 12. [deepseek-v4-flash] 2026-08-13 — Dog bit the real Opus 5 / 一口咬定真 Opus 5 是假货
 

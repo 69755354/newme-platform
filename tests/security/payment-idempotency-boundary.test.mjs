@@ -35,7 +35,6 @@ import {
   paymentAmountMinorUnits,
   paymentIntentsMatch,
   readIdempotencyKey,
-  recordPaymentWithKey,
   resolveSpentKey,
   validatePaymentRecordInput,
 } from "../../src/lib/payment-idempotency.mjs";
@@ -44,7 +43,7 @@ const ROUTE = "src/app/api/payments/route.ts";
 const LIST_ROUTE = "src/app/api/payments/list/route.ts";
 const PAGE = "src/app/(dashboard)/payments/page.tsx";
 const ACTIONS = "src/app/actions/payments.ts";
-const WRITER = "src/lib/payment-idempotency.mjs";
+const WRITER = "src/lib/payment-idempotency-server.mjs";
 const MIGRATION = "supabase/migrations/20260813100000_payment_request_key_idempotency.sql";
 const PAYMENT_SCHEMA = "supabase/migrations/20260605000000_newme_crm_v22_complete.sql";
 

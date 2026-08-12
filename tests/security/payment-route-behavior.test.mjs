@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as paymentBoundary from "../../src/lib/payment-idempotency.mjs";
+import * as paymentServer from "../../src/lib/payment-idempotency-server.mjs";
 
 const require = createRequire(import.meta.url);
 const Module = require("node:module");
@@ -181,6 +182,7 @@ function loadRoutes(state) {
     "@/lib/supabase-server": { createServerSupabase: async () => supabase },
     "@/lib/logger": { logger, genReqId: () => "req-1" },
     "@/lib/payment-idempotency.mjs": paymentBoundary,
+    "@/lib/payment-idempotency-server.mjs": paymentServer,
   };
   return {
     write: loadTypeScriptModule("src/app/api/payments/route.ts", commonMocks),

@@ -5,9 +5,9 @@ import { logger, genReqId } from "@/lib/logger";
 import {
   canRecordPayment,
   readIdempotencyKey,
-  recordPaymentWithKey,
   validatePaymentRecordInput,
 } from "@/lib/payment-idempotency.mjs";
+import { recordPaymentWithKey } from "@/lib/payment-idempotency-server.mjs";
 
 /**
  * POST /api/payments

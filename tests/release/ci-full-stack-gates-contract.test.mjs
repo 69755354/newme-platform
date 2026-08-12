@@ -47,6 +47,62 @@ test("ordinary CI and release-final taskboard modes are distinct", async () => {
   assert.match(shell, /exec node "\$SCRIPT_DIR\/check-taskboard\.mjs" "\$@"/);
 });
 
+test("the published-credential gate is wired into CI with its negative regression", async () => {
+  const workflow = await readFile(new URL(".github/workflows/ci.yml", ROOT), "utf8");
+  const packageJson = JSON.parse(await readFile(new URL("package.json", ROOT), "utf8"));
+
+  assert.equal(
+    packageJson.scripts["check:published-credentials"],
+    "node scripts/check-published-credentials.mjs",
+  );
+  // Part of the aggregate too, so `npm run check:security` cannot pass a tree the
+  // dedicated gate would fail.
+  assert.match(packageJson.scripts["check:security"], /npm run check:published-credentials/);
+
+  assert.match(workflow, /- name: Published credential gate\s*\n        run: npm run check:published-credentials/);
+  // The gate alone proves nothing — it exits 0 on a tree it has no rule for. The
+  // regression is what makes a green gate mean something, so CI must run both.
+  assert.match(
+    workflow,
+    /- name: Published credential gate negative regression\s*\n        run: node --test tests\/security\/published-credentials\.test\.mjs tests\/security\/dev-identity-bootstrap\.test\.mjs/,
+  );
+
+  // Both steps run inside the job whose identity production requires.
+  const jobs = jobBlocks(workflow);
+  const validate = jobs.find((job) => job.id === "validate");
+  assert.ok(validate, "ci.yml must define the validate job");
+  assert.match(validate.body, /npm run check:published-credentials/);
+
+  // And the gate never prints a value, in any of its output paths. Checked as a
+  // property of the interpolations rather than of the words: the remediation text
+  // says "redact the value", which is prose about a value and not one.
+  const gate = await readFile(new URL("scripts/check-published-credentials.mjs", ROOT), "utf8");
+  assert.match(gate, /Values are deliberately not printed/);
+  for (const printer of gate.matchAll(/console\.(?:log|error)\((.*)$/gm)) {
+    for (const interpolation of printer[1].matchAll(/\$\{([^}]*)\}/g)) {
+      assert.doesNotMatch(
+        interpolation[1],
+        /\b(value|secret|password|passwd|token|credential|cell|line\[|match)\b/i,
+        `a gate output line may interpolate the location and the rule, never the matched text: ${printer[1]}`,
+      );
+    }
+  }
+  // The finding shape is the structural guarantee behind that: a finding cannot
+  // carry a value because it has nowhere to put one.
+  const { auditSource, auditText } = await import("../../scripts/check-published-credentials.mjs");
+  const shapes = [
+    ...auditSource('const DEV_PASSWORD = "not-a-real-value";'),
+    // Deliberately not an address in the first column: the pair rule would then
+    // report this fixture too, and one fixture should exercise one rule.
+    ...auditText(["| Account | Password |", "|---|---|", "| an-account | not-a-real-value |"].join("\n")),
+  ];
+  assert.ok(shapes.length >= 2);
+  for (const finding of shapes) {
+    assert.deepEqual(Object.keys(finding).sort(), ["detail", "line", "rule"]);
+    assert.doesNotMatch(finding.detail, /not-a-real-value/);
+  }
+});
+
 test("migration replay job gates on a negative control and never reaches production", async () => {
   const workflow = await readFile(new URL(".github/workflows/ci.yml", ROOT), "utf8");
   const start = workflow.indexOf("  migration-replay:");

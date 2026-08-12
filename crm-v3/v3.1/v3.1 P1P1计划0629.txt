@@ -4906,7 +4906,7 @@ Phase 1.5 — 非核心表 RLS 清理（2026-07-01）
 
 【生产数据库状态】
 - Supabase project: vfopmpxlhwzpxqegayew
-- DB 密码: QAZqaz123@ding（含@，连接时需 URL 编码或引号）
+- DB 密码: [REDACTED-ROTATE-ME]（含@，连接时需 URL 编码或引号）
 - 连接方式: supabase db query --linked（cli）或 PGPASSWORD 直连
 - 7 个 migration 全部已推送，36张表 RLS 合规，FOR ALL = 0
 
@@ -5083,7 +5083,7 @@ BUILD_ID: HPRWHGYxbof1NJ_xTdGlR (旧) → 6rXVcdEAiHfV2_pneoln0 (新 webpack)
 
 #### C.3 2026-07-01 14:00 — P0-1 SQL migration 验证
 档位: 🔴 双审（DB DDL，但 SQL 已通过完整 CC → Codex 1 → Hermes 2 审）
-操作: supabase migration list --linked --password QAZqaz123@ding + verify_p01.py
+操作: supabase migration list --linked --password [REDACTED-ROTATE-ME] + verify_p01.py
 验证结果:
   - supabase CLI 返 "Remote database is up to date"
   - migration 历史含 20260701130000

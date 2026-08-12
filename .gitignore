@@ -1,6 +1,10 @@
 # Build
 .next/
 .next.bak/
+# The directory, not just the timestamped siblings below: `.next.backup.*` never
+# matched `.next.backup/`, which is how 1634 build artifacts — two of them source
+# maps carrying a plaintext password — became tracked and stayed tracked.
+.next.backup/
 node_modules/
 
 # Logs

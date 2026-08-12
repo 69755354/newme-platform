@@ -59,6 +59,18 @@ jobs:
       - name: E2E secret gate negative regression
         run: node --test tests/security/e2e-secret-gate.test.mjs
 
+      # Round-4 A0. The gate reads `git ls-files`, so it needs the checkout above
+      # and nothing else. It reports paths and rule names and never values: a gate
+      # that printed what it found would republish the credential into this log.
+      - name: Published credential gate
+        run: npm run check:published-credentials
+
+      # And the negative half, because a gate that matches nothing also exits 0.
+      # These tests reconstruct the shape of every site that really was published
+      # in this repository and require rejection.
+      - name: Published credential gate negative regression
+        run: node --test tests/security/published-credentials.test.mjs tests/security/dev-identity-bootstrap.test.mjs
+
       - name: Taskboard gate
         run: npm run check:taskboard
 

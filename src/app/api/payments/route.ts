@@ -2,10 +2,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import {
+  canRecordPayment,
+  isRequestKeyConflict,
+  readIdempotencyKey,
+  resolveSpentKey,
+} from "@/lib/payment-idempotency.mjs";
 
 /**
  * POST /api/payments
- * Records a new payment against a contract.
+ * Records a new payment against a contract. This is the only way a payment is
+ * recorded; the payments dashboard posts here.
+ *
+ * Requires an idempotency key. It is stored as payments.request_key, which carries
+ * a unique index on (created_by, request_key): a double-submitted form or a
+ * retried fetch records one payment, and the retry is answered with the payment
+ * the first attempt created rather than a second one. The key has to come from the
+ * caller — one generated here would be new on every attempt and would make every
+ * retry a fresh payment, which is the defect this closes, not a fix for it.
+ *
+ * The index raises the same 23505 whether the retry is honest or the key has been
+ * reused for a different payment, so this route decides between them by comparing
+ * the request against the payment already stored under that key.
  */
 export async function POST(request: NextRequest) {
   const request_id = genReqId();
@@ -37,6 +55,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "payment_method is required" }, { status: 400 });
     }
 
+    const requestKey = readIdempotencyKey({
+      body,
+      headerValue: request.headers.get("idempotency-key"),
+    });
+    if (!requestKey) {
+      return NextResponse.json(
+        {
+          error:
+            "A valid idempotencyKey (UUID) is required, so a resubmitted request records one payment instead of two",
+          code: "INVALID_REQUEST",
+        },
+        { status: 400 },
+      );
+    }
+
     // Verify the contract exists
     const { data: contract, error: contractErr } = await supabase
       .from("contracts")
@@ -55,14 +88,15 @@ export async function POST(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    if (!profile?.role) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-    const userRole = profile.role;
-    const isPrivileged = ["admin", "boss", "finance", "operator"].includes(userRole);
-
-    // Sales can only record payments against their own contracts
-    if (!isPrivileged && contract.sales_id !== user.id) {
+    // A role is required, the recording roles may record against any contract,
+    // and anyone else may record only against a contract they own.
+    if (
+      !canRecordPayment({
+        role: profile?.role,
+        contractSalesId: contract.sales_id,
+        userId: user.id,
+      })
+    ) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -77,11 +111,66 @@ export async function POST(request: NextRequest) {
         reference_no: reference_no || null,
         confirmed: false,
         notes: notes || null,
+        request_key: requestKey,
       })
       .select("id, amount")
       .single();
 
     if (insertErr) {
+      // 23505 on the request-key index is not, by itself, a failure: this key has
+      // already recorded a payment. Whether that payment is the one being asked
+      // for is a different question, and the index answers with the same sqlstate
+      // either way — so read the stored payment and compare.
+      if (isRequestKeyConflict(insertErr)) {
+        const { data: existing } = await supabase
+          .from("payments")
+          .select("id, amount, contract_id, payment_date, payment_method, reference_no, notes")
+          .eq("created_by", user.id)
+          .eq("request_key", requestKey)
+          .maybeSingle();
+
+        const requested = { contract_id, amount, payment_date, payment_method, reference_no, notes };
+        const verdict = resolveSpentKey({ stored: existing, requested });
+
+        if (verdict.outcome === "replay" && existing) {
+          logger.info(
+            { request_id, operation: "payment_create", user_id: user.id, contract_id, payment_id: existing.id },
+            "[API Payments] Idempotent replay: returning the payment the first attempt recorded",
+          );
+          return NextResponse.json(
+            { id: existing.id, amount: existing.amount, idempotent_replay: true },
+            { status: verdict.status },
+          );
+        }
+
+        if (verdict.outcome === "mismatch") {
+          // Recording it would be a second payment under a key that promised
+          // there would be only one; answering with the stored payment would tell
+          // the caller a payment it never asked for had been recorded. Neither is
+          // acceptable, so the caller has to mint a new key and decide.
+          logger.warn(
+            { request_id, operation: "payment_create", user_id: user.id, contract_id },
+            "[API Payments] Idempotency key reused for a different payment; refused",
+          );
+          return NextResponse.json(
+            {
+              error:
+                "This idempotency key already recorded a different payment. Use a new key to record a new payment.",
+              code: verdict.code,
+            },
+            { status: verdict.status },
+          );
+        }
+
+        // The row exists but this session cannot read it — a key reused across
+        // creators, or a contract this caller may write to but not read back.
+        // Refusing is right, and saying which of the two it is would leak the row.
+        return NextResponse.json(
+          { error: "This request has already been recorded", code: verdict.code },
+          { status: verdict.status },
+        );
+      }
+
       logger.error(
         {
           err: insertErr,

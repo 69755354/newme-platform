@@ -47,7 +47,7 @@ import {
 import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
-import { createPayment, confirmPayment, allocatePayment as allocatePaymentAction } from "@/app/actions/payments";
+import { confirmPayment, allocatePayment as allocatePaymentAction } from "@/app/actions/payments";
 import { fmtAED } from "@/shared/utils/format";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -124,6 +124,9 @@ export default function PaymentsPage() {
   const [recRefNo, setRecRefNo] = useState("");
   const [recNotes, setRecNotes] = useState("");
   const [recSaving, setRecSaving] = useState(false);
+  // The idempotency key for the payment being recorded. Minted once per intent,
+  // when the dialog opens — see openRecordDialog().
+  const [recRequestKey, setRecRequestKey] = useState("");
 
   // Confirm action state
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -219,6 +222,11 @@ export default function PaymentsPage() {
     setRecMethod("bank_transfer");
     setRecRefNo("");
     setRecNotes("");
+    // One key per intent, minted here rather than per submit. A key minted inside
+    // handleRecordPayment would be new on every attempt, so a double-clicked
+    // button or a retried request would record two payments — which is the whole
+    // defect. Opening the dialog again is a new intent and gets a new key.
+    setRecRequestKey(crypto.randomUUID());
     setRecordDialogOpen(true);
   }
 
@@ -234,20 +242,34 @@ export default function PaymentsPage() {
     }
 
     try {
-      await createPayment({
-        contract_id: recContractId,
-        amount,
-        payment_date: recDate,
-        payment_method: recMethod,
-        reference_no: recRefNo || null,
-        notes: recNotes || null,
+      // POST /api/payments is the canonical recording boundary: it is where the
+      // idempotency key becomes payments.request_key. The server action this
+      // replaced inserted directly, with no key at all.
+      const res = await fetch("/api/payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contract_id: recContractId,
+          amount,
+          payment_date: recDate,
+          payment_method: recMethod,
+          reference_no: recRefNo || null,
+          notes: recNotes || null,
+          idempotencyKey: recRequestKey,
+        }),
       });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || t("payments.recordFailed"));
+        return;
+      }
 
       toast.success(t("payments.saved"));
       setRecordDialogOpen(false);
       await fetchData();
-    } catch (err: any) {
-      toast.error(err.message || t("payments.recordFailed"));
+    } catch {
+      toast.error(t("login.networkError"));
     } finally {
       setRecSaving(false);
     }

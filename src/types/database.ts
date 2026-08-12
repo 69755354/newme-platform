@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=a9066f620047fea53b5deb49a1409ea90414b533a4a5d69cbe96d8453122332c
+// Migration fingerprint: sha256=c0f27b0f1f3e26a5e342729d948a31888aa1caa42ca8f38aef1587aec638b597
 export type Json =
   | string
   | number
@@ -2445,6 +2445,7 @@ export type Database = {
           payment_method: string | null
           received_at: string | null
           reference_no: string | null
+          request_key: string | null
           updated_at: string | null
         }
         Insert: {
@@ -2464,6 +2465,7 @@ export type Database = {
           payment_method?: string | null
           received_at?: string | null
           reference_no?: string | null
+          request_key?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -2483,6 +2485,7 @@ export type Database = {
           payment_method?: string | null
           received_at?: string | null
           reference_no?: string | null
+          request_key?: string | null
           updated_at?: string | null
         }
         Relationships: [

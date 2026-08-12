@@ -56,7 +56,7 @@ keeps it open.
 
 ### The two pushes
 
-Expand phase — apply these ten, in this order (they are the pending set on this
+Expand phase — apply these eleven, in this order (they are the pending set on this
 branch, and `scripts/replay-migrations.sh` applies exactly them plus the contract
 phase):
 
@@ -70,8 +70,17 @@ phase):
 20260811100500_kpi_targets_atomic_replace.sql
 20260812000000_money_actor_identity_and_atomicity.sql
 20260813000000_session_revocation_boundary.sql
+20260813100000_payment_request_key_idempotency.sql
 20260814000000_l0_round3_authorization_and_integrity.sql
 ```
+
+`20260813100000` is in the expand phase, and is numbered below `20260814000000` so
+that it is, because it is additive only: a nullable `payments.request_key` and a
+partial unique index on `(created_by, request_key) where request_key is not null`.
+The previous release never sets that column, so every row it writes leaves the key
+null, falls outside the index predicate, and collides with nothing. The candidate
+release needs the column present before it is deployed, because its payment
+recording boundary writes the key on every insert.
 
 Contract phase — one file, pushed only after §4 step 6 passes:
 
@@ -89,10 +98,10 @@ production now. **C** = the candidate release on this branch.
 | State | Schema | `direct_write_mode` | P works? | C works? |
 | --- | --- | --- | --- | --- |
 | 1 · today | base, stamp `20260805202917` | table does not exist | yes | **no** — the RPCs it calls do not all exist yet |
-| 2 · expand applied | + the ten files | `compat` | yes, with the four deliberate exceptions in §3 | yes |
-| 3 · candidate deployed | + the ten files | `compat` | yes (this is the overlap window) | yes |
-| 4 · contract applied | + all eleven | `strict` | **no** — its direct money writes are refused | yes |
-| 5 · companion run | + all eleven | `compat` | yes, as in state 2 | yes |
+| 2 · expand applied | + the eleven files | `compat` | yes, with the four deliberate exceptions in §3 | yes |
+| 3 · candidate deployed | + the eleven files | `compat` | yes (this is the overlap window) | yes |
+| 4 · contract applied | + all twelve | `strict` | **no** — its direct money writes are refused | yes |
+| 5 · companion run | + all twelve | `compat` | yes, as in state 2 | yes |
 
 State 3 is the rollback boundary: both releases work against the same schema, so
 the application can be rolled back without touching the database. State 5 is how
@@ -251,7 +260,7 @@ Read §5 before starting: the point of no return is step 7, not step 8.
      depends on.
    * A verified point-in-time recovery target exists for the production project,
      and its timestamp is recorded next to this checklist.
-2. **[AUTHORISED ACTION] Apply the expand phase.** Push the ten files in §1.
+2. **[AUTHORISED ACTION] Apply the expand phase.** Push the eleven files in §1.
    `20260815000000` must **not** be in the pending set for this push — check
    before, not after.
 3. **Verify state 2, read-only.** §6.1. If `direct_write_mode` is anything other

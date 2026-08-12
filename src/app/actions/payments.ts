@@ -3,79 +3,29 @@
 import { createServerSupabase } from '@/lib/supabase-server'
 import type { Json } from '@/types/database'
 
-interface CreatePaymentInput {
-  contract_id: string
-  amount: number
-  payment_date: string
-  payment_method: string
-  reference_no?: string | null
-  notes?: string | null
-}
-
 interface AllocationItem {
   plan_id: string
   amount: number
 }
 
 /**
- * Record a new payment against a contract.
+ * Recording a payment is not a server action.
+ *
+ * There used to be a `createPayment` here, called by the payments dashboard. It
+ * inserted into `payments` directly and carried no idempotency key, so the same
+ * form submitted twice recorded two payments. Reproduced on an isolated
+ * PostgreSQL 17 against this branch's migrations, as the sales identity owning
+ * the fixture contract: the same insert twice gave `sqlstate=00000 rows=2`.
+ * Under the round-4 payment guard in strict mode that same insert instead raises
+ * `22023 a payment must carry request_key, the idempotency key of the creating
+ * request` — so the button was heading for two payments today and none later.
+ *
+ * The single recording boundary is `POST /api/payments`, which requires a
+ * caller-minted key, stores it as `payments.request_key`, and is the only place
+ * that can tell an honest retry from a key reused for a different payment.
+ * Confirming and allocating stay here because they already go through
+ * `confirm_payment()` and `allocate_payment()`.
  */
-export async function createPayment(data: CreatePaymentInput) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
-
-  // Validation
-  if (!data.contract_id) throw new Error('contract_id is required')
-  if (!data.amount || typeof data.amount !== 'number' || data.amount <= 0) {
-    throw new Error('Valid amount is required')
-  }
-  if (!data.payment_date) throw new Error('payment_date is required')
-  if (!data.payment_method) throw new Error('payment_method is required')
-
-  // Verify the contract exists
-  const { data: contract, error: contractErr } = await supabase
-    .from('contracts')
-    .select('id, sales_id')
-    .eq('id', data.contract_id)
-    .single()
-
-  if (contractErr || !contract) throw new Error('Contract not found')
-
-  // Fetch user role for access control
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  const userRole = profile?.role
-  const isPrivileged = userRole ? ['admin', 'boss', 'finance', 'operator'].includes(userRole) : false
-
-  // Sales can only record payments against their own contracts
-  if (!isPrivileged && contract.sales_id !== user.id) {
-    throw new Error('Forbidden')
-  }
-
-  const { data: payment, error: insertErr } = await supabase
-    .from('payments')
-    .insert({
-      contract_id: data.contract_id,
-      created_by: user.id,
-      amount: data.amount,
-      payment_date: data.payment_date,
-      payment_method: data.payment_method,
-      reference_no: data.reference_no || null,
-      confirmed: false,
-      notes: data.notes || null,
-    })
-    .select('id, amount')
-    .single()
-
-  if (insertErr) throw new Error('Failed to record payment')
-
-  return { id: payment.id, amount: payment.amount }
-}
 
 /**
  * Confirm a payment (admin/boss/finance only).

@@ -104,69 +104,26 @@ export async function approveContract(
 }
 
 /**
- * Revoke a contract (admin/boss only).
+ * Revocation is not a server action.
+ *
+ * There used to be a revokeContract() here that read the caller's role from
+ * profiles and then issued `update contracts set status = 'revoking'` through the
+ * caller's own client. Both halves were wrong in a way a replay on PG17 shows
+ * rather than argues:
+ *
+ *   compat mode — the update succeeds, so the contract moves without
+ *     revoke_contract()'s transition check or its `for update`; and the same
+ *     statement from a *sales* session succeeds too (00000, status -> revoking),
+ *     because the admin/boss rule existed only in this file's separate SELECT and
+ *     never in the database. Anything that reached the table another way — a
+ *     second call site, a script, a crafted request — was unauthorized.
+ *   strict mode — trg_guard_contracts_write refuses it with 42501, so the
+ *     contracts-list Revoke button could not revoke at all.
+ *
+ * The supported path is POST /api/contracts/[id]/revoke, which calls
+ * revoke_contract(): it takes the row FOR UPDATE, resolves the actor from the
+ * JWT subject and checks admin/boss inside the same transaction as the write.
+ * Both the contracts list and the contract detail page use it.
+ * tests/security/contract-revoke-boundary.test.mjs keeps this file free of
+ * contract-status writes.
  */
-export async function revokeContract(contractId: string, reason: string) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
-
-  // Verify admin/boss role
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  const isAdminOrBoss = profile?.role && ['admin', 'boss'].includes(profile.role)
-  if (!isAdminOrBoss) throw new Error('Only admin or boss can revoke contracts')
-
-  if (!reason || typeof reason !== 'string') {
-    throw new Error('reason is required')
-  }
-
-  // Fetch the contract
-  const { data: contract, error: contractErr } = await supabase
-    .from('contracts')
-    .select('id, contract_no, status, sales_id')
-    .eq('id', contractId)
-    .single()
-
-  if (contractErr || !contract) throw new Error('Contract not found')
-
-  if (contract.status === 'superseded') throw new Error('Contract is already superseded')
-  if (contract.status === 'revoked') throw new Error('Contract is already revoked')
-
-  const newStatus = 'revoking'
-
-  // Update contract status
-  const { error: updateErr } = await supabase
-    .from('contracts')
-    .update({
-      status: newStatus,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', contractId)
-
-  if (updateErr) throw new Error('Failed to update contract status')
-
-  // Send notifications
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    await fetch(`${baseUrl}/api/notify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'contract_revoked',
-        contract_id: contractId,
-        contract_no: contract.contract_no,
-        reason,
-        revoked_by: user.id,
-      }),
-    })
-  } catch {
-    // Notification failure is non-critical
-  }
-
-  return { success: true, contract_id: contractId, status: newStatus }
-}

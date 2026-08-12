@@ -20,7 +20,7 @@ import SubNavTabs from "@/components/SubNavTabs";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
-import { approveContract, revokeContract } from "@/app/actions/contracts";
+import { approveContract } from "@/app/actions/contracts";
 import { fmtAED } from "@/shared/utils/format";
 
 interface Contract {
@@ -127,14 +127,35 @@ export default function ContractsPage() {
     }
   }
 
-  // Revoke action
+  // Revoke action.
+  //
+  // POSTs to the same route the contract detail page uses, which calls
+  // revoke_contract(). The server action this replaced issued
+  // `update contracts set status='revoking'` from the caller's own client, and
+  // that shape has two failures a reproduction on a replayed PG17 showed in both
+  // release modes: in compat it succeeds while skipping the routine's transition
+  // check and its `for update`, and a sales session's identical statement also
+  // succeeds — the admin/boss rule lived only in the action's separate SELECT on
+  // profiles, never in the database; in strict, trg_guard_contracts_write refuses
+  // it with 42501 and the button cannot revoke anything at all. revoke_contract()
+  // decides the role from the token subject inside the same transaction as the
+  // write, so both go away.
   async function handleRevoke(contractId: string, reason: string) {
     try {
-      await revokeContract(contractId, reason);
+      const res = await fetch(`/api/contracts/${contractId}/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || t("contracts.revokeFailed"));
+        return;
+      }
       toast.success(t("contracts.revokeSuccess"));
       window.location.reload();
-    } catch (err: any) {
-      toast.error(err.message || t("contracts.revokeFailed"));
+    } catch {
+      toast.error(t("login.networkError"));
     }
   }
 

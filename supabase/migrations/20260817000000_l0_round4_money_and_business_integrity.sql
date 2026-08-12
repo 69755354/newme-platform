@@ -129,12 +129,21 @@ update public.payments p
 -- ---------------------------------------------------------------------------
 -- 3 · B2 — one derivation of first_payment_status, and nobody may write it
 -- ---------------------------------------------------------------------------
--- Reproduced twice. A sales owner could set contracts.first_payment_status to
--- 'paid' with a direct UPDATE, because the guard's protected-column list did not
--- include it. And allocate_payment() could allocate the full first installment
+-- Reproduced three times. A sales owner could set contracts.first_payment_status
+-- to 'paid' with a direct UPDATE, because the guard's protected-column list did
+-- not include it. allocate_payment() could allocate the full first installment
 -- while the contract still read 'unpaid', because confirm_payment() and
 -- void_payment() recomputed the field and allocate_payment() did not — which is
--- precisely the operation that changes the answer.
+-- precisely the operation that changes the answer. And the derivation itself read
+-- the first installment as `seq = 1` rather than as the first row of the schedule:
+-- reproduced in strict mode, a contract created through create_contract() with
+-- installments seq 2 (40000.00) and seq 3 (60000.00) — a payload
+-- src/app/api/contracts/route.ts accepts, because it requires seqs to be positive
+-- and unique and not to start at 1 — read 'unpaid' after its first installment was
+-- confirmed and fully allocated, allocate_payment() returned
+-- first_payment_status 'unpaid', the plan read 'paid', and no later confirmation
+-- or void could ever move it. The stored column and the derivation agreed on the
+-- wrong answer, so the reconciliation invariant below could not see it.
 --
 -- SECURITY INVOKER, not definer: it is a derivation over rows the caller has
 -- already been authorised to touch by whichever routine calls it, and making it
@@ -152,12 +161,16 @@ declare
   v_amount    numeric(12, 2);
   v_allocated numeric(12, 2);
 begin
-  -- The same "first installment" every previous version picked: lowest seq, and
-  -- among duplicates the oldest, so the answer does not depend on scan order.
+  -- The FIRST installment of the schedule, which is the lowest seq present and not
+  -- literally seq 1. assert_installment_schedule() (§9) requires seqs that are
+  -- positive and unique, and does not require that 1 is among them; nor does
+  -- src/app/api/contracts/route.ts, which validates the same three properties and
+  -- passes any unique positive integers through to create_contract(). Among
+  -- duplicate seqs the oldest, so the answer does not depend on scan order.
   select id, amount into v_plan_id, v_amount
     from public.installment_plans
-   where contract_id = p_contract_id and seq = 1
-   order by created_at asc, id asc
+   where contract_id = p_contract_id
+   order by seq asc, created_at asc, id asc
    limit 1;
 
   if v_plan_id is null then
@@ -183,7 +196,7 @@ end
 $$;
 
 comment on function public.contract_first_payment_status(uuid) is
-  'The single derivation of contracts.first_payment_status from confirmed, unvoided allocations against the first installment. confirm_payment(), allocate_payment() and void_payment() all write what this returns; nothing else may write the column.';
+  'The single derivation of contracts.first_payment_status from confirmed, unvoided allocations against the first installment of the schedule — the lowest seq present, not literally seq 1. confirm_payment(), allocate_payment() and void_payment() all write what this returns; nothing else may write the column.';
 
 revoke all on function public.contract_first_payment_status(uuid) from public, anon;
 grant execute on function public.contract_first_payment_status(uuid) to authenticated, service_role;

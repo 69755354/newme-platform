@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=ca7f116beb89cb52c49b380f4fd2b282c17ec0a7768a111cfc94c9c35c8a0004
+// Migration fingerprint: sha256=890cb3918b7fe20cf3810c78d62e8884c19ed090291fcc3c92cc5831c1786c3f
 export type Json =
   | string
   | number
@@ -4058,6 +4058,10 @@ export type Database = {
           }
       milestone_order: { Args: { milestone: string }; Returns: number }
       next_quote_no: { Args: never; Returns: string }
+      clear_kpi_targets: {
+        Args: { p_period: string; p_actor: string }
+        Returns: number
+      }
       replace_kpi_targets: {
         Args: { p_period: string; p_rows: Json; p_set_by: string }
         Returns: {

@@ -113,6 +113,30 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // The positions have to describe installment 1 through installment N. Unique
+    // and positive, checked above, is a weaker property: [{seq:1},{seq:3}]
+    // satisfies both, and it is a two-row schedule whose second installment is
+    // missing. `seq` is taken straight from the request body, so the browser form
+    // — which always emits `seq: i + 1` — is not the only client that reaches
+    // here. N distinct integers, each >= 1, are exactly 1..N precisely when the
+    // largest is N. assert_installment_schedule() refuses the same shape with
+    // 22023 for every caller; this is here for the same reason as the checks
+    // above, to name the field before the contract number is drawn.
+    const maxSeq = Math.max(...schedule.map((inst) => inst.seq));
+    if (maxSeq !== schedule.length) {
+      const numbering = schedule
+        .map((inst) => inst.seq)
+        .sort((a, b) => a - b)
+        .join(", ");
+      return NextResponse.json(
+        {
+          error: `The installment schedule must be numbered 1 to ${schedule.length} with no gaps, but it is numbered ${numbering}`,
+          code: "INVALID_SCHEDULE",
+        },
+        { status: 400 },
+      );
+    }
+
     // Compared in cents. 0.1 + 0.2 !== 0.3 in this language, and a schedule that
     // is off by a rounding error is exactly the case the client is most likely to
     // send, so summing the floats and comparing to `amount` would reject valid

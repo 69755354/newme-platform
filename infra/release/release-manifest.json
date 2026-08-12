@@ -87,12 +87,27 @@
     {
       "version": "20260817000000",
       "file": "20260817000000_l0_round4_money_and_business_integrity.sql",
-      "sha256": "9fba78164efeca2a91ebbb366388f85bf2562ea00d54eaa1a92cad1ade3d424a"
+      "sha256": "3e1accf16d44857ff7c38d020e5ea3845ebd1da1d424db3cbfd0a8c8bf775e10"
     },
     {
       "version": "20260817120000",
       "file": "20260817120000_admin_reset_session_revocation.sql",
       "sha256": "482f2efac47ece7f8c9c016c602eda6c566827bc77f990d6364ef45b68ae5f72"
+    },
+    {
+      "version": "20260817130000",
+      "file": "20260817130000_b5_conversion_retry_idempotence.sql",
+      "sha256": "84e7d7c271f72959f3ffcfedce2e9113eea925c95e906b8c33dfa97b34ee5edd"
+    },
+    {
+      "version": "20260817140000",
+      "file": "20260817140000_l0_round4_installment_sequence_contiguity.sql",
+      "sha256": "919f0116645267214bdbe5dd632505754515e21e3142af9b8b25d9bf1e914299"
+    },
+    {
+      "version": "20260817150000",
+      "file": "20260817150000_kpi_period_clear_owns_the_delete.sql",
+      "sha256": "176c9c9be40ae1b9e4179db703f3820e872c6e453f25576ed28ef56bcf6588b4"
     }
   ],
   "deferred_contract": [

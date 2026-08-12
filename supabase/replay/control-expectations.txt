@@ -378,6 +378,7 @@ fail b2-first-payment-status-is-refused-from-a-session
 fail b2-first-payment-status-follows-an-allocation
 fail b2-first-payment-status-follows-a-void
 fail b2-first-payment-status-is-partial-for-a-short-allocation
+fail b2-first-payment-status-reads-the-lowest-seq-not-literally-one
 fail b3-a-negative-payment-is-refused
 fail b3-a-payment-without-a-request-key-is-refused
 fail b3-a-keyed-payment-is-recorded-as-sent
@@ -388,18 +389,25 @@ fail b4-a-schedule-that-does-not-total-is-refused
 fail b4-a-duplicate-installment-position-is-refused
 fail b4-a-non-positive-installment-is-refused-by-name
 fail b4-an-exact-schedule-is-stored-as-sent
+fail b4-a-schedule-with-a-gap-is-refused
+fail b4-a-schedule-that-does-not-start-at-one-is-refused
 fail b5-the-conversion-link-is-refused-from-a-session
 fail b5-a-crossed-conversion-link-is-refused
 pass b5-a-crossed-link-writes-nothing-on-the-foreign-contract
 fail b6-the-conversion-creates-the-customer-and-links-the-lead
 fail b6-the-conversion-records-exactly-one-won-event
 fail b6-the-conversion-puts-that-customer-on-the-project-and-the-contract
+fail b5-a-conversion-retry-does-not-add-the-amount-again
+fail b5-a-retry-asking-for-a-different-schedule-is-refused
 fail b10-a-conversion-schedule-must-equal-the-quotation-exactly
 fail b7-saving-a-period-preserves-what-was-collected
 fail b7-a-period-cannot-be-saved-in-a-way-that-drops-collected-amounts
 fail b7-confirming-a-payment-records-who-was-credited
 fail b7-a-void-debits-the-recorded-creditor-not-the-current-owner
 fail b7-the-credit-identity-is-refused-from-a-session
+fail b7-clearing-a-period-that-holds-collections-is-refused
+fail b7-clearing-a-period-that-holds-nothing-is-still-allowed
+fail b7-the-period-clear-routine-is-service-role-only
 
 # A3 · 20260817120000_admin_reset_session_revocation.sql. All seventeen are
 # load-bearing: the floor has no revoke_user_sessions(), so the catalog probes

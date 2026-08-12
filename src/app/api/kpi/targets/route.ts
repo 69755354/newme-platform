@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
 
 // GET /api/kpi/targets?period=2026-06
 export async function GET(request: NextRequest) {
@@ -90,7 +91,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ data });
 }
 
-// DELETE /api/kpi/targets?period=2026-06 — delete all targets for a period
+// DELETE /api/kpi/targets?period=2026-06 — clear all targets for a period
 export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const period = searchParams.get("period");
@@ -101,18 +102,44 @@ export async function DELETE(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // B7: admin/boss, not admin/boss/operator. The write below goes out on the
+  // service-role client, which bypasses RLS, so this list is the ONLY thing
+  // enforcing the rule — and the database's own DELETE policy on kpi_targets
+  // (20260701000000_non_core_tables_rls_fix.sql:227) is admin/boss. Measured on an
+  // isolated PG17 with the branch migrations applied: an operator's identical
+  // `delete from kpi_targets where period = ...` as `authenticated` removes 0 rows,
+  // and the same statement as `service_role` removes every one of them. Keeping
+  // operator here meant the route granted a capability the database refuses.
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-  if (!profile?.role || !["admin", "boss", "operator"].includes(profile.role)) {
+  if (!profile?.role || !["admin", "boss"].includes(profile.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   if (!period) return NextResponse.json({ error: "period required" }, { status: 400 });
 
-  const { error } = await supabaseAdmin.from("kpi_targets").delete().eq("period", period);
+  // B7: this used to be
+  //     await supabaseAdmin.from("kpi_targets").delete().eq("period", period);
+  // i.e. the service-role client reaching the table without reaching the routine
+  // that owns the write. replace_kpi_targets() carries actual_amount forward and
+  // refuses a payload that drops a target still holding collected money; this
+  // statement dropped the same money by a different verb, and took none of the
+  // period advisory lock that serializes same-period saves. Reproduced on an
+  // isolated PG17, both release modes: the service-role delete answered 00000,
+  // removed 2 rows and took recorded actuals 700.00 -> 0, and a second connection
+  // could take the period lock while that delete was still in flight.
+  //
+  // clear_kpi_targets() takes the same lock and refuses (22023) when any row in the
+  // period holds a non-zero actual_amount, so clearing an untouched period still
+  // works and clearing collected money is no longer expressible.
+  const { data: removed, error } = await supabaseAdmin.rpc("clear_kpi_targets", {
+    p_period: period,
+    p_actor: user.id,
+  });
+
   if (error) {
-    const msg = process.env.NODE_ENV === "production" ? "Internal server error" : error.message;
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const { status, body } = moneyRpcFailure(error, "Failed to clear the period's KPI targets");
+    return NextResponse.json(body, { status });
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, rows_removed: removed ?? 0 });
 }

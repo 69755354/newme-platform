@@ -26,12 +26,13 @@
 #      · an object created EARLIER IN THE SAME FILE is gone, which is what
 #        proves the file's own `commit;` did not escape the tool's transaction
 #
-# Step 9 breaks the twelfth migration the way a real database breaks one: it leaves
-# a stale `public.assert_installment_schedule(jsonb, numeric, text)` behind that
-# returns text, so the migration's `create or replace ... returns integer` fails
-# with 42P13, 331 lines into a file that has already altered three tables. No file
-# in the repository is edited, moved or restored by this drill — that is the point
-# of C7's "do not temporarily remove files".
+# Step 9 breaks one named migration the way a real database breaks one: it leaves a
+# stale `public.assert_installment_schedule(jsonb, numeric, text)` behind that
+# returns text, so that migration's `create or replace ... returns integer` fails
+# with 42P13 part-way into a file that has already altered three tables. Which file
+# that is, and therefore how many apply before it, is read out of the manifest —
+# see BREAK_FILE below. No file in the repository is edited, moved or restored by
+# this drill — that is the point of C7's "do not temporarily remove files".
 #
 # Requires: psql and node on PATH, the `pg` module resolvable, and an EMPTY
 # database named in PGDATABASE. It also creates ${PGDATABASE}_interrupt. Nothing
@@ -68,6 +69,28 @@ EXPAND_COUNT="$(manifest_count expand)"
 CONTRACT_COUNT="$(manifest_count contract)"
 POSTURE_COUNT="$(manifest_count posture)"
 TOTAL_COUNT=$((EXPAND_COUNT + CONTRACT_COUNT))
+
+# Step 9 breaks a named FILE, not a position. The stale shim it stages collides
+# with the `create or replace function public.assert_installment_schedule` inside
+# this one, so the position it happens to occupy — and the newest version recorded
+# before it — are read out of the manifest for the same reason the counts above
+# are. A release that inserts a migration on either side of it must not also have
+# to edit a number down there.
+BREAK_FILE="20260817000000_l0_round4_money_and_business_integrity.sql"
+manifest_before() {
+  ROOT="$ROOT" node -e '
+const manifest = require(process.env.ROOT + "/infra/release/release-manifest.json");
+const list = manifest.required_for_app;
+const at = list.findIndex((m) => m.file === process.argv[1]);
+if (at < 1) {
+  process.stderr.write(process.argv[1] + " is not a non-first entry of required_for_app\n");
+  process.exit(1);
+}
+process.stdout.write(process.argv[2] === "version" ? list[at - 1].version : String(at));
+' "$BREAK_FILE" "$1"
+}
+BREAK_PRIOR_COUNT="$(manifest_before count)"
+BREAK_PRIOR_VERSION="$(manifest_before version)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -215,7 +238,7 @@ expect_log "^OK$"
 
 # ---------------------------------------------------------------------------
 # 9 · interruption. A stale function with the same signature and a different
-#     return type makes the twelfth migration fail at its
+#     return type makes $BREAK_FILE fail at its
 #     `create or replace function public.assert_installment_schedule` — after the
 #     same file has already added three check constraints and a column.
 note "creating $INTERRUPT_DB for the interruption test"
@@ -227,25 +250,32 @@ prepare_db "$INTERRUPT_DB"
   || fail "could not stage the interruption"
 
 run_phase refuse "$INTERRUPT_DB" required_for_app --apply --init-history
-expect_log "refusing: 20260817000000_l0_round4_money_and_business_integrity\.sql failed at statement"
+expect_log "refusing: ${BREAK_FILE//./\\.} failed at statement"
 expect_log "no history row was written"
-count_log "^applied             : " 11
+count_log "^applied             : " "$BREAK_PRIOR_COUNT"
 
 interrupted="$("${PSQL[@]}" -d "$INTERRUPT_DB" -c "select count(*) from supabase_migrations.schema_migrations")"
-[ "$interrupted" = "11" ] || fail "the interrupted phase recorded $interrupted migrations, expected 11"
+[ "$interrupted" = "$BREAK_PRIOR_COUNT" ] || fail "the interrupted phase recorded $interrupted migrations, expected $BREAK_PRIOR_COUNT"
 newest="$("${PSQL[@]}" -d "$INTERRUPT_DB" -c "select max(version) from supabase_migrations.schema_migrations")"
-[ "$newest" = "20260816000000" ] || fail "the interrupted phase recorded up to $newest, expected 20260816000000"
+[ "$newest" = "$BREAK_PRIOR_VERSION" ] || fail "the interrupted phase recorded up to $newest, expected $BREAK_PRIOR_VERSION"
 # The proof that the whole file rolled back: a column added by a statement BEFORE
 # the failing one is absent. With the file's own `commit;` sent instead of
 # skipped, this column would survive and the release would be half-applied with
 # no record of it.
-rolled_back="$("${PSQL[@]}" -d "$INTERRUPT_DB" -c "select count(*) = 0 from information_schema.columns where table_schema = 'public' and table_name = 'payments' and column_name = 'request_key'")"
-[ "$rolled_back" = "t" ] || fail "payments.request_key survived a rolled-back migration: the file's own transaction control escaped the tool's transaction"
-# The same proof from a second object, added by the same file 350 lines earlier
-# still: a check constraint, which unlike a column cannot be explained away by an
-# `if not exists` guard.
+#
+# It has to be a column that ONLY the broken file creates. payments.request_key
+# cannot serve: 20260813100000_payment_request_key_idempotency.sql adds it earlier
+# in the same phase, so it is legitimately present after that file commits and its
+# survival proves nothing either way. payments.credited_to is added by the broken
+# file alone (`grep -rl credited_to supabase/migrations` returns one path) and is
+# not in the production floor.
+rolled_back="$("${PSQL[@]}" -d "$INTERRUPT_DB" -c "select count(*) = 0 from information_schema.columns where table_schema = 'public' and table_name = 'payments' and column_name = 'credited_to'")"
+[ "$rolled_back" = "t" ] || fail "payments.credited_to survived a rolled-back migration: the file's own transaction control escaped the tool's transaction"
+# The same proof from a second object, added by the same file earlier still: a
+# check constraint, which unlike a column cannot be explained away by an
+# `if not exists` guard. Also created by no other migration.
 constraint_gone="$("${PSQL[@]}" -d "$INTERRUPT_DB" -c "select count(*) = 0 from pg_constraint where conname = 'payments_amount_positive'")"
 [ "$constraint_gone" = "t" ] || fail "payments_amount_positive survived a rolled-back migration"
-note "interruption: 11 applied, the twelfth rolled back whole, nothing recorded for it"
+note "interruption: $BREAK_PRIOR_COUNT applied through $BREAK_PRIOR_VERSION, $BREAK_FILE rolled back whole, nothing recorded for it"
 
 echo "== phase drill OK: 9 steps, 2 databases, 5 refusals, $TOTAL_COUNT migrations applied in two phases =="

@@ -56,7 +56,7 @@ keeps it open, and `scripts/db-phase-push.mjs` is what executes it.
 
 ### The two pushes
 
-Expand phase — apply these fourteen, in this order (they are the pending set on this
+Expand phase — apply these seventeen, in this order (they are the pending set on this
 branch, and `scripts/replay-migrations.sh` applies exactly them plus the contract
 phase):
 
@@ -75,6 +75,9 @@ phase):
 20260816000000_l0_round4_definer_entry_boundary.sql
 20260817000000_l0_round4_money_and_business_integrity.sql
 20260817120000_admin_reset_session_revocation.sql
+20260817130000_b5_conversion_retry_idempotence.sql
+20260817140000_l0_round4_installment_sequence_contiguity.sql
+20260817150000_kpi_period_clear_owns_the_delete.sql
 ```
 
 Contract phase — one file, pushed only after §4 step 6 passes:
@@ -94,7 +97,7 @@ artifacts:
 
 * [`infra/release/release-manifest.json`](../../infra/release/release-manifest.json)
   names every pending migration in exactly one phase — `required_for_app` (the
-  thirteen above) or `deferred_contract` (the one above) — with the SHA-256 of each
+  seventeen above) or `deferred_contract` (the one above) — with the SHA-256 of each
   file and the runtime posture each phase must produce.
 * [`scripts/db-phase-push.mjs`](../../scripts/db-phase-push.mjs) applies one named
   phase and nothing else:
@@ -142,7 +145,7 @@ expand set is a contiguous prefix of the pending set. That is deliberate:
 * `supabase_migrations.schema_migrations` records the two phases in version
   order, so the application order in production is the order
   `scripts/replay-migrations.sh` replays and asserts. §6.1 query 3 expects
-  `20260817120000` as the newest version at state 2 and `20260818000000` at
+  `20260817150000` as the newest version at state 2 and `20260818000000` at
   state 4.
 
 What none of this proves: the tool is not the Supabase CLI, and the statement
@@ -170,10 +173,10 @@ production now. **C** = the candidate release on this branch.
 | State | Schema | `direct_write_mode` | P works? | C works? |
 | --- | --- | --- | --- | --- |
 | 1 · today | base, stamp `20260805202917` | table does not exist | yes | **no** — the RPCs it calls do not all exist yet |
-| 2 · expand applied | + the fourteen files | `compat` | yes, with the seven deliberate exceptions in §3 | yes |
-| 3 · candidate deployed | + the fourteen files | `compat` | yes (this is the overlap window) | yes |
-| 4 · contract applied | + all fifteen | `strict` | **no** — its direct money writes are refused | yes |
-| 5 · companion run | + all fifteen | `compat` | yes, as in state 2 | yes |
+| 2 · expand applied | + the seventeen files | `compat` | yes, with the seven deliberate exceptions in §3 | yes |
+| 3 · candidate deployed | + the seventeen files | `compat` | yes (this is the overlap window) | yes |
+| 4 · contract applied | + all eighteen | `strict` | **no** — its direct money writes are refused | yes |
+| 5 · companion run | + all eighteen | `compat` | yes, as in state 2 | yes |
 
 State 3 is the rollback boundary: both releases work against the same schema, so
 the application can be rolled back without touching the database. State 5 is how
@@ -401,11 +404,11 @@ Read §5 before starting: the point of no return is step 7, not step 8.
      depends on.
    * A verified point-in-time recovery target exists for the production project,
      and its timestamp is recorded next to this checklist.
-2. **[AUTHORISED ACTION] Apply the expand phase.** Apply the fourteen files in §1
+2. **[AUTHORISED ACTION] Apply the expand phase.** Apply the seventeen files in §1
    with
    `node scripts/db-phase-push.mjs --phase required_for_app --url-file <file> --apply`,
    from the exact reviewed tree. Run it once with `--plan` first and read the
-   `to apply` list: the fourteen, and `20260818000000` absent. Do **not** use
+   `to apply` list: the seventeen, and `20260818000000` absent. Do **not** use
    `supabase db push`, which would apply the contract phase in the same run (§1,
    "How the split is executed"). `supabase/preflight/scan-money-invariants.sql`
    must have been run first: §3 item 5 aborts this push if a non-positive money row
@@ -495,7 +498,7 @@ select count(*) from supabase_migrations.schema_migrations
 -- 3. the expand set is applied, and is the newest
 select version from supabase_migrations.schema_migrations
  order by version desc limit 3;
--- expect 20260817120000 first, then 20260817000000, then 20260816000000 —
+-- expect 20260817150000 first, then 20260817140000, then 20260817130000 —
 -- 20260818000000 is absent because it is the contract phase, which is applied
 -- separately (§1, "How the split is executed")
 

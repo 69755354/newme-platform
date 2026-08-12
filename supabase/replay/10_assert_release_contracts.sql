@@ -15,7 +15,7 @@
 -- notices against ASSERT_TOTAL below, so an assertion file that stops early
 -- fails the job instead of passing quietly.
 --
--- ASSERT_TOTAL: 323
+-- ASSERT_TOTAL: 331
 -- ============================================================================
 
 create temp table assert_log (name text, passed boolean not null);
@@ -37,7 +37,7 @@ create temp table assert_log (name text, passed boolean not null);
 -- of raising is what makes one marker per assertion possible.
 --
 -- Both branches write to assert_log, so the self-check at the foot of this file
--- can prove from inside the database that all 323 assertions were reached —
+-- can prove from inside the database that all 331 assertions were reached —
 -- a claim no amount of log scraping can make.
 create or replace function pg_temp.assert(condition boolean, assertion_name text)
 returns void
@@ -3792,6 +3792,56 @@ begin
 end
 $$;
 
+-- B2 · the first installment is the LOWEST SEQ PRESENT, not literally seq 1
+-- (reproduced: the derivation matched `seq = 1`, so a contract whose schedule is
+-- numbered 2,3 — a shape assert_installment_schedule() accepted before
+-- 20260817140000, and which rows written before it still carry — read 'unpaid'
+-- after its first installment had been confirmed and fully allocated, the plan read
+-- 'paid', and no later confirmation or void could ever move it. The stored column
+-- and the derivation agreed on the wrong answer, so the table-wide reconciliation
+-- invariant above could not see it either).
+--
+-- The renumber is done as the migration role on purpose. 20260817140000 now refuses
+-- a schedule that does not start at 1, so create_contract() can no longer produce
+-- this shape; rows that already carry it can, and the derivation has to be right
+-- about them. Rolled back with the rest of the envelope.
+do $$
+declare
+  v_state text := '00000';
+  v_seq   integer := -1;
+  v_fp    text := '(not measured)';
+begin
+  begin
+    update public.installment_plans set seq = 2
+     where id = '96666666-6666-6666-6666-666666666666';
+    select seq into v_seq from public.installment_plans
+     where id = '96666666-6666-6666-6666-666666666666';
+
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    perform public.confirm_payment('d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6',
+                                   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    perform public.allocate_payment('d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6',
+      '[{"plan_id": "96666666-6666-6666-6666-666666666666", "amount": 40000}]'::jsonb,
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select first_payment_status into v_fp from public.contracts
+     where id = 'c6c6c6c6-c6c6-c6c6-c6c6-c6c6c6c6c6c6';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state := sqlstate;
+      perform pg_temp.absorb(sqlstate, sqlerrm);
+    end if;
+  end;
+  perform pg_temp.assert(v_state = '00000' and v_seq = 2 and v_fp = 'paid',
+    'b2-first-payment-status-reads-the-lowest-seq-not-literally-one');
+end
+$$;
+
 -- B3 · a payment of -100.00 (reproduced: accepted, confirmed, and it moved the
 -- collection KPI down by 100)
 do $$
@@ -4099,6 +4149,89 @@ begin
 end
 $$;
 
+-- B4 · a schedule with a gap (20260817140000). Reproduced against the release as
+-- it stood, in both modes: [{seq:1,30000},{seq:3,70000}] on a 100000.00 contract was
+-- accepted — it totals exactly and every seq is positive and used once — and
+-- produced a contract whose second installment does not exist and which nothing
+-- downstream can tell apart from a two-installment contract.
+do $$
+declare
+  v_state text := '00000';
+  v_msg   text := '';
+  v_rows  bigint := -1;
+begin
+  begin
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    begin
+      perform public.create_contract(jsonb_build_object(
+        'lead_id',      '0d0d0d0d-0d0d-0d0d-0d0d-0d0d0d0d0d0d',
+        'amount',       100000,
+        'party_a_name', 'Replay B4 gap',
+        'installments', jsonb_build_array(
+          jsonb_build_object('seq', 1, 'amount', 30000),
+          jsonb_build_object('seq', 3, 'amount', 70000))));
+    exception when others then v_state := sqlstate; v_msg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select count(*) into v_rows from public.contracts
+     where party_a_name = 'Replay B4 gap';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  -- The count is part of the assertion: a refusal that still left the contract
+  -- behind would be a half-applied write, which is the shape B4 is about.
+  perform pg_temp.assert(v_state = '22023'
+                         and v_msg like '%numbered 1..2 with no gaps, but it is numbered 1,3%'
+                         and v_rows = 0,
+    'b4-a-schedule-with-a-gap-is-refused');
+end
+$$;
+
+-- B4 · and a schedule that does not begin at the first installment. Reproduced the
+-- same way: a single installment numbered 2 for the whole 100000.00 was accepted, and
+-- the contract it created reported no first installment at all to every reader that
+-- asks for one — which is precisely the B2 hazard above, arriving through the front
+-- door.
+do $$
+declare
+  v_state text := '00000';
+  v_msg   text := '';
+  v_rows  bigint := -1;
+begin
+  begin
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    set local role authenticated;
+    begin
+      perform public.create_contract(jsonb_build_object(
+        'lead_id',      '0d0d0d0d-0d0d-0d0d-0d0d-0d0d0d0d0d0d',
+        'amount',       100000,
+        'party_a_name', 'Replay B4 no first installment',
+        'installments', jsonb_build_array(
+          jsonb_build_object('seq', 2, 'amount', 100000))));
+    exception when others then v_state := sqlstate; v_msg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select count(*) into v_rows from public.contracts
+     where party_a_name = 'Replay B4 no first installment';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_state = '22023'
+                         and v_msg like '%numbered 1..1 with no gaps, but it is numbered 2%'
+                         and v_rows = 0,
+    'b4-a-schedule-that-does-not-start-at-one-is-refused');
+end
+$$;
+
 -- B5 · the write half (reproduced: one row updated, the link repointed at another
 -- salesperson's contract). policy_quotations_update_sales carries a USING clause
 -- and no WITH CHECK — 20260630200000_rls_policy_remediation.sql:546-548 — so RLS
@@ -4221,6 +4354,76 @@ begin
   perform pg_temp.assert(v_project is not null and v_project = v_customer
                          and v_contract = v_customer,
     'b6-the-conversion-puts-that-customer-on-the-project-and-the-contract');
+end
+$$;
+
+-- B5 · the retry that charged twice (reproduced on the tree as it stands: one
+-- conversion of the 80000.00 fixture quotation followed by two identical retries
+-- left customers.total_contract_amount at 240000.00, because the idempotent
+-- branch calls finalize_lead_won() again on every retry and that function added
+-- p_amount unconditionally; and a retry carrying a different schedule was
+-- answered success: true, because the branch never looks at p_payload).
+--
+-- The measurements are taken with the role reset, like B6's above: customers is
+-- RLS-protected and an `authenticated` session does not see the row it just
+-- caused to be written.
+do $$
+declare
+  v_state   text := '00000';
+  v_lead    uuid := '0e0e0e0e-0e0e-0e0e-0e0e-0e0e0e0e0e0e';
+  v_quote   uuid := 'b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6';
+  v_sched   jsonb := jsonb_build_object('installments',
+                       jsonb_build_array(jsonb_build_object('seq', 1, 'amount', 80000)));
+  v_after1  numeric := -1;
+  v_after3  numeric := -1;
+  v_amount  numeric := -1;
+  v_rows    bigint  := -1;
+  v_retry   text    := '00000';
+  v_retmsg  text    := '';
+begin
+  begin
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    perform public.convert_quotation_to_contract(v_quote, v_sched);
+    reset role;
+    select coalesce(sum(total_contract_amount), -1) into v_after1
+      from public.customers where lead_id = v_lead;
+
+    -- the exact same call, twice more: the retry a double-submit or a retried
+    -- POST /api/quotations/[id]/convert sends
+    set local role authenticated;
+    perform public.convert_quotation_to_contract(v_quote, v_sched);
+    perform public.convert_quotation_to_contract(v_quote, v_sched);
+
+    -- a retry that is not a retry: same quotation, a schedule the stored
+    -- contract does not have
+    begin
+      perform public.convert_quotation_to_contract(v_quote,
+        jsonb_build_object('installments', jsonb_build_array(
+          jsonb_build_object('seq', 1, 'amount', 40000.00),
+          jsonb_build_object('seq', 2, 'amount', 40000.00))));
+    exception when others then v_retry := sqlstate; v_retmsg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select coalesce(sum(total_contract_amount), -1) into v_after3
+      from public.customers where lead_id = v_lead;
+    select count(*), coalesce(sum(contract_amount), -1) into v_rows, v_amount
+      from public.contracts where lead_id = v_lead;
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state := sqlstate;
+      perform pg_temp.absorb(sqlstate, sqlerrm);
+    end if;
+  end;
+  perform pg_temp.assert(v_state = '00000' and v_after1 = 80000.00
+                         and v_after3 = 80000.00 and v_rows = 1 and v_amount = 80000.00,
+    'b5-a-conversion-retry-does-not-add-the-amount-again');
+  perform pg_temp.assert(v_retry = '22023' and v_retmsg like '%disagree%',
+    'b5-a-retry-asking-for-a-different-schedule-is-refused');
 end
 $$;
 
@@ -4449,6 +4652,100 @@ begin
 end
 $$;
 
+-- B7 · clearing a period is a routine, not a DELETE (20260817150000). Reproduced
+-- on the release as it stood: the route's own service-role
+-- `delete from kpi_targets where period = P` removed two rows and took 700.00 of
+-- collected money with them, took no period lock while a replace was in flight, and
+-- answered to the route's role list (admin/boss/operator) instead of the table's
+-- DELETE policy (admin/boss). clear_kpi_targets() takes the same period lock the save
+-- path takes and refuses a period that still holds collections, with the same errcode
+-- and the same shape of message as the save path's orphan guard.
+--
+-- Measured as the migration role, which is how the route reaches it: the function is
+-- service-role only, and the third assertion below is that an end-user session cannot
+-- call it at all.
+do $$
+declare
+  v_state text := '00000';
+  v_msg   text := '';
+  v_rows  bigint := -1;
+  v_sum   numeric := -1;
+begin
+  begin
+    insert into public.kpi_targets (period, target_type, target_amount, actual_amount,
+                                    assigned_to, set_by)
+    values ('2026-95', 'collection', 500000.00, 0.00,
+            'cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
+           ('2026-95', 'collection', 500000.00, 777.00,
+            'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    begin
+      perform public.clear_kpi_targets('2026-95', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    exception when others then v_state := sqlstate; v_msg := sqlerrm;
+    end;
+    select count(*), coalesce(sum(actual_amount), -1) into v_rows, v_sum
+      from public.kpi_targets where period = '2026-95';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+  perform pg_temp.assert(v_state = '22023'
+                         and v_msg like '%already hold collected amounts%'
+                         and v_rows = 2 and v_sum = 777.00,
+    'b7-clearing-a-period-that-holds-collections-is-refused');
+end
+$$;
+
+-- B7 · and the capability itself survives: clearing a period nobody has collected
+-- against is still allowed, because that is a real thing an administrator does and
+-- removing it would be a different change from removing the hazard. Without this the
+-- refusal above would also be satisfied by a routine that refuses everything.
+do $$
+declare
+  v_state   text := '00000';
+  v_removed bigint := -1;
+  v_left    bigint := -1;
+begin
+  begin
+    insert into public.kpi_targets (period, target_type, target_amount, actual_amount,
+                                    assigned_to, set_by)
+    values ('2026-94', 'collection', 500000.00, 0.00,
+            'cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
+           ('2026-94', 'collection', 500000.00, 0.00,
+            'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    v_removed := public.clear_kpi_targets('2026-94', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    select count(*) into v_left from public.kpi_targets where period = '2026-94';
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state := sqlstate;
+      perform pg_temp.absorb(sqlstate, sqlerrm);
+    end if;
+  end;
+  perform pg_temp.assert(v_state = '00000' and v_removed = 2 and v_left = 0,
+    'b7-clearing-a-period-that-holds-nothing-is-still-allowed');
+end
+$$;
+
+-- B7 · and no browser session can reach it. The role check for this one lives in the
+-- route, because the route calls it over the service-role client where auth.uid() is
+-- null — so the grant is the only thing standing between an `authenticated` session
+-- and a period-wide delete. Catalog, not a source grep, and written so that a database
+-- on which the function does not exist fails rather than passing vacuously.
+do $$
+declare v_blocked boolean := false;
+begin
+  select coalesce((select not has_function_privilege('authenticated', p.oid, 'execute')
+                     and not has_function_privilege('anon', p.oid, 'execute')
+                     and has_function_privilege('service_role', p.oid, 'execute')
+                   from pg_proc p
+                   join pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public' and p.proname = 'clear_kpi_targets'), false)
+    into v_blocked;
+  perform pg_temp.assert(v_blocked,
+    'b7-the-period-clear-routine-is-service-role-only');
+end
+$$;
+
 -- ============================================================================
 -- A3 · Administrator password reset is bound to a VERIFIED session revocation
 --     (20260817120000_admin_reset_session_revocation.sql)
@@ -4665,7 +4962,7 @@ $$;
 -- ============================================================================
 -- In MODE=branch "ran" and "passed" are the same number, because a failure would
 -- already have raised. In MODE=control they are not, and the distinction is the
--- whole point: the ledger below is the in-database proof that all 323 assertions
+-- whole point: the ledger below is the in-database proof that all 331 assertions
 -- were REACHED. A DO block that died on an unclassified SQL error takes its
 -- remaining assertions out of the ledger, so the count comes up short and the
 -- control run fails here rather than in a log-scraping heuristic. Reported
@@ -4680,13 +4977,13 @@ begin
   select count(*), count(*) filter (where assert_log.passed), count(*) filter (where not assert_log.passed)
     into total, passed, failed
     from assert_log;
-  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=323', total, passed, failed;
-  if total <> 323 then
-    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 323', total
+  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=331', total, passed, failed;
+  if total <> 331 then
+    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 331', total
       using errcode = '22000';
   end if;
-  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 323 then
-    raise exception 'assertion file passed % of 323 assertions', passed
+  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 331 then
+    raise exception 'assertion file passed % of 331 assertions', passed
       using errcode = '22000';
   end if;
   if exists (select 1 from assert_log group by name having count(*) > 1) then

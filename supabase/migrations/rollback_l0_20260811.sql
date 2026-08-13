@@ -7,6 +7,18 @@
 -- ROLLS_BACK: 20260811100400_f09_money_authorization_phase1.sql
 -- ROLLS_BACK: 20260811100500_kpi_targets_atomic_replace.sql
 --
+-- NO_RECONTRACT: the one object this companion removes is re-created by re-running
+-- 20260811100500_kpi_targets_atomic_replace.sql itself, which is idempotent by
+-- construction — `create unique index if not exists`, `create or replace function`,
+-- then revoke/grant — so an operator re-deploying after a rollback runs that file
+-- by hand and the function is back with the definition this tree ships. See
+-- supabase/preflight/expand-contract-rollback.md §5.1. A separate recontract_*.sql
+-- artifact would be a second copy of one function body, i.e. a second definition
+-- that can drift from the migration. The money contract phase needs a real one for
+-- the opposite reason: re-entering 'strict' must be REFUSED unless the guards that
+-- enforce it are present and enabled, and its forward migration does not check
+-- that.
+--
 -- Not a migration: the Supabase CLI only applies files whose name begins with a
 -- 14-digit timestamp, so this file is inert until an operator runs it
 -- explicitly. Same convention as rollback_crm_v3.sql and rollback_p0_10.sql.

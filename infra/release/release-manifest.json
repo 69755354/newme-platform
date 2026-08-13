@@ -138,7 +138,7 @@
         },
         {
           "name": "write-guards-are-installed",
-          "sql": "select count(*) = 4 from (values ('trg_guard_contracts_write'),('trg_guard_payments_write'),('trg_guard_quotations_write'),('trg_guard_contract_transition')) as t(n) where exists (select 1 from pg_trigger g where not g.tgisinternal and g.tgname = t.n)",
+          "sql": "select count(*) = 4 from (values ('trg_guard_contracts_write'),('trg_guard_payments_write'),('trg_guard_quotations_write'),('trg_guard_contract_transition')) as t(n) where exists (select 1 from pg_trigger g where not g.tgisinternal and g.tgname = t.n and g.tgenabled = 'O')",
           "expect": true
         },
         {
@@ -173,7 +173,7 @@
         },
         {
           "name": "write-guards-are-still-installed",
-          "sql": "select count(*) = 4 from (values ('trg_guard_contracts_write'),('trg_guard_payments_write'),('trg_guard_quotations_write'),('trg_guard_contract_transition')) as t(n) where exists (select 1 from pg_trigger g where not g.tgisinternal and g.tgname = t.n)",
+          "sql": "select count(*) = 4 from (values ('trg_guard_contracts_write'),('trg_guard_payments_write'),('trg_guard_quotations_write'),('trg_guard_contract_transition')) as t(n) where exists (select 1 from pg_trigger g where not g.tgisinternal and g.tgname = t.n and g.tgenabled = 'O')",
           "expect": true
         }
       ]

@@ -84,11 +84,16 @@ test("a clean history with a forward-only new migration passes", () => {
   const { root, migrations } = fixture();
   fs.writeFileSync(path.join(migrations, "20260103000000_new.sql"), "select 3;\n");
   fs.writeFileSync(path.join(migrations, "rollback_new.sql"), "select 4;\n");
+  // Both hand-run shapes. `recontract_` is the return half added by round-4 B9:
+  // it must be accepted as a companion and NOT counted as a new migration, or the
+  // forward-only rule would demand a 14-digit timestamp from a file whose whole
+  // purpose is that the CLI never applies it.
+  fs.writeFileSync(path.join(migrations, "recontract_new.sql"), "select 5;\n");
   const { code, output } = run(root);
   assert.equal(code, 0, output);
   assert.match(output, /2 listed, 2 verified unchanged/);
   assert.match(output, /new on this branch\s*: 1/);
-  assert.match(output, /rollback companions : 1/);
+  assert.match(output, /hand-run companions : 2 \(recontract_new\.sql, rollback_new\.sql\)/);
   assert.match(output, /verified against/);
 });
 

@@ -177,10 +177,21 @@ production now. **C** = the candidate release on this branch.
 | 3 · candidate deployed | + the seventeen files | `compat` | yes (this is the overlap window) | yes |
 | 4 · contract applied | + all eighteen | `strict` | **no** — its direct money writes are refused | yes |
 | 5 · companion run | + all eighteen | `compat` | yes, as in state 2 | yes |
+| 6 · recontract run | + all eighteen | `strict` | **no** — as in state 4 | yes |
 
 State 3 is the rollback boundary: both releases work against the same schema, so
 the application can be rolled back without touching the database. State 5 is how
 state 4 is returned to state 3.
+
+State 6 is how state 5 is returned to state 4, and it is a separate state because
+it cannot be reached by a migration. Once `20260818000000` has been applied it is
+recorded in `supabase_migrations.schema_migrations`, so neither `supabase db push`
+nor `scripts/db-phase-push.mjs` will run it again: after a rollback there is
+nothing pending that would restore `strict`. The way back is
+`supabase/migrations/recontract_money_direct_write_contract_phase.sql`, run by
+hand exactly as the companion is (§5.1). A second numbered migration would not
+help — it would be applied and recorded during the first deploy, and the second
+attempt would be in the same position.
 
 ### Writer-by-writer, verified against the two revisions
 
@@ -456,6 +467,11 @@ application-only rollback leaves the previous release unable to write money rows
 so the rollback is two actions and not one: run the companion first, then
 redeploy. If the companion cannot be run, the only remaining option is PITR.
 
+Run the companion the way §5.1 runs its mirror image — a libpq service file, no
+connection string in `argv` — and read §5.1 before running it, so that the way
+back out of `compat` is known before it is needed rather than during the next
+attempt.
+
 What the companion does **not** do, deliberately: it touches exactly one row in
 one table. It does not re-enable the published credential, does not re-grant
 `meta_tokens` or `profiles` UPDATE, does not recreate the `with_check (true)`
@@ -475,6 +491,89 @@ not a new hole.
 `20260814000000` is NO_ROLLBACK on purpose. Reverting the session boundary or the
 actor binding would restore the P0 findings, so there is no companion for it; the
 recovery for a problem in the expand phase is roll forward or PITR.
+
+### 5.1 · Re-deploying after a rollback (state 5 → state 4)
+
+A rollback is not the end of the release; the next attempt has to be able to reach
+`strict` again. It cannot do that with a migration, for the reason given under the
+matrix in §2: `20260818000000` is already recorded, so the phase tool and the CLI
+both skip it and the pending set is empty.
+
+So the return is the companion's mirror image,
+`supabase/migrations/recontract_money_direct_write_contract_phase.sql`. Like the
+rollback companion its name does not match `^[0-9]{14}_`, so the CLI never applies
+it and it can be run as many times as there are attempts.
+
+1. **Redeploy the candidate release** (§4 step 5) and verify state 3 (§6.2). The
+   mode is still `compat` at this point, so both releases work — do not skip
+   ahead: re-entering `strict` while the previous release is the deployed one
+   breaks it immediately.
+2. **[AUTHORISED ACTION] Re-enter the contract phase.** Run the re-contract
+   companion against the production database with the service role:
+
+```text
+PGSERVICEFILE=<service-file> PGSERVICE=<service-name> \
+  psql --no-psqlrc --single-transaction -v ON_ERROR_STOP=1 \
+    -f supabase/migrations/recontract_money_direct_write_contract_phase.sql
+```
+
+   The connection comes from a libpq service file — mode `0600`, owned by the
+   operator — for the same reason `scripts/db-phase-push.mjs` refuses a URL on the
+   command line and takes `--url-file` instead: a DSN in `argv` is readable by
+   every process on the host for as long as the command runs. Do not paste a
+   connection string into the shell, and do not `cat` the file to read it back.
+
+   It refuses with `42P01` — and changes nothing — if `money_release_mode` is
+   absent, if `money_direct_write_mode()` or `money_direct_write_is_blocked()` is
+   missing, or if any of the four mode-gated guard triggers
+   (`trg_guard_contracts_write`, `trg_guard_payments_write`,
+   `trg_guard_quotations_write`, `trg_guard_contract_transition`) is absent or
+   disabled. Declaring `strict` while the machinery that enforces it is not there
+   would be a posture claim with nothing behind it, which is worse than a refusal.
+   It writes a `MONEY_CONTRACT_PHASE_REENTERED` row to `audit_logs` recording the
+   mode it came from.
+   If `rollback_l0_20260811.sql` was also run, this is the point to put back the
+   one object it removes: `public.replace_kpi_targets(text, jsonb, uuid)`. It is
+   `service_role`-only and the previous release never calls it, so a rollback can
+   drop it safely — but `20260811100500` is recorded too, so nothing pending
+   re-creates it and the candidate's `POST /api/kpi/targets` would fail closed with
+   `42883`. The return path is the forward migration itself, which is idempotent by
+   construction (`create unique index if not exists`, `create or replace function`,
+   then revoke/grant), so re-run that file the same way:
+
+```text
+PGSERVICEFILE=<service-file> PGSERVICE=<service-name> \
+  psql --no-psqlrc --single-transaction -v ON_ERROR_STOP=1 \
+    -f supabase/migrations/20260811100500_kpi_targets_atomic_replace.sql
+```
+
+   This is why that companion declares `-- NO_RECONTRACT:` rather than shipping a
+   `recontract_` twin: a twin would be a second copy of one function body, free to
+   drift from the migration.
+
+3. **Verify state 4, read-only.** §6.3, plus the phase tool's own posture check,
+   which reads the recorded history and the `deferred_contract` predicates in
+   `infra/release/release-manifest.json`:
+
+```text
+node scripts/db-phase-push.mjs --phase deferred_contract --url-file <file> --verify-only
+```
+
+   The same three predicates the apply path checks — the mode row, the mode
+   function and the four guards — so this is the same question, asked by the same
+   code, after a hand-run change.
+
+The round trip is measured, not asserted here: `MODE=branch` in
+`scripts/replay-migrations.sh` applies the migrations, runs the rollback companion
+and `supabase/replay/20_assert_post_rollback.sql`, then applies the re-contract
+companion **twice** and runs `supabase/replay/30_assert_post_recontract.sql`,
+which re-checks at the behaviour level that the direct writes the compatibility
+window accepted are refused again, that re-running the file is harmless, and that
+the round trip did not re-enable the published credential. A rollback companion
+with no such forward twin now fails the harness outright — a rollback the CLI
+cannot undo is a one-way door, so it must either declare `-- RECONTRACTS:` in a
+`recontract_*.sql` file or say why not with `-- NO_RECONTRACT:` in the rollback
+companion.
 
 ---
 

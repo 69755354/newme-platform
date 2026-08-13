@@ -23,10 +23,10 @@
  *      different order on a fresh database than it did on production.
  *
  *   3. Filename shape. A new file must match the Supabase CLI's rule exactly
- *      (^[0-9]{14}_.*\.sql$), or be a rollback_ companion the CLI never runs.
- *      The one legacy exception, the 10-digit epoch file, is pinned by the
- *      manifest rather than allowed by a pattern, so it cannot be the precedent
- *      for a second one.
+ *      (^[0-9]{14}_.*\.sql$), or be a hand-run companion the CLI never runs:
+ *      rollback_*.sql or recontract_*.sql. The one legacy exception, the 10-digit
+ *      epoch file, is pinned by the manifest rather than allowed by a pattern, so
+ *      it cannot be the precedent for a second one.
  *
  *   4. Manifest integrity. The manifest itself is cross-checked against its
  *      BASE_COMMIT with git: same file set, same hashes. Without this the gate
@@ -56,7 +56,12 @@ const MIGRATIONS_DIR = path.join(ROOT, "supabase", "migrations");
 const MANIFEST = path.join(ROOT, "supabase", "migration-history-baseline.sha256");
 
 const APPLIED_NAME = /^[0-9]{14}_.*\.sql$/;
-const ROLLBACK_NAME = /^rollback_.*\.sql$/;
+// The two hand-run companion shapes. Neither matches APPLIED_NAME, which is the
+// whole point: the Supabase CLI never applies them, so an operator runs them
+// deliberately. `rollback_` gives up a posture; `recontract_` re-enters it after
+// a rollback, because the migration that established it is already recorded and
+// nothing pending would run again (review round 4 B9).
+const COMPANION_NAME = /^(rollback|recontract)_.*\.sql$/;
 
 const argv = new Set(process.argv.slice(2));
 const LIST_NEW = argv.has("--list-new");
@@ -102,12 +107,12 @@ const onDisk = fs
 
 const diskSet = new Set(onDisk);
 const newFiles = [];
-const rollbackFiles = [];
+const companionFiles = [];
 
 for (const name of onDisk) {
   if (expected.has(name)) continue;
-  if (ROLLBACK_NAME.test(name)) {
-    rollbackFiles.push(name);
+  if (COMPANION_NAME.test(name)) {
+    companionFiles.push(name);
   } else {
     newFiles.push(name);
   }
@@ -179,8 +184,8 @@ for (const name of newFiles) {
   seenStamps.set(stamp, name);
 }
 
-for (const name of rollbackFiles) {
-  if (!ROLLBACK_NAME.test(name)) fail(`unexpected companion filename: ${name}`);
+for (const name of companionFiles) {
+  if (!COMPANION_NAME.test(name)) fail(`unexpected companion filename: ${name}`);
 }
 
 // 4 · manifest integrity against the base commit
@@ -206,7 +211,7 @@ if (!NO_GIT) {
         .map((l) => l.trim())
         .filter((l) => l.endsWith(".sql"))
         .map((l) => l.replace(/^supabase\/migrations\//, ""))
-        .filter((n) => !ROLLBACK_NAME.test(n))
+        .filter((n) => !COMPANION_NAME.test(n))
         .sort();
 
       for (const name of listed) {
@@ -245,7 +250,7 @@ if (LIST_NEW) {
 console.log("migration history");
 console.log(`  applied (immutable) : ${expected.size} listed, ${unchanged} verified unchanged`);
 console.log(`  new on this branch  : ${newFiles.length}${newFiles.length ? ` (${newFiles.join(", ")})` : ""}`);
-console.log(`  rollback companions : ${rollbackFiles.length}`);
+console.log(`  hand-run companions : ${companionFiles.length}${companionFiles.length ? ` (${companionFiles.join(", ")})` : ""}`);
 console.log(`  last applied stamp  : ${highestApplied}`);
 console.log(`  manifest vs git     : ${gitChecked ? `verified against ${baseCommitMatch?.[1].slice(0, 12)}` : "NOT VERIFIED"}`);
 console.log(`  files on disk       : ${diskSet.size} .sql`);

@@ -273,9 +273,11 @@ test("no assertion in either replay file is a constant", async () => {
   // them in the post-rollback file. The shape is banned rather than fixed once:
   // pass the measurement to assert() and put the detail in a `raise notice`.
   const postRollbackSql = await read("supabase/replay/20_assert_post_rollback.sql");
+  const postRecontractSql = await read("supabase/replay/30_assert_post_recontract.sql");
   for (const [name, sql] of [
     ["10_assert_release_contracts.sql", assertionSql],
     ["20_assert_post_rollback.sql", postRollbackSql],
+    ["30_assert_post_recontract.sql", postRecontractSql],
   ]) {
     const vacuous = [...sql.matchAll(/^[^-\n]*\bassert\(\s*(?:true|false)\s*,\s*'([^']+)'/gim)].map(
       (m) => m[1],
@@ -287,16 +289,29 @@ test("no assertion in either replay file is a constant", async () => {
     );
   }
 
-  // And the post-rollback file's declared total still matches its markers, which
-  // is what scripts/replay-migrations.sh compares the run's ASSERT_OK count to.
-  const declared = /^-- ASSERT_TOTAL: (\d+)$/m.exec(postRollbackSql);
-  assert.ok(declared, "20_assert_post_rollback.sql must declare ASSERT_TOTAL");
-  const markers = [...postRollbackSql.matchAll(/pg_temp\.assert\(/g)].length - 1; // minus its own definition
-  assert.equal(
-    Number(declared[1]),
-    markers,
-    "the post-rollback ASSERT_TOTAL must equal the number of assertion call sites",
-  );
+  // And each post-phase file's declared total still matches its markers, which is
+  // what scripts/replay-migrations.sh compares that stage's ASSERT_OK count to. A
+  // declared total below the real count is the quiet failure mode: the file stops
+  // early, the stage still reaches the declared number, and the runner is happy.
+  for (const [name, sql] of [
+    ["20_assert_post_rollback.sql", postRollbackSql],
+    ["30_assert_post_recontract.sql", postRecontractSql],
+  ]) {
+    const declared = /^-- ASSERT_TOTAL: (\d+)$/m.exec(sql);
+    assert.ok(declared, `${name} must declare ASSERT_TOTAL`);
+    const markers = [...sql.matchAll(/pg_temp\.assert\(/g)].length - 1; // minus its own definition
+    assert.equal(
+      Number(declared[1]),
+      markers,
+      `${name}'s ASSERT_TOTAL must equal the number of assertion call sites`,
+    );
+    // The file's own trailing self-check has to compare against the same number.
+    // Two places, so both are asserted rather than one being assumed to follow.
+    assert.ok(
+      new RegExp(`if total <> ${declared[1]} then`).test(sql),
+      `${name}'s self-check must compare against its declared ASSERT_TOTAL (${declared[1]})`,
+    );
+  }
 });
 
 test("parseLog tolerates CRLF and psql line prefixes", () => {

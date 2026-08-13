@@ -44,6 +44,15 @@ const GUARDS_FILE = "20260814000000_l0_round3_authorization_and_integrity.sql";
 const CONTRACT_FILE = "20260818000000_money_direct_write_contract_phase.sql";
 const MANIFEST_PATH = "infra/release/release-manifest.json";
 const COMPANION = "rollback_money_direct_write_contract_phase.sql";
+/**
+ * The way back. Round-4 review B9: the rollback companion enters `compat` and
+ * nothing returns the database to `strict`, because `20260818000000` is already
+ * recorded in supabase_migrations.schema_migrations and both the CLI and
+ * scripts/db-phase-push.mjs skip a recorded version. A second numbered migration
+ * would inherit the same one-shot property, so the return path is a hand-run
+ * artifact — the rollback companion's mirror image.
+ */
+const RECONTRACT = "recontract_money_direct_write_contract_phase.sql";
 /** The production stamp the replay's history phase stops at. */
 const PRODUCTION_STAMP = "20260805202917";
 
@@ -63,6 +72,7 @@ const expandSetSql = readdirSync(path.join(ROOT, "supabase/migrations"))
   .join("\n");
 const contractSql = read(`supabase/migrations/${CONTRACT_FILE}`);
 const companionSql = read(`supabase/migrations/${COMPANION}`);
+const recontractSql = read(`supabase/migrations/${RECONTRACT}`);
 
 /** The contents of a ```<tag> fenced block, as trimmed non-empty lines. */
 function fence(tag) {
@@ -79,13 +89,16 @@ test("the document leads with what has not been done, and marks every action", (
   assert.match(doc, /does not apply a migration/);
   const actions = doc.match(/\*\*\[AUTHORISED ACTION\]/g) ?? [];
   assert.ok(
-    actions.length >= 3,
+    actions.length >= 4,
     `each production step must be marked [AUTHORISED ACTION]; found ${actions.length}`,
   );
-  // The three that must be marked, by name.
+  // The four that must be marked, by name. Re-entering the contract phase is one
+  // of them: it is a hand-run change to production's money posture, so it cannot
+  // be presented as a recovery detail inside a rollback section.
   assert.match(doc, /\*\*\[AUTHORISED ACTION\] Apply the expand phase\.\*\*/);
   assert.match(doc, /\*\*\[AUTHORISED ACTION\] Deploy the candidate release\.\*\*/);
   assert.match(doc, /\*\*\[AUTHORISED ACTION\] Apply the contract phase\.\*\*/);
+  assert.match(doc, /\*\*\[AUTHORISED ACTION\] Re-enter the contract phase\.\*\*/);
 });
 
 test("the documented expand set is the real pending migration set", () => {
@@ -280,15 +293,151 @@ test("the three release-mode values are the values the SQL writes", () => {
   // Companion returns to compat and verifies it took.
   assert.match(companionSql, /set direct_write_mode = 'compat'/);
   assert.match(companionSql, /if v_mode <> 'compat' then/);
+  // And the re-contract companion goes back to strict and verifies THAT took, by
+  // the column and by the function the guards call.
+  assert.match(recontractSql, /values \('only', 'strict',/);
+  assert.match(recontractSql, /if v_mode <> 'strict' then/);
+  assert.match(recontractSql, /if public\.money_direct_write_mode\(\) <> 'strict' then/);
 
   // The document's matrix must use those exact values, and must call state 3 the
   // rollback boundary — that is the whole point of the two-push procedure.
   assert.match(doc, /\| 2 · expand applied \|.*`compat` \|/);
   assert.match(doc, /\| 4 · contract applied \|.*`strict` \|/);
   assert.match(doc, /\| 5 · companion run \|.*`compat` \|/);
+  assert.match(doc, /\| 6 · recontract run \|.*`strict` \|/);
   assert.match(doc, /State 3 is the rollback boundary/);
   assert.match(doc, /point of no return is step 7/);
   assert.match(doc, new RegExp(COMPANION.replace(/\./g, "\\.")));
+});
+
+test("the way back out of compat is an artifact, not a migration that cannot re-run", () => {
+  // Round-4 review B9. Three separate claims have to hold together, and each of
+  // them is a thing that has been got wrong before:
+  //
+  //   1. the artifact is not a migration — a numbered file would be recorded on
+  //      the first deploy and skipped on the second, which is the dead end B9
+  //      found in the first place;
+  //   2. it refuses to declare a posture it cannot enforce;
+  //   3. the harness measures the round trip, so "there is a way back" is not a
+  //      sentence in a document.
+  assert.doesNotMatch(
+    RECONTRACT,
+    /^\d{14}_/,
+    "a timestamped name is applied and recorded once, which is exactly the dead end this file exists to avoid",
+  );
+  assert.match(
+    recontractSql,
+    new RegExp(`^-- RECONTRACTS: ${CONTRACT_FILE.replace(/\./g, "\\.")}$`, "m"),
+    "the artifact must declare which migration it re-enters, which is what the harness's coverage gate reads",
+  );
+
+  // 2 · the refusal. The four mode-gated guards it checks must be the four the
+  // manifest's deferred_contract posture predicate checks: if the artifact and the
+  // verifier disagree about what "strict" is made of, one of them is wrong and
+  // nothing says which.
+  const manifest = JSON.parse(read(MANIFEST_PATH));
+  const guardPredicate = manifest.posture.deferred_contract.predicates.find((p) => /guard/.test(p.name));
+  assert.ok(guardPredicate, "deferred_contract must carry a posture predicate covering the write guards");
+  const triggerNames = (sql) => [...sql.matchAll(/'(trg_guard_[a-z_]+)'/g)].map((m) => m[1]);
+  const manifestGuards = [...new Set(triggerNames(guardPredicate.sql))].sort();
+  assert.equal(manifestGuards.length, 4, `expected four mode-gated guards in the manifest, saw ${manifestGuards.length}`);
+
+  const guardArray = /v_guards\s+text\[\]\s*:=\s*array\[([\s\S]*?)\];/.exec(recontractSql);
+  assert.ok(guardArray, "the artifact must name the guards it requires");
+  assert.deepEqual(
+    [...new Set(triggerNames(guardArray[1]))].sort(),
+    manifestGuards,
+    "the guards the re-contract requires are not the guards the manifest verifies",
+  );
+
+  // A trigger that exists but is disabled refuses nothing, so presence is not the
+  // test — `tgenabled = 'O'` is, in the artifact AND in every posture predicate
+  // that counts guards. `alter table … disable trigger` leaves the row in
+  // pg_trigger, so a presence-only predicate reports a posture that enforces
+  // nothing, and the operator's --verify-only would disagree with the artifact
+  // that just refused to run.
+  assert.match(recontractSql, /and g\.tgenabled = 'O'/);
+  for (const [phase, block] of Object.entries(manifest.posture)) {
+    for (const predicate of block.predicates ?? []) {
+      if (triggerNames(predicate.sql).length === 0) continue;
+      assert.match(
+        predicate.sql,
+        /tgenabled = 'O'/,
+        `posture predicate ${phase}/${predicate.name} counts triggers without requiring them to be enabled`,
+      );
+    }
+  }
+  assert.match(recontractSql, /refusing to declare the strict posture/);
+  assert.match(recontractSql, /using errcode = '42P01'/);
+  for (const required of ["public.money_direct_write_mode()", "public.money_direct_write_is_blocked()"]) {
+    assert.ok(
+      recontractSql.includes(`to_regprocedure('${required}')`),
+      `the artifact must refuse when ${required} is absent`,
+    );
+  }
+  // One row in one table, exactly like the rollback companion. A hand-run file
+  // that creates or replaces objects is a migration wearing a companion's name,
+  // and it would silently re-install whatever definition it happens to carry.
+  assert.doesNotMatch(
+    recontractSql.replace(/^--.*$/gm, ""),
+    /\b(create|alter|drop)\s+(or\s+replace\s+)?(function|trigger|policy|table|view|index)\b/i,
+    "the re-contract companion must not carry DDL",
+  );
+  assert.match(recontractSql, /'MONEY_CONTRACT_PHASE_REENTERED'/);
+
+  // 3 · the harness. Applied twice, because an operator who cannot tell whether
+  // the first run committed will run it again.
+  const harness = read("scripts/replay-migrations.sh");
+  assert.match(harness, /for attempt in 1 2; do/);
+  assert.match(harness, /RECONTRACTS:/);
+  assert.match(harness, /NO_RECONTRACT:/);
+  assert.match(harness, /a rollback the CLI cannot undo is a one-way door/);
+  assert.ok(
+    existsSync(path.join(ROOT, "supabase/replay/30_assert_post_recontract.sql")),
+    "the harness runs a post-recontract assertion file, so it has to exist",
+  );
+
+  // The two hand-run shapes must be treated as hand-run by both static gates.
+  // check-db-static.mjs read the whole name up to the first `_` as a timestamp, so
+  // an unfiltered companion becomes a "duplicate migration timestamp" report.
+  for (const gate of ["scripts/check-migration-history.mjs", "scripts/check-db-static.mjs"]) {
+    assert.match(
+      read(gate),
+      /\^\(rollback\|recontract\)_/,
+      `${gate} must recognise both hand-run companion shapes`,
+    );
+  }
+});
+
+test("the runbook tells an operator how to run the hand-run artifacts without exposing a DSN", () => {
+  // The section exists, is numbered where the matrix says the transition is, and
+  // says why a migration cannot do this — the reasoning is the load-bearing part,
+  // because the next person's instinct will be to add 20260819000000_.
+  assert.match(doc, /### 5\.1 · Re-deploying after a rollback \(state 5 → state 4\)/);
+  assert.match(doc, /already recorded, so the phase tool and the CLI\s*\r?\n?\s*both skip it/);
+  assert.ok(doc.includes(`supabase/migrations/${RECONTRACT}`), "§5.1 must name the artifact it tells the operator to run");
+
+  // The invocation. `psql "$(cat url-file)"` would put the DSN in argv, where any
+  // process on the host can read it for as long as the command runs; scripts/
+  // db-phase-push.mjs refuses a URL argument for the same reason. libpq's service
+  // file is the form that keeps it out.
+  assert.match(doc, /PGSERVICEFILE=<service-file> PGSERVICE=<service-name>/);
+  assert.match(doc, /a DSN in `argv` is readable by\s*\r?\n?\s*every process on the host/);
+  const shellBlocks = [...doc.matchAll(/```text\r?\n([\s\S]*?)```/g)].map((m) => m[1]);
+  for (const block of shellBlocks) {
+    assert.doesNotMatch(
+      block,
+      /postgres(?:ql)?:\/\/|\$\(\s*cat\b/,
+      `a command block passes a connection string on the command line: ${block.trim()}`,
+    );
+  }
+
+  // Verification is the phase tool's own posture check, so the operator's answer
+  // and the gate's answer come from one implementation.
+  assert.match(doc, /node scripts\/db-phase-push\.mjs --phase deferred_contract --url-file <file> --verify-only/);
+  // And the rollback section has to point at the return path, so an operator
+  // standing at the rollback decision knows the way back before taking it.
+  assert.match(doc, /Run the companion the way §5\.1 runs its mirror image/);
 });
 
 test("the document is right about which gate function sees the calling role", () => {

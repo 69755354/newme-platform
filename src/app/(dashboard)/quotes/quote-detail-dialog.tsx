@@ -227,11 +227,17 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
   const quoteTotal = round2(quote.total_amount || 0);
   const scheduleTotal = round2((schedule ?? []).reduce((sum, row) => sum + (row.amount || 0), 0));
   const scheduleRemainder = round2(quoteTotal - scheduleTotal);
+  // Exactly, not within a cent. `abs(remainder) <= 0.01` is the tolerance
+  // convert_quotation_to_contract() itself used until 20260817000000 replaced it
+  // with equality after rounding to two decimals; leaving it here would put the
+  // label and the button one cent ahead of the routine, so a schedule this dialog
+  // calls a match would come back as a 22023 the operator cannot act on.
+  const scheduleBalanced = scheduleRemainder === 0;
   const scheduleIsValid =
     schedule !== null &&
     schedule.length > 0 &&
     schedule.every((row) => Number.isFinite(row.amount) && row.amount > 0) &&
-    Math.abs(scheduleRemainder) <= 0.01;
+    scheduleBalanced;
 
   const updateInstallment = (index: number, patch: Partial<Installment>) => {
     setSchedule((rows) =>
@@ -599,10 +605,10 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
               <span
                 className={cn(
                   "text-xs",
-                  Math.abs(scheduleRemainder) <= 0.01 ? "text-emerald-400" : "text-amber-400",
+                  scheduleBalanced ? "text-emerald-400" : "text-amber-400",
                 )}
               >
-                {Math.abs(scheduleRemainder) <= 0.01
+                {scheduleBalanced
                   ? `Scheduled ${fmtAED(scheduleTotal)} — matches the quotation total`
                   : `Scheduled ${fmtAED(scheduleTotal)} — ${fmtAED(Math.abs(scheduleRemainder))} ${
                       scheduleRemainder > 0 ? "unallocated" : "over the quotation total"

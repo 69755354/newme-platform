@@ -12,9 +12,13 @@
 #       adds or changes, then fixtures, then a re-apply against those fixtures,
 #       then supabase/replay/10_assert_release_contracts.sql, then
 #       supabase/replay/15_concurrency_two_session.sh with EXPECT=consistent,
-#       then the rollback companion. This is the executable proof that the L0
-#       migrations apply, do what they claim at the behaviour level, hold up under
-#       two concurrent writers, are idempotent, and are reversible.
+#       then the rollback companion and supabase/replay/20_assert_post_rollback.sql,
+#       then the recontract companion — twice — and
+#       supabase/replay/30_assert_post_recontract.sql. This is the executable proof
+#       that the L0 migrations apply, do what they claim at the behaviour level,
+#       hold up under two concurrent writers, are idempotent, are reversible, and
+#       that the posture a rollback gives up can be re-entered afterwards without
+#       replaying an already-recorded migration (review round 4 B9).
 #
 #   MODE=control  (gating)
 #       The floor and the fixtures, WITHOUT the migrations, then the same
@@ -104,6 +108,7 @@ export PGHOST PGPORT PGUSER PGDATABASE
 BASELINE_MANIFEST="$ROOT/supabase/migration-history-baseline.sha256"
 BRANCH_MIGRATIONS=()
 ROLLBACK_COMPANIONS=()
+RECONTRACT_COMPANIONS=()
 
 # ---------------------------------------------------------------------------
 # MODE=control expectations live in supabase/replay/control-expectations.txt,
@@ -260,6 +265,15 @@ for name in "${all_sql[@]}"; do
       ROLLBACK_COMPANIONS+=("$name")
       continue
       ;;
+    recontract_*.sql)
+      # The forward twin of a rollback companion, and inert for the same reason:
+      # the name does not match ^[0-9]{14}_ so the CLI never applies it. Review
+      # round 4 B9 is why these exist — once a numbered migration is recorded,
+      # nothing pending can return the database to the state it established, so
+      # the way back from a hand-run rollback has to be a hand-run artifact too.
+      RECONTRACT_COMPANIONS+=("$name")
+      continue
+      ;;
   esac
   if [[ ! "$name" =~ ^[0-9]{14}_.*\.sql$ ]]; then
     bad_names+=("$name: the Supabase CLI will never apply this name")
@@ -324,6 +338,58 @@ fi
 # Reverse application order.
 mapfile -t BRANCH_ROLLBACKS < <(printf '%s\n' "${BRANCH_ROLLBACKS[@]}" | LC_ALL=C sort -r)
 
+# ---------------------------------------------------------------------------
+# Return coverage: a rollback with no way forward again is a one-way door.
+#
+# Review round 4 B9. A hand-run rollback companion leaves the database in a state
+# the CLI can no longer change: the migration it reverses is RECORDED, so
+# `supabase db push` and scripts/db-phase-push.mjs both skip it, and there is
+# nothing pending that would restore what the companion undid. Shipping a second
+# numbered migration does not fix that — it would be applied and recorded during
+# the first deploy and the next attempt would be back in the same dead end — so
+# the way forward has to be a hand-run artifact too, declared with
+# `-- RECONTRACTS:` in a recontract_*.sql file.
+#
+# Every migration that a rollback companion reverses therefore needs a recontract
+# companion, or the rollback companion must say why not with `-- NO_RECONTRACT:`
+# plus a reason. The escape hatch is deliberate and it is on the ROLLBACK file:
+# the artifact that creates the one-way door is where the reason for it belongs.
+# ---------------------------------------------------------------------------
+declare -A RECONTRACT_FOR=()
+for companion in "${RECONTRACT_COMPANIONS[@]}"; do
+  while read -r covered; do
+    [ -n "$covered" ] || continue
+    RECONTRACT_FOR["$covered"]="$companion"
+  done < <(sed -n 's/^--[[:space:]]*RECONTRACTS:[[:space:]]*\([A-Za-z0-9_.-]\{1,\}\)[[:space:]]*$/\1/p' \
+    "$MIGRATIONS_DIR/$companion")
+done
+
+no_way_forward=()
+BRANCH_RECONTRACTS=()
+for name in "${BRANCH_MIGRATIONS[@]}"; do
+  [ -n "${ROLLBACK_FOR[$name]+set}" ] || continue   # nothing rolls it back
+  if [ -n "${RECONTRACT_FOR[$name]+set}" ]; then
+    companion="${RECONTRACT_FOR[$name]}"
+    case " ${BRANCH_RECONTRACTS[*]-} " in
+      *" $companion "*) ;;
+      *) BRANCH_RECONTRACTS+=("$companion") ;;
+    esac
+  elif grep -qE '^--[[:space:]]*NO_RECONTRACT:[[:space:]]*\S' "$MIGRATIONS_DIR/${ROLLBACK_FOR[$name]}"; then
+    printf '  no return path by declaration: %s (via %s)\n' "$name" "${ROLLBACK_FOR[$name]}"
+  else
+    no_way_forward+=("$name (rolled back by ${ROLLBACK_FOR[$name]})")
+  fi
+done
+if [ "${#no_way_forward[@]}" -gt 0 ]; then
+  printf 'no return path: %s\n' "${no_way_forward[@]}" >&2
+  fail "${#no_way_forward[@]} rolled-back migration(s) have neither a '-- RECONTRACTS:' companion nor a '-- NO_RECONTRACT: <reason>' declaration on the rollback companion; a rollback the CLI cannot undo is a one-way door"
+fi
+
+# Forward application order, the mirror of the rollback ordering above.
+if [ "${#BRANCH_RECONTRACTS[@]}" -gt 0 ]; then
+  mapfile -t BRANCH_RECONTRACTS < <(printf '%s\n' "${BRANCH_RECONTRACTS[@]}" | LC_ALL=C sort)
+fi
+
 echo "== history integrity =="
 echo "  applied and unchanged : ${#BASELINE_HASH[@]}"
 echo "  last applied stamp    : $highest_applied"
@@ -331,6 +397,10 @@ echo "  new on this branch    : ${#BRANCH_MIGRATIONS[@]}"
 printf '    %s\n' "${BRANCH_MIGRATIONS[@]}"
 echo "  rollback companions   : ${#BRANCH_ROLLBACKS[@]}"
 printf '    %s\n' "${BRANCH_ROLLBACKS[@]}"
+echo "  recontract companions : ${#BRANCH_RECONTRACTS[@]}"
+if [ "${#BRANCH_RECONTRACTS[@]}" -gt 0 ]; then
+  printf '    %s\n' "${BRANCH_RECONTRACTS[@]}"
+fi
 
 # ---------------------------------------------------------------------------
 # Refuse a non-empty target. This is a replay harness, not a repair tool; if it
@@ -607,4 +677,48 @@ post_observed="$(printf '%s\n' "$post_output" | grep -c 'ASSERT_OK ' || true)"
 [ "$post_observed" = "$post_expected" ] \
   || fail "expected $post_expected post-rollback assertions, saw $post_observed"
 
-echo "== replay OK: ${#BRANCH_MIGRATIONS[@]} migrations, $observed release assertions, ${#BRANCH_ROLLBACKS[@]} rollback companion(s), $post_observed post-rollback assertions =="
+# ---------------------------------------------------------------------------
+# Forward again, and the state THAT leaves behind.
+#
+# Review round 4 B9: the rollback was verified and the way back was not, so the
+# release had a measured exit and an unmeasured return. This runs the recontract
+# companions on top of the rolled-back schema and asserts the strict posture is
+# genuinely re-established — at the behaviour level, because after a round trip
+# `direct_write_mode = 'strict'` is a claim and a refused write is evidence.
+#
+# Each companion is applied TWICE. An operator re-running a hand-run file, or
+# re-running it because they cannot tell whether the first run committed, must not
+# be punished for it; and idempotence is what makes it usable on the second and
+# third redeploy attempt rather than only the first.
+# ---------------------------------------------------------------------------
+if [ "${#BRANCH_RECONTRACTS[@]}" -gt 0 ]; then
+  echo "== recontract companions =="
+  for companion in "${BRANCH_RECONTRACTS[@]}"; do
+    [ -f "$MIGRATIONS_DIR/$companion" ] || fail "missing $companion"
+    for attempt in 1 2; do
+      "${PSQL_TX[@]}" -f "$MIGRATIONS_DIR/$companion" >/dev/null \
+        || fail "$companion does not apply on top of the rolled-back schema (attempt $attempt)"
+    done
+    printf '  applied %s twice\n' "$companion"
+  done
+
+  echo "== post-recontract posture =="
+  POST_RECONTRACT_ASSERTS="$REPLAY_DIR/30_assert_post_recontract.sql"
+  [ -f "$POST_RECONTRACT_ASSERTS" ] || fail "missing post-recontract assertions"
+  recontract_expected="$(sed -n 's/^-- ASSERT_TOTAL: \([0-9]\{1,\}\)$/\1/p' "$POST_RECONTRACT_ASSERTS" | head -1)"
+  [ -n "${recontract_expected:-}" ] && [ "$recontract_expected" -gt 0 ] \
+    || fail "post-recontract assertion file does not declare ASSERT_TOTAL"
+
+  recontract_output="$(psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 -f "$POST_RECONTRACT_ASSERTS" 2>&1)" || {
+    printf '%s\n' "$recontract_output" >&2
+    fail "the re-contract did not restore the strict posture (post-recontract assertions raised)"
+  }
+  printf '%s\n' "$recontract_output"
+  recontract_observed="$(printf '%s\n' "$recontract_output" | grep -c 'ASSERT_OK ' || true)"
+  [ "$recontract_observed" = "$recontract_expected" ] \
+    || fail "expected $recontract_expected post-recontract assertions, saw $recontract_observed"
+else
+  recontract_observed=0
+fi
+
+echo "== replay OK: ${#BRANCH_MIGRATIONS[@]} migrations, $observed release assertions, ${#BRANCH_ROLLBACKS[@]} rollback companion(s), $post_observed post-rollback assertions, ${#BRANCH_RECONTRACTS[@]} recontract companion(s), $recontract_observed post-recontract assertions =="

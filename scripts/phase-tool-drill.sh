@@ -48,6 +48,25 @@
 #        failing mode function must NOT be reported as absence
 #      · a group-readable URL file is refused — on a Windows checkout that
 #        assertion passes vacuously, so this drill is where it means something
+#  12  transaction control that breaks the outer transaction (round-4 C4-6): a
+#      mutation test on a real release tree, in a fourth database
+#      · first the hazard itself is measured on this server: `rollback` inside a
+#        transaction discards the work AND ends the block, so what follows it
+#        commits on its own — a migration rolled back with its history row kept
+#      · then each of rollback, abort, savepoint, release savepoint, commit and
+#        chain, prepare transaction, set transaction and discard is injected into
+#        a copy of the newest required migration, the manifest is re-stamped so
+#        the hash gate cannot be what refuses, and the tool must refuse the WHOLE
+#        phase, name the keyword it classified, and write no history row
+#      · with a control: the same tree, database and command, mutation removed,
+#        applies every required migration — without it eight identical refusals
+#        from a broken copy would read as a pass
+#      · and the mutation that matters most is of the GUARD: the classifier in the
+#        copy is restored to what it did before C4-6 and the same `rollback;` is
+#        injected, which is required to record the migration while leaving nothing
+#        it created behind — the unrepeatable failure, since a recorded version is
+#        never applied again — with its own control showing the neutered tool
+#        harmless on an unmutated tree
 #
 # Step 9 breaks one named migration the way a real database breaks one: it leaves a
 # stale `public.assert_installment_schedule(jsonb, numeric, text)` behind that
@@ -58,9 +77,9 @@
 # this drill — that is the point of C7's "do not temporarily remove files".
 #
 # Requires: psql and node on PATH, the `pg` module resolvable, and an EMPTY
-# database named in PGDATABASE. It also creates ${PGDATABASE}_interrupt and
-# ${PGDATABASE}_absent. Nothing here touches production: the only databases it
-# talks to are those three.
+# database named in PGDATABASE. It also creates ${PGDATABASE}_interrupt,
+# ${PGDATABASE}_absent and ${PGDATABASE}_txctl. Nothing here touches production:
+# the only databases it talks to are those four.
 #
 #   PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=phase \
 #     bash scripts/phase-tool-drill.sh
@@ -593,4 +612,207 @@ node "$ROOT/scripts/check-release-phase.mjs" --for-switch --release-dir "$PREMEC
 [ ! -s "$WORK/loose.out" ] || fail "the phase gate printed a mode while refusing a loose URL file"
 note "  refused (exit $loose_rc)"
 
-echo "== phase drill OK: 11 steps, 3 databases, 4 + 7 refusals + 3 negative controls, $TOTAL_COUNT migrations applied in two phases and reproduced through the gate, release↔phase coupling measured in absent, compat and strict =="
+# ============================================================================
+# 12 · Transaction control that would break the outer transaction (round-4 C4-6)
+# ============================================================================
+# The tool's atomicity claim is that a migration and its history row commit
+# together or not at all, and it rests on the file's own `begin;`/`commit;` being
+# skipped. Everything the old classifier did not recognise was executed, and this
+# vocabulary is what that costs. First the cost is measured on this server, then
+# each statement is injected into a real release tree and the tool is required to
+# refuse the whole phase with nothing applied.
+# Announced like steps 10 and 11 rather than with $STEP: only run_phase advances
+# that counter, so a $STEP here would have read 10 while this is the twelfth step.
+note "transaction control: statements that would break the outer transaction"
+
+TXCTL_DB="${PGDATABASE}_txctl"
+"${PSQL[@]}" -d postgres -c "drop database if exists $TXCTL_DB" >/dev/null 2>&1 || true
+"${PSQL[@]}" -d postgres -c "create database $TXCTL_DB" >/dev/null || fail "could not create $TXCTL_DB"
+
+# The failing behaviour, on this server, before any refusal is asserted: inside a
+# transaction, `rollback` discards the work AND ends the block, so the statements
+# after it commit on their own. That is precisely a migration rolled back with its
+# history row committed.
+note "  failing behaviour: rollback mid-transaction discards the work and leaves the rest to autocommit"
+"${PSQL[@]}" -d "$TXCTL_DB" >"$WORK/txctl-probe.out" <<'PROBE' || fail "the rollback probe did not run"
+begin;
+create table public.probe_before (id int);
+rollback;
+create table public.probe_after (id int);
+select coalesce((to_regclass('public.probe_before') is null)::text, 'unknown') as before_gone,
+       coalesce((to_regclass('public.probe_after') is not null)::text, 'unknown') as after_committed;
+PROBE
+grep -qx 'true|true' "$WORK/txctl-probe.out" \
+  || { sed 's/^/    /' "$WORK/txctl-probe.out" >&2; fail "the rollback probe did not demonstrate the hazard on this server"; }
+note "    confirmed: the pre-rollback table is gone and the post-rollback table committed by itself"
+"${PSQL[@]}" -d "$TXCTL_DB" -c "drop table public.probe_after" >/dev/null
+
+# A real release tree, outside the repository, so nothing here edits, moves or
+# restores a file this release ships — C7's constraint, still in force.
+MUTANT="$WORK/release-mutant"
+mkdir -p "$MUTANT/supabase" "$MUTANT/infra"
+cp -R "$ROOT/scripts" "$MUTANT/scripts"
+cp -R "$ROOT/supabase/migrations" "$MUTANT/supabase/migrations"
+cp -R "$ROOT/infra/release" "$MUTANT/infra/release"
+MUTANT_TARGET="$(node -e '
+const m = require(process.argv[1]);
+const last = m.required_for_app[m.required_for_app.length - 1];
+process.stdout.write(`${last.file} ${last.version}`);
+' "$MUTANT/infra/release/release-manifest.json")"
+MUTANT_FILE="$MUTANT/supabase/migrations/${MUTANT_TARGET% *}"
+MUTANT_VERSION="${MUTANT_TARGET#* }"
+cp "$MUTANT_FILE" "$WORK/mutant-pristine.sql"
+# The witness for the damage measured below: an object the mutated file creates and
+# no other migration in the tree does, so its absence beside a recorded history row
+# can only mean that file was rolled back after being recorded. Both halves of that
+# are asserted here rather than assumed, because a later release that moves this
+# function must break this step loudly instead of measuring nothing.
+TXCTL_WITNESS="clear_kpi_targets"
+witness_creators="$(grep -lE "create (or replace )?function public\.$TXCTL_WITNESS\b" \
+  "$MUTANT"/supabase/migrations/[0-9]*.sql | wc -l | tr -d ' ')"
+[ "$witness_creators" = "1" ] \
+  || fail "public.$TXCTL_WITNESS is created by $witness_creators numbered migration(s); the damage witness must belong to exactly one"
+grep -qE "create (or replace )?function public\.$TXCTL_WITNESS\b" "$WORK/mutant-pristine.sql" \
+  || fail "public.$TXCTL_WITNESS is not created by ${MUTANT_TARGET% *}, so it cannot witness that file being rolled back"
+prepare_db "$TXCTL_DB"
+
+inject() {
+  local statement="$1" label="$2"
+  cp "$WORK/mutant-pristine.sql" "$MUTANT_FILE"
+  # Injected before the file's own final `commit;`, where a real one would be, so
+  # everything the file creates has already run when it takes effect.
+  node -e '
+    const fs = require("node:fs");
+    const [file, statement] = process.argv.slice(1);
+    const sql = fs.readFileSync(file, "utf8");
+    const at = sql.lastIndexOf("commit;");
+    if (at < 0) { console.error("no final commit; in the mutation target"); process.exit(1); }
+    fs.writeFileSync(file, `${sql.slice(0, at)}${statement}\n${sql.slice(at)}`);
+  ' "$MUTANT_FILE" "$statement" || fail "could not inject $label"
+  # Re-stamped so the content hash cannot be what refuses: this step is about the
+  # statement classifier, and a hash mismatch would refuse every mutation for a
+  # reason that has nothing to do with it.
+  node "$MUTANT/scripts/check-release-manifest.mjs" --stamp >/dev/null \
+    || fail "could not re-stamp the mutant manifest for $label"
+}
+
+push_mutant() {
+  local log="$1" rc=0
+  shift
+  node "$MUTANT/scripts/db-phase-push.mjs" --phase required_for_app \
+    --url-file "$(url_file "$TXCTL_DB")" --apply --init-history --modules-dir "$ROOT" \
+    >"$log" 2>&1 || rc=$?
+  echo "$rc"
+}
+
+mutate_and_run() {
+  local statement="$1" keyword="$2" rc rows
+  inject "$statement" "$keyword"
+  rc="$(push_mutant "$WORK/txctl-$keyword.log")"
+  [ "$rc" -ne 0 ] \
+    || { sed 's/^/    /' "$WORK/txctl-$keyword.log" >&2; fail "the tool applied a phase containing $keyword"; }
+  grep -q "cannot honour" "$WORK/txctl-$keyword.log" \
+    || { sed 's/^/    /' "$WORK/txctl-$keyword.log" >&2; fail "$keyword was refused for the wrong reason"; }
+  grep -q "($keyword)" "$WORK/txctl-$keyword.log" \
+    || { sed 's/^/    /' "$WORK/txctl-$keyword.log" >&2; fail "the refusal for $keyword does not name the keyword it classified"; }
+  # Nothing applied means nothing recorded — not one row, and not the table either,
+  # since the refusal happens before --init-history could create it.
+  rows="$("${PSQL[@]}" -d "$TXCTL_DB" -c "select coalesce((select count(*) from supabase_migrations.schema_migrations), 0) where to_regclass('supabase_migrations.schema_migrations') is not null")"
+  [ -z "$rows" ] || [ "$rows" = "0" ] \
+    || fail "$keyword was refused but $rows history row(s) were written"
+  note "    refused: $keyword (exit $rc, 0 history rows)"
+}
+
+mutate_and_run "rollback;" "rollback"
+mutate_and_run "abort;" "abort"
+mutate_and_run "savepoint s1;" "savepoint"
+mutate_and_run "release savepoint s1;" "release"
+mutate_and_run "commit and chain;" "commit"
+mutate_and_run "prepare transaction 'phase-drill';" "prepare transaction"
+mutate_and_run "set transaction read only;" "set transaction"
+mutate_and_run "discard all;" "discard"
+
+# The control that makes the eight refusals mean something: the same tree, the same
+# database and the same command, with the mutation removed, applies. Without this a
+# broken copy would produce eight identical refusals and look like a pass.
+cp "$WORK/mutant-pristine.sql" "$MUTANT_FILE"
+node "$MUTANT/scripts/check-release-manifest.mjs" --stamp >/dev/null \
+  || fail "could not restore the mutant manifest"
+txctl_rc="$(push_mutant "$WORK/txctl-clean.log")"
+[ "$txctl_rc" = "0" ] \
+  || { sed 's/^/    /' "$WORK/txctl-clean.log" >&2; fail "the unmutated tree did not apply: the refusals above prove nothing"; }
+txctl_rows="$("${PSQL[@]}" -d "$TXCTL_DB" -c "select count(*) from supabase_migrations.schema_migrations")"
+[ "$txctl_rows" = "$EXPAND_COUNT" ] \
+  || fail "the unmutated tree applied $txctl_rows migration(s), expected $EXPAND_COUNT"
+note "  control: the same tree without the mutation applied $txctl_rows migration(s) to the same database"
+
+# The mutation that matters most is of the guard, not of the input. The eight
+# refusals above show the classifier declining; they do not show what declining is
+# worth. So the classifier is neutered in the COPY — restored to what it did before
+# round-4 C4-6, when anything it did not recognise was simply sent — and the same
+# `rollback;` is injected again. The tool is then required to do real damage:
+# record the migration and leave nothing it created behind. That row is the
+# unrepeatable kind, because a version already in schema_migrations is never applied
+# again; the phase would be "already applied" forever with the objects missing.
+#
+# A fresh database, because the control above left this phase fully applied and an
+# applied phase is a no-op — the strongest control here would otherwise measure
+# nothing at all.
+note "  superseded classifier: what the refusals above are worth"
+"${PSQL[@]}" -d postgres -c "drop database $TXCTL_DB" >/dev/null \
+  || fail "could not recycle $TXCTL_DB for the superseded-classifier control"
+"${PSQL[@]}" -d postgres -c "create database $TXCTL_DB" >/dev/null \
+  || fail "could not recreate $TXCTL_DB"
+prepare_db "$TXCTL_DB"
+node -e '
+  const fs = require("node:fs");
+  const file = process.argv[1];
+  const src = fs.readFileSync(file, "utf8");
+  // Anchored on the whole function, so a rewrite of the classifier that this
+  // control no longer describes fails here rather than silently neutering nothing.
+  const anchor = `  const match = TRANSACTION_VOCABULARY.exec(code);
+  return match ? match[0] : null;`;
+  if (!src.includes(anchor)) {
+    console.error("breaksOuterTransaction no longer has the shape this control neuters");
+    process.exit(1);
+  }
+  fs.writeFileSync(file, src.replace(anchor, "  return null; // neutered by the drill"));
+' "$MUTANT/scripts/db-phase-push.mjs" \
+  || fail "could not neuter the classifier in the copy"
+inject "rollback;" "superseded"
+txctl_rc="$(push_mutant "$WORK/txctl-superseded.log")"
+# Whether it exits 0 is not the finding — `commit` after a rollback is a warning,
+# not an error, so it may well report success. The finding is the state it leaves.
+txctl_damage="$("${PSQL[@]}" -d "$TXCTL_DB" -c "
+  select (select count(*) from supabase_migrations.schema_migrations where version = '$MUTANT_VERSION')
+      || '|' ||
+         (select count(*) from pg_proc p
+            join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = '$TXCTL_WITNESS')")"
+[ "$txctl_damage" = "1|0" ] \
+  || { sed 's/^/    /' "$WORK/txctl-superseded.log" >&2; fail "the superseded classifier did not reproduce the hazard (recorded|witness = $txctl_damage, expected 1|0)"; }
+note "    reproduced: $MUTANT_VERSION recorded as applied (exit $txctl_rc) with public.$TXCTL_WITNESS absent"
+# And back: the same neutered tool with the mutation removed leaves the witness in
+# place, so the damage above is the injected statement's and not the neutering's.
+"${PSQL[@]}" -d postgres -c "drop database $TXCTL_DB" >/dev/null \
+  || fail "could not recycle $TXCTL_DB for the superseded-classifier control's own control"
+"${PSQL[@]}" -d postgres -c "create database $TXCTL_DB" >/dev/null \
+  || fail "could not recreate $TXCTL_DB"
+prepare_db "$TXCTL_DB"
+cp "$WORK/mutant-pristine.sql" "$MUTANT_FILE"
+node "$MUTANT/scripts/check-release-manifest.mjs" --stamp >/dev/null \
+  || fail "could not restore the mutant manifest"
+txctl_rc="$(push_mutant "$WORK/txctl-superseded-clean.log")"
+[ "$txctl_rc" = "0" ] \
+  || { sed 's/^/    /' "$WORK/txctl-superseded-clean.log" >&2; fail "the neutered tool could not apply an unmutated tree, so the damage above is not attributable to the injected statement"; }
+txctl_damage="$("${PSQL[@]}" -d "$TXCTL_DB" -c "
+  select (select count(*) from supabase_migrations.schema_migrations where version = '$MUTANT_VERSION')
+      || '|' ||
+         (select count(*) from pg_proc p
+            join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = '$TXCTL_WITNESS')")"
+[ "$txctl_damage" = "1|1" ] \
+  || fail "the unmutated tree under the neutered classifier reported recorded|witness = $txctl_damage, expected 1|1"
+note "    attributed: without the injected statement the same neutered tool leaves public.$TXCTL_WITNESS in place"
+
+echo "== phase drill OK: 12 steps, 4 databases, 4 + 15 refusals + 7 negative controls, $TOTAL_COUNT migrations applied in two phases and reproduced through the gate, release↔phase coupling measured in absent, compat and strict, 8 transaction-control mutations refused with nothing applied and the superseded classifier measured recording a rolled-back migration =="

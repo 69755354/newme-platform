@@ -38,8 +38,11 @@
  * SQL that did not run, never SQL that ran without a row. The file's own `begin;`
  * / `commit;` is skipped rather than sent (see isTransactionControl), because an
  * inner `commit` would end this tool's transaction and break exactly that
- * property; a statement that cannot run inside a transaction block at all is a
- * refusal for the whole phase before anything is applied.
+ * property; a statement that cannot run inside a transaction block at all, and any
+ * other statement that would end, hand away or partly discard the transaction —
+ * `rollback`, `abort`, `savepoint`, `release`, `and chain`, `prepare transaction`,
+ * `set transaction`, `discard` (see breaksOuterTransaction) — is a refusal for the
+ * whole phase before anything is applied.
  *
  * After applying it verifies, in a READ ONLY transaction:
  *   * read-after-write on the history itself: every row it just wrote is read
@@ -114,8 +117,63 @@ export function statementCode(statement) {
  * single transaction is the one that commits: the migration and its history row,
  * together or not at all.
  */
+const OWN_TRANSACTION_CONTROL = /^(?:begin|start transaction|commit|end)(?: work| transaction)?$/;
+
 export function isTransactionControl(statement) {
-  return /^(begin|start transaction|commit|end)( work| transaction)?$/.test(statementCode(statement));
+  return OWN_TRANSACTION_CONTROL.test(statementCode(statement));
+}
+
+/**
+ * The leading keywords of every statement that changes transaction state.
+ *
+ * Round-4 C4-6. `isTransactionControl` above is an allowlist of the two forms
+ * this tool skips, and everything it does not match used to be executed — which
+ * is fine for `create table` and catastrophic for the rest of this vocabulary,
+ * because the transaction it would end is the one carrying the migration and its
+ * history row together:
+ *
+ *   rollback, abort                 discard the migration, then leave the
+ *                                   remaining statements running in autocommit —
+ *                                   each committing on its own, and the history
+ *                                   row committing too, so the row would claim a
+ *                                   migration that was rolled back
+ *   savepoint, release, rollback to  discard part of it, silently, and the
+ *                                   history row would still be written and
+ *                                   committed as if the whole file had run
+ *   commit/rollback/end and chain    commit here and open a new transaction, so
+ *                                   the history row lands in a different one
+ *   prepare transaction              hand the transaction to two-phase commit and
+ *                                   dissociate it from this session, leaving the
+ *                                   history row to commit separately and a
+ *                                   prepared transaction holding locks
+ *   commit/rollback prepared         cannot run inside a transaction block at all
+ *   set transaction, set constraints,
+ *   set session characteristics      change the transaction this tool opened —
+ *                                   `set transaction read only` would fail every
+ *                                   statement after it
+ *   discard                          cannot run inside a transaction block
+ *
+ * The list of ways to break an outer transaction is longer than the list of ways
+ * to open one and grows with each PostgreSQL release, so the shape is an
+ * allowlist: a statement whose first keyword is in this vocabulary is refused
+ * unless it is exactly one of the two skippable forms. Classification is on
+ * `statementCode`, which strips comments; a keyword inside a string literal is
+ * not at the start of a statement, and a statement this misreads is refused
+ * rather than run.
+ */
+const TRANSACTION_VOCABULARY =
+  /^(?:begin|start|commit|end|rollback|abort|savepoint|release|prepare transaction|discard)\b|^set (?:transaction|constraints|session characteristics)\b/;
+
+/**
+ * The transaction-control keyword a statement would execute, or null if it is
+ * either ordinary SQL or the file's own outer `begin`/`commit`. Never the
+ * statement text: the caller prints what this returns.
+ */
+export function breaksOuterTransaction(statement) {
+  const code = statementCode(statement);
+  if (OWN_TRANSACTION_CONTROL.test(code)) return null;
+  const match = TRANSACTION_VOCABULARY.exec(code);
+  return match ? match[0] : null;
 }
 
 /**
@@ -415,6 +473,13 @@ async function main(argv) {
           );
           return 1;
         }
+        const breaking = statements.findIndex((statement) => breaksOuterTransaction(statement) !== null);
+        if (breaking >= 0) {
+          console.error(
+            `refusing: ${entry.file} statement ${breaking + 1} is transaction control this tool cannot honour (${breaksOuterTransaction(statements[breaking])}): it would end, hand away or partly discard the transaction that carries this migration and its history row together`,
+          );
+          return 1;
+        }
       }
 
       for (const entry of toApply) {
@@ -427,6 +492,16 @@ async function main(argv) {
           await client.query("begin");
           for (const statement of statements) {
             if (isTransactionControl(statement)) continue;
+            // The shape refusal above already rejected the whole phase for this,
+            // and it is checked again here on purpose: this is the line that
+            // would send it, so this is where the guarantee has to hold. A future
+            // caller that reaches the apply loop by another route cannot cross it.
+            const breaks = breaksOuterTransaction(statement);
+            if (breaks !== null) {
+              throw Object.assign(new Error(`transaction control reached the apply loop (${breaks})`), {
+                code: "transaction_control_in_apply",
+              });
+            }
             await client.query(statement);
             executed += 1;
           }
@@ -466,7 +541,30 @@ async function main(argv) {
         continue;
       }
       const expected = splitSqlStatements(sqlByFile.get(String(entry.file)));
-      const expectedFingerprint = statementsFingerprint(expected);
+      let expectedFingerprint;
+      try {
+        expectedFingerprint = statementsFingerprint(expected);
+      } catch (error) {
+        if (error.code !== "unfingerprintable_statements") throw error;
+        // Round-4 C4-6. Not reachable for a file this release ships (measured: 0 of
+        // 120 parse to an empty or missing statement), and if it ever is, the run is
+        // over: read-after-write is the only proof this tool offers that the row it
+        // wrote describes the file, and a file with no fingerprint cannot supply it.
+        console.error(`history: ${version} could not be fingerprinted from ${entry.file} (${error.reason})`);
+        failures += 1;
+        continue;
+      }
+      if (row.statement_count === null || row.statements_sha256 === null) {
+        // The server refuses to fingerprint a recorded value that is not a
+        // one-dimensional array of non-empty text starting at subscript 1. This
+        // tool inserts exactly that shape, so a null here means the row it read
+        // back is not the row it wrote.
+        console.error(
+          `history: ${version} is recorded with a value the server cannot fingerprint, so this run cannot prove what it wrote`,
+        );
+        failures += 1;
+        continue;
+      }
       const measured = Number(row.statement_count);
       if (measured !== expected.length) {
         console.error(

@@ -126,12 +126,52 @@ export const FINGERPRINT_FORMAT = "statements-v2-length-delimited";
  * fingerprint is what the fixture stores, what this gate compares, and the only
  * thing about a statement that is ever allowed to leave the database.
  */
+export class UnfingerprintableStatements extends Error {
+  constructor(reason) {
+    super(`statements cannot be fingerprinted: ${reason}`);
+    this.name = "UnfingerprintableStatements";
+    this.code = "unfingerprintable_statements";
+    this.reason = reason;
+  }
+}
+
 export function statementsFingerprint(statements) {
-  const list = Array.isArray(statements) ? statements : [];
+  // Round-4 C4-6. Coercion is what makes a digest lie. Measured on PostgreSQL
+  // 17.10: `{ok,NULL}` and `{ok,""}` had the same count and the same digest,
+  // and so did a null column and an empty array, because both sides mapped a
+  // missing element to the empty string. A digest that cannot tell "the CLI
+  // recorded nothing here" from "the CLI recorded an empty statement" is a
+  // digest that can be satisfied by a row nobody applied, which is the one
+  // thing this gate exists to make impossible. So the domain is narrow and
+  // everything outside it throws: a value that cannot be fingerprinted honestly
+  // has no fingerprint, and a thrown error cannot be compared into a pass the
+  // way a null can.
+  if (!Array.isArray(statements)) {
+    throw new UnfingerprintableStatements(`the value is ${statements === null ? "null" : typeof statements}, not an array`);
+  }
   const hash = crypto.createHash("sha256");
-  hash.update(`${list.length}\n`);
-  for (const statement of list) {
-    const bytes = Buffer.from(typeof statement === "string" ? statement : String(statement ?? ""), "utf8");
+  hash.update(`${statements.length}\n`);
+  for (const [index, statement] of statements.entries()) {
+    // A multidimensional text[] arrives here as nested arrays. The header above
+    // counts the outer dimension while the elements below would be flattened,
+    // so the count would stop describing the payload.
+    if (Array.isArray(statement)) {
+      throw new UnfingerprintableStatements(`element ${index + 1} is itself an array, so the value is not one-dimensional`);
+    }
+    if (statement === null || statement === undefined) {
+      throw new UnfingerprintableStatements(`element ${index + 1} is ${statement === null ? "null" : "undefined"}`);
+    }
+    if (typeof statement !== "string") {
+      throw new UnfingerprintableStatements(`element ${index + 1} is of type ${typeof statement}, not text`);
+    }
+    // No migration in this release parses to an empty statement (measured: 0 of
+    // 120 files), so a recorded empty element did not come from a file this
+    // release ships — and under any length-prefixed encoding it is the one
+    // element a missing one could be confused with.
+    if (statement === "") {
+      throw new UnfingerprintableStatements(`element ${index + 1} is empty`);
+    }
+    const bytes = Buffer.from(statement, "utf8");
     hash.update(`${bytes.length}\n`);
     hash.update(bytes);
   }
@@ -149,12 +189,28 @@ export function statementsFingerprint(statements) {
  */
 function rowContent(row) {
   if (Array.isArray(row?.statements)) {
-    return { count: row.statements.length, fingerprint: statementsFingerprint(row.statements) };
+    try {
+      return { count: row.statements.length, fingerprint: statementsFingerprint(row.statements) };
+    } catch (error) {
+      if (error.code !== "unfingerprintable_statements") throw error;
+      // A row whose recorded array cannot be fingerprinted is reported with no
+      // fingerprint, which auditHistory() turns into content_unmeasured — a
+      // refusal by cause. It is deliberately not an exception escaping the gate:
+      // "this row cannot be measured" is a finding, not a crash.
+      return { count: row.statements.length, fingerprint: null };
+    }
   }
   const count = Number(row?.statement_count);
+  // Round-4 C4-6. The server now returns a null count and a null digest together
+  // for any row whose recorded value is not a one-dimensional array of non-empty
+  // text starting at subscript 1. Both are required before either is believed,
+  // so a null count cannot be read as "zero statements" — an unmeasurable row
+  // and an empty one are different answers and only one of them is a comparison.
+  const measurable =
+    row?.statement_count !== null && row?.statement_count !== undefined && Number.isInteger(count) && count >= 0;
   return {
-    count: Number.isInteger(count) && count > 0 ? count : 0,
-    fingerprint: typeof row?.statements_sha256 === "string" ? row.statements_sha256 : null,
+    count: measurable && count > 0 ? count : 0,
+    fingerprint: measurable && typeof row?.statements_sha256 === "string" ? row.statements_sha256 : null,
   };
 }
 
@@ -861,38 +917,74 @@ export function loadPg(modulesDir) {
  * statementsFingerprint(), so that no statement text is transferred, printed,
  * logged or written by either script — only a count and a hash.
  *
- * Detail, in the order it bites: `array_length` is null for an empty array, hence
- * the coalesce, and a row with no statements measures as 0 and is reported as a
- * difference by auditHistory(). A null element unnests as null and would null the
- * whole concatenation, so it is coalesced to the empty string, matching the JS
- * side's `?? ""`. Lengths are octets of the UTF-8 encoding rather than
+ * Detail: lengths are octets of the UTF-8 encoding rather than
  * `octet_length(text)`, so the digest does not change with the server encoding.
  * `with ordinality` and the ordered aggregate keep array order, which is statement
  * order and therefore part of what is being fingerprinted.
+ *
+ * Round-4 C4-6, and the reason for the `case`. `text[]` admits values the JS side
+ * has no way to represent, and the previous expression coerced every one of them
+ * into a digest. Measured on PostgreSQL 17.10, each of these pairs came back with
+ * the same statement_count AND the same digest:
+ *
+ *   {ok,NULL}          and  {ok,""}            — coalesce(s.statement,'') erased the difference
+ *   NULL               and  '{}'               — coalesce(array_length,0) erased it again
+ *   '{{a},{b}}' (2-D)  and  '{a,b}'            — array_length counts dimension 1, unnest flattens
+ *   '[0:1]={a,b}'      and  '{a,b}'            — with ordinality renumbers from 1, whatever the bound
+ *   '[5:6]={a,b}'      and  '{a,b}'
+ *
+ * Every one of those is a value the CLI would not write and a value this release
+ * cannot produce, which is exactly why it matters: the gate's claim is that a
+ * history row could not have been recorded by anything but this release's file, and
+ * a collision is a row that satisfies the claim without satisfying the fact. A 2-D
+ * array also reported a count that did not describe its own payload (`{{a,b},{c,d}}`
+ * measured count 2 with cardinality 4).
+ *
+ * So the domain is stated instead of coerced. `STATEMENTS_WELL_FORMED_SQL` admits a
+ * non-null, one-dimensional array whose lower bound is 1 and whose elements are all
+ * non-null and non-empty — the empty array included, since `array_ndims` and
+ * `array_lower` are null for it and `cardinality` is 0 — and everything else gets a
+ * null count and a null digest, which auditHistory() reports as content_unmeasured.
+ * `cardinality` replaces `coalesce(array_length(...,1),0)` because inside the
+ * `case` the two are equal by construction and cardinality cannot disagree with the
+ * payload. **The digest bytes are unchanged for every value both versions accept**,
+ * so no captured baseline and no fixture is invalidated by this: FINGERPRINT_FORMAT
+ * describes the encoding, and the encoding did not change — its domain narrowed.
  *
  * The two implementations are held against each other by measurement, not by
  * reading: scripts/statements-fingerprint-parity.mjs records adversarial arrays
  * (moved boundaries, empty arrays, a null column, null and empty elements,
  * embedded quotes and newlines, multi-byte text) plus every migration file in this
  * release into a real PostgreSQL of production's major version, and requires the
- * server's digest to equal statementsFingerprint()'s for every one. Its --self-test
- * pass recomputes the JS side through the superseded encoding and requires every
- * row to be reported as a difference, so a harness that measures nothing cannot
- * pass. The `migration-replay` job of .github/workflows/ci.yml runs both.
+ * server's digest to equal statementsFingerprint()'s for every one — and for the
+ * values outside the domain, requires both sides to refuse rather than to agree.
+ * Its --self-test pass recomputes the JS side through the superseded encoding and
+ * requires every row to be reported as a difference, so a harness that measures
+ * nothing cannot pass. The `migration-replay` job of .github/workflows/ci.yml runs
+ * both.
  */
-export const STATEMENTS_FINGERPRINT_SQL = `encode(sha256(
-         convert_to(coalesce(array_length(m.statements, 1), 0)::text || E'\\n', 'UTF8') ||
+export const STATEMENTS_WELL_FORMED_SQL = `(
+             m.statements is not null
+         and coalesce(array_ndims(m.statements), 1) = 1
+         and coalesce(array_lower(m.statements, 1), 1) = 1
+         and not exists (select 1
+                           from unnest(m.statements) as bad(statement)
+                          where bad.statement is null or bad.statement = '')
+       )`;
+
+export const STATEMENTS_FINGERPRINT_SQL = `case when ${STATEMENTS_WELL_FORMED_SQL} then encode(sha256(
+         convert_to(cardinality(m.statements)::text || E'\\n', 'UTF8') ||
          coalesce((select string_agg(
-                            convert_to(octet_length(convert_to(coalesce(s.statement, ''), 'UTF8'))::text || E'\\n', 'UTF8')
-                              || convert_to(coalesce(s.statement, ''), 'UTF8'),
+                            convert_to(octet_length(convert_to(s.statement, 'UTF8'))::text || E'\\n', 'UTF8')
+                              || convert_to(s.statement, 'UTF8'),
                             ''::bytea order by s.ord)
                      from unnest(m.statements) with ordinality as s(statement, ord)),
                   ''::bytea)
-       ), 'hex')`;
+       ), 'hex') end`;
 
 export const HISTORY_QUERY = `select m.version,
        m.name,
-       coalesce(array_length(m.statements, 1), 0) as statement_count,
+       case when ${STATEMENTS_WELL_FORMED_SQL} then cardinality(m.statements) end as statement_count,
        ${STATEMENTS_FINGERPRINT_SQL} as statements_sha256
   from supabase_migrations.schema_migrations m
  order by m.version`;

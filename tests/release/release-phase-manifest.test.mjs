@@ -29,6 +29,7 @@ import {
   readMigration,
 } from "../../scripts/check-release-manifest.mjs";
 import {
+  breaksOuterTransaction,
   isTransactionControl,
   nonTransactional,
   planPhase,
@@ -332,6 +333,140 @@ test("transaction control and non-transactional statements are classified", () =
   assert.equal(nonTransactional("-- two writers concurrently\nselect 1;"), false);
 });
 
+test("every way of breaking the outer transaction is refused, and named", () => {
+  // Round-4 C4-6. isTransactionControl() answers "may this be skipped", and
+  // everything it said no to was executed — including `rollback`, which does not
+  // merely discard the migration: it ends the block, so the history row that
+  // follows commits on its own. That is a version recorded as applied with nothing
+  // it created in the database, and a recorded version is never applied again, so
+  // the phase is "already applied" forever with the objects missing. Measured on
+  // PostgreSQL 17.10 in scripts/phase-tool-drill.sh, which reproduces exactly that
+  // state with this classifier neutered.
+  //
+  // The keyword is returned rather than the statement, because the caller prints it.
+  for (const [statement, keyword] of [
+    ["rollback", "rollback"],
+    ["ROLLBACK;", "rollback"],
+    ["rollback to savepoint s1;", "rollback"],
+    ["rollback prepared 'g';", "rollback"],
+    ["abort;", "abort"],
+    ["abort transaction;", "abort"],
+    ["savepoint s1;", "savepoint"],
+    ["release savepoint s1;", "release"],
+    ["release s1;", "release"],
+    ["commit and chain;", "commit"],
+    ["commit prepared 'g';", "commit"],
+    ["rollback and chain;", "rollback"],
+    ["end and chain;", "end"],
+    ["prepare transaction 'g';", "prepare transaction"],
+    ["discard all;", "discard"],
+    ["discard plans;", "discard"],
+    ["set transaction read only;", "set transaction"],
+    ["set transaction isolation level serializable;", "set transaction"],
+    ["set constraints all deferred;", "set constraints"],
+    ["set session characteristics as transaction read only;", "set session characteristics"],
+    ["begin isolation level serializable;", "begin"],
+    ["start transaction read write;", "start"],
+    ["-- harmless\nrollback;", "rollback"],
+    ["/* harmless */ savepoint s1;", "savepoint"],
+    ["Begin Isolation Level Repeatable Read", "begin"],
+  ]) {
+    assert.equal(breaksOuterTransaction(statement), keyword, statement);
+  }
+
+  // The two forms the tool skips, and nothing else, are allowed through. These are
+  // the file's own outer transaction, which the tool replaces with its own.
+  for (const statement of ["begin", "BEGIN", "begin;", "begin work", "begin transaction", "start transaction", "commit", "commit;", "commit work", "end", "end transaction", "-- x\ncommit;"]) {
+    assert.equal(breaksOuterTransaction(statement), null, statement);
+    assert.equal(isTransactionControl(statement), true, statement);
+  }
+
+  // Ordinary SQL is untouched, including statements whose text mentions the
+  // vocabulary somewhere other than the first keyword: classification is on the
+  // statement's leading keyword, and a word inside a literal or an identifier is
+  // not that.
+  for (const statement of [
+    "select 1",
+    "create table t (x int);",
+    "select 'rollback';",
+    "comment on function f() is 'call rollback first';",
+    "create table savepoints (id int);",
+    "insert into release_notes (body) values ('abort');",
+    "update t set x = 1 where note = 'discard all';",
+    "grant execute on function public.f() to service_role;",
+    "create or replace function f() returns void language plpgsql as $$ begin perform 1; end $$;",
+  ]) {
+    assert.equal(breaksOuterTransaction(statement), null, statement);
+  }
+
+  // Fail-closed where the two disagree: a statement whose first keyword is `begin`
+  // but which is not exactly the skippable form is refused rather than sent. That
+  // is deliberate — the tool cannot tell an isolation-level BEGIN from the file's
+  // own one without deciding, and deciding wrong here means a transaction it does
+  // not control. No statement in this release is affected; the next test measures
+  // that rather than assuming it.
+  assert.equal(isTransactionControl("begin isolation level serializable"), false);
+  assert.equal(breaksOuterTransaction("begin isolation level serializable"), "begin");
+});
+
+test("no statement in this release is refused by that classifier", () => {
+  // The other half of a fail-closed guard: it has to be measured against the thing
+  // it guards, or a guard that refuses everything would pass the test above. Every
+  // statement of every migration the release ships, plus the hand-run companions,
+  // because those are applied by an operator through the same rules.
+  let skipped = 0;
+  let total = 0;
+  for (const file of readdirSync(MIGRATIONS_DIR).filter((name) => name.endsWith(".sql")).sort()) {
+    for (const statement of splitSqlStatements(readMigration(MIGRATIONS_DIR, file))) {
+      total += 1;
+      if (isTransactionControl(statement)) {
+        skipped += 1;
+        continue;
+      }
+      assert.equal(
+        breaksOuterTransaction(statement),
+        null,
+        `${file} has a statement this tool would refuse`,
+      );
+    }
+  }
+  assert.ok(total > 1000, `only ${total} statements measured, which is too few to mean anything`);
+  assert.ok(skipped > 0, "no transaction control was skipped, so the skip path was not measured");
+});
+
+test("the refusal is for the whole phase, and again at the line that would send it", () => {
+  const tool = readFileSync(path.join(ROOT, "scripts/db-phase-push.mjs"), "utf8");
+  // Before anything is applied: a phase with one such statement in its last file
+  // must not apply the files before it. The drill measures this against a database
+  // (0 history rows after each of eight mutations); here it is pinned to the shape
+  // that makes it true — the same loop as the nonTransactional refusal, above the
+  // apply loop.
+  const shapeRefusals = tool.indexOf("Shape refusals for the whole phase first");
+  // Two loops over toApply: the shape pass, then the apply pass. The second one is
+  // the boundary this test is about.
+  const shapePass = tool.indexOf("for (const entry of toApply) {", shapeRefusals + 1);
+  const applyLoop = tool.indexOf("for (const entry of toApply) {", shapePass + 1);
+  const breaking = tool.indexOf("const breaking = statements.findIndex");
+  assert.ok(shapeRefusals > 0 && shapePass > 0 && applyLoop > shapePass && breaking > 0);
+  assert.ok(
+    breaking > shapeRefusals && breaking < applyLoop,
+    "the transaction-control refusal is not in the pre-apply pass",
+  );
+  assert.match(tool, /cannot honour \(\$\{breaksOuterTransaction\(statements\[breaking\]\)\}\)/);
+  // And again inside the loop, at the line that would send it, so a future caller
+  // reaching the apply loop by another route cannot cross the guarantee.
+  assert.match(tool, /code: "transaction_control_in_apply"/);
+  assert.ok(
+    tool.indexOf('code: "transaction_control_in_apply"') > applyLoop,
+    "the defence-in-depth check is not inside the apply loop",
+  );
+
+  // Read-after-write fails closed on both new refusals: a file this release ships
+  // that cannot be fingerprinted, and a row the server declined to fingerprint.
+  assert.match(tool, /error\.code !== "unfingerprintable_statements"/);
+  assert.match(tool, /row\.statement_count === null \|\| row\.statements_sha256 === null/);
+});
+
 test("every migration in the release splits into applyable statements", () => {
   for (const entry of manifestEntries(manifest)) {
     const sql = readMigration(MIGRATIONS_DIR, entry.file);
@@ -392,6 +527,42 @@ test("the drill that tests the tool against a database is committed and wired", 
   assert.match(drill, /verify-remote-migration-history\.mjs/);
   assert.match(drill, /cross_tool_check \|\| fail/);
   assert.match(drill, /it is not measuring content/);
+
+  // Round-4 C4-6's mutation step. The offline tests above hold the classifier to a
+  // list of statements; only a database can show what the classifier is worth, so
+  // the drill injects each form into a copy of a real release tree and requires the
+  // whole phase refused with nothing recorded — then neuters the classifier in that
+  // copy and requires the damage to appear. Pinned from outside because a drill can
+  // keep exiting 0 with a step quietly removed.
+  for (const statement of [
+    "rollback;",
+    "abort;",
+    "savepoint s1;",
+    "release savepoint s1;",
+    "commit and chain;",
+    "prepare transaction 'phase-drill';",
+    "set transaction read only;",
+    "discard all;",
+  ]) {
+    assert.ok(
+      drill.includes(`mutate_and_run "${statement}"`),
+      `the drill does not inject ${statement}`,
+    );
+  }
+  assert.match(drill, /the rollback probe did not demonstrate the hazard on this server/);
+  assert.match(drill, /the tool applied a phase containing \$keyword/);
+  assert.match(drill, /was refused but \$rows history row\(s\) were written/);
+  assert.match(drill, /check-release-manifest\.mjs" --stamp/, "a hash mismatch would refuse for the wrong reason");
+  assert.match(drill, /the unmutated tree did not apply: the refusals above prove nothing/);
+  assert.match(drill, /the superseded classifier did not reproduce the hazard/);
+  assert.match(drill, /neutered by the drill/);
+  assert.match(drill, /12 steps, 4 databases/);
+  // The mutation happens in a copy under $WORK. C7's constraint is that the drill
+  // edits nothing in the repository, and a mutation step is the one place that could
+  // quietly stop being true.
+  assert.match(drill, /MUTANT="\$WORK\/release-mutant"/);
+  assert.doesNotMatch(drill, /MUTANT_FILE="\$ROOT/);
+
   const ci = readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
   assert.match(ci, /bash scripts\/phase-tool-drill\.sh/);
   assert.doesNotMatch(

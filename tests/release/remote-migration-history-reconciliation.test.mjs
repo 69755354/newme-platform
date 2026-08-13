@@ -41,6 +41,7 @@ import {
   FINGERPRINT_FORMAT,
   HISTORY_QUERY,
   STATEMENTS_FINGERPRINT_SQL,
+  STATEMENTS_WELL_FORMED_SQL,
 } from "../../scripts/verify-remote-migration-history.mjs";
 import { splitSqlStatements } from "../../scripts/split-sql-statements.mjs";
 
@@ -524,10 +525,44 @@ test("an erased history is still the first thing reported", () => {
 test("the fingerprints are stable and separate content from structure", () => {
   // Fixed vectors: a change to either function is a change to every recorded
   // baseline, so it has to be a deliberate one.
-  assert.equal(statementsFingerprint([]), statementsFingerprint(null));
   assert.notEqual(statementsFingerprint(["a", "b"]), statementsFingerprint(["a b"]));
-  assert.notEqual(statementsFingerprint(["a"]), statementsFingerprint(["a", ""]));
   assert.equal(statementsFingerprint(["select 1;"]), statementsFingerprint(["select 1;"]));
+
+  // Round-4 C4-6. The two vectors above used to sit beside two more that asserted
+  // the opposite of what this gate needs: `statementsFingerprint([])` equal to
+  // `statementsFingerprint(null)`, and `["a"]` merely unequal to `["a",""]`. Both
+  // were consequences of coercing a missing element to the empty string, and
+  // coercion is what makes a digest lie — a null column and an empty array reached
+  // the same value, so a row that records nothing could satisfy a comparison
+  // against a release that records something. The domain is now narrow and
+  // everything outside it throws, because a thrown error cannot be compared into a
+  // pass the way two nulls can.
+  for (const [value, why] of [
+    [null, "the value is null"],
+    [undefined, "the value is undefined"],
+    ["select 1;", "the value is string"],
+    [["ok", null], "element 2 is null"],
+    [["ok", undefined], "element 2 is undefined"],
+    [["ok", ""], "element 2 is empty"],
+    [["", "select 1;"], "element 1 is empty"],
+    [["ok", 7], "element 2 is of type number"],
+    [[["a"], ["b"]], "element 1 is itself an array"],
+  ]) {
+    assert.throws(
+      () => statementsFingerprint(value),
+      (error) => {
+        assert.equal(error.code, "unfingerprintable_statements");
+        assert.ok(error.reason.startsWith(why), `${why} — reported instead: ${error.reason}`);
+        return true;
+      },
+      `${why} must not be fingerprintable`,
+    );
+  }
+  // The empty array stays inside the domain: zero statements is a shape the CLI
+  // really records (production has seven such rows) and it is handled as the
+  // `no_statements` acceptance, not as a digest that cannot be computed.
+  assert.equal(statementsFingerprint([]).length, 64);
+  assert.notEqual(statementsFingerprint([]), statementsFingerprint(["a"]));
 
   const rows = [{ version: "1", name: "n", statement_count: 1, statements_sha256: "abc" }];
   assert.equal(rowsFingerprint(rows), rowsFingerprint([...rows]));
@@ -544,8 +579,17 @@ test("the gate asks the server for the fingerprint, never for the statements", (
   // rows this gate can reproduce — and a second copy of it in any of them is a
   // second encoding no side can see. So: one definition in the source, interpolated
   // into the query, and the query still asks for a digest and never for the text.
-  assert.match(source, /export const STATEMENTS_FINGERPRINT_SQL = `encode\(sha256\(/);
+  assert.match(source, /export const STATEMENTS_FINGERPRINT_SQL = `case when \$\{STATEMENTS_WELL_FORMED_SQL\} then encode\(sha256\(/);
   assert.match(source, /\$\{STATEMENTS_FINGERPRINT_SQL\} as statements_sha256/);
+  // Round-4 C4-6: the domain predicate is one definition too, interpolated into the
+  // digest AND into the count. A count computed outside it would describe a value
+  // the digest declined to describe, and the pair would disagree about the same row.
+  assert.equal(
+    source.split("export const STATEMENTS_WELL_FORMED_SQL").length - 1,
+    1,
+    "the well-formedness predicate is written more than once in this module",
+  );
+  assert.match(source, /case when \$\{STATEMENTS_WELL_FORMED_SQL\} then cardinality\(m\.statements\) end as statement_count/);
   assert.equal(
     source.split("encode(sha256(").length - 1,
     1,
@@ -564,10 +608,28 @@ test("the gate asks the server for the fingerprint, never for the statements", (
   // so a statement boundary could move without the fingerprint moving.
   assert.doesNotMatch(query[0], /array_to_string\(/);
   // One backslash, not two: the built query carries the E-string escape the source
-  // had to write twice.
-  assert.match(query[0], /octet_length\(convert_to\(coalesce\(s\.statement, ''\), 'UTF8'\)\)::text \|\| E'\\n'/);
+  // had to write twice. And no coalesce around the element: C4-6 measured
+  // `coalesce(s.statement,'')` mapping a NULL element onto an empty one, which gave
+  // `{ok,NULL}` and `{ok,''}` the same count and the same digest on PostgreSQL
+  // 17.10. Both are now outside the domain instead of being equal inside it.
+  assert.match(query[0], /octet_length\(convert_to\(s\.statement, 'UTF8'\)\)::text \|\| E'\\n'/);
+  assert.doesNotMatch(query[0], /coalesce\(s\.statement/);
   assert.match(query[0], /order by s\.ord/);
-  assert.match(source, /hash\.update\(`\$\{list\.length\}\\n`\)/);
+  // The four ways a text[] can be malformed, each refused by the server side rather
+  // than coerced into a comparable value. `array_ndims` and `array_lower` are NULL
+  // for an empty array while `cardinality` is 0, so the coalesce admits `'{}'` and
+  // nothing else: a 2-D array, a non-standard lower bound, a NULL column and a NULL
+  // or empty element all fall out.
+  assert.match(STATEMENTS_WELL_FORMED_SQL, /m\.statements is not null/);
+  assert.match(STATEMENTS_WELL_FORMED_SQL, /coalesce\(array_ndims\(m\.statements\), 1\) = 1/);
+  assert.match(STATEMENTS_WELL_FORMED_SQL, /coalesce\(array_lower\(m\.statements, 1\), 1\) = 1/);
+  assert.match(STATEMENTS_WELL_FORMED_SQL, /bad\.statement is null or bad\.statement = ''/);
+  // cardinality, not array_length: array_length(a,1) counts dimension 1 while
+  // unnest flattens, so on a 2-D array the header would not describe the payload
+  // (measured: 2x2 gives array_length 2 and cardinality 4). The predicate refuses
+  // 2-D outright, and the count agrees with the elements the digest hashes.
+  assert.doesNotMatch(query[0], /array_length\(m\.statements/);
+  assert.match(source, /hash\.update\(`\$\{statements\.length\}\\n`\)/);
   assert.match(source, /hash\.update\(`\$\{bytes\.length\}\\n`\)/);
 
   // The old encoding is what these two vectors collided under; sha256("2 a b c") is

@@ -84,9 +84,6 @@ const VECTORS = [
   { label: "framing attack A", statements: ["1\n1", "x"] },
   { label: "framing attack B", statements: ["3\n1", "1\n1\nx"] },
   { label: "empty array", statements: [] },
-  { label: "null column", statements: null },
-  { label: "null element", statements: ["ok", null] },
-  { label: "empty element", statements: ["", "select 1;"] },
   { label: "single space element", statements: [" "] },
   { label: "adjacent lengths", statements: ["1", "12", "123"] },
   { label: "embedded quote", statements: ["select 'it''s';"] },
@@ -95,6 +92,29 @@ const VECTORS = [
   { label: "tab", statements: ["select\t1;"] },
   { label: "multi-byte text", statements: ["-- 迁移 · émoji 🚀\nselect 1;"] },
   { label: "dollar quoted", statements: ["create function f() returns int as $$ begin return 1; end $$ language plpgsql;"] },
+  { label: "two elements", statements: ["a", "b"] },
+  { label: "four elements", statements: ["a", "b", "c", "d"] },
+
+  // Round-4 C4-6. Values `text[]` admits and this release cannot produce, each
+  // of which the previous expression coerced into a digest — and each of which
+  // then collided with a value above. `sql` is the literal the row is inserted
+  // with, because a multidimensional array and a non-standard lower bound cannot
+  // be expressed through a bound parameter at all; `statements` is what the JS
+  // side is asked to fingerprint, and `refused` says both sides must decline.
+  { label: "null column", statements: null, sql: "null", refused: true },
+  { label: "null element", statements: ["ok", null], sql: "array['ok',null]::text[]", refused: true },
+  // The value the one above collided with: same count, and the same bytes once a
+  // missing element was coerced to an empty one. Both are refused now, and the pair
+  // is what MUST_NOT_COLLIDE measures.
+  { label: "empty element twin", statements: ["ok", ""], sql: "array['ok','']::text[]", refused: true },
+  { label: "empty element", statements: ["", "select 1;"], sql: "array['','select 1;']::text[]", refused: true },
+  { label: "two dimensional 2x1", statements: [["a"], ["b"]], sql: "array[array['a'],array['b']]::text[]", refused: true },
+  { label: "two dimensional 2x2", statements: [["a", "b"], ["c", "d"]], sql: "array[array['a','b'],array['c','d']]::text[]", refused: true },
+  // `serverOnly`, not `refused`: a lower bound has no JavaScript counterpart, so
+  // the JS side is handed the flattened equivalent — the collision partner itself —
+  // and the server's refusal is the entire defence.
+  { label: "lower bound zero", statements: ["a", "b"], sql: "'[0:1]={a,b}'::text[]", serverOnly: true },
+  { label: "lower bound five", statements: ["a", "b"], sql: "'[5:6]={a,b}'::text[]", serverOnly: true },
 ];
 
 /** Pairs that must NOT share a digest, whatever the encoding does elsewhere. */
@@ -102,6 +122,45 @@ const MUST_DIFFER = [
   ["moved boundary A", "moved boundary B"],
   ["framing attack A", "framing attack B"],
 ];
+
+/**
+ * The collisions round-4 C4-6 found in the previous expression, as measured on
+ * PostgreSQL 17.10: each pair came back with the same statement_count and the same
+ * digest, so a history row holding the left value satisfied a claim about the right
+ * one. They are listed as pairs rather than as "these values must be refused"
+ * because that is the property that matters — and because the harness proves it can
+ * see them: SUPERSEDED_FINGERPRINT_SQL below is the expression this one replaced,
+ * evaluated in the same query, and every pair here is required to collide under it.
+ * A domain check that no longer detects anything is then a failure rather than a
+ * silent pass.
+ */
+const MUST_NOT_COLLIDE = [
+  ["null element", "empty element twin"],
+  ["null column", "empty array"],
+  ["two elements", "two dimensional 2x1"],
+  ["two elements", "lower bound zero"],
+  ["two elements", "lower bound five"],
+];
+
+/**
+ * The count and digest expression as it stood before C4-6, kept here and nowhere
+ * else: it is the negative control for MUST_NOT_COLLIDE, not a code path.
+ */
+const SUPERSEDED_FINGERPRINT_SQL = `encode(sha256(
+         convert_to(coalesce(array_length(m.statements, 1), 0)::text || E'\\n', 'UTF8') ||
+         coalesce((select string_agg(
+                            convert_to(octet_length(convert_to(coalesce(s.statement, ''), 'UTF8'))::text || E'\\n', 'UTF8')
+                              || convert_to(coalesce(s.statement, ''), 'UTF8'),
+                            ''::bytea order by s.ord)
+                     from unnest(m.statements) with ordinality as s(statement, ord)),
+                  ''::bytea)
+       ), 'hex')`;
+
+const SUPERSEDED_QUERY = `select m.version,
+       coalesce(array_length(m.statements, 1), 0) as statement_count,
+       ${SUPERSEDED_FINGERPRINT_SQL} as statements_sha256
+  from supabase_migrations.schema_migrations m
+ order by m.version`;
 
 /**
  * The encoding this one replaced: `count || ' ' || array_to_string(statements,' ')`
@@ -208,6 +267,15 @@ async function main({ selfTest }) {
     }
 
     for (const item of cases) {
+      if (item.sql) {
+        // A literal, because the value is one no bound parameter can carry. The
+        // label and version are still bound; nothing here interpolates input.
+        await client.query(
+          `insert into supabase_migrations.schema_migrations (version, statements, name) values ($1, ${item.sql}, $2)`,
+          [item.version, item.label],
+        );
+        continue;
+      }
       await client.query(
         "insert into supabase_migrations.schema_migrations (version, statements, name) values ($1, $2, $3)",
         [item.version, item.statements, item.label],
@@ -217,16 +285,73 @@ async function main({ selfTest }) {
     const { rows } = await client.query(HISTORY_QUERY);
     const byVersion = new Map(rows.map((row) => [String(row.version), row]));
     const digests = new Map();
+    const superseded = new Map(
+      (await client.query(SUPERSEDED_QUERY)).rows.map((row) => [
+        String(row.version),
+        `${row.statement_count}:${row.statements_sha256}`,
+      ]),
+    );
 
     const check = (item) => {
       const row = byVersion.get(item.version);
-      const expectedCount = Array.isArray(item.statements) ? item.statements.length : 0;
-      const expected = fingerprint(item.statements);
       if (row === undefined) {
         console.log(`FAIL  ${item.label}: the server did not return the row`);
         return false;
       }
-      digests.set(item.label, row.statements_sha256);
+      digests.set(item.label, `${row.statement_count}:${row.statements_sha256}`);
+
+      const serverRefused = row.statement_count === null && row.statements_sha256 === null;
+
+      // Round-4 C4-6, and only in the parity pass: --self-test deliberately runs a
+      // wrong JS side and requires every row to be reported as a difference, so the
+      // domain expectations below — which report agreement — are not applied there.
+      // The plain comparison at the bottom reports those rows as differences, which
+      // in that mode is the correct answer for them too.
+      if (!selfTest && item.refused === true) {
+        // Neither side can honestly fingerprint this value, so both must decline.
+        // "One declines" is the drift this harness exists to catch: it is the shape
+        // in which a false accusation or a false pass would arrive.
+        let reason = null;
+        try {
+          fingerprint(item.statements);
+        } catch (error) {
+          if (error.code !== "unfingerprintable_statements") throw error;
+          reason = error.reason;
+        }
+        if (reason !== null && serverRefused) return true;
+        console.log(
+          `FAIL  ${item.label}: declared outside the fingerprintable domain, but` +
+            ` js ${reason === null ? "produced a digest" : `refused (${reason})`} and the server` +
+            ` ${serverRefused ? "refused" : `returned count=${row.statement_count}`}`,
+        );
+        return false;
+      }
+      if (!selfTest && item.serverOnly === true) {
+        // A value PostgreSQL admits and JavaScript cannot represent: `text[]`
+        // subscripts start where the value says, and an array with a lower bound
+        // other than 1 is a different value from the one JS would build out of the
+        // same elements. There is nothing for the JS side to refuse — it is handed
+        // the flattened equivalent, which is exactly the collision partner — so the
+        // server's refusal is the whole defence, and this is where it is measured.
+        if (serverRefused) return true;
+        console.log(
+          `FAIL  ${item.label}: the server accepted a value JavaScript cannot express` +
+            ` (count=${row.statement_count} digest=${String(row.statements_sha256).slice(0, 16)}), so it can be compared with one it can`,
+        );
+        return false;
+      }
+
+      let expected;
+      try {
+        expected = fingerprint(item.statements);
+      } catch (error) {
+        if (error.code !== "unfingerprintable_statements") throw error;
+        console.log(
+          `FAIL  ${item.label}: the js side refused a vector that is not declared outside the domain (${error.reason})`,
+        );
+        return false;
+      }
+      const expectedCount = Array.isArray(item.statements) ? item.statements.length : 0;
       const countOk = Number(row.statement_count) === expectedCount;
       const digestOk = row.statements_sha256 === expected;
       if (countOk && digestOk) return true;
@@ -252,12 +377,38 @@ async function main({ selfTest }) {
       }
     }
 
+    // Round-4 C4-6, and the negative control for it. Each pair has to collide
+    // under the expression this one replaced — otherwise this check is looking for
+    // something it could not find, and its silence would mean nothing — and must
+    // not collide under the current one.
+    const byLabel = new Map(synthetic.map((item) => [item.label, item.version]));
+    // A digest neither side produced is not a digest two values share: two refused
+    // values are both reported as `null:null`, and reading that as a collision
+    // would turn the fix into a failure. The claim is about digests that exist.
+    const measured = (label) => (digests.get(label) ?? "").endsWith(":null") === false ? digests.get(label) : undefined;
+    let detected = 0;
+    for (const [a, b] of MUST_NOT_COLLIDE) {
+      const before = superseded.get(byLabel.get(a));
+      if (before !== undefined && before === superseded.get(byLabel.get(b))) detected += 1;
+      if (measured(a) !== undefined && measured(a) === measured(b)) {
+        console.log(`FAIL  ${a} and ${b} share a count and a digest: a value this release cannot produce satisfies a claim about one it can`);
+        failures += 1;
+      }
+    }
+    if (detected !== MUST_NOT_COLLIDE.length) {
+      console.log(
+        `FAIL  the superseded expression collided on ${detected} of ${MUST_NOT_COLLIDE.length} pair(s): this harness cannot demonstrate that it detects a collision, so its verdict on the current one is worth nothing`,
+      );
+      failures += 1;
+    }
+
     console.log(`mode                : ${selfTest ? "SELF-TEST (JS side deliberately wrong)" : "parity"}`);
     console.log(`format              : ${FINGERPRINT_FORMAT}`);
     console.log(`server              : ${(await client.query("show server_version")).rows[0].server_version}`);
-    console.log(`adversarial vectors : ${synthetic.length} compared`);
+    console.log(`adversarial vectors : ${synthetic.length} compared, ${synthetic.filter((item) => item.refused === true).length} required to be refused by both sides`);
     console.log(`release migrations  : ${fromFiles.length} parsed, recorded and compared`);
     console.log(`boundary pairs      : ${MUST_DIFFER.length} required to differ`);
+    console.log(`collision pairs     : ${MUST_NOT_COLLIDE.length} required to differ now and ${detected} measured colliding under the superseded expression`);
   } finally {
     // Always. DDL is transactional in PostgreSQL, so this undoes the schema and
     // the table as well as the rows.

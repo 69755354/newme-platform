@@ -1,0 +1,45 @@
+# ============================================================================
+# Round-4 C4-7: a checkout may not rewrite the release
+# ============================================================================
+# This release compares, hashes and executes files as bytes. Every blob in
+# supabase/migrations is LF and its statements are fingerprinted by
+# scripts/verify-remote-migration-history.mjs against what production actually
+# recorded; every shell script under scripts/ and infra/systemd/ is executed by
+# bash on the production host; infra/release/release-manifest.json carries
+# SHA256 digests of files in this tree. All three are byte-exact claims.
+#
+# Without the rule below a checkout on a host with the Windows default
+# core.autocrlf=true rewrites all of them. Measured on this tree: 126 of 126
+# migrations, 29 of 29 scripts/*.sh, 27 of 27 scripts/*.mjs and 5 of 5
+# infra/systemd/*.sh come out CRLF, and the content gate then refuses with
+# local_content_line_endings. That refusal is correct about the bytes on disk
+# and wrong about production, which never applied a CRLF file — a false
+# accusation, and one that cannot be cleared by re-running anything.
+#
+# `eol=lf` makes the checkout write the committed bytes whatever core.autocrlf
+# says, so the gate has the release in front of it. The gate's refusal stays
+# where it is: it is the defence for a tree that reached the host some other
+# way, and removing it would trade a false red for a false green.
+#
+# tests/release/checkout-byte-fidelity.test.mjs measures this instead of
+# reading it, and requires a fresh checkout of HEAD to come out clean.
+
+* text=auto eol=lf
+
+# The four blobs that were committed with mixed line endings before the rule
+# above existed. Under `text=auto` alone they would be normalised on the next
+# write while `eol=lf` hands their CRLF straight back out, so every working
+# tree would report them modified for ever — the same false red, moved. `-text`
+# preserves their bytes exactly and reports them clean. Normalising them is a
+# content change to files this round does not otherwise touch, so it is not
+# done here.
+build.log -text
+docs/meta-ads-auth-instructions.txt -text
+src/app/api/leads/\[id\]/quality/route.ts -text
+tests/integration/api-validation-static.test.mjs -text
+
+# Already classified correctly by `text=auto` (measured: i/-text). Named so a
+# future line-ending rule cannot reach them.
+*.png binary
+*.ico binary
+*.pyc binary

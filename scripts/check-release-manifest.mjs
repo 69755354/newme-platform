@@ -36,6 +36,13 @@
  *      predicate is a single read-only `select` with a unique name. The phase
  *      tool runs them in a READ ONLY transaction after applying, so a phase that
  *      "applied" without producing the posture it claims is a failure.
+ *   7. Phase coupling. `runs_under.database_phases` names the direct-write modes
+ *      this release can serve traffic under, and scripts/check-release-phase.mjs
+ *      reads it before any path switches the `current` symlink (Round-4 C8). The
+ *      declaration is validated by that module's own resolver, so the deploy path
+ *      and this gate cannot disagree about what a declaration means, and it must
+ *      be present: a release that ships the mode may not fall back to the
+ *      pre-mechanism default, which exists for releases that predate the key.
  *
  * It deliberately does NOT check that anything was applied: this gate runs in CI
  * against a checkout, where that question has no answer.
@@ -49,6 +56,11 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+
+// Rule 7 is judged by the resolver the deploy path uses, not by a second reading
+// of the same key: the whole point of the declaration is that the manifest gate
+// and scripts/check-release-phase.mjs agree about what it means.
+import { COMPLETION_PHASE, resolveDeclaredPhases } from "./check-release-phase.mjs";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const MANIFEST_PATH = path.join(ROOT, "infra", "release", "release-manifest.json");
@@ -231,6 +243,40 @@ export function auditManifest({ manifest, files, hashes, baseline }) {
       if (!readOnly || forbidden) {
         fail(
           `posture predicate ${JSON.stringify(name)} must be a single read-only select: the phase tool runs it against production`,
+        );
+      }
+    }
+  }
+
+  // 7 · phase coupling
+  const declaration = resolveDeclaredPhases(manifest);
+  for (const problem of declaration.problems) fail(problem);
+  if (declaration.problems.length === 0) {
+    if (declaration.source !== "declared") {
+      fail(
+        "runs_under.database_phases must name the direct-write modes this release can serve traffic under: scripts/check-release-phase.mjs refuses to switch to a release it cannot place, and the pre-mechanism default it would otherwise apply is for releases that predate the key, not for this one",
+      );
+    } else {
+      // The mode function is created by an expand migration
+      // (20260814000000_l0_round3_authorization_and_integrity.sql), so `absent`
+      // means a required_for_app migration has not been applied — which is the one
+      // state in which this release must not be serving traffic at all.
+      if (declaration.phases.includes("absent") && (manifest.required_for_app ?? []).length > 0) {
+        fail(
+          "runs_under.database_phases claims this release runs under `absent`, but `absent` is the state before its own required_for_app migrations are applied",
+        );
+      }
+      // Completion is only declared in strict, so a release that cannot run there
+      // could never be finished; and between the expand push and the contract push
+      // the candidate serves live traffic in compat, so it has to run there too.
+      if (!declaration.phases.includes(COMPLETION_PHASE)) {
+        fail(
+          `runs_under.database_phases does not include ${JSON.stringify(COMPLETION_PHASE)}: the deferred contract phase moves the database there, so this release could never be completed`,
+        );
+      }
+      if ((manifest.deferred_contract ?? []).length > 0 && !declaration.phases.includes("compat")) {
+        fail(
+          "runs_under.database_phases does not include \"compat\": this release defers a contract migration, so it serves live traffic in compat between the two pushes",
         );
       }
     }

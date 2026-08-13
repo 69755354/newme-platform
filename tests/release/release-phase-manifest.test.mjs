@@ -32,9 +32,13 @@ import {
   isTransactionControl,
   nonTransactional,
   planPhase,
-  splitStatements,
-  statementsFingerprint,
 } from "../../scripts/db-phase-push.mjs";
+import { splitSqlStatements } from "../../scripts/split-sql-statements.mjs";
+import {
+  FINGERPRINT_FORMAT,
+  readLocalContent,
+  statementsFingerprint,
+} from "../../scripts/verify-remote-migration-history.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const MIGRATIONS_DIR = path.join(ROOT, "supabase", "migrations");
@@ -240,36 +244,85 @@ test("a phase file that sorts before recorded history is refused, not applied", 
   );
 });
 
-// --- statement splitting --------------------------------------------------
+// --- one statement encoding, shared with the gate that must reproduce it ----
 
-test("the splitter respects dollar quoting, comments and strings", () => {
-  const sql = [
-    "begin;",
-    "create function f() returns void language plpgsql as $$",
-    "begin",
-    "  perform 1; perform 2;",
-    "end",
-    "$$;",
-    "-- a comment with a ; in it",
-    "select 'a string with a ; and a $$ in it';",
-    "/* a block /* nested */ comment with a ; */",
-    'select "a quoted ; identifier";',
-    "commit;",
-  ].join("\n");
-  const statements = splitStatements(sql);
-  assert.equal(statements.length, 5, statements.join("\n---\n"));
-  assert.equal(statements[0], "begin;");
-  assert.ok(statements[1].includes("perform 1; perform 2;"), "the function body was split");
-  assert.ok(statements[2].startsWith("-- a comment"), "the comment stayed with its statement");
-  assert.equal(statements.at(-1), "commit;");
-  assert.ok(statements.every((statement) => statement.endsWith(";")));
+test("the applier carries no private splitter or digest", () => {
+  // The history rows this tool writes are the rows
+  // scripts/verify-remote-migration-history.mjs later has to reproduce from these
+  // same files — that local half is Round-4 C4's closure. This tool used to split
+  // with a private splitter that kept the terminating `;`, and hash with the
+  // superseded space-joined digest, under a comment claiming it could not collide.
+  // Left that way, every version it applied would read back as
+  // `content_not_locally_reproducible`; those versions are claimed via
+  // --require-applied, so the gate refuses the whole run rather than reporting one
+  // row, and C5's post-capture delta — which requires content reproduction — could
+  // never admit them. A permanent deploy block, produced by two files disagreeing
+  // in private. So the defect is the second copy, not its output, and that is what
+  // this test looks for.
+  const tool = readFileSync(path.join(ROOT, "scripts/db-phase-push.mjs"), "utf8");
+  assert.match(tool, /import \{ splitSqlStatements \} from "\.\/split-sql-statements\.mjs";/);
+  assert.match(tool, /statementsFingerprint,\s*\n\} from "\.\/verify-remote-migration-history\.mjs";/);
+  assert.match(
+    tool,
+    /\$\{STATEMENTS_FINGERPRINT_SQL\} as statements_sha256/,
+    "the server-side digest is restated instead of interpolated",
+  );
+  assert.doesNotMatch(
+    tool,
+    /function\s+(splitStatements|splitSqlStatements|statementsFingerprint)\b/,
+    "the applier defines its own statement encoding",
+  );
+  assert.doesNotMatch(tool, /node:crypto|createHash/, "the applier hashes statements itself");
+});
+
+test("the gate's local half is exactly the splitter and the digest", () => {
+  // The other end of the coupling, over the committed release. The gate computes
+  // its local content with no normalisation of its own: count and fingerprint are
+  // splitSqlStatements() and statementsFingerprint() over the file's bytes. Given
+  // that, and given the applier now calls the same two functions on the same file,
+  // the two sides can only differ if the bytes differ.
+  const entries = manifestEntries(manifest);
+  const gate = readLocalContent(MIGRATIONS_DIR, entries);
+  assert.equal(gate.size, entries.length);
+  for (const entry of entries) {
+    const local = gate.get(entry.version);
+    assert.ok(local, `${entry.file} has no local content`);
+    assert.equal(local.error, null, `${entry.file} could not be read (${local.error})`);
+    const raw = readFileSync(path.join(MIGRATIONS_DIR, entry.file), "utf8");
+    const statements = splitSqlStatements(raw);
+    assert.equal(local.count, statements.length, `${entry.file} statement count`);
+    assert.equal(local.fingerprint, statementsFingerprint(statements), `${entry.file} fingerprint`);
+
+    // The one byte-level difference between the two sides, asserted rather than
+    // assumed: the applier reads through readMigration(), which folds CRLF to LF
+    // because that is the form it sends to the server, and the gate reads the file
+    // as it is. On the LF checkout CI and every deploy host use they are the same
+    // bytes. On a CRLF checkout they are not — and the gate refuses by cause
+    // (local_content_line_endings) instead of comparing, which is why this test
+    // states the difference here rather than asserting an equality that would hold
+    // only on Linux.
+    assert.equal(local.crlf, raw.includes("\r\n"), `${entry.file} line-ending report`);
+    assert.doesNotMatch(readMigration(MIGRATIONS_DIR, entry.file), /\r\n/);
+  }
 });
 
 test("transaction control and non-transactional statements are classified", () => {
-  for (const statement of ["begin;", "BEGIN;", "commit;", "end;", "start transaction;", "-- x\nbegin;"]) {
+  // Both spellings, because the splitter hands these over without the terminating
+  // `;` — the semicolon-bearing forms are only what a reader would type.
+  for (const statement of [
+    "begin",
+    "BEGIN",
+    "commit",
+    "end",
+    "start transaction",
+    "-- x\nbegin",
+    "begin;",
+    "commit;",
+    "-- x\nbegin;",
+  ]) {
     assert.equal(isTransactionControl(statement), true, statement);
   }
-  for (const statement of ["begin\n  perform 1;\nend;", "select 1;", "create table t (x int);"]) {
+  for (const statement of ["begin\n  perform 1;\nend", "begin\n  perform 1;\nend;", "select 1", "create table t (x int);"]) {
     assert.equal(isTransactionControl(statement), false, statement);
   }
   assert.equal(nonTransactional("create index concurrently i on t (x);"), true);
@@ -282,12 +335,16 @@ test("transaction control and non-transactional statements are classified", () =
 test("every migration in the release splits into applyable statements", () => {
   for (const entry of manifestEntries(manifest)) {
     const sql = readMigration(MIGRATIONS_DIR, entry.file);
-    const statements = splitStatements(sql);
+    const statements = splitSqlStatements(sql);
     assert.ok(statements.length > 0, `${entry.file} split into nothing`);
 
-    // Nothing is lost but whitespace between statements: the tool records these
-    // as the migration's content, and the history row is compared against them.
-    const strip = (text) => text.replace(/\s+/g, "");
+    // Nothing is lost but whitespace and the separators themselves: the tool
+    // records these as the migration's content, and the history row is compared
+    // against them. The terminating `;` is dropped because the CLI drops it — a
+    // separator inside a string or a comment is not a separator and stays, which is
+    // why both sides are compared with semicolons removed rather than with the
+    // array re-joined on one.
+    const strip = (text) => text.replace(/[\s;]+/g, "");
     assert.equal(
       strip(statements.join("")),
       strip(sql),
@@ -308,10 +365,16 @@ test("every migration in the release splits into applyable statements", () => {
   }
 });
 
-test("the statement fingerprint folds in the count", () => {
-  // Otherwise ["a","b"] and ["a b"] collide and a re-split migration compares
-  // equal to a differently-split one.
+test("the statement fingerprint separates arrays a count cannot", () => {
+  // The digest this tool now uses is length-delimited, so every boundary is in the
+  // hashed bytes. The superseded form folded in the count and then joined on a
+  // space, which separates ["a","b"] from ["a b"] but NOT ["a","b c"] from
+  // ["a b","c"]: same count, moved boundary, identical digest. That is a migration
+  // recorded with a different split reading back as content this release
+  // reproduces, which is the one thing the fingerprint exists to prevent.
+  assert.equal(FINGERPRINT_FORMAT, "statements-v2-length-delimited");
   assert.notEqual(statementsFingerprint(["a", "b"]), statementsFingerprint(["a b"]));
+  assert.notEqual(statementsFingerprint(["a", "b c"]), statementsFingerprint(["a b", "c"]));
   assert.equal(statementsFingerprint(["a", "b"]), statementsFingerprint(["a", "b"]));
   assert.equal(statementsFingerprint([]).length, 64);
 });
@@ -322,6 +385,13 @@ test("the drill that tests the tool against a database is committed and wired", 
   const drill = readFileSync(path.join(ROOT, "scripts/phase-tool-drill.sh"), "utf8");
   assert.match(drill, /db-phase-push\.mjs/);
   assert.match(drill, /phase drill OK/);
+  // The one step the offline tests above cannot stand in for: the rows the applier
+  // writes, read back through the gate's own query and digest, with a perturbation
+  // it is required to catch. Asserted here so it cannot be quietly dropped from the
+  // drill while the drill keeps exiting 0.
+  assert.match(drill, /verify-remote-migration-history\.mjs/);
+  assert.match(drill, /cross_tool_check \|\| fail/);
+  assert.match(drill, /it is not measuring content/);
   const ci = readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
   assert.match(ci, /bash scripts\/phase-tool-drill\.sh/);
   assert.doesNotMatch(

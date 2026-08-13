@@ -17,12 +17,28 @@
     "endings. Regenerate with: node scripts/check-release-manifest.mjs --stamp",
     "",
     "Nothing here asserts that anything has been applied. See",
-    "supabase/preflight/expand-contract-rollback.md §7."
+    "supabase/preflight/expand-contract-rollback.md §7.",
+    "",
+    "runs_under.database_phases: the direct-write modes this release can serve",
+    "traffic under, read by scripts/check-release-phase.mjs before any path switches",
+    "the `current` symlink to a release and before a candidate may be declared",
+    "complete. Round-4 review C8: a release predating this key declares nothing, and",
+    "is therefore treated as running under `absent` and `compat` only — which is why",
+    "rolling back to it while the mode is `strict` is refused instead of taking the",
+    "previous release's money writes down. See",
+    "supabase/preflight/expand-contract-rollback.md §2 for the state table."
   ],
   "release": "l0-money-authorization",
   "base_commit": "81956f2ff3bffe89389ac3185e8b271805333374",
   "production_stamp": "20260805202917",
   "hash_algorithm": "sha256-crlf-normalised",
+  "runs_under": {
+    "$comment": "States 2, 3, 4, 5 and 6 of the runbook's compatibility matrix; not state 1, where the RPCs this release calls do not all exist yet.",
+    "database_phases": [
+      "compat",
+      "strict"
+    ]
+  },
   "required_for_app": [
     {
       "version": "20260806000000",

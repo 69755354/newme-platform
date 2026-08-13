@@ -67,7 +67,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import process from "node:process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -83,88 +82,14 @@ import {
   readManifest,
   readMigration,
 } from "./check-release-manifest.mjs";
+import { splitSqlStatements } from "./split-sql-statements.mjs";
+import {
+  STATEMENTS_FINGERPRINT_SQL,
+  statementsFingerprint,
+} from "./verify-remote-migration-history.mjs";
 
 const MIGRATIONS_DIR = path.join(ROOT, "supabase", "migrations");
 const CLI_MIGRATION = /^([0-9]{14})_(.+)\.sql$/;
-
-/**
- * The migration's SQL as a list of statements, for the `statements` column.
- *
- * Top-level semicolons only: single- and double-quoted strings, dollar-quoted
- * bodies ($$ … $$, $tag$ … $tag$), line comments and nested block comments are
- * all skipped over, because every function body in this release is dollar-quoted
- * and contains semicolons. Comments and the terminating semicolon are KEPT, so
- * the concatenation of the statements is the file's own text apart from
- * whitespace between statements.
- *
- * This is this repository's splitter, used both when recording and when reading
- * back, which is what makes the read-after-write check below meaningful. It is
- * NOT claimed to be byte-identical to the Supabase CLI's own splitter: for rows
- * the CLI wrote, content equivalence with local files remains unproven (round-4
- * C4), and scripts/verify-remote-migration-history.mjs reports those as
- * differences rather than passes.
- */
-export function splitStatements(sql) {
-  const statements = [];
-  let start = 0;
-  let i = 0;
-  const text = String(sql);
-  while (i < text.length) {
-    const ch = text[i];
-    if (ch === "'" || ch === '"') {
-      i += 1;
-      while (i < text.length) {
-        if (text[i] === ch) {
-          // '' and "" are escapes for the quote character itself.
-          if (text[i + 1] === ch) i += 2;
-          else break;
-        } else i += 1;
-      }
-      i += 1;
-      continue;
-    }
-    if (ch === "-" && text[i + 1] === "-") {
-      const end = text.indexOf("\n", i);
-      i = end === -1 ? text.length : end + 1;
-      continue;
-    }
-    if (ch === "/" && text[i + 1] === "*") {
-      let depth = 1;
-      i += 2;
-      while (i < text.length && depth > 0) {
-        if (text[i] === "/" && text[i + 1] === "*") {
-          depth += 1;
-          i += 2;
-        } else if (text[i] === "*" && text[i + 1] === "/") {
-          depth -= 1;
-          i += 2;
-        } else i += 1;
-      }
-      continue;
-    }
-    if (ch === "$") {
-      const tag = /^\$[A-Za-z_][A-Za-z_0-9]*\$|^\$\$/.exec(text.slice(i));
-      if (tag) {
-        const end = text.indexOf(tag[0], i + tag[0].length);
-        i = end === -1 ? text.length : end + tag[0].length;
-        continue;
-      }
-      i += 1;
-      continue;
-    }
-    if (ch === ";") {
-      const statement = text.slice(start, i + 1).trim();
-      if (statement !== "" && statement !== ";") statements.push(statement);
-      i += 1;
-      start = i;
-      continue;
-    }
-    i += 1;
-  }
-  const tail = text.slice(start).trim();
-  if (tail !== "") statements.push(tail);
-  return statements;
-}
 
 /** A statement's SQL with comments removed, lowercased — for classification only. */
 export function statementCode(statement) {
@@ -206,33 +131,22 @@ export function nonTransactional(statement) {
 }
 
 /**
- * The same fingerprint scripts/verify-remote-migration-history.mjs computes, and
- * the same one the server computes in HISTORY_CONTENT_QUERY below. Length is
- * folded in so ["a","b"] and ["a b"] cannot collide.
+ * Server-side count and fingerprint of the recorded statements. No text.
+ *
+ * The digest expression is imported, not written here. This query and the one the
+ * remote-history gate runs against production have to ask for the same bytes: the
+ * rows this tool writes are the rows that gate later has to reproduce from these
+ * same files, and a private encoding here would have made that impossible in a way
+ * neither side could see. This tool did carry one — the superseded space-joined
+ * form, under a comment claiming it could not collide.
  */
-export function statementsFingerprint(statements) {
-  const list = Array.isArray(statements) ? statements : [];
-  const hash = crypto.createHash("sha256");
-  hash.update(`${list.length}`);
-  for (const statement of list) {
-    hash.update(" ");
-    hash.update(String(statement ?? ""));
-  }
-  return hash.digest("hex");
-}
-
-/** Server-side count and fingerprint of the recorded statements. No text. */
-const HISTORY_CONTENT_QUERY = `select version,
-       name,
-       coalesce(array_length(statements, 1), 0) as statement_count,
-       encode(sha256(convert_to(
-         coalesce(array_length(statements, 1), 0)::text ||
-         case when coalesce(array_length(statements, 1), 0) > 0
-              then ' ' || array_to_string(statements, ' ')
-              else '' end, 'UTF8')), 'hex') as statements_sha256
-  from supabase_migrations.schema_migrations
- where version = any($1::text[])
- order by version`;
+const HISTORY_CONTENT_QUERY = `select m.version,
+       m.name,
+       coalesce(array_length(m.statements, 1), 0) as statement_count,
+       ${STATEMENTS_FINGERPRINT_SQL} as statements_sha256
+  from supabase_migrations.schema_migrations m
+ where m.version = any($1::text[])
+ order by m.version`;
 
 const HISTORY_LIST_QUERY =
   "select version, name from supabase_migrations.schema_migrations order by version";
@@ -493,7 +407,7 @@ async function main(argv) {
       // Shape refusals for the whole phase first: nothing is applied if any file
       // of it could not be applied atomically.
       for (const entry of toApply) {
-        const statements = splitStatements(sqlByFile.get(String(entry.file)));
+        const statements = splitSqlStatements(sqlByFile.get(String(entry.file)));
         const offending = statements.findIndex(nonTransactional);
         if (offending >= 0) {
           console.error(
@@ -506,7 +420,7 @@ async function main(argv) {
       for (const entry of toApply) {
         const file = String(entry.file);
         const sql = sqlByFile.get(file);
-        const statements = splitStatements(sql);
+        const statements = splitSqlStatements(sql);
         const name = CLI_MIGRATION.exec(file)[2];
         let executed = 0;
         try {
@@ -551,7 +465,7 @@ async function main(argv) {
         failures += 1;
         continue;
       }
-      const expected = splitStatements(sqlByFile.get(String(entry.file)));
+      const expected = splitSqlStatements(sqlByFile.get(String(entry.file)));
       const expectedFingerprint = statementsFingerprint(expected);
       const measured = Number(row.statement_count);
       if (measured !== expected.length) {
@@ -560,10 +474,14 @@ async function main(argv) {
         );
         failures += 1;
       } else if (row.statements_sha256 !== expectedFingerprint) {
-        // Only possible for a row this tool did not write — the CLI's splitter is
-        // not this one — so it is reported as unproven content, not as a lie.
+        // Not reachable for a row of this run: the same splitter produced the array
+        // that was inserted and the array compared here, and the digest expression
+        // is the gate's own. So the row was recorded from bytes this file no longer
+        // holds — another tool applied it, the file changed after it was applied, or
+        // this checkout's line endings are not the ones that were applied. Reported
+        // as unproven content rather than as a mismatch anyone has explained.
         console.error(
-          `history: ${version} is recorded with content this release cannot reproduce (fingerprint ${String(row.statements_sha256).slice(0, 12)}… vs ${expectedFingerprint.slice(0, 12)}…): it was applied by other tooling`,
+          `history: ${version} is recorded with content this release cannot reproduce (fingerprint ${String(row.statements_sha256).slice(0, 12)}… vs ${expectedFingerprint.slice(0, 12)}…): it was not recorded from this file`,
         );
         failures += 1;
       } else {

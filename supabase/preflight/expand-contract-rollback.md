@@ -132,9 +132,31 @@ classified fails CI rather than being left out of the expand push.
 against throwaway databases and asserts the refusals as hard as the successes —
 history-less database refused, contract-before-expand refused, expand applied and
 read back, re-run a no-op, contract applied, expand-after-contract refused,
-`--verify-only` at state 4, and an interruption in which the twelfth migration
-fails after altering tables: eleven stay applied, nothing is recorded for the
-twelfth, and a column it added earlier in the same file is gone.
+`--verify-only` at state 4, and an interruption in which
+`20260817000000_l0_round4_money_and_business_integrity.sql` fails after altering
+tables: every migration before it stays applied, nothing is recorded for it, and a
+column it added earlier in the same file is gone. Its tenth step reads every
+recorded row back through `scripts/verify-remote-migration-history.mjs` — the
+module that must later reproduce production's recorded content from these same
+files — using that module's query, digest expression and local half rather than the
+applier's, and then moves one statement boundary in one recorded array without
+changing the count, requiring the check to fail on it and to pass again once it is
+reverted. Which migration breaks, how many precede it, and how many rows must
+reproduce are all read out of the manifest; a count a release would have to
+maintain is a count that stops being evidence.
+
+Its eleventh step measures the release↔phase coupling of §2 against that same real
+catalog rather than a stub: `scripts/check-release-phase.mjs` is asked both
+questions in every mode the state table has. At state 4 completion is allowed and a
+switch to a release carrying no declaration is refused by name; the rollback
+companion is then run by hand, the mode is read back as `compat`, the same switch is
+allowed, completion is refused — with the contract phase still recorded in
+`supabase_migrations.schema_migrations`, which is C8's "history can say applied
+while mode is compat", measured — and the re-contract companion puts both verdicts
+back. State 1 is measured on a third database that no phase ever touched. Three
+negative controls have to fail: a present-but-unusable mode function must not read
+as `absent`, a refusal must not print a mode on stdout, and a group-readable URL
+file must be refused.
 
 The contract phase also carries the **highest** version in the release, so the
 expand set is a contiguous prefix of the pending set. That is deliberate:
@@ -148,12 +170,25 @@ expand set is a contiguous prefix of the pending set. That is deliberate:
   `20260817150000` as the newest version at state 2 and `20260818000000` at
   state 4.
 
-What none of this proves: the tool is not the Supabase CLI, and the statement
-array it records is split by this repository's own parser
-(`splitStatements`). For the history rows **production already has**, written by
-the CLI, content equivalence with the local files remains unproven — round-4
-finding C4 — and `scripts/verify-remote-migration-history.mjs` reports those rows
-as differences rather than passes.
+What none of this proves on its own: the tool is not the Supabase CLI, and the
+statement array it records is split by this repository's own parser —
+`scripts/split-sql-statements.mjs`, the same module the remote-history gate uses,
+because a second copy of it here would make every row this tool writes
+unreproducible by the gate that later has to reproduce it, and those versions are
+claimed, so that is a refused predeploy gate rather than one reported row. The
+parser's agreement with the CLI is measured rather than asserted:
+`scripts/verify-cli-statement-parity.mjs` (CI job `local-database`) pushes an
+adversarial corpus with the pinned CLI 2.113.0 and requires the array the CLI
+recorded, byte for byte. For a CLI version that drill has not run against, the gate
+reports a difference rather than a pass.
+
+For the history rows **production already has**, written by the CLI, content
+equivalence with the local files is therefore provable but **unmeasured** — round-4
+finding C4 gave the gate the local half it was missing, and no code round runs it
+against production. It needs one authorised read-only capture and gate run; until
+then `supabase/migration-history-reconciliation.json` records no capture and the
+gate refuses on sight. See `supabase/preflight/migration-history-reconciliation.md`
+§3a.
 
 Neither round-4 file may depend on the contract phase, and neither does: the mode
 row is seeded by `20260814000000`, which precedes both, and everything either file
@@ -167,7 +202,7 @@ mode.
 
 ## 2 · Compatibility matrix
 
-Five states. **P** = the previous release (`f37c203` / `81956f2`) that is serving
+Six states. **P** = the previous release (`f37c203` / `81956f2`) that is serving
 production now. **C** = the candidate release on this branch.
 
 | State | Schema | `direct_write_mode` | P works? | C works? |
@@ -192,6 +227,88 @@ nothing pending that would restore `strict`. The way back is
 hand exactly as the companion is (§5.1). A second numbered migration would not
 help — it would be applied and recorded during the first deploy, and the second
 attempt would be in the same position.
+
+### The matrix is a gate, not a table (round-4 C8)
+
+The two **no** cells above are outages, and a table in a document prevents
+nobody — operator or script — from producing one. Round-4 review C8: *"database
+phase rollback is not coupled to production app rollback — app rollback does not
+verify/switch DB mode; contract history can say applied while mode is compat."*
+Rolling the application back from state 4 by moving the `current` symlink alone
+leaves the database in `strict` with **P** deployed, which is the row that says
+**no**: every direct money write it makes is refused, immediately, in production.
+
+So each release declares which columns of this table it can occupy, in its own
+tree, in `infra/release/release-manifest.json`:
+
+```json
+"runs_under": { "database_phases": ["compat", "strict"] }
+```
+
+That is this release: states 2 through 6, and not state 1, where the RPCs it
+calls do not all exist yet. The values are the ones the table uses, plus a name
+for state 1 — `absent` (the mode function does not exist, because
+`20260814000000` is what creates it), `compat`, `strict`.
+
+**The previous release carries no declaration**, because it predates the key.
+That is not read as "anything goes" but as the pre-mechanism contract: it runs
+under `absent` and `compat`, and **not** under `strict`. This default is the
+load-bearing part. The rollback C8 is about is a rollback *to a release with no
+declaration*, so a default of "all three modes" would pass in exactly the case
+the check exists for.
+
+`scripts/check-release-phase.mjs` is the one implementation, and it answers two
+questions:
+
+* `--for-switch --release-dir DIR` — may the release in DIR serve traffic against
+  the database as it is *now*? `newme-production-rollback execute` asks before it
+  touches anything — before it even snapshots the live assets — and exits **70**
+  when the answer is no, naming the companion as the way through (§5).
+* `--for-completion` — may the candidate be declared complete? Only in `strict`.
+  `newme-deploy finalize <sha> pass …` asks before the evidence file is
+  rewritten. This is C8's second half: `schema_migrations` records that
+  `20260818000000` ran, and the companion returns the mode to `compat` **without
+  touching history**, so applied history is not evidence of state 4 — the mode
+  is. A release finalized in state 5 would claim to be fully live while the
+  previous release's direct writes were still being accepted.
+
+Three properties, each of them a way this could have been false:
+
+1. **The declaration cannot be deleted to make a switch pass.** Rule 7 of
+   `scripts/check-release-manifest.mjs` judges it with
+   `check-release-phase.mjs`'s own resolver rather than a second reading of the
+   same key, and refuses a manifest with no declaration; one claiming `absent`
+   while its own `required_for_app` set is what creates the mode function; one
+   omitting `strict`, which could never be completed; and one omitting `compat`
+   while deferring a contract migration, which is state 3. CI runs that gate.
+2. **Absence is established positively.** The gate asks `pg_catalog.pg_proc` for
+   a zero-argument `public.money_direct_write_mode` *before* it calls it.
+   Catching `undefined_function` instead would report a revoked grant or a
+   `search_path` problem as state 1 — the one answer that lets an undeclared
+   release through while the database is `strict`.
+3. **The observed mode is recorded durably, not just logged.** The rollback's
+   pending-transaction record carries `db_phase=`,
+   `newme-production-rollback status` reports it as `rollback_db_phase=`, and the
+   journald entry carries `NEWME_DB_PHASE=`. That is the state machine the
+   finding asked for: which state production was in when a switch was made stays
+   answerable afterwards, and across a reboot. `status` reads the record and
+   never opens a connection — a monitoring probe must not depend on the migration
+   credential.
+
+Deliberately **not** gated: the two recovery paths, `recover_preswitch_deploy`
+and `restore_original_transaction`. They put back the release that was already
+serving, so they cannot be what breaks it, and the expand phase leaves the mode
+at `compat` — a deploy that fails in state 2 or 3 rolls back into a mode the
+previous release runs under anyway. Only a post-contract switch is refused, which
+is the two-action rollback §5 already describes.
+
+One deliberate deviation from C8's wording. It asked for the re-contract to be "a
+new forward migration"; it is a hand-run companion instead, for the reason given
+above under state 6 — a numbered migration is recorded on its first application
+and skipped on every later one, so it could restore `strict` once and never
+again. The requirement behind the words is that the way back is executable and
+verified, and `recontract_money_direct_write_contract_phase.sql` is applied twice
+by the replay harness (§5.1), which a one-shot migration could not be.
 
 ### Writer-by-writer, verified against the two revisions
 
@@ -466,6 +583,32 @@ Read §5 before starting: the point of no return is step 7, not step 8.
 application-only rollback leaves the previous release unable to write money rows,
 so the rollback is two actions and not one: run the companion first, then
 redeploy. If the companion cannot be run, the only remaining option is PITR.
+
+**That ordering is enforced, not remembered** (§2, round-4 C8).
+`newme-production-rollback execute` runs the phase gate before it touches
+anything — before it snapshots the live assets, and long before it moves the
+`current` symlink — and exits **70** when the mode does not permit the target:
+
+```text
+node scripts/check-release-phase.mjs --for-switch \
+  --release-dir <target-release-dir> --url-file <file>
+```
+
+So a rollback attempted from state 4 to the previous release fails, with
+`rollback_money_direct_write_contract_phase.sql` and this section named in the
+refusal, and succeeds once the companion has been run. There is no override flag:
+the two actions above are an ordering, and this is what makes it one rather than
+something the operator has to know at 3am. The mode the switch was made in is
+written into the pending-transaction record as `db_phase=`, reported by
+`newme-production-rollback status` as `rollback_db_phase=`, and logged to journald
+as `NEWME_DB_PHASE=`.
+
+The gate reads its connection from `/etc/newme/migration-db.url` — root-owned,
+mode `0400` or `0600` — and refuses if that file is missing, a symlink, or more
+widely owned, for the same reason the commands below take a service file rather
+than a DSN. Refusing there costs nothing that mattered: a rollback that cannot
+reach the migration database cannot run the companion either, and both releases
+need that database.
 
 Run the companion the way §5.1 runs its mirror image — a libpq service file, no
 connection string in `argv` — and read §5.1 before running it, so that the way

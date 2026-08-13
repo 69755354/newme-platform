@@ -184,13 +184,45 @@ jobs:
     name: Narrow task follow-up database contract
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The service container is for the CLI statement-parity drill below and is
+    # deliberately separate from the Supabase stack this job starts: that stack's
+    # database is provenance-pinned and reset-verified, and the drill applies a
+    # corpus of deliberately hostile SQL. Port 5432 is free here because
+    # supabase/ci-local/supabase/config.toml puts the local database on 56432.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       SUPABASE_TELEMETRY_DISABLED: '1'
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGDATABASE: postgres
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.0'
+          cache: npm
+
+      # The parity drill reads the recorded statements array back through `pg`,
+      # which is a devDependency; npm ci is what makes it the locked version.
+      - name: Install dependencies
+        run: npm ci
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v3
@@ -202,6 +234,24 @@ jobs:
           test "$(supabase --version)" = "2.113.0"
           test -f supabase/ci-local/supabase/config.toml
           node supabase/ci-local/verify-provenance.mjs
+
+      # Round-4 C4, the half that cannot be established by reading anything in
+      # this repository. The remote-history gate's content proof parses migration
+      # files with scripts/split-sql-statements.mjs and compares the result with
+      # the statements array the CLI recorded when it applied them. That array is a
+      # property of the CLI's own lexer, whose source this repository does not
+      # vendor — so the splitter is a claim about software nobody here can read.
+      #
+      # This drill applies an adversarial corpus with the CLI pinned above, reads
+      # back what it recorded, and requires the splitter to have produced it byte
+      # for byte. It has already earned its place twice: it caught the splitter
+      # honouring backslash escapes inside E'' (the CLI does not) and keeping the
+      # terminating semicolon on each statement (the CLI drops it). Parity is
+      # established per CLI version and for no other, which is why this step sits
+      # immediately below the pin, and why raising the pin without a green run here
+      # invalidates the content proof.
+      - name: CLI statement splitter parity drill
+        run: node scripts/verify-cli-statement-parity.mjs
 
       - name: Start local database and replay narrowed contract
         run: |
@@ -334,3 +384,23 @@ jobs:
         run: |
           createdb history
           MODE=history PGDATABASE=history bash scripts/replay-migrations.sh
+
+      # Round-4 C4. The remote-history gate decides "production ran this release's
+      # SQL" by comparing a digest the server computes over the recorded
+      # statements with one this repository computes over its own migration files.
+      # The statement text deliberately never crosses the wire, which is also why
+      # the two encodings can drift apart unseen: a disagreement makes the gate
+      # accuse a correct production of content drift, or match where the bytes
+      # differ. Neither is visible by reading either side, so it is measured — on
+      # the same PostgreSQL major version production runs, over adversarial vectors
+      # and over every migration file in this release.
+      #
+      # The self-test runs first and is the negative control: it recomputes the JS
+      # side through the superseded space-joined encoding and requires EVERY row to
+      # be reported as a difference. A harness that cannot see a whole encoding
+      # change cannot see a one-byte one, and would be F-05 theatre.
+      - name: Statement fingerprint SQL/JS parity drill
+        run: |
+          createdb parity
+          PGDATABASE=parity node scripts/statements-fingerprint-parity.mjs --self-test
+          PGDATABASE=parity node scripts/statements-fingerprint-parity.mjs

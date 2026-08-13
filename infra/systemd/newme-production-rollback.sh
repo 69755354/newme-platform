@@ -15,6 +15,7 @@ STATE_ROOT=/var/lib/newme/deploy-state
 PENDING_RECORD="$STATE_ROOT/production-rollback.pending"
 ROLLBACK_MAP="$STATE_ROOT/production-rollback.map"
 SYSTEMD_PENDING_RECORD="$STATE_ROOT/systemd-assets.pending"
+MIGRATION_DB_URL_FILE=/etc/newme/migration-db.url
 ASSET_SNAPSHOT_HELPER=/usr/local/libexec/newme/newme-install-systemd-assets
 ASSET_ROLLBACK_HELPER=/usr/local/libexec/newme/newme-rollback-systemd-assets
 SNAPSHOT_RECORD=""
@@ -26,6 +27,7 @@ PENDING_TARGET_RELEASE=""
 PENDING_TARGET_ROLLBACK=""
 PENDING_TARGET_ASSET_BACKUP=""
 PENDING_LIVE_ASSET_BACKUP=""
+PENDING_DB_PHASE=""
 PENDING_STATE=""
 SYSTEMD_PENDING_SHA=""
 SYSTEMD_PENDING_BACKUP=""
@@ -79,14 +81,79 @@ validate_control_helper() {
   [ "$(stat -c '%a' "$helper")" = 755 ]
 }
 
+# Round-4 review C8: the application rollback was not coupled to the database
+# phase. This release changes the database in two phases, and after the contract
+# phase the previous release is not merely untested against it — every direct money
+# write it makes is refused. A rollback that only moved the `current` symlink would
+# therefore produce the outage it was run to prevent, and nothing in this script
+# looked. So the mode is asked for before the switch, and the answer is recorded in
+# the durable transaction record.
+#
+# The gate that is run is the LIVE release's copy, pointed at the target directory.
+# That is the right way round: the target is normally the release that predates the
+# mechanism, so it carries neither this script nor a declaration, and its missing
+# declaration is exactly what has to be judged (a pre-mechanism release runs under
+# `compat`, not under `strict`). The live release is a validated, protected,
+# immutable directory, and `current` was validated by validate_release above.
+#
+# Fail-closed, with no override, because every refusal has the same operator
+# remedy and the gate prints it: return the database to compat with
+# supabase/migrations/rollback_money_direct_write_contract_phase.sql (runbook §5.1)
+# and re-run. The two refusals that are not about the mode are honest too — a
+# rollback that cannot reach the migration database is not a rollback that would
+# have helped, since both releases need that database to serve a request.
+read_target_database_phase() {
+  local target="$1" live="$2" gate="" node_bin="" output=""
+  gate="$live/scripts/check-release-phase.mjs"
+  node_bin="$(command -v node || true)"
+  [ -n "$node_bin" ] && [ -x "$node_bin" ] || {
+    echo "node is required to verify the database phase before switching releases" >&2
+    return 1
+  }
+  [ -f "$gate" ] && [ ! -L "$gate" ] || {
+    echo "the live release carries no scripts/check-release-phase.mjs, so the database phase cannot be verified" >&2
+    return 1
+  }
+  [ -f "$MIGRATION_DB_URL_FILE" ] && [ ! -L "$MIGRATION_DB_URL_FILE" ] || {
+    echo "root-owned migration database URL file is missing" >&2
+    return 1
+  }
+  [ "$(stat -c '%U:%G' "$MIGRATION_DB_URL_FILE")" = root:root ] || {
+    echo "migration database URL file ownership is invalid" >&2
+    return 1
+  }
+  case "$(stat -c '%a' "$MIGRATION_DB_URL_FILE")" in
+    400|600) ;;
+    *) echo "migration database URL file mode must be 0400 or 0600" >&2; return 1 ;;
+  esac
+  # The URL is read by the gate from the file and never appears in an argument
+  # list: a connection string is a credential. The gate's diagnostics go to stderr
+  # and reach the operator; stdout is one line and is the only thing parsed here.
+  output="$("$node_bin" "$gate" --for-switch \
+    --release-dir "$target" \
+    --url-file "$MIGRATION_DB_URL_FILE" \
+    --modules-dir "$live/node_modules")" || return 1
+  [[ "$output" =~ ^NEWME_DB_PHASE=(absent|compat|strict)$ ]] || {
+    echo "the database phase gate exited 0 without reporting a mode" >&2
+    return 1
+  }
+  PENDING_DB_PHASE="${BASH_REMATCH[1]}"
+}
+
 write_pending_state() {
   local state="$1" tmp="${PENDING_RECORD}.tmp.$$"
   case "$state" in prepared|app_switched|target_assets_restored|complete) ;; *) return 1 ;; esac
   umask 077
-  printf 'transaction_kind=%s\nremove_original_on_complete=%s\noriginal_current=%s\noriginal_rollback=%s\ntarget_release=%s\ntarget_rollback=%s\ntarget_asset_backup=%s\nlive_asset_backup=%s\nstate=%s\n' \
+  # db_phase is the mode read_target_database_phase() observed before the switch was
+  # authorised, so the record says which database this transaction was judged
+  # against. A record written by the version of this script that predates the key
+  # has nine lines and is refused by load_pending_state — which is safe rather than
+  # a cliff, because newme-deploy.sh refuses to deploy at all while a rollback
+  # transaction is unresolved, so this script can only be replaced between them.
+  printf 'transaction_kind=%s\nremove_original_on_complete=%s\noriginal_current=%s\noriginal_rollback=%s\ntarget_release=%s\ntarget_rollback=%s\ntarget_asset_backup=%s\nlive_asset_backup=%s\ndb_phase=%s\nstate=%s\n' \
     "$PENDING_TRANSACTION_KIND" "$PENDING_REMOVE_ORIGINAL_ON_COMPLETE" "$PENDING_ORIGINAL_CURRENT" "$PENDING_ORIGINAL_ROLLBACK" \
     "$PENDING_TARGET_RELEASE" "$PENDING_TARGET_ROLLBACK" "$PENDING_TARGET_ASSET_BACKUP" \
-    "$PENDING_LIVE_ASSET_BACKUP" "$state" > "$tmp" || return 1
+    "$PENDING_LIVE_ASSET_BACKUP" "$PENDING_DB_PHASE" "$state" > "$tmp" || return 1
   chown root:root "$tmp" || return 1
   chmod 0600 "$tmp" || return 1
   mv -f "$tmp" "$PENDING_RECORD" || return 1
@@ -98,7 +165,7 @@ load_pending_state() {
   [ -f "$PENDING_RECORD" ] && [ ! -L "$PENDING_RECORD" ] || return 1
   [ "$(stat -c '%U:%G' "$PENDING_RECORD")" = root:root ] || return 1
   [ "$(stat -c '%a' "$PENDING_RECORD")" = 600 ] || return 1
-  [ "$(wc -l < "$PENDING_RECORD")" -eq 9 ] || return 1
+  [ "$(wc -l < "$PENDING_RECORD")" -eq 10 ] || return 1
   [ "$(grep -Ec '^transaction_kind=(rollback|deploy_recovery|release_recovery)$' "$PENDING_RECORD")" -eq 1 ] || return 1
   [ "$(grep -Ec '^remove_original_on_complete=[01]$' "$PENDING_RECORD")" -eq 1 ] || return 1
   [ "$(grep -Ec '^original_current=/opt/newme/releases/[0-9a-f]{40}$' "$PENDING_RECORD")" -eq 1 ] || return 1
@@ -107,6 +174,7 @@ load_pending_state() {
   [ "$(grep -Ec '^target_rollback=(/opt/newme/releases/[0-9a-f]{40})?$' "$PENDING_RECORD")" -eq 1 ] || return 1
   [ "$(grep -Ec '^target_asset_backup=/var/backups/newme-systemd-assets/[^[:space:]]+$' "$PENDING_RECORD")" -eq 1 ] || return 1
   [ "$(grep -Ec '^live_asset_backup=/var/backups/newme-systemd-assets/[^[:space:]]+$' "$PENDING_RECORD")" -eq 1 ] || return 1
+  [ "$(grep -Ec '^db_phase=(absent|compat|strict)$' "$PENDING_RECORD")" -eq 1 ] || return 1
   [ "$(grep -Ec '^state=(prepared|app_switched|target_assets_restored|complete)$' "$PENDING_RECORD")" -eq 1 ] || return 1
   PENDING_TRANSACTION_KIND="$(sed -n 's/^transaction_kind=//p' "$PENDING_RECORD")"
   PENDING_REMOVE_ORIGINAL_ON_COMPLETE="$(sed -n 's/^remove_original_on_complete=//p' "$PENDING_RECORD")"
@@ -116,6 +184,7 @@ load_pending_state() {
   PENDING_TARGET_ROLLBACK="$(sed -n 's/^target_rollback=//p' "$PENDING_RECORD")"
   PENDING_TARGET_ASSET_BACKUP="$(sed -n 's/^target_asset_backup=//p' "$PENDING_RECORD")"
   PENDING_LIVE_ASSET_BACKUP="$(sed -n 's/^live_asset_backup=//p' "$PENDING_RECORD")"
+  PENDING_DB_PHASE="$(sed -n 's/^db_phase=//p' "$PENDING_RECORD")"
   PENDING_STATE="$(sed -n 's/^state=//p' "$PENDING_RECORD")"
   case "$PENDING_TRANSACTION_KIND:$PENDING_REMOVE_ORIGINAL_ON_COMPLETE" in
     rollback:0|deploy_recovery:1|release_recovery:1) ;;
@@ -461,8 +530,18 @@ case "$action" in
     current="$(readlink -f /opt/newme/current 2>/dev/null || true)"
     rollback="$(readlink -f /opt/newme/current.rollback 2>/dev/null || true)"
     transaction=none
+    transaction_db_phase=none
     if [ -e "$PENDING_RECORD" ] || [ -L "$PENDING_RECORD" ]; then
-      if load_pending_state; then transaction="$PENDING_STATE"; else transaction=invalid; fi
+      if load_pending_state; then
+        transaction="$PENDING_STATE"
+        # The mode the in-flight transaction was judged against, from the durable
+        # record. Read rather than measured: `status` is cheap on purpose, and
+        # opening a database connection to answer it would make a monitoring probe
+        # depend on the migration credential.
+        transaction_db_phase="$PENDING_DB_PHASE"
+      else
+        transaction=invalid
+      fi
     fi
     systemd_asset_transaction=none
     if [ -e "$SYSTEMD_PENDING_RECORD" ] || [ -L "$SYSTEMD_PENDING_RECORD" ]; then
@@ -476,10 +555,10 @@ case "$action" in
         systemd_asset_transaction=mismatch
       fi
     fi
-    printf 'current=%s\nrollback=%s\nservice=%s\nhealth_http=%s\nrollback_transaction=%s\nsystemd_asset_transaction=%s\n' \
+    printf 'current=%s\nrollback=%s\nservice=%s\nhealth_http=%s\nrollback_transaction=%s\nsystemd_asset_transaction=%s\nrollback_db_phase=%s\n' \
       "$current" "$rollback" "$(systemctl is-active newme-platform.service)" \
       "$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:3001/api/health || true)" \
-      "$transaction" "$systemd_asset_transaction"
+      "$transaction" "$systemd_asset_transaction" "$transaction_db_phase"
     ;;
   execute)
     [ "$#" -eq 2 ] && [ -n "$2" ] || {
@@ -557,6 +636,16 @@ case "$action" in
     [ "$current" != "$rollback" ] || { echo "current and rollback are identical" >&2; exit 67; }
     validate_release "$target_release" || exit 66
     [ "$current" != "$target_release" ] || { echo "current and rollback target are identical" >&2; exit 67; }
+    # Before anything is snapshotted or moved: may the target serve traffic against
+    # the database as it now is? Every path that reaches this point is about to
+    # switch — the two recovery paths that do not switch a new release in
+    # (recover_preswitch_deploy, and restore_original_transaction, which puts back
+    # the release that was live when this transaction was judged) deliberately do
+    # not ask, because a refusal there could only strand a recovery.
+    read_target_database_phase "$target_release" "$current" || {
+      echo "refusing to switch to $target_release: the database phase does not permit it" >&2
+      exit 70
+    }
     live_asset_backup="$(snapshot_live_assets "$current")" || {
       echo "current live assets could not be snapshotted" >&2
       exit 65
@@ -599,11 +688,12 @@ NEWME_ACTOR=${SUDO_USER:-$(id -un)}
 NEWME_REASON=$reason
 NEWME_CURRENT=$(readlink -f /opt/newme/current)
 NEWME_ROLLBACK=$(readlink -f /opt/newme/current.rollback)
+NEWME_DB_PHASE=$PENDING_DB_PHASE
 EOF
-    printf 'current=%s\nrollback=%s\nhealth_http=%s\nauth_http=%s\n' \
+    printf 'current=%s\nrollback=%s\nhealth_http=%s\nauth_http=%s\ndb_phase=%s\n' \
       "$(readlink -f /opt/newme/current)" \
       "$(readlink -f /opt/newme/current.rollback)" \
-      "$health" "$auth"
+      "$health" "$auth" "$PENDING_DB_PHASE"
     ;;
   *)
     echo "usage: newme-production-rollback <status|execute> [reason]" >&2

@@ -36,7 +36,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { fetchRemoteHistory, rowsFingerprint } from "./verify-remote-migration-history.mjs";
+import { fetchRemoteHistory, rowsFingerprint, FINGERPRINT_FORMAT } from "./verify-remote-migration-history.mjs";
 
 function parseArgs(argv) {
   const options = { urlFile: null, modulesDir: null, out: null };
@@ -109,6 +109,10 @@ export function buildFixture({ rows, statementsRead, urlFile, capturedAt, accept
       // Recorded so the gate can refuse a baseline whose content was not
       // measurable, instead of treating "no statements column" as agreement.
       statements_measured: statementsRead,
+      // And so it can refuse one taken under a different statement encoding.
+      // Digests from two encodings are not comparable, and a gate that compared
+      // them anyway would report content drift in production that never happened.
+      fingerprint_format: FINGERPRINT_FORMAT,
       row_count: captured.length,
       rows_sha256: rowsFingerprint(captured),
     },

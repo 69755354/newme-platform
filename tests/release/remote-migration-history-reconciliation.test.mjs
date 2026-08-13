@@ -30,6 +30,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 import {
@@ -37,7 +38,11 @@ import {
   compareHistories,
   rowsFingerprint,
   statementsFingerprint,
+  FINGERPRINT_FORMAT,
+  HISTORY_QUERY,
+  STATEMENTS_FINGERPRINT_SQL,
 } from "../../scripts/verify-remote-migration-history.mjs";
+import { splitSqlStatements } from "../../scripts/split-sql-statements.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const read = (rel) => readFileSync(path.join(ROOT, rel), "utf8");
@@ -87,7 +92,7 @@ function fixtures() {
 }
 
 /** What scripts/capture-remote-migration-history.mjs would write for those rows. */
-function capturedFrom(remote, { accepted = [], digest = true, tamper = null } = {}) {
+function capturedFrom(remote, { accepted = [], digest = true, tamper = null, format = FINGERPRINT_FORMAT } = {}) {
   const rows = remote.map((row) => ({
     version: String(row.version),
     name: row.name,
@@ -99,11 +104,66 @@ function capturedFrom(remote, { accepted = [], digest = true, tamper = null } = 
     generator: "scripts/capture-remote-migration-history.mjs",
     url_file: "/etc/newme/migration-db.url",
     statements_measured: true,
+    fingerprint_format: format,
     row_count: rows.length,
   };
   if (digest) capture.rows_sha256 = rowsFingerprint(rows);
   if (tamper) tamper(rows);
   return { capture, rows, accepted };
+}
+
+/**
+ * What readLocalContent() would produce for those release files, without files.
+ *
+ * Faithful by default: every release migration parses into exactly the statements
+ * production recorded for it, which is what round-4 C4 asks the gate to be able to
+ * establish. `drift` names versions whose file parses into something else, and
+ * `unreadable` names versions whose file cannot be opened at all.
+ */
+function localContentFrom(remote, local, { drift = [], unreadable = [], empty = [] } = {}) {
+  const remoteByVersion = new Map(remote.map((row) => [String(row.version), row]));
+  const byVersion = new Map();
+  for (const entry of local) {
+    if (unreadable.includes(entry.version)) {
+      byVersion.set(entry.version, { file: entry.file, count: 0, fingerprint: null, error: "ENOENT" });
+      continue;
+    }
+    if (empty.includes(entry.version)) {
+      byVersion.set(entry.version, { file: entry.file, count: 0, fingerprint: statementsFingerprint([]), error: null });
+      continue;
+    }
+    const recorded = remoteByVersion.get(entry.version)?.statements;
+    const statements = drift.includes(entry.version) || !Array.isArray(recorded) || recorded.length === 0
+      ? [`select 'only in the release';`]
+      : recorded;
+    byVersion.set(entry.version, {
+      file: entry.file,
+      count: statements.length,
+      fingerprint: statementsFingerprint(statements),
+      error: null,
+    });
+  }
+  return byVersion;
+}
+
+/** The manifest versions the release declares — everything the release contains. */
+const manifestOf = (local) => new Set(local.map((entry) => entry.version));
+
+/**
+ * auditHistory() with the two inputs a real run always has: the release's own
+ * parsed content and its manifest. Built from the `remote` under test, so a test
+ * that mutates production is testing the baseline comparison rather than
+ * accidentally also testing the local one; the tests that are about a MISSING
+ * local parse call auditHistory() directly.
+ */
+function audit({ remote, local, ...rest }) {
+  return auditHistory({
+    localContent: localContentFrom(remote, local),
+    manifestVersions: manifestOf(local),
+    remote,
+    local,
+    ...rest,
+  });
 }
 
 const WHY = "production applied this before the repository baseline existed; recorded here so it is explained, not hidden";
@@ -125,7 +185,7 @@ test("the review's 18 differences are reproduced by the version/name comparison"
 
 test("reading statements adds the seven rows the old gate could not see", () => {
   const { remote, local } = fixtures();
-  const { problems } = auditHistory({ remote, local });
+  const { problems } = audit({ remote, local });
 
   assert.equal(kinds(problems, "with no statements"), 7);
   assert.equal(problems.length, 25, `18 structural + 7 content, got:\n${problems.join("\n")}`);
@@ -141,7 +201,7 @@ test("reading statements adds the seven rows the old gate could not see", () => 
 test("a database whose statements cannot be read is a refusal, not agreement", () => {
   const { remote, local } = fixtures();
   const rows = remote.map(({ version, name }) => ({ version, name })); // the old two-column shape
-  const { problems } = auditHistory({ remote: rows, local, statementsRead: false });
+  const { problems } = audit({ remote: rows, local, statementsRead: false });
 
   assert.ok(
     problems.some((p) => p.includes("no readable statements column") && p.includes("cannot be measured")),
@@ -156,15 +216,15 @@ test("rows that carry neither statements nor a measurement count as unverified",
   // and every row silently becomes "fine" again.
   const { remote, local } = fixtures();
   const rows = remote.map(({ version, name }) => ({ version, name }));
-  const { problems } = auditHistory({ remote: rows, local, statementsRead: true });
+  const { problems } = audit({ remote: rows, local, statementsRead: true });
   assert.equal(kinds(problems, "with no statements"), remote.length);
 });
 
 test("a matching captured baseline adds nothing, and both drift directions refuse", () => {
   const { remote, local } = fixtures();
-  const base = auditHistory({ remote, local }).problems.length;
+  const base = audit({ remote, local }).problems.length;
 
-  const clean = auditHistory({ remote, local, reconciliation: capturedFrom(remote) });
+  const clean = audit({ remote, local, reconciliation: capturedFrom(remote) });
   assert.equal(clean.problems.length, base, "a baseline that matches production must add no problems");
 
   // Content changed under a version whose name and count are unchanged — the exact
@@ -172,7 +232,7 @@ test("a matching captured baseline adds nothing, and both drift directions refus
   const rewritten = remote.map((row) =>
     row.version === v(30) ? { ...row, statements: ["select 999;", "commit;"] } : row,
   );
-  const drift = auditHistory({ remote: rewritten, local, reconciliation: capturedFrom(remote) });
+  const drift = audit({ remote: rewritten, local, reconciliation: capturedFrom(remote) });
   assert.ok(
     drift.problems.some((p) => p.includes(v(30)) && p.includes("different statement fingerprint")),
     `expected content drift to be reported, got:\n${drift.problems.join("\n")}`,
@@ -180,23 +240,24 @@ test("a matching captured baseline adds nothing, and both drift directions refus
 
   // A count change is reported as a count change, not as an opaque hash mismatch.
   const shorter = remote.map((row) => (row.version === v(31) ? { ...row, statements: ["select 31;"] } : row));
-  const counted = auditHistory({ remote: shorter, local, reconciliation: capturedFrom(remote) });
+  const counted = audit({ remote: shorter, local, reconciliation: capturedFrom(remote) });
   assert.ok(
     counted.problems.some((p) => p.includes(v(31)) && p.includes("statement(s) but the database now reports 1")),
     `expected a count difference to be reported, got:\n${counted.problems.join("\n")}`,
   );
 
-  // Production ahead of the baseline, and production behind it.
+  // Production ahead of the baseline: refused unless it is this release's claimed,
+  // manifested, content-verified delta, which is the C5 test below.
   const ahead = [...remote, { version: v(60), name: "applied_after_capture", statements: ["select 60;"] }];
   assert.ok(
-    auditHistory({ remote: ahead, local, reconciliation: capturedFrom(remote) }).problems.some(
-      (p) => p.includes(v(60)) && p.includes("baseline is older than production"),
+    audit({ remote: ahead, local, reconciliation: capturedFrom(remote) }).problems.some(
+      (p) => p.includes(v(60)) && p.includes("captured baseline does not contain it"),
     ),
-    "a version applied after the capture must refuse",
+    "an unexplained version applied after the capture must refuse",
   );
   const behind = remote.filter((row) => row.version !== v(32));
   assert.ok(
-    auditHistory({ remote: behind, local, reconciliation: capturedFrom(remote) }).problems.some(
+    audit({ remote: behind, local, reconciliation: capturedFrom(remote) }).problems.some(
       (p) => p.includes(v(32)) && p.includes("applied history was removed from production"),
     ),
     "history removed from production must refuse",
@@ -211,7 +272,7 @@ test("a baseline edited after capture is refused by its own digest", () => {
     },
   });
   assert.ok(
-    auditHistory({ remote, local, reconciliation: tampered }).problems.some((p) =>
+    audit({ remote, local, reconciliation: tampered }).problems.some((p) =>
       p.includes("edited after it was captured"),
     ),
     "a hand-edited baseline must be refused",
@@ -219,7 +280,7 @@ test("a baseline edited after capture is refused by its own digest", () => {
 
   const undigested = capturedFrom(remote, { digest: false });
   assert.ok(
-    auditHistory({ remote, local, reconciliation: undigested }).problems.some((p) =>
+    audit({ remote, local, reconciliation: undigested }).problems.some((p) =>
       p.includes("cannot be shown to be the one that was captured"),
     ),
     "a baseline with no digest must be refused",
@@ -227,7 +288,7 @@ test("a baseline edited after capture is refused by its own digest", () => {
 
   const provenanceless = { capture: null, rows: capturedFrom(remote).rows, accepted: [] };
   assert.ok(
-    auditHistory({ remote, local, reconciliation: provenanceless }).problems.some((p) =>
+    audit({ remote, local, reconciliation: provenanceless }).problems.some((p) =>
       p.includes("records no capture"),
     ),
     "rows with no capture block must be refused",
@@ -236,7 +297,7 @@ test("a baseline edited after capture is refused by its own digest", () => {
 
 test("an acceptance explains exactly the difference it restates, and nothing else", () => {
   const { remote, local } = fixtures();
-  const base = auditHistory({ remote, local }).problems.length;
+  const base = audit({ remote, local }).problems.length;
 
   const accepted = [];
   for (let i = 0; i <= 7; i += 1) {
@@ -249,7 +310,7 @@ test("an acceptance explains exactly the difference it restates, and nothing els
       evidence: EVIDENCE,
     });
   }
-  const result = auditHistory({ remote, local, reconciliation: capturedFrom(remote, { accepted }) });
+  const result = audit({ remote, local, reconciliation: capturedFrom(remote, { accepted }) });
   assert.equal(result.reconciled.length, 8);
   assert.equal(result.problems.length, base - 8, `only the eight named differences may be explained:\n${result.problems.join("\n")}`);
   assert.equal(kinds(result.problems, "applied history was renamed"), 0);
@@ -261,7 +322,7 @@ test("an acceptance explains exactly the difference it restates, and nothing els
   }
   // …and it explains one difference, not the class: seven more remain unexplained
   // if only one is written.
-  const one = auditHistory({
+  const one = audit({
     remote,
     local,
     reconciliation: capturedFrom(remote, { accepted: [accepted[0]] }),
@@ -291,7 +352,7 @@ test("an acceptance that does not describe production is itself a refusal", () =
     [{ ...good, kind: "fixture_content_drift" }, "not a difference this gate lets anyone accept"],
   ];
   for (const [entry, needle] of mutations) {
-    const { problems, reconciled } = auditHistory({
+    const { problems, reconciled } = audit({
       remote,
       local,
       reconciliation: capturedFrom(remote, { accepted: [entry] }),
@@ -308,7 +369,7 @@ test("an acceptance that does not describe production is itself a refusal", () =
   }
 
   // Two acceptances cannot explain the same single difference.
-  const doubled = auditHistory({
+  const doubled = audit({
     remote,
     local,
     reconciliation: capturedFrom(remote, { accepted: [good, { ...good }] }),
@@ -328,18 +389,73 @@ test("an acceptance without a captured baseline explains nothing", () => {
       evidence: EVIDENCE,
     },
   ];
-  for (const reconciliation of [
-    { capture: null, rows: [], accepted },
-    { capture: { captured_at: "x", rows_sha256: rowsFingerprint([]) }, rows: [], accepted },
-  ]) {
-    const { problems, reconciled } = auditHistory({ remote, local, reconciliation });
-    assert.equal(reconciled.length, 0);
-    assert.ok(
-      problems.some((p) => p.includes("without read-only evidence is not a reconciliation")),
-      `expected the evidence requirement, got:\n${problems.join("\n")}`,
-    );
-    assert.ok(problems.some((p) => p.includes(v(20)) && p.includes("no statements")));
-  }
+  const uncaptured = audit({ remote, local, reconciliation: { capture: null, rows: [], accepted } });
+  assert.equal(uncaptured.reconciled.length, 0);
+  assert.ok(
+    uncaptured.problems.some((p) => p.includes("without read-only evidence is not a reconciliation")),
+    `expected the evidence requirement, got:\n${uncaptured.problems.join("\n")}`,
+  );
+  assert.ok(uncaptured.problems.some((p) => p.includes(v(20)) && p.includes("no statements")));
+  // And the file itself is reported, not only the acceptance inside it: round-4 C4
+  // is that "the baseline agrees" and "there is no baseline" reached the same
+  // outcome, so the absence has to be a finding of its own.
+  assert.ok(
+    uncaptured.problems.some((p) => p.includes("records no capture") && p.includes("has never been read")),
+    "an uncaptured reconciliation must refuse on its own account",
+  );
+
+  // A capture block over an empty row set is a captured baseline, so the acceptance
+  // does match — and the run still refuses, because a baseline containing none of
+  // production's rows cannot account for any of them.
+  const emptyBaseline = audit({
+    remote,
+    local,
+    reconciliation: {
+      capture: {
+        captured_at: "x",
+        statements_measured: true,
+        fingerprint_format: FINGERPRINT_FORMAT,
+        rows_sha256: rowsFingerprint([]),
+      },
+      rows: [],
+      accepted,
+    },
+  });
+  assert.equal(emptyBaseline.reconciled.length, 1, "the acceptance describes an observed difference");
+  assert.equal(
+    emptyBaseline.problems.filter((p) => p.includes("captured baseline does not contain it")).length,
+    remote.length,
+    `every production row must be unaccounted for, got:\n${emptyBaseline.problems.join("\n")}`,
+  );
+});
+
+test("a capture whose content or encoding cannot be compared is refused", () => {
+  const { remote, local } = fixtures();
+
+  const unmeasured = capturedFrom(remote);
+  unmeasured.capture.statements_measured = false;
+  assert.ok(
+    audit({ remote, local, reconciliation: unmeasured }).problems.some((p) =>
+      p.includes("statements were not measurable when it was taken"),
+    ),
+    "a baseline captured without content must not read as agreement",
+  );
+
+  // The previous encoding folded the element count in and joined the elements with
+  // a space, so its digests are numerically fine and semantically meaningless here.
+  const stale = capturedFrom(remote, { format: "statements-v1-space-joined" });
+  const problems = audit({ remote, local, reconciliation: stale }).problems;
+  assert.ok(
+    problems.some((p) => p.includes("must be captured again") && p.includes("statements-v1-space-joined")),
+    `expected the stale encoding to be named, got:\n${problems.join("\n")}`,
+  );
+
+  const undeclared = capturedFrom(remote);
+  delete undeclared.capture.fingerprint_format;
+  assert.ok(
+    audit({ remote, local, reconciliation: undeclared }).problems.some((p) => p.includes("must be captured again")),
+    "a capture that does not say which encoding it used must be refused",
+  );
 });
 
 test("the seven no-statement rows are reconcilable, one row at a time", () => {
@@ -356,7 +472,7 @@ test("the seven no-statement rows are reconcilable, one row at a time", () => {
       evidence: EVIDENCE,
     });
   }
-  const { problems, reconciled } = auditHistory({
+  const { problems, reconciled } = audit({
     remote,
     local,
     reconciliation: capturedFrom(remote, { accepted }),
@@ -376,7 +492,7 @@ test("no acceptance can explain away a false claim", () => {
     { kind: "claim_not_applied", version, why: WHY, evidence: EVIDENCE },
     { kind: "remote_only", version, remote_name: "", why: WHY, evidence: EVIDENCE },
   ];
-  const { problems, reconciled } = auditHistory({
+  const { problems, reconciled } = audit({
     remote,
     local,
     requireApplied: [version],
@@ -387,7 +503,7 @@ test("no acceptance can explain away a false claim", () => {
   assert.ok(problems.some((p) => p.includes("not a difference this gate lets anyone accept")));
 
   // Same for the no-pending claim.
-  const noPending = auditHistory({
+  const noPending = audit({
     remote,
     local,
     requireNoPending: true,
@@ -401,7 +517,7 @@ test("no acceptance can explain away a false claim", () => {
 
 test("an erased history is still the first thing reported", () => {
   const { local } = fixtures();
-  const { problems } = auditHistory({ remote: [], local, reconciliation: capturedFrom([]) });
+  const { problems } = audit({ remote: [], local, reconciliation: capturedFrom([]) });
   assert.ok(problems[0].includes("zero applied migrations"));
 });
 
@@ -421,25 +537,58 @@ test("the fingerprints are stable and separate content from structure", () => {
 
 test("the gate asks the server for the fingerprint, never for the statements", () => {
   const source = read("scripts/verify-remote-migration-history.mjs");
-  const query = /export const HISTORY_QUERY = `([\s\S]*?)`;/.exec(source);
-  assert.ok(query, "HISTORY_QUERY must be exported so the capture script runs the same one");
-  // No bare `statements` in the select list: the text must not cross the wire.
-  assert.match(query[1], /encode\(sha256\(convert_to\(/);
-  assert.match(query[1], /array_to_string\(statements, ' '\)/);
-  assert.doesNotMatch(query[1], /select version,\s*\n?\s*name,\s*\n?\s*statements\b/);
-  assert.match(query[1], /^\s*from supabase_migrations\.schema_migrations$/m);
+  assert.ok(HISTORY_QUERY, "HISTORY_QUERY must be exported so the capture script runs the same one");
+  // Asserted on the built query rather than on the source text, because the digest
+  // expression is now interpolated: it has three callers — this gate, the capture,
+  // and the read-after-write check in scripts/db-phase-push.mjs, which must write
+  // rows this gate can reproduce — and a second copy of it in any of them is a
+  // second encoding no side can see. So: one definition in the source, interpolated
+  // into the query, and the query still asks for a digest and never for the text.
+  assert.match(source, /export const STATEMENTS_FINGERPRINT_SQL = `encode\(sha256\(/);
+  assert.match(source, /\$\{STATEMENTS_FINGERPRINT_SQL\} as statements_sha256/);
+  assert.equal(
+    source.split("encode(sha256(").length - 1,
+    1,
+    "the digest expression is written more than once in this module",
+  );
+  const query = [HISTORY_QUERY];
+  assert.match(query[0], /encode\(sha256\(/);
+  assert.doesNotMatch(query[0], /select m?\.?version,\s*\n?\s*m?\.?name,\s*\n?\s*m?\.?statements\b/);
+  assert.match(query[0], /^\s*from supabase_migrations\.schema_migrations m$/m);
+  // The expression is written against `m`, so any query interpolating it has to
+  // alias the history table that way — a silent requirement otherwise.
+  assert.match(STATEMENTS_FINGERPRINT_SQL, /m\.statements/);
 
-  // And the count prefix in SQL is the count prefix in JS, or every fingerprint
-  // captured by the server would mismatch every fingerprint computed here.
-  assert.match(query[1], /coalesce\(array_length\(statements, 1\), 0\)::text \|\|/);
-  assert.match(source, /hash\.update\(`\$\{list\.length\}`\)/);
+  // Length-delimited on both sides, and no space-joined encoding anywhere: round-4
+  // C4 is that joining with a separator lets ["a","b c"] and ["a b","c"] collide,
+  // so a statement boundary could move without the fingerprint moving.
+  assert.doesNotMatch(query[0], /array_to_string\(/);
+  // One backslash, not two: the built query carries the E-string escape the source
+  // had to write twice.
+  assert.match(query[0], /octet_length\(convert_to\(coalesce\(s\.statement, ''\), 'UTF8'\)\)::text \|\| E'\\n'/);
+  assert.match(query[0], /order by s\.ord/);
+  assert.match(source, /hash\.update\(`\$\{list\.length\}\\n`\)/);
+  assert.match(source, /hash\.update\(`\$\{bytes\.length\}\\n`\)/);
+
+  // The old encoding is what these two vectors collided under; sha256("2 a b c") is
+  // one value, so the regression is stated as a measurement rather than a comment.
+  const spaceJoined = (list) =>
+    createHash("sha256").update(`${list.length}`).update(list.map((s) => ` ${s}`).join("")).digest("hex");
+  assert.equal(spaceJoined(["a", "b c"]), spaceJoined(["a b", "c"]), "the old encoding did collide");
+  assert.notEqual(statementsFingerprint(["a", "b c"]), statementsFingerprint(["a b", "c"]));
 
   const capture = read("scripts/capture-remote-migration-history.mjs");
-  assert.match(capture, /import \{ fetchRemoteHistory, rowsFingerprint \}/);
+  assert.match(capture, /import \{ fetchRemoteHistory, rowsFingerprint, FINGERPRINT_FORMAT \}/);
+  assert.match(capture, /fingerprint_format: FINGERPRINT_FORMAT/);
   assert.doesNotMatch(capture, /statements_sha256: [^n]*row\.statements\b/);
+
+  // The parity drill that holds this query against statementsFingerprint() on a
+  // real server is wired into CI, not left as a hand-run script.
+  const workflow = read(".github/workflows/ci.yml");
+  assert.match(workflow, /scripts\/statements-fingerprint-parity\.mjs/);
 });
 
-test("the reconciliation shipped in this repository is uncaptured and inert", () => {
+test("the reconciliation shipped in this repository is uncaptured, and refuses", () => {
   const shipped = JSON.parse(read("supabase/migration-history-reconciliation.json"));
   assert.equal(shipped.capture, null, "no production capture may be committed by a code round");
   assert.deepEqual(shipped.rows, []);
@@ -449,12 +598,232 @@ test("the reconciliation shipped in this repository is uncaptured and inert", ()
     "the file must say what state it is in",
   );
 
-  // Inert means exactly that: passing it changes no verdict.
+  // Round-4 C4's second half. This used to be asserted as *inert* — passing the
+  // file changed no verdict — and the claim that the deploy gate therefore refuses
+  // until the capture happens rested on production having differences to find,
+  // which is a statement about production, not about the gate. Now the absence of
+  // a capture is itself the refusal, so the property holds against any database.
   const { remote, local } = fixtures();
-  const withFile = auditHistory({ remote, local, reconciliation: shipped }).problems;
-  const without = auditHistory({ remote, local }).problems;
-  assert.deepEqual(withFile, without);
-  assert.equal(withFile.length, 25);
+  const withFile = audit({ remote, local, reconciliation: shipped }).problems;
+  const without = audit({ remote, local }).problems;
+  assert.deepEqual(
+    withFile.filter((p) => !without.includes(p)),
+    ["a reconciliation file was supplied but records no capture: production's recorded history has never been read, so nothing in this run compares it to anything"],
+  );
+
+  // A database this release agrees with completely: still refused, because nobody
+  // has read production's history.
+  const agreed = local.map((entry) => ({ version: entry.version, name: entry.name, statements: [`select ${entry.version};`] }));
+  const clean = audit({ remote: agreed, local });
+  assert.deepEqual(clean.problems, [], "the synthetic agreeing database must otherwise pass");
+  assert.deepEqual(audit({ remote: agreed, local, reconciliation: shipped }).problems, [
+    "a reconciliation file was supplied but records no capture: production's recorded history has never been read, so nothing in this run compares it to anything",
+  ]);
+});
+
+test("every recorded row is compared with this release's own file", () => {
+  // Round-4 C4. The capture comparison proves production has not changed since it
+  // was read. This is the other half: production's recorded statements against the
+  // statements this release's files parse into. Without it the gate could only ever
+  // say "production is stable", never "production ran this".
+  const { remote, local } = fixtures();
+  const { problems, reproduced } = audit({ remote, local });
+
+  // The five agreeing rows plus the eight renamed ones plus the newest applied:
+  // every row that has a local file and recorded statements. Not the three
+  // production-only rows (no file), and not the seven with nothing recorded.
+  assert.equal(reproduced.length, 14);
+  for (let i = 20; i <= 26; i += 1) {
+    assert.ok(!reproduced.includes(v(20)), "a row with no statements is never counted as reproduced");
+  }
+  assert.equal(kinds(problems, "is not what this release carries"), 0);
+
+  // Content changed under an unchanged version and name, with no capture in sight:
+  // the release's own file is enough to catch it.
+  const drifted = audit({
+    remote,
+    local,
+    localContent: localContentFrom(remote, local, { drift: [v(30)] }),
+    manifestVersions: manifestOf(local),
+  });
+  assert.ok(
+    drifted.problems.some((p) => p.includes(v(30)) && p.includes("is not what this release carries")),
+    `expected a content difference against the local file, got:\n${drifted.problems.join("\n")}`,
+  );
+  assert.ok(!drifted.reproduced.includes(v(30)));
+
+  // A file that cannot be opened, and one that parses into nothing, are refusals —
+  // not silent skips, which is how the previous gate treated everything local.
+  const unreadable = audit({
+    remote,
+    local,
+    localContent: localContentFrom(remote, local, { unreadable: [v(31)] }),
+    manifestVersions: manifestOf(local),
+  });
+  assert.ok(unreadable.problems.some((p) => p.includes(v(31)) && p.includes("could not be read")));
+
+  const empty = audit({
+    remote,
+    local,
+    localContent: localContentFrom(remote, local, { empty: [v(32)] }),
+    manifestVersions: manifestOf(local),
+  });
+  assert.ok(empty.problems.some((p) => p.includes("parses into no statements at all")));
+
+  // And no local parse at all is one refusal that names the missing half, rather
+  // than a run that quietly compares nothing.
+  const unparsed = auditHistory({ remote, local });
+  assert.ok(
+    unparsed.problems.some((p) => p.includes("were not parsed into statements")),
+    "a run without the local parse must say so",
+  );
+  assert.equal(unparsed.reproduced.length, 0);
+});
+
+test("a CRLF checkout is one refusal, not a hundred content differences", () => {
+  // Every migration blob in this repository is LF. A CRLF working file therefore
+  // means the checkout rewrote it — core.autocrlf on Windows — and fingerprinting
+  // it compares bytes production never applied. Reported once, by cause: the
+  // alternative is a deploy log full of content drift that looks like production
+  // was tampered with.
+  const { remote, local } = fixtures();
+  const rewritten = localContentFrom(remote, local);
+  for (const row of rewritten.values()) row.crlf = true;
+
+  const { problems, reproduced } = audit({
+    remote,
+    local,
+    localContent: rewritten,
+    manifestVersions: manifestOf(local),
+  });
+  assert.equal(kinds(problems, "CRLF line endings"), 1);
+  assert.ok(problems.some((p) => p.includes("core.autocrlf=false")));
+  // And no per-row content claim in either direction.
+  assert.equal(kinds(problems, "is not what this release carries"), 0);
+  assert.equal(reproduced.length, 0);
+});
+
+test("a content difference is historical, or it is a false claim", () => {
+  // C5's other half. Production applied its history through CLI versions this
+  // release does not pin, so a recorded array whose boundaries differ from this
+  // release's parse of the same file is explainable for an old row.
+  const { remote, local } = fixtures();
+  const localContent = localContentFrom(remote, local, { drift: [v(30)] });
+  const observed = {
+    kind: "content_not_locally_reproducible",
+    version: v(30),
+    remote_name: "agreed_30",
+    remote_count: "2",
+    local_count: "1",
+    why: WHY,
+    evidence: EVIDENCE,
+  };
+  const historical = auditHistory({
+    remote,
+    local,
+    localContent,
+    manifestVersions: manifestOf(local),
+    reconciliation: capturedFrom(remote, { accepted: [observed] }),
+  });
+  assert.equal(historical.reconciled.length, 1);
+  assert.equal(kinds(historical.problems, "is not what this release carries"), 0);
+
+  // But not for a version this release claims to have just applied. That is the
+  // deploy applying something other than what it shipped, and no acceptance
+  // written in advance may excuse it.
+  const claimed = auditHistory({
+    remote,
+    local,
+    requireApplied: [v(30)],
+    localContent,
+    manifestVersions: manifestOf(local),
+    reconciliation: capturedFrom(remote, { accepted: [observed] }),
+  });
+  assert.equal(claimed.reconciled.length, 0);
+  assert.ok(
+    claimed.problems.some((p) => p.includes(v(30)) && p.includes("is not what this release carries")),
+    `the content difference must survive for a claimed version, got:\n${claimed.problems.join("\n")}`,
+  );
+  assert.ok(
+    claimed.problems.some((p) => p.includes("a claimed migration's content cannot be excused")),
+    `the acceptance itself must be refused, got:\n${claimed.problems.join("\n")}`,
+  );
+});
+
+test("the post-capture delta is admitted only on all five conditions", () => {
+  // Round-4 C5. Before this, any row applied after the capture was reported as a
+  // stale baseline, so a deploy could not apply a migration without invalidating
+  // the baseline that let it deploy — a deadlock resolvable only by recapturing
+  // production between two steps of the same release.
+  //
+  // The way out is not to relax the baseline but to require something stronger for
+  // the one row that bypasses it: it sorts after everything captured, this release
+  // contains it, the release manifest declares it, the command line claims it, and
+  // its recorded content was reproduced from this release's own file. The last
+  // condition is what makes the bypass safe.
+  const { remote, local } = fixtures();
+  const version = v(60);
+  const name = "expand_phase";
+  const file = `${version}_${name}.sql`;
+  const statements = ["alter table contracts add column x int;"];
+
+  const ahead = [...remote, { version, name, statements }];
+  const localAhead = [...local, { version, name, file }];
+  const capture = capturedFrom(remote); // taken BEFORE the delta was applied
+  const full = {
+    remote: ahead,
+    local: localAhead,
+    requireApplied: [version],
+    localContent: localContentFrom(ahead, localAhead),
+    manifestVersions: manifestOf(localAhead),
+    reconciliation: capture,
+  };
+
+  const allowed = auditHistory(full);
+  assert.deepEqual(
+    allowed.deltas,
+    [{ version, file }],
+    `the claimed delta must be admitted and named, got:\n${allowed.problems.join("\n")}`,
+  );
+  assert.equal(kinds(allowed.problems, "captured baseline does not contain it"), 0);
+  assert.ok(allowed.reproduced.includes(version));
+  // And admitting it changes nothing else: the same 18 structural differences.
+  assert.equal(allowed.problems.length, audit({ remote, local }).problems.length);
+
+  // Now each condition, removed one at a time. Every one of them must turn the
+  // delta back into a refusal, because each is load-bearing on its own.
+  const refuses = (label, override, expected = version) => {
+    const result = auditHistory({ ...full, ...override });
+    assert.deepEqual(result.deltas, [], `${label}: the delta must not be admitted`);
+    assert.ok(
+      result.problems.some((p) => p.includes(expected) && p.includes("captured baseline does not contain it")),
+      `${label}: expected the baseline refusal, got:\n${result.problems.join("\n")}`,
+    );
+  };
+
+  // 1 · not claimed on the command line.
+  refuses("unclaimed", { requireApplied: [] });
+  // 2 · not declared in the release manifest.
+  refuses("unmanifested", { manifestVersions: manifestOf(local) });
+  // 3 · no manifest read at all.
+  refuses("no manifest", { manifestVersions: null });
+  // 4 · content not reproducible from this release's file.
+  refuses("content drift", { localContent: localContentFrom(ahead, localAhead, { drift: [version] }) });
+  // 5 · the release does not contain the file.
+  refuses("not in the release", {
+    local,
+    localContent: localContentFrom(ahead, local),
+    manifestVersions: manifestOf(local),
+  });
+  // 6 · and the ordering condition: a row that sorts BEFORE the newest captured
+  //     version is not a post-capture delta at all, whatever else is true of it.
+  const inside = v(33);
+  const withoutInside = remote.filter((row) => row.version !== inside);
+  refuses(
+    "inside the captured range",
+    { remote, requireApplied: [inside], reconciliation: capturedFrom(withoutInside) },
+    inside,
+  );
 });
 
 test("the deploy gate passes the reconciliation and the document explains it", () => {

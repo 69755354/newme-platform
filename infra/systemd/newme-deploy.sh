@@ -13,6 +13,36 @@ flock -n 9 || {
 STATE_ROOT=/var/lib/newme/deploy-state
 PENDING_ASSET_RECORD="$STATE_ROOT/systemd-assets.pending"
 PRODUCTION_ROLLBACK_PENDING="$STATE_ROOT/production-rollback.pending"
+readonly MIGRATION_DB_URL_FILE=/etc/newme/migration-db.url
+
+# Defined here, above the finalize branch, because both entry points need it: the
+# deployment gates the release on production's migration history, and finalization
+# gates completion on the database phase (Round-4 C8). The URL itself is read by the
+# node gate from the file descriptor, never passed as an argument and never echoed —
+# a connection string is a credential — so what this checks is the file: not a
+# symlink, root-owned, and unreadable by anyone else.
+validate_migration_db_url_file() {
+  [ -f "$MIGRATION_DB_URL_FILE" ] && [ ! -L "$MIGRATION_DB_URL_FILE" ] || {
+    echo "root-owned migration database URL file is missing" >&2
+    return 1
+  }
+  [ "$(stat -c '%U:%G' "$MIGRATION_DB_URL_FILE")" = root:root ] || {
+    echo "migration database URL file ownership is invalid" >&2
+    return 1
+  }
+  case "$(stat -c '%a' "$MIGRATION_DB_URL_FILE")" in
+    400|600) ;;
+    *) echo "migration database URL file mode must be 0400 or 0600" >&2; return 1 ;;
+  esac
+}
+
+require_node() {
+  NODE_BIN="$(command -v node || true)"
+  [ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ] || {
+    echo "node is required to gate this deployment and was not found" >&2
+    return 1
+  }
+}
 
 if [ "${1:-}" = "finalize" ]; then
   FINALIZE_SHA=${2:-}
@@ -129,6 +159,34 @@ for required in ("managed.list", "present.list", "manifest.sha256", "symlink.sha
     if not os.path.isfile(required_path) or os.path.islink(required_path):
         raise SystemExit(65)
 PY
+  # Round-4 review C8, the other half: "contract history can say applied while mode
+  # is compat", so completion must require strict. `complete` is the claim that this
+  # release is fully live — it is what makes the candidate a rollback target for the
+  # next deployment, and what resolve_target_asset_backup() reads. While the mode is
+  # compat the deferred contract migration has not closed the direct-write path,
+  # whichever way the migration history reads, so the deferred half of the release
+  # is not deployed and the claim would be false. A `fail` finalization records
+  # uat_failed and is never gated: it does not claim the release is live.
+  if [ "$UAT_STATUS" = pass ]; then
+    require_node || exit 65
+    validate_migration_db_url_file || exit 65
+    # No bypass when the gate is absent. A tree that carries this wrapper carries the
+    # gate — install-systemd-assets.sh installs the wrapper from the same tree, and
+    # CI asserts both — so "the release has no gate" is not the pre-mechanism case,
+    # it is a release someone took the gate out of. Skipping the check there is the
+    # false green this whole review round exists to remove.
+    FINALIZE_PHASE_GATE="$FINALIZE_TARGET/scripts/check-release-phase.mjs"
+    [ -f "$FINALIZE_PHASE_GATE" ] && [ ! -L "$FINALIZE_PHASE_GATE" ] || {
+      echo "the current release carries no scripts/check-release-phase.mjs; completion cannot be gated on the database phase" >&2
+      exit 70
+    }
+    "$NODE_BIN" "$FINALIZE_PHASE_GATE" --for-completion \
+      --url-file "$MIGRATION_DB_URL_FILE" \
+      --modules-dir "$FINALIZE_TARGET/node_modules" >/dev/null || {
+      echo "the database phase does not allow this release to be completed" >&2
+      exit 70
+    }
+  fi
   UAT_STATUS="$UAT_STATUS" \
   UAT_ACTOR="$UAT_ACTOR" \
   UAT_FIXTURE_IDS="$UAT_FIXTURE_IDS" \
@@ -594,11 +652,7 @@ chown -R root:root "$WORKTREE"
 # Both run against the root-owned worktree at the canonical main SHA, before any
 # asset is installed and before the release is staged, and both abort the
 # deployment. Neither can be satisfied by a claim on the command line.
-NODE_BIN="$(command -v node || true)"
-[ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ] || {
-  echo "node is required to gate this deployment and was not found" >&2
-  exit 65
-}
+require_node || exit 65
 
 # TASKBOARD completion. The required GitHub job proves it for the dispatched SHA;
 # this proves it for the tree that is actually about to be deployed, using the
@@ -624,21 +678,7 @@ NODE_BIN="$(command -v node || true)"
 # list does not explicitly account for are all refusals — including on the first
 # deploy, where the baseline is uncaptured and therefore explains nothing. That is
 # deliberate: see supabase/preflight/migration-history-reconciliation.md.
-readonly MIGRATION_DB_URL_FILE=/etc/newme/migration-db.url
-[ -f "$MIGRATION_DB_URL_FILE" ] && [ ! -L "$MIGRATION_DB_URL_FILE" ] || {
-  echo "root-owned migration database URL file is missing" >&2
-  exit 65
-}
-[ "$(stat -c '%U:%G' "$MIGRATION_DB_URL_FILE")" = root:root ] || {
-  echo "migration database URL file ownership is invalid" >&2
-  exit 65
-}
-case "$(stat -c '%a' "$MIGRATION_DB_URL_FILE")" in
-  400|600) ;;
-  *) echo "migration database URL file mode must be 0400 or 0600" >&2; exit 65 ;;
-esac
-# The URL is read by the script from the file descriptor, never passed as an
-# argument and never echoed: a connection string is a credential.
+validate_migration_db_url_file || exit 65
 MIGRATION_HISTORY_ARGS=(
   "$WORKTREE/scripts/verify-remote-migration-history.mjs"
   --url-file "$MIGRATION_DB_URL_FILE"

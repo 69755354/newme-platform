@@ -9,6 +9,25 @@ import {
   PAYMENT_UI_METHODS,
   paymentAmountMinorUnits,
 } from "@/lib/payment-idempotency.mjs";
+import {
+  allocatedTotal,
+  allocationDraftStatus,
+  filterPaymentsByState,
+  hasAllocationData,
+  isFullyAllocated,
+  paymentAllowsAllocate,
+  paymentAllowsConfirm,
+  paymentAllowsVoid,
+  paymentState,
+  paymentTotals,
+  unallocatedTotal,
+} from "@/lib/payment-state.mjs";
+import type {
+  PaymentContractOption,
+  PaymentListResponse,
+  PaymentListRow,
+  PaymentStateFilter,
+} from "@/types/payments";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,6 +67,7 @@ import {
   FileText,
   ArrowRightLeft,
   Hash,
+  Ban,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
@@ -56,32 +76,15 @@ import { confirmPayment, allocatePayment as allocatePaymentAction } from "@/app/
 import { fmtAED } from "@/shared/utils/format";
 
 // ─── Types ───────────────────────────────────────────────────────────
-
-interface Contract {
-  id: string;
-  contract_no: string;
-  contract_amount: number;
-  status: string;
-  party_a_name: string;
-  sales_id: string;
-}
-
-interface Payment {
-  id: string;
-  contract_id: string;
-  amount: number;
-  payment_date: string;
-  payment_method: string;
-  reference_no: string | null;
-  notes: string | null;
-  confirmed: boolean;
-  confirmed_by: string | null;
-  confirmed_at: string | null;
-  created_by: string;
-  created_at: string;
-  allocated_amount: number;
-  contracts?: { contract_no: string; party_a_name: string } | null;
-}
+//
+// Round-4 B8: the row and contract shapes used to be declared here as a second
+// opinion about what GET /api/payments/list returns, and they were wrong — a
+// non-optional `allocated_amount` no payments row carries, `confirmed: boolean`
+// for a nullable column, and no void fields at all. The route returned a wildcard
+// select, so voided_at/voided_by/void_reason were on the wire and this declaration
+// is where they were lost. They now come from src/types/payments.ts, which the
+// route's response is typed against, so the page can only read fields the route
+// actually promises — and cannot fail to see the ones it does.
 
 interface InstallmentPlan {
   id: string;
@@ -90,7 +93,12 @@ interface InstallmentPlan {
   amount: number;
   due_date: string;
   status: string;
-  paid_amount: number;
+  // What allocate_payment() and void_payment() recompute. `paid_amount` is the
+  // legacy single-installment field, written only by the pre-allocation trigger in
+  // 20260605000000 for payments that carry installment_plan_id, so displaying it
+  // beside an allocation dialog would show a figure this dialog never moves.
+  allocated_amount: number;
+  paid_amount: number | null;
   description: string | null;
 }
 
@@ -110,15 +118,17 @@ export default function PaymentsPage() {
   const { t } = useLanguage();
 
   // Core state
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [payments, setPayments] = useState<PaymentListRow[]>([]);
+  const [contracts, setContracts] = useState<PaymentContractOption[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
-  // Tab filter
-  const [activeTab, setActiveTab] = useState<"all" | "pending" | "confirmed">("all");
+  // Tab filter. Four values, not three: a voided payment used to fall into
+  // `pending`, where it was counted as money awaiting confirmation and offered a
+  // Confirm button that confirm_payment() refuses with 22023.
+  const [activeTab, setActiveTab] = useState<PaymentStateFilter>("all");
 
   // Record Payment dialog state
   const [recordDialogOpen, setRecordDialogOpen] = useState(false);
@@ -138,20 +148,31 @@ export default function PaymentsPage() {
 
   // Allocate dialog state
   const [allocateDialogOpen, setAllocateDialogOpen] = useState(false);
-  const [allocatePayment, setAllocatePayment] = useState<Payment | null>(null);
+  const [allocatePayment, setAllocatePayment] = useState<PaymentListRow | null>(null);
   const [installmentPlans, setInstallmentPlans] = useState<InstallmentPlan[]>([]);
   const [allocAmounts, setAllocAmounts] = useState<Record<string, number>>({});
   const [allocSaving, setAllocSaving] = useState(false);
+
+  // Void dialog state. void_payment() requires a reason and POST
+  // /api/payments/[id]/void answers a blank one with 400, so the reason is part of
+  // the dialog rather than something the operator discovers by being refused.
+  const [voidDialogOpen, setVoidDialogOpen] = useState(false);
+  const [voidTarget, setVoidTarget] = useState<PaymentListRow | null>(null);
+  const [voidReason, setVoidReason] = useState("");
+  const [voidSaving, setVoidSaving] = useState(false);
 
   // ─── Auth & Data Loading ─────────────────────────────────────────
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch("/api/payments/list");
+      // `no-store` on the request as well as on the response: every write below
+      // ends with this call, and a money list served from a cache is the same
+      // defect as a stale one computed from missing fields.
+      const res = await fetch("/api/payments/list", { cache: "no-store" });
       if (!res.ok) throw new Error(t("payments.fetchFailed"));
-      const json = await res.json();
-      setPayments((json.payments ?? []) as Payment[]);
-      setContracts((json.contracts ?? []) as Contract[]);
+      const json = (await res.json()) as PaymentListResponse;
+      setPayments(json.payments ?? []);
+      setContracts(json.contracts ?? []);
       setRole(json.role);
       setUserId(json.userId);
     } catch (err) {
@@ -202,20 +223,25 @@ export default function PaymentsPage() {
 
   // ─── KPI Computed ────────────────────────────────────────────────
 
-  const totalRecorded = payments.reduce((s, p) => s + p.amount, 0);
-  const totalConfirmed = payments.filter((p) => p.confirmed).reduce((s, p) => s + p.amount, 0);
-  const totalPending = payments.filter((p) => !p.confirmed).reduce((s, p) => s + p.amount, 0);
-  const totalAllocated = payments
-    .filter((p) => p.confirmed)
-    .reduce((s, p) => s + (p.allocated_amount || 0), 0);
+  // One call, because every one of these figures has to use the predicate the
+  // database uses. The reviewed page summed every row into Total Recorded and every
+  // unconfirmed row into Total Pending, so a voided payment was counted as cash
+  // twice; and it summed a field the route never sent, so Total Allocated was
+  // always AED 0.00. See src/lib/payment-state.mjs.
+  const totals = paymentTotals(payments);
 
   // ─── Filtered Payments ───────────────────────────────────────────
 
-  const filteredPayments = payments.filter((p) => {
-    if (activeTab === "pending") return !p.confirmed;
-    if (activeTab === "confirmed") return p.confirmed;
-    return true;
-  });
+  const filteredPayments = filterPaymentsByState(payments, activeTab);
+
+  // ─── Allocation Draft ────────────────────────────────────────────
+
+  // The whole intended allocation for the open dialog, capped where the routine
+  // caps it. Derived rather than stored, so the total, the warning and the submit
+  // button cannot disagree about the same numbers.
+  const allocateDraft = allocatePayment
+    ? allocationDraftStatus({ amount: allocatePayment.amount, draft: allocAmounts })
+    : null;
 
   // ─── Record Payment ─────────────────────────────────────────────
 
@@ -296,15 +322,14 @@ export default function PaymentsPage() {
 
   // ─── Allocate Payment ───────────────────────────────────────────
 
-  async function openAllocateDialog(payment: Payment) {
+  async function openAllocateDialog(payment: PaymentListRow) {
     setAllocatePayment(payment);
     setAllocAmounts({});
     setAllocSaving(false);
 
-    // Fetch installment plans for this contract
     const { data, error: err } = await supabase
       .from("installment_plans")
-      .select("*")
+      .select("id, contract_id, seq, amount, due_date, status, allocated_amount, paid_amount, description")
       .eq("contract_id", payment.contract_id)
       .order("seq", { ascending: true });
 
@@ -314,12 +339,17 @@ export default function PaymentsPage() {
       return;
     }
 
-    setInstallmentPlans((data as InstallmentPlan[]) || []);
+    setInstallmentPlans(data ?? []);
+    // Opening on the existing allocation is the correction, not a convenience:
+    // allocate_payment() DELETEs every existing allocation for the payment before
+    // inserting the submitted set, so a submission replaces the whole allocation.
+    // The reviewed dialog opened empty and called that "allocate", which meant
+    // allocating to installment 2 silently released installment 1 — and it showed
+    // "Previously allocated" beside a total compared against the payment amount, as
+    // though the two summed. The breakdown comes from the list route, which already
+    // reads payment_allocations to compute the sum shown on the row.
+    setAllocAmounts({ ...payment.allocations });
     setAllocateDialogOpen(true);
-  }
-
-  function getAllocatedTotal() {
-    return Object.values(allocAmounts).reduce((s, v) => s + (v || 0), 0);
   }
 
   async function handleAllocate(e: React.FormEvent) {
@@ -327,12 +357,20 @@ export default function PaymentsPage() {
     if (!allocatePayment) return;
     setAllocSaving(true);
 
+    const draft = allocationDraftStatus({ amount: allocatePayment.amount, draft: allocAmounts });
     const allocations = Object.entries(allocAmounts)
       .filter(([, amount]) => amount > 0)
       .map(([plan_id, amount]) => ({ plan_id, amount }));
 
-    if (allocations.length === 0) {
+    if (draft.empty) {
       toast.error(t("payments.allocationRequired"));
+      setAllocSaving(false);
+      return;
+    }
+    // allocate_payment() refuses this with 22023. Refusing it here as well keeps a
+    // submittable form from being the way an operator finds out.
+    if (draft.exceeds) {
+      toast.error(t("payments.allocationExceeds"));
       setAllocSaving(false);
       return;
     }
@@ -347,6 +385,56 @@ export default function PaymentsPage() {
       toast.error(err.message || t("payments.allocationFailed"));
     } finally {
       setAllocSaving(false);
+    }
+  }
+
+  // ─── Void Payment ───────────────────────────────────────────────
+  //
+  // void_payment() existed, POST /api/payments/[id]/void existed, and the page had
+  // no way to reach either — so the only reversal available through the UI was the
+  // DELETE that round 3 revoked from every role. That is the other half of B8: a
+  // voided payment displayed as pending, and no way to void one.
+
+  function openVoidDialog(payment: PaymentListRow) {
+    setVoidTarget(payment);
+    setVoidReason("");
+    setVoidSaving(false);
+    setVoidDialogOpen(true);
+  }
+
+  async function handleVoid(e: React.FormEvent) {
+    e.preventDefault();
+    if (!voidTarget) return;
+
+    // The route answers a blank reason with 400 and void_payment() records the
+    // reason on the row, so it is required here rather than discovered by refusal.
+    const reason = voidReason.trim();
+    if (!reason) {
+      toast.error(t("payments.voidReasonRequired"));
+      return;
+    }
+
+    setVoidSaving(true);
+    try {
+      const res = await fetch(`/api/payments/${voidTarget.id}/void`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || t("payments.voidFailed"));
+        return;
+      }
+
+      toast.success(t("payments.voided"));
+      setVoidDialogOpen(false);
+      await fetchData();
+    } catch {
+      toast.error(t("login.networkError"));
+    } finally {
+      setVoidSaving(false);
     }
   }
 
@@ -381,43 +469,57 @@ export default function PaymentsPage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards — every figure from `totals`, i.e. from the database's own
+          predicate. Voided money is reported as its own sub-line rather than
+          folded into the recorded total, which is where it was counted twice. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <Card className="bg-copper-500/5 border-copper-500/20">
           <CardContent className="p-4">
             <p className="text-xs text-copper-400">{t("payments.totalRecorded")}</p>
-            <p className="text-xl font-bold">{fmtAED(totalRecorded)}</p>
+            <p className="text-xl font-bold">{fmtAED(totals.recorded)}</p>
             <p className="text-[10px] text-muted-foreground mt-0.5">
-              {payments.length} {t("payments.paymentCount")}
+              {totals.counts.all - totals.counts.voided} {t("payments.paymentCount")}
+              {totals.counts.voided > 0 && (
+                <span className="text-rose-400 ml-1">
+                  · {fmtAED(totals.voided)} {t("payments.totalVoided")}
+                </span>
+              )}
             </p>
           </CardContent>
         </Card>
         <Card className="bg-emerald-500/5 border-emerald-500/20">
           <CardContent className="p-4">
             <p className="text-xs text-emerald-400">{t("payments.totalConfirmed")}</p>
-            <p className="text-xl font-bold">{fmtAED(totalConfirmed)}</p>
+            <p className="text-xl font-bold">{fmtAED(totals.confirmed)}</p>
             <p className="text-[10px] text-muted-foreground mt-0.5">
-              {payments.filter((p) => p.confirmed).length} {t("payments.paymentCount")}
+              {totals.counts.confirmed} {t("payments.paymentCount")}
             </p>
           </CardContent>
         </Card>
         <Card className="bg-amber-500/5 border-amber-500/20">
           <CardContent className="p-4">
             <p className="text-xs text-amber-400">{t("payments.totalPending")}</p>
-            <p className="text-xl font-bold">{fmtAED(totalPending)}</p>
+            <p className="text-xl font-bold">{fmtAED(totals.pending)}</p>
             <p className="text-[10px] text-muted-foreground mt-0.5">
-              {payments.filter((p) => !p.confirmed).length} {t("payments.paymentCount")}
+              {totals.counts.pending} {t("payments.paymentCount")}
             </p>
           </CardContent>
         </Card>
         <Card className="bg-blue-500/5 border-blue-500/20">
           <CardContent className="p-4">
             <p className="text-xs text-blue-400">{t("payments.totalAllocated")}</p>
-            <p className="text-xl font-bold">{fmtAED(totalAllocated)}</p>
+            <p className="text-xl font-bold">{fmtAED(totals.allocated)}</p>
+            {/* An incomplete aggregate is named, not averaged into a percentage.
+                The reviewed page reported AED 0.00 with total confidence because
+                the route never sent the field at all. */}
             <p className="text-[10px] text-muted-foreground mt-0.5">
-              {totalConfirmed > 0
-                ? `${Math.round((totalAllocated / totalConfirmed) * 100)}% ${t("payments.ofConfirmed")}`
-                : "—"}
+              {totals.allocationDataMissing > 0 ? (
+                <span className="text-amber-400">{t("payments.allocationUnknown")}</span>
+              ) : totals.confirmed > 0 ? (
+                `${Math.round((totals.allocated / totals.confirmed) * 100)}% ${t("payments.ofConfirmed")}`
+              ) : (
+                "—"
+              )}
             </p>
           </CardContent>
         </Card>
@@ -426,19 +528,25 @@ export default function PaymentsPage() {
       {/* Status Filter Tabs */}
       <Tabs
         value={activeTab}
-        onValueChange={(v) => setActiveTab(v as "all" | "pending" | "confirmed")}
+        onValueChange={(v) => setActiveTab(v as PaymentStateFilter)}
       >
         <TabsList className="mb-4">
           <TabsTrigger value="all">
-            {t("payments.all")} ({payments.length})
+            {t("payments.all")} ({totals.counts.all})
           </TabsTrigger>
           <TabsTrigger value="pending">
             <Clock className="w-3 h-3 mr-1" />
-            {t("payments.pending")} ({payments.filter((p) => !p.confirmed).length})
+            {t("payments.pending")} ({totals.counts.pending})
           </TabsTrigger>
           <TabsTrigger value="confirmed">
             <CheckCircle className="w-3 h-3 mr-1" />
-            {t("payments.confirmedStatus")} ({payments.filter((p) => p.confirmed).length})
+            {t("payments.confirmedStatus")} ({totals.counts.confirmed})
+          </TabsTrigger>
+          {/* The fourth tab is the finding: a voided payment used to land in
+              `pending`, counted as money awaiting confirmation. */}
+          <TabsTrigger value="voided">
+            <Ban className="w-3 h-3 mr-1" />
+            {t("payments.voidedStatus")} ({totals.counts.voided})
           </TabsTrigger>
         </TabsList>
 
@@ -454,17 +562,19 @@ export default function PaymentsPage() {
             ) : (
               filteredPayments.map((payment) => {
                 const cNo = contractMap.get(payment.contract_id) || "—";
-                const remaining =
-                  payment.confirmed && payment.allocated_amount != null
-                    ? payment.amount - payment.allocated_amount
-                    : null;
+                // Three states from the shared model, not `confirmed ? … : …`.
+                // void_payment() also sets confirmed = false, so the two-state
+                // rule rendered every reversed payment as pending cash.
+                const state = paymentState(payment);
+                const unallocated = unallocatedTotal(payment);
 
                 return (
                   <Card
                     key={payment.id}
                     className={cn(
                       "bg-card border-border hover:border-border transition-colors",
-                      !payment.confirmed && "border-amber-500/20"
+                      state === "pending" && "border-amber-500/20",
+                      state === "voided" && "border-rose-500/20 opacity-70"
                     )}
                   >
                     <CardContent className="p-4">
@@ -476,12 +586,19 @@ export default function PaymentsPage() {
                             <span className="font-medium text-foreground">
                               {cNo}
                             </span>
-                            {payment.confirmed ? (
+                            {state === "voided" && (
+                              <Badge className="bg-rose-500/10 text-rose-400 border border-rose-500/30 text-[10px] px-1.5 py-0">
+                                <Ban className="w-3 h-3 mr-0.5" />
+                                {t("payments.voidedStatus")}
+                              </Badge>
+                            )}
+                            {state === "confirmed" && (
                               <Badge className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] px-1.5 py-0">
                                 <CheckCircle className="w-3 h-3 mr-0.5" />
                                 {t("payments.confirmedStatus")}
                               </Badge>
-                            ) : (
+                            )}
+                            {state === "pending" && (
                               <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] px-1.5 py-0">
                                 <Clock className="w-3 h-3 mr-0.5" />
                                 {t("payments.pending")}
@@ -491,7 +608,12 @@ export default function PaymentsPage() {
 
                           {/* Payment Details Row */}
                           <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-                            <span className="flex items-center gap-1">
+                            <span
+                              className={cn(
+                                "flex items-center gap-1",
+                                state === "voided" && "line-through"
+                              )}
+                            >
                               <DollarSign className="w-3 h-3" />
                               {fmtAED(payment.amount)}
                             </span>
@@ -511,20 +633,43 @@ export default function PaymentsPage() {
                             )}
                           </div>
 
-                          {/* Allocation info for confirmed payments */}
-                          {payment.confirmed && payment.allocated_amount != null && (
+                          {/* Allocation, for the payments that have any: a voided
+                              payment's allocations were deleted by the routine, and
+                              a pending one has nothing to allocate. */}
+                          {state === "confirmed" && (
                             <div className="text-xs text-muted-foreground">
-                              <span className="text-blue-400">
-                                {t("payments.allocated")}: {fmtAED(payment.allocated_amount)}
-                              </span>
-                              {remaining != null && remaining > 0 && (
-                                <span className="text-amber-400 ml-2">
-                                  {t("payments.unallocated")}: {fmtAED(remaining)}
+                              {hasAllocationData(payment) ? (
+                                <>
+                                  <span className="text-blue-400">
+                                    {t("payments.allocated")}: {fmtAED(allocatedTotal(payment))}
+                                  </span>
+                                  {unallocated != null && unallocated > 0 && (
+                                    <span className="text-amber-400 ml-2">
+                                      {t("payments.unallocated")}: {fmtAED(unallocated)}
+                                    </span>
+                                  )}
+                                  {isFullyAllocated(payment) && (
+                                    <span className="text-emerald-400 ml-2">
+                                      {t("payments.fullyAllocated")}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-amber-400">
+                                  {t("payments.allocationUnknown")}
                                 </span>
                               )}
-                              {remaining === 0 && (
-                                <span className="text-emerald-400 ml-2">
-                                  {t("payments.fullyAllocated")}
+                            </div>
+                          )}
+
+                          {/* Why it was reversed, and when. void_payment() records
+                              both; the reviewed page displayed neither. */}
+                          {state === "voided" && (
+                            <div className="text-xs text-rose-400">
+                              {t("payments.voidedOn")}: {payment.voided_at?.slice(0, 10)}
+                              {payment.void_reason && (
+                                <span className="text-muted-foreground ml-2">
+                                  — {payment.void_reason}
                                 </span>
                               )}
                             </div>
@@ -536,9 +681,18 @@ export default function PaymentsPage() {
                           )}
                         </div>
 
-                        {/* Action Buttons */}
+                        {/* Action Buttons.
+                            Two rules, kept apart: `canSettle` is the role rule
+                            (SETTLEMENT_ROLES, coupled to the routines by
+                            tests/security/money-grant-coupling.test.mjs) and
+                            paymentAllows* is the row rule (each mirrors one
+                            routine's own guards, in src/lib/payment-state.mjs).
+                            An offered button is therefore an action the database
+                            will accept — the reviewed page offered Confirm on a
+                            voided payment, which confirm_payment() answers with
+                            22023. */}
                         <div className="flex items-center gap-2 shrink-0 ml-2">
-                          {!payment.confirmed && canSettle && (
+                          {canSettle && paymentAllowsConfirm(payment) && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -550,7 +704,7 @@ export default function PaymentsPage() {
                               {confirmingId === payment.id ? "..." : t("payments.confirm")}
                             </Button>
                           )}
-                          {payment.confirmed && canSettle && (
+                          {canSettle && paymentAllowsAllocate(payment) && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -559,6 +713,17 @@ export default function PaymentsPage() {
                             >
                               <ArrowRightLeft className="w-3 h-3 mr-1" />
                               {t("payments.allocate")}
+                            </Button>
+                          )}
+                          {canSettle && paymentAllowsVoid(payment) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openVoidDialog(payment)}
+                              className="border-rose-500/30 text-rose-400 hover:bg-rose-500/10 text-xs h-8"
+                            >
+                              <Ban className="w-3 h-3 mr-1" />
+                              {t("payments.voidPayment")}
                             </Button>
                           )}
                         </div>
@@ -707,9 +872,14 @@ export default function PaymentsPage() {
               {t("payments.allocatePayment")} — {allocatePayment ? fmtAED(allocatePayment.amount) : ""}
             </DialogTitle>
           </DialogHeader>
-          {allocatePayment && (
+          {allocatePayment && allocateDraft && (
             <form onSubmit={handleAllocate} className="space-y-4 pt-2">
-              {/* Summary */}
+              {/* Summary. "Previously allocated" is gone: it was displayed beside a
+                  running total that was compared against the payment amount, as
+                  though the existing allocation and the new one summed. They do
+                  not — allocate_payment() replaces. The existing allocation is
+                  now prefilled into the inputs below, where it is what the
+                  operator is editing. */}
               <div className="text-sm text-muted-foreground bg-muted/50 rounded-lg p-3">
                 <p>
                   {t("payments.contract")}: <span className="text-foreground font-medium">{contractMap.get(allocatePayment.contract_id) || "—"}</span>
@@ -717,9 +887,7 @@ export default function PaymentsPage() {
                 <p>
                   {t("payments.paymentAmount")}: <span className="text-foreground font-medium">{fmtAED(allocatePayment.amount)}</span>
                 </p>
-                <p>
-                  {t("payments.previouslyAllocated")}: <span className="text-foreground font-medium">{fmtAED(allocatePayment.allocated_amount || 0)}</span>
-                </p>
+                <p className="text-xs text-amber-400 mt-1">{t("payments.allocationReplaces")}</p>
               </div>
 
               {/* Installment Plans */}
@@ -743,8 +911,14 @@ export default function PaymentsPage() {
                             {t("payments.due")}: {plan.due_date?.slice(0, 10)}
                           </span>
                         </div>
+                        {/* allocated_amount, not paid_amount: allocate_payment()
+                            and void_payment() recompute the former from
+                            payment_allocations, while paid_amount is only written
+                            by the pre-allocation trigger in 20260605000000 — so
+                            the reviewed dialog showed a "Paid" figure that nothing
+                            it did could move. */}
                         <p className="text-xs text-muted-foreground">
-                          {t("payments.amount")}: {fmtAED(plan.amount)} | {t("payments.paid")}: {fmtAED(plan.paid_amount)} | {t("payments.status")}: {plan.status}
+                          {t("payments.amount")}: {fmtAED(plan.amount)} | {t("payments.allocated")}: {fmtAED(plan.allocated_amount)} | {t("payments.status")}: {plan.status}
                         </p>
                         {plan.description && (
                           <p className="text-[10px] text-gray-500 mt-0.5">{plan.description}</p>
@@ -775,24 +949,25 @@ export default function PaymentsPage() {
               <div className="flex items-center justify-between text-sm border-t border-border pt-3">
                 <span className="text-muted-foreground">{t("payments.allocating")}:</span>
                 <span
-                  className={cn(
-                    "font-bold",
-                    getAllocatedTotal() > allocatePayment.amount
-                      ? "text-rose-400"
-                      : "text-foreground"
-                  )}
+                  className={cn("font-bold", allocateDraft.exceeds ? "text-rose-400" : "text-foreground")}
                 >
-                  {fmtAED(getAllocatedTotal())}
+                  {fmtAED(allocateDraft.total)}
                   <span className="text-muted-foreground font-normal ml-2">
                     {t("payments.of")} {fmtAED(allocatePayment.amount)}
                   </span>
                 </span>
               </div>
-              {getAllocatedTotal() > allocatePayment.amount && (
+              {allocateDraft.exceeds ? (
                 <div className="flex items-center gap-1 text-xs text-rose-400">
                   <AlertTriangle className="w-3 h-3" />
                   {t("payments.allocationExceeds")}
                 </div>
+              ) : (
+                allocateDraft.remaining > 0 && (
+                  <div className="text-xs text-amber-400">
+                    {t("payments.remainingToAllocate")}: {fmtAED(allocateDraft.remaining)}
+                  </div>
+                )
               )}
 
               {/* Actions */}
@@ -804,10 +979,78 @@ export default function PaymentsPage() {
                 </DialogClose>
                 <Button
                   type="submit"
-                  disabled={allocSaving || getAllocatedTotal() <= 0}
+                  disabled={allocSaving || !allocateDraft.submittable}
                   className="bg-blue-600 hover:bg-blue-700 text-white font-medium h-8 text-sm"
                 >
                   {allocSaving ? t("payments.saving") : t("payments.allocate")}
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Void Payment Dialog ────────────────────────────────── */}
+      {/* 同 Record Payment Dialog 注释：modal 大类 = z-40 (内部已 z-50) */}
+      <Dialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-card border-border text-gray-100">
+          <DialogHeader>
+            <DialogTitle className="text-foreground text-lg">
+              {t("payments.voidPaymentTitle")} — {voidTarget ? fmtAED(voidTarget.amount) : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {voidTarget && (
+            <form onSubmit={handleVoid} className="space-y-4 pt-2">
+              <div className="text-sm text-muted-foreground bg-muted/50 rounded-lg p-3">
+                <p>
+                  {t("payments.contract")}:{" "}
+                  <span className="text-foreground font-medium">
+                    {contractMap.get(voidTarget.contract_id) || "—"}
+                  </span>
+                </p>
+                <p>
+                  {t("payments.paymentDate")}:{" "}
+                  <span className="text-foreground font-medium">
+                    {voidTarget.payment_date?.slice(0, 10)}
+                  </span>
+                </p>
+              </div>
+
+              {/* What void_payment() actually does, said before it is done: it
+                  deletes this payment's allocations and recomputes
+                  installment_plans.allocated_amount, projects.paid_amount,
+                  kpi_targets.actual_amount and contracts.first_payment_status. */}
+              <div className="flex items-start gap-2 text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>{t("payments.voidWarning")}</span>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-muted-foreground text-xs">
+                  {t("payments.voidReason")} *
+                </Label>
+                <Textarea
+                  required
+                  value={voidReason}
+                  onChange={(e) => setVoidReason(e.target.value)}
+                  placeholder={t("payments.voidReasonPlaceholder")}
+                  className="bg-muted border-border text-foreground min-h-16"
+                  rows={2}
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <DialogClose>
+                  <Button type="button" variant="ghost" className="text-muted-foreground h-8">
+                    {t("payments.cancel")}
+                  </Button>
+                </DialogClose>
+                <Button
+                  type="submit"
+                  disabled={voidSaving || voidReason.trim().length === 0}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-medium h-8 text-sm"
+                >
+                  {voidSaving ? t("payments.saving") : t("payments.voidConfirm")}
                 </Button>
               </div>
             </form>

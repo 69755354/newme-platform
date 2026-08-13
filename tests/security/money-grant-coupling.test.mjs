@@ -219,7 +219,15 @@ test("the settlement roles in the payments UI equal the roles the settlement rou
   // off it, not that it is gone. Each action is found by its handler and the guard is
   // read from the JSX conditional immediately above it.
   const lines = page.split(/\r?\n/);
-  for (const handler of ["handleConfirm(payment.id)", "openAllocateDialog(payment)"]) {
+  for (const handler of [
+    "handleConfirm(payment.id)",
+    "openAllocateDialog(payment)",
+    // B8 added the void button. void_payment() takes the same role list as the
+    // other two (asserted above), so it has to be gated the same way — a Void
+    // button offered on the broader recording rule would be an operator being
+    // shown a reversal the routine refuses.
+    "openVoidDialog(payment)",
+  ]) {
     const at = lines.findIndex((line) => line.includes(handler));
     assert.ok(at !== -1, `the payments page no longer calls ${handler}`);
     const guard = lines.slice(Math.max(0, at - 6), at).join(" ");

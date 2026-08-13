@@ -1,7 +1,28 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { createServerSupabase } from '@/lib/supabase-server'
 import type { Json } from '@/types/database'
+
+/**
+ * The pages whose server-rendered totals a settlement changes.
+ *
+ * Round-4 B8, the cache half: POST /api/payments/[id]/void revalidated these three
+ * and the two settlement actions revalidated nothing, so confirming a payment
+ * moved projects.paid_amount, kpi_targets.actual_amount and
+ * contracts.first_payment_status in the database while a previously-visited
+ * /contracts or /dashboard kept rendering the figures from before the write.
+ * Allocation is the same story: it is the writer that decides
+ * first_payment_status, per 20260817000000 §12.
+ *
+ * The payments dashboard itself re-fetches /api/payments/list after every write and
+ * that route is force-dynamic and no-store, so it is never the stale one.
+ */
+const SETTLEMENT_PATHS = ['/contracts', '/payments', '/dashboard']
+
+function revalidateSettlementPaths() {
+  for (const path of SETTLEMENT_PATHS) revalidatePath(path)
+}
 
 interface AllocationItem {
   plan_id: string
@@ -65,6 +86,7 @@ export async function confirmPayment(paymentId: string) {
 
   if (rpcErr) throw new Error(rpcErr.message || 'Failed to confirm payment')
 
+  revalidateSettlementPaths()
   return { data: result }
 }
 
@@ -136,5 +158,6 @@ export async function allocatePayment(paymentId: string, allocations: Allocation
 
   if (rpcErr) throw new Error(rpcErr.message || 'Failed to allocate payment')
 
+  revalidateSettlementPaths()
   return { data: result }
 }

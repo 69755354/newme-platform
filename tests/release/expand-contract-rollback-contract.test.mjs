@@ -502,9 +502,10 @@ test("the runbook routes production phase and companion actions through the cano
   // locked exact-SHA wrapper.
   assert.match(doc, /newme-deploy db-transition[\s\\\r\n]+<release-sha> <successful-run-id> contract-verify/);
   assert.doesNotMatch(doc, /node scripts\/db-phase-push\.mjs[^\n]*--apply/);
-  // And the rollback section has to point at the return path, so an operator
-  // standing at the rollback decision knows the way back before taking it.
-  assert.match(doc, /Run the companion the way §5\.1 runs its mirror image/);
+  // And the rollback section has to point at the protected return path, so an
+  // operator standing at the rollback decision knows the way back before taking it.
+  assert.match(doc, /Run the companion with the `contract-rollback` operation above/);
+  assert.match(doc, /### 5\.1 · Re-deploying after a rollback/);
 });
 
 test("the document is right about which gate function sees the calling role", () => {

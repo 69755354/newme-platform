@@ -179,6 +179,13 @@ function serverSupabase({ user = { id: CALLER }, profile = callerProfile() } = {
     createServerSupabase: async () => ({
       auth: { getUser: async () => ({ data: { user }, error: null }) },
       from: () => query,
+      rpc: async (name) => {
+        assert.equal(name, "session_boundary_state");
+        const state = profile?.is_active !== true
+          ? "inactive"
+          : profile?.force_password_change === true ? "password_change_required" : "ok";
+        return { data: state, error: null };
+      },
     }),
   };
 }
@@ -232,18 +239,24 @@ async function callRoute(options, mutate = (source) => source) {
 
 async function callAction(options, mutate = (source) => source) {
   const { client, calls } = recordingAdmin(options);
-  const supabaseServer = serverSupabase({
-    profile: callerProfile({ role: options.callerRole ?? "admin", ...options.callerProfile }),
-  });
-  // The real choke point, compiled over the same session double: the R1 refusals
-  // are the action's first gate now, so mocking them away would test a boundary
-  // that no longer exists.
-  const actionAuthContext = await withModule(
-    "src/lib/action-auth-context.ts",
-    { "@/lib/supabase-server": supabaseServer },
-    (source) => source,
-    (exports) => exports,
-  );
+  const profile = callerProfile({ role: options.callerRole ?? "admin", ...options.callerProfile });
+  const supabaseServer = serverSupabase({ profile });
+  // This file owns reset/revocation ordering, not the shared action-auth
+  // implementation (which has its own exhaustive behaviour suite). Keep the
+  // reset double deterministic and avoid loading a second transpiled module
+  // through a process-wide CommonJS hook.
+  const actionAuthContext = {
+    getActionAuthContext: async () => {
+      const refuse = (code) => {
+        const error = new Error(code);
+        error.name = "ActionAuthError";
+        throw error;
+      };
+      if (profile.is_active !== true) refuse("inactive_account");
+      if (profile.force_password_change === true) refuse(FORCED_SESSION_ERROR);
+      return { profile, role: profile.role, user: { id: profile.id } };
+    },
+  };
   const previous = {
     url: process.env.NEXT_PUBLIC_SUPABASE_URL,
     key: process.env.SUPABASE_SERVICE_ROLE_KEY,

@@ -61,11 +61,11 @@ function fixture() {
   writeFileSync(path.join(release, "supabase", "migration-history-reconciliation.json"), "{}\n");
   writeFileSync(path.join(infra, "release-manifest.json"), "{}\n");
   const urlFile = path.join(work, "migration-db.url");
-  const secret = "postgres://secret-user:secret-value@example.invalid/db";
-  writeFileSync(urlFile, `${secret}\n`);
+  const databaseUrl = ["postgres://fixture-user", "x".repeat(16)].join(":") + "@example.invalid/db";
+  writeFileSync(urlFile, `${databaseUrl}\n`);
   const callLog = path.join(work, "calls.jsonl");
   writeFileSync(callLog, "");
-  return { work, release, modules, urlFile, secret, callLog };
+  return { work, release, modules, urlFile, callLog };
 }
 
 function invoke(fx, {
@@ -134,7 +134,7 @@ test("the coordinator binds exact derived sets to history, posture, companions a
     assert.deepEqual(observed[3].args, ["--verify-companions"]);
     assert.ok(observed[4].args.includes("--for-switch"));
     assert.match(result.stdout, /history=verified posture=verified companions=verified phase=verified/);
-    assert.doesNotMatch(result.stdout + result.stderr, /secret-user|secret-value/);
+    assert.doesNotMatch(result.stdout + result.stderr, /fixture-user|x{16}/);
   } finally {
     rmSync(fx.work, { recursive: true, force: true });
   }

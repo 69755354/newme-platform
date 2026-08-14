@@ -155,8 +155,9 @@ test("the two phases in the document are the two phases in the release manifest"
 
   // And the document must give the operator the tool, not a file-moving ritual.
   assert.match(doc, /How the split is executed: a manifest, not a moved file/);
-  assert.match(doc, /node scripts\/db-phase-push\.mjs --phase required_for_app/);
-  assert.match(doc, /node scripts\/db-phase-push\.mjs --phase deferred_contract/);
+  assert.match(doc, /newme-deploy db-transition <release-sha> <successful-run-id> expand-plan/);
+  assert.match(doc, /newme-deploy db-transition <release-sha> <successful-run-id> expand-apply/);
+  assert.match(doc, /newme-deploy db-transition <release-sha> <successful-run-id> contract-apply/);
   assert.doesNotMatch(
     doc,
     /moves the contract-phase file out of/,
@@ -474,7 +475,7 @@ test("the way back out of compat is an artifact, not a migration that cannot re-
   }
 });
 
-test("the runbook tells an operator how to run the hand-run artifacts without exposing a DSN", () => {
+test("the runbook routes production phase and companion actions through the canonical coordinator", () => {
   // The section exists, is numbered where the matrix says the transition is, and
   // says why a migration cannot do this — the reasoning is the load-bearing part,
   // because the next person's instinct will be to add 20260819000000_.
@@ -482,12 +483,12 @@ test("the runbook tells an operator how to run the hand-run artifacts without ex
   assert.match(doc, /already recorded, so the phase tool and the CLI\s*\r?\n?\s*both skip it/);
   assert.ok(doc.includes(`supabase/migrations/${RECONTRACT}`), "§5.1 must name the artifact it tells the operator to run");
 
-  // The invocation. `psql "$(cat url-file)"` would put the DSN in argv, where any
-  // process on the host can read it for as long as the command runs; scripts/
-  // db-phase-push.mjs refuses a URL argument for the same reason. libpq's service
-  // file is the form that keeps it out.
-  assert.match(doc, /PGSERVICEFILE=<service-file> PGSERVICE=<service-name>/);
-  assert.match(doc, /a DSN in `argv` is readable by\s*\r?\n?\s*every process on the host/);
+  // The invocation accepts an exact release/run and a fixed operation, never a SQL
+  // path, migration id, service file or connection string.
+  assert.match(doc, /newme-deploy db-transition[\s\\\r\n]+<release-sha> <successful-run-id> contract-reenter/);
+  assert.match(doc, /newme-deploy db-transition[\s\\\r\n]+<release-sha> <successful-run-id> contract-rollback/);
+  assert.doesNotMatch(doc, /PGSERVICEFILE=<service-file>|psql --no-psqlrc/);
+  assert.match(doc, /a DSN in `argv`\s+is readable by\s+every process on the host/);
   const shellBlocks = [...doc.matchAll(/```text\r?\n([\s\S]*?)```/g)].map((m) => m[1]);
   for (const block of shellBlocks) {
     assert.doesNotMatch(
@@ -497,9 +498,10 @@ test("the runbook tells an operator how to run the hand-run artifacts without ex
     );
   }
 
-  // Verification is the phase tool's own posture check, so the operator's answer
-  // and the gate's answer come from one implementation.
-  assert.match(doc, /node scripts\/db-phase-push\.mjs --phase deferred_contract --url-file <file> --verify-only/);
+  // Verification is the phase tool's own posture check, reached through the same
+  // locked exact-SHA wrapper.
+  assert.match(doc, /newme-deploy db-transition[\s\\\r\n]+<release-sha> <successful-run-id> contract-verify/);
+  assert.doesNotMatch(doc, /node scripts\/db-phase-push\.mjs[^\n]*--apply/);
   // And the rollback section has to point at the return path, so an operator
   // standing at the rollback decision knows the way back before taking it.
   assert.match(doc, /Run the companion the way §5\.1 runs its mirror image/);

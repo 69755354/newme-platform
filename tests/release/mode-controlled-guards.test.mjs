@@ -34,6 +34,7 @@
 // here until all three are updated, and one that stops gating a table fails here
 // until all three drop it.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -92,6 +93,8 @@ const DROP_TRIGGER = /drop\s+trigger\s+(?:if\s+exists\s+)?([a-z0-9_]+)\s+on\s+(?
 function deriveGuards() {
   const files = readdirSync(MIGRATIONS_DIR).filter((f) => CLI_MIGRATION.test(f)).sort();
   const gated = new Set();
+  /** function name -> the exact final body stored as pg_proc.prosrc */
+  const functionBodies = new Map();
   /** key `tgname|relname` → function name */
   const triggers = new Map();
 
@@ -101,6 +104,7 @@ function deriveGuards() {
     // A function's LAST definition wins, in both directions: one that starts
     // consulting the gate joins the set, one that stops leaves it.
     for (const { name, body } of functionDefinitions(sql)) {
+      functionBodies.set(name, body);
       if (name === GATE_FUNCTION) continue;
       if (body.includes(GATE)) gated.add(name);
       else gated.delete(name);
@@ -126,7 +130,7 @@ function deriveGuards() {
     const [tgname, relname] = key.split("|");
     guards.push([tgname, relname]);
   }
-  return { guards, gated, triggers };
+  return { functionBodies, guards, gated, triggers };
 }
 
 const derived = deriveGuards();
@@ -135,13 +139,28 @@ const derived = deriveGuards();
 // Reading the three artifacts.
 // ---------------------------------------------------------------------------
 
-/** `('trg_x','table')` — the shape a SQL `values` list uses. */
-const SQL_PAIR = /\(\s*'(trg_[a-z0-9_]+)'\s*,\s*'([a-z0-9_]+)'\s*\)/gi;
-/** `['trg_x', 'table']` — the shape the plpgsql `text[][]` literal uses. */
-const PLPGSQL_PAIR = /\[\s*'(trg_[a-z0-9_]+)'\s*,\s*'([a-z0-9_]+)'\s*\]/gi;
+/** `('trg_x','table',...)` — the shape a SQL `values` list uses. */
+const SQL_PAIR = /\(\s*'(trg_[a-z0-9_]+)'\s*,\s*'([a-z0-9_]+)'(?:\s*,\s*'[^']+'){0,2}\s*\)/gi;
+/** `['trg_x', 'table', ...]` — the shape the plpgsql `text[][]` literal uses. */
+const PLPGSQL_PAIR = /\[\s*'(trg_[a-z0-9_]+)'\s*,\s*'([a-z0-9_]+)'(?:\s*,\s*'[^']+'){0,2}\s*\]/gi;
+/** Either artifact's `(trigger, table, function[, digest])` declaration. */
+const GUARD_TRIPLE = /[\[(]\s*'(trg_[a-z0-9_]+)'\s*,\s*'([a-z0-9_]+)'\s*,\s*'(?:public\.)?([a-z0-9_]+)(?:\(\))?'(?:\s*,\s*'[0-9a-f]{64}')?\s*[\])]/gi;
+/** The production declaration, including the exact pg_proc.prosrc SHA-256. */
+const GUARD_QUAD = /[\[(]\s*'(trg_[a-z0-9_]+)'\s*,\s*'([a-z0-9_]+)'\s*,\s*'(?:public\.)?([a-z0-9_]+)(?:\(\))?'\s*,\s*'([0-9a-f]{64})'\s*[\])]/gi;
 
 const pairsIn = (text, re) => [...text.matchAll(re)].map((m) => [m[1].toLowerCase(), m[2].toLowerCase()]);
 const unique = (pairs) => [...new Map(pairs.map((p) => [pair(p), p])).values()];
+const triplesIn = (text) => [...text.matchAll(GUARD_TRIPLE)]
+  .map((m) => [m[1].toLowerCase(), m[2].toLowerCase(), m[3].toLowerCase()]);
+const sortedTriples = (triples) => [...triples]
+  .map(([trigger, table, fn]) => `${trigger} on public.${table} -> public.${fn}()`)
+  .sort();
+const quadsIn = (text) => [...text.matchAll(GUARD_QUAD)]
+  .map((m) => [m[1].toLowerCase(), m[2].toLowerCase(), m[3].toLowerCase(), m[4].toLowerCase()]);
+const sortedQuads = (quads) => [...quads]
+  .map(([trigger, table, fn, digest]) => `${trigger} on public.${table} -> public.${fn}() sha256:${digest}`)
+  .sort();
+const sha256 = (body) => createHash("sha256").update(body, "utf8").digest("hex");
 
 const manifest = JSON.parse(read("infra", "release", "release-manifest.json"));
 const predicate = (phase, name) => {
@@ -172,6 +191,48 @@ const DECLARATIONS = [
     // "both directions agree" test below proves they were identical.
     what: "30_assert_post_recontract.sql",
     pairs: unique(pairsIn(POST_RECONTRACT, SQL_PAIR)),
+  },
+];
+
+const FUNCTION_DECLARATIONS = [
+  {
+    what: "the required_for_app posture predicate",
+    triples: triplesIn(predicate("required_for_app", "mode-controlled-guards-match-the-declaration").sql),
+  },
+  {
+    what: "the deferred_contract posture predicate",
+    triples: triplesIn(predicate("deferred_contract", "strict-mode-controlled-guards-match-the-declaration").sql),
+  },
+  {
+    what: "the recontract companion's v_guards",
+    triples: triplesIn(RECONTRACT.slice(RECONTRACT.indexOf("v_guards"))),
+  },
+  {
+    what: "30_assert_post_recontract.sql",
+    triples: [...new Map(
+      triplesIn(POST_RECONTRACT).map((triple) => [`${triple[0]}|${triple[1]}`, triple]),
+    ).values()],
+  },
+];
+
+const BODY_DECLARATIONS = [
+  {
+    what: "the required_for_app posture predicate",
+    quads: quadsIn(predicate("required_for_app", "mode-controlled-guards-match-the-declaration").sql),
+  },
+  {
+    what: "the deferred_contract posture predicate",
+    quads: quadsIn(predicate("deferred_contract", "strict-mode-controlled-guards-match-the-declaration").sql),
+  },
+  {
+    what: "the recontract companion's v_guards",
+    quads: quadsIn(RECONTRACT.slice(RECONTRACT.indexOf("v_guards"))),
+  },
+  {
+    what: "30_assert_post_recontract.sql",
+    quads: [...new Map(
+      quadsIn(POST_RECONTRACT).map((quad) => [`${quad[0]}|${quad[1]}`, quad]),
+    ).values()],
   },
 ];
 
@@ -219,6 +280,30 @@ for (const { what, pairs } of DECLARATIONS) {
   });
 }
 
+const derivedTriples = derived.guards.map(([trigger, table]) => [
+  trigger,
+  table,
+  derived.triggers.get(`${trigger}|${table}`),
+]);
+
+const derivedQuads = derivedTriples.map(([trigger, table, fn]) => {
+  const body = derived.functionBodies.get(fn);
+  assert.equal(typeof body, "string", `no final migration body found for public.${fn}()`);
+  return [trigger, table, fn, sha256(body)];
+});
+
+for (const { what, triples } of FUNCTION_DECLARATIONS) {
+  test(`${what} binds every guard to the derived trigger function`, () => {
+    assert.deepEqual(sortedTriples(triples), sortedTriples(derivedTriples));
+  });
+}
+
+for (const { what, quads } of BODY_DECLARATIONS) {
+  test(`${what} pins every guard to the exact shipped function body`, () => {
+    assert.deepEqual(sortedQuads(quads), sortedQuads(derivedQuads));
+  });
+}
+
 test("every artifact still checks the transition guard, separately and by name", () => {
   // Not counted is not the same as not checked. It is part of what makes a money
   // write safe; it just is not evidence about the release mode.
@@ -240,7 +325,8 @@ test("30_assert_post_recontract.sql checks the set in both directions", () => {
   assert.equal(lists.length, 2, "expected one values list per direction");
   assert.match(POST_RECONTRACT, /'recontract-the-six-mode-gated-guards-are-still-enabled'/);
   assert.match(POST_RECONTRACT, /'recontract-no-undeclared-mode-gated-guard-exists'/);
-  assert.match(POST_RECONTRACT, /pg_get_functiondef\(p\.oid\)\s+like\s+'%money_direct_write_is_blocked%'/);
+  assert.match(POST_RECONTRACT, /pg_catalog\.sha256\(pg_catalog\.convert_to\(p\.prosrc,\s*'UTF8'\)\)/);
+  assert.match(POST_RECONTRACT, /=\s*d\.prosrc_sha256/);
 });
 
 test("the posture predicates check the set in both directions too", () => {
@@ -260,7 +346,21 @@ test("the posture predicates check the set in both directions too", () => {
     assert.match(sql, /count\(\*\)\s*>\s*0/i, `${phase}: zero rows must not read as agreement`);
     assert.match(sql, /tgenabled\s*=\s*'O'/i, `${phase}: a disabled guard refuses nothing`);
     assert.match(sql, /p\.prokind\s*=\s*'f'/i, `${phase}: pg_get_functiondef throws for aggregates`);
+    assert.match(sql, /not\s+p\.prosecdef/i, `${phase}: a definer guard would run under the wrong identity`);
+    assert.match(sql, /live\.proname\s*=\s*d\.proname/i, `${phase}: a rebound trigger would still pass`);
+    assert.match(sql, /live\.prosrc_sha256\s*=\s*d\.prosrc_sha256/i, `${phase}: a drifted function body would still pass`);
+    assert.match(sql, /pg_catalog\.sha256\(pg_catalog\.convert_to\(p\.prosrc,\s*'UTF8'\)\)/i, `${phase}: body digest is not computed from pg_proc.prosrc`);
   }
+});
+
+test("the re-contract companion validates guard function identity before writing strict", () => {
+  const write = RECONTRACT.indexOf("insert into public.money_release_mode");
+  const checks = RECONTRACT.slice(RECONTRACT.indexOf("for i in 1 .. array_length(v_guards, 1) loop"), write);
+  assert.ok(write !== -1, "the companion no longer writes the release mode");
+  assert.match(checks, /g\.tgfoid\s*=\s*to_regprocedure\(v_guards\[i\]\[3\]\)/i);
+  assert.match(checks, /pg_catalog\.sha256\(pg_catalog\.convert_to\(p\.prosrc,\s*'UTF8'\)\)/i);
+  assert.match(checks, /=\s*v_guards\[i\]\[4\]/i);
+  assert.match(checks, /not\s+p\.prosecdef/i);
 });
 
 test("both phases verify the KPI routines the rollback path can remove", () => {

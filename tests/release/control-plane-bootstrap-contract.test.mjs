@@ -22,7 +22,7 @@
  * /var/lib/newme/deploy-state.
  */
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -46,6 +46,7 @@ const DOC = path.join(REPO, "infra/release/control-plane-bootstrap.md");
 const installerSource = fs.readFileSync(INSTALLER, "utf8");
 const wrapperSource = fs.readFileSync(WRAPPER, "utf8");
 const rollbackSource = fs.readFileSync(ROLLBACK, "utf8");
+const docSource = fs.readFileSync(DOC, "utf8");
 
 const SHA = "a".repeat(40);
 const OTHER_SHA = "b".repeat(40);
@@ -123,6 +124,130 @@ function problemLines(stderr) {
     .filter((line) => line.startsWith("deploy gate record: "))
     .map((line) => line.slice("deploy gate record: ".length))
     .filter((line) => !/^refusing to install the control plane: /.test(line));
+}
+
+function bootstrapProcedureSource() {
+  const section = /## Authorised procedure[\s\S]*?```bash\n([\s\S]*?)\n```/.exec(docSource);
+  assert.ok(section, "the authorised bootstrap shell block is missing");
+  return section[1];
+}
+
+function bashExecutable() {
+  if (process.platform !== "win32") return "bash";
+  const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+  const bash = path.join(programFiles, "Git", "bin", "bash.exe");
+  assert.ok(fs.existsSync(bash), `Git Bash is required for the bootstrap behaviour test: ${bash}`);
+  return bash;
+}
+
+function bashPath(value) {
+  const normalized = value.replaceAll("\\", "/");
+  return /^[A-Za-z]:\//.test(normalized)
+    ? `/${normalized[0].toLowerCase()}${normalized.slice(2)}`
+    : normalized;
+}
+
+function runDocumentedBootstrap({
+  gitMode = "ok",
+  bootstrapMode = "ok",
+  sha = SHA,
+  run = "42",
+  migrationStatus = "applied_verified",
+  migrationIds = "20260817170000",
+  rollbackSha = OTHER_SHA,
+} = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "newme-bootstrap-procedure-"));
+  const bin = path.join(root, "bin");
+  const fakeRun = path.join(root, "run");
+  const installed = path.join(root, "installed-newme-deploy");
+  const invocation = path.join(root, "invocation.log");
+  const cleanup = path.join(root, "cleanup.log");
+  const candidate = path.join(root, "candidate-newme-deploy");
+  fs.mkdirSync(bin);
+  fs.mkdirSync(fakeRun);
+
+  fs.writeFileSync(
+    candidate,
+    `#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\\n' "$*" >"$FAKE_INVOCATION_LOG"
+case "\${FAKE_BOOTSTRAP_MODE:-ok}" in
+  ok) cp -- "$0" "$FAKE_INSTALLED_WRAPPER" ;;
+  drift) { cat -- "$0"; printf '\\n# injected drift\\n'; } >"$FAKE_INSTALLED_WRAPPER" ;;
+  fail) exit 52 ;;
+  *) exit 53 ;;
+esac
+`,
+  );
+  fs.chmodSync(candidate, 0o755);
+
+  const fakeSudo = path.join(bin, "sudo");
+  fs.writeFileSync(
+    fakeSudo,
+    `#!/usr/bin/env bash
+set -Eeuo pipefail
+command_name=\${1:-}
+shift || true
+case "$command_name" in
+  mktemp)
+    mkdir -p "$FAKE_ROOT/run"
+    command mktemp "$FAKE_ROOT/run/\${1##*/}"
+    ;;
+  git)
+    case "\${FAKE_GIT_MODE:-ok}" in
+      ok) cat -- "$FAKE_COORDINATOR_SOURCE" ;;
+      empty) : ;;
+      fail) exit 51 ;;
+      *) exit 53 ;;
+    esac
+    ;;
+  cmp)
+    [ "\${1:-}" = -s ] && [ "\${3:-}" = /usr/local/sbin/newme-deploy ] || exit 54
+    command cmp -s "$2" "$FAKE_INSTALLED_WRAPPER"
+    ;;
+  rm)
+    printf '%s\\n' "$*" >>"$FAKE_CLEANUP_LOG"
+    command rm "$@"
+    ;;
+  chmod|tee|test|bash)
+    command "$command_name" "$@"
+    ;;
+  *) exit 55 ;;
+esac
+`,
+  );
+  fs.chmodSync(fakeSudo, 0o755);
+
+  const quoted = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+  const source = bootstrapProcedureSource()
+    .replace(/^sha=.*$/m, `sha=${quoted(sha)}`)
+    .replace(/^run=.*$/m, `run=${quoted(run)}`)
+    .replace(/^migration_status=.*$/m, `migration_status=${quoted(migrationStatus)}`)
+    .replace(/^migration_ids=.*$/m, `migration_ids=${quoted(migrationIds)}`)
+    .replace(/^rollback_sha=.*$/m, `rollback_sha=${quoted(rollbackSha)}`);
+  const script = path.join(root, "bootstrap.sh");
+  fs.writeFileSync(script, `${source}\n`);
+
+  const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") || "PATH";
+  const env = {
+    ...process.env,
+    FAKE_ROOT: bashPath(root),
+    FAKE_GIT_MODE: gitMode,
+    FAKE_BOOTSTRAP_MODE: bootstrapMode,
+    FAKE_COORDINATOR_SOURCE: bashPath(candidate),
+    FAKE_INSTALLED_WRAPPER: bashPath(installed),
+    FAKE_INVOCATION_LOG: bashPath(invocation),
+    FAKE_CLEANUP_LOG: bashPath(cleanup),
+    [pathKey]: [bin, process.env[pathKey] || ""].filter(Boolean).join(path.delimiter),
+  };
+  const result = spawnSync(bashExecutable(), [script], {
+    cwd: root,
+    encoding: "utf8",
+    env,
+    timeout: 10_000,
+  });
+  assert.equal(result.error, undefined, result.error?.message);
+  return { result, root, fakeRun, installed, invocation, cleanup, candidate };
 }
 
 // ---------------------------------------------------------------------------
@@ -402,10 +527,12 @@ test("the record is removed on every exit path, so it can never gate a later ins
 });
 
 test("bootstrap is a coordinator mode, not a hand-written installer bypass", () => {
-  assert.match(
+  const modeRouter = /BOOTSTRAP_ONLY=0\nDB_TRANSITION_ONLY=0\nDB_TRANSITION_OPERATION=""\ncase "\$\{1:-\}" in\n([\s\S]*?)\nesac/.exec(
     wrapperSource,
-    /BOOTSTRAP_ONLY=0\nif \[ "\$\{1:-\}" = bootstrap \]; then\n\s*BOOTSTRAP_ONLY=1\n\s*shift\nfi/,
   );
+  assert.ok(modeRouter, "the wrapper has no explicit operation-mode router");
+  assert.match(modeRouter[1], /bootstrap\)\n\s*BOOTSTRAP_ONLY=1\n\s*shift\n\s*;;/);
+  assert.match(modeRouter[1], /db-transition\)\n\s*DB_TRANSITION_ONLY=1\n\s*shift\n\s*;;/);
   assert.match(wrapperSource, /newme-deploy bootstrap <main-sha> <successful-run-id>/);
 
   const start = wrapperSource.indexOf('if [ "$BOOTSTRAP_ONLY" -eq 1 ]; then');
@@ -657,7 +784,7 @@ test("the restore path needs no change of its own to put the old control plane b
 });
 
 test("the bootstrap document states the procedure and does not claim it was performed", () => {
-  const doc = fs.readFileSync(DOC, "utf8");
+  const doc = docSource;
   assert.match(doc, /Status: \*\*NOT EXECUTED\.\*\*/);
   assert.match(doc, /separately authorised production release action/);
   assert.match(doc, /sudo bash "\$coordinator" bootstrap/);
@@ -680,4 +807,77 @@ test("the bootstrap document states the procedure and does not claim it was perf
   assert.match(doc, /scripts\/rollback-systemd-assets\.sh/);
   // The installer's refusal message points back at the document.
   assert.match(installerSource, /infra\/release\/control-plane-bootstrap\.md/);
+});
+
+test("the documented bootstrap shell is fail-closed and ordered around the candidate bytes", () => {
+  const source = bootstrapProcedureSource();
+  assert.match(source, /^set -Eeuo pipefail\n/);
+  assert.ok(source.includes('[[ "$sha" =~ ^[0-9a-f]{40}$ ]]'));
+  assert.ok(source.includes('[[ "$run" =~ ^[1-9][0-9]*$ ]]'));
+  assert.ok(source.includes('[[ "$rollback_sha" =~ ^[0-9a-f]{40}$ ]]'));
+  assert.ok(source.includes('[[ "$migration_ids" =~ ^[0-9]{14}(,[0-9]{14})*$ ]]'));
+
+  assert.match(source, /cleanup\(\) \{[\s\S]*?rc=\$\?[\s\S]*?trap - EXIT[\s\S]*?set \+e[\s\S]*?sudo rm -f -- "\$coordinator"[\s\S]*?exit "\$rc"\n\}/);
+  assert.equal((source.match(/trap cleanup EXIT/g) ?? []).length, 1);
+  assert.equal((source.match(/sudo rm -f -- "\$coordinator"/g) ?? []).length, 1);
+
+  const at = (needle) => {
+    const index = source.indexOf(needle);
+    assert.notEqual(index, -1, `not found in documented bootstrap: ${needle}`);
+    return index;
+  };
+  const validation = at('[[ "$sha" =~ ^[0-9a-f]{40}$ ]]');
+  const mktemp = at("coordinator=\"$(sudo mktemp /run/newme-bootstrap.XXXXXX)\"");
+  const show = at("sudo git --git-dir=/opt/newme/repository.git show");
+  const nonempty = at('sudo test -s "$coordinator"');
+  const bootstrap = at('sudo bash "$coordinator" bootstrap');
+  const installedBytes = at('sudo cmp -s "$coordinator" /usr/local/sbin/newme-deploy');
+  assert.ok(validation < mktemp && mktemp < show && show < nonempty && nonempty < bootstrap && bootstrap < installedBytes);
+  assert.match(
+    source.slice(show, nonempty),
+    /"\$\{sha\}:infra\/systemd\/newme-deploy\.sh" \| sudo tee "\$coordinator" >\/dev\/null/,
+  );
+  assert.doesNotMatch(source.slice(show, nonempty), /\|\|\s*true/);
+});
+
+test("the documented bootstrap runs the exact candidate and removes its temporary coordinator", (t) => {
+  const run = runDocumentedBootstrap();
+  t.after(() => fs.rmSync(run.root, { recursive: true, force: true }));
+  assert.equal(run.result.status, 0, run.result.stderr);
+  assert.equal(
+    fs.readFileSync(run.invocation, "utf8").trim(),
+    `bootstrap ${SHA} 42 applied_verified 20260817170000 ${OTHER_SHA}`,
+  );
+  assert.equal(fs.readFileSync(run.installed, "utf8"), fs.readFileSync(run.candidate, "utf8"));
+  assert.deepEqual(fs.readdirSync(run.fakeRun), [], "the EXIT cleanup left the coordinator behind");
+  assert.match(fs.readFileSync(run.cleanup, "utf8"), /-f -- .*newme-bootstrap\./);
+});
+
+test("pipe, empty-output, bootstrap, and installed-byte mutations all fail closed and clean up", (t) => {
+  for (const [name, options, expectedStatus, invoked] of [
+    ["git show producer failure", { gitMode: "fail" }, 51, false],
+    ["empty git object", { gitMode: "empty" }, 1, false],
+    ["candidate bootstrap failure", { bootstrapMode: "fail" }, 52, true],
+    ["installed wrapper drift", { bootstrapMode: "drift" }, 1, true],
+  ]) {
+    const run = runDocumentedBootstrap(options);
+    t.after(() => fs.rmSync(run.root, { recursive: true, force: true }));
+    assert.equal(run.result.status, expectedStatus, `${name}: ${run.result.stderr}`);
+    assert.equal(fs.existsSync(run.invocation), invoked, `${name}: unexpected coordinator invocation state`);
+    assert.deepEqual(fs.readdirSync(run.fakeRun), [], `${name}: temporary coordinator survived`);
+  }
+});
+
+test("invalid release SHA and workflow run id are refused before sudo creates a file", (t) => {
+  for (const [name, options, message] of [
+    ["release SHA", { sha: "A".repeat(40) }, /invalid release SHA/],
+    ["workflow run", { run: "0" }, /invalid workflow run id/],
+  ]) {
+    const run = runDocumentedBootstrap(options);
+    t.after(() => fs.rmSync(run.root, { recursive: true, force: true }));
+    assert.equal(run.result.status, 64, `${name}: ${run.result.stderr}`);
+    assert.match(run.result.stderr, message);
+    assert.deepEqual(fs.readdirSync(run.fakeRun), [], `${name}: validation ran after mktemp`);
+    assert.equal(fs.existsSync(run.cleanup), false, `${name}: sudo was invoked before validation`);
+  }
 });

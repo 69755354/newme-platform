@@ -127,25 +127,35 @@ select pg_temp.assert(public.money_direct_write_mode() = 'strict',
 --
 -- The trigger name alone is not the guard: trg_require_current_session proves one
 -- name can be attached to twenty tables, and guard_definer_only_write() backs two
--- of these six under two different trigger names. So the pairs are (trigger,
--- table), matched both ways. `tgenabled = 'O'` because a DISABLED trigger reads as
+-- of these six under two different trigger names. So each declaration binds the
+-- trigger, table, function and exact SHA-256 of pg_proc.prosrc, matched both ways.
+-- The digest prevents a no-op replacement with the gate name left in a comment or
+-- string from passing. `tgenabled = 'O'` because a DISABLED trigger reads as
 -- present in pg_trigger and refuses nothing.
 select pg_temp.assert((select count(*) = 6
-                       from (values ('trg_guard_contracts_write',           'contracts'),
-                                    ('trg_guard_payments_write',            'payments'),
-                                    ('trg_guard_installment_plans_write',   'installment_plans'),
-                                    ('trg_guard_contract_approvals_write',  'contract_approvals'),
-                                    ('trg_guard_payment_allocations_write', 'payment_allocations'),
-                                    ('trg_guard_quotations_write',          'quotations')) as d(tgname, relname)
+                       from (values ('trg_guard_contracts_write',           'contracts',           'public.guard_contracts_write()',         '4cf1b6b7264ec7e8228f51ea57c8acb0f0aa09d5806c041cea520d52c8e92012'),
+                                    ('trg_guard_payments_write',            'payments',            'public.guard_payments_write()',          'c32179d89b956eb24a187b441a706b82ee04e4462067406edb92d2552b32a1e8'),
+                                    ('trg_guard_installment_plans_write',   'installment_plans',   'public.guard_installment_plans_write()', 'fcf92768dc68b6450e200c4b22b30ce27b0aa90471b5a18f39f78b461683e052'),
+                                    ('trg_guard_contract_approvals_write',  'contract_approvals',  'public.guard_definer_only_write()',       '0ac33b97358b40023346fb09647c5927613ac6888be443c3aff47984c82615bb'),
+                                    ('trg_guard_payment_allocations_write', 'payment_allocations', 'public.guard_definer_only_write()',       '0ac33b97358b40023346fb09647c5927613ac6888be443c3aff47984c82615bb'),
+                                    ('trg_guard_quotations_write',          'quotations',          'public.guard_quotations_write()',         '830b4dabef7df1e3709e23a33cbeda27c065964e7a737b632c8670d591e36e45')) as d(tgname, relname, proregprocedure, prosrc_sha256)
                        where exists (select 1
                                        from pg_trigger g
                                        join pg_class c on c.oid = g.tgrelid
                                        join pg_namespace n on n.oid = c.relnamespace
+                                       join pg_proc p on p.oid = g.tgfoid
                                       where not g.tgisinternal
                                         and g.tgenabled = 'O'
                                         and n.nspname = 'public'
                                         and g.tgname = d.tgname
-                                        and c.relname = d.relname)),
+                                        and c.relname = d.relname
+                                        and p.prokind = 'f'
+                                        and not p.prosecdef
+                                        and g.tgfoid = to_regprocedure(d.proregprocedure)
+                                        and pg_catalog.encode(
+                                              pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')),
+                                              'hex'
+                                            ) = d.prosrc_sha256)),
                       'recontract-the-six-mode-gated-guards-are-still-enabled');
 -- The other direction, which is what stops this list from silently ceasing to be
 -- the list: a trigger whose function consults the release mode and is not declared
@@ -163,14 +173,19 @@ select pg_temp.assert((select count(*) = 0
                         and p.prokind = 'f'
                         and pg_get_functiondef(p.oid) like '%money_direct_write_is_blocked%'
                         and not exists (select 1
-                                          from (values ('trg_guard_contracts_write',           'contracts'),
-                                                       ('trg_guard_payments_write',            'payments'),
-                                                       ('trg_guard_installment_plans_write',   'installment_plans'),
-                                                       ('trg_guard_contract_approvals_write',  'contract_approvals'),
-                                                       ('trg_guard_payment_allocations_write', 'payment_allocations'),
-                                                       ('trg_guard_quotations_write',          'quotations')) as d(tgname, relname)
-                                         where d.tgname = g.tgname::text
-                                           and d.relname = c.relname::text)),
+                                          from (values ('trg_guard_contracts_write',           'contracts',           'public.guard_contracts_write()',         '4cf1b6b7264ec7e8228f51ea57c8acb0f0aa09d5806c041cea520d52c8e92012'),
+                                                       ('trg_guard_payments_write',            'payments',            'public.guard_payments_write()',          'c32179d89b956eb24a187b441a706b82ee04e4462067406edb92d2552b32a1e8'),
+                                                       ('trg_guard_installment_plans_write',   'installment_plans',   'public.guard_installment_plans_write()', 'fcf92768dc68b6450e200c4b22b30ce27b0aa90471b5a18f39f78b461683e052'),
+                                                       ('trg_guard_contract_approvals_write',  'contract_approvals',  'public.guard_definer_only_write()',       '0ac33b97358b40023346fb09647c5927613ac6888be443c3aff47984c82615bb'),
+                                                       ('trg_guard_payment_allocations_write', 'payment_allocations', 'public.guard_definer_only_write()',       '0ac33b97358b40023346fb09647c5927613ac6888be443c3aff47984c82615bb'),
+                                                       ('trg_guard_quotations_write',          'quotations',          'public.guard_quotations_write()',         '830b4dabef7df1e3709e23a33cbeda27c065964e7a737b632c8670d591e36e45')) as d(tgname, relname, proregprocedure, prosrc_sha256)
+                                          where d.tgname = g.tgname::text
+                                            and d.relname = c.relname::text
+                                            and g.tgfoid = to_regprocedure(d.proregprocedure)
+                                            and pg_catalog.encode(
+                                                  pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')),
+                                                  'hex'
+                                                ) = d.prosrc_sha256)),
                       'recontract-no-undeclared-mode-gated-guard-exists');
 -- The seventh guard trigger, which the mode does NOT stand down: it refuses an
 -- impossible status change in both modes. Checked separately so the count of

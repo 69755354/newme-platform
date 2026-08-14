@@ -327,26 +327,49 @@ PY
 fi
 
 BOOTSTRAP_ONLY=0
-if [ "${1:-}" = bootstrap ]; then
-  BOOTSTRAP_ONLY=1
-  shift
-fi
+DB_TRANSITION_ONLY=0
+DB_TRANSITION_OPERATION=""
+case "${1:-}" in
+  bootstrap)
+    BOOTSTRAP_ONLY=1
+    shift
+    ;;
+  db-transition)
+    DB_TRANSITION_ONLY=1
+    shift
+    ;;
+esac
 
 SHA=${1:-}
 RUN_ID=${2:-}
-MIGRATION_STATUS=${3:-}
-MIGRATION_IDS=${4:-}
-ROLLBACK_SHA=${5:-}
-if [ "$#" -ne 5 ] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || ! [[ "$ROLLBACK_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "usage: newme-deploy <main-sha> <successful-run-id> <not_required|applied_verified> <migration-ids> <rollback-sha>" >&2
-  echo "   or: newme-deploy bootstrap <main-sha> <successful-run-id> <not_required|applied_verified> <migration-ids> <rollback-sha>" >&2
-  exit 64
+MIGRATION_STATUS=""
+MIGRATION_IDS=""
+ROLLBACK_SHA=""
+if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
+  DB_TRANSITION_OPERATION=${3:-}
+  if [ "$#" -ne 3 ] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "usage: newme-deploy db-transition <main-sha> <successful-run-id> <expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter>" >&2
+    exit 64
+  fi
+  case "$DB_TRANSITION_OPERATION" in
+    expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter) ;;
+    *) exit 64 ;;
+  esac
+else
+  MIGRATION_STATUS=${3:-}
+  MIGRATION_IDS=${4:-}
+  ROLLBACK_SHA=${5:-}
+  if [ "$#" -ne 5 ] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || ! [[ "$ROLLBACK_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "usage: newme-deploy <main-sha> <successful-run-id> <not_required|applied_verified> <migration-ids> <rollback-sha>" >&2
+    echo "   or: newme-deploy bootstrap <main-sha> <successful-run-id> <not_required|applied_verified> <migration-ids> <rollback-sha>" >&2
+    exit 64
+  fi
+  case "$MIGRATION_STATUS" in
+    not_required) [ -z "$MIGRATION_IDS" ] || exit 64 ;;
+    applied_verified) [[ "$MIGRATION_IDS" =~ ^[0-9A-Za-z_.-]+(,[0-9A-Za-z_.-]+)*$ ]] || exit 64 ;;
+    *) exit 64 ;;
+  esac
 fi
-case "$MIGRATION_STATUS" in
-  not_required) [ -z "$MIGRATION_IDS" ] || exit 64 ;;
-  applied_verified) [[ "$MIGRATION_IDS" =~ ^[0-9A-Za-z_.-]+(,[0-9A-Za-z_.-]+)*$ ]] || exit 64 ;;
-  *) exit 64 ;;
-esac
 if [ "$RUN_ID" = "manual" ]; then
   echo "manual production deployment is disabled; an exact successful GitHub Actions run is required" >&2
   exit 65
@@ -380,10 +403,16 @@ git --git-dir="$MIRROR" fetch --quiet --prune origin '+refs/heads/main:refs/remo
 MAIN_SHA="$(git --git-dir="$MIRROR" rev-parse refs/remotes/origin/main)"
 [ "$SHA" = "$MAIN_SHA" ] || { echo "release SHA must equal canonical main" >&2; exit 65; }
 LIVE_RELEASE="$(readlink -f /opt/newme/current 2>/dev/null || true)"
-[ "$LIVE_RELEASE" = "/opt/newme/releases/$ROLLBACK_SHA" ] || {
-  echo "rollback SHA must equal the current immutable production release" >&2
-  exit 65
-}
+if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
+  case "$LIVE_RELEASE" in /opt/newme/releases/[0-9a-f][0-9a-f]*) ;; *) echo "current immutable production release is invalid" >&2; exit 65 ;; esac
+  ROLLBACK_SHA="$(basename "$LIVE_RELEASE")"
+  [[ "$ROLLBACK_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "current immutable production release SHA is invalid" >&2; exit 65; }
+else
+  [ "$LIVE_RELEASE" = "/opt/newme/releases/$ROLLBACK_SHA" ] || {
+    echo "rollback SHA must equal the current immutable production release" >&2
+    exit 65
+  }
+fi
 if [ "$ROLLBACK_SHA" != "$LEGACY_EVIDENCELESS_BASELINE" ]; then
   [ -d "$LIVE_RELEASE/.audit" ] && [ ! -L "$LIVE_RELEASE/.audit" ] || {
     echo "current release lacks protected deployment evidence" >&2
@@ -583,7 +612,80 @@ CI_CONCLUSION=success
 # the API response.
 CI_EVENT=workflow_dispatch
 
+# Gates shared by application deployment and every production database transition.
+# The worktree is always a root-owned detached checkout of canonical main at the
+# exact SHA whose successful run was verified above. Keeping these checks in one
+# function prevents the database-only path from becoming a weaker shadow deploy.
+verify_exact_tree_release_gates() {
+  require_node || return 65
+  "$NODE_BIN" "$WORKTREE/scripts/check-taskboard.mjs" --require-scope=predeploy_ready || {
+    echo "TASKBOARD.md at canonical main is not predeploy-ready; production operation is blocked" >&2
+    return 65
+  }
+  (cd "$WORKTREE" && "$NODE_BIN" scripts/check-release-manifest.mjs) || {
+    echo "the release manifest does not describe the exact canonical-main tree" >&2
+    return 65
+  }
+  (cd "$WORKTREE" && "$NODE_BIN" scripts/check-release-manifest.mjs --verify-companions) || {
+    echo "the hand-run rollback/recontract companions do not match the release manifest at this SHA" >&2
+    return 65
+  }
+}
+
 mkdir -p -m 0700 "$WORKTREE_ROOT"
+
+if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
+  WORKTREE="$(mktemp -d "$WORKTREE_ROOT/db-transition.XXXXXX")"
+  cleanup_db_transition_worktree() {
+    trap - EXIT HUP INT TERM
+    git --git-dir="$MIRROR" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
+  }
+  trap cleanup_db_transition_worktree EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  rmdir "$WORKTREE"
+  git --git-dir="$MIRROR" worktree add --detach "$WORKTREE" "$MAIN_SHA" >/dev/null
+  chown -R root:root "$WORKTREE"
+
+  verify_exact_tree_release_gates || exit 65
+  validate_migration_db_url_file || exit 65
+  case "$DB_TRANSITION_OPERATION" in
+    expand-plan)
+      "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
+        --phase required_for_app --plan \
+        --url-file "$MIGRATION_DB_URL_FILE" \
+        --modules-dir "$LIVE_RELEASE/node_modules"
+      ;;
+    expand-apply)
+      "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
+        --phase required_for_app --apply \
+        --url-file "$MIGRATION_DB_URL_FILE" \
+        --modules-dir "$LIVE_RELEASE/node_modules"
+      ;;
+    contract-apply)
+      "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
+        --phase deferred_contract --apply \
+        --url-file "$MIGRATION_DB_URL_FILE" \
+        --modules-dir "$LIVE_RELEASE/node_modules"
+      ;;
+    contract-verify)
+      "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
+        --phase deferred_contract --verify-only \
+        --url-file "$MIGRATION_DB_URL_FILE" \
+        --modules-dir "$LIVE_RELEASE/node_modules"
+      ;;
+    contract-rollback|contract-reenter)
+      "$NODE_BIN" "$WORKTREE/scripts/db-companion-run.mjs" \
+        --operation "$DB_TRANSITION_OPERATION" \
+        --url-file "$MIGRATION_DB_URL_FILE" \
+        --modules-dir "$LIVE_RELEASE/node_modules"
+      ;;
+  esac
+  echo "database transition complete release=$SHA run=$RUN_ID operation=$DB_TRANSITION_OPERATION"
+  exit 0
+fi
+
 install -d -o root -g root -m 0700 "$STATE_ROOT"
 [ -d "$STATE_ROOT" ] && [ ! -L "$STATE_ROOT" ] || { echo "persistent deploy-state directory is invalid" >&2; exit 65; }
 [ "$(stat -c '%U:%G' "$STATE_ROOT")" = root:root ] || { echo "persistent deploy-state directory ownership is invalid" >&2; exit 65; }
@@ -778,7 +880,7 @@ chown -R root:root "$WORKTREE"
 # Both run against the root-owned worktree at the canonical main SHA, before any
 # asset is installed and before the release is staged, and both abort the
 # deployment. Neither can be satisfied by a claim on the command line.
-require_node || exit 65
+verify_exact_tree_release_gates || exit 65
 
 # TASKBOARD predeploy readiness. The required GitHub job proves this same
 # milestone for the dispatched SHA; this proves it again for the tree
@@ -797,11 +899,6 @@ require_node || exit 65
 # requires the first. Nothing is loosened: an undeclared unfinished row is a FAIL
 # in the checker and lands in predeploy_ready anyway. A later TASKBOARD-only
 # closure SHA is verified independently before release finalization.
-"$NODE_BIN" "$WORKTREE/scripts/check-taskboard.mjs" --require-scope=predeploy_ready || {
-  echo "TASKBOARD.md at canonical main is not predeploy-ready; deployment is blocked" >&2
-  exit 65
-}
-
 # Remote migration history. The replay job proves the migrations in this tree run
 # and do what they claim; it cannot prove that production's recorded history is
 # the same history. A renamed or rewritten applied migration — the defect that
@@ -888,11 +985,6 @@ esac
 # Both sides of this check come from $WORKTREE — the root-owned worktree at the
 # canonical main SHA — so what it proves is "the companions at this SHA are the
 # companions this SHA declares", the same binding as the artifacts above.
-(cd "$WORKTREE" && "$NODE_BIN" scripts/check-release-manifest.mjs --verify-companions) || {
-  echo "the hand-run rollback/recontract companions do not match the release manifest at this SHA" >&2
-  exit 65
-}
-
 # Systemd, sudo and observability assets are part of the immutable release
 # boundary. Refresh them only from the verified root-owned main worktree.
 ASSET_BACKUP_RECORD="$(mktemp "$STATE_ROOT/systemd-assets-backup.XXXXXX")"

@@ -81,10 +81,10 @@
 #     capture-mutate-restore idiom 19_ and 23_ use, and cleanup() restores it even
 #     when the gate fails.
 #
-# What this gate deliberately does NOT check: that the six mode-gated guards are
-# present when the money companion runs. Standing them down is the companion's
-# purpose. The recontract companion is the direction that must find them enabled,
-# and 17_/18_ already measure that.
+# The rollback direction does not require the six mode-gated guards to be active;
+# standing them down is its purpose. The recontract probe below separately
+# replaces one expected trigger function with a no-op and proves that the return
+# to strict is refused before the mode or audit trail changes.
 #
 # Requires: psql on PATH, PG* pointing at the throwaway replay database, the
 # release migrations applied and public.money_release_mode at 'strict'. Invoked by
@@ -119,6 +119,16 @@ restore_mode_function() {
     -f "$work_dir/mode_orig.sql" >"$work_dir/restore_mode.log" 2>&1 || {
     cat "$work_dir/restore_mode.log" >&2
     printf 'FAIL(%s): could not restore public.money_direct_write_mode(); this database is now mutated\n' "$EXPECT" >&2
+    exit 1
+  }
+}
+
+restore_contract_guard() {
+  [ -s "$work_dir/contract_guard_orig.sql" ] || return 0
+  psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 --single-transaction \
+    -f "$work_dir/contract_guard_orig.sql" >"$work_dir/restore_contract_guard.log" 2>&1 || {
+    cat "$work_dir/restore_contract_guard.log" >&2
+    printf 'FAIL(%s): could not restore public.guard_contracts_write(); this database is now mutated\n' "$EXPECT" >&2
     exit 1
   }
 }
@@ -169,6 +179,7 @@ cleanup() {
   psql --no-psqlrc --quiet -c "alter table public.payments enable trigger trg_require_current_session" >/dev/null 2>&1 || true
   psql --no-psqlrc --quiet -c "revoke execute on function public.clear_kpi_targets(text, uuid) from authenticated" >/dev/null 2>&1 || true
   restore_mode_function
+  restore_contract_guard
   restore_kpi_function
   [ "$status" != "0" ] && [ -f "$out_a" ] && { echo "--- session A ---" >&2; cat "$out_a" >&2; }
   rm -rf "$work_dir"
@@ -245,6 +256,16 @@ if [ "$EXPECT" = "companion_guards" ]; then
   printf ';\n' >>"$work_dir/mode_orig.sql"
   grep -q "money_release_mode" "$work_dir/mode_orig.sql" \
     || fail "the captured definition of money_direct_write_mode() does not read money_release_mode, so restoring it would not restore the release"
+
+  psql --no-psqlrc --quiet --no-align --tuples-only -v ON_ERROR_STOP=1 \
+    -c "select pg_get_functiondef(to_regprocedure('public.guard_contracts_write()')::oid)" \
+    >"$work_dir/contract_guard_orig.sql" 2>"$work_dir/capture_contract_guard.log" || {
+    cat "$work_dir/capture_contract_guard.log" >&2
+    fail "could not capture public.guard_contracts_write()"
+  }
+  printf ';\n' >>"$work_dir/contract_guard_orig.sql"
+  grep -q "money_direct_write_is_blocked" "$work_dir/contract_guard_orig.sql" \
+    || fail "the captured guard_contracts_write() does not consult the release mode"
 
   baseline_audit="$(audit_count)"
 
@@ -340,6 +361,29 @@ SQL
     || fail "the audit row does not record the mode it replaced, which is the only part of it an operator cannot reconstruct afterwards"
   echo "  positive: mode compat through the function, guards stood down, one audit row recording previous_mode=strict"
 
+  # ── Negative 4 · expected trigger exists but its exact function body drifted ─
+  # Keep the gate name in a comment: a text-presence check would accept this no-op,
+  # while the shipped pg_proc.prosrc digest must reject it before strict or audit.
+  reentry_audit_before="$(q "select count(*) from public.audit_logs where action = 'MONEY_CONTRACT_PHASE_REENTERED'")"
+  psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 \
+    -c "create or replace function public.guard_contracts_write() returns trigger language plpgsql security invoker as \$fn\$ begin /* money_direct_write_is_blocked() intentionally absent */ return new; end \$fn\$" \
+    >"$work_dir/noop_guard.log" 2>&1 \
+    || { cat "$work_dir/noop_guard.log" >&2; fail "could not install the no-op contract guard probe"; }
+  if run_companion "$MONEY_RECONTRACT" "$work_dir/neg4.log"; then
+    cat "$work_dir/neg4.log" >&2
+    fail "the recontract companion declared strict while guard_contracts_write() no longer consulted the release mode"
+  fi
+  grep -q "enabled mode-gated trigger trg_guard_contracts_write on public.contracts backed by public.guard_contracts_write()" "$work_dir/neg4.log" \
+    || { cat "$work_dir/neg4.log" >&2; fail "the recontract refusal did not name the trigger/function contract it rejected"; }
+  [ "$(mode_column)" = "compat" ] \
+    || fail "the refused recontract wrote strict before validating the live guard function"
+  [ "$(q "select count(*) from public.audit_logs where action = 'MONEY_CONTRACT_PHASE_REENTERED'")" = "$reentry_audit_before" ] \
+    || fail "the refused recontract wrote a MONEY_CONTRACT_PHASE_REENTERED audit row"
+  restore_contract_guard
+  [ "$(q "select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex') from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.guard_contracts_write()')")" = "4cf1b6b7264ec7e8228f51ea57c8acb0f0aa09d5806c041cea520d52c8e92012" ] \
+    || fail "restoring guard_contracts_write() did not restore its exact shipped body"
+  echo "  negative 4 (contract trigger function replaced by a marker-bearing no-op): refused before strict or audit, exact function restored"
+
   # ── Reentry · a rollback re-run is not an error, and says so ──────────────
   run_companion "$MONEY_ROLLBACK" "$work_dir/reentry.log" \
     || { cat "$work_dir/reentry.log" >&2; fail "re-running the rollback companion failed; an operator who repeats a hand-run step must not be left guessing"; }
@@ -362,7 +406,7 @@ SQL
   # The mode is back; the record of getting there three times is not part of the
   # posture the harness handed over. See restore_audit_trail().
   restore_audit_trail
-  echo "== rollback companion guards OK (control + 3 negatives + positive + reentry, posture and audit trail restored) =="
+  echo "== rollback companion guards OK (control + 4 negatives + positive + reentry, posture and audit trail restored) =="
   exit 0
 fi
 

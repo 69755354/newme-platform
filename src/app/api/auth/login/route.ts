@@ -29,8 +29,8 @@ const AUTH_UPSTREAM_TIMEOUT_MS = 8_000;
 // Server-side authentication funnels every user through the origin IP, which
 // would otherwise collapse upstream per-IP brute-force protection into one
 // bucket. Bound both the source address and the targeted account.
-const PER_IP_LIMIT = { limit: 20, windowMs: 5 * 60_000 };
-const PER_ACCOUNT_LIMIT = { limit: 8, windowMs: 15 * 60_000 };
+const PER_IP_LIMIT = { limit: 20, windowMs: 5 * 60_000, namespace: "login-ip" };
+const PER_ACCOUNT_LIMIT = { limit: 8, windowMs: 15 * 60_000, namespace: "login-account" };
 
 const PRIVATE_NO_STORE = "private, no-store, max-age=0, must-revalidate";
 

@@ -107,12 +107,16 @@ artifacts:
   twenty-four above) or `deferred_contract` (the one above) — with the SHA-256 of each
   file and the runtime posture each phase must produce.
 * [`scripts/db-phase-push.mjs`](../../scripts/db-phase-push.mjs) applies one named
-  phase and nothing else:
+  phase and nothing else. In production it is reachable only through the canonical
+  root wrapper, which first takes `/run/lock/newme-production-release.lock`, checks
+  canonical main and the named exact-SHA CI run, creates a root-owned detached
+  worktree, verifies the manifest/companions and reads the fixed root-owned URL
+  file:
 
 ```text
-node scripts/db-phase-push.mjs --phase required_for_app  --url-file <file> --plan
-node scripts/db-phase-push.mjs --phase required_for_app  --url-file <file> --apply
-node scripts/db-phase-push.mjs --phase deferred_contract --url-file <file> --apply
+sudo /usr/local/sbin/newme-deploy db-transition <release-sha> <successful-run-id> expand-plan
+sudo /usr/local/sbin/newme-deploy db-transition <release-sha> <successful-run-id> expand-apply
+sudo /usr/local/sbin/newme-deploy db-transition <release-sha> <successful-run-id> contract-apply
 ```
 
   `--plan` runs every precondition and the hash check and writes nothing. Each
@@ -548,9 +552,9 @@ Read §5 before starting: the point of no return is step 7, not step 8.
    * A verified point-in-time recovery target exists for the production project,
      and its timestamp is recorded next to this checklist.
 2. **[AUTHORISED ACTION] Apply the expand phase.** Apply the twenty-four files in §1
-   with
-   `node scripts/db-phase-push.mjs --phase required_for_app --url-file <file> --apply`,
-   from the exact reviewed tree. Run it once with `--plan` first and read the
+   through the canonical wrapper:
+   `sudo /usr/local/sbin/newme-deploy db-transition <release-sha> <successful-run-id> expand-apply`.
+   First run the same command with `expand-plan` and read the
    `to apply` list: the twenty-four, and `20260818000000` absent. Do **not** use
    `supabase db push`, which would apply the contract phase in the same run (§1,
    "How the split is executed"). `supabase/preflight/scan-money-invariants.sql`
@@ -574,7 +578,7 @@ Read §5 before starting: the point of no return is step 7, not step 8.
    there is no time pressure on this step.
 7. **[AUTHORISED ACTION] Apply the contract phase.** Apply
    `20260818000000_money_direct_write_contract_phase.sql` with
-   `node scripts/db-phase-push.mjs --phase deferred_contract --url-file <file> --apply`.
+   `sudo /usr/local/sbin/newme-deploy db-transition <release-sha> <successful-run-id> contract-apply`.
    It refuses if any `required_for_app` migration is still unapplied, and its
    posture check is what proves the mode is `strict` afterwards. **After this step
    an application-only rollback no longer works** (§5).
@@ -599,24 +603,24 @@ application-only rollback leaves the previous release unable to write money rows
 so the rollback is two actions and not one: run the companion first, then
 redeploy. If the companion cannot be run, the only remaining option is PITR.
 
-**Verify the companion's content before you execute it, from the tree you are
-about to execute it from** (round-4 C4-5):
+**Run the rollback companion only through the canonical release coordinator**
+(round-4 C4-5):
 
 ```text
-node scripts/check-release-manifest.mjs --verify-companions
+sudo /usr/local/sbin/newme-deploy db-transition \
+  <release-sha> <successful-run-id> contract-rollback
 ```
 
-It prints one line per hand-run file with its hash and exits **1**, naming the
-file, if any byte differs from `infra/release/release-manifest.json`. This is not
-ceremony at 3am: `rollback_money_direct_write_contract_phase.sql` is executed
-against production by hand, with the service role, in a single transaction, and
-nothing else in this release records what it contains — a `grant` appended to it
-was measured on PG 17.10 leaving the replay harness at rc=0 with every
-post-rollback assertion passing. `infra/systemd/newme-deploy.sh` runs the same
-command against the candidate's own worktree and records
-`gate=release-companions-verified`, so on a host deployed by the canonical path
-the check has already passed once for that SHA; running it again is how you learn
-that the file you are about to feed to `psql` is still that file.
+The coordinator refuses unless it holds the same release lock as deploy and app
+rollback, `<release-sha>` is canonical main, `<successful-run-id>` is the exact
+successful required-job run for that SHA, and the root-owned detached worktree's
+manifest and every companion hash agree. It then selects
+`rollback_money_direct_write_contract_phase.sql` from a fixed operation allowlist,
+executes it with the fixed `/etc/newme/migration-db.url`, and verifies the `compat`
+posture from the manifest. It accepts no SQL path, migration id, service file or
+connection string from the operator. A `grant` appended to the companion was
+measured on PG 17.10 leaving the old replay harness at rc=0; the manifest binding
+and exact operation selection are why that byte drift is now a refusal.
 
 **That ordering is enforced, not remembered** (§2, round-4 C8).
 `newme-production-rollback execute` runs the phase gate before it touches
@@ -639,15 +643,13 @@ as `NEWME_DB_PHASE=`.
 
 The gate reads its connection from `/etc/newme/migration-db.url` — root-owned,
 mode `0400` or `0600` — and refuses if that file is missing, a symlink, or more
-widely owned, for the same reason the commands below take a service file rather
-than a DSN. Refusing there costs nothing that mattered: a rollback that cannot
+widely owned. Refusing there costs nothing that mattered: a rollback that cannot
 reach the migration database cannot run the companion either, and both releases
 need that database.
 
-Run the companion the way §5.1 runs its mirror image — a libpq service file, no
-connection string in `argv` — and read §5.1 before running it, so that the way
-back out of `compat` is known before it is needed rather than during the next
-attempt.
+Run the companion with the `contract-rollback` operation above, and read §5.1
+before running it, so that the protected way back out of `compat` is known before
+it is needed rather than during the next attempt.
 
 What the companion does **not** do, deliberately: it touches exactly one row in
 one table. It does not re-enable the published credential, does not re-grant
@@ -685,27 +687,23 @@ it and it can be run as many times as there are attempts.
    mode is still `compat` at this point, so both releases work — do not skip
    ahead: re-entering `strict` while the previous release is the deployed one
    breaks it immediately.
-2. **[AUTHORISED ACTION] Re-enter the contract phase.** Verify the companion's
-   content first, from the tree you are about to run it from, and only then run it
-   against the production database with the service role:
+2. **[AUTHORISED ACTION] Re-enter the contract phase.** Use the coordinator's
+   fixed `contract-reenter` operation:
 
 ```text
-node scripts/check-release-manifest.mjs --verify-companions
-PGSERVICEFILE=<service-file> PGSERVICE=<service-name> \
-  psql --no-psqlrc --single-transaction -v ON_ERROR_STOP=1 \
-    -f supabase/migrations/recontract_money_direct_write_contract_phase.sql
+sudo /usr/local/sbin/newme-deploy db-transition \
+  <release-sha> <successful-run-id> contract-reenter
 ```
 
-   The first command exits **1**, naming the file, if any byte of any hand-run
+   The coordinator exits non-zero before connecting if any byte of any hand-run
    companion differs from `infra/release/release-manifest.json` (§4 step 1,
-   round-4 C4-5). Do not run the second if the first refuses: this file grants and
-   revokes, and it is the one that puts the money writers back behind the guards.
+   round-4 C4-5). The selected file grants and revokes, and it is the one that puts
+   the money writers back behind the guards, so there is no free-form fallback.
 
-   The connection comes from a libpq service file — mode `0600`, owned by the
-   operator — for the same reason `scripts/db-phase-push.mjs` refuses a URL on the
-   command line and takes `--url-file` instead: a DSN in `argv` is readable by
-   every process on the host for as long as the command runs. Do not paste a
-   connection string into the shell, and do not `cat` the file to read it back.
+   The connection comes only from `/etc/newme/migration-db.url`; a DSN in `argv`
+   is readable by every process on the host for as long as the command runs. Do
+   not paste a connection string into the shell, and do not `cat` the file to read
+   it back.
 
    It refuses with `42P01` — and changes nothing — if `money_release_mode` is
    absent, if `money_direct_write_mode()` or `money_direct_write_is_blocked()` is
@@ -765,7 +763,8 @@ PGSERVICEFILE=<service-file> PGSERVICE=<service-name> \
    `infra/release/release-manifest.json`:
 
 ```text
-node scripts/db-phase-push.mjs --phase deferred_contract --url-file <file> --verify-only
+sudo /usr/local/sbin/newme-deploy db-transition \
+  <release-sha> <successful-run-id> contract-verify
 ```
 
    The same **twelve** predicates the apply path checks — the mode row, the mode
@@ -955,10 +954,10 @@ select version from supabase_migrations.schema_migrations
 -- expect 20260818000000
 ```
 
-`node scripts/db-phase-push.mjs --phase deferred_contract --url-file <file>
---verify-only` re-measures the first two of these from the manifest and writes
-nothing; it is the machine-checked form of this section, not a replacement for
-reading the output.
+`sudo /usr/local/sbin/newme-deploy db-transition <release-sha>
+<successful-run-id> contract-verify` re-measures the first two of these from the
+manifest and writes nothing; it is the machine-checked form of this section, not
+a replacement for reading the output.
 
 Then re-run 6.1 queries 4–8: the contract phase changes one row and must change
 nothing else. Do **not** verify strict mode by attempting a direct write from a

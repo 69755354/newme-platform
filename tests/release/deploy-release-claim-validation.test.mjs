@@ -450,7 +450,7 @@ test("the wrapper enforces the predeploy taskboard scope and remote migration hi
   assert.ok(assets < immutable);
 
   // Both abort, and abort with the wrapper's precondition status.
-  assert.match(wrapper, /TASKBOARD\.md at canonical main is not predeploy-ready; deployment is blocked" >&2\n\s*exit 65/);
+  assert.match(wrapper, /TASKBOARD\.md at canonical main is not predeploy-ready; production operation is blocked" >&2\n\s*return 65/);
   assert.match(wrapper, /production migration history does not match the release being deployed" >&2\n\s*exit 65/);
 
   // The connection string is a credential: root-owned, not group- or

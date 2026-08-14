@@ -15,7 +15,7 @@
 -- notices against ASSERT_TOTAL below, so an assertion file that stops early
 -- fails the job instead of passing quietly.
 --
--- ASSERT_TOTAL: 342
+-- ASSERT_TOTAL: 343
 -- ============================================================================
 
 create temp table assert_log (name text, passed boolean not null);
@@ -4615,6 +4615,10 @@ declare
   v_qstatus  text;
   v_final    text;
   v_customer uuid;
+  v_foreign  uuid := 'f6f6f6f6-f6f6-f6f6-f6f6-f6f6f6f6f6f6';
+  v_contract_customer uuid;
+  v_mismatch text := '00000';
+  v_mismatch_msg text := '';
   v_lost     text := '00000';
   v_lostmsg  text := '';
 begin
@@ -4642,6 +4646,24 @@ begin
     select status       into v_qstatus  from public.quotations where id = v_quote;
     select final_status into v_final    from public.leads      where id = v_lead;
     select customer_id  into v_customer from public.contracts  where id = v_contract;
+
+    -- A non-null different customer is contradictory state rather than a NULL
+    -- left by an interrupted first attempt. The retry must refuse it and leave
+    -- both identities untouched.
+    insert into public.customers (id, name) values (v_foreign, 'Foreign retry customer');
+    update public.contracts set customer_id = v_foreign where id = v_contract;
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    begin
+      perform public.convert_quotation_to_contract(v_quote, '{}'::jsonb);
+    exception when others then v_mismatch := sqlstate; v_mismatch_msg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    select customer_id into v_contract_customer from public.contracts where id = v_contract;
+
+    -- Restore the converged link for the separate terminal-status refusal below.
+    update public.contracts set customer_id = v_customer where id = v_contract;
 
     -- And the refusal: a lead given a different terminal decision is not a
     -- conversion waiting to be finished.
@@ -4675,6 +4697,10 @@ begin
                          and v_retry -> 'finalized'
                              @> '["quotation_status","lead_won","contract_customer"]'::jsonb,
     'r4-a-retry-returns-the-project-and-reports-what-it-repaired');
+  perform pg_temp.assert(v_mismatch = '22023'
+                         and v_mismatch_msg like '%different customer identities%'
+                         and v_contract_customer = v_foreign,
+    'r4-a-retry-refuses-a-conflicting-contract-customer');
   perform pg_temp.assert(v_lost = '22023' and v_lostmsg like '%rather than won%',
     'r4-a-retry-refuses-a-lead-given-a-different-terminal-status');
 end
@@ -5230,13 +5256,13 @@ begin
   select count(*), count(*) filter (where assert_log.passed), count(*) filter (where not assert_log.passed)
     into total, passed, failed
     from assert_log;
-  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=342', total, passed, failed;
-  if total <> 342 then
-    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 342', total
+  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=343', total, passed, failed;
+  if total <> 343 then
+    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 343', total
       using errcode = '22000';
   end if;
-  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 342 then
-    raise exception 'assertion file passed % of 342 assertions', passed
+  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 343 then
+    raise exception 'assertion file passed % of 343 assertions', passed
       using errcode = '22000';
   end if;
   if exists (select 1 from assert_log group by name having count(*) > 1) then

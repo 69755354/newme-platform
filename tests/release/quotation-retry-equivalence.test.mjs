@@ -236,6 +236,13 @@ test("the retry repairs the three rows the way the first conversion writes them"
     assert.ok(stmt, `the ${name} does not set contracts.customer_id`);
     assert.match(stmt[0], /customer_id is null/, `the ${name} would overwrite an existing customer`);
   }
+
+  // A non-null different customer is neither overwritten nor accepted as a
+  // successful retry. The refusal must precede the NULL-only repair.
+  const mismatch = retry.indexOf("v_contract.customer_id is distinct from v_customer_id");
+  const repair = retry.indexOf("update public.contracts set customer_id = v_customer_id");
+  assert.ok(mismatch !== -1 && mismatch < repair, "the retry does not refuse a conflicting contract customer before repair");
+  assert.match(retry.slice(mismatch, repair), /using errcode = '22023'/);
 });
 
 test("the lead row is locked before either path writes it", () => {

@@ -324,6 +324,18 @@ begin
         v_finalized := array_append(v_finalized, 'customer');
       end if;
 
+      -- A retry may repair an absent link, but a non-null different customer is
+      -- contradictory state, not missing work. Returning success here used to
+      -- report the lead's customer while leaving the linked contract attached to
+      -- somebody else. Refuse before returning or committing the repair; the
+      -- exception rolls back earlier writes in this transaction as well.
+      if v_contract.customer_id is not null
+         and v_contract.customer_id is distinct from v_customer_id then
+        raise exception 'quotation % is converted to contract %, but that contract belongs to customer % rather than the lead customer %; a retry cannot reconcile different customer identities',
+          v_quote.quote_no, v_contract_no, v_contract.customer_id, v_customer_id
+          using errcode = '22023';
+      end if;
+
       -- R4. The column the failure this branch repairs actually leaves null. Same
       -- statement as the first conversion's, `customer_id is null` included, so a
       -- customer somebody else put on the contract is never overwritten.

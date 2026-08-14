@@ -364,7 +364,7 @@ test("the way back out of compat is an artifact, not a migration that cannot re-
   // Pairs, not names: guard_definer_only_write() backs two guards under two
   // trigger names, and trg_require_current_session proves one name can be attached
   // to twenty tables, so a name alone does not identify a guard.
-  const sqlPairs = (sql) => [...sql.matchAll(/\(\s*'(trg_guard_[a-z_]+)'\s*,\s*'([a-z_]+)'\s*\)/g)]
+  const sqlPairs = (sql) => [...sql.matchAll(/\(\s*'(trg_guard_[a-z_]+)'\s*,\s*'([a-z_]+)'(?:\s*,\s*'[^']+'){0,2}\s*\)/g)]
     .map((m) => `${m[1]} on public.${m[2]}`);
   const manifestGuards = [...new Set(sqlPairs(guardPredicate.sql))].sort();
   assert.ok(manifestGuards.length > 0, "the posture predicate must declare (trigger, table) pairs");
@@ -372,7 +372,7 @@ test("the way back out of compat is an artifact, not a migration that cannot re-
   const guardArray = /v_guards\s+text\[\]\[\]\s*:=\s*array\[([\s\S]*?)\];/.exec(recontractSql);
   assert.ok(guardArray, "the artifact must name the guards it requires");
   const plpgsqlGuards = [...new Set(
-    [...guardArray[1].matchAll(/\[\s*'(trg_guard_[a-z_]+)'\s*,\s*'([a-z_]+)'\s*\]/g)]
+    [...guardArray[1].matchAll(/\[\s*'(trg_guard_[a-z_]+)'\s*,\s*'([a-z_]+)'(?:\s*,\s*'[^']+'){0,2}\s*\]/g)]
       .map((m) => `${m[1]} on public.${m[2]}`),
   )].sort();
   assert.deepEqual(

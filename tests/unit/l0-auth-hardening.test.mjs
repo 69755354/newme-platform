@@ -206,8 +206,8 @@ describe("consumeRateLimit", () => {
   });
 
   it("does not let a one-shot account flood poison the IP policy", () => {
-    const shortWindow = { limit: 20, windowMs: 5 * 60 * 1000 };
-    const longWindow = { limit: 8, windowMs: 15 * 60 * 1000 };
+    const shortWindow = { limit: 20, windowMs: 5 * 60 * 1000, namespace: "flood-ip" };
+    const longWindow = { limit: 8, windowMs: 15 * 60 * 1000, namespace: "flood-account" };
     const now = 4_500_000;
     resetRateLimits();
 
@@ -224,6 +224,25 @@ describe("consumeRateLimit", () => {
       const result = consumeRateLimit(`login:ip:198.51.${Math.floor(i / 256)}.${i % 256}`, shortWindow, now);
       assert.equal(result.allowed, true, `unrelated IP ${i} must retain its first attempt`);
     }
+  });
+
+  it("does not restore a partially consumed budget after a distinct-key flood", () => {
+    const options = { limit: 8, windowMs: 15 * 60 * 1000, namespace: "partial-budget" };
+    const now = 4_625_000;
+    resetRateLimits();
+
+    let beforeFlood;
+    for (let attempt = 0; attempt < 7; attempt += 1) {
+      beforeFlood = consumeRateLimit("victim@example.invalid", options, now);
+    }
+    assert.equal(beforeFlood.remaining, 1);
+
+    for (let i = 0; i < 200_000; i += 1) {
+      consumeRateLimit(`partial-flood-${i}@example.invalid`, options, now);
+    }
+
+    const afterFlood = consumeRateLimit("victim@example.invalid", options, now);
+    assert.equal(afterFlood.remaining, 0, "flooding restored part of the victim's budget");
   });
 
   it("fails closed if one logical key is reused with a different policy", () => {

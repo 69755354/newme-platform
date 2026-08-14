@@ -50,22 +50,63 @@ temporary file is not installed directly; it merely starts the candidate's
 root-owned worktree and executes the same verifier used for every later release.
 
 ```bash
-sha=<40-hex release SHA>
-run=<successful exact-head workflow_dispatch run id>
-migration_status=<not_required|applied_verified>
-migration_ids=<exact manifest-derived required list, or empty>
-rollback_sha=<current immutable production SHA>
+set -Eeuo pipefail
+
+sha='<40-lowercase-hex release SHA>'
+run='<positive successful exact-head workflow_dispatch run id>'
+migration_status='<not_required|applied_verified>'
+migration_ids='<exact comma-separated 14-digit manifest-derived required list, or empty>'
+rollback_sha='<40-lowercase-hex current immutable production SHA>'
+
+[[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid release SHA" >&2; exit 64; }
+[[ "$run" =~ ^[1-9][0-9]*$ ]] || { echo "invalid workflow run id" >&2; exit 64; }
+[[ "$rollback_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid rollback SHA" >&2; exit 64; }
+case "$migration_status" in
+  not_required)
+    [ -z "$migration_ids" ] || { echo "not_required must carry no migration ids" >&2; exit 64; }
+    ;;
+  applied_verified)
+    [[ "$migration_ids" =~ ^[0-9]{14}(,[0-9]{14})*$ ]] || {
+      echo "applied_verified requires comma-separated 14-digit migration ids" >&2
+      exit 64
+    }
+    ;;
+  *) echo "invalid migration status" >&2; exit 64 ;;
+esac
+
+coordinator=''
+cleanup() {
+  rc=$?
+  cleanup_rc=0
+  trap - EXIT
+  set +e
+  if [ -n "$coordinator" ]; then
+    sudo rm -f -- "$coordinator"
+    cleanup_rc=$?
+  fi
+  if [ "$rc" -eq 0 ] && [ "$cleanup_rc" -ne 0 ]; then
+    rc=$cleanup_rc
+  fi
+  exit "$rc"
+}
+trap cleanup EXIT
 
 coordinator="$(sudo mktemp /run/newme-bootstrap.XXXXXX)"
 sudo chmod 0700 "$coordinator"
 sudo git --git-dir=/opt/newme/repository.git show \
-  "$sha:infra/systemd/newme-deploy.sh" | sudo tee "$coordinator" >/dev/null
+  "${sha}:infra/systemd/newme-deploy.sh" | sudo tee "$coordinator" >/dev/null
+sudo test -s "$coordinator"
 sudo bash "$coordinator" bootstrap \
   "$sha" "$run" "$migration_status" "$migration_ids" "$rollback_sha"
-rc=$?
-sudo rm -f -- "$coordinator"
-exit "$rc"
+sudo cmp -s "$coordinator" /usr/local/sbin/newme-deploy
 ```
+
+The strict shell options make a failed `git show` fail the pipeline even if
+`tee` itself succeeds. The non-empty check prevents an empty coordinator from
+being executed, and the `EXIT` trap removes the root-owned temporary file while
+preserving the original failure status. The final byte comparison proves that a
+reported bootstrap installed the exact coordinator fetched from the candidate
+SHA; any mismatch is a failed bootstrap invocation, not success evidence.
 
 The `bootstrap` entry point performs, in order:
 

@@ -299,6 +299,9 @@ function parseArgs(argv) {
         break;
       case "--url-file":
         options.urlFile = next();
+        if (/^postgres(ql)?:\/\//.test(options.urlFile)) {
+          throw new Error("the connection string must be read from a file, never passed as an argument");
+        }
         break;
       case "--manifest":
         options.manifest = next();
@@ -334,7 +337,7 @@ function parseArgs(argv) {
 }
 
 /** Read the URL without letting it reach stdout, stderr, argv or an env var. */
-function readUrlFile(file) {
+export function readUrlFile(file) {
   const stat = fs.lstatSync(file);
   if (stat.isSymbolicLink()) throw new Error("the connection URL file is a symlink");
   if (!stat.isFile()) throw new Error("the connection URL file is not a regular file");
@@ -348,7 +351,7 @@ function readUrlFile(file) {
   return value;
 }
 
-function loadPg(modulesDir) {
+export function loadPg(modulesDir) {
   const here = fileURLToPath(import.meta.url);
   const candidates = [];
   if (modulesDir) candidates.push(path.join(modulesDir, "__resolve__.cjs"));

@@ -288,16 +288,25 @@ test("the Bearer path asks the database for the flag it enforces", async (t) => 
 });
 
 test("the shared auth context refuses a forced session and lets the escape hatch opt out", async () => {
-  const profileRow = (profile) => ({
+  const profileRow = (profile, state) => ({
     from: () => ({
       select: () => ({ eq: () => ({ single: async () => ({ data: profile, error: null }) }) }),
     }),
     auth: { getUser: async () => ({ data: { user: { id: "u1" } }, error: null }) },
+    rpc: async (name) => {
+      assert.equal(name, "session_boundary_state");
+      return { data: state, error: null };
+    },
   });
-  const load = (profile) => loadModule("src/lib/request-auth-context.ts", {
+  const load = (
+    profile,
+    state = profile.is_active !== true
+      ? "inactive"
+      : profile.force_password_change ? "password_change_required" : "ok",
+  ) => loadModule("src/lib/request-auth-context.ts", {
     "next/server": nextServer(),
     "@/lib/supabase-server": {
-      createServerSupabase: async () => profileRow(profile),
+      createServerSupabase: async () => profileRow(profile, state),
       getRefreshAttempted: () => false,
       getRefreshFailure: () => undefined,
       getRefreshedCookies: () => [],
@@ -336,6 +345,122 @@ test("the shared auth context refuses a forced session and lets the escape hatch
   const inactiveError = await inactive.getRequestAuthContext(httpRequest).then(() => null, (caught) => caught);
   assert.equal(inactiveError.code, "inactive_account");
   assert.equal(inactiveError.status, 401);
+
+  // The profile self-read is deliberately available to a stale token so the
+  // client can explain the refusal. The authoritative database verdict must
+  // therefore stop that token before a route receives an auth context.
+  const stale = load({ ...CLEAR, password_changed_at: "2099-01-01T00:00:00Z" }, "token_stale");
+  const staleError = await stale.getRequestAuthContext(httpRequest).then(() => null, (caught) => caught);
+  assert.equal(staleError.code, "unauthorized");
+  assert.equal(staleError.status, 401);
+  assert.equal(staleError.clearSession, true);
+});
+
+test("the impersonation handler independently refuses a revoked, forced, or stale Bearer identity", async (t) => {
+  const run = async (boundaryState) => {
+    let capturedBearer;
+    let capturedCookie;
+    const adminCalls = [];
+    const callerProfile = {
+      ...CLEAR,
+      id: "bearer-user-b",
+      email: "bearer-admin@example.invalid",
+      full_name: "Bearer Admin",
+    };
+    const callerClient = {
+      auth: { getUser: async () => ({ data: { user: { id: "bearer-user-b", email: callerProfile.email } }, error: null }) },
+      rpc: async (name) => {
+        assert.equal(name, "session_boundary_state");
+        return { data: boundaryState, error: null };
+      },
+      from: () => ({
+        select: () => ({
+          eq: () => ({ single: async () => ({ data: callerProfile, error: null }) }),
+        }),
+      }),
+    };
+    const requestAuth = loadModule("src/lib/request-auth-context.ts", {
+      "next/server": nextServer(),
+      "@/lib/supabase-server": {
+        createServerSupabase: async (bearer, cookie) => {
+          capturedBearer = bearer;
+          capturedCookie = cookie;
+          return callerClient;
+        },
+        getRefreshAttempted: () => false,
+        getRefreshFailure: () => undefined,
+        getRefreshedCookies: () => [],
+      },
+      "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => ({ authToken: "a", refreshToken: "r" }) },
+      "@/lib/forced-password-change.mjs": { FORCED_SESSION_ERROR, isForcedPasswordChange },
+    });
+    const target = {
+      id: "target-user",
+      email: "target@example.invalid",
+      full_name: "Target User",
+      role: "sales",
+    };
+    const admin = {
+      auth: {
+        admin: {
+          generateLink: async () => {
+            adminCalls.push("generateLink");
+            return { data: { properties: { action_link: "https://example.invalid/link" } }, error: null };
+          },
+        },
+      },
+      from: (table) => {
+        adminCalls.push(`from:${table}`);
+        if (table === "audit_logs") {
+          return {
+            insert: (values) => {
+              adminCalls.push({ op: "audit", values });
+              return Promise.resolve({ error: null });
+            },
+          };
+        }
+        return {
+          select: () => ({
+            eq: () => ({ single: async () => ({ data: target, error: null }) }),
+          }),
+        };
+      },
+    };
+    const route = loadModule("src/app/api/admin/impersonate/route.ts", {
+      "next/server": nextServer(),
+      "@/lib/request-auth-context": requestAuth,
+      "@/lib/supabase-admin": { supabaseAdmin: admin },
+    });
+    const response = await route.POST(new Request("https://app.newme.ae/api/admin/impersonate", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer bearer-user-b-token",
+        Cookie: "sb-cookie-session=active-user-a",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ targetUserId: target.id }),
+    }));
+    return { adminCalls, capturedBearer, capturedCookie, response };
+  };
+
+  for (const [state, status] of [
+    ["inactive", 401],
+    ["token_stale", 401],
+    ["password_change_required", 403],
+  ]) {
+    await t.test(state, async () => {
+      const result = await run(state);
+      assert.equal(result.response.status, status);
+      assert.deepEqual(result.adminCalls, [], `${state} identity reached the service-role client`);
+      assert.equal(result.capturedBearer, "bearer-user-b-token");
+      assert.equal(result.capturedCookie, "sb-cookie-session=active-user-a");
+    });
+  }
+
+  const valid = await run("ok");
+  assert.equal(valid.response.status, 200);
+  assert.ok(valid.adminCalls.includes("generateLink"), "a valid admin never reached link generation");
+  assert.ok(valid.adminCalls.includes("from:audit_logs"), "a valid impersonation was not audited");
 });
 
 // --- 3 · the inventory ------------------------------------------------------

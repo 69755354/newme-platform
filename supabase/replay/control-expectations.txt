@@ -406,24 +406,26 @@ fail b6-the-conversion-puts-that-customer-on-the-project-and-the-contract
 fail b5-a-conversion-retry-does-not-add-the-amount-again
 fail b5-a-retry-asking-for-a-different-schedule-is-refused
 
-# R4 · 20260817170000_b5_retry_reaches_the_same_state.sql. All five are
+# R4 · 20260817170000_b5_retry_reaches_the_same_state.sql. All six are
 # load-bearing: the floor has no convert_quotation_to_contract() at all, so the
 # probe reports the SQLSTATE of a missing function (recorded as
 # ASSERT_UNMEASURABLE [42883] in the run) instead of the three repaired rows and
 # the refusal it is looking for.
 #
 # That is the weaker of the two controls, because "the floor has no function" would
-# also be reported by five assertions that measure nothing. So the same five were
+# also be reported by six assertions that measure nothing. So the same six were
 # run against the release with only 20260817170000 withheld — floor, the other
 # nineteen migrations, these fixtures, the same nineteen re-applied — and there the
-# ledger ends total=342 passed=336 failed=6 with 0 ASSERT_UNMEASURABLE: exactly
-# these five fail, for the finding itself. The retry returns quotation_status
+# earlier five-assertion ledger ended total=342 passed=336 failed=6 with 0
+# ASSERT_UNMEASURABLE. The new conflicting-customer assertion is remeasured by
+# the current control run. The retry returns quotation_status
 # 'accepted', project_id null and finalized [], repairs none of the three rows, and
 # answers sqlstate 00000 to a retry against a lead marked 'lost'.
 fail r4-a-retry-restores-the-converted-quotation-status
 fail r4-a-retry-marks-the-lead-won-again
 fail r4-a-retry-backfills-the-contract-customer
 fail r4-a-retry-returns-the-project-and-reports-what-it-repaired
+fail r4-a-retry-refuses-a-conflicting-contract-customer
 fail r4-a-retry-refuses-a-lead-given-a-different-terminal-status
 fail b10-a-conversion-schedule-must-equal-the-quotation-exactly
 fail b7-saving-a-period-preserves-what-was-collected

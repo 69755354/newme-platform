@@ -1,7 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 
 /**
- * Fixed-window rate limiter over a fixed-size slot table.
+ * Sliding-window rate limiter over fixed-size, process-keyed Count-Min sketches.
  *
  * Server-side password authentication concentrates every user's login attempts
  * behind one origin IP, which collapses the upstream per-IP brute-force
@@ -30,36 +30,52 @@ import { createHmac, randomBytes } from "node:crypto";
  *  3. UNBOUNDED KEY LENGTH. Keys embedded a caller-supplied email with no length
  *     bound, so each tracked entry could be arbitrarily large.
  *
- * All three are structural consequences of a growable, keyed table, so the table
- * is gone. Keys are hashed into a fixed, four-way set-associative table:
+ * All three are structural consequences of a growable, keyed table. A later
+ * four-way cache removed the memory leak but introduced another bypass: an
+ * active bucket below its limit was replaceable, so a distinct-key flood could
+ * reset a victim from 7/8 attempts back to 1/8. Protecting every cache entry
+ * would instead turn cardinality into a global login-denial switch.
  *
- *   * memory is bounded by construction — no eviction policy exists to get
- *     wrong, and no request can ever cause another key's counter to be dropped;
- *   * every operation is O(1) — no sweep, so cost does not depend on traffic;
- *   * only a process-keyed 64-bit fingerprint is retained, so no caller-supplied
- *     string (and no email address) is held in memory at all.
+ * The rolling sketches have neither failure mode:
  *
- * Distinct keys never share a counter merely because they land in the same set.
- * An entry that has reached its allowance is protected until its window expires;
- * an entry still below its allowance may be replaced when all four ways are in
- * use. If all four ways are protected, the new key fails closed until the first
- * protected window expires. The process-random HMAC key prevents an anonymous
- * caller from precomputing a chosen set collision from this public source tree.
+ *   * counters are never evicted inside their window, so traffic cannot restore
+ *     a consumed budget;
+ *   * collisions only increase an estimate. They can conservatively refuse a
+ *     request but can never grant an extra attempt;
+ *   * account and IP policies have separate developer-chosen namespaces, so a
+ *     high-cardinality account stream cannot contaminate the IP boundary;
+ *   * memory and work are bounded, and only process-keyed hashes are retained.
+ *
+ * Thirty-two time slices bound the sliding-window approximation to less than
+ * one slice. The process-random HMAC key prevents a remote caller from choosing
+ * collisions from the public source tree.
  */
 
-const SLOT_COUNT = 16384;
-const WAY_COUNT = 4;
-const SET_COUNT = SLOT_COUNT / WAY_COUNT;
-const SET_MASK = SET_COUNT - 1;
+const SKETCH_WIDTH = 1 << 16;
+const SKETCH_MASK = SKETCH_WIDTH - 1;
+const SKETCH_DEPTH = 4;
+const TIME_SLICES = 32;
+const MAX_NAMESPACES = 8;
 const HASH_KEY = randomBytes(32);
 
-// Parallel arrays rather than objects: fixed allocation, no per-entry GC.
-const counts = new Int32Array(SLOT_COUNT);
-const resetAt = new Float64Array(SLOT_COUNT);
-const limits = new Float64Array(SLOT_COUNT);
-const windowMs = new Float64Array(SLOT_COUNT);
-const fingerprintHigh = new Uint32Array(SLOT_COUNT);
-const fingerprintLow = new Uint32Array(SLOT_COUNT);
+type RateLimitOptions = {
+  limit: number;
+  windowMs: number;
+  /** A static call-site name. Never pass caller-controlled input here. */
+  namespace?: string;
+};
+
+type NamespaceState = {
+  counts: Uint8Array;
+  generations: Int32Array;
+  limit: number;
+  namespace: string;
+  originAt: number;
+  sliceMs: number;
+  windowMs: number;
+};
+
+const namespaceStates = new Map<string, NamespaceState>();
 
 /**
  * Client identity for limiting. The release nginx config always overwrites
@@ -78,129 +94,125 @@ export function clientIdentifier(request: Request): string {
   );
 }
 
-/**
- * Map a key of any length to one set and a 64-bit identity tag. The HMAC key is
- * generated per process and never exposed, so the public key format does not let
- * a caller calculate a chosen collision. The input itself is not retained.
- */
-function identityFor(key: string): {
-  setStart: number;
-  high: number;
-  low: number;
-} {
-  const digest = createHmac("sha256", HASH_KEY).update(key).digest();
-  return {
-    setStart: (digest.readUInt32LE(0) & SET_MASK) * WAY_COUNT,
-    high: digest.readUInt32LE(4),
-    low: digest.readUInt32LE(8),
-  };
-}
-
-function startWindow(
-  slot: number,
-  identity: { high: number; low: number },
-  options: { limit: number; windowMs: number },
-  now: number,
-): RateLimitResult {
-  fingerprintHigh[slot] = identity.high;
-  fingerprintLow[slot] = identity.low;
-  counts[slot] = 1;
-  resetAt[slot] = now + options.windowMs;
-  limits[slot] = options.limit;
-  windowMs[slot] = options.windowMs;
-  return { allowed: true, remaining: options.limit - 1, retryAfterSeconds: 0 };
-}
-
 export type RateLimitResult = {
   allowed: boolean;
   remaining: number;
   retryAfterSeconds: number;
 };
 
+function refusal(retryAfterSeconds: number): RateLimitResult {
+  return {
+    allowed: false,
+    remaining: 0,
+    retryAfterSeconds: Math.max(1, Math.ceil(retryAfterSeconds)),
+  };
+}
+
+function stateFor(options: RateLimitOptions, now: number): NamespaceState | null {
+  const namespace = options.namespace ?? "default";
+  if (
+    !Number.isSafeInteger(options.limit)
+    || options.limit < 1
+    || options.limit > 255
+    || !Number.isFinite(options.windowMs)
+    || options.windowMs < TIME_SLICES
+    || typeof namespace !== "string"
+    || namespace.length < 1
+    || namespace.length > 64
+  ) {
+    return null;
+  }
+
+  const existing = namespaceStates.get(namespace);
+  if (existing) {
+    if (existing.limit !== options.limit || existing.windowMs !== options.windowMs) return null;
+    if (now < existing.originAt) {
+      existing.counts.fill(0);
+      existing.generations.fill(-1);
+      existing.originAt = now;
+    }
+    return existing;
+  }
+  if (namespaceStates.size >= MAX_NAMESPACES) return null;
+
+  const state: NamespaceState = {
+    counts: new Uint8Array(TIME_SLICES * SKETCH_DEPTH * SKETCH_WIDTH),
+    generations: new Int32Array(TIME_SLICES),
+    limit: options.limit,
+    namespace,
+    originAt: now,
+    sliceMs: Math.ceil(options.windowMs / TIME_SLICES),
+    windowMs: options.windowMs,
+  };
+  state.generations.fill(-1);
+  namespaceStates.set(namespace, state);
+  return state;
+}
+
+function counterOffset(slice: number, depth: number, index: number): number {
+  return ((slice * SKETCH_DEPTH + depth) * SKETCH_WIDTH) + index;
+}
+
+function indicesFor(namespace: string, key: string): number[] {
+  const digest = createHmac("sha256", HASH_KEY)
+    .update(namespace)
+    .update("\0")
+    .update(key)
+    .digest();
+  return [0, 4, 8, 12].map((offset) => digest.readUInt32LE(offset) & SKETCH_MASK);
+}
+
 export function consumeRateLimit(
   key: string,
-  options: { limit: number; windowMs: number },
+  options: RateLimitOptions,
   now: number = Date.now(),
 ): RateLimitResult {
-  const identity = identityFor(key);
-  let matchingSlot = -1;
-  let emptySlot = -1;
-  let replaceableSlot = -1;
-  let protectedReset = Number.POSITIVE_INFINITY;
+  const safeNow = Number.isFinite(now) ? now : Date.now();
+  const state = stateFor(options, safeNow);
+  if (!state) return refusal(options.windowMs / 1000);
 
-  for (let way = 0; way < WAY_COUNT; way += 1) {
-    const slot = identity.setStart + way;
-    if (resetAt[slot] <= now) {
-      if (emptySlot === -1) emptySlot = slot;
-      continue;
-    }
-    if (
-      fingerprintHigh[slot] === identity.high
-      && fingerprintLow[slot] === identity.low
-    ) {
-      matchingSlot = slot;
-      break;
-    }
-    // Once a key has consumed its complete allowance, keep its identity until
-    // expiry. That prevents a distinct-key flood from evicting an exhausted
-    // victim and restoring a brute-force budget.
-    if (counts[slot] < limits[slot]) {
-      if (
-        replaceableSlot === -1
-        || resetAt[slot] < resetAt[replaceableSlot]
-      ) {
-        replaceableSlot = slot;
-      }
-    } else {
-      protectedReset = Math.min(protectedReset, resetAt[slot]);
-    }
+  const generation = Math.floor((safeNow - state.originAt) / state.sliceMs);
+  const currentSlice = generation % TIME_SLICES;
+  if (state.generations[currentSlice] !== generation) {
+    const start = currentSlice * SKETCH_DEPTH * SKETCH_WIDTH;
+    state.counts.fill(0, start, start + SKETCH_DEPTH * SKETCH_WIDTH);
+    state.generations[currentSlice] = generation;
   }
 
-  if (matchingSlot === -1) {
-    const available = emptySlot !== -1 ? emptySlot : replaceableSlot;
-    if (available !== -1) return startWindow(available, identity, options, now);
-    return {
-      allowed: false,
-      remaining: 0,
-      retryAfterSeconds: Math.max(1, Math.ceil((protectedReset - now) / 1000)),
-    };
+  const indices = indicesFor(state.namespace, key);
+  const oldestGeneration = Math.max(0, generation - TIME_SLICES + 1);
+  let estimate = Number.POSITIVE_INFINITY;
+  for (let depth = 0; depth < SKETCH_DEPTH; depth += 1) {
+    let depthTotal = 0;
+    for (let active = oldestGeneration; active <= generation; active += 1) {
+      const slice = active % TIME_SLICES;
+      if (state.generations[slice] !== active) continue;
+      depthTotal += state.counts[counterOffset(slice, depth, indices[depth])];
+    }
+    estimate = Math.min(estimate, depthTotal);
   }
 
-  const slot = matchingSlot;
-  // The same logical key must not be reused with a weaker policy while its
-  // bucket is active.
-  if (limits[slot] !== options.limit || windowMs[slot] !== options.windowMs) {
-    return {
-      allowed: false,
-      remaining: 0,
-      retryAfterSeconds: Math.max(1, Math.ceil((resetAt[slot] - now) / 1000)),
-    };
+  for (let depth = 0; depth < SKETCH_DEPTH; depth += 1) {
+    const offset = counterOffset(currentSlice, depth, indices[depth]);
+    if (state.counts[offset] < 255) state.counts[offset] += 1;
   }
 
-  // Saturate rather than wrap: a sustained flood must not roll Int32 negative
-  // and hand out a fresh budget.
-  if (counts[slot] < 0x7fffffff) counts[slot] += 1;
-
-  if (counts[slot] > options.limit) {
-    return {
-      allowed: false,
-      remaining: 0,
-      retryAfterSeconds: Math.max(1, Math.ceil((resetAt[slot] - now) / 1000)),
-    };
+  const nextEstimate = estimate + 1;
+  if (nextEstimate > state.limit) {
+    // This upper bound waits until every contribution visible in the current
+    // slice has left the rolling window. It may be stricter than necessary after
+    // a collision, but it never promises a retry time that restores budget early.
+    const fullyResetAt = state.originAt + (generation + TIME_SLICES) * state.sliceMs;
+    return refusal((fullyResetAt - safeNow) / 1000);
   }
   return {
     allowed: true,
-    remaining: options.limit - counts[slot],
+    remaining: state.limit - nextEstimate,
     retryAfterSeconds: 0,
   };
 }
 
 /** Test-only reset so suites do not leak counters between cases. */
 export function resetRateLimits(): void {
-  counts.fill(0);
-  resetAt.fill(0);
-  limits.fill(0);
-  windowMs.fill(0);
-  fingerprintHigh.fill(0);
-  fingerprintLow.fill(0);
+  namespaceStates.clear();
 }

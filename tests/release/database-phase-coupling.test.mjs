@@ -47,6 +47,10 @@ import {
   readManifest,
   readTreeFiles,
 } from "../../scripts/check-release-manifest.mjs";
+import {
+  OPERATIONS as COMPANION_OPERATIONS,
+  parseArgs as parseCompanionArgs,
+} from "../../scripts/db-companion-run.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const GATE = path.join(ROOT, "scripts", "check-release-phase.mjs");
@@ -347,6 +351,64 @@ test("production rollback verifies the phase before it switches releases", () =>
   assert.doesNotMatch(restore, /read_target_database_phase/);
 });
 
+test("production database writes use the canonical release lock and an exact-SHA operation allowlist", () => {
+  const source = read("infra/systemd/newme-deploy.sh").replaceAll("\r\n", "\n");
+  const lock = source.indexOf("exec 9>/run/lock/newme-production-release.lock");
+  const dispatch = source.indexOf('case "${1:-}" in');
+  const canonicalMain = source.indexOf('[ "$SHA" = "$MAIN_SHA" ]');
+  const exactRun = source.indexOf('run.get("head_sha") != expected_sha');
+  const transition = source.lastIndexOf('if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then');
+  assert.ok(lock >= 0 && lock < dispatch, "the db-transition parser runs before the shared release lock");
+  assert.ok(canonicalMain > dispatch && canonicalMain < transition, "db-transition is not gated on canonical main");
+  assert.ok(exactRun > canonicalMain && exactRun < transition, "db-transition is not gated on the exact successful run");
+
+  const body = source.slice(transition, source.indexOf("install -d -o root", transition));
+  assert.match(body, /worktree add --detach "\$WORKTREE" "\$MAIN_SHA"/);
+  assert.match(body, /verify_exact_tree_release_gates \|\| exit 65/);
+  assert.match(body, /validate_migration_db_url_file \|\| exit 65/);
+  assert.match(body, /--url-file "\$MIGRATION_DB_URL_FILE"/);
+  assert.match(body, /--modules-dir "\$LIVE_RELEASE\/node_modules"/);
+  assert.match(body, /expand-plan\)[\s\S]*--phase required_for_app --plan/);
+  assert.match(body, /expand-apply\)[\s\S]*--phase required_for_app --apply/);
+  assert.match(body, /contract-apply\)[\s\S]*--phase deferred_contract --apply/);
+  assert.match(body, /contract-verify\)[\s\S]*--phase deferred_contract --verify-only/);
+  assert.match(body, /contract-rollback\|contract-reenter\)[\s\S]*db-companion-run\.mjs/);
+  assert.doesNotMatch(body, /psql|PGSERVICE|--manifest|postgres(?:ql)?:\/\//i);
+
+  assert.match(
+    source,
+    /expand-plan\|expand-apply\|contract-apply\|contract-verify\|contract-rollback\|contract-reenter\) ;;/,
+  );
+  assert.doesNotMatch(source, /DB_TRANSITION_OPERATION=.*\$\{4:-\}|db-transition.*<sql|db-transition.*<path/i);
+});
+
+test("the companion helper accepts operation names, never caller-selected SQL", () => {
+  assert.deepEqual(Object.keys(COMPANION_OPERATIONS).sort(), ["contract-reenter", "contract-rollback"]);
+  assert.equal(
+    parseCompanionArgs([
+      "--operation", "contract-rollback",
+      "--url-file", "root-owned-url-file",
+      "--modules-dir", "immutable-modules",
+    ]).operation,
+    "contract-rollback",
+  );
+  for (const argv of [
+    [],
+    ["--operation", "../rollback.sql", "--url-file", "x", "--modules-dir", "y"],
+    ["--operation", "contract-rollback", "--url-file", "postgres://example.invalid/x", "--modules-dir", "y"],
+    ["--operation", "contract-rollback", "--url", "postgres://example.invalid/x", "--modules-dir", "y"],
+    ["--operation", "contract-rollback", "--url-file", "x"],
+  ]) {
+    assert.throws(() => parseCompanionArgs(argv));
+  }
+  const helper = read("scripts/db-companion-run.mjs");
+  assert.match(helper, /auditManifest\(\{ manifest, files, hashes, baseline: readBaseline\(\) \}\)/);
+  assert.match(helper, /contentHash\(sql\) !== entry\.sha256/);
+  assert.match(helper, /rollback_money_direct_write_contract_phase\.sql/);
+  assert.match(helper, /recontract_money_direct_write_contract_phase\.sql/);
+  assert.doesNotMatch(helper, /readFileSync\(options\.operation|path\.join\([^\n]*options\.operation/);
+});
+
 test("the observed phase is part of the durable transaction record", () => {
   const source = read("infra/systemd/newme-production-rollback.sh").replaceAll("\r\n", "\n");
   // Written in the record, between the asset backup and the state, so a resumed or
@@ -395,10 +457,11 @@ test("finalization requires strict before it may call a release complete", () =>
     "a fail finalization is blocked by the completion gate",
   );
 
-  // One definition of the URL file and its validation, used by both entry points.
+  // One definition of the URL file and its validation, used by deploy,
+  // db-transition and successful finalization.
   assert.equal(source.split("MIGRATION_DB_URL_FILE=/etc/newme/migration-db.url").length - 1, 1);
   assert.equal(source.split("validate_migration_db_url_file() {").length - 1, 1);
-  assert.equal(source.split("validate_migration_db_url_file || exit 65").length - 1, 2);
+  assert.equal(source.split("validate_migration_db_url_file || exit 65").length - 1, 3);
 });
 
 test("the gate the deploy path runs is committed, and the phases agree with the runbook", () => {

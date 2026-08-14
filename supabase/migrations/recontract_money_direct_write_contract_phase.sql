@@ -45,7 +45,9 @@
 --   * public.money_release_mode exists, and
 --   * public.money_direct_write_mode() and public.money_direct_write_is_blocked()
 --     exist, and
---   * the SIX mode-gated guard triggers are present and ENABLED: contracts,
+--   * the SIX mode-gated guard triggers are present, ENABLED, still bound to
+--     their declared trigger functions, and those functions still consult the
+--     release-mode gate as SECURITY INVOKER: contracts,
 --     payments, installment_plans, contract_approvals, payment_allocations and
 --     quotations. These are the same six the `deferred_contract` posture predicate
 --     `strict-mode-controlled-guards-match-the-declaration` names in
@@ -110,16 +112,19 @@ do $do$
 declare
   v_mode     text;
   v_missing  text[] := '{}';
-  -- The six mode-gated guards, as (trigger, table) pairs: a trigger name alone is
-  -- not the guard, because trg_require_current_session proves one name can be
-  -- attached to twenty tables, and guard_definer_only_write() backs two of these
-  -- six under two different trigger names.
-  v_guards   text[][] := array[['trg_guard_contracts_write',           'contracts'],
-                               ['trg_guard_payments_write',            'payments'],
-                               ['trg_guard_installment_plans_write',   'installment_plans'],
-                               ['trg_guard_contract_approvals_write',  'contract_approvals'],
-                               ['trg_guard_payment_allocations_write', 'payment_allocations'],
-                               ['trg_guard_quotations_write',          'quotations']];
+  -- The six mode-gated guards, as (trigger, table, function, exact prosrc SHA-256)
+  -- declarations. A trigger name alone is not the guard, because
+  -- trg_require_current_session proves one name can be attached to twenty tables,
+  -- and guard_definer_only_write() backs two of these six under two different
+  -- trigger names. The digest is over pg_proc.prosrc's UTF-8 bytes after a clean
+  -- replay of the numbered migrations; it prevents a no-op body from satisfying
+  -- this check merely by retaining the gate name in a comment or string literal.
+  v_guards   text[][] := array[['trg_guard_contracts_write',           'contracts',           'public.guard_contracts_write()',         '4cf1b6b7264ec7e8228f51ea57c8acb0f0aa09d5806c041cea520d52c8e92012'],
+                               ['trg_guard_payments_write',            'payments',            'public.guard_payments_write()',          'c32179d89b956eb24a187b441a706b82ee04e4462067406edb92d2552b32a1e8'],
+                               ['trg_guard_installment_plans_write',   'installment_plans',   'public.guard_installment_plans_write()', 'fcf92768dc68b6450e200c4b22b30ce27b0aa90471b5a18f39f78b461683e052'],
+                               ['trg_guard_contract_approvals_write',  'contract_approvals',  'public.guard_definer_only_write()',       '0ac33b97358b40023346fb09647c5927613ac6888be443c3aff47984c82615bb'],
+                               ['trg_guard_payment_allocations_write', 'payment_allocations', 'public.guard_definer_only_write()',       '0ac33b97358b40023346fb09647c5927613ac6888be443c3aff47984c82615bb'],
+                               ['trg_guard_quotations_write',          'quotations',          'public.guard_quotations_write()',         '830b4dabef7df1e3709e23a33cbeda27c065964e7a737b632c8670d591e36e45']];
   v_routines text[] := array['public.replace_kpi_targets(text, jsonb, uuid)',
                              'public.clear_kpi_targets(text, uuid)'];
   v_routine  text;
@@ -163,20 +168,32 @@ begin
   -- And the guards are what turn 'strict' into a refusal. `tgenabled = 'O'` is
   -- the default origin setting; a trigger left DISABLED reads as present in
   -- pg_trigger and refuses nothing, which is precisely the false posture this
-  -- check exists to catch. The table is named as well as the trigger, so a guard
-  -- re-attached to the wrong relation is a miss rather than a match.
+  -- check exists to catch. The table and function are named as well as the
+  -- trigger, so a guard re-attached to the wrong relation or rebound to a
+  -- different function is a miss rather than a match. Requiring the exact shipped
+  -- function-body digest catches in-place no-op replacements, including bodies
+  -- that mention money_direct_write_is_blocked() only in a comment or literal.
   for i in 1 .. array_length(v_guards, 1) loop
     if not exists (select 1
                      from pg_trigger g
                      join pg_class c on c.oid = g.tgrelid
                      join pg_namespace n on n.oid = c.relnamespace
+                     join pg_proc p on p.oid = g.tgfoid
                     where not g.tgisinternal
                       and g.tgenabled = 'O'
                       and n.nspname = 'public'
                       and g.tgname = v_guards[i][1]
-                      and c.relname = v_guards[i][2]) then
-      v_missing := v_missing || ('enabled trigger ' || v_guards[i][1]
-                                 || ' on public.' || v_guards[i][2]);
+                      and c.relname = v_guards[i][2]
+                      and p.prokind = 'f'
+                      and not p.prosecdef
+                      and g.tgfoid = to_regprocedure(v_guards[i][3])
+                      and pg_catalog.encode(
+                            pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')),
+                            'hex'
+                          ) = v_guards[i][4]) then
+      v_missing := v_missing || ('enabled mode-gated trigger ' || v_guards[i][1]
+                                 || ' on public.' || v_guards[i][2]
+                                 || ' backed by ' || v_guards[i][3]);
     end if;
   end loop;
 

@@ -335,7 +335,7 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   const liveReleaseGateStart = deploy.indexOf('LIVE_RELEASE="$(readlink -f /opt/newme/current');
   const controlSourceStart = deploy.indexOf("\nservice_control_source=", liveReleaseGateStart);
   const liveReleaseGate = deploy.slice(liveReleaseGateStart, controlSourceStart).replaceAll("\r\n", "\n").trimEnd();
-  assert.match(liveReleaseGate, /\}\nif \[ "\$ROLLBACK_SHA" != "\$LEGACY_EVIDENCELESS_BASELINE" \]; then/);
+  assert.match(liveReleaseGate, /fi\nif \[ "\$ROLLBACK_SHA" != "\$LEGACY_EVIDENCELESS_BASELINE" \]; then/);
   assert.match(liveReleaseGate, /if evidence\.get\("git_sha"\) != expected_sha or evidence\.get\("release_status"\) != "complete":\n    raise SystemExit\(65\)\nPY\nfi$/);
 
   assert.match(immutableDeploy, /ROLLBACK=.*current\.rollback/);

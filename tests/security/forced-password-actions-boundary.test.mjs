@@ -115,7 +115,7 @@ function builder(result, record) {
  * error, so an action that gets past the gate fails on its own next step rather
  * than on a missing mock, and the failure is distinguishable from a refusal.
  */
-function sessionClient(profile, log, user) {
+function sessionClient(profile, log, user, boundaryState) {
   const unavailable = (table) => ({ data: null, error: { message: `${table} unavailable in this test` } });
   const identity = user !== undefined
     ? user
@@ -130,6 +130,15 @@ function sessionClient(profile, log, user) {
     ),
     rpc: (name) => {
       log.push({ client: "session", op: "rpc", rpc: name });
+      if (name === "session_boundary_state") {
+        const state = boundaryState
+          ?? (!identity ? "no_session"
+            : !profile ? "no_profile"
+              : profile.is_active !== true ? "inactive"
+                : profile.force_password_change === true ? "password_change_required"
+                  : "ok");
+        return builder({ data: state, error: null }, () => {});
+      }
       return builder({ data: null, error: { message: `rpc ${name} unavailable in this test` } }, () => {});
     },
   };
@@ -165,7 +174,7 @@ function serviceRoleClient(log) {
 function loadActions(profile, overrides = {}) {
   const log = [];
   const supabaseServer = {
-    createServerSupabase: async () => sessionClient(profile, log, overrides.user),
+    createServerSupabase: async () => sessionClient(profile, log, overrides.user, overrides.boundaryState),
   };
   const context = loadModule("src/lib/action-auth-context.ts", {
     "@/lib/supabase-server": supabaseServer,
@@ -315,7 +324,9 @@ async function invoke(modules, action) {
 /** The refusal happened at the profile read, and nothing else was touched. */
 function assertNothingTouched(log, where) {
   const beyondTheProfileRead = log.filter(
-    (entry) => entry.client !== "session" || entry.table !== "profiles" || WRITE_OPS.has(entry.op),
+    (entry) => entry.client !== "session"
+      || (entry.table !== "profiles" && entry.rpc !== "session_boundary_state")
+      || WRITE_OPS.has(entry.op),
   );
   assert.deepEqual(beyondTheProfileRead, [], `${where} reached past the auth gate`);
 }
@@ -439,6 +450,24 @@ test("a revoked identity is refused by every server action, including the opt-ou
   }
 });
 
+test("a stale access token is refused by every server action, including the opt-out", async () => {
+  for (const action of ACTIONS) {
+    const { context, log, modules } = loadActions(CLEARED, { boundaryState: "token_stale" });
+    const outcome = await invoke(modules, action);
+    const where = `${action.file}:${action.name}`;
+
+    if (action.forced === "opt-out") {
+      assert.equal(outcome.value, null, `${where} answered a stale token`);
+    } else if (action.forced === "false") {
+      assert.equal(outcome.value, false, where);
+    } else {
+      assert.ok(outcome.error instanceof context.ActionAuthError, `${where} threw ${outcome.error?.name}`);
+      assert.equal(outcome.error.code, "Unauthorized", where);
+    }
+    assertNothingTouched(log, where);
+  }
+});
+
 test("no session at all is refused by every server action before any query runs", async () => {
   for (const action of ACTIONS) {
     const { context, log, modules } = loadActions(null);
@@ -468,10 +497,11 @@ test("a session whose profile row is gone is refused, not treated as unprivilege
   const outcome = await invoke(modules, ACTIONS.find((action) => action.name === "writeBusinessEvent"));
   assert.ok(outcome.error instanceof context.ActionAuthError, `threw ${outcome.error?.name}`);
   assert.equal(outcome.error.code, "Profile not found");
-  // The profile read is the only thing that happened.
+  // The authoritative caller-scoped verdict is the only thing that happened;
+  // it refuses before a relaxed profiles self-read can turn absence into a role.
   assert.deepEqual(
-    log.map((entry) => `${entry.client}:${entry.table}:${entry.op}`),
-    ["session:profiles:select", "session:profiles:eq"],
+    log.map((entry) => `${entry.client}:${entry.rpc}:${entry.op}`),
+    ["session:session_boundary_state:rpc"],
   );
 });
 

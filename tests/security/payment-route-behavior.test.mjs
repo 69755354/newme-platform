@@ -175,14 +175,39 @@ function createSupabase(state) {
   };
 }
 
+/**
+ * The real helper's header values, read out of the real helper.
+ *
+ * R5 replaced each money route's own `Cache-Control` literal with
+ * applyPrivateNoStore(). Stubbing that here as a pass-through would let the routes
+ * under test answer without the header they now delegate; writing the values out by
+ * hand would recreate the second copy R5 removed. So the stub sends what the module
+ * sends, and fails closed if the module stops saying it in this shape.
+ */
+function privateNoStoreHeaders() {
+  const source = fs.readFileSync(path.join(repoRoot, "src/lib/request-auth-context.ts"), "utf8");
+  const cacheControl = /const PRIVATE_NO_STORE = "([^"]+)"/.exec(source);
+  const vary = /headers\.set\("Vary", "([^"]+)"\)/.exec(source);
+  assert.ok(cacheControl, "src/lib/request-auth-context.ts no longer declares PRIVATE_NO_STORE");
+  assert.ok(vary, "applyPrivateNoStore() no longer sets Vary");
+  return { "Cache-Control": cacheControl[1], Vary: vary[1] };
+}
+
 function loadRoutes(state) {
   const supabase = createSupabase(state);
+  const headers = privateNoStoreHeaders();
   const commonMocks = {
     "next/server": nextServer,
     "@/lib/supabase-server": { createServerSupabase: async () => supabase },
     "@/lib/logger": { logger, genReqId: () => "req-1" },
     "@/lib/payment-idempotency.mjs": paymentBoundary,
     "@/lib/payment-idempotency-server.mjs": paymentServer,
+    "@/lib/request-auth-context": {
+      applyPrivateNoStore: (response) => {
+        for (const [name, value] of Object.entries(headers)) response.headers.set(name, value);
+        return response;
+      },
+    },
   };
   return {
     write: loadTypeScriptModule("src/app/api/payments/route.ts", commonMocks),

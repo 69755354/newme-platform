@@ -8,6 +8,16 @@ on:
         required: false
         default: false
         type: boolean
+      release_sha:
+        description: Exact deployed release SHA being closed (release_final only)
+        required: false
+        default: ''
+        type: string
+      closure_sha:
+        description: Exact current main SHA whose only release diff is TASKBOARD.md (release_final only)
+        required: false
+        default: ''
+        type: string
   pull_request:
   push:
     branches:
@@ -135,11 +145,10 @@ jobs:
           fi
   windows-checkout:
     name: Windows checkout and SPEC gate
-    # PR runs, plus the release-final dispatch that infra/release/required-jobs.json
-    # gates production on. It was previously pull_request-only, which made it
-    # impossible for a release-final run to carry it: the canonical deploy would
-    # have had to require a job that could not exist in the run it accepts.
-    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.release_final) }}
+    # PR runs, plus every manual release-candidate dispatch. Requiring
+    # release_final here would recreate a dependency on postdeploy evidence
+    # before production has run the release.
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
@@ -168,6 +177,50 @@ jobs:
           node scripts/run-bash.mjs scripts/check-spec.sh
           if ($LASTEXITCODE -ne 0) { throw "check-spec failed" }
 
+  taskboard-predeploy:
+    name: Predeploy taskboard readiness
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require predeploy-ready taskboard
+        run: npm run check:taskboard:predeploy
+
+  control-plane-restore:
+    name: Control-plane restore interruption drill
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.release_final }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact release candidate with history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # This script intentionally rewrites /etc, /usr/local and /opt, so its own
+      # hard refusal requires a throwaway container marker. The repository is
+      # mounted read-only; there are no credentials, host services or network in
+      # the container. It performs real snapshot/install/restore operations and a
+      # deterministic SIGTERM during copy, then requires repeated restore/finalize
+      # reentry to converge.
+      - name: Run isolated SIGTERM and reentry drill
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker run --rm \
+            --network none \
+            --pids-limit 256 \
+            --memory 1g \
+            --cpus 2 \
+            --volume "$PWD:/repo:ro" \
+            --env NEWME_DRILL_CONFIRM=throwaway-container \
+            node:24-bookworm \
+            bash /repo/scripts/control-plane-restore-drill.sh
+
   taskboard-completion:
     name: Release-final taskboard completion
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_final }}
@@ -176,6 +229,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind closure to deployed release
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          CLOSURE_SHA: ${{ inputs.closure_sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "release_sha must be an exact 40-character SHA" >&2; exit 64; }
+          [[ "$CLOSURE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "closure_sha must be an exact 40-character SHA" >&2; exit 64; }
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "release-final must be dispatched on main" >&2; exit 1; }
+          [ "$CLOSURE_SHA" = "$GITHUB_SHA" ] || { echo "closure_sha is not the exact workflow SHA" >&2; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ] || { echo "checkout is not the exact workflow SHA" >&2; exit 1; }
+          node scripts/check-release-closure.mjs \
+            --release-sha "$RELEASE_SHA" \
+            --closure-sha "$CLOSURE_SHA"
 
       - name: Require completed taskboard
         run: npm run check:taskboard:complete
@@ -274,7 +345,7 @@ jobs:
   migration-replay:
     name: Migration replay and release contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     # The job above exercises four migrations under supabase/ci-local. The other
     # 106 in supabase/migrations/ — including every L0 security migration — had
     # never been executed anywhere except production. This job executes them
@@ -336,6 +407,24 @@ jobs:
       - name: Release phase manifest gate
         run: npm run check:release-manifest
 
+      # Round-4 C4-5. The hand-run companions — rollback_*.sql and
+      # recontract_*.sql — are the scripts an operator executes against production
+      # to take this release back out, and they are the one class of release SQL
+      # that no other gate here can reach: they are never applied by the CLI, never
+      # recorded in supabase_migrations.schema_migrations, and therefore excluded
+      # from the immutability gate above and from the remote-history fingerprint
+      # gate below. Two of the five are executed by no job in this workflow at all,
+      # because they cover no migration new on this branch, and a privilege
+      # escalation appended to the one that *is* executed was measured leaving the
+      # replay harness at rc=0 with every post-rollback assertion passing.
+      #
+      # The manifest gate above already refuses on drift; this step is the record:
+      # one line per companion, with its hash, in the log of the exact-head run the
+      # deploy wrapper verifies. The wrapper runs the same command against the
+      # candidate SHA's own worktree, which is what binds the two.
+      - name: Hand-run companion content binding
+        run: npm run check:release-companions
+
       - name: Install psql client
         run: |
           sudo apt-get update
@@ -372,15 +461,13 @@ jobs:
       # printed — a step whose result is discarded is not evidence, and this
       # repository has already booked that pattern as F-05.
       #
-      # The full history still does not replay from empty; that debt predates the
-      # branch and cannot be paid without a schema baseline taken by an operator
-      # who holds credentials. So what is gated is not "the history replays" but
-      # "the history fails exactly where supabase/replay/history-replay-expectation.txt
-      # says it fails": same file, same count applied before it. A branch that
-      # makes it fail earlier — the shape of an accidental edit to applied
-      # history — turns this step red, and so does a branch that fixes it without
-      # updating the expectation.
-      - name: Full migration history replay against the recorded failure point
+      # The 100 recorded migrations are immutable and several cannot replay from
+      # empty. The authenticated schema-only production capture is their flattened
+      # watermark: its bytes, provenance, zero-row property and object inventory
+      # are verified first. The exact release-manifest set after that watermark is
+      # then run through the same positive, negative, concurrent, rollback and
+      # re-entry evidence as the branch replay. This is gating, not informational.
+      - name: Captured production baseline and exact pending migration replay
         run: |
           createdb history
           MODE=history PGDATABASE=history bash scripts/replay-migrations.sh

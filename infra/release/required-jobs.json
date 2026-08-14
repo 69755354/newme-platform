@@ -14,18 +14,15 @@
     "when none of the jobs that RAN failed. Jobs skipped by an `if:` condition do",
     "not make the run anything other than green, so 'run.conclusion == success'",
     "answers 'nothing that ran failed', never 'everything that had to run, ran'.",
-    "The reviewed revision of the wrapper checked only the run, and additionally",
-    "required event == 'push' — while 'Release-final taskboard completion' is",
-    "gated on `github.event_name == 'workflow_dispatch' && inputs.release_final`.",
-    "So the one run shape it accepted was structurally incapable of containing the",
-    "one job that proves the taskboard was complete. It was not a weak gate, it",
-    "was an unsatisfiable one, recorded as satisfied.",
+    "The reviewed revision of the wrapper checked only the run and accepted a",
+    "push event, while the explicit predeploy taskboard job runs only on a manual",
+    "release-candidate dispatch. The accepted run shape therefore could not carry",
+    "the required predeploy set.",
     "",
-    "'Release-final taskboard completion' is therefore load-bearing twice over:",
-    "it runs `npm run check:taskboard:complete` at the release SHA, and because it",
-    "exists in the job list at all, it is the proof that the dispatch carried",
-    "release_final = true. The runs API does not expose workflow_dispatch inputs,",
-    "so this is the only way to establish that from the API."
+    "Release-final taskboard completion is intentionally not listed here. It runs",
+    "after production evidence exists, at a later closure SHA, and is governed by",
+    "infra/release/final-required-jobs.json plus check-release-closure.mjs. Making",
+    "that postdeploy fact a precondition of this release would be circular."
   ],
   "workflow": "ci",
   "event": "workflow_dispatch",
@@ -37,11 +34,15 @@
     },
     {
       "name": "Windows checkout and SPEC gate",
-      "why": "the SPEC gate under a case-insensitive filesystem and CRLF checkout; reachable on a release-final dispatch since this revision"
+      "why": "the SPEC gate under a case-insensitive filesystem and CRLF checkout; reachable on the release-candidate dispatch"
     },
     {
-      "name": "Release-final taskboard completion",
-      "why": "every tracked TASKBOARD row complete at this SHA, and the structural proof that release_final was true"
+      "name": "Predeploy taskboard readiness",
+      "why": "every predeploy_ready TASKBOARD row is closed at the exact release SHA; postdeploy rows remain independently gated"
+    },
+    {
+      "name": "Control-plane restore interruption drill",
+      "why": "the candidate control plane is restorable after SIGTERM during atomic copy, repeated restore converges, and bootstrap finalization leaves no pending asset transaction"
     },
     {
       "name": "Narrow task follow-up database contract",
@@ -52,11 +53,61 @@
       "why": "migration history immutability, negative control, full branch replay with behaviour assertions, rollback state assertions, recorded history failure point"
     }
   ],
+  "taskboard_closure_evidence": [
+    {
+      "item": "PROD-CHECKOUT-REWRITES-RELEASE-BYTES",
+      "evidence": "required_job",
+      "job": "Windows checkout and SPEC gate"
+    },
+    {
+      "item": "PROD-DEPLOY-TASKBOARD-GATE-UNSATISFIABLE",
+      "evidence": "required_job",
+      "job": "Predeploy taskboard readiness"
+    },
+    {
+      "item": "PROD-CI-CRM-HERMES-FALSE-GREEN",
+      "evidence": "post_main_workflow_delivery"
+    },
+    {
+      "item": "PROD-COMPANIONS-UNBOUND-TO-RELEASE",
+      "evidence": "required_job",
+      "job": "Migration replay and release contracts"
+    },
+    {
+      "item": "PROD-DEPLOY-TRUSTS-OPERATOR-MIGRATION-SET",
+      "evidence": "all_required_jobs"
+    },
+    {
+      "item": "PROD-FINGERPRINT-AND-TXCONTROL-COERCION",
+      "evidence": "required_job",
+      "job": "Migration replay and release contracts"
+    },
+    {
+      "item": "PROD-L0-MIGRATION-REPLAY-GATE",
+      "evidence": "required_job",
+      "job": "Migration replay and release contracts"
+    },
+    {
+      "item": "PROD-STRICT-POSTURE-UNDERVERIFIED",
+      "evidence": "required_job",
+      "job": "Migration replay and release contracts"
+    },
+    {
+      "item": "SAM-6",
+      "evidence": "all_required_jobs"
+    },
+    {
+      "item": "hermes-ci",
+      "evidence": "post_main_workflow_delivery"
+    }
+  ],
   "tolerated_conclusions": ["success"],
   "notes": [
     "tolerated_conclusions is exhaustive on purpose: 'skipped', 'neutral' and",
     "'stale' are refused for a required job, and no job in the run may have",
     "concluded anything other than success or skipped. A required job that is",
-    "absent from the run is refused by name."
+    "absent from the run is refused by name. Release-final taskboard completion is",
+    "intentionally not a deploy precondition; it is required only after production",
+    "has produced the evidence needed to close postdeploy acceptance rows."
   ]
 }

@@ -40,13 +40,21 @@
  *   node scripts/verify-remote-migration-history.mjs \
  *     --url-file /etc/newme/migration-db.url \
  *     [--migrations-dir <dir>] [--modules-dir <dir>] \
- *     [--require-applied <ids>] [--require-no-pending] \
+ *     [--require-applied <ids>] [--require-unapplied <ids>] [--require-no-pending] \
  *     [--history-fixture supabase/migration-history-reconciliation.json]
  *
  * --require-applied <ids>  comma-separated migration ids (full filename stem or
  *                          bare 14-digit version) that MUST be recorded as
  *                          applied. This is the deploy's `applied_verified`
- *                          claim, re-measured.
+ *                          claim, re-measured. The canonical deploy derives the
+ *                          list from the release manifest rather than accepting
+ *                          the operator's (round-4 C4-1); see
+ *                          auditReleaseClaim() in scripts/check-release-manifest.mjs.
+ * --require-unapplied <ids> ids that must NOT be recorded at all — the deferred
+ *                          contract phase. Applying it before the traffic switch
+ *                          closes the direct money-write path the still-live
+ *                          release uses, and no other check here is capable of
+ *                          noticing that (round-4 C4-1).
  * --require-no-pending     refuse if the release contains any migration the
  *                          database has not applied. This is the deploy's
  *                          `not_required` claim, re-measured.
@@ -301,7 +309,7 @@ export function readLocalContent(dir, entries) {
 }
 
 /** Structural comparison of two histories: versions, names, claims, order. */
-function structuralFindings({ remote, local, requireApplied, requireNoPending }) {
+function structuralFindings({ remote, local, requireApplied, requireNoPending, requireUnapplied = [] }) {
   const findings = [];
   const add = (kind, version, message, observed = {}) =>
     findings.push({ kind, version, message, observed: { version, ...observed } });
@@ -381,6 +389,46 @@ function structuralFindings({ remote, local, requireApplied, requireNoPending })
     }
   }
 
+  // 2b · The other direction, and it is not symmetric with the one above (round-4
+  //      C4-1). The deferred contract phase closes the previous release's direct
+  //      money-write path; applying it before the traffic switch takes the LIVE
+  //      release out, and nothing above this line notices — with every required
+  //      migration applied and the contract phase applied too, this gate measured
+  //      zero findings. So the phase split has to be checked as a fact about
+  //      production, not only as an ordering rule inside the release manifest.
+  const claimedApplied = new Set(requireApplied.map((id) => normalizeId(id)).filter(Boolean));
+  for (const id of requireUnapplied) {
+    const version = normalizeId(id);
+    if (!version) {
+      add("claim_unparseable", null, `${JSON.stringify(id)} is not a migration id this gate can check`);
+      continue;
+    }
+    if (claimedApplied.has(version)) {
+      add(
+        "claim_contradiction",
+        version,
+        `${version} was required both applied and not applied: the two phases of this release are not disjoint in the claim`,
+      );
+      continue;
+    }
+    if (!localByVersion.has(version)) {
+      add(
+        "deferred_not_in_release",
+        version,
+        `${id} was required to be unapplied but this release contains no migration ${version}: the deferred phase cannot be checked against a file that is not here`,
+      );
+    }
+    // remoteAll, not remoteByVersion: any recorded row under that version means it
+    // ran, including one the CLI could not have written.
+    if (remoteAll.has(version)) {
+      add(
+        "deferred_applied_early",
+        version,
+        `${version} is this release's deferred contract-phase migration and the database has already applied it: it closes the direct money-write path the currently live release still uses, so the app may not be switched with it applied. Run supabase/migrations/rollback_money_direct_write_contract_phase.sql (runbook §5.1) and deploy again.`,
+      );
+    }
+  }
+
   // 3 · What the release carries that the database has not run.
   const newestRemote = [...remoteByVersion.keys()].sort().at(-1);
   const pending = local.filter((entry) => !remoteByVersion.has(entry.version));
@@ -423,8 +471,9 @@ export function compareHistories({
   local,
   requireApplied = [],
   requireNoPending = false,
+  requireUnapplied = [],
 }) {
-  return structuralFindings({ remote, local, requireApplied, requireNoPending }).findings.map(
+  return structuralFindings({ remote, local, requireApplied, requireNoPending, requireUnapplied }).findings.map(
     (finding) => finding.message,
   );
 }
@@ -443,6 +492,10 @@ export function compareHistories({
  *     an older reading of production is not that comparison
  *   * every recorded row that this release also contains must reproduce from this
  *     release's file, or be an explicit exception
+ *   * a version the deploy declared deferred (`--require-unapplied`) must not be
+ *     recorded at all: applying the contract phase before the traffic switch
+ *     breaks the release that is still live, and the claim half of this gate
+ *     could only ever ask the opposite question (round-4 C4-1)
  *   * a reconciliation that records no capture is a refusal by itself, so "the
  *     baseline agrees" and "there is no baseline" cannot reach the same outcome
  *   * with a captured fixture, every remote row must match it by name, statement
@@ -459,6 +512,7 @@ export function auditHistory({
   local,
   requireApplied = [],
   requireNoPending = false,
+  requireUnapplied = [],
   statementsRead = true,
   reconciliation = null,
   localContent = null,
@@ -469,6 +523,7 @@ export function auditHistory({
     local,
     requireApplied,
     requireNoPending,
+    requireUnapplied,
   });
   const add = (kind, version, message, observed = {}) =>
     findings.push({ kind, version, message, observed: { version, ...observed } });
@@ -821,6 +876,7 @@ function parseArgs(argv) {
     modulesDir: null,
     requireApplied: [],
     requireNoPending: false,
+    requireUnapplied: [],
     historyFixture: null,
     releaseManifest: null,
   };
@@ -850,6 +906,12 @@ function parseArgs(argv) {
         break;
       case "--require-no-pending":
         options.requireNoPending = true;
+        break;
+      case "--require-unapplied":
+        options.requireUnapplied = next()
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean);
         break;
       case "--history-fixture":
         options.historyFixture = next();
@@ -1065,6 +1127,7 @@ async function main(argv) {
     local,
     requireApplied: options.requireApplied,
     requireNoPending: options.requireNoPending,
+    requireUnapplied: options.requireUnapplied,
     statementsRead,
     reconciliation,
     localContent,
@@ -1085,6 +1148,11 @@ async function main(argv) {
   console.log(`release manifest    : ${manifestVersions ? `${manifestVersions.size} declared version(s)` : "not read (no post-capture delta can be allowed)"}`);
   if (options.requireApplied.length > 0) {
     console.log(`claimed applied     : ${options.requireApplied.length}`);
+  }
+  if (options.requireUnapplied.length > 0) {
+    // Named in the deploy log: an operator reading it has to be able to see that
+    // the contract phase was checked for absence, not merely left unmentioned.
+    console.log(`claimed not applied : ${options.requireUnapplied.length} deferred (${options.requireUnapplied.join(", ")})`);
   }
   if (options.requireNoPending) {
     console.log("claim               : this release needs no migrations");

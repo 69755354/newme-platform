@@ -1,16 +1,13 @@
 import assert from "node:assert/strict";
-import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { validateSupplyChain } from "../../scripts/check-supply-chain.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const XREF = path.join(ROOT, "scripts/_supply_chain_xref.py");
-const GATE = path.join(ROOT, "scripts/check-supply-chain.sh");
 const advisory = (id = "GHSA-qx2v-qp2m-jg93") => ({
   source: 123456,
   name: "postcss",
@@ -73,100 +70,6 @@ async function withTempDir(run) {
     await rm(dir, { recursive: true, force: true });
   }
 }
-
-async function runXref(auditJson, acceptedJson) {
-  return withTempDir(async (dir) => {
-    const auditFile = path.join(dir, "audit.json");
-    const acceptFile = path.join(dir, "accept.json");
-    await writeFile(auditFile, JSON.stringify(auditJson));
-    await writeFile(acceptFile, JSON.stringify(acceptedJson));
-    return spawnSync("python3", [XREF, auditFile, acceptFile], { encoding: "utf8" });
-  });
-}
-
-async function makeGateFixture(dir, auditPayload, acceptPayload) {
-  await mkdir(path.join(dir, "scripts"), { recursive: true });
-  await mkdir(path.join(dir, "node_modules/xlsx"), { recursive: true });
-  await mkdir(path.join(dir, "fake-bin"), { recursive: true });
-  await cp(GATE, path.join(dir, "scripts/check-supply-chain.sh"));
-  await cp(XREF, path.join(dir, "scripts/_supply_chain_xref.py"));
-  await writeFile(path.join(dir, "package.json"), JSON.stringify({
-    packageManager: "npm@10.0.0",
-    engines: { node: process.versions.node, npm: "10.0.0" },
-    dependencies: { next: "16.2.12", react: "19.2.4", "react-dom": "19.2.4" },
-  }));
-  await writeFile(path.join(dir, "package-lock.json"), "{}\n");
-  await writeFile(path.join(dir, ".nvmrc"), `${process.versions.node.split(".")[0]}\n`);
-  await writeFile(path.join(dir, ".supply-chain-accept.json"), JSON.stringify(acceptPayload));
-  await cp(
-    path.join(ROOT, "node_modules/xlsx/package.json"),
-    path.join(dir, "node_modules/xlsx/package.json"),
-  );
-  await writeFile(path.join(dir, "audit.json"), typeof auditPayload === "string" ? auditPayload : JSON.stringify(auditPayload));
-
-  const fakeNpm = path.join(dir, "fake-bin/npm");
-  await writeFile(fakeNpm, `#!/usr/bin/env bash\nset -euo pipefail\ncase "\${1:-}" in\n  --version) echo 10.0.0 ;;\n  ls) exit 0 ;;\n  audit) cat "\${FAKE_AUDIT_FILE}"; exit "\${FAKE_AUDIT_RC:-1}" ;;\n  *) exit 2 ;;\nesac\n`);
-  await chmod(fakeNpm, 0o755);
-
-}
-
-async function runGate({ auditPayload, acceptPayload = accepted(), acceptKnown = true }) {
-  return withTempDir(async (dir) => {
-    await makeGateFixture(dir, auditPayload, acceptPayload);
-    return spawnSync("bash", ["scripts/check-supply-chain.sh", ...(acceptKnown ? ["--accept-known"] : [])], {
-      cwd: dir,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: `${path.join(dir, "fake-bin")}${path.delimiter}${process.env.PATH}`,
-        FAKE_AUDIT_FILE: path.join(dir, "audit.json"),
-        FAKE_AUDIT_RC: "1",
-      },
-    });
-  });
-}
-
-test.skip("legacy Python xref parity (superseded by Node gate contract)", async () => {
-  const exact = await runXref(audit(), accepted());
-  assert.equal(exact.status, 0, exact.stderr);
-  assert.match(exact.stdout, /COUNT=0/);
-
-  const wrongId = await runXref(audit(), accepted({ vuln_id: "GHSA-0000-0000-0000" }));
-  assert.equal(wrongId.status, 0, wrongId.stderr);
-  assert.doesNotMatch(wrongId.stdout, /COUNT=0/);
-});
-
-test.skip("legacy Python exception validation (superseded by Node gate contract)", async () => {
-  const expired = await runXref(audit(), accepted({ expires: "2000-01-01" }));
-  assert.notEqual(expired.status, 0);
-
-  const incomplete = accepted();
-  delete incomplete.accepted[0].owner;
-  const missingOwner = await runXref(audit(), incomplete);
-  assert.notEqual(missingOwner.status, 0);
-});
-
-test.skip("legacy Bash gate (superseded by Node gate contract)", async () => {
-  const acceptedAudit = await runGate({ auditPayload: audit() });
-  assert.equal(acceptedAudit.status, 0, acceptedAudit.stdout + acceptedAudit.stderr);
-
-  const noException = await runGate({ auditPayload: audit(), acceptKnown: false });
-  assert.notEqual(noException.status, 0);
-
-  const expiredException = await runGate({
-    auditPayload: audit(),
-    acceptPayload: accepted({ expires: "2000-01-01" }),
-  });
-  assert.notEqual(expiredException.status, 0);
-
-  const malformed = await runGate({ auditPayload: "not-json" });
-  assert.notEqual(malformed.status, 0);
-
-  const registryError = await runGate({
-    auditPayload: { error: { code: "EAI_AGAIN", summary: "registry unavailable" } },
-  });
-  assert.notEqual(registryError.status, 0);
-});
 
 async function nodeGate(input = {}) {
   const packageJson = JSON.parse(await readFile(path.join(ROOT, "package.json"), "utf8"));

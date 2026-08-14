@@ -2,9 +2,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { applyPrivateNoStore } from "@/lib/request-auth-context";
 import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
 import type { Database, Json } from "@/types/database";
+
+// R5: the GET below embeds installment_plans, whose paid_amount and
+// allocated_amount are written by the payment routines, so this module is
+// force-dynamic and its read goes out private/no-store like every other
+// money-derived read.
+export const dynamic = "force-dynamic";
 
 /**
  * POST /api/contracts
@@ -194,18 +202,14 @@ export async function POST(request: NextRequest) {
       installments_count: number;
     };
 
-    // Notify admins that contract is pending approval
+    // Resolve status, copy and approvers from the committed contract.
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/notify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await dispatchPersistedNotification({
+        actorId: user.id,
+        input: {
           type: "contract_pending_approval",
           contract_id: contract.id,
-          contract_no: contract.contract_no,
-          lead_id,
-          amount,
-        }),
+        },
       });
     } catch (notifyErr) {
       logger.warn(
@@ -294,7 +298,7 @@ export async function GET(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: "Failed to fetch contracts" }, { status: 500 });
     }
-    return NextResponse.json({ data });
+    return applyPrivateNoStore(NextResponse.json({ data }));
   } catch (err: any) {
     logger.error(
       {

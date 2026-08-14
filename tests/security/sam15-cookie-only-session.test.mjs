@@ -379,6 +379,7 @@ test("server component refresh path never writes through the read-only cookies s
 test("middleware passes the explicit Cookie header and writes custom refresh cookies both ways", async () => {
   const requestCookies = [];
   let receivedCookieHeader;
+  let receivedBearerToken;
   class MockResponse {
     constructor(request) {
       this.request = request;
@@ -395,7 +396,8 @@ test("middleware passes the explicit Cookie header and writes custom refresh coo
   ];
   const middleware = loadTypeScriptModule("src/lib/supabase-middleware.ts", {
     "@/lib/supabase-server": {
-      createServerSupabase: async (_bearerToken, cookieHeader) => {
+      createServerSupabase: async (bearerToken, cookieHeader) => {
+        receivedBearerToken = bearerToken;
         receivedCookieHeader = cookieHeader;
         return { refreshedCookies };
       },
@@ -414,8 +416,9 @@ test("middleware passes the explicit Cookie header and writes custom refresh coo
       set: (name, value) => requestCookies.push({ name, value }),
     },
   };
-  const { getResponse } = await middleware.createMiddlewareClient(request);
+  const { getResponse } = await middleware.createMiddlewareClient(request, "explicit-bearer");
 
+  assert.equal(receivedBearerToken, "explicit-bearer");
   assert.equal(receivedCookieHeader, "sb-auth=old-access; sb-refresh=old-refresh");
   assert.deepEqual(requestCookies, [
     { name: "sb-auth", value: "new-access" },

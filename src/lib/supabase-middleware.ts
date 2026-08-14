@@ -9,8 +9,17 @@ import { createServerSupabase, getRefreshedCookies } from "@/lib/supabase-server
  * session (access/refresh tokens) is available in the middleware and the
  * response's `Set-Cookie` headers are properly forwarded to the client.
  */
-export async function createMiddlewareClient(request: NextRequest) {
-  const supabase = await createServerSupabase(undefined, request.headers.get("cookie") ?? "");
+export async function createMiddlewareClient(
+  request: NextRequest,
+  bearerToken?: string,
+) {
+  // Match route handlers: an explicit Bearer credential has priority over a
+  // cookie session. The proxy must authorize the same identity that the handler's
+  // createServerSupabase(bearer, cookie) client will use downstream.
+  const supabase = await createServerSupabase(
+    bearerToken,
+    request.headers.get("cookie") ?? "",
+  );
   const refreshedCookies = getRefreshedCookies(supabase);
 
   // Keep custom split-session refreshes in the request passed downstream and

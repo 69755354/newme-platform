@@ -107,6 +107,27 @@ export interface RequestAuthOptions {
   allowForcedPasswordChange?: boolean;
 }
 
+type SessionBoundaryState =
+  | "ok"
+  | "no_session"
+  | "no_profile"
+  | "inactive"
+  | "banned"
+  | "token_stale"
+  | "password_change_required";
+
+function isSessionBoundaryState(value: unknown): value is SessionBoundaryState {
+  return typeof value === "string" && [
+    "ok",
+    "no_session",
+    "no_profile",
+    "inactive",
+    "banned",
+    "token_stale",
+    "password_change_required",
+  ].includes(value);
+}
+
 /** Resolve one request-bound client for auth, authorization, and RLS queries. */
 export async function getRequestAuthContext(
   request: Request,
@@ -144,6 +165,37 @@ export async function getRequestAuthContext(
       );
     }
     throw new RequestAuthError("unauthorized", { refreshedCookies });
+  }
+
+  // Ask the caller-scoped database boundary for the same verdict enforced by
+  // RLS and SECURITY DEFINER entry guards. getUser() proves that Supabase signed
+  // the token; it does not prove that an administrator has not since banned the
+  // identity or changed its password. The profiles self-read below is
+  // intentionally available to stale/forced sessions so the UI can explain the
+  // refusal, so it cannot be used as the freshness check itself.
+  let boundaryState: unknown;
+  try {
+    const { data, error } = await withAuthTimeout(supabase.rpc("session_boundary_state"));
+    if (error) throw error;
+    boundaryState = data;
+  } catch {
+    throw new RequestAuthError("profile_unavailable", { refreshedCookies });
+  }
+
+  if (!isSessionBoundaryState(boundaryState)) {
+    throw new RequestAuthError("profile_unavailable", { refreshedCookies });
+  }
+  if (boundaryState === "no_session" || boundaryState === "token_stale") {
+    throw new RequestAuthError("unauthorized", { clearSession: true, refreshedCookies });
+  }
+  if (["no_profile", "inactive", "banned"].includes(boundaryState)) {
+    throw new RequestAuthError("inactive_account", { clearSession: true, refreshedCookies });
+  }
+  if (
+    boundaryState === "password_change_required"
+    && options.allowForcedPasswordChange !== true
+  ) {
+    throw new RequestAuthError(FORCED_SESSION_ERROR, { refreshedCookies });
   }
 
   let profile: ActiveProfile | null = null;

@@ -35,17 +35,17 @@
 #       requires the floor to actually lose a concurrent allocation.
 #
 #   MODE=history  (gating)
-#       Every 14-digit migration in supabase/migrations/, from empty, in order.
-#       The history does not replay from empty — it never has — so this mode does
-#       not gate on "it applies". It gates on the failure being EXACTLY the one
-#       recorded in supabase/replay/history-replay-expectation.txt: the same file,
-#       the same line, the same count of migrations applied before it. That makes
-#       it a change detector rather than a report. A branch that repairs the
-#       history must update the expectation file, and a branch that makes it fail
-#       EARLIER — the shape of an accidental edit to applied history — fails here.
+#       The authenticated, schema-only production baseline is verified byte for
+#       byte against its capture metadata and migration-history reconciliation,
+#       applied to empty PG17, and proved to contain zero application rows. The
+#       exact release-manifest set after the captured production watermark is then
+#       required to equal the timestamped files on disk and is run through the
+#       same fixtures, re-entry, behaviour, concurrency, rollback and recontract
+#       chain as MODE=branch. Baseline tampering, undeclared pending migrations,
+#       row-bearing SQL and credential-shaped material all refuse before apply.
 #
-# Why the gate uses a floor instead of the real history
-# ----------------------------------------------------
+# Why branch/control retain a floor
+# ---------------------------------
 # Before this script existed, CI exercised four migrations (the narrowed contract
 # under supabase/ci-local); the other 109 had never run anywhere except
 # production. A migration that has never run is not a migration, it is a hope.
@@ -58,14 +58,11 @@
 # leads.metadata, a column no migration creates and production does not have; and
 # four objects that production does have are created by no migration at all.
 #
-# Repairing the rest needs the live schema to decide what each dead file should
-# now say, and several of them carry backfill UPDATEs that would rewrite
-# production rows the first time they were allowed to run. That is an operator
-# task — `supabase db dump` squashed into a baseline — not something to guess at
-# from a branch — and the applied files are immutable, so this branch may not
-# rewrite them to make the replay succeed. So the gate proves what it can actually
-# prove, MODE=history pins the known failure point so it cannot move unnoticed,
-# and the finding is reported rather than papered over.
+# The applied files remain immutable and several carry unsafe backfills, so they
+# are not rewritten to manufacture a replay. MODE=history instead starts at the
+# independently captured production watermark. MODE=branch and MODE=control keep
+# the smaller synthetic floor because their mutation controls require a known
+# vulnerable state; neither floor is evidence about production history.
 #
 # Requires: psql on PATH. No Supabase CLI, no Docker-in-Docker, no secrets — the
 # CI job points it at a service container over trust/local auth.
@@ -130,6 +127,8 @@ RECONTRACT_COMPANIONS=()
 # ---------------------------------------------------------------------------
 CONTROL_EXPECTATIONS="$REPLAY_DIR/control-expectations.txt"
 CONTROL_ACCOUNTING="$ROOT/scripts/control-marker-accounting.mjs"
+HISTORY_BASELINE_CHECK="$ROOT/scripts/check-history-baseline.mjs"
+HISTORY_BASELINE_SQL="$REPLAY_DIR/production-schema-baseline.sql"
 
 # ---------------------------------------------------------------------------
 # The one behaviour no assertion in 10_assert_release_contracts.sql can reach:
@@ -152,6 +151,157 @@ CONCURRENCY_GATE="$REPLAY_DIR/15_concurrency_two_session.sh"
 # idx_payments_request_key turns the gate red.
 # ---------------------------------------------------------------------------
 REQUEST_KEY_GATE="$REPLAY_DIR/16_concurrency_request_key.sh"
+
+# ---------------------------------------------------------------------------
+# And the same argument for round-4 finding C4-3, with one difference that
+# decides where the control lives.
+#
+# "The contract phase refuses direct writes" is a single-session claim and
+# 10_assert_release_contracts.sql measures it. "The contract phase does not commit
+# 'strict' underneath a write the PREVIOUS release already has in flight" is a
+# claim about two overlapping transactions, and no single session can distinguish
+# a serialized flip from an unserialized one — both leave mode = 'strict' and both
+# refuse the next write.
+#
+# Unlike the two gates above, its negative control cannot run in MODE=control:
+# the un-remediated floor has no money_release_mode, no mode function and no
+# guards, so there is no flip there to fail to serialize. So both directions run
+# here, against this schema, and the mutant is the guard itself —
+# money_direct_write_is_blocked() replaced with its pre-C4-3 lock-free body inside
+# the throwaway replay database, captured with pg_get_functiondef() and restored
+# from that capture. EXPECT=torn runs FIRST on purpose: if the restore did not put
+# the serialized guard back, the EXPECT=serialized run immediately after it goes
+# red rather than the rest of the harness quietly measuring a mutated database.
+# ---------------------------------------------------------------------------
+MODE_FLIP_GATE="$REPLAY_DIR/17_concurrency_mode_flip.sh"
+
+# The same claim about the other way in. The three artifacts above are hand-run
+# files; public.money_set_direct_write_mode() is the GRANTED route — service_role
+# holds EXECUTE on it and this harness's own assertions call it — so serializing
+# the files and leaving the function unlocked would make the serialization depend
+# on the caller's choice of path. Same two directions, same in-database mutation
+# restored from pg_get_functiondef(), control first for the same reason.
+MODE_SETTER_GATE="$REPLAY_DIR/18_concurrency_mode_setter.sh"
+
+# ---------------------------------------------------------------------------
+# R3, and the same argument once more. "A period's targets are saved atomically"
+# and "a collection is added to actual_amount" are both single-session claims that
+# 10_assert_release_contracts.sql measures. "A collection that overlaps a target
+# save survives it" is not: replace_kpi_targets() and clear_kpi_targets() took a
+# period advisory lock, confirm_payment() and void_payment() wrote the same rows
+# without it, and the only way to observe that is two transactions in flight at
+# once. Sequentially every one of the four routines does the arithmetic anyone
+# would expect.
+#
+# Its negative control cannot run in MODE=control either, and for a sharper reason
+# than the mode gates': the un-remediated floor has no B7 carry-forward, so a
+# target save there resets actuals to zero whether or not anything raced it, and
+# the floor therefore cannot distinguish this finding from the one B7 closed. So
+# both directions run here, against this schema, and the mutant is the LIVE
+# definitions of confirm_payment()/void_payment() with the one
+# pg_advisory_xact_lock() line removed from each — captured with
+# pg_get_functiondef(), restored from that capture, byte-compared on the way back.
+# EXPECT=lost runs FIRST for the same reason it does above.
+# ---------------------------------------------------------------------------
+KPI_PERIOD_GATE="$REPLAY_DIR/19_concurrency_kpi_period.sh"
+
+# ---------------------------------------------------------------------------
+# R5, whose control is neither a mutation nor MODE=control but the release mode
+# itself.
+#
+# The finding is that seven read paths counted a payment as cash when
+# `confirmed` was true, while every derived total in the database counts
+# `confirmed = true and voided_at is null`. That is only a defect if a row can
+# hold both — and one can, because guard_payments_write() places its
+# confirmed-immutability checks behind money_direct_write_is_blocked() (direct AND
+# strict) while refusing void-column edits unconditionally. So inside the
+# compatibility window the contract's own salesperson can re-confirm a reversed
+# payment with an ordinary UPDATE, and the two predicates then disagree by its
+# amount.
+#
+# EXPECT=compat is therefore the reproduction and EXPECT=strict is the bound, with
+# the mode as the only variable: same row, same statement, same session identity.
+# The reproduction runs FIRST for the same reason the mutants above do — if compat
+# no longer admits the write, the finding is closed in the database and this gate
+# has to say so instead of the strict run reporting green for a state nobody can
+# reach. Four claims the mode does not change are measured in both directions (the
+# reversal is one-way; the confirm/allocate refusals form a loop with no exit; both
+# refusals are idempotent on retry; a rolled-back write leaves nothing), and the
+# in-flight write is required to hold money_release_mode_lock_key() in SHARE mode —
+# asserted by re-taking the key and finding no new pg_locks row, which ties this
+# gate's write to the exclusive lock 17_/18_ prove the flip takes.
+#
+# It stages one payment in a period no fixture and no assertion uses, removes it
+# again, and restores the mode it was invoked under, so what follows sees the state
+# the fixtures left.
+# ---------------------------------------------------------------------------
+PREDICATE_GATE="$REPLAY_DIR/21_payment_predicate_divergence.sh"
+
+# ---------------------------------------------------------------------------
+# R6, in two gates, because the lead-reassignment path turned out to hold three
+# defects of two different kinds, and the first kind is a precondition of measuring
+# the second.
+#
+# 22_ measures two defects that are not concurrency findings at all: statements
+# reassign_lead_atomic() makes that the schema it writes into refuses.
+#   * activities (20260723140000:165-169) inserts type = 'transfer', and
+#     activities_type_check — the domain 20260605000000:209-214 installed, still the
+#     last word on that column — does not contain it → 23514.
+#   * the historical floor has notifications.related_id=uuid while the legacy
+#     routine inserts p_lead_id::text, which PostgreSQL refuses with 42804. The
+#     authenticated production baseline instead has related_id=text; there the
+#     same catalog-derived cast control commits, refuting that production risk.
+# Either one aborts the branch that actually moves a lead, taking the lead UPDATE,
+# the transfer_history row, the business_events row, the notification and the
+# idempotency record with it, and the one API that calls the routine reports 400
+# INVALID_REQUEST. Neither control can run in MODE=control: the floor carries the
+# same narrow domain AND the same cast, so BOTH modes would refuse and the gate
+# would measure nothing. So all three directions run here and each control is an
+# in-database derivation of what is installed — the constraint renamed aside and
+# re-added under the production name with 'transfer' removed by regexp from
+# pg_get_constraintdef(), and the cast put back by substituting one literal inside
+# pg_get_functiondef() and re-executing it, with the md5 required back afterwards.
+# The two controls run FIRST, for the reason every control above does.
+#
+# 23_ measures the concurrency boundary in both catalog shapes. The historical
+# floor has no server-clock stamp, so its control removes the migration's fallback
+# and reproduces a client-pinnable token. The authenticated production baseline
+# already has trg_set_updated_at with an unconditional server-clock body, so the
+# migration is a catalog-proven no-op and removing only the repository fallback
+# does not weaken CAS; that direction refutes the earlier production-no-trigger
+# claim. Two overlapping transactions are still required to prove stale-token
+# refusal after a committed transfer. The control cannot run in MODE=control
+# because the migration/fallback is the variable, so it is exercised inside the
+# throwaway database and restored from
+# pg_get_triggerdef(). EXPECT=forged runs FIRST, same reason.
+#
+# The ORDER of the two gates matters and is not alphabetical by accident: with
+# either write defect in place reassign_lead_atomic() cannot commit a reassignment,
+# so a compare-and-set run against it would be measuring a refusal and reporting a
+# guard. 23_ asserts both fixes as preconditions and fails closed if either is
+# missing, rather than trusting this ordering.
+# ---------------------------------------------------------------------------
+LEAD_WRITES_GATE="$REPLAY_DIR/22_lead_reassignment_writes.sh"
+LEAD_CAS_GATE="$REPLAY_DIR/23_lead_assignment_cas.sh"
+
+# Round-4 R7. The rollback path's own two defects, and the only two things in this
+# harness that have to be measured with the companions treated as the artifact
+# under test rather than as a step: the money companion's readback (it checked the
+# row, not the function the guards call) and the KPI drop in rollback_l0_20260811
+# (no period lock, no lock_timeout). Both run BEFORE the rollback section below,
+# because both need the release posture — strict, guards enabled — to be what they
+# start from, and both are required to leave it exactly as they found it.
+COMPANION_GUARD_GATE="$REPLAY_DIR/24_rollback_companion_guards.sh"
+
+# R8. Quote allocation and lead unassignment share one integrity migration, and
+# both need behaviour that a single catalog query cannot establish: initialization
+# must wait for an in-flight quotation INSERT; overlapping inserts must receive
+# distinct database-owned numbers; same-key lead mutations must serialize into a
+# replay; CAS failures and caller rollback must leave no audit/request residue.
+# The gate re-applies only that migration against this throwaway PG17 database,
+# stages fixed synthetic UUIDs and removes every row it creates.
+QUOTE_UNASSIGN_GATE="$REPLAY_DIR/25_quote_unassignment_integrity.sh"
+NOTIFICATION_EVENT_GATE="$REPLAY_DIR/26_notification_event_idempotency.sh"
 
 PSQL=(psql --no-psqlrc --quiet --no-align --tuples-only -v ON_ERROR_STOP=1)
 
@@ -403,6 +553,45 @@ if [ "${#BRANCH_RECONTRACTS[@]}" -gt 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Companion content, Round-4 review C4-5.
+#
+# Everything above is about which companion covers which migration. Nothing above
+# — and until C4-5 nothing anywhere — said anything about what a companion
+# contains. These files are executed by hand against production, are never
+# recorded in supabase_migrations.schema_migrations, and are excluded from the
+# applied-history baseline by design, so the remote-history fingerprint gate
+# structurally cannot reach them.
+#
+# Two further facts, measured on PG 17.10 rather than assumed:
+#   * `grant select on public.contracts to anon` and `grant execute on function
+#     public.create_contract(jsonb) to authenticated`, appended to
+#     rollback_money_direct_write_contract_phase.sql, both left this harness at
+#     rc=0 with every post-rollback assertion passing.
+#   * BRANCH_ROLLBACKS only selects companions that cover a migration new on this
+#     branch, so rollback_crm_v3.sql and rollback_p0_10.sql are executed by no
+#     gate at all — an escalation inside them is invisible to every assertion
+#     because the file never runs.
+#
+# So the check is the declared hash of every companion on disk, in every mode,
+# before any of them is executed, which is the only form that covers the two
+# nothing runs. infra/release/release-manifest.json holds the hashes and
+# scripts/check-release-manifest.mjs --verify-companions is the same code the CI
+# release-gates job and infra/systemd/newme-deploy.sh run against the candidate
+# SHA's own worktree.
+# ---------------------------------------------------------------------------
+COMPANION_TOTAL=$(( ${#ROLLBACK_COMPANIONS[@]} + ${#RECONTRACT_COMPANIONS[@]} ))
+echo "== companion content =="
+if [ "$COMPANION_TOTAL" -gt 0 ]; then
+  command -v node >/dev/null 2>&1 \
+    || fail "node not found on PATH; the companion content binding needs it"
+  node "$ROOT/scripts/check-release-manifest.mjs" --verify-companions \
+      --migrations-dir "$MIGRATIONS_DIR" \
+    || fail "$COMPANION_TOTAL hand-run companion(s) on disk do not match the release manifest"
+else
+  echo "  no hand-run companions in this tree"
+fi
+
+# ---------------------------------------------------------------------------
 # Refuse a non-empty target. This is a replay harness, not a repair tool; if it
 # is ever pointed at a database that already has application tables, the only
 # safe thing it can do is stop.
@@ -415,69 +604,67 @@ echo "== platform bootstrap =="
 "${PSQL[@]}" -f "$REPLAY_DIR/00_platform_bootstrap.sql" >/dev/null
 
 # ===========================================================================
-# MODE=history — informational full replay
+# MODE=history — captured production baseline plus exact pending manifest
 # ===========================================================================
+HISTORY_BASELINE_ACTIVE=0
 if [ "$MODE" = history ]; then
-  mapfile -t migrations < <(find "$MIGRATIONS_DIR" -maxdepth 1 -type f \
-    -regextype posix-extended -regex '.*/[0-9]{14}_.*\.sql' -print | LC_ALL=C sort)
-  [ "${#migrations[@]}" -gt 0 ] || fail "no timestamped migrations found"
+  command -v node >/dev/null 2>&1 \
+    || fail "node not found on PATH; MODE=history needs the baseline integrity verifier"
+  [ -f "$HISTORY_BASELINE_CHECK" ] || fail "missing $HISTORY_BASELINE_CHECK"
+  [ -f "$HISTORY_BASELINE_SQL" ] || fail "missing $HISTORY_BASELINE_SQL"
 
-  echo "== history replay: ${#migrations[@]} migrations from empty =="
-  applied=0
-  stopped_at=
-  for migration in "${migrations[@]}"; do
-    name="$(basename "$migration")"
-    if ! "${PSQL_TX[@]}" -f "$migration"; then
-      stopped_at="$name"
-      break
-    fi
-    applied=$((applied + 1))
+  manifest_output="$(node "$HISTORY_BASELINE_CHECK" --print-forward)" \
+    || fail "production schema baseline or exact pending manifest did not verify"
+  mapfile -t manifest_forward <<<"$manifest_output"
+  [ "${#manifest_forward[@]}" -gt 0 ] || fail "verified history baseline has no pending migrations"
+  [ "${#manifest_forward[@]}" = "${#BRANCH_MIGRATIONS[@]}" ] \
+    || fail "verified manifest has ${#manifest_forward[@]} pending migrations but history derivation has ${#BRANCH_MIGRATIONS[@]}"
+  for i in "${!manifest_forward[@]}"; do
+    [ "${manifest_forward[$i]}" = "${BRANCH_MIGRATIONS[$i]}" ] \
+      || fail "pending migration order differs between exact manifest and history derivation at item $((i + 1))"
   done
 
-  echo
-  echo "HISTORY_REPLAY_APPLIED=$applied"
-  echo "HISTORY_REPLAY_TOTAL=${#migrations[@]}"
-  echo "HISTORY_REPLAY_STOPPED_AT=$stopped_at"
-  echo
+  echo "== production schema baseline =="
+  "${PSQL_TX[@]}" -f "$HISTORY_BASELINE_SQL" >/dev/null \
+    || fail "production schema baseline did not apply transactionally to empty PG17"
 
-  # -------------------------------------------------------------------------
-  # This mode used to print the numbers and exit 0, and CI ran it with
-  # continue-on-error: true. Both halves of that were wrong: a step that cannot
-  # fail is not a check, and the job it lived in reported success while its own
-  # log said the migration directory does not replay.
-  #
-  # It is now gated against a committed expectation. The debt is real and is not
-  # fixable from this branch, so the gate asserts its exact shape rather than its
-  # absence: stop at exactly this file, after exactly this many applications.
-  # Movement in either direction — a repair, or a regression that breaks an
-  # earlier file — turns the job red and has to be acknowledged.
-  # -------------------------------------------------------------------------
-  expectation="$REPLAY_DIR/history-replay-expectation.txt"
-  [ -f "$expectation" ] || fail "missing $expectation"
+  expected_inventory="$(node "$HISTORY_BASELINE_CHECK" --print-inventory)" \
+    || fail "baseline inventory metadata did not verify"
+  actual_inventory="$("${PSQL[@]}" -c "select concat_ws('|',
+    (select count(*) from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p')),
+    (select count(*) from pg_catalog.pg_attribute a join pg_catalog.pg_class c on c.oid=a.attrelid join pg_catalog.pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p') and a.attnum>0 and not a.attisdropped),
+    (select count(*) from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('v','m')),
+    (select count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public'),
+    (select count(*) from pg_catalog.pg_constraint co join pg_catalog.pg_class c on c.oid=co.conrelid join pg_catalog.pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and co.conparentid=0),
+    (select count(*) from pg_catalog.pg_index i join pg_catalog.pg_class c on c.oid=i.indrelid join pg_catalog.pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not exists(select 1 from pg_catalog.pg_constraint co where co.conindid=i.indexrelid)),
+    (select count(*) from pg_catalog.pg_trigger t join pg_catalog.pg_class c on c.oid=t.tgrelid join pg_catalog.pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not t.tgisinternal),
+    (select count(*) from pg_catalog.pg_policy p join pg_catalog.pg_class c on c.oid=p.polrelid join pg_catalog.pg_namespace n on n.oid=c.relnamespace where n.nspname='public'))")"
+  [ "$actual_inventory" = "$expected_inventory" ] \
+    || fail "applied baseline inventory differs from captured metadata"
 
-  exp_applied="$(sed -n 's/^EXPECTED_APPLIED=\([0-9]\{1,\}\)$/\1/p' "$expectation" | head -1)"
-  exp_stopped="$(sed -n 's/^EXPECTED_STOPPED_AT=\(.*\)$/\1/p' "$expectation" | head -1)"
-  [ -n "$exp_applied" ] || fail "$expectation does not declare EXPECTED_APPLIED"
-
-  mismatch=0
-  if [ "$applied" != "$exp_applied" ]; then
-    echo "expected EXPECTED_APPLIED=$exp_applied, observed $applied" >&2
-    mismatch=1
-  fi
-  if [ "$stopped_at" != "$exp_stopped" ]; then
-    echo "expected EXPECTED_STOPPED_AT=$exp_stopped, observed '${stopped_at:-<none>}'" >&2
-    mismatch=1
-  fi
-
-  if [ "$mismatch" -ne 0 ]; then
-    if [ -z "$stopped_at" ]; then
-      fail "the full history now replays from empty. This is good news and still a failure: update $expectation, promote this mode to the primary gate and delete supabase/replay/01_floor_schema.sql"
-    fi
-    fail "the migration history debt changed shape. Re-read the log, then update $expectation in the same commit as whatever moved it"
-  fi
-
-  echo "== history debt unchanged: $applied applied, stops at $stopped_at as recorded =="
-  exit 0
+  "${PSQL[@]}" >/dev/null <<'SQL'
+do $baseline_zero_rows$
+declare
+  relation record;
+  row_total bigint;
+begin
+  for relation in
+    select format('%I.%I', n.nspname, c.relname) as qualified_name
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind in ('r', 'p')
+    order by c.relname
+  loop
+    execute format('select count(*) from %s', relation.qualified_name) into row_total;
+    if row_total <> 0 then
+      raise exception 'schema baseline contains application rows in %', relation.qualified_name;
+    end if;
+  end loop;
+end
+$baseline_zero_rows$;
+SQL
+  HISTORY_BASELINE_ACTIVE=1
+  echo "== history baseline verified: 0 application rows; ${#manifest_forward[@]} exact pending migrations =="
 fi
 
 # ===========================================================================
@@ -564,9 +751,13 @@ fi
 # MODE=branch — the gate
 # ===========================================================================
 echo "== schema floor =="
-[ -f "$REPLAY_DIR/01_floor_schema.sql" ] || fail "missing schema floor"
-"${PSQL[@]}" -f "$REPLAY_DIR/01_floor_schema.sql" >/dev/null \
-  || fail "01_floor_schema.sql did not apply to an empty database"
+if [ "$HISTORY_BASELINE_ACTIVE" = 1 ]; then
+  echo "  captured production baseline already applied"
+else
+  [ -f "$REPLAY_DIR/01_floor_schema.sql" ] || fail "missing schema floor"
+  "${PSQL[@]}" -f "$REPLAY_DIR/01_floor_schema.sql" >/dev/null \
+    || fail "01_floor_schema.sql did not apply to an empty database"
+fi
 
 echo "== applying ${#BRANCH_MIGRATIONS[@]} branch migrations =="
 for name in "${BRANCH_MIGRATIONS[@]}"; do
@@ -638,6 +829,131 @@ echo "== two-session request-key idempotency (payments) =="
 [ -f "$REQUEST_KEY_GATE" ] || fail "missing $REQUEST_KEY_GATE"
 EXPECT=unique bash "$REQUEST_KEY_GATE" \
   || fail "two concurrent submissions of one payment request are not collapsed to one payment"
+
+# The mode flip, both directions. See MODE_FLIP_GATE above for why the control
+# runs here instead of in MODE=control, and why it runs first. Both leave the
+# release mode as they found it, so the rollback companions below still see the
+# strict posture the contract phase established.
+echo "== two-session mode flip: control, the flip without the lock =="
+[ -f "$MODE_FLIP_GATE" ] || fail "missing $MODE_FLIP_GATE"
+EXPECT=torn bash "$MODE_FLIP_GATE" \
+  || fail "removing the shared lock from money_direct_write_is_blocked() did not reproduce the flip committing 'strict' over an in-flight compat write, so the serialized result below is not evidence of anything"
+
+echo "== two-session mode flip (contract phase vs in-flight compat write) =="
+EXPECT=serialized bash "$MODE_FLIP_GATE" \
+  || fail "the contract phase is not serialized against the direct money writes it is supposed to end"
+
+echo "== two-session mode setter: control, the granted route without the lock =="
+[ -f "$MODE_SETTER_GATE" ] || fail "missing $MODE_SETTER_GATE"
+EXPECT=torn bash "$MODE_SETTER_GATE" \
+  || fail "removing the lock from money_set_direct_write_mode() did not reproduce a posture change over an in-flight compat write, so the serialized result below is not evidence of anything"
+
+echo "== two-session mode setter (money_set_direct_write_mode vs in-flight compat write) =="
+EXPECT=serialized bash "$MODE_SETTER_GATE" \
+  || fail "the granted route into the posture is not serialized against the direct money writes it ends"
+
+# The KPI period lock, both directions. See KPI_PERIOD_GATE above for why the
+# control runs here instead of in MODE=control, and why it runs first. It stages
+# its own target row and payment in a period no fixture uses and removes them
+# again, so what follows sees the state the fixtures left.
+echo "== two-session kpi period lock: control, the money routines without the lock =="
+[ -f "$KPI_PERIOD_GATE" ] || fail "missing $KPI_PERIOD_GATE"
+EXPECT=lost bash "$KPI_PERIOD_GATE" \
+  || fail "removing the period lock from confirm_payment()/void_payment() did not reproduce the collection being lost across a target save, so the serialized result below is not evidence of anything"
+
+echo "== two-session kpi period lock (confirm/void vs an in-flight target save) =="
+EXPECT=serialized bash "$KPI_PERIOD_GATE" \
+  || fail "kpi_targets.actual_amount is written outside the period lock that replace_kpi_targets() holds"
+
+# The cash predicate, both postures. See PREDICATE_GATE above for why the
+# compatibility window is the control and why it runs first.
+echo "== cash predicate: the compatibility window admits the contradictory row =="
+[ -f "$PREDICATE_GATE" ] || fail "missing $PREDICATE_GATE"
+EXPECT=compat bash "$PREDICATE_GATE" \
+  || fail "the compatibility window did not reproduce a payment that is confirmed and voided at once, so the strict result below is not evidence of anything"
+
+echo "== cash predicate (direct re-confirmation of a reversed payment under the strict posture) =="
+EXPECT=strict bash "$PREDICATE_GATE" \
+  || fail "the strict posture does not refuse the direct re-confirmation that makes a reversed payment count as cash"
+
+# The two writes reassign_lead_atomic() could not make, three directions. Both
+# controls are reproductions and both run first: if the release's domain or the
+# release's routine is not installed, or if either derivation did not go back, the
+# fixed run immediately after them goes red rather than the rest of the harness
+# measuring a mutated constraint or a mutated routine body.
+echo "== lead reassignment writes: control, the activities domain that refuses 'transfer' =="
+[ -f "$LEAD_WRITES_GATE" ] || fail "missing $LEAD_WRITES_GATE"
+EXPECT=narrow bash "$LEAD_WRITES_GATE" \
+  || fail "putting activities_type_check back the way production has it did not reproduce reassign_lead_atomic() failing with 23514 and rolling back its own audit rows, so the fixed result below is not evidence of anything"
+
+related_id_type="$("${PSQL[@]}" -c "select data_type from information_schema.columns
+  where table_schema = 'public' and table_name = 'notifications' and column_name = 'related_id'" | tr -d '[:space:]')"
+case "$related_id_type" in
+  uuid)
+    echo "== lead reassignment writes: control, text cast refused by uuid notifications.related_id =="
+    EXPECT=related_text bash "$LEAD_WRITES_GATE" \
+      || fail "putting the ::text cast back into reassign_lead_atomic() did not reproduce 42804 on the uuid notifications.related_id target"
+    ;;
+  text)
+    echo "== lead reassignment writes: production refutation, text cast accepted by text notifications.related_id =="
+    EXPECT=related_text_compatible bash "$LEAD_WRITES_GATE" \
+      || fail "the captured production text notifications.related_id target did not accept the catalog-derived ::text control, so the production refutation is not established"
+    ;;
+  *)
+    fail "notifications.related_id has unsupported data_type '$related_id_type'; expected uuid or text"
+    ;;
+esac
+
+echo "== lead reassignment writes (reassign_lead_atomic writes all five of its rows) =="
+EXPECT=fixed bash "$LEAD_WRITES_GATE" \
+  || fail "reassign_lead_atomic() still cannot write one of the rows it inserts, so no reassignment it performs can commit"
+
+# The lead compare-and-set, both directions. Runs after the domain gate for the
+# reason given at LEAD_CAS_GATE above — it needs a reassignment that can commit —
+# and the control runs first for the reason every control here does.
+[ -f "$LEAD_CAS_GATE" ] || fail "missing $LEAD_CAS_GATE"
+other_stamp_triggers="$("${PSQL[@]}" -c "select count(*) from pg_catalog.pg_trigger t
+  join pg_catalog.pg_proc p on p.oid = t.tgfoid
+  where t.tgrelid = 'public.leads'::regclass
+    and not t.tgisinternal and t.tgname <> 'zz_leads_stamp_updated_at' and t.tgenabled = 'O'
+    and (t.tgtype & 1) = 1 and (t.tgtype & 2) = 2 and (t.tgtype & 16) = 16
+    and t.tgattr::text = '' and t.tgqual is null and not p.prosecdef
+    and pg_catalog.regexp_replace(p.prosrc, '[[:space:]]+', '', 'g')
+          ~* '^beginnew[.]updated_at(:=|=)(pg_catalog[.])?now[(][)];returnnew;end;?$'" | tr -d '[:space:]')"
+if [ "$other_stamp_triggers" = "0" ]; then
+  echo "== lead assignment compare-and-set: control, updated_at not server-owned =="
+  EXPECT=forged bash "$LEAD_CAS_GATE" \
+    || fail "dropping zz_leads_stamp_updated_at did not reproduce a client-pinnable token and a reassignment committing over a concurrent transfer"
+else
+  echo "== lead assignment compare-and-set: production refutation, pre-existing stamp remains after release trigger removal =="
+  EXPECT=baseline_guarded bash "$LEAD_CAS_GATE" \
+    || fail "the captured production schema's pre-existing updated_at stamp did not preserve the CAS boundary after zz_leads_stamp_updated_at was removed"
+fi
+
+echo "== lead assignment compare-and-set (reassign_lead_atomic vs a concurrent direct transfer) =="
+EXPECT=guarded bash "$LEAD_CAS_GATE" \
+  || fail "leads.updated_at is not server-owned, so reassign_lead_atomic()'s compare-and-set does not refuse a reassignment whose token was invalidated by a concurrent committed transfer"
+
+echo "== quote allocation and atomic lead unassignment (lock, poison, concurrency, CAS, replay, rollback, re-entry) =="
+[ -f "$QUOTE_UNASSIGN_GATE" ] || fail "missing $QUOTE_UNASSIGN_GATE"
+EXPECT=fixed bash "$QUOTE_UNASSIGN_GATE" \
+  || fail "quote allocation or lead unassignment failed its PG17 behaviour contract"
+
+echo "== notification event idempotency (concurrent same-key insert, binding, rollback, re-entry, ACL) =="
+[ -f "$NOTIFICATION_EVENT_GATE" ] || fail "missing $NOTIFICATION_EVENT_GATE"
+EXPECT=fixed bash "$NOTIFICATION_EVENT_GATE" \
+  || fail "notification event idempotency failed its PG17 behaviour contract"
+
+# The rollback path, measured before it is used. Each direction restores what it
+# mutated, so the rollback section below still runs against the release posture.
+echo "== rollback companion guards (the money companion's readback and promised-closed set) =="
+[ -f "$COMPANION_GUARD_GATE" ] || fail "missing $COMPANION_GUARD_GATE"
+MIGRATIONS_DIR="$MIGRATIONS_DIR" EXPECT=companion_guards bash "$COMPANION_GUARD_GATE" \
+  || fail "the money rollback companion does not verify what it claims: it either accepted a mode function the guards would disagree with, or returned to 'compat' on a database the previous release never ran under, or did not record the posture change"
+
+echo "== rollback KPI drop (period lock and lock_timeout around dropping the save path) =="
+MIGRATIONS_DIR="$MIGRATIONS_DIR" EXPECT=kpi_drop bash "$COMPANION_GUARD_GATE" \
+  || fail "rollback_l0_20260811.sql drops public.replace_kpi_targets() without ordering itself against an in-flight KPI write, or without a bound on how long it will block while holding the rollback's DDL locks"
 
 # ---------------------------------------------------------------------------
 # Down migration, then the state it leaves behind.

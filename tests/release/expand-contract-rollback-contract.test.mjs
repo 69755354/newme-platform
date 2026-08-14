@@ -253,8 +253,18 @@ test("the status graph in the document is the graph in the SQL", () => {
       `${terminal} is documented as terminal but the graph leaves it`,
     );
   }
-  // The trigger is what makes the graph apply to the previous release too.
-  assert.match(expandSql, /create trigger trg_guard_contract_transition\s*\n\s*before update of status on public\.contracts/);
+  // The trigger is what makes the graph apply to the previous release too — and
+  // it has to be unconditional. C4-3b measured the difference: `before update of
+  // status` fires on the statement's target column list, so a co-resident BEFORE
+  // ROW trigger that assigns new.status let an update which never names `status`
+  // move a terminal contract back to active with sqlstate 00000. Same fixture,
+  // unconditional trigger: 22023, status unchanged.
+  assert.match(expandSql, /create trigger trg_guard_contract_transition\s*\n\s*before update on public\.contracts/);
+  assert.doesNotMatch(
+    expandSql,
+    /create trigger trg_guard_contract_transition\s*\n\s*before update of/,
+    "a column list makes the transition guard conditional on the writer naming that column",
+  );
   assert.match(doc, /trg_guard_contract_transition/);
 });
 
@@ -331,24 +341,79 @@ test("the way back out of compat is an artifact, not a migration that cannot re-
     "the artifact must declare which migration it re-enters, which is what the harness's coverage gate reads",
   );
 
-  // 2 · the refusal. The four mode-gated guards it checks must be the four the
+  // 2 · the refusal. The mode-gated guards it checks must be the ones the
   // manifest's deferred_contract posture predicate checks: if the artifact and the
   // verifier disagree about what "strict" is made of, one of them is wrong and
   // nothing says which.
+  //
+  // Round-4 C4-2. This assertion used to read `assert.equal(manifestGuards.length,
+  // 4)`, and that made it the fourth copy of the defect rather than a check on it:
+  // the four were trg_guard_contracts_write, trg_guard_payments_write,
+  // trg_guard_quotations_write and trg_guard_contract_transition, and the last of
+  // those does not read the release mode at all while three that do were missing.
+  // Agreement between two wrong lists is not evidence, so the count is gone. What
+  // both sides must now equal is derived from the migrations themselves, in
+  // tests/release/mode-controlled-guards.test.mjs; this file's job is narrower and
+  // unchanged — the artifact and the verifier must not disagree.
   const manifest = JSON.parse(read(MANIFEST_PATH));
-  const guardPredicate = manifest.posture.deferred_contract.predicates.find((p) => /guard/.test(p.name));
+  const guardPredicate = manifest.posture.deferred_contract.predicates.find(
+    (p) => p.name === "strict-mode-controlled-guards-match-the-declaration",
+  );
   assert.ok(guardPredicate, "deferred_contract must carry a posture predicate covering the write guards");
   const triggerNames = (sql) => [...sql.matchAll(/'(trg_guard_[a-z_]+)'/g)].map((m) => m[1]);
-  const manifestGuards = [...new Set(triggerNames(guardPredicate.sql))].sort();
-  assert.equal(manifestGuards.length, 4, `expected four mode-gated guards in the manifest, saw ${manifestGuards.length}`);
+  // Pairs, not names: guard_definer_only_write() backs two guards under two
+  // trigger names, and trg_require_current_session proves one name can be attached
+  // to twenty tables, so a name alone does not identify a guard.
+  const sqlPairs = (sql) => [...sql.matchAll(/\(\s*'(trg_guard_[a-z_]+)'\s*,\s*'([a-z_]+)'\s*\)/g)]
+    .map((m) => `${m[1]} on public.${m[2]}`);
+  const manifestGuards = [...new Set(sqlPairs(guardPredicate.sql))].sort();
+  assert.ok(manifestGuards.length > 0, "the posture predicate must declare (trigger, table) pairs");
 
-  const guardArray = /v_guards\s+text\[\]\s*:=\s*array\[([\s\S]*?)\];/.exec(recontractSql);
+  const guardArray = /v_guards\s+text\[\]\[\]\s*:=\s*array\[([\s\S]*?)\];/.exec(recontractSql);
   assert.ok(guardArray, "the artifact must name the guards it requires");
+  const plpgsqlGuards = [...new Set(
+    [...guardArray[1].matchAll(/\[\s*'(trg_guard_[a-z_]+)'\s*,\s*'([a-z_]+)'\s*\]/g)]
+      .map((m) => `${m[1]} on public.${m[2]}`),
+  )].sort();
   assert.deepEqual(
-    [...new Set(triggerNames(guardArray[1]))].sort(),
+    plpgsqlGuards,
     manifestGuards,
     "the guards the re-contract requires are not the guards the manifest verifies",
   );
+
+  // The transition guard is checked by both, and counted by neither: it refuses an
+  // impossible status change in either mode, so it can never fail a mode check, and
+  // including it in the counted set is what let the old count reach four with three
+  // real guards dropped.
+  assert.ok(!manifestGuards.some((g) => g.startsWith("trg_guard_contract_transition")));
+  assert.ok(!plpgsqlGuards.some((g) => g.startsWith("trg_guard_contract_transition")));
+  assert.ok(
+    manifest.posture.deferred_contract.predicates.some(
+      (p) => p.name === "strict-transition-guard-is-installed" && p.sql.includes("trg_guard_contract_transition"),
+    ),
+    "the transition guard must still be verified, separately",
+  );
+  // C4-3b · the artifact checks tgtype and tgattr too, so a trigger that exists
+  // but only fires when the writer names `status` fails the posture rather than
+  // satisfying it. The wording follows, because the refusal names what is missing.
+  assert.match(recontractSql, /'enabled unconditional trigger trg_guard_contract_transition on public\.contracts'/);
+  assert.match(recontractSql, /g\.tgtype = 19\s+and g\.tgattr::text = ''/);
+
+  // And the KPI write routines, which are in the artifact's refusal for a reason
+  // the mode cannot cover: rollback_l0_20260811.sql can remove
+  // public.replace_kpi_targets(text, jsonb, uuid), and no forward artifact puts it
+  // back, so 'strict' would be declared over a database with no KPI save path.
+  for (const routine of ["public.replace_kpi_targets(text, jsonb, uuid)", "public.clear_kpi_targets(text, uuid)"]) {
+    assert.ok(recontractSql.includes(`'${routine}'`), `the artifact must refuse when ${routine} is absent`);
+    for (const phase of ["required_for_app", "deferred_contract"]) {
+      assert.ok(
+        manifest.posture[phase].predicates.some(
+          (p) => /kpi-write-routines-are-installed$/.test(p.name) && p.sql.includes(routine),
+        ),
+        `${phase} must verify ${routine}`,
+      );
+    }
+  }
 
   // A trigger that exists but is disabled refuses nothing, so presence is not the
   // test — `tgenabled = 'O'` is, in the artifact AND in every posture predicate

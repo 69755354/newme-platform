@@ -22,11 +22,11 @@ import path from "node:path";
 
 import {
   auditManifest,
-  contentHash,
   manifestEntries,
   readBaseline,
   readManifest,
   readMigration,
+  readTreeFiles,
 } from "../../scripts/check-release-manifest.mjs";
 import {
   breaksOuterTransaction,
@@ -46,8 +46,12 @@ const MIGRATIONS_DIR = path.join(ROOT, "supabase", "migrations");
 const CLI_MIGRATION = /^[0-9]{14}_.*\.sql$/;
 
 const manifest = readManifest();
-const files = readdirSync(MIGRATIONS_DIR).filter((file) => CLI_MIGRATION.test(file)).sort();
-const hashes = new Map(files.map((file) => [file, contentHash(readMigration(MIGRATIONS_DIR, file))]));
+// The whole directory, companions included: auditManifest's rule 8 (Round-4 C4-5)
+// compares the declared hand-run set against the files it is handed, so a CLI-only
+// list would invert the rule instead of exercising it. `cliFiles` is the pending
+// set the deployment procedure is written against.
+const { files, hashes } = readTreeFiles(MIGRATIONS_DIR);
+const cliFiles = files.filter((file) => CLI_MIGRATION.test(file));
 
 /** A deep copy, so a test that breaks the manifest cannot affect another. */
 const copy = () => JSON.parse(JSON.stringify(manifest));
@@ -59,7 +63,7 @@ test("the committed manifest describes this tree", () => {
   // The two phases together are the pending set, and the contract phase is one
   // file. Stated here as well as computed, because these are the two facts the
   // deployment procedure is written against.
-  const pending = files.filter((file) => file.slice(0, 14) > manifest.production_stamp);
+  const pending = cliFiles.filter((file) => file.slice(0, 14) > manifest.production_stamp);
   assert.equal(manifest.required_for_app.length + manifest.deferred_contract.length, pending.length);
   assert.equal(manifest.deferred_contract.length, 1);
   assert.match(manifest.deferred_contract[0].file, /^20260818000000_money_direct_write_contract_phase\.sql$/);
@@ -138,6 +142,16 @@ test("a posture predicate that is not a read-only select fails the gate", () => 
     "update public.money_release_mode set direct_write_mode = 'strict'",
     "select 1; drop table public.contracts",
     "do $$ begin end $$",
+    // R3: the keyword scan skips the CONTENTS of string literals so that a
+    // predicate can carry a pattern. These are the ways that could be abused,
+    // and none of them may become acceptable:
+    //   a keyword after a literal, i.e. outside it
+    "select id from public.contracts where status = 'signed' union all delete from public.payments",
+    //   an unterminated literal, which is what would let the stripper swallow
+    //   the rest of the statement
+    "select count(*) from public.contracts where status = 'signed",
+    //   $$-quoting, which is not unwrapped at all
+    "select $$ drop table public.contracts $$",
   ]) {
     const broken = copy();
     broken.posture.required_for_app.predicates.push({ name: "sneaky", sql, expect: true });
@@ -148,6 +162,29 @@ test("a posture predicate that is not a read-only select fails the gate", () => 
       `accepted: ${sql}`,
     );
   }
+
+  // The other direction, and the reason the rule reads the statement rather than
+  // its literals: a posture check that derives its answer from function BODIES has
+  // to carry a pattern, and the pattern names the writes it is looking for. Refusing
+  // this is refusing the only fail-closed form of "every writer of this table takes
+  // the lock" — which is the check R3 added, and the one that catches a fifth
+  // writer nobody remembered to list.
+  const bodyInspecting = copy();
+  bodyInspecting.posture.required_for_app.predicates.push({
+    name: "pattern-carrying",
+    sql:
+      "select bool_and(pg_catalog.pg_get_functiondef(p.oid) like '%pg_advisory_xact_lock(%') " +
+      "from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace " +
+      "where n.nspname = 'public' and pg_catalog.pg_get_functiondef(p.oid) ~* " +
+      "'(update|delete[[:space:]]+from|insert[[:space:]]+into)[[:space:]]+public[.]kpi_targets'",
+    expect: true,
+  });
+  assert.deepEqual(
+    auditManifest({ manifest: bodyInspecting, files, hashes, baseline: readBaseline() }).filter((problem) =>
+      /pattern-carrying/.test(problem),
+    ),
+    [],
+  );
 
   const empty = copy();
   empty.posture.deferred_contract.predicates = [];
@@ -556,7 +593,22 @@ test("the drill that tests the tool against a database is committed and wired", 
   assert.match(drill, /the unmutated tree did not apply: the refusals above prove nothing/);
   assert.match(drill, /the superseded classifier did not reproduce the hazard/);
   assert.match(drill, /neutered by the drill/);
-  assert.match(drill, /12 steps, 4 databases/);
+  assert.match(drill, /14 steps, 4 databases/);
+
+  // Round-4 C4-5's re-entry step. Step 9 proves an interrupted phase records
+  // nothing and leaves nothing behind; the runbook's instruction is to fix the
+  // cause and re-run, and until this step nothing measured that the re-run
+  // succeeds. Pinned here for the same reason as the mutation step above: the
+  // drill would keep exiting 0 without it.
+  assert.match(drill, /drop function public\.assert_installment_schedule\(jsonb, numeric, text\)/);
+  assert.match(drill, /REENTRY_COUNT=\$\(\(EXPAND_COUNT - BREAK_PRIOR_COUNT\)\)/);
+  assert.match(drill, /already applied     : \$BREAK_PRIOR_COUNT/);
+  assert.match(drill, /re-entry did not restore/);
+  // The resumed database must go on to reach the strict posture, and the count it
+  // is held to must come from the manifest rather than from a number in the drill.
+  assert.match(drill, /strict: \(\) => manifest\.posture\.deferred_contract\.predicates\.length/);
+  assert.match(drill, /count_log "\^posture OK          : " "\$STRICT_POSTURE_COUNT"/);
+  assert.match(drill, /the resumed database's contract phase left the release mode at/);
   // The mutation happens in a copy under $WORK. C7's constraint is that the drill
   // edits nothing in the repository, and a mutation step is the one place that could
   // quietly stop being true.

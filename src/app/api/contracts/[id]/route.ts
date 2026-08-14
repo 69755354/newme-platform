@@ -2,8 +2,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { applyPrivateNoStore } from "@/lib/request-auth-context";
 import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+import { allowedSetContractStatuses } from "@/lib/contract-status-capabilities.mjs";
 
 /**
  * GET /api/contracts/[id]
@@ -21,7 +23,13 @@ import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
  * NOTE: payments & contract_approvals each have multiple FKs to profiles, so we
  * resolve approver/confirmer names with a separate profiles lookup instead of
  * embedding (avoids PostgREST FK-disambiguation errors).
+ *
+ * Round-4 finding R5: this response carries payments and installment_plans, so it is
+ * force-dynamic and goes out through applyPrivateNoStore() like every other
+ * money-derived read. tests/security/api-cache-money-boundary.test.mjs derives that
+ * rule from the routes' own queries rather than from a list.
  */
+export const dynamic = "force-dynamic";
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -77,10 +85,19 @@ export async function GET(
       .order("seq", { ascending: true });
 
     // ── Payments ──
+    //
+    // Round-4 finding R5: this select named `confirmed` and stopped there, so the
+    // detail page had no way to tell a reversal from a payment still awaiting
+    // confirmation. void_payment() sets confirmed = false as well as voided_at, and
+    // the page's `p.confirmed ? paid : pendingConfirm` therefore displayed every
+    // voided payment as pending cash — the same two-state rule B8 removed from the
+    // payments dashboard, still live here. voided_at is what records the reversal
+    // (src/lib/payment-state.mjs), void_reason is why, and voided_by joins the same
+    // profiles lookup below as confirmed_by.
     const { data: payments } = await supabase
       .from("payments")
       .select(
-        "id, amount, payment_date, payment_method, reference_no, confirmed, confirmed_at, confirmed_by, installment_plan_id, created_at"
+        "id, amount, payment_date, payment_method, reference_no, confirmed, confirmed_at, confirmed_by, voided_at, voided_by, void_reason, installment_plan_id, created_at"
       )
       .eq("contract_id", contractId)
       .order("payment_date", { ascending: false });
@@ -94,7 +111,10 @@ export async function GET(
 
     // ── Resolve approver / confirmer names in one profiles lookup ──
     const nameIds = new Set<string>();
-    (payments ?? []).forEach((p: any) => { if (p.confirmed_by) nameIds.add(p.confirmed_by); });
+    (payments ?? []).forEach((p: any) => {
+      if (p.confirmed_by) nameIds.add(p.confirmed_by);
+      if (p.voided_by) nameIds.add(p.voided_by);
+    });
     (approvals ?? []).forEach((a: any) => { if (a.approver_id) nameIds.add(a.approver_id); });
     const nameMap: Record<string, string> = {};
     if (nameIds.size > 0) {
@@ -108,19 +128,27 @@ export async function GET(
     const paymentsNamed = (payments ?? []).map((p: any) => ({
       ...p,
       confirmer_name: p.confirmed_by ? nameMap[p.confirmed_by] ?? null : null,
+      voider_name: p.voided_by ? nameMap[p.voided_by] ?? null : null,
     }));
     const approvalsNamed = (approvals ?? []).map((a: any) => ({
       ...a,
       approver_name: a.approver_id ? nameMap[a.approver_id] ?? null : null,
     }));
 
-    return NextResponse.json({
-      contract,
-      installments: installments ?? [],
-      payments: paymentsNamed,
-      approvals: approvalsNamed,
-      canManage: isManagement,
-    });
+    return applyPrivateNoStore(
+      NextResponse.json({
+        contract,
+        installments: installments ?? [],
+        payments: paymentsNamed,
+        approvals: approvalsNamed,
+        canManage: isManagement,
+        allowedStatusTransitions: allowedSetContractStatuses(
+          role,
+          contract.sales_id === user.id,
+          contract.status,
+        ),
+      }),
+    );
   } catch (err: any) {
     const message =
       process.env.NODE_ENV === "production" ? "Internal server error" : err.message;

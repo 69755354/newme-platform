@@ -30,7 +30,7 @@
 -- cross-checked against ASSERT_TOTAL, so a file that stops early cannot pass
 -- quietly.
 --
--- ASSERT_TOTAL: 13
+-- ASSERT_TOTAL: 18
 -- ============================================================================
 
 create temp table if not exists post_recontract_assert_log (name text);
@@ -104,20 +104,115 @@ select pg_temp.assert((select direct_write_mode = 'strict' from public.money_rel
                       'recontract-release-mode-row-is-strict-again');
 select pg_temp.assert(public.money_direct_write_mode() = 'strict',
                       'recontract-mode-function-reports-strict-again');
--- The manifest's `deferred_contract` posture predicate reads exactly these two
--- and the four guard triggers below. Asserting the same set here is deliberate:
--- `--verify-only` after a re-contract must be answering the same question this
--- gate answers, or the operator's check and the gate's check are two different
--- claims wearing one name.
-select pg_temp.assert((select count(*) = 4
-                       from pg_trigger
-                       where not tgisinternal
-                         and tgenabled = 'O'
-                         and tgname in ('trg_guard_contracts_write',
-                                        'trg_guard_payments_write',
-                                        'trg_guard_quotations_write',
-                                        'trg_guard_contract_transition')),
-                      'recontract-the-four-mode-gated-guards-are-still-enabled');
+-- The manifest's `deferred_contract` posture predicates read exactly these two,
+-- the six mode-gated guards below, the transition guard and the two KPI write
+-- routines. Asserting the same sets here is deliberate: `--verify-only` after a
+-- re-contract must be answering the same question this gate answers, or the
+-- operator's check and the gate's check are two different claims wearing one name.
+--
+-- Round-4 C4-2 · what this block used to assert
+-- --------------------------------------------
+-- One assertion, `count(*) = 4` over trg_guard_contracts_write,
+-- trg_guard_payments_write, trg_guard_quotations_write and
+-- trg_guard_contract_transition, with the comment above it claiming that set was
+-- deliberately the same as the manifest's. The set was the same, and both were
+-- wrong in both directions: trg_guard_contract_transition does not read the
+-- release mode at all, and trg_guard_installment_plans_write,
+-- trg_guard_contract_approvals_write and trg_guard_payment_allocations_write have
+-- read it since 20260814000000 rewrote them to stand down during the compatibility
+-- window. Measured on PG 17.10 after both phases: SIX enabled triggers whose
+-- function body calls public.money_direct_write_is_blocked(), and the transition
+-- guard is not one of them. Because a name was counted that could not fail, the
+-- count still reached four with three real guards dropped.
+--
+-- The trigger name alone is not the guard: trg_require_current_session proves one
+-- name can be attached to twenty tables, and guard_definer_only_write() backs two
+-- of these six under two different trigger names. So the pairs are (trigger,
+-- table), matched both ways. `tgenabled = 'O'` because a DISABLED trigger reads as
+-- present in pg_trigger and refuses nothing.
+select pg_temp.assert((select count(*) = 6
+                       from (values ('trg_guard_contracts_write',           'contracts'),
+                                    ('trg_guard_payments_write',            'payments'),
+                                    ('trg_guard_installment_plans_write',   'installment_plans'),
+                                    ('trg_guard_contract_approvals_write',  'contract_approvals'),
+                                    ('trg_guard_payment_allocations_write', 'payment_allocations'),
+                                    ('trg_guard_quotations_write',          'quotations')) as d(tgname, relname)
+                       where exists (select 1
+                                       from pg_trigger g
+                                       join pg_class c on c.oid = g.tgrelid
+                                       join pg_namespace n on n.oid = c.relnamespace
+                                      where not g.tgisinternal
+                                        and g.tgenabled = 'O'
+                                        and n.nspname = 'public'
+                                        and g.tgname = d.tgname
+                                        and c.relname = d.relname)),
+                      'recontract-the-six-mode-gated-guards-are-still-enabled');
+-- The other direction, which is what stops this list from silently ceasing to be
+-- the list: a trigger whose function consults the release mode and is not declared
+-- above is a guard nobody verified. A future migration that adds one fails here
+-- until it is declared in all three places
+-- (tests/release/mode-controlled-guards.test.mjs enforces the "all three").
+select pg_temp.assert((select count(*) = 0
+                       from pg_trigger g
+                       join pg_class c on c.oid = g.tgrelid
+                       join pg_namespace n on n.oid = c.relnamespace
+                       join pg_proc p on p.oid = g.tgfoid
+                      where not g.tgisinternal
+                        and g.tgenabled = 'O'
+                        and n.nspname = 'public'
+                        and p.prokind = 'f'
+                        and pg_get_functiondef(p.oid) like '%money_direct_write_is_blocked%'
+                        and not exists (select 1
+                                          from (values ('trg_guard_contracts_write',           'contracts'),
+                                                       ('trg_guard_payments_write',            'payments'),
+                                                       ('trg_guard_installment_plans_write',   'installment_plans'),
+                                                       ('trg_guard_contract_approvals_write',  'contract_approvals'),
+                                                       ('trg_guard_payment_allocations_write', 'payment_allocations'),
+                                                       ('trg_guard_quotations_write',          'quotations')) as d(tgname, relname)
+                                         where d.tgname = g.tgname::text
+                                           and d.relname = c.relname::text)),
+                      'recontract-no-undeclared-mode-gated-guard-exists');
+-- The seventh guard trigger, which the mode does NOT stand down: it refuses an
+-- impossible status change in both modes. Checked separately so the count of
+-- mode-gated guards above stays a measurement rather than a habit — the previous
+-- revision of this block is what counting it produced.
+select pg_temp.assert((select count(*) = 1
+                       from pg_trigger g
+                       join pg_class c on c.oid = g.tgrelid
+                       join pg_namespace n on n.oid = c.relnamespace
+                      where not g.tgisinternal
+                        and g.tgenabled = 'O'
+                        and n.nspname = 'public'
+                        and g.tgname = 'trg_guard_contract_transition'
+                        and c.relname = 'contracts'),
+                      'recontract-the-transition-guard-is-still-enabled');
+-- And still unconditional: `before update`, not `before update of status`. A
+-- column list would make the graph depend on which columns a writer names, and
+-- re-declaring 'strict' over that is declaring a posture that is not there.
+select pg_temp.assert((select tgtype = 19 and tgattr::text = '' from pg_trigger
+                       where tgrelid = 'public.contracts'::regclass
+                         and tgname = 'trg_guard_contract_transition'),
+                      'recontract-the-transition-guard-is-still-unconditional');
+-- The KPI write path, which is here because the rollback direction can remove it
+-- and the mode cannot put it back. 20_assert_post_rollback.sql asserts both
+-- routines survive the companions; this asserts the re-contract did not declare
+-- 'strict' over a database that has no way to change a period's targets except the
+-- direct table write 20260817150000 exists to remove.
+select pg_temp.assert((select count(*) = 2 from pg_proc p
+                        where p.prokind = 'f'
+                          and p.oid in (to_regprocedure('public.replace_kpi_targets(text, jsonb, uuid)'),
+                                        to_regprocedure('public.clear_kpi_targets(text, uuid)'))),
+                      'recontract-kpi-write-routines-are-installed');
+select pg_temp.assert((select count(*) = 2
+                         and bool_and(p.prosecdef)
+                         and bool_and(has_function_privilege('service_role', p.oid, 'execute'))
+                         and not bool_or(has_function_privilege('authenticated', p.oid, 'execute'))
+                         and not bool_or(has_function_privilege('anon', p.oid, 'execute'))
+                       from pg_proc p
+                       where p.prokind = 'f'
+                         and p.oid in (to_regprocedure('public.replace_kpi_targets(text, jsonb, uuid)'),
+                                       to_regprocedure('public.clear_kpi_targets(text, uuid)'))),
+                      'recontract-kpi-write-routines-are-server-only');
 
 -- ============================================================================
 -- Behaviour: the writes the compatibility window accepted are refused again
@@ -162,9 +257,9 @@ begin
     -- say nothing about the release mode. A different id from the post-rollback
     -- fixture's, because that statement committed nothing but this file runs on
     -- the same database.
-    insert into public.leads (id, assigned_to, stage, customer_name)
+    insert into public.leads (id, assigned_to, stage, customer_name, source)
     values ('13131313-1313-1313-1313-131313131313',
-            'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay post-recontract lead');
+            'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay post-recontract lead', 'other');
     begin
       perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
       set local role authenticated;
@@ -222,7 +317,7 @@ $$;
 -- What the round trip must not have cost
 -- ============================================================================
 -- The rollback direction is where a companion can quietly re-open a hole, and
--- 20_assert_post_rollback.sql spends fifty assertions on that. The forward
+-- 20_assert_post_rollback.sql spends fifty-three assertions on that. The forward
 -- direction has the mirror-image risk: an artifact that restores 'strict' by
 -- recreating objects could restore an OLD definition of them. This one is
 -- allowed to touch one row in one table, so the check is that the routines the
@@ -258,8 +353,8 @@ declare
   total int;
 begin
   select count(*) into total from post_recontract_assert_log;
-  if total <> 13 then
-    raise exception 'post-recontract assertion file ran % assertions, ASSERT_TOTAL says 13', total
+  if total <> 18 then
+    raise exception 'post-recontract assertion file ran % assertions, ASSERT_TOTAL says 18', total
       using errcode = '22000';
   end if;
   raise notice 'all % post-recontract assertions passed', total;

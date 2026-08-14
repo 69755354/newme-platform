@@ -2,6 +2,16 @@
 export const translations = {
   en: {
     common: {
+      // t() falls back to the KEY PATH, never to a blank or to the English word —
+      // see src/lib/i18n/LanguageContext.tsx. So a caller writing
+      // `t("common.page") || "Page"` renders the literal string "common.page" and
+      // the `||` branch is dead code. These four were exactly that: the contracts
+      // list shipped a filter chip reading "common.all" and a pager reading
+      // "common.page 1 / 3" in both languages.
+      all: "All",
+      page: "Page",
+      prev: "Prev",
+      next: "Next",
       search: "Search",
       loading: "Loading...",
       saving: "Saving...",
@@ -677,6 +687,11 @@ export const translations = {
       dueDate: "Due",
       confirmed: "Confirmed",
       pendingConfirm: "Pending",
+      // R5: the trace badge's other state. Deliberately not "Pending": v_lead_trace
+      // carries `confirmed` and no void column, so `confirmed = false` covers a
+      // payment still awaiting confirmation AND one that has been reversed, and
+      // calling both "pending" told an operator that reversed money was on its way.
+      paymentNotConfirmed: "Not confirmed",
       installment: "Installment",
       payment: "Payment",
       quotationLabel: "Quotation",
@@ -1044,6 +1059,28 @@ export const translations = {
       statusRevoking: "Revoking",
       statusSuperseded: "Superseded",
       statusSuspended: "Suspended",
+      // The list page and the detail page both label this status; neither had a key
+      // for it, so both rendered "contracts.statusCancelled".
+      statusCancelled: "Cancelled",
+      // The first-payment badge. These five were hardcoded English in the list
+      // page's getFirstPaymentBadge(), so the Chinese UI showed "✓ Paid",
+      // "⚠ Partial", "Overdue", "Due Soon" and "Unpaid".
+      firstPaymentPaid: "Paid",
+      firstPaymentPartial: "Partial",
+      firstPaymentOverdue: "Overdue",
+      firstPaymentDueSoon: "Due Soon",
+      firstPaymentUnpaid: "Unpaid",
+      firstDue: "1st due",
+      // The contract detail page's status control. `confirmStatusChange` was the
+      // clearest case of what a missing key costs: the dialog compared t()'s return
+      // value against the string "contracts.confirmStatusChange" and substituted a
+      // hardcoded English sentence when they matched, because t() answers a missing
+      // key with the key path and can never be falsy. The other three rendered
+      // through `t("…") || "Literal"`, which is the same dead branch written shorter.
+      changeStatus: "Change Status",
+      confirmStatusChange: "Change status to {status}?",
+      statusUpdated: "Status updated",
+      signedAt: "Signed At",
       approve: "Approve",
       reject: "Reject",
       revoke: "Revoke",
@@ -1536,6 +1573,10 @@ export const translations = {
   },
   zh: {
     common: {
+      all: "全部",
+      page: "页码",
+      prev: "上一页",
+      next: "下一页",
       search: "搜索",
       loading: "加载中...",
       saving: "保存中...",
@@ -2207,6 +2248,7 @@ export const translations = {
       dueDate: "到期",
       confirmed: "已确认",
       pendingConfirm: "待确认",
+      paymentNotConfirmed: "未确认",
       installment: "分期",
       payment: "付款",
       quotationLabel: "报价单",
@@ -2574,6 +2616,17 @@ export const translations = {
       statusRevoking: "撤销中",
       statusSuperseded: "已替代",
       statusSuspended: "已暂停",
+      statusCancelled: "已取消",
+      firstPaymentPaid: "已付",
+      firstPaymentPartial: "部分",
+      firstPaymentOverdue: "逾期",
+      firstPaymentDueSoon: "即将到期",
+      firstPaymentUnpaid: "未付",
+      firstDue: "首款到期",
+      changeStatus: "变更状态",
+      confirmStatusChange: "确认将状态变更为{status}？",
+      statusUpdated: "状态已更新",
+      signedAt: "签署日期",
       approve: "通过",
       reject: "驳回",
       revoke: "撤销",

@@ -1,6 +1,6 @@
 # API Catalog
 
-**Total endpoints:** 103
+**Total endpoints:** 119
 
 | Method | Path | RBAC (from comments) | Source File |
 |--------|------|----------------------|-------------|
@@ -12,13 +12,16 @@
 | GET | `/api/analytics/summary` | — | `src/app/api/analytics/summary/route.ts` |
 | POST | `/api/auth/change-password` | — | `src/app/api/auth/change-password/route.ts` |
 | POST | `/api/auth/dev-login` | public | `src/app/api/auth/dev-login/route.ts` |
+| POST | `/api/auth/login` | public | `src/app/api/auth/login/route.ts` |
 | POST | `/api/auth/logout` | — | `src/app/api/auth/logout/route.ts` |
 | GET | `/api/auth/me` | — | `src/app/api/auth/me/route.ts` |
+| POST | `/api/auth/session` | — | `src/app/api/auth/session/route.ts` |
 | GET | `/api/command-center` | — | `src/app/api/command-center/route.ts` |
 | GET | `/api/contracts` | — | `src/app/api/contracts/route.ts` |
 | POST | `/api/contracts` | — | `src/app/api/contracts/route.ts` |
 | PUT | `/api/contracts` | — | `src/app/api/contracts/route.ts` |
 | GET | `/api/contracts/:id` | admin, boss | `src/app/api/contracts/[id]/route.ts` |
+| PATCH | `/api/contracts/:id` | admin, boss | `src/app/api/contracts/[id]/route.ts` |
 | POST | `/api/contracts/:id/approve` | admin, boss | `src/app/api/contracts/[id]/approve/route.ts` |
 | POST | `/api/contracts/:id/confirm-upload` | — | `src/app/api/contracts/[id]/confirm-upload/route.ts` |
 | POST | `/api/contracts/:id/remind-payment` | — | `src/app/api/contracts/[id]/remind-payment/route.ts` |
@@ -58,11 +61,21 @@
 | DELETE | `/api/kpi/targets` | — | `src/app/api/kpi/targets/route.ts` |
 | GET | `/api/kpi/targets` | — | `src/app/api/kpi/targets/route.ts` |
 | POST | `/api/kpi/targets` | — | `src/app/api/kpi/targets/route.ts` |
+| POST | `/api/leads/:id/assignment` | — | `src/app/api/leads/[id]/assignment/route.ts` |
+| POST | `/api/leads/:id/contacts` | admin, authenticated, boss | `src/app/api/leads/[id]/contacts/route.ts` |
+| DELETE | `/api/leads/:id/contacts/:contactId` | admin, authenticated, boss | `src/app/api/leads/[id]/contacts/[contactId]/route.ts` |
+| PATCH | `/api/leads/:id/contacts/:contactId` | admin, authenticated, boss | `src/app/api/leads/[id]/contacts/[contactId]/route.ts` |
+| POST | `/api/leads/:id/delete` | — | `src/app/api/leads/[id]/delete/route.ts` |
 | POST | `/api/leads/:id/events` | — | `src/app/api/leads/[id]/events/route.ts` |
 | POST | `/api/leads/:id/follow-up` | — | `src/app/api/leads/[id]/follow-up/route.ts` |
+| PATCH | `/api/leads/:id/milestone` | — | `src/app/api/leads/[id]/milestone/route.ts` |
 | POST | `/api/leads/:id/milestone` | — | `src/app/api/leads/[id]/milestone/route.ts` |
+| POST | `/api/leads/:id/notes` | — | `src/app/api/leads/[id]/notes/route.ts` |
 | POST | `/api/leads/:id/quality` | — | `src/app/api/leads/[id]/quality/route.ts` |
+| PATCH | `/api/leads/:id/stage` | admin, authenticated, boss | `src/app/api/leads/[id]/stage/route.ts` |
 | GET | `/api/leads/:id/timeline` | — | `src/app/api/leads/[id]/timeline/route.ts` |
+| GET | `/api/leads/:id/transfer-history` | — | `src/app/api/leads/[id]/transfer-history/route.ts` |
+| DELETE | `/api/leads/archive` | admin, boss | `src/app/api/leads/archive/route.ts` |
 | GET | `/api/leads/archive` | admin, boss | `src/app/api/leads/archive/route.ts` |
 | POST | `/api/leads/archive` | admin, boss | `src/app/api/leads/archive/route.ts` |
 | GET | `/api/leads/follow-up-overdue` | — | `src/app/api/leads/follow-up-overdue/route.ts` |
@@ -71,6 +84,7 @@
 | GET | `/api/leads/list` | — | `src/app/api/leads/list/route.ts` |
 | POST | `/api/leads/meta-capi` | public | `src/app/api/leads/meta-capi/route.ts` |
 | GET | `/api/meta/oauth-callback` | public | `src/app/api/meta/oauth-callback/route.ts` |
+| GET | `/api/meta/oauth-start` | — | `src/app/api/meta/oauth-start/route.ts` |
 | GET | `/api/metrics/daily` | — | `src/app/api/metrics/daily/route.ts` |
 | GET | `/api/metrics/funnel` | — | `src/app/api/metrics/funnel/route.ts` |
 | POST | `/api/monitoring/report` | public | `src/app/api/monitoring/report/route.ts` |
@@ -80,10 +94,10 @@
 | POST | `/api/notifications/read-all` | — | `src/app/api/notifications/read-all/route.ts` |
 | GET | `/api/notifications/unread-count` | — | `src/app/api/notifications/unread-count/route.ts` |
 | POST | `/api/notify` | — | `src/app/api/notify/route.ts` |
-| GET | `/api/payments` | — | `src/app/api/payments/route.ts` |
 | POST | `/api/payments` | — | `src/app/api/payments/route.ts` |
 | POST | `/api/payments/:id/allocate` | admin, boss | `src/app/api/payments/[id]/allocate/route.ts` |
 | POST | `/api/payments/:id/confirm` | admin, boss | `src/app/api/payments/[id]/confirm/route.ts` |
+| POST | `/api/payments/:id/void` | admin, boss | `src/app/api/payments/[id]/void/route.ts` |
 | GET | `/api/payments/list` | — | `src/app/api/payments/list/route.ts` |
 | GET | `/api/pipeline/list` | — | `src/app/api/pipeline/list/route.ts` |
 | GET | `/api/products` | — | `src/app/api/products/route.ts` |
@@ -92,16 +106,17 @@
 | POST | `/api/quotations/calculate` | — | `src/app/api/quotations/calculate/route.ts` |
 | GET | `/api/quotations/export` | — | `src/app/api/quotations/export/route.ts` |
 | POST | `/api/quotations/generate` | — | `src/app/api/quotations/generate/route.ts` |
+| GET | `/api/ready` | — | `src/app/api/ready/route.ts` |
 | GET | `/api/settings/data` | — | `src/app/api/settings/data/route.ts` |
 | GET | `/api/tasks` | — | `src/app/api/tasks/route.ts` |
-| POST | `/api/tasks` | — | `src/app/api/tasks/route.ts` |
 | PATCH | `/api/tasks` | — | `src/app/api/tasks/route.ts` |
+| POST | `/api/tasks` | — | `src/app/api/tasks/route.ts` |
 | GET | `/api/tasks/:id` | — | `src/app/api/tasks/[id]/route.ts` |
 | PATCH | `/api/tasks/:id` | — | `src/app/api/tasks/[id]/route.ts` |
 | GET | `/api/tasks/list` | — | `src/app/api/tasks/list/route.ts` |
 | GET | `/api/team/list` | — | `src/app/api/team/list/route.ts` |
-| GET | `/api/users` | — | `src/app/api/users/route.ts` |
-| POST | `/api/users` | — | `src/app/api/users/route.ts` |
+| GET | `/api/users` | admin, boss | `src/app/api/users/route.ts` |
+| POST | `/api/users` | admin, boss | `src/app/api/users/route.ts` |
 | DELETE | `/api/users/:id` | admin, boss | `src/app/api/users/[id]/route.ts` |
 | GET | `/api/users/:id/password` | admin, boss | `src/app/api/users/[id]/password/route.ts` |
 | PATCH | `/api/users/:id/password` | admin, boss | `src/app/api/users/[id]/password/route.ts` |

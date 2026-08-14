@@ -1,6 +1,7 @@
 'use server'
 
-import { createServerSupabase } from '@/lib/supabase-server'
+import { getActionAuthContext } from '@/lib/action-auth-context'
+import { dispatchPersistedNotification } from '@/lib/notification-dispatch'
 
 /**
  * Approve or reject a contract via the two-step approval workflow.
@@ -14,20 +15,8 @@ export async function approveContract(
   action: 'approve' | 'reject',
   notes?: string
 ) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
+  const { supabase, user, role: userRole } = await getActionAuthContext()
 
-  // Fetch user role
-  const { data: profile, error: profileErr } = await supabase
-    .from('profiles')
-    .select('role, full_name')
-    .eq('id', user.id)
-    .single()
-
-  if (profileErr || !profile) throw new Error('Profile not found')
-
-  const userRole = profile.role
   if (!userRole) throw new Error('Profile role not found')
 
   if (!action || !['approve', 'reject'].includes(action)) {
@@ -72,31 +61,19 @@ export async function approveContract(
 
   if (rpcErr) throw new Error(rpcErr.message || 'Approval RPC failed')
 
-  // Send notification
+  // Dispatch from the committed approval row; no loopback HTTP request or
+  // caller-supplied recipient/copy is involved.
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
     const notificationType = action === 'approve' ? 'contract_approved' : 'contract_rejected'
-
-    const { data: contractInfo } = await supabase
-      .from('contracts')
-      .select('contract_no, sales_id')
-      .eq('id', contractId)
-      .single()
-
-    await fetch(`${baseUrl}/api/notify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    await dispatchPersistedNotification({
+      actorId: user.id,
+      input: {
         type: notificationType,
         contract_id: contractId,
-        contract_no: contractInfo?.contract_no,
-        action,
-        step: currentStep,
-        approver_name: profile.full_name || 'Unknown',
-        target_user_id: contractInfo?.sales_id,
-      }),
+      },
     })
-  } catch {
+  } catch (error) {
+    console.error('contract_notification_failed', error instanceof Error ? error.message : 'unknown_error')
     // Notification failure is non-critical
   }
 

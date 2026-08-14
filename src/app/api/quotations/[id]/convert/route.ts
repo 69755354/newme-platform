@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
 import type { Json } from "@/types/database";
 
 /**
@@ -180,23 +181,23 @@ export async function POST(
       );
     }
 
-    // Notify admins. Best-effort by design: this is an outbound call, not part of
-    // the conversion's graph.
+    // Resolve the pending step and approvers from the committed contract.
     try {
-      await fetch(
-        `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/notify`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "contract_pending_approval",
-            contract_id: conversion.contract_id,
-            lead_id: null,
-          }),
-        }
-      );
-    } catch {
-      // non-blocking
+      await dispatchPersistedNotification({
+        actorId: user.id,
+        input: {
+          type: "contract_pending_approval",
+          contract_id: conversion.contract_id,
+        },
+      });
+    } catch (notifyErr) {
+      logger.warn({
+        err: notifyErr,
+        request_id,
+        operation: "quotation_convert_notification",
+        user_id: user.id,
+        contract_id: conversion.contract_id,
+      }, "[Quotation Convert] Notification failed");
     }
 
     // Revalidate cached pages to reflect new contract

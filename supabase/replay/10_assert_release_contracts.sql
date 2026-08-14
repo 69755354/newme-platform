@@ -15,7 +15,7 @@
 -- notices against ASSERT_TOTAL below, so an assertion file that stops early
 -- fails the job instead of passing quietly.
 --
--- ASSERT_TOTAL: 331
+-- ASSERT_TOTAL: 342
 -- ============================================================================
 
 create temp table assert_log (name text, passed boolean not null);
@@ -37,8 +37,10 @@ create temp table assert_log (name text, passed boolean not null);
 -- of raising is what makes one marker per assertion possible.
 --
 -- Both branches write to assert_log, so the self-check at the foot of this file
--- can prove from inside the database that all 331 assertions were reached —
--- a claim no amount of log scraping can make.
+-- can prove from inside the database that every assertion declared in
+-- ASSERT_TOTAL above was reached — a claim no amount of log scraping can make.
+-- The count is deliberately not repeated here: a second copy of it in prose is a
+-- copy that rots, and this comment has already been wrong once.
 create or replace function pg_temp.assert(condition boolean, assertion_name text)
 returns void
 language plpgsql
@@ -277,25 +279,42 @@ select pg_temp.assert_eval($q$ has_table_privilege('service_role', 'public.meta_
 -- Behaviour: the grant is what closes this, so prove the grant, not the policy.
 -- RLS alone would not have been enough — a permissive `using (true)` policy plus
 -- a table grant is how every authenticated user could read the plaintext token.
-do $$
-declare v_state text := '00000';
+--
+-- The access attempt has to run through a SECURITY INVOKER routine called by a
+-- top-level SET ROLE. A static statement inside a postgres-owned DO block keeps
+-- the block's original privilege context even after SET LOCAL ROLE and can reach
+-- RLS first; on the production baseline that reports 28003 for the deliberately
+-- inactive fixture rather than measuring the table grant. This helper catches
+-- the SQLSTATE while genuinely executing as authenticated.
+create or replace function pg_temp.meta_tokens_read_sqlstate()
+returns text
+language plpgsql
+security invoker
+as $$
 begin
-  begin
-    perform pg_temp.act_as('dddddddd-dddd-dddd-dddd-dddddddddddd');
-    set local role authenticated;
-    perform count(*) from public.meta_tokens;
-  exception when others then v_state := sqlstate;
-  end;
-  reset role;
-  -- 42501 exactly, not "it raised something". The grant is what the migration
-  -- revoked, so insufficient_privilege is the boundary that has to do the
-  -- refusing; a read that failed for any other reason would not prove it.
-  -- Recording the SQLSTATE rather than raising on success is also what makes this
-  -- assertion reportable in MODE=control: the floor still holds the grant, the
-  -- read succeeds, and the verdict is 00000 under this assertion's own name.
-  perform pg_temp.assert(v_state = '42501', 'f10-authenticated-cannot-read-meta-tokens');
+  perform count(*) from public.meta_tokens;
+  return '00000';
+exception when others then
+  return sqlstate;
 end
 $$;
+
+begin;
+select pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+set local role authenticated;
+select set_config('replay.meta_tokens_read_sqlstate', pg_temp.meta_tokens_read_sqlstate(), true);
+reset role;
+-- 42501 exactly, not "it raised something". The grant is what the migration
+-- revoked, so insufficient_privilege is the boundary that has to do the
+-- refusing; a read that failed for any other reason would not prove it.
+-- Recording the SQLSTATE rather than raising on success is also what makes this
+-- assertion reportable in MODE=control: the floor still holds the grant, the
+-- read succeeds, and the verdict is 00000 under this assertion's own name.
+select pg_temp.assert(
+  current_setting('replay.meta_tokens_read_sqlstate') = '42501',
+  'f10-authenticated-cannot-read-meta-tokens'
+);
+commit;
 
 -- ============================================================================
 -- F-02 · default-credential admin account
@@ -2508,12 +2527,146 @@ select pg_temp.assert_eval($q$
   and public.contract_transition_is_allowed('revoking', 'terminated')
 $q$, 'money-transition-graph-still-permits-the-working-lifecycle');
 -- ROW (1) | BEFORE (2) | UPDATE (16) = 19. Row-level on purpose: it compares
--- OLD.status with NEW.status, which a statement-level trigger cannot see.
+-- OLD.status with NEW.status, which a statement-level trigger cannot see. And
+-- tgattr empty, i.e. `before update` and not `before update of status`: a column
+-- list makes the trigger fire on the statement's target list rather than on what
+-- the row ends up holding, so anything that assigns new.status without naming it
+-- escapes. The behavioural half is two blocks below.
 select pg_temp.assert_eval($q$
-  (select tgtype = 19 and tgenabled = 'O' from pg_trigger
+  (select tgtype = 19 and tgenabled = 'O' and tgattr::text = '' from pg_trigger
   where tgrelid = 'public.contracts'::regclass
   and tgname = 'trg_guard_contract_transition')
-$q$, 'money-transition-trigger-is-a-before-row-update-trigger');
+$q$, 'money-transition-trigger-is-an-unconditional-before-row-update-trigger');
+
+-- ---------------------------------------------------------------------------
+-- The guard triggers and the KPI RPCs, pinned by identity
+-- ---------------------------------------------------------------------------
+-- Round-4 C4-3. The posture verification asks whether each guard is present and
+-- enabled. Present and enabled is not the same as unchanged: a migration can keep
+-- the name and move the trigger to a different table, narrow it to UPDATE only,
+-- give it a column list, or repoint it at another function, and every existence
+-- check still passes. So the full identity of all seven — schema, table, trigger
+-- name, function, tgtype, tgattr, tgenabled — is pinned as a set, in both
+-- directions: an unexpected guard fails this too, because a guard nobody declared
+-- is a guard nobody verifies on rollback.
+select pg_temp.assert_eval($q$
+  not exists (
+    select 1
+      from (
+        select n.nspname || '.' || c.relname || '|' || t.tgname || '|' ||
+               pn.nspname || '.' || p.proname || '|' || t.tgtype::text || '|' ||
+               coalesce(t.tgattr::text, '') || '|' || t.tgenabled::text as row_id
+          from pg_trigger t
+          join pg_class c on c.oid = t.tgrelid
+          join pg_namespace n on n.oid = c.relnamespace
+          join pg_proc p on p.oid = t.tgfoid
+          join pg_namespace pn on pn.oid = p.pronamespace
+         where not t.tgisinternal
+           and (pg_get_functiondef(p.oid) like '%money_direct_write_is_blocked%'
+                or t.tgname = 'trg_guard_contract_transition')
+      ) actual
+      full join (
+        values ('public.contract_approvals|trg_guard_contract_approvals_write|public.guard_definer_only_write|31||O'),
+               ('public.contracts|trg_guard_contract_transition|public.guard_contract_transition|19||O'),
+               ('public.contracts|trg_guard_contracts_write|public.guard_contracts_write|31||O'),
+               ('public.installment_plans|trg_guard_installment_plans_write|public.guard_installment_plans_write|31||O'),
+               ('public.payment_allocations|trg_guard_payment_allocations_write|public.guard_definer_only_write|31||O'),
+               ('public.payments|trg_guard_payments_write|public.guard_payments_write|31||O'),
+               ('public.quotations|trg_guard_quotations_write|public.guard_quotations_write|19||O')
+      ) expected (row_id) on actual.row_id = expected.row_id
+     where actual.row_id is null or expected.row_id is null
+  )
+$q$, 'money-guard-triggers-are-pinned-by-full-identity');
+
+-- The two KPI routines the phase rollback affects, pinned the same way: identity
+-- arguments, return type, set-returning or not, SECURITY DEFINER, the search_path
+-- that makes definer safe, and the ACL. A definer routine that quietly loses its
+-- search_path, gains EXECUTE for authenticated, or changes its return shape is a
+-- different routine wearing the same name.
+select pg_temp.assert_eval($q$
+  not exists (
+    select 1
+      from (
+        select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')|' ||
+               pg_catalog.format_type(p.prorettype, null) || '|' ||
+               p.proretset::text || '|' || p.prosecdef::text || '|' ||
+               coalesce(array_to_string(p.proconfig, ','), '') || '|' ||
+               coalesce(array_to_string(p.proacl, ' '), '') as row_id
+          from pg_proc p
+          join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public'
+           and p.proname in ('clear_kpi_targets', 'replace_kpi_targets')
+      ) actual
+      full join (
+        values ('clear_kpi_targets(p_period text, p_actor uuid)|bigint|false|true|search_path=pg_catalog, public, pg_temp|postgres=X/postgres service_role=X/postgres'),
+               ('replace_kpi_targets(p_period text, p_rows jsonb, p_set_by uuid)|kpi_targets|true|true|search_path=pg_catalog, public, pg_temp|postgres=X/postgres service_role=X/postgres')
+      ) expected (row_id) on actual.row_id = expected.row_id
+     where actual.row_id is null or expected.row_id is null
+  )
+$q$, 'money-kpi-rpcs-are-pinned-by-full-identity');
+
+-- ---------------------------------------------------------------------------
+-- And unconditional as behaviour, not as a catalog column
+-- ---------------------------------------------------------------------------
+-- tgattr = '' says the trigger has no column list. This says what that buys. A
+-- second BEFORE ROW trigger assigns new.status and sorts ahead of the guard by
+-- name — the shape of any normalizer, stamp or audit hook a later migration adds.
+-- The statement never names status, so `before update of status` would not fire at
+-- all and a terminal 'completed' contract would re-open to 'active'. Everything
+-- here is rolled back by REPLAY_ROLLBACK, DDL included.
+do $$
+declare
+  v_st      text := '00000';
+  v_msg     text := '';
+  v_status  text;
+  v_left    int;
+begin
+  begin
+    update public.contracts set status = 'completed'
+     where id = 'c4c4c4c4-c4c4-c4c4-c4c4-c4c4c4c4c4c4';
+
+    create function public.replay_status_normalizer() returns trigger
+    language plpgsql as $fn$
+    begin
+      new.status := 'active';
+      return new;
+    end
+    $fn$;
+    create trigger aaa_replay_status_normalizer
+      before update on public.contracts
+      for each row execute function public.replay_status_normalizer();
+
+    begin
+      -- status is not in the target list; the normalizer puts it there.
+      update public.contracts set party_a_name = party_a_name
+       where id = 'c4c4c4c4-c4c4-c4c4-c4c4-c4c4c4c4c4c4';
+    exception when others then v_st := sqlstate; v_msg := sqlerrm;
+    end;
+
+    select status into v_status from public.contracts
+     where id = 'c4c4c4c4-c4c4-c4c4-c4c4-c4c4c4c4c4c4';
+
+    raise exception 'REPLAY_ROLLBACK';
+  exception
+    when others then
+      if sqlerrm <> 'REPLAY_ROLLBACK' then perform pg_temp.absorb(sqlstate, sqlerrm); end if;
+  end;
+
+  select count(*) into v_left from pg_trigger
+   where tgrelid = 'public.contracts'::regclass
+     and tgname = 'aaa_replay_status_normalizer';
+
+  perform pg_temp.assert(v_st = '22023'
+                         and v_msg like '%active is not a permitted transition from completed%',
+                         'money-transition-guard-fires-when-the-writer-never-names-status');
+  perform pg_temp.assert(v_status = 'completed',
+                         'money-transition-guard-left-the-terminal-contract-terminal');
+  perform pg_temp.assert(v_left = 0
+                         and (select status = 'active' from public.contracts
+                              where id = 'c4c4c4c4-c4c4-c4c4-c4c4-c4c4c4c4c4c4'),
+                         'money-transition-normalizer-fixture-was-rolled-back');
+end
+$$;
 
 -- And the same three answers as statements. The contract is moved to 'completed'
 -- through the supported operation first, so the refusals below are refusals of a
@@ -3242,6 +3395,14 @@ select pg_temp.assert_eval($q$ (select count(*) >= 10
 select pg_temp.assert_eval($q$ (select count(*) = 0 from public.definer_entry_boundary_exemptions
    where reason is null or char_length(btrim(reason)) < 30) $q$,
   'a1-entry-boundary-exemptions-each-carry-a-reason');
+
+select pg_temp.assert_eval($q$ (select count(*) = 1
+    from public.definer_entry_boundary_exemptions e
+    join pg_proc p on p.oid = to_regprocedure('public.get_my_role()')
+   where e.routine = 'get_my_role()'
+     and p.prosrc like '%session_boundary_state()%'
+     and p.prosrc not like '%assert_current_session_at_entry()%') $q$,
+  'a1-get-my-role-is-an-rls-safe-exemption');
 
 select pg_temp.assert_eval($q$ (select count(*) between 1 and 8 from public.definer_entry_boundary_exemptions) $q$,
   'a1-entry-boundary-exemption-list-is-short');
@@ -4427,6 +4588,98 @@ begin
 end
 $$;
 
+-- R4 · the retry that only half finished. B5 above is about what the
+-- already-converted branch REFUSES; this is about what it does when the retry is a
+-- retry. Reproduced against the release minus only 20260817170000: a converted
+-- quotation whose status was set back to 'accepted' — the quotes list writes that
+-- column directly, and trg_guard_quotations_write protects the link beside it and
+-- not the status — whose lead's final_status was cleared and whose contract's
+-- customer_id was nulled, which is the state a first attempt that died after the
+-- contract leaves and the state this branch exists to finish. The retry answered
+-- success: true, already_converted: true, quotation_status: 'accepted',
+-- project_id: null, finalized: [] — and afterwards all three rows still held the
+-- broken values. Nothing repaired, and nothing said about not repairing it.
+--
+-- The three rows are read back with the role reset, like B5 and B6 above:
+-- customers and contracts are RLS-protected and an `authenticated` session does
+-- not necessarily see what it just caused to be written.
+do $$
+declare
+  v_state    text := '00000';
+  v_lead     uuid := '0e0e0e0e-0e0e-0e0e-0e0e-0e0e0e0e0e0e';
+  v_quote    uuid := 'b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6';
+  v_sched    jsonb := jsonb_build_object('installments',
+                        jsonb_build_array(jsonb_build_object('seq', 1, 'amount', 80000)));
+  v_contract uuid;
+  v_retry    jsonb := '{}'::jsonb;
+  v_qstatus  text;
+  v_final    text;
+  v_customer uuid;
+  v_lost     text := '00000';
+  v_lostmsg  text := '';
+begin
+  begin
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    v_contract := (public.convert_quotation_to_contract(v_quote, v_sched) ->> 'contract_id')::uuid;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+
+    -- Break it the way a deployment breaks it, not the way a test would like it
+    -- broken: a status change any quotation owner can make, plus the two columns a
+    -- first attempt that died after the contract never got to.
+    update public.quotations set status = 'accepted' where id = v_quote;
+    update public.leads      set final_status = null  where id = v_lead;
+    update public.contracts  set customer_id = null   where id = v_contract;
+
+    -- The repair call: a re-POST with no schedule restated.
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    v_retry := public.convert_quotation_to_contract(v_quote, '{}'::jsonb);
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+
+    select status       into v_qstatus  from public.quotations where id = v_quote;
+    select final_status into v_final    from public.leads      where id = v_lead;
+    select customer_id  into v_customer from public.contracts  where id = v_contract;
+
+    -- And the refusal: a lead given a different terminal decision is not a
+    -- conversion waiting to be finished.
+    update public.leads set final_status = 'lost' where id = v_lead;
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    set local role authenticated;
+    begin
+      perform public.convert_quotation_to_contract(v_quote, '{}'::jsonb);
+    exception when others then v_lost := sqlstate; v_lostmsg := sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    raise exception 'REPLAY_ROLLBACK';
+  exception when others then
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    if sqlerrm <> 'REPLAY_ROLLBACK' then
+      v_state := sqlstate;
+      perform pg_temp.absorb(sqlstate, sqlerrm);
+    end if;
+  end;
+  perform pg_temp.assert(v_state = '00000' and v_qstatus = 'contract_created'
+                         and v_retry ->> 'quotation_status' = 'contract_created',
+    'r4-a-retry-restores-the-converted-quotation-status');
+  perform pg_temp.assert(v_state = '00000' and v_final = 'won',
+    'r4-a-retry-marks-the-lead-won-again');
+  perform pg_temp.assert(v_state = '00000' and v_customer is not null
+                         and v_customer = (v_retry ->> 'customer_id')::uuid,
+    'r4-a-retry-backfills-the-contract-customer');
+  perform pg_temp.assert(v_state = '00000' and (v_retry ->> 'project_id') is not null
+                         and v_retry -> 'finalized'
+                             @> '["quotation_status","lead_won","contract_customer"]'::jsonb,
+    'r4-a-retry-returns-the-project-and-reports-what-it-repaired');
+  perform pg_temp.assert(v_lost = '22023' and v_lostmsg like '%rather than won%',
+    'r4-a-retry-refuses-a-lead-given-a-different-terminal-status');
+end
+$$;
+
 -- B10 · one cent (reproduced: a 79999.99 schedule against an 80000.00 quotation,
 -- accepted, because the old check allowed 0.01 of slack per installment).
 do $$
@@ -4962,7 +5215,7 @@ $$;
 -- ============================================================================
 -- In MODE=branch "ran" and "passed" are the same number, because a failure would
 -- already have raised. In MODE=control they are not, and the distinction is the
--- whole point: the ledger below is the in-database proof that all 331 assertions
+-- whole point: the ledger below is the in-database proof that all 342 assertions
 -- were REACHED. A DO block that died on an unclassified SQL error takes its
 -- remaining assertions out of the ledger, so the count comes up short and the
 -- control run fails here rather than in a log-scraping heuristic. Reported
@@ -4977,13 +5230,13 @@ begin
   select count(*), count(*) filter (where assert_log.passed), count(*) filter (where not assert_log.passed)
     into total, passed, failed
     from assert_log;
-  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=331', total, passed, failed;
-  if total <> 331 then
-    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 331', total
+  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=342', total, passed, failed;
+  if total <> 342 then
+    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 342', total
       using errcode = '22000';
   end if;
-  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 331 then
-    raise exception 'assertion file passed % of 331 assertions', passed
+  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 342 then
+    raise exception 'assertion file passed % of 342 assertions', passed
       using errcode = '22000';
   end if;
   if exists (select 1 from assert_log group by name having count(*) > 1) then

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+import { isVoided } from "@/lib/payment-state.mjs";
 
 /**
  * POST /api/payments/[id]/confirm
@@ -44,10 +45,19 @@ export async function POST(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Verify the payment exists and is not already confirmed
+    // Verify the payment exists, is not reversed, and is not already confirmed.
+    //
+    // Round-4 finding R5: this precheck selected `confirmed` and stopped there, so it
+    // had no column with which to see a reversal. void_payment() sets confirmed =
+    // false, so a voided payment passed the check, reached confirm_payment() and came
+    // back as 22023 'a voided payment cannot be confirmed' — the right refusal, told
+    // one round-trip late and under a message the client had to parse to understand.
+    // The voided test comes FIRST because a reversal is terminal: a row carrying both
+    // voided_at and confirmed = true (representable only through a compat-mode direct
+    // write) must be reported as reversed rather than as already confirmed.
     const { data: payment, error: paymentErr } = await supabase
       .from("payments")
-      .select("id, confirmed")
+      .select("id, confirmed, voided_at")
       .eq("id", paymentId)
       .single();
 
@@ -55,9 +65,19 @@ export async function POST(
       return NextResponse.json({ error: "Payment not found" }, { status: 404 });
     }
 
+    // Same message and same HTTP status the routine's own refusal would produce
+    // (22023 → 400, see src/lib/money-rpc.mjs), so a client cannot tell whether the
+    // precheck or the database refused it — and cannot be taught two vocabularies.
+    if (isVoided(payment)) {
+      return NextResponse.json(
+        { error: "a voided payment cannot be confirmed", code: "22023" },
+        { status: 400 }
+      );
+    }
+
     if (payment.confirmed) {
       return NextResponse.json(
-        { error: "Payment is already confirmed" },
+        { error: "payment is already confirmed", code: "22023" },
         { status: 400 }
       );
     }

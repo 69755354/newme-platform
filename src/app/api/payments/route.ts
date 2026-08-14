@@ -144,114 +144,30 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * GET /api/payments
- * Lists payments with optional filters.
- * Query params: contract_id, confirmed
- */
-export async function GET(request: NextRequest) {
-  const request_id = genReqId();
-  try {
-    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(bearerToken, cookieHeader);
-    const {
-      data: { user },
-      error: authErr,
-    } = await supabase.auth.getUser();
-    if (authErr || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Fetch user role for access control
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile?.role) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 403 });
-    }
-
-    const userRole = profile.role;
-    const allowedRoles = ["admin", "boss", "sales", "finance", "operator"];
-    if (!allowedRoles.includes(userRole)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const contractId = searchParams.get("contract_id");
-    const confirmed = searchParams.get("confirmed");
-
-    let query = supabase
-      .from("payments")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (contractId) {
-      query = query.eq("contract_id", contractId);
-    }
-    if (confirmed !== null && confirmed !== undefined) {
-      query = query.eq("confirmed", confirmed === "true");
-    }
-
-    // Sales can only see payments for their own contracts
-    if (userRole === "sales") {
-      // Get contract IDs owned by this sales user
-      const { data: ownContracts, error: contractsErr } = await supabase
-        .from("contracts")
-        .select("id")
-        .eq("sales_id", user.id);
-
-      if (contractsErr) {
-        logger.error(
-          {
-            err: contractsErr,
-            request_id,
-            operation: "payment_list",
-            user_id: user.id,
-          },
-          "[API Payments] Failed to fetch sales contracts",
-        );
-        return NextResponse.json({ error: "Failed to fetch payments" }, { status: 500 });
-      }
-
-      const ownContractIds = (ownContracts || []).map((c: { id: string }) => c.id);
-
-      if (ownContractIds.length === 0) {
-        return NextResponse.json({ data: [] });
-      }
-
-      query = query.in("contract_id", ownContractIds);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      logger.error(
-        {
-          err: error,
-          request_id,
-          operation: "payment_list",
-          user_id: user.id,
-        },
-        "[API Payments] Fetch failed",
-      );
-      return NextResponse.json({ error: "Failed to fetch payments" }, { status: 500 });
-    }
-
-    return NextResponse.json({ data });
-  } catch (err: any) {
-    const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
-    logger.error(
-      {
-        err,
-        request_id,
-        operation: "payment_list",
-      },
-      "[API Payments] GET Error",
-    );
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
+// ── There is no GET here any more ────────────────────────────────────────────
+//
+// Round-4 finding R5. This file used to export a second payments read model:
+// `select("*")` on payments, returned as `{ data }`, with `?contract_id` and
+// `?confirmed` filters, its own role list ["admin","boss","sales","finance",
+// "operator"], and its own sales scoping through a separate contracts lookup.
+// Nothing in the application called it — the dashboard reads GET
+// /api/payments/list, which B8 made the one typed read model — so it was an
+// authenticated surface no page exercised and no test covered, still answering
+// requests.
+//
+// Three concrete reasons it could not just be left there:
+//
+//   * it was a THIRD state model. `?confirmed=true` filters on `confirmed` alone,
+//     so it reported voided money as received; `select("*")` returned voided_at
+//     alongside it, which is exactly the shape B8 removed from the list route
+//     (fields on the wire that nothing interprets). See src/lib/payment-state.mjs.
+//   * `select("*")` also returned request_key and credited_to — the idempotency key
+//     a client minted and the internal credit attribution — which are server-side
+//     bookkeeping. The list route names its columns for that reason.
+//   * its role list was a fourth copy of the money-role rule, unbound to the
+//     routines' own lists that tests/security/money-grant-coupling.test.mjs holds
+//     together. A route nobody calls is a route nobody notices drifting.
+//
+// Deleted rather than fixed: a read model has one place, and it already exists.
+// tests/security/payment-idempotency-boundary.test.mjs pins that this file exports
+// POST and nothing else.

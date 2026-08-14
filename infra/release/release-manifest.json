@@ -26,7 +26,23 @@
     "is therefore treated as running under `absent` and `compat` only — which is why",
     "rolling back to it while the mode is `strict` is refused instead of taking the",
     "previous release's money writes down. See",
-    "supabase/preflight/expand-contract-rollback.md §2 for the state table."
+    "supabase/preflight/expand-contract-rollback.md §2 for the state table.",
+    "",
+    "companions: the hand-run files. rollback_*.sql and recontract_*.sql are never",
+    "applied by the CLI or by scripts/db-phase-push.mjs and never reach",
+    "supabase_migrations.schema_migrations, so until Round-4 review C4-5 no artifact",
+    "recorded what they contained: check-migration-history.mjs excludes them from",
+    "applied history by design, and its only companion check was a tautology over a",
+    "list built by the same regex. Measured on PG 17.10 before this key existed,",
+    "`grant select on public.contracts to anon` and `grant execute on function",
+    "public.create_contract(jsonb) to authenticated` appended to",
+    "rollback_money_direct_write_contract_phase.sql both left MODE=branch at rc=0,",
+    "and rollback_crm_v3.sql and rollback_p0_10.sql cover no migration in this",
+    "release, so no gate executes them at all. These hashes are the binding:",
+    "`--verify-companions` runs in CI and inside infra/systemd/newme-deploy.sh",
+    "against the candidate SHA's own worktree, and the declared set must equal the",
+    "directory in both directions, so adding a companion without declaring it is a",
+    "refusal rather than an unreviewed production script."
   ],
   "release": "l0-money-authorization",
   "base_commit": "81956f2ff3bffe89389ac3185e8b271805333374",
@@ -78,7 +94,7 @@
     {
       "version": "20260812000000",
       "file": "20260812000000_money_actor_identity_and_atomicity.sql",
-      "sha256": "41c52e96cedd4d96750f79df3a47a62a3f184439d49d1c0a36f2ef4f63341392"
+      "sha256": "6fd55475051f3a06461fb34b9162e376f165d117a90670f50f1fc73343b450ec"
     },
     {
       "version": "20260813000000",
@@ -93,17 +109,17 @@
     {
       "version": "20260814000000",
       "file": "20260814000000_l0_round3_authorization_and_integrity.sql",
-      "sha256": "b9c0e1fd307650d793738b6e2966e563e514f18b9bc0eb471b44b8602f63d652"
+      "sha256": "340dc8db5860ac8c7ac6a5c13ad562a480eb22c9d2b2d2000604ce690cef1c4b"
     },
     {
       "version": "20260816000000",
       "file": "20260816000000_l0_round4_definer_entry_boundary.sql",
-      "sha256": "d70619e2506f6e5d9ea06e3aed88d426aa96f2af21f796a1e1fd0da41ab25074"
+      "sha256": "340629f904251750a78cc1f05ad9f1903e35f33ffe8a3e09224206921a7c7168"
     },
     {
       "version": "20260817000000",
       "file": "20260817000000_l0_round4_money_and_business_integrity.sql",
-      "sha256": "3e1accf16d44857ff7c38d020e5ea3845ebd1da1d424db3cbfd0a8c8bf775e10"
+      "sha256": "69482bbe55c10d83dd978267e659f1a453e8ffefe822238b1657df83f1397c89"
     },
     {
       "version": "20260817120000",
@@ -113,7 +129,7 @@
     {
       "version": "20260817130000",
       "file": "20260817130000_b5_conversion_retry_idempotence.sql",
-      "sha256": "84e7d7c271f72959f3ffcfedce2e9113eea925c95e906b8c33dfa97b34ee5edd"
+      "sha256": "b5fd65fbf0cce6b0f4bcd4621b6d134047f92dce59241d0ba1d4c05430f4e636"
     },
     {
       "version": "20260817140000",
@@ -124,18 +140,80 @@
       "version": "20260817150000",
       "file": "20260817150000_kpi_period_clear_owns_the_delete.sql",
       "sha256": "176c9c9be40ae1b9e4179db703f3820e872c6e453f25576ed28ef56bcf6588b4"
+    },
+    {
+      "version": "20260817160000",
+      "file": "20260817160000_kpi_period_lock_covers_money_writers.sql",
+      "sha256": "f49087599f1f96fec538c0ca193298f6b458e8952b18e28fa14c912555c6d3fc"
+    },
+    {
+      "version": "20260817170000",
+      "file": "20260817170000_b5_retry_reaches_the_same_state.sql",
+      "sha256": "9b5f6c2dfa874dec7d6734c6dee63ec28a95c9ce824dea07309c1ea17810b3e5"
+    },
+    {
+      "version": "20260817180000",
+      "file": "20260817180000_leads_updated_at_is_server_owned.sql",
+      "sha256": "27a309e7f91a82c8abcdd54f1bd10d5f40ef9ea1a92e6e6b15b2ccb52cdd097e"
+    },
+    {
+      "version": "20260817190000",
+      "file": "20260817190000_lead_reassignment_activity_type.sql",
+      "sha256": "a4c07738e5fd9a760cc35e7a45f47880c2359888766aff4a41a623218d7a3b99"
+    },
+    {
+      "version": "20260817200000",
+      "file": "20260817200000_lead_reassignment_notification_related_id.sql",
+      "sha256": "937838e067325e375307c0ef23bec175e1d64869b47a0d135f91f69ab451ab5d"
+    },
+    {
+      "version": "20260817210000",
+      "file": "20260817210000_quote_number_and_lead_unassignment_integrity.sql",
+      "sha256": "d74ae87448e6c64c29a711f41790844468e4488e6ade0cefa7b68a33b1f9ff1b"
+    },
+    {
+      "version": "20260817220000",
+      "file": "20260817220000_notification_event_idempotency.sql",
+      "sha256": "cec5955929107511e4c04d4c676f64e53ffadb0b3244e34a184e5cf1a603345b"
     }
   ],
   "deferred_contract": [
     {
       "version": "20260818000000",
       "file": "20260818000000_money_direct_write_contract_phase.sql",
-      "sha256": "3a1146c9bf58533f64ebf53f4f5c759deeca9c349a0e25f70752bb9ee3523bee"
+      "sha256": "6896a66f684e4597a06e5f8366d3578deeaff846ea6444e173524ee3307b9dec"
+    }
+  ],
+  "companions": [
+    {
+      "file": "recontract_money_direct_write_contract_phase.sql",
+      "kind": "recontract",
+      "sha256": "e40d1262d1650292428a5b58a12d3551eed4cbdd1d25af58abcc4ab9b3c3557a"
+    },
+    {
+      "file": "rollback_crm_v3.sql",
+      "kind": "rollback",
+      "sha256": "2d9e49d591708805ec10c3a70daef9c2c6f1e6c379e7fd82449c21eb3af53fbb"
+    },
+    {
+      "file": "rollback_l0_20260811.sql",
+      "kind": "rollback",
+      "sha256": "9a19b04503799969f2c45e43e71367059cc9f1b97ca860f5d90184f05d122695"
+    },
+    {
+      "file": "rollback_money_direct_write_contract_phase.sql",
+      "kind": "rollback",
+      "sha256": "584ff7bb69f7da96dcb585643f7f82bfd453afa11f708b4b0b0de835fcdd1eec"
+    },
+    {
+      "file": "rollback_p0_10.sql",
+      "kind": "rollback",
+      "sha256": "7ece25595f7d421c681f003076eaeb0209992e01e184ff5ef85ba984d572bcf7"
     }
   ],
   "posture": {
     "required_for_app": {
-      "$comment": "State 2 of supabase/preflight/expand-contract-rollback.md §2: the schema the candidate needs is present and the release mode is still the compatible one, because the previous release is still the deployed one. One posture claim is deliberately NOT here: whether the migration owner can actually clear auth.sessions/auth.refresh_tokens. A predicate for it would have to name the DML privilege, which this gate forbids in a posture query for good reason, and 20260817120000 asserts it at apply time instead — so the phase push fails on the migration rather than passing the apply and failing the readback.",
+      "$comment": "State 2 of supabase/preflight/expand-contract-rollback.md §2: the schema the candidate needs is present and the release mode is still the compatible one, because the previous release is still the deployed one. One posture claim is deliberately NOT here: whether the migration owner can actually clear auth.sessions/auth.refresh_tokens. A predicate for it would have to name the DML privilege, which this gate forbids in a posture query for good reason, and 20260817120000 asserts it at apply time instead — so the phase push fails on the migration rather than passing the apply and failing the readback. Round-4 C4-2: every claim in this phase is repeated in deferred_contract. The strict posture used to be a proper subset of this one, which made `--verify-only --phase deferred_contract` — the operator's only check after a re-contract — weaker than the check the same operator ran on the way in.",
       "predicates": [
         {
           "name": "release-mode-row-is-compat",
@@ -153,29 +231,95 @@
           "expect": true
         },
         {
-          "name": "write-guards-are-installed",
-          "sql": "select count(*) = 4 from (values ('trg_guard_contracts_write'),('trg_guard_payments_write'),('trg_guard_quotations_write'),('trg_guard_contract_transition')) as t(n) where exists (select 1 from pg_trigger g where not g.tgisinternal and g.tgname = t.n and g.tgenabled = 'O')",
+          "$comment": "Round-4 C4-2. The predicate this replaces named four trigger names and asked only whether each was present, and the four were wrong in both directions: it counted trg_guard_contract_transition, which does not read the mode at all, and it did not count the installment-plans, contract-approvals and payment-allocations guards, which have read the mode since 20260814000000 rewrote them to stand down during the compatibility window. Measured on PG 17.10 after both phases: six enabled triggers whose function body calls money_direct_write_is_blocked(), on contracts, payments, installment_plans, contract_approvals, payment_allocations and quotations, backed by five distinct functions. So this is a set comparison, not a lookup: every declared guard must be live AND every live mode-controlled guard must be declared. The second direction is the one that keeps this honest as migrations are added — a new mode-gated guard fails this predicate until it is named here, instead of silently joining an unverified set.",
+          "name": "mode-controlled-guards-match-the-declaration",
+          "sql": "select count(*) > 0 and count(*) = count(d.tgname) and count(*) = count(live.tgname) from (values ('trg_guard_contracts_write','contracts'),('trg_guard_payments_write','payments'),('trg_guard_installment_plans_write','installment_plans'),('trg_guard_contract_approvals_write','contract_approvals'),('trg_guard_payment_allocations_write','payment_allocations'),('trg_guard_quotations_write','quotations')) as d(tgname, relname) full join (select g.tgname::text as tgname, c.relname::text as relname from pg_catalog.pg_trigger g join pg_catalog.pg_class c on c.oid = g.tgrelid join pg_catalog.pg_namespace n on n.oid = c.relnamespace join pg_catalog.pg_proc p on p.oid = g.tgfoid where not g.tgisinternal and g.tgenabled = 'O' and n.nspname = 'public' and p.prokind = 'f' and pg_catalog.pg_get_functiondef(p.oid) like '%money_direct_write_is_blocked%') as live on live.tgname = d.tgname and live.relname = d.relname",
+          "expect": true
+        },
+        {
+          "$comment": "The seventh guard trigger, checked on its own because it is deliberately NOT mode-controlled: the transition graph refuses an impossible status change in both modes, so it must not appear in the set above. Separating them is the difference between counting seven guards and knowing which of them the mode can stand down.",
+          "name": "transition-guard-is-installed",
+          "sql": "select count(*) = 1 and bool_and(g.tgenabled = 'O') from pg_catalog.pg_trigger g join pg_catalog.pg_class c on c.oid = g.tgrelid join pg_catalog.pg_namespace n on n.oid = c.relnamespace where not g.tgisinternal and n.nspname = 'public' and c.relname = 'contracts' and g.tgname = 'trg_guard_contract_transition'",
           "expect": true
         },
         {
           "name": "gate-function-is-security-invoker",
-          "sql": "select not p.prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'money_direct_write_is_blocked'",
+          "sql": "select count(*) = 1 and bool_and(not p.prosecdef) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'money_direct_write_is_blocked' and p.pronargs = 0",
           "expect": true
         },
         {
           "name": "mode-function-is-security-definer",
-          "sql": "select p.prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'money_direct_write_mode'",
+          "sql": "select count(*) = 1 and bool_and(p.prosecdef) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'money_direct_write_mode' and p.pronargs = 0",
           "expect": true
         },
         {
           "name": "session-revocation-rpc-is-server-only",
           "sql": "select has_function_privilege('service_role', 'public.revoke_user_sessions(uuid, text)', 'execute') and not has_function_privilege('authenticated', 'public.revoke_user_sessions(uuid, text)', 'execute') and not has_function_privilege('anon', 'public.revoke_user_sessions(uuid, text)', 'execute')",
           "expect": true
+        },
+        {
+          "$comment": "Round-4 C4-2, the KPI half. These two routines are the only supported way to change or clear a period's targets: replace_kpi_targets() carries actual_amount forward and refuses a payload that drops a pair still holding collected money (B7), and clear_kpi_targets() owns the DELETE the route used to issue straight at the table (20260817150000). They are in the posture for BOTH phases because the rollback path can remove them and the mode cannot: rollback_l0_20260811.sql reverts 20260811100500 by dropping replace_kpi_targets, and measured on PG 17.10 the strict → compat → strict round trip landed with the routine absent, the mode back at strict, and this phase's posture reporting three of three OK. Signatures are pinned through to_regprocedure so a routine re-created with different parameters is a miss rather than a match.",
+          "name": "kpi-write-routines-are-installed",
+          "sql": "select count(*) = 2 and bool_and(p.prosecdef) from pg_catalog.pg_proc p where p.prokind = 'f' and p.oid in (to_regprocedure('public.replace_kpi_targets(text, jsonb, uuid)'), to_regprocedure('public.clear_kpi_targets(text, uuid)'))",
+          "expect": true
+        },
+        {
+          "name": "kpi-write-routines-are-server-only",
+          "sql": "select count(*) = 2 and bool_and(has_function_privilege('service_role', p.oid, 'execute')) and not bool_or(has_function_privilege('authenticated', p.oid, 'execute')) and not bool_or(has_function_privilege('anon', p.oid, 'execute')) from pg_catalog.pg_proc p where p.prokind = 'f' and p.oid in (to_regprocedure('public.replace_kpi_targets(text, jsonb, uuid)'), to_regprocedure('public.clear_kpi_targets(text, uuid)'))",
+          "expect": true
+        },
+        {
+          "$comment": "The property that makes the pair safe rather than merely present: both take the SAME period-scoped advisory lock, so a save and a clear of one period serialize instead of racing. Measured absent before 20260817150000 — an uncommitted service-role DELETE of a period left pg_locks holding no advisory lock on that period's key, and a second connection's pg_try_advisory_xact_lock succeeded.",
+          "name": "kpi-routines-share-the-period-lock",
+          "sql": "select count(*) = 2 and bool_and(pg_catalog.pg_get_functiondef(p.oid) like '%pg_advisory_xact_lock(%') and bool_and(pg_catalog.pg_get_functiondef(p.oid) like '%hashtextextended(''public.kpi_targets:'' || p_period, 0)%') from pg_catalog.pg_proc p where p.prokind = 'f' and p.oid in (to_regprocedure('public.replace_kpi_targets(text, jsonb, uuid)'), to_regprocedure('public.clear_kpi_targets(text, uuid)'))",
+          "expect": true
+        },
+        {
+          "$comment": "R3, and the predicate above is why it is a separate one. That predicate names two routines, so it was satisfied while the two routines that actually MOVE money into and out of kpi_targets.actual_amount — confirm_payment() and void_payment() — wrote the same period's rows with no lock at all. Reproduced on PG 17.10 in supabase/replay/19_concurrency_kpi_period.sh: a confirmation of 4321.00 overlapping a save of its own period left actual_amount at 0.00 against a ledger of 4321.00, and a void left it at 4321.00 against a ledger of 0.00, both operations reporting success. So this predicate takes no list of names: it derives the writers from the function bodies and requires every one of them to take the period lock, which is the only form that a fifth writer added later cannot pass by not being on a list. The >= 4 floor is the fail-closed half — an empty set must not read as agreement, and the four known writers must all still be there.",
+          "name": "kpi-actuals-writers-take-the-period-lock",
+          "sql": "select count(*) >= 4 and bool_and(pg_catalog.pg_get_functiondef(p.oid) like '%pg_advisory_xact_lock(%') and bool_and(pg_catalog.pg_get_functiondef(p.oid) like '%hashtextextended(''public.kpi_targets:''%') from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.prokind = 'f' and pg_catalog.pg_get_functiondef(p.oid) ~* '(update|delete[[:space:]]+from|insert[[:space:]]+into)[[:space:]]+public[.]kpi_targets'",
+          "expect": true
+        },
+        {
+          "$comment": "R6 production finding corrected by authenticated schema capture and PG17 behaviour: production already has enabled trg_set_updated_at BEFORE UPDATE FOR EACH ROW, whose SECURITY INVOKER function is exactly an unconditional NEW.updated_at = now(); RETURN NEW stamp. Removing only the repository fallback therefore left pin, plain-update and stale concurrent CAS protection intact; the earlier claim that production had no stamp is REFUTED. The application direct-write and missing-audit path remains separately remediated. This posture is deliberately name- and order-independent: at least one enabled unconditional BEFORE UPDATE ROW trigger must invoke a complete SECURITY INVOKER body consisting only of a server-clock assignment and RETURN NEW. The migration is a strict no-op when that property already exists and creates zz_leads_stamp_updated_at only on a fresh environment where it does not.",
+          "name": "lead-updated-at-is-server-owned",
+          "sql": "select exists (select 1 from pg_catalog.pg_trigger t join pg_catalog.pg_proc p on p.oid = t.tgfoid where t.tgrelid = 'public.leads'::regclass and not t.tgisinternal and t.tgenabled = 'O' and (t.tgtype & 1) = 1 and (t.tgtype & 2) = 2 and (t.tgtype & 16) = 16 and t.tgattr::text = '' and t.tgqual is null and not p.prosecdef and pg_catalog.regexp_replace(pg_catalog.translate(p.prosrc, pg_catalog.chr(59), ''), '[[:space:]]+', '', 'g') ~* '^beginnew[.]updated_at(:=|=)(pg_catalog[.])?now[(][)]returnnewend$')",
+          "expect": true
+        },
+        {
+          "$comment": "R6, the second defect on the same path and the one that made the first unmeasurable. reassign_lead_atomic() (20260723140000:165-169) inserts an activities row with type = 'transfer', and activities_type_check as 20260605000000:209-214 left it accepts sixteen values without that one — so the branch that actually moves a lead raised 23514 and rolled back the lead UPDATE, the transfer_history row, the business_events row, the notification and its own idempotency record, and the one route that calls it reported 400 INVALID_REQUEST. Reproduced on PG 17.10 in supabase/replay/22_lead_reassignment_writes.sh, whose control is the installed constraint with that single value removed by regexp from pg_get_constraintdef(). Both halves are pinned together on purpose: the value matters only because the routine writes it, so a future rewrite that makes the routine write something else has to change this predicate deliberately rather than leave a domain nobody needs guarding a routine nobody checked. convalidated is asserted too — a NOT VALID constraint was never checked against the rows already in the table.",
+          "name": "lead-reassignment-activity-domain",
+          "sql": "select coalesce(count(*) = 1 and bool_and(c.convalidated) and bool_and(pg_catalog.pg_get_constraintdef(c.oid) like '%''transfer''%') and bool_and(pg_catalog.pg_get_functiondef(to_regprocedure('public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)')) like '%''transfer''%'), false) from pg_catalog.pg_constraint c where c.conrelid = 'public.activities'::regclass and c.conname = 'activities_type_check' and c.contype = 'c'",
+          "expect": true
+        },
+        {
+          "$comment": "R6 production finding corrected by authenticated schema capture: notifications.related_id is text in production, so the catalog-derived ::text control commits all five reassignment rows and exact-key replay adds none; the production 42804 claim is REFUTED. The historical floor uses uuid and still reproduces 42804, so 20260817200000 is a cross-environment compatibility backstop: uuid requires the uncast expression, while text accepts exactly one recognized cast or uncast expression. Both shapes must retain SECURITY DEFINER and the first-statement session boundary; a routine that lost the notification INSERT cannot pass.",
+          "name": "lead-reassignment-notification-target",
+          "sql": "select coalesce(count(*) = 1 and bool_and(p.prosecdef) and bool_and(p.prosrc like '%perform public.assert_current_session_at_entry()%') and bool_and((c.data_type = 'uuid' and pg_catalog.pg_get_functiondef(p.oid) not like '%p_lead_id::text, ''lead''%' and pg_catalog.pg_get_functiondef(p.oid) like '%p_lead_id, ''lead''%') or (c.data_type = 'text' and ((pg_catalog.pg_get_functiondef(p.oid) like '%p_lead_id::text, ''lead''%') <> (pg_catalog.pg_get_functiondef(p.oid) like '%p_lead_id, ''lead''%')))), false) from pg_catalog.pg_proc p join information_schema.columns c on c.table_schema = 'public' and c.table_name = 'notifications' and c.column_name = 'related_id' where p.oid = to_regprocedure('public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)')",
+          "expect": true
+        },
+        {
+          "$comment": "R8. PG17 behaviour is measured by 25_quote_unassignment_integrity.sh; this live predicate binds the phase claim to the sequence, enabled BEFORE INSERT OR UPDATE row trigger, immutable number, unique key and explicit ACL posture that behaviour depends on.",
+          "name": "quote-number-allocation-is-database-owned",
+          "sql": "select to_regclass('public.quotation_number_seq') is not null and exists (select 1 from pg_catalog.pg_trigger t join pg_catalog.pg_proc p on p.oid = t.tgfoid where t.tgrelid = 'public.quotations'::regclass and t.tgname = 'aa_quotations_assign_quote_no' and not t.tgisinternal and t.tgenabled = 'O' and (t.tgtype & 3) = 3 and (t.tgtype & 4) = 4 and (t.tgtype & 16) = 16 and p.prosrc like '%QUOTE_NUMBER_IS_DATABASE_OWNED%') and exists (select 1 from pg_catalog.pg_constraint c where c.conrelid = 'public.quotations'::regclass and c.contype = 'u' and pg_catalog.pg_get_constraintdef(c.oid) = 'UNIQUE (quote_no)') and not has_function_privilege('public','public.allocate_quote_no()','execute') and not has_function_privilege('anon','public.allocate_quote_no()','execute') and not has_function_privilege('authenticated','public.allocate_quote_no()','execute') and not has_function_privilege('service_role','public.allocate_quote_no()','execute') and not has_sequence_privilege('public','public.quotation_number_seq','usage') and not has_sequence_privilege('anon','public.quotation_number_seq','usage') and not has_sequence_privilege('authenticated','public.quotation_number_seq','usage') and not has_sequence_privilege('service_role','public.quotation_number_seq','usage')",
+          "expect": true
+        },
+        {
+          "$comment": "R8. The function body and ACL are checked live; NULL/CAS, concurrent same-key replay, request binding and exactly-once writes are measured on PG17 by the focused gate.",
+          "name": "lead-reassignment-requires-cas-and-binds-replay",
+          "sql": "select count(*) = 1 and bool_and(p.prosecdef) and bool_and(p.prosrc like '%MISSING_EXPECTED_UPDATED_AT%') and bool_and(p.prosrc like '%IDEMPOTENCY_KEY_REUSED_FOR_DIFFERENT_REQUEST%') and bool_and(p.prosrc like '%pg_advisory_xact_lock%') and has_function_privilege('authenticated','public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('public','public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('anon','public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('service_role','public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)','execute') from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)')",
+          "expect": true
+        },
+        {
+          "$comment": "R8. The callable surface, CAS/idempotency markers and all three audit writes are checked live; positive, negative, concurrent, rollback and re-entry behaviour are measured by 25_quote_unassignment_integrity.sh.",
+          "name": "lead-unassignment-is-atomic-audited-and-bound",
+          "sql": "select count(*) = 1 and bool_and(p.prosecdef) and bool_and(p.prosrc like '%MISSING_EXPECTED_UPDATED_AT%') and bool_and(p.prosrc like '%IDEMPOTENCY_KEY_REUSED_FOR_DIFFERENT_REQUEST%') and bool_and(p.prosrc like '%pg_advisory_xact_lock%') and bool_and(p.prosrc like '%insert into public.activities%') and bool_and(p.prosrc like '%insert into public.business_events%') and bool_and(p.prosrc like '%insert into public.audit_logs%') and has_function_privilege('authenticated','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('public','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('anon','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('service_role','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.unassign_lead_atomic(uuid, timestamptz, uuid, text)')",
+          "expect": true
         }
       ]
     },
     "deferred_contract": {
-      "$comment": "State 4: direct end-user money writes are refused. This is past the rollback boundary for the previous release; see §5.",
+      "$comment": "State 4: direct end-user money writes are refused. This is past the rollback boundary for the previous release; see §5. Round-4 C4-2: this phase asserts everything required_for_app asserts, with the mode reversed, and it is the ONLY posture an operator re-checks after running the re-contract companion — so a claim that appears in the expand phase and not here is a claim nobody makes again on the way back. Measured on PG 17.10 before this was widened: with three of the six mode-controlled guard triggers dropped, `--verify-only --phase deferred_contract` exited 0 with three of three posture predicates OK; with public.replace_kpi_targets(text, jsonb, uuid) dropped by the rollback path and never restored, the same command exited 0 again.",
       "predicates": [
         {
           "name": "release-mode-row-is-strict",
@@ -188,8 +332,92 @@
           "expect": true
         },
         {
-          "name": "write-guards-are-still-installed",
-          "sql": "select count(*) = 4 from (values ('trg_guard_contracts_write'),('trg_guard_payments_write'),('trg_guard_quotations_write'),('trg_guard_contract_transition')) as t(n) where exists (select 1 from pg_trigger g where not g.tgisinternal and g.tgname = t.n and g.tgenabled = 'O')",
+          "name": "strict-mode-controlled-guards-match-the-declaration",
+          "sql": "select count(*) > 0 and count(*) = count(d.tgname) and count(*) = count(live.tgname) from (values ('trg_guard_contracts_write','contracts'),('trg_guard_payments_write','payments'),('trg_guard_installment_plans_write','installment_plans'),('trg_guard_contract_approvals_write','contract_approvals'),('trg_guard_payment_allocations_write','payment_allocations'),('trg_guard_quotations_write','quotations')) as d(tgname, relname) full join (select g.tgname::text as tgname, c.relname::text as relname from pg_catalog.pg_trigger g join pg_catalog.pg_class c on c.oid = g.tgrelid join pg_catalog.pg_namespace n on n.oid = c.relnamespace join pg_catalog.pg_proc p on p.oid = g.tgfoid where not g.tgisinternal and g.tgenabled = 'O' and n.nspname = 'public' and p.prokind = 'f' and pg_catalog.pg_get_functiondef(p.oid) like '%money_direct_write_is_blocked%') as live on live.tgname = d.tgname and live.relname = d.relname",
+          "expect": true
+        },
+        {
+          "name": "strict-transition-guard-is-installed",
+          "sql": "select count(*) = 1 and bool_and(g.tgenabled = 'O') from pg_catalog.pg_trigger g join pg_catalog.pg_class c on c.oid = g.tgrelid join pg_catalog.pg_namespace n on n.oid = c.relnamespace where not g.tgisinternal and n.nspname = 'public' and c.relname = 'contracts' and g.tgname = 'trg_guard_contract_transition'",
+          "expect": true
+        },
+        {
+          "$comment": "In strict the gate function is what every guard calls on every money write, so its security posture is load-bearing here in a way it is not in compat: as SECURITY DEFINER it would read money_release_mode as the owner and keep answering after a grant is withdrawn, and as SECURITY INVOKER — measured — an `authenticated` session hits `permission denied for table money_release_mode` and the write fails with 42501 for the wrong reason.",
+          "name": "strict-gate-function-is-security-invoker",
+          "sql": "select count(*) = 1 and bool_and(not p.prosecdef) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'money_direct_write_is_blocked' and p.pronargs = 0",
+          "expect": true
+        },
+        {
+          "name": "strict-mode-function-is-security-definer",
+          "sql": "select count(*) = 1 and bool_and(p.prosecdef) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'money_direct_write_mode' and p.pronargs = 0",
+          "expect": true
+        },
+        {
+          "$comment": "In strict these seven are the only way money rows change at all, so their absence is not a degraded posture, it is an outage. In compat the same predicate is a precondition; here it is the whole write path.",
+          "name": "strict-money-rpcs-are-installed",
+          "sql": "select count(*) = 7 from (values ('create_contract'),('approve_contract'),('revoke_contract'),('confirm_payment'),('allocate_payment'),('void_payment'),('convert_quotation_to_contract')) as r(n) where exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = r.n)",
+          "expect": true
+        },
+        {
+          "name": "strict-session-revocation-rpc-is-server-only",
+          "sql": "select has_function_privilege('service_role', 'public.revoke_user_sessions(uuid, text)', 'execute') and not has_function_privilege('authenticated', 'public.revoke_user_sessions(uuid, text)', 'execute') and not has_function_privilege('anon', 'public.revoke_user_sessions(uuid, text)', 'execute')",
+          "expect": true
+        },
+        {
+          "name": "strict-kpi-write-routines-are-installed",
+          "sql": "select count(*) = 2 and bool_and(p.prosecdef) from pg_catalog.pg_proc p where p.prokind = 'f' and p.oid in (to_regprocedure('public.replace_kpi_targets(text, jsonb, uuid)'), to_regprocedure('public.clear_kpi_targets(text, uuid)'))",
+          "expect": true
+        },
+        {
+          "name": "strict-kpi-write-routines-are-server-only",
+          "sql": "select count(*) = 2 and bool_and(has_function_privilege('service_role', p.oid, 'execute')) and not bool_or(has_function_privilege('authenticated', p.oid, 'execute')) and not bool_or(has_function_privilege('anon', p.oid, 'execute')) from pg_catalog.pg_proc p where p.prokind = 'f' and p.oid in (to_regprocedure('public.replace_kpi_targets(text, jsonb, uuid)'), to_regprocedure('public.clear_kpi_targets(text, uuid)'))",
+          "expect": true
+        },
+        {
+          "name": "strict-kpi-routines-share-the-period-lock",
+          "sql": "select count(*) = 2 and bool_and(pg_catalog.pg_get_functiondef(p.oid) like '%pg_advisory_xact_lock(%') and bool_and(pg_catalog.pg_get_functiondef(p.oid) like '%hashtextextended(''public.kpi_targets:'' || p_period, 0)%') from pg_catalog.pg_proc p where p.prokind = 'f' and p.oid in (to_regprocedure('public.replace_kpi_targets(text, jsonb, uuid)'), to_regprocedure('public.clear_kpi_targets(text, uuid)'))",
+          "expect": true
+        },
+        {
+          "$comment": "R3, in this phase too and for the reason this phase exists: it is the only posture an operator re-checks after the re-contract companion, and the rollback path re-emits confirm_payment()/void_payment() from an earlier migration. A rollback that leaves the money routines at their pre-R3 bodies while the mode is back at strict is exactly the state this predicate has to refuse.",
+          "name": "strict-kpi-actuals-writers-take-the-period-lock",
+          "sql": "select count(*) >= 4 and bool_and(pg_catalog.pg_get_functiondef(p.oid) like '%pg_advisory_xact_lock(%') and bool_and(pg_catalog.pg_get_functiondef(p.oid) like '%hashtextextended(''public.kpi_targets:''%') from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.prokind = 'f' and pg_catalog.pg_get_functiondef(p.oid) ~* '(update|delete[[:space:]]+from|insert[[:space:]]+into)[[:space:]]+public[.]kpi_targets'",
+          "expect": true
+        },
+        {
+          "$comment": "R6 in the deferred posture too: re-contract must preserve at least one effective server-owned leads.updated_at stamp. Production's pre-existing trg_set_updated_at and a fresh environment's fallback zz_leads_stamp_updated_at satisfy the same name-independent property; neither a specific trigger name nor trigger sort order is part of the contract.",
+          "name": "strict-lead-updated-at-is-server-owned",
+          "sql": "select exists (select 1 from pg_catalog.pg_trigger t join pg_catalog.pg_proc p on p.oid = t.tgfoid where t.tgrelid = 'public.leads'::regclass and not t.tgisinternal and t.tgenabled = 'O' and (t.tgtype & 1) = 1 and (t.tgtype & 2) = 2 and (t.tgtype & 16) = 16 and t.tgattr::text = '' and t.tgqual is null and not p.prosecdef and pg_catalog.regexp_replace(pg_catalog.translate(p.prosrc, pg_catalog.chr(59), ''), '[[:space:]]+', '', 'g') ~* '^beginnew[.]updated_at(:=|=)(pg_catalog[.])?now[(][)]returnnewend$')",
+          "expect": true
+        },
+        {
+          "$comment": "R6, same argument. Re-narrowing activities_type_check puts reassign_lead_atomic() back to failing with 23514 on every reassignment that moves a lead, and 20260817190000's NO_ROLLBACK note records that the revert cannot even be performed cleanly once the release has written audit rows carrying the value. A posture check that only ran in compat would let a hand-run narrowing pass unnoticed on the way back out.",
+          "name": "strict-lead-reassignment-activity-domain",
+          "sql": "select coalesce(count(*) = 1 and bool_and(c.convalidated) and bool_and(pg_catalog.pg_get_constraintdef(c.oid) like '%''transfer''%') and bool_and(pg_catalog.pg_get_functiondef(to_regprocedure('public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)')) like '%''transfer''%'), false) from pg_catalog.pg_constraint c where c.conrelid = 'public.activities'::regclass and c.conname = 'activities_type_check' and c.contype = 'c'",
+          "expect": true
+        },
+        {
+          "$comment": "R6 in the deferred posture too: the production text target permits exactly one recognized cast or uncast notification expression, while a legacy uuid target permits only the uncast expression. The type-aware predicate keeps the production refutation and the fresh-environment 42804 protection true at the same time, and still binds SECURITY DEFINER plus the session-entry guard.",
+          "name": "strict-lead-reassignment-notification-target",
+          "sql": "select coalesce(count(*) = 1 and bool_and(p.prosecdef) and bool_and(p.prosrc like '%perform public.assert_current_session_at_entry()%') and bool_and((c.data_type = 'uuid' and pg_catalog.pg_get_functiondef(p.oid) not like '%p_lead_id::text, ''lead''%' and pg_catalog.pg_get_functiondef(p.oid) like '%p_lead_id, ''lead''%') or (c.data_type = 'text' and ((pg_catalog.pg_get_functiondef(p.oid) like '%p_lead_id::text, ''lead''%') <> (pg_catalog.pg_get_functiondef(p.oid) like '%p_lead_id, ''lead''%')))), false) from pg_catalog.pg_proc p join information_schema.columns c on c.table_schema = 'public' and c.table_name = 'notifications' and c.column_name = 'related_id' where p.oid = to_regprocedure('public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)')",
+          "expect": true
+        },
+        {
+          "$comment": "R8 in strict too: neither the contract phase nor a re-contract may remove the insert allocator, update immutability guard, unique key or internal ACL boundary.",
+          "name": "strict-quote-number-allocation-is-database-owned",
+          "sql": "select to_regclass('public.quotation_number_seq') is not null and exists (select 1 from pg_catalog.pg_trigger t join pg_catalog.pg_proc p on p.oid = t.tgfoid where t.tgrelid = 'public.quotations'::regclass and t.tgname = 'aa_quotations_assign_quote_no' and not t.tgisinternal and t.tgenabled = 'O' and (t.tgtype & 3) = 3 and (t.tgtype & 4) = 4 and (t.tgtype & 16) = 16 and p.prosrc like '%QUOTE_NUMBER_IS_DATABASE_OWNED%') and exists (select 1 from pg_catalog.pg_constraint c where c.conrelid = 'public.quotations'::regclass and c.contype = 'u' and pg_catalog.pg_get_constraintdef(c.oid) = 'UNIQUE (quote_no)') and not has_function_privilege('public','public.allocate_quote_no()','execute') and not has_function_privilege('anon','public.allocate_quote_no()','execute') and not has_function_privilege('authenticated','public.allocate_quote_no()','execute') and not has_function_privilege('service_role','public.allocate_quote_no()','execute') and not has_sequence_privilege('public','public.quotation_number_seq','usage') and not has_sequence_privilege('anon','public.quotation_number_seq','usage') and not has_sequence_privilege('authenticated','public.quotation_number_seq','usage') and not has_sequence_privilege('service_role','public.quotation_number_seq','usage')",
+          "expect": true
+        },
+        {
+          "$comment": "R8 in strict too: the contract/re-contract path must retain mandatory CAS, bound concurrent replay and the authenticated-only RPC surface.",
+          "name": "strict-lead-reassignment-requires-cas-and-binds-replay",
+          "sql": "select count(*) = 1 and bool_and(p.prosecdef) and bool_and(p.prosrc like '%MISSING_EXPECTED_UPDATED_AT%') and bool_and(p.prosrc like '%IDEMPOTENCY_KEY_REUSED_FOR_DIFFERENT_REQUEST%') and bool_and(p.prosrc like '%pg_advisory_xact_lock%') and has_function_privilege('authenticated','public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('public','public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('anon','public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('service_role','public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)','execute') from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text)')",
+          "expect": true
+        },
+        {
+          "$comment": "R8 in strict too: unassignment remains a guarded atomic RPC whose body writes the three durable ledgers and whose behavior is covered by the focused PG17 gate.",
+          "name": "strict-lead-unassignment-is-atomic-audited-and-bound",
+          "sql": "select count(*) = 1 and bool_and(p.prosecdef) and bool_and(p.prosrc like '%MISSING_EXPECTED_UPDATED_AT%') and bool_and(p.prosrc like '%IDEMPOTENCY_KEY_REUSED_FOR_DIFFERENT_REQUEST%') and bool_and(p.prosrc like '%pg_advisory_xact_lock%') and bool_and(p.prosrc like '%insert into public.activities%') and bool_and(p.prosrc like '%insert into public.business_events%') and bool_and(p.prosrc like '%insert into public.audit_logs%') and has_function_privilege('authenticated','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('public','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('anon','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('service_role','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.unassign_lead_atomic(uuid, timestamptz, uuid, text)')",
           "expect": true
         }
       ]

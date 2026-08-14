@@ -43,12 +43,10 @@ import {
 } from "../../scripts/check-release-phase.mjs";
 import {
   auditManifest,
-  contentHash,
   readBaseline,
   readManifest,
-  readMigration,
+  readTreeFiles,
 } from "../../scripts/check-release-manifest.mjs";
-import { readdirSync } from "node:fs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const GATE = path.join(ROOT, "scripts", "check-release-phase.mjs");
@@ -110,8 +108,7 @@ test("a malformed declaration resolves to nothing, not to a default", () => {
 test("the manifest gate refuses every malformed or missing declaration", () => {
   // Rule 7. Without this, the declaration the deploy path depends on could be
   // deleted, misspelled or narrowed with every other gate still green.
-  const files = readdirSync(MIGRATIONS_DIR).filter((file) => /^[0-9]{14}_.*\.sql$/.test(file)).sort();
-  const hashes = new Map(files.map((file) => [file, contentHash(readMigration(MIGRATIONS_DIR, file))]));
+  const { files, hashes } = readTreeFiles(MIGRATIONS_DIR);
   const baseline = readBaseline();
   const audit = (mutate) => {
     const manifest = JSON.parse(JSON.stringify(readManifest()));
@@ -374,7 +371,7 @@ test("the observed phase is part of the durable transaction record", () => {
 test("finalization requires strict before it may call a release complete", () => {
   const source = read("infra/systemd/newme-deploy.sh").replaceAll("\r\n", "\n");
   const finalizeStart = source.indexOf('if [ "${1:-}" = "finalize" ]; then');
-  const finalizeEnd = source.indexOf("\nfi\n\nSHA=${1:-}", finalizeStart);
+  const finalizeEnd = source.indexOf("\nfi\n\nBOOTSTRAP_ONLY=0", finalizeStart);
   assert.ok(finalizeStart >= 0 && finalizeEnd > finalizeStart);
   const finalize = source.slice(finalizeStart, finalizeEnd);
 

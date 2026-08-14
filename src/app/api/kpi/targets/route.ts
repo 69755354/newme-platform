@@ -2,7 +2,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { applyPrivateNoStore } from "@/lib/request-auth-context";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+
+// R5: kpi_targets.actual_amount is maintained by confirm_payment() and
+// void_payment(), so this read is money-derived and must not be served from any
+// cache — see tests/security/api-cache-money-boundary.test.mjs, which derives that
+// rule from what each route queries.
+export const dynamic = "force-dynamic";
 
 // GET /api/kpi/targets?period=2026-06
 export async function GET(request: NextRequest) {
@@ -30,7 +37,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 
-  return NextResponse.json({ data });
+  return applyPrivateNoStore(NextResponse.json({ data }));
 }
 
 // POST /api/kpi/targets — batch upsert targets for a period
@@ -43,7 +50,9 @@ export async function POST(request: NextRequest) {
 
   // Check role
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-  if (!profile?.role || !["admin", "boss", "operator"].includes(profile.role)) {
+  // The service-role RPC bypasses RLS, so this check must match the table's
+  // admin/boss write policy exactly. Operators retain read access only.
+  if (!profile?.role || !["admin", "boss"].includes(profile.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

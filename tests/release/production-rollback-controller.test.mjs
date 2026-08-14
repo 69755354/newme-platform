@@ -315,7 +315,10 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   assert.doesNotMatch(deploy, /curl[^\n]*\$github_token/);
   assert.match(deploy, /NEWME_MANUAL_VERIFICATION=0/);
   assert.match(deploy, /FINALIZE_TARGET=.*readlink -f \/opt\/newme\/current/);
-  assert.match(deploy, /finalize <current-sha> <pass\|fail>/);
+  assert.match(deploy, /finalize <release-sha> <closure-sha> <successful-final-run-id> pass/);
+  assert.match(deploy, /finalize <release-sha> fail/);
+  assert.match(deploy, /closure SHA must equal canonical main/);
+  assert.match(deploy, /final-required-jobs\.json/);
   assert.match(deploy, /UAT_STATUS="\$UAT_STATUS"/);
   assert.match(deploy, /status=uat_failed/);
   assert.doesNotMatch(deploy, /UAT_STATUS=pass \\/);
@@ -406,14 +409,15 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   assert.match(installer, /sync -f \/opt\/newme\/releases[\s\S]*rm -f -- "\$PENDING_RECORD"/);
   assert.match(assetRollback, /CRON_PATH=\/etc\/cron\.d\/newme-observability/);
   assert.match(assetRollback, /\[ "\$dest" != "\$CRON_PATH" \] \|\| continue/);
-  assert.match(assetRollback, /mktemp \/etc\/cron\.d\/\.newme-observability\.rollback\.XXXXXX/);
-  assert.match(assetRollback, /^\s*cp -a -- "\$BACKUP\/rootfs\/\$rel" "\$CRON_TMP" \|\| return 1\r?$/m);
-  assert.match(assetRollback, /mv -Tf "\$CRON_TMP" "\$CRON_PATH"/);
+  assert.match(assetRollback, /RESTORE_TMP="\$\(mktemp "\$directory\/\.newme-asset-rollback\.XXXXXX"\)" \|\| return 1/);
+  assert.match(assetRollback, /^\s*cp -a -- "\$source_root\/\$rel" "\$RESTORE_TMP" \|\| return 1\r?$/m);
+  assert.match(assetRollback, /mv -Tf "\$RESTORE_TMP" "\$dest" \|\| return 1/);
   assert.match(assetRollback, /^\s*sync -f \/etc\/cron\.d \|\| return 1\r?$/m);
   const cronRestore = assetRollback.search(/^restore_managed_cron\r?$/m);
   assert.ok(cronRestore > assetRollback.lastIndexOf("systemctl is-active --quiet nginx"));
-  const pendingRollbackRestoreSync = installer.indexOf("sync -f /opt/newme");
-  const recoveredPendingClear = installer.indexOf('rm -f -- "$PENDING_RECORD"');
+  const recoveryBranch = installer.indexOf('if [ "$MODE" = install ] && { [ -e "$PENDING_RECORD" ]');
+  const pendingRollbackRestoreSync = installer.indexOf("sync -f /opt/newme", recoveryBranch);
+  const recoveredPendingClear = installer.indexOf('rm -f -- "$PENDING_RECORD"', recoveryBranch);
   assert.ok(pendingRollbackRestoreSync >= 0 && pendingRollbackRestoreSync < recoveredPendingClear);
 
   const managedStart = installer.indexOf("MANAGED=(");

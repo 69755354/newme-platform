@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { fmtAED } from "@/shared/utils/format";
+import { paymentState } from "@/lib/payment-state.mjs";
 
 /* ─── Types ─── */
 interface DetailResponse {
@@ -33,6 +34,7 @@ interface DetailResponse {
   payments: Payment[];
   approvals: Approval[];
   canManage: boolean;
+  allowedStatusTransitions: string[];
 }
 
 interface Installment {
@@ -46,6 +48,14 @@ interface Installment {
   description: string | null;
 }
 
+/**
+ * Round-4 finding R5: this interface stopped at `confirmed`, and so did the badge
+ * below it. void_payment() sets confirmed = false as well as voided_at, so a
+ * reversed payment rendered as "pending confirmation" — money the operator is still
+ * waiting for rather than money that was taken back. The void columns are named
+ * here and selected by GET /api/contracts/[id]; the state rule is the shared one in
+ * src/lib/payment-state.mjs, not a second `? :` in this file.
+ */
 interface Payment {
   id: string;
   amount: number;
@@ -55,9 +65,13 @@ interface Payment {
   confirmed: boolean;
   confirmed_at: string | null;
   confirmed_by: string | null;
+  voided_at: string | null;
+  voided_by: string | null;
+  void_reason: string | null;
   installment_plan_id: string | null;
   created_at: string;
   confirmer_name?: string | null;
+  voider_name?: string | null;
 }
 
 interface Approval {
@@ -99,15 +113,6 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
  * Anything not listed here is refused by the routine with 22023 → HTTP 400, so
  * this map is a usability boundary, not the security boundary.
  */
-const STATUS_TRANSITIONS: Record<string, string[]> = {
-  draft: ["pending_admin"],
-  rejected: ["pending_admin", "draft"],
-  approved: ["active", "terminated"],
-  active: ["completed", "suspended", "terminated"],
-  suspended: ["active", "terminated"],
-  revoking: ["terminated"],
-};
-
 /** Transitions set_contract_status() requires a reason for (22023 without one). */
 const STATUS_REASON_REQUIRED = new Set(["terminated"]);
 
@@ -175,7 +180,7 @@ export default function ContractDetailPage() {
     );
   }
 
-  const { contract, installments, payments, approvals, canManage } = data;
+  const { contract, installments, payments, approvals, canManage, allowedStatusTransitions } = data;
   const today = new Date().toISOString().slice(0, 10);
 
   const STATUS_LABELS: Record<string, string> = {
@@ -191,9 +196,18 @@ export default function ContractDetailPage() {
     revoking: t("contracts.statusRevoking"),
     superseded: t("contracts.statusSuperseded"),
     suspended: t("contracts.statusSuspended"),
-    cancelled: t("contracts.statusCancelled") || "Cancelled",
+    cancelled: t("contracts.statusCancelled"),
   };
-  const confirmStatusMessage = t("contracts.confirmStatusChange");
+  // Round-4 finding R5. The dialog below used to compare this string against the key
+  // path "contracts.confirmStatusChange" and substitute a hardcoded English sentence
+  // when they matched — a sentinel for a key that did not exist, because t() returns
+  // the path it was given for a missing key and is never falsy. The key exists now in
+  // both languages, and the status name is substituted the way every other
+  // parameterised string in this file is.
+  const confirmStatusMessage = t("contracts.confirmStatusChange").replace(
+    "{status}",
+    pendingStatus ? STATUS_LABELS[pendingStatus] ?? pendingStatus : "",
+  );
 
   /* ── Payment status roll-up ── */
   const totalContract = Number(contract.contract_amount ?? 0);
@@ -293,8 +307,7 @@ export default function ContractDetailPage() {
 
   /* ── Status change ── */
   function changeStatus(newStatus: string) {
-    if (!canManage) return;
-    if (!allowedTransitions.includes(newStatus)) return;
+    if (!allowedStatusTransitions.includes(newStatus)) return;
     setPendingStatus(newStatus);
     setStatusReason("");
     setConfirmDialogOpen(true);
@@ -316,7 +329,7 @@ export default function ContractDetailPage() {
         body: JSON.stringify({ status: newStatus, ...(reason ? { reason } : {}) }),
       });
       if (res.ok) {
-        toast.success(t("contracts.statusUpdated") || "Status updated");
+        toast.success(t("contracts.statusUpdated"));
         await load();
       } else {
         const err = await res.json().catch(() => ({}));
@@ -363,8 +376,8 @@ export default function ContractDetailPage() {
   // Only the transitions the routine will accept from where this contract is now.
   // 'completed' and 'terminated' are terminal, so they fall out of the map rather
   // than being special-cased.
-  const allowedTransitions = STATUS_TRANSITIONS[contract.status] ?? [];
-  const showStatusActions = canManage && allowedTransitions.length > 0;
+  const allowedTransitions = allowedStatusTransitions;
+  const showStatusActions = allowedTransitions.length > 0;
 
   return (
     <DashboardScrollContainer className="space-y-5 max-w-5xl">
@@ -524,7 +537,7 @@ export default function ContractDetailPage() {
             <InfoRow icon={<User className="w-3.5 h-3.5" />} label={t("contracts.partyB")} value={contract.party_b_name} sub={contract.party_b_contact} />
             <InfoRow icon={<DollarSign className="w-3.5 h-3.5" />} label={t("contracts.amount")} value={fmtAED(totalContract)} sub={contract.currency} />
             {contract.signed_at && (
-              <InfoRow icon={<CheckCircle className="w-3.5 h-3.5" />} label={t("contracts.signedAt") || "Signed At"} value={contract.signed_at?.slice(0, 10)} />
+              <InfoRow icon={<CheckCircle className="w-3.5 h-3.5" />} label={t("contracts.signedAt")} value={contract.signed_at?.slice(0, 10)} />
             )}
           </CardContent>
         </Card>
@@ -553,12 +566,12 @@ export default function ContractDetailPage() {
       </div>
 
       {/* ── Status change (admin/manager only) ── */}
-      {showStatusActions && canManage && (
+      {showStatusActions && (
         <Card className="bg-card border-border">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-1 h-4 rounded-full bg-amber-400" />
-              <h2 className="text-sm font-semibold text-foreground">{t("contracts.changeStatus") || "Change Status"}</h2>
+              <h2 className="text-sm font-semibold text-foreground">{t("contracts.changeStatus")}</h2>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {allowedTransitions.map((s) => (
@@ -644,16 +657,32 @@ export default function ContractDetailPage() {
               <p className="text-xs text-muted-foreground py-4 text-center">{t("contracts.noPayments")}</p>
             ) : (
               <div className="space-y-2">
-                {payments.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/40 p-2.5">
+                {payments.map((p) => {
+                  // Three states from the shared model, as on the payments dashboard.
+                  const state = paymentState(p);
+                  return (
+                  <div
+                    key={p.id}
+                    className={`flex items-center justify-between gap-2 rounded-lg border p-2.5 ${
+                      state === "voided" ? "border-rose-500/20 opacity-70" : "border-border/40"
+                    }`}
+                  >
                     <div className="space-y-0.5 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">{fmtAED(Number(p.amount))}</span>
-                        {p.confirmed ? (
+                        <span className={`text-sm font-medium text-foreground ${state === "voided" ? "line-through" : ""}`}>
+                          {fmtAED(Number(p.amount))}
+                        </span>
+                        {state === "voided" && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 inline-flex items-center gap-1">
+                            <Ban className="w-2.5 h-2.5" />{t("payments.voidedStatus")}
+                          </span>
+                        )}
+                        {state === "confirmed" && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1">
                             <CheckCircle className="w-2.5 h-2.5" />{t("analytics.paid")}
                           </span>
-                        ) : (
+                        )}
+                        {state === "pending" && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 inline-flex items-center gap-1">
                             <Clock className="w-2.5 h-2.5" />{t("contracts.pendingConfirm")}
                           </span>
@@ -664,9 +693,17 @@ export default function ContractDetailPage() {
                         {p.payment_method && <span>{PAYMENT_METHOD_LABEL[p.payment_method] || p.payment_method}</span>}
                         {p.reference_no && <span>· #{p.reference_no}</span>}
                       </div>
+                      {state === "voided" && (
+                        <div className="flex items-center gap-2 text-[11px] text-rose-400/80">
+                          <span>{t("payments.voidedOn")}: {p.voided_at?.slice(0, 10)}</span>
+                          {p.voider_name && <span>· {p.voider_name}</span>}
+                          {p.void_reason && <span>· {p.void_reason}</span>}
+                        </div>
+                      )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>
@@ -734,9 +771,7 @@ export default function ContractDetailPage() {
           <DialogHeader>
             <DialogTitle>{t("common.confirm")}</DialogTitle>
             <DialogDescription>
-              {confirmStatusMessage === "contracts.confirmStatusChange"
-                ? `Change status to ${pendingStatus ? STATUS_LABELS[pendingStatus] || pendingStatus : ""}?`
-                : confirmStatusMessage}
+              {confirmStatusMessage}
             </DialogDescription>
           </DialogHeader>
           {pendingStatus && STATUS_REASON_REQUIRED.has(pendingStatus) && (

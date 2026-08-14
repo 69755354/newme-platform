@@ -26,6 +26,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { MONEY_RPC_STATUS, moneyRpcFailure, moneyRpcStatus } from "../../src/lib/money-rpc.mjs";
+import { allowedSetContractStatuses } from "../../src/lib/contract-status-capabilities.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const MIGRATION = "supabase/migrations/20260812000000_money_actor_identity_and_atomicity.sql";
@@ -311,7 +312,7 @@ test("PATCH does not write the status itself — the routine decides the transit
   assert.match(src, /p_status:\s*status/, "PATCH must pass the requested status to set_contract_status()");
 });
 
-/* ─── the UI grid vs the routine's transition table ───────────────────── */
+/* ─── role capabilities, page consumption, and the routine graph ───────── */
 
 /**
  * from-status → allowed target statuses reachable through set_contract_status().
@@ -319,9 +320,8 @@ test("PATCH does not write the status itself — the routine decides the transit
  * Two artifacts, both in 20260814000000: the transition GRAPH, which is the whole
  * lifecycle including the statuses only approve_contract() and revoke_contract()
  * may set, and set_contract_status()'s own whitelist of statuses it will set. The
- * buttons are the intersection. Parsing the graph out of the SQL rather than
- * restating it here is the point — a pair added to the database with no button, or
- * a button with no pair, is a drift this test reports.
+ * manager capability is the intersection. The role matrix below is explicit, and
+ * the page is separately required to consume the capability returned by the API.
  */
 function transitionsFromMigration(sql) {
   const graphStart = sql.indexOf("create or replace function public.contract_transition_is_allowed(");
@@ -349,57 +349,95 @@ function transitionsFromMigration(sql) {
   return table;
 }
 
-function transitionsFromPage(tsx) {
-  const start = tsx.indexOf("const STATUS_TRANSITIONS");
-  assert.ok(start >= 0, "STATUS_TRANSITIONS not found on the contract page");
-  const literal = tsx.slice(tsx.indexOf("{", start), tsx.indexOf("};", start));
+const CONTRACT_STATUSES = [
+  "draft", "signed", "pending_admin", "pending_ceo", "approved", "active", "completed",
+  "terminated", "rejected", "revoking", "superseded", "suspended", "cancelled", "unknown",
+];
+
+const MANAGER_TRANSITIONS = {
+  draft: ["pending_admin"],
+  rejected: ["pending_admin", "draft"],
+  approved: ["active", "terminated"],
+  active: ["completed", "suspended", "terminated"],
+  suspended: ["active", "terminated"],
+  revoking: ["terminated"],
+};
+const OPERATIONS_TRANSITIONS = {
+  approved: ["active"],
+  active: ["completed"],
+  suspended: ["active"],
+};
+const OWNER_TRANSITIONS = {
+  draft: ["pending_admin"],
+  rejected: ["pending_admin", "draft"],
+};
+
+function expectedTransitions(role, isOwner, status) {
+  if (role === "admin" || role === "boss") return MANAGER_TRANSITIONS[status] ?? [];
+  if (role === "operator") {
+    return [...(OPERATIONS_TRANSITIONS[status] ?? []), ...(OWNER_TRANSITIONS[status] ?? [])];
+  }
+  if (role === "finance") {
+    return [...(OPERATIONS_TRANSITIONS[status] ?? []), ...(isOwner ? OWNER_TRANSITIONS[status] ?? [] : [])];
+  }
+  if (role === "sales" && isOwner) return OWNER_TRANSITIONS[status] ?? [];
+  return [];
+}
+
+function transitionsFromCapabilities(role, isOwner) {
   const table = new Map();
-  const entry = /([a-z_]+):\s*\[([^\]]*)\]/g;
-  let match;
-  while ((match = entry.exec(literal)) !== null) {
-    const targets = match[2].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
-    table.set(match[1], new Set(targets));
+  for (const status of CONTRACT_STATUSES) {
+    const targets = allowedSetContractStatuses(role, isOwner, status);
+    if (targets.length > 0) table.set(status, new Set(targets));
   }
   return table;
 }
 
-test("the contract page offers exactly the transitions set_contract_status() accepts", async () => {
-  const [sql, page] = await Promise.all([read(ROUND3), read(CONTRACT_PAGE)]);
-  const routine = transitionsFromMigration(sql);
-  const ui = transitionsFromPage(page);
-
-  assert.ok(routine.size > 0, "parsed no transitions out of the routine — the parser has drifted");
-
-  for (const [from, targets] of ui) {
-    assert.ok(routine.has(from), `the page offers buttons from '${from}', which the routine has no branch for`);
-    for (const target of targets) {
-      assert.ok(
-        routine.get(from).has(target),
-        `the page offers ${from} → ${target}; set_contract_status() answers 22023 for it`,
-      );
-    }
+for (const role of ["admin", "boss", "operator", "finance", "sales", "designer"]) {
+  for (const isOwner of [false, true]) {
+    test(`contract status capability matrix: ${role}, owner=${isOwner}`, () => {
+      for (const status of CONTRACT_STATUSES) {
+        assert.deepEqual(
+          allowedSetContractStatuses(role, isOwner, status),
+          expectedTransitions(role, isOwner, status),
+          `${role}, owner=${isOwner}, status=${status}`,
+        );
+      }
+    });
   }
-  // And the other direction: a transition the routine allows but the page hides
-  // is an unreachable feature, so the two tables must be equal.
-  for (const [from, targets] of routine) {
-    assert.ok(ui.has(from), `set_contract_status() allows transitions from '${from}' that the page never offers`);
-    for (const target of targets) {
-      assert.ok(ui.get(from).has(target), `set_contract_status() allows ${from} → ${target}; the page never offers it`);
-    }
-  }
+}
+
+test("the contract page consumes server-provided allowedStatusTransitions and defines no local transition grid", async () => {
+  const [page, route] = await Promise.all([read(CONTRACT_PAGE), read("src/app/api/contracts/[id]/route.ts")]);
+
+  assert.match(page, /allowedStatusTransitions:\s*string\[\]/);
+  assert.match(page, /const \{[^}]*allowedStatusTransitions[^}]*\} = data/);
+  assert.match(page, /if \(!allowedStatusTransitions\.includes\(newStatus\)\) return/);
+  assert.match(page, /const allowedTransitions = allowedStatusTransitions/);
+  assert.doesNotMatch(page, /\b(?:const|let|var)\s+STATUS_TRANSITIONS\b/);
+
+  assert.match(route, /import \{ allowedSetContractStatuses \} from "@\/lib\/contract-status-capabilities\.mjs"/);
+  assert.match(route, /allowedStatusTransitions:\s*allowedSetContractStatuses\(/);
 });
 
-test("the approval-chain statuses are not in the page's grid", async () => {
-  const page = await read(CONTRACT_PAGE);
-  const ui = transitionsFromPage(page);
-  // approved / pending_ceo / rejected belong to approve_contract(). They were in
-  // the nine-button grid this replaces.
-  for (const [from, targets] of ui) {
-    for (const forbidden of ["approved", "pending_ceo", "rejected", "superseded", "revoking"]) {
-      assert.ok(
-        !targets.has(forbidden),
-        `the page offers ${from} → ${forbidden}, which only approve_contract()/revoke_contract() may set`,
-      );
+test("the manager capability includes exactly the transitions set_contract_status() accepts", async () => {
+  const sql = await read(ROUND3);
+  const routine = transitionsFromMigration(sql);
+  const capability = transitionsFromCapabilities("admin", false);
+
+  assert.ok(routine.size > 0, "parsed no transitions out of the routine — the parser has drifted");
+  assert.deepEqual(capability, routine);
+});
+
+test("no role capability exposes an approval-chain or revocation-only target", () => {
+  for (const role of ["admin", "boss", "operator", "finance", "sales", "designer"]) {
+    for (const isOwner of [false, true]) {
+      for (const from of CONTRACT_STATUSES) {
+        const targets = allowedSetContractStatuses(role, isOwner, from);
+        for (const forbidden of ["approved", "pending_ceo", "rejected", "superseded", "revoking"]) {
+          assert.ok(!targets.includes(forbidden), `${role}, owner=${isOwner} exposes ${from} → ${forbidden}`);
+        }
+      }
     }
   }
 });

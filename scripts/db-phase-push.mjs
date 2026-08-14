@@ -84,6 +84,7 @@ import {
   readBaseline,
   readManifest,
   readMigration,
+  readTreeFiles,
 } from "./check-release-manifest.mjs";
 import { splitSqlStatements } from "./split-sql-statements.mjs";
 import {
@@ -371,8 +372,11 @@ async function main(argv) {
 
   // 1 · The manifest must describe this tree before it is allowed to describe a
   //     production action. These are the same checks CI runs.
-  const files = fs.readdirSync(MIGRATIONS_DIR).filter((file) => CLI_MIGRATION.test(file)).sort();
-  const hashes = new Map(files.map((file) => [file, contentHash(readMigration(MIGRATIONS_DIR, file))]));
+  //     readTreeFiles, not a CLI-only readdir: rule 8 compares the declared
+  //     companion set against the files it is given, so a caller that filtered the
+  //     hand-run files out would invert the rule into "the manifest lists
+  //     companions that are not on disk" and refuse every push.
+  const { files, hashes } = readTreeFiles(MIGRATIONS_DIR);
   const manifestProblems = auditManifest({ manifest, files, hashes, baseline: readBaseline() });
   if (manifestProblems.length > 0) {
     for (const problem of manifestProblems) console.error(`release manifest: ${problem}`);

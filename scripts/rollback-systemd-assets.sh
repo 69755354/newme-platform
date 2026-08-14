@@ -21,7 +21,7 @@ NGINX_MANAGED=0
 NGINX_TRANSACTION_COMMITTED=0
 CRON_PATH=/etc/cron.d/newme-observability
 CRON_MANAGED=0
-CRON_TMP=""
+RESTORE_TMP=""
 if grep -Fqx /etc/nginx/sites-available/newme-platform "$BACKUP/managed.list" ||
   grep -Fqx /etc/nginx/sites-enabled/newme-platform "$BACKUP/managed.list"; then
   NGINX_MANAGED=1
@@ -39,14 +39,15 @@ if grep -Fqx "$CRON_PATH" "$BACKUP/managed.list"; then
   CRON_MANAGED=1
 fi
 
+# Defined before restore_managed_path() and calling it: both are in place before
+# anything calls either. This is the path taken when the BACKUP's own Nginx
+# configuration turns out to be invalid, i.e. the second failure in a row, so it
+# gets the same atomic replacement as everything else — including the
+# sites-enabled symlink, which is why restore_managed_path() handles links.
 restore_nginx_snapshot() {
   local nginx_path=""
   for nginx_path in /etc/nginx/sites-available/newme-platform /etc/nginx/sites-enabled/newme-platform; do
-    rm -f -- "$nginx_path" || return 1
-    if grep -Fqx "$nginx_path" "$NGINX_SNAPSHOT/present.list"; then
-      mkdir -p "$(dirname "$nginx_path")" || return 1
-      cp -a -- "$NGINX_SNAPSHOT/rootfs/${nginx_path#/}" "$nginx_path" || return 1
-    fi
+    restore_managed_path "$nginx_path" "$NGINX_SNAPSHOT/rootfs" "$NGINX_SNAPSHOT/present.list" || return 1
   done
 }
 
@@ -59,8 +60,8 @@ discard_nginx_snapshot() {
 cleanup() {
   rc=$?
   trap - EXIT HUP INT TERM
-  if [ -n "$CRON_TMP" ]; then
-    case "$CRON_TMP" in /etc/cron.d/.newme-observability.rollback.*) rm -f -- "$CRON_TMP" ;; esac
+  if [ -n "$RESTORE_TMP" ]; then
+    case "$RESTORE_TMP" in */.newme-asset-rollback.*) rm -f -- "$RESTORE_TMP" ;; esac
   fi
   if [ "$rc" -ne 0 ] && [ "$NGINX_MANAGED" -eq 1 ] && [ "$NGINX_TRANSACTION_COMMITTED" -eq 0 ]; then
     if restore_nginx_snapshot && nginx -t && systemctl reload nginx && systemctl is-active --quiet nginx; then
@@ -80,43 +81,70 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-restore_managed_cron() {
-  local rel="${CRON_PATH#/}"
-  [ "$CRON_MANAGED" -eq 1 ] || return 0
-  if grep -Fqx "$CRON_PATH" "$BACKUP/present.list"; then
-    CRON_TMP="$(mktemp /etc/cron.d/.newme-observability.rollback.XXXXXX)" || return 1
-    rm -f -- "$CRON_TMP" || return 1
-    cp -a -- "$BACKUP/rootfs/$rel" "$CRON_TMP" || return 1
-    mv -Tf "$CRON_TMP" "$CRON_PATH" || return 1
-    CRON_TMP=""
+# Put one managed path back, atomically (round-4 review C3).
+#
+# `rm -f` followed by `cp -a` — which every path except the cron file used to do —
+# has a window in which the destination does not exist, and a second window in
+# which it exists half-written. Both windows are real: this script is what runs
+# when a deploy has already failed, so it runs on a host that is already having a
+# bad day, and it is also called by the installer's own failure trap and by
+# newme-production-rollback. Lose power inside the first window and the file is
+# simply gone; inside the second and it is truncated. For
+# /etc/sudoers.d/newme-platform that is the difference between a rollback and a
+# host whose operator can no longer sudo the deploy wrapper; for the unit file it
+# is a service that cannot start.
+#
+# The temp-and-rename idiom below was already here, applied to exactly one path
+# (the cron file, whose window would have let cron fire a half-written schedule).
+# It is the same fix for the same reason everywhere else, so it is now the only
+# restore path, and rename replaces the destination in one step: a reader sees the
+# old file or the new one, a crash leaves one or the other, and re-running this
+# script from the same backup converges — which is what makes an interrupted
+# rollback recoverable by repeating it.
+#
+# The temp is created in the destination's own directory (rename is only atomic
+# within a filesystem) with a leading dot in its name, which is what keeps it inert
+# while it exists: cron.d and sudoers.d both ignore names containing a dot, and
+# nginx's include globs do not match a leading dot. cleanup() removes it if a
+# signal arrives between mktemp and mv.
+restore_managed_path() {
+  local dest="$1" source_root="${2:-$BACKUP/rootfs}" present="${3:-$BACKUP/present.list}"
+  local rel="${1#/}" directory=""
+  directory="$(dirname "$dest")"
+  if grep -Fqx "$dest" "$present"; then
+    mkdir -p "$directory" || return 1
+    RESTORE_TMP="$(mktemp "$directory/.newme-asset-rollback.XXXXXX")" || return 1
+    # cp -a must create the copy itself, symlink or file, so the placeholder goes.
+    rm -f -- "$RESTORE_TMP" || return 1
+    cp -a -- "$source_root/$rel" "$RESTORE_TMP" || return 1
+    if [ -L "$RESTORE_TMP" ]; then
+      # sync -f follows the link, and a restored symlink may point at something
+      # this run has not restored yet. Its filesystem is the directory's.
+      sync -f "$directory" || return 1
+    else
+      sync -f "$RESTORE_TMP" || return 1
+    fi
+    mv -Tf "$RESTORE_TMP" "$dest" || return 1
+    RESTORE_TMP=""
   else
-    rm -f -- "$CRON_PATH" || return 1
+    rm -f -- "$dest" || return 1
   fi
+}
+
+restore_managed_cron() {
+  [ "$CRON_MANAGED" -eq 1 ] || return 0
+  restore_managed_path "$CRON_PATH" || return 1
   sync -f /etc/cron.d || return 1
 }
 
 while IFS= read -r dest; do
   [ -n "$dest" ] || continue
   [ "$dest" != "$CRON_PATH" ] || continue
-  if grep -Fqx "$dest" "$BACKUP/present.list"; then
-    rel="${dest#/}"
-    mkdir -p "$(dirname "$dest")"
-    rm -f -- "$dest"
-    cp -a -- "$BACKUP/rootfs/$rel" "$dest"
-  else
-    rm -f -- "$dest"
-  fi
+  restore_managed_path "$dest"
 done < "$BACKUP/managed.list"
 
 for dropin in /etc/systemd/system/newme-platform.service.d/forensic.conf /etc/systemd/system/newme-platform.service.d/restart-always.conf /etc/newme/newme-runtime.env; do
-  rel="${dropin#/}"
-  if grep -Fqx "$dropin" "$BACKUP/present.list"; then
-    mkdir -p "$(dirname "$dropin")"
-    rm -f -- "$dropin"
-    cp -a -- "$BACKUP/rootfs/$rel" "$dropin"
-  else
-    rm -f -- "$dropin"
-  fi
+  restore_managed_path "$dropin"
 done
 
 systemctl daemon-reload

@@ -19,11 +19,11 @@
  * The wrapper's own GitHub-API check is exercised the same way, because the two
  * layers must agree about what a valid claim looks like. The reviewed revision of
  * that check accepted exactly one run shape — a green `push` run on main — and
- * that shape structurally cannot contain "Release-final taskboard completion",
- * which ci.yml gates on `workflow_dispatch && inputs.release_final`. So the gate
- * was not weak, it was unsatisfiable, and it recorded itself as satisfied. Both
- * layers now require a release-final dispatch, and the wrapper additionally
- * measures every job named in infra/release/required-jobs.json.
+ * that shape structurally cannot contain the explicit predeploy taskboard job,
+ * which ci.yml runs on workflow_dispatch. Both deployment layers now require a
+ * release-candidate dispatch, and the wrapper additionally measures every job
+ * named in infra/release/required-jobs.json. Release-final is a later closure-SHA
+ * dispatch and cannot be a precondition of the deployment that creates its facts.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -89,7 +89,14 @@ function validate(overrides = {}) {
     if (value !== undefined) env[key] = value;
   }
 
-  const result = spawnSync("bash", [harness], { encoding: "utf8", env });
+  const bash = process.platform === "win32"
+    ? path.join(env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe")
+    : "bash";
+  if (process.platform === "win32") {
+    const pathKey = Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+    env[pathKey] = [path.dirname(bash), env[pathKey] ?? ""].filter(Boolean).join(path.delimiter);
+  }
+  const result = spawnSync(bash, [harness], { encoding: "utf8", env });
   return {
     accepted: result.status === 0 && result.stdout.includes("ACCEPTED"),
     status: result.status,
@@ -108,7 +115,12 @@ test("a complete, self-consistent claim for the SHA being deployed is accepted",
   assert.equal(result.accepted, true, result.stderr);
   assert.equal(result.stderr, "");
 
-  // applied_verified is the other accepted shape, and it must carry ids.
+  // applied_verified is the other accepted shape, and it must carry ids. This
+  // function judges the SHAPE of the claim, not its scope: whether those ids are
+  // the set the release requires is decided after `git archive`, against that
+  // tree's own manifest, because at this point the SHA's tree does not exist yet.
+  // A single id is well-formed here and is refused there
+  // (tests/release/release-claim-derivation.test.mjs, round-4 C4-1).
   const applied = validate({ MIGRATION_STATUS: "applied_verified", MIGRATION_IDS: "20260811100000_f08_audit_logs_actor_identity" });
   assert.equal(applied.accepted, true, applied.stderr);
 });
@@ -146,10 +158,10 @@ test("a non-success conclusion is rejected", () => {
 });
 
 test("only the event that can run the full gate set is accepted", () => {
-  // A pull_request run tests the merge commit and skips the release-final jobs;
+  // A pull_request run tests the merge commit and skips release-candidate jobs;
   // workflow_run/schedule/repository_dispatch prove nothing about this SHA. And
   // `push` — accepted by this function until this revision — cannot contain the
-  // release-final taskboard job at all, so it cannot satisfy the required set the
+  // manual candidate gate set at all, so it cannot satisfy the required set the
   // wrapper measures.
   for (const event of ["push", "pull_request", "pull_request_target", "workflow_run", "schedule", "repository_dispatch", "merge_group", "release", ""]) {
     assertRejected({ CI_EVENT: event }, /CI_EVENT (must be 'workflow_dispatch'|is required)/);
@@ -295,7 +307,7 @@ const GOOD_RUN = {
   head_branch: "main",
 };
 
-/** The job list a release-final dispatch of ci actually produces. */
+/** The job list a release-candidate dispatch of ci actually produces. */
 function jobList(overrides = []) {
   const jobs = MANIFEST.required_jobs.map((entry) => ({
     name: entry.name,
@@ -312,7 +324,7 @@ function jobList(overrides = []) {
   return { total_count: jobs.length, jobs };
 }
 
-test("the wrapper requires a release-final main dispatch of ci", () => {
+test("the wrapper requires a release-candidate main dispatch of ci", () => {
   const check = wrapperCheck();
   const status = (run, jobs = jobList()) => check(run, jobs).status;
 
@@ -320,8 +332,8 @@ test("the wrapper requires a release-final main dispatch of ci", () => {
 
   // Each of these was accepted before: the check looked at id, head_sha, name and
   // conclusion only, so a green pull_request run on any topic branch passed.
-  assert.equal(status({ ...GOOD_RUN, event: "pull_request" }), 65, "a pull_request run skips the release-final jobs");
-  assert.equal(status({ ...GOOD_RUN, event: "push" }), 65, "a push run cannot contain the release-final jobs");
+  assert.equal(status({ ...GOOD_RUN, event: "pull_request" }), 65, "a pull_request run skips candidate-only jobs");
+  assert.equal(status({ ...GOOD_RUN, event: "push" }), 65, "a push run cannot contain candidate-only jobs");
   assert.equal(status({ ...GOOD_RUN, event: "workflow_run" }), 65);
   assert.equal(status({ ...GOOD_RUN, event: "schedule" }), 65);
   assert.equal(status({ ...GOOD_RUN, head_branch: "agent/prod-l0-taskboard-closure" }), 65, "a topic-branch run is not main evidence");
@@ -405,29 +417,40 @@ test("the wrapper refuses a manifest that has been emptied or loosened", () => {
   assert.equal(check(GOOD_RUN, jobList(), duplicatedRequirement).status, 65);
 });
 
-test("the wrapper enforces taskboard completion and remote migration history before it stages anything", () => {
-  // Two claims CI structurally cannot make about production: that the board is
-  // complete in the tree being deployed, and that production's recorded migration
-  // history is the history this release contains. Both were unenforced in the
-  // canonical path — scripts/deploy.sh checked the board, and scripts/deploy.sh is
-  // not the canonical path.
+test("the wrapper enforces the predeploy taskboard scope and remote migration history before it stages anything", () => {
+  // Two claims CI structurally cannot make about production: that the board's
+  // pre-deploy milestone is closed in the tree being deployed, and that
+  // production's recorded migration history is the history this release contains.
+  // Both were unenforced in the canonical path — scripts/deploy.sh checked the
+  // board, and scripts/deploy.sh is not the canonical path.
   const wrapper = readFileSync(WRAPPER, "utf8");
   const lines = wrapper.split(/\r?\n/);
   const at = (pattern) => lines.findIndex((line) => pattern.test(line));
 
-  const taskboard = at(/check-taskboard\.mjs" --require-complete/);
+  // Round-4 C4-4. The milestone, not the whole board: --require-complete could
+  // never pass here because most rows on that board close only once production has
+  // run the release, and a gate that cannot pass is a gate that gets routed
+  // around. The scope is still fail-closed — an undeclared unfinished row FAILs
+  // the checker and is counted in predeploy_ready — and release-final completeness
+  // stays with the separate closure workflow.
+  const taskboard = at(/check-taskboard\.mjs" --require-scope=predeploy_ready/);
   const remoteHistory = at(/verify-remote-migration-history\.mjs/);
   const assets = at(/install-systemd-assets\.sh"/);
   const immutable = at(/deploy-immutable\.sh" "\$SHA"/);
 
-  assert.notEqual(taskboard, -1, "the wrapper does not require a complete taskboard");
+  assert.notEqual(taskboard, -1, "the wrapper does not require the predeploy taskboard scope");
+  assert.equal(
+    at(/check-taskboard\.mjs" --require-complete/),
+    -1,
+    "the wrapper must not require a milestone this deployment is itself the precondition of",
+  );
   assert.notEqual(remoteHistory, -1, "the wrapper does not verify the remote migration history");
   assert.ok(taskboard < assets, "the taskboard gate must run before assets are installed");
   assert.ok(remoteHistory < assets, "the history gate must run before assets are installed");
   assert.ok(assets < immutable);
 
   // Both abort, and abort with the wrapper's precondition status.
-  assert.match(wrapper, /TASKBOARD\.md at canonical main is not complete; deployment is blocked" >&2\n\s*exit 65/);
+  assert.match(wrapper, /TASKBOARD\.md at canonical main is not predeploy-ready; deployment is blocked" >&2\n\s*exit 65/);
   assert.match(wrapper, /production migration history does not match the release being deployed" >&2\n\s*exit 65/);
 
   // The connection string is a credential: root-owned, not group- or
@@ -439,8 +462,13 @@ test("the wrapper enforces taskboard completion and remote migration history bef
   assert.doesNotMatch(wrapper, /--url[= ]postgres/);
 
   // The claim on the command line decides which direction is re-measured, so a
-  // not_required deployment cannot quietly carry unapplied migrations.
-  assert.match(wrapper, /applied_verified\) MIGRATION_HISTORY_ARGS\+=\(--require-applied "\$MIGRATION_IDS"\)/);
+  // not_required deployment cannot quietly carry unapplied migrations. What is
+  // re-measured for applied_verified is the set derived from the release's own
+  // manifest, never the operator's list — see
+  // tests/release/release-claim-derivation.test.mjs for the finding (round-4 C4-1)
+  // and for the derivation itself.
+  assert.match(wrapper, /MIGRATION_HISTORY_ARGS\+=\(--require-applied "\$REQUIRED_IDS"\)/);
+  assert.doesNotMatch(wrapper, /--require-applied "\$MIGRATION_IDS"/);
   assert.match(wrapper, /not_required\)\s+MIGRATION_HISTORY_ARGS\+=\(--require-no-pending\)/);
 
   // The required-jobs manifest comes from the mirror at the SHA being deployed,
@@ -449,7 +477,7 @@ test("the wrapper enforces taskboard completion and remote migration history bef
   assert.match(wrapper, /main does not carry infra\/release\/required-jobs\.json/);
 });
 
-test("every required job exists in ci.yml and can run on a release-final dispatch", () => {
+test("every required job exists in ci.yml and can run on a release-candidate dispatch", () => {
   // A manifest naming a job that does not exist would be unsatisfiable — the
   // exact defect this replaces, in a new place.
   const ci = readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
@@ -470,13 +498,13 @@ test("every required job exists in ci.yml and can run on a release-final dispatc
       assert.match(
         condition,
         /workflow_dispatch/,
-        `"${name}" is gated on ${condition}, which a release-final dispatch cannot satisfy`,
+        `"${name}" is gated on ${condition}, which a release-candidate dispatch cannot satisfy`,
       );
     }
   }
 
-  // And the reverse direction for the one job that proves release_final: it must
-  // stay dispatch-gated, or its presence stops being proof of anything.
-  const taskboard = lines.findIndex((line) => line.trim() === "name: Release-final taskboard completion");
-  assert.match(lines[taskboard + 1], /if: .*workflow_dispatch.*inputs\.release_final/);
+  const finalJob = lines.findIndex((line) => line.trim() === "name: Release-final taskboard completion");
+  assert.match(lines[finalJob + 1], /if: .*workflow_dispatch.*inputs\.release_final/);
+  assert.ok(!MANIFEST.required_jobs.some((job) => job.name === "Release-final taskboard completion"));
+  assert.ok(MANIFEST.required_jobs.some((job) => job.name === "Predeploy taskboard readiness"));
 });

@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase-middleware";
 import { reportServerError } from "@/lib/report-server-error";
+import { shouldRecordActivity } from "@/lib/activity-throttle.mjs";
 import { isActiveProfile } from "@/lib/auth-profile.mjs";
 import {
   FORCED_SESSION_ERROR,
@@ -77,8 +78,14 @@ function authUnavailable(request: NextRequest, isApiRequest: boolean) {
   return NextResponse.redirect(loginUrl);
 }
 
-// Track user activity — update last_active_at, but throttle to once per 5 min per user
-const activityThrottle = new Map<string, number>();
+// Track user activity — update last_active_at, but throttle to once per 5 min
+// per user. The bookkeeping lives in @/lib/activity-throttle: it used to be a
+// `Map<string, number>` here that was only ever written to, so it retained one
+// entry per user id for the life of the process to enforce a 5-minute window
+// (R8). The write itself stays in this file — tests/security/
+// profiles-grant-coupling.test.mjs requires the proxy to be the only
+// caller-scoped writer of public.profiles.
+const ACTIVITY_WINDOW_MS = 300_000;
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -119,10 +126,16 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // Use createMiddlewareClient to validate session (no service_role needed)
+  // Resolve credentials once, with the same Bearer-first precedence used by
+  // createServerSupabase in route handlers. The old cookie-first/fallback flow
+  // could authorize cookie user A here and then execute as Bearer user B below.
+  const authHeader = request.headers.get("authorization");
+  const bearerToken = authHeader?.match(/^Bearer\s+([^\s]+)$/i)?.[1];
+
+  // Use createMiddlewareClient to validate session (no service_role needed).
   let middlewareClient: Awaited<ReturnType<typeof createMiddlewareClient>>;
   try {
-    middlewareClient = await withAuthTimeout(createMiddlewareClient(request));
+    middlewareClient = await withAuthTimeout(createMiddlewareClient(request, bearerToken));
   } catch {
     return authUnavailable(request, isApiRequest);
   }
@@ -131,31 +144,10 @@ export async function proxy(request: NextRequest) {
   let user: { id: string } | null = null;
   let authInfrastructureFailed = false;
   try {
-    const { data } = await withAuthTimeout(supabase.auth.getUser());
+    const { data } = await withAuthTimeout(supabase.auth.getUser(bearerToken));
     user = data.user;
   } catch {
     authInfrastructureFailed = true;
-  }
-
-  // Fallback: also check Authorization Bearer header (for localhost/dev testing,
-  // where SSR cookies may fail to parse correctly)
-  let usedBearerFallback = false;
-  let bearerToken: string | undefined;
-  if (!user) {
-    const authHeader = request.headers.get("authorization");
-    if (authHeader?.startsWith("Bearer ")) {
-      const token = authHeader.slice(7);
-      bearerToken = token;
-      try {
-        const { data: authUser } = await withAuthTimeout(supabase.auth.getUser(token));
-        user = authUser?.user ?? null;
-        if (user) {
-          usedBearerFallback = true;
-        }
-      } catch {
-        authInfrastructureFailed = true;
-      }
-    }
   }
 
   if (!user && protectedApiMutation) {
@@ -177,7 +169,7 @@ export async function proxy(request: NextRequest) {
     let profile: ActiveProfile | null = null;
     let profileErr: unknown = null;
 
-    if (usedBearerFallback) {
+    if (bearerToken) {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
       const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
       if (!supabaseUrl || !publishableKey || !bearerToken) {
@@ -279,10 +271,7 @@ export async function proxy(request: NextRequest) {
   // The client-IP capture that used to accompany this existed only to populate
   // the audit row below; see the note there.
   if (user && !pathname.startsWith("/_next") && !pathname.startsWith("/api")) {
-    const now = Date.now();
-    const last = activityThrottle.get(user.id) || 0;
-    if (now - last > 300_000) {
-      activityThrottle.set(user.id, now);
+    if (shouldRecordActivity(user.id, ACTIVITY_WINDOW_MS)) {
       // Fire-and-forget: update profile activity.
       supabase.from("profiles").update({ last_active_at: new Date().toISOString() }).eq("id", user.id).then(({ error }) => {
         if (error) {

@@ -44,7 +44,7 @@ test("session cookies use dynamic names and secure server refresh attributes", a
 
 test("middleware uses the custom split-session refresh boundary", async () => {
   const middleware = await read("src/lib/supabase-middleware.ts");
-  assert.match(middleware, /createServerSupabase\(undefined, request\.headers\.get\("cookie"\)/);
+  assert.match(middleware, /createServerSupabase\([\s\S]*bearerToken,[\s\S]*request\.headers\.get\("cookie"\)/);
   assert.match(middleware, /getRefreshedCookies\(supabase\)/);
   assert.match(middleware, /request\.cookies\.set\(name, value\)/);
   assert.match(middleware, /response\.cookies\.set\(name, value, options/);

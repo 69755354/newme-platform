@@ -9,12 +9,10 @@ test("CI runs on pull requests, main pushes, and manual dispatch", async () => {
   assert.match(workflow, /^on:\s*\n(?:[\s\S]*?)^  workflow_dispatch:/m);
   assert.match(workflow, /^  pull_request:\s*$/m);
   assert.match(workflow, /^  push:\s*\n    branches:\s*\n      - main\s*$/m);
-  // The Windows SPEC gate runs on PRs and on the release-final dispatch that
-  // infra/release/required-jobs.json gates production on. It was pull_request-only,
-  // which made the required set unsatisfiable for a release-final run.
+  // The Windows SPEC gate runs on PRs and every release-candidate dispatch.
   assert.match(
     workflow,
-    /windows-checkout:[\s\S]*?if: \$\{\{ github\.event_name == 'pull_request' \|\| \(github\.event_name == 'workflow_dispatch' && inputs\.release_final\) \}\}/,
+    /windows-checkout:[\s\S]*?if: \$\{\{ github\.event_name == 'pull_request' \|\| github\.event_name == 'workflow_dispatch' \}\}/,
   );
   assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
   assert.match(
@@ -38,13 +36,48 @@ test("ordinary CI and release-final taskboard modes are distinct", async () => {
     packageJson.scripts["check:taskboard:complete"],
     "node scripts/check-taskboard.mjs --require-complete",
   );
+  // Round-4 C4-4. There are exactly two taskboard milestones: the canonical
+  // wrapper and bootstrap coordinator both run predeploy, while release-final
+  // keeps requiring the whole board after production evidence exists.
+  assert.equal(
+    packageJson.scripts["check:taskboard:predeploy"],
+    "node scripts/check-taskboard.mjs --require-scope=predeploy_ready",
+  );
+  assert.equal(packageJson.scripts["check:taskboard:bootstrap"], undefined);
   assert.match(workflow, /- name: Taskboard gate\s*\n        run: npm run check:taskboard/);
   assert.match(workflow, /release_final:[\s\S]*?type: boolean/);
   assert.match(
     workflow,
     /taskboard-completion:[\s\S]*?github\.event_name == 'workflow_dispatch' && inputs\.release_final[\s\S]*?npm run check:taskboard:complete/,
   );
+  assert.match(
+    workflow,
+    /taskboard-predeploy:[\s\S]*?github\.event_name == 'workflow_dispatch'[\s\S]*?npm run check:taskboard:predeploy/,
+  );
   assert.match(shell, /exec node "\$SCRIPT_DIR\/check-taskboard\.mjs" "\$@"/);
+});
+
+test("release-candidate CI requires the isolated control-plane SIGTERM and reentry drill", async () => {
+  const workflow = await readFile(new URL(".github/workflows/ci.yml", ROOT), "utf8");
+  const manifest = JSON.parse(await readFile(new URL("infra/release/required-jobs.json", ROOT), "utf8"));
+  const jobs = jobBlocks(workflow);
+  const drill = jobs.find((job) => job.id === "control-plane-restore");
+  assert.ok(drill, "ci.yml must define the control-plane restore drill job");
+  assert.match(drill.body, /name: Control-plane restore interruption drill/);
+  assert.match(drill.body, /github\.event_name == 'workflow_dispatch' && !inputs\.release_final/);
+  assert.match(drill.body, /fetch-depth: 0/);
+  assert.match(drill.body, /persist-credentials: false/);
+  assert.match(drill.body, /docker run --rm/);
+  assert.match(drill.body, /--network none/);
+  assert.match(drill.body, /--volume "\$PWD:\/repo:ro"/);
+  assert.match(drill.body, /NEWME_DRILL_CONFIRM=throwaway-container/);
+  assert.match(drill.body, /node:24-bookworm/);
+  assert.match(drill.body, /bash \/repo\/scripts\/control-plane-restore-drill\.sh/);
+  assert.doesNotMatch(drill.body, /\bsecrets\.|SUPABASE_|POSTGRES|PGPASSWORD/i);
+  assert.ok(
+    manifest.required_jobs.some((entry) => entry.name === "Control-plane restore interruption drill"),
+    "the canonical wrapper would not require the drill's result",
+  );
 });
 
 test("the published-credential gate is wired into CI with its negative regression", async () => {
@@ -138,10 +171,11 @@ test("migration replay job gates on a negative control and never reaches product
   assert.notEqual(history, -1, "the full-history replay step must exist");
   assert.ok(history > branch, "the full-history replay must run after the branch replay");
 
-  // And it must be gating against a recorded failure point, not printed and
-  // ignored: the expectation file is what makes a red step actionable.
-  assert.match(job, /- name: Full migration history replay against the recorded failure point/);
-  assert.match(job, /history-replay-expectation\.txt/);
+  // And it must be gating against the captured production watermark, not a
+  // recorded failure that treats an unreplayable directory as success.
+  assert.match(job, /- name: Captured production baseline and exact pending migration replay/);
+  assert.match(job, /authenticated schema-only production capture/);
+  assert.doesNotMatch(job, /history-replay-expectation\.txt/);
 
   // The history immutability gate is a precondition for every replay below it:
   // if applied migrations have been edited or renamed, the replay is measuring a

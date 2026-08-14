@@ -4,6 +4,16 @@ import test from "node:test";
 
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
+/**
+ * The same source with its block comments removed.
+ *
+ * "This statement is not in the file" has to be a statement about the code. The
+ * R6 headers quote the defective statements they replaced — that is what makes
+ * them readable — and a `doesNotMatch` over the raw text would be satisfied by
+ * deleting the explanation instead of by keeping the fix.
+ */
+const readCode = (path) => read(path).replace(/\/\*[\s\S]*?\*\//g, "");
+
 test("SAM-43 chooses a deterministic eligible receiver or safely unassigns", async () => {
   const { resolveActiveLeadReassignmentTarget } = await import(
     "../src/lib/lead-reassignment.mjs"
@@ -93,9 +103,26 @@ test("SAM-43 exposes only eligible Settings targets while the database rejects i
   assert.match(migration, /Lead assignee must be an active transfer candidate/);
   assert.match(migration, /BEFORE INSERT ON public\.leads/);
   assert.match(migration, /BEFORE UPDATE OF assigned_to ON public\.leads/);
-  assert.match(actions, /if \(error\) throw new Error\(error\.message\)/);
   assert.doesNotMatch(actions, /validateAssignmentTarget/);
   assert.doesNotMatch(page, /profiles\.filter\(p => p\.role === 'sales'\)/);
+
+  // R6 · assignments and unassignments go through dedicated audited routines.
+  // What these assertions cannot show is that the comparison *works* — that is
+  // tests/security/lead-transfer-cas-behaviour.test.mjs, which runs these bodies,
+  // and supabase/replay/23_lead_assignment_cas.sh, which runs the database.
+  assert.match(actions, /rpc\('reassign_lead_atomic'/);
+  assert.match(actions, /rpc\('unassign_lead_atomic'/);
+  assert.match(actions, /p_expected_updated_at: target\.expectedUpdatedAt/);
+  assert.match(actions, /p_idempotency_key: deriveLeadTransferKey\(batchKey, target\.id\)/);
+  assert.doesNotMatch(actions, /\.update\(\{ assigned_to: null \}\)/);
+  // No unguarded owner write is left anywhere in the code.
+  assert.doesNotMatch(
+    readCode("src/app/actions/settings.ts"),
+    /update\(\{ assigned_to: (userId|targetUserId|toUserId) \}\)/,
+  );
+  // The screen has to carry the token for the comparison to mean anything.
+  assert.match(route, /updated_at/);
+  assert.match(page, /expectedUpdatedAt: lead\.updated_at/);
 });
 
 test("SAM-43 rebalance uses eligible targets and never reports failed updates as transferred", () => {
@@ -103,11 +130,29 @@ test("SAM-43 rebalance uses eligible targets and never reports failed updates as
 
   assert.match(route, /filterLeadTransferCandidateQuery\(/);
   assert.match(route, /is_active/);
-  assert.match(route, /const failedLeadIds: string\[\] = \[\]/);
-  assert.match(route, /if \(error \|\| !updated\)/);
   assert.match(route, /transferred\+\+/);
   assert.match(route, /failed: failedLeadIds\.length/);
   assert.doesNotMatch(route, /transferred: updates\.length/);
+
+  // R6 · the round-robin is executed by the audited routine, with the token read
+  // alongside the plan and one derived idempotency key per lead. The direct
+  // `update({ assigned_to })` this route used to run is gone, and with it the
+  // three defects it carried: no comparison, no transfer_history, no idempotence.
+  assert.match(route, /rpc\("reassign_lead_atomic"/);
+  assert.match(route, /\.select\("id, assigned_to, customer_name, updated_at"\)/);
+  assert.match(route, /p_expected_updated_at: update\.expected_updated_at/);
+  assert.match(route, /p_idempotency_key: deriveLeadTransferKey\(batchKey, update\.id\)/);
+  assert.match(route, /readLeadTransferBatchKey\(\{/);
+  assert.doesNotMatch(
+    readCode("src/app/api/dashboard/sales-load/rebalance/route.ts"),
+    /\.update\(\{ assigned_to/,
+  );
+  // A refusal and a replay are reported, never counted as work done.
+  assert.match(route, /conflicts: conflictLeadIds\.length/);
+  assert.match(route, /replayed\+\+/);
+  // And the caller supplies the batch key the derivation needs.
+  const caller = read("src/app/(dashboard)/analytics/_components/SalesLoad.tsx");
+  assert.match(caller, /batchKey: batchKeyRef\.current/);
 });
 
 test("SAM-43 enforces eligible assignment on both Lead inserts and reassignment updates", () => {

@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { FORCED_SESSION_ERROR } from "../../src/lib/forced-password-change.mjs";
 
 // A3 · an administrator password reset must end with the target's existing
 // sessions verifiably gone, and must not report success otherwise.
@@ -25,6 +26,16 @@ import { fileURLToPath } from "node:url";
 // supabase/replay/10_assert_release_contracts.sql, each one shown to fail against
 // the floor. GoTrue's own behaviour is measured by
 // scripts/gotrue-revocation-drill.sh.
+//
+// R2 changed one thing this file used to assert the other way round: a failed
+// profiles update no longer skips the revocation. The password has already been
+// replaced by then, so that failure is the case where the target's live sessions
+// are most certainly stale — and it was the one case that left them alone. The
+// two writes protect different things (the timestamp makes an already-minted
+// access token fail the `iat` check; the RPC deletes the refresh token that would
+// mint a newer one), so the first failing is a reason to attempt the second. The
+// tests below pin the new order, and a mutation re-introduces the old early exit
+// to show the difference is real.
 
 const require = createRequire(import.meta.url);
 const Module = require("node:module");
@@ -137,22 +148,81 @@ function nextServer() {
   };
 }
 
-function serverSupabase(user = { id: CALLER }) {
-  return { createServerSupabase: async () => ({ auth: { getUser: async () => ({ data: { user }, error: null }) } }) };
+function callerProfile(overrides = {}) {
+  return {
+    id: CALLER,
+    role: "admin",
+    is_active: true,
+    full_name: "An Administrator",
+    email: "admin@newme.ae",
+    force_password_change: false,
+    ...overrides,
+  };
+}
+
+/**
+ * The caller's own RLS client.
+ *
+ * R1 · resetUserPassword resolves its caller through
+ * src/lib/action-auth-context.ts now, which reads the caller's profile with this
+ * client instead of with the service key, and checks is_active and
+ * force_password_change on the way. So the double answers a profiles select, and
+ * the action's caller role arrives here rather than through recordingAdmin.
+ */
+function serverSupabase({ user = { id: CALLER }, profile = callerProfile() } = {}) {
+  const query = {
+    select: () => query,
+    eq: () => query,
+    single: async () => ({ data: profile, error: null }),
+  };
+  return {
+    createServerSupabase: async () => ({
+      auth: { getUser: async () => ({ data: { user }, error: null }) },
+      from: () => query,
+    }),
+  };
 }
 
 function patchRequest(password = NEW_PASSWORD) {
   return { headers: new Headers(), json: async () => ({ password }) };
 }
 
+function requestAuthContext(profile) {
+  class RequestAuthError extends Error {
+    constructor(code) {
+      super(code);
+      this.name = "RequestAuthError";
+      this.code = code;
+      this.status = code === FORCED_SESSION_ERROR ? 403 : 401;
+    }
+  }
+
+  return {
+    RequestAuthError,
+    getRequestAuthContext: async () => {
+      if (profile.is_active !== true) throw new RequestAuthError("inactive_account");
+      if (profile.force_password_change === true) throw new RequestAuthError(FORCED_SESSION_ERROR);
+      return {
+        profile,
+        role: profile.role ?? "sales",
+        user: { id: profile.id },
+        refreshedCookies: [],
+      };
+    },
+    applyRequestAuthCookies: (_context, response) => response,
+    requestAuthErrorResponse: (error) => ({ body: { error: error.code }, status: error.status }),
+  };
+}
+
 async function callRoute(options, mutate = (source) => source) {
   const { client, calls } = recordingAdmin(options);
+  const profile = callerProfile({ role: options.callerRole ?? "admin", ...options.callerProfile });
   const response = await withModule(
     ROUTE,
     {
       "next/server": nextServer(),
-      "@/lib/supabase-server": serverSupabase(),
       "@/lib/supabase-admin": { supabaseAdmin: client },
+      "@/lib/request-auth-context": requestAuthContext(profile),
     },
     mutate,
     (route) => route.PATCH(patchRequest(), { params: Promise.resolve({ id: TARGET }) }),
@@ -162,6 +232,18 @@ async function callRoute(options, mutate = (source) => source) {
 
 async function callAction(options, mutate = (source) => source) {
   const { client, calls } = recordingAdmin(options);
+  const supabaseServer = serverSupabase({
+    profile: callerProfile({ role: options.callerRole ?? "admin", ...options.callerProfile }),
+  });
+  // The real choke point, compiled over the same session double: the R1 refusals
+  // are the action's first gate now, so mocking them away would test a boundary
+  // that no longer exists.
+  const actionAuthContext = await withModule(
+    "src/lib/action-auth-context.ts",
+    { "@/lib/supabase-server": supabaseServer },
+    (source) => source,
+    (exports) => exports,
+  );
   const previous = {
     url: process.env.NEXT_PUBLIC_SUPABASE_URL,
     key: process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -172,7 +254,8 @@ async function callAction(options, mutate = (source) => source) {
     const result = await withModule(
       ACTION,
       {
-        "@/lib/supabase-server": serverSupabase(),
+        "@/lib/supabase-server": supabaseServer,
+        "@/lib/action-auth-context": actionAuthContext,
         "@/lib/supabase-admin": { supabaseAdmin: client },
         "@/lib/lead-reassignment.mjs": { resolveActiveLeadReassignmentTarget: async () => null },
         "@supabase/supabase-js": { createClient: () => client },
@@ -281,29 +364,82 @@ test("a failed revocation makes the server action throw rather than return succe
   }
 });
 
-test("a timestamp that was not recorded stops the reset before it can be reported as done", async () => {
-  // password_changed_at is the other half of the boundary: without it the
+test("a timestamp that was not recorded still revokes, and still is not a completed reset", async () => {
+  // R2 · password_changed_at is the other half of the boundary: without it the
   // restrictive policy has nothing to compare an already-minted token against.
-  const { response, calls } = await callRoute({
-    revocation: verified,
-    profileUpdateError: { message: "permission denied for table profiles" },
-  });
+  // Both paths used to stop here, before the revocation ran. The password is
+  // already replaced at this point, so stopping left the target's live sessions
+  // in place — the outcome this whole file exists to prevent, reached through the
+  // one failure nobody tested.
+  const failure = { message: "permission denied for table profiles" };
+
+  const { response, calls } = await callRoute({ revocation: verified, profileUpdateError: failure });
   assert.equal(response.status, 500);
   assert.notEqual(response.body?.success, true);
-  assert.equal(calls.some((call) => call.op === "rpc"), false);
+  // The revocation happened, in its usual place, with its usual arguments.
+  const rpc = calls.find((call) => call.op === "rpc");
+  assert.ok(rpc, "the profile failure skipped the revocation");
+  assert.deepEqual(rpc.args, { p_user_id: TARGET, p_reason: "admin_password_reset" });
+  assert.deepEqual(
+    calls.filter((call) => call.op !== "readCallerRole").map((call) => call.op),
+    ["setPassword", "updateProfile", "rpc"],
+  );
+  // And the administrator is told which half is missing, because the two have
+  // different remedies: this one is "reset again", not "the account is exposed".
+  assert.match(response.body.error, /sessions were revoked/);
+  assert.match(response.body.error, /audit timestamp could not be recorded/);
+  assert.doesNotMatch(response.body.error, /still signed in/i);
 
-  const action = await callAction({
-    revocation: verified,
-    profileUpdateError: { message: "permission denied for table profiles" },
-  });
+  const action = await callAction({ revocation: verified, profileUpdateError: failure });
   assert.equal(action.result.value, undefined);
-  assert.match(action.result.error.message, /still signed in/i);
+  assert.ok(action.calls.some((call) => call.op === "rpc"), "the action skipped the revocation");
+  assert.match(action.result.error.message, /existing sessions were revoked/);
+  assert.match(action.result.error.message, /timestamp could not be recorded/);
+  assert.doesNotMatch(action.result.error.message, /still signed in/i);
+});
+
+test("when both halves fail, the caller is told about the sessions first", async () => {
+  // The two failures are not equally dangerous and must not be reported as one
+  // message. An unrecorded timestamp with the sessions gone leaves nothing to
+  // sign in with; a recorded timestamp with the sessions intact leaves a refresh
+  // token that mints tokens whose `iat` passes the check. So when both fail, the
+  // sessions win the message.
+  const failure = { message: "permission denied for table profiles" };
+
+  const { response } = await callRoute({ revocation: unverified, profileUpdateError: failure });
+  assert.equal(response.status, 502);
+  assert.match(response.body.error, /could not be verifiably revoked/);
+  assert.match(response.body.error, /still signed in/i);
+
+  const action = await callAction({ revocation: unverified, profileUpdateError: failure });
+  assert.equal(action.result.value, undefined);
+  assert.match(action.result.error.message, /could not be verifiably revoked/);
+});
+
+test("R1 · both reset paths refuse a forced or revoked caller before resetting anything", async () => {
+  // resetUserPassword is an administrator action that hands out a new password.
+  // A caller whose own credential the operator has already decided must be
+  // replaced, or whose account has been deactivated, must not be the one doing
+  // that — and before R1 neither state was checked here at all.
+  for (const [label, overrides] of [
+    ["forced", { force_password_change: true }],
+    ["revoked", { is_active: false }],
+  ]) {
+    const route = await callRoute({ revocation: verified, callerProfile: overrides });
+    assert.equal(route.response.status, label === "forced" ? 403 : 401, `${label} route status`);
+    assert.deepEqual(route.calls, [], `${label} caller reached the route's service-role client`);
+
+    const { result, calls } = await callAction({ revocation: verified, callerProfile: overrides });
+    assert.equal(result.value, undefined, `${label} caller completed a reset`);
+    assert.equal(result.error.name, "ActionAuthError", `${label} caller: ${result.error.message}`);
+    assert.deepEqual(calls, [], `${label} caller reached the service-role client`);
+  }
 });
 
 test("a caller who is neither admin nor boss never reaches the reset at all", async () => {
   const { response, calls } = await callRoute({ revocation: verified, callerRole: "sales" });
   assert.equal(response.status, 403);
-  assert.deepEqual(calls.map((call) => call.op), ["readCallerRole"]);
+  assert.deepEqual(calls, []);
 
   const action = await callAction({ revocation: verified, callerRole: "sales" });
   assert.match(action.result.error.message, /Forbidden/);
@@ -311,10 +447,11 @@ test("a caller who is neither admin nor boss never reaches the reset at all", as
 });
 
 // ---------------------------------------------------------------------------
-// Coupling: these two are the only callers, and the RPC is server-only.
+// Coupling: only the two administrator reset paths and the authenticated
+// self-change path call the RPC, and the RPC remains server-only.
 // ---------------------------------------------------------------------------
 
-test("revoke_user_sessions is called from exactly the two administrator reset paths", () => {
+test("revoke_user_sessions is called from exactly the intended password-change paths", () => {
   const sources = fs
     .readdirSync(path.join(root, "src"), { recursive: true, encoding: "utf8" })
     .filter((entry) => /\.(ts|tsx|mts|mjs)$/.test(entry))
@@ -324,8 +461,9 @@ test("revoke_user_sessions is called from exactly the two administrator reset pa
     sources.map((entry) => entry.split(path.sep).join("/")).sort(),
     [
       "app/actions/team.ts",
+      "app/api/auth/change-password/route.ts",
       "app/api/users/[id]/password/route.ts",
-      // The typed signature the two callers share; a caller inventing different
+      // The typed signature the callers share; a caller inventing different
       // argument names is a compile error rather than a silent no-op.
       "types/database.ts",
     ],
@@ -350,7 +488,7 @@ test("deleting the fail-closed guard flips each reset path back to reporting suc
   const withoutRouteGuard = (source) => {
     const start = source.indexOf("if (revokeError ||");
     assert.notEqual(start, -1, "the route's fail-closed guard must still be present");
-    const end = source.indexOf("return NextResponse.json({ success: true });", start);
+    const end = source.indexOf("return respond({ success: true });", start);
     assert.notEqual(end, -1);
     return source.slice(0, start) + source.slice(end);
   };
@@ -359,14 +497,48 @@ test("deleting the fail-closed guard flips each reset path back to reporting suc
 
   // The action's guard: without it, the same failure resolves instead of throwing.
   const withoutActionGuard = (source) => {
-    const start = source.indexOf("if (revokeError ||");
+    const start = source.indexOf("if (!sessionsRevoked) {");
     assert.notEqual(start, -1, "the action's fail-closed guard must still be present");
-    const end = source.indexOf("return { success: true }", start);
-    assert.notEqual(end, -1);
+    const end = source.indexOf("if (profileError) {", start);
+    assert.notEqual(end, -1, "the action's profile-failure report must still be present");
     return source.slice(0, start) + source.slice(end);
   };
   const actionMutant = await callAction({ revocation: unverified }, withoutActionGuard);
   assert.deepEqual(actionMutant.result, { value: { success: true } });
+});
+
+test("re-introducing the pre-R2 early exit is what stops the revocation", async () => {
+  // The R2 fix is an ordering, and an ordering is invisible unless the other
+  // order is exercised. These two mutations are the code as it was: report the
+  // profile failure the moment it is seen, before the revocation. Both then leave
+  // a target whose password an administrator has just replaced still signed in —
+  // which is what the tests above would otherwise only be asserting by shape.
+  const failure = { message: "permission denied for table profiles" };
+
+  const routeEarlyExit = (source) => {
+    const anchor = "    // R2 · a failed timestamp write does not skip the revocation.";
+    assert.ok(source.includes(anchor), "the route's R2 note must still mark the ordering");
+    return source.replace(
+      anchor,
+      '    if (profileErr) return NextResponse.json({ error: "pre-R2 early exit" }, { status: 500 });\n' + anchor,
+    );
+  };
+  const route = await callRoute({ revocation: verified, profileUpdateError: failure }, routeEarlyExit);
+  assert.equal(route.response.status, 500);
+  assert.equal(route.response.body.error, "pre-R2 early exit");
+  assert.equal(route.calls.some((call) => call.op === "rpc"), false, "the mutation did not remove the revocation");
+
+  const actionEarlyExit = (source) => {
+    const anchor = "  // R2 · the timestamp failing does not make the revocation optional.";
+    assert.ok(source.includes(anchor), "the action's R2 note must still mark the ordering");
+    return source.replace(
+      anchor,
+      "  if (profileError) throw new Error('pre-R2 early exit')\n" + anchor,
+    );
+  };
+  const action = await callAction({ revocation: verified, profileUpdateError: failure }, actionEarlyExit);
+  assert.equal(action.result.error.message, "pre-R2 early exit");
+  assert.equal(action.calls.some((call) => call.op === "rpc"), false, "the mutation did not remove the revocation");
 });
 
 test("deleting the revocation call itself is what the positive tests would otherwise miss", async () => {

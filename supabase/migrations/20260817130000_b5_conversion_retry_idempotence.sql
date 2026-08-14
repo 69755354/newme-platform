@@ -116,8 +116,7 @@ begin
            name  = case when customers.name is null or customers.name in ('', 'Unknown')
                         then v_name else customers.name end,
            phone = coalesce(customers.phone, v_lead.phone),
-           email = coalesce(customers.email, v_lead.email),
-           updated_at = now()
+           email = coalesce(customers.email, v_lead.email)
      where id = v_customer_id;
   else
     -- One customer per lead. The lookup is by lead_id rather than by name so a
@@ -587,8 +586,8 @@ begin
   perform set_config('request.jwt.claims', '', true);
 
   begin
-    insert into public.leads (id, assigned_to, stage, customer_name, quotation_value)
-    values (v_lead, v_actor, 'new', 'B5 apply-time check', 80000.00);
+    insert into public.leads (id, assigned_to, stage, customer_name, source, quotation_value)
+    values (v_lead, v_actor, 'new', 'B5 apply-time check', 'other', 80000.00);
     insert into public.quotations (id, lead_id, quote_no, status, subtotal, total_amount, created_by)
     values (v_quote, v_lead, 'B5-APPLY-CHECK', 'accepted', 80000.00, 80000.00, v_actor);
 

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
 
 /**
  * POST /api/contracts/[id]/approve
@@ -34,17 +35,6 @@ export async function POST(
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    // ── Fetch the actor's display name for the notification ────────────
-    // Authorization is NOT decided here. approve_contract() derives the step from
-    // the contract's own status and checks the caller's role against that step
-    // with money_actor(), which reads the actor from the JWT subject. This read is
-    // for the notification body only, and a missing profile is not a decision.
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("full_name")
-      .eq("id", user.id)
-      .single();
 
     // ── Parse & validate body ──────────────────────────────────────────
     const body = await request.json();
@@ -95,35 +85,16 @@ export async function POST(
       return NextResponse.json(failure.body, { status: failure.status });
     }
 
-    const decision = rpcResult as { step: string; new_status: string };
-    const currentStep = decision.step;
-
     // ── Send notification on success ───────────────────────────────────
     try {
-      const baseUrl =
-        process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
       const notificationType =
         action === "approve" ? "contract_approved" : "contract_rejected";
-
-      // Fetch contract info for a richer notification body
-      const { data: contractInfo } = await supabase
-        .from("contracts")
-        .select("contract_no, sales_id")
-        .eq("id", contractId)
-        .single();
-
-      await fetch(`${baseUrl}/api/notify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await dispatchPersistedNotification({
+        actorId: user.id,
+        input: {
           type: notificationType,
           contract_id: contractId,
-          contract_no: contractInfo?.contract_no,
-          action,
-          step: currentStep,
-          approver_name: profile?.full_name || "Unknown",
-          target_user_id: contractInfo?.sales_id,
-        }),
+        },
       });
     } catch (notifyErr) {
       logger.warn(

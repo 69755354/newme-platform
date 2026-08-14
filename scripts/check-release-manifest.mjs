@@ -44,12 +44,36 @@
  *      be present: a release that ships the mode may not fall back to the
  *      pre-mechanism default, which exists for releases that predate the key.
  *
+ *   8. Companions (Round-4 C4-5). `companions` names every hand-run
+ *      rollback_*.sql / recontract_*.sql file in supabase/migrations/, with the
+ *      same content hash, and the set must be EXACTLY the set on disk. These
+ *      files are the ones an operator executes against production by hand, and
+ *      before this rule nothing in the release recorded what they contained:
+ *      they are deliberately excluded from the applied-history manifest (they are
+ *      not history), they never reach supabase_migrations.schema_migrations, so
+ *      the remote-history fingerprint gate structurally cannot cover them, and
+ *      two of the five were executed by no gate at all. Measured on PG 17.10: a
+ *      `grant execute on function public.create_contract(jsonb) to authenticated`
+ *      appended to rollback_money_direct_write_contract_phase.sql — the exact
+ *      authorization defect this release exists to close — left `MODE=branch`
+ *      green, and the same line inside rollback_p0_10.sql was not executed at all.
+ *      Set equality is checked in both directions, because a companion added and
+ *      not declared is the whole failure mode.
+ *
  * It deliberately does NOT check that anything was applied: this gate runs in CI
  * against a checkout, where that question has no answer.
+ *
+ * `--verify-claim` is the one mode that is about a deploy rather than about the
+ * tree, and it still answers a question with no database in it: is the migration
+ * claim on the deploy command line the set this manifest requires? See
+ * auditReleaseClaim() for why the deploy may not be trusted to name it.
  *
  *   node scripts/check-release-manifest.mjs
  *   node scripts/check-release-manifest.mjs --stamp    # rewrite the hashes
  *   node scripts/check-release-manifest.mjs --phase required_for_app --list
+ *   node scripts/check-release-manifest.mjs --verify-companions
+ *   node scripts/check-release-manifest.mjs --verify-claim \
+ *     --status applied_verified --ids 20260806000000,...
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -69,6 +93,14 @@ const BASELINE = path.join(ROOT, "supabase", "migration-history-baseline.sha256"
 
 export const PHASES = ["required_for_app", "deferred_contract"];
 const CLI_MIGRATION = /^([0-9]{14})_(.+)\.sql$/;
+/**
+ * The hand-run companion shapes, identical to the pattern in
+ * scripts/check-migration-history.mjs. That script is a top-level program with no
+ * exports, so this is a second literal rather than an import, and
+ * tests/release/companion-binding.test.mjs holds the two source lines equal — the
+ * one copy that is allowed, and it is pinned.
+ */
+export const COMPANION_NAME = /^(rollback|recontract)_.*\.sql$/;
 
 /**
  * sha256 over content with CRLF normalised to LF, identical to
@@ -83,6 +115,21 @@ export function contentHash(text) {
 /** The file's content as the phase tool would send it: CRLF normalised. */
 export function readMigration(dir, file) {
   return fs.readFileSync(path.join(dir, file), "utf8").replace(/\r\n/g, "\n");
+}
+
+/**
+ * Every .sql file in a migrations directory and its normalised hash — numbered
+ * migrations and hand-run companions alike.
+ *
+ * One reader, three callers (this gate, scripts/db-phase-push.mjs and the tests),
+ * because a caller that filtered companions out of `files` would silently turn
+ * rule 8's set equality into "the manifest lists companions that are not on
+ * disk". Round-4 C4-2 was four copies of one list disagreeing; this is the same
+ * shape and it gets one implementation.
+ */
+export function readTreeFiles(dir = MIGRATIONS_DIR) {
+  const files = fs.readdirSync(dir).filter((file) => file.endsWith(".sql")).sort();
+  return { files, hashes: new Map(files.map((file) => [file, contentHash(readMigration(dir, file))])) };
 }
 
 export function readManifest(file = MANIFEST_PATH) {
@@ -105,6 +152,210 @@ export function manifestEntries(manifest, phase = null) {
     for (const entry of list) entries.push({ ...entry, phase: name });
   }
   return entries;
+}
+
+/**
+ * Rule 8 on its own, so the full gate and `--verify-companions` cannot disagree
+ * about what a declared companion set means. `--verify-companions` is what the
+ * canonical deploy path runs against the candidate worktree, where the history
+ * baseline and the pending set are not the question being asked.
+ *
+ * Returns a list of problems; empty means the declared set is exactly the set on
+ * disk and every byte matches.
+ */
+export function auditCompanions({ manifest, files, hashes }) {
+  const problems = [];
+  const fail = (message) => problems.push(message);
+
+  const onDisk = files.filter((file) => COMPANION_NAME.test(file)).sort();
+  const declared = manifest.companions;
+  if (!Array.isArray(declared)) {
+    fail(
+      "companions must be an array naming every hand-run rollback_*.sql / recontract_*.sql file in supabase/migrations/: an operator executes those against production and nothing else in this release records what they contain",
+    );
+    return problems;
+  }
+
+  const seen = new Map();
+  for (const entry of declared) {
+    const file = String(entry?.file ?? "");
+    if (!COMPANION_NAME.test(file)) {
+      fail(`companions: ${JSON.stringify(file)} is not a hand-run companion filename (rollback_*.sql or recontract_*.sql)`);
+      continue;
+    }
+    // The kind is not decoration: scripts/replay-migrations.sh decides what to
+    // execute from the filename prefix, so a mislabelled entry is a claim about
+    // execution order that the harness will not honour.
+    const prefix = file.slice(0, file.indexOf("_"));
+    if (String(entry?.kind ?? "") !== prefix) {
+      fail(`companions: ${file} is declared kind ${JSON.stringify(String(entry?.kind ?? ""))}, but its filename says ${JSON.stringify(prefix)}`);
+    }
+    if (!/^[0-9a-f]{64}$/.test(String(entry?.sha256 ?? ""))) fail(`companions: ${file} has no sha256`);
+    if (seen.has(file)) {
+      fail(`companions: ${file} is listed twice`);
+      continue;
+    }
+    seen.set(file, String(entry?.sha256 ?? ""));
+  }
+
+  const order = declared.map((entry) => String(entry?.file ?? ""));
+  if (JSON.stringify(order) !== JSON.stringify([...order].sort())) {
+    fail("companions is not listed in filename order");
+  }
+
+  // Set equality, both directions. A companion added and left undeclared is the
+  // failure mode this rule exists for; a declared file that is gone is a rollback
+  // path the release claims to have and does not.
+  for (const file of onDisk) {
+    if (!seen.has(file)) {
+      fail(
+        `${file} is a hand-run companion in supabase/migrations/ but the manifest does not name it: an operator can execute it against production and no gate in this release would know what it contained`,
+      );
+    }
+  }
+  for (const file of seen.keys()) {
+    if (!onDisk.includes(file)) {
+      fail(`companions lists ${file}, which is not present in supabase/migrations/`);
+    }
+  }
+  for (const [file, sha] of seen) {
+    const actual = hashes.get(file);
+    if (actual === undefined) continue; // already reported as absent
+    if (actual !== sha) {
+      fail(
+        `${file} has changed since the manifest was stamped (manifest ${sha.slice(0, 12)}…, file ${actual.slice(0, 12)}…): rerun with --stamp and have the change reviewed`,
+      );
+    }
+  }
+  if (problems.length === 0 && onDisk.length === 0) {
+    fail("companions is declared but supabase/migrations/ holds no hand-run companion: one side of this release's rollback path is missing");
+  }
+  return problems;
+}
+
+/** A migration id as an operator may type it, reduced to its version. */
+export function normalizeClaimId(id) {
+  const text = String(id ?? "").trim().replace(/\.sql$/i, "");
+  const match = /^([0-9]{14})(?:_.*)?$/.exec(text);
+  return match ? match[1] : null;
+}
+
+/**
+ * The deploy's migration claim, judged against the manifest — round-4 C4-1.
+ * ============================================================================
+ * `newme-deploy <sha> <run-id> applied_verified <ids>` took `<ids>` from the
+ * operator and passed it verbatim to scripts/verify-remote-migration-history.mjs
+ * as `--require-applied`. That gate re-measures every id it is given, which reads
+ * like proof and is not: the claim is also the *scope*. Measured against this
+ * release's own manifest, with the history gate's own pure judgement:
+ *
+ *   * `applied_verified 20260806000000` — one id of the seventeen this release
+ *     requires — produced ZERO findings with sixteen required migrations
+ *     unapplied. The app would have been switched onto a schema that is missing
+ *     the authorization migrations it exists to ship.
+ *   * the same gate produced ZERO findings for a history that had ALSO applied the
+ *     deferred contract phase before the switch, which closes the previous
+ *     release's direct-write path while the previous release is still live — the
+ *     outage supabase/preflight/expand-contract-rollback.md §2 exists to prevent.
+ *
+ * Neither is a claim an honest operator would make on purpose; both are what a
+ * copied command line, a partial `supabase db push`, or a resumed session
+ * produces. So the required set is derived here, from the manifest in the tree
+ * being deployed, and the operator's list is compared against it for EXACT set
+ * equality — a subset is refused, and so is a superset, because the only id this
+ * release adds beyond the required set is the one that must not be applied yet.
+ *
+ * Returns { problems, required, deferred } with both sets as sorted versions.
+ * `required` and `deferred` are what the caller passes to the history gate, so
+ * they are derived only from entries this function has validated: a malformed
+ * manifest yields problems AND empty sets, never a partial set that would silence
+ * the very check it feeds.
+ */
+export function auditReleaseClaim({ manifest, status, claimed = [] }) {
+  const problems = [];
+  const fail = (message) => problems.push(message);
+
+  const versions = (phase) => {
+    const list = manifest?.[phase];
+    if (!Array.isArray(list)) {
+      fail(`${phase} must be an array: the required migration set cannot be derived from this manifest`);
+      return null;
+    }
+    const out = [];
+    for (const entry of list) {
+      const file = String(entry?.file ?? "");
+      const match = CLI_MIGRATION.exec(file);
+      if (!match) {
+        fail(`${phase} entry ${JSON.stringify(file)} is not a CLI-applicable migration filename`);
+        return null;
+      }
+      if (String(entry?.version ?? "") !== match[1]) {
+        fail(`${phase} lists ${file} under version ${JSON.stringify(String(entry?.version ?? ""))}`);
+        return null;
+      }
+      if (!/^[0-9a-f]{64}$/.test(String(entry?.sha256 ?? ""))) {
+        fail(`${phase} lists ${file} with no sha256, so the deploy cannot be told to require it`);
+        return null;
+      }
+      out.push(match[1]);
+    }
+    return out.sort();
+  };
+
+  const required = versions("required_for_app");
+  const deferred = versions("deferred_contract");
+  if (required === null || deferred === null) return { problems, required: [], deferred: [] };
+  for (const version of deferred) {
+    if (required.includes(version)) {
+      fail(`${version} is listed in both required_for_app and deferred_contract`);
+      return { problems, required: [], deferred: [] };
+    }
+  }
+
+  const ids = (Array.isArray(claimed) ? claimed : String(claimed).split(","))
+    .map((id) => String(id).trim())
+    .filter((id) => id !== "");
+  const claimedVersions = new Set();
+  for (const id of ids) {
+    const version = normalizeClaimId(id);
+    if (version === null) {
+      fail(`${JSON.stringify(id)} is not a migration id: expected a 14-digit version or a migration filename`);
+      continue;
+    }
+    if (claimedVersions.has(version)) fail(`the claim names ${version} twice`);
+    claimedVersions.add(version);
+  }
+
+  if (status === "applied_verified") {
+    for (const version of claimedVersions) {
+      if (required.includes(version)) continue;
+      fail(
+        deferred.includes(version)
+          ? `the claim names ${version}, which is this release's deferred contract-phase migration: it closes the previous release's direct money-write path and must not be applied until the candidate is live and verified (runbook §4). Roll the phase back before deploying.`
+          : `the claim names ${version}, which this release's manifest does not list as required before the app switch`,
+      );
+    }
+    const missing = required.filter((version) => !claimedVersions.has(version));
+    if (missing.length > 0) {
+      fail(
+        `the claim names ${claimedVersions.size} migration(s) but this release requires all ${required.length} of required_for_app before the app may be switched; missing ${missing.join(", ")}. A proper subset is not a claim that this release's schema is present.`,
+      );
+    }
+    if (required.length === 0) {
+      fail("applied_verified was claimed but this release's manifest requires no migrations before the switch; use not_required");
+    }
+  } else if (status === "not_required") {
+    if (claimedVersions.size > 0) fail("not_required must not carry migration ids");
+    if (required.length > 0) {
+      fail(
+        `not_required was claimed but this release's manifest requires ${required.length} migration(s) before the app switch (${required.join(", ")})`,
+      );
+    }
+  } else {
+    fail(`the migration status must be applied_verified or not_required, not ${JSON.stringify(String(status ?? ""))}`);
+  }
+
+  return { problems, required, deferred };
 }
 
 /**
@@ -152,7 +403,15 @@ export function auditManifest({ manifest, files, hashes, baseline }) {
     const file = String(entry.file ?? "");
     const match = CLI_MIGRATION.exec(file);
     if (!match) {
-      fail(`${entry.phase}: ${JSON.stringify(file)} is not a CLI-applicable migration filename`);
+      // Named separately from "not a CLI-applicable filename": a companion in a
+      // phase array would be applied AND recorded in
+      // supabase_migrations.schema_migrations by the phase tool, which is how a
+      // hand-run rollback becomes a permanent part of the history it undoes.
+      fail(
+        COMPANION_NAME.test(file)
+          ? `${entry.phase} lists the hand-run companion ${file}; companions are declared under "companions" and are never applied by the CLI or the phase tool`
+          : `${entry.phase}: ${JSON.stringify(file)} is not a CLI-applicable migration filename`,
+      );
       continue;
     }
     if (String(entry.version ?? "") !== match[1]) {
@@ -239,14 +498,32 @@ export function auditManifest({ manifest, files, hashes, baseline }) {
       }
       const sql = String(predicate?.sql ?? "").trim();
       const readOnly = /^select\b/i.test(sql) && !sql.includes(";");
-      const forbidden = /\b(insert|update|delete|alter|drop|grant|revoke|truncate|create|call|do|copy|set)\b/i.test(sql);
-      if (!readOnly || forbidden) {
+      // The keyword scan reads the STATEMENT, not the contents of its string
+      // literals. A predicate that inspects SQL text — pg_get_functiondef()
+      // against a pattern, which is how the mode-controlled guards and the KPI
+      // writers are derived from bodies rather than from a list of names —
+      // legitimately carries the words `update`, `insert` and `delete` inside a
+      // quoted pattern, and scanning those made the only fail-closed form of
+      // that check impossible to declare. Removing literals cannot let a
+      // mutation through: a single statement that starts with `select` and
+      // contains no semicolon cannot execute what is inside a string constant.
+      // An unbalanced quote is its own refusal, so the removal is never applied
+      // to a statement it could mis-parse, and $$-quoting is not unwrapped at
+      // all — a keyword inside one still fails closed.
+      const collapsed = sql.replace(/''/g, "");
+      const balanced = (collapsed.match(/'/g) ?? []).length % 2 === 0;
+      const bare = collapsed.replace(/'[^']*'/g, "''");
+      const forbidden = /\b(insert|update|delete|alter|drop|grant|revoke|truncate|create|call|do|copy|set)\b/i.test(bare);
+      if (!readOnly || forbidden || !balanced) {
         fail(
           `posture predicate ${JSON.stringify(name)} must be a single read-only select: the phase tool runs it against production`,
         );
       }
     }
   }
+
+  // 8 · companions
+  for (const problem of auditCompanions({ manifest, files, hashes })) fail(problem);
 
   // 7 · phase coupling
   const declaration = resolveDeclaredPhases(manifest);
@@ -294,21 +571,34 @@ export function readBaseline(file = BASELINE) {
   return { baseCommit, newestApplied: versions.at(-1) ?? null };
 }
 
+/**
+ * Every entry `--stamp` may restamp: the two phase arrays and the companions.
+ * A companion left out of this list would be declared once and then never
+ * restamped, which reads as "unchanged since the release was cut" for as long as
+ * nobody looks.
+ */
+function stampableEntries(manifest) {
+  const companions = Array.isArray(manifest.companions) ? manifest.companions : [];
+  return [...manifestEntries(manifest), ...companions.map((entry) => ({ ...entry, phase: "companions" }))];
+}
+
 function stamp() {
   const manifest = readManifest();
   const text = fs.readFileSync(MANIFEST_PATH, "utf8");
   let updated = text;
   let changed = 0;
-  for (const entry of manifestEntries(manifest)) {
+  for (const entry of stampableEntries(manifest)) {
     const file = String(entry.file);
     if (!fs.existsSync(path.join(MIGRATIONS_DIR, file))) continue;
     const hash = contentHash(readMigration(MIGRATIONS_DIR, file));
     if (hash === entry.sha256) continue;
     // Replace only the sha256 that follows this filename, so --stamp can never
     // reclassify a file or add one: the union check is not something a stamp may
-    // silence.
+    // silence. A companion entry carries its `kind` between the two keys, and
+    // that is the only thing allowed between them — anything else and the stamp
+    // refuses rather than guessing which hash it is looking at.
     const pattern = new RegExp(
-      `("file"\\s*:\\s*"${file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"\\s*,\\s*"sha256"\\s*:\\s*")[0-9a-f]{64}(")`,
+      `("file"\\s*:\\s*"${file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"\\s*,\\s*(?:"kind"\\s*:\\s*"[a-z]+"\\s*,\\s*)?"sha256"\\s*:\\s*")[0-9a-f]{64}(")`,
     );
     if (!pattern.test(updated)) {
       console.error(`--stamp could not find the sha256 for ${file}; fix the manifest by hand`);
@@ -327,9 +617,100 @@ function stamp() {
   return 0;
 }
 
+/**
+ * Rule 8 alone, against a named migrations directory. This is what the canonical
+ * deploy path runs on the candidate worktree before it will install anything: the
+ * script and the manifest both come out of the release being deployed, so what it
+ * proves is "the companions at this SHA are the companions this SHA declares".
+ * The full gate's other rules need the history baseline and the pending set, which
+ * is CI's question, not the deploy path's.
+ */
+function verifyCompanions(argv) {
+  const index = argv.indexOf("--migrations-dir");
+  const dir = index >= 0 ? String(argv[index + 1] ?? "") : MIGRATIONS_DIR;
+  if (dir === "") {
+    console.error("--migrations-dir needs a directory");
+    return 1;
+  }
+  const manifest = readManifest();
+  const { files, hashes } = readTreeFiles(dir);
+  const problems = auditCompanions({ manifest, files, hashes });
+  const declared = Array.isArray(manifest.companions) ? manifest.companions : [];
+  for (const entry of declared) {
+    const file = String(entry?.file ?? "");
+    const actual = hashes.get(file);
+    console.log(`companion ${actual === String(entry?.sha256 ?? "") ? "OK " : "BAD"} ${String(entry?.kind ?? "?").padEnd(10)} ${file} ${String(actual ?? "absent").slice(0, 12)}`);
+  }
+  if (problems.length > 0) {
+    for (const problem of problems) console.error(`release companions: ${problem}`);
+    console.error(`refusing: ${problems.length} problem(s)`);
+    return 1;
+  }
+  console.log(`release companions: ${declared.length} hand-run file(s) match the manifest`);
+  return 0;
+}
+
+/**
+ * The migration claim on the deploy command line, against the manifest in the tree
+ * being deployed (round-4 C4-1). Two things have to be true before a derived set is
+ * worth anything, and both are checked here:
+ *
+ *   1. the manifest describes this tree — the full audit, so a required migration
+ *      present in supabase/migrations/ and missing from `required_for_app` cannot
+ *      make the derived set a subset of the truth;
+ *   2. the operator's list is exactly the derived `required_for_app` set.
+ *
+ * On success the derived sets are printed as two `key=value` lines for the caller to
+ * pass on, and they are printed on failure too: the operator's next move is to run
+ * the deploy with the set this names.
+ */
+function verifyClaim(argv) {
+  const value = (flag) => {
+    const index = argv.indexOf(flag);
+    return index >= 0 ? String(argv[index + 1] ?? "") : "";
+  };
+  const status = value("--status");
+  const ids = value("--ids");
+  const dirArg = value("--migrations-dir");
+  const dir = dirArg === "" ? MIGRATIONS_DIR : dirArg;
+  if (status === "") {
+    console.error("--verify-claim requires --status applied_verified|not_required");
+    return 1;
+  }
+
+  const manifest = readManifest();
+  const { files, hashes } = readTreeFiles(dir);
+  const structural = auditManifest({ manifest, files, hashes, baseline: readBaseline() });
+  const claim = auditReleaseClaim({ manifest, status, claimed: ids.split(",") });
+
+  // Machine-readable first, and unconditionally: the caller reads these two lines,
+  // and a reader of a failed deploy log needs the derived set in front of them.
+  console.log(`required_for_app=${claim.required.join(",")}`);
+  console.log(`deferred_contract=${claim.deferred.join(",")}`);
+
+  if (structural.length > 0) {
+    for (const problem of structural) console.error(`release claim: ${problem}`);
+    console.error(
+      `release claim: the manifest at this SHA does not describe supabase/migrations/, so the required set cannot be derived from it (${structural.length} problem(s))`,
+    );
+    return 1;
+  }
+  if (claim.problems.length > 0) {
+    for (const problem of claim.problems) console.error(`release claim: ${problem}`);
+    console.error(`refusing: ${claim.problems.length} problem(s)`);
+    return 1;
+  }
+  console.log(
+    `release claim: ${status} agrees with the manifest — ${claim.required.length} required before the switch, ${claim.deferred.length} deferred until after it`,
+  );
+  return 0;
+}
+
 function main(argv) {
   const args = new Set(argv);
   if (args.has("--stamp")) return stamp();
+  if (args.has("--verify-companions")) return verifyCompanions(argv);
+  if (args.has("--verify-claim")) return verifyClaim(argv);
 
   const manifest = readManifest();
   if (args.has("--list")) {
@@ -343,8 +724,7 @@ function main(argv) {
     return 0;
   }
 
-  const files = fs.readdirSync(MIGRATIONS_DIR).filter((file) => CLI_MIGRATION.test(file)).sort();
-  const hashes = new Map(files.map((file) => [file, contentHash(readMigration(MIGRATIONS_DIR, file))]));
+  const { files, hashes } = readTreeFiles();
   const problems = auditManifest({ manifest, files, hashes, baseline: readBaseline() });
 
   console.log(`release             : ${manifest.release}`);
@@ -352,7 +732,13 @@ function main(argv) {
   console.log(`production stamp    : ${manifest.production_stamp}`);
   console.log(`required_for_app    : ${(manifest.required_for_app ?? []).length}`);
   console.log(`deferred_contract   : ${(manifest.deferred_contract ?? []).length}`);
-  console.log(`pending in tree     : ${files.filter((file) => file.slice(0, 14) > manifest.production_stamp).length}`);
+  // CLI_MIGRATION first: a companion filename beats any 14-digit stamp in a
+  // string comparison (letters sort after digits), so counting `files` unfiltered
+  // would report five phantom pending migrations.
+  console.log(
+    `pending in tree     : ${files.filter((file) => CLI_MIGRATION.test(file) && file.slice(0, 14) > manifest.production_stamp).length}`,
+  );
+  console.log(`hand-run companions : ${(manifest.companions ?? []).length}`);
 
   if (problems.length > 0) {
     for (const problem of problems) console.error(`release manifest: ${problem}`);

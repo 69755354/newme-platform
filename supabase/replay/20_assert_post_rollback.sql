@@ -22,7 +22,7 @@
 -- security hole". The ASSERT_OK count is cross-checked against ASSERT_TOTAL, so
 -- a file that stops early cannot pass quietly.
 --
--- ASSERT_TOTAL: 50
+-- ASSERT_TOTAL: 54
 -- ============================================================================
 
 create temp table if not exists post_rollback_assert_log (name text);
@@ -72,17 +72,62 @@ $$;
 -- ============================================================================
 -- Proof that the rollback ran
 -- ============================================================================
--- Exactly one thing in the companion is executable: it drops the KPI atomic
--- replace function, because removing a function opens nothing. If this assertion
--- fails, the companion did not run and every assertion below is measuring the
--- forward state instead of the post-rollback state — which is the shape of a
--- rubber stamp, so it is checked first and by name.
-select pg_temp.assert(to_regprocedure('public.replace_kpi_targets(text, jsonb, uuid)') is null, 'rollback-actually-executed-kpi-function-dropped');
+-- If the companions did not run, every assertion below is measuring the forward
+-- state instead of the post-rollback state — which is the shape of a rubber
+-- stamp, so this is checked first and by name.
+--
+-- The witness is the release mode, read through the function the guards actually
+-- call: the migrations leave 'strict', and
+-- rollback_money_direct_write_contract_phase.sql leaves 'compat', so a database
+-- that was never rolled back cannot produce this answer. The same condition is
+-- asserted again further down under "The contract phase is rolled back, and ONLY
+-- the contract phase"; there it is the compatibility invariant, here it is the
+-- liveness check, and the duplication is the point — one of the two is about
+-- whether this file is measuring anything at all.
+select pg_temp.assert(public.money_direct_write_mode() = 'compat', 'rollback-actually-executed-release-mode-is-compat');
 
--- The same section of the companion drops the function and deliberately does NOT
--- drop the partial unique index it shipped alongside. Dropping a uniqueness
--- constraint on business data is not a revert: it re-permits the duplicate
--- unassigned targets that make every KPI view double-count.
+-- Round-4 C4-2 · the witness this used to be, and why it was wrong
+-- ---------------------------------------------------------------
+-- It was `to_regprocedure('public.replace_kpi_targets(text, jsonb, uuid)') is
+-- null`: the KPI atomic replace function had to be GONE, because dropping it was
+-- the one executable statement in rollback_l0_20260811.sql and removing a
+-- function opens nothing. That was true of the 20260811100500 definition and
+-- stopped being true at 20260817000000, which redefines the same signature with
+-- the A1 session boundary and the B7 actual-carry-forward refusal.
+--
+-- Measured on PG 17.10, floor plus this release's eighteen migrations in two
+-- phases: the drop ran, the money companion returned the mode to compat, the
+-- re-contract companion returned it to strict — and nothing put the function
+-- back, because a recorded migration is never applied again and the re-contract
+-- companion touches one row in one table by charter. The database sat in strict
+-- with no KPI save path at all while
+-- `db-phase-push.mjs --phase deferred_contract --verify-only` reported three of
+-- three posture predicates OK. So the companion now refuses to drop the round-4
+-- definition, and this assertion is inverted: the function must SURVIVE.
+select pg_temp.assert(to_regprocedure('public.replace_kpi_targets(text, jsonb, uuid)') is not null, 'kpi-post-rollback-round4-replace-kpi-targets-survives');
+-- Present is not enough, and this is the same discriminator the companion itself
+-- uses: a database where the drop ran and 20260811100500 was then re-applied by
+-- hand would have the signature back WITHOUT the B7 carry-forward, so the two
+-- states are told apart by the round-4 session boundary rather than by presence.
+select pg_temp.assert((select pg_get_functiondef(p.oid) like '%assert_current_session_at_entry%'
+                       from pg_proc p
+                       where p.oid = to_regprocedure('public.replace_kpi_targets(text, jsonb, uuid)')),
+                      'kpi-post-rollback-replace-kpi-targets-is-still-the-round4-definition');
+-- Its twin from 20260817150000, which no companion touches. Checked here because
+-- the re-contract companion now refuses to declare 'strict' without both of them,
+-- and this is the file that measures the direction in which they could go missing.
+select pg_temp.assert((select p.prosecdef
+                         and has_function_privilege('service_role', p.oid, 'execute')
+                         and not has_function_privilege('authenticated', p.oid, 'execute')
+                         and not has_function_privilege('anon', p.oid, 'execute')
+                       from pg_proc p
+                       where p.oid = to_regprocedure('public.clear_kpi_targets(text, uuid)')),
+                      'kpi-post-rollback-clear-kpi-targets-survives-server-only');
+
+-- The same section of the companion deliberately does NOT drop the partial unique
+-- index it shipped alongside. Dropping a uniqueness constraint on business data is
+-- not a revert: it re-permits the duplicate unassigned targets that make every KPI
+-- view double-count.
 select pg_temp.assert(to_regclass('public.idx_kpi_targets_one_unassigned_per_period_type') is not null, 'kpi-post-rollback-unassigned-uniqueness-survives');
 
 -- ============================================================================
@@ -106,16 +151,18 @@ select pg_temp.assert(not (has_table_privilege('authenticated', 'public.meta_tok
                         or has_table_privilege('authenticated', 'public.meta_tokens', 'update')
                         or has_table_privilege('authenticated', 'public.meta_tokens', 'delete')), 'f10-post-rollback-authenticated-has-no-write-grant');
 
--- Enumerated, not named: the hole was one permissive policy, and RLS policies OR
--- together, so a companion that adds a differently-named `using (true)` policy
--- reopens it just as effectively as one that recreates the original name.
+-- Enumerated, not named: the hole was one unconditional permissive policy, and
+-- RLS policies OR together, so a companion that adds a differently-named
+-- `using (true)` policy recreates the same latent hole. Production also has an
+-- admin/boss/operator-select policy; it is not the unconditional policy this
+-- assertion is about and, with the SELECT grant revoked above, is not readable.
 select pg_temp.assert((select count(*) = 0
                        from pg_policies
                        where schemaname = 'public'
                          and tablename = 'meta_tokens'
                          and cmd in ('SELECT', 'ALL')
                          and (roles = '{public}' or 'authenticated' = any(roles) or 'anon' = any(roles))
-                         and coalesce(qual, 'true') <> 'false'), 'f10-post-rollback-no-readable-select-policy');
+                         and pg_catalog.regexp_replace(coalesce(qual, 'true'), '[()[:space:]]+', '', 'g') = 'true'), 'f10-post-rollback-no-unconditional-select-policy');
 
 -- Behaviour, as the role a browser session actually runs as.
 --
@@ -315,9 +362,9 @@ begin
     -- non-terminal contract per lead, and the forward assertions have already
     -- used the seeded leads, so a shared one would fail with 23505 and say
     -- nothing about the release mode.
-    insert into public.leads (id, assigned_to, stage, customer_name)
+    insert into public.leads (id, assigned_to, stage, customer_name, source)
     values ('12121212-1212-1212-1212-121212121212',
-            'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay post-rollback lead');
+            'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay post-rollback lead', 'other');
     begin
       perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
       set local role authenticated;
@@ -538,6 +585,14 @@ select pg_temp.assert((select tgenabled = 'O' from pg_trigger
                        where tgrelid = 'public.contracts'::regclass
                          and tgname = 'trg_guard_contract_transition'),
                       'money-post-rollback-transition-trigger-still-enabled');
+-- Enabled is not the whole property. `before update of status` fires on the
+-- statement's target column list, so a trigger that comes back with a column list
+-- stops enforcing the graph for any writer that changes the status without naming
+-- it. The rollback must not be able to reintroduce that form.
+select pg_temp.assert((select tgtype = 19 and tgattr::text = '' from pg_trigger
+                       where tgrelid = 'public.contracts'::regclass
+                         and tgname = 'trg_guard_contract_transition'),
+                      'money-post-rollback-transition-trigger-is-still-unconditional');
 
 -- ============================================================================
 -- The session revocation boundary survives the revert
@@ -690,8 +745,8 @@ declare
   total int;
 begin
   select count(*) into total from post_rollback_assert_log;
-  if total <> 50 then
-    raise exception 'post-rollback assertion file ran % assertions, ASSERT_TOTAL says 50', total
+  if total <> 54 then
+    raise exception 'post-rollback assertion file ran % assertions, ASSERT_TOTAL says 54', total
       using errcode = '22000';
   end if;
   raise notice 'all % post-rollback assertions passed', total;

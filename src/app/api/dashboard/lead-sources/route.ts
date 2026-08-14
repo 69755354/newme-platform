@@ -1,6 +1,9 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { applyPrivateNoStore } from "@/lib/request-auth-context";
+
+export const dynamic = "force-dynamic";
 
 /**
  * GET /api/dashboard/lead-sources
@@ -22,7 +25,7 @@ export async function GET(request: NextRequest) {
 
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return applyPrivateNoStore(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
   }
 
   const { data: profile } = await supabase
@@ -137,7 +140,7 @@ export async function GET(request: NextRequest) {
     const overallQuality = { hot: 0, warm: 0, cold: 0, dormant: 0, unknown: 0 } as Record<string, number>;
     sources.forEach((s) => Object.entries(s.quality).forEach(([k, v]) => { overallQuality[k] = (overallQuality[k] ?? 0) + v; }));
 
-    return NextResponse.json({
+    return applyPrivateNoStore(NextResponse.json({
       isCEO,
       sources,
       assignment,
@@ -147,9 +150,9 @@ export async function GET(request: NextRequest) {
         conversionRate: totalCount > 0 ? Math.round((totalWon / totalCount) * 100) : 0,
         quality: overallQuality,
       },
-    });
+    }));
   } catch (err: any) {
     console.error("[lead-sources] error:", err);
-    return NextResponse.json({ error: "Failed to fetch lead source analysis" }, { status: 500 });
+    return applyPrivateNoStore(NextResponse.json({ error: "Failed to fetch lead source analysis" }, { status: 500 }));
   }
 }

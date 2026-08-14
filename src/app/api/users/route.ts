@@ -174,6 +174,7 @@ export async function POST(request: NextRequest) {
             body: `${full_name} added as ${role}`,
             relatedId: authData.user.id,
             relatedType: "user",
+            eventKey: `team_member_added:${authData.user.id}`,
           }))
         );
       }

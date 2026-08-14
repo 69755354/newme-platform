@@ -1001,8 +1001,24 @@ export default function LeadSalesProcess({
                     {trace?.payment_date ? ` · ${fmtDubai(trace.payment_date)}` : ""}
                   </p>
                 </div>
-                <Badge className={cn("text-[10px]", trace?.confirmed ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400")}>
-                  {trace?.confirmed ? t("leadDetail.confirmed") : t("leadDetail.pendingConfirm")}
+                {/* R5. This badge used to read "Confirmed" or "Pending confirm" off
+                    `confirmed` alone, and it is fed by v_lead_trace, which exposes
+                    `confirmed` and no void column at all (see src/types/database.ts).
+                    void_payment() clears `confirmed`, so a REVERSED payment rendered
+                    here as money still awaiting confirmation — the B8 defect, on the
+                    page a salesperson actually works from.
+
+                    The view cannot be read three ways, so this says only what it can
+                    support: `confirmed = true` is confirmed money, and anything else
+                    is "not confirmed", which is true of a pending payment and of a
+                    voided one alike. It no longer promises that the money is still
+                    coming. The contract detail page renders the real three states
+                    from the payments row itself. Giving v_lead_trace a voided_at
+                    column needs a migration that redefines the view, and no migration
+                    in this repository creates it — it is a production-only object;
+                    that gap is recorded rather than guessed at. */}
+                <Badge className={cn("text-[10px]", trace?.confirmed === true ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400")}>
+                  {trace?.confirmed === true ? t("leadDetail.confirmed") : t("leadDetail.paymentNotConfirmed")}
                 </Badge>
               </div>
             </>

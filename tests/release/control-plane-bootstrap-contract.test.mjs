@@ -242,20 +242,23 @@ test("a wrapper from a different release, naming gates this installer never hear
 
 test("a duplicated gate line cannot stand in for a gate that is missing", () => {
   const root = stateRoot();
-  const gates = [REQUIRED_GATES[0], REQUIRED_GATES[0], REQUIRED_GATES[1], REQUIRED_GATES[2]];
+  // The first gate twice, and the last one left out: the count is right and the
+  // set is not. Derived from REQUIRED_GATES so adding a gate cannot make this
+  // test stop being about the last one.
+  const gates = [REQUIRED_GATES[0], ...REQUIRED_GATES.slice(0, -1)];
   const record = writeRecord(root, validLines({ gates }));
   const result = runGuard({ record, root });
   assert.equal(result.code, 1);
   assert.match(result.stderr, /names .* twice/);
-  assert.match(result.stderr, new RegExp(`does not account for: ${REQUIRED_GATES[3]}`));
+  assert.match(result.stderr, new RegExp(`does not account for: ${REQUIRED_GATES.at(-1)}`));
 });
 
-test("only a release-final workflow_dispatch run counts, and the run must be named", () => {
+test("only a release-candidate workflow_dispatch run counts, and the run must be named", () => {
   const root = stateRoot();
   const pushed = writeRecord(root, validLines({ event: "push" }));
   const pushResult = runGuard({ record: pushed, root });
   assert.equal(pushResult.code, 1);
-  assert.match(pushResult.stderr, /only a release-final workflow_dispatch run is evidence/);
+  assert.match(pushResult.stderr, /only a release-candidate workflow_dispatch run is evidence/);
 
   const unrun = writeRecord(root, validLines({ run: "" }), { basename: "deploy-gates.NoRun01" });
   const unrunResult = runGuard({ record: unrun, root });
@@ -348,7 +351,7 @@ test("the candidate wrapper writes exactly the gates the installer requires", ()
   assert.match(wrapperSource, /NEWME_DEPLOY_GATE_RECORD="\$GATE_RECORD" \\\nNEWME_NODE_BIN="\$NODE_BIN" \\\n\s*bash "\$WORKTREE\/scripts\/install-systemd-assets\.sh"/);
 });
 
-test("the wrapper writes the record only after all four gates have actually run", () => {
+test("the wrapper writes the record only after every release-candidate gate has actually run", () => {
   const at = (pattern) => {
     const index = wrapperSource.search(pattern);
     assert.notEqual(index, -1, `not found in the wrapper: ${pattern}`);
@@ -357,8 +360,25 @@ test("the wrapper writes the record only after all four gates have actually run"
   const written = at(/GATE_RECORD="\$\(mktemp/);
   assert.ok(at(/CI_EVENT=workflow_dispatch/) < written, "the event is claimed before it is set");
   assert.ok(at(/required-jobs\.json/) < written, "the job-level gate runs after the record is written");
-  assert.ok(at(/check-taskboard\.mjs" --require-complete/) < written, "the taskboard gate runs after the record");
+  // Round-4 C4-4: the scope, not --require-complete. The gate the wrapper can
+  // actually satisfy is the predeploy milestone; release-final completeness is the
+  // required CI job's, and the gate record is named for what was measured.
+  assert.ok(
+    at(/check-taskboard\.mjs" --require-scope=predeploy_ready/) < written,
+    "the taskboard gate runs after the record",
+  );
+  assert.doesNotMatch(wrapperSource, /check-taskboard\.mjs" --require-complete/);
   assert.ok(at(/verify-remote-migration-history\.mjs/) < written, "the history gate runs after the record");
+  // Round-4 C4-5, and it must read both sides out of the candidate's own worktree:
+  // a companion check against some other tree proves nothing about this release.
+  assert.ok(
+    at(/check-release-manifest\.mjs --verify-companions/) < written,
+    "the companion gate runs after the record is written",
+  );
+  assert.match(
+    wrapperSource,
+    /\(cd "\$WORKTREE" && "\$NODE_BIN" scripts\/check-release-manifest\.mjs --verify-companions\)/,
+  );
   // The record is written after the gates and before the installer, and nowhere else.
   assert.equal((wrapperSource.match(/mktemp "\$STATE_ROOT\/deploy-gates\.XXXXXX"/g) ?? []).length, 1);
   assert.ok(written < at(/bash "\$WORKTREE\/scripts\/install-systemd-assets\.sh"/));
@@ -381,9 +401,56 @@ test("the record is removed on every exit path, so it can never gate a later ins
   assert.doesNotMatch(wrapperSource, /trap remove_gate_record EXIT/);
 });
 
+test("bootstrap is a coordinator mode, not a hand-written installer bypass", () => {
+  assert.match(
+    wrapperSource,
+    /BOOTSTRAP_ONLY=0\nif \[ "\$\{1:-\}" = bootstrap \]; then\n\s*BOOTSTRAP_ONLY=1\n\s*shift\nfi/,
+  );
+  assert.match(wrapperSource, /newme-deploy bootstrap <main-sha> <successful-run-id>/);
+
+  const start = wrapperSource.indexOf('if [ "$BOOTSTRAP_ONLY" -eq 1 ]; then');
+  const end = wrapperSource.indexOf('\nfi\n\nDEPLOY_STATE_RECORD=', start);
+  assert.ok(start > 0 && end > start, "the bootstrap coordinator branch is missing");
+  const body = wrapperSource.slice(start, end);
+  const at = (needle) => {
+    const index = body.indexOf(needle);
+    assert.notEqual(index, -1, `bootstrap does not perform: ${needle}`);
+    return index;
+  };
+
+  const service = at("systemctl is-active --quiet newme-platform");
+  const health = at("http://127.0.0.1:3001/api/health");
+  const finalize = at('bash "$WORKTREE/scripts/install-systemd-assets.sh" finalize');
+  const pending = at('if [ -e "$PENDING_ASSET_RECORD" ] || [ -L "$PENDING_ASSET_RECORD" ]');
+  const success = at("systemd_asset_transaction=none");
+  assert.ok(service < health && health < finalize && finalize < pending && pending < success);
+
+  // All candidate verification and the machine-created one-use gate record are in
+  // the shared path before the bootstrap branch; the branch cannot call the
+  // installer directly or accept operator-authored gate names.
+  const install = wrapperSource.indexOf('bash "$WORKTREE/scripts/install-systemd-assets.sh"');
+  assert.ok(install > 0 && install < start);
+  assert.doesNotMatch(body, /NEWME_DEPLOY_GATE_RECORD|gate=/);
+  assert.doesNotMatch(body, /deploy-immutable\.sh/);
+});
+
 test("the installer verifies the record before it can mutate anything", () => {
+  // finalize mode (round-4 C2) sits before the gate check and exits inside its own
+  // branch, so it is not on the path this test is about — but it does repeat some of
+  // install mode's refusal wording, and a first-occurrence search would find its
+  // copy. It is removed here, after proving it cannot fall through into install
+  // mode: every exit from the branch is an exit from the process.
+  const finalizeStart = installerSource.indexOf('if [ "$MODE" = finalize ]; then');
+  assert.notEqual(finalizeStart, -1, "there is no finalize mode");
+  const finalizeEnd = installerSource.indexOf("\nfi\n", finalizeStart);
+  assert.ok(finalizeEnd > finalizeStart, "the finalize branch is unterminated");
+  const finalizeBody = installerSource.slice(finalizeStart, finalizeEnd);
+  assert.match(finalizeBody, /\n  exit 0\n$|\n  exit 0$/);
+  assert.equal(finalizeBody.split("\n").filter((line) => /^  (?:exit|:)/.test(line) && !/^  exit \d+$/.test(line)).length, 0);
+  const installPath = installerSource.slice(0, finalizeStart) + installerSource.slice(finalizeEnd);
+
   const at = (pattern) => {
-    const index = installerSource.search(pattern);
+    const index = installPath.search(pattern);
     assert.notEqual(index, -1, `not found in the installer: ${pattern}`);
     return index;
   };
@@ -417,14 +484,14 @@ test("the installer verifies the record before it can mutate anything", () => {
 
   // The one thing that does precede it is creating and validating the protected
   // directory the record must live in — which is where it has to be.
-  const before = installerSource.slice(0, guard);
+  const before = installPath.slice(0, guard);
   assert.match(before, /install -d -o root -g root -m 0700 "\$STATE_ROOT"/);
   assert.equal((before.match(/^install -D /gm) ?? []).length, 0);
   assert.equal((before.match(/^systemctl /gm) ?? []).length, 0);
 });
 
 test("every control-plane path the installer writes is in the remembered backup set", () => {
-  const block = /CONTROL_PLANE=\(\n([\s\S]*?)\n\)/.exec(installerSource);
+  const block = /^CONTROL_PLANE=\(\n([\s\S]*?)\n\)/m.exec(installerSource);
   assert.ok(block, "the installer has no CONTROL_PLANE set");
   const controlPlane = block[1]
     .split("\n")
@@ -458,6 +525,92 @@ test("every control-plane path the installer writes is in the remembered backup 
 
   // The remember loop must cover both sets.
   assert.match(installerSource, /for p in "\$\{MANAGED\[@\]\}" "\$\{CONTROL_PLANE\[@\]\}"[^\n]*; do remember "\$p"; done/);
+});
+
+test("finalize verifies exactly the control plane install writes, from the same sources", () => {
+  // Round-4 review C2. `finalize` declares a hand-run transaction complete only if
+  // the control plane on disk is this release's, so its idea of "the control plane"
+  // has to be the installer's. The two lists are written separately — the install
+  // calls are ordered, dependency before consumer, and finalize is a data table
+  // reached before any of them — so their agreement is asserted here instead of
+  // being left to whoever edits one of them next.
+  const block = /^  FINALIZE_CONTROL_PLANE=\(\n([\s\S]*?)\n  \)/m.exec(installerSource);
+  assert.ok(block, "finalize mode has no control-plane table");
+  const finalized = block[1]
+    .split("\n")
+    .map((line) => line.trim().replace(/^"|"$/g, ""))
+    .filter((line) => line !== "" && !line.startsWith("#"))
+    .map((entry) => {
+      const [source, destination, mode] = entry.split(":");
+      assert.match(mode, /^(?:755|440)$/, `${destination} has no expected mode`);
+      return { source, destination, mode };
+    });
+
+  const installed = [...installerSource.matchAll(/^install_control_(script|sudoers) "\$ROOT\/(\S+)" (\S+)$/gm)].map(
+    (match) => ({ source: match[2], destination: match[3], mode: match[1] === "sudoers" ? "440" : "755" }),
+  );
+  assert.equal(installed.length, 6);
+  assert.deepEqual(
+    finalized.slice().sort((a, b) => a.destination.localeCompare(b.destination)),
+    installed.slice().sort((a, b) => a.destination.localeCompare(b.destination)),
+    "finalize and install disagree about the control plane",
+  );
+
+  // The modes finalize requires must be the ones the installers actually set.
+  assert.match(installerSource, /install_control_script\(\)[\s\S]*?install -o root -g root -m 0755 "\$source" "\$temporary"/);
+  assert.match(installerSource, /install_control_sudoers\(\)[\s\S]*?install -o root -g root -m 0440 "\$source" "\$temporary"/);
+  // And the one path install removes rather than writes is checked as removed.
+  assert.match(installerSource, /the control plane is not this release's: \/etc\/sudoers\.d\/ubuntu-nopasswd is still present/);
+});
+
+test("finalize is guarded, idempotent, and closes the transaction only after verifying it", () => {
+  const finalize = /^if \[ "\$MODE" = finalize \]; then\n([\s\S]*?)\n^fi$/m.exec(installerSource);
+  assert.ok(finalize, "there is no finalize mode");
+  const body = finalize[1];
+
+  // Nothing automated can call it.
+  assert.match(body, /NEWME_ASSET_FINALIZE_CONFIRM:-\}" = bootstrap/);
+  // No record is success: a crash between the removal and the flush must be
+  // recoverable by running it again.
+  assert.match(body, /if \[ ! -e "\$PENDING_RECORD" \] && \[ ! -L "\$PENDING_RECORD" \]; then\n\s*#[^\n]*\n\s*#[^\n]*\n\s*echo "systemd_asset_transaction=none"\n\s*exit 0/);
+  // It refuses while a production rollback is unresolved.
+  assert.match(body, /PRODUCTION_ROLLBACK_PENDING[\s\S]*?exit 75/);
+  // It is bound to the release, not to whatever tree it was run from.
+  assert.match(body, /git -C "\$ROOT" rev-parse HEAD/);
+  assert.match(body, /\[ "\$FINALIZE_TREE_SHA" = "\$FINALIZE_SHA" \]/);
+  // Both closable states, and nothing else.
+  assert.match(body, /FINALIZE_STATE=candidate_active/);
+  assert.match(body, /FINALIZE_STATE=control_plane_only/);
+  assert.match(body, /matches neither the transaction's candidate nor its recovery point/);
+  // The rollback target must still be whole.
+  assert.match(body, /would roll back to is incomplete; it must not be closed/);
+
+  // Ordering: every verification precedes the removal, and the removal is flushed
+  // and then read back.
+  const at = (needle) => {
+    const index = body.indexOf(needle);
+    assert.notEqual(index, -1, `not found in finalize: ${needle}`);
+    return index;
+  };
+  const removal = at('rm -f -- "$PENDING_RECORD"');
+  for (const needle of [
+    'NEWME_ASSET_FINALIZE_CONFIRM:-}" = bootstrap',
+    'git -C "$ROOT" rev-parse HEAD',
+    'readlink -f /opt/newme/current',
+    "$FINALIZE_BACKUP/rootfs",
+    'cmp -s "$source" "$dest"',
+    "/etc/sudoers.d/ubuntu-nopasswd is still present",
+  ]) {
+    assert.ok(at(needle) < removal, `finalize removes the pending record before checking ${needle}`);
+  }
+  assert.ok(at('sync -f "$STATE_ROOT"') > removal, "the removal is not flushed");
+  assert.ok(at("the unresolved versioned asset pointer survived its removal") > removal);
+  assert.ok(at("systemd_asset_transaction=none") < removal, "the idempotent report must come first");
+  assert.match(body, /echo "finalized=\$FINALIZE_SHA state=\$FINALIZE_STATE backup=\$FINALIZE_BACKUP"/);
+
+  // And it is one of the three modes the usage line offers.
+  assert.match(installerSource, /install:0\|snapshot:1\|finalize:1/);
+  assert.match(installerSource, /usage: install-systemd-assets\.sh \[snapshot\|finalize\]/);
 });
 
 test("the control plane is installed inside the open transaction, never before it", () => {
@@ -506,14 +659,25 @@ test("the restore path needs no change of its own to put the old control plane b
 test("the bootstrap document states the procedure and does not claim it was performed", () => {
   const doc = fs.readFileSync(DOC, "utf8");
   assert.match(doc, /Status: \*\*NOT EXECUTED\.\*\*/);
-  assert.match(doc, /\[AUTHORISED ACTION\] Snapshot the current control plane first/);
-  assert.match(doc, /\[AUTHORISED ACTION\] Install the candidate control plane once, by hand/);
-  assert.match(doc, /newme-rollback-systemd-assets <snapshot path>/);
-  assert.match(doc, /None of these may be marked ✅ from a code round/);
-  for (const gate of REQUIRED_GATES) assert.ok(doc.includes(gate), `${gate} is undocumented`);
-  // The doc must point at the guard and the installer by path, so it stays findable.
-  assert.match(doc, /scripts\/verify-deploy-gate-record\.mjs/);
+  assert.match(doc, /separately authorised production release action/);
+  assert.match(doc, /sudo bash "\$coordinator" bootstrap/);
+  assert.match(doc, /git --git-dir=\/opt\/newme\/repository\.git show/);
+  assert.match(doc, /exact-head and every job in/);
+  assert.match(doc, /production history verification/);
+  assert.match(doc, /machine generation of the one-use installer gate record/);
+  assert.match(doc, /application service and `\/api\/health` verification/);
+  assert.match(doc, /require: systemd_asset_transaction=none/);
+
+  // Operator-written labels are deliberately absent. The coordinator proves the
+  // gates and writes the record itself.
+  assert.doesNotMatch(doc, /^\s*gate=/m);
+  assert.doesNotMatch(doc, /tee "\$record"/);
+  assert.doesNotMatch(doc, /NEWME_DEPLOY_GATE_RECORD=/);
+  assert.match(doc, /must never synthesize `gate=` labels/);
+
+  // The doc keeps the transactional installer/rollback boundary findable.
   assert.match(doc, /scripts\/install-systemd-assets\.sh/);
+  assert.match(doc, /scripts\/rollback-systemd-assets\.sh/);
   // The installer's refusal message points back at the document.
   assert.match(installerSource, /infra\/release\/control-plane-bootstrap\.md/);
 });

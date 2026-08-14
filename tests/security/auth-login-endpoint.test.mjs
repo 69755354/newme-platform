@@ -384,6 +384,33 @@ test("one exhausted source address does not lock out another", async () => {
   assert.equal((await attempt("198.51.100.9", 200)).status, 401);
 });
 
+test("an exhausted source cannot consume an account bucket", async () => {
+  const route = loadLoginRoute();
+  stubUpstream({ grantStatus: 400 });
+  const request = (ip, email) => route.POST(loginRequest(
+    { email, password: "guess" },
+    { "cf-connecting-ip": ip },
+  ));
+
+  for (let i = 0; i < 20; i += 1) {
+    assert.equal(
+      (await request("198.51.100.70", `source-fill-${i}@example.com`)).status,
+      401,
+    );
+  }
+  for (let i = 0; i < 9; i += 1) {
+    assert.equal(
+      (await request("198.51.100.70", "untouched-account@example.com")).status,
+      429,
+    );
+  }
+  assert.equal(
+    (await request("198.51.100.71", "untouched-account@example.com")).status,
+    401,
+    "IP refusal must short-circuit before the account namespace is consumed",
+  );
+});
+
 test("a rate-limited attempt is never forwarded upstream", async () => {
   const route = loadLoginRoute();
   const calls = stubUpstream({ grantStatus: 400 });

@@ -23,6 +23,11 @@ API_DIR = PROJECT_DIR / "src" / "app" / "api"
 OUTPUT_DIR = Path("/tmp/p1-catalog-output")
 
 
+# One spelling of "this is an exported route handler", used both to list a route's
+# methods and to find where its header comment stops.
+HANDLER_RE = re.compile(r'export\s+(?:async\s+)?function\s+(GET|POST|PATCH|DELETE|PUT|HEAD)\b')
+
+
 def extract_path(route_file: Path) -> str:
     """Derive the API path from the route file's location relative to src/app/api."""
     rel = route_file.relative_to(API_DIR)
@@ -52,8 +57,10 @@ def extract_rbac(content: str) -> str:
     Look for keywords: admin, sales, boss, operator, finance, designer, authenticated, public
     inside comments that describe role/permission.
     """
-    # Grab everything before the first 'export async function'
-    header = content.split("export async function")[0]
+    # Grab everything before the first exported handler. `async` is optional: a route
+    # that returns a static payload needs no await (src/app/api/health/route.ts), and
+    # matching only the async form read that file's whole body as its header.
+    header = HANDLER_RE.split(content, maxsplit=1)[0]
 
     # Look for role-related patterns in comments
     roles_found = set()
@@ -98,7 +105,7 @@ def extract_rbac(content: str) -> str:
 def extract_methods(content: str) -> list:
     """Extract exported HTTP methods from the route file."""
     methods = []
-    for m in re.finditer(r'export\s+async\s+function\s+(GET|POST|PATCH|DELETE|PUT|HEAD)\b', content):
+    for m in HANDLER_RE.finditer(content):
         methods.append(m.group(1))
     return methods
 
@@ -120,12 +127,19 @@ def main():
         methods = extract_methods(content)
         rbac = extract_rbac(content)
 
+        # `.as_posix()`, not `str()`: str() of a relative path yields backslashes on
+        # Windows and forward slashes elsewhere, so the same tree produced two
+        # different catalogs depending on who regenerated it. docs/api-catalog.md is
+        # committed, and the paths in it are the same paths .gitattributes, the release
+        # manifest and the migration gates spell with `/` (see C4-7).
+        rel_file = path.relative_to(PROJECT_DIR).as_posix()
+
         for method in methods:
             entries.append({
                 "method": method,
                 "path": api_path,
                 "rbac": rbac,
-                "file": str(path.relative_to(PROJECT_DIR)),
+                "file": rel_file,
             })
 
         if not methods:
@@ -133,7 +147,7 @@ def main():
                 "method": "—",
                 "path": api_path,
                 "rbac": rbac,
-                "file": str(path.relative_to(PROJECT_DIR)),
+                "file": rel_file,
             })
 
     # Sort by path then method

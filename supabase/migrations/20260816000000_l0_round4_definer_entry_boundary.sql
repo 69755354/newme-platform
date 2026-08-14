@@ -206,9 +206,34 @@ insert into public.definer_entry_boundary_exemptions (routine, reason) values
    'Evaluated inside RLS policies. A policy predicate that raises turns a row-level refusal into a request-level error and takes /api/auth/me offline for the very sessions that need to be told why.'),
   ('session_token_is_current()',
    'Same: an RLS predicate must answer false, not raise.'),
+  ('get_my_role()',
+   'Evaluated inside permissive RLS policies, including profiles self-read. It must return NULL for a refused session so the table-level restrictive session policy can produce an empty result instead of a request-level 28003 error.'),
   ('money_direct_write_mode()',
    'Read by the write guards and by RLS on every money statement, including statements made by trusted server paths during the compatibility window. It reports the release phase; it does not authorise anything.')
 on conflict (routine) do update set reason = excluded.reason;
+
+-- get_my_role() is both a small authenticated RPC and an RLS helper. A generic
+-- entry assertion is wrong for the latter use: a stale, banned, inactive or
+-- forced-password session evaluating an unrelated table policy would raise
+-- 28003 instead of being filtered out. It still fails closed for direct calls by
+-- returning NULL unless the same canonical session verdict is `ok`.
+create or replace function public.get_my_role()
+returns text
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public, pg_temp
+as $$
+begin
+  if public.session_boundary_state() <> 'ok' then
+    return null;
+  end if;
+  return (select role from public.profiles where id = auth.uid());
+end
+$$;
+
+revoke execute on function public.get_my_role() from public, anon;
+grant execute on function public.get_my_role() to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- 4 · The transform

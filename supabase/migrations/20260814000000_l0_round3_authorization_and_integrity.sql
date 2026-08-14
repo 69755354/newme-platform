@@ -199,6 +199,43 @@ on conflict (id) do nothing;
 comment on table public.money_release_mode is
   'Expand/contract switch for direct end-user money writes. compat = the previous release can still write directly (rollback boundary); strict = only the money RPCs may write. Changed through money_set_direct_write_mode().';
 
+-- ---------------------------------------------------------------------------
+-- 0a · The one key that serializes a write against the flip  (round-4 C4-3)
+-- ---------------------------------------------------------------------------
+-- The expand/contract switch was a bare `insert … on conflict do update` with no
+-- lock anywhere, so the phase flip and the writes it is supposed to end were not
+-- ordered against each other at all. Two consequences, both measured on PG 17.10
+-- before this key existed:
+--
+--   * an in-flight write from the PREVIOUS release could still be uncommitted
+--     when the contract phase committed 'strict'. The operator's next step is to
+--     believe direct writes have stopped; one of them had not finished, and it
+--     went on to commit afterwards.
+--   * a write that STARTED during the flip read the mode from its own statement
+--     snapshot. Under READ COMMITTED that snapshot is taken when the write
+--     statement begins, which is before the flip commits, so the write was
+--     accepted under 'compat' after 'strict' was already the committed truth.
+--
+-- One key for both halves, derived in one place so the guards and the three
+-- posture-changing artifacts cannot disagree about which lock they are taking.
+-- Same convention as the KPI period lock in 20260811100500 / 20260817150000:
+-- hashtextextended over a name that says what is being serialized.
+create or replace function public.money_release_mode_lock_key()
+returns bigint
+language sql
+immutable
+set search_path = pg_catalog, public, pg_temp
+as $$ select hashtextextended('public.money_release_mode:only', 0) $$;
+
+comment on function public.money_release_mode_lock_key() is
+  'The single advisory-lock key that orders direct money writes against a change of the release mode. Every mode-controlled guard takes it SHARED before reading the mode; the contract phase, the rollback companion and the re-contract companion take it EXCLUSIVELY before they check or write the mode, which makes them wait for in-flight writes to drain.';
+
+-- The guards run in the invoker's context (see money_direct_write_is_blocked()
+-- below), so `authenticated` must be able to compute the key it locks. It is a
+-- constant hash of a literal: it discloses nothing.
+revoke all on function public.money_release_mode_lock_key() from public, anon;
+grant execute on function public.money_release_mode_lock_key() to authenticated, service_role;
+
 create or replace function public.money_direct_write_mode()
 returns text
 language sql
@@ -231,6 +268,26 @@ begin
   if p_reason is null or btrim(p_reason) = '' then
     raise exception 'a reason is required to change the direct write mode' using errcode = '22023';
   end if;
+
+  -- Round-4 C4-3 · the exclusive half of the flip lock, taken here too.
+  --
+  -- The contract phase, the rollback companion and the re-contract companion take
+  -- it themselves, but they are not the only way the posture changes: this setter
+  -- is the granted route — service_role holds EXECUTE on it — and
+  -- 10_assert_release_contracts.sql already calls it to move the mode. A posture
+  -- change that arrives through the function instead of through one of the three
+  -- artifacts must be ordered against in-flight direct writes for exactly the same
+  -- reason, or the serialization is only as good as the caller's choice of path.
+  --
+  -- After the argument checks and before the write: an invalid call should be
+  -- refused without making a legitimate money write wait for it. Bounded like the
+  -- artifacts are — the caller's explicit lock_timeout is honoured, 15s otherwise —
+  -- so a posture change that cannot drain fails loudly instead of parking every
+  -- money write behind its own lock request.
+  perform set_config('lock_timeout',
+                     coalesce(nullif(current_setting('lock_timeout'), '0'), '15s'),
+                     true);
+  perform pg_advisory_xact_lock(public.money_release_mode_lock_key());
 
   insert into public.money_release_mode (id, direct_write_mode, reason, changed_by, changed_at)
   values ('only', p_mode, btrim(p_reason), v_actor, now())
@@ -278,13 +335,63 @@ grant execute on function public.money_set_direct_write_mode(text, text) to serv
 -- supabase/replay/10_assert_release_contracts.sql asserts both halves: that
 -- current_user still discriminates through this wrapper, and that a direct insert
 -- is actually refused under strict.
+--
+-- Round-4 C4-3 · why this is plpgsql and VOLATILE, both load-bearing
+-- ------------------------------------------------------------------
+-- It used to be one `language sql stable` expression:
+--
+--   select public.money_write_is_direct() and public.money_direct_write_mode() = 'strict'
+--
+-- and both of those words were wrong once the flip had to be serialized.
+--
+--   * plpgsql, because the shared lock has to be taken BEFORE the mode is read
+--     and PostgreSQL does not promise the operands of AND are evaluated
+--     left to right. An ordering claim that the planner is free to reorder is
+--     not an ordering claim. plpgsql executes its statements in the order
+--     written, so "locked, then read" is a property of the language rather than
+--     of a plan.
+--   * VOLATILE, because a STABLE function's queries run on the CALLING query's
+--     snapshot. Under READ COMMITTED that snapshot is taken when the write
+--     statement begins — before this trigger ever waits on the lock. So the
+--     stable version waited for the flip to commit and then read the mode as it
+--     was BEFORE the flip: measured on PG 17.10, a direct write that started
+--     during the flip blocked on the lock, was released once 'strict' was
+--     committed, read 'compat' anyway and was accepted. A volatile function gets
+--     a fresh snapshot for each of its own statements, so the mode is read as of
+--     after the lock was granted, which is the whole point of taking it.
+--
+-- The cost of volatile is that it may be evaluated per row instead of once per
+-- statement. That is the correct direction here — a long multi-row write should
+-- see a flip that lands halfway through it — and the lock is re-acquired for
+-- free, because a transaction that already holds it only bumps a refcount.
 create or replace function public.money_direct_write_is_blocked()
 returns boolean
-language sql
-stable
+language plpgsql
+volatile
+security invoker
 set search_path = pg_catalog, public, pg_temp
 as $$
-  select public.money_write_is_direct() and public.money_direct_write_mode() = 'strict'
+begin
+  -- The shared half of the flip lock. Held until this transaction ends, so the
+  -- contract phase, the rollback companion and the re-contract companion — which
+  -- all take the same key EXCLUSIVELY — cannot commit a new posture while this
+  -- write is still in flight, and cannot be overtaken by one that started
+  -- before them.
+  --
+  -- Shared, so concurrent money writes never wait for each other: the only thing
+  -- this blocks is a posture change, and the only thing that blocks it is a
+  -- posture change in progress.
+  perform pg_advisory_xact_lock_shared(public.money_release_mode_lock_key());
+
+  if not public.money_write_is_direct() then
+    -- A definer routine or the service role. The lock was still taken: the flip
+    -- has to drain the RPC writes too, because they are the writes that were
+    -- admitted under the posture that is being replaced.
+    return false;
+  end if;
+
+  return public.money_direct_write_mode() = 'strict';
+end
 $$;
 
 comment on function public.money_direct_write_is_blocked() is
@@ -1029,8 +1136,22 @@ end
 $$;
 
 drop trigger if exists trg_guard_contract_transition on public.contracts;
+-- Unconditional: `before update`, NOT `before update of status`.
+--
+-- `update of status` fires on the statement's target column list, not on what the
+-- row ends up holding. A co-resident BEFORE ROW trigger that assigns new.status —
+-- a normalizer, a stamp, anything a later migration adds — changes the status
+-- without status ever appearing in a SET list, and the conditional form does not
+-- fire at all. Measured on PG 17.10: with such a trigger sorting ahead of this one
+-- by name, `update public.contracts set party_a_name = party_a_name` moved a
+-- 'completed' contract to 'active' — a terminal state re-opened — and this guard
+-- never ran. The state machine cannot be enforced conditionally on which columns a
+-- writer happens to name.
+--
+-- The cost is one comparison per updated row: the function's first statement
+-- returns immediately when the status is not distinct from the old one.
 create trigger trg_guard_contract_transition
-  before update of status on public.contracts
+  before update on public.contracts
   for each row execute function public.guard_contract_transition();
 
 create or replace function public.set_contract_status(

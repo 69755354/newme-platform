@@ -130,23 +130,23 @@ on conflict (id) do update
 -- one non-terminal contract per lead — the same index create_contract's
 -- duplicate pre-check mirrors.
 -- ---------------------------------------------------------------------------
-insert into public.leads (id, assigned_to, stage, customer_name)
+insert into public.leads (id, assigned_to, stage, customer_name, source)
 values
-  ('11111111-1111-1111-1111-111111111111', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C1'),
-  ('22222222-2222-2222-2222-222222222222', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'new', 'Replay lead free'),
-  ('33333333-3333-3333-3333-333333333333', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'new', 'Replay lead other sales'),
-  ('44444444-4444-4444-4444-444444444444', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C2'),
-  ('55555555-5555-5555-5555-555555555555', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C3'),
-  ('66666666-6666-6666-6666-666666666666', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'new', 'Replay lead Q1'),
-  ('77777777-7777-7777-7777-777777777777', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C4'),
-  ('88888888-8888-8888-8888-888888888888', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'new', 'Replay lead Q2'),
+  ('11111111-1111-1111-1111-111111111111', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C1', 'other'),
+  ('22222222-2222-2222-2222-222222222222', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'new', 'Replay lead free', 'other'),
+  ('33333333-3333-3333-3333-333333333333', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'new', 'Replay lead other sales', 'other'),
+  ('44444444-4444-4444-4444-444444444444', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C2', 'other'),
+  ('55555555-5555-5555-5555-555555555555', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C3', 'other'),
+  ('66666666-6666-6666-6666-666666666666', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'new', 'Replay lead Q1', 'other'),
+  ('77777777-7777-7777-7777-777777777777', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay lead C4', 'other'),
+  ('88888888-8888-8888-8888-888888888888', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'new', 'Replay lead Q2', 'other'),
   -- Two leads reserved for the role-hole probes, and reserved is the point: those
   -- probes have to create a contract through create_contract(), which refuses a
   -- lead that already carries a non-terminal one. Every other lead above has been
   -- used by an earlier section by then, so a probe that borrowed one would fail on
   -- 23505 and say nothing about roles.
-  ('0c0c0c0c-0c0c-0c0c-0c0c-0c0c0c0c0c0c', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'won', 'Replay lead K7 setup'),
-  ('0d0d0d0d-0d0d-0d0d-0d0d-0d0d0d0d0d0d', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'won', 'Replay lead K7 probe')
+  ('0c0c0c0c-0c0c-0c0c-0c0c-0c0c0c0c0c0c', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'won', 'Replay lead K7 setup', 'other'),
+  ('0d0d0d0d-0d0d-0d0d-0d0d-0d0d0d0d0d0d', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'won', 'Replay lead K7 probe', 'other')
 on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -250,10 +250,10 @@ on conflict (actor_id, operation, idempotency_key) do nothing;
 -- sales1 and accepted, so a conversion has to create the customer, set
 -- leads.customer_id and record the won business event. REPLAY-Q1 cannot be used
 -- for this: the other conversion assertions consume it.
-insert into public.leads (id, assigned_to, stage, customer_name, phone, email,
+insert into public.leads (id, assigned_to, stage, customer_name, source, phone, email,
                           property_type, property_size_sqm, location, quotation_value)
 values ('0e0e0e0e-0e0e-0e0e-0e0e-0e0e0e0e0e0e', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
-        'new', 'Replay lead B6', '+971500000006', 'b6@example.invalid',
+        'new', 'Replay lead B6', 'other', '+971500000006', 'b6@example.invalid',
         'villa', 420, 'Replay District', 80000.00)
 on conflict (id) do nothing;
 
@@ -268,9 +268,9 @@ on conflict (id) do nothing;
 -- lead's contract" is constructible. The contract is created directly here
 -- because the fixtures load before the guards care about the mode — the same way
 -- every other contract fixture is seeded.
-insert into public.leads (id, assigned_to, stage, customer_name)
+insert into public.leads (id, assigned_to, stage, customer_name, source)
 values ('0f0f0f0f-0f0f-0f0f-0f0f-0f0f0f0f0f0f', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
-        'new', 'Replay lead B5 foreign')
+        'new', 'Replay lead B5 foreign', 'other')
 on conflict (id) do nothing;
 
 insert into public.contracts (id, lead_id, sales_id, created_by, contract_no,
@@ -284,9 +284,9 @@ on conflict (id) do nothing;
 -- was allocated to, on a contract of its own — so the "a negative payment cannot
 -- be created and cannot be confirmed" probes have somewhere to write that does
 -- not disturb the C3 chain the other money assertions measure.
-insert into public.leads (id, assigned_to, stage, customer_name)
+insert into public.leads (id, assigned_to, stage, customer_name, source)
 values ('0909a0a0-0909-0909-0909-090909090909', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
-        'won', 'Replay lead B3')
+        'won', 'Replay lead B3', 'other')
 on conflict (id) do nothing;
 
 insert into public.contracts (id, lead_id, sales_id, created_by, contract_no,

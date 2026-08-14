@@ -77,6 +77,32 @@ const KPI_ROUTE = "src/app/api/kpi/targets/route.ts";
 const KPI_UI = "src/app/(dashboard)/settings/kpi-management.tsx";
 const ROUND4 = "supabase/migrations/20260817000000_l0_round4_money_and_business_integrity.sql";
 const CLEAR_MIGRATION = "supabase/migrations/20260817150000_kpi_period_clear_owns_the_delete.sql";
+const MIGRATIONS = "supabase/migrations";
+const CLI_MIGRATION = /^[0-9]{14}_.*\.sql$/;
+
+/**
+ * The LAST `create or replace function public.NAME(` in the release, by filename
+ * order — which is apply order, and therefore the definition the database ends up
+ * with. Pinning a named file instead was how a body could be re-emitted later and
+ * lose a guard while the test that guarded it stayed green: R3's
+ * 20260817160000_kpi_period_lock_covers_money_writers.sql re-emits confirm_payment
+ * and void_payment in full, so every assertion below about their bodies has to
+ * read that file now, and whatever re-emits them next without anyone editing this
+ * one.
+ */
+async function lastDefinition(name) {
+  const files = (await readdir(path.join(ROOT, MIGRATIONS))).filter((file) => CLI_MIGRATION.test(file)).sort();
+  let found = null;
+  for (const file of files) {
+    const sql = await read(`${MIGRATIONS}/${file}`);
+    const at = sql.lastIndexOf(`create or replace function public.${name}(`);
+    if (at === -1) continue;
+    const rest = sql.slice(at);
+    found = { file, body: rest.slice(0, rest.indexOf("$$;")) };
+  }
+  assert.ok(found, `no migration defines public.${name}`);
+  return found;
+}
 
 /**
  * Source with its comments removed, because these rules are about what the code
@@ -362,32 +388,56 @@ test("replace_kpi_targets still carries actuals forward — the claim the review
 });
 
 test("payment credit is pinned to the crediting salesperson, not the contract's current one", async () => {
-  const sql = await read(ROUND4);
-
   assert.match(
-    sql,
+    await read(ROUND4),
     /add column if not exists credited_to uuid references public\.profiles \(id\)/,
     `${ROUND4} no longer adds payments.credited_to; without a persisted credit, a void debits whoever owns the contract at void time`,
   );
 
-  const confirm = sql.slice(sql.indexOf("create or replace function public.confirm_payment("));
-  const confirmBody = confirm.slice(0, confirm.indexOf("$$;"));
+  const confirm = await lastDefinition("confirm_payment");
   assert.match(
-    confirmBody,
+    confirm.body,
     /credited_to\s*=\s*(coalesce\()?v_contract\.sales_id/,
-    "confirm_payment() must record who the collection was credited to at confirm time",
+    `${confirm.file} defines confirm_payment last and it no longer records who the collection was credited to at confirm time`,
   );
 
-  const voidFn = sql.slice(sql.indexOf("create or replace function public.void_payment("));
-  const voidBody = voidFn.slice(0, voidFn.indexOf("$$;"));
+  const voided = await lastDefinition("void_payment");
   assert.match(
-    voidBody,
+    voided.body,
     /coalesce\(v_payment\.credited_to,\s*v_contract\.sales_id\)/,
-    "void_payment() must debit the recorded credit, falling back to the contract owner only for rows confirmed before credited_to existed",
+    `${voided.file} defines void_payment last and it no longer debits the recorded credit; falling back to the contract owner is correct only for rows confirmed before credited_to existed`,
   );
   assert.match(
-    voidBody,
+    voided.body,
     /assigned_to = v_credited_to/,
-    "the actual_amount debit must target the credited salesperson's target row; measured, a reassignment then a void moved owner_C 100.00 -> 0.00 and left owner_E at 0.00",
+    `${voided.file}: the actual_amount debit must target the credited salesperson's target row; measured, a reassignment then a void moved owner_C 100.00 -> 0.00 and left owner_E at 0.00`,
   );
+});
+
+test("every routine that writes actual_amount takes the period lock, in its last definition", async () => {
+  // R3. The lock existed and covered the two routines that edit TARGETS; the two
+  // that move the money wrote the same rows with no lock, so a confirmation
+  // overlapping a target save of its own period was lost. Measured on PG 17.10 in
+  // supabase/replay/19_concurrency_kpi_period.sh: without the lock a confirmed
+  // 4321.00 left actual_amount at 0.00 against a ledger of 4321.00, and a void left
+  // it at 4321.00 against a ledger of 0.00 — both reporting success. That gate is
+  // the evidence; this test is what makes a later body edit fail in seconds instead
+  // of in the replay, and it reads the LAST definition of each routine for the same
+  // reason R3 existed at all.
+  const KEY = /hashtextextended\(\s*'public\.kpi_targets:'/;
+  for (const name of ["confirm_payment", "void_payment", "replace_kpi_targets", "clear_kpi_targets"]) {
+    const { file, body } = await lastDefinition(name);
+    if (!/public\.kpi_targets/.test(body)) continue; // not a writer any more; nothing to lock
+    assert.match(
+      body,
+      /pg_advisory_xact_lock\(/,
+      `${file}: ${name}() writes public.kpi_targets and takes no advisory lock`,
+    );
+    assert.match(body, KEY, `${file}: ${name}() locks some other key than the period's`);
+    // Before the write, not after it: a lock taken afterwards serializes nothing.
+    assert.ok(
+      body.indexOf("pg_advisory_xact_lock") < body.search(/(update|delete from|insert into)\s+public\.kpi_targets/),
+      `${file}: ${name}() writes public.kpi_targets before it takes the period lock`,
+    );
+  }
 });

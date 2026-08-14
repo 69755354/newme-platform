@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { assignLead, bulkAssignLeads, bulkUnassignLeads, transferAllLeads } from "@/app/actions/settings";
+import type { LeadTransferReport, LeadTransferTarget } from "@/app/actions/settings";
 import {
   Users, ArrowRight, Search, Check, RefreshCw,
   ShieldCheck, User, AlertCircle, GripHorizontal, Settings,
@@ -21,6 +22,11 @@ interface Lead {
   stage: string; final_status: string | null; assigned_to: string | null; owner: string | null;
   sales_manager: string | null; location: string | null;
   source: string; quotation_value: number | null;
+  // R6 · the compare-and-set token. The assignment actions send it back to
+  // reassign_lead_atomic(), which refuses if the lead moved since this load, so
+  // it has to survive every optimistic update below or the next write on the same
+  // row would be comparing against a value the server has already replaced.
+  updated_at: string;
 }
 
 interface Profile {
@@ -61,6 +67,12 @@ function PasswordChange() {
         body: JSON.stringify({ oldPassword: current, newPassword: newPass }),
       });
       const data = await res.json();
+      if (!res.ok && data.passwordChanged === true) {
+        setCurrent(""); setNewPass(""); setConfirm("");
+        toast.error(data.error || "Password changed, but the security workflow did not complete.");
+        window.location.href = "/login";
+        return;
+      }
       if (!res.ok) throw new Error(data.error || "Failed");
       toast.success(t("settings.passwordChanged"));
       setCurrent(""); setNewPass(""); setConfirm("");
@@ -106,7 +118,7 @@ function PasswordChange() {
 /* ════════════════════════════════════════ */
 export default function SettingsPage() {
   const { t } = useLanguage();
-  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss", "operator"]);
+  const { loading: roleLoading, role, blocked } = useRequireRole(["admin", "boss", "operator"]);
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -127,6 +139,14 @@ export default function SettingsPage() {
   // Bulk action
   const [targetUserId, setTargetUserId] = useState<string>("");
   const [targetUserSearch, setTargetUserSearch] = useState("");
+
+  // R6 · one batch key per gesture, from which the server action derives one
+  // idempotency key per lead. It is kept when a gesture comes back partly
+  // unfinished — so clicking again retries the same batch, replaying the leads
+  // that already moved instead of moving them twice — and thrown away when the
+  // intent changes, because the same key with a different target would replay the
+  // old target and quietly do nothing.
+  const batchKeyRef = useRef<{ signature: string; key: string } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -186,13 +206,79 @@ export default function SettingsPage() {
     }
   };
 
+  // ── R6 · batch keys and reports ──
+  //
+  // One batch key per gesture, from which the server action derives one
+  // idempotency key per lead. It is kept when a gesture comes back partly
+  // unfinished — so clicking again retries the same batch, and the leads that
+  // already moved are replayed instead of moved twice — and thrown away when the
+  // intent changes, because the same key with a different target would replay the
+  // old target and quietly do nothing.
+  const batchKeyFor = (signature: string) => {
+    if (!batchKeyRef.current || batchKeyRef.current.signature !== signature) {
+      batchKeyRef.current = { signature, key: crypto.randomUUID() };
+    }
+    return batchKeyRef.current.key;
+  };
+
+  /** The leads this screen holds, as compare-and-set targets. */
+  const targetsFor = (ids: Iterable<string>): LeadTransferTarget[] => {
+    const byId = new Map(leads.map(l => [l.id, l]));
+    const targets: LeadTransferTarget[] = [];
+    for (const id of ids) {
+      const lead = byId.get(id);
+      if (lead) targets.push({ id, expectedUpdatedAt: lead.updated_at });
+    }
+    return targets;
+  };
+
+  /**
+   * Fold one action's report into the table, and say what happened.
+   *
+   * Only the leads the server actually moved are updated, and they are updated
+   * with the updated_at it returned — an optimistic write that kept the old token
+   * would make the next action on that row fail its compare-and-set. Conflicts
+   * mean somebody else moved the lead first, so the answer is to reload rather
+   * than to retry: the operator has to see where it went before deciding again.
+   */
+  const applyReport = (
+    report: LeadTransferReport,
+    assignedTo: string | null,
+    failurePrefix: string,
+  ) => {
+    const moved = new Map(report.transferred.map(l => [l.id, l.updatedAt]));
+    if (moved.size > 0) {
+      setLeads(prev => prev.map(l => moved.has(l.id)
+        ? { ...l, assigned_to: assignedTo, updated_at: moved.get(l.id) ?? l.updated_at }
+        : l));
+    }
+    if (report.failed.length > 0) toast.error(failurePrefix + report.failed[0].message);
+    if (report.conflicts.length > 0) {
+      toast.warning(`${t("common.staleWrite")} (${report.conflicts.length})`);
+    }
+    const settled = report.failed.length === 0 && report.conflicts.length === 0;
+    if (settled) batchKeyRef.current = null;
+    // A conflict means this screen is out of date about at least one row; a replay
+    // means an earlier attempt moved leads this screen never saw move.
+    if (report.conflicts.length > 0 || report.replayed.length > 0) fetchData();
+    return settled;
+  };
+
   // Assign single lead — uses server action
   const handleAssignLead = async (leadId: string, userId: string) => {
+    const [target] = targetsFor([leadId]);
+    if (!target) return;
     setSaving(true);
     try {
-      await assignLead(leadId, userId);
-      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, assigned_to: userId } : l));
-      setSelected(prev => { const n = new Set(prev); n.delete(leadId); return n; });
+      const report = await assignLead(
+        leadId,
+        userId,
+        target.expectedUpdatedAt,
+        batchKeyFor(`assign:${leadId}:${userId}`),
+      );
+      if (applyReport(report, userId, t("common.failedPrefix"))) {
+        setSelected(prev => { const n = new Set(prev); n.delete(leadId); return n; });
+      }
     } catch (err: any) {
       toast.error(t("common.failedPrefix") + err.message);
     }
@@ -202,13 +288,21 @@ export default function SettingsPage() {
   // Bulk assign
   const bulkAssign = async () => {
     if (!targetUserId || selected.size === 0) return;
+    const ids = Array.from(selected).sort();
+    const targets = targetsFor(ids);
+    if (targets.length === 0) return;
     setSaving(true);
     try {
-      await bulkAssignLeads(Array.from(selected), targetUserId);
-      setLeads(prev => prev.map(l => selected.has(l.id) ? { ...l, assigned_to: targetUserId } : l));
-      setSelected(new Set());
-      setSelectAll(false);
-      setTargetUserId("");
+      const report = await bulkAssignLeads(
+        targets,
+        targetUserId,
+        batchKeyFor(`bulkAssign:${targetUserId}:${ids.join(",")}`),
+      );
+      if (applyReport(report, targetUserId, t("common.bulkAssignFailed"))) {
+        setSelected(new Set());
+        setSelectAll(false);
+        setTargetUserId("");
+      }
     } catch (err: any) {
       toast.error(t("common.bulkAssignFailed") + err.message);
     }
@@ -218,12 +312,19 @@ export default function SettingsPage() {
   // Bulk unassign
   const bulkUnassign = async () => {
     if (selected.size === 0) return;
+    const ids = Array.from(selected).sort();
+    const targets = targetsFor(ids);
+    if (targets.length === 0) return;
     setSaving(true);
     try {
-      await bulkUnassignLeads(Array.from(selected));
-      setLeads(prev => prev.map(l => selected.has(l.id) ? { ...l, assigned_to: null } : l));
-      setSelected(new Set());
-      setSelectAll(false);
+      const report = await bulkUnassignLeads(
+        targets,
+        batchKeyFor(`bulkUnassign:${ids.join(",")}`),
+      );
+      if (applyReport(report, null, t("common.bulkUnassignFailed"))) {
+        setSelected(new Set());
+        setSelectAll(false);
+      }
     } catch (err: any) {
       toast.error(t("common.bulkUnassignFailed") + err.message);
     }
@@ -231,12 +332,25 @@ export default function SettingsPage() {
   };
 
   // Transfer all from user A to user B
+  //
+  // The lead set is enumerated by the action, not by this screen: "all of A's
+  // leads" means the ones A holds when it runs. So there is nothing to update
+  // optimistically for leads this table may not even be showing — it reloads.
   const transferAll = async (fromUserId: string, toUserId: string) => {
     if (!fromUserId || !toUserId || fromUserId === toUserId) return;
     setSaving(true);
     try {
-      await transferAllLeads(fromUserId, toUserId);
-      setLeads(prev => prev.map(l => l.assigned_to === fromUserId ? { ...l, assigned_to: toUserId } : l));
+      const report = await transferAllLeads(
+        fromUserId,
+        toUserId,
+        batchKeyFor(`transferAll:${fromUserId}:${toUserId}`),
+      );
+      if (report.failed.length > 0) toast.error(t("common.transferFailed") + report.failed[0].message);
+      if (report.conflicts.length > 0) {
+        toast.warning(`${t("common.staleWrite")} (${report.conflicts.length})`);
+      }
+      if (report.failed.length === 0 && report.conflicts.length === 0) batchKeyRef.current = null;
+      fetchData();
     } catch (err: any) {
       toast.error(t("common.transferFailed") + err.message);
     }
@@ -299,7 +413,7 @@ export default function SettingsPage() {
       </div>
 
       {activeTab === "kpi" ? (
-        <KpiManagement />
+        <KpiManagement canWriteKpi={role === "admin" || role === "boss"} />
       ) : activeTab === "password" ? (
         <PasswordChange />
       ) : (

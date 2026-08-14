@@ -1,6 +1,6 @@
 // RBAC: user (authenticated)
 import { NextResponse } from "next/server"
-import { getCached, setCache } from "@/lib/api-cache"
+import { getCached, setCache } from "@/lib/api-cache.mjs"
 import {
   applyRequestAuthCookies,
   getRequestAuthContext,

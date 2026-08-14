@@ -205,6 +205,37 @@ describe("consumeRateLimit", () => {
     assert.equal(consumeRateLimit("client-b", OPTIONS, now + OPTIONS.windowMs).allowed, true);
   });
 
+  it("does not let a one-shot account flood poison the IP policy", () => {
+    const shortWindow = { limit: 20, windowMs: 5 * 60 * 1000 };
+    const longWindow = { limit: 8, windowMs: 15 * 60 * 1000 };
+    const now = 4_500_000;
+    resetRateLimits();
+
+    // Distinct one-shot account keys used to aggregate in anonymous fixed slots.
+    // Enough of them occupied every slot with the 15-minute policy, after which
+    // every unrelated five-minute IP key was refused on policy mismatch.
+    for (let i = 0; i < 200_000; i += 1) {
+      assert.equal(
+        consumeRateLimit(`login:account:flood-${i}@example.invalid`, longWindow, now).allowed,
+        true,
+      );
+    }
+    for (let i = 0; i < 10_000; i += 1) {
+      const result = consumeRateLimit(`login:ip:198.51.${Math.floor(i / 256)}.${i % 256}`, shortWindow, now);
+      assert.equal(result.allowed, true, `unrelated IP ${i} must retain its first attempt`);
+    }
+  });
+
+  it("fails closed if one logical key is reused with a different policy", () => {
+    resetRateLimits();
+    const now = 4_750_000;
+    const key = "login:account:policy-mismatch@example.invalid";
+    const shortWindow = { limit: 20, windowMs: 5 * 60 * 1000 };
+    const longWindow = { limit: 8, windowMs: 15 * 60 * 1000 };
+    assert.equal(consumeRateLimit(key, shortWindow, now).allowed, true);
+    assert.equal(consumeRateLimit(key, longWindow, now).allowed, false);
+  });
+
   it("does not wrap to a fresh budget under a sustained flood", () => {
     // Int32 counters: 2^31 increments would roll negative and read as under the
     // limit. The counter saturates instead. Exercised by forcing the saturation
@@ -216,7 +247,7 @@ describe("consumeRateLimit", () => {
     assert.equal(consumeRateLimit("client-c", OPTIONS, now).allowed, false);
   });
 
-  it("prefers the one forwarded header a client cannot spoof end to end", () => {
+  it("prefers nginx's derived peer address over caller-supplied forwarding headers", () => {
     const request = new Request("https://app.newme.ae/api/auth/login", {
       headers: {
         "cf-connecting-ip": "203.0.113.7",
@@ -224,7 +255,12 @@ describe("consumeRateLimit", () => {
         "x-real-ip": "9.9.9.9",
       },
     });
-    assert.equal(clientIdentifier(request), "203.0.113.7");
+    assert.equal(clientIdentifier(request), "9.9.9.9");
+
+    const cloudflareOnly = new Request("https://app.newme.ae/api/auth/login", {
+      headers: { "cf-connecting-ip": "203.0.113.8" },
+    });
+    assert.equal(clientIdentifier(cloudflareOnly), "203.0.113.8");
 
     const spoofable = new Request("https://app.newme.ae/api/auth/login", {
       headers: { "x-forwarded-for": "1.2.3.4, 5.6.7.8" },

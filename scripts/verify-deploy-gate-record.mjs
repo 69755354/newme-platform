@@ -56,10 +56,29 @@ export const REQUIRED_GATES = [
   // The exact-head workflow_dispatch run is green and every required job in
   // infra/release/required-jobs.json ran and succeeded.
   "github-required-jobs-green",
-  // TASKBOARD.md at that tree is complete, checked with that tree's checker.
-  "taskboard-complete",
+  // Round-4 C4-4. TASKBOARD.md at that tree satisfies the predeploy_ready
+  // milestone, checked with that tree's checker. The name is the scope on purpose:
+  // the wrapper used to write "taskboard-complete" while running
+  // --require-complete, a check that could not pass because most rows on that
+  // board close only after production has run the release. A record naming a
+  // completeness it cannot have established is the same class of false claim this
+  // installer refuses everywhere else, so the gate is named for what is actually
+  // measured, and release-final completeness stays with the required CI job.
+  "taskboard-predeploy-ready",
+  // Round-4 C4-1. The migration set the deploy verifies is derived from that
+  // tree's own release manifest, and the operator's list equals it exactly — a
+  // proper subset of required_for_app used to pass every gate here with the
+  // release's schema absent from production.
+  "release-claim-derived",
   // Production's recorded migration history matches the release, reconciled.
   "remote-migration-history",
+  // Round-4 C4-5. The hand-run rollback_*/recontract_* companions at that tree
+  // match the hashes that tree's own manifest declares. These files are executed
+  // by hand against production and are never recorded in migration history, so
+  // remote-migration-history cannot reach them: without this gate the release
+  // being installed says nothing about the scripts the operator will run if it
+  // has to be taken back out.
+  "release-companions-verified",
 ];
 
 export const DEFAULT_STATE_ROOT = "/var/lib/newme/deploy-state";
@@ -117,7 +136,7 @@ export function checkGateRecord({
   }
   if (values.get("event") !== "workflow_dispatch") {
     problems.push(
-      `the gate record records event ${JSON.stringify(values.get("event") ?? "")}; only a release-final workflow_dispatch run is evidence`,
+      `the gate record records event ${JSON.stringify(values.get("event") ?? "")}; only a release-candidate workflow_dispatch run is evidence`,
     );
   }
   if (!/^[0-9]{1,20}$/.test(String(values.get("run") ?? ""))) {

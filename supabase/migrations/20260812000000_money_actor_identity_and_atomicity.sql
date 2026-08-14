@@ -1284,8 +1284,7 @@ begin
       last_activity_at      = now(),
       name  = case when customers.name = 'Unknown' or customers.name is null
                    then v_customer_name else customers.name end,
-      phone = coalesce(customers.phone, new.phone),
-      updated_at = now()
+      phone = coalesce(customers.phone, new.phone)
     where id = v_customer_id;
   else
     insert into public.customers (lead_id, name, phone, email, address, total_contract_amount, last_activity_at)

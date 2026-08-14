@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "The job that must conclude success on the closure SHA after the already",
+    "deployed release SHA has produced the evidence needed to close TASKBOARD.md.",
+    "This is intentionally separate from required-jobs.json: deployment is gated",
+    "at the release SHA, while final acceptance is gated at a later closure SHA.",
+    "scripts/check-release-closure.mjs proves that the release is an ancestor of",
+    "the closure and that their non-empty diff changes only TASKBOARD.md."
+  ],
+  "workflow": "ci",
+  "event": "workflow_dispatch",
+  "head_branch": "main",
+  "required_jobs": [
+    {
+      "name": "Release-final taskboard completion",
+      "why": "runs at the closure SHA, requires the workflow's release_sha input to name the deployed release SHA, checks that exact release-to-closure relationship, and requires every TASKBOARD row to be complete"
+    }
+  ],
+  "tolerated_conclusions": ["success"],
+  "notes": [
+    "The closure SHA is not a second application release and must never replace",
+    "the exact SHA recorded by canonical deployment evidence.",
+    "A missing job, skipped job, non-success conclusion, missing release_sha input",
+    "or failed release-closure check is a final-acceptance refusal."
+  ]
+}

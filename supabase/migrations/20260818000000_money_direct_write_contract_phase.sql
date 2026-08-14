@@ -64,6 +64,36 @@ begin
       using errcode = '42P01';
   end if;
 
+  -- Round-4 C4-3 · take the flip lock before anything reads or writes the mode.
+  --
+  -- Every mode-controlled guard takes this key SHARED for the duration of the
+  -- write it is guarding, so acquiring it exclusively here does two things that
+  -- the bare `insert … on conflict` did not:
+  --
+  --   * it WAITS for the direct writes the previous release already has in
+  --     flight, so 'strict' is not committed underneath a write that was
+  --     admitted under 'compat' and is still going;
+  --   * it makes any write that starts from now on wait for this transaction,
+  --     and — because the guard is volatile — read the mode after being let
+  --     through, so it is judged by the posture this transaction commits rather
+  --     than by the one it replaced.
+  --
+  -- A missing key function means the expand phase is not fully applied, and
+  -- flipping without it would be an unserialized flip wearing this file's name.
+  if to_regprocedure('public.money_release_mode_lock_key()') is null then
+    raise exception 'public.money_release_mode_lock_key() does not exist; apply 20260814000000 first, because without it this flip cannot be serialized against in-flight direct writes'
+      using errcode = '42P01';
+  end if;
+
+  -- Bounded, so a flip that cannot drain fails loudly instead of parking every
+  -- money write behind its own lock request. An operator who set lock_timeout
+  -- deliberately keeps theirs; 15s is the default when none is set. Measured on
+  -- PG 17.10: lock_timeout does apply to an advisory-lock wait (55P03).
+  perform set_config('lock_timeout',
+                     coalesce(nullif(current_setting('lock_timeout'), '0'), '15s'),
+                     true);
+  perform pg_advisory_xact_lock(public.money_release_mode_lock_key());
+
   insert into public.money_release_mode (id, direct_write_mode, reason, changed_at)
   values ('only', 'strict',
           'contract phase 20260818000000: the candidate release is live and writes '

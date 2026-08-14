@@ -78,12 +78,11 @@ const CRLF_SENSITIVE_TESTS = [
 ];
 
 /**
- * Every skip in the test tree, by file and count. All three are legacy cases
- * superseded by a Node gate contract and named as such; none is conditional on a
- * platform. The list is exact so that a new skip has to be added here, where the
- * reason has to be written down.
+ * Every skip in the test tree, by file and count. The list is exact so that a new
+ * skip has to be added here, where the reason has to be written down. There are
+ * currently no accepted skips.
  */
-const DECLARED_SKIPS = new Map([["tests/security/supply-chain-gate.test.mjs", 3]]);
+const DECLARED_SKIPS = new Map();
 
 const SKIP_CALL = /\b(?:test|it|describe|suite)\s*\.\s*(?:skip|todo)\b|(?<![\w$."'])(?:skip|todo)\s*:/g;
 const PLATFORM = /\bwin32\b|process\.platform/;

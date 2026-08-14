@@ -100,20 +100,34 @@ export async function POST(request: Request) {
 
   const ip = clientIdentifier(request);
   const ipLimit = consumeRateLimit(`login:ip:${ip}`, PER_IP_LIMIT);
-  const accountLimit = consumeRateLimit(
-    `login:account:${email.toLowerCase()}`,
-    PER_ACCOUNT_LIMIT,
-  );
-  if (!ipLimit.allowed || !accountLimit.allowed) {
-    const retryAfter = Math.max(ipLimit.retryAfterSeconds, accountLimit.retryAfterSeconds);
+  if (!ipLimit.allowed) {
     logger.warn({
       request_id: requestId,
       operation: "auth_login",
       code: "rate_limited",
-      scope: !ipLimit.allowed ? "ip" : "account",
+      scope: "ip",
     });
     const response = respond({ error: "rate_limited" }, { status: 429 });
-    response.headers.set("Retry-After", String(retryAfter));
+    response.headers.set("Retry-After", String(ipLimit.retryAfterSeconds));
+    return response;
+  }
+
+  // Do not let a source that already exhausted its own budget consume arbitrary
+  // account buckets. Otherwise one blocked source can continue poisoning the
+  // longer-lived account namespace without any request reaching authentication.
+  const accountLimit = consumeRateLimit(
+    `login:account:${email.toLowerCase()}`,
+    PER_ACCOUNT_LIMIT,
+  );
+  if (!accountLimit.allowed) {
+    logger.warn({
+      request_id: requestId,
+      operation: "auth_login",
+      code: "rate_limited",
+      scope: "account",
+    });
+    const response = respond({ error: "rate_limited" }, { status: 429 });
+    response.headers.set("Retry-After", String(accountLimit.retryAfterSeconds));
     return response;
   }
 

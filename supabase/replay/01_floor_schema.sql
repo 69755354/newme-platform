@@ -1,17 +1,18 @@
 -- ============================================================================
 -- Replay harness — step 1: schema floor
 -- ============================================================================
--- Not a migration. This is the starting schema for the branch-mode replay: the
+-- Not a migration. This is the starting schema for branch/control replay: the
 -- objects the migrations on this branch touch, in the state production has them
 -- in TODAY, before remediation.
 --
 -- Why a floor instead of the real history
 -- ---------------------------------------
 -- Replaying supabase/migrations/ from empty does not work, and the reason is a
--- finding in its own right rather than a harness problem. `MODE=history bash
--- scripts/replay-migrations.sh` reproduces it, and it is gated against a recorded
--- expectation in supabase/replay/history-replay-expectation.txt rather than
--- narrated. What it finds, in the first three files:
+-- finding in its own right rather than a harness problem. MODE=history no longer
+-- treats that known failure as a pass: it verifies the authenticated, zero-row
+-- production schema baseline and applies the exact manifest set after its
+-- watermark. This smaller floor remains because MODE=control needs the known
+-- vulnerable state. The immutable directory's first three defects are:
 --
 --   * 1780601210_workflow_stages.sql carries a 10-digit unix epoch instead of the
 --     14-digit timestamp the Supabase CLI requires, so the CLI never saw it, yet
@@ -138,6 +139,11 @@ create table public.leads (
   property_type     text,
   property_size_sqm integer,
   location          text,
+  -- Production requires source (captured baseline: text NOT NULL). The compact
+  -- floor keeps it nullable because older negative-control fixtures predate that
+  -- requirement, but it must expose the column so the same production-valid
+  -- behaviour fixtures and migration probes run in both catalog shapes.
+  source        text,
   created_at    timestamptz default now(),
   updated_at    timestamptz default now()
 );
@@ -995,3 +1001,259 @@ $fn$;
 
 REVOKE EXECUTE ON FUNCTION public.record_lead_note_atomic(uuid, text, uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.record_lead_note_atomic(uuid, text, uuid) TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- The lead-reassignment path (R6)
+-- ---------------------------------------------------------------------------
+-- 20260723140000_atomic_lead_reassignment.sql is in
+-- supabase/migration-history-baseline.sha256, so reassign_lead_atomic() and the
+-- three tables it writes are part of the state this release starts from, not part
+-- of the release. The floor carried lead_mutation_requests and
+-- record_lead_note_atomic() from that migration already; it did not carry the
+-- reassignment routine or its targets, so nothing measured what happens when two
+-- sessions move the same lead.
+--
+-- transfer_history is not created by ANY file in supabase/migrations. It exists in
+-- production — src/types/database.ts:3302-3331 has it, and
+-- 20260701000002_final_for_all_cleanup.sql:193-226 creates six policies on it,
+-- which could not have applied against a table that was not there — and it is not
+-- in 20260806000000_baseline_undeclared_production_objects.sql either. It is an
+-- undeclared production object that baseline missed. Column names, nullability and
+-- the four foreign keys below come from the committed, production-generated
+-- src/types/database.ts, the same source that file used and for the same reason:
+-- this branch has no read access to production's catalog.
+alter table public.leads
+  add column if not exists transfer_candidate boolean default false,
+  add column if not exists recovery_candidate boolean default false,
+  -- date, not timestamptz: 20260602000000_crm_v2_columns.sql:28 adds it as DATE
+  -- and 20260603000000_add_crm_fields.sql:40 re-adds it as TIMESTAMPTZ under
+  -- IF NOT EXISTS, so the earlier type is the one production has.
+  add column if not exists hold_since date;
+
+-- 20260607000000_create_notifications.sql:4-17, with the type domain as
+-- 20260610000003_add_follow_up_overdue.sql:7-21 last left it. reassign_lead_atomic
+-- writes type = 'lead_assigned', which that domain accepts; the point of carrying
+-- the CHECK is that the floor states the domain rather than assuming it.
+create table public.notifications (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null references public.profiles (id),
+  type         varchar(50) not null,
+  title        text not null,
+  body         text,
+  related_id   uuid,
+  related_type varchar(30),
+  is_read      boolean default false,
+  created_at   timestamptz default now(),
+  constraint notifications_type_check check (type in (
+    'lead_created', 'lead_assigned', 'lead_stage_change', 'lead_stage_changed',
+    'quote_created', 'contract_created', 'contract_signed',
+    'payment_due', 'payment_overdue', 'payment_received',
+    'kpi_target_set', 'followup_reminder', 'follow_up_overdue',
+    'team_member_added'
+  )),
+  constraint notifications_related_type_check
+    check (related_type in ('lead', 'contract', 'payment', 'kpi'))
+);
+
+create table public.transfer_history (
+  id             uuid primary key default gen_random_uuid(),
+  lead_id        uuid not null references public.leads (id),
+  from_user_id   uuid references public.profiles (id),
+  to_user_id     uuid not null references public.profiles (id),
+  reason         text,
+  notes          text,
+  created_at     timestamptz default now(),
+  transferred_by uuid not null references public.profiles (id)
+);
+
+alter table public.notifications    enable row level security;
+alter table public.transfer_history enable row level security;
+
+-- 20260701000002_final_for_all_cleanup.sql:196-226, in the floor's style. The
+-- comment in that migration records two policies as already present and
+-- undeclared — transfer_sales_select and transfer_sales_insert, which let a
+-- salesperson read and write transfer_history rows for their own leads — so the
+-- floor carries them too, spelled the way that comment describes them. They are
+-- why an audit table only reassign_lead_atomic() should write is reachable from a
+-- browser session at all.
+create policy policy_transfer_history_select_admin on public.transfer_history for select to authenticated
+  using (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin','boss','operator')));
+create policy policy_transfer_history_select_finance on public.transfer_history for select to authenticated
+  using (exists (select 1 from public.profiles where id = auth.uid() and role = 'finance'));
+create policy policy_transfer_history_select_designer on public.transfer_history for select to authenticated
+  using (exists (select 1 from public.profiles where id = auth.uid() and role = 'designer'));
+create policy policy_transfer_history_insert_admin on public.transfer_history for insert to authenticated
+  with check (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin','boss','operator')));
+create policy policy_transfer_history_update_admin on public.transfer_history for update to authenticated
+  using (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin','boss')))
+  with check (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin','boss')));
+create policy policy_transfer_history_delete_admin on public.transfer_history for delete to authenticated
+  using (exists (select 1 from public.profiles where id = auth.uid() and role in ('admin','boss')));
+create policy transfer_sales_select on public.transfer_history for select to authenticated
+  using (exists (select 1 from public.leads l where l.id = transfer_history.lead_id and l.assigned_to = auth.uid()));
+create policy transfer_sales_insert on public.transfer_history for insert to authenticated
+  with check (exists (select 1 from public.leads l where l.id = transfer_history.lead_id and l.assigned_to = auth.uid()));
+
+-- notifications is read and marked-read by the owning session and inserted by the
+-- definer routines and by supabaseAdmin; transfer_history is reachable per the
+-- policies above. Both grants are the pre-remediation shape: table-level, every
+-- column, with RLS deciding the rows.
+grant select, insert, update on public.notifications to authenticated;
+grant select, insert, update, delete on public.transfer_history to authenticated;
+
+-- 20260723140000_atomic_lead_reassignment.sql:87-199, verbatim, including the
+-- REVOKE/GRANT pair. Two things about it are the subject of this release:
+--
+--   * :140-142 is the only concurrency guard, and it compares against
+--     leads.updated_at — a column this historical floor did not model a trigger
+--     for, which several application
+--     writers change assigned_to without naming, and which the two update
+--     policies above leave in the client's hands: neither carries a WITH CHECK,
+--     so each reuses its USING clause as the check.
+--     policy_leads_update_sales therefore lets the owning salesperson write any
+--     column of their own lead, updated_at included, but NOT hand the lead to
+--     anyone else — the reused clause is tested against the new row.
+--     policy_leads_update_admin tests the ACTOR instead, so an admin, boss or
+--     operator can write any column of any lead, which is the privilege the
+--     direct reassignment writers spend.
+--     The authenticated production baseline already has trg_set_updated_at and is
+--     server-owned. 20260817180000_leads_updated_at_is_server_owned.sql therefore
+--     no-ops there and creates a fallback only on this legacy floor;
+--     supabase/replay/23_lead_assignment_cas.sh measures both catalog shapes.
+--
+--   * :165-169 inserts an activities row with type = 'transfer', and
+--     activities_type_check above — the domain 20260605000000:209-214 installed,
+--     which is still the last word on that column — does not contain 'transfer'.
+--     So on the floor, as in production, the branch that actually moves a lead
+--     raises SQLSTATE 23514 and rolls back everything including its own audit
+--     rows. 20260817190000_lead_reassignment_activity_type.sql adds the value.
+--     The floor keeps the narrow domain because that is what production has.
+--
+--   * :177-181 inserts notifications.related_id = p_lead_id::text, and this
+--     historical floor's column is uuid (public.notifications above).
+--     PostgreSQL accepts text in a uuid column only on an explicit cast, so this
+--     statement raises SQLSTATE 42804 — a second, independent reason the same
+--     branch cannot commit, and the reason widening the activities domain alone
+--     changed nothing. 20260817200000_lead_reassignment_notification_related_id.sql
+--     removes the cast from the installed routine on this uuid shape. The
+--     authenticated production baseline has related_id=text and its installed
+--     routine already uses p_lead_id without the cast, so the migration is a
+--     catalog/behavior-proven no-op there.
+--
+--     supabase/replay/22_lead_reassignment_writes.sh measures all three directions
+--     of the two write defects; supabase/replay/23_lead_assignment_cas.sh measures
+--     both directions of the compare-and-set, and needs both write repairs applied
+--     before it can observe a committed reassignment at all.
+CREATE OR REPLACE FUNCTION public.reassign_lead_atomic(
+  p_lead_id uuid,
+  p_new_assignee uuid,
+  p_expected_updated_at timestamptz,
+  p_idempotency_key uuid,
+  p_reason text DEFAULT 'manual_reassign'
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $fn$
+DECLARE
+  v_actor_id uuid := auth.uid();
+  v_actor_role text;
+  v_target_role text;
+  v_target_active boolean;
+  v_lead public.leads%ROWTYPE;
+  v_response jsonb;
+  v_reason text := left(btrim(coalesce(p_reason, 'manual_reassign')), 500);
+BEGIN
+  IF v_actor_id IS NULL THEN
+    RAISE EXCEPTION 'UNAUTHORIZED';
+  END IF;
+  IF p_idempotency_key IS NULL THEN
+    RAISE EXCEPTION 'INVALID_IDEMPOTENCY_KEY';
+  END IF;
+
+  SELECT role INTO v_actor_role FROM public.profiles WHERE id = v_actor_id;
+  IF coalesce(v_actor_role, '') NOT IN ('admin', 'boss', 'operator') THEN
+    RAISE EXCEPTION 'FORBIDDEN_REASSIGNMENT';
+  END IF;
+
+  SELECT response INTO v_response
+  FROM public.lead_mutation_requests
+  WHERE actor_id = v_actor_id
+    AND operation = 'lead_reassignment'
+    AND idempotency_key = p_idempotency_key;
+  IF FOUND THEN
+    RETURN v_response || jsonb_build_object('idempotent_replay', true);
+  END IF;
+
+  SELECT role, is_active INTO v_target_role, v_target_active
+  FROM public.profiles WHERE id = p_new_assignee;
+  IF NOT FOUND OR coalesce(v_target_active, false) = false
+     OR coalesce(v_target_role, '') NOT IN ('sales', 'operator', 'boss') THEN
+    RAISE EXCEPTION 'INVALID_ASSIGNEE';
+  END IF;
+
+  SELECT * INTO v_lead FROM public.leads WHERE id = p_lead_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'LEAD_NOT_FOUND';
+  END IF;
+  IF p_expected_updated_at IS NOT NULL AND v_lead.updated_at IS DISTINCT FROM p_expected_updated_at THEN
+    RAISE EXCEPTION 'CONCURRENT_LEAD_UPDATE';
+  END IF;
+
+  IF v_lead.assigned_to IS NOT DISTINCT FROM p_new_assignee THEN
+    v_response := jsonb_build_object(
+      'lead_id', p_lead_id,
+      'assigned_to', p_new_assignee,
+      'unchanged', true
+    );
+  ELSE
+    UPDATE public.leads
+    SET assigned_to = p_new_assignee,
+        transfer_candidate = false,
+        recovery_candidate = false,
+        hold_since = NULL,
+        updated_at = now()
+    WHERE id = p_lead_id;
+
+    INSERT INTO public.transfer_history (
+      lead_id, from_user_id, to_user_id, reason, transferred_by
+    ) VALUES (
+      p_lead_id, v_lead.assigned_to, p_new_assignee, v_reason, v_actor_id
+    );
+
+    INSERT INTO public.activities (lead_id, user_id, type, content)
+    VALUES (
+      p_lead_id, v_actor_id, 'transfer',
+      format('Lead reassigned from %s to %s', coalesce(v_lead.assigned_to::text, 'unassigned'), p_new_assignee::text)
+    );
+
+    INSERT INTO public.business_events (lead_id, user_id, event_type, description, event_data)
+    VALUES (
+      p_lead_id, v_actor_id, 'transfer', 'Lead reassigned',
+      jsonb_build_object('from_user_id', v_lead.assigned_to, 'to_user_id', p_new_assignee, 'reason', v_reason)
+    );
+
+    INSERT INTO public.notifications (user_id, type, title, body, related_id, related_type)
+    VALUES (
+      p_new_assignee, 'lead_assigned', 'Lead assigned',
+      coalesce(v_lead.customer_name, 'Lead') || ' was assigned to you.', p_lead_id::text, 'lead'
+    );
+
+    v_response := jsonb_build_object(
+      'lead_id', p_lead_id,
+      'assigned_to', p_new_assignee,
+      'updated_at', (SELECT updated_at FROM public.leads WHERE id = p_lead_id),
+      'unchanged', false
+    );
+  END IF;
+
+  INSERT INTO public.lead_mutation_requests (actor_id, operation, idempotency_key, lead_id, response)
+  VALUES (v_actor_id, 'lead_reassignment', p_idempotency_key, p_lead_id, v_response);
+
+  RETURN v_response;
+END;
+$fn$;
+
+REVOKE EXECUTE ON FUNCTION public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text) TO authenticated;

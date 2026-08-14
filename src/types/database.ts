@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=4eff5a183d44dc660a0b1d50fff5b3d868bb727092eca490618486f025bd7d74
+// Migration fingerprint: sha256=97a495f1a4545b614f9929c2be3a9db1b622eab9a54f2721cb06fc366a282d19
 export type Json =
   | string
   | number
@@ -2293,6 +2293,7 @@ export type Database = {
         Row: {
           body: string | null
           created_at: string | null
+          event_key: string | null
           id: string
           is_read: boolean | null
           related_id: string | null
@@ -2304,6 +2305,7 @@ export type Database = {
         Insert: {
           body?: string | null
           created_at?: string | null
+          event_key?: string | null
           id?: string
           is_read?: boolean | null
           related_id?: string | null
@@ -2315,6 +2317,7 @@ export type Database = {
         Update: {
           body?: string | null
           created_at?: string | null
+          event_key?: string | null
           id?: string
           is_read?: boolean | null
           related_id?: string | null
@@ -4021,6 +4024,7 @@ export type Database = {
       detect_stale_leads: { Args: { stale_days?: number }; Returns: number }
       generate_quote_no: { Args: { year_param: number }; Returns: string }
       get_my_role: { Args: never; Returns: string }
+      session_boundary_state: { Args: never; Returns: string }
       get_team_activity: {
         Args: { p_date?: string }
         Returns: {
@@ -4034,6 +4038,10 @@ export type Database = {
           total_duration_seconds: number
           user_id: string
         }[]
+      }
+      insert_notifications_atomic: {
+        Args: { p_notifications: Json }
+        Returns: Json
       }
       log_activity:
         | {
@@ -4083,10 +4091,19 @@ export type Database = {
       }
       reassign_lead_atomic: {
         Args: {
-          p_expected_updated_at: string | null
+          p_expected_updated_at: string
           p_idempotency_key: string
           p_lead_id: string
           p_new_assignee: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      unassign_lead_atomic: {
+        Args: {
+          p_expected_updated_at: string
+          p_idempotency_key: string
+          p_lead_id: string
           p_reason?: string
         }
         Returns: Json

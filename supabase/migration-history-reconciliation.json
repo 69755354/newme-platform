@@ -1,34 +1,950 @@
 {
   "_comment": [
-    "Redacted, read-only baseline of the migration history production recorded, plus",
-    "the explicit mapping of differences an operator has reconciled against it.",
-    "",
-    "STATUS: NOT CAPTURED. capture is null and rows is empty, which is what an",
-    "uncaptured baseline looks like. In this state the file accepts nothing and the",
-    "gate refuses on sight: supplying a reconciliation that records no capture is",
-    "itself a reported problem (reconciliation_without_capture), because production's",
-    "recorded history has never been read and nothing in the run compares it to",
-    "anything. Round-4 C4: before that check existed, this file's refusal was a",
-    "property of production happening to differ from the release, not of the gate —",
-    "an uncaptured baseline and an agreeing one reached the same outcome. That is the",
-    "intended state until an operator runs the capture, because production content",
-    "equivalence has not been demonstrated.",
-    "",
-    "Fill it by running, from the release, against production:",
-    "  node scripts/capture-remote-migration-history.mjs \\",
-    "    --url-file /etc/newme/migration-db.url \\",
-    "    --out supabase/migration-history-reconciliation.json",
-    "That is a read-only capture; it is still an authorised production action and is",
-    "not performed by any code round.",
-    "",
-    "rows[] carries version, name, statement_count and a server-computed",
-    "statements_sha256 only. Never statement text, never business data, never an",
-    "identity. accepted[] entries must restate the observation they explain and are",
-    "re-matched against production on every run; an acceptance that matches nothing",
-    "is a refusal of its own. Rules and procedure:",
-    "supabase/preflight/migration-history-reconciliation.md"
+    "Redacted, read-only baseline of the migration history production recorded.",
+    "Captured through the authenticated Supabase connector with the exact",
+    "HISTORY_QUERY contract exported by scripts/verify-remote-migration-history.mjs.",
+    "Rows contain only version, name, statement count and a server-computed SHA-256:",
+    "no statement text, business data, identity or connection credential.",
+    "Procedure and reconciliation rules:",
+    "supabase/preflight/migration-history-reconciliation.md."
   ],
-  "capture": null,
-  "rows": [],
-  "accepted": []
+  "capture": {
+    "captured_at": "2026-08-14T15:20:48.391Z",
+    "generator": "Codex Supabase connector execute_sql with exported HISTORY_QUERY",
+    "project_id": "vfopmpxlhwzpxqegayew",
+    "statements_measured": true,
+    "fingerprint_format": "statements-v2-length-delimited",
+    "row_count": 100,
+    "rows_sha256": "82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea"
+  },
+  "rows": [
+    {
+      "version": "1780601210",
+      "name": "workflow_stages",
+      "statement_count": 16,
+      "statements_sha256": "218afbc61d75236de9ddf2f85e0485d3baea5ec22bff782b847942d229605583"
+    },
+    {
+      "version": "20260601000000",
+      "name": "init",
+      "statement_count": 48,
+      "statements_sha256": "c759bbdbcbff97095024adf5f77c518fc2f46d3f7396bd7710a40f7d1e2f93d2"
+    },
+    {
+      "version": "20260602000000",
+      "name": "crm_v2_columns",
+      "statement_count": 18,
+      "statements_sha256": "a19582b205b95ca0bb94e2cfc608ef062cdc1f032d9544e6d37a23e473452e85"
+    },
+    {
+      "version": "20260602010000",
+      "name": "crm_mvp_final",
+      "statement_count": 47,
+      "statements_sha256": "5b90ce24a123c111d9d31206954cc80baaf8848c7fc6e493113ea965f0bf044a"
+    },
+    {
+      "version": "20260602020000",
+      "name": "crm_fix_owner_policies",
+      "statement_count": 8,
+      "statements_sha256": "5f84b2278a967b3a5946e9ac1af5035d500002a0c9ca4b9c9736045a937890ae"
+    },
+    {
+      "version": "20260603000000",
+      "name": "add_crm_fields",
+      "statement_count": 47,
+      "statements_sha256": "817830a2b5a7f07bdb4c98dab9dfee7657f7488b7cd6fcd658e3657e179e72a6"
+    },
+    {
+      "version": "20260603000001",
+      "name": "fix_lead_won_trigger",
+      "statement_count": 4,
+      "statements_sha256": "1cbed2659b1d2a7fadbe6a8ecc5abe75bf98d75a2dd47d1b430b4b3e691ee229"
+    },
+    {
+      "version": "20260604000000",
+      "name": "fix_schema",
+      "statement_count": 56,
+      "statements_sha256": "0f3e1efc0c2f3bde798f2a25915d00d582d81294104f4421cf24f98e4c3bc9a4"
+    },
+    {
+      "version": "20260604000001",
+      "name": "create_kpi_targets",
+      "statement_count": 7,
+      "statements_sha256": "501470f58176126693f0d72f840f6897c05ece4b00a67eef23ad66865b674fbe"
+    },
+    {
+      "version": "20260604000002",
+      "name": "auto_lead_status",
+      "statement_count": 4,
+      "statements_sha256": "f1c43cdb01755017abeab5db5fbe539b3591ab56bb46bd0b4ca32dd546871f15"
+    },
+    {
+      "version": "20260604000003",
+      "name": "create_products",
+      "statement_count": 4,
+      "statements_sha256": "fb2f2b9a42cad51832b5e993ead6df3b7f8b002fb790a45aa584bfff0a12af4c"
+    },
+    {
+      "version": "20260604000004",
+      "name": "fix_schema",
+      "statement_count": 56,
+      "statements_sha256": "0f3e1efc0c2f3bde798f2a25915d00d582d81294104f4421cf24f98e4c3bc9a4"
+    },
+    {
+      "version": "20260604230000",
+      "name": "fix_indexes_and_rls",
+      "statement_count": 12,
+      "statements_sha256": "48fbcf6b8b985cdeae72228fa9080e83e7f8c737d388446c6575ee3edc2f2983"
+    },
+    {
+      "version": "20260604230100",
+      "name": "cleanup_dup_indexes",
+      "statement_count": 4,
+      "statements_sha256": "b954c8bece8f6226bc259e4ab35ebabfb7e8d28076707c634ee9755646cbaec3"
+    },
+    {
+      "version": "20260605000000",
+      "name": "newme_crm_v22_complete",
+      "statement_count": 146,
+      "statements_sha256": "ff09f2a53438ee05d2857109bb62db2d55fcbcef3b224bed11c921d62e7ab0e9"
+    },
+    {
+      "version": "20260605000001",
+      "name": "fix_projects_lead_fk",
+      "statement_count": 3,
+      "statements_sha256": "3308949e641cdc714588adb72e32247a5f08739c2d315d1dc51379961c3ec85a"
+    },
+    {
+      "version": "20260605233000",
+      "name": "fix_products_leads_rls",
+      "statement_count": 10,
+      "statements_sha256": "ed8d2ab98e005d0368c01fdacc17a933edf3a89c53c3f2ab106e99ace63ae7ae"
+    },
+    {
+      "version": "20260607000000",
+      "name": "create_notifications",
+      "statement_count": 7,
+      "statements_sha256": "1e133bbb892a54c4a6efab9be04713d0733bf310cdda90b94e58b1c25d312ac8"
+    },
+    {
+      "version": "20260608000000",
+      "name": "ad_spend",
+      "statement_count": 6,
+      "statements_sha256": "8d986fe3b643d525c7b4ce3f5b5a9c51b7a1daf1be607640f75c49abf7c25f7c"
+    },
+    {
+      "version": "20260610000000",
+      "name": "add_notification_types",
+      "statement_count": 3,
+      "statements_sha256": "7f8d991e95e6a5fad2a265fff861e7c507ce557a7ac9c90f3045381e92038626"
+    },
+    {
+      "version": "20260610000001",
+      "name": "add_first_payment_tracking",
+      "statement_count": 4,
+      "statements_sha256": "c33f05fef68f2ecdccb62e38729c0f856ded39d48df2615fa520b05e091473a1"
+    },
+    {
+      "version": "20260610000002",
+      "name": "fix_notification_types",
+      "statement_count": 2,
+      "statements_sha256": "d1981f6c8c62643354d0a84894921097d74a7b913610fe2f33da6cec29d65788"
+    },
+    {
+      "version": "20260610000003",
+      "name": "add_follow_up_overdue",
+      "statement_count": 2,
+      "statements_sha256": "68b2f9123a418eb9c447197afb3b29c967ead363601cf5ca40c010326a0218fa"
+    },
+    {
+      "version": "20260611000000",
+      "name": "fix_activities_rls",
+      "statement_count": 4,
+      "statements_sha256": "610078e28fdd150cf7ea80c58fbfc6e7c1b71340e3f8a14e5680fd2a3ce25929"
+    },
+    {
+      "version": "20260612000000",
+      "name": "contract_pipeline_v1",
+      "statement_count": 23,
+      "statements_sha256": "a345ea96cfcf97272d4ce1f688f766e7152af6dbee941354bef4b4aac83b3ed1"
+    },
+    {
+      "version": "20260612000001",
+      "name": "rpc_functions",
+      "statement_count": 3,
+      "statements_sha256": "5d501bc718632d07c80c79786da9b960b501d548970008928e4c9ac69ec15553"
+    },
+    {
+      "version": "20260612000002",
+      "name": "contract_pipeline_fix",
+      "statement_count": 23,
+      "statements_sha256": "fadb3507b5521e5d3f76ef47f6e8e9249ba1da998c67cc89192301043c4b4d70"
+    },
+    {
+      "version": "20260612000003",
+      "name": "activity_tracking",
+      "statement_count": 17,
+      "statements_sha256": "148a0222a707fa3c6e36ba6911502f42abc97e7b3e18e75e57b18f198dfa7e11"
+    },
+    {
+      "version": "20260612000007",
+      "name": "fix_p0_security_rls",
+      "statement_count": 10,
+      "statements_sha256": "ac83cf0b38801e48030b122cb2c02dce56785b6a8a46ece907f924a63d76e7f6"
+    },
+    {
+      "version": "20260612000010",
+      "name": "lead_round_robin_assignment",
+      "statement_count": 15,
+      "statements_sha256": "7275d47fa7e501cf1646c3122dd62dd47e4917093db2a93c3d8ed415aff3c1d8"
+    },
+    {
+      "version": "20260613000000",
+      "name": "audit_logs",
+      "statement_count": 10,
+      "statements_sha256": "d6ff4ec4f4120fcce5eaf6636998c8b922405fb6dfd813fe02c082e210d74900"
+    },
+    {
+      "version": "20260613010000",
+      "name": "lead_alerts_v2",
+      "statement_count": 2,
+      "statements_sha256": "5a21360b9769a77c5b99156dc10adfbcfa808907eb00be9aba4d6ea8e9f60dc8"
+    },
+    {
+      "version": "20260613020000",
+      "name": "fix_alerts_and_constraints",
+      "statement_count": 5,
+      "statements_sha256": "bb939adf0ef2855b05576c5aab4c213651c1d11234bb9435ab5c9658a13127bb"
+    },
+    {
+      "version": "20260613220000",
+      "name": "rls_auto_protection",
+      "statement_count": 3,
+      "statements_sha256": "5a2e8869490b482280bd2c47dc14b22f4bbf713775851daf442c538427df701f"
+    },
+    {
+      "version": "20260623000001",
+      "name": "auth_login_trigger",
+      "statement_count": 3,
+      "statements_sha256": "c19116b4007425391d24742a7513a0599b6df1e138f367d7d3580bb7b7f7e2e5"
+    },
+    {
+      "version": "20260623021000",
+      "name": "20260623021000_add_no_answer_flag.sql",
+      "statement_count": 0,
+      "statements_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "version": "20260623030000",
+      "name": "20260623030000_crm_v3_stage_to_milestone_mapping.sql",
+      "statement_count": 0,
+      "statements_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "version": "20260623040000",
+      "name": "20260623040000_crm_v3_phase_b_fields.sql",
+      "statement_count": 0,
+      "statements_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "version": "20260624000000",
+      "name": "20260624000000_next_quote_no_rpc.sql",
+      "statement_count": 0,
+      "statements_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "version": "20260624000001",
+      "name": "20260624000001_fix_milestone_order.sql",
+      "statement_count": 0,
+      "statements_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "version": "20260624000002",
+      "name": "20260624000002_fix_won_lost_migration.sql",
+      "statement_count": 0,
+      "statements_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "version": "20260624000003",
+      "name": "20260624000003_fix_trg_lead_won.sql",
+      "statement_count": 0,
+      "statements_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "version": "20260624000004",
+      "name": "add_approval_status",
+      "statement_count": 1,
+      "statements_sha256": "5e110eb55776df227c1ae68ebecaca269aea06fc87749377efc49d0fd5ceeef1"
+    },
+    {
+      "version": "20260624095205",
+      "name": "fix_p0_won_trigger_perms",
+      "statement_count": 2,
+      "statements_sha256": "304ac012c61f14d86914d515f45fda84ad3f2f27bcce3c4412eb9e1ae7a1d80c"
+    },
+    {
+      "version": "20260624130000",
+      "name": "add_default_next_action",
+      "statement_count": 4,
+      "statements_sha256": "6cee998c987cd2f6fdaf3d95c93458732ce975ce6ca557e94867acfdfa5b6c94"
+    },
+    {
+      "version": "20260624143000",
+      "name": "fix_auth_login_trigger",
+      "statement_count": 1,
+      "statements_sha256": "8ee71e91502b091903f420fba068161e4725d84e6573d2084a2d89d6071062a2"
+    },
+    {
+      "version": "20260625000000",
+      "name": "relax_tasks_due_check",
+      "statement_count": 2,
+      "statements_sha256": "b32399e0a3b7c1bbc352c1ee8d9af43389999bbef0587e881b67e0c8f9752351"
+    },
+    {
+      "version": "20260625020000",
+      "name": "crm_v3_import_archive",
+      "statement_count": 14,
+      "statements_sha256": "ddb7cc6993b4e158c1c32badd6bbb23d8f03827c7768bb8d1ac88ff983def060"
+    },
+    {
+      "version": "20260625152302",
+      "name": "add_ac_brand_column",
+      "statement_count": 1,
+      "statements_sha256": "4b9b8fc5adfdcc50815ad653a25af3e36da14d49078901484e85d3e0ee06d892"
+    },
+    {
+      "version": "20260627000000",
+      "name": "contracts_unique_active_per_lead",
+      "statement_count": 1,
+      "statements_sha256": "4d2e901c54d1dd8a7f52b19d7a9010cdac2e5b1639738b494c9c51d3b2aea579"
+    },
+    {
+      "version": "20260630120000",
+      "name": "profiles_add_email",
+      "statement_count": 7,
+      "statements_sha256": "b8cb4017a7d28fb7f7cd7752b7f4b2b9d593ab29458d57446f7b993a9789d0e3"
+    },
+    {
+      "version": "20260630130000",
+      "name": "pipeline_stages",
+      "statement_count": 11,
+      "statements_sha256": "4a21761e17b825e6da764182a39bdc9fa19d423005dd43324c9eb0a84218a6b3"
+    },
+    {
+      "version": "20260630200000",
+      "name": "rls_policy_remediation",
+      "statement_count": 212,
+      "statements_sha256": "bfd57242c3574b4b1d3523d6560ebda3e7967133a2eadc6426073e547491bcf5"
+    },
+    {
+      "version": "20260701000000",
+      "name": "non_core_tables_rls_fix",
+      "statement_count": 107,
+      "statements_sha256": "5a994476f0db6fd7069a54b7185eb49827bb8cefa7ec46a3929d95d9d5611c6c"
+    },
+    {
+      "version": "20260701000001",
+      "name": "drop_remaining_for_all_policies",
+      "statement_count": 3,
+      "statements_sha256": "081a968be233d882e96882f844919c35454271aa338ba935df51c24498347d7f"
+    },
+    {
+      "version": "20260701000002",
+      "name": "final_for_all_cleanup",
+      "statement_count": 42,
+      "statements_sha256": "46fd3bbd01bcdb107145859d8fe4ee4d921d8f091eeef2df43f7265e044b9369"
+    },
+    {
+      "version": "20260701000003",
+      "name": "drop_final_for_all",
+      "statement_count": 97,
+      "statements_sha256": "144e4a7caa4f023b404c5ded3e16549adbee06f6dfb47a78bce0358009a5f0c2"
+    },
+    {
+      "version": "20260701000004",
+      "name": "fix_profiles_rls_recursion",
+      "statement_count": 22,
+      "statements_sha256": "0ab6ba2ea62819518f0b15151d5d9ab6ac006102e484c5a58504b7113714139a"
+    },
+    {
+      "version": "20260701000005",
+      "name": "fix_get_my_role_search_path",
+      "statement_count": 1,
+      "statements_sha256": "0117976c53664569aef3f4c79150002c9811317c71d8dd4f72c3c9255cd252fd"
+    },
+    {
+      "version": "20260701000006",
+      "name": "fix_security_definer_naked_refs",
+      "statement_count": 7,
+      "statements_sha256": "9dc8d3d11425038509e224b8ce49c385a9d8e04d4be4c5b7100700cfd052a0d0"
+    },
+    {
+      "version": "20260701000007",
+      "name": "fix_public_policies_and_log_activity",
+      "statement_count": 5,
+      "statements_sha256": "42f3a2755da2699131626cd9a29673bf842bce57b8dbe481c0161a65b736d32d"
+    },
+    {
+      "version": "20260701000008",
+      "name": "add_leads_created_by_and_fks",
+      "statement_count": 9,
+      "statements_sha256": "96fa6006e0f4c61e141c3c8b977aea739ce4c5ea1742cca223945ab276cec0b6"
+    },
+    {
+      "version": "20260701000009",
+      "name": "add_business_events_user_fk",
+      "statement_count": 5,
+      "statements_sha256": "201654ef283b0c36cd5320592138e615e5f57eb70b20171ed223f9f46af566da"
+    },
+    {
+      "version": "20260701000011",
+      "name": "add_missing_columns_and_fks",
+      "statement_count": 8,
+      "statements_sha256": "8340a3e06177823b8218a5e6b55b5e3c69bc05b710a32c7244d59778c61001fc"
+    },
+    {
+      "version": "20260701000012",
+      "name": "backfill_null_created_by",
+      "statement_count": 4,
+      "statements_sha256": "cdc49bf985898fc0855abad815ff009c5c8e8d5dd63083ef02a00232a2c0d862"
+    },
+    {
+      "version": "20260701130000",
+      "name": "p0_1_lead_detail_fk_and_idx",
+      "statement_count": 18,
+      "statements_sha256": "ece433c8a11d7bca7d6207ddf5fa6f91c07c78822f0eededb7c5277df0216493"
+    },
+    {
+      "version": "20260706000000",
+      "name": "add_won_at_field",
+      "statement_count": 8,
+      "statements_sha256": "ccdb70f449038979b847b17f9192e4f971bc60a01354d160a7acb9e1032decd8"
+    },
+    {
+      "version": "20260706000001",
+      "name": "auto_first_contact_trigger",
+      "statement_count": 5,
+      "statements_sha256": "c2f21ef4487fff822705c5563e884874b53752358f0153abd52c26524fb20ebe"
+    },
+    {
+      "version": "20260706000002",
+      "name": "check_milestone_order_compat",
+      "statement_count": 5,
+      "statements_sha256": "79b51134d11ba1f488e4281786858e5c8d2a780e6676c587152746f9878745af"
+    },
+    {
+      "version": "20260706000003",
+      "name": "quality_checked_event_check",
+      "statement_count": 2,
+      "statements_sha256": "a8cd8f96f254eeca2c09ea04120182edb8c83215a9a273524c2bf39293f5e777"
+    },
+    {
+      "version": "20260706000004",
+      "name": "audit_event_type_widening",
+      "statement_count": 5,
+      "statements_sha256": "6101be2e5d511efe40c27a40cc6a2cfd446613e7c79376486d4cab944f6d9272"
+    },
+    {
+      "version": "20260706000005",
+      "name": "add_leads_archived",
+      "statement_count": 5,
+      "statements_sha256": "5f82fe1434b13c1f07f621a63c8b75db2870a0cfd9c90b673431fbf2efefa08e"
+    },
+    {
+      "version": "20260707000000",
+      "name": "add_contact_time_to_follow_up_logs",
+      "statement_count": 6,
+      "statements_sha256": "48638ec65efe2d45d5b2252cd05e7eb8dab37f22c30203415d412bb72bbe7e61"
+    },
+    {
+      "version": "20260707000001",
+      "name": "add_first_contact_db_gate",
+      "statement_count": 5,
+      "statements_sha256": "e2fef708a5b230fba0e711af014c1996c00ad4fbfb0b940ca292738836700554"
+    },
+    {
+      "version": "20260708000000",
+      "name": "stage_sequential_gate",
+      "statement_count": 3,
+      "statements_sha256": "f4dfa215c4daf840ea81073874fff6ae41bf035e837654f76524c7c6b4d50b99"
+    },
+    {
+      "version": "20260708000001",
+      "name": "stage_sequential_gate_hardened",
+      "statement_count": 3,
+      "statements_sha256": "13ad2c391ecbaa6e6bed4c8edc0b8481a1790d640d78ba084fc191b2eb68ec01"
+    },
+    {
+      "version": "20260709000000",
+      "name": "add_contact_result",
+      "statement_count": 7,
+      "statements_sha256": "e1baad36c1630d762915611b0673f5abacc0e607bdedbc2889351618745bfdc8"
+    },
+    {
+      "version": "20260711000000",
+      "name": "fix_first_contact_gate_business_rule",
+      "statement_count": 6,
+      "statements_sha256": "5177eb6d9e17cff799297cc2a32308ea52b9ad9044b432c2752003b00a0445b6"
+    },
+    {
+      "version": "20260712000000",
+      "name": "add_lead_import_fingerprint",
+      "statement_count": 6,
+      "statements_sha256": "d7ece76adfb0303c879c59a56dca58ab2afbea6fa57f1885d7beaca5f79ffad0"
+    },
+    {
+      "version": "20260712000001",
+      "name": "replace_meta_ads_source",
+      "statement_count": 6,
+      "statements_sha256": "ee3e83f9f708367b05a3317e1f8662e40aaa646a2aab0e91ec153992e1cac4a3"
+    },
+    {
+      "version": "20260712000002",
+      "name": "complete_contact_milestone",
+      "statement_count": 6,
+      "statements_sha256": "45e5b2e57368d1a9583efae22a1a1d04ffeeeca220db4a58ed0acc938d7e7595"
+    },
+    {
+      "version": "20260714000000",
+      "name": "enforce_first_contact_milestone_gate",
+      "statement_count": 21,
+      "statements_sha256": "f6ff2d7f523991c0b3638fcd46b87597b9e2b36fcc881e1701905e114e60cb18"
+    },
+    {
+      "version": "20260714000001",
+      "name": "normalize_lead_sources",
+      "statement_count": 6,
+      "statements_sha256": "35abe6932a465da1755fc75ef4bae16f61807b2b768aa28631decafa392dff5c"
+    },
+    {
+      "version": "20260714000002",
+      "name": "add_contact_idempotency",
+      "statement_count": 5,
+      "statements_sha256": "ad527aa5cb7aade46b265709a342b522267813c963eccc4644f1045e4ce9c785"
+    },
+    {
+      "version": "20260714000003",
+      "name": "atomic_stage_transition",
+      "statement_count": 7,
+      "statements_sha256": "84ba5342344934a494f57f5632be712b010eb617174a20210c6813bf674eaa70"
+    },
+    {
+      "version": "20260716000000",
+      "name": "fix_import_fingerprint_conflict",
+      "statement_count": 2,
+      "statements_sha256": "83b9029d641ba8a7b92fb7ae07e6f4f80824779495f2497b8538f2cc79b2b90d"
+    },
+    {
+      "version": "20260716000001",
+      "name": "disable_auto_first_contact_milestone",
+      "statement_count": 5,
+      "statements_sha256": "7d440cef96f5e645c290e1e3cbea98aa8390edb40efbf8adfe2d2a818f992cae"
+    },
+    {
+      "version": "20260717000000",
+      "name": "allow_lead_delete_with_first_contact",
+      "statement_count": 1,
+      "statements_sha256": "ca921272a2d602e4fecb7fd831b9155676687f0e981f2cf40e2056558e52af16"
+    },
+    {
+      "version": "20260718000000",
+      "name": "fix_milestone_order_same_timestamp",
+      "statement_count": 1,
+      "statements_sha256": "7eb5b4f7611b146eff9edcf2af464aa6c233627e4241b367599e97be7c4fcd43"
+    },
+    {
+      "version": "20260718010000",
+      "name": "reopen_lead_milestones",
+      "statement_count": 11,
+      "statements_sha256": "1ffc605a70d0d8a11107c7f788ef457c9af40d1501fb1fb58111d2b86f594005"
+    },
+    {
+      "version": "20260718020000",
+      "name": "fix_reopen_milestone_keys",
+      "statement_count": 11,
+      "statements_sha256": "92dad1528ce206059a641d53f162b398064bf5d86543fe8e9ed700f59fe02c30"
+    },
+    {
+      "version": "20260718030000",
+      "name": "allow_open_lead_milestones",
+      "statement_count": 3,
+      "statements_sha256": "1e3576b4460083b425997c6614645dcf1c44f5a88bb4a134b64d9c6d01bc921d"
+    },
+    {
+      "version": "20260719000000",
+      "name": "fix_reopen_fact_consistency",
+      "statement_count": 11,
+      "statements_sha256": "9f24749829940e22670723d71d14db69a49806efc10236edacf75ecb27bcc91a"
+    },
+    {
+      "version": "20260719010000",
+      "name": "reconcile_legacy_reopened_milestones",
+      "statement_count": 4,
+      "statements_sha256": "f790568a73926f33b3a7de5212efdc0c49168715853c6088ae429150538f25ee"
+    },
+    {
+      "version": "20260719020000",
+      "name": "add_leads_project_status",
+      "statement_count": 10,
+      "statements_sha256": "bf95e756ea9d841dbf2d7894a0393a16c48a49edc086710384a878b4a27e1344"
+    },
+    {
+      "version": "20260722233049",
+      "name": "20260723000000_quotation_status_audit_fields",
+      "statement_count": 1,
+      "statements_sha256": "c944f666d6db6f47fc309ccf6b8cd577ee8c304fcb67ae9e1816b7670cf7356a"
+    },
+    {
+      "version": "20260722233115",
+      "name": "20260723090000_add_task_detail_fields",
+      "statement_count": 1,
+      "statements_sha256": "b14ee642182d19a50a2c64ab56ab763025914b02b3a4e3f8cd6785a2ff97d6df"
+    },
+    {
+      "version": "20260725072332",
+      "name": "l0_restore_runtime_atomic_contracts",
+      "statement_count": 1,
+      "statements_sha256": "9f3a9bed361250bd0f5dfa9e9af2b0d6c1fd15a9b8b4fea9dee2df1427e3ad7b"
+    },
+    {
+      "version": "20260805194358",
+      "name": "hotfix_lead_alerts_security_invoker",
+      "statement_count": 1,
+      "statements_sha256": "903c52c1b6eba0b15cc0ef6744bb5f631f6973972c45fe708f1781c0223c17c2"
+    },
+    {
+      "version": "20260805202917",
+      "name": "hotfix_public_definer_acl_search_path",
+      "statement_count": 1,
+      "statements_sha256": "1b8d6bd984864e91d8b6bb4b94e5447e19ec3387e793630283041866d6767f41"
+    }
+  ],
+  "accepted": [
+  {
+    "kind": "non_cli_version",
+    "version": "1780601210",
+    "why": "Production records this pre-existing legacy version outside the fourteen-digit CLI namespace, and this candidate does not claim to apply it. Removing or renumbering the live row would rewrite applied history, so the exception preserves the observed legacy stamp without claiming file equivalence.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "name_mismatch",
+    "version": "20260604000000",
+    "remote_name": "fix_schema",
+    "local_name": "fix_lead_insert_rls",
+    "why": "Production and this candidate retain different names for the same pre-existing version, which this candidate does not claim to apply. Renaming either applied history or the historical local file to manufacture agreement would rewrite evidence, so only the measured name difference is accepted.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "name_mismatch",
+    "version": "20260623021000",
+    "remote_name": "20260623021000_add_no_answer_flag.sql",
+    "local_name": "add_no_answer_flag",
+    "why": "Production and this candidate retain different names for the same pre-existing version, which this candidate does not claim to apply. Renaming either applied history or the historical local file to manufacture agreement would rewrite evidence, so only the measured name difference is accepted.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "name_mismatch",
+    "version": "20260623030000",
+    "remote_name": "20260623030000_crm_v3_stage_to_milestone_mapping.sql",
+    "local_name": "crm_v3_stage_to_milestone_mapping",
+    "why": "Production and this candidate retain different names for the same pre-existing version, which this candidate does not claim to apply. Renaming either applied history or the historical local file to manufacture agreement would rewrite evidence, so only the measured name difference is accepted.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "name_mismatch",
+    "version": "20260623040000",
+    "remote_name": "20260623040000_crm_v3_phase_b_fields.sql",
+    "local_name": "crm_v3_phase_b_fields",
+    "why": "Production and this candidate retain different names for the same pre-existing version, which this candidate does not claim to apply. Renaming either applied history or the historical local file to manufacture agreement would rewrite evidence, so only the measured name difference is accepted.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "name_mismatch",
+    "version": "20260624000000",
+    "remote_name": "20260624000000_next_quote_no_rpc.sql",
+    "local_name": "next_quote_no_rpc",
+    "why": "Production and this candidate retain different names for the same pre-existing version, which this candidate does not claim to apply. Renaming either applied history or the historical local file to manufacture agreement would rewrite evidence, so only the measured name difference is accepted.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "name_mismatch",
+    "version": "20260624000001",
+    "remote_name": "20260624000001_fix_milestone_order.sql",
+    "local_name": "fix_milestone_order",
+    "why": "Production and this candidate retain different names for the same pre-existing version, which this candidate does not claim to apply. Renaming either applied history or the historical local file to manufacture agreement would rewrite evidence, so only the measured name difference is accepted.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "name_mismatch",
+    "version": "20260624000002",
+    "remote_name": "20260624000002_fix_won_lost_migration.sql",
+    "local_name": "fix_won_lost_migration",
+    "why": "Production and this candidate retain different names for the same pre-existing version, which this candidate does not claim to apply. Renaming either applied history or the historical local file to manufacture agreement would rewrite evidence, so only the measured name difference is accepted.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "name_mismatch",
+    "version": "20260624000003",
+    "remote_name": "20260624000003_fix_trg_lead_won.sql",
+    "local_name": "fix_trg_lead_won",
+    "why": "Production and this candidate retain different names for the same pre-existing version, which this candidate does not claim to apply. Renaming either applied history or the historical local file to manufacture agreement would rewrite evidence, so only the measured name difference is accepted.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "remote_only",
+    "version": "20260722233049",
+    "remote_name": "20260723000000_quotation_status_audit_fields",
+    "why": "Production records this pre-existing version and name, while this candidate contains no file under that recorded version and does not claim to apply it. Deleting or renaming the live row would rewrite applied history, so the exception records the remote-only fact without claiming local content equivalence.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "remote_only",
+    "version": "20260722233115",
+    "remote_name": "20260723090000_add_task_detail_fields",
+    "why": "Production records this pre-existing version and name, while this candidate contains no file under that recorded version and does not claim to apply it. Deleting or renaming the live row would rewrite applied history, so the exception records the remote-only fact without claiming local content equivalence.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "remote_only",
+    "version": "20260725072332",
+    "remote_name": "l0_restore_runtime_atomic_contracts",
+    "why": "Production records this pre-existing version and name, while this candidate contains no file under that recorded version and does not claim to apply it. Deleting or renaming the live row would rewrite applied history, so the exception records the remote-only fact without claiming local content equivalence.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "local_absent_remote_before_newest",
+    "version": "20260723000000",
+    "file": "20260723000000_quotation_status_audit_fields.sql",
+    "why": "This historical local file sorts before the captured production head but production does not record its local version, so applying it now would violate the ordered-history boundary. The exception records that pre-existing ordering difference only and does not claim that this file ran under another version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "local_absent_remote_before_newest",
+    "version": "20260723090000",
+    "file": "20260723090000_add_task_detail_fields.sql",
+    "why": "This historical local file sorts before the captured production head but production does not record its local version, so applying it now would violate the ordered-history boundary. The exception records that pre-existing ordering difference only and does not claim that this file ran under another version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "local_absent_remote_before_newest",
+    "version": "20260723110000",
+    "file": "20260723110000_allow_active_admin_lead_assignee.sql",
+    "why": "This historical local file sorts before the captured production head but production does not record its local version, so applying it now would violate the ordered-history boundary. The exception records that pre-existing ordering difference only and does not claim that this file ran under another version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "local_absent_remote_before_newest",
+    "version": "20260723130000",
+    "file": "20260723130000_lock_definer_boundaries.sql",
+    "why": "This historical local file sorts before the captured production head but production does not record its local version, so applying it now would violate the ordered-history boundary. The exception records that pre-existing ordering difference only and does not claim that this file ran under another version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "local_absent_remote_before_newest",
+    "version": "20260723140000",
+    "file": "20260723140000_atomic_lead_reassignment.sql",
+    "why": "This historical local file sorts before the captured production head but production does not record its local version, so applying it now would violate the ordered-history boundary. The exception records that pre-existing ordering difference only and does not claim that this file ran under another version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "local_absent_remote_before_newest",
+    "version": "20260724100000",
+    "file": "20260724100000_fix_transition_lead_stage_definer_search_path.sql",
+    "why": "This historical local file sorts before the captured production head but production does not record its local version, so applying it now would violate the ordered-history boundary. The exception records that pre-existing ordering difference only and does not claim that this file ran under another version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260604000000",
+    "remote_name": "fix_schema",
+    "remote_count": "56",
+    "local_count": "2",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260604000001",
+    "remote_name": "create_kpi_targets",
+    "remote_count": "7",
+    "local_count": "5",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260604000002",
+    "remote_name": "auto_lead_status",
+    "remote_count": "4",
+    "local_count": "4",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260605000000",
+    "remote_name": "newme_crm_v22_complete",
+    "remote_count": "146",
+    "local_count": "147",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260612000003",
+    "remote_name": "activity_tracking",
+    "remote_count": "17",
+    "local_count": "17",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260612000010",
+    "remote_name": "lead_round_robin_assignment",
+    "remote_count": "15",
+    "local_count": "12",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260613000000",
+    "remote_name": "audit_logs",
+    "remote_count": "10",
+    "local_count": "7",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "no_statements",
+    "version": "20260623021000",
+    "remote_name": "20260623021000_add_no_answer_flag.sql",
+    "why": "Production stores an empty statement array for this pre-existing version, so the historical SQL cannot be proven from migration history. This candidate does not claim to apply the version; the exception preserves the explicit evidence gap instead of treating an empty record as content equivalence.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "no_statements",
+    "version": "20260623030000",
+    "remote_name": "20260623030000_crm_v3_stage_to_milestone_mapping.sql",
+    "why": "Production stores an empty statement array for this pre-existing version, so the historical SQL cannot be proven from migration history. This candidate does not claim to apply the version; the exception preserves the explicit evidence gap instead of treating an empty record as content equivalence.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "no_statements",
+    "version": "20260623040000",
+    "remote_name": "20260623040000_crm_v3_phase_b_fields.sql",
+    "why": "Production stores an empty statement array for this pre-existing version, so the historical SQL cannot be proven from migration history. This candidate does not claim to apply the version; the exception preserves the explicit evidence gap instead of treating an empty record as content equivalence.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "no_statements",
+    "version": "20260624000000",
+    "remote_name": "20260624000000_next_quote_no_rpc.sql",
+    "why": "Production stores an empty statement array for this pre-existing version, so the historical SQL cannot be proven from migration history. This candidate does not claim to apply the version; the exception preserves the explicit evidence gap instead of treating an empty record as content equivalence.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "no_statements",
+    "version": "20260624000001",
+    "remote_name": "20260624000001_fix_milestone_order.sql",
+    "why": "Production stores an empty statement array for this pre-existing version, so the historical SQL cannot be proven from migration history. This candidate does not claim to apply the version; the exception preserves the explicit evidence gap instead of treating an empty record as content equivalence.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "no_statements",
+    "version": "20260624000002",
+    "remote_name": "20260624000002_fix_won_lost_migration.sql",
+    "why": "Production stores an empty statement array for this pre-existing version, so the historical SQL cannot be proven from migration history. This candidate does not claim to apply the version; the exception preserves the explicit evidence gap instead of treating an empty record as content equivalence.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "no_statements",
+    "version": "20260624000003",
+    "remote_name": "20260624000003_fix_trg_lead_won.sql",
+    "why": "Production stores an empty statement array for this pre-existing version, so the historical SQL cannot be proven from migration history. This candidate does not claim to apply the version; the exception preserves the explicit evidence gap instead of treating an empty record as content equivalence.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260630120000",
+    "remote_name": "profiles_add_email",
+    "remote_count": "7",
+    "local_count": "7",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260701000000",
+    "remote_name": "non_core_tables_rls_fix",
+    "remote_count": "107",
+    "local_count": "109",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260701130000",
+    "remote_name": "p0_1_lead_detail_fk_and_idx",
+    "remote_count": "18",
+    "local_count": "17",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260706000003",
+    "remote_name": "quality_checked_event_check",
+    "remote_count": "2",
+    "local_count": "5",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260708000000",
+    "remote_name": "stage_sequential_gate",
+    "remote_count": "3",
+    "local_count": "3",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260712000001",
+    "remote_name": "replace_meta_ads_source",
+    "remote_count": "6",
+    "local_count": "6",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260712000002",
+    "remote_name": "complete_contact_milestone",
+    "remote_count": "6",
+    "local_count": "6",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260805194358",
+    "remote_name": "hotfix_lead_alerts_security_invoker",
+    "remote_count": "1",
+    "local_count": "3",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  },
+  {
+    "kind": "content_not_locally_reproducible",
+    "version": "20260805202917",
+    "remote_name": "hotfix_public_definer_acl_search_path",
+    "remote_count": "1",
+    "local_count": "72",
+    "why": "The production row predates this candidate and its measured statement count or fingerprint differs from the current historical file. Editing applied history or the file to manufacture equality is forbidden; this exception explicitly records that content equivalence is not demonstrated for this old, unclaimed version.",
+    "evidence": "Authenticated read-only production capture 2026-08-14T15:20:48.391Z, project vfopmpxlhwzpxqegayew, 100-row baseline rows_sha256 82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea; the current gate re-matches this exact observation against the captured row and current local files on every run."
+  }
+]
 }

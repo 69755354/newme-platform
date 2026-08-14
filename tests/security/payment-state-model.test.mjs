@@ -56,6 +56,7 @@ const TYPES = "src/types/payments.ts";
 const LIST_ROUTE = "src/app/api/payments/list/route.ts";
 const PAGE = "src/app/(dashboard)/payments/page.tsx";
 const ACTIONS = "src/app/actions/payments.ts";
+const HELPER = "src/lib/request-auth-context.ts";
 const VOID_ROUTE = "src/app/api/payments/[id]/void/route.ts";
 const ROUND4 = "supabase/migrations/20260817000000_l0_round4_money_and_business_integrity.sql";
 
@@ -395,7 +396,15 @@ test("the list route's response is typed against the declaration the page import
 test("the money list is not cached at any layer", () => {
   const route = code(read(LIST_ROUTE));
   assert.match(route, /export const dynamic = "force-dynamic"/);
-  assert.match(route, /no-store/);
+  // R5 replaced this route's own `Cache-Control` literal with the shared helper, so
+  // the assertion follows the delegation rather than the string: the route has to
+  // call it on the responses that carry payments, and the helper has to be what
+  // sends no-store. Asserting the literal here is what let six routes each keep a
+  // shorter private copy of the header.
+  assert.match(route, /import \{ applyPrivateNoStore \} from "@\/lib\/request-auth-context"/);
+  assert.match(route, /return applyPrivateNoStore\(NextResponse\.json\(empty\)\)/);
+  assert.match(route, /return applyPrivateNoStore\(NextResponse\.json\(body\)\)/);
+  assert.match(read(HELPER), /private, no-store, max-age=0, must-revalidate/);
   assert.doesNotMatch(route, /force-static|revalidate\s*=/);
   // And the client asks for a fresh copy, because every write below re-fetches.
   assert.match(code(read(PAGE)), /fetch\("\/api\/payments\/list", \{ cache: "no-store" \}\)/);

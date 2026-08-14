@@ -92,19 +92,24 @@ test("every required context is a ci.yml job that a pull request can actually ru
   }
 });
 
-test("the dispatch-only taskboard job is required at the deploy boundary and only there", () => {
+test("predeploy and release-final taskboard jobs are distinct boundaries", () => {
   const contexts = PROTECTION.protection.required_status_checks.contexts;
-  const taskboardJob = "Release-final taskboard completion";
+  const finalJob = "Release-final taskboard completion";
+  const predeployJob = "Predeploy taskboard readiness";
 
   assert.match(
-    JOBS.get(taskboardJob) ?? "",
+    JOBS.get(finalJob) ?? "",
     /workflow_dispatch/,
-    "the taskboard job must stay dispatch-gated, or its presence in a run stops proving release_final",
+    "the release-final taskboard job must stay dispatch-gated",
   );
-  assert.ok(!contexts.includes(taskboardJob), "a dispatch-only job as a required context deadlocks pull requests");
+  assert.ok(!contexts.includes(finalJob), "a dispatch-only final job as a required context deadlocks pull requests");
   assert.ok(
-    DEPLOY_MANIFEST.required_jobs.some((job) => job.name === taskboardJob),
-    "the deploy manifest must still require it, or an incomplete taskboard can reach production",
+    !DEPLOY_MANIFEST.required_jobs.some((job) => job.name === finalJob),
+    "postdeploy completion cannot gate the deployment that creates its evidence",
+  );
+  assert.ok(
+    DEPLOY_MANIFEST.required_jobs.some((job) => job.name === predeployJob),
+    "the deploy manifest must require the predeploy taskboard milestone",
   );
 
   // And the other direction: everything required of a pull request is also

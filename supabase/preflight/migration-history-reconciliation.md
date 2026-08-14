@@ -1,8 +1,10 @@
 # Production migration-history reconciliation
 
-Status: **NOT CAPTURED.** No production capture has been taken, no baseline is
-committed, and nothing here has been run against production. This document is the
-procedure and the rules; it is not evidence that anything was verified.
+Status: **CAPTURED AND RECONCILED.** The committed fixture contains a redacted,
+authenticated, read-only 100-row production capture taken on 2026-08-14. Its
+row-count and length-delimited digest are verified by the repository gate; the
+accepted mappings remain explicit and are re-matched on every run. No statement
+text, business data, identity, connection string, or credential is stored.
 
 Round-3 finding P1-11, verbatim:
 
@@ -278,11 +280,12 @@ allowance is what lets the deploy finish, not a substitute for the capture.
 
 ## 4 · The procedure
 
-Steps 2 and 3 touch production. They are read-only, and they are still authorised
-actions: no code round performs them.
+The initial execution of steps 2 through 6 is complete for the committed fixture.
+They remain the authorised read-only recapture procedure whenever production
+history changes; ordinary code checks do not perform them.
 
-1. Confirm the release contains this document, the gate, the capture script and an
-   uncaptured `supabase/migration-history-reconciliation.json`.
+1. Confirm the release contains this document, the gate, the capture script and
+   the captured `supabase/migration-history-reconciliation.json`.
 
 2. **[AUTHORISED ACTION] Capture the baseline.** From the release, on the deploy
    host, as the user that can read the root-owned URL file:
@@ -331,9 +334,9 @@ actions: no code round performs them.
 
 The deploy wrapper runs the same gate with the same fixture at
 `infra/systemd/newme-deploy.sh`, and a non-zero exit blocks the deployment with
-`production migration history does not match the release being deployed`. Until
-step 5 has been completed for real, that gate blocks the deploy. That is the
-correct state: production content equivalence has not been demonstrated.
+`production migration history does not match the release being deployed`. The
+committed capture completed step 5; any later production drift or unmatched
+post-capture row makes the same gate fail closed and requires this procedure again.
 
 ## 5 · Read-only queries an operator may run directly
 

@@ -562,8 +562,7 @@ begin
            name  = case when customers.name is null or customers.name in ('', 'Unknown')
                         then v_name else customers.name end,
            phone = coalesce(customers.phone, v_lead.phone),
-           email = coalesce(customers.email, v_lead.email),
-           updated_at = now()
+           email = coalesce(customers.email, v_lead.email)
      where id = v_customer_id;
   else
     -- One customer per lead. The lookup is by lead_id rather than by name so a

@@ -1,6 +1,7 @@
 // RBAC: user (authenticated)
 import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
+import { applyPrivateNoStore } from "@/lib/request-auth-context"
 import { logger, genReqId } from "@/lib/logger"
 import type { PaymentListRow, PaymentListResponse } from "@/types/payments"
 
@@ -58,8 +59,6 @@ const PAYMENT_SELECT =
   "id, contract_id, amount, payment_date, payment_method, reference_no, notes, confirmed, confirmed_at, confirmed_by, voided_at, voided_by, void_reason, created_by, created_at, contracts(contract_no, party_a_name), payment_allocations(plan_id, amount_allocated)"
 
 const CONTRACT_COLUMNS = "id, contract_no, contract_amount, status, party_a_name, sales_id"
-
-const NO_STORE = { "Cache-Control": "private, no-store, max-age=0, must-revalidate" }
 
 export async function GET(request: Request) {
   const request_id = genReqId()
@@ -120,7 +119,7 @@ export async function GET(request: Request) {
   // empty list, which PostgREST answers with every row rather than none.
   if (isSales && ownedContracts.length === 0) {
     const empty: PaymentListResponse = { payments: [], contracts: [], role, userId }
-    return NextResponse.json(empty, { headers: NO_STORE })
+    return applyPrivateNoStore(NextResponse.json(empty))
   }
 
   // payment_allocations is embedded rather than fetched by id list: the page is
@@ -178,5 +177,5 @@ export async function GET(request: Request) {
     : ownedContracts
 
   const body: PaymentListResponse = { payments, contracts, role, userId }
-  return NextResponse.json(body, { headers: NO_STORE })
+  return applyPrivateNoStore(NextResponse.json(body))
 }

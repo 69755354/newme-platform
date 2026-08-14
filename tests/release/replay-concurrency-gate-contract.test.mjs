@@ -62,9 +62,13 @@ test("both replay modes run the concurrency gate, with opposite expectations", (
   assert.match(branch, /EXPECT=consistent bash "\$CONCURRENCY_GATE"/);
   assert.match(control, /EXPECT=lost bash "\$CONCURRENCY_GATE"/);
 
-  // Neither mode may run the other's expectation.
-  assert.doesNotMatch(branch, /EXPECT=lost/);
-  assert.doesNotMatch(control, /EXPECT=consistent/);
+  // Neither mode may run the other's expectation — of THIS gate. Scoped to the
+  // gate variable rather than to the word: the KPI period-lock gate
+  // (19_concurrency_kpi_period.sh) names its own control direction `lost` too, and
+  // that one runs in branch mode by design, because the un-remediated floor cannot
+  // reproduce it (see KPI_PERIOD_GATE in the runner).
+  assert.doesNotMatch(branch, /EXPECT=lost bash "\$CONCURRENCY_GATE"/);
+  assert.doesNotMatch(control, /EXPECT=consistent bash "\$CONCURRENCY_GATE"/);
 
   // And both must be gating, not informational: the invocation itself has to be
   // followed by `|| fail`, so its exit status cannot be swallowed.
@@ -84,8 +88,11 @@ test("both replay modes run the concurrency gate, with opposite expectations", (
   );
 });
 
-test("MODE=history does not run it, because there are no migrations to test", () => {
-  assert.doesNotMatch(modeBody("history"), /CONCURRENCY_GATE/);
+test("MODE=history verifies its baseline then reaches the shared positive gate path", () => {
+  const history = modeBody("history");
+  assert.match(history, /HISTORY_BASELINE_ACTIVE=1/);
+  assert.doesNotMatch(history, /exit 0/);
+  assert.match(modeBody("branch"), /EXPECT=consistent bash "\$CONCURRENCY_GATE"/);
 });
 
 test("EXPECT is mandatory and closed to anything but the two verdicts", () => {

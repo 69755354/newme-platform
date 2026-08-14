@@ -245,7 +245,12 @@ fail money-transition-graph-makes-completed-terminal
 fail money-transition-graph-makes-terminated-and-superseded-terminal
 fail money-transition-graph-refuses-a-null-status
 fail money-transition-graph-still-permits-the-working-lifecycle
-fail money-transition-trigger-is-a-before-row-update-trigger
+fail money-transition-trigger-is-an-unconditional-before-row-update-trigger
+fail money-guard-triggers-are-pinned-by-full-identity
+fail money-kpi-rpcs-are-pinned-by-full-identity
+fail money-transition-guard-fires-when-the-writer-never-names-status
+fail money-transition-guard-left-the-terminal-contract-terminal
+pass money-transition-normalizer-fixture-was-rolled-back
 fail money-set-contract-status-completes-an-active-contract-for-a-manager
 fail money-revoke-contract-refuses-a-completed-contract
 fail money-set-contract-status-refuses-to-leave-a-terminal-status
@@ -312,6 +317,7 @@ fail a1-entry-guard-is-security-definer-with-a-pinned-search-path
 fail a1-every-definer-routine-asserts-the-session-at-entry
 fail a1-entry-boundary-covered-a-plausible-number-of-routines
 fail a1-entry-boundary-exemptions-each-carry-a-reason
+fail a1-get-my-role-is-an-rls-safe-exemption
 fail a1-entry-boundary-exemption-list-is-short
 fail a1-entry-boundary-exemption-table-is-unreachable-by-end-user-roles
 pass a1-trigger-functions-are-off-the-end-user-rpc-surface
@@ -399,6 +405,26 @@ fail b6-the-conversion-records-exactly-one-won-event
 fail b6-the-conversion-puts-that-customer-on-the-project-and-the-contract
 fail b5-a-conversion-retry-does-not-add-the-amount-again
 fail b5-a-retry-asking-for-a-different-schedule-is-refused
+
+# R4 · 20260817170000_b5_retry_reaches_the_same_state.sql. All five are
+# load-bearing: the floor has no convert_quotation_to_contract() at all, so the
+# probe reports the SQLSTATE of a missing function (recorded as
+# ASSERT_UNMEASURABLE [42883] in the run) instead of the three repaired rows and
+# the refusal it is looking for.
+#
+# That is the weaker of the two controls, because "the floor has no function" would
+# also be reported by five assertions that measure nothing. So the same five were
+# run against the release with only 20260817170000 withheld — floor, the other
+# nineteen migrations, these fixtures, the same nineteen re-applied — and there the
+# ledger ends total=342 passed=336 failed=6 with 0 ASSERT_UNMEASURABLE: exactly
+# these five fail, for the finding itself. The retry returns quotation_status
+# 'accepted', project_id null and finalized [], repairs none of the three rows, and
+# answers sqlstate 00000 to a retry against a lead marked 'lost'.
+fail r4-a-retry-restores-the-converted-quotation-status
+fail r4-a-retry-marks-the-lead-won-again
+fail r4-a-retry-backfills-the-contract-customer
+fail r4-a-retry-returns-the-project-and-reports-what-it-repaired
+fail r4-a-retry-refuses-a-lead-given-a-different-terminal-status
 fail b10-a-conversion-schedule-must-equal-the-quotation-exactly
 fail b7-saving-a-period-preserves-what-was-collected
 fail b7-a-period-cannot-be-saved-in-a-way-that-drops-collected-amounts

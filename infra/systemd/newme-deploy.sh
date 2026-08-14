@@ -44,15 +44,133 @@ require_node() {
   }
 }
 
+# Completion is a two-commit claim. The immutable application release stays at
+# FINALIZE_RELEASE_SHA; a later canonical-main commit at FINALIZE_CLOSURE_SHA may
+# close postdeploy TASKBOARD rows, but it may change nothing else. This function
+# re-measures that relationship from the root-owned mirror and then requires the
+# release-final GitHub job to have succeeded at the closure SHA. It runs in a
+# subshell so token/config cleanup cannot be bypassed by an early return.
+verify_release_closure_and_final_ci() (
+  set -Eeuo pipefail
+  local mirror=/opt/newme/repository.git
+  local origin_https=https://github.com/69755354/newme-platform.git
+  local origin_ssh=git@github.com:69755354/newme-platform.git
+  local token_file=/etc/newme/github-actions-read.token
+  local checker="$FINALIZE_TARGET/scripts/check-release-closure.mjs"
+  local main_sha github_token
+  local curl_config="" run_file="" jobs_file="" manifest_file=""
+
+  cleanup_finalize_ci_files() {
+    local file
+    for file in "$curl_config" "$run_file" "$jobs_file" "$manifest_file"; do
+      [ -z "$file" ] || rm -f -- "$file" || true
+    done
+  }
+  trap cleanup_finalize_ci_files EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  [ -d "$mirror" ] || { echo "root-owned release mirror is missing" >&2; return 65; }
+  [ "$(stat -c '%U:%G' "$mirror")" = root:root ] || { echo "release mirror ownership is invalid" >&2; return 65; }
+  case "$(git --git-dir="$mirror" remote get-url origin)" in
+    "$origin_https"|"$origin_ssh") ;;
+    *) echo "release mirror origin is invalid" >&2; return 65 ;;
+  esac
+
+  git --git-dir="$mirror" fetch --quiet --prune origin '+refs/heads/main:refs/remotes/origin/main' || return 65
+  main_sha="$(git --git-dir="$mirror" rev-parse refs/remotes/origin/main)" || return 65
+  [ "$FINALIZE_CLOSURE_SHA" = "$main_sha" ] || {
+    echo "closure SHA must equal canonical main" >&2
+    return 65
+  }
+  [ -f "$checker" ] && [ ! -L "$checker" ] || {
+    echo "the deployed release carries no release-closure checker" >&2
+    return 65
+  }
+  "$NODE_BIN" "$checker" \
+    --release-sha "$FINALIZE_RELEASE_SHA" \
+    --closure-sha "$FINALIZE_CLOSURE_SHA" \
+    --repo "$mirror" || return 65
+
+  [ -f "$token_file" ] && [ ! -L "$token_file" ] || {
+    echo "root-owned GitHub Actions read token is missing" >&2
+    return 65
+  }
+  [ "$(stat -c '%U:%G' "$token_file")" = root:root ] || {
+    echo "GitHub Actions read token ownership is invalid" >&2
+    return 65
+  }
+  case "$(stat -c '%a' "$token_file")" in
+    400|600) ;;
+    *) echo "GitHub Actions read token mode must be 0400 or 0600" >&2; return 65 ;;
+  esac
+  IFS= read -r github_token < "$token_file" || true
+  [[ "$github_token" =~ ^[A-Za-z0-9_]{20,512}$ ]] || {
+    echo "GitHub Actions read token format is invalid" >&2
+    return 65
+  }
+
+  curl_config="$(mktemp /run/newme-finalize-github-config.XXXXXX)" || return 65
+  run_file="$(mktemp /run/newme-finalize-run.XXXXXX)" || return 65
+  jobs_file="$(mktemp /run/newme-finalize-jobs.XXXXXX)" || return 65
+  manifest_file="$(mktemp /run/newme-finalize-jobs-manifest.XXXXXX)" || return 65
+  chmod 0600 "$curl_config" "$run_file" "$jobs_file" "$manifest_file" || return 65
+  printf 'header = "Authorization: Bearer %s"\n' "$github_token" > "$curl_config" || return 65
+  unset github_token
+
+  curl --fail --silent --show-error --max-time 15 \
+    --config "$curl_config" \
+    -H 'Accept: application/vnd.github+json' \
+    -o "$run_file" \
+    "https://api.github.com/repos/69755354/newme-platform/actions/runs/$FINALIZE_RUN_ID" || return 65
+  curl --fail --silent --show-error --max-time 20 \
+    --config "$curl_config" \
+    -H 'Accept: application/vnd.github+json' \
+    -o "$jobs_file" \
+    "https://api.github.com/repos/69755354/newme-platform/actions/runs/$FINALIZE_RUN_ID/jobs?per_page=100&filter=latest" || return 65
+  git --git-dir="$mirror" show \
+    "$FINALIZE_CLOSURE_SHA:infra/release/final-required-jobs.json" > "$manifest_file" || {
+    echo "closure SHA carries no final-required-jobs manifest" >&2
+    return 65
+  }
+
+  "$NODE_BIN" "$checker" \
+    --release-sha "$FINALIZE_RELEASE_SHA" \
+    --closure-sha "$FINALIZE_CLOSURE_SHA" \
+    --repo "$mirror" \
+    --run-id "$FINALIZE_RUN_ID" \
+    --run-json-file "$run_file" \
+    --jobs-json-file "$jobs_file" \
+    --required-jobs-file "$manifest_file"
+)
+
 if [ "${1:-}" = "finalize" ]; then
-  FINALIZE_SHA=${2:-}
-  UAT_STATUS=${3:-}
-  UAT_ACTOR=${4:-}
-  UAT_FIXTURE_IDS=${5:-}
-  FIXTURE_CLEANUP_STATUS=${6:-}
-  if [ "$#" -ne 6 ] || ! [[ "$FINALIZE_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+  FINALIZE_RELEASE_SHA=${2:-}
+  FINALIZE_CLOSURE_SHA=""
+  FINALIZE_RUN_ID=""
+  if [ "$#" -eq 8 ] && [ "${5:-}" = pass ]; then
+    FINALIZE_CLOSURE_SHA=${3:-}
+    FINALIZE_RUN_ID=${4:-}
+    UAT_STATUS=${5:-}
+    UAT_ACTOR=${6:-}
+    UAT_FIXTURE_IDS=${7:-}
+    FIXTURE_CLEANUP_STATUS=${8:-}
+  elif [ "$#" -eq 6 ] && [ "${3:-}" = fail ]; then
+    UAT_STATUS=${3:-}
+    UAT_ACTOR=${4:-}
+    UAT_FIXTURE_IDS=${5:-}
+    FIXTURE_CLEANUP_STATUS=${6:-}
+  else
+    echo "usage: newme-deploy finalize <release-sha> <closure-sha> <successful-final-run-id> pass <uat-actor-uuid> <fixture-uuid-list> <not_required|archived_verified|removed_verified>" >&2
+    echo "   or: newme-deploy finalize <release-sha> fail <uat-actor-uuid> <fixture-uuid-list> <not_required|archived_verified|removed_verified>" >&2
+    exit 64
+  fi
+  FINALIZE_SHA=$FINALIZE_RELEASE_SHA
+  if ! [[ "$FINALIZE_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+    { [ "$UAT_STATUS" = pass ] && { ! [[ "$FINALIZE_CLOSURE_SHA" =~ ^[0-9a-f]{40}$ ]] || ! [[ "$FINALIZE_RUN_ID" =~ ^[1-9][0-9]*$ ]]; }; } ||
     ! [[ "$UAT_ACTOR" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
-    echo "usage: newme-deploy finalize <current-sha> <pass|fail> <uat-actor-uuid> <fixture-uuid-list> <not_required|archived_verified|removed_verified>" >&2
+    echo "finalize arguments are invalid" >&2
     exit 64
   fi
   case "$UAT_STATUS" in pass|fail) ;; *) exit 64 ;; esac
@@ -169,6 +287,10 @@ PY
   # uat_failed and is never gated: it does not claim the release is live.
   if [ "$UAT_STATUS" = pass ]; then
     require_node || exit 65
+    verify_release_closure_and_final_ci || {
+      echo "release closure or final GitHub Actions evidence is not verified" >&2
+      exit 65
+    }
     validate_migration_db_url_file || exit 65
     # No bypass when the gate is absent. A tree that carries this wrapper carries the
     # gate — install-systemd-assets.sh installs the wrapper from the same tree, and
@@ -191,15 +313,23 @@ PY
   UAT_ACTOR="$UAT_ACTOR" \
   UAT_FIXTURE_IDS="$UAT_FIXTURE_IDS" \
   FIXTURE_CLEANUP_STATUS="$FIXTURE_CLEANUP_STATUS" \
+  RELEASE_CLOSURE_SHA="$FINALIZE_CLOSURE_SHA" \
+  RELEASE_FINAL_RUN_ID="$FINALIZE_RUN_ID" \
     bash "$FINALIZE_TARGET/scripts/finalize-deploy-evidence.sh" "$EVIDENCE_FILE"
   sync -f "$EVIDENCE_FILE"
   sync -f "$FINALIZE_TARGET/.audit"
   if [ "$UAT_STATUS" = pass ]; then
-    echo "finalized SHA=$FINALIZE_SHA evidence=$EVIDENCE_FILE status=complete"
+    echo "finalized release=$FINALIZE_SHA closure=$FINALIZE_CLOSURE_SHA final_run=$FINALIZE_RUN_ID evidence=$EVIDENCE_FILE status=complete"
     exit 0
   fi
   echo "finalized SHA=$FINALIZE_SHA evidence=$EVIDENCE_FILE status=uat_failed" >&2
   exit 1
+fi
+
+BOOTSTRAP_ONLY=0
+if [ "${1:-}" = bootstrap ]; then
+  BOOTSTRAP_ONLY=1
+  shift
 fi
 
 SHA=${1:-}
@@ -209,6 +339,7 @@ MIGRATION_IDS=${4:-}
 ROLLBACK_SHA=${5:-}
 if [ "$#" -ne 5 ] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || ! [[ "$ROLLBACK_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "usage: newme-deploy <main-sha> <successful-run-id> <not_required|applied_verified> <migration-ids> <rollback-sha>" >&2
+  echo "   or: newme-deploy bootstrap <main-sha> <successful-run-id> <not_required|applied_verified> <migration-ids> <rollback-sha>" >&2
   exit 64
 fi
 case "$MIGRATION_STATUS" in
@@ -388,15 +519,10 @@ if len(set(required_names)) != len(required_names):
 # ---------------------------------------------------------------------------
 # The run
 # ---------------------------------------------------------------------------
-# The reviewed revision required event == "push" on main. That is not merely
-# narrow, it is unsatisfiable together with the required set below: the
-# "Release-final taskboard completion" job is gated on
-#     if: github.event_name == "workflow_dispatch" && inputs.release_final
-# so no push run can ever contain it. The comment there also claimed a push run
-# has a larger job set than a pull_request run, which was the opposite of true.
-#
-# The runs API does not expose workflow_dispatch inputs, so release_final cannot
-# be read directly. The presence of that job in the job list IS the proof.
+# The release candidate is measured on a manual main dispatch so the required
+# predeploy job set is explicit. Release-final is a later, separate dispatch:
+# postdeploy rows cannot be made a precondition of the deployment that produces
+# their evidence.
 if str(run.get("id")) != expected_run:
     refuse("the run is not the one named in the claim")
 if run.get("head_sha") != expected_sha:
@@ -448,7 +574,7 @@ missing = [name for name in required_names if name not in seen]
 if missing:
     refuse("required job(s) absent from the run: %s" % ", ".join(missing))
 ' "$SHA" "$RUN_ID" "$RUN_JSON" "$JOBS_JSON" "$REQUIRED_JOBS_JSON" || {
-  echo "GitHub Actions evidence is not a release-final main dispatch of ci with every required job green" >&2
+  echo "GitHub Actions evidence is not a main release-candidate dispatch of ci with every predeploy job green" >&2
   exit 65
 }
 CI_RUN_URL="https://github.com/69755354/newme-platform/actions/runs/$RUN_ID"
@@ -654,14 +780,25 @@ chown -R root:root "$WORKTREE"
 # deployment. Neither can be satisfied by a claim on the command line.
 require_node || exit 65
 
-# TASKBOARD completion. The required GitHub job proves it for the dispatched SHA;
-# this proves it for the tree that is actually about to be deployed, using the
-# checker committed to that same tree. AGENTS.md makes an unfinished board a
-# deploy blocker, and until this revision nothing in the canonical path enforced
-# that — scripts/deploy.sh Step 0 did, and scripts/deploy.sh is not the canonical
-# path.
-"$NODE_BIN" "$WORKTREE/scripts/check-taskboard.mjs" --require-complete || {
-  echo "TASKBOARD.md at canonical main is not complete; deployment is blocked" >&2
+# TASKBOARD predeploy readiness. The required GitHub job proves this same
+# milestone for the dispatched SHA; this proves it again for the tree
+# that is actually about to be deployed, using the checker committed to that same
+# tree. AGENTS.md makes an unfinished board a deploy blocker, and until this
+# revision nothing in the canonical path enforced that — scripts/deploy.sh Step 0
+# did, and scripts/deploy.sh is not the canonical path.
+#
+# Round-4 C4-4 · why the scope and not --require-complete. Most rows on that board
+# close only when production has run the change; they say 待部署. Requiring every
+# row here meant requiring the outcome of the deployment as a precondition of the
+# deployment, so this gate could never be green — and an unsatisfiable gate is one
+# an operator learns to route around, which is exactly how the reviewed wrapper
+# came to record a gate it had not really checked. The board now declares each
+# unfinished row into predeploy_ready / postdeploy_acceptance and this call
+# requires the first. Nothing is loosened: an undeclared unfinished row is a FAIL
+# in the checker and lands in predeploy_ready anyway. A later TASKBOARD-only
+# closure SHA is verified independently before release finalization.
+"$NODE_BIN" "$WORKTREE/scripts/check-taskboard.mjs" --require-scope=predeploy_ready || {
+  echo "TASKBOARD.md at canonical main is not predeploy-ready; deployment is blocked" >&2
   exit 65
 }
 
@@ -678,6 +815,31 @@ require_node || exit 65
 # list does not explicitly account for are all refusals — including on the first
 # deploy, where the baseline is uncaptured and therefore explains nothing. That is
 # deliberate: see supabase/preflight/migration-history-reconciliation.md.
+
+# The migration set is DERIVED, not accepted (round-4 C4-1). Until this revision
+# `$MIGRATION_IDS` — an operator's comma-separated list — was passed verbatim to
+# --require-applied, and that gate re-measures every id it is handed. It cannot
+# re-measure the ones it was not handed, so the claim was also the scope: measured
+# against this release's manifest with the history gate's own judgement,
+# `applied_verified 20260806000000` produced ZERO findings with sixteen of the
+# seventeen required migrations unapplied, and a history that had additionally
+# applied the deferred contract phase before the switch produced zero findings too.
+#
+# So the sets come out of $WORKTREE/infra/release/release-manifest.json — the
+# manifest of the SHA being deployed, checked against that SHA's own
+# supabase/migrations/ first, because a derived set is only as good as the manifest
+# it is derived from — and the operator's list has to equal the required one exactly.
+# What is printed is two id lists and a count; there is no database in this gate.
+RELEASE_CLAIM="$(cd "$WORKTREE" && "$NODE_BIN" scripts/check-release-manifest.mjs \
+  --verify-claim --status "$MIGRATION_STATUS" --ids "$MIGRATION_IDS")" || {
+  printf '%s\n' "$RELEASE_CLAIM"
+  echo "the migration claim on the command line is not the set this release's manifest requires" >&2
+  exit 65
+}
+printf '%s\n' "$RELEASE_CLAIM"
+REQUIRED_IDS="$(printf '%s\n' "$RELEASE_CLAIM" | sed -n 's/^required_for_app=//p')"
+DEFERRED_IDS="$(printf '%s\n' "$RELEASE_CLAIM" | sed -n 's/^deferred_contract=//p')"
+
 validate_migration_db_url_file || exit 65
 MIGRATION_HISTORY_ARGS=(
   "$WORKTREE/scripts/verify-remote-migration-history.mjs"
@@ -687,11 +849,47 @@ MIGRATION_HISTORY_ARGS=(
   --history-fixture "$WORKTREE/supabase/migration-history-reconciliation.json"
 )
 case "$MIGRATION_STATUS" in
-  applied_verified) MIGRATION_HISTORY_ARGS+=(--require-applied "$MIGRATION_IDS") ;;
+  applied_verified)
+    # The derived list, never $MIGRATION_IDS: the two are equal by the gate above,
+    # and using the derived one means a future change to that gate cannot leave this
+    # line quietly enforcing the operator's scope again.
+    [[ "$REQUIRED_IDS" =~ ^[0-9]{14}(,[0-9]{14})*$ ]] || {
+      echo "the release manifest yielded no required migration set to verify" >&2
+      exit 65
+    }
+    MIGRATION_HISTORY_ARGS+=(--require-applied "$REQUIRED_IDS")
+    # The other half of the phase split, as a fact about production rather than an
+    # ordering rule inside the manifest: the contract phase must not be applied yet.
+    if [ -n "$DEFERRED_IDS" ]; then
+      [[ "$DEFERRED_IDS" =~ ^[0-9]{14}(,[0-9]{14})*$ ]] || {
+        echo "the release manifest's deferred contract set is not a list of migration versions" >&2
+        exit 65
+      }
+      MIGRATION_HISTORY_ARGS+=(--require-unapplied "$DEFERRED_IDS")
+    fi
+    ;;
   not_required)     MIGRATION_HISTORY_ARGS+=(--require-no-pending) ;;
 esac
 "$NODE_BIN" "${MIGRATION_HISTORY_ARGS[@]}" || {
   echo "production migration history does not match the release being deployed" >&2
+  exit 65
+}
+
+# Hand-run companions (round-4 review C4-5). The gate above covers what production
+# recorded; rollback_*.sql and recontract_*.sql are never recorded, because they
+# are never applied by the CLI and never reach supabase_migrations.schema_migrations
+# — so no gate above this line says anything about the scripts the operator will
+# execute against production if this release has to be taken back out. Two of the
+# five are executed by no CI job either, because they cover no migration new on
+# this branch; measured on PG 17.10, a privilege escalation appended to the one CI
+# does execute left the replay harness at rc=0 with every post-rollback assertion
+# passing.
+#
+# Both sides of this check come from $WORKTREE — the root-owned worktree at the
+# canonical main SHA — so what it proves is "the companions at this SHA are the
+# companions this SHA declares", the same binding as the artifacts above.
+(cd "$WORKTREE" && "$NODE_BIN" scripts/check-release-manifest.mjs --verify-companions) || {
+  echo "the hand-run rollback/recontract companions do not match the release manifest at this SHA" >&2
   exit 65
 }
 
@@ -715,8 +913,10 @@ event=$CI_EVENT
 run=$RUN_ID
 gate=canonical-main-verified
 gate=github-required-jobs-green
-gate=taskboard-complete
+gate=taskboard-predeploy-ready
+gate=release-claim-derived
 gate=remote-migration-history
+gate=release-companions-verified
 EOF
 sync -f "$STATE_ROOT"
 
@@ -728,6 +928,37 @@ NEWME_NODE_BIN="$NODE_BIN" \
   bash "$WORKTREE/scripts/install-systemd-assets.sh"
 remove_gate_record
 load_asset_backup_from_record || { echo "installer did not return a valid asset backup" >&2; exit 65; }
+
+# Bootstrap is the first control-plane installation only. It deliberately runs
+# through every release-candidate gate above and lets the candidate wrapper write
+# the one-use installer gate record; there is no operator-authored gate label or
+# shortcut around exact CI, taskboard, migration history, or companions.
+# The installer opens a durable asset transaction before mutation. Health is
+# checked while that rollback record still exists; only then may the candidate
+# tree's verifier finalize the transaction. Any interruption or failed health
+# check reaches cleanup(), which restores the recorded asset snapshot.
+if [ "$BOOTSTRAP_ONLY" -eq 1 ]; then
+  systemctl is-active --quiet newme-platform || {
+    echo "bootstrap installed the control plane but the application service is not active" >&2
+    exit 65
+  }
+  curl -fsS --max-time 10 http://127.0.0.1:3001/api/health >/dev/null || {
+    echo "bootstrap installed the control plane but application health verification failed" >&2
+    exit 65
+  }
+  NEWME_ASSET_FINALIZE_CONFIRM=bootstrap \
+    bash "$WORKTREE/scripts/install-systemd-assets.sh" finalize || {
+      echo "bootstrap control-plane transaction could not be finalized" >&2
+      exit 65
+    }
+  if [ -e "$PENDING_ASSET_RECORD" ] || [ -L "$PENDING_ASSET_RECORD" ]; then
+    echo "bootstrap finalizer left an unresolved asset transaction" >&2
+    exit 66
+  fi
+  echo "bootstrapped control-plane release=$SHA run=$RUN_ID systemd_asset_transaction=none"
+  exit 0
+fi
+
 DEPLOY_STATE_RECORD="$(mktemp "$STATE_ROOT/deploy-state.XXXXXX")"
 chmod 0600 "$DEPLOY_STATE_RECORD"
 
@@ -748,7 +979,7 @@ CI_CONCLUSION="$CI_CONCLUSION" \
 CI_EVENT="$CI_EVENT" \
 NEWME_MANUAL_VERIFICATION=0 \
 MIGRATION_STATUS="$MIGRATION_STATUS" \
-MIGRATION_IDS="$MIGRATION_IDS" \
+MIGRATION_IDS="$REQUIRED_IDS" \
 ROLLBACK_GIT_SHA="$ROLLBACK_SHA" \
 NEWME_ASSET_BACKUP="$ASSET_BACKUP" \
 NEWME_DEPLOY_STATE_RECORD="$DEPLOY_STATE_RECORD" \

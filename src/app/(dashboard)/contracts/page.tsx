@@ -22,16 +22,12 @@ import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { approveContract } from "@/app/actions/contracts";
 import { fmtAED } from "@/shared/utils/format";
+// R5: this page used to declare its own `interface Contract`, and the route cast its
+// rows to `any[]`. Two unchecked declarations of one read model — see
+// src/types/contracts.ts for what they disagreed about.
+import type { ContractListResponse, ContractListRow } from "@/types/contracts";
 
-interface Contract {
-  id: string; contract_no: string; contract_amount: number; status: string;
-  party_a_name: string; contract_date: string; sales_id: string;
-  lead_id: string; created_at: string;
-  first_payment_status?: string; first_payment_due_date?: string;
-  leads?: { customer_name: string | null } | null;
-  profiles?: { full_name: string | null; email: string | null } | null;
-  installment_plans?: { id: string; amount: number; due_date: string; status: string; paid_amount: number; seq: number }[] | null;
-}
+type Contract = ContractListRow;
 
 export default function ContractsPage() {
   const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss"]);
@@ -51,7 +47,7 @@ export default function ContractsPage() {
     revoking: t("contracts.statusRevoking"),
     superseded: t("contracts.statusSuperseded"),
     suspended: t("contracts.statusSuspended"),
-    cancelled: t("contracts.statusCancelled") || "Cancelled",
+    cancelled: t("contracts.statusCancelled"),
   };
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -78,26 +74,38 @@ export default function ContractsPage() {
     return STATUS_LABELS[s] || s;
   };
 
-  // First payment status helper
+  // First payment status helper.
+  //
+  // contracts.first_payment_status is NOT NULL DEFAULT 'unpaid' with a CHECK on
+  // ('unpaid','partial','paid') and is maintained by the B2 trigger, so there is no
+  // absent case to substitute for — the `|| "unpaid"` this used to carry was dead,
+  // and reading it as optional was one of the two declarations R5 removed.
   const getFirstPaymentBadge = (c: Contract) => {
-    const status = c.first_payment_status || "unpaid";
+    const status = c.first_payment_status;
     const dueDate = c.first_payment_due_date;
     const today = new Date().toISOString().slice(0, 10);
 
     if (status === "paid") {
-      return { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", label: "✓ Paid", icon: <CheckCircle className="w-3 h-3" /> };
+      return { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", label: `✓ ${t("contracts.firstPaymentPaid")}`, icon: <CheckCircle className="w-3 h-3" /> };
     }
     if (status === "partial") {
-      return { color: "bg-amber-500/10 text-amber-400 border-amber-500/30", label: "⚠ Partial", icon: <AlertTriangle className="w-3 h-3" /> };
+      return { color: "bg-amber-500/10 text-amber-400 border-amber-500/30", label: `⚠ ${t("contracts.firstPaymentPartial")}`, icon: <AlertTriangle className="w-3 h-3" /> };
     }
     // unpaid
     if (dueDate && dueDate < today) {
-      return { color: "bg-rose-500/10 text-rose-400 border-rose-500/30", label: "Overdue", icon: <AlertTriangle className="w-3 h-3" /> };
+      return { color: "bg-rose-500/10 text-rose-400 border-rose-500/30", label: t("contracts.firstPaymentOverdue"), icon: <AlertTriangle className="w-3 h-3" /> };
     }
-    if (dueDate && dueDate <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)) {
-      return { color: "bg-amber-500/10 text-amber-400 border-amber-500/30", label: "Due Soon", icon: <Clock className="w-3 h-3" /> };
+    // The due-soon boundary is derived from `today` rather than from a second clock
+    // read: `Date.now()` during render is impure (react-hooks/purity), and two reads
+    // in one badge can straddle midnight. `new Date(<string>)` is a pure parse, and
+    // today+7d in UTC is the same date this used to compute.
+    const dueSoon = new Date(new Date(`${today}T00:00:00Z`).getTime() + 7 * 86400000)
+      .toISOString()
+      .slice(0, 10);
+    if (dueDate && dueDate <= dueSoon) {
+      return { color: "bg-amber-500/10 text-amber-400 border-amber-500/30", label: t("contracts.firstPaymentDueSoon"), icon: <Clock className="w-3 h-3" /> };
     }
-    return { color: "bg-muted text-muted-foreground border-border/30", label: "Unpaid", icon: <Clock className="w-3 h-3" /> };
+    return { color: "bg-muted text-muted-foreground border-border/30", label: t("contracts.firstPaymentUnpaid"), icon: <Clock className="w-3 h-3" /> };
   };
 
   async function sendReminder(contractId: string) {
@@ -280,8 +288,8 @@ export default function ContractsPage() {
           setLoading(false);
           return;
         }
-        const json = await res.json();
-        setContracts((json.contracts ?? []) as Contract[]);
+        const json: ContractListResponse = await res.json();
+        setContracts(json.contracts ?? []);
         setTotalCount(json.totalCount ?? 0);
         setRole(json.role);
       } catch (err) {
@@ -301,7 +309,7 @@ export default function ContractsPage() {
   const totalActive = contracts.reduce((s, c) => ["signed","active","approved"].includes(c.status) ? s + c.contract_amount : s, 0);
 
   const STATUS_FILTER_OPTIONS = [
-    { value: "all", label: t("common.all") || "All" },
+    { value: "all", label: t("common.all") },
     { value: "draft", label: STATUS_LABELS.draft },
     { value: "signed", label: STATUS_LABELS.signed },
     { value: "pending_admin", label: STATUS_LABELS.pending_admin },
@@ -371,7 +379,7 @@ export default function ContractsPage() {
           <Card className="bg-card border-border"><CardContent className="p-8 text-center text-muted-foreground">{t("contracts.noContracts")}</CardContent></Card>
         ) : contracts.map(c => {
           const fpBadge = getFirstPaymentBadge(c);
-          const needsReminder = (c.first_payment_status || "unpaid") !== "paid";
+          const needsReminder = c.first_payment_status !== "paid";
           const showApproveReject = canApproveReject(c);
           const showUpload = canUpload(c);
           const showRevoke = canRevoke(c);
@@ -387,12 +395,11 @@ export default function ContractsPage() {
                       {c.contract_no}
                     </Link>
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-copper-500/10 text-copper-400">{statusLabel(c.status)}</span>
-                    {/* First payment badge */}
-                    {c.first_payment_status && (
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${fpBadge.color} inline-flex items-center gap-1`}>
-                        {fpBadge.icon}{fpBadge.label}
-                      </span>
-                    )}
+                    {/* First payment badge. Always rendered: the column is NOT NULL,
+                        so the guard this replaced could only ever be true. */}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${fpBadge.color} inline-flex items-center gap-1`}>
+                      {fpBadge.icon}{fpBadge.label}
+                    </span>
                   </div>
                   <p className="text-sm text-foreground">{c.leads?.customer_name || c.party_a_name || "—"}</p>
                   <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
@@ -401,7 +408,7 @@ export default function ContractsPage() {
                     <span className="flex items-center gap-1"><User className="w-3 h-3" />{c.profiles?.full_name || c.profiles?.email || "—"}</span>
                     {c.first_payment_due_date && (
                       <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                        <Clock className="w-3 h-3" />1st due: {c.first_payment_due_date.slice(0,10)}
+                        <Clock className="w-3 h-3" />{t("contracts.firstDue")}: {c.first_payment_due_date.slice(0,10)}
                       </span>
                     )}
                   </div>
@@ -425,7 +432,7 @@ export default function ContractsPage() {
                       onClick={() => sendReminder(c.id)}
                       className="border-copper-500/30 text-copper-400 hover:bg-copper-500/10 text-xs h-8"
                     >
-                      <Bell className="w-3 h-3 mr-1" />Remind
+                      <Bell className="w-3 h-3 mr-1" />{t("contracts.remind")}
                     </Button>
                   )}
                   {/* Approve / Reject buttons */}
@@ -484,7 +491,7 @@ export default function ContractsPage() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4 px-1">
           <span className="text-xs text-muted-foreground">
-            {t("common.page") || "Page"} {page} / {totalPages} ({totalCount} {t("contracts.total")})
+            {t("common.page")} {page} / {totalPages} ({totalCount} {t("contracts.total")})
           </span>
           <div className="flex items-center gap-2">
             <Button
@@ -493,7 +500,7 @@ export default function ContractsPage() {
               onClick={() => setPage(p => Math.max(1, p - 1))}
               className="h-8 text-xs"
             >
-              <ChevronLeft className="w-3.5 h-3.5 mr-1" />{t("common.prev") || "Prev"}
+              <ChevronLeft className="w-3.5 h-3.5 mr-1" />{t("common.prev")}
             </Button>
             <Button
               size="sm" variant="outline"
@@ -501,7 +508,7 @@ export default function ContractsPage() {
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               className="h-8 text-xs"
             >
-              {t("common.next") || "Next"}<ChevronRight className="w-3.5 h-3.5 ml-1" />
+              {t("common.next")}<ChevronRight className="w-3.5 h-3.5 ml-1" />
             </Button>
           </div>
         </div>

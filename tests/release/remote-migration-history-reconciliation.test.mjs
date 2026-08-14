@@ -24,9 +24,9 @@
 //   * no acceptance can touch a claim failure — a false `applied_verified` is not
 //     a historical difference
 //
-// There is no production capture in this file and none in the repository: the
-// shipped supabase/migration-history-reconciliation.json is uncaptured and inert,
-// which is asserted here. Capturing it is an authorised production action.
+// The repository now carries a redacted authenticated production capture. The
+// shipped fixture's provenance, row count and digest are asserted here; the
+// synthetic uncaptured cases below remain the fail-closed negative controls.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -650,37 +650,16 @@ test("the gate asks the server for the fingerprint, never for the statements", (
   assert.match(workflow, /scripts\/statements-fingerprint-parity\.mjs/);
 });
 
-test("the reconciliation shipped in this repository is uncaptured, and refuses", () => {
+test("the reconciliation shipped in this repository is captured and self-verifying", () => {
   const shipped = JSON.parse(read("supabase/migration-history-reconciliation.json"));
-  assert.equal(shipped.capture, null, "no production capture may be committed by a code round");
-  assert.deepEqual(shipped.rows, []);
-  assert.deepEqual(shipped.accepted, []);
-  assert.ok(
-    shipped._comment.join(" ").includes("NOT CAPTURED"),
-    "the file must say what state it is in",
-  );
-
-  // Round-4 C4's second half. This used to be asserted as *inert* — passing the
-  // file changed no verdict — and the claim that the deploy gate therefore refuses
-  // until the capture happens rested on production having differences to find,
-  // which is a statement about production, not about the gate. Now the absence of
-  // a capture is itself the refusal, so the property holds against any database.
-  const { remote, local } = fixtures();
-  const withFile = audit({ remote, local, reconciliation: shipped }).problems;
-  const without = audit({ remote, local }).problems;
-  assert.deepEqual(
-    withFile.filter((p) => !without.includes(p)),
-    ["a reconciliation file was supplied but records no capture: production's recorded history has never been read, so nothing in this run compares it to anything"],
-  );
-
-  // A database this release agrees with completely: still refused, because nobody
-  // has read production's history.
-  const agreed = local.map((entry) => ({ version: entry.version, name: entry.name, statements: [`select ${entry.version};`] }));
-  const clean = audit({ remote: agreed, local });
-  assert.deepEqual(clean.problems, [], "the synthetic agreeing database must otherwise pass");
-  assert.deepEqual(audit({ remote: agreed, local, reconciliation: shipped }).problems, [
-    "a reconciliation file was supplied but records no capture: production's recorded history has never been read, so nothing in this run compares it to anything",
-  ]);
+  assert.ok(shipped.capture, "the shipped fixture must carry capture provenance");
+  assert.equal(shipped.capture.statements_measured, true);
+  assert.equal(shipped.capture.fingerprint_format, FINGERPRINT_FORMAT);
+  assert.equal(shipped.capture.row_count, shipped.rows.length);
+  assert.equal(shipped.capture.rows_sha256, rowsFingerprint(shipped.rows));
+  assert.equal(shipped.rows.length, 100);
+  assert.ok(shipped.accepted.length > 0, "measured historical differences must remain explicit");
+  assert.ok(shipped._comment.join(" ").includes("read-only baseline"));
 });
 
 test("every recorded row is compared with this release's own file", () => {
@@ -896,7 +875,7 @@ test("the deploy gate passes the reconciliation and the document explains it", (
   assert.match(wrapper, /production migration history does not match the release being deployed/);
 
   const doc = read("supabase/preflight/migration-history-reconciliation.md");
-  assert.match(doc, /Status: \*\*NOT CAPTURED\.\*\*/);
+  assert.match(doc, /Status: \*\*CAPTURED AND RECONCILED\.\*\*/);
   assert.match(doc, /\*\*\[AUTHORISED ACTION\]/);
   assert.match(doc, /capture-remote-migration-history\.mjs/);
   // The counts the reviewer measured are recorded as the thing to reconcile.

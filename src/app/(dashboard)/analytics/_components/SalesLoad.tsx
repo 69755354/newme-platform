@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
@@ -103,12 +103,29 @@ function CEOSalesLoad({ data, t }: { data: SalesLoadData; t: (path: string) => s
   const [rebalancing, setRebalancing] = useState(false);
   const [rebalMsg, setRebalMsg] = useState<string | null>(null);
 
+  // R6. The route derives one idempotency key per lead from this batch key, so a
+  // second click, a retried fetch or a dropped response cannot run the
+  // round-robin twice. It is held in a ref and minted once per *attempt series*:
+  // regenerated only after a rebalance we know landed, so the retry of a request
+  // whose answer we never saw presents the same key the first attempt did.
+  const batchKeyRef = useRef<string | null>(null);
+
   const handleRebalance = useCallback(async () => {
     setRebalancing(true);
     setRebalMsg(null);
+    if (!batchKeyRef.current) batchKeyRef.current = crypto.randomUUID();
     try {
-      const res = await fetch("/api/dashboard/sales-load/rebalance", { method: "POST" });
+      const res = await fetch("/api/dashboard/sales-load/rebalance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batchKey: batchKeyRef.current }),
+      });
       const result = await res.json();
+      if (!res.ok) {
+        setRebalMsg(result.error || t('analytics.rebalanceFailed'));
+        return;
+      }
+      batchKeyRef.current = null;
       setRebalMsg(result.message || `Transferred ${result.transferred} leads`);
       // Reload after 2s
       setTimeout(() => window.location.reload(), 2000);
@@ -117,7 +134,7 @@ function CEOSalesLoad({ data, t }: { data: SalesLoadData; t: (path: string) => s
     } finally {
       setRebalancing(false);
     }
-  }, []);
+  }, [t]);
 
   // Chart data
   const chartData = data.repStats.map((r) => ({

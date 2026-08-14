@@ -13,15 +13,23 @@ EVIDENCE_FILE="$1"
 [[ -n "${UAT_ACTOR+x}" ]] || fail "UAT_ACTOR must be present"
 [[ -n "${UAT_FIXTURE_IDS+x}" ]] || fail "UAT_FIXTURE_IDS must be present"
 [[ -n "${FIXTURE_CLEANUP_STATUS:-}" ]] || fail "FIXTURE_CLEANUP_STATUS is required"
+if [[ "$UAT_STATUS" == pass ]]; then
+  [[ "${RELEASE_CLOSURE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || fail "RELEASE_CLOSURE_SHA is required for passing UAT"
+  [[ "${RELEASE_FINAL_RUN_ID:-}" =~ ^[1-9][0-9]*$ ]] || fail "RELEASE_FINAL_RUN_ID is required for passing UAT"
+else
+  RELEASE_CLOSURE_SHA=""
+  RELEASE_FINAL_RUN_ID=""
+fi
 
-python3 - "$EVIDENCE_FILE" "$UAT_STATUS" "$UAT_ACTOR" "$UAT_FIXTURE_IDS" "$FIXTURE_CLEANUP_STATUS" <<'PY'
+python3 - "$EVIDENCE_FILE" "$UAT_STATUS" "$UAT_ACTOR" "$UAT_FIXTURE_IDS" "$FIXTURE_CLEANUP_STATUS" \
+  "$RELEASE_CLOSURE_SHA" "$RELEASE_FINAL_RUN_ID" <<'PY'
 import json
 import os
 import sys
 import tempfile
 from datetime import datetime, timezone
 
-path, uat_status, actor, fixture_text, cleanup = sys.argv[1:]
+path, uat_status, actor, fixture_text, cleanup, closure_sha, final_run_id = sys.argv[1:]
 
 def fail(message):
     print(f"G0-Lite evidence: {message}", file=sys.stderr)
@@ -37,6 +45,20 @@ git_sha = evidence.get("git_sha")
 build_id = evidence.get("build_id")
 if not git_sha or not build_id:
     fail("git_sha and build_id are required")
+
+expected_closure = None
+if uat_status == "pass":
+    if closure_sha == git_sha:
+        fail("release closure SHA must differ from the deployed release SHA")
+    expected_closure = {
+        "release_sha": git_sha,
+        "closure_sha": closure_sha,
+        "final_ci_run_id": final_run_id,
+        "final_ci_run_url": f"https://github.com/69755354/newme-platform/actions/runs/{final_run_id}",
+        "final_ci_head_sha": closure_sha,
+        "final_ci_conclusion": "success",
+        "required_jobs_manifest": "infra/release/final-required-jobs.json",
+    }
 
 for section in ("build", "systemd", "smoke", "logs", "regression", "health"):
     if evidence.get(section, {}).get("status") != "pass":
@@ -83,7 +105,8 @@ def fsync_directory(directory_path):
     finally:
         os.close(directory_fd)
 
-if evidence.get("release_status") in {"complete", "uat_failed"}:
+release_status = evidence.get("release_status")
+if release_status in {"complete", "uat_failed"}:
     expected_status = "pass" if evidence.get("release_status") == "complete" else "fail"
     existing_uat = evidence.get("uat", {})
     if (
@@ -94,6 +117,12 @@ if evidence.get("release_status") in {"complete", "uat_failed"}:
         or existing_uat.get("cleanup_status") != cleanup
     ):
         fail("completed UAT evidence does not match the requested finalization")
+    if release_status == "complete":
+        existing_closure = evidence.get("release_closure", {})
+        if not isinstance(existing_closure, dict) or any(
+            existing_closure.get(key) != value for key, value in expected_closure.items()
+        ):
+            fail("completed release-closure evidence does not match the requested finalization")
     evidence_fd = os.open(path, os.O_RDWR)
     try:
         os.fsync(evidence_fd)
@@ -101,7 +130,7 @@ if evidence.get("release_status") in {"complete", "uat_failed"}:
         os.close(evidence_fd)
     fsync_directory(directory)
     raise SystemExit(0)
-if evidence.get("release_status") != "awaiting_uat":
+if release_status != "awaiting_uat":
     fail("release_status must be awaiting_uat or matching complete evidence")
 
 completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -123,6 +152,7 @@ else:
         "fixture_ids": fixtures,
         "cleanup_status": cleanup,
     }
+    evidence["release_closure"] = {**expected_closure, "verified_at": completed_at}
     evidence["release_status"] = "complete"
 
 fd, temporary = tempfile.mkstemp(prefix=".deploy-evidence-", dir=directory, text=True)

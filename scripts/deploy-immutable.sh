@@ -20,6 +20,10 @@ OWN_DEPLOY_STATE_RECORD=0
 PARENT_DEPLOY_STATE_RECORD=0
 ASSET_BACKUP_TRUSTED=0
 STATE_ROOT=/var/lib/newme/deploy-state
+# The same root-owned file infra/systemd/newme-deploy.sh validates and reads from;
+# the pre-switch phase gate below reads it through scripts/check-release-phase.mjs,
+# which never lets its contents reach an argument, an env var or a log line.
+MIGRATION_DB_URL_FILE="${NEWME_MIGRATION_DB_URL_FILE:-/etc/newme/migration-db.url}"
 PENDING_ASSET_RECORD="$STATE_ROOT/systemd-assets.pending"
 PENDING_ASSET_CLEARED=0
 APP_WAS_SWITCHED=0
@@ -109,11 +113,10 @@ validate_release_claims() {
   #
   # `push` was accepted here until this revision, and that made the two layers
   # disagree in the direction that mattered. infra/release/required-jobs.json
-  # requires the "Release-final taskboard completion" job, which .github/workflows/ci.yml
-  # gates on `github.event_name == 'workflow_dispatch' && inputs.release_final`,
-  # so a push run cannot carry the required set at all. Accepting `push` here
-  # meant this layer would archive as complete a claim the wrapper can no longer
-  # produce.
+  # requires the explicit predeploy jobs produced by a release-candidate manual
+  # dispatch, so a push run cannot carry the required set at all. The later
+  # release-final dispatch is a separate closure-SHA claim and is verified only by
+  # the canonical finalize path; making it part of deployment would be circular.
   [ "$event" = workflow_dispatch ] ||
     { echo "CI_EVENT must be 'workflow_dispatch' (got: $event)" >&2; return 1; }
 
@@ -135,6 +138,10 @@ validate_release_claims() {
       return 1
       ;;
   esac
+  # The SCOPE of an applied_verified claim is checked against the release manifest
+  # of the SHA being deployed, not here: this function runs before the tree at that
+  # SHA has been extracted, and $ROOT's working copy is not that tree. See the
+  # --verify-claim step immediately after `git archive` below (round-4 C4-1).
 }
 
 # Validated before any staging directory, symlink, service action or asset
@@ -414,6 +421,46 @@ grep -Fqx '*/2 * * * * ubuntu /usr/bin/flock -n /run/lock/newme-observability-l0
 [ "$FAILURE" != build ] || { fail "injected build failure"; exit 1; }
 mkdir -p "$STAGE"
 git -C "$ROOT" archive "$SHA" | tar -x -C "$STAGE"
+
+# ── The migration claim's SCOPE, from the tree being deployed (round-4 C4-1) ──
+#
+# validate_release_claims() proved the ids are well-formed. It cannot prove they are
+# the release's required set, and the set is the whole claim: measured with the
+# history gate's own judgement, `applied_verified 20260806000000` — one id of the
+# seventeen this release requires — produced ZERO findings with sixteen required
+# migrations unapplied, because that gate re-measures the ids it is handed and
+# cannot re-measure the ones it is not. A history that had additionally applied the
+# deferred contract phase before the switch produced zero findings too.
+#
+# So the required set is derived from infra/release/release-manifest.json of the SHA
+# just extracted — by that SHA's own gate, against that SHA's supabase/migrations/,
+# because a derived set is only as good as the manifest it comes from — and the
+# operator's list must equal it exactly. This runs here rather than in
+# validate_release_claims() for one reason: at that point the SHA's tree does not
+# exist yet, and $ROOT's working copy is not it.
+#
+# infra/systemd/newme-deploy.sh runs the same gate from its root-owned worktree and
+# passes the derived list; this is the copy that covers scripts/deploy.sh, which
+# reaches this script directly with nothing but environment variables.
+command -v node >/dev/null 2>&1 || { fail "node is required to derive the release's required migration set"; exit 1; }
+RELEASE_CLAIM="$(cd "$STAGE" && node scripts/check-release-manifest.mjs \
+  --verify-claim --status "$MIGRATION_STATUS" --ids "${MIGRATION_IDS:-}")" || {
+  printf '%s\n' "$RELEASE_CLAIM"
+  fail "MIGRATION_IDS is not the migration set this release's manifest requires"
+  exit 1
+}
+printf '%s\n' "$RELEASE_CLAIM"
+INITIAL_REQUIRED_IDS="$(printf '%s\n' "$RELEASE_CLAIM" | sed -n 's/^required_for_app=//p')"
+INITIAL_DEFERRED_IDS="$(printf '%s\n' "$RELEASE_CLAIM" | sed -n 's/^deferred_contract=//p')"
+[[ "$INITIAL_REQUIRED_IDS" =~ ^([0-9]{14}(,[0-9]{14})*)?$ ]] || {
+  fail "the release manifest yielded a malformed required migration set"
+  exit 1
+}
+[[ "$INITIAL_DEFERRED_IDS" =~ ^([0-9]{14}(,[0-9]{14})*)?$ ]] || {
+  fail "the release manifest yielded a malformed deferred migration set"
+  exit 1
+}
+
 install -m 0600 "$PREVIOUS/.env.local" "$STAGE/.env.local"
 python3 "$STAGE/scripts/validate-production-config.py" \
   --release-env "$STAGE/.env.local" \
@@ -488,6 +535,46 @@ ln -s "$PREVIOUS" "$ROLLBACK_NEXT"
 mv -Tf "$ROLLBACK_NEXT" "$ROLLBACK"
 sync -f "$(dirname "$ROLLBACK")"
 ROLLBACK_CHANGED=1
+
+# ── Exact release/database boundary, immediately before the traffic switch ──
+#
+# Round-4 C4 TOCTOU. The canonical wrapper measures the manifest-derived migration
+# sets, remote history and companions before installing versioned assets. Building
+# and probing the candidate happens after that measurement. A later production
+# history/posture change, or candidate-tree drift by root, must not ride through on
+# the early green result. The candidate coordinator therefore derives the sets
+# again from $RELEASE, requires them to equal the early derived sets, and re-runs:
+#   * full remote history/content/drift against exact required/deferred versions;
+#   * required_for_app history plus every manifest posture predicate, read-only;
+#   * every rollback/recontract companion hash;
+#   * the live database mode against this release's runs_under declaration.
+#
+# It is the last fallible precondition before switch_pending and mv -Tf. The URL
+# remains a root-owned file path, never a credential argument or log value.
+PRE_SWITCH_GATE="$RELEASE/scripts/check-pre-switch-release.mjs"
+[ -f "$PRE_SWITCH_GATE" ] && [ ! -L "$PRE_SWITCH_GATE" ] || {
+  fail "the release carries no scripts/check-pre-switch-release.mjs; exact migration history/posture/companion state cannot be revalidated"
+  exit 1
+}
+PRE_SWITCH_OUTPUT="$(node "$PRE_SWITCH_GATE" \
+  --release-dir "$RELEASE" \
+  --status "$MIGRATION_STATUS" \
+  --ids "${MIGRATION_IDS:-}" \
+  --expect-required "$INITIAL_REQUIRED_IDS" \
+  --expect-deferred "$INITIAL_DEFERRED_IDS" \
+  --url-file "$MIGRATION_DB_URL_FILE" \
+  --modules-dir "$RELEASE/node_modules")" || {
+  printf '%s\n' "$PRE_SWITCH_OUTPUT"
+  fail "the exact pre-switch migration history/posture/companion revalidation refused this release"
+  exit 1
+}
+printf '%s\n' "$PRE_SWITCH_OUTPUT"
+DB_PHASE_LINE="$(printf '%s\n' "$PRE_SWITCH_OUTPUT" | sed -n 's/^NEWME_DB_PHASE=/NEWME_DB_PHASE=/p')"
+[ "${DB_PHASE_LINE#NEWME_DB_PHASE=}" != "$DB_PHASE_LINE" ] ||
+  { fail "the database phase gate reported no mode"; exit 1; }
+DB_PHASE="${DB_PHASE_LINE#NEWME_DB_PHASE=}"
+echo "database phase before switch: $DB_PHASE"
+
 write_deploy_state switch_pending
 ln -s "$RELEASE" "$CURRENT_NEXT"
 mv -Tf "$CURRENT_NEXT" "$CURRENT"

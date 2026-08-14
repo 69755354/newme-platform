@@ -6,8 +6,8 @@ exec 8>/run/lock/newme-systemd-assets.lock
 flock -n 8 || { echo "another versioned asset installation is active" >&2; exit 75; }
 MODE="${1:-install}"
 case "$MODE:$#" in
-  install:0|snapshot:1) ;;
-  *) echo "usage: install-systemd-assets.sh [snapshot]" >&2; exit 64 ;;
+  install:0|snapshot:1|finalize:1) ;;
+  *) echo "usage: install-systemd-assets.sh [snapshot|finalize]" >&2; exit 64 ;;
 esac
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if [ -n "${NEWME_ASSET_SOURCE_ROOT:-}" ]; then
@@ -33,6 +33,152 @@ install -d -o root -g root -m 0700 "$STATE_ROOT"
 [ "$(stat -c '%a' "$STATE_ROOT")" = 700 ] || exit 65
 PENDING_RECORD="$STATE_ROOT/systemd-assets.pending"
 PRODUCTION_ROLLBACK_PENDING="$STATE_ROOT/production-rollback.pending"
+
+# ---------------------------------------------------------------------------
+# finalize — closing a hand-run asset transaction (round-4 review C2)
+# ---------------------------------------------------------------------------
+# The pending record deliberately outlives this script: install mode publishes it
+# before the first mutation and never removes it on success, because the
+# transaction it names is bigger than the install. /usr/local/sbin/newme-deploy
+# owns the rest of that transaction and clears the record itself
+# (clear_matching_pending_asset_record complete), which is correct for every
+# deployment from the second one onward.
+#
+# The first one is not a deployment. infra/release/control-plane-bootstrap.md runs
+# this installer by hand, because the wrapper that would clear the record is the
+# file being replaced — so a bootstrap that succeeds in every respect still leaves
+# /var/lib/newme/deploy-state/systemd-assets.pending behind, and that record is not
+# inert:
+#   * `newme-production-rollback status` reports
+#     systemd_asset_transaction=pre_switch — a monitored host permanently claiming
+#     an unresolved transaction, so the one signal that would show a real
+#     interrupted deploy is already lit;
+#   * the next `install` takes the unresolved-transaction branch below. A bootstrap
+#     does not move /opt/newme/current, so LIVE_CURRENT equals the record's
+#     `previous=` exactly, the branch's own consistency check passes, and it does
+#     what it is designed to do: restores the backup — the f37c203 control plane —
+#     and restarts the service. The bootstrap is silently undone by the first
+#     deployment that follows it.
+#
+# So the transaction needs a close, and the close has to verify rather than assume:
+# this mode refuses unless the control plane on disk really is this release's, byte
+# for byte, and the backup it would roll back to is still intact. It is idempotent
+# (no record is success, not failure), it requires an explicit confirmation so
+# nothing automated can call it, and its last act before removing the record is to
+# make the removal durable.
+if [ "$MODE" = finalize ]; then
+  [ "${NEWME_ASSET_FINALIZE_CONFIRM:-}" = bootstrap ] || {
+    echo "finalizing a hand-run asset transaction requires NEWME_ASSET_FINALIZE_CONFIRM=bootstrap (see infra/release/control-plane-bootstrap.md)" >&2
+    exit 64
+  }
+  if [ -e "$PRODUCTION_ROLLBACK_PENDING" ] || [ -L "$PRODUCTION_ROLLBACK_PENDING" ]; then
+    echo "an unresolved production rollback must be recovered before an asset transaction can be finalized" >&2
+    exit 75
+  fi
+  if [ ! -e "$PENDING_RECORD" ] && [ ! -L "$PENDING_RECORD" ]; then
+    # Nothing to close. Reported as success on purpose: an interruption between the
+    # removal and the flush below must be recoverable by running this again.
+    echo "systemd_asset_transaction=none"
+    exit 0
+  fi
+  [ -f "$PENDING_RECORD" ] && [ ! -L "$PENDING_RECORD" ] || {
+    echo "the unresolved versioned asset pointer is invalid" >&2
+    exit 65
+  }
+  [ "$(stat -c '%U:%G' "$PENDING_RECORD")" = root:root ] || exit 65
+  [ "$(stat -c '%a' "$PENDING_RECORD")" = 600 ] || exit 65
+  [ "$(wc -l < "$PENDING_RECORD")" -eq 5 ] || exit 65
+  [ "$(grep -Ec '^sha=[0-9a-f]{40}$' "$PENDING_RECORD")" -eq 1 ] || exit 65
+  [ "$(grep -Ec '^backup=/var/backups/newme-systemd-assets/[^[:space:]]+$' "$PENDING_RECORD")" -eq 1 ] || exit 65
+  [ "$(grep -Ec '^previous=/opt/newme/releases/[0-9a-f]{40}$' "$PENDING_RECORD")" -eq 1 ] || exit 65
+  [ "$(grep -Ec '^previous_rollback=(/opt/newme/releases/[0-9a-f]{40})?$' "$PENDING_RECORD")" -eq 1 ] || exit 65
+  [ "$(grep -Ec '^candidate_preexisting=0$' "$PENDING_RECORD")" -eq 1 ] || exit 65
+  FINALIZE_SHA="$(sed -n 's/^sha=//p' "$PENDING_RECORD")"
+  FINALIZE_BACKUP="$(sed -n 's/^backup=//p' "$PENDING_RECORD")"
+  FINALIZE_PREVIOUS="$(sed -n 's/^previous=//p' "$PENDING_RECORD")"
+
+  # The tree this runs from must be the release the transaction installed. Same
+  # derivation install mode uses, so "finalize" cannot be run from a different
+  # checkout than the one whose bytes are about to be declared live.
+  FINALIZE_TREE_SHA="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
+  [[ "$FINALIZE_TREE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "finalize must run from the git worktree of the release it is closing" >&2
+    exit 65
+  }
+  [ "$FINALIZE_TREE_SHA" = "$FINALIZE_SHA" ] || {
+    echo "this worktree is not the release the unresolved asset transaction installed" >&2
+    exit 65
+  }
+
+  # The transaction is closable only from a state a rollback would still leave
+  # consistent: either the release was never switched (the bootstrap case, current
+  # is still the record's previous) or the candidate is live (a completed switch).
+  FINALIZE_CURRENT="$(readlink -f /opt/newme/current 2>/dev/null || true)"
+  FINALIZE_STATE=""
+  if [ "$FINALIZE_CURRENT" = "/opt/newme/releases/$FINALIZE_SHA" ]; then
+    FINALIZE_STATE=candidate_active
+  elif [ "$FINALIZE_CURRENT" = "$FINALIZE_PREVIOUS" ]; then
+    FINALIZE_STATE=control_plane_only
+  else
+    echo "the release pointer matches neither the transaction's candidate nor its recovery point; recover it before finalizing" >&2
+    exit 65
+  fi
+
+  # A record that points at a vanished backup is the state `newme-production-rollback
+  # status` calls invalid. Finalizing it would erase the evidence instead of the
+  # transaction, so it is refused here and has to be looked at.
+  [ -d "$FINALIZE_BACKUP/rootfs" ] &&
+    [ -f "$FINALIZE_BACKUP/managed.list" ] &&
+    [ -f "$FINALIZE_BACKUP/present.list" ] &&
+    [ -f "$FINALIZE_BACKUP/manifest.sha256" ] &&
+    [ -f "$FINALIZE_BACKUP/symlink.sha256" ] || {
+    echo "the backup this transaction would roll back to is incomplete; it must not be closed" >&2
+    exit 65
+  }
+
+  # What "installed" means, checked rather than assumed. Kept in step with the
+  # install_control_* calls below by
+  # tests/release/control-plane-bootstrap-contract.test.mjs, which requires this
+  # list and those call lines to be the same set of (source, destination) pairs.
+  FINALIZE_CONTROL_PLANE=(
+    "scripts/install-systemd-assets.sh:/usr/local/libexec/newme/newme-install-systemd-assets:755"
+    "scripts/rollback-systemd-assets.sh:/usr/local/libexec/newme/newme-rollback-systemd-assets:755"
+    "infra/systemd/newme-service-control.sh:/usr/local/sbin/newme-service-control:755"
+    "infra/systemd/newme-production-rollback.sh:/usr/local/sbin/newme-production-rollback:755"
+    "infra/systemd/newme-deploy.sh:/usr/local/sbin/newme-deploy:755"
+    "infra/sudoers/newme-platform:/etc/sudoers.d/newme-platform:440"
+  )
+  for entry in "${FINALIZE_CONTROL_PLANE[@]}"; do
+    source="$ROOT/${entry%%:*}"
+    rest="${entry#*:}"
+    dest="${rest%%:*}"
+    expected_mode="${rest#*:}"
+    [ -f "$dest" ] && [ ! -L "$dest" ] || {
+      echo "the control plane is not this release's: $dest is missing" >&2
+      exit 65
+    }
+    cmp -s "$source" "$dest" || {
+      echo "the control plane is not this release's: $dest differs from the tree being finalized" >&2
+      exit 65
+    }
+    [ "$(stat -c '%U:%G' "$dest")" = root:root ] || { echo "control-plane ownership is invalid: $dest" >&2; exit 65; }
+    [ "$(stat -c '%a' "$dest")" = "$expected_mode" ] || { echo "control-plane mode is invalid: $dest" >&2; exit 65; }
+  done
+  if [ -e /etc/sudoers.d/ubuntu-nopasswd ] || [ -L /etc/sudoers.d/ubuntu-nopasswd ]; then
+    echo "the control plane is not this release's: /etc/sudoers.d/ubuntu-nopasswd is still present" >&2
+    exit 65
+  fi
+
+  rm -f -- "$PENDING_RECORD"
+  sync -f "$STATE_ROOT"
+  if [ -e "$PENDING_RECORD" ] || [ -L "$PENDING_RECORD" ]; then
+    echo "CRITICAL: the unresolved versioned asset pointer survived its removal" >&2
+    exit 66
+  fi
+  echo "finalized=$FINALIZE_SHA state=$FINALIZE_STATE backup=$FINALIZE_BACKUP"
+  echo "systemd_asset_transaction=none"
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # The bootstrap precondition (round-3 P1-10)
@@ -143,10 +289,25 @@ if [ "$MODE" = install ]; then
   fi
 fi
 PREVIOUS_CURRENT="$(readlink -f /opt/newme/current 2>/dev/null || true)"
-PREVIOUS_ROLLBACK="$(readlink -f /opt/newme/current.rollback 2>/dev/null || true)"
-[[ "$PREVIOUS_CURRENT" =~ ^/opt/newme/releases/[0-9a-f]{40}$ ]] || exit 65
-if [ -n "$PREVIOUS_ROLLBACK" ]; then
-  [[ "$PREVIOUS_ROLLBACK" =~ ^/opt/newme/releases/[0-9a-f]{40}$ ]] || exit 65
+[[ "$PREVIOUS_CURRENT" =~ ^/opt/newme/releases/[0-9a-f]{40}$ ]] || {
+  echo "the live release pointer /opt/newme/current is not an immutable release path" >&2
+  exit 65
+}
+# `readlink -f` prints the path it was given when only the last component is
+# missing, so an absent rollback pointer canonicalises to the literal string
+# "/opt/newme/current.rollback" rather than to nothing. The check below then failed
+# and this script exited 65 with no message on any host that has no rollback pointer
+# yet — which is exactly the host the bootstrap in
+# infra/release/control-plane-bootstrap.md runs on. The pending record's grammar
+# admits an empty previous_rollback and the recovery branch above handles it
+# (`rm -f -- /opt/newme/current.rollback`), so absence has to reach it as absence.
+PREVIOUS_ROLLBACK=""
+if [ -e /opt/newme/current.rollback ] || [ -L /opt/newme/current.rollback ]; then
+  PREVIOUS_ROLLBACK="$(readlink -f /opt/newme/current.rollback 2>/dev/null || true)"
+  [[ "$PREVIOUS_ROLLBACK" =~ ^/opt/newme/releases/[0-9a-f]{40}$ ]] || {
+    echo "the rollback release pointer /opt/newme/current.rollback is not an immutable release path" >&2
+    exit 65
+  }
 fi
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 install -d -o root -g root -m 0700 /var/backups/newme-systemd-assets
@@ -169,7 +330,13 @@ remember() {
       link_hash="$(printf '%s' "$(readlink -- "$dest")" | sha256sum | awk '{print $1}')"
       printf '%s  %s\n' "$link_hash" "$dest" >> "$BACKUP/symlink.sha256"
     elif [ -f "$dest" ]; then
-      sha256sum "$ROOTFS/$rel" >> "$BACKUP/manifest.sha256"
+      # Keyed relative to rootfs, because that is where the restore verifies it:
+      # scripts/rollback-systemd-assets.sh runs `cd "$BACKUP/rootfs" && sha256sum -c`.
+      # An absolute key resolved to the directory the backup was *taken* in, so a
+      # backup that had been copied or moved verified the original copy's bytes and
+      # then restored the copy's — an integrity check that could pass for a file it
+      # had not read.
+      ( cd "$ROOTFS" && sha256sum -- "$rel" ) >> "$BACKUP/manifest.sha256"
     else
       echo "managed asset must be a regular file or symlink: $dest" >&2
       exit 65
@@ -177,12 +344,25 @@ remember() {
   fi
 }
 
+# Round-4 review C3, same defect as scripts/rollback-systemd-assets.sh had: `rm -f`
+# then `cp -a` leaves the destination missing and then half-written, and this runs
+# when the candidate's Nginx configuration has already failed validation. Replace by
+# rename instead, so a crash here leaves the old file or the new one.
+RESTORE_TMP=""
 restore_path() {
-  local dest="$1" rel="${1#/}"
-  rm -f -- "$dest"
+  local dest="$1" rel="${1#/}" directory=""
+  directory="$(dirname "$dest")"
   if grep -Fqx "$dest" "$BACKUP/present.list"; then
-    mkdir -p "$(dirname "$dest")"
-    cp -a -- "$ROOTFS/$rel" "$dest"
+    mkdir -p "$directory"
+    RESTORE_TMP="$(mktemp "$directory/.newme-asset-restore.XXXXXX")"
+    rm -f -- "$RESTORE_TMP"
+    cp -a -- "$ROOTFS/$rel" "$RESTORE_TMP"
+    if [ -L "$RESTORE_TMP" ]; then sync -f "$directory"; else sync -f "$RESTORE_TMP"; fi
+    mv -Tf "$RESTORE_TMP" "$dest"
+    RESTORE_TMP=""
+    sync -f "$directory"
+  else
+    rm -f -- "$dest"
   fi
 }
 
@@ -304,6 +484,9 @@ rollback_on_error() {
   fi
   if [ -n "$PENDING_TMP" ]; then
     case "$PENDING_TMP" in "$STATE_ROOT"/systemd-assets.pending.*) rm -f -- "$PENDING_TMP" ;; esac
+  fi
+  if [ -n "$RESTORE_TMP" ]; then
+    case "$RESTORE_TMP" in */.newme-asset-restore.*) rm -f -- "$RESTORE_TMP" ;; esac
   fi
   if [ "$ROLLBACK_COMPLETED" -eq 1 ] && [ -n "${NEWME_ASSET_BACKUP_RECORD:-}" ]; then
     : > "$NEWME_ASSET_BACKUP_RECORD" 2>/dev/null || true

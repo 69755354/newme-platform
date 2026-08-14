@@ -33,6 +33,12 @@ import {
   isForcedSessionAllowedPath,
 } from "../../src/lib/forced-password-change.mjs";
 import { isActiveProfile } from "../../src/lib/auth-profile.mjs";
+// Round-4 R8. The proxy records activity through this module, so the mock maps
+// below have to name it or the module loader falls through to real resolution and
+// `@/lib/...` is not resolvable outside Next's tsconfig paths. The real function is
+// used rather than a stub: this file measures the refusal order, and a stub that
+// always agreed to record would be a different proxy from the one that ships.
+import { shouldRecordActivity } from "../../src/lib/activity-throttle.mjs";
 
 const require = createRequire(import.meta.url);
 const Module = require("node:module");
@@ -137,6 +143,7 @@ function loadProxy(profile) {
       }),
     },
     "@/lib/report-server-error": { reportServerError: async () => {} },
+    "@/lib/activity-throttle.mjs": { shouldRecordActivity },
     "@/lib/auth-profile.mjs": { isActiveProfile },
     "@/lib/forced-password-change.mjs": {
       FORCED_SESSION_ERROR,
@@ -232,6 +239,7 @@ test("the Bearer path asks the database for the flag it enforces", async (t) => 
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://project.supabase.co";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "publishable-key";
   let requestedUrl;
+  let middlewareBearerToken;
   globalThis.fetch = async (url) => {
     requestedUrl = String(url);
     return { ok: true, json: async () => [FORCED] };
@@ -247,16 +255,20 @@ test("the Bearer path asks the database for the flag it enforces", async (t) => 
   const proxy = loadModule("src/proxy.ts", {
     "next/server": nextServer(),
     "@/lib/supabase-middleware": {
-      createMiddlewareClient: async () => ({
-        supabase: {
-          auth: {
-            getUser: async (token) => ({ data: { user: token === "user-token" ? { id: "u1" } : null } }),
+      createMiddlewareClient: async (_request, bearerToken) => {
+        middlewareBearerToken = bearerToken;
+        return {
+          supabase: {
+            auth: {
+              getUser: async (token) => ({ data: { user: token === "user-token" ? { id: "u1" } : null } }),
+            },
           },
-        },
-        getResponse: () => ({ status: 200 }),
-      }),
+          getResponse: () => ({ status: 200 }),
+        };
+      },
     },
     "@/lib/report-server-error": { reportServerError: async () => {} },
+    "@/lib/activity-throttle.mjs": { shouldRecordActivity },
     "@/lib/auth-profile.mjs": { isActiveProfile },
     "@/lib/forced-password-change.mjs": {
       FORCED_SESSION_ERROR,
@@ -266,8 +278,12 @@ test("the Bearer path asks the database for the flag it enforces", async (t) => 
     },
   });
 
-  const bearer = request("/api/contracts", "GET", { Authorization: "Bearer user-token" });
+  const bearer = request("/api/contracts", "GET", {
+    Authorization: "Bearer user-token",
+    Cookie: "sb-cookie-session=active-user-a",
+  });
   assertRefused(await proxy.proxy(bearer), "GET /api/contracts with a Bearer token");
+  assert.equal(middlewareBearerToken, "user-token", "the cookie displaced the Bearer identity at the proxy");
   assert.match(requestedUrl, /select=[^&]*force_password_change/);
 });
 
@@ -445,6 +461,13 @@ test("every authenticated page is behind the proxy, so no page escapes the bound
 test("only the escape hatch opts out of the forced-session refusal", () => {
   // A route that passes allowForcedPasswordChange is asserting it is part of the
   // password-change flow. The refusal is only as good as that list staying short.
+  //
+  // R1 added the second boundary — src/lib/action-auth-context.ts, which is to
+  // server actions what request-auth-context.ts is to route handlers — so the
+  // list is now two definitions and one caller. Which *actions* may opt out is a
+  // narrower question and belongs with the actions:
+  // tests/security/forced-password-actions-boundary.test.mjs pins it to
+  // getCurrentUser alone.
   const callers = [];
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -460,5 +483,20 @@ test("only the escape hatch opts out of the forced-session refusal", () => {
     }
   };
   walk(path.join(root, "src"));
-  assert.deepEqual(callers, ["src/lib/request-auth-context.ts"], "unexpected opt-out of the A2 boundary");
+  assert.deepEqual(
+    callers,
+    [
+      // The one action-shaped caller: who-am-I, for the /change-password page.
+      "src/app/actions/auth.ts",
+      // The two boundaries that define the option.
+      "src/lib/action-auth-context.ts",
+      "src/lib/request-auth-context.ts",
+    ],
+    "unexpected opt-out of the A2 boundary",
+  );
+
+  // No route handler opts out through the option itself; the routes on the
+  // exception list are exempted by the list, not by the flag. If that changes,
+  // this test is where it has to be argued.
+  assert.deepEqual(callers.filter((file) => /^src\/app\/api\//.test(file)), []);
 });

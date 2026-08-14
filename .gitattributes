@@ -38,6 +38,11 @@ docs/meta-ads-auth-instructions.txt -text
 src/app/api/leads/\[id\]/quality/route.ts -text
 tests/integration/api-validation-static.test.mjs -text
 
+# This is an authenticated production schema capture whose exact bytes are
+# provenance-bound in production-schema-baseline.json. Preserve its original
+# whitespace and exempt only that immutable artifact from patch whitespace QA.
+supabase/replay/production-schema-baseline.sql whitespace=-trailing-space
+
 # Already classified correctly by `text=auto` (measured: i/-text). Named so a
 # future line-ending rule cannot reach them.
 *.png binary

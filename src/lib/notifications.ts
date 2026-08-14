@@ -1,3 +1,4 @@
+import "server-only";
 import { supabaseAdmin } from "./supabase-admin";
 
 /**
@@ -15,60 +16,107 @@ export const VALID_NOTIFICATION_TYPES = [
 
 export type NotificationType = typeof VALID_NOTIFICATION_TYPES[number];
 
-/**
- * Server-side helper to create a notification.
- * Called from API routes or server components when events occur.
- */
-export async function createNotification(params: {
+export interface NotificationDraft {
   userId: string;
+  // Dedicated server-side notification producers predate the public event
+  // registry and also persist internal-only types (for example revocations).
+  // The public /api/notify route still validates against NotificationType.
   type: string;
   title: string;
   body?: string;
   relatedId?: string;
   relatedType?: string;
-}) {
-  const { userId, type, title, body, relatedId, relatedType } = params;
+  /** Stable persisted occurrence. Undefined means a repeatable delivery intent. */
+  eventKey?: string;
+}
 
-  const { error } = await supabaseAdmin.from("notifications").insert({
-    user_id: userId,
-    type,
-    title,
-    body: body || null,
-    related_id: relatedId || null,
-    related_type: relatedType || null,
-  });
+export interface NotificationWriteResult {
+  created: number;
+  skipped: number;
+}
 
-  if (error) {
-    console.error("[Notifications] Failed to create notification:", error);
+export class NotificationPersistenceError extends Error {
+  readonly operation: string;
+  readonly code: string | null;
+
+  constructor(operation: string, error: unknown) {
+    const code = typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: unknown }).code ?? "") || null
+      : null;
+    super(`${operation}${code ? ` (${code})` : ""}`);
+    this.name = "NotificationPersistenceError";
+    this.operation = operation;
+    this.code = code;
+    this.cause = error;
   }
+}
+
+/**
+ * Server-side helper to create a notification.
+ * Called from API routes or server components when events occur.
+ */
+export async function createNotification(
+  params: NotificationDraft,
+): Promise<NotificationWriteResult> {
+  return createNotificationsBulk([params]);
 }
 
 /**
  * Create notifications for multiple users at once (e.g., notify all admins/bosses).
  */
 export async function createNotificationsBulk(
-  notifications: {
-    userId: string;
-    type: string;
-    title: string;
-    body?: string;
-    relatedId?: string;
-    relatedType?: string;
-  }[]
-) {
-  const rows = notifications.map((n) => ({
+  notifications: NotificationDraft[],
+): Promise<NotificationWriteResult> {
+  // Collapse only rows that explicitly name the same persisted occurrence. A
+  // missing eventKey is a new delivery intent (for example, a human choosing to
+  // send the same reminder again), so presentation fields must not create a
+  // lifetime uniqueness rule for it.
+  const candidates: NotificationDraft[] = [];
+  const seenOccurrences = new Set<string>();
+  for (const notification of notifications) {
+    if (notification.eventKey !== undefined) {
+      const key = [notification.userId, notification.eventKey].join("\u001f");
+      if (seenOccurrences.has(key)) continue;
+      seenOccurrences.add(key);
+    }
+    candidates.push(notification);
+  }
+
+  if (candidates.length === 0) return { created: 0, skipped: 0 };
+
+  const rows = candidates.map((n) => ({
     user_id: n.userId,
     type: n.type,
     title: n.title,
     body: n.body || null,
     related_id: n.relatedId || null,
     related_type: n.relatedType || null,
+    event_key: n.eventKey ?? null,
   }));
 
-  const { error } = await supabaseAdmin.from("notifications").insert(rows);
-  if (error) {
-    console.error("[Notifications] Bulk insert failed:", error);
+  const { data, error } = await supabaseAdmin.rpc("insert_notifications_atomic", {
+    p_notifications: rows,
+  });
+  if (error) throw new NotificationPersistenceError("notification_insert_failed", error);
+
+  const result = data as { created?: unknown; skipped?: unknown } | null;
+  if (
+    !result
+    || typeof result.created !== "number"
+    || typeof result.skipped !== "number"
+    || !Number.isInteger(result.created)
+    || !Number.isInteger(result.skipped)
+    || result.created < 0
+    || result.skipped < 0
+    || result.created + result.skipped !== rows.length
+  ) {
+    throw new NotificationPersistenceError("notification_insert_result_invalid", null);
   }
+
+  return {
+    created: result.created,
+    skipped: (notifications.length - rows.length) + result.skipped,
+  };
 }
 
 /**
@@ -78,12 +126,11 @@ export async function getAdminUserIds(): Promise<string[]> {
   const { data, error } = await supabaseAdmin
     .from("profiles")
     .select("id")
-    .in("role", ["admin", "boss"]);
+    .in("role", ["admin", "boss"])
+    .eq("is_active", true);
 
-  if (error || !data) {
-    console.error("[Notifications] Failed to fetch admin user IDs:", error);
-    return [];
-  }
+  if (error) throw new NotificationPersistenceError("notification_admin_lookup_failed", error);
+  if (!data) return [];
   return data.map((p) => p.id);
 }
 
@@ -97,10 +144,8 @@ export async function getAllActiveUserIds(excludeUserId?: string): Promise<strin
     .select("id")
     .eq("is_active", true);
 
-  if (error || !data) {
-    console.error("[Notifications] Failed to fetch active user IDs:", error);
-    return [];
-  }
+  if (error) throw new NotificationPersistenceError("notification_recipient_lookup_failed", error);
+  if (!data) return [];
 
   let ids = data.map((p) => p.id);
   if (excludeUserId) {

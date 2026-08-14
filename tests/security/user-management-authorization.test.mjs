@@ -35,10 +35,19 @@ test("API checkRole rejects unauthorized (401) and wrong role (403) separately",
 });
 
 // ─── Server Actions ─────────────────────────────────────────
+// R1 · these three used to read `profiles.role` themselves and compare it. The
+// role list is still each action's own, but the row it compares now arrives from
+// getActionAuthContext() — one place that resolves the session, refuses a
+// deactivated or forced identity, and reads the profile once. So the needle is
+// `role` from that call rather than a locally-fetched `profile.role`, and the
+// behaviour behind it is in tests/security/forced-password-actions-boundary.test.mjs
+// and tests/security/admin-reset-session-revocation.test.mjs.
 test("addTeamMember Server Action requires admin or boss", async () => {
   const action = await read("src/app/actions/team.ts");
-  assert.match(action, /\['admin', 'boss'\]\.includes\(profile\.role\)/);
-  assert.match(action, /throw new Error\('Forbidden'\)/);
+  const addMember = action.slice(action.indexOf("addTeamMember"), action.indexOf("removeTeamMember"));
+  assert.match(addMember, /const \{ role \} = await getActionAuthContext\(\)/);
+  assert.match(addMember, /!role \|\| !\['admin', 'boss'\]\.includes\(role\)/);
+  assert.match(addMember, /throw new Error\('Forbidden'\)/);
   // No wider role grant
   assert.doesNotMatch(action, /'sales'\]\.includes/);
   assert.doesNotMatch(action, /'operator'\]\.includes/);
@@ -47,16 +56,26 @@ test("addTeamMember Server Action requires admin or boss", async () => {
 test("removeTeamMember Server Action requires admin or boss", async () => {
   const action = await read("src/app/actions/team.ts");
   // Second role check (removeTeamMember has its own)
-  const removeMember = action.slice(action.indexOf("removeTeamMember"));
-  assert.match(removeMember, /\['admin', 'boss'\]\.includes\(caller\.role\)/);
+  const removeMember = action.slice(action.indexOf("removeTeamMember"), action.indexOf("resetUserPassword"));
+  assert.match(removeMember, /const \{ user, role \} = await getActionAuthContext\(\)/);
+  assert.match(removeMember, /!role \|\| !\['admin', 'boss'\]\.includes\(role\)/);
   assert.match(removeMember, /throw new Error\('Forbidden'\)/);
 });
 
 test("resetUserPassword Server Action requires admin or boss", async () => {
   const action = await read("src/app/actions/team.ts");
   const resetPw = action.slice(action.indexOf("resetUserPassword"));
-  assert.match(resetPw, /\['admin', 'boss'\]\.includes\(profile\.role\)/);
+  assert.match(resetPw, /const \{ role \} = await getActionAuthContext\(\)/);
+  assert.match(resetPw, /!role \|\| !\['admin', 'boss'\]\.includes\(role\)/);
   assert.match(resetPw, /throw new Error\('Forbidden'\)/);
+  // R1 · and it authenticates before it takes the service-role key, not after.
+  const authenticated = resetPw.indexOf("await getActionAuthContext()");
+  assert.ok(authenticated > 0);
+  for (const privileged of ["process.env.SUPABASE_SERVICE_ROLE_KEY", "createClient(supabaseUrl"]) {
+    const at = resetPw.indexOf(privileged);
+    assert.ok(at > 0, `${privileged} is no longer in resetUserPassword`);
+    assert.ok(authenticated < at, `${privileged} is reached before the caller is authenticated`);
+  }
 });
 
 // ─── Deactivated user gate ──────────────────────────────────
@@ -100,7 +119,10 @@ test("only admin and boss can manage users through UI, API, and Server Action", 
 
   assert.match(api, /profile\.role !== "admin" && profile\.role !== "boss"/);
   assert.doesNotMatch(api, /profile\.role !== "sales"/);
-  assert.match(action, /\['admin', 'boss'\]\.includes\(profile\.role\)/);
+  assert.match(action, /!role \|\| !\['admin', 'boss'\]\.includes\(role\)/);
   assert.doesNotMatch(action, /\['admin', 'boss', 'sales'\]/);
+  // All three actions gate, and all three gate through the same context.
+  assert.equal((action.match(/await getActionAuthContext\(\)/g) ?? []).length, 3);
+  assert.equal((action.match(/!\['admin', 'boss'\]\.includes\(role\)/g) ?? []).length, 3);
   assert.match(page, /useRequireRole\(\["admin", "boss"\]\)/);
 });

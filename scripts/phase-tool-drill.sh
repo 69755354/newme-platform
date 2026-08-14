@@ -25,14 +25,23 @@
 #      · the files applied before it stay applied
 #      · an object created EARLIER IN THE SAME FILE is gone, which is what
 #        proves the file's own `commit;` did not escape the tool's transaction
-#  10  cross-tool: every row applied above, read back through
+#  10  re-entry (round-4 C4-5): the fault is removed and the SAME database resumes
+#      the SAME phase, which is the half of step 9's claim the runbook depends on
+#      · already applied / to apply split exactly at the interruption point
+#      · the whole phase read back and content-compared, across both attempts
+#      · the objects step 9 proved absent are present again — the same three
+#        predicates, opposite verdicts
+#  11  the resumed database is an ordinary one: the contract phase applies to it,
+#      reaches the strict posture and verifies, so an interrupted expand phase is a
+#      delay and not a database that has to be rebuilt
+#  12  cross-tool: every row applied above, read back through
 #      scripts/verify-remote-migration-history.mjs — the module that must later
 #      reproduce production's recorded content from these same files — using its
 #      query, its digest expression and its local half rather than this tool's
 #      · plus a negative control: one recorded array is perturbed by moving a
 #        statement boundary without changing the count, the check is required to
 #        fail on it, and required to pass again once it is reverted
-#  11  release ↔ database-phase coupling (round-4 C8): the gate that must refuse an
+#  13  release ↔ database-phase coupling (round-4 C8): the gate that must refuse an
 #      application-only rollback out of the contract phase, measured against a real
 #      catalog in all three modes rather than a stubbed one
 #      · state 4 (strict): this release may switch and may complete; the
@@ -48,7 +57,7 @@
 #        failing mode function must NOT be reported as absence
 #      · a group-readable URL file is refused — on a Windows checkout that
 #        assertion passes vacuously, so this drill is where it means something
-#  12  transaction control that breaks the outer transaction (round-4 C4-6): a
+#  14  transaction control that breaks the outer transaction (round-4 C4-6): a
 #      mutation test on a real release tree, in a fourth database
 #      · first the hazard itself is measured on this server: `rollback` inside a
 #        transaction discards the work AND ends the block, so what follows it
@@ -105,15 +114,17 @@ manifest_count() {
 const manifest = require(process.env.ROOT + "/infra/release/release-manifest.json");
 const paths = { expand: () => manifest.required_for_app.length,
                 contract: () => manifest.deferred_contract.length,
-                posture: () => manifest.posture.required_for_app.predicates.length };
+                posture: () => manifest.posture.required_for_app.predicates.length,
+                strict: () => manifest.posture.deferred_contract.predicates.length };
 process.stdout.write(String(paths[process.argv[1]]()));
 ' "$1"
 }
 EXPAND_COUNT="$(manifest_count expand)"
 CONTRACT_COUNT="$(manifest_count contract)"
 POSTURE_COUNT="$(manifest_count posture)"
+STRICT_POSTURE_COUNT="$(manifest_count strict)"
 TOTAL_COUNT=$((EXPAND_COUNT + CONTRACT_COUNT))
-# The version step 11 has to find recorded while the mode is back at compat — that
+# The version step 13 has to find recorded while the mode is back at compat — that
 # combination is the finding it measures — read from the manifest for the same
 # reason the counts are.
 CONTRACT_VERSION="$(ROOT="$ROOT" node -e '
@@ -336,7 +347,65 @@ constraint_gone="$("${PSQL[@]}" -d "$INTERRUPT_DB" -c "select count(*) = 0 from 
 note "interruption: $BREAK_PRIOR_COUNT applied through $BREAK_PRIOR_VERSION, $BREAK_FILE rolled back whole, nothing recorded for it"
 
 # ---------------------------------------------------------------------------
-# 10 · cross-tool reproducibility. Steps 3 and 6 checked the recorded rows with
+# 10 · re-entry, the other half of step 9 (round-4 review C4-5).
+#
+#      "Rolled back whole and recorded nothing" is only worth something if the
+#      operator can then remove the cause and finish. The runbook says exactly that
+#      — fix the failure and re-run the same phase — and until this step the drill
+#      stopped at the refusal, so the property the procedure actually depends on was
+#      the one property never measured. A tool that recorded a row for a rolled-back
+#      file, or that lost track of which files it had already applied, would pass
+#      step 9 and fail here.
+#
+#      Nothing is reset: this is the same $INTERRUPT_DB, with $BREAK_PRIOR_COUNT
+#      migrations recorded and the rest of the phase unapplied, and the only change
+#      is that the staged shim is gone.
+note "removing the staged fault from $INTERRUPT_DB and re-entering the same phase"
+"${PSQL[@]}" -d "$INTERRUPT_DB" -c "drop function public.assert_installment_schedule(jsonb, numeric, text)" >/dev/null \
+  || fail "could not remove the staged fault"
+
+REENTRY_COUNT=$((EXPAND_COUNT - BREAK_PRIOR_COUNT))
+# No --init-history: the table exists, and the resumed run must find its own place
+# in it rather than being told where to start.
+run_phase ok "$INTERRUPT_DB" required_for_app --apply
+expect_log "^already applied     : $BREAK_PRIOR_COUNT\$"
+expect_log "^to apply            : $REENTRY_COUNT\$"
+count_log "^applied             : " "$REENTRY_COUNT"
+# Read-after-write covers the whole phase, not just what this run applied, so a row
+# the interrupted run left behind that no longer describes its file fails here.
+count_log "^history verified    : " "$EXPAND_COUNT"
+count_log "^posture OK          : " "$POSTURE_COUNT"
+expect_log "^OK\$"
+
+resumed="$("${PSQL[@]}" -d "$INTERRUPT_DB" -c "select count(*) from supabase_migrations.schema_migrations")"
+[ "$resumed" = "$EXPAND_COUNT" ] || fail "the resumed phase recorded $resumed migrations, expected $EXPAND_COUNT"
+# The two objects step 9 proved absent, now present: the statement before the
+# failing one, and the check constraint from earlier in the same file. Same
+# predicates, opposite verdicts — which is what makes step 9's absence a rollback
+# rather than a migration that never got that far for some other reason.
+for probe in \
+  "payments.credited_to|select count(*) = 1 from information_schema.columns where table_schema = 'public' and table_name = 'payments' and column_name = 'credited_to'" \
+  "payments_amount_positive|select count(*) = 1 from pg_constraint where conname = 'payments_amount_positive'" \
+  "assert_installment_schedule returns integer|select count(*) = 1 from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.assert_installment_schedule(jsonb, numeric, text)') and p.prorettype = 'integer'::regtype"; do
+  present="$("${PSQL[@]}" -d "$INTERRUPT_DB" -c "${probe#*|}")"
+  [ "$present" = "t" ] || fail "re-entry did not restore ${probe%%|*}"
+done
+note "re-entry: $REENTRY_COUNT applied on the second attempt, $EXPAND_COUNT recorded and verified, the rolled-back objects are back"
+
+# 11 · and the resumed database is an ordinary one: the contract phase applies to
+#      it and reaches the strict posture, so an interrupted expand phase is a delay
+#      and not a database that has to be rebuilt to be deployable.
+run_phase ok "$INTERRUPT_DB" deferred_contract --apply
+count_log "^applied             : " "$CONTRACT_COUNT"
+count_log "^posture OK          : " "$STRICT_POSTURE_COUNT"
+expect_log "posture OK          : release-mode-row-is-strict"
+resumed_mode="$("${PSQL[@]}" -d "$INTERRUPT_DB" -c "select direct_write_mode from public.money_release_mode where id = 'only'")"
+[ "$resumed_mode" = "strict" ] || fail "the resumed database's contract phase left the release mode at '$resumed_mode'"
+run_phase ok "$INTERRUPT_DB" deferred_contract --verify-only
+expect_log "^OK\$"
+
+# ---------------------------------------------------------------------------
+# 12 · cross-tool reproducibility. Steps 3 and 6 checked the recorded rows with
 #      this tool's own reading of the files, which cannot catch the two tools
 #      disagreeing — and they did disagree: until Round-4 C4's closure this
 #      applier split with a private splitter that kept the terminating `;` and
@@ -472,7 +541,7 @@ note "  perturbation caught: $PROBE_VERSION reported unreproducible"
 cross_tool_check || fail "the recorded history did not verify again after the negative control was reverted"
 
 # ---------------------------------------------------------------------------
-# 11 · release ↔ database-phase coupling (round-4 C8). Everything above measures
+# 13 · release ↔ database-phase coupling (round-4 C8). Everything above measures
 #      the applier. This measures the gate that stands between an operator and the
 #      outage the applier makes possible: after step 6 the database is at state 4 —
 #      contract applied, mode strict — and an application-only rollback to the
@@ -613,7 +682,7 @@ node "$ROOT/scripts/check-release-phase.mjs" --for-switch --release-dir "$PREMEC
 note "  refused (exit $loose_rc)"
 
 # ============================================================================
-# 12 · Transaction control that would break the outer transaction (round-4 C4-6)
+# 14 · Transaction control that would break the outer transaction (round-4 C4-6)
 # ============================================================================
 # The tool's atomicity claim is that a migration and its history row commit
 # together or not at all, and it rests on the file's own `begin;`/`commit;` being
@@ -621,8 +690,8 @@ note "  refused (exit $loose_rc)"
 # vocabulary is what that costs. First the cost is measured on this server, then
 # each statement is injected into a real release tree and the tool is required to
 # refuse the whole phase with nothing applied.
-# Announced like steps 10 and 11 rather than with $STEP: only run_phase advances
-# that counter, so a $STEP here would have read 10 while this is the twelfth step.
+# Announced like steps 12 and 13 rather than with $STEP: only run_phase advances
+# that counter, so a $STEP here would not have matched the section number.
 note "transaction control: statements that would break the outer transaction"
 
 TXCTL_DB="${PGDATABASE}_txctl"
@@ -654,24 +723,29 @@ mkdir -p "$MUTANT/supabase" "$MUTANT/infra"
 cp -R "$ROOT/scripts" "$MUTANT/scripts"
 cp -R "$ROOT/supabase/migrations" "$MUTANT/supabase/migrations"
 cp -R "$ROOT/infra/release" "$MUTANT/infra/release"
-MUTANT_TARGET="$(node -e '
-const m = require(process.argv[1]);
-const last = m.required_for_app[m.required_for_app.length - 1];
-process.stdout.write(`${last.file} ${last.version}`);
-' "$MUTANT/infra/release/release-manifest.json")"
-MUTANT_FILE="$MUTANT/supabase/migrations/${MUTANT_TARGET% *}"
-MUTANT_VERSION="${MUTANT_TARGET#* }"
-cp "$MUTANT_FILE" "$WORK/mutant-pristine.sql"
 # The witness for the damage measured below: an object the mutated file creates and
 # no other migration in the tree does, so its absence beside a recorded history row
 # can only mean that file was rolled back after being recorded. Both halves of that
 # are asserted here rather than assumed, because a later release that moves this
 # function must break this step loudly instead of measuring nothing.
 TXCTL_WITNESS="clear_kpi_targets"
-witness_creators="$(grep -lE "create (or replace )?function public\.$TXCTL_WITNESS\b" \
-  "$MUTANT"/supabase/migrations/[0-9]*.sql | wc -l | tr -d ' ')"
+witness_files="$(grep -lE "create (or replace )?function public\.$TXCTL_WITNESS\b" \
+  "$MUTANT"/supabase/migrations/[0-9]*.sql || true)"
+witness_creators="$(printf '%s\n' "$witness_files" | sed '/^$/d' | wc -l | tr -d ' ')"
 [ "$witness_creators" = "1" ] \
   || fail "public.$TXCTL_WITNESS is created by $witness_creators numbered migration(s); the damage witness must belong to exactly one"
+MUTANT_FILENAME="$(basename "$witness_files")"
+MUTANT_TARGET="$(node -e '
+const manifest = require(process.argv[1]);
+const file = process.argv[2];
+const entry = manifest.required_for_app.find((item) => item.file === file);
+if (!entry) process.exit(1);
+process.stdout.write(`${entry.file} ${entry.version}`);
+' "$MUTANT/infra/release/release-manifest.json" "$MUTANT_FILENAME")" \
+  || fail "the migration creating public.$TXCTL_WITNESS is not required_for_app"
+MUTANT_FILE="$MUTANT/supabase/migrations/${MUTANT_TARGET% *}"
+MUTANT_VERSION="${MUTANT_TARGET#* }"
+cp "$MUTANT_FILE" "$WORK/mutant-pristine.sql"
 grep -qE "create (or replace )?function public\.$TXCTL_WITNESS\b" "$WORK/mutant-pristine.sql" \
   || fail "public.$TXCTL_WITNESS is not created by ${MUTANT_TARGET% *}, so it cannot witness that file being rolled back"
 prepare_db "$TXCTL_DB"
@@ -815,4 +889,4 @@ txctl_damage="$("${PSQL[@]}" -d "$TXCTL_DB" -c "
   || fail "the unmutated tree under the neutered classifier reported recorded|witness = $txctl_damage, expected 1|1"
 note "    attributed: without the injected statement the same neutered tool leaves public.$TXCTL_WITNESS in place"
 
-echo "== phase drill OK: 12 steps, 4 databases, 4 + 15 refusals + 7 negative controls, $TOTAL_COUNT migrations applied in two phases and reproduced through the gate, release↔phase coupling measured in absent, compat and strict, 8 transaction-control mutations refused with nothing applied and the superseded classifier measured recording a rolled-back migration =="
+echo "== phase drill OK: 14 steps, 4 databases, 4 + 15 refusals + 7 negative controls, $TOTAL_COUNT migrations applied in two phases and reproduced through the gate, an interrupted phase resumed to complete success and carried on through the contract phase to the strict posture, release↔phase coupling measured in absent, compat and strict, 8 transaction-control mutations refused with nothing applied and the superseded classifier measured recording a rolled-back migration =="

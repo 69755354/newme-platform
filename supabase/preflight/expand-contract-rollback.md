@@ -56,7 +56,7 @@ keeps it open, and `scripts/db-phase-push.mjs` is what executes it.
 
 ### The two pushes
 
-Expand phase — apply these seventeen, in this order (they are the pending set on this
+Expand phase — apply these twenty-four, in this order (they are the pending set on this
 branch, and `scripts/replay-migrations.sh` applies exactly them plus the contract
 phase):
 
@@ -78,6 +78,13 @@ phase):
 20260817130000_b5_conversion_retry_idempotence.sql
 20260817140000_l0_round4_installment_sequence_contiguity.sql
 20260817150000_kpi_period_clear_owns_the_delete.sql
+20260817160000_kpi_period_lock_covers_money_writers.sql
+20260817170000_b5_retry_reaches_the_same_state.sql
+20260817180000_leads_updated_at_is_server_owned.sql
+20260817190000_lead_reassignment_activity_type.sql
+20260817200000_lead_reassignment_notification_related_id.sql
+20260817210000_quote_number_and_lead_unassignment_integrity.sql
+20260817220000_notification_event_idempotency.sql
 ```
 
 Contract phase — one file, pushed only after §4 step 6 passes:
@@ -97,7 +104,7 @@ artifacts:
 
 * [`infra/release/release-manifest.json`](../../infra/release/release-manifest.json)
   names every pending migration in exactly one phase — `required_for_app` (the
-  seventeen above) or `deferred_contract` (the one above) — with the SHA-256 of each
+  twenty-four above) or `deferred_contract` (the one above) — with the SHA-256 of each
   file and the runtime posture each phase must produce.
 * [`scripts/db-phase-push.mjs`](../../scripts/db-phase-push.mjs) applies one named
   phase and nothing else:
@@ -167,7 +174,7 @@ expand set is a contiguous prefix of the pending set. That is deliberate:
 * `supabase_migrations.schema_migrations` records the two phases in version
   order, so the application order in production is the order
   `scripts/replay-migrations.sh` replays and asserts. §6.1 query 3 expects
-  `20260817150000` as the newest version at state 2 and `20260818000000` at
+  `20260817220000` as the newest version at state 2 and `20260818000000` at
   state 4.
 
 What none of this proves on its own: the tool is not the Supabase CLI, and the
@@ -208,11 +215,11 @@ production now. **C** = the candidate release on this branch.
 | State | Schema | `direct_write_mode` | P works? | C works? |
 | --- | --- | --- | --- | --- |
 | 1 · today | base, stamp `20260805202917` | table does not exist | yes | **no** — the RPCs it calls do not all exist yet |
-| 2 · expand applied | + the seventeen files | `compat` | yes, with the seven deliberate exceptions in §3 | yes |
-| 3 · candidate deployed | + the seventeen files | `compat` | yes (this is the overlap window) | yes |
-| 4 · contract applied | + all eighteen | `strict` | **no** — its direct money writes are refused | yes |
-| 5 · companion run | + all eighteen | `compat` | yes, as in state 2 | yes |
-| 6 · recontract run | + all eighteen | `strict` | **no** — as in state 4 | yes |
+| 2 · expand applied | + the twenty-four files | `compat` | yes, with the seven deliberate exceptions in §3 | yes |
+| 3 · candidate deployed | + the twenty-four files | `compat` | yes (this is the overlap window) | yes |
+| 4 · contract applied | + all twenty-five | `strict` | **no** — its direct money writes are refused | yes |
+| 5 · companion run | + all twenty-five | `compat` | yes, as in state 2 | yes |
+| 6 · recontract run | + all twenty-five | `strict` | **no** — as in state 4 | yes |
 
 State 3 is the rollback boundary: both releases work against the same schema, so
 the application can be rolled back without touching the database. State 5 is how
@@ -528,15 +535,23 @@ Read §5 before starting: the point of no return is step 7, not step 8.
      `Migration replay and release contracts` job is green on that head.
    * `node scripts/verify-remote-migration-history.mjs` reports no unexplained
      drift against production's `supabase_migrations.schema_migrations`.
+   * `npm run check:release-companions` is green at that head, and its five
+     `companion OK` lines are in the job log. The hand-run scripts this document
+     tells you to execute — the rollback companion in §5 and the re-contract
+     companion in §5.1 — are the only release SQL the two checks above cannot see:
+     the CLI never applies them, so no history row exists to compare against
+     anything. That gate is the only thing standing between "the reviewed script"
+     and "the script on disk"; run it, and run it again on the host before you
+     execute either file (§5, §5.1).
    * `bash scripts/check-taskboard.sh` shows no ❌ item that the deployment
      depends on.
    * A verified point-in-time recovery target exists for the production project,
      and its timestamp is recorded next to this checklist.
-2. **[AUTHORISED ACTION] Apply the expand phase.** Apply the seventeen files in §1
+2. **[AUTHORISED ACTION] Apply the expand phase.** Apply the twenty-four files in §1
    with
    `node scripts/db-phase-push.mjs --phase required_for_app --url-file <file> --apply`,
    from the exact reviewed tree. Run it once with `--plan` first and read the
-   `to apply` list: the seventeen, and `20260818000000` absent. Do **not** use
+   `to apply` list: the twenty-four, and `20260818000000` absent. Do **not** use
    `supabase db push`, which would apply the contract phase in the same run (§1,
    "How the split is executed"). `supabase/preflight/scan-money-invariants.sql`
    must have been run first: §3 item 5 aborts this push if a non-positive money row
@@ -583,6 +598,25 @@ Read §5 before starting: the point of no return is step 7, not step 8.
 application-only rollback leaves the previous release unable to write money rows,
 so the rollback is two actions and not one: run the companion first, then
 redeploy. If the companion cannot be run, the only remaining option is PITR.
+
+**Verify the companion's content before you execute it, from the tree you are
+about to execute it from** (round-4 C4-5):
+
+```text
+node scripts/check-release-manifest.mjs --verify-companions
+```
+
+It prints one line per hand-run file with its hash and exits **1**, naming the
+file, if any byte differs from `infra/release/release-manifest.json`. This is not
+ceremony at 3am: `rollback_money_direct_write_contract_phase.sql` is executed
+against production by hand, with the service role, in a single transaction, and
+nothing else in this release records what it contains — a `grant` appended to it
+was measured on PG 17.10 leaving the replay harness at rc=0 with every
+post-rollback assertion passing. `infra/systemd/newme-deploy.sh` runs the same
+command against the candidate's own worktree and records
+`gate=release-companions-verified`, so on a host deployed by the canonical path
+the check has already passed once for that SHA; running it again is how you learn
+that the file you are about to feed to `psql` is still that file.
 
 **That ordering is enforced, not remembered** (§2, round-4 C8).
 `newme-production-rollback execute` runs the phase gate before it touches
@@ -651,14 +685,21 @@ it and it can be run as many times as there are attempts.
    mode is still `compat` at this point, so both releases work — do not skip
    ahead: re-entering `strict` while the previous release is the deployed one
    breaks it immediately.
-2. **[AUTHORISED ACTION] Re-enter the contract phase.** Run the re-contract
-   companion against the production database with the service role:
+2. **[AUTHORISED ACTION] Re-enter the contract phase.** Verify the companion's
+   content first, from the tree you are about to run it from, and only then run it
+   against the production database with the service role:
 
 ```text
+node scripts/check-release-manifest.mjs --verify-companions
 PGSERVICEFILE=<service-file> PGSERVICE=<service-name> \
   psql --no-psqlrc --single-transaction -v ON_ERROR_STOP=1 \
     -f supabase/migrations/recontract_money_direct_write_contract_phase.sql
 ```
+
+   The first command exits **1**, naming the file, if any byte of any hand-run
+   companion differs from `infra/release/release-manifest.json` (§4 step 1,
+   round-4 C4-5). Do not run the second if the first refuses: this file grants and
+   revokes, and it is the one that puts the money writers back behind the guards.
 
    The connection comes from a libpq service file — mode `0600`, owned by the
    operator — for the same reason `scripts/db-phase-push.mjs` refuses a URL on the
@@ -668,30 +709,55 @@ PGSERVICEFILE=<service-file> PGSERVICE=<service-name> \
 
    It refuses with `42P01` — and changes nothing — if `money_release_mode` is
    absent, if `money_direct_write_mode()` or `money_direct_write_is_blocked()` is
-   missing, or if any of the four mode-gated guard triggers
-   (`trg_guard_contracts_write`, `trg_guard_payments_write`,
-   `trg_guard_quotations_write`, `trg_guard_contract_transition`) is absent or
-   disabled. Declaring `strict` while the machinery that enforces it is not there
-   would be a posture claim with nothing behind it, which is worse than a refusal.
-   It writes a `MONEY_CONTRACT_PHASE_REENTERED` row to `audit_logs` recording the
-   mode it came from.
-   If `rollback_l0_20260811.sql` was also run, this is the point to put back the
-   one object it removes: `public.replace_kpi_targets(text, jsonb, uuid)`. It is
-   `service_role`-only and the previous release never calls it, so a rollback can
-   drop it safely — but `20260811100500` is recorded too, so nothing pending
-   re-creates it and the candidate's `POST /api/kpi/targets` would fail closed with
-   `42883`. The return path is the forward migration itself, which is idempotent by
-   construction (`create unique index if not exists`, `create or replace function`,
-   then revoke/grant), so re-run that file the same way:
+   missing, if any of the **six** mode-gated guard triggers
+   (`trg_guard_contracts_write` on `contracts`, `trg_guard_payments_write` on
+   `payments`, `trg_guard_installment_plans_write` on `installment_plans`,
+   `trg_guard_contract_approvals_write` on `contract_approvals`,
+   `trg_guard_payment_allocations_write` on `payment_allocations`,
+   `trg_guard_quotations_write` on `quotations`) is absent or disabled, if
+   `trg_guard_contract_transition` on `contracts` is absent or disabled, if a
+   trigger that reads the release mode is present but **not** on that list, or if
+   either KPI write routine (`public.replace_kpi_targets(text, jsonb, uuid)`,
+   `public.clear_kpi_targets(text, uuid)`) is absent or is executable by
+   `authenticated` or `anon`. Declaring `strict` while the machinery that enforces
+   it is not there would be a posture claim with nothing behind it, which is worse
+   than a refusal. It writes a `MONEY_CONTRACT_PHASE_REENTERED` row to `audit_logs`
+   recording the mode it came from.
 
-```text
-PGSERVICEFILE=<service-file> PGSERVICE=<service-name> \
-  psql --no-psqlrc --single-transaction -v ON_ERROR_STOP=1 \
-    -f supabase/migrations/20260811100500_kpi_targets_atomic_replace.sql
-```
+   > **Round-4 C4-2.** This list said "the four mode-gated guard triggers:
+   > `trg_guard_contracts_write`, `trg_guard_payments_write`,
+   > `trg_guard_quotations_write`, `trg_guard_contract_transition`", and so did the
+   > companion and the manifest. It was wrong in both directions:
+   > `trg_guard_contract_transition` does not read the release mode (it refuses an
+   > impossible status change in either mode, so it can never fail a mode check),
+   > and the three guards on `installment_plans`, `contract_approvals` and
+   > `payment_allocations` have read it since `20260814000000` rewrote them to stand
+   > down during the compatibility window. Measured on PG 17.10: with those three
+   > dropped, the companion declared `strict` and exited 0, and
+   > `--verify-only --phase deferred_contract` reported three of three posture
+   > predicates OK. The set is now derived from the migrations by
+   > `tests/release/mode-controlled-guards.test.mjs`, so this paragraph, the
+   > companion and the manifest cannot drift from the SQL again.
 
-   This is why that companion declares `-- NO_RECONTRACT:` rather than shipping a
-   `recontract_` twin: a twin would be a second copy of one function body, free to
+   **Do not re-run `20260811100500_kpi_targets_atomic_replace.sql`.** The previous
+   revision of this step told the operator to, because
+   `rollback_l0_20260811.sql` dropped `public.replace_kpi_targets(text, jsonb,
+   uuid)` and nothing pending re-created it. Both halves of that have changed:
+   `20260817000000` §14 now *redefines* the same signature with the A1 session
+   boundary and the B7 actual-carry-forward refusal, so re-running the round-1 file
+   would silently **downgrade** the function and take the B7 fix out of a database
+   that had just been declared `strict`; and the companion no longer drops it —
+   it refuses to, discriminating on whether the live definition is the round-4 one.
+   `supabase/replay/20_assert_post_rollback.sql` asserts the survival, so a
+   companion that starts dropping it again fails `MODE=branch`. If the function is
+   genuinely absent — a database that was rolled back by an older revision of the
+   companion — then reverting below `20260817000000` is the separate, audited step,
+   and the re-contract companion will refuse `strict` until it is done. That
+   refusal is the intended outcome, not an obstacle to work around.
+
+   `rollback_l0_20260811.sql` still declares `-- NO_RECONTRACT:` rather than
+   shipping a `recontract_` twin, and now for a stronger reason than before: it has
+   nothing to undo, and a twin would be a second copy of one function body, free to
    drift from the migration.
 
 3. **Verify state 4, read-only.** §6.3, plus the phase tool's own posture check,
@@ -702,9 +768,17 @@ PGSERVICEFILE=<service-file> PGSERVICE=<service-name> \
 node scripts/db-phase-push.mjs --phase deferred_contract --url-file <file> --verify-only
 ```
 
-   The same three predicates the apply path checks — the mode row, the mode
-   function and the four guards — so this is the same question, asked by the same
-   code, after a hand-run change.
+   The same **twelve** predicates the apply path checks — the mode row, the mode
+   function, the six mode-gated guards as a set equality in both directions, the
+   transition guard, the security posture of the gate and mode functions, the seven
+   money RPCs, the session-revocation RPC, the two KPI write routines with their
+   period lock, and (R3) every function whose body writes `public.kpi_targets`
+   taking that same period lock — including `confirm_payment()` and
+   `void_payment()`, which are the two that move the money and are not on any list
+   — so this is the same question, asked by the same code, after a
+   hand-run change. It refuses if a guard is missing **or** if a guard that reads
+   the mode is present and undeclared; a `count(*) = N` lookup could only see the
+   first, which is how the round-4 defect survived.
 
 The round trip is measured, not asserted here: `MODE=branch` in
 `scripts/replay-migrations.sh` applies the migrations, runs the rollback companion
@@ -740,7 +814,7 @@ select count(*) from supabase_migrations.schema_migrations
 -- 3. the expand set is applied, and is the newest
 select version from supabase_migrations.schema_migrations
  order by version desc limit 3;
--- expect 20260817150000 first, then 20260817140000, then 20260817130000 —
+-- expect 20260817220000 first, then 20260817210000, then 20260817200000 —
 -- 20260818000000 is absent because it is the contract phase, which is applied
 -- separately (§1, "How the split is executed")
 
@@ -820,6 +894,24 @@ select count(*) as uncovered
    and (l.lanname <> 'plpgsql'
         or p.prosrc !~* '(^|\n)[ \t]*begin[ \t]*\r?\n[ \t]*perform[ \t]+public\.assert_current_session_at_entry\(\);');
 -- expect 0
+
+-- 10. every routine that writes kpi_targets takes the period lock (R3,
+--     20260817160000). Derived from the bodies, not from a list of names: the
+--     defect was that confirm_payment() and void_payment() move money into and out
+--     of actual_amount and were on nobody's list. Same predicate as the manifest's
+--     kpi-actuals-writers-take-the-period-lock, so this is a read-back of what the
+--     phase tool checks.
+select p.oid::regprocedure::text as routine,
+       pg_catalog.pg_get_functiondef(p.oid) like '%hashtextextended(''public.kpi_targets:''%'
+         as takes_period_lock
+  from pg_catalog.pg_proc p
+  join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.prokind = 'f'
+   and pg_catalog.pg_get_functiondef(p.oid) ~*
+         '(update|delete[[:space:]]+from|insert[[:space:]]+into)[[:space:]]+public[.]kpi_targets'
+ order by 1;
+-- expect four rows — clear_kpi_targets, confirm_payment, replace_kpi_targets,
+-- void_payment — and takes_period_lock = true for every one of them
 ```
 
 ### 6.2 · After the candidate deploy (expect state 3)

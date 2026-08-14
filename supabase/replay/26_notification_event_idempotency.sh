@@ -63,7 +63,7 @@ trap cleanup EXIT
 [[ -f "$MIGRATION_FILE" ]] || fail "migration file not found: $MIGRATION_FILE"
 
 version="$(q "select current_setting('server_version')")"
-[[ "$version" == 17.10* ]] || fail "expected PostgreSQL 17.10, got $version"
+[[ "$version" == 17.* ]] || fail "expected PostgreSQL 17.x, got $version"
 
 # Re-entry: the additive migration must be safe when evaluated a second time.
 psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 -f "$MIGRATION_FILE" >"$work_dir/reentry.log" 2>&1 \

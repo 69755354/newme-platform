@@ -24,7 +24,7 @@ const result = spawnSync(
   // Several behavior tests temporarily replace the process-wide CommonJS
   // loader to inject deterministic mocks. Keep test files isolated from one
   // another so those hooks cannot overlap and corrupt unrelated test modules.
-  ["--test", "--test-concurrency=1", "tests/**/*.test.mjs"],
+  ["--test", "--test-concurrency=1", "--test-isolation=process", "tests/**/*.test.mjs"],
   { env: testEnvironment(), stdio: "inherit" },
 );
 

@@ -19,21 +19,30 @@ function testEnvironment() {
   return env;
 }
 
-const result = spawnSync(
-  process.execPath,
-  // Several behavior tests temporarily replace the process-wide CommonJS
-  // loader to inject deterministic mocks. Keep test files isolated from one
-  // another so those hooks cannot overlap and corrupt unrelated test modules.
-  ["--test", "--test-concurrency=1", "--test-isolation=process", "tests/**/*.test.mjs"],
-  { env: testEnvironment(), stdio: "inherit" },
+const allTests = fs.globSync("tests/**/*.test.mjs").sort();
+const loaderHookTests = allTests.filter((file) =>
+  fs.readFileSync(file, "utf8").includes("Module._load"),
 );
+const ordinaryTests = allTests.filter((file) => !loaderHookTests.includes(file));
 
-if (result.error) {
-  console.error(result.error.message);
-  process.exit(1);
+// Tests that replace the process-wide CommonJS loader must never share a test
+// process. Node's file isolation has differed across runner/platform versions,
+// so enforce the boundary explicitly instead of relying on its default.
+for (const files of [ordinaryTests, ...loaderHookTests.map((file) => [file])]) {
+  if (files.length === 0) continue;
+  const result = spawnSync(
+    process.execPath,
+    ["--test", "--test-concurrency=1", "--test-isolation=process", ...files],
+    { env: testEnvironment(), stdio: "inherit" },
+  );
+
+  if (result.error) {
+    console.error(result.error.message);
+    process.exit(1);
+  }
+  if (result.signal) {
+    console.error(`Repository tests terminated by ${result.signal}`);
+    process.exit(1);
+  }
+  if (result.status !== 0) process.exit(result.status ?? 1);
 }
-if (result.signal) {
-  console.error(`Repository tests terminated by ${result.signal}`);
-  process.exit(1);
-}
-process.exit(result.status ?? 1);

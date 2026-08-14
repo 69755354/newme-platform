@@ -9,7 +9,9 @@ test("npm test uses the cross-platform Node test launcher", async () => {
   assert.equal(packageJson.scripts.test, "node scripts/run-node-tests.mjs");
   const launcher = await readFile(new URL("../../scripts/run-node-tests.mjs", import.meta.url), "utf8");
   assert.match(launcher, /process\.execPath/);
-  assert.match(launcher, /"--test", "--test-concurrency=1", "--test-isolation=process", "tests\/\*\*\/\*\.test\.mjs"/);
+  assert.match(launcher, /globSync\("tests\/\*\*\/\*\.test\.mjs"\)/);
+  assert.match(launcher, /includes\("Module\._load"\)/);
+  assert.match(launcher, /"--test", "--test-concurrency=1", "--test-isolation=process", \.\.\.files/);
   assert.match(launcher, /Git", "bin"/);
 });
 

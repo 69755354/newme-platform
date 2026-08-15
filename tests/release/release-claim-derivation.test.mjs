@@ -337,7 +337,9 @@ test("the wrapper derives the set from its own worktree and verifies the derived
 
   const claim = at(/--verify-claim --status/);
   const history = at(/verify-remote-migration-history\.mjs/);
-  const assets = at(/install-systemd-assets\.sh"/);
+  // Select the ordinary asset transaction, not the earlier credential-only
+  // coordinator branch, which deliberately has its own derived gate set.
+  const assets = at(/^\s*bash "\$WORKTREE\/scripts\/install-systemd-assets\.sh"$/);
   assert.ok(claim > 0 && claim < history, "the claim must be derived before the history gate consumes it");
   assert.ok(history < assets);
 

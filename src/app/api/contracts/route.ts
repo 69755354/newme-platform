@@ -202,12 +202,14 @@ export async function POST(request: NextRequest) {
       installments_count: number;
     };
 
-    // Resolve status, copy and approvers from the committed contract.
+    // Creation leaves the contract in draft. Notify that persisted fact now;
+    // the pending-approval event is emitted only by the later transition that
+    // actually moves the row to pending_admin.
     try {
       await dispatchPersistedNotification({
         actorId: user.id,
         input: {
-          type: "contract_pending_approval",
+          type: "contract_created",
           contract_id: contract.id,
         },
       });

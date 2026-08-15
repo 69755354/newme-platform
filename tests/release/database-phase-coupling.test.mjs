@@ -356,7 +356,7 @@ test("production database writes use the canonical release lock and an exact-SHA
   const lock = source.indexOf("exec 9>/run/lock/newme-production-release.lock");
   const dispatch = source.indexOf('case "${1:-}" in');
   const canonicalMain = source.indexOf('[ "$SHA" = "$MAIN_SHA" ]');
-  const exactRun = source.indexOf('run.get("head_sha") != expected_sha');
+  const exactRun = source.indexOf('run.get("head_sha") != expected_sha', canonicalMain);
   const transition = source.lastIndexOf('if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then');
   assert.ok(lock >= 0 && lock < dispatch, "the db-transition parser runs before the shared release lock");
   assert.ok(canonicalMain > dispatch && canonicalMain < transition, "db-transition is not gated on canonical main");
@@ -438,24 +438,21 @@ test("finalization requires strict before it may call a release complete", () =>
   const finalize = source.slice(finalizeStart, finalizeEnd);
 
   const gate = finalize.indexOf("--for-completion");
-  const evidence = finalize.indexOf("finalize-deploy-evidence.sh");
+  const evidence = finalize.indexOf('bash "$FINALIZE_TARGET/scripts/finalize-deploy-evidence.sh"');
   assert.ok(gate > 0, "finalization is not gated on the database phase");
   assert.ok(gate < evidence, "the evidence file is rewritten before the phase is checked");
-  assert.match(finalize, /if \[ "\$UAT_STATUS" = pass \]; then/);
   assert.match(finalize, /require_node \|\| exit 65/);
   assert.match(finalize, /validate_migration_db_url_file \|\| exit 65/);
   assert.match(finalize, /--url-file "\$MIGRATION_DB_URL_FILE"/);
-  assert.match(finalize, /the database phase does not allow this release to be completed" >&2\n      exit 70/);
+  assert.match(finalize, /the database phase does not allow this release to be completed" >&2\n\s+exit 70/);
   // No bypass when the gate is missing from the release being finalized.
   assert.match(finalize, /carries no scripts\/check-release-phase\.mjs; completion cannot be gated/);
   const missingGate = finalize.slice(finalize.indexOf("FINALIZE_PHASE_GATE="));
   assert.doesNotMatch(missingGate.slice(0, missingGate.indexOf("--for-completion")), /note:|continue|true/);
 
-  // A failed UAT records uat_failed and claims nothing, so it is not gated.
-  assert.ok(
-    finalize.indexOf('if [ "$UAT_STATUS" = pass ]; then') < gate,
-    "a fail finalization is blocked by the completion gate",
-  );
+  assert.match(finalize, /release_status not in \{"acceptance_verified", "complete"\}/);
+  assert.match(finalize, /acceptance\.get\("bundle_sha256"\) != expected_digest/);
+  assert.doesNotMatch(finalize, /UAT_STATUS|UAT_ACTOR|UAT_FIXTURE_IDS|FIXTURE_CLEANUP_STATUS/);
 
   // One definition of the URL file and its validation, used by deploy,
   // db-transition and successful finalization.

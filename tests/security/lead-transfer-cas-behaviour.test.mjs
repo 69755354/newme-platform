@@ -32,6 +32,12 @@ import {
   isLeadUpdatedAtToken,
   readLeadTransferBatchKey,
 } from "../../src/lib/lead-transfer-batch.mjs";
+import {
+  acquireLeadRebalanceBatchKey,
+  clearLeadRebalanceBatchKey,
+  LEAD_REBALANCE_PENDING_BATCH_KEY,
+  leadRebalancePendingBatchStorageKey,
+} from "../../src/lib/lead-rebalance-intent.mjs";
 
 const require = createRequire(import.meta.url);
 const Module = require("node:module");
@@ -187,6 +193,51 @@ test("R6 the batch key must come from the caller, and a null token is not a toke
   assert.equal(classifyLeadReassignResult({ unchanged: true }), "unchanged");
   assert.equal(classifyLeadReassignResult({ unchanged: false, idempotent_replay: true }), "replayed");
   assert.equal(classifyLeadReassignResult(null), "transferred");
+});
+
+test("R6 pending browser rebalance keys survive reload and remain scoped to their actors", () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key),
+  };
+  let generated = 0;
+  const actorAKey = leadRebalancePendingBatchStorageKey(LEAD_A);
+  const actorBKey = leadRebalancePendingBatchStorageKey(LEAD_B);
+  const first = acquireLeadRebalanceBatchKey(storage, LEAD_A, () => {
+    generated += 1;
+    return BATCH;
+  });
+  const afterReload = acquireLeadRebalanceBatchKey(storage, LEAD_A, () => {
+    generated += 1;
+    return OTHER_BATCH;
+  });
+  assert.equal(first, BATCH);
+  assert.equal(afterReload, BATCH);
+  assert.equal(generated, 1);
+  const actorB = acquireLeadRebalanceBatchKey(storage, LEAD_B, () => OTHER_BATCH);
+  assert.equal(actorB, OTHER_BATCH);
+  assert.equal(values.get(actorAKey), BATCH);
+  assert.equal(values.get(actorBKey), OTHER_BATCH);
+  assert.equal(clearLeadRebalanceBatchKey(storage, LEAD_B, OTHER_BATCH), true);
+  assert.equal(values.get(actorAKey), BATCH, "actor B cleared actor A's pending intent");
+  assert.equal(acquireLeadRebalanceBatchKey(storage, LEAD_A, () => OTHER_BATCH), BATCH);
+  assert.equal(clearLeadRebalanceBatchKey(storage, LEAD_A, OTHER_BATCH), false);
+  assert.equal(values.get(actorAKey), BATCH);
+  assert.equal(clearLeadRebalanceBatchKey(storage, LEAD_A, BATCH), true);
+  assert.equal(values.has(actorAKey), false);
+  assert.equal(LEAD_REBALANCE_PENDING_BATCH_KEY, "newme:lead-rebalance:pending-batch-v1");
+});
+
+test("R6 storage failure refuses to mint an ephemeral rebalance intent", () => {
+  const storage = {
+    getItem: () => null,
+    setItem: () => { throw new Error("quota"); },
+    removeItem: () => {},
+  };
+  assert.throws(() => acquireLeadRebalanceBatchKey(storage, LEAD_A, () => BATCH), /quota/);
+  assert.throws(() => acquireLeadRebalanceBatchKey(storage, "not-an-actor", () => BATCH), /actor id/);
 });
 
 // --- 2 · the actions --------------------------------------------------------
@@ -430,20 +481,35 @@ function rebalanceRequest(body) {
  * `leads` is asked for twice — once for the per-rep counts and once for the
  * transferable rows — so it answers by looking at what the chain filtered on.
  */
-function rebalanceClient({ reps, counts, transferable, respond }) {
+function rebalanceClient({ reps, counts, transferable, respond, persistedPlan = null }) {
+  let storedPlan = persistedPlan;
   const { client, rpcCalls, chains } = supabaseDouble({
-    respond,
+    respond: (call) => {
+      if (call.name === "get_or_create_lead_rebalance_plan") {
+        if (storedPlan !== null) {
+          return { data: { found: true, plan: structuredClone(storedPlan) }, error: null };
+        }
+        if (call.args.p_plan === undefined) {
+          return { data: { found: false }, error: null };
+        }
+        storedPlan = structuredClone(call.args.p_plan);
+        return { data: { found: true, plan: structuredClone(storedPlan) }, error: null };
+      }
+      return respond
+        ? respond(call)
+        : { data: { unchanged: false }, error: null };
+    },
     tables: {
       profiles: (chain) => (chain.ops.some(([op, column]) => op === "eq" && column === "id")
         ? { data: { role: "admin" }, error: null }
-        : { data: reps, error: null }),
+        : { data: typeof reps === "function" ? reps() : reps, error: null }),
       leads: (chain) => (chain.ops.some(([op, column]) => op === "eq" && column === "stage")
-        ? { data: transferable, error: null }
-        : { data: counts, error: null }),
+        ? { data: typeof transferable === "function" ? transferable() : transferable, error: null }
+        : { data: typeof counts === "function" ? counts() : counts, error: null }),
     },
   });
   client.auth = { getUser: async () => ({ data: { user: { id: "actor" } }, error: null }) };
-  return { client, rpcCalls, chains };
+  return { client, rpcCalls, chains, getStoredPlan: () => structuredClone(storedPlan) };
 }
 
 const REPS = [
@@ -486,11 +552,16 @@ test("R6 the rebalance route transfers through the routine and reports refusals 
   const answer = await route.POST(rebalanceRequest({ batchKey: BATCH }));
 
   // The token came from the same read as the plan, and each lead got its own key.
-  assert.equal(rpcCalls.length, 2);
-  assert.equal(rpcCalls[0].args.p_expected_updated_at, TOKEN_A);
-  assert.equal(rpcCalls[1].args.p_expected_updated_at, TOKEN_B);
-  assert.equal(rpcCalls[0].args.p_idempotency_key, deriveLeadTransferKey(BATCH, LEAD_A));
-  assert.equal(rpcCalls[0].args.p_reason, "sales_load_rebalance");
+  const planCalls = rpcCalls.filter((call) => call.name === "get_or_create_lead_rebalance_plan");
+  const transferCalls = rpcCalls.filter((call) => call.name === "reassign_lead_atomic");
+  assert.equal(planCalls.length, 2);
+  assert.equal(planCalls[0].args.p_plan, undefined);
+  assert.equal(transferCalls.length, 2);
+  assert.equal(transferCalls[0].args.p_expected_updated_at, TOKEN_A);
+  assert.equal(transferCalls[1].args.p_expected_updated_at, TOKEN_B);
+  assert.equal(transferCalls[0].args.p_idempotency_key, deriveLeadTransferKey(BATCH, LEAD_A));
+  assert.equal(planCalls[1].args.p_plan.updates[0].idempotency_key, transferCalls[0].args.p_idempotency_key);
+  assert.equal(transferCalls[0].args.p_reason, "sales_load_rebalance");
 
   // Not one direct owner write. This is the assertion the old route failed.
   const ownerWrites = chains.filter((chain) => chain.ops.some(
@@ -526,6 +597,70 @@ test("R6 a replayed rebalance reports zero transferred rather than repeating its
   assert.equal(answer.body.replayed, 1);
 });
 
+test("R6 a partial rebalance retry executes the original stored plan without replanning", async () => {
+  const transferable = [
+    { id: LEAD_A, assigned_to: "over", customer_name: "A", updated_at: TOKEN_A },
+    { id: LEAD_B, assigned_to: "over", customer_name: "B", updated_at: TOKEN_B },
+  ];
+  let currentCounts = COUNTS;
+  const attempts = new Map();
+  const { client, rpcCalls, chains, getStoredPlan } = rebalanceClient({
+    reps: REPS,
+    counts: () => currentCounts,
+    transferable,
+    respond: ({ args }) => {
+      const attempt = attempts.get(args.p_lead_id) ?? 0;
+      attempts.set(args.p_lead_id, attempt + 1);
+      if (args.p_lead_id === LEAD_B && attempt === 0) {
+        return { data: null, error: { message: "temporary transport failure" } };
+      }
+      return {
+        data: {
+          lead_id: args.p_lead_id,
+          assigned_to: args.p_new_assignee,
+          unchanged: false,
+          idempotent_replay: args.p_lead_id === LEAD_A && attempt > 0,
+        },
+        error: null,
+      };
+    },
+  });
+  const route = loadRebalanceRoute(client);
+
+  const first = await route.POST(rebalanceRequest({ batchKey: BATCH }));
+  assert.equal(first.status, 500);
+  assert.equal(first.body.transferred, 1);
+  assert.equal(first.body.failed, 1);
+  const storedPlan = getStoredPlan();
+  const firstLeadReads = chains.filter((chain) => chain.table === "leads").length;
+
+  // One successful transfer changes the live distribution enough for the old
+  // implementation to return its early "No imbalance" response. A retry must
+  // still replay A and finish B from the stored first-attempt plan.
+  currentCounts = [
+    { assigned_to: "over" }, { assigned_to: "over" }, { assigned_to: "over" }, { assigned_to: "under" },
+  ];
+  const second = await route.POST(rebalanceRequest({ batchKey: BATCH }));
+  assert.equal(second.status, 200);
+  assert.equal(second.body.transferred, 1);
+  assert.equal(second.body.replayed, 1);
+  assert.equal(second.body.conflicts, 0);
+  assert.equal(chains.filter((chain) => chain.table === "leads").length, firstLeadReads);
+
+  const transferCalls = rpcCalls.filter((call) => call.name === "reassign_lead_atomic");
+  assert.equal(transferCalls.length, 4);
+  for (const leadId of [LEAD_A, LEAD_B]) {
+    const calls = transferCalls.filter((call) => call.args.p_lead_id === leadId);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].args.p_new_assignee, calls[1].args.p_new_assignee);
+    assert.equal(calls[0].args.p_idempotency_key, calls[1].args.p_idempotency_key);
+    assert.equal(
+      storedPlan.updates.find((update) => update.id === leadId).idempotency_key,
+      calls[0].args.p_idempotency_key,
+    );
+  }
+});
+
 test("R6 the rebalance route treats a lead with no token as a failure, not as a free transfer", async () => {
   const transferable = [{ id: LEAD_A, assigned_to: "over", customer_name: "A", updated_at: null }];
   const { client, rpcCalls } = rebalanceClient({
@@ -537,7 +672,11 @@ test("R6 the rebalance route treats a lead with no token as a failure, not as a 
   const route = loadRebalanceRoute(client);
 
   const answer = await route.POST(rebalanceRequest({ batchKey: BATCH }));
-  assert.deepEqual(rpcCalls, [], "a lead with no token was sent to the routine, where null means do not compare");
+  assert.equal(
+    rpcCalls.filter((call) => call.name === "reassign_lead_atomic").length,
+    0,
+    "a lead with no token was sent to the routine, where null means do not compare",
+  );
   assert.equal(answer.status, 500);
   assert.equal(answer.body.failed, 1);
   assert.equal(answer.body.transferred, 0);

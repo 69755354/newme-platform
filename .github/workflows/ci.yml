@@ -8,6 +8,11 @@ on:
         required: false
         default: false
         type: boolean
+      credential_remediation:
+        description: Run the protected credential-remediation readiness gate without authorizing deploy, database, or finalize
+        required: false
+        default: false
+        type: boolean
       release_sha:
         description: Exact deployed release SHA being closed (release_final only)
         required: false
@@ -15,6 +20,11 @@ on:
         type: string
       closure_sha:
         description: Exact current main SHA whose only release diff is TASKBOARD.md (release_final only)
+        required: false
+        default: ''
+        type: string
+      acceptance_digest:
+        description: SHA-256 of the canonically attested postdeploy evidence bundle (release_final only)
         required: false
         default: ''
         type: string
@@ -41,8 +51,13 @@ env:
 jobs:
   validate:
     name: Repository validation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
+      options: --ipc=host
+    permissions:
+      contents: read
     steps:
       # fetch-depth: 0 is load-bearing here too: tests/release/migration-history-gate.test.mjs
       # verifies supabase/migration-history-baseline.sha256 against the base commit
@@ -50,18 +65,29 @@ jobs:
       # shallow checkout makes the immutability proof unverifiable, and the gate
       # fails closed rather than reporting an unverified manifest as OK.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Review dependency changes for high-severity advisories
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          license-check: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.18.0'
           cache: npm
 
+      - name: Verify toolchain before dependency install
+        run: node scripts/check-toolchain.mjs
+
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --registry=https://registry.npmjs.org --strict-allow-scripts=true --include=optional
 
       - name: E2E secret and artifact gate
         run: npm run check:e2e-secrets && npm run check:e2e-artifacts
@@ -108,6 +134,9 @@ jobs:
       - name: Workflow YAML validation
         run: npm run check:workflows
 
+      - name: CI provenance gate
+        run: npm run check:ci-provenance
+
       - name: Supply chain gate
         run: npm run check:supply-chain -- --accept-known
 
@@ -123,11 +152,8 @@ jobs:
       - name: Release hygiene regression
         run: node --test tests/release/*.test.mjs
 
-      - name: Install production smoke browser
-        run: npx playwright install --with-deps chromium
-
       - name: Production anonymous browser smoke
-        run: npx playwright test --config=playwright.production-smoke.config.ts
+        run: npm exec --offline -- playwright test --config=playwright.production-smoke.config.ts
 
       - name: Build
         run: npm run build
@@ -143,19 +169,44 @@ jobs:
             echo "Build recreated the forbidden root tsconfig.tsbuildinfo"
             exit 1
           fi
+
+  codeql:
+    name: CodeQL analysis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Initialize isolated CodeQL analysis
+        uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        with:
+          languages: javascript-typescript
+          build-mode: none
+
+      - name: Analyze JavaScript and TypeScript with CodeQL
+        uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        with:
+          category: /language:javascript-typescript
+
   windows-checkout:
     name: Windows checkout and SPEC gate
     # PR runs, plus every manual release-candidate dispatch. Requiring
     # release_final here would recreate a dependency on postdeploy evidence
     # before production has run the release.
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 10
     steps:
       # On a dispatch there is no pull_request context, so this falls back to the
       # dispatched SHA rather than checking out an empty ref.
       - name: Checkout exact PR head
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           path: sam16-checkout
@@ -166,6 +217,11 @@ jobs:
             scripts/check-spec.sh
             scripts/run-bash.mjs
           sparse-checkout-cone-mode: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.18.0'
 
       - name: Verify clean checkout and SPEC
         shell: pwsh
@@ -179,24 +235,66 @@ jobs:
 
   taskboard-predeploy:
     name: Predeploy taskboard readiness
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.credential_remediation }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.18.0'
+
+      - name: Verify toolchain before taskboard check
+        run: node scripts/check-toolchain.mjs
 
       - name: Require predeploy-ready taskboard
         run: npm run check:taskboard:predeploy
 
+  credential-remediation-readiness:
+    name: Credential remediation readiness
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.credential_remediation }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.18.0'
+
+      - name: Refuse mixed release-final or non-main remediation runs
+        shell: bash
+        env:
+          RELEASE_FINAL: ${{ inputs.release_final }}
+        run: |
+          set -Eeuo pipefail
+          [ "$RELEASE_FINAL" = false ] || { echo "credential remediation and release_final are mutually exclusive" >&2; exit 64; }
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "credential remediation must be dispatched on main" >&2; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ] || { echo "checkout is not the exact workflow SHA" >&2; exit 1; }
+
+      - name: Verify toolchain before credential-remediation check
+        run: node scripts/check-toolchain.mjs
+
+      - name: Require the single credential-remediation blocker
+        run: npm run check:taskboard:credential-remediation
+
   control-plane-restore:
     name: Control-plane restore interruption drill
     if: ${{ github.event_name == 'workflow_dispatch' && !inputs.release_final }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
       - name: Checkout exact release candidate with history
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -218,42 +316,117 @@ jobs:
             --cpus 2 \
             --volume "$PWD:/repo:ro" \
             --env NEWME_DRILL_CONFIRM=throwaway-container \
-            node:24-bookworm \
+            docker.io/library/node:24.18.0-bookworm@sha256:5711a0d445a1af54af9589066c646df387d1831a608226f4cd694fc59e745059 \
             bash /repo/scripts/control-plane-restore-drill.sh
+
+      - name: Run isolated credential subset transaction drill
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker run --rm \
+            --network none \
+            --pids-limit 256 \
+            --memory 1g \
+            --cpus 2 \
+            --volume "$PWD:/repo:ro" \
+            --env NEWME_DRILL_CONFIRM=throwaway-container \
+            docker.io/library/node:24.18.0-bookworm@sha256:5711a0d445a1af54af9589066c646df387d1831a608226f4cd694fc59e745059 \
+            bash /repo/scripts/credential-assets-transaction-drill.sh
+
+      - name: Refuse untrusted alert state before any installer write
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker run --rm \
+            --network none \
+            --pids-limit 256 \
+            --memory 1g \
+            --cpus 2 \
+            --volume "$PWD:/repo:ro" \
+            --env NEWME_DRILL_CONFIRM=throwaway-container \
+            docker.io/library/node:24.18.0-bookworm@sha256:5711a0d445a1af54af9589066c646df387d1831a608226f4cd694fc59e745059 \
+            bash /repo/scripts/alert-state-preflight-drill.sh
+
+      - name: Exercise credential live-state durable cleanup and reentry
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker run --rm \
+            --network none \
+            --pids-limit 256 \
+            --memory 1g \
+            --cpus 2 \
+            --volume "$PWD:/repo:ro" \
+            docker.io/library/node:24.18.0-bookworm@sha256:5711a0d445a1af54af9589066c646df387d1831a608226f4cd694fc59e745059 \
+            node /repo/scripts/credential-live-attestation-drill.mjs
+
+      - name: Exercise the credential live five-stage state machine
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker run --rm \
+            --network none \
+            --pids-limit 256 \
+            --memory 1g \
+            --cpus 2 \
+            --volume "$PWD:/repo:ro" \
+            docker.io/library/node:24.18.0-bookworm@sha256:5711a0d445a1af54af9589066c646df387d1831a608226f4cd694fc59e745059 \
+            bash -lc 'exec 9>/run/lock/newme-production-release.lock; exec node /repo/scripts/credential-live-five-stage-drill.mjs'
+          docker run --rm \
+            --network none \
+            --pids-limit 256 \
+            --memory 1g \
+            --cpus 2 \
+            --volume "$PWD:/repo:ro" \
+            --env NEWME_CREDENTIAL_LIVE_DRILL_MODE=expire-prepared \
+            docker.io/library/node:24.18.0-bookworm@sha256:5711a0d445a1af54af9589066c646df387d1831a608226f4cd694fc59e745059 \
+            bash -lc 'exec 9>/run/lock/newme-production-release.lock; exec node /repo/scripts/credential-live-five-stage-drill.mjs'
 
   taskboard-completion:
     name: Release-final taskboard completion
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_final }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.18.0'
+
+      - name: Verify toolchain before closure checks
+        run: node scripts/check-toolchain.mjs
 
       - name: Bind closure to deployed release
         shell: bash
         env:
           RELEASE_SHA: ${{ inputs.release_sha }}
           CLOSURE_SHA: ${{ inputs.closure_sha }}
+          ACCEPTANCE_DIGEST: ${{ inputs.acceptance_digest }}
         run: |
           set -Eeuo pipefail
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "release_sha must be an exact 40-character SHA" >&2; exit 64; }
           [[ "$CLOSURE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "closure_sha must be an exact 40-character SHA" >&2; exit 64; }
+          [[ "$ACCEPTANCE_DIGEST" =~ ^[0-9a-f]{64}$ ]] || { echo "acceptance_digest must be an exact SHA-256" >&2; exit 64; }
           [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "release-final must be dispatched on main" >&2; exit 1; }
           [ "$CLOSURE_SHA" = "$GITHUB_SHA" ] || { echo "closure_sha is not the exact workflow SHA" >&2; exit 1; }
           [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ] || { echo "checkout is not the exact workflow SHA" >&2; exit 1; }
           node scripts/check-release-closure.mjs \
             --release-sha "$RELEASE_SHA" \
-            --closure-sha "$CLOSURE_SHA"
+            --closure-sha "$CLOSURE_SHA" \
+            --acceptance-digest "$ACCEPTANCE_DIGEST"
 
       - name: Require completed taskboard
         run: npm run check:taskboard:complete
 
   local-database:
     name: Narrow task follow-up database contract
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     # The service container is for the CLI statement-parity drill below and is
     # deliberately separate from the Supabase stack this job starts: that stack's
@@ -262,7 +435,7 @@ jobs:
     # supabase/ci-local/supabase/config.toml puts the local database on 56432.
     services:
       postgres:
-        image: postgres:17
+        image: docker.io/library/postgres:17.11-trixie@sha256:f86c774c7a51d0f05133f2ab70e4c384b589170458ab1df1ba83426d7cc30da7
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
         ports:
@@ -280,25 +453,29 @@ jobs:
       PGDATABASE: postgres
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.18.0'
           cache: npm
 
+      - name: Verify toolchain before dependency install
+        run: node scripts/check-toolchain.mjs
+
       # The parity drill reads the recorded statements array back through `pg`,
       # which is a devDependency; npm ci is what makes it the locked version.
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --registry=https://registry.npmjs.org --strict-allow-scripts=true --include=optional
 
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v3
-        with:
-          version: 2.113.0
+      - name: Install checksum-locked Supabase CLI
+        run: |
+          node scripts/install-reviewed-artifact.mjs supabase-cli-linux-amd64
+          printf '%s\n' "$RUNNER_TEMP/newme-supabase-cli" >> "$GITHUB_PATH"
 
       - name: Verify pinned local CLI
         run: |
@@ -344,7 +521,7 @@ jobs:
 
   migration-replay:
     name: Migration replay and release contracts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # The job above exercises four migrations under supabase/ci-local. The other
     # 106 in supabase/migrations/ — including every L0 security migration — had
@@ -353,11 +530,11 @@ jobs:
     # they do what they claim.
     #
     # No Supabase CLI and no Docker-in-Docker: a postgres service container plus
-    # the psql client that ubuntu-latest already ships. No secrets are referenced,
+    # the psql client declared by the fixed ubuntu-24.04 runner exception. No secrets are referenced,
     # and the only database reachable from this job is the service container.
     services:
       postgres:
-        image: postgres:17
+        image: docker.io/library/postgres:17.11-trixie@sha256:f86c774c7a51d0f05133f2ab70e4c384b589170458ab1df1ba83426d7cc30da7
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
         ports:
@@ -378,21 +555,25 @@ jobs:
       # without full history that commit is absent and the gate FAILS rather than
       # downgrading itself to a warning.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.18.0'
           cache: npm
+
+      - name: Verify toolchain before dependency install
+        run: node scripts/check-toolchain.mjs
 
       # The two-phase applier below talks to the service container through `pg`,
       # which is a devDependency; npm ci is what makes it the locked version
       # rather than whatever a bare `npm install pg` resolves to at run time.
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --registry=https://registry.npmjs.org --strict-allow-scripts=true --include=optional
 
       # Runs before anything is replayed: if applied history has been edited,
       # renamed or deleted, every replay result below is measuring a history that
@@ -425,11 +606,10 @@ jobs:
       - name: Hand-run companion content binding
         run: npm run check:release-companions
 
-      - name: Install psql client
+      - name: Verify hosted psql client
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends postgresql-client
-          psql --version
+          test "$(psql --version)" = "psql (PostgreSQL) 16.14 (Ubuntu 16.14-1.pgdg24.04+1)"
+          command -v createdb >/dev/null
 
       # Negative control first. If the assertions hold against the un-remediated
       # floor they prove nothing, and the gate below would be theatre.

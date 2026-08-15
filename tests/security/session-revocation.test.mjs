@@ -154,6 +154,7 @@ test("login and the dashboard guard require an active profile", async () => {
   // The active-profile gate moved from the browser into the login endpoint,
   // where it runs before any cookie is issued instead of after.
   assert.match(login, /data\?\.isActive !== true/);
+  assert.doesNotMatch(login, /clearStaleSession|fetch\(["']\/api\/auth\/logout["']/);
   assert.match(loginRoute, /isActiveProfile\(profile\)/);
   assert.match(loginRoute, /Authorization: `Bearer \$\{accessToken\}`/);
   assert.match(loginRoute, /revokeIssuedToken\(supabaseUrl, anonKey, accessToken\)/);
@@ -184,6 +185,33 @@ test("login and the dashboard guard require an active profile", async () => {
   assert.doesNotMatch(authorizationRead, /lastActive/);
   assert.match(hook, /readSessionIdentity\(\)/);
   assert.doesNotMatch(hook, /peekSessionIdentity/);
+});
+
+test("session identity distinguishes revoked credentials from upstream outages", async (t) => {
+  const previousFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = previousFetch;
+  });
+
+  const identity = loadTypeScriptModule("src/lib/session-identity.ts", {});
+
+  for (const status of [401, 403]) {
+    globalThis.fetch = async () => ({ ok: false, status });
+    assert.deepEqual(
+      await identity.readSessionIdentity(),
+      { status: "unauthenticated" },
+      `${status} must revoke browser authorization`,
+    );
+  }
+
+  for (const status of [429, 500, 503]) {
+    globalThis.fetch = async () => ({ ok: false, status });
+    assert.deepEqual(
+      await identity.readSessionIdentity(),
+      { status: "unavailable" },
+      `${status} must not be misreported as an invalid session`,
+    );
+  }
 });
 
 test("real lead stage handler rejects an inactive old session before business access", async () => {

@@ -15,9 +15,22 @@ STATE_ROOT=/var/lib/newme/deploy-state
 PENDING_RECORD="$STATE_ROOT/production-rollback.pending"
 ROLLBACK_MAP="$STATE_ROOT/production-rollback.map"
 SYSTEMD_PENDING_RECORD="$STATE_ROOT/systemd-assets.pending"
+CREDENTIAL_TRANSITION_PENDING="$STATE_ROOT/credential-transition.pending.json"
+CREDENTIAL_TRANSITION_BACKUP="$STATE_ROOT/credential-transition.previous.env"
+CREDENTIAL_TRANSITION_PENDING_NEXT="$STATE_ROOT/credential-transition.pending.next"
+CREDENTIAL_TRANSITION_BACKUP_PREPARING="$STATE_ROOT/credential-transition.previous.env.preparing"
+CREDENTIAL_RUNTIME_NEXT=/etc/newme/newme-runtime.env.credential-transition.next
+CREDENTIAL_ASSET_PENDING="$STATE_ROOT/credential-assets.pending"
+CREDENTIAL_GATE_CONSUMED="$STATE_ROOT/credential-remediation-gate.consumed"
+CREDENTIAL_LIVE_HELPER=/usr/local/libexec/newme/newme-credential-live-attestation.mjs
+CREDENTIAL_LIVE_POLICY=/usr/local/share/newme/credential-live-attestation-policy-v1.json
+CREDENTIAL_TRANSITION_HELPER=/usr/local/libexec/newme/newme-credential-transition.mjs
 MIGRATION_DB_URL_FILE=/etc/newme/migration-db.url
 ASSET_SNAPSHOT_HELPER=/usr/local/libexec/newme/newme-install-systemd-assets
 ASSET_ROLLBACK_HELPER=/usr/local/libexec/newme/newme-rollback-systemd-assets
+POSTDEPLOY_ACCEPTANCE_STATE_ROOT=/var/lib/newme/postdeploy-acceptance-state-v1
+POSTDEPLOY_ACCEPTANCE_RUNNER=scripts/run-postdeploy-acceptance.mjs
+CANONICAL_RELEASE_MIRROR=/opt/newme/repository.git
 SNAPSHOT_RECORD=""
 PENDING_ORIGINAL_CURRENT=""
 PENDING_ORIGINAL_ROLLBACK=""
@@ -38,11 +51,27 @@ RESOLVED_RELEASE_STATUS=""
 RESOLVED_PREVIOUS_ROLLBACK=""
 health=""
 auth=""
+action=${1:-}
 
 install -d -o root -g root -m 0700 "$STATE_ROOT"
 [ -d "$STATE_ROOT" ] && [ ! -L "$STATE_ROOT" ] || { echo "persistent rollback state directory is invalid" >&2; exit 65; }
 [ "$(stat -c '%U:%G' "$STATE_ROOT")" = root:root ] || { echo "persistent rollback state ownership is invalid" >&2; exit 65; }
 [ "$(stat -c '%a' "$STATE_ROOT")" = 700 ] || { echo "persistent rollback state mode is invalid" >&2; exit 65; }
+if [ "$action" = execute ]; then
+  if [ -e "$CREDENTIAL_TRANSITION_PENDING" ] || [ -L "$CREDENTIAL_TRANSITION_PENDING" ] ||
+    [ -e "$CREDENTIAL_TRANSITION_BACKUP" ] || [ -L "$CREDENTIAL_TRANSITION_BACKUP" ] ||
+    [ -e "$CREDENTIAL_TRANSITION_PENDING_NEXT" ] || [ -L "$CREDENTIAL_TRANSITION_PENDING_NEXT" ] ||
+    [ -e "$CREDENTIAL_TRANSITION_BACKUP_PREPARING" ] || [ -L "$CREDENTIAL_TRANSITION_BACKUP_PREPARING" ] ||
+    [ -e "$CREDENTIAL_RUNTIME_NEXT" ] || [ -L "$CREDENTIAL_RUNTIME_NEXT" ]; then
+    echo "an unresolved credential transition blocks production rollback; run: sudo /usr/local/sbin/newme-deploy credential-recover" >&2
+    exit 75
+  fi
+  if [ -e "$CREDENTIAL_ASSET_PENDING" ] || [ -L "$CREDENTIAL_ASSET_PENDING" ] ||
+    [ -e "$CREDENTIAL_GATE_CONSUMED" ] || [ -L "$CREDENTIAL_GATE_CONSUMED" ]; then
+    echo "an unresolved credential-asset transaction blocks production rollback; run: sudo /usr/local/sbin/newme-deploy credential-recover" >&2
+    exit 75
+  fi
+fi
 
 validate_release() {
   local release="$1"
@@ -54,6 +83,119 @@ validate_release() {
   [ -d "$release" ] && [ ! -L "$release" ] &&
     [ -f "$release/.newme-protect" ] && [ -f "$release/.next/BUILD_ID" ] || {
     echo "release is not protected and complete: $release" >&2
+    return 1
+  }
+}
+
+require_canonical_installed_credential_attestor() {
+  local candidate_sha="" main_sha="" expected="" actual="" origin="" trusted="" path="" mode=""
+  [ -d "$CANONICAL_RELEASE_MIRROR" ] && [ ! -L "$CANONICAL_RELEASE_MIRROR" ] || return 1
+  [ "$(stat -c '%U:%G' "$CANONICAL_RELEASE_MIRROR")" = root:root ] || return 1
+  [ "$(stat -c '%a' "$CANONICAL_RELEASE_MIRROR")" = 700 ] || return 1
+  origin="$(git --git-dir="$CANONICAL_RELEASE_MIRROR" remote get-url origin 2>/dev/null || true)"
+  case "$origin" in
+    https://github.com/69755354/newme-platform.git|git@github.com:69755354/newme-platform.git) ;;
+    *) return 1 ;;
+  esac
+  for trusted in "$CREDENTIAL_LIVE_HELPER:755" "$CREDENTIAL_LIVE_POLICY:644" "$STATE_ROOT/credential-remediation.protected.json:600"; do
+    path="${trusted%:*}"
+    mode="${trusted##*:}"
+    [ -f "$path" ] && [ ! -L "$path" ] || return 1
+    [ "$(stat -c '%U:%G' "$path")" = root:root ] && [ "$(stat -c '%a' "$path")" = "$mode" ] || return 1
+  done
+  candidate_sha="$(python3 - "$STATE_ROOT/credential-remediation.protected.json" <<'PY'
+import json
+import re
+import sys
+expected_assets = {
+    "/etc/systemd/system/newme-platform.service",
+    "/etc/tmpfiles.d/newme-credential-inbox.conf",
+    "/etc/cron.d/newme-observability",
+    "/usr/local/sbin/newme-deploy",
+    "/usr/local/sbin/newme-production-rollback",
+    "/usr/local/libexec/newme/newme-install-systemd-assets",
+    "/usr/local/libexec/newme/newme-rollback-systemd-assets",
+    "/usr/local/libexec/newme/newme-validate-production-config.py",
+    "/usr/local/libexec/newme/newme-credential-transition.mjs",
+    "/usr/local/libexec/newme/newme-credential-live-attestation.mjs",
+    "/usr/local/share/newme/credential-live-attestation-policy-v1.json",
+    "/usr/local/libexec/newme/newme-readiness.sh",
+    "/opt/hermes-scripts/observability/dependency-probe.sh",
+}
+with open(sys.argv[1], encoding="utf-8") as handle:
+    marker = json.load(handle)
+if (
+    not isinstance(marker, dict)
+    or set(marker) != {"version", "candidate_sha", "activated_at", "assets"}
+    or marker.get("version") != 2
+    or re.fullmatch(r"[0-9a-f]{40}", str(marker.get("candidate_sha", ""))) is None
+    or not isinstance(marker.get("assets"), dict)
+    or set(marker["assets"]) != expected_assets
+    or any(re.fullmatch(r"[0-9a-f]{64}", str(value)) is None for value in marker["assets"].values())
+):
+    raise SystemExit(65)
+print(marker["candidate_sha"])
+PY
+)" || return 1
+  git --git-dir="$CANONICAL_RELEASE_MIRROR" fetch --quiet --prune origin '+refs/heads/main:refs/remotes/origin/main' || return 1
+  main_sha="$(git --git-dir="$CANONICAL_RELEASE_MIRROR" rev-parse refs/remotes/origin/main)" || return 1
+  [ "$candidate_sha" = "$main_sha" ] || return 1
+  expected="$(git --git-dir="$CANONICAL_RELEASE_MIRROR" show "$candidate_sha:scripts/credential-live-attestation.mjs" | sha256sum | awk '{print $1}')" || return 1
+  actual="$(sha256sum "$CREDENTIAL_LIVE_HELPER" | awk '{print $1}')"
+  [ "$actual" = "$expected" ] || return 1
+  expected="$(git --git-dir="$CANONICAL_RELEASE_MIRROR" show "$candidate_sha:infra/release/credential-live-attestation-policy-v1.json" | sha256sum | awk '{print $1}')" || return 1
+  actual="$(sha256sum "$CREDENTIAL_LIVE_POLICY" | awk '{print $1}')"
+  [ "$actual" = "$expected" ] || return 1
+}
+
+select_postdeploy_operations_runner() {
+  local link="" release="" release_sha="" runner="" expected="" actual="" seen=""
+  POSTDEPLOY_OPERATIONS_RUNNER=""
+  [ -d "$CANONICAL_RELEASE_MIRROR" ] && [ ! -L "$CANONICAL_RELEASE_MIRROR" ] || return 1
+  [ "$(stat -c '%U:%G' "$CANONICAL_RELEASE_MIRROR")" = root:root ] || return 1
+  [ "$(stat -c '%a' "$CANONICAL_RELEASE_MIRROR")" = 700 ] || return 1
+  case "$(git --git-dir="$CANONICAL_RELEASE_MIRROR" remote get-url origin 2>/dev/null || true)" in
+    https://github.com/69755354/newme-platform.git|git@github.com:69755354/newme-platform.git) ;;
+    *) return 1 ;;
+  esac
+  for link in /opt/newme/current /opt/newme/current.rollback; do
+    if [ ! -e "$link" ] && [ ! -L "$link" ]; then continue; fi
+    release="$(readlink -f "$link" 2>/dev/null || true)"
+    validate_release "$release" || return 1
+    if [ "$release" = "$seen" ]; then continue; fi
+    seen="$release"
+    runner="$release/$POSTDEPLOY_ACCEPTANCE_RUNNER"
+    if [ ! -e "$runner" ] && [ ! -L "$runner" ]; then continue; fi
+    [ -f "$runner" ] && [ ! -L "$runner" ] || return 1
+    [ "$(stat -c '%U:%G' "$runner")" = root:ubuntu ] || return 1
+    [ "$(stat -c '%a' "$runner")" = 440 ] || return 1
+    release_sha="$(basename "$release")"
+    if ! expected="$(git --git-dir="$CANONICAL_RELEASE_MIRROR" show \
+      "$release_sha:$POSTDEPLOY_ACCEPTANCE_RUNNER" 2>/dev/null | sha256sum | awk '{print $1}')"; then
+      return 1
+    fi
+    actual="$(sha256sum "$runner" | awk '{print $1}')"
+    [ "$actual" = "$expected" ] || return 1
+    POSTDEPLOY_OPERATIONS_RUNNER="$runner"
+    return 0
+  done
+  return 1
+}
+
+require_postdeploy_operations_clear() {
+  if [ ! -e "$POSTDEPLOY_ACCEPTANCE_STATE_ROOT" ] && [ ! -L "$POSTDEPLOY_ACCEPTANCE_STATE_ROOT" ]; then
+    return 0
+  fi
+  [ -x /usr/bin/node ] || {
+    echo "postdeploy acceptance state exists but the fixed Node runtime is unavailable" >&2
+    return 1
+  }
+  select_postdeploy_operations_runner || {
+    echo "postdeploy acceptance state exists but no canonical immutable operations verifier is available" >&2
+    return 1
+  }
+  /usr/bin/node "$POSTDEPLOY_OPERATIONS_RUNNER" --assert-operations-clear >/dev/null || {
+    echo "postdeploy acceptance recovery blocks production rollback; run canonical newme-deploy accept-recover and accept-abort for the affected release first" >&2
     return 1
   }
 }
@@ -221,10 +363,20 @@ load_pending_state() {
 }
 
 load_systemd_pending() {
+  local pending_lines=""
   [ -f "$SYSTEMD_PENDING_RECORD" ] && [ ! -L "$SYSTEMD_PENDING_RECORD" ] || return 1
   [ "$(stat -c '%U:%G' "$SYSTEMD_PENDING_RECORD")" = root:root ] || return 1
   [ "$(stat -c '%a' "$SYSTEMD_PENDING_RECORD")" = 600 ] || return 1
-  [ "$(wc -l < "$SYSTEMD_PENDING_RECORD")" -eq 5 ] || return 1
+  pending_lines="$(wc -l < "$SYSTEMD_PENDING_RECORD")"
+  case "$pending_lines" in
+    5) ;;
+    8)
+      [ "$(grep -Ec '^version=2$' "$SYSTEMD_PENDING_RECORD")" -eq 1 ] || return 1
+      [ "$(grep -Ec '^protected_before_candidate_sha=[0-9a-f]{40}$' "$SYSTEMD_PENDING_RECORD")" -eq 1 ] || return 1
+      [ "$(grep -Ec '^protected_before_marker_sha256=[0-9a-f]{64}$' "$SYSTEMD_PENDING_RECORD")" -eq 1 ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
   [ "$(grep -Ec '^sha=[0-9a-f]{40}$' "$SYSTEMD_PENDING_RECORD")" -eq 1 ] || return 1
   [ "$(grep -Ec '^backup=/var/backups/newme-systemd-assets/[^[:space:]]+$' "$SYSTEMD_PENDING_RECORD")" -eq 1 ] || return 1
   [ "$(grep -Ec '^previous=/opt/newme/releases/[0-9a-f]{40}$' "$SYSTEMD_PENDING_RECORD")" -eq 1 ] || return 1
@@ -372,7 +524,7 @@ status = evidence.get("release_status")
 previous_rollback = target.get("previous_rollback", {})
 if (
     evidence.get("git_sha") != current.rsplit("/", 1)[-1]
-    or status not in {"awaiting_uat", "uat_failed", "complete"}
+    or status not in {"awaiting_uat", "acceptance_verified", "uat_failed", "complete"}
     or target.get("git_sha") != rollback.rsplit("/", 1)[-1]
     or target.get("backup_dir") != rollback
 ):
@@ -381,7 +533,7 @@ asset_backup = target.get("asset_backup", "")
 if not re.fullmatch(r"/var/backups/newme-systemd-assets/[^\s]+", asset_backup):
     raise SystemExit(65)
 previous_dir = ""
-if status in {"awaiting_uat", "uat_failed"}:
+if status in {"awaiting_uat", "acceptance_verified", "uat_failed"}:
     if evidence.get("candidate_preexisting") is not False or not isinstance(previous_rollback, dict):
         raise SystemExit(65)
     previous_sha = previous_rollback.get("git_sha", "")
@@ -523,8 +675,19 @@ rollback_cleanup() {
   exit "$rc"
 }
 
-action=${1:-}
+if [ "$action" = execute ]; then
+  require_postdeploy_operations_clear || exit 75
+fi
+
 case "$action" in
+  receipt-key-inspect)
+    [ "$#" -eq 1 ] || { echo "usage: newme-production-rollback receipt-key-inspect" >&2; exit 64; }
+    require_canonical_installed_credential_attestor || {
+      echo "credential live attestation trust bootstrap is not canonical" >&2
+      exit 65
+    }
+    /usr/bin/node "$CREDENTIAL_LIVE_HELPER" inspect-receipt-key
+    ;;
   status)
     [ "$#" -eq 1 ] || { echo "usage: newme-production-rollback status" >&2; exit 64; }
     current="$(readlink -f /opt/newme/current 2>/dev/null || true)"
@@ -555,10 +718,32 @@ case "$action" in
         systemd_asset_transaction=mismatch
       fi
     fi
-    printf 'current=%s\nrollback=%s\nservice=%s\nhealth_http=%s\nrollback_transaction=%s\nsystemd_asset_transaction=%s\nrollback_db_phase=%s\n' \
+    credential_asset_transaction=none
+    if [ -e "$CREDENTIAL_ASSET_PENDING" ] || [ -L "$CREDENTIAL_ASSET_PENDING" ] ||
+      [ -e "$CREDENTIAL_GATE_CONSUMED" ] || [ -L "$CREDENTIAL_GATE_CONSUMED" ]; then
+      credential_asset_transaction=recovery_required
+    fi
+    credential_transition_transaction=none
+    if [ -e "$CREDENTIAL_TRANSITION_PENDING" ] || [ -L "$CREDENTIAL_TRANSITION_PENDING" ]; then
+      if [ -x "$CREDENTIAL_TRANSITION_HELPER" ] && [ ! -L "$CREDENTIAL_TRANSITION_HELPER" ] &&
+        [ "$(stat -c '%U:%G' "$CREDENTIAL_TRANSITION_HELPER")" = root:root ] &&
+        [ "$(stat -c '%a' "$CREDENTIAL_TRANSITION_HELPER")" = 755 ] &&
+        [ "$(/usr/bin/node "$CREDENTIAL_TRANSITION_HELPER" inspect-awaiting 2>/dev/null || true)" = credential_transition=awaiting_provider_revocation ]; then
+        credential_transition_transaction=awaiting_provider_revocation
+      else
+        credential_transition_transaction=invalid
+      fi
+    elif [ -e "$CREDENTIAL_TRANSITION_BACKUP" ] || [ -L "$CREDENTIAL_TRANSITION_BACKUP" ] ||
+      [ -e "$CREDENTIAL_TRANSITION_PENDING_NEXT" ] || [ -L "$CREDENTIAL_TRANSITION_PENDING_NEXT" ] ||
+      [ -e "$CREDENTIAL_TRANSITION_BACKUP_PREPARING" ] || [ -L "$CREDENTIAL_TRANSITION_BACKUP_PREPARING" ] ||
+      [ -e "$CREDENTIAL_RUNTIME_NEXT" ] || [ -L "$CREDENTIAL_RUNTIME_NEXT" ]; then
+      credential_transition_transaction=recovery_required
+    fi
+    printf 'current=%s\nrollback=%s\nservice=%s\nhealth_http=%s\nrollback_transaction=%s\nsystemd_asset_transaction=%s\ncredential_asset_transaction=%s\ncredential_transition_transaction=%s\nrollback_db_phase=%s\n' \
       "$current" "$rollback" "$(systemctl is-active newme-platform.service)" \
       "$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:3001/api/health || true)" \
-      "$transaction" "$systemd_asset_transaction" "$transaction_db_phase"
+      "$transaction" "$systemd_asset_transaction" "$credential_asset_transaction" \
+      "$credential_transition_transaction" "$transaction_db_phase"
     ;;
   execute)
     [ "$#" -eq 2 ] && [ -n "$2" ] || {
@@ -623,7 +808,7 @@ case "$action" in
       }
       target_asset_backup="$RESOLVED_TARGET_ASSET_BACKUP"
       case "$RESOLVED_RELEASE_STATUS" in
-        awaiting_uat|uat_failed)
+        awaiting_uat|acceptance_verified|uat_failed)
           transaction_kind=release_recovery
           remove_original_on_complete=1
           target_rollback="$RESOLVED_PREVIOUS_ROLLBACK"
@@ -696,7 +881,7 @@ EOF
       "$health" "$auth" "$PENDING_DB_PHASE"
     ;;
   *)
-    echo "usage: newme-production-rollback <status|execute> [reason]" >&2
+    echo "usage: newme-production-rollback <status|receipt-key-inspect|execute> [reason]" >&2
     exit 64
     ;;
 esac

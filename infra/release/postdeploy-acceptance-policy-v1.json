@@ -1,0 +1,136 @@
+{
+  "policy_version": "newme-postdeploy-acceptance-policy/v1",
+  "schema_version": "newme-postdeploy-evidence/v1",
+  "schema_path": "infra/release/postdeploy-evidence-v1.schema.json",
+  "receipts": {
+    "receipt_version": "newme-postdeploy-receipt/v1",
+    "algorithm": "Ed25519",
+    "public_key_path": "/etc/newme/postdeploy-acceptance-receipt.pub"
+  },
+  "uat": {
+    "artifact_version": "newme-postdeploy-artifact/v1",
+    "runner": "newme-postdeploy-uat/v1",
+    "required_session_checks": ["login", "refresh", "authorization", "logout", "post_logout_denied"]
+  },
+  "browser_uat": {
+    "artifact_version": "newme-postdeploy-artifact/v1",
+    "runner": "newme-postdeploy-browser-uat/v1",
+    "runner_source_path": "scripts/run-postdeploy-browser-uat.mjs",
+    "trace_version": "newme-postdeploy-browser-trace/v1",
+    "redaction_version": "newme-postdeploy-browser-redaction/v2",
+    "playwright_image": "mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948",
+    "browser_name": "chromium",
+    "browser_version": "148.0.7778.96",
+    "required_locales": ["en", "zh"],
+    "viewport": { "width": 1440, "height": 900 },
+    "required_steps": [
+      "login_page_visible",
+      "login_submitted",
+      "landing_visible",
+      "navigation_visible",
+      "collection_card_visible",
+      "bulk_action_verified",
+      "detail_visible",
+      "contract_list_visible",
+      "settings_contract_verified",
+      "locale_switched",
+      "locale_content_verified",
+      "locale_restored",
+      "logout",
+      "post_logout_denied"
+    ],
+    "required_screenshot_steps": [
+      "login_page_visible",
+      "collection_card_visible",
+      "bulk_action_verified",
+      "detail_visible",
+      "contract_list_visible",
+      "settings_contract_verified",
+      "locale_content_verified"
+    ],
+    "required_http_checks": ["login", "identity", "logout", "post_logout_denied"],
+    "required_quality_checks": [
+      "console_error_count",
+      "page_error_count",
+      "critical_http_failure_count",
+      "overflow_violation_count",
+      "overlap_violation_count",
+      "raw_i18n_key_count"
+    ],
+    "require_no_conditional_skips": true,
+    "require_storage_state_absent": true
+  },
+  "required_roles": ["admin", "boss", "operator", "sales"],
+  "required_flows": [
+    {
+      "id": "lead_to_contract",
+      "role": "sales",
+      "participants": ["sales"],
+      "assertions": ["lead_marked_won", "draft_contract_created", "admin_review_pending"]
+    },
+    {
+      "id": "contract_status_transition",
+      "role": "operator",
+      "participants": ["operator"],
+      "assertions": ["transition_accepted", "persisted_status_matches"]
+    },
+    {
+      "id": "quotation_conversion",
+      "role": "sales",
+      "participants": ["sales"],
+      "assertions": ["quotation_marked_converted", "contract_linked"]
+    },
+    {
+      "id": "quotation_two_step_approval",
+      "role": "boss",
+      "participants": ["admin", "boss"],
+      "assertions": ["admin_review_recorded", "ceo_review_recorded", "contract_approved"]
+    },
+    {
+      "id": "payment_allocation",
+      "role": "boss",
+      "participants": ["boss"],
+      "assertions": ["payment_confirmed", "allocation_persisted", "derived_totals_reconciled"]
+    },
+    {
+      "id": "kpi_period_replace",
+      "role": "admin",
+      "participants": ["admin"],
+      "assertions": ["period_replaced", "no_duplicate_targets", "target_readback_matches"]
+    }
+  ],
+  "fixture_cleanup": {
+    "runner": "newme-postdeploy-fixture-audit/v1",
+    "created_equals_cleaned": true,
+    "maximum_residual_count": 0,
+    "require_canonical_payment_void": true,
+    "require_exact_kpi_restore": true
+  },
+  "alert_drill": {
+    "runner": "newme-postdeploy-alert-drill/v1",
+    "require_canonical_trigger": true,
+    "require_provider_receipts": true,
+    "require_notifier_owned_provider_delivery": true,
+    "require_distinct_event_ids": true,
+    "final_status": "ok"
+  },
+  "performance": {
+    "runner": "newme-postdeploy-performance/v1",
+    "minimum_sample_count": 20,
+    "p75_max_ms": 2000,
+    "p95_max_ms": 5000
+  },
+  "delayed_verification": {
+    "runner": "newme-postdeploy-delayed-verification/v1",
+    "minimum_delay_seconds": 900,
+    "require_fresh_provider_readback": true,
+    "require_post_delay_unpredictable_challenge": true,
+    "require_same_recovery_delivery_readback": true,
+    "required_checks": ["service", "logs", "alerts", "restarts"]
+  },
+  "artifacts": {
+    "minimum_count": 16,
+    "maximum_count": 64,
+    "maximum_bytes_each": 16777216
+  }
+}

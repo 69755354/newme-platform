@@ -49,6 +49,7 @@ const UNFINISHED_STATUSES = new Set(["TODO", "IN_PROGRESS", "REVIEW", "BLOCKED"]
 // naming it (otherwise stale declarations accumulate until nobody can tell which
 // ones are load-bearing).
 export const SCOPE_ORDER = ["predeploy_ready", "postdeploy_acceptance"];
+export const REMEDIATION_BLOCKER_ITEM = "PROD-SECRET-SCANNING-ALERTS-OPEN";
 const SCOPE_BEGIN = "<!-- taskboard-scopes:begin -->";
 const SCOPE_END = "<!-- taskboard-scopes:end -->";
 const SCOPE_HEADER = /^\|\s*item\s*\|\s*scope\s*\|\s*closure condition\s*\|$/i;
@@ -238,6 +239,7 @@ export function runTaskboardCheck({
   log = console.log,
   requireComplete = false,
   requireScope = null,
+  requireCredentialRemediation = false,
 } = {}) {
   const result = { pass: 0, fail: 0, warn: 0 };
   const pass = (message) => {
@@ -418,6 +420,29 @@ export function runTaskboardCheck({
     }
   }
 
+  if (requireCredentialRemediation) {
+    const predeployRows = openByScope.get(SCOPE_ORDER[0]);
+    const exactBlocker =
+      predeployRows.length === 1 &&
+      predeployRows[0].key === REMEDIATION_BLOCKER_ITEM &&
+      predeployRows[0].status === "BLOCKED";
+    if (exactBlocker) {
+      pass(
+        `credential remediation has exactly the permitted predeploy blocker: ` +
+          `${REMEDIATION_BLOCKER_ITEM} (BLOCKED)`,
+      );
+    } else {
+      const observed =
+        predeployRows.length === 0
+          ? "none"
+          : predeployRows.map((row) => `${row.key} (${row.status}, line ${row.line})`).join(", ");
+      fail(
+        `credential remediation requires exactly one predeploy blocker, ` +
+          `${REMEDIATION_BLOCKER_ITEM} (BLOCKED); observed: ${observed}`,
+      );
+    }
+  }
+
   log(
     `PASS: ${result.pass} FAIL: ${result.fail} WARN: ${result.warn} ` +
       `UNFINISHED: ${unfinishedRows.length}`,
@@ -439,6 +464,11 @@ export function runTaskboardCheck({
   if (result.fail > 0) {
     log(`TASKBOARD EVIDENCE GATE: ${result.fail} code-evidence check(s) failed.`);
     exitCode = 1;
+  } else if (requireCredentialRemediation) {
+    log(
+      `Credential remediation taskboard gate is satisfied; only ${REMEDIATION_BLOCKER_ITEM} ` +
+        "may remain open before the protected credential cutover.",
+    );
   } else if (requestedScope === SCOPE_ORDER[SCOPE_ORDER.length - 1] && blocking.length > 0) {
     log(
       `TASKBOARD COMPLETION GATE: ${blocking.length} unfinished row(s). ` +
@@ -475,13 +505,18 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const args = process.argv.slice(2);
   const usage = () => {
     console.error(
-      `Usage: node scripts/check-taskboard.mjs [--require-complete | --require-scope=<${SCOPE_ORDER.join("|")}>]`,
+      `Usage: node scripts/check-taskboard.mjs [--require-complete | --require-scope=<${SCOPE_ORDER.join("|")}> | --require-credential-remediation]`,
     );
     process.exitCode = 64;
   };
   const scopeArgument = args.find((arg) => arg.startsWith("--require-scope="));
   const requireScope = scopeArgument ? scopeArgument.slice("--require-scope=".length) : null;
-  const unknown = args.filter((arg) => arg !== "--require-complete" && arg !== scopeArgument);
+  const unknown = args.filter(
+    (arg) =>
+      arg !== "--require-complete" &&
+      arg !== "--require-credential-remediation" &&
+      arg !== scopeArgument,
+  );
   if (args.length > 1 || unknown.length > 0) {
     // One mode per invocation. Two modes on one command line is a caller that
     // does not know which milestone it is gating, and guessing for it is how a
@@ -494,6 +529,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     process.exitCode = runTaskboardCheck({
       requireComplete: args[0] === "--require-complete",
       requireScope,
+      requireCredentialRemediation: args[0] === "--require-credential-remediation",
     }).exitCode;
   }
 }

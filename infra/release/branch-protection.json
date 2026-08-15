@@ -1,19 +1,18 @@
 {
   "_comment": [
-    "The branch protection this repository's main branch is MISSING, written down",
-    "exactly, so that applying it is a mechanical step rather than a judgement call.",
+    "The branch protection required for this repository's main branch, written down",
+    "exactly so live readback can be compared with a reviewable repository contract.",
     "",
-    "Round-3 finding P1-13: live metadata shows main has no required status checks,",
-    "no required pull request reviews and no rulesets. Draft status on a pull request",
-    "is not branch protection — it stops a merge button, not a push.",
+    "Round-3 finding P1-13 originally observed no required status checks or reviews.",
+    "On 2026-08-15 an authenticated repository-admin operation applied the four",
+    "non-CodeQL contexts below. CodeQL remains a declared, release-blocking delta",
+    "until an exact-head analysis succeeds and a separate GET reads it back.",
     "",
-    "THIS FILE IS NOT APPLIED BY ANYTHING IN THIS REPOSITORY, AND MUST NOT BE.",
+    "THIS FILE IS NOT AUTO-APPLIED BY ANYTHING IN THIS REPOSITORY, AND MUST NOT BE.",
     "Writing branch protection is a control-plane mutation on the GitHub repository:",
     "it needs an administrative token, it changes who can merge what, and it is",
-    "outside the authorization this code round has. It is recorded here, and the",
-    "TASKBOARD row that tracks it stays unfinished, until an operator with that",
-    "authorization applies it deliberately. tests/release/branch-protection-contract.test.mjs",
-    "asserts that no script in the repository writes it.",
+    "deliberate control-plane operation. tests/release/branch-protection-contract.test.mjs",
+    "asserts that no repository script can silently rewrite it.",
     "",
     "Why the contexts are job names and not 'workflow / job': for GitHub Actions the",
     "check run that a protection rule matches is created per job and named with the",
@@ -35,12 +34,13 @@
   ],
   "branch": "main",
   "api": "PUT /repos/{owner}/{repo}/branches/main/protection",
-  "authorization": "requires a repository-admin token; not granted to this code round",
+  "authorization": "requires a deliberate repository-admin control-plane operation; never auto-applied",
   "protection": {
     "required_status_checks": {
       "strict": true,
       "contexts": [
         "Repository validation",
+        "CodeQL analysis",
         "Windows checkout and SPEC gate",
         "Narrow task follow-up database contract",
         "Migration replay and release contracts"
@@ -79,8 +79,9 @@
       "why": [
         "Gated on `github.event_name == 'workflow_dispatch' && inputs.release_final`,",
         "so it cannot run for a pull request and would block every merge if required.",
-        "It is required at the other boundary instead — infra/release/required-jobs.json,",
-        "checked by the deploy wrapper against the release-final run it is handed."
+        "It is required at the other boundary instead — infra/release/final-required-jobs.json,",
+        "checked by the deploy wrapper against the release-final run and the same",
+        "postdeploy acceptance digest recorded by the TASKBOARD closure."
       ]
     },
     {
@@ -94,11 +95,39 @@
       ]
     }
   ],
+  "live_readback": {
+    "status": "blocked_pending_codeql_analysis_and_protection",
+    "verified_on": "2026-08-15",
+    "endpoint": "GET /repos/69755354/newme-platform/branches/main/protection",
+    "required_status_checks": {
+      "strict": true,
+      "contexts": [
+        "Repository validation",
+        "Windows checkout and SPEC gate",
+        "Narrow task follow-up database contract",
+        "Migration replay and release contracts"
+      ],
+      "github_actions_app_id": 15368
+    },
+    "missing_required_contexts": [
+      "CodeQL analysis"
+    ],
+    "required_pull_request_reviews": {
+      "required_approving_review_count": 1,
+      "dismiss_stale_reviews": true,
+      "require_last_push_approval": true
+    },
+    "enforce_admins": true,
+    "required_linear_history": true,
+    "required_conversation_resolution": true,
+    "allow_force_pushes": false,
+    "allow_deletions": false
+  },
   "verification": [
-    "After an authorized operator applies this file:",
-    "  gh api /repos/{owner}/{repo}/branches/main/protection",
-    "must report the same four contexts, strict = true, enforce_admins = true and",
-    "required_approving_review_count = 1. Until that output exists, the TASKBOARD row",
-    "stays unfinished — a written intention is not a configured branch."
+    "Re-read before every release decision:",
+    "  gh api /repos/69755354/newme-platform/branches/main/protection",
+    "and compare it with both protection and live_readback above. The 2026-08-15",
+    "readback currently differs by CodeQL analysis and therefore blocks the release;",
+    "after protected application, replace this blocked readback with exact live fields."
   ]
 }

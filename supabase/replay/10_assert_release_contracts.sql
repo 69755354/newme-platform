@@ -15,7 +15,7 @@
 -- notices against ASSERT_TOTAL below, so an assertion file that stops early
 -- fails the job instead of passing quietly.
 --
--- ASSERT_TOTAL: 343
+-- ASSERT_TOTAL: 350
 -- ============================================================================
 
 create temp table assert_log (name text, passed boolean not null);
@@ -4534,13 +4534,21 @@ declare
   v_lead    uuid := '0e0e0e0e-0e0e-0e0e-0e0e-0e0e0e0e0e0e';
   v_quote   uuid := 'b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6';
   v_sched   jsonb := jsonb_build_object('installments',
-                       jsonb_build_array(jsonb_build_object('seq', 1, 'amount', 80000)));
+                       jsonb_build_array(jsonb_build_object(
+                         'seq', 1,
+                         'amount', 80000,
+                         'due_date', '2026-09-01',
+                         'description', 'Initial installment')));
   v_after1  numeric := -1;
   v_after3  numeric := -1;
   v_amount  numeric := -1;
   v_rows    bigint  := -1;
   v_retry   text    := '00000';
   v_retmsg  text    := '';
+  v_due_retry text  := '00000';
+  v_due_msg   text  := '';
+  v_desc_retry text := '00000';
+  v_desc_msg   text := '';
 begin
   begin
     perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
@@ -4565,6 +4573,25 @@ begin
           jsonb_build_object('seq', 2, 'amount', 40000.00))));
     exception when others then v_retry := sqlstate; v_retmsg := sqlerrm;
     end;
+
+    -- Same amount and sequence are not enough: the persisted due date and
+    -- description are part of the request whose success a retry reports.
+    begin
+      perform public.convert_quotation_to_contract(v_quote,
+        jsonb_build_object('installments', jsonb_build_array(
+          jsonb_build_object('seq', 1, 'amount', 80000.00,
+                             'due_date', '2026-09-02',
+                             'description', 'Initial installment'))));
+    exception when others then v_due_retry := sqlstate; v_due_msg := sqlerrm;
+    end;
+    begin
+      perform public.convert_quotation_to_contract(v_quote,
+        jsonb_build_object('installments', jsonb_build_array(
+          jsonb_build_object('seq', 1, 'amount', 80000.00,
+                             'due_date', '2026-09-01',
+                             'description', 'Changed installment'))));
+    exception when others then v_desc_retry := sqlstate; v_desc_msg := sqlerrm;
+    end;
     reset role;
     perform set_config('request.jwt.claims', '', true);
     select coalesce(sum(total_contract_amount), -1) into v_after3
@@ -4583,7 +4610,9 @@ begin
   perform pg_temp.assert(v_state = '00000' and v_after1 = 80000.00
                          and v_after3 = 80000.00 and v_rows = 1 and v_amount = 80000.00,
     'b5-a-conversion-retry-does-not-add-the-amount-again');
-  perform pg_temp.assert(v_retry = '22023' and v_retmsg like '%disagree%',
+  perform pg_temp.assert(v_retry = '22023' and v_retmsg like '%disagree%'
+                         and v_due_retry = '22023' and v_due_msg like '%disagree%'
+                         and v_desc_retry = '22023' and v_desc_msg like '%disagree%',
     'b5-a-retry-asking-for-a-different-schedule-is-refused');
 end
 $$;
@@ -5237,11 +5266,116 @@ end
 $$;
 
 -- ============================================================================
+-- R9 · A rebalance retry is the original batch, not a new load calculation.
+-- The focused PG17 gate stages the two-session race and rollback. These catalog
+-- assertions keep its table/function/ACL prerequisites in the main ledger too.
+-- ============================================================================
+select pg_temp.assert_eval($q$
+  to_regclass('public.lead_rebalance_batches') is not null
+$q$, 'r9-rebalance-plan-table-installed');
+
+select pg_temp.assert_eval($q$
+  (select array_agg(a.attname order by k.ord)
+     from pg_constraint c
+     cross join lateral unnest(c.conkey) with ordinality as k(attnum, ord)
+     join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum
+    where c.conrelid = to_regclass('public.lead_rebalance_batches')
+      and c.contype = 'p') = array['actor_id','batch_key']::name[]
+$q$, 'r9-rebalance-plan-primary-key-is-actor-and-batch');
+
+select pg_temp.assert_eval($q$
+  coalesce((select c.relrowsecurity and c.relforcerowsecurity
+              from pg_class c where c.oid = to_regclass('public.lead_rebalance_batches')), false)
+$q$, 'r9-rebalance-plan-table-forces-rls');
+
+select pg_temp.assert_eval($q$
+  coalesce((
+    select not exists (
+             select 1
+               from pg_catalog.aclexplode(coalesce(c.relacl, pg_catalog.acldefault('r', c.relowner))) x
+               left join pg_catalog.pg_roles r on r.oid = x.grantee
+              where x.grantee = 0 or r.rolname in ('anon', 'authenticated')
+           )
+           and coalesce((
+             select pg_catalog.array_agg(x.privilege_type::text order by x.privilege_type::text)
+               from pg_catalog.aclexplode(coalesce(c.relacl, pg_catalog.acldefault('r', c.relowner))) x
+               join pg_catalog.pg_roles r on r.oid = x.grantee
+              where r.rolname = 'service_role'
+           ), array[]::text[]) = array['SELECT']::text[]
+           and not coalesce(has_table_privilege('anon', c.oid, 'select'), false)
+           and not coalesce(has_table_privilege('anon', c.oid, 'insert'), false)
+           and not coalesce(has_table_privilege('anon', c.oid, 'update'), false)
+           and not coalesce(has_table_privilege('anon', c.oid, 'delete'), false)
+           and not coalesce(has_table_privilege('anon', c.oid, 'truncate'), false)
+           and not coalesce(has_table_privilege('anon', c.oid, 'references'), false)
+           and not coalesce(has_table_privilege('anon', c.oid, 'trigger'), false)
+           and not coalesce(has_table_privilege('anon', c.oid, 'maintain'), false)
+           and not coalesce(has_table_privilege('authenticated', c.oid, 'select'), false)
+           and not coalesce(has_table_privilege('authenticated', c.oid, 'insert'), false)
+           and not coalesce(has_table_privilege('authenticated', c.oid, 'update'), false)
+           and not coalesce(has_table_privilege('authenticated', c.oid, 'delete'), false)
+           and not coalesce(has_table_privilege('authenticated', c.oid, 'truncate'), false)
+           and not coalesce(has_table_privilege('authenticated', c.oid, 'references'), false)
+           and not coalesce(has_table_privilege('authenticated', c.oid, 'trigger'), false)
+           and not coalesce(has_table_privilege('authenticated', c.oid, 'maintain'), false)
+           and coalesce(has_table_privilege('service_role', c.oid, 'select'), false)
+           and not coalesce(has_table_privilege('service_role', c.oid, 'insert'), false)
+           and not coalesce(has_table_privilege('service_role', c.oid, 'update'), false)
+           and not coalesce(has_table_privilege('service_role', c.oid, 'delete'), false)
+           and not coalesce(has_table_privilege('service_role', c.oid, 'truncate'), false)
+           and not coalesce(has_table_privilege('service_role', c.oid, 'references'), false)
+           and not coalesce(has_table_privilege('service_role', c.oid, 'trigger'), false)
+           and not coalesce(has_table_privilege('service_role', c.oid, 'maintain'), false)
+      from pg_catalog.pg_class c
+     where c.oid = to_regclass('public.lead_rebalance_batches')
+  ), false)
+$q$, 'r9-rebalance-plan-table-is-service-read-only');
+
+select pg_temp.assert_eval($q$
+  coalesce((select p.prosecdef and p.provolatile = 'v'
+                     and p.proconfig = array['search_path=""']::text[]
+              from pg_proc p
+             where p.oid = to_regprocedure('public.get_or_create_lead_rebalance_plan(uuid,jsonb)')), false)
+$q$, 'r9-rebalance-plan-rpc-is-empty-path-definer');
+
+select pg_temp.assert_eval($q$
+  case when to_regprocedure('public.get_or_create_lead_rebalance_plan(uuid,jsonb)') is null then false else
+    has_function_privilege('authenticated', 'public.get_or_create_lead_rebalance_plan(uuid,jsonb)', 'EXECUTE')
+    and not has_function_privilege('anon', 'public.get_or_create_lead_rebalance_plan(uuid,jsonb)', 'EXECUTE')
+    and not has_function_privilege('service_role', 'public.get_or_create_lead_rebalance_plan(uuid,jsonb)', 'EXECUTE')
+  end
+$q$, 'r9-rebalance-plan-rpc-is-authenticated-only');
+
+select pg_temp.assert_eval($q$
+  coalesce((select pg_catalog.position(
+                       pg_catalog.chr(10) || 'begin' || pg_catalog.chr(10)
+                       || '  perform public.assert_current_session_at_entry();'
+                       in pg_catalog.lower(p.prosrc)
+                     ) > 0
+                    and strpos(p.prosrc, 'pg_catalog.pg_advisory_xact_lock')
+                        < strpos(p.prosrc, 'insert into public.lead_rebalance_batches')
+              from pg_proc p
+             where p.oid = to_regprocedure('public.get_or_create_lead_rebalance_plan(uuid,jsonb)')), false)
+  and exists (
+    select 1 from pg_trigger t
+     where t.tgrelid = to_regclass('public.lead_rebalance_batches')
+       and t.tgname = 'trg_require_current_session'
+       and not t.tgisinternal
+       and t.tgenabled = 'O'
+       and (t.tgtype & 1) = 0
+       and (t.tgtype & 2) = 2
+       and (t.tgtype & 28) = 28
+       and t.tgattr::text = ''
+       and t.tgqual is null
+  )
+$q$, 'r9-rebalance-plan-entry-lock-and-statement-boundary');
+
+-- ============================================================================
 -- Self-check: every assertion above ran.
 -- ============================================================================
 -- In MODE=branch "ran" and "passed" are the same number, because a failure would
 -- already have raised. In MODE=control they are not, and the distinction is the
--- whole point: the ledger below is the in-database proof that all 342 assertions
+-- whole point: the ledger below is the in-database proof that all 350 assertions
 -- were REACHED. A DO block that died on an unclassified SQL error takes its
 -- remaining assertions out of the ledger, so the count comes up short and the
 -- control run fails here rather than in a log-scraping heuristic. Reported
@@ -5256,13 +5390,13 @@ begin
   select count(*), count(*) filter (where assert_log.passed), count(*) filter (where not assert_log.passed)
     into total, passed, failed
     from assert_log;
-  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=343', total, passed, failed;
-  if total <> 343 then
-    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 343', total
+  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=350', total, passed, failed;
+  if total <> 350 then
+    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 350', total
       using errcode = '22000';
   end if;
-  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 343 then
-    raise exception 'assertion file passed % of 343 assertions', passed
+  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 350 then
+    raise exception 'assertion file passed % of 350 assertions', passed
       using errcode = '22000';
   end if;
   if exists (select 1 from assert_log group by name having count(*) > 1) then

@@ -56,7 +56,7 @@ keeps it open, and `scripts/db-phase-push.mjs` is what executes it.
 
 ### The two pushes
 
-Expand phase — apply these twenty-four, in this order (they are the pending set on this
+Expand phase — apply these twenty-five, in this order (they are the pending set on this
 branch, and `scripts/replay-migrations.sh` applies exactly them plus the contract
 phase):
 
@@ -85,6 +85,7 @@ phase):
 20260817200000_lead_reassignment_notification_related_id.sql
 20260817210000_quote_number_and_lead_unassignment_integrity.sql
 20260817220000_notification_event_idempotency.sql
+20260817230000_lead_rebalance_plan_idempotency.sql
 ```
 
 Contract phase — one file, pushed only after §4 step 6 passes:
@@ -104,7 +105,7 @@ artifacts:
 
 * [`infra/release/release-manifest.json`](../../infra/release/release-manifest.json)
   names every pending migration in exactly one phase — `required_for_app` (the
-  twenty-four above) or `deferred_contract` (the one above) — with the SHA-256 of each
+  twenty-five above) or `deferred_contract` (the one above) — with the SHA-256 of each
   file and the runtime posture each phase must produce.
 * [`scripts/db-phase-push.mjs`](../../scripts/db-phase-push.mjs) applies one named
   phase and nothing else. In production it is reachable only through the canonical
@@ -178,7 +179,7 @@ expand set is a contiguous prefix of the pending set. That is deliberate:
 * `supabase_migrations.schema_migrations` records the two phases in version
   order, so the application order in production is the order
   `scripts/replay-migrations.sh` replays and asserts. §6.1 query 3 expects
-  `20260817220000` as the newest version at state 2 and `20260818000000` at
+  `20260817230000` as the newest version at state 2 and `20260818000000` at
   state 4.
 
 What none of this proves on its own: the tool is not the Supabase CLI, and the
@@ -219,11 +220,11 @@ production now. **C** = the candidate release on this branch.
 | State | Schema | `direct_write_mode` | P works? | C works? |
 | --- | --- | --- | --- | --- |
 | 1 · today | base, stamp `20260805202917` | table does not exist | yes | **no** — the RPCs it calls do not all exist yet |
-| 2 · expand applied | + the twenty-four files | `compat` | yes, with the seven deliberate exceptions in §3 | yes |
-| 3 · candidate deployed | + the twenty-four files | `compat` | yes (this is the overlap window) | yes |
-| 4 · contract applied | + all twenty-five | `strict` | **no** — its direct money writes are refused | yes |
-| 5 · companion run | + all twenty-five | `compat` | yes, as in state 2 | yes |
-| 6 · recontract run | + all twenty-five | `strict` | **no** — as in state 4 | yes |
+| 2 · expand applied | + the twenty-five files | `compat` | yes, with the seven deliberate exceptions in §3 | yes |
+| 3 · candidate deployed | + the twenty-five files | `compat` | yes (this is the overlap window) | yes |
+| 4 · contract applied | + all twenty-six | `strict` | **no** — its direct money writes are refused | yes |
+| 5 · companion run | + all twenty-six | `compat` | yes, as in state 2 | yes |
+| 6 · recontract run | + all twenty-six | `strict` | **no** — as in state 4 | yes |
 
 State 3 is the rollback boundary: both releases work against the same schema, so
 the application can be rolled back without touching the database. State 5 is how
@@ -551,11 +552,11 @@ Read §5 before starting: the point of no return is step 7, not step 8.
      depends on.
    * A verified point-in-time recovery target exists for the production project,
      and its timestamp is recorded next to this checklist.
-2. **[AUTHORISED ACTION] Apply the expand phase.** Apply the twenty-four files in §1
+2. **[AUTHORISED ACTION] Apply the expand phase.** Apply the twenty-five files in §1
    through the canonical wrapper:
    `sudo /usr/local/sbin/newme-deploy db-transition <release-sha> <successful-run-id> expand-apply`.
    First run the same command with `expand-plan` and read the
-   `to apply` list: the twenty-four, and `20260818000000` absent. Do **not** use
+   `to apply` list: the twenty-five, and `20260818000000` absent. Do **not** use
    `supabase db push`, which would apply the contract phase in the same run (§1,
    "How the split is executed"). `supabase/preflight/scan-money-invariants.sql`
    must have been run first: §3 item 5 aborts this push if a non-positive money row
@@ -767,14 +768,16 @@ sudo /usr/local/sbin/newme-deploy db-transition \
   <release-sha> <successful-run-id> contract-verify
 ```
 
-   The same **twelve** predicates the apply path checks — the mode row, the mode
-   function, the six mode-gated guards as a set equality in both directions, the
+   This reuses the exact manifest predicate set from the apply path. It covers the
+   mode row, the mode function, the six mode-gated guards as a set equality in both directions, the
    transition guard, the security posture of the gate and mode functions, the seven
    money RPCs, the session-revocation RPC, the two KPI write routines with their
    period lock, and (R3) every function whose body writes `public.kpi_targets`
    taking that same period lock — including `confirm_payment()` and
    `void_payment()`, which are the two that move the money and are not on any list
-   — so this is the same question, asked by the same code, after a
+   — plus the live lead timestamp, audit-domain, notification-target, quote-number,
+   reassignment CAS, unassignment, and immutable rebalance-plan boundaries. This is
+   the same question, asked by the same code, after a
    hand-run change. It refuses if a guard is missing **or** if a guard that reads
    the mode is present and undeclared; a `count(*) = N` lookup could only see the
    first, which is how the round-4 defect survived.
@@ -813,7 +816,7 @@ select count(*) from supabase_migrations.schema_migrations
 -- 3. the expand set is applied, and is the newest
 select version from supabase_migrations.schema_migrations
  order by version desc limit 3;
--- expect 20260817220000 first, then 20260817210000, then 20260817200000 —
+-- expect 20260817230000 first, then 20260817220000, then 20260817210000 —
 -- 20260818000000 is absent because it is the contract phase, which is applied
 -- separately (§1, "How the split is executed")
 

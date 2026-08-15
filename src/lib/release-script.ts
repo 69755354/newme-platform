@@ -46,10 +46,18 @@ export function resolveReleaseScript(relativePath: string): string | null {
   if (path.isAbsolute(relativePath)) return null;
   if (relativePath.split(/[\\/]+/).includes("..")) return null;
 
-  const root = process.cwd();
-  const resolved = path.resolve(root, relativePath);
+  const normalized = relativePath.replaceAll("\\", "/");
+  if (!normalized.startsWith("scripts/")) return null;
+  const scriptRelativePath = normalized.slice("scripts/".length);
+  if (!scriptRelativePath) return null;
 
-  const relative = path.relative(root, resolved);
+  // Keep the dynamic suffix statically scoped to the shipped scripts directory.
+  // Besides tightening the runtime contract, this prevents the production
+  // tracer from treating every file in the release as a possible dependency.
+  const scriptsRoot = path.join(process.cwd(), "scripts");
+  const resolved = path.join(scriptsRoot, scriptRelativePath);
+
+  const relative = path.relative(scriptsRoot, resolved);
   if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return null;
 
   let stats;

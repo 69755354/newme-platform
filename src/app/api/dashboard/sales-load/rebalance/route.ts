@@ -8,6 +8,48 @@ import {
   isLeadTransferConflict,
   readLeadTransferBatchKey,
 } from "@/lib/lead-transfer-batch.mjs";
+import type { Json } from "@/types/database";
+
+type LeadRebalanceUpdate = {
+  id: string;
+  assigned_to: string;
+  expected_updated_at: string;
+  idempotency_key: string;
+};
+
+type LeadRebalancePlan = {
+  updates: LeadRebalanceUpdate[];
+  untokened_lead_ids: string[];
+  source_ids: string[];
+  target_ids: string[];
+};
+
+function decodeLeadRebalancePlan(value: unknown): LeadRebalancePlan | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("lead rebalance plan lookup returned an invalid envelope");
+  }
+  const envelope = value as Record<string, unknown>;
+  if (envelope.found === false && envelope.plan === undefined) return null;
+  if (envelope.found !== true || !envelope.plan || typeof envelope.plan !== "object" || Array.isArray(envelope.plan)) {
+    throw new Error("lead rebalance plan lookup returned an invalid result");
+  }
+  const plan = envelope.plan as Record<string, unknown>;
+  if (!Array.isArray(plan.updates)
+      || !Array.isArray(plan.untokened_lead_ids)
+      || !Array.isArray(plan.source_ids)
+      || !Array.isArray(plan.target_ids)
+      || !plan.untokened_lead_ids.every((id) => typeof id === "string")
+      || !plan.source_ids.every((id) => typeof id === "string")
+      || !plan.target_ids.every((id) => typeof id === "string")
+      || !plan.updates.every((item) => item && typeof item === "object" && !Array.isArray(item)
+        && typeof item.id === "string"
+        && typeof item.assigned_to === "string"
+        && typeof item.expected_updated_at === "string"
+        && typeof item.idempotency_key === "string")) {
+    throw new Error("stored lead rebalance plan has an invalid shape");
+  }
+  return plan as LeadRebalancePlan;
+}
 
 // ─── POST /api/dashboard/sales-load/rebalance ───
 // Round-robin transfer of transferable leads from overloaded reps to underloaded reps
@@ -67,107 +109,117 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // ── Fetch all sales reps ──
-    const repsQuery = supabase
-      .from("profiles")
-      .select("id, full_name, email, role, is_active");
-    const eligibleRepsQuery = filterLeadTransferCandidateQuery(
-      repsQuery as never
-    ) as typeof repsQuery;
-    const { data: salesReps, error: salesRepsErr } = await eligibleRepsQuery;
-    if (salesRepsErr) throw salesRepsErr;
+    // A persisted plan is consulted before any load read or no-op decision.
+    // After a partial first attempt, the load distribution has changed; planning
+    // again at that point is not a retry of the original request.
+    const { data: lookupEnvelope, error: lookupError } = await supabase.rpc(
+      "get_or_create_lead_rebalance_plan",
+      { p_batch_key: batchKey, p_plan: undefined },
+    );
+    if (lookupError) throw lookupError;
+    let plan = decodeLeadRebalancePlan(lookupEnvelope);
 
-    const reps = salesReps ?? [];
-    const repIds = reps.map((r: any) => r.id);
+    if (!plan) {
+      // ── Fetch all eligible reps and compute the first plan ──
+      const repsQuery = supabase
+        .from("profiles")
+        .select("id, full_name, email, role, is_active");
+      const eligibleRepsQuery = filterLeadTransferCandidateQuery(
+        repsQuery as never
+      ) as typeof repsQuery;
+      eligibleRepsQuery.order("id", { ascending: true });
+      const { data: salesReps, error: salesRepsErr } = await eligibleRepsQuery;
+      if (salesRepsErr) throw salesRepsErr;
 
-    // ── Get leads per rep ──
-    const { data: allLeads } = await supabase
-      .from("leads")
-      .select("id, assigned_to")
-      .in("assigned_to", repIds);
+      const reps = salesReps ?? [];
+      const repIds = reps.map((rep) => rep.id);
+      const { data: allLeads, error: allLeadsError } = repIds.length > 0
+        ? await supabase.from("leads").select("id, assigned_to").in("assigned_to", repIds)
+        : { data: [], error: null };
+      if (allLeadsError) throw allLeadsError;
 
-    const leadsByRep: Record<string, number> = {};
-    (allLeads ?? []).forEach((l: any) => {
-      leadsByRep[l.assigned_to] = (leadsByRep[l.assigned_to] ?? 0) + 1;
-    });
-
-    // ── Identify overloaded and underloaded ──
-    const leadCounts = reps.map((r: any) => ({
-      id: r.id,
-      name: r.full_name || r.email,
-      count: leadsByRep[r.id] ?? 0,
-    }));
-
-    const avgLoad =
-      leadCounts.length > 0
-        ? leadCounts.reduce((s, r) => s + r.count, 0) / leadCounts.length
-        : 0;
-    const imbalanceThreshold = avgLoad * 1.5;
-
-    const overloaded = leadCounts.filter((r) => r.count > imbalanceThreshold);
-    const underloaded = leadCounts.filter((r) => r.count < avgLoad);
-
-    if (overloaded.length === 0 || underloaded.length === 0) {
-      return NextResponse.json({
-        message: "No imbalance detected. Nothing to rebalance.",
-        transferred: 0,
-      });
-    }
-
-    // ── Find transferable leads from overloaded reps ──
-    // Transferable: stage='new' AND last_contact_date IS NULL
-    // `updated_at` is the compare-and-set token, so it is read here, with the
-    // plan, and handed back to the routine unchanged. Selecting it later — or not
-    // at all, which is what this route used to do — is what turns the comparison
-    // in reassign_lead_atomic() into a no-op.
-    const overloadedIds = overloaded.map((r) => r.id);
-    const { data: transferableRaw } = await supabase
-      .from("leads")
-      .select("id, assigned_to, customer_name, updated_at")
-      .in("assigned_to", overloadedIds)
-      .eq("stage", "new")
-      .is("last_contact_date", null);
-
-    const transferable = transferableRaw ?? [];
-
-    if (transferable.length === 0) {
-      return NextResponse.json({
-        message: "No transferable leads found (new leads with no contact).",
-        transferred: 0,
-      });
-    }
-
-    // ── Round-robin assign ──
-    //
-    // A lead with no updated_at is dropped rather than transferred. The column is
-    // NOT NULL with a default in production and the trigger keeps it that way, so
-    // this is unreachable there — but the alternative to dropping it is passing
-    // null as the token, and reassign_lead_atomic() reads null as "do not
-    // compare", which is precisely the behaviour this route is here to stop.
-    let idx = 0;
-    const updates: { id: string; assigned_to: string; expected_updated_at: string }[] = [];
-    const untokenedLeadIds: string[] = [];
-
-    for (const lead of transferable) {
-      const target = underloaded[idx % underloaded.length];
-      if (lead.assigned_to !== target.id) {
-        if (typeof lead.updated_at === "string" && lead.updated_at !== "") {
-          updates.push({
-            id: lead.id,
-            assigned_to: target.id,
-            expected_updated_at: lead.updated_at,
-          });
-        } else {
-          untokenedLeadIds.push(lead.id);
+      const leadsByRep: Record<string, number> = {};
+      for (const lead of allLeads ?? []) {
+        if (lead.assigned_to) {
+          leadsByRep[lead.assigned_to] = (leadsByRep[lead.assigned_to] ?? 0) + 1;
         }
       }
-      idx++;
+      const leadCounts = reps.map((rep) => ({
+        id: rep.id,
+        name: rep.full_name || rep.email || rep.id,
+        count: leadsByRep[rep.id] ?? 0,
+      }));
+      const avgLoad = leadCounts.length > 0
+        ? leadCounts.reduce((sum, rep) => sum + rep.count, 0) / leadCounts.length
+        : 0;
+      const imbalanceThreshold = avgLoad * 1.5;
+      const overloaded = leadCounts.filter((rep) => rep.count > imbalanceThreshold);
+      const underloaded = leadCounts.filter((rep) => rep.count < avgLoad);
+
+      let transferable: Array<{
+        id: string;
+        assigned_to: string | null;
+        customer_name: string | null;
+        updated_at: string | null;
+      }> = [];
+      if (overloaded.length > 0 && underloaded.length > 0) {
+        const { data: transferableRaw, error: transferableError } = await supabase
+          .from("leads")
+          .select("id, assigned_to, customer_name, updated_at")
+          .in("assigned_to", overloaded.map((rep) => rep.id))
+          .eq("stage", "new")
+          .is("last_contact_date", null)
+          .order("id", { ascending: true });
+        if (transferableError) throw transferableError;
+        transferable = transferableRaw ?? [];
+      }
+
+      const updates: LeadRebalanceUpdate[] = [];
+      const untokenedLeadIds: string[] = [];
+      let index = 0;
+      for (const lead of transferable) {
+        const target = underloaded[index % underloaded.length];
+        if (lead.assigned_to !== target.id) {
+          if (typeof lead.updated_at === "string" && lead.updated_at !== "") {
+            updates.push({
+              id: lead.id,
+              assigned_to: target.id,
+              expected_updated_at: lead.updated_at,
+              idempotency_key: deriveLeadTransferKey(batchKey, lead.id),
+            });
+          } else {
+            untokenedLeadIds.push(lead.id);
+          }
+        }
+        index++;
+      }
+
+      const proposedPlan: LeadRebalancePlan = {
+        updates,
+        untokened_lead_ids: untokenedLeadIds,
+        source_ids: overloaded.map((rep) => rep.id),
+        target_ids: underloaded.map((rep) => rep.id),
+      };
+      const { data: claimedEnvelope, error: claimError } = await supabase.rpc(
+        "get_or_create_lead_rebalance_plan",
+        { p_batch_key: batchKey, p_plan: proposedPlan as Json },
+      );
+      if (claimError) throw claimError;
+      plan = decodeLeadRebalancePlan(claimedEnvelope);
+      if (!plan) throw new Error("lead rebalance plan was not persisted");
     }
 
+    const updates = plan.updates;
+    const untokenedLeadIds = plan.untokened_lead_ids;
     if (updates.length === 0 && untokenedLeadIds.length === 0) {
       return NextResponse.json({
-        message: "All transferable leads already assigned to underloaded reps.",
+        message: "No eligible lead transfers were present in this rebalance plan.",
         transferred: 0,
+        replayed: 0,
+        unchanged: 0,
+        conflicts: 0,
+        from: plan.source_ids,
+        to: plan.target_ids,
       });
     }
 
@@ -189,7 +241,7 @@ export async function POST(request: NextRequest) {
         p_lead_id: update.id,
         p_new_assignee: update.assigned_to,
         p_expected_updated_at: update.expected_updated_at,
-        p_idempotency_key: deriveLeadTransferKey(batchKey, update.id),
+        p_idempotency_key: update.idempotency_key,
         p_reason: "sales_load_rebalance",
       });
       if (error) {
@@ -219,14 +271,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       message: conflictLeadIds.length > 0
-        ? `Rebalanced ${transferred} leads across ${underloaded.length} reps; ${conflictLeadIds.length} skipped because they were reassigned while this ran.`
-        : `Rebalanced ${transferred} leads across ${underloaded.length} reps.`,
+        ? `Rebalanced ${transferred} leads across ${plan.target_ids.length} reps; ${conflictLeadIds.length} skipped because they were reassigned while this ran.`
+        : `Rebalanced ${transferred} leads across ${plan.target_ids.length} reps.`,
       transferred,
       replayed,
       unchanged,
       conflicts: conflictLeadIds.length,
-      from: overloaded.map((r) => r.name),
-      to: underloaded.map((r) => r.name),
+      from: plan.source_ids,
+      to: plan.target_ids,
     });
   } catch (err: any) {
     console.error("Rebalance API error:", err);

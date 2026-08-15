@@ -46,6 +46,12 @@ const CLI_MIGRATION = /^[0-9]{14}_.*\.sql$/;
 const GATE = "money_direct_write_is_blocked";
 /** The gate function itself: it reads the mode, it is not a guard. */
 const GATE_FUNCTION = "money_direct_write_is_blocked";
+const GATE_DEPENDENCY_NAMES = [
+  "money_direct_write_is_blocked",
+  "money_write_is_direct",
+  "money_direct_write_mode",
+  "money_release_mode_lock_key",
+];
 /** Not mode-gated, and checked separately by every artifact. See the header. */
 const TRANSITION_GUARD = ["trg_guard_contract_transition", "contracts"];
 
@@ -72,7 +78,16 @@ function functionDefinitions(sql) {
     const openAt = match.index + opener.index + opener[0].length;
     const closeAt = sql.indexOf(opener[0], openAt);
     if (closeAt === -1) continue;
-    found.push({ name: match[1].toLowerCase(), body: sql.slice(openAt, closeAt) });
+    const declaration = sql.slice(match.index, openAt - opener[0].length);
+    const language = /\blanguage\s+([a-z0-9_]+)/i.exec(declaration)?.[1]?.toLowerCase();
+    const volatilityWord = /\b(immutable|stable|volatile)\b/i.exec(declaration)?.[1]?.toLowerCase() ?? "volatile";
+    found.push({
+      name: match[1].toLowerCase(),
+      body: sql.slice(openAt, closeAt),
+      language,
+      volatility: ({ immutable: "i", stable: "s", volatile: "v" })[volatilityWord],
+      securityDefiner: /\bsecurity\s+definer\b/i.test(declaration),
+    });
     header.lastIndex = closeAt;
   }
   return found;
@@ -95,6 +110,8 @@ function deriveGuards() {
   const gated = new Set();
   /** function name -> the exact final body stored as pg_proc.prosrc */
   const functionBodies = new Map();
+  /** function name -> the final language/volatility/SECURITY declaration. */
+  const functionAttributes = new Map();
   /** key `tgname|relname` → function name */
   const triggers = new Map();
 
@@ -103,8 +120,9 @@ function deriveGuards() {
 
     // A function's LAST definition wins, in both directions: one that starts
     // consulting the gate joins the set, one that stops leaves it.
-    for (const { name, body } of functionDefinitions(sql)) {
+    for (const { name, body, language, volatility, securityDefiner } of functionDefinitions(sql)) {
       functionBodies.set(name, body);
+      functionAttributes.set(name, { language, volatility, securityDefiner });
       if (name === GATE_FUNCTION) continue;
       if (body.includes(GATE)) gated.add(name);
       else gated.delete(name);
@@ -130,7 +148,7 @@ function deriveGuards() {
     const [tgname, relname] = key.split("|");
     guards.push([tgname, relname]);
   }
-  return { functionBodies, guards, gated, triggers };
+  return { functionAttributes, functionBodies, guards, gated, triggers };
 }
 
 const derived = deriveGuards();
@@ -147,6 +165,8 @@ const PLPGSQL_PAIR = /\[\s*'(trg_[a-z0-9_]+)'\s*,\s*'([a-z0-9_]+)'(?:\s*,\s*'[^'
 const GUARD_TRIPLE = /[\[(]\s*'(trg_[a-z0-9_]+)'\s*,\s*'([a-z0-9_]+)'\s*,\s*'(?:public\.)?([a-z0-9_]+)(?:\(\))?'(?:\s*,\s*'[0-9a-f]{64}')?\s*[\])]/gi;
 /** The production declaration, including the exact pg_proc.prosrc SHA-256. */
 const GUARD_QUAD = /[\[(]\s*'(trg_[a-z0-9_]+)'\s*,\s*'([a-z0-9_]+)'\s*,\s*'(?:public\.)?([a-z0-9_]+)(?:\(\))?'\s*,\s*'([0-9a-f]{64})'\s*[\])]/gi;
+/** `(signature, prosrc SHA-256, language, volatility, SECURITY DEFINER)`. */
+const GATE_DEPENDENCY_DECLARATION = /[\[(]\s*'public\.([a-z0-9_]+)\(\)'\s*,\s*'([0-9a-f]{64})'\s*,\s*'(sql|plpgsql)'\s*,\s*'([vis])'\s*,\s*'?((?:true|false))'?\s*[\])]/gi;
 
 const pairsIn = (text, re) => [...text.matchAll(re)].map((m) => [m[1].toLowerCase(), m[2].toLowerCase()]);
 const unique = (pairs) => [...new Map(pairs.map((p) => [pair(p), p])).values()];
@@ -160,6 +180,18 @@ const quadsIn = (text) => [...text.matchAll(GUARD_QUAD)]
 const sortedQuads = (quads) => [...quads]
   .map(([trigger, table, fn, digest]) => `${trigger} on public.${table} -> public.${fn}() sha256:${digest}`)
   .sort();
+const gateDependenciesIn = (text) => [...text.matchAll(GATE_DEPENDENCY_DECLARATION)]
+  .map((m) => ({
+    name: m[1].toLowerCase(),
+    digest: m[2].toLowerCase(),
+    language: m[3].toLowerCase(),
+    volatility: m[4].toLowerCase(),
+    securityDefiner: m[5].toLowerCase() === "true",
+  }));
+const sortedGateDependencies = (dependencies) => [...dependencies]
+  .map(({ name, digest, language, volatility, securityDefiner }) =>
+    `public.${name}() sha256:${digest} language:${language} volatility:${volatility} definer:${securityDefiner}`)
+  .sort();
 const sha256 = (body) => createHash("sha256").update(body, "utf8").digest("hex");
 
 const manifest = JSON.parse(read("infra", "release", "release-manifest.json"));
@@ -172,6 +204,7 @@ const predicate = (phase, name) => {
 const RECONTRACT = read("supabase", "migrations", "recontract_money_direct_write_contract_phase.sql");
 const POST_RECONTRACT = read("supabase", "replay", "30_assert_post_recontract.sql");
 const POST_ROLLBACK = read("supabase", "replay", "20_assert_post_rollback.sql");
+const COMPANION_GUARD_GATE = read("supabase", "replay", "24_rollback_companion_guards.sh");
 
 const DECLARATIONS = [
   {
@@ -236,6 +269,25 @@ const BODY_DECLARATIONS = [
   },
 ];
 
+const GATE_DEPENDENCY_DECLARATIONS = [
+  {
+    what: "the required_for_app posture predicate",
+    dependencies: gateDependenciesIn(predicate("required_for_app", "money-gate-dependency-closure-matches-the-declaration").sql),
+  },
+  {
+    what: "the deferred_contract posture predicate",
+    dependencies: gateDependenciesIn(predicate("deferred_contract", "strict-money-gate-dependency-closure-matches-the-declaration").sql),
+  },
+  {
+    what: "the recontract companion's v_gate_dependencies",
+    dependencies: gateDependenciesIn(RECONTRACT.slice(RECONTRACT.indexOf("v_gate_dependencies"))),
+  },
+  {
+    what: "30_assert_post_recontract.sql",
+    dependencies: gateDependenciesIn(POST_RECONTRACT),
+  },
+];
+
 // ---------------------------------------------------------------------------
 // The tests.
 // ---------------------------------------------------------------------------
@@ -292,6 +344,14 @@ const derivedQuads = derivedTriples.map(([trigger, table, fn]) => {
   return [trigger, table, fn, sha256(body)];
 });
 
+const derivedGateDependencies = GATE_DEPENDENCY_NAMES.map((name) => {
+  const body = derived.functionBodies.get(name);
+  const attributes = derived.functionAttributes.get(name);
+  assert.equal(typeof body, "string", `no final migration body found for public.${name}()`);
+  assert.ok(attributes?.language, `no final language declaration found for public.${name}()`);
+  return { name, digest: sha256(body), ...attributes };
+});
+
 for (const { what, triples } of FUNCTION_DECLARATIONS) {
   test(`${what} binds every guard to the derived trigger function`, () => {
     assert.deepEqual(sortedTriples(triples), sortedTriples(derivedTriples));
@@ -301,6 +361,12 @@ for (const { what, triples } of FUNCTION_DECLARATIONS) {
 for (const { what, quads } of BODY_DECLARATIONS) {
   test(`${what} pins every guard to the exact shipped function body`, () => {
     assert.deepEqual(sortedQuads(quads), sortedQuads(derivedQuads));
+  });
+}
+
+for (const { what, dependencies } of GATE_DEPENDENCY_DECLARATIONS) {
+  test(`${what} pins the complete money-gate dependency closure`, () => {
+    assert.deepEqual(sortedGateDependencies(dependencies), sortedGateDependencies(derivedGateDependencies));
   });
 }
 
@@ -361,6 +427,72 @@ test("the re-contract companion validates guard function identity before writing
   assert.match(checks, /pg_catalog\.sha256\(pg_catalog\.convert_to\(p\.prosrc,\s*'UTF8'\)\)/i);
   assert.match(checks, /=\s*v_guards\[i\]\[4\]/i);
   assert.match(checks, /not\s+p\.prosecdef/i);
+});
+
+test("the re-contract companion validates the complete gate dependency closure before writing strict", () => {
+  const write = RECONTRACT.indexOf("insert into public.money_release_mode");
+  const start = RECONTRACT.indexOf("for i in 1 .. array_length(v_gate_dependencies, 1) loop");
+  assert.ok(start !== -1 && start < write, "the gate dependency check is absent or follows the strict write");
+  const beforeChecks = RECONTRACT.slice(0, start);
+  assert.match(
+    beforeChecks,
+    /pg_advisory_xact_lock\(\s*pg_catalog\.hashtextextended\('public\.money_release_mode:only',\s*0\)\s*\)/i,
+    "the companion does not acquire the shipped canonical key before catalog verification",
+  );
+  assert.doesNotMatch(
+    beforeChecks,
+    /pg_advisory_xact_lock\(\s*public\.money_release_mode_lock_key\(\)\s*\)/i,
+    "the companion executes the unverified live lock-key helper",
+  );
+  const checks = RECONTRACT.slice(start, write);
+  assert.match(checks, /p\.oid\s*=\s*to_regprocedure\(v_gate_dependencies\[i\]\[1\]\)/i);
+  assert.match(checks, /pg_catalog\.sha256\(pg_catalog\.convert_to\(p\.prosrc,\s*'UTF8'\)\)/i);
+  assert.match(checks, /=\s*v_gate_dependencies\[i\]\[2\]/i);
+  assert.match(checks, /l\.lanname\s*=\s*v_gate_dependencies\[i\]\[3\]/i);
+  assert.match(checks, /p\.provolatile\s*=\s*v_gate_dependencies\[i\]\[4\]/i);
+  assert.match(checks, /p\.prosecdef\s*=\s*v_gate_dependencies\[i\]\[5\]::boolean/i);
+});
+
+test("both manifest phases fail closed on a missing or drifted gate dependency", () => {
+  for (const [phase, name] of [
+    ["required_for_app", "money-gate-dependency-closure-matches-the-declaration"],
+    ["deferred_contract", "strict-money-gate-dependency-closure-matches-the-declaration"],
+  ]) {
+    const { sql, expect } = predicate(phase, name);
+    assert.equal(expect, true);
+    assert.match(sql, /count\(\*\)\s*=\s*4/i, `${phase}: the closure is not exact`);
+    assert.match(sql, /bool_and\(coalesce\([\s\S]*false\)\)/i, `${phase}: an absent routine could be ignored`);
+    assert.match(sql, /l\.lanname\s*=\s*d\.lanname/i, `${phase}: language drift is accepted`);
+    assert.match(sql, /p\.provolatile\s*=\s*d\.provolatile/i, `${phase}: volatility drift is accepted`);
+    assert.match(sql, /p\.prosecdef\s*=\s*d\.prosecdef/i, `${phase}: SECURITY drift is accepted`);
+  }
+});
+
+test("the rollback companion gate covers a marker-bearing no-op shared money gate", () => {
+  const start = COMPANION_GUARD_GATE.indexOf("Negative 5");
+  const end = COMPANION_GUARD_GATE.indexOf("Reentry", start);
+  assert.ok(start !== -1 && end > start, "the shared-gate negative is not wired into 24_");
+  const probe = COMPANION_GUARD_GATE.slice(start, end);
+  assert.match(probe, /create or replace function public\.money_direct_write_is_blocked\(\)[\s\S]*return false/i);
+  for (const dependency of ["money_release_mode_lock_key", "money_write_is_direct", "money_direct_write_mode"]) {
+    assert.ok(probe.includes(`${dependency}()`), `the no-op probe does not retain the ${dependency} marker`);
+  }
+  assert.match(probe, /run_companion\s+"\$MONEY_RECONTRACT"\s+"\$work_dir\/neg5\.log"/);
+  assert.match(probe, /mode_column[\s\S]*compat/);
+  assert.match(probe, /MONEY_CONTRACT_PHASE_REENTERED/);
+  assert.match(probe, /restore_gate_function/);
+});
+
+test("the rollback companion gate covers a drifted live lock-key helper", () => {
+  const start = COMPANION_GUARD_GATE.indexOf("Negative 6");
+  const end = COMPANION_GUARD_GATE.indexOf("Reentry", start);
+  assert.ok(start !== -1 && end > start, "the lock-key negative is not wired into 24_");
+  const probe = COMPANION_GUARD_GATE.slice(start, end);
+  assert.match(probe, /create or replace function public\.money_release_mode_lock_key\(\)[\s\S]*money_release_mode:different/i);
+  assert.match(probe, /run_companion\s+"\$MONEY_RECONTRACT"\s+"\$work_dir\/neg6\.log"/);
+  assert.match(probe, /mode_column[\s\S]*compat/);
+  assert.match(probe, /MONEY_CONTRACT_PHASE_REENTERED/);
+  assert.match(probe, /restore_lock_key_function/);
 });
 
 test("both phases verify the KPI routines the rollback path can remove", () => {

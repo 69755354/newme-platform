@@ -302,6 +302,7 @@ COMPANION_GUARD_GATE="$REPLAY_DIR/24_rollback_companion_guards.sh"
 # stages fixed synthetic UUIDs and removes every row it creates.
 QUOTE_UNASSIGN_GATE="$REPLAY_DIR/25_quote_unassignment_integrity.sh"
 NOTIFICATION_EVENT_GATE="$REPLAY_DIR/26_notification_event_idempotency.sh"
+LEAD_REBALANCE_PLAN_GATE="$REPLAY_DIR/27_lead_rebalance_plan_idempotency.sh"
 
 PSQL=(psql --no-psqlrc --quiet --no-align --tuples-only -v ON_ERROR_STOP=1)
 
@@ -943,6 +944,11 @@ echo "== notification event idempotency (concurrent same-key insert, binding, ro
 [ -f "$NOTIFICATION_EVENT_GATE" ] || fail "missing $NOTIFICATION_EVENT_GATE"
 EXPECT=fixed bash "$NOTIFICATION_EVENT_GATE" \
   || fail "notification event idempotency failed its PG17 behaviour contract"
+
+echo "== lead rebalance plan idempotency (concurrent winner, rollback, empty replay, ACL) =="
+[ -f "$LEAD_REBALANCE_PLAN_GATE" ] || fail "missing $LEAD_REBALANCE_PLAN_GATE"
+EXPECT=fixed bash "$LEAD_REBALANCE_PLAN_GATE" \
+  || fail "lead rebalance plan idempotency failed its PG17 behaviour contract"
 
 # The rollback path, measured before it is used. Each direction restores what it
 # mutated, so the rollback section below still runs against the release posture.

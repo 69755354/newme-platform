@@ -1,0 +1,396 @@
+import assert from "node:assert/strict";
+import { createHash, createHmac } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import test from "node:test";
+
+import {
+  assertExactPaymentKpiRestoration,
+  assertNoServiceRestartSinceDeploy,
+  compareFixtureInventory,
+  verifyAlertProviderReadback,
+} from "../../scripts/run-postdeploy-acceptance.mjs";
+import { canonicalJsonBytes } from "../../scripts/postdeploy-receipt.mjs";
+
+const ROOT = path.resolve(import.meta.dirname, "../..");
+const PRODUCER = readFileSync(path.join(ROOT, "scripts/run-postdeploy-acceptance.mjs"), "utf8");
+const CANONICAL_BROWSER = readFileSync(path.join(ROOT, "scripts/canonical-browser-uat.mjs"), "utf8");
+const BROWSER_RUNNER = readFileSync(path.join(ROOT, "scripts/run-postdeploy-browser-uat.mjs"), "utf8");
+const WRAPPER = readFileSync(path.join(ROOT, "infra/systemd/newme-deploy.sh"), "utf8");
+const PROVIDER = readFileSync(path.join(ROOT, "infra/observability/newme-alert-provider-v1.mjs"), "utf8");
+const NOTIFIER = readFileSync(path.join(ROOT, "infra/observability/hermes-alert-notifier-v1.sh"), "utf8");
+const ALERT_STATE = readFileSync(path.join(ROOT, "infra/observability/hermes-alert-state-v1.sh"), "utf8");
+const ALERT_POLICY = readFileSync(path.join(ROOT, "infra/observability/hermes-alert-v1.env.example"), "utf8");
+const INSTALLER = readFileSync(path.join(ROOT, "scripts/install-systemd-assets.sh"), "utf8");
+const REQUIRED_JOBS = JSON.parse(readFileSync(path.join(ROOT, "infra/release/required-jobs.json"), "utf8"));
+const digest = (value) => createHash("sha256").update(canonicalJsonBytes(value)).digest("hex");
+
+function predeployCiPython() {
+  const startMarker = "CI_GATE_AUDIT_RESULT=\"$(python3 -c '\n";
+  const start = WRAPPER.indexOf(startMarker);
+  const end = WRAPPER.indexOf("\n' \"$SHA\"", start + startMarker.length);
+  assert.ok(start >= 0 && end > start, "predeploy CI Python gate was not found");
+  return WRAPPER.slice(start + startMarker.length, end);
+}
+
+function runPredeployCiGate(overrides = {}) {
+  const sha = "a".repeat(40);
+  const runId = "29351813434";
+  const completedAt = new Date(Date.now() - 60_000);
+  const startedAt = new Date(completedAt.getTime() - 60_000);
+  const createdAt = new Date(startedAt.getTime() - 60_000);
+  const run = {
+    id: Number(runId),
+    head_sha: sha,
+    name: REQUIRED_JOBS.workflow,
+    path: REQUIRED_JOBS.workflow_path,
+    workflow_id: REQUIRED_JOBS.workflow_id,
+    status: "completed",
+    conclusion: "success",
+    event: REQUIRED_JOBS.event,
+    head_branch: REQUIRED_JOBS.head_branch,
+    created_at: createdAt.toISOString(),
+    run_started_at: startedAt.toISOString(),
+    updated_at: completedAt.toISOString(),
+    ...overrides.run,
+  };
+  const jobs = REQUIRED_JOBS.required_jobs.map((entry) => ({
+    name: entry.name,
+    head_sha: sha,
+    status: "completed",
+    conclusion: "success",
+    started_at: startedAt.toISOString(),
+    completed_at: completedAt.toISOString(),
+  }));
+  const workflow = {
+    id: REQUIRED_JOBS.workflow_id,
+    path: REQUIRED_JOBS.workflow_path,
+    name: REQUIRED_JOBS.workflow,
+    state: "active",
+    ...overrides.workflow,
+  };
+  return spawnSync(
+    process.platform === "win32" ? "python" : "python3",
+    [
+      "-c", predeployCiPython(), sha, runId,
+      JSON.stringify(run),
+      JSON.stringify({ total_count: jobs.length, jobs }),
+      JSON.stringify(workflow),
+      JSON.stringify(REQUIRED_JOBS),
+    ],
+    { encoding: "utf8", windowsHide: true },
+  );
+}
+
+test("an interrupted confirmed payment cannot pass cleanup until its real-month KPI baseline is exactly restored", () => {
+  const existingRealTarget = [{ id: "10000000-0000-4000-8000-000000000001", actual_amount: "4000.00" }];
+  const effect = { baseline_rows: existingRealTarget, baseline_sha256: digest(existingRealTarget) };
+
+  assert.equal(assertExactPaymentKpiRestoration(effect, existingRealTarget).sha256, effect.baseline_sha256);
+  assert.throws(
+    () => assertExactPaymentKpiRestoration(effect, [{ ...existingRealTarget[0], actual_amount: "5000.00" }]),
+    /fixture_payment_kpi_not_restored/,
+  );
+  assert.throws(
+    () => assertExactPaymentKpiRestoration(effect, [...existingRealTarget, { id: "10000000-0000-4000-8000-000000000002", actual_amount: "0.00" }]),
+    /fixture_payment_kpi_not_restored/,
+  );
+});
+
+test("the producer durably snapshots before confirm and reverses through the canonical API on normal and failure paths", () => {
+  const snapshot = PRODUCER.indexOf("await capturePaymentKpiBaseline(db, fixture, journal)");
+  const flows = PRODUCER.indexOf("flowResults = await runBusinessFlows({ db, sessions, fixture })");
+  assert.ok(snapshot > 0 && snapshot < flows, "the durable KPI snapshot must precede the payment flow");
+  assert.match(PRODUCER, /journal\.payment_effect = effect;[\s\S]*persistJournal\(journal\)/);
+  assert.match(PRODUCER, /`\/api\/payments\/\$\{fixture\.ids\.payment\}\/void`/);
+  assert.match(PRODUCER, /assertFixturePaymentSafeToDelete\(db, fixture\)[\s\S]*delete from public\.payments/);
+  assert.match(PRODUCER, /catch \(error\)[\s\S]*reverseFixturePayment\([\s\S]*cleanupFixtures\(/);
+  assert.match(PRODUCER, /recoverCanonicalPostdeployAcceptance[\s\S]*reverseFixturePayment\([\s\S]*cleanupFixtures\(/);
+});
+
+test("fixture KPI cleanup is exact-ID and period-lock scoped, and foreign rows are preserved", () => {
+  assert.match(PRODUCER, /pg_advisory_xact_lock\(hashtextextended\('public\.kpi_targets:' \|\| \$1, 0\)\)/);
+  assert.match(PRODUCER, /delete from public\.kpi_targets where id = any\(\$1::uuid\[\]\) and period = \$2 and notes = \$3 and set_by = \$4 returning id/);
+  assert.doesNotMatch(PRODUCER, /delete from public\.kpi_targets where period = \$1/);
+  assert.match(PRODUCER, /foreignKpiRowPresent[\s\S]*fixture_kpi_foreign_row_present/);
+});
+
+test("normal cleanup refuses already-missing objects while recovery records the exact missing subset", () => {
+  const expected = [
+    { table: "leads", id: "10000000-0000-4000-8000-000000000001" },
+    { table: "payments", id: "10000000-0000-4000-8000-000000000002" },
+  ];
+  assert.throws(() => compareFixtureInventory(expected, expected.slice(0, 1)), /fixture_inventory_changed_before_cleanup/);
+  assert.deepEqual(
+    compareFixtureInventory(expected, expected.slice(0, 1), { allowAlreadyMissing: true }).alreadyMissing,
+    [expected[1]],
+  );
+  assert.throws(
+    () => compareFixtureInventory(expected, [...expected, { table: "contracts", id: "10000000-0000-4000-8000-000000000003" }], { allowAlreadyMissing: true }),
+    /fixture_inventory_changed_before_cleanup/,
+  );
+});
+
+test("canonical wrapper fixes acceptance intake and all state changes share its global release lock", () => {
+  assert.match(WRAPPER, /exec 9>\/run\/lock\/newme-production-release\.lock[\s\S]*flock -n 9/);
+  assert.match(WRAPPER, /POSTDEPLOY_INTAKE_ROOT=\/var\/lib\/newme\/postdeploy-intake-v1/);
+  assert.match(WRAPPER, /ATTEST_BUNDLE="\$POSTDEPLOY_INTAKE_ROOT\/\$ATTEST_RELEASE_SHA\/bundle\.json"/);
+  assert.doesNotMatch(WRAPPER, /attest[^\n]*<bundle/);
+  assert.match(WRAPPER, /--assert-ready --release-sha "\$ATTEST_RELEASE_SHA"/);
+  assert.match(WRAPPER, /accept\|accept-recover\|accept-abort/);
+  assert.match(WRAPPER, /attest\|attest-recover\|attest-abort/);
+  assert.match(WRAPPER, /require_postdeploy_operations_clear\(\)[\s\S]*--assert-operations-clear/);
+  const liveRelease = WRAPPER.indexOf('LIVE_RELEASE="$(readlink -f /opt/newme/current', WRAPPER.indexOf('DB_TRANSITION_ONLY=0'));
+  const operationsClear = WRAPPER.indexOf('require_postdeploy_operations_clear "$LIVE_RELEASE"', liveRelease);
+  const databaseOnlyBranch = WRAPPER.indexOf('if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then', liveRelease);
+  assert.ok(
+    liveRelease >= 0
+      && operationsClear > liveRelease
+      && databaseOnlyBranch > operationsClear,
+  );
+});
+
+test("canonical wrapper executes only immutable exact-SHA postdeploy and finalizer assets", () => {
+  assert.match(WRAPPER, /require_immutable_release_asset\(\)/);
+  assert.match(WRAPPER, /stat -c '%U:%G'[\s\S]*root:ubuntu/);
+  assert.match(WRAPPER, /case "\$expected_mode" in 440\|550/);
+  assert.match(WRAPPER, /git --git-dir="\$CANONICAL_RELEASE_MIRROR" show "\$release_sha:\$relative_path" \| sha256sum/);
+  const producerValidation = WRAPPER.indexOf('scripts/run-postdeploy-acceptance.mjs "$ATTEST_PRODUCER" 440');
+  const producerExecution = WRAPPER.indexOf('"$ATTEST_PRODUCER" --assert-ready');
+  assert.ok(producerValidation > 0 && producerValidation < producerExecution);
+  assert.match(WRAPPER, /scripts\/verify-postdeploy-acceptance\.mjs "\$ATTEST_VERIFIER" 440/);
+  assert.match(WRAPPER, /scripts\/record-deploy-acceptance\.mjs "\$ATTEST_RECORDER" 440/);
+  assert.match(WRAPPER, /scripts\/finalize-deploy-evidence\.sh "\$FINALIZE_TARGET\/scripts\/finalize-deploy-evidence\.sh" 440/);
+  assert.match(WRAPPER, /scripts\/canonical-browser-uat\.mjs "\$ACCEPT_TARGET\/scripts\/canonical-browser-uat\.mjs" 440/);
+  assert.match(WRAPPER, /scripts\/run-postdeploy-browser-uat\.mjs "\$ACCEPT_TARGET\/scripts\/run-postdeploy-browser-uat\.mjs" 440/);
+  assert.match(WRAPPER, /POSTDEPLOY_BROWSER_IMAGE='mcr\.microsoft\.com\/playwright:v1\.60\.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948'/);
+  assert.match(WRAPPER, /docker image inspect --format '\{\{json \.RepoDigests\}\}' "\$POSTDEPLOY_BROWSER_IMAGE"/);
+  assert.match(WRAPPER, /env -i PATH=\/usr\/bin:\/bin HOME=\/root LANG=C\.UTF-8[\s\S]*docker pull "\$POSTDEPLOY_BROWSER_IMAGE"/);
+  const imagePreparation = WRAPPER.lastIndexOf("prepare_postdeploy_browser_image");
+  const immutableDeploy = WRAPPER.indexOf('bash "$WORKTREE/scripts/deploy-immutable.sh" "$SHA"', imagePreparation);
+  assert.ok(imagePreparation > 0 && immutableDeploy > imagePreparation);
+});
+
+test("canonical acceptance runs the exact browser matrix in a locked local image and imports every signed raw artifact", () => {
+  const roleSessionsRevoked = PRODUCER.indexOf('recordJournalStep(journal, "role_sessions_revoked"');
+  const browserRun = PRODUCER.indexOf("browserResult = await runCanonicalBrowserUat");
+  const browserInventory = PRODUCER.indexOf("browser_uat_fixture_inventory_verified", browserRun);
+  const cleanupRun = PRODUCER.indexOf("cleanup = await cleanupFixtures", browserInventory);
+  const performanceRun = PRODUCER.indexOf("const performanceResult = await measurePerformance", browserRun);
+  const assemble = PRODUCER.indexOf("const assembled = assemblePostdeployBundle", performanceRun);
+  assert.ok(
+    roleSessionsRevoked > 0
+      && browserRun > roleSessionsRevoked
+      && browserInventory > browserRun
+      && cleanupRun > browserInventory
+      && performanceRun > cleanupRun
+      && assemble > performanceRun,
+  );
+  assert.match(PRODUCER, /fixture: \{\s*marker: fixture\.marker,\s*lead_id: fixture\.ids\.browserLead,\s*contract_id: fixture\.ids\.browserContract,/);
+  assert.match(PRODUCER, /postBrowserObjects = await fixtureObjects\(db, fixture\)[\s\S]*compareFixtureInventory\(journal\.observed_objects, postBrowserObjects\)/);
+  assert.match(PRODUCER, /browser_uat: structuredClone\(browserResult\.sessions\)/);
+  assert.match(PRODUCER, /for \(const \[file, bytes\] of browserResult\.documents\)/);
+  assert.match(PRODUCER, /mkdirSync\(parent, \{ recursive: true, mode: 0o700 \}\)/);
+
+  assert.match(CANONICAL_BROWSER, /mcr\.microsoft\.com\/playwright:v1\.60\.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948/);
+  for (const marker of [
+    '"--pull=never"',
+    '"--read-only"',
+    '"--user", "pwuser"',
+    '"--group-add", String(identity.releaseGid)',
+    '"--cap-drop=ALL"',
+    '"--security-opt=no-new-privileges"',
+    '"--pids-limit=512"',
+    '"--mount", `type=bind,src=${releaseRoot},dst=/release,readonly`',
+    '"--entrypoint", "/usr/bin/node"',
+  ]) assert.ok(CANONICAL_BROWSER.includes(marker), `browser container omitted ${marker}`);
+  assert.match(CANONICAL_BROWSER, /image", "inspect", "--format", "\{\{json \.RepoDigests\}\}"/);
+  assert.match(CANONICAL_BROWSER, /child\.stdin\.end\(inputBytes\)/);
+  assert.match(CANONICAL_BROWSER, /fixture: \{ \.\.\.fixture \}/);
+  assert.match(CANONICAL_BROWSER, /session\.subject\.lead_id !== fixture\.lead_id[\s\S]*document\.payload\?\.subject\?\.contract_id !== fixture\.contract_id/);
+  assert.match(CANONICAL_BROWSER, /expectedPaths\.size !== 72/);
+  assert.match(CANONICAL_BROWSER, /verifyPostdeployArtifactReceipt/);
+  assert.doesNotMatch(CANONICAL_BROWSER, /--pull=(?:always|missing)/);
+  assert.doesNotMatch(CANONICAL_BROWSER, /password.*(?:args|env)|email.*(?:args|env)/i);
+  assert.match(BROWSER_RUNNER, /CANONICAL_DATA_ORIGIN = "https:\/\/vfopmpxlhwzpxqegayew\.supabase\.co"/);
+  assert.match(BROWSER_RUNNER, /context\.route\("\*\*\/\*"[\s\S]*!ALLOWED_HTTP_ORIGINS\.has\(origin\)/);
+});
+
+test("predeploy CI is bound to the canonical live workflow and a fresh ordered run", () => {
+  assert.equal(REQUIRED_JOBS.workflow_path, ".github/workflows/ci.yml");
+  assert.equal(REQUIRED_JOBS.workflow_id, 310914082);
+  assert.equal(REQUIRED_JOBS.max_run_age_seconds, 86400);
+  assert.match(WRAPPER, /actions\/workflows\/\$CANONICAL_CI_WORKFLOW_ID/);
+  assert.match(WRAPPER, /run\.get\("path"\) != manifest\.get\("workflow_path"\)/);
+  assert.match(WRAPPER, /run\.get\("workflow_id"\) != manifest\.get\("workflow_id"\)/);
+  assert.match(WRAPPER, /created_at <= run_started_at <= updated_at/);
+  assert.match(WRAPPER, /completion is outside the manifest freshness SLO/);
+  assert.match(WRAPPER, /workflow\.get\("state"\) != "active"/);
+  assert.match(WRAPPER, /required_job_completed_at/);
+  assert.match(WRAPPER, /oldest_completion = min\(completion_values\)/);
+
+  const valid = runPredeployCiGate();
+  assert.equal(valid.status, 0, valid.stderr);
+  const auditFields = valid.stdout.trim().split("\t");
+  assert.equal(auditFields.length, 7);
+  assert.match(auditFields[0], /^[0-9a-f]{64}$/);
+  assert.equal(auditFields[3], "310914082");
+  assert.equal(auditFields[4], ".github/workflows/ci.yml");
+  assert.equal(auditFields[5], "86400");
+  const auditBytes = Buffer.from(auditFields[6], "base64");
+  assert.equal(createHash("sha256").update(auditBytes).digest("hex"), auditFields[0]);
+  const auditDocument = JSON.parse(auditBytes);
+  assert.equal(auditDocument.version, "newme-ci-gate-audit/v1");
+  assert.equal(auditDocument.workflow_id, 310914082);
+  assert.equal(auditDocument.max_run_age_seconds, 86400);
+  assert.deepEqual(Object.keys(auditDocument.required_job_completed_at).sort(), REQUIRED_JOBS.required_jobs.map((job) => job.name).sort());
+  assert.match(auditDocument.manifest_sha256, /^[0-9a-f]{64}$/);
+
+  const lookalike = runPredeployCiGate({ run: { path: ".github/workflows/lookalike.yml" } });
+  assert.notEqual(lookalike.status, 0);
+  assert.match(lookalike.stderr, /different workflow path/);
+
+  const wrongIdentity = runPredeployCiGate({ workflow: { id: 999 } });
+  assert.notEqual(wrongIdentity.status, 0);
+  assert.match(wrongIdentity.stderr, /different workflow_id/);
+
+  const stale = runPredeployCiGate({ run: {
+    created_at: "2026-08-10T12:00:00Z",
+    run_started_at: "2026-08-10T12:01:00Z",
+    updated_at: "2026-08-10T12:02:00Z",
+  } });
+  assert.notEqual(stale.status, 0);
+  assert.match(stale.stderr, /freshness SLO/);
+
+  const dbBoundary = WRAPPER.indexOf('require_ci_gate_still_fresh', WRAPPER.indexOf('canonical main changed before the database transition'));
+  const dbMutation = WRAPPER.indexOf('case "$DB_TRANSITION_OPERATION" in', dbBoundary);
+  assert.ok(dbBoundary > 0 && dbBoundary < dbMutation);
+  const assetBoundary = WRAPPER.indexOf('require_ci_gate_still_fresh', WRAPPER.indexOf('canonical main changed before the control-plane asset transaction'));
+  const assetMutation = WRAPPER.indexOf('ASSET_BACKUP_RECORD="$(mktemp', assetBoundary);
+  assert.ok(assetBoundary > 0 && assetBoundary < assetMutation);
+  const durableAudit = WRAPPER.indexOf("materialize_ci_gate_audit_record", assetBoundary);
+  assert.ok(durableAudit > assetBoundary && durableAudit < assetMutation);
+  assert.match(WRAPPER, /CI_GATE_AUDIT_RECORD="\$CI_GATE_AUDIT_RECORD"/);
+  assert.match(WRAPPER, /CI_MAX_RUN_AGE_SECONDS="\$CI_MAX_RUN_AGE_SECONDS"/);
+});
+
+test("provider configuration is installed and validated without accepting a no-op notifier", () => {
+  assert.match(INSTALLER, /PROVIDER_CONFIG=\/etc\/newme\/postdeploy-alert-provider-v1\.json/);
+  assert.match(INSTALLER, /newme-alert-provider-v1\.mjs" validate-config/);
+  assert.match(INSTALLER, /install -D -o root -g root -m 0640 "\$ROOT\/infra\/observability\/hermes-alert-v1\.env\.example" "\$ALERT_POLICY"/);
+  assert.match(INSTALLER, /cmp -s "\$ROOT\/infra\/observability\/hermes-alert-v1\.env\.example" "\$ALERT_POLICY"/);
+  assert.doesNotMatch(INSTALLER, /\[ -e \/etc\/hermes\/observability\/hermes-alert-v1\.env \] \|\|/);
+  assert.match(ALERT_STATE, /CANONICAL_STATE=\/opt\/hermes-scripts\/observability\/hermes-alert-state-v1\.sh/);
+  assert.match(ALERT_STATE, /CANONICAL_STATE_ROOT=\/var\/lib\/newme\/hermes-alert-v1/);
+  assert.match(ALERT_STATE, /EXPECTED_STATE_DIR="\$CANONICAL_STATE_ROOT\/production"/);
+  assert.match(ALERT_STATE, /EXPECTED_STATE_DIR="\$CANONICAL_STATE_ROOT\/postdeploy\/\$DRILL_RELEASE_SHA"/);
+  assert.match(ALERT_STATE, /trusted state directory owner mismatch/);
+  assert.match(ALERT_STATE, /persisted state path is untrusted/);
+  assert.match(ALERT_STATE, /recovery:firing\|recovery:pending_failure\|recovery:pending_recovery/);
+  assert.equal(ALERT_POLICY.match(/^HERMES_ALERT_STATE_DIR=(.*)$/m)?.[1], "/var/lib/newme/hermes-alert-v1/production");
+  const alertStateTrustCheck = INSTALLER.indexOf("preflight_alert_state_trust ||");
+  const installerLockOpen = INSTALLER.indexOf("exec 8>/run/lock/newme-systemd-assets.lock");
+  const alertStateInstall = INSTALLER.indexOf("install -d -o root -g root -m 0700", alertStateTrustCheck);
+  assert.ok(
+    alertStateTrustCheck >= 0 &&
+      alertStateTrustCheck < installerLockOpen &&
+      installerLockOpen < alertStateInstall,
+    "the full alert-state trust preflight must run before the installer's first filesystem write",
+  );
+  assert.match(INSTALLER, /existing alert state contains untrusted metadata/);
+  assert.match(INSTALLER, /metadata\.st_uid != 0 or metadata\.st_gid != 0/);
+  assert.match(INSTALLER, /stat\.S_IMODE\(metadata\.st_mode\) != 0o700/);
+  assert.match(INSTALLER, /stat\.S_IMODE\(metadata\.st_mode\) != 0o600/);
+  assert.match(INSTALLER, /install -d -o root -g root -m 0700[\s\S]*\/var\/lib\/newme\/hermes-alert-v1\/production[\s\S]*\/var\/lib\/newme\/hermes-alert-v1\/postdeploy/);
+  assert.match(ALERT_STATE, /if \[ "\$0" = "\$CANONICAL_STATE" \]; then[\s\S]*NOTIFIER="\$CANONICAL_NOTIFIER"/);
+  assert.match(PROVIDER, /"getMe"/);
+  assert.match(PROVIDER, /"sendMessage"/);
+  assert.match(PROVIDER, /"editMessageText"/);
+  assert.doesNotMatch(NOTIFIER, /HERMES_ALERT_LIBRARY|hermes_alert|hermes_ok/);
+  assert.match(NOTIFIER, /"\$PROVIDER" notify "\$EVENT" "\$SOURCE" "\$DETAIL" "\$LEVEL"/);
+  assert.match(NOTIFIER, /ACK_VERSION[\s\S]*ACK_DELIVERY/);
+  const ordinaryStart = PROVIDER.indexOf("export async function produceOperationalNotification");
+  const ordinaryEnd = PROVIDER.indexOf("function lstatExists", ordinaryStart);
+  assert.ok(ordinaryStart > 0 && ordinaryEnd > ordinaryStart);
+  assert.doesNotMatch(PROVIDER.slice(ordinaryStart, ordinaryEnd), /receiptSecret|readTrigger|durablePair|INBOX_ROOT/);
+  assert.match(PROVIDER, /recoverExistingReceipt\(mode, releaseSha, secret, triggerSha256\)[\s\S]*publishDeliveryIntent\(mode, releaseSha, triggerSha256\)[\s\S]*verifyProviderIdentity/);
+  assert.match(PROVIDER, /provider_delivery_outcome_unknown/);
+  assert.match(PROVIDER, /persistProviderReceiptPair[\s\S]*return "recovered"/);
+});
+
+test("a pre-signed future provider readback cannot satisfy the post-delay challenge", () => {
+  const secret = Buffer.alloc(32, 7);
+  const receipt = {
+    receipt_version: "newme-alert-provider-receipt/v1",
+    source: "newme-l0-alert-drill",
+    release_sha: "a".repeat(40),
+    trigger_sha256: "b".repeat(64),
+    event_type: "readback",
+    event_id: "newme:alert:recovery:001",
+    provider_delivery_id: "telegram:message:1001",
+    provider_operation_id: "telegram:edit:1001:1893456000",
+    occurred_at: "2030-01-01T00:00:00Z",
+    status: "ok",
+  };
+  const body = Buffer.from(`${JSON.stringify(receipt)}\n`);
+  const signature = Buffer.from(`${createHmac("sha256", secret).update(body).digest("hex")}\n`);
+  assert.throws(() => verifyAlertProviderReadback({
+    body,
+    signature,
+    secret,
+    releaseSha: receipt.release_sha,
+    readbackTriggerSha: receipt.trigger_sha256,
+    recoveryEventId: receipt.event_id,
+    recoveryProviderDeliveryId: receipt.provider_delivery_id,
+    recoveryProviderOperationId: "telegram:send:1001",
+    notBefore: "2026-08-15T00:15:00Z",
+    now: new Date("2026-08-15T00:16:00Z"),
+  }), /alert_readback_semantic_invalid/);
+  assert.throws(() => verifyAlertProviderReadback({
+    body,
+    signature,
+    secret,
+    releaseSha: receipt.release_sha,
+    readbackTriggerSha: "c".repeat(64),
+    recoveryEventId: receipt.event_id,
+    recoveryProviderDeliveryId: receipt.provider_delivery_id,
+    recoveryProviderOperationId: "telegram:send:1001",
+    notBefore: "2026-08-15T00:15:00Z",
+    now: new Date("2030-01-01T00:01:00Z"),
+  }), /alert_readback_semantic_invalid/);
+});
+
+test("the drill traverses state then notifier before provider delivery and delayed readback edits that recovery message", () => {
+  assert.match(NOTIFIER, /\[ "\$#" -eq 3 \] \|\| exit 2/);
+  assert.match(NOTIFIER, /"\$PROVIDER" "\$DRILL_MODE" "\$DRILL_RELEASE_SHA"/);
+  assert.match(ALERT_STATE, /postdeploy-acceptance-\$DRILL_RELEASE_SHA/);
+  assert.match(PRODUCER, /installedObservabilityAsset\(releaseRoot, "hermes-alert-state-v1\.sh"\)/);
+  assert.match(PRODUCER, /execFileSync\(stateMachine,[\s\S]*NEWME_ALERT_DRILL_TRIGGER_SHA256: triggerSha256/);
+  assert.doesNotMatch(PRODUCER, /execFileSync\(notifier,/);
+  assert.doesNotMatch(PRODUCER, /invokeProviderWriter\(\{ releaseRoot, releaseSha, mode: eventType \}\)/);
+  assert.match(PRODUCER, /Date\.parse\(verifiedFailure\.occurred_at\) \+ 1050 - Date\.now\(\)/);
+  assert.match(PROVIDER, /newme-alert-state-notifier-provider\/v1/);
+  assert.match(PROVIDER, /mode === "readback"[\s\S]*readRecoveryReceipt\(releaseSha, secret\)[\s\S]*"editMessageText"/);
+  assert.match(PROVIDER, /providerDeliveryId = recovery\.receipt\.provider_delivery_id/);
+  assert.match(PROVIDER, /provider_operation_id: providerOperationId/);
+  const recoverStart = PRODUCER.indexOf("export async function recoverCanonicalPostdeployAcceptance");
+  const recoverAlert = PRODUCER.indexOf("recoverCanonicalAlertState({ releaseRoot, releaseSha })", recoverStart);
+  const archiveInbox = PRODUCER.indexOf("uat_alert_inbox", recoverStart);
+  assert.ok(recoverAlert > recoverStart && recoverAlert < archiveInbox, "accept-recover must confirm alert recovery before archiving provider state");
+  assert.match(PRODUCER, /stageUncertainFailureState\(releaseSha\)[\s\S]*eventType: "recovery", reuseExisting: true/);
+});
+
+test("deploy-time service identity rejects a restart even when NRestarts is unchanged", () => {
+  const baseline = {
+    nrestarts: 0,
+    main_pid: 4100,
+    invocation_id: "a".repeat(32),
+    exec_main_start_monotonic: 100000,
+  };
+  assert.doesNotThrow(() => assertNoServiceRestartSinceDeploy(baseline, { ...baseline }));
+  assert.throws(
+    () => assertNoServiceRestartSinceDeploy(baseline, { ...baseline, main_pid: 4101, invocation_id: "b".repeat(32), exec_main_start_monotonic: 100100 }),
+    /service_restarted_since_deploy/,
+  );
+});

@@ -366,7 +366,7 @@ export default function ContractsPage() {
       />
 
       {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div data-newme-uat-sensitive="true" className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.total")}</p><p className="text-xl font-bold">{totalCount}</p></CardContent></Card>
         <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.activeValue")}</p><p className="text-xl font-bold">{fmtAED(totalActive)}</p></CardContent></Card>
         <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.signed")}</p><p className="text-xl font-bold">{contracts.filter(c => c.status === "signed").length}</p></CardContent></Card>
@@ -385,7 +385,7 @@ export default function ContractsPage() {
           const showRevoke = canRevoke(c);
           const isUploading = uploadingId === c.id;
           return (
-          <Card key={c.id} className="bg-card border-border hover:border-border transition-colors">
+          <Card key={c.id} data-newme-uat-contract-id={c.id} className="bg-card border-border hover:border-border transition-colors">
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="space-y-1 flex-1 min-w-0">
@@ -405,7 +405,7 @@ export default function ContractsPage() {
                   <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                     <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" />{fmtAED(c.contract_amount)}</span>
                     <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{c.contract_date?.slice(0,10)}</span>
-                    <span className="flex items-center gap-1"><User className="w-3 h-3" />{c.profiles?.full_name || c.profiles?.email || "—"}</span>
+                    <span data-newme-uat-sensitive="true" className="flex items-center gap-1"><User className="w-3 h-3" />{c.profiles?.full_name || c.profiles?.email || "—"}</span>
                     {c.first_payment_due_date && (
                       <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                         <Clock className="w-3 h-3" />{t("contracts.firstDue")}: {c.first_payment_due_date.slice(0,10)}
@@ -490,7 +490,7 @@ export default function ContractsPage() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4 px-1">
-          <span className="text-xs text-muted-foreground">
+          <span data-newme-uat-sensitive="true" className="text-xs text-muted-foreground">
             {t("common.page")} {page} / {totalPages} ({totalCount} {t("contracts.total")})
           </span>
           <div className="flex items-center gap-2">

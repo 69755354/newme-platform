@@ -122,7 +122,7 @@ describe("resolveReleaseScript", () => {
     // The first version returned process.cwd() for these: path.resolve(root, "")
     // is root, and root exists, so the existence check passed and the caller
     // would have been handed a directory to spawn.
-    for (const hostile of ["", "   ", ".", "./", "scripts", "scripts/"]) {
+    for (const hostile of ["", "   ", ".", "./", "package.json", "scripts", "scripts/"]) {
       assert.equal(resolveReleaseScript(hostile), null, JSON.stringify(hostile));
     }
     for (const hostile of [undefined, null, 42, {}]) {

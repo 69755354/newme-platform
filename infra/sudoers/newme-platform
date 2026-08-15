@@ -12,6 +12,7 @@ Cmnd_Alias NEWME_SERVICE_READ = \
   /usr/bin/tail -n * /var/log/newme-forensic/newme-forensic.log
 Cmnd_Alias NEWME_PRODUCTION_RECOVERY = \
   /usr/local/sbin/newme-production-rollback status, \
+  /usr/local/sbin/newme-production-rollback receipt-key-inspect, \
   /usr/local/sbin/newme-production-rollback execute *, \
   /usr/local/sbin/newme-deploy *
 

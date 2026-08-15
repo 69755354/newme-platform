@@ -149,7 +149,7 @@
     {
       "version": "20260817170000",
       "file": "20260817170000_b5_retry_reaches_the_same_state.sql",
-      "sha256": "10c9a1851c11c6846a6079a1bb89116a526426516ac5202092c606e9852c9371"
+      "sha256": "c743cd39ee52d8bf2cc7e403786a603055abdb5b641aa24e2cd01dc9cba5d7d0"
     },
     {
       "version": "20260817180000",
@@ -175,6 +175,11 @@
       "version": "20260817220000",
       "file": "20260817220000_notification_event_idempotency.sql",
       "sha256": "cec5955929107511e4c04d4c676f64e53ffadb0b3244e34a184e5cf1a603345b"
+    },
+    {
+      "version": "20260817230000",
+      "file": "20260817230000_lead_rebalance_plan_idempotency.sql",
+      "sha256": "f718d5587f6c4b02e41af5088a7875bc5cbee1a363ac61135f553242199ee168"
     }
   ],
   "deferred_contract": [
@@ -188,7 +193,7 @@
     {
       "file": "recontract_money_direct_write_contract_phase.sql",
       "kind": "recontract",
-      "sha256": "9f724b0c18adf35b55c888a32e447ba1ec53ae80aad4691c798e893b503a122d"
+      "sha256": "f231ad61a653131345d549840d01b120dea72f181d84df4beea7393c299b820c"
     },
     {
       "file": "rollback_crm_v3.sql",
@@ -250,6 +255,12 @@
         {
           "name": "mode-function-is-security-definer",
           "sql": "select count(*) = 1 and bool_and(p.prosecdef) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'money_direct_write_mode' and p.pronargs = 0",
+          "expect": true
+        },
+        {
+          "$comment": "The six exact guard bodies delegate the decision to this four-function closure. Existence and SECURITY attributes alone accepted a measured false strict posture when money_direct_write_is_blocked() kept its signature and returned false. Pin pg_proc.prosrc plus the language, volatility and SECURITY mode that make lock-before-read and caller-identity semantics real.",
+          "name": "money-gate-dependency-closure-matches-the-declaration",
+          "sql": "select count(*) = 4 and bool_and(coalesce(p.prokind = 'f' and pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex') = d.prosrc_sha256 and l.lanname = d.lanname and p.provolatile = d.provolatile and p.prosecdef = d.prosecdef, false)) from (values ('public.money_direct_write_is_blocked()','7e441dc681f66aa2f58c001a9c8a705fe6b01400a80b50491dd98b95e6093ed5','plpgsql','v',false),('public.money_write_is_direct()','79bf852b44dea5fdfc5e5f9799fa5cff7253929d30cbd87dc012e0b57ba06a5d','sql','s',false),('public.money_direct_write_mode()','adabfffdd1b4f00dbac0f37a062225cafc954084db8e0d38fd749d293d811dde','sql','s',true),('public.money_release_mode_lock_key()','a58de3a00df07a1ccfe3250cf009c3a77675df80ce268f092124b236192cf26a','sql','i',false)) as d(proregprocedure, prosrc_sha256, lanname, provolatile, prosecdef) left join pg_catalog.pg_proc p on p.oid = to_regprocedure(d.proregprocedure) left join pg_catalog.pg_language l on l.oid = p.prolang",
           "expect": true
         },
         {
@@ -315,6 +326,12 @@
           "name": "lead-unassignment-is-atomic-audited-and-bound",
           "sql": "select count(*) = 1 and bool_and(p.prosecdef) and bool_and(p.prosrc like '%MISSING_EXPECTED_UPDATED_AT%') and bool_and(p.prosrc like '%IDEMPOTENCY_KEY_REUSED_FOR_DIFFERENT_REQUEST%') and bool_and(p.prosrc like '%pg_advisory_xact_lock%') and bool_and(p.prosrc like '%insert into public.activities%') and bool_and(p.prosrc like '%insert into public.business_events%') and bool_and(p.prosrc like '%insert into public.audit_logs%') and has_function_privilege('authenticated','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('public','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('anon','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('service_role','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.unassign_lead_atomic(uuid, timestamptz, uuid, text)')",
           "expect": true
+        },
+        {
+          "$comment": "R9. The immutable actor/batch plan is the durable truth that lets a partial or response-lost rebalance resume without recalculating against changed loads. Verify-only binds the live forced-RLS table, actor+batch primary key, statement guard, exact service-role read-only ACL, and the exact authenticated-only empty-path definer body shipped by 20260817230000. The focused PG17 gate supplies the concurrent winner, rollback, replay and entry-guard behaviour evidence.",
+          "name": "lead-rebalance-plan-boundary-is-installed",
+          "sql": "select coalesce((select c.relrowsecurity and c.relforcerowsecurity and exists (select 1 from pg_catalog.pg_constraint pc where pc.conrelid = c.oid and pc.contype = 'p' and (select pg_catalog.array_agg(a.attname::text order by k.ord) from pg_catalog.unnest(pc.conkey) with ordinality as k(attnum, ord) join pg_catalog.pg_attribute a on a.attrelid = pc.conrelid and a.attnum = k.attnum) = array['actor_id','batch_key']::text[]) and exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = c.oid and t.tgname = 'trg_require_current_session' and not t.tgisinternal and t.tgenabled = 'O' and t.tgfoid = to_regprocedure('public.require_current_session()') and (t.tgtype & 1) = 0 and (t.tgtype & 2) = 2 and (t.tgtype & 28) = 28 and t.tgattr::text = '' and t.tgqual is null) and not exists (select 1 from pg_catalog.aclexplode(coalesce(c.relacl, pg_catalog.acldefault('r', c.relowner))) x left join pg_catalog.pg_roles r on r.oid = x.grantee where x.grantee = 0 or r.rolname in ('anon','authenticated')) and coalesce((select pg_catalog.array_agg(x.privilege_type::text order by x.privilege_type::text) from pg_catalog.aclexplode(coalesce(c.relacl, pg_catalog.acldefault('r', c.relowner))) x join pg_catalog.pg_roles r on r.oid = x.grantee where r.rolname = 'service_role'), array[]::text[]) = array['SELECT']::text[] and not coalesce(has_table_privilege('anon', c.oid, 'select'), false) and not coalesce(has_table_privilege('anon', c.oid, 'insert'), false) and not coalesce(has_table_privilege('anon', c.oid, 'update'), false) and not coalesce(has_table_privilege('anon', c.oid, 'delete'), false) and not coalesce(has_table_privilege('anon', c.oid, 'truncate'), false) and not coalesce(has_table_privilege('anon', c.oid, 'references'), false) and not coalesce(has_table_privilege('anon', c.oid, 'trigger'), false) and not coalesce(has_table_privilege('anon', c.oid, 'maintain'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'select'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'insert'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'update'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'delete'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'truncate'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'references'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'trigger'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'maintain'), false) and coalesce(has_table_privilege('service_role', c.oid, 'select'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'insert'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'update'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'delete'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'truncate'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'references'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'trigger'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'maintain'), false) from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname = 'lead_rebalance_batches' and c.relkind = 'r'), false) and coalesce((select p.prokind = 'f' and p.prosecdef and p.provolatile = 'v' and p.proconfig = array['search_path=\"\"']::text[] and pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex') = 'ba0a12063712c249b3d0e73f1cfcda41152c01be64330e634bd5c0f47950d826' and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('public', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute') and not has_function_privilege('service_role', p.oid, 'execute') from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.get_or_create_lead_rebalance_plan(uuid,jsonb)')), false)",
+          "expect": true
         }
       ]
     },
@@ -350,6 +367,11 @@
         {
           "name": "strict-mode-function-is-security-definer",
           "sql": "select count(*) = 1 and bool_and(p.prosecdef) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'money_direct_write_mode' and p.pronargs = 0",
+          "expect": true
+        },
+        {
+          "name": "strict-money-gate-dependency-closure-matches-the-declaration",
+          "sql": "select count(*) = 4 and bool_and(coalesce(p.prokind = 'f' and pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex') = d.prosrc_sha256 and l.lanname = d.lanname and p.provolatile = d.provolatile and p.prosecdef = d.prosecdef, false)) from (values ('public.money_direct_write_is_blocked()','7e441dc681f66aa2f58c001a9c8a705fe6b01400a80b50491dd98b95e6093ed5','plpgsql','v',false),('public.money_write_is_direct()','79bf852b44dea5fdfc5e5f9799fa5cff7253929d30cbd87dc012e0b57ba06a5d','sql','s',false),('public.money_direct_write_mode()','adabfffdd1b4f00dbac0f37a062225cafc954084db8e0d38fd749d293d811dde','sql','s',true),('public.money_release_mode_lock_key()','a58de3a00df07a1ccfe3250cf009c3a77675df80ce268f092124b236192cf26a','sql','i',false)) as d(proregprocedure, prosrc_sha256, lanname, provolatile, prosecdef) left join pg_catalog.pg_proc p on p.oid = to_regprocedure(d.proregprocedure) left join pg_catalog.pg_language l on l.oid = p.prolang",
           "expect": true
         },
         {
@@ -418,6 +440,12 @@
           "$comment": "R8 in strict too: unassignment remains a guarded atomic RPC whose body writes the three durable ledgers and whose behavior is covered by the focused PG17 gate.",
           "name": "strict-lead-unassignment-is-atomic-audited-and-bound",
           "sql": "select count(*) = 1 and bool_and(p.prosecdef) and bool_and(p.prosrc like '%MISSING_EXPECTED_UPDATED_AT%') and bool_and(p.prosrc like '%IDEMPOTENCY_KEY_REUSED_FOR_DIFFERENT_REQUEST%') and bool_and(p.prosrc like '%pg_advisory_xact_lock%') and bool_and(p.prosrc like '%insert into public.activities%') and bool_and(p.prosrc like '%insert into public.business_events%') and bool_and(p.prosrc like '%insert into public.audit_logs%') and has_function_privilege('authenticated','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('public','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('anon','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') and not has_function_privilege('service_role','public.unassign_lead_atomic(uuid, timestamptz, uuid, text)','execute') from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.unassign_lead_atomic(uuid, timestamptz, uuid, text)')",
+          "expect": true
+        },
+        {
+          "$comment": "R9 in strict too: re-contracting the money posture must not weaken or delete the immutable rebalance retry boundary. This is intentionally the same live catalog and exact-body claim as required_for_app.",
+          "name": "strict-lead-rebalance-plan-boundary-is-installed",
+          "sql": "select coalesce((select c.relrowsecurity and c.relforcerowsecurity and exists (select 1 from pg_catalog.pg_constraint pc where pc.conrelid = c.oid and pc.contype = 'p' and (select pg_catalog.array_agg(a.attname::text order by k.ord) from pg_catalog.unnest(pc.conkey) with ordinality as k(attnum, ord) join pg_catalog.pg_attribute a on a.attrelid = pc.conrelid and a.attnum = k.attnum) = array['actor_id','batch_key']::text[]) and exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = c.oid and t.tgname = 'trg_require_current_session' and not t.tgisinternal and t.tgenabled = 'O' and t.tgfoid = to_regprocedure('public.require_current_session()') and (t.tgtype & 1) = 0 and (t.tgtype & 2) = 2 and (t.tgtype & 28) = 28 and t.tgattr::text = '' and t.tgqual is null) and not exists (select 1 from pg_catalog.aclexplode(coalesce(c.relacl, pg_catalog.acldefault('r', c.relowner))) x left join pg_catalog.pg_roles r on r.oid = x.grantee where x.grantee = 0 or r.rolname in ('anon','authenticated')) and coalesce((select pg_catalog.array_agg(x.privilege_type::text order by x.privilege_type::text) from pg_catalog.aclexplode(coalesce(c.relacl, pg_catalog.acldefault('r', c.relowner))) x join pg_catalog.pg_roles r on r.oid = x.grantee where r.rolname = 'service_role'), array[]::text[]) = array['SELECT']::text[] and not coalesce(has_table_privilege('anon', c.oid, 'select'), false) and not coalesce(has_table_privilege('anon', c.oid, 'insert'), false) and not coalesce(has_table_privilege('anon', c.oid, 'update'), false) and not coalesce(has_table_privilege('anon', c.oid, 'delete'), false) and not coalesce(has_table_privilege('anon', c.oid, 'truncate'), false) and not coalesce(has_table_privilege('anon', c.oid, 'references'), false) and not coalesce(has_table_privilege('anon', c.oid, 'trigger'), false) and not coalesce(has_table_privilege('anon', c.oid, 'maintain'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'select'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'insert'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'update'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'delete'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'truncate'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'references'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'trigger'), false) and not coalesce(has_table_privilege('authenticated', c.oid, 'maintain'), false) and coalesce(has_table_privilege('service_role', c.oid, 'select'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'insert'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'update'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'delete'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'truncate'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'references'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'trigger'), false) and not coalesce(has_table_privilege('service_role', c.oid, 'maintain'), false) from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname = 'lead_rebalance_batches' and c.relkind = 'r'), false) and coalesce((select p.prokind = 'f' and p.prosecdef and p.provolatile = 'v' and p.proconfig = array['search_path=\"\"']::text[] and pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex') = 'ba0a12063712c249b3d0e73f1cfcda41152c01be64330e634bd5c0f47950d826' and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('public', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute') and not has_function_privilege('service_role', p.oid, 'execute') from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.get_or_create_lead_rebalance_plan(uuid,jsonb)')), false)",
           "expect": true
         }
       ]

@@ -60,6 +60,13 @@ const VALID_CLAIM = {
   CI_HEAD_SHA: RELEASE_SHA,
   CI_CONCLUSION: "success",
   CI_EVENT: "workflow_dispatch",
+  CI_WORKFLOW_ID: "310914082",
+  CI_WORKFLOW_PATH: ".github/workflows/ci.yml",
+  CI_RUN_COMPLETED_AT: "2026-08-15T00:00:00Z",
+  CI_GATE_AUDIT_SHA256: "a".repeat(64),
+  CI_GATE_AUDITED_AT: "2026-08-15T00:01:00Z",
+  CI_GATE_AUDIT_RECORD: "/var/lib/newme/deploy-state/ci-gate-audit.pending",
+  CI_MAX_RUN_AGE_SECONDS: "86400",
   MIGRATION_STATUS: "not_required",
   MIGRATION_IDS: "",
 };
@@ -133,6 +140,13 @@ test("every claim variable is required, so an unset one cannot default to green"
   assertRejected({ CI_HEAD_SHA: undefined }, /CI_HEAD_SHA is required/);
   assertRejected({ CI_CONCLUSION: undefined }, /CI_CONCLUSION is required/);
   assertRejected({ CI_EVENT: undefined }, /CI_EVENT is required/);
+  assertRejected({ CI_WORKFLOW_ID: undefined }, /CI_WORKFLOW_ID is required/);
+  assertRejected({ CI_WORKFLOW_PATH: undefined }, /CI_WORKFLOW_PATH is required/);
+  assertRejected({ CI_RUN_COMPLETED_AT: undefined }, /CI_RUN_COMPLETED_AT is required/);
+  assertRejected({ CI_GATE_AUDIT_SHA256: undefined }, /CI_GATE_AUDIT_SHA256 is required/);
+  assertRejected({ CI_GATE_AUDITED_AT: undefined }, /CI_GATE_AUDITED_AT is required/);
+  assertRejected({ CI_GATE_AUDIT_RECORD: undefined }, /CI_GATE_AUDIT_RECORD is required/);
+  assertRejected({ CI_MAX_RUN_AGE_SECONDS: undefined }, /CI_MAX_RUN_AGE_SECONDS is required/);
   assertRejected({ MIGRATION_STATUS: undefined }, /MIGRATION_STATUS is required/);
 
   // Empty is the same as unset: `deploy.sh` passes the environment straight
@@ -140,6 +154,16 @@ test("every claim variable is required, so an unset one cannot default to green"
   assertRejected({ CI_RUN_ID: "" }, /CI_RUN_ID is required/);
   assertRejected({ CI_CONCLUSION: "" }, /CI_CONCLUSION is required/);
   assertRejected({ CI_EVENT: "" }, /CI_EVENT is required/);
+});
+
+test("the immutable layer requires the canonical workflow and well-formed audit binding", () => {
+  assertRejected({ CI_WORKFLOW_ID: "999" }, /CI_WORKFLOW_ID must identify the canonical/);
+  assertRejected({ CI_WORKFLOW_PATH: ".github/workflows/lookalike.yml" }, /CI_WORKFLOW_PATH must identify the canonical/);
+  assertRejected({ CI_RUN_COMPLETED_AT: "not-a-time" }, /CI_RUN_COMPLETED_AT must be a UTC RFC3339/);
+  assertRejected({ CI_GATE_AUDITED_AT: "2030-01-01" }, /CI_GATE_AUDITED_AT must be a UTC RFC3339/);
+  assertRejected({ CI_GATE_AUDIT_SHA256: "a".repeat(63) }, /CI_GATE_AUDIT_SHA256 must be a lowercase SHA-256/);
+  assertRejected({ CI_GATE_AUDIT_RECORD: "/tmp/audit.json" }, /CI_GATE_AUDIT_RECORD must use the canonical/);
+  assertRejected({ CI_MAX_RUN_AGE_SECONDS: "86401" }, /CI_MAX_RUN_AGE_SECONDS must be between/);
 });
 
 test("the claim must be about the commit being deployed", () => {
@@ -279,6 +303,14 @@ test("the guard runs before the deploy touches anything", () => {
  * comment about a check.
  */
 const MANIFEST = JSON.parse(readFileSync(path.join(ROOT, "infra/release/required-jobs.json"), "utf8"));
+const FIXTURE_NOW = Date.now();
+const fixtureTime = (millisecondsAgo) => new Date(FIXTURE_NOW - millisecondsAgo).toISOString();
+const GOOD_WORKFLOW = {
+  id: MANIFEST.workflow_id,
+  path: MANIFEST.workflow_path,
+  name: MANIFEST.workflow,
+  state: "active",
+};
 
 function wrapperCheck() {
   const wrapper = readFileSync(WRAPPER, "utf8");
@@ -289,10 +321,18 @@ function wrapperCheck() {
   assert.ok(program.includes("json.loads"), "extracted the wrong block from the wrapper");
   const programFile = path.join(TMP, "wrapper-check.py");
   writeFileSync(programFile, program);
-  return (run, jobs, manifest = MANIFEST) =>
+  return (run, jobs, manifest = MANIFEST, workflow = GOOD_WORKFLOW) =>
     spawnSync(
       "python3",
-      [programFile, RELEASE_SHA, RUN_ID, JSON.stringify(run), JSON.stringify(jobs), JSON.stringify(manifest)],
+      [
+        programFile,
+        RELEASE_SHA,
+        RUN_ID,
+        JSON.stringify(run),
+        JSON.stringify(jobs),
+        JSON.stringify(workflow),
+        JSON.stringify(manifest),
+      ],
       { encoding: "utf8" },
     );
 }
@@ -301,10 +341,15 @@ const GOOD_RUN = {
   id: Number(RUN_ID),
   head_sha: RELEASE_SHA,
   name: "ci",
+  path: MANIFEST.workflow_path,
+  workflow_id: MANIFEST.workflow_id,
   status: "completed",
   conclusion: "success",
   event: "workflow_dispatch",
   head_branch: "main",
+  created_at: fixtureTime(180_000),
+  run_started_at: fixtureTime(120_000),
+  updated_at: fixtureTime(60_000),
 };
 
 /** The job list a release-candidate dispatch of ci actually produces. */
@@ -314,6 +359,8 @@ function jobList(overrides = []) {
     status: "completed",
     conclusion: "success",
     head_sha: RELEASE_SHA,
+    started_at: fixtureTime(110_000),
+    completed_at: fixtureTime(70_000),
   }));
   for (const override of overrides) {
     const index = jobs.findIndex((job) => job.name === override.name);
@@ -435,7 +482,9 @@ test("the wrapper enforces the predeploy taskboard scope and remote migration hi
   // stays with the separate closure workflow.
   const taskboard = at(/check-taskboard\.mjs" --require-scope=predeploy_ready/);
   const remoteHistory = at(/verify-remote-migration-history\.mjs/);
-  const assets = at(/install-systemd-assets\.sh"/);
+  // Select the ordinary asset transaction, not the earlier credential-only
+  // coordinator branch, which deliberately has its own narrower gates.
+  const assets = at(/^\s*bash "\$WORKTREE\/scripts\/install-systemd-assets\.sh"$/);
   const immutable = at(/deploy-immutable\.sh" "\$SHA"/);
 
   assert.notEqual(taskboard, -1, "the wrapper does not require the predeploy taskboard scope");

@@ -155,6 +155,10 @@ test("the module's claim about how it is verified names a drill that exists", ()
   // the job that runs it installs. Parity is per CLI version and for no other.
   const ci = read(".github/workflows/ci.yml");
   const job = ci.slice(ci.indexOf("  local-database:"), ci.indexOf("  migration-replay:"));
-  assert.match(job, /version: 2\.113\.0/);
+  const provenance = JSON.parse(read("infra/ci/provenance-lock.json"));
+  const cli = provenance.artifacts.find((artifact) => artifact.id === "supabase-cli-linux-amd64");
+  assert.equal(cli?.version, "2.113.0");
+  assert.match(job, /node scripts\/install-reviewed-artifact\.mjs supabase-cli-linux-amd64/);
+  assert.match(job, /test "\$\(supabase --version\)" = "2\.113\.0"/);
   assert.match(job, /node scripts\/verify-cli-statement-parity\.mjs/);
 });

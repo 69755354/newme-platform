@@ -58,7 +58,7 @@ export function LeadsPipelineSummary({
   t,
 }: Props) {
   return (
-    <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-1.5">
+    <div data-newme-uat-sensitive="true" className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-1.5">
       {stages.map((s) => {
         const totals = stageTotals[s.key];
         return (

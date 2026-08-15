@@ -426,7 +426,7 @@ export default function SettingsPage() {
         </button>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
+      <div data-newme-uat-sensitive="true" className="grid grid-cols-3 gap-3">
         <div className="p-4 rounded-xl border border-border/50 bg-card/50">
           <p className="text-xs text-muted-foreground">{t("settings.totalLeads")}</p>
           <p className="text-2xl font-bold text-foreground mt-1">{leads.length}</p>
@@ -526,7 +526,7 @@ export default function SettingsPage() {
                         "bg-muted text-muted-foreground"
                       )}>{t(`stages.${lead.final_status || lead.stage}`) || lead.final_status || lead.stage}</span>
                     </td>
-                    <td className="py-2.5 px-3">
+                    <td data-newme-uat-sensitive="true" className="py-2.5 px-3">
                       {lead.assigned_to ? (
                         <span className="text-xs">
                           <span className="text-foreground">{ownerProfile?.full_name || ownerProfile?.email || "—"}</span>

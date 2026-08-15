@@ -5,6 +5,7 @@ set -u -o pipefail
 
 EXPECTED_SUPABASE_URL=https://vfopmpxlhwzpxqegayew.supabase.co
 RELEASE_ENV="${NEWME_RELEASE_ENV:-/opt/newme/current/.env.local}"
+readonly RUNTIME_ENV=/etc/newme/newme-runtime.env
 CURRENT_LINK="${NEWME_CURRENT_LINK:-/opt/newme/current}"
 ALERT_SCRIPT="${HERMES_ALERT_STATE_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert-state-v1.sh}"
 TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -20,10 +21,10 @@ add_alert() {
   ALERTS="${ALERTS}[$1] $2\n"
 }
 
-read_release_value() {
-  local key="$1"
-  [ -r "$RELEASE_ENV" ] || return 1
-  python3 - "$RELEASE_ENV" "$key" <<'PY'
+read_env_value() {
+  local source="$1" key="$2"
+  [ -r "$source" ] || return 1
+  python3 - "$source" "$key" <<'PY'
 import re
 import sys
 from pathlib import Path
@@ -93,9 +94,16 @@ then
   add_alert RELEASE_INTEGRITY "current immutable release metadata is invalid"
 fi
 
-SUPABASE_URL="$(read_release_value NEXT_PUBLIC_SUPABASE_URL || true)"
-ANON_KEY="$(read_release_value NEXT_PUBLIC_SUPABASE_ANON_KEY || true)"
-SERVICE_KEY="$(read_release_value SUPABASE_SERVICE_ROLE_KEY || true)"
+SUPABASE_URL="$(read_env_value "$RELEASE_ENV" NEXT_PUBLIC_SUPABASE_URL || true)"
+ANON_KEY="$(read_env_value "$RELEASE_ENV" NEXT_PUBLIC_SUPABASE_ANON_KEY || true)"
+SERVICE_KEY=""
+if [ -f "$RUNTIME_ENV" ] && [ ! -L "$RUNTIME_ENV" ] &&
+  [ "$(stat -c '%U:%G' "$RUNTIME_ENV" 2>/dev/null || true)" = root:root ] &&
+  [ "$(stat -c '%a' "$RUNTIME_ENV" 2>/dev/null || true)" = 600 ]; then
+  SERVICE_KEY="$(read_env_value "$RUNTIME_ENV" SUPABASE_SERVICE_ROLE_KEY || true)"
+else
+  add_alert SUPABASE_KEY "fixed runtime credential store metadata is invalid"
+fi
 
 if [ "$SUPABASE_URL" != "$EXPECTED_SUPABASE_URL" ]; then
   add_alert SUPABASE_PROJECT "production project URL is missing or unexpected"
@@ -111,18 +119,41 @@ if [ -n "$ANON_KEY" ] && [ "$ANON_KEY" = "$SERVICE_KEY" ]; then
 fi
 
 classify_key() {
-  local expected="$1" key="$2"
+  local expected="$1" key="$2" source="$3" wanted="$4"
   case "$expected:$key" in
     publishable:sb_publishable_*) printf 'opaque\n'; return 0 ;;
     service:sb_secret_*) printf 'opaque\n'; return 0 ;;
   esac
-  printf '%s' "$key" | python3 -c '
+  python3 - "$expected" "$source" "$wanted" <<'PY'
 import base64
 import json
+import re
 import sys
+from pathlib import Path
 
-expected = sys.argv[1]
-value = sys.stdin.read()
+expected, source, wanted = sys.argv[1:]
+key_pattern = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+values = {}
+try:
+    for raw_line in Path(source).read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            raise ValueError
+        name, value = line.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+        if not key_pattern.fullmatch(name) or name in values:
+            raise ValueError
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        values[name] = value
+    value = values[wanted]
+except (KeyError, OSError, UnicodeError, ValueError):
+    raise SystemExit(1)
 parts = value.split(".")
 if len(parts) != 3:
     raise SystemExit(1)
@@ -137,16 +168,16 @@ allowed = {"publishable": "anon", "service": "service_role"}
 if role != allowed[expected]:
     raise SystemExit(1)
 print("legacy_jwt")
-' "$expected"
+PY
 }
 
 ANON_KIND=""
 SERVICE_KIND=""
 if [[ "$ANON_KEY" =~ ^[A-Za-z0-9._-]{20,2048}$ ]]; then
-  ANON_KIND="$(classify_key publishable "$ANON_KEY")" || add_alert SUPABASE_KEY "publishable credential has the wrong role or type"
+  ANON_KIND="$(classify_key publishable "$ANON_KEY" "$RELEASE_ENV" NEXT_PUBLIC_SUPABASE_ANON_KEY)" || add_alert SUPABASE_KEY "publishable credential has the wrong role or type"
 fi
 if [[ "$SERVICE_KEY" =~ ^[A-Za-z0-9._-]{20,2048}$ ]]; then
-  SERVICE_KIND="$(classify_key service "$SERVICE_KEY")" || add_alert SUPABASE_KEY "service credential has the wrong role or type"
+  SERVICE_KIND="$(classify_key service "$SERVICE_KEY" "$RUNTIME_ENV" SUPABASE_SERVICE_ROLE_KEY)" || add_alert SUPABASE_KEY "service credential has the wrong role or type"
 fi
 
 probe_rest_key() {

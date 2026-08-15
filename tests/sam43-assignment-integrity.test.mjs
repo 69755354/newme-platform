@@ -139,9 +139,11 @@ test("SAM-43 rebalance uses eligible targets and never reports failed updates as
   // `update({ assigned_to })` this route used to run is gone, and with it the
   // three defects it carried: no comparison, no transfer_history, no idempotence.
   assert.match(route, /rpc\("reassign_lead_atomic"/);
+  assert.match(route, /rpc\(\s*"get_or_create_lead_rebalance_plan"/);
   assert.match(route, /\.select\("id, assigned_to, customer_name, updated_at"\)/);
   assert.match(route, /p_expected_updated_at: update\.expected_updated_at/);
-  assert.match(route, /p_idempotency_key: deriveLeadTransferKey\(batchKey, update\.id\)/);
+  assert.match(route, /idempotency_key: deriveLeadTransferKey\(batchKey, lead\.id\)/);
+  assert.match(route, /p_idempotency_key: update\.idempotency_key/);
   assert.match(route, /readLeadTransferBatchKey\(\{/);
   assert.doesNotMatch(
     readCode("src/app/api/dashboard/sales-load/rebalance/route.ts"),
@@ -152,7 +154,14 @@ test("SAM-43 rebalance uses eligible targets and never reports failed updates as
   assert.match(route, /replayed\+\+/);
   // And the caller supplies the batch key the derivation needs.
   const caller = read("src/app/(dashboard)/analytics/_components/SalesLoad.tsx");
-  assert.match(caller, /batchKey: batchKeyRef\.current/);
+  assert.match(caller, /const batchKey = batchKeyRef\.current/);
+  assert.match(caller, /body: JSON\.stringify\(\{ batchKey \}\)/);
+  assert.match(caller, /acquireLeadRebalanceBatchKey\(\s*window\.sessionStorage/);
+  assert.match(caller, /acquireLeadRebalanceBatchKey\([\s\S]*?window\.sessionStorage,[\s\S]*?actorId \?\? ""/);
+  assert.match(caller, /clearLeadRebalanceBatchKey\(window\.sessionStorage, actorId \?\? "", batchKey\)/);
+  assert.match(caller, /actorId=\{userId\}/);
+  assert.match(caller, /canRebalance=\{role === "admin" \|\| role === "boss"\}/);
+  assert.match(caller, /\{canRebalance && \(\s*<button/);
 });
 
 test("SAM-43 enforces eligible assignment on both Lead inserts and reassignment updates", () => {

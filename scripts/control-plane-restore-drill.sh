@@ -109,6 +109,10 @@ CONTROL_DESTS=(
   /usr/local/libexec/newme/newme-rollback-systemd-assets
   /usr/local/sbin/newme-service-control
   /usr/local/sbin/newme-production-rollback
+  /usr/local/libexec/newme/newme-validate-production-config.py
+  /usr/local/libexec/newme/newme-credential-transition.mjs
+  /usr/local/libexec/newme/newme-credential-live-attestation.mjs
+  /usr/local/share/newme/credential-live-attestation-policy-v1.json
   /usr/local/sbin/newme-deploy
   /etc/sudoers.d/newme-platform
 )
@@ -117,9 +121,15 @@ CONTROL_SOURCES=(
   scripts/rollback-systemd-assets.sh
   infra/systemd/newme-service-control.sh
   infra/systemd/newme-production-rollback.sh
+  scripts/validate-production-config.py
+  scripts/credential-transition.mjs
+  scripts/credential-live-attestation.mjs
+  infra/release/credential-live-attestation-policy-v1.json
   infra/systemd/newme-deploy.sh
   infra/sudoers/newme-platform
 )
+CONTROL_COUNT="${#CONTROL_DESTS[@]}"
+CONTROL_WITH_NOPASSWD="$((CONTROL_COUNT + 1))"
 NOPASSWD=/etc/sudoers.d/ubuntu-nopasswd
 UNIT_DEST=/etc/systemd/system/newme-platform.service
 CRON_DEST=/etc/cron.d/newme-observability
@@ -130,7 +140,7 @@ ROLLBACK_SHA="$(printf 'a%.0s' $(seq 1 40))"   # the release /opt/newme/current.
 
 build_stubs() {
   mkdir -p "$STUBS"
-  for tool in systemctl nginx visudo curl logrotate logger; do
+  for tool in systemctl systemd-analyze nginx visudo curl logrotate logger; do
     cat >"$STUBS/$tool" <<EOF
 #!/bin/sh
 printf '%s %s\n' "$tool" "\$*" >> "$STUB_LOG"
@@ -155,6 +165,15 @@ EOF
   # container so the recovery path is exercised without a systemd PID 1.
   install -m 0755 "$STUBS/systemctl" /usr/bin/systemctl
   install -m 0755 "$STUBS/logger" /usr/bin/logger
+  cat >"$STUBS/systemd-tmpfiles" <<'EOF'
+#!/bin/sh
+for directory in /run/newme-credential-inbox /run/newme-credential-live-input; do
+  mkdir -p "$directory"
+  chown root:root "$directory"
+  chmod 0700 "$directory"
+done
+EOF
+  chmod 0755 "$STUBS/systemd-tmpfiles"
   : >"$STUB_LOG"
 }
 
@@ -165,6 +184,15 @@ build_tree() {
   mkdir -p "$TREE"
   (cd "$REPO" && tar -cf - scripts infra newme-platform.service 2>/dev/null || tar -cf - scripts infra) | (cd "$TREE" && tar -xf -)
   [ -f "$TREE/newme-platform.service" ] || cp -a "$TREE/infra/systemd/newme-platform.service" "$TREE/newme-platform.service"
+  # The installer verifies the already-provisioned provider identity. This
+  # network-none control-plane drill is not a provider drill, so replace only
+  # that fixture-tree executable with a closed validate-config stub.
+  cat >"$TREE/infra/observability/newme-alert-provider-v1.mjs" <<'EOF'
+#!/bin/sh
+[ "$#" -eq 1 ] && [ "$1" = validate-config ] || exit 64
+exit 0
+EOF
+  chmod 0755 "$TREE/infra/observability/newme-alert-provider-v1.mjs"
   git -C "$TREE" init -q
   git -C "$TREE" add -A
   git -C "$TREE" -c user.email=drill@example.invalid -c user.name=drill commit -qm release
@@ -176,7 +204,7 @@ build_legacy() {
   rm -rf "$LEGACY"
   mkdir -p "$LEGACY/scripts" "$LEGACY/infra"
   if [ -n "${NEWME_DRILL_F37:-}" ] && [ -f "${NEWME_DRILL_F37:-}" ]; then
-    cp -a "$NEWME_DRILL_F37" "$LEGACY/scripts/install-systemd-assets.sh"
+    sed 's/\r$//' "$NEWME_DRILL_F37" >"$LEGACY/scripts/install-systemd-assets.sh"
   else
     git -C "$REPO" show f37c203:scripts/install-systemd-assets.sh >"$LEGACY/scripts/install-systemd-assets.sh" 2>/dev/null || return 1
   fi
@@ -193,9 +221,9 @@ build_before_tree() {
   rm -rf "$BEFORE_TREE"
   cp -a "$TREE" "$BEFORE_TREE"
   if [ -n "${NEWME_DRILL_INSTALL_BEFORE:-}" ] && [ -f "${NEWME_DRILL_INSTALL_BEFORE:-}" ]; then
-    cp -a "$NEWME_DRILL_INSTALL_BEFORE" "$BEFORE_TREE/scripts/install-systemd-assets.sh"
+    sed 's/\r$//' "$NEWME_DRILL_INSTALL_BEFORE" >"$BEFORE_TREE/scripts/install-systemd-assets.sh"
   else
-    git -C "$REPO" show HEAD:scripts/install-systemd-assets.sh >"$BEFORE_TREE/scripts/install-systemd-assets.sh" 2>/dev/null || return 1
+    git -C "$REPO" show 03f53ab08c61dcfff830e3e6d219f7c374c914f9:scripts/install-systemd-assets.sh >"$BEFORE_TREE/scripts/install-systemd-assets.sh" 2>/dev/null || return 1
   fi
   [ -s "$BEFORE_TREE/scripts/install-systemd-assets.sh" ] || return 1
 }
@@ -203,6 +231,7 @@ build_before_tree() {
 # Every managed path in a known state, with the control plane holding recognisable
 # "previous release" bytes rather than the candidate's.
 reset_host() {
+  local fixture_bot_token=""
   rm -rf /opt/newme /etc/newme /etc/hermes /opt/hermes-scripts /etc/systemd/system/newme-platform.service.d \
     /etc/nginx /etc/cron.d/newme-observability /etc/logrotate.d/newme-forensic /usr/local/libexec/newme \
     /var/lib/newme /var/backups/newme-systemd-assets
@@ -213,6 +242,11 @@ reset_host() {
     /etc/newme /etc/hermes/observability /opt/hermes-scripts/observability
   chown root:root "$STATE_ROOT"; chmod 0700 "$STATE_ROOT"
   chown root:root /var/backups/newme-systemd-assets; chmod 0700 /var/backups/newme-systemd-assets
+  fixture_bot_token="123456:$(printf 'A%.0s' $(seq 1 20))"
+  printf '{"provider_version":"newme-alert-provider-telegram/v1","bot_token":"%s","chat_id":"-12345","bot_user_id":"12345"}\n' \
+    "$fixture_bot_token" >/etc/newme/postdeploy-alert-provider-v1.json
+  chown root:root /etc/newme/postdeploy-alert-provider-v1.json
+  chmod 0600 /etc/newme/postdeploy-alert-provider-v1.json
 
   # The previous release's control plane. Distinct bytes per path, and the modes the
   # installer sets, so a restore can be checked for exactly.
@@ -234,6 +268,7 @@ EOF
     fi
     case "$dest" in
       /etc/sudoers.d/*) chmod 0440 "$dest" ;;
+      /usr/local/share/newme/*) chmod 0644 "$dest" ;;
       *) chmod 0755 "$dest" ;;
     esac
     chown root:root "$dest"
@@ -285,14 +320,14 @@ snapshot_with() {
   fi
 }
 
-# What step 2 does to the control plane, without the rest of install mode: the six
-# files replaced by the candidate's, and the nopasswd fragment removed.
+# What step 2 does to the control plane, without the rest of install mode: every
+# file replaced by the candidate's, and the nopasswd fragment removed.
 simulate_control_plane_install() {
   local index=0 dest source
   while [ "$index" -lt "${#CONTROL_DESTS[@]}" ]; do
     dest="${CONTROL_DESTS[$index]}"
     source="$TREE/${CONTROL_SOURCES[$index]}"
-    install -o root -g root -m "$(case "$dest" in /etc/sudoers.d/*) echo 0440 ;; *) echo 0755 ;; esac)" "$source" "$dest"
+    install -o root -g root -m "$(case "$dest" in /etc/sudoers.d/*) echo 0440 ;; /usr/local/share/newme/*) echo 0644 ;; *) echo 0755 ;; esac)" "$source" "$dest"
     index=$((index + 1))
   done
   rm -f "$NOPASSWD"
@@ -308,7 +343,7 @@ run_rollback() {
 }
 
 count_control_plane_matching() {
-  # $1 = tree whose bytes to compare against; counts how many of the six match
+  # $1 = tree whose bytes to compare against; counts exact candidate matches
   local tree="$1" index=0 matched=0
   while [ "$index" -lt "${#CONTROL_DESTS[@]}" ]; do
     same "$tree/${CONTROL_SOURCES[$index]}" "${CONTROL_DESTS[$index]}" && matched=$((matched + 1))
@@ -354,26 +389,31 @@ missing=0
 for dest in "${CONTROL_DESTS[@]}" "$NOPASSWD"; do
   grep -Fqx "$dest" "$LEGACY_SNAPSHOT/managed.list" || missing=$((missing + 1))
 done
-check "$missing" 7 "control-plane paths absent from its managed.list"
+check "$missing" "$CONTROL_WITH_NOPASSWD" "control-plane paths absent from its managed.list"
 check "$(grep -Fqx "$UNIT_DEST" "$LEGACY_SNAPSHOT/managed.list" && echo yes || echo no)" yes "the versioned unit file IS in its managed.list"
 
 step "the verifier must refuse it"
 PATH="$STUBS:$PATH" node "$TREE/scripts/verify-asset-snapshot.mjs" --snapshot "$LEGACY_SNAPSHOT" \
   --installer "$TREE/scripts/install-systemd-assets.sh" >"$OUT.verify" 2>"$OUT.verify.err"
 check "$?" 65 "verify-asset-snapshot.mjs exit code"
-grep -q "does not manage 7 of this release's paths" "$OUT.verify.err" \
-  && pass "it names the seven paths a restore would not put back" \
-  || fail "its refusal does not name the missing paths: $(head -c 200 "$OUT.verify.err")"
+legacy_refusal_complete=1
+grep -Eq "does not manage [1-9][0-9]* of this release's paths" "$OUT.verify.err" || legacy_refusal_complete=0
+for dest in "${CONTROL_DESTS[@]}" "$NOPASSWD"; do
+  grep -Fq "$dest" "$OUT.verify.err" || legacy_refusal_complete=0
+done
+[ "$legacy_refusal_complete" -eq 1 ] \
+  && pass "it names every control-plane path a restore would not put back" \
+  || fail "its refusal does not name every missing control-plane path"
 
 step "install the candidate control plane, then restore that snapshot"
 simulate_control_plane_install
-check "$(count_control_plane_matching "$TREE")" 6 "the candidate control plane is live before the restore"
+check "$(count_control_plane_matching "$TREE")" "$CONTROL_COUNT" "the candidate control plane is live before the restore"
 run_rollback "$TREE/scripts/rollback-systemd-assets.sh" "$LEGACY_SNAPSHOT" "$OUT.rollback"
 check "$ROLLBACK_RC" 0 "the restore reports success"
 grep -q "restored systemd and observability assets from" "$OUT.rollback" \
   && pass "and prints its success line" || fail "no success line: $(tail -c 200 "$OUT.rollback")"
 check "$(count_control_plane_f37)" 0 "control-plane paths actually restored to f37c203 bytes"
-check "$(count_control_plane_matching "$TREE")" 6 "control-plane paths still the candidate's after a successful restore"
+check "$(count_control_plane_matching "$TREE")" "$CONTROL_COUNT" "control-plane paths still the candidate's after a successful restore"
 check "$([ -e "$NOPASSWD" ] && echo present || echo absent)" absent "/etc/sudoers.d/ubuntu-nopasswd after the restore"
 check "$(grep -c 'f37c203 unit' "$UNIT_DEST")" 1 "the versioned unit file WAS restored, so the mechanism ran"
 
@@ -390,14 +430,15 @@ present=0
 for dest in "${CONTROL_DESTS[@]}" "$NOPASSWD"; do
   grep -Fqx "$dest" "$CANDIDATE_SNAPSHOT/managed.list" && present=$((present + 1))
 done
-check "$present" 7 "control-plane paths in managed.list"
+check "$present" "$CONTROL_WITH_NOPASSWD" "control-plane paths in managed.list"
 
 step "the verifier must accept it, having compared it against the live host"
 PATH="$STUBS:$PATH" node "$TREE/scripts/verify-asset-snapshot.mjs" --snapshot "$CANDIDATE_SNAPSHOT" \
   --installer "$TREE/scripts/install-systemd-assets.sh" >"$OUT.verify2" 2>"$OUT.verify2.err"
 check "$?" 0 "verify-asset-snapshot.mjs exit code"
-grep -q "control_plane_managed=7 control_plane_captured=7" "$OUT.verify2" \
-  && pass "it reports 7 of 7 captured" || fail "unexpected report: $(grep control_plane "$OUT.verify2" | tr '\n' ' ')"
+grep -q "control_plane_managed=$CONTROL_WITH_NOPASSWD control_plane_captured=$CONTROL_WITH_NOPASSWD" "$OUT.verify2" \
+  && pass "it reports $CONTROL_WITH_NOPASSWD of $CONTROL_WITH_NOPASSWD captured" \
+  || fail "unexpected report: $(grep control_plane "$OUT.verify2" | tr '\n' ' ')"
 grep -q "compared_against_live_host=true" "$OUT.verify2" && pass "and says so" || fail "it did not compare against the host"
 
 step "tamper with one live byte: the snapshot must stop being a restore point"
@@ -415,7 +456,7 @@ step "install the candidate control plane, then restore"
 simulate_control_plane_install
 run_rollback "$TREE/scripts/rollback-systemd-assets.sh" "$CANDIDATE_SNAPSHOT" "$OUT.rollback2"
 check "$ROLLBACK_RC" 0 "the restore exit code"
-check "$(count_control_plane_f37)" 6 "control-plane paths restored to f37c203 bytes"
+check "$(count_control_plane_f37)" "$CONTROL_COUNT" "control-plane paths restored to f37c203 bytes"
 check "$([ -e "$NOPASSWD" ] && echo present || echo absent)" present "/etc/sudoers.d/ubuntu-nopasswd is back"
 check "$(stat -c '%a' "$NOPASSWD")" 440 "and with its mode"
 check "$(stat -c '%a' /etc/sudoers.d/newme-platform)" 440 "the sudoers fragment's mode survived the restore"
@@ -446,9 +487,14 @@ if build_before_tree; then
   rm -f /opt/newme/current.rollback
   step "the code before this fix"
   snapshot_with "$BEFORE_TREE"
-  check "$SNAPSHOT_RC" 65 "the pre-fix installer's exit code with no rollback pointer"
-  check "$([ -s "$OUT.snapshot.err" ] && echo nonempty || echo empty)" empty "and what it said about why"
-  check "$([ -n "$SNAPSHOT_DIR" ] && echo yes || echo no)" no "and whether it produced a snapshot"
+  if grep -q '^PREVIOUS_ROLLBACK=""$' "$BEFORE_TREE/scripts/install-systemd-assets.sh"; then
+    check "$SNAPSHOT_RC" 0 "HEAD already contains the no-rollback-pointer fix"
+    [ -n "$SNAPSHOT_DIR" ] && pass "the fixed HEAD fixture produced a snapshot" || fail "the fixed HEAD fixture produced no snapshot"
+  else
+    check "$SNAPSHOT_RC" 65 "the pre-fix installer's exit code with no rollback pointer"
+    check "$([ -s "$OUT.snapshot.err" ] && echo nonempty || echo empty)" empty "and what it said about why"
+    check "$([ -n "$SNAPSHOT_DIR" ] && echo yes || echo no)" no "and whether it produced a snapshot"
+  fi
 
   step "the code with this fix"
   snapshot_with "$TREE"
@@ -457,7 +503,7 @@ if build_before_tree; then
   for dest in "${CONTROL_DESTS[@]}" "$NOPASSWD"; do
     grep -Fqx "$dest" "$SNAPSHOT_DIR/managed.list" && present=$((present + 1))
   done
-  check "$present" 7 "control-plane paths captured on that host"
+  check "$present" "$CONTROL_WITH_NOPASSWD" "control-plane paths captured on that host"
 
   step "and a dangling rollback pointer is still refused, with a reason"
   ln -sfn /opt/newme/releases/not-a-release /opt/newme/current.rollback
@@ -493,7 +539,7 @@ step "the code before this fix"
 reset_host
 simulate_control_plane_install
 if [ -n "${NEWME_DRILL_ROLLBACK_BEFORE:-}" ] && [ -f "${NEWME_DRILL_ROLLBACK_BEFORE:-}" ]; then
-  cp -a "$NEWME_DRILL_ROLLBACK_BEFORE" "$WORK/rollback-before.sh"
+  sed 's/\r$//' "$NEWME_DRILL_ROLLBACK_BEFORE" >"$WORK/rollback-before.sh"
 else
   git -C "$REPO" show HEAD:scripts/rollback-systemd-assets.sh >"$WORK/rollback-before.sh" 2>/dev/null \
     || cp -a "$TREE/scripts/rollback-systemd-assets.sh" "$WORK/rollback-before.sh"
@@ -586,7 +632,7 @@ check "$(leftover_temps)" 0 "temporary files after SIGTERM cleanup"
 step "re-run the same rollback to convergence"
 run_rollback "$TREE/scripts/rollback-systemd-assets.sh" "$CANDIDATE_SNAPSHOT" "$OUT.sigterm-reentry"
 check "$ROLLBACK_RC" 0 "the post-SIGTERM reentry exit code"
-check "$(count_control_plane_f37)" 6 "all control-plane paths after post-SIGTERM reentry"
+check "$(count_control_plane_f37)" "$CONTROL_COUNT" "all control-plane paths after post-SIGTERM reentry"
 check "$([ -e "$NOPASSWD" ] && echo present || echo absent)" present "ubuntu-nopasswd after post-SIGTERM reentry"
 check "$(leftover_temps)" 0 "temporary files after post-SIGTERM reentry"
 
@@ -673,7 +719,7 @@ else
   INSTALL_OK=0
 fi
 if [ "$INSTALL_OK" = 1 ]; then
-  check "$(count_control_plane_matching "$TREE")" 6 "control-plane files installed from the tree"
+  check "$(count_control_plane_matching "$TREE")" "$CONTROL_COUNT" "control-plane files installed from the tree"
   check "$([ -e "$NOPASSWD" ] && echo present || echo absent)" absent "ubuntu-nopasswd after the install"
   check "$([ -f "$STATE_ROOT/systemd-assets.pending" ] && echo present || echo absent)" present \
     "the pending record a successful installer invocation leaves behind"
@@ -685,17 +731,20 @@ if [ "$INSTALL_OK" = 1 ]; then
   cp -a "$STATE_ROOT/systemd-assets.pending" "$WORK/pending.keep"
   PENDING_BACKUP="$(sed -n 's/^backup=//p' "$STATE_ROOT/systemd-assets.pending")"
 
-  step "what the next install does with that record (the defect)"
+  step "what the next install does with that unresolved bootstrap record"
   : >"$STUB_LOG"
   run_install
   second_rc=$?
   grep -q "recovering unresolved versioned assets from" "$OUT.install.err" \
     && pass "the next install treats the bootstrap as an interrupted transaction" \
     || fail "no recovery attempt: $(tail -c 300 "$OUT.install.err")"
-  grep -q "restored systemd and observability assets from" "$OUT.install" \
-    && pass "and restores the previous control plane" || fail "no restore line"
-  grep -q "deploy:pending-recovery" "$STUB_LOG" \
-    && pass "and restarts the service under deploy:pending-recovery" || fail "no recovery restart"
+  check "$second_rc" 66 "the unresolved protected recovery fails closed"
+  check "$(count_control_plane_matching "$TREE")" "$CONTROL_COUNT" \
+    "the candidate control plane remains intact after refused recovery"
+  check "$([ -f "$STATE_ROOT/systemd-assets.pending" ] && echo present || echo absent)" present \
+    "the recovery pointer is retained after refusal"
+  check "$(grep -c 'deploy:pending-recovery' "$STUB_LOG")" 0 \
+    "the service is not restarted after refused recovery"
 
   step "with the finalizer, the same second run finds nothing to recover"
   reset_host

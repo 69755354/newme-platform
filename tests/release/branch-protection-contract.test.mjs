@@ -1,11 +1,9 @@
 // ============================================================================
-// Contract test for the intended main-branch protection (round-3 P1-13)
+// Contract test for the applied main-branch protection (round-3 P1-13)
 // ============================================================================
-// P1-13: main has no required status checks, no required reviews and no rulesets.
-// Applying protection is a GitHub control-plane mutation and is out of scope for
-// a code round, so what this round can deliver is the exact rule — named checks
-// and all — plus the guarantee that it cannot be applied by accident and cannot
-// name a check that would either deadlock pull requests or prove nothing.
+// P1-13 originally observed no required status checks or reviews. The rule was
+// applied and read back on 2026-08-15. This file keeps the intended fields, the
+// recorded readback, and the workflow topology mutually consistent.
 //
 // This file is that guarantee:
 //
@@ -146,11 +144,9 @@ test("crm-ci is excluded because workflow_run cannot report on a pull request he
   assert.match(excluded.why.join(" "), /workflow_run|default branch/);
 });
 
-test("nothing in the repository applies the protection", () => {
-  // The file is a declaration awaiting authorization. A script that applies it
-  // would make this round a control-plane change, which it is not allowed to be.
-  assert.match(PROTECTION._comment.join(" "), /NOT APPLIED BY ANYTHING IN THIS REPOSITORY/);
-  assert.match(PROTECTION.authorization, /not granted/i);
+test("nothing in the repository silently auto-applies the protection", () => {
+  assert.match(PROTECTION._comment.join(" "), /NOT AUTO-APPLIED BY ANYTHING IN THIS REPOSITORY/);
+  assert.match(PROTECTION.authorization, /repository-admin control-plane operation/i);
 
   const writes = [];
   const skip = new Set(["node_modules", ".git", ".next", "coverage", "dist", "build", "playwright-report"]);
@@ -177,9 +173,39 @@ test("nothing in the repository applies the protection", () => {
   assert.deepEqual(writes, [], `these files would mutate branch protection: ${writes.join(", ")}`);
 });
 
-test("the verification step is stated as production evidence, not as done", () => {
-  // The finding is only closed by live metadata from an authorized apply. The
-  // file has to say so, because the next reader's question is "is this on?".
+test("the recorded live readback exposes the exact CodeQL protection blocker", () => {
+  const declared = PROTECTION.protection;
+  const live = PROTECTION.live_readback;
+
+  assert.equal(live.verified_on, "2026-08-15");
+  assert.match(live.endpoint, /branches\/main\/protection$/);
+  assert.equal(live.status, "blocked_pending_codeql_analysis_and_protection");
+  assert.deepEqual(live.missing_required_contexts, ["CodeQL analysis"]);
+  assert.deepEqual(
+    declared.required_status_checks.contexts.filter(
+      (context) => !live.required_status_checks.contexts.includes(context),
+    ),
+    live.missing_required_contexts,
+  );
+  assert.deepEqual(
+    live.required_status_checks.contexts.filter(
+      (context) => !declared.required_status_checks.contexts.includes(context),
+    ),
+    [],
+  );
+  assert.equal(live.required_status_checks.strict, declared.required_status_checks.strict);
+  assert.equal(live.enforce_admins, declared.enforce_admins);
+  assert.equal(live.required_linear_history, declared.required_linear_history);
+  assert.equal(live.required_conversation_resolution, declared.required_conversation_resolution);
+  assert.equal(live.allow_force_pushes, declared.allow_force_pushes);
+  assert.equal(live.allow_deletions, declared.allow_deletions);
+  assert.equal(
+    live.required_pull_request_reviews.required_approving_review_count,
+    declared.required_pull_request_reviews.required_approving_review_count,
+  );
+  assert.equal(live.required_pull_request_reviews.dismiss_stale_reviews, true);
+  assert.equal(live.required_pull_request_reviews.require_last_push_approval, true);
+
   assert.match(PROTECTION.verification.join(" "), /branches\/\{owner\}|branches\/main\/protection|\/protection/);
-  assert.match(PROTECTION.verification.join(" "), /stays unfinished|not a configured branch/);
+  assert.match(PROTECTION.verification.join(" "), /blocks the release/);
 });

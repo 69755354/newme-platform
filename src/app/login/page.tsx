@@ -23,18 +23,6 @@ import { safeRedirectPath } from "@/lib/safe-redirect";
  * receives a cookie at all: the server revokes its token before responding.
  */
 
-/**
- * A rejected login must not leave a usable browser session behind. The refresh
- * half is httpOnly, so only the server can clear it.
- */
-async function clearStaleSession() {
-  try {
-    await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
-  } catch {
-    // The server-side active-profile gate still rejects any stale token.
-  }
-}
-
 function LoginPageInner() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -73,7 +61,6 @@ function LoginPageInner() {
       const data = await res.json().catch(() => null);
 
       if (!res.ok || data?.ok !== true || data?.isActive !== true) {
-        await clearStaleSession();
         setError(messageFor(data?.error));
         setLoading(false);
         return;

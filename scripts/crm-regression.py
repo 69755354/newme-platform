@@ -118,12 +118,32 @@ def run_contract_self_test() -> int:
     assert not is_unregistered_api_key(403, '{"message":"Unregistered API key"}')
     assert not is_unregistered_api_key(401, '{"message":"Unauthorized"}')
     assert all(uses_explicit_kpi_assignee_embed(path) for path in KPI_ROUTE_FILES)
+    assert merge_runtime_environment(
+        {"NEXT_PUBLIC_SUPABASE_URL": "https://example.invalid"},
+        {"SUPABASE_SERVICE_ROLE_KEY": "runtime-value"},
+        {"SUPABASE_SERVICE_ROLE_KEY": "process-value"},
+    )["SUPABASE_SERVICE_ROLE_KEY"] == "process-value"
+    assert merge_runtime_environment(
+        {"NEXT_PUBLIC_SUPABASE_URL": "https://example.invalid"},
+        {"SUPABASE_SERVICE_ROLE_KEY": "runtime-value"},
+        {},
+    )["SUPABASE_SERVICE_ROLE_KEY"] == "runtime-value"
+    try:
+        merge_runtime_environment(
+            {"SUPABASE_SERVICE_ROLE_KEY": "release-value"},
+            {},
+            {},
+        )
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("release-scoped service key must be rejected")
 
     print("contract self-test passed")
     return 0
 
 
-def load_env(path: Path) -> dict[str, str]:
+def read_env_file(path: Path) -> dict[str, str]:
     env: dict[str, str] = {}
     if not path.is_file():
         raise RuntimeError(f"environment file not found: {path}")
@@ -133,6 +153,35 @@ def load_env(path: Path) -> dict[str, str]:
             key, _, value = line.partition("=")
             env[key] = value
     return env
+
+
+def merge_runtime_environment(
+    release_env: dict[str, str],
+    runtime_env: dict[str, str],
+    process_env: dict[str, str],
+) -> dict[str, str]:
+    if "SUPABASE_SERVICE_ROLE_KEY" in release_env:
+        raise RuntimeError("release environment must not contain SUPABASE_SERVICE_ROLE_KEY")
+    merged = dict(release_env)
+    service_key = process_env.get("SUPABASE_SERVICE_ROLE_KEY") or runtime_env.get("SUPABASE_SERVICE_ROLE_KEY")
+    if service_key:
+        merged["SUPABASE_SERVICE_ROLE_KEY"] = service_key
+    return merged
+
+
+def load_env(path: Path, runtime_path: Path | None = None) -> dict[str, str]:
+    release_env = read_env_file(path)
+    runtime_env: dict[str, str] = {}
+    if runtime_path is not None:
+        metadata = runtime_path.lstat()
+        if runtime_path.is_symlink() or not runtime_path.is_file():
+            raise RuntimeError("runtime environment file is not a regular file")
+        if metadata.st_mode & 0o077:
+            raise RuntimeError("runtime environment file permissions are too broad")
+        if hasattr(os, "geteuid") and os.geteuid() == 0 and (metadata.st_uid != 0 or metadata.st_gid != 0):
+            raise RuntimeError("runtime environment file must be root-owned")
+        runtime_env = read_env_file(runtime_path)
+    return merge_runtime_environment(release_env, runtime_env, dict(os.environ))
 
 
 class Regression:
@@ -454,6 +503,11 @@ def parse_args() -> argparse.Namespace:
         default=Path(os.environ.get("CRM_ENV_FILE", PROJECT_ROOT / ".env.local")),
     )
     parser.add_argument(
+        "--runtime-env-file",
+        type=Path,
+        default=Path(os.environ["CRM_RUNTIME_ENV_FILE"]) if os.environ.get("CRM_RUNTIME_ENV_FILE") else None,
+    )
+    parser.add_argument(
         "--base-url",
         default=os.environ.get("CRM_BASE_URL", "http://localhost:3001"),
     )
@@ -475,7 +529,7 @@ def main() -> int:
     if args.self_test:
         return run_contract_self_test()
 
-    env = load_env(args.env_file)
+    env = load_env(args.env_file, args.runtime_env_file)
     try:
         supabase_url = env["NEXT_PUBLIC_SUPABASE_URL"]
         service_key = env["SUPABASE_SERVICE_ROLE_KEY"]

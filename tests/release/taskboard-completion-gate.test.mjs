@@ -6,6 +6,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   auditClosureEvidenceModel,
+  REMEDIATION_BLOCKER_ITEM,
   runTaskboardCheck,
 } from "../../scripts/check-taskboard.mjs";
 
@@ -144,6 +145,84 @@ test("a later milestone can never go green over an open earlier one", () => {
     assert.equal(result.exitCode, 1, `${requireScope} must be blocked by an open predeploy row`);
     assert.match(output, /TRACKED-TODO/);
   }
+});
+
+test("credential remediation accepts only the exact secret-scanning blocker", () => {
+  const board = [
+    `| ${REMEDIATION_BLOCKER_ITEM} | BLOCKED |`,
+    "| LATER-UAT | REVIEW |",
+    scopeBlock([
+      [REMEDIATION_BLOCKER_ITEM, "predeploy_ready", "provider revocation and revoked alert readback"],
+      ["LATER-UAT", "postdeploy_acceptance", "closes after production UAT"],
+    ]),
+  ].join("\n");
+  const { result, output } = runFixture(board, { requireCredentialRemediation: true });
+  assert.equal(result.exitCode, 0, output);
+  assert.equal(result.fail, 0, output);
+  assert.match(output, /exactly the permitted predeploy blocker: PROD-SECRET-SCANNING-ALERTS-OPEN \(BLOCKED\)/);
+  assert.match(output, /Credential remediation taskboard gate is satisfied/);
+  assert.match(output, /SCOPES: predeploy_ready=1 postdeploy_acceptance=1/);
+});
+
+test("credential remediation refuses a missing, mis-stated, or additional predeploy blocker", () => {
+  const cases = [
+    {
+      name: "missing target blocker",
+      board: [
+        "| LATER-UAT | REVIEW |",
+        scopeBlock([["LATER-UAT", "postdeploy_acceptance", "closes after production UAT"]]),
+      ].join("\n"),
+      observed: /observed: none/,
+    },
+    {
+      name: "target is not BLOCKED",
+      board: [
+        `| ${REMEDIATION_BLOCKER_ITEM} | REVIEW |`,
+        scopeBlock([
+          [REMEDIATION_BLOCKER_ITEM, "predeploy_ready", "provider revocation and revoked alert readback"],
+        ]),
+      ].join("\n"),
+      observed: /PROD-SECRET-SCANNING-ALERTS-OPEN \(REVIEW, line \d+\)/,
+    },
+    {
+      name: "another predeploy blocker remains",
+      board: [
+        `| ${REMEDIATION_BLOCKER_ITEM} | BLOCKED |`,
+        "| PROD-CODEQL-BLOCKING-RULESET-MISSING | BLOCKED |",
+        scopeBlock([
+          [REMEDIATION_BLOCKER_ITEM, "predeploy_ready", "provider revocation and revoked alert readback"],
+          ["PROD-CODEQL-BLOCKING-RULESET-MISSING", "predeploy_ready", "live ruleset readback must close it"],
+        ]),
+      ].join("\n"),
+      observed: /PROD-CODEQL-BLOCKING-RULESET-MISSING \(BLOCKED, line \d+\)/,
+    },
+  ];
+
+  for (const fixture of cases) {
+    const { result, output } = runFixture(fixture.board, { requireCredentialRemediation: true });
+    assert.equal(result.exitCode, 1, `${fixture.name}:\n${output}`);
+    assert.match(
+      output,
+      /credential remediation requires exactly one predeploy blocker, PROD-SECRET-SCANNING-ALERTS-OPEN \(BLOCKED\)/,
+      fixture.name,
+    );
+    assert.match(output, fixture.observed, fixture.name);
+    assert.doesNotMatch(output, /Credential remediation taskboard gate is satisfied/, fixture.name);
+  }
+});
+
+test("credential remediation never masks taskboard structure failures", () => {
+  const board = [
+    `| ${REMEDIATION_BLOCKER_ITEM} | BLOCKED |`,
+    "| UNDECLARED-PREDEPLOY | BLOCKED |",
+    scopeBlock([
+      [REMEDIATION_BLOCKER_ITEM, "predeploy_ready", "provider revocation and revoked alert readback"],
+    ]),
+  ].join("\n");
+  const { result, output } = runFixture(board, { requireCredentialRemediation: true });
+  assert.equal(result.exitCode, 1, output);
+  assert.match(output, /UNDECLARED-PREDEPLOY is unfinished but declares no release scope/);
+  assert.match(output, /TASKBOARD EVIDENCE GATE:/);
 });
 
 test("unfinished rows with no scope block at all are a failure, not a pass", () => {

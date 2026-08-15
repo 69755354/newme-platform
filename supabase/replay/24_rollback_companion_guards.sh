@@ -133,6 +133,26 @@ restore_contract_guard() {
   }
 }
 
+restore_gate_function() {
+  [ -s "$work_dir/gate_orig.sql" ] || return 0
+  psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 --single-transaction \
+    -f "$work_dir/gate_orig.sql" >"$work_dir/restore_gate.log" 2>&1 || {
+    cat "$work_dir/restore_gate.log" >&2
+    printf 'FAIL(%s): could not restore public.money_direct_write_is_blocked(); this database is now mutated\n' "$EXPECT" >&2
+    exit 1
+  }
+}
+
+restore_lock_key_function() {
+  [ -s "$work_dir/lock_key_orig.sql" ] || return 0
+  psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 --single-transaction \
+    -f "$work_dir/lock_key_orig.sql" >"$work_dir/restore_lock_key.log" 2>&1 || {
+    cat "$work_dir/restore_lock_key.log" >&2
+    printf 'FAIL(%s): could not restore public.money_release_mode_lock_key(); this database is now mutated\n' "$EXPECT" >&2
+    exit 1
+  }
+}
+
 restore_kpi_function() {
   [ -s "$work_dir/kpi_orig.sql" ] || return 0
   psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 --single-transaction \
@@ -180,6 +200,8 @@ cleanup() {
   psql --no-psqlrc --quiet -c "revoke execute on function public.clear_kpi_targets(text, uuid) from authenticated" >/dev/null 2>&1 || true
   restore_mode_function
   restore_contract_guard
+  restore_gate_function
+  restore_lock_key_function
   restore_kpi_function
   [ "$status" != "0" ] && [ -f "$out_a" ] && { echo "--- session A ---" >&2; cat "$out_a" >&2; }
   rm -rf "$work_dir"
@@ -266,6 +288,26 @@ if [ "$EXPECT" = "companion_guards" ]; then
   printf ';\n' >>"$work_dir/contract_guard_orig.sql"
   grep -q "money_direct_write_is_blocked" "$work_dir/contract_guard_orig.sql" \
     || fail "the captured guard_contracts_write() does not consult the release mode"
+
+  psql --no-psqlrc --quiet --no-align --tuples-only -v ON_ERROR_STOP=1 \
+    -c "select pg_get_functiondef(to_regprocedure('public.money_direct_write_is_blocked()')::oid)" \
+    >"$work_dir/gate_orig.sql" 2>"$work_dir/capture_gate.log" || {
+    cat "$work_dir/capture_gate.log" >&2
+    fail "could not capture public.money_direct_write_is_blocked()"
+  }
+  printf ';\n' >>"$work_dir/gate_orig.sql"
+  [ "$(q "select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex') from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.money_direct_write_is_blocked()')")" = "7e441dc681f66aa2f58c001a9c8a705fe6b01400a80b50491dd98b95e6093ed5" ] \
+    || fail "money_direct_write_is_blocked() does not start with the exact shipped body, so this gate cannot restore it"
+
+  psql --no-psqlrc --quiet --no-align --tuples-only -v ON_ERROR_STOP=1 \
+    -c "select pg_get_functiondef(to_regprocedure('public.money_release_mode_lock_key()')::oid)" \
+    >"$work_dir/lock_key_orig.sql" 2>"$work_dir/capture_lock_key.log" || {
+    cat "$work_dir/capture_lock_key.log" >&2
+    fail "could not capture public.money_release_mode_lock_key()"
+  }
+  printf ';\n' >>"$work_dir/lock_key_orig.sql"
+  [ "$(q "select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex') from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.money_release_mode_lock_key()')")" = "a58de3a00df07a1ccfe3250cf009c3a77675df80ce268f092124b236192cf26a" ] \
+    || fail "money_release_mode_lock_key() does not start with the exact shipped body, so this gate cannot restore it"
 
   baseline_audit="$(audit_count)"
 
@@ -384,6 +426,52 @@ SQL
     || fail "restoring guard_contracts_write() did not restore its exact shipped body"
   echo "  negative 4 (contract trigger function replaced by a marker-bearing no-op): refused before strict or audit, exact function restored"
 
+  # ── Negative 5 · guard bodies are exact but their shared gate is a no-op ────
+  # Keep all dependency names in a comment. A name-presence check sees the full
+  # closure while the exact pg_proc.prosrc declaration must still refuse it.
+  reentry_audit_before="$(q "select count(*) from public.audit_logs where action = 'MONEY_CONTRACT_PHASE_REENTERED'")"
+  psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 \
+    -c "create or replace function public.money_direct_write_is_blocked() returns boolean language plpgsql volatile security invoker set search_path = pg_catalog, public, pg_temp as \$fn\$ begin /* money_release_mode_lock_key() money_write_is_direct() money_direct_write_mode() */ return false; end \$fn\$" \
+    >"$work_dir/noop_gate.log" 2>&1 \
+    || { cat "$work_dir/noop_gate.log" >&2; fail "could not install the no-op money gate probe"; }
+  if run_companion "$MONEY_RECONTRACT" "$work_dir/neg5.log"; then
+    cat "$work_dir/neg5.log" >&2
+    fail "the recontract companion declared strict while money_direct_write_is_blocked() always returned false"
+  fi
+  grep -q "exact shipped definition of public.money_direct_write_is_blocked()" "$work_dir/neg5.log" \
+    || { cat "$work_dir/neg5.log" >&2; fail "the recontract refusal did not name the drifted money gate"; }
+  [ "$(mode_column)" = "compat" ] \
+    || fail "the refused gate recontract wrote strict before validating the money gate"
+  [ "$(q "select count(*) from public.audit_logs where action = 'MONEY_CONTRACT_PHASE_REENTERED'")" = "$reentry_audit_before" ] \
+    || fail "the refused gate recontract wrote a MONEY_CONTRACT_PHASE_REENTERED audit row"
+  restore_gate_function
+  [ "$(q "select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex') from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.money_direct_write_is_blocked()')")" = "7e441dc681f66aa2f58c001a9c8a705fe6b01400a80b50491dd98b95e6093ed5" ] \
+    || fail "restoring money_direct_write_is_blocked() did not restore its exact shipped body"
+  echo "  negative 5 (shared money gate replaced by a marker-bearing no-op): refused before strict or audit, exact function restored"
+
+  # ── Negative 6 · the live lock-key helper points at a different lock ───────
+  # The companion must acquire the canonical shipped key without executing this
+  # unverified helper, then reject its body before changing mode or audit state.
+  reentry_audit_before="$(q "select count(*) from public.audit_logs where action = 'MONEY_CONTRACT_PHASE_REENTERED'")"
+  psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 \
+    -c "create or replace function public.money_release_mode_lock_key() returns bigint language sql immutable security invoker set search_path = pg_catalog, public, pg_temp as \$fn\$ select pg_catalog.hashtextextended('public.money_release_mode:different', 0) \$fn\$" \
+    >"$work_dir/drifted_lock_key.log" 2>&1 \
+    || { cat "$work_dir/drifted_lock_key.log" >&2; fail "could not install the drifted lock-key probe"; }
+  if run_companion "$MONEY_RECONTRACT" "$work_dir/neg6.log"; then
+    cat "$work_dir/neg6.log" >&2
+    fail "the recontract companion declared strict with a non-canonical live lock-key helper"
+  fi
+  grep -q "exact shipped definition of public.money_release_mode_lock_key()" "$work_dir/neg6.log" \
+    || { cat "$work_dir/neg6.log" >&2; fail "the recontract refusal did not name the drifted lock-key helper"; }
+  [ "$(mode_column)" = "compat" ] \
+    || fail "the refused lock-key recontract wrote strict before validating the helper"
+  [ "$(q "select count(*) from public.audit_logs where action = 'MONEY_CONTRACT_PHASE_REENTERED'")" = "$reentry_audit_before" ] \
+    || fail "the refused lock-key recontract wrote a MONEY_CONTRACT_PHASE_REENTERED audit row"
+  restore_lock_key_function
+  [ "$(q "select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex') from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.money_release_mode_lock_key()')")" = "a58de3a00df07a1ccfe3250cf009c3a77675df80ce268f092124b236192cf26a" ] \
+    || fail "restoring money_release_mode_lock_key() did not restore its exact shipped body"
+  echo "  negative 6 (lock-key helper returned a different key): canonical lock taken, refused before strict or audit, exact function restored"
+
   # ── Reentry · a rollback re-run is not an error, and says so ──────────────
   run_companion "$MONEY_ROLLBACK" "$work_dir/reentry.log" \
     || { cat "$work_dir/reentry.log" >&2; fail "re-running the rollback companion failed; an operator who repeats a hand-run step must not be left guessing"; }
@@ -406,7 +494,7 @@ SQL
   # The mode is back; the record of getting there three times is not part of the
   # posture the harness handed over. See restore_audit_trail().
   restore_audit_trail
-  echo "== rollback companion guards OK (control + 4 negatives + positive + reentry, posture and audit trail restored) =="
+  echo "== rollback companion guards OK (control + 6 negatives + positive + reentry, posture and audit trail restored) =="
   exit 0
 fi
 

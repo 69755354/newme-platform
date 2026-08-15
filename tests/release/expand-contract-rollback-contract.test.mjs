@@ -435,12 +435,22 @@ test("the way back out of compat is an artifact, not a migration that cannot re-
   }
   assert.match(recontractSql, /refusing to declare the strict posture/);
   assert.match(recontractSql, /using errcode = '42P01'/);
-  for (const required of ["public.money_direct_write_mode()", "public.money_direct_write_is_blocked()"]) {
+  for (const required of [
+    "public.money_direct_write_is_blocked()",
+    "public.money_write_is_direct()",
+    "public.money_direct_write_mode()",
+    "public.money_release_mode_lock_key()",
+  ]) {
     assert.ok(
-      recontractSql.includes(`to_regprocedure('${required}')`),
+      recontractSql.includes(`'${required}'`),
       `the artifact must refuse when ${required} is absent`,
     );
   }
+  assert.match(
+    recontractSql,
+    /p\.oid = to_regprocedure\(v_gate_dependencies\[i\]\[1\]\)/,
+    "the artifact must resolve every declared gate dependency by exact signature",
+  );
   // One row in one table, exactly like the rollback companion. A hand-run file
   // that creates or replaces objects is a migration wearing a companion's name,
   // and it would silently re-install whatever definition it happens to carry.

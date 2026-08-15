@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+[ "$(id -u)" -eq 0 ] || { echo "deploy-immutable must run as root" >&2; exit 77; }
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SHA="${RELEASE_SHA:-${1:-}}"
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "a full 40-character release SHA is required" >&2; exit 64; }
@@ -10,7 +12,9 @@ CURRENT="${NEWME_CURRENT_LINK:-/opt/newme/current}"
 ROLLBACK="${NEWME_ROLLBACK_LINK:-/opt/newme/current.rollback}"
 LOCK="${NEWME_DEPLOY_LOCK:-/run/lock/newme-deploy.lock}"
 CONTROL="${NEWME_SERVICE_CONTROL:-/usr/local/sbin/newme-service-control}"
-RUNTIME_ENV="${NEWME_RUNTIME_ENV:-/etc/newme/newme-runtime.env}"
+readonly RUNTIME_ENV=/etc/newme/newme-runtime.env
+readonly CANONICAL_RELEASE_MIRROR=/opt/newme/repository.git
+readonly CANONICAL_RELEASE_ORIGIN=https://github.com/69755354/newme-platform.git
 FAILURE="${NEWME_DEPLOY_TEST_FAILURE:-}"
 EXPECTED_ROLLBACK_SHA="${ROLLBACK_GIT_SHA:-}"
 ASSET_BACKUP="${NEWME_ASSET_BACKUP:-}"
@@ -46,16 +50,77 @@ SWITCHED=0
 ROLLBACK_CHANGED=0
 CREATED_RELEASE=0
 CANDIDATE_REMOVAL_VERIFIED=1
+CANONICAL_MAIN_VERIFIED_AT=""
 
 fail() { echo "deploy failed: $*" >&2; return 1; }
+
+canonical_git() {
+  env -i \
+    PATH=/usr/bin:/bin \
+    HOME=/ \
+    GIT_CONFIG_NOSYSTEM=1 \
+    GIT_CONFIG_GLOBAL=/dev/null \
+    GIT_TERMINAL_PROMPT=0 \
+    /usr/bin/git \
+      -c core.hooksPath=/dev/null \
+      -c credential.helper= \
+      -c protocol.file.allow=never \
+      -c fetch.fsckObjects=true \
+      --git-dir="$CANONICAL_RELEASE_MIRROR" "$@"
+}
+
+validate_canonical_mirror() {
+  [ -d "$CANONICAL_RELEASE_MIRROR" ] && [ ! -L "$CANONICAL_RELEASE_MIRROR" ] || {
+    fail "root-owned canonical release mirror is missing"
+    return 1
+  }
+  [ "$(stat -c '%U:%G' "$CANONICAL_RELEASE_MIRROR")" = root:root ] || {
+    fail "canonical release mirror ownership is invalid"
+    return 1
+  }
+  [ -z "$(find "$CANONICAL_RELEASE_MIRROR" -xdev -type l -print -quit)" ] || {
+    fail "canonical release mirror contains a symlink"
+    return 1
+  }
+  [ -z "$(find "$CANONICAL_RELEASE_MIRROR" -xdev \( ! -user root -o ! -group root -o -perm -0002 \) -print -quit)" ] || {
+    fail "canonical release mirror contains untrusted metadata"
+    return 1
+  }
+}
+
+verify_canonical_main() {
+  local origin="" observed="" fetch_ok=0 attempt
+  validate_canonical_mirror || return 1
+  origin="$(canonical_git remote get-url origin 2>/dev/null || true)"
+  case "$origin" in
+    "$CANONICAL_RELEASE_ORIGIN"|git@github.com:69755354/newme-platform.git) ;;
+    *) fail "canonical release mirror origin is invalid"; return 1 ;;
+  esac
+  for attempt in 1 2 3; do
+    if canonical_git fetch --quiet --force --no-tags \
+      "$CANONICAL_RELEASE_ORIGIN" \
+      '+refs/heads/main:refs/remotes/origin/main'; then
+      fetch_ok=1
+      break
+    fi
+    [ "$attempt" -eq 3 ] || sleep 2
+  done
+  [ "$fetch_ok" -eq 1 ] || { fail "canonical main could not be refreshed"; return 1; }
+  validate_canonical_mirror || return 1
+  observed="$(canonical_git rev-parse --verify 'refs/remotes/origin/main^{commit}' 2>/dev/null || true)"
+  [ "$observed" = "$SHA" ] || {
+    fail "canonical main moved away from the release SHA"
+    return 1
+  }
+  CANONICAL_MAIN_VERIFIED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
 
 # ── Release-claim validation ────────────────────────────────────────────────
 #
 # The evidence file written at the end of this script records a CI result and a
-# migration result. Everything else in that file is MEASURED here — the release
-# manifest, BUILD_ID, systemd invocation id, health, smoke, logs, regression —
-# but the ci.* and migration.* blocks were read straight out of the environment
-# and serialised verbatim:
+# migration result. Earlier revisions measured the release manifest, BUILD_ID,
+# systemd invocation id, health, smoke, logs and regression, but copied the ci.*
+# and migration.* blocks straight out of the environment without binding them:
 #
 #     "ci":        { "run_id": os.environ["CI_RUN_ID"], ...
 #                    "conclusion": os.environ["CI_CONCLUSION"] },
@@ -69,20 +134,21 @@ fail() { echo "deploy failed: $*" >&2; return 1; }
 # CI had never run — the exact false-green class this repo already booked as
 # F-05. Presence was enforced only incidentally, by KeyError.
 #
-# The canonical wrapper, infra/systemd/newme-deploy.sh, does query the GitHub API
-# and check the run's id, head_sha, name and conclusion — that part of the review
-# finding is refuted for that entry point. But this script is also the target of
-# scripts/deploy.sh, which passes nothing but environment variables and performs
-# no verification at all. Every check below therefore has to exist here, at the
-# layer that actually writes the record.
-#
-# These claims cannot be re-measured here (no network, by design), so they are
-# validated for internal consistency and for agreement with the SHA actually
-# being deployed. A claim that cannot be checked is not accepted as a default:
-# every variable is required, and the deploy aborts before it touches anything.
+# The canonical wrapper, infra/systemd/newme-deploy.sh, now queries the run, jobs
+# and workflow endpoints, binds the exact workflow identity and freshness, and
+# materializes its canonical non-secret audit JSON as a root-owned record. This
+# layer requires every summary field before it touches anything; after extracting
+# the exact release it checks the audit bytes, manifest hash, workflow/run/job
+# fields and oldest required-job completion. It repeats that verification at the
+# traffic-switch and evidence-write boundaries, and independently refreshes the
+# root-owned canonical main mirror at both boundaries.
 validate_release_claims() {
   local run_id="${CI_RUN_ID:-}" run_url="${CI_RUN_URL:-}" head_sha="${CI_HEAD_SHA:-}"
   local conclusion="${CI_CONCLUSION:-}" event="${CI_EVENT:-}"
+  local workflow_id="${CI_WORKFLOW_ID:-}" workflow_path="${CI_WORKFLOW_PATH:-}"
+  local completed_at="${CI_RUN_COMPLETED_AT:-}" audit_sha256="${CI_GATE_AUDIT_SHA256:-}"
+  local audited_at="${CI_GATE_AUDITED_AT:-}" audit_record="${CI_GATE_AUDIT_RECORD:-}"
+  local max_run_age="${CI_MAX_RUN_AGE_SECONDS:-}"
   local migration_status="${MIGRATION_STATUS:-}" migration_ids="${MIGRATION_IDS:-}"
 
   [ -n "$run_id" ]           || { echo "CI_RUN_ID is required" >&2; return 1; }
@@ -90,6 +156,13 @@ validate_release_claims() {
   [ -n "$head_sha" ]         || { echo "CI_HEAD_SHA is required" >&2; return 1; }
   [ -n "$conclusion" ]       || { echo "CI_CONCLUSION is required" >&2; return 1; }
   [ -n "$event" ]            || { echo "CI_EVENT is required" >&2; return 1; }
+  [ -n "$workflow_id" ]      || { echo "CI_WORKFLOW_ID is required" >&2; return 1; }
+  [ -n "$workflow_path" ]    || { echo "CI_WORKFLOW_PATH is required" >&2; return 1; }
+  [ -n "$completed_at" ]     || { echo "CI_RUN_COMPLETED_AT is required" >&2; return 1; }
+  [ -n "$audit_sha256" ]     || { echo "CI_GATE_AUDIT_SHA256 is required" >&2; return 1; }
+  [ -n "$audited_at" ]       || { echo "CI_GATE_AUDITED_AT is required" >&2; return 1; }
+  [ -n "$audit_record" ]     || { echo "CI_GATE_AUDIT_RECORD is required" >&2; return 1; }
+  [ -n "$max_run_age" ]      || { echo "CI_MAX_RUN_AGE_SECONDS is required" >&2; return 1; }
   [ -n "$migration_status" ] || { echo "MIGRATION_STATUS is required" >&2; return 1; }
 
   [[ "$run_id" =~ ^[0-9]+$ ]] ||
@@ -120,6 +193,21 @@ validate_release_claims() {
   [ "$event" = workflow_dispatch ] ||
     { echo "CI_EVENT must be 'workflow_dispatch' (got: $event)" >&2; return 1; }
 
+  [ "$workflow_id" = 310914082 ] ||
+    { echo "CI_WORKFLOW_ID must identify the canonical ci workflow" >&2; return 1; }
+  [ "$workflow_path" = .github/workflows/ci.yml ] ||
+    { echo "CI_WORKFLOW_PATH must identify the canonical ci workflow" >&2; return 1; }
+  [[ "$completed_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] ||
+    { echo "CI_RUN_COMPLETED_AT must be a UTC RFC3339 timestamp" >&2; return 1; }
+  [[ "$audited_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] ||
+    { echo "CI_GATE_AUDITED_AT must be a UTC RFC3339 timestamp" >&2; return 1; }
+  [[ "$audit_sha256" =~ ^[0-9a-f]{64}$ ]] ||
+    { echo "CI_GATE_AUDIT_SHA256 must be a lowercase SHA-256 digest" >&2; return 1; }
+  [ "$audit_record" = /var/lib/newme/deploy-state/ci-gate-audit.pending ] ||
+    { echo "CI_GATE_AUDIT_RECORD must use the canonical deploy-state path" >&2; return 1; }
+  [[ "$max_run_age" =~ ^[0-9]+$ ]] && [ "$max_run_age" -ge 1 ] && [ "$max_run_age" -le 86400 ] ||
+    { echo "CI_MAX_RUN_AGE_SECONDS must be between 1 and 86400" >&2; return 1; }
+
   # Values are the ones infra/systemd/newme-deploy.sh accepts on its command
   # line, so the two layers cannot disagree about what a valid claim looks like.
   case "$migration_status" in
@@ -149,14 +237,23 @@ validate_release_claims() {
 validate_release_claims || { echo "deploy failed: release claims rejected" >&2; exit 64; }
 
 load_pending_asset_backup() {
-  local pending_sha="" pending_backup="" pending_previous="" pending_previous_rollback=""
+  local pending_sha="" pending_backup="" pending_previous="" pending_previous_rollback="" pending_lines=""
   [ -d "$STATE_ROOT" ] && [ ! -L "$STATE_ROOT" ] || return 1
   [ "$(stat -c '%U:%G' "$STATE_ROOT")" = root:root ] || return 1
   [ "$(stat -c '%a' "$STATE_ROOT")" = 700 ] || return 1
   [ -f "$PENDING_ASSET_RECORD" ] && [ ! -L "$PENDING_ASSET_RECORD" ] || return 1
   [ "$(stat -c '%U:%G' "$PENDING_ASSET_RECORD")" = root:root ] || return 1
   [ "$(stat -c '%a' "$PENDING_ASSET_RECORD")" = 600 ] || return 1
-  [ "$(wc -l < "$PENDING_ASSET_RECORD")" -eq 5 ] || return 1
+  pending_lines="$(wc -l < "$PENDING_ASSET_RECORD")"
+  case "$pending_lines" in
+    5) ;;
+    8)
+      [ "$(grep -Ec '^version=2$' "$PENDING_ASSET_RECORD")" -eq 1 ] || return 1
+      [ "$(grep -Ec '^protected_before_candidate_sha=[0-9a-f]{40}$' "$PENDING_ASSET_RECORD")" -eq 1 ] || return 1
+      [ "$(grep -Ec '^protected_before_marker_sha256=[0-9a-f]{64}$' "$PENDING_ASSET_RECORD")" -eq 1 ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
   [ "$(grep -Ec '^sha=[0-9a-f]{40}$' "$PENDING_ASSET_RECORD")" -eq 1 ] || return 1
   [ "$(grep -Ec '^backup=/var/backups/newme-systemd-assets/[^[:space:]]+$' "$PENDING_ASSET_RECORD")" -eq 1 ] || return 1
   [ "$(grep -Ec '^previous=/opt/newme/releases/[0-9a-f]{40}$' "$PENDING_ASSET_RECORD")" -eq 1 ] || return 1
@@ -212,7 +309,7 @@ early_asset_cleanup() {
     fi
     if [ "$ASSET_BACKUP_TRUSTED" -eq 1 ]; then
       echo "immutable deploy setup failed; restoring versioned assets from $ASSET_BACKUP" >&2
-      if bash "$ROOT/scripts/rollback-systemd-assets.sh" "$ASSET_BACKUP"; then
+      if NEWME_VERSIONED_ASSET_RECOVERY=1 bash "$ROOT/scripts/rollback-systemd-assets.sh" "$ASSET_BACKUP"; then
         rm -f -- "$PENDING_ASSET_RECORD" || echo "CRITICAL: stale pending asset record could not be removed" >&2
       else
         echo "CRITICAL: early versioned asset rollback failed for $ASSET_BACKUP" >&2
@@ -314,7 +411,7 @@ rollback_assets() {
     echo "CRITICAL: refusing to restore prior assets while the candidate release remains active" >&2
     return 1
   fi
-  bash "$ROOT/scripts/rollback-systemd-assets.sh" "$ASSET_BACKUP" || return 1
+  NEWME_VERSIONED_ASSET_RECOVERY=1 bash "$ROOT/scripts/rollback-systemd-assets.sh" "$ASSET_BACKUP" || return 1
   # Do not publish assets_rolled_back until the direct rollback release pointer
   # is also restored. Otherwise the parent could discard the only durable copy
   # of PREVIOUS_ROLLBACK after an interrupted application rollback.
@@ -409,14 +506,20 @@ fi
 [ ! -e "$RELEASE" ] || { fail "release already exists"; exit 1; }
 [ -r "$PREVIOUS/.env.local" ] || { fail "current release environment is missing"; exit 1; }
 
-for asset in /etc/systemd/system/newme-platform.service "$RUNTIME_ENV" /usr/local/libexec/newme/newme-readiness.sh /usr/local/libexec/newme/newme-install-systemd-assets /usr/local/libexec/newme/newme-rollback-systemd-assets /usr/local/sbin/newme-service-control /usr/local/sbin/newme-production-rollback /etc/cron.d/newme-observability /etc/logrotate.d/newme-forensic /etc/nginx/sites-enabled/newme-platform /opt/hermes-scripts/observability/health-check.sh /opt/hermes-scripts/observability/login-probe.sh /opt/hermes-scripts/observability/dependency-probe.sh /opt/hermes-scripts/observability/l0-composite-probe.sh; do
+for asset in /etc/systemd/system/newme-platform.service "$RUNTIME_ENV" /etc/tmpfiles.d/newme-credential-inbox.conf /run/newme-credential-inbox /usr/local/libexec/newme/newme-readiness.sh /usr/local/libexec/newme/newme-install-systemd-assets /usr/local/libexec/newme/newme-rollback-systemd-assets /usr/local/libexec/newme/newme-validate-production-config.py /usr/local/libexec/newme/newme-credential-transition.mjs /usr/local/sbin/newme-service-control /usr/local/sbin/newme-production-rollback /etc/cron.d/newme-observability /etc/logrotate.d/newme-forensic /etc/nginx/sites-enabled/newme-platform /opt/hermes-scripts/observability/health-check.sh /opt/hermes-scripts/observability/login-probe.sh /opt/hermes-scripts/observability/dependency-probe.sh /opt/hermes-scripts/observability/l0-composite-probe.sh; do
   [ -e "$asset" ] || { fail "missing versioned release asset: $asset"; exit 1; }
 done
+[ -f "$RUNTIME_ENV" ] && [ ! -L "$RUNTIME_ENV" ] &&
+  [ "$(stat -c '%U:%G' "$RUNTIME_ENV")" = root:root ] &&
+  [ "$(stat -c '%a' "$RUNTIME_ENV")" = 600 ] || { fail "fixed runtime store metadata is invalid"; exit 1; }
+[ -d /run/newme-credential-inbox ] && [ ! -L /run/newme-credential-inbox ] &&
+  [ "$(stat -c '%U:%G' /run/newme-credential-inbox)" = root:root ] &&
+  [ "$(stat -c '%a' /run/newme-credential-inbox)" = 700 ] || { fail "credential inbox metadata is invalid"; exit 1; }
 FRAGMENT="$(systemctl show newme-platform.service -p FragmentPath --value 2>/dev/null || true)"
 DROP_INS="$(systemctl show newme-platform.service -p DropInPaths --value 2>/dev/null || true)"
 [ "$FRAGMENT" = /etc/systemd/system/newme-platform.service ] || { fail "unexpected FragmentPath"; exit 1; }
 [ -z "$DROP_INS" ] || { fail "legacy drop-in ownership remains"; exit 1; }
-grep -Fqx '*/2 * * * * ubuntu /usr/bin/flock -n /run/lock/newme-observability-l0.lock /opt/hermes-scripts/observability/l0-composite-probe.sh' /etc/cron.d/newme-observability || { fail "cron drift"; exit 1; }
+grep -Fqx '*/2 * * * * root /usr/bin/flock -n /run/lock/newme-observability-l0.lock /opt/hermes-scripts/observability/l0-composite-probe.sh' /etc/cron.d/newme-observability || { fail "cron drift"; exit 1; }
 
 [ "$FAILURE" != build ] || { fail "injected build failure"; exit 1; }
 mkdir -p "$STAGE"
@@ -460,14 +563,25 @@ INITIAL_DEFERRED_IDS="$(printf '%s\n' "$RELEASE_CLAIM" | sed -n 's/^deferred_con
   fail "the release manifest yielded a malformed deferred migration set"
   exit 1
 }
+node "$STAGE/scripts/check-deploy-ci-binding.mjs" \
+  --manifest "$STAGE/infra/release/required-jobs.json" \
+  --audit-record "$CI_GATE_AUDIT_RECORD"
 
-install -m 0600 "$PREVIOUS/.env.local" "$STAGE/.env.local"
+umask 077
+awk '$0 !~ /^[[:space:]]*(export[[:space:]]+)?SUPABASE_SERVICE_ROLE_KEY[[:space:]]*=/' \
+  "$PREVIOUS/.env.local" > "$STAGE/.env.local"
+chmod 0600 "$STAGE/.env.local"
+! grep -Eq '^[[:space:]]*(export[[:space:]]+)?SUPABASE_SERVICE_ROLE_KEY[[:space:]]*=' \
+  "$STAGE/.env.local" || { fail "release environment contains a server credential"; exit 1; }
 python3 "$STAGE/scripts/validate-production-config.py" \
   --release-env "$STAGE/.env.local" \
   --runtime-env "$RUNTIME_ENV" \
+  --require-runtime-service-key \
+  --require-no-release-service-key \
   --network
 cd "$STAGE"
-npm ci --no-audit --no-fund
+node scripts/check-toolchain.mjs
+npm ci --registry=https://registry.npmjs.org --strict-allow-scripts=true --include=optional --no-audit --no-fund
 [ -x node_modules/.bin/next ] || { fail "next missing"; exit 1; }
 NEXT_PUBLIC_APP_VERSION="$SHA" SENTRY_RELEASE="$SHA" \
   NODE_OPTIONS="${NODE_OPTIONS:---max_old_space_size=2048}" npm run build
@@ -522,11 +636,39 @@ HOST_LOAD_SETTLE_THRESHOLD_PCT=90 \
 
 printf 'protected_release=true\ngit_sha=%s\nbuild_id=%s\ncreated_at_utc=%s\n' \
   "$SHA" "$BUILD" "$(date -u +%Y%m%dT%H%M%SZ)" > "$STAGE/.newme-protect"
-if [ "$(id -u)" -eq 0 ]; then
-  chown -R ubuntu:ubuntu "$STAGE"
-  chown root:root "$STAGE/.newme-protect"
-fi
-chmod -R a-w "$STAGE"
+chown -hR root:ubuntu "$STAGE"
+find "$STAGE" -xdev -type d -exec chmod 0550 {} +
+find "$STAGE" -xdev -type f -perm /111 -exec chmod 0550 {} +
+find "$STAGE" -xdev -type f ! -perm /111 -exec chmod 0440 {} +
+
+release_tree_root="$(readlink -f -- "$STAGE")" || { fail "protected release root is invalid"; exit 1; }
+while IFS= read -r -d '' release_link; do
+  release_link_target="$(readlink -f -- "$release_link")" || {
+    fail "protected release contains a dangling symlink"
+    exit 1
+  }
+  case "$release_link_target" in
+    "$release_tree_root"/*) ;;
+    *) fail "protected release symlink escapes the immutable tree"; exit 1 ;;
+  esac
+done < <(find "$STAGE" -xdev -type l -print0)
+
+[ -z "$(find "$STAGE" -xdev \( ! -user root -o ! -group ubuntu \) -print -quit)" ] || {
+  fail "protected release ownership is not root:ubuntu"
+  exit 1
+}
+[ -z "$(find "$STAGE" -xdev -type d ! -perm 0550 -print -quit)" ] || {
+  fail "protected release directory mode is not 0550"
+  exit 1
+}
+[ -z "$(find "$STAGE" -xdev -type f -perm /111 ! -perm 0550 -print -quit)" ] || {
+  fail "protected release executable mode is not 0550"
+  exit 1
+}
+[ -z "$(find "$STAGE" -xdev -type f ! -perm /111 ! -perm 0440 -print -quit)" ] || {
+  fail "protected release data mode is not 0440"
+  exit 1
+}
 mv "$STAGE" "$RELEASE"
 CREATED_RELEASE=1
 sync -f "$RELEASES"
@@ -575,6 +717,10 @@ DB_PHASE_LINE="$(printf '%s\n' "$PRE_SWITCH_OUTPUT" | sed -n 's/^NEWME_DB_PHASE=
 DB_PHASE="${DB_PHASE_LINE#NEWME_DB_PHASE=}"
 echo "database phase before switch: $DB_PHASE"
 
+node "$RELEASE/scripts/check-deploy-ci-binding.mjs" \
+  --manifest "$RELEASE/infra/release/required-jobs.json" \
+  --audit-record "$CI_GATE_AUDIT_RECORD"
+verify_canonical_main
 write_deploy_state switch_pending
 ln -s "$RELEASE" "$CURRENT_NEXT"
 mv -Tf "$CURRENT_NEXT" "$CURRENT"
@@ -586,6 +732,14 @@ write_deploy_state switched
 
 "$CONTROL" reset-failed "deploy:$ID:reset-before-switch"
 "$CONTROL" restart "deploy:$ID:switch"
+SWITCH_NRESTARTS="$(systemctl show newme-platform.service -p NRestarts --value)"
+SWITCH_MAIN_PID="$(systemctl show newme-platform.service -p MainPID --value)"
+SWITCH_INVOCATION_ID="$(systemctl show newme-platform.service -p InvocationID --value)"
+SWITCH_STARTED_MONOTONIC="$(systemctl show newme-platform.service -p ExecMainStartTimestampMonotonic --value)"
+[[ "$SWITCH_NRESTARTS" =~ ^[0-9]+$ ]] &&
+  [[ "$SWITCH_MAIN_PID" =~ ^[1-9][0-9]*$ ]] &&
+  [[ "$SWITCH_INVOCATION_ID" =~ ^[0-9a-f]{32}$ ]] &&
+  [[ "$SWITCH_STARTED_MONOTONIC" =~ ^[1-9][0-9]*$ ]] || { fail "service switch identity is invalid"; exit 1; }
 TARGET="$(readlink -f "$CURRENT")"
 [ "$TARGET" = "$RELEASE" ] || { fail "release symlink mismatch"; exit 1; }
 grep -Fqx "{\"git_sha\":\"$SHA\",\"build_id\":\"$BUILD\"}" "$TARGET/manifest.json" || { fail "release manifest mismatch"; exit 1; }
@@ -595,6 +749,16 @@ bash "$TARGET/scripts/check-smoke.sh" http://127.0.0.1:3001
 bash /opt/hermes-scripts/observability/l0-composite-probe.sh
 INVOCATION_ID="$(systemctl show newme-platform.service -p InvocationID --value)"
 [[ "$INVOCATION_ID" =~ ^[0-9a-f]{32}$ ]] || { fail "service invocation id missing"; exit 1; }
+FINAL_NRESTARTS="$(systemctl show newme-platform.service -p NRestarts --value)"
+FINAL_MAIN_PID="$(systemctl show newme-platform.service -p MainPID --value)"
+FINAL_STARTED_MONOTONIC="$(systemctl show newme-platform.service -p ExecMainStartTimestampMonotonic --value)"
+[ "$FINAL_NRESTARTS" = "$SWITCH_NRESTARTS" ] &&
+  [ "$FINAL_MAIN_PID" = "$SWITCH_MAIN_PID" ] &&
+  [ "$INVOCATION_ID" = "$SWITCH_INVOCATION_ID" ] &&
+  [ "$FINAL_STARTED_MONOTONIC" = "$SWITCH_STARTED_MONOTONIC" ] || {
+  fail "service restarted between the traffic switch and deployment evidence"
+  exit 1
+}
 NEWME_INVOCATION_ID="$INVOCATION_ID" bash "$TARGET/scripts/check-logs.sh" "2 minutes ago"
 if [ -z "$EVIDENCE_DIR" ]; then
   EVIDENCE_DIR="$TARGET/.audit"
@@ -604,15 +768,42 @@ else
 fi
 EVIDENCE_FILE="$EVIDENCE_DIR/deploy-$ID.json"
 REGRESSION_FILE="$EVIDENCE_DIR/crm-regression-$ID.json"
-CRM_REGRESSION_RESULT_FILE="$REGRESSION_FILE" bash "$TARGET/scripts/deploy-verify.sh" --no-git
+CRM_RUNTIME_ENV_FILE="$RUNTIME_ENV" CRM_REGRESSION_RESULT_FILE="$REGRESSION_FILE" \
+  bash "$TARGET/scripts/deploy-verify.sh" --no-git
 
-python3 - "$EVIDENCE_FILE" "$SHA" "$BUILD" "$PREVIOUS" "$PREVIOUS_BUILD" "$PREVIOUS_ROLLBACK" <<'PY'
+node "$RELEASE/scripts/check-deploy-ci-binding.mjs" \
+  --manifest "$RELEASE/infra/release/required-jobs.json" \
+  --audit-record "$CI_GATE_AUDIT_RECORD"
+verify_canonical_main
+SERVICE_RUNTIME_OBSERVED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+python3 - "$EVIDENCE_FILE" "$SHA" "$BUILD" "$PREVIOUS" "$PREVIOUS_BUILD" "$PREVIOUS_ROLLBACK" \
+  "$SWITCH_NRESTARTS" "$SWITCH_MAIN_PID" "$SWITCH_INVOCATION_ID" "$SWITCH_STARTED_MONOTONIC" \
+  "$SERVICE_RUNTIME_OBSERVED_AT" "$CANONICAL_MAIN_VERIFIED_AT" <<'PY'
 import json
+import hashlib
 import os
 import sys
 from datetime import datetime, timezone
 
-path, git_sha, build_id, previous, previous_build, previous_rollback = sys.argv[1:]
+(
+    path,
+    git_sha,
+    build_id,
+    previous,
+    previous_build,
+    previous_rollback,
+    service_nrestarts,
+    service_main_pid,
+    service_invocation_id,
+    service_started_monotonic,
+    service_observed_at,
+    canonical_main_verified_at,
+) = sys.argv[1:]
+with open(os.environ["CI_GATE_AUDIT_RECORD"], "rb") as handle:
+    ci_gate_audit_bytes = handle.read()
+if hashlib.sha256(ci_gate_audit_bytes).hexdigest() != os.environ["CI_GATE_AUDIT_SHA256"]:
+    raise SystemExit(65)
+ci_gate_audit = json.loads(ci_gate_audit_bytes)
 evidence = {
     "git_sha": git_sha,
     "build_id": build_id,
@@ -625,12 +816,30 @@ evidence = {
     "logs": {"status": "pass"},
     "regression": {"status": "pass"},
     "health": {"status": "pass"},
+    "canonical_main": {
+        "git_sha": git_sha,
+        "verified_at": canonical_main_verified_at,
+    },
+    "service_runtime": {
+        "nrestarts": int(service_nrestarts),
+        "main_pid": int(service_main_pid),
+        "invocation_id": service_invocation_id,
+        "exec_main_start_monotonic": int(service_started_monotonic),
+        "observed_at": service_observed_at,
+    },
     "ci": {
         "run_id": os.environ["CI_RUN_ID"],
         "run_url": os.environ["CI_RUN_URL"],
         "head_sha": os.environ["CI_HEAD_SHA"],
         "conclusion": os.environ["CI_CONCLUSION"],
         "event": os.environ["CI_EVENT"],
+        "workflow_id": int(os.environ["CI_WORKFLOW_ID"]),
+        "workflow_path": os.environ["CI_WORKFLOW_PATH"],
+        "run_completed_at": os.environ["CI_RUN_COMPLETED_AT"],
+        "gate_audit_sha256": os.environ["CI_GATE_AUDIT_SHA256"],
+        "gate_audited_at": os.environ["CI_GATE_AUDITED_AT"],
+        "max_run_age_seconds": int(os.environ["CI_MAX_RUN_AGE_SECONDS"]),
+        "gate_audit": ci_gate_audit,
         # validate_release_claims() has already proved: run_url names run_id,
         # head_sha == the deployed SHA, conclusion == success, event is
         # workflow_dispatch, and migration status/ids agree with each other.

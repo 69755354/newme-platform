@@ -35,7 +35,10 @@ let lastActive: { identity: SessionIdentity; at: number } | null = null;
 
 async function request(): Promise<SessionOutcome> {
   const response = await fetch("/api/auth/me", { credentials: "same-origin" });
-  if (!response.ok) return { status: "unauthenticated" };
+  if (response.status === 401 || response.status === 403) {
+    return { status: "unauthenticated" };
+  }
+  if (!response.ok) return { status: "unavailable" };
 
   const body = (await response.json()) as SessionIdentity | undefined;
   if (!body || body.isActive !== true) return { status: "unauthenticated" };

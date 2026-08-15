@@ -146,4 +146,6 @@ retroactively satisfy a bootstrap gate.
 - The bootstrap has not been executed.
 - No migration or application deployment is authorised or performed by this
   runbook.
-- Postdeploy acceptance remains a separate milestone after canonical deployment.
+- Postdeploy acceptance remains a separate milestone after canonical deployment
+  and follows `infra/release/postdeploy-acceptance.md`; bootstrap evidence alone
+  cannot create an acceptance digest or complete a release.

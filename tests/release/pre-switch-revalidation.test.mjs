@@ -198,9 +198,11 @@ test("not_required re-measures the whole release as no-pending", () => {
 test("deploy-immutable invokes the coordinator as the last fallible switch precondition", () => {
   const source = readFileSync(DEPLOY, "utf8").replaceAll("\r\n", "\n");
   const gate = source.indexOf('PRE_SWITCH_OUTPUT="$(node "$PRE_SWITCH_GATE"');
+  const ciFreshness = source.indexOf('node "$RELEASE/scripts/check-deploy-ci-binding.mjs"', gate);
+  const canonicalMain = source.indexOf("verify_canonical_main", ciFreshness);
   const pending = source.indexOf("write_deploy_state switch_pending", gate);
   const traffic = source.indexOf('mv -Tf "$CURRENT_NEXT" "$CURRENT"', pending);
-  assert.ok(gate > 0 && gate < pending && pending < traffic);
+  assert.ok(gate > 0 && gate < ciFreshness && ciFreshness < canonicalMain && canonicalMain < pending && pending < traffic);
   const invocation = source.slice(gate, pending);
   for (const argument of [
     '--release-dir "$RELEASE"',

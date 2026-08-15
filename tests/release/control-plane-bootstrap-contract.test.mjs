@@ -458,7 +458,7 @@ test("the f37c203 wrapper running in production sets no gate record and runs non
 // ---------------------------------------------------------------------------
 
 test("the candidate wrapper writes exactly the gates the installer requires", () => {
-  const heredoc = /GATE_RECORD"\s*<<EOF\n([\s\S]*?)\nEOF\n/.exec(wrapperSource);
+  const heredoc = /^\s*cat > "\$GATE_RECORD" <<EOF\n([\s\S]*?)\nEOF\n/m.exec(wrapperSource);
   assert.ok(heredoc, "the wrapper does not write a gate record heredoc");
   const body = heredoc[1];
   const written = [...body.matchAll(/^gate=(.+)$/gm)].map((match) => match[1]);
@@ -482,7 +482,7 @@ test("the wrapper writes the record only after every release-candidate gate has 
     assert.notEqual(index, -1, `not found in the wrapper: ${pattern}`);
     return index;
   };
-  const written = at(/GATE_RECORD="\$\(mktemp/);
+  const written = at(/^GATE_RECORD="\$\(mktemp/m);
   assert.ok(at(/CI_EVENT=workflow_dispatch/) < written, "the event is claimed before it is set");
   assert.ok(at(/required-jobs\.json/) < written, "the job-level gate runs after the record is written");
   // Round-4 C4-4: the scope, not --require-complete. The gate the wrapper can
@@ -506,7 +506,8 @@ test("the wrapper writes the record only after every release-candidate gate has 
   );
   // The record is written after the gates and before the installer, and nowhere else.
   assert.equal((wrapperSource.match(/mktemp "\$STATE_ROOT\/deploy-gates\.XXXXXX"/g) ?? []).length, 1);
-  assert.ok(written < at(/bash "\$WORKTREE\/scripts\/install-systemd-assets\.sh"/));
+  const ordinaryInstaller = wrapperSource.indexOf('bash "$WORKTREE/scripts/install-systemd-assets.sh"', written);
+  assert.ok(ordinaryInstaller > written);
 });
 
 test("the record is removed on every exit path, so it can never gate a later installer", () => {
@@ -536,7 +537,7 @@ test("bootstrap is a coordinator mode, not a hand-written installer bypass", () 
   assert.match(wrapperSource, /newme-deploy bootstrap <main-sha> <successful-run-id>/);
 
   const start = wrapperSource.indexOf('if [ "$BOOTSTRAP_ONLY" -eq 1 ]; then');
-  const end = wrapperSource.indexOf('\nfi\n\nDEPLOY_STATE_RECORD=', start);
+  const end = wrapperSource.indexOf('\nfi\n\nrequire_canonical_main_sha "$SHA" || {', start);
   assert.ok(start > 0 && end > start, "the bootstrap coordinator branch is missing");
   const body = wrapperSource.slice(start, end);
   const at = (needle) => {
@@ -574,7 +575,11 @@ test("the installer verifies the record before it can mutate anything", () => {
   const finalizeBody = installerSource.slice(finalizeStart, finalizeEnd);
   assert.match(finalizeBody, /\n  exit 0\n$|\n  exit 0$/);
   assert.equal(finalizeBody.split("\n").filter((line) => /^  (?:exit|:)/.test(line) && !/^  exit \d+$/.test(line)).length, 0);
-  const installPath = installerSource.slice(0, finalizeStart) + installerSource.slice(finalizeEnd);
+  let installPath = installerSource.slice(0, finalizeStart) + installerSource.slice(finalizeEnd);
+  const credentialStart = installPath.indexOf("# Protected credential-remediation subset");
+  const credentialEnd = installPath.indexOf('PREVIOUS_CURRENT="$(readlink -f /opt/newme/current', credentialStart);
+  assert.ok(credentialStart > 0 && credentialEnd > credentialStart, "credential-only branches are not bounded");
+  installPath = installPath.slice(0, credentialStart) + installPath.slice(credentialEnd);
 
   const at = (pattern) => {
     const index = installPath.search(pattern);
@@ -590,14 +595,14 @@ test("the installer verifies the record before it can mutate anything", () => {
   );
   // Absence is a refusal with its own exit code, before anything else.
   assert.match(installerSource, /no deploy gate record was passed/);
-  assert.equal((installerSource.match(/exit 78/g) ?? []).length, 2);
+  assert.equal((installerSource.match(/exit 78/g) ?? []).length, 4);
 
   // Nothing that changes the host may precede it. The unresolved-transaction
   // recovery restarts the service, so it counts.
   for (const pattern of [
     /an unresolved production rollback must be recovered/,
     /recovering unresolved versioned assets from/,
-    /^BACKUP="\$\(mktemp -d/m,
+    /^\s*BACKUP="\$\(mktemp -d/m,
     /trap rollback_on_error EXIT/,
     /^install_control_script /m,
     /^install_control_sudoers /m,
@@ -632,6 +637,8 @@ test("every control-plane path the installer writes is in the remembered backup 
     "/usr/local/sbin/newme-production-rollback",
     "/usr/local/libexec/newme/newme-install-systemd-assets",
     "/usr/local/libexec/newme/newme-rollback-systemd-assets",
+    "/usr/local/libexec/newme/newme-validate-production-config.py",
+    "/usr/local/libexec/newme/newme-credential-transition.mjs",
     "/etc/sudoers.d/newme-platform",
     "/etc/sudoers.d/ubuntu-nopasswd",
   ]) {
@@ -643,7 +650,7 @@ test("every control-plane path the installer writes is in the remembered backup 
   const destinations = [...installerSource.matchAll(/^install_control_(?:script|sudoers) \S+ (\S+)$/gm)].map(
     (match) => match[1],
   );
-  assert.ok(destinations.length >= 6);
+  assert.ok(destinations.length >= 8);
   for (const destination of destinations) {
     assert.ok(controlPlane.includes(destination), `${destination} is installed but not remembered`);
   }
@@ -669,14 +676,21 @@ test("finalize verifies exactly the control plane install writes, from the same 
     .filter((line) => line !== "" && !line.startsWith("#"))
     .map((entry) => {
       const [source, destination, mode] = entry.split(":");
-      assert.match(mode, /^(?:755|440)$/, `${destination} has no expected mode`);
+      const expectedMode = destination === "/usr/local/share/newme/credential-live-attestation-policy-v1.json"
+        ? "644"
+        : /\/etc\/sudoers\.d\//.test(destination) ? "440" : "755";
+      assert.equal(mode, expectedMode, `${destination} has no expected mode`);
       return { source, destination, mode };
     });
 
-  const installed = [...installerSource.matchAll(/^install_control_(script|sudoers) "\$ROOT\/(\S+)" (\S+)$/gm)].map(
-    (match) => ({ source: match[2], destination: match[3], mode: match[1] === "sudoers" ? "440" : "755" }),
+  const installed = [...installerSource.matchAll(/^install_control_(script|sudoers|file) "\$ROOT\/(\S+)" (\S+)(?: (0[0-7]{3}))?$/gm)].map(
+    (match) => ({
+      source: match[2],
+      destination: match[3],
+      mode: match[1] === "sudoers" ? "440" : match[1] === "file" ? match[4].slice(1) : "755",
+    }),
   );
-  assert.equal(installed.length, 6);
+  assert.equal(installed.length, 10);
   assert.deepEqual(
     finalized.slice().sort((a, b) => a.destination.localeCompare(b.destination)),
     installed.slice().sort((a, b) => a.destination.localeCompare(b.destination)),
@@ -767,6 +781,13 @@ test("the control plane is installed inside the open transaction, never before i
       order.indexOf("/usr/local/sbin/newme-production-rollback"),
     "the rollback controller is installed before the helper it calls",
   );
+  assert.ok(
+    order.indexOf("/usr/local/libexec/newme/newme-validate-production-config.py") <
+      order.indexOf("/usr/local/libexec/newme/newme-credential-transition.mjs") &&
+      order.indexOf("/usr/local/libexec/newme/newme-credential-transition.mjs") <
+        order.indexOf("/usr/local/sbin/newme-deploy"),
+    "the credential validator and transition helper are not installed before their coordinator",
+  );
   assert.equal(order[order.length - 2], "/usr/local/sbin/newme-deploy");
 
   // And no versioned runtime asset is touched until the whole recovery plane is up.
@@ -774,12 +795,16 @@ test("the control plane is installed inside the open transaction, never before i
   assert.ok(firstControlInstall < firstVersionedInstall);
 });
 
-test("the restore path needs no change of its own to put the old control plane back", () => {
+test("the restore path is managed-list driven and preserves remediated assets only after the durable marker", () => {
   // rollback-systemd-assets.sh iterates the recorded managed list, so the paths
   // added to CONTROL_PLANE[] are restored by the code that already exists. If this
   // ever became a hard-coded list, adding a path would silently not be restorable.
   assert.match(rollbackSource, /managed\.list/);
-  assert.doesNotMatch(rollbackSource, /newme-deploy\b/);
+  const restoreBody = rollbackSource.slice(rollbackSource.indexOf('BACKUP="${1:-}"'));
+  assert.match(restoreBody, /is_credential_protected_asset "\$dest" && continue/);
+  assert.match(restoreBody, /CREDENTIAL_PROTECTION_ACTIVE/);
+  assert.match(restoreBody, /credential-remediation\.protected\.json/);
+  assert.match(restoreBody, /verify_credential_protected_assets/);
   assert.doesNotMatch(rollbackSource, /CONTROL_PLANE/);
 });
 

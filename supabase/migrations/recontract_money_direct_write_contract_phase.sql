@@ -125,6 +125,15 @@ declare
                                ['trg_guard_contract_approvals_write',  'contract_approvals',  'public.guard_definer_only_write()',       '0ac33b97358b40023346fb09647c5927613ac6888be443c3aff47984c82615bb'],
                                ['trg_guard_payment_allocations_write', 'payment_allocations', 'public.guard_definer_only_write()',       '0ac33b97358b40023346fb09647c5927613ac6888be443c3aff47984c82615bb'],
                                ['trg_guard_quotations_write',          'quotations',          'public.guard_quotations_write()',         '830b4dabef7df1e3709e23a33cbeda27c065964e7a737b632c8670d591e36e45']];
+  -- The guards' exact bodies are not enough on their own: they delegate the
+  -- decision to this four-function closure. Pin the final migration body and the
+  -- execution attributes whose semantics are load-bearing. In particular,
+  -- money_direct_write_is_blocked() must remain PL/pgSQL + VOLATILE so it takes
+  -- the shared lock before reading the mode on a fresh snapshot.
+  v_gate_dependencies text[][] := array[['public.money_direct_write_is_blocked()', '7e441dc681f66aa2f58c001a9c8a705fe6b01400a80b50491dd98b95e6093ed5', 'plpgsql', 'v', 'false'],
+                                        ['public.money_write_is_direct()',          '79bf852b44dea5fdfc5e5f9799fa5cff7253929d30cbd87dc012e0b57ba06a5d', 'sql',     's', 'false'],
+                                        ['public.money_direct_write_mode()',        'adabfffdd1b4f00dbac0f37a062225cafc954084db8e0d38fd749d293d811dde', 'sql',     's', 'true'],
+                                        ['public.money_release_mode_lock_key()',    'a58de3a00df07a1ccfe3250cf009c3a77675df80ce268f092124b236192cf26a', 'sql',     'i', 'false']];
   v_routines text[] := array['public.replace_kpi_targets(text, jsonb, uuid)',
                              'public.clear_kpi_targets(text, uuid)'];
   v_routine  text;
@@ -146,24 +155,14 @@ begin
   -- the KPI routines and the mode row are all read after the direct writes
   -- admitted under 'compat' have drained, so the readback that follows is a
   -- statement about a quiet database rather than about a moving one.
-  if to_regprocedure('public.money_release_mode_lock_key()') is null then
-    v_missing := v_missing || 'function public.money_release_mode_lock_key()';
-    raise exception 'refusing to declare the strict posture: % is missing, so this re-contract could not be serialized against in-flight direct writes',
-      array_to_string(v_missing, ', ')
-      using errcode = '42P01';
-  end if;
   perform set_config('lock_timeout',
                      coalesce(nullif(current_setting('lock_timeout'), '0'), '15s'),
                      true);
-  perform pg_advisory_xact_lock(public.money_release_mode_lock_key());
-
-  -- The mode is only as real as the code that reads it.
-  if to_regprocedure('public.money_direct_write_mode()') is null then
-    v_missing := v_missing || 'function public.money_direct_write_mode()';
-  end if;
-  if to_regprocedure('public.money_direct_write_is_blocked()') is null then
-    v_missing := v_missing || 'function public.money_direct_write_is_blocked()';
-  end if;
+  -- Do not call the live helper until its exact body has been validated below.
+  -- The canonical expression is the helper's shipped body, so an altered helper
+  -- cannot make this companion take an unrelated lock before it refuses.
+  perform pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('public.money_release_mode:only', 0));
 
   -- And the guards are what turn 'strict' into a refusal. `tgenabled = 'O'` is
   -- the default origin setting; a trigger left DISABLED reads as present in
@@ -194,6 +193,27 @@ begin
       v_missing := v_missing || ('enabled mode-gated trigger ' || v_guards[i][1]
                                  || ' on public.' || v_guards[i][2]
                                  || ' backed by ' || v_guards[i][3]);
+    end if;
+  end loop;
+
+  -- The mode is only as real as the complete code path that reads it. Checking
+  -- existence or the guard bodies alone is insufficient: a drifted gate that
+  -- always returns false leaves all six triggers installed while accepting the
+  -- writes the new posture claims to refuse.
+  for i in 1 .. array_length(v_gate_dependencies, 1) loop
+    if not exists (select 1
+                     from pg_catalog.pg_proc p
+                     join pg_catalog.pg_language l on l.oid = p.prolang
+                    where p.oid = to_regprocedure(v_gate_dependencies[i][1])
+                      and p.prokind = 'f'
+                      and pg_catalog.encode(
+                            pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')),
+                            'hex'
+                          ) = v_gate_dependencies[i][2]
+                      and l.lanname = v_gate_dependencies[i][3]
+                      and p.provolatile = v_gate_dependencies[i][4]
+                      and p.prosecdef = v_gate_dependencies[i][5]::boolean) then
+      v_missing := v_missing || ('exact shipped definition of ' || v_gate_dependencies[i][1]);
     end if;
   end loop;
 

@@ -245,6 +245,19 @@ test("the retry repairs the three rows the way the first conversion writes them"
   assert.match(retry.slice(mismatch, repair), /using errcode = '22023'/);
 });
 
+test("a restated retry schedule matches every field the first conversion persisted", () => {
+  const { retry } = paths(migration(LAST_DEFINER));
+  const comparisonStart = retry.indexOf("select count(*) into v_disagree");
+  const comparisonEnd = retry.indexOf("if v_disagree > 0", comparisonStart);
+  assert.ok(comparisonStart >= 0 && comparisonEnd > comparisonStart, "retry schedule comparison was not found");
+  const comparison = retry.slice(comparisonStart, comparisonEnd);
+  for (const field of ["amount", "due_date", "description"]) {
+    assert.match(comparison, new RegExp(`want\\.${field} is distinct from have\\.${field}`));
+  }
+  assert.match(comparison, /v_contract\.contract_date/);
+  assert.match(comparison, /coalesce\(description, ''\)/);
+});
+
 test("the lead row is locked before either path writes it", () => {
   // The retry branch writes leads, which it did not before, so both paths now take
   // quotations → leads → contracts. Without `for update` on the read, two

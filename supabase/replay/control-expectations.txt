@@ -458,3 +458,13 @@ fail a3-an-authenticated-session-is-refused-by-the-grant
 fail a3-a-call-carrying-an-end-user-identity-is-refused
 fail a3-an-unknown-target-is-refused
 fail a3-a-null-target-is-refused
+
+# R9 · 20260817230000_lead_rebalance_plan_idempotency.sql. The control floor has
+# neither table nor RPC, so all seven catalog/entry assertions are load-bearing.
+fail r9-rebalance-plan-table-installed
+fail r9-rebalance-plan-primary-key-is-actor-and-batch
+fail r9-rebalance-plan-table-forces-rls
+fail r9-rebalance-plan-table-is-service-read-only
+fail r9-rebalance-plan-rpc-is-empty-path-definer
+fail r9-rebalance-plan-rpc-is-authenticated-only
+fail r9-rebalance-plan-entry-lock-and-statement-boundary

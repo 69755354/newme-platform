@@ -245,7 +245,7 @@ export function LeadCard({
             <span>{SOURCE_ICONS[lead.source] || "📋"} {t(`sourceLabels.${lead.source}`) || lead.source}</span>
             {lead.assigned_to && (
               <>
-                <span className="inline-flex items-center gap-1 min-w-0">
+                <span data-newme-uat-sensitive="true" className="inline-flex items-center gap-1 min-w-0">
                   <User className="w-3 h-3 shrink-0" />
                   <span className="truncate">{userNameMap[lead.assigned_to] || t("leads.unassigned")}</span>
                 </span>
@@ -301,7 +301,7 @@ export function LeadCard({
                   "h-1.5 w-1.5 rounded-full",
                   lead.assigned_to === user.id ? "bg-copper-400" : "bg-gray-600"
                 )} />
-                <span className="truncate">{user.full_name || user.email}</span>
+                <span data-newme-uat-sensitive="true" className="truncate">{user.full_name || user.email}</span>
               </button>
             ))}
             {salesUsers.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">{t("leads.noUsers")}</p>}

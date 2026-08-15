@@ -30,7 +30,7 @@
 -- cross-checked against ASSERT_TOTAL, so a file that stops early cannot pass
 -- quietly.
 --
--- ASSERT_TOTAL: 18
+-- ASSERT_TOTAL: 19
 -- ============================================================================
 
 create temp table if not exists post_recontract_assert_log (name text);
@@ -104,6 +104,29 @@ select pg_temp.assert((select direct_write_mode = 'strict' from public.money_rel
                       'recontract-release-mode-row-is-strict-again');
 select pg_temp.assert(public.money_direct_write_mode() = 'strict',
                       'recontract-mode-function-reports-strict-again');
+-- The exact guard bodies below all delegate to this closure. Pinning the
+-- closure here mirrors both manifest phases and prevents a same-signature gate
+-- that always returns false from turning a strict mode row into a false claim.
+select pg_temp.assert((select count(*) = 4
+                              and bool_and(coalesce(
+                                    p.prokind = 'f'
+                                    and pg_catalog.encode(
+                                          pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')),
+                                          'hex'
+                                        ) = d.prosrc_sha256
+                                    and l.lanname = d.lanname
+                                    and p.provolatile = d.provolatile
+                                    and p.prosecdef = d.prosecdef,
+                                    false))
+                         from (values ('public.money_direct_write_is_blocked()', '7e441dc681f66aa2f58c001a9c8a705fe6b01400a80b50491dd98b95e6093ed5', 'plpgsql', 'v', false),
+                                      ('public.money_write_is_direct()',          '79bf852b44dea5fdfc5e5f9799fa5cff7253929d30cbd87dc012e0b57ba06a5d', 'sql',     's', false),
+                                      ('public.money_direct_write_mode()',        'adabfffdd1b4f00dbac0f37a062225cafc954084db8e0d38fd749d293d811dde', 'sql',     's', true),
+                                      ('public.money_release_mode_lock_key()',    'a58de3a00df07a1ccfe3250cf009c3a77675df80ce268f092124b236192cf26a', 'sql',     'i', false))
+                                as d(proregprocedure, prosrc_sha256, lanname, provolatile, prosecdef)
+                         left join pg_catalog.pg_proc p
+                           on p.oid = to_regprocedure(d.proregprocedure)
+                         left join pg_catalog.pg_language l on l.oid = p.prolang),
+                      'recontract-money-gate-dependency-closure-is-exact');
 -- The manifest's `deferred_contract` posture predicates read exactly these two,
 -- the six mode-gated guards below, the transition guard and the two KPI write
 -- routines. Asserting the same sets here is deliberate: `--verify-only` after a
@@ -368,8 +391,8 @@ declare
   total int;
 begin
   select count(*) into total from post_recontract_assert_log;
-  if total <> 18 then
-    raise exception 'post-recontract assertion file ran % assertions, ASSERT_TOTAL says 18', total
+  if total <> 19 then
+    raise exception 'post-recontract assertion file ran % assertions, ASSERT_TOTAL says 19', total
       using errcode = '22000';
   end if;
   raise notice 'all % post-recontract assertions passed', total;

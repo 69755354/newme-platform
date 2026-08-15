@@ -10,12 +10,15 @@ const shouldNotify = ({ eventName, upstreamEvent, branch, conclusion }) =>
   branch === "main" &&
   ["failure", "cancelled"].includes(conclusion);
 
+const shouldFailForUpstream = ({ eventName, conclusion }) =>
+  eventName === "workflow_run" && conclusion !== "success";
+
 test("crm-ci scopes workflow_run to main push CI and preserves manual diagnostics", () => {
   assert.match(workflow, /workflow_run/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /github\.event\.workflow_run\.event == 'push'/);
   assert.match(workflow, /github\.event\.workflow_run\.head_branch == 'main'/);
-  assert.doesNotMatch(workflow, /Require upstream ci success/);
+  assert.match(workflow, /- name: Require upstream ci success/);
 });
 
 test("PR and non-main cancelled runs do not enter the main-push notification path", () => {
@@ -45,4 +48,31 @@ test("main success stays quiet; main failure or cancellation notifies, and a fai
   assert.match(workflow, /::error::Telegram notification delivery failed/);
   assert.equal(shouldNotify({ eventName: "workflow_run", upstreamEvent: "push", branch: "main", conclusion: "failure" }), true);
   assert.equal(shouldNotify({ eventName: "workflow_run", upstreamEvent: "push", branch: "main", conclusion: "cancelled" }), true);
+});
+
+test("every non-success upstream conclusion fails after the notification attempt", () => {
+  const notifyIndex = workflow.indexOf("      - name: Notify Telegram");
+  const verdictIndex = workflow.indexOf("      - name: Require upstream ci success");
+  assert.ok(notifyIndex >= 0 && verdictIndex > notifyIndex);
+  const verdictStep = workflow.slice(verdictIndex);
+  assert.match(verdictStep, /\$\{\{ always\(\) &&/);
+  assert.match(verdictStep, /github\.event_name == 'workflow_run'/);
+  assert.match(verdictStep, /github\.event\.workflow_run\.conclusion != 'success'/);
+  assert.match(verdictStep, /exit 1/);
+  assert.doesNotMatch(verdictStep, /^\s*continue-on-error\s*:/m);
+
+  assert.equal(shouldFailForUpstream({ eventName: "workflow_run", conclusion: "success" }), false);
+  assert.equal(shouldFailForUpstream({ eventName: "workflow_dispatch", conclusion: undefined }), false);
+  for (const conclusion of [
+    "failure",
+    "cancelled",
+    "timed_out",
+    "skipped",
+    "neutral",
+    "action_required",
+    "stale",
+    "startup_failure",
+  ]) {
+    assert.equal(shouldFailForUpstream({ eventName: "workflow_run", conclusion }), true, conclusion);
+  }
 });

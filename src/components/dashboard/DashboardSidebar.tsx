@@ -144,7 +144,7 @@ export function DashboardSidebar({
         {/* Footer — user + logout */}
         <div className="p-3 border-t border-border space-y-2">
           {userEmail && (
-            <div className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-muted-foreground">
+            <div data-newme-uat-sensitive="true" className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-muted-foreground">
               <div className="w-6 h-6 rounded-full bg-slate-600/20 flex items-center justify-center text-slate-600 text-[10px] font-bold shrink-0">
                 {userEmail.charAt(0).toUpperCase()}
               </div>

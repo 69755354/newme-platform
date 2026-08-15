@@ -254,14 +254,20 @@ begin
 
       select count(*) into v_disagree
         from (select coalesce(nullif(e.value ->> 'seq', '')::integer, e.ord::integer) as seq,
-                     round((e.value ->> 'amount')::numeric(12, 2), 2)                as amount
+                     round((e.value ->> 'amount')::numeric(12, 2), 2)                as amount,
+                     coalesce(nullif(e.value ->> 'due_date', '')::date,
+                              v_contract.contract_date)                              as due_date,
+                     coalesce(e.value ->> 'description', '')                         as description
                 from jsonb_array_elements(p_payload -> 'installments')
                        with ordinality e(value, ord)) want
-        full join (select seq, round(amount, 2) as amount
+        full join (select seq, round(amount, 2) as amount, due_date,
+                          coalesce(description, '') as description
                      from public.installment_plans
                     where contract_id = v_contract.id) have on have.seq = want.seq
        where want.seq is null or have.seq is null
-          or want.amount is distinct from have.amount;
+          or want.amount is distinct from have.amount
+          or want.due_date is distinct from have.due_date
+          or want.description is distinct from have.description;
       if v_disagree > 0 then
         raise exception 'quotation % is already converted to contract %, whose schedule is not the one this call asks for (% installment(s) disagree); a retry may only repeat the conversion it retries',
           v_quote.quote_no, v_contract.contract_no, v_disagree using errcode = '22023';

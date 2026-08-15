@@ -321,7 +321,7 @@ test("cookie-only browser session does not use localStorage or client persistenc
   assert.match(cookies, /httpOnly: true/);
   assert.match(session, /applySessionCookies\(/);
   assert.match(server, /decodeURIComponent/);
-  assert.match(login, /fetch\("\/api\/auth\/logout"/);
+  assert.doesNotMatch(login, /fetch\(["']\/api\/auth\/logout["']/);
   // Upstream revocation of a token we refuse to hand out now happens server
   // side, because the browser never receives that token in the first place.
   assert.doesNotMatch(login, /auth\/v1\/logout/);

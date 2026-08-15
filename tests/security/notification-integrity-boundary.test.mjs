@@ -52,6 +52,18 @@ const IDs = {
   approval: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
 };
 
+test("contract notifications describe the committed lifecycle state", () => {
+  const createRoute = fs.readFileSync(path.join(root, "src/app/api/contracts/route.ts"), "utf8");
+  const statusRoute = fs.readFileSync(path.join(root, "src/app/api/contracts/[id]/route.ts"), "utf8");
+
+  assert.match(createRoute, /type: "contract_created"/);
+  assert.doesNotMatch(createRoute, /type: "contract_pending_approval"/);
+  const successfulTransition = statusRoute.indexOf("if (status.trim() === \"pending_admin\")");
+  const rpcRefusal = statusRoute.indexOf("if (rpcErr)");
+  const pendingDispatch = statusRoute.indexOf('type: "contract_pending_approval"');
+  assert.ok(rpcRefusal >= 0 && successfulTransition > rpcRefusal && pendingDispatch > successfulTransition);
+});
+
 class Query {
   constructor(rows) {
     this.rows = rows.map((row) => ({ ...row }));

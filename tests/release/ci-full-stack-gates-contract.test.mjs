@@ -20,16 +20,24 @@ test("CI runs on pull requests, main pushes, and manual dispatch", async () => {
     /sparse-checkout: \|\s*\n\s*crm-v3\/SPEC\.md\s*\n\s*scripts\/check-spec\.sh\s*\n\s*scripts\/run-bash\.mjs\s*\n\s*sparse-checkout-cone-mode: false/,
   );
   assert.match(workflow, /node scripts\/run-bash\.mjs scripts\/check-spec\.sh/);
-  assert.match(workflow, /npx playwright install --with-deps chromium/);
+  assert.doesNotMatch(workflow, /playwright install/);
   assert.match(
     workflow,
-    /npx playwright test --config=playwright\.production-smoke\.config\.ts/,
+    /container:\s*\n\s*image: mcr\.microsoft\.com\/playwright:v1\.60\.0-noble@sha256:[0-9a-f]{64}/,
+  );
+  assert.match(
+    workflow,
+    /npm exec --offline -- playwright test --config=playwright\.production-smoke\.config\.ts/,
   );
 });
 
-test("ordinary CI and release-final taskboard modes are distinct", async () => {
+test("ordinary, credential-remediation, and release-final taskboard modes are distinct", async () => {
   const workflow = await readFile(new URL(".github/workflows/ci.yml", ROOT), "utf8");
   const packageJson = JSON.parse(await readFile(new URL("package.json", ROOT), "utf8"));
+  const ordinaryManifest = JSON.parse(await readFile(new URL("infra/release/required-jobs.json", ROOT), "utf8"));
+  const credentialManifest = JSON.parse(
+    await readFile(new URL("infra/release/credential-remediation-required-jobs.json", ROOT), "utf8"),
+  );
   const shell = await readFile(new URL("scripts/check-taskboard.sh", ROOT), "utf8");
   assert.equal(packageJson.scripts["check:taskboard"], "node scripts/check-taskboard.mjs");
   assert.equal(
@@ -43,16 +51,57 @@ test("ordinary CI and release-final taskboard modes are distinct", async () => {
     packageJson.scripts["check:taskboard:predeploy"],
     "node scripts/check-taskboard.mjs --require-scope=predeploy_ready",
   );
+  assert.equal(
+    packageJson.scripts["check:taskboard:credential-remediation"],
+    "node scripts/check-taskboard.mjs --require-credential-remediation",
+  );
   assert.equal(packageJson.scripts["check:taskboard:bootstrap"], undefined);
   assert.match(workflow, /- name: Taskboard gate\s*\n        run: npm run check:taskboard/);
   assert.match(workflow, /release_final:[\s\S]*?type: boolean/);
+  assert.match(workflow, /credential_remediation:[\s\S]*?type: boolean/);
   assert.match(
     workflow,
     /taskboard-completion:[\s\S]*?github\.event_name == 'workflow_dispatch' && inputs\.release_final[\s\S]*?npm run check:taskboard:complete/,
   );
   assert.match(
     workflow,
-    /taskboard-predeploy:[\s\S]*?github\.event_name == 'workflow_dispatch'[\s\S]*?npm run check:taskboard:predeploy/,
+    /taskboard-predeploy:[\s\S]*?github\.event_name == 'workflow_dispatch' && !inputs\.credential_remediation[\s\S]*?npm run check:taskboard:predeploy/,
+  );
+  assert.match(
+    workflow,
+    /credential-remediation-readiness:[\s\S]*?name: Credential remediation readiness[\s\S]*?github\.event_name == 'workflow_dispatch' && inputs\.credential_remediation[\s\S]*?credential remediation and release_final are mutually exclusive[\s\S]*?npm run check:taskboard:credential-remediation/,
+  );
+  assert.match(workflow, /credential remediation must be dispatched on main/);
+
+  assert.equal(credentialManifest.workflow, "ci");
+  assert.equal(credentialManifest.workflow_path, ".github/workflows/ci.yml");
+  assert.equal(credentialManifest.workflow_id, 310914082);
+  assert.equal(credentialManifest.event, "workflow_dispatch");
+  assert.equal(credentialManifest.head_branch, "main");
+  assert.equal(credentialManifest.max_run_age_seconds, 21600);
+  const credentialRequired = credentialManifest.required_jobs.map((entry) => entry.name);
+  assert.deepEqual(credentialRequired, [
+    "Repository validation",
+    "CodeQL analysis",
+    "Windows checkout and SPEC gate",
+    "Credential remediation readiness",
+    "Control-plane restore interruption drill",
+    "Narrow task follow-up database contract",
+    "Migration replay and release contracts",
+  ]);
+  const credentialSkipped = credentialManifest.required_skipped_jobs.map((entry) => entry.name);
+  assert.deepEqual(credentialSkipped, [
+    "Predeploy taskboard readiness",
+    "Release-final taskboard completion",
+  ]);
+  const ordinaryRequired = ordinaryManifest.required_jobs.map((entry) => entry.name);
+  assert.ok(ordinaryRequired.includes("Predeploy taskboard readiness"));
+  assert.ok(!ordinaryRequired.includes("Credential remediation readiness"));
+  assert.ok(credentialRequired.includes("Credential remediation readiness"));
+  assert.ok(!credentialRequired.includes("Predeploy taskboard readiness"));
+  assert.ok(
+    credentialSkipped.includes("Predeploy taskboard readiness"),
+    "a remediation run must skip the job whose success the ordinary deploy manifest requires",
   );
   assert.match(shell, /exec node "\$SCRIPT_DIR\/check-taskboard\.mjs" "\$@"/);
 });
@@ -71,8 +120,49 @@ test("release-candidate CI requires the isolated control-plane SIGTERM and reent
   assert.match(drill.body, /--network none/);
   assert.match(drill.body, /--volume "\$PWD:\/repo:ro"/);
   assert.match(drill.body, /NEWME_DRILL_CONFIRM=throwaway-container/);
-  assert.match(drill.body, /node:24-bookworm/);
+  assert.match(drill.body, /docker\.io\/library\/node:24\.18\.0-bookworm@sha256:[0-9a-f]{64}/);
   assert.match(drill.body, /bash \/repo\/scripts\/control-plane-restore-drill\.sh/);
+  assert.match(drill.body, /bash \/repo\/scripts\/credential-assets-transaction-drill\.sh/);
+  assert.match(drill.body, /bash \/repo\/scripts\/alert-state-preflight-drill\.sh/);
+  assert.match(drill.body, /node \/repo\/scripts\/credential-live-attestation-drill\.mjs/);
+  assert.match(drill.body, /exec 9>\/run\/lock\/newme-production-release\.lock; exec node \/repo\/scripts\/credential-live-five-stage-drill\.mjs/);
+  assert.match(drill.body, /NEWME_CREDENTIAL_LIVE_DRILL_MODE=expire-prepared/);
+  assert.match(drill.body, /--pids-limit 256/);
+  assert.match(drill.body, /--memory 1g/);
+  assert.match(drill.body, /--cpus 2/);
+  const controlPlaneDrill = await readFile(
+    new URL("scripts/control-plane-restore-drill.sh", ROOT),
+    "utf8",
+  );
+  assert.match(controlPlaneDrill, /03f53ab08c61dcfff830e3e6d219f7c374c914f9:scripts\/install-systemd-assets\.sh/);
+  assert.doesNotMatch(controlPlaneDrill, /show HEAD:scripts\/install-systemd-assets\.sh/);
+  const alertPreflightDrill = await readFile(new URL("scripts/alert-state-preflight-drill.sh", ROOT), "utf8");
+  assert.match(alertPreflightDrill, /bash "\$FIXTURE_ROOT\/scripts\/install-systemd-assets\.sh" \\/);
+  assert.match(alertPreflightDrill, /untrusted_directory/);
+  assert.match(alertPreflightDrill, /untrusted_file/);
+  assert.match(alertPreflightDrill, /state-symlink symlink/);
+  assert.match(alertPreflightDrill, /leaves the complete target tree unchanged/);
+  assert.match(alertPreflightDrill, /installer lock write/);
+  assert.match(alertPreflightDrill, /before deploy-state creation/);
+  const credentialLiveDrill = await readFile(
+    new URL("scripts/credential-live-attestation-drill.mjs", ROOT),
+    "utf8",
+  );
+  assert.match(credentialLiveDrill, /removeTrustedRootFileMatching/);
+  assert.match(credentialLiveDrill, /readCredentialEscrow/);
+  assert.match(credentialLiveDrill, /credential_live_attestation_drill_checks=/);
+  const credentialFiveStageDrill = await readFile(
+    new URL("scripts/credential-live-five-stage-drill.mjs", ROOT),
+    "utf8",
+  );
+  assert.match(credentialFiveStageDrill, /prepareInstalledCredentialAttestation/);
+  assert.match(credentialFiveStageDrill, /produceInstalledRevocationProof/);
+  assert.match(credentialFiveStageDrill, /produceInstalledCompletion/);
+  assert.match(credentialFiveStageDrill, /produceInstalledReadback/);
+  assert.match(credentialFiveStageDrill, /consumeInstalledCredentialAttestation/);
+  assert.match(credentialFiveStageDrill, /expirePreparedCredentialAttestation/);
+  assert.match(credentialFiveStageDrill, /credential_live_five_stage_drill_checks=/);
+  assert.match(credentialFiveStageDrill, /credential_live_expiry_drill_checks=/);
   assert.doesNotMatch(drill.body, /\bsecrets\.|SUPABASE_|POSTGRES|PGPASSWORD/i);
   assert.ok(
     manifest.required_jobs.some((entry) => entry.name === "Control-plane restore interruption drill"),
@@ -143,7 +233,7 @@ test("migration replay job gates on a negative control and never reaches product
   const job = workflow.slice(start);
 
   // A throwaway service container, not a linked project.
-  assert.match(job, /image: postgres:17/);
+  assert.match(job, /image: docker\.io\/library\/postgres:17\.11-trixie@sha256:[0-9a-f]{64}/);
   assert.match(job, /POSTGRES_HOST_AUTH_METHOD: trust/);
   assert.doesNotMatch(
     job,
@@ -177,6 +267,12 @@ test("migration replay job gates on a negative control and never reaches product
   assert.match(job, /authenticated schema-only production capture/);
   assert.doesNotMatch(job, /history-replay-expectation\.txt/);
 
+  // The fixed hosted-runner label remains a time-bounded exception, so its
+  // preinstalled client is asserted exactly and no mutable apt resolution is
+  // allowed back into the release job.
+  assert.match(job, /test "\$\(psql --version\)" = "psql \(PostgreSQL\) 16\.14 \(Ubuntu 16\.14-1\.pgdg24\.04\+1\)"/);
+  assert.doesNotMatch(job, /\bapt(?:-get)?\s+(?:update|install)\b/);
+
   // The history immutability gate is a precondition for every replay below it:
   // if applied migrations have been edited or renamed, the replay is measuring a
   // history production does not have.
@@ -193,10 +289,11 @@ test("local database job is pinned, isolated, repeatable, and has no remote cred
   const start = workflow.indexOf("  local-database:");
   assert.notEqual(start, -1);
   const localJob = workflow.slice(start);
-  assert.match(localJob, /uses: actions\/checkout@v4\s*\n        with:\s*\n          fetch-depth: 0/);
+  assert.match(localJob, /uses: actions\/checkout@[0-9a-f]{40} # v4\.4\.0\s*\n        with:\s*\n          fetch-depth: 0/);
   assert.match(localJob, /name: Narrow task follow-up database contract/);
-  assert.match(localJob, /uses: supabase\/setup-cli@v3/);
-  assert.match(localJob, /version: 2\.113\.0/);
+  assert.doesNotMatch(localJob, /uses: supabase\/setup-cli@/);
+  assert.match(localJob, /node scripts\/install-reviewed-artifact\.mjs supabase-cli-linux-amd64/);
+  assert.match(localJob, /RUNNER_TEMP\/newme-supabase-cli/);
   assert.match(localJob, /node supabase\/ci-local\/verify-provenance\.mjs/);
   assert.match(localJob, /supabase db start --workdir supabase\/ci-local/);
   assert.equal(
@@ -260,7 +357,7 @@ test("every job that verifies migration history checks out with full history", a
   for (const job of needsHistory) {
     assert.match(
       job.body,
-      /uses: actions\/checkout@v4\s*\n\s*with:\s*\n(?:\s*[a-z-]+:.*\n)*?\s*fetch-depth: 0/,
+      /uses: actions\/checkout@[0-9a-f]{40} # v4\.4\.0\s*\n\s*with:\s*\n(?:\s*[a-z-]+:.*\n)*?\s*fetch-depth: 0/,
       `job '${job.id}' verifies migration history but checks out shallow; the gate then reports NOT VERIFIED and fails`,
     );
   }

@@ -22,6 +22,25 @@ function runEmbeddedPython(code, args) {
   return spawnSync("python3", ["-", ...args], { input: code, encoding: "utf8" });
 }
 
+test("immutable deploy seals the release tree against application-user rewrites", async () => {
+  const immutableDeploy = await read("scripts/deploy-immutable.sh");
+
+  assert.match(immutableDeploy, /deploy-immutable must run as root/);
+  assert.doesNotMatch(immutableDeploy, /chown -R ubuntu:ubuntu "\$STAGE"/);
+  assert.match(immutableDeploy, /chown -hR root:ubuntu "\$STAGE"/);
+  assert.match(immutableDeploy, /find "\$STAGE" -xdev -type d -exec chmod 0550 \{\} \+/);
+  assert.match(immutableDeploy, /find "\$STAGE" -xdev -type f -perm \/111 -exec chmod 0550 \{\} \+/);
+  assert.match(immutableDeploy, /find "\$STAGE" -xdev -type f ! -perm \/111 -exec chmod 0440 \{\} \+/);
+  assert.match(immutableDeploy, /release_tree_root="\$\(readlink -f -- "\$STAGE"\)"/);
+  assert.match(immutableDeploy, /readlink -f -- "\$release_link"/);
+  assert.match(immutableDeploy, /protected release symlink escapes the immutable tree/);
+  assert.match(immutableDeploy, /! -user root -o ! -group ubuntu/);
+  assert.match(immutableDeploy, /protected release ownership is not root:ubuntu/);
+  assert.match(immutableDeploy, /protected release directory mode is not 0550/);
+  assert.match(immutableDeploy, /protected release executable mode is not 0550/);
+  assert.match(immutableDeploy, /protected release data mode is not 0440/);
+});
+
 test("production rollback controller restores app and versioned assets transactionally", async () => {
   const source = await read("infra/systemd/newme-production-rollback.sh");
 
@@ -42,14 +61,42 @@ test("production rollback controller restores app and versioned assets transacti
   assert.match(source, /prepared\|app_switched\|target_assets_restored\|complete/);
   assert.match(source, /sync -f "\$STATE_ROOT"/);
   assert.match(source, /resolve_target_asset_backup/);
-  assert.match(source, /or status not in \{"awaiting_uat", "uat_failed", "complete"\}/);
+  assert.match(source, /or status not in \{"awaiting_uat", "acceptance_verified", "uat_failed", "complete"\}/);
   assert.match(source, /or target\.get\("git_sha"\) != rollback\.rsplit\("\/", 1\)\[-1\]/);
-  assert.match(source, /if status in \{"awaiting_uat", "uat_failed"\}:/);
+  assert.match(source, /if status in \{"awaiting_uat", "acceptance_verified", "uat_failed"\}:/);
   assert.match(source, /if evidence\.get\("candidate_preexisting"\) is not False or not isinstance\(previous_rollback, dict\):/);
-  assert.match(source, /previous_dir = ""\r?\nif status in \{"awaiting_uat", "uat_failed"\}:/);
+  assert.match(source, /previous_dir = ""\r?\nif status in \{"awaiting_uat", "acceptance_verified", "uat_failed"\}:/);
   assert.match(source, /target\.get\("asset_backup", ""\)/);
   assert.match(source, /SYSTEMD_PENDING_RECORD="\$STATE_ROOT\/systemd-assets\.pending"/);
-  assert.match(source, /wc -l < "\$SYSTEMD_PENDING_RECORD"\)" -eq 5/);
+  assert.match(source, /CREDENTIAL_TRANSITION_PENDING="\$STATE_ROOT\/credential-transition\.pending\.json"/);
+  assert.match(source, /\[ -e "\$CREDENTIAL_TRANSITION_PENDING" \] \|\| \[ -L "\$CREDENTIAL_TRANSITION_PENDING" \]/);
+  assert.match(source, /sudo \/usr\/local\/sbin\/newme-deploy credential-recover/);
+  const actionParse = source.indexOf("action=${1:-}");
+  const credentialExecuteFence = source.indexOf('if [ "$action" = execute ]; then');
+  assert.ok(
+    actionParse >= 0 && credentialExecuteFence > actionParse &&
+      source.indexOf('if [ -e "$CREDENTIAL_TRANSITION_PENDING" ]', credentialExecuteFence) > credentialExecuteFence &&
+      credentialExecuteFence < source.indexOf("load_pending_state()"),
+    "credential recovery must gate the mutating execute path while status remains readable",
+  );
+  assert.match(source, /POSTDEPLOY_ACCEPTANCE_STATE_ROOT=\/var\/lib\/newme\/postdeploy-acceptance-state-v1/);
+  assert.match(source, /POSTDEPLOY_ACCEPTANCE_RUNNER=scripts\/run-postdeploy-acceptance\.mjs/);
+  assert.match(source, /CANONICAL_RELEASE_MIRROR=\/opt\/newme\/repository\.git/);
+  assert.match(source, /select_postdeploy_operations_runner\(\)/);
+  assert.match(source, /\/opt\/newme\/current \/opt\/newme\/current\.rollback/);
+  assert.match(source, /git --git-dir="\$CANONICAL_RELEASE_MIRROR" show[\s\S]*"\$release_sha:\$POSTDEPLOY_ACCEPTANCE_RUNNER"/);
+  assert.match(source, /\/usr\/bin\/node "\$POSTDEPLOY_OPERATIONS_RUNNER" --assert-operations-clear >\/dev\/null/);
+  assert.match(source, /run canonical newme-deploy accept-recover and accept-abort/);
+  const acceptanceGuard = source.indexOf("require_postdeploy_operations_clear || exit 75");
+  assert.ok(
+    acceptanceGuard > actionParse && acceptanceGuard < source.indexOf('case "$action" in'),
+    "postdeploy recovery must block execute after parsing the read-only status action",
+  );
+  assert.ok(
+    source.indexOf('if [ -e "$CREDENTIAL_TRANSITION_PENDING" ]', credentialExecuteFence) < acceptanceGuard,
+    "credential recovery remains the first pending-state interlock",
+  );
+  assert.match(source, /pending_lines="\$\(wc -l < "\$SYSTEMD_PENDING_RECORD"\)"[\s\S]*?case "\$pending_lines" in[\s\S]*?5\) ;;[\s\S]*?8\)[\s\S]*?protected_before_candidate_sha[\s\S]*?protected_before_marker_sha256/);
   assert.match(source, /load_unresolved_deploy_target/);
   assert.match(source, /candidate_preexisting=0/);
   assert.match(source, /remove_interrupted_candidate_release/);
@@ -57,7 +104,7 @@ test("production rollback controller restores app and versioned assets transacti
   assert.match(source, /recover_preswitch_deploy/);
   assert.match(source, /recovered interrupted deployment before application switch/);
   assert.match(source, /transaction_kind=deploy_recovery\r?\n\s*remove_original_on_complete=1\r?\n\s*target_release="\$SYSTEMD_PENDING_PREVIOUS"\r?\n\s*target_rollback="\$SYSTEMD_PENDING_PREVIOUS_ROLLBACK"/);
-  assert.match(source, /awaiting_uat\|uat_failed\)\r?\n\s*transaction_kind=release_recovery\r?\n\s*remove_original_on_complete=1\r?\n\s*target_rollback="\$RESOLVED_PREVIOUS_ROLLBACK"/);
+  assert.match(source, /awaiting_uat\|acceptance_verified\|uat_failed\)\r?\n\s*transaction_kind=release_recovery\r?\n\s*remove_original_on_complete=1\r?\n\s*target_rollback="\$RESOLVED_PREVIOUS_ROLLBACK"/);
   assert.match(source, /case "\$PENDING_TRANSACTION_KIND:\$PENDING_REMOVE_ORIGINAL_ON_COMPLETE" in[\s\S]*rollback:0\|deploy_recovery:1\|release_recovery:1/);
   assert.match(source, /PENDING_TRANSACTION_KIND="\$transaction_kind"[\s\S]*PENDING_REMOVE_ORIGINAL_ON_COMPLETE="\$remove_original_on_complete"[\s\S]*PENDING_TARGET_ROLLBACK="\$target_rollback"/);
   assert.match(source, /switch_release_links "\$target_release" "\$target_rollback"/);
@@ -99,13 +146,46 @@ test("production rollback controller restores app and versioned assets transacti
   const statusBody = source.slice(statusStart, statusEnd).replaceAll("\r\n", "\n");
   assert.match(statusBody, /systemd_asset_transaction=none\n    if \[ -e "\$SYSTEMD_PENDING_RECORD" \] \|\| \[ -L "\$SYSTEMD_PENDING_RECORD" \]; then/);
   assert.match(statusBody, /if ! load_systemd_pending; then\n        systemd_asset_transaction=invalid\n      elif \[ "\$current" = "\/opt\/newme\/releases\/\$SYSTEMD_PENDING_SHA" \]; then\n        systemd_asset_transaction=candidate_active\n      elif \[ "\$current" = "\$SYSTEMD_PENDING_PREVIOUS" \]; then\n        systemd_asset_transaction=pre_switch\n      else\n        systemd_asset_transaction=mismatch/);
-  assert.match(statusBody, /rollback_transaction=%s\\nsystemd_asset_transaction=%s/);
+  assert.match(
+    statusBody,
+    /rollback_transaction=%s\\nsystemd_asset_transaction=%s\\ncredential_asset_transaction=%s\\ncredential_transition_transaction=%s\\nrollback_db_phase=%s/,
+  );
+  assert.match(statusBody, /credential_asset_transaction=recovery_required/);
+  assert.match(statusBody, /credential_transition_transaction=recovery_required/);
+  assert.match(source, /receipt-key-inspect\)[\s\S]*\[ "\$#" -eq 1 \]/);
+  assert.match(source, /require_canonical_installed_credential_attestor \|\|/);
+  assert.match(source, /refs\/remotes\/origin\/main/);
+  assert.match(source, /show "\$candidate_sha:scripts\/credential-live-attestation\.mjs"/);
+  assert.match(source, /show "\$candidate_sha:infra\/release\/credential-live-attestation-policy-v1\.json"/);
+  assert.match(source, /\/usr\/bin\/node "\$CREDENTIAL_LIVE_HELPER" inspect-receipt-key/);
 
   assert.doesNotMatch(source, /systemctl\s+(?:restart|start|stop)/);
   assert.doesNotMatch(source, /\$(?:current|PENDING_ORIGINAL_CURRENT)\/scripts\/(?:install|rollback)-systemd-assets\.sh/);
   assert.deepEqual(source.match(/rm -rf[^\n]*/g), ['rm -rf --one-file-system -- "$candidate" || return 1']);
   assert.doesNotMatch(source, /eval\s|source\s+.*\.env|cat\s+.*\.env/);
   assert.doesNotMatch(source, /SUPABASE|SERVICE_ROLE|READINESS_TOKEN/);
+});
+
+test("production rollback status remains readable while unresolved fixtures block execute", async () => {
+  const source = await read("infra/systemd/newme-production-rollback.sh");
+  const guardFunction = source.slice(
+    source.indexOf("require_postdeploy_operations_clear() {"),
+    source.indexOf("\n}\n", source.indexOf("require_postdeploy_operations_clear() {")) + 3,
+  );
+  assert.match(
+    guardFunction,
+    /\[ ! -e "\$POSTDEPLOY_ACCEPTANCE_STATE_ROOT" \] && \[ ! -L "\$POSTDEPLOY_ACCEPTANCE_STATE_ROOT" \]/,
+    "a symlinked state root must not be treated as absent",
+  );
+  assert.match(guardFunction, /select_postdeploy_operations_runner \|\|/);
+  assert.match(guardFunction, /--assert-operations-clear/);
+  assert.match(guardFunction, /accept-recover and accept-abort/);
+  const gate = source.indexOf("require_postdeploy_operations_clear || exit 75");
+  const actionParse = source.indexOf("action=${1:-}");
+  const executeFence = source.lastIndexOf('if [ "$action" = execute ]; then', gate);
+  const actionCase = source.indexOf("case \"$action\" in");
+  assert.ok(actionParse >= 0 && executeFence > actionParse && gate > executeFence && gate < actionCase);
+  assert.doesNotMatch(source.slice(executeFence, actionCase), /\|\| true|continue-on-error/);
 });
 
 test("rollback evidence parsing keeps previous rollback mandatory only for recovery states", async () => {
@@ -158,6 +238,11 @@ test("rollback evidence parsing keeps previous rollback mandatory only for recov
     assert.equal(awaiting.status, 0, awaiting.stderr);
     assert.match(awaiting.stdout, /^awaiting_uat\t.*\t\/opt\/newme\/releases\/[c]{40}\s*$/);
 
+    await writeFile(evidencePath, JSON.stringify({ ...recoveryEvidence, release_status: "acceptance_verified" }));
+    const accepted = runEmbeddedPython(code, [evidencePath, current, rollback]);
+    assert.equal(accepted.status, 0, accepted.stderr);
+    assert.match(accepted.stdout, /^acceptance_verified\t.*\t\/opt\/newme\/releases\/[c]{40}\s*$/);
+
     await writeFile(evidencePath, JSON.stringify({ ...recoveryEvidence, release_status: "uat_failed" }));
     const failedUat = runEmbeddedPython(code, [evidencePath, current, rollback]);
     assert.equal(failedUat.status, 0, failedUat.stderr);
@@ -191,7 +276,7 @@ test("canonical deploy chaining gate accepts only complete evidence after the le
   const sha = "e".repeat(40);
 
   try {
-    for (const [releaseStatus, expectedStatus] of [["complete", 0], ["awaiting_uat", 65], ["uat_failed", 65]]) {
+    for (const [releaseStatus, expectedStatus] of [["complete", 0], ["awaiting_uat", 65], ["acceptance_verified", 65], ["uat_failed", 65]]) {
       await writeFile(evidencePath, JSON.stringify({ git_sha: sha, release_status: releaseStatus }));
       assert.equal(runEmbeddedPython(code, [evidencePath, sha]).status, expectedStatus, releaseStatus);
     }
@@ -206,7 +291,7 @@ test("canonical finalize retry accepts complete evidence after its older rollbac
   const source = await read("infra/systemd/newme-deploy.sh");
   const validator = extractPythonHeredoc(
     source,
-    '    "$UAT_STATUS" "$UAT_ACTOR" "$UAT_FIXTURE_IDS" "$FIXTURE_CLEANUP_STATUS" <<\'PY\'',
+    'python3 - "$EVIDENCE_FILE" "$FINALIZE_RELEASE_SHA" "$FINALIZE_ACCEPTANCE_DIGEST" "$FINALIZE_ROLLBACK_TARGET" <<\'PY\'',
   );
   const directory = await mkdtemp(join(tmpdir(), "newme-finalize-retry-"));
   const evidencePath = join(directory, "deploy.json");
@@ -215,12 +300,12 @@ test("canonical finalize retry accepts complete evidence after its older rollbac
   const prunedSha = "3".repeat(40);
   const rollbackTarget = `/opt/newme/releases/${rollbackSha}`;
   const assetBackup = "/var/backups/newme-systemd-assets/test-finalize";
-  const actor = "11111111-1111-1111-1111-111111111111";
+  const acceptanceDigest = "d".repeat(64);
   const evidence = {
     git_sha: currentSha,
     release_status: "complete",
     candidate_preexisting: false,
-    uat: { status: "pass", actor, fixture_ids: [], cleanup_status: "not_required" },
+    acceptance: { status: "verified", bundle_sha256: acceptanceDigest },
     rollback: {
       git_sha: rollbackSha,
       backup_dir: rollbackTarget,
@@ -252,11 +337,8 @@ os.stat = lambda path: _AssetMetadata() if path == _asset else _real_stat(path)
     const retry = runEmbeddedPython(fakeFilesystem + validator, [
       evidencePath,
       currentSha,
+      acceptanceDigest,
       rollbackTarget,
-      "pass",
-      actor,
-      "",
-      "not_required",
     ]);
     assert.equal(retry.status, 0, retry.stderr);
   } finally {
@@ -284,7 +366,7 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   assert.match(deploy, /flock -n 9/);
   assert.match(deploy, /another production release operation is active/);
   assert.match(deploy, /unresolved production rollback must be recovered before deployment/);
-  assert.match(deploy, /wc -l < "\$PENDING_ASSET_RECORD"\)" -eq 5/);
+  assert.match(deploy, /pending_lines="\$\(wc -l < "\$PENDING_ASSET_RECORD"\)"[\s\S]*?case "\$pending_lines" in[\s\S]*?5\) ;;[\s\S]*?8\)[\s\S]*?protected_before_candidate_sha[\s\S]*?protected_before_marker_sha256/);
   assert.match(deploy, /candidate_preexisting=0/);
   const releaseLock = "exec 9>/run/lock/newme-production-release.lock";
   assert.equal([deploy, rollback].filter((source) => source.includes(releaseLock)).length, 2);
@@ -315,18 +397,20 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   assert.doesNotMatch(deploy, /curl[^\n]*\$github_token/);
   assert.match(deploy, /NEWME_MANUAL_VERIFICATION=0/);
   assert.match(deploy, /FINALIZE_TARGET=.*readlink -f \/opt\/newme\/current/);
-  assert.match(deploy, /finalize <release-sha> <closure-sha> <successful-final-run-id> pass/);
-  assert.match(deploy, /finalize <release-sha> fail/);
+  assert.match(deploy, /usage: newme-deploy <attest\|attest-recover\|attest-abort> <release-sha>/);
+  assert.match(deploy, /ATTEST_BUNDLE="\$POSTDEPLOY_INTAKE_ROOT\/\$ATTEST_RELEASE_SHA\/bundle\.json"/);
+  assert.match(deploy, /verify-postdeploy-acceptance\.mjs/);
+  assert.match(deploy, /record-deploy-acceptance\.mjs/);
+  assert.match(deploy, /finalize <release-sha> <acceptance-sha256> <closure-sha> <successful-final-run-id>/);
   assert.match(deploy, /closure SHA must equal canonical main/);
   assert.match(deploy, /final-required-jobs\.json/);
-  assert.match(deploy, /UAT_STATUS="\$UAT_STATUS"/);
-  assert.match(deploy, /status=uat_failed/);
-  assert.doesNotMatch(deploy, /UAT_STATUS=pass \\/);
+  assert.match(deploy, /status=acceptance_verified/);
+  assert.doesNotMatch(deploy, /UAT_ACTOR|UAT_FIXTURE_IDS|FIXTURE_CLEANUP_STATUS|UAT_STATUS/);
   assert.match(deploy, /finalize SHA must equal the current immutable release/);
   assert.match(deploy, /current release must contain exactly one deployment evidence file/);
   assert.match(deploy, /evidence\.get\("git_sha"\) != expected_sha/);
-  assert.match(deploy, /release_status == "complete"/);
-  assert.match(deploy, /elif release_status != "awaiting_uat"/);
+  assert.match(deploy, /release_status not in \{"acceptance_verified", "complete"\}/);
+  assert.match(deploy, /acceptance\.get\("bundle_sha256"\) != expected_digest/);
   assert.match(deploy, /if release_status != "complete" and \([\s\S]*os\.path\.isdir\(previous_rollback_dir\)/);
   assert.doesNotMatch(deploy, /manual_verified|CI_RUN_URL="manual"/);
   const finalizedCurrentGate = deploy.indexOf('if [ "$ROLLBACK_SHA" != "$LEGACY_EVIDENCELESS_BASELINE" ]; then');
@@ -348,12 +432,11 @@ test("production deploy and sudo policy require the versioned rollback boundary"
     ['setsid node node_modules/next/dist/bin/next start -p 3002 9>&- 7>&- >"/tmp/newme-candidate-$ID.log" 2>&1 &'],
   );
   assert.match(immutableDeploy, /PREVIOUS_ROLLBACK/);
-  assert.match(immutableDeploy, /wc -l < "\$PENDING_ASSET_RECORD"\)" -eq 5/);
+  assert.match(immutableDeploy, /pending_lines="\$\(wc -l < "\$PENDING_ASSET_RECORD"\)"[\s\S]*?case "\$pending_lines" in[\s\S]*?5\) ;;[\s\S]*?8\)[\s\S]*?protected_before_candidate_sha[\s\S]*?protected_before_marker_sha256/);
   assert.match(immutableDeploy, /candidate_preexisting=0/);
   assert.match(immutableDeploy, /restore_rollback_link/);
   assert.match(immutableDeploy, /ROLLBACK_CHANGED/);
   assert.match(immutableDeploy, /protected_release=true/);
-  assert.match(immutableDeploy, /chmod -R a-w "\$STAGE"/);
   assert.match(immutableDeploy, /newme-production-rollback/);
   assert.match(immutableDeploy, /"asset_backup": os\.environ\["NEWME_ASSET_BACKUP"\]/);
   assert.match(immutableDeploy, /"candidate_preexisting": False/);
@@ -382,6 +465,8 @@ test("production deploy and sudo policy require the versioned rollback boundary"
 
   assert.match(sudoers, /NEWME_PRODUCTION_RECOVERY/);
   assert.match(sudoers, /newme-production-rollback status/);
+  assert.match(sudoers, /newme-production-rollback receipt-key-inspect/);
+  assert.doesNotMatch(sudoers, /newme-production-rollback receipt-key-inspect \*/);
   assert.match(sudoers, /newme-production-rollback execute \*/);
   assert.match(sudoers, /journalctl -t newme-production-rollback \*/);
   assert.doesNotMatch(sudoers, /newme-service-control (?:start|stop|try-restart) \*/);
@@ -404,7 +489,8 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   assert.match(installer, /sync -f "\$BACKUP"/);
   assert.match(installer, /candidate release already exists before asset installation/);
   assert.match(installer, /candidate_preexisting=0/);
-  assert.match(installer, /wc -l < "\$PENDING_RECORD"\)" -eq 5/);
+  assert.match(installer, /line_count="\$\(wc -l < "\$record"\)"[\s\S]*?case "\$line_count" in[\s\S]*?5\) ;;[\s\S]*?8\)[\s\S]*?protected_before_candidate_sha[\s\S]*?protected_before_marker_sha256/);
+  assert.match(installer, /printf 'version=2\\nsha=%s\\nbackup=%s\\nprevious=%s\\nprevious_rollback=%s\\ncandidate_preexisting=0\\nprotected_before_candidate_sha=%s\\nprotected_before_marker_sha256=%s\\n'/);
   assert.match(installer, /rm -rf --one-file-system -- "\$RECOVERY_CANDIDATE"/);
   assert.match(installer, /sync -f \/opt\/newme\/releases[\s\S]*rm -f -- "\$PENDING_RECORD"/);
   assert.match(assetRollback, /CRON_PATH=\/etc\/cron\.d\/newme-observability/);
@@ -412,6 +498,11 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   assert.match(assetRollback, /RESTORE_TMP="\$\(mktemp "\$directory\/\.newme-asset-rollback\.XXXXXX"\)" \|\| return 1/);
   assert.match(assetRollback, /^\s*cp -a -- "\$source_root\/\$rel" "\$RESTORE_TMP" \|\| return 1\r?$/m);
   assert.match(assetRollback, /mv -Tf "\$RESTORE_TMP" "\$dest" \|\| return 1/);
+  assert.match(assetRollback, /RESTORE_PROTECTED_MARKER_LAST=0/);
+  assert.match(assetRollback, /if \[ "\$RESTORE_PROTECTED_MARKER_LAST" -eq 1 \] && \[ "\$dest" = "\$CREDENTIAL_PROTECTION_RECORD" \]; then\r?\n\s*continue/);
+  assert.match(assetRollback, /restore_managed_cron[\s\S]*RESTORE_PROTECTED_MARKER_LAST/);
+  assert.match(assetRollback, /protected_before_candidate_sha/);
+  assert.match(assetRollback, /protected_before_marker_sha256/);
   assert.match(assetRollback, /^\s*sync -f \/etc\/cron\.d \|\| return 1\r?$/m);
   const cronRestore = assetRollback.search(/^restore_managed_cron\r?$/m);
   assert.ok(cronRestore > assetRollback.lastIndexOf("systemctl is-active --quiet nginx"));
@@ -434,6 +525,8 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   assert.match(installer, /newme-service-control\.sh" \/usr\/local\/sbin\/newme-service-control/);
   assert.match(installer, /install-systemd-assets\.sh" \/usr\/local\/libexec\/newme\/newme-install-systemd-assets/);
   assert.match(installer, /rollback-systemd-assets\.sh" \/usr\/local\/libexec\/newme\/newme-rollback-systemd-assets/);
+  const normalControlInstall = installer.indexOf("# The recovery control plane is installed inside the open transaction");
+  assert.ok(normalControlInstall >= 0);
   const controlInstallOrder = [
     'install_control_script "$ROOT/scripts/install-systemd-assets.sh" /usr/local/libexec/newme/newme-install-systemd-assets',
     'install_control_script "$ROOT/scripts/rollback-systemd-assets.sh" /usr/local/libexec/newme/newme-rollback-systemd-assets',
@@ -441,7 +534,7 @@ test("production deploy and sudo policy require the versioned rollback boundary"
     'install_control_script "$ROOT/infra/systemd/newme-production-rollback.sh" /usr/local/sbin/newme-production-rollback',
     'install_control_script "$ROOT/infra/systemd/newme-deploy.sh" /usr/local/sbin/newme-deploy',
     'install_control_sudoers "$ROOT/infra/sudoers/newme-platform" /etc/sudoers.d/newme-platform',
-  ].map((line) => installer.indexOf(line));
+  ].map((line) => installer.indexOf(line, normalControlInstall));
   assert.deepEqual(controlInstallOrder, [...controlInstallOrder].sort((a, b) => a - b));
   assert.ok(controlInstallOrder.every((index) => index >= 0));
   const pendingPublish = installer.indexOf('ln -- "$PENDING_TMP" "$PENDING_RECORD"');

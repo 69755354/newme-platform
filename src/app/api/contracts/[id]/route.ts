@@ -5,6 +5,7 @@ import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
 import { allowedSetContractStatuses } from "@/lib/contract-status-capabilities.mjs";
 
 /**
@@ -234,6 +235,29 @@ export async function PATCH(
         "[API Contracts Detail] set_contract_status refused the request",
       );
       return NextResponse.json(failure.body, { status: failure.status });
+    }
+
+    if (status.trim() === "pending_admin") {
+      try {
+        await dispatchPersistedNotification({
+          actorId: user.id,
+          input: {
+            type: "contract_pending_approval",
+            contract_id: contractId,
+          },
+        });
+      } catch (notifyErr) {
+        logger.warn(
+          {
+            err: notifyErr,
+            request_id,
+            operation: "contract_set_status",
+            user_id: user.id,
+            contract_id: contractId,
+          },
+          "[API Contracts Detail] Pending-approval notification failed",
+        );
+      }
     }
 
     revalidatePath("/contracts");

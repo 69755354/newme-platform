@@ -25,12 +25,19 @@
     "that postdeploy fact a precondition of this release would be circular."
   ],
   "workflow": "ci",
+  "workflow_path": ".github/workflows/ci.yml",
+  "workflow_id": 310914082,
   "event": "workflow_dispatch",
   "head_branch": "main",
+  "max_run_age_seconds": 86400,
   "required_jobs": [
     {
       "name": "Repository validation",
       "why": "taskboard, spec, lint, supply-chain, database-types, typecheck, unit tests, release hygiene, production smoke and build"
+    },
+    {
+      "name": "CodeQL analysis",
+      "why": "isolated JavaScript and TypeScript code scanning completed independently for the exact release SHA; it has no upstream needs that could turn the required scan into skipped/neutral"
     },
     {
       "name": "Windows checkout and SPEC gate",

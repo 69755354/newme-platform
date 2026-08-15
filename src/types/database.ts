@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=a0beb5b81781085a69e086c86e7c1d8a463f79239a1fbe08c7d1127317a0cf5b
+// Migration fingerprint: sha256=74df222d0a256ffe92bca5dfbf32afd6a665db103118f6621e43ad94c2439500
 export type Json =
   | string
   | number
@@ -1490,6 +1490,35 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "v_stagnant_leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_rebalance_batches: {
+        Row: {
+          actor_id: string
+          batch_key: string
+          created_at: string
+          plan: Json
+        }
+        Insert: {
+          actor_id: string
+          batch_key: string
+          created_at?: string
+          plan: Json
+        }
+        Update: {
+          actor_id?: string
+          batch_key?: string
+          created_at?: string
+          plan?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_rebalance_batches_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -4088,6 +4117,10 @@ export type Database = {
       reassign_lead: {
         Args: { p_lead_id: string; p_new_sales: string; p_reason?: string }
         Returns: boolean
+      }
+      get_or_create_lead_rebalance_plan: {
+        Args: { p_batch_key: string; p_plan?: Json }
+        Returns: Json
       }
       reassign_lead_atomic: {
         Args: {

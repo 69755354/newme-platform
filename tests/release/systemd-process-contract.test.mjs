@@ -25,6 +25,24 @@ test("both versioned units directly supervise the immutable Next.js release", as
     assert.match(unit, /^StartLimitBurst=3$/m);
     assert.match(unit, /^ExecStartPost=\+\/usr\/local\/libexec\/newme\/newme-readiness\.sh$/m);
     assert.match(unit, /^ExecStopPost=\+\/usr\/local\/libexec\/newme\/newme-forensic\.sh$/m);
+    assert.match(unit, /^UMask=0077$/m);
+    assert.match(unit, /^NoNewPrivileges=true$/m);
+    assert.match(unit, /^CapabilityBoundingSet=$/m);
+    assert.match(unit, /^AmbientCapabilities=$/m);
+    assert.match(unit, /^ProtectSystem=full$/m);
+    assert.match(unit, /^ProtectHome=true$/m);
+    assert.match(unit, /^ReadOnlyPaths=\/opt\/newme\/releases$/m);
+    assert.match(unit, /^PrivateDevices=true$/m);
+    assert.match(unit, /^ProtectKernelTunables=true$/m);
+    assert.match(unit, /^ProtectKernelModules=true$/m);
+    assert.match(unit, /^ProtectKernelLogs=true$/m);
+    assert.match(unit, /^ProtectControlGroups=true$/m);
+    assert.match(unit, /^RestrictSUIDSGID=true$/m);
+    assert.match(unit, /^LockPersonality=true$/m);
+    assert.match(unit, /^RestrictRealtime=true$/m);
+    assert.match(unit, /^RestrictNamespaces=true$/m);
+    assert.match(unit, /^SystemCallArchitectures=native$/m);
+    assert.match(unit, /^RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6$/m);
   }
 });
 
@@ -83,6 +101,10 @@ test("installer replaces direct service sudo with the audited control boundary",
   ]);
   assert.match(installer, /infra\/sudoers\/newme-platform/);
   assert.match(installer, /install_control_sudoers\(\)/);
+  const unitVerify = installer.indexOf('systemd-analyze verify "$UNIT"');
+  const unitInstall = installer.indexOf('install -D -o root -g root -m 0644 "$UNIT"');
+  assert.ok(unitVerify >= 0 && unitInstall > unitVerify, "unit verification must precede live installation");
+  assert.match(installer, /systemd-analyze verify \/etc\/systemd\/system\/newme-platform\.service/);
   assert.match(installer, /visudo -cf "\$temporary"/);
   assert.match(installer, /mv -Tf "\$temporary" "\$dest"/);
   assert.match(installer, /sync -f "\$directory"/);
@@ -95,6 +117,8 @@ test("installer replaces direct service sudo with the audited control boundary",
   assert.match(sudoers, /newme-service-control restart \*/);
   assert.match(sudoers, /newme-service-control reset-failed \*/);
   assert.match(sudoers, /newme-production-rollback status/);
+  assert.match(sudoers, /newme-production-rollback receipt-key-inspect/);
+  assert.doesNotMatch(sudoers, /newme-production-rollback receipt-key-inspect \*/);
   assert.match(sudoers, /newme-production-rollback execute \*/);
   assert.doesNotMatch(sudoers, /newme-service-control (?:start|stop|try-restart) \*/);
   assert.match(sudoers, /\/usr\/local\/sbin\/newme-deploy \*/);

@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=12f66e05a80849d2a139103b4cc38be6b3d93f95c803b0452a43bac6d20e228b
+// Migration fingerprint: sha256=74df222d0a256ffe92bca5dfbf32afd6a665db103118f6621e43ad94c2439500
 export type Json =
   | string
   | number
@@ -1494,6 +1494,35 @@ export type Database = {
           },
         ]
       }
+      lead_rebalance_batches: {
+        Row: {
+          actor_id: string
+          batch_key: string
+          created_at: string
+          plan: Json
+        }
+        Insert: {
+          actor_id: string
+          batch_key: string
+          created_at?: string
+          plan: Json
+        }
+        Update: {
+          actor_id?: string
+          batch_key?: string
+          created_at?: string
+          plan?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_rebalance_batches_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_milestones: {
         Row: {
           completed_at: string | null
@@ -2293,6 +2322,7 @@ export type Database = {
         Row: {
           body: string | null
           created_at: string | null
+          event_key: string | null
           id: string
           is_read: boolean | null
           related_id: string | null
@@ -2304,6 +2334,7 @@ export type Database = {
         Insert: {
           body?: string | null
           created_at?: string | null
+          event_key?: string | null
           id?: string
           is_read?: boolean | null
           related_id?: string | null
@@ -2315,6 +2346,7 @@ export type Database = {
         Update: {
           body?: string | null
           created_at?: string | null
+          event_key?: string | null
           id?: string
           is_read?: boolean | null
           related_id?: string | null
@@ -2436,6 +2468,7 @@ export type Database = {
           contract_id: string
           created_at: string | null
           created_by: string | null
+          credited_to: string | null
           currency: string | null
           id: string
           installment_plan_id: string | null
@@ -2445,7 +2478,11 @@ export type Database = {
           payment_method: string | null
           received_at: string | null
           reference_no: string | null
+          request_key: string | null
           updated_at: string | null
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
           amount: number
@@ -2455,6 +2492,7 @@ export type Database = {
           contract_id: string
           created_at?: string | null
           created_by?: string | null
+          credited_to?: string | null
           currency?: string | null
           id?: string
           installment_plan_id?: string | null
@@ -2464,7 +2502,11 @@ export type Database = {
           payment_method?: string | null
           received_at?: string | null
           reference_no?: string | null
+          request_key?: string | null
           updated_at?: string | null
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
           amount?: number
@@ -2474,6 +2516,7 @@ export type Database = {
           contract_id?: string
           created_at?: string | null
           created_by?: string | null
+          credited_to?: string | null
           currency?: string | null
           id?: string
           installment_plan_id?: string | null
@@ -2483,7 +2526,11 @@ export type Database = {
           payment_method?: string | null
           received_at?: string | null
           reference_no?: string | null
+          request_key?: string | null
           updated_at?: string | null
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Relationships: [
           {
@@ -4006,6 +4053,7 @@ export type Database = {
       detect_stale_leads: { Args: { stale_days?: number }; Returns: number }
       generate_quote_no: { Args: { year_param: number }; Returns: string }
       get_my_role: { Args: never; Returns: string }
+      session_boundary_state: { Args: never; Returns: string }
       get_team_activity: {
         Args: { p_date?: string }
         Returns: {
@@ -4019,6 +4067,10 @@ export type Database = {
           total_duration_seconds: number
           user_id: string
         }[]
+      }
+      insert_notifications_atomic: {
+        Args: { p_notifications: Json }
+        Returns: Json
       }
       log_activity:
         | {
@@ -4043,16 +4095,48 @@ export type Database = {
           }
       milestone_order: { Args: { milestone: string }; Returns: number }
       next_quote_no: { Args: never; Returns: string }
+      clear_kpi_targets: {
+        Args: { p_period: string; p_actor: string }
+        Returns: number
+      }
+      replace_kpi_targets: {
+        Args: { p_period: string; p_rows: Json; p_set_by: string }
+        Returns: {
+          actual_amount: number
+          assigned_to: string | null
+          created_at: string | null
+          id: string
+          notes: string | null
+          period: string
+          set_by: string | null
+          target_amount: number
+          target_type: string
+          updated_at: string | null
+        }[]
+      }
       reassign_lead: {
         Args: { p_lead_id: string; p_new_sales: string; p_reason?: string }
         Returns: boolean
       }
+      get_or_create_lead_rebalance_plan: {
+        Args: { p_batch_key: string; p_plan?: Json }
+        Returns: Json
+      }
       reassign_lead_atomic: {
         Args: {
-          p_expected_updated_at: string | null
+          p_expected_updated_at: string
           p_idempotency_key: string
           p_lead_id: string
           p_new_assignee: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      unassign_lead_atomic: {
+        Args: {
+          p_expected_updated_at: string
+          p_idempotency_key: string
+          p_lead_id: string
           p_reason?: string
         }
         Returns: Json
@@ -4093,6 +4177,47 @@ export type Database = {
           p_note: string
           p_idempotency_key: string
         }
+        Returns: Json
+      }
+      // The money routines of
+      // supabase/migrations/20260812000000_money_actor_identity_and_atomicity.sql.
+      // Declared here rather than regenerated because that migration has not been
+      // applied to the linked project: `supabase gen types` reads the live schema,
+      // and running it now would describe the schema this release replaces. The
+      // migration fingerprint on line 1 is what binds this file to that migration
+      // set, and supabase/replay/10_assert_release_contracts.sql is what checks the
+      // signatures against a replayed schema.
+      create_contract: {
+        Args: { p_payload: Json }
+        Returns: Json
+      }
+      convert_quotation_to_contract: {
+        Args: { p_quotation_id: string; p_payload?: Json }
+        Returns: Json
+      }
+      set_contract_status: {
+        Args: { p_contract_id: string; p_status: string; p_reason?: string }
+        Returns: Json
+      }
+      revoke_contract: {
+        Args: { p_contract_id: string; p_reason: string; p_supersede?: boolean }
+        Returns: Json
+      }
+      // The reversal added by
+      // supabase/migrations/20260814000000_l0_round3_authorization_and_integrity.sql.
+      // Same reason for hand-declaring it: that migration is not applied to the
+      // linked project either, so generated types would not contain it.
+      void_payment: {
+        Args: { p_payment_id: string; p_reason: string }
+        Returns: Json
+      }
+      // Added by
+      // supabase/migrations/20260817120000_admin_reset_session_revocation.sql, and
+      // hand-declared for the same reason. Callable by service_role only: the two
+      // administrator password-reset paths are the only callers, and a typed entry
+      // here is what keeps a future caller from inventing different argument names.
+      revoke_user_sessions: {
+        Args: { p_user_id: string; p_reason?: string }
         Returns: Json
       }
     }

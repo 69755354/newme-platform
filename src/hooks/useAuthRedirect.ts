@@ -2,15 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-
-interface SessionInfo {
-  userId: string | null;
-  email: string | null;
-  role: string;
-  isActive: boolean;
-  forcePasswordChange: boolean;
-  fullName: string | null;
-}
+import { forgetSessionIdentity, readSessionIdentity } from "@/lib/session-identity";
 
 /**
  * useAuthRedirect — DashboardLayout 的鉴权 + 角色解析 + 重定向副作用集中点
@@ -70,22 +62,22 @@ export function useAuthRedirect() {
       if (!cancelled) router.push("/login");
     }, 5000);
 
-    fetch("/api/auth/me")
-      .then((res) => {
+    // Always a live read: this is the session revocation boundary, so a
+    // deactivated profile must be rejected on the very next mount.
+    readSessionIdentity()
+      .then((outcome) => {
         clearTimeout(t);
         if (cancelled) return;
-        if (!res.ok) {
+        if (outcome.status === "unauthenticated") {
           router.push("/login");
           return;
         }
-        return res.json();
-      })
-      .then((data: SessionInfo | undefined) => {
-        if (cancelled || !data) return;
-        if (data.isActive !== true) {
-          router.push("/login");
+        if (outcome.status === "unavailable") {
+          setAuthError(true);
+          setAuthLoading(false);
           return;
         }
+        const data = outcome.identity;
         setUserId(data.userId);
         setUserEmail(data.email);
         const r = data.role || "sales";
@@ -120,6 +112,7 @@ export function useAuthRedirect() {
   }, [role, pathname, router]);
 
   const handleLogout = async () => {
+    forgetSessionIdentity();
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch {

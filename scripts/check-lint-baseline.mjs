@@ -2,6 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const root = process.cwd();
 const baselinePath = path.join(root, 'scripts/lint-baseline.json');
@@ -38,7 +39,7 @@ function runEslintJson() {
 function rel(filePath) {
   return path.relative(root, filePath).replaceAll(path.sep, '/');
 }
-function fingerprint(message) {
+export function fingerprint(message) {
   const normalizedRoot = root.replace(/\\/g, '/');
   return message
     .replace(/\\/g, '/')
@@ -47,7 +48,17 @@ function fingerprint(message) {
     .replace(/\/workspace\/[^/]+/g, '<root>')
     .replace(/\d+/g, '<n>')
     .replace(/'[^']*'/g, "'<value>'")
-    .replace(/"[^"]*"/g, '"<value>"');
+    .replace(/"[^"]*"/g, '"<value>"')
+    // Line numbers are already erased above so that moving code does not read as a
+    // new error. The gutter of an eslint code frame is padded to the width of the
+    // widest line number in it, so the padding still carries the digit count: an
+    // unrelated edit that pushes a finding from line 88 to line 144 widens
+    // "\n     |" to "\n      |" and the finding looks new. Collapsing runs of
+    // horizontal whitespace removes that last trace of position. It cannot hide an
+    // error: the frame still contains the offending source line, and a finding that
+    // collides with another one only makes the count for that key larger, which is
+    // still compared against the baseline count.
+    .replace(/[ \t]+/g, ' ');
 }
 function collect(results) {
   const entries = [];
@@ -73,27 +84,38 @@ function counts(entries) {
   return out;
 }
 
-if (!fs.existsSync(baselinePath)) {
-  console.error(`Missing lint baseline: ${path.relative(root, baselinePath)}`);
-  process.exit(1);
-}
-const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
-const current = collect(runEslintJson());
-const baseCounts = counts(baseline.entries ?? []);
-const currentCounts = counts(current);
-const newFindings = [];
-for (const [key, count] of currentCounts) {
-  const base = baseCounts.get(key) ?? 0;
-  if (count > base) {
-    const [file, ruleId, message] = key.split('\0');
-    newFindings.push({ file, ruleId, message, added: count - base });
+function main() {
+  if (!fs.existsSync(baselinePath)) {
+    console.error(`Missing lint baseline: ${path.relative(root, baselinePath)}`);
+    process.exit(1);
   }
-}
-if (newFindings.length) {
-  console.error(`Lint baseline check failed: ${newFindings.reduce((n, f) => n + f.added, 0)} new error(s).`);
-  for (const f of newFindings.slice(0, 50)) {
-    console.error(`NEW ${f.file} ${f.ruleId} x${f.added}: ${f.message}`);
+  const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+  const current = collect(runEslintJson());
+  // Both sides go through counts(), which re-fingerprints, so a baseline recorded
+  // before a fingerprint change is normalised the same way as the current run. The
+  // committed baseline is never rewritten by a check.
+  const baseCounts = counts(baseline.entries ?? []);
+  const currentCounts = counts(current);
+  const newFindings = [];
+  for (const [key, count] of currentCounts) {
+    const base = baseCounts.get(key) ?? 0;
+    if (count > base) {
+      const [file, ruleId, message] = key.split('\0');
+      newFindings.push({ file, ruleId, message, added: count - base });
+    }
   }
-  process.exit(1);
+  if (newFindings.length) {
+    console.error(`Lint baseline check failed: ${newFindings.reduce((n, f) => n + f.added, 0)} new error(s).`);
+    for (const f of newFindings.slice(0, 50)) {
+      console.error(`NEW ${f.file} ${f.ruleId} x${f.added}: ${f.message}`);
+    }
+    process.exit(1);
+  }
+  console.log(`Lint baseline check passed: ${current.length} current error(s), no new errors over baseline ${baseline.generated_at}.`);
 }
-console.log(`Lint baseline check passed: ${current.length} current error(s), no new errors over baseline ${baseline.generated_at}.`);
+
+// Importable for tests/lint-baseline-negative.test.mjs, which asserts the
+// fingerprint's properties directly instead of only end-to-end.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}

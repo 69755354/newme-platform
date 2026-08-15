@@ -40,6 +40,14 @@ function loadTypeScriptModule(relativePath, mocks) {
   }
 }
 
+function loadSessionCookies(names) {
+  // The real shared cookie contract, so these tests keep asserting the actual
+  // Set-Cookie behaviour rather than a stub of it.
+  return loadTypeScriptModule("src/lib/session-cookies.ts", {
+    "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
+  });
+}
+
 function createCookieResponseMock() {
   class MockResponse {
     constructor(body, init = {}) {
@@ -90,6 +98,7 @@ function cookieHeaderFromSetCookie(response) {
 test("browser-readable session cookie contains no refresh token", async () => {
   const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
   const session = loadTypeScriptModule("src/app/api/auth/session/route.ts", {
+    "@/lib/session-cookies": loadSessionCookies(names),
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
     "next/server": createCookieResponseMock(),
   });
@@ -118,6 +127,7 @@ test("browser-readable session cookie contains no refresh token", async () => {
 test("configured public origin is accepted behind a reverse proxy and other origins are rejected", async (t) => {
   const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
   const session = loadTypeScriptModule("src/app/api/auth/session/route.ts", {
+    "@/lib/session-cookies": loadSessionCookies(names),
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
     "next/server": createCookieResponseMock(),
   });
@@ -142,6 +152,7 @@ test("configured public origin is accepted behind a reverse proxy and other orig
 test("production host remains available when mutable site configuration drifts", async (t) => {
   const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
   const session = loadTypeScriptModule("src/app/api/auth/session/route.ts", {
+    "@/lib/session-cookies": loadSessionCookies(names),
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
     "next/server": createCookieResponseMock(),
   });
@@ -164,6 +175,7 @@ test("production host remains available when mutable site configuration drifts",
 test("caller-supplied forwarded host cannot weaken the production Origin boundary", async (t) => {
   const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
   const session = loadTypeScriptModule("src/app/api/auth/session/route.ts", {
+    "@/lib/session-cookies": loadSessionCookies(names),
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
     "next/server": createCookieResponseMock(),
   });
@@ -192,6 +204,7 @@ test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives au
   const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
   const nextServer = createCookieResponseMock();
   const session = loadTypeScriptModule("src/app/api/auth/session/route.ts", {
+    "@/lib/session-cookies": loadSessionCookies(names),
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
     "next/server": nextServer,
   });
@@ -287,14 +300,17 @@ test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives au
 });
 
 test("cookie-only browser session does not use localStorage or client persistence", async () => {
-  const [login, client, logout, session, server, redirect, posthog] = await Promise.all([
+  const [login, client, logout, session, cookies, loginRoute, server, redirect, posthog, identity] = await Promise.all([
     readFile(new URL("src/app/login/page.tsx", root), "utf8"),
     readFile(new URL("src/lib/supabase.ts", root), "utf8"),
     readFile(new URL("src/app/api/auth/logout/route.ts", root), "utf8"),
     readFile(new URL("src/app/api/auth/session/route.ts", root), "utf8"),
+    readFile(new URL("src/lib/session-cookies.ts", root), "utf8"),
+    readFile(new URL("src/app/api/auth/login/route.ts", root), "utf8"),
     readFile(new URL("src/lib/supabase-server.ts", root), "utf8"),
     readFile(new URL("src/hooks/useAuthRedirect.ts", root), "utf8"),
     readFile(new URL("src/components/PostHogProviderInner.tsx", root), "utf8"),
+    readFile(new URL("src/lib/session-identity.ts", root), "utf8"),
   ]);
 
   assert.doesNotMatch(login, /localStorage/);
@@ -302,13 +318,21 @@ test("cookie-only browser session does not use localStorage or client persistenc
   assert.match(client, /Authorization:.*nextToken/);
   assert.match(client, /persistSession: false/);
   assert.match(logout, /getSupabaseCookieNames/);
-  assert.match(session, /httpOnly: true/);
+  assert.match(cookies, /httpOnly: true/);
+  assert.match(session, /applySessionCookies\(/);
   assert.match(server, /decodeURIComponent/);
-  assert.match(login, /fetch\(["']\/api\/auth\/logout/);
-  assert.match(login, /auth\/v1\/logout/);
+  assert.doesNotMatch(login, /fetch\(["']\/api\/auth\/logout["']/);
+  // Upstream revocation of a token we refuse to hand out now happens server
+  // side, because the browser never receives that token in the first place.
+  assert.doesNotMatch(login, /auth\/v1\/logout/);
+  assert.match(loginRoute, /auth\/v1\/logout/);
   assert.doesNotMatch(redirect, /localStorage|auth-token/);
-  assert.doesNotMatch(posthog, /localStorage|access_token|atob\(/);
-  assert.match(posthog, /fetch\(["']\/api\/auth\/me/);
+  assert.doesNotMatch(posthog + identity, /localStorage|access_token|atob\(/);
+  // Identity still comes from the server endpoint, now through one shared
+  // reader instead of a second identical round trip per dashboard mount.
+  assert.match(posthog, /peekSessionIdentity\(\)/);
+  assert.doesNotMatch(posthog, /fetch\(/);
+  assert.match(identity, /fetch\("\/api\/auth\/me", \{ credentials: "same-origin" \}\)/);
 });
 
 test("server component refresh path never writes through the read-only cookies store", async (t) => {
@@ -355,6 +379,7 @@ test("server component refresh path never writes through the read-only cookies s
 test("middleware passes the explicit Cookie header and writes custom refresh cookies both ways", async () => {
   const requestCookies = [];
   let receivedCookieHeader;
+  let receivedBearerToken;
   class MockResponse {
     constructor(request) {
       this.request = request;
@@ -371,7 +396,8 @@ test("middleware passes the explicit Cookie header and writes custom refresh coo
   ];
   const middleware = loadTypeScriptModule("src/lib/supabase-middleware.ts", {
     "@/lib/supabase-server": {
-      createServerSupabase: async (_bearerToken, cookieHeader) => {
+      createServerSupabase: async (bearerToken, cookieHeader) => {
+        receivedBearerToken = bearerToken;
         receivedCookieHeader = cookieHeader;
         return { refreshedCookies };
       },
@@ -390,8 +416,9 @@ test("middleware passes the explicit Cookie header and writes custom refresh coo
       set: (name, value) => requestCookies.push({ name, value }),
     },
   };
-  const { getResponse } = await middleware.createMiddlewareClient(request);
+  const { getResponse } = await middleware.createMiddlewareClient(request, "explicit-bearer");
 
+  assert.equal(receivedBearerToken, "explicit-bearer");
   assert.equal(receivedCookieHeader, "sb-auth=old-access; sb-refresh=old-refresh");
   assert.deepEqual(requestCookies, [
     { name: "sb-auth", value: "new-access" },
@@ -400,20 +427,70 @@ test("middleware passes the explicit Cookie header and writes custom refresh coo
   assert.deepEqual(getResponse().cookiesSet, refreshedCookies);
 });
 
-test("same-origin logout clears dynamic and legacy cookies", async () => {
-  const names = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
+const LOGOUT_COOKIE_NAMES = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
+
+function loadLogout(signOut) {
+  const calls = [];
   const logout = loadTypeScriptModule("src/app/api/auth/logout/route.ts", {
     "@/lib/supabase-server": {
-      createServerSupabase: async () => ({ auth: { signOut: async () => ({ error: null }) } }),
+      createServerSupabase: async () => ({
+        auth: {
+          signOut: async (options) => {
+            calls.push(options);
+            return signOut();
+          },
+        },
+      }),
     },
-    "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
+    "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => LOGOUT_COOKIE_NAMES },
+    "@/lib/logger": { logger: { error: () => {}, warn: () => {}, info: () => {} } },
     "next/server": createCookieResponseMock(),
   });
-  const response = await logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
-  assert.equal(response.status, 200);
+  return { logout, calls };
+}
+
+function assertCookiesCleared(response) {
   assert.deepEqual(
     response.cookiesSet.map((cookie) => cookie.name),
-    [names.authToken, names.refreshToken, "sb-access-token", "sb-refresh-token"],
+    [LOGOUT_COOKIE_NAMES.authToken, LOGOUT_COOKIE_NAMES.refreshToken, "sb-access-token", "sb-refresh-token"],
   );
   assert.ok(response.cookiesSet.every((cookie) => cookie.value === "" && cookie.options.maxAge === 0));
+}
+
+test("same-origin logout clears dynamic and legacy cookies", async () => {
+  const { logout, calls } = loadLogout(() => ({ error: null }));
+  const response = await logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { ok: true, revoked: true });
+  assertCookiesCleared(response);
+
+  // Anything less than a global sign-out leaves every other copy of the refresh
+  // token minting access tokens after the user believes they signed out.
+  assert.deepEqual(calls, [{ scope: "global" }]);
+});
+
+test("a failed upstream revocation is reported, not answered with ok:true", async () => {
+  // The old implementation discarded the signOut() result and always returned
+  // { ok: true }: a silent upstream failure was indistinguishable from a real
+  // sign-out, and the refresh token stayed valid.
+  const { logout } = loadLogout(() => ({ error: { message: "upstream unavailable" } }));
+  const response = await logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
+  assert.equal(response.status, 502);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.revoked, false);
+
+  // Cookies still go: leaving a live session in the browser because the upstream
+  // call failed would be strictly worse than reporting the failure.
+  assertCookiesCleared(response);
+});
+
+test("a thrown revocation still clears cookies and never claims success", async () => {
+  const { logout } = loadLogout(() => {
+    throw new Error("network down");
+  });
+  const response = await logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
+  assert.equal(response.status, 500);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.revoked, false);
+  assertCookiesCleared(response);
 });

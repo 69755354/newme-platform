@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { resolveReleaseScript } from "@/lib/release-script";
 
 /**
  * POST /api/dashboard/ads-roi/import
@@ -30,13 +31,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Parse the Excel using the Python script
+    // Parse the Excel using the Python script that ships inside this release;
+    // see resolveReleaseScript for why the absolute /home/ubuntu path was wrong.
+    const parser = resolveReleaseScript("scripts/parse-ad-spend.py");
+    if (!parser) {
+      console.error("[Ads Import] parser missing from release at", process.cwd());
+      return NextResponse.json({ error: "Parser unavailable" }, { status: 500 });
+    }
+
     const result = await new Promise<string>((resolve, reject) => {
       execFile(
         "python3",
-        ["/home/ubuntu/newme-platform/scripts/parse-ad-spend.py"],
+        [parser],
         {
-          env: { ...process.env },
+          // Only what parse-ad-spend.py and the cos-download.py it shells out to
+          // actually read. `{ ...process.env }` handed the subprocess
+          // SUPABASE_SERVICE_ROLE_KEY and every other runtime secret — the same
+          // defect fixed in /api/cos/download-url as F-25, still present here.
+          env: {
+            PATH: process.env.PATH ?? "",
+            COS_SECRET_ID: process.env.COS_SECRET_ID ?? "",
+            COS_SECRET_KEY: process.env.COS_SECRET_KEY ?? "",
+            COS_BUCKET: process.env.COS_BUCKET ?? "",
+            COS_REGION: process.env.COS_REGION ?? "",
+            NODE_ENV: process.env.NODE_ENV,
+          },
           timeout: 120_000, // 2 minutes for download + parse
           maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large Excel
           encoding: "utf-8",

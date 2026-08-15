@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+import { isVoided } from "@/lib/payment-state.mjs";
 
 /**
  * POST /api/payments/[id]/confirm
@@ -43,10 +45,19 @@ export async function POST(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Verify the payment exists and is not already confirmed
+    // Verify the payment exists, is not reversed, and is not already confirmed.
+    //
+    // Round-4 finding R5: this precheck selected `confirmed` and stopped there, so it
+    // had no column with which to see a reversal. void_payment() sets confirmed =
+    // false, so a voided payment passed the check, reached confirm_payment() and came
+    // back as 22023 'a voided payment cannot be confirmed' — the right refusal, told
+    // one round-trip late and under a message the client had to parse to understand.
+    // The voided test comes FIRST because a reversal is terminal: a row carrying both
+    // voided_at and confirmed = true (representable only through a compat-mode direct
+    // write) must be reported as reversed rather than as already confirmed.
     const { data: payment, error: paymentErr } = await supabase
       .from("payments")
-      .select("id, confirmed")
+      .select("id, confirmed, voided_at")
       .eq("id", paymentId)
       .single();
 
@@ -54,9 +65,19 @@ export async function POST(
       return NextResponse.json({ error: "Payment not found" }, { status: 404 });
     }
 
+    // Same message and same HTTP status the routine's own refusal would produce
+    // (22023 → 400, see src/lib/money-rpc.mjs), so a client cannot tell whether the
+    // precheck or the database refused it — and cannot be taught two vocabularies.
+    if (isVoided(payment)) {
+      return NextResponse.json(
+        { error: "a voided payment cannot be confirmed", code: "22023" },
+        { status: 400 }
+      );
+    }
+
     if (payment.confirmed) {
       return NextResponse.json(
-        { error: "Payment is already confirmed" },
+        { error: "payment is already confirmed", code: "22023" },
         { status: 400 }
       );
     }
@@ -68,20 +89,25 @@ export async function POST(
     });
 
     if (rpcErr) {
-      logger.error(
+      // Every refusal confirm_payment() raises is a decision with a SQLSTATE:
+      // 42501 for the role rule, 22023 for a second confirmation or a voided
+      // payment, class 28 for a session the boundary no longer accepts. Reporting
+      // all of them as 500 told the client "we broke" and invited a retry.
+      const failure = moneyRpcFailure(rpcErr, "Failed to confirm payment");
+      const log = failure.status >= 500 ? logger.error : logger.warn;
+      log(
         {
           err: rpcErr,
           request_id,
           operation: "payment_confirm",
           user_id: user.id,
           payment_id: paymentId,
+          error_code: rpcErr.code,
+          http_status: failure.status,
         },
-        "[API Payments Confirm] RPC failed",
+        "[API Payments Confirm] confirm_payment refused the request",
       );
-      return NextResponse.json(
-        { error: rpcErr.message || "Failed to confirm payment" },
-        { status: 500 }
-      );
+      return NextResponse.json(failure.body, { status: failure.status });
     }
 
     revalidatePath("/contracts");

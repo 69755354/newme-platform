@@ -19,24 +19,227 @@ function matchingLineCount(source, text) {
 
 const UNFINISHED_STATUSES = new Set(["TODO", "IN_PROGRESS", "REVIEW", "BLOCKED"]);
 
-function findUnfinishedRows(taskboard) {
+// ── Release scopes ──────────────────────────────────────────────────────────
+// Round-4 C4-4. Until this revision the board had exactly two states as far as
+// automation was concerned: "no unfinished rows" or "blocked", and the canonical
+// deploy wrapper required the first. Most rows on this board cannot reach it
+// before a deploy — they say 待部署, and what closes them is production having
+// run the change. So the one gate that AGENTS.md calls a physical deploy blocker
+// was unsatisfiable by construction, which is the same defect the required-jobs
+// manifest documents about the reviewed wrapper: an unsatisfiable gate is not a
+// strict gate, it is a gate that gets bypassed, and a bypassed gate protects
+// nothing.
+//
+// The rows are therefore declared into two ordered milestones, in TASKBOARD.md
+// itself (the Iron Rule: if it is not on the board, it does not exist):
+//
+//   predeploy_ready       must be closed before the canonical deploy or guarded
+//                         control-plane bootstrap runs at all
+//   postdeploy_acceptance can only be closed after production has run the change
+//
+// A scope requirement is cumulative: postdeploy_acceptance also requires
+// predeploy_ready, so the later milestone can never go green over the earlier one.
+// --require-complete is the last milestone, i.e. unchanged behaviour, and stays
+// the release-final gate.
+//
+// The declarations are checked in both directions on every run of this checker,
+// including the CI job that does not require any scope: an unfinished row nobody
+// declared is a FAIL naming it (otherwise the way to leave the deploy gate is to
+// add a row and say nothing), and a declaration with no unfinished row is a FAIL
+// naming it (otherwise stale declarations accumulate until nobody can tell which
+// ones are load-bearing).
+export const SCOPE_ORDER = ["predeploy_ready", "postdeploy_acceptance"];
+export const REMEDIATION_BLOCKER_ITEM = "PROD-SECRET-SCANNING-ALERTS-OPEN";
+const SCOPE_BEGIN = "<!-- taskboard-scopes:begin -->";
+const SCOPE_END = "<!-- taskboard-scopes:end -->";
+const SCOPE_HEADER = /^\|\s*item\s*\|\s*scope\s*\|\s*closure condition\s*\|$/i;
+const SCOPE_SEPARATOR = /^\|(?:\s*:?-{3,}:?\s*\|)+$/;
+const SCOPE_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const MIN_REASON_LENGTH = 8;
+
+function findUnfinishedRows(taskboard, skipRange = null) {
   const rows = [];
   for (const [index, line] of taskboard.split(/\r?\n/).entries()) {
+    const lineNumber = index + 1;
+    // The scope block's own rows start with "|" too. They are excluded here and
+    // constrained by parseScopeBlock(), which refuses any line inside the block
+    // that is not a declaration — so the exclusion cannot be used to park a real
+    // row where this scan will not see it.
+    if (skipRange && lineNumber >= skipRange.start && lineNumber <= skipRange.end) continue;
     if (!line.startsWith("|")) continue;
-    const status = line
+    const cells = line
       .split("|")
       .slice(1, -1)
-      .map((cell) => cell.trim().replace(/^⚠️\s*/u, ""))
-      .find((cell) => UNFINISHED_STATUSES.has(cell));
-    if (status) rows.push({ line: index + 1, status, source: line });
+      .map((cell) => cell.trim().replace(/^⚠️\s*/u, ""));
+    const status = cells.find((cell) => UNFINISHED_STATUSES.has(cell));
+    if (status) rows.push({ line: lineNumber, status, key: cells[0] ?? "", source: line });
   }
   return rows;
+}
+
+function findTaskboardItemKeys(taskboard, skipRange = null) {
+  const keys = new Set();
+  for (const [index, line] of taskboard.split(/\r?\n/).entries()) {
+    const lineNumber = index + 1;
+    if (skipRange && lineNumber >= skipRange.start && lineNumber <= skipRange.end) continue;
+    if (!line.startsWith("|")) continue;
+    const key = line.split("|")[1]?.trim() ?? "";
+    if (SCOPE_KEY.test(key)) keys.add(key);
+  }
+  return keys;
+}
+
+export function parseScopeBlock(taskboard) {
+  const lines = taskboard.split(/\r?\n/);
+  const problems = [];
+  const declarations = new Map();
+  const begins = [];
+  const ends = [];
+  for (const [index, line] of lines.entries()) {
+    if (line.trim() === SCOPE_BEGIN) begins.push(index + 1);
+    if (line.trim() === SCOPE_END) ends.push(index + 1);
+  }
+  if (begins.length === 0 && ends.length === 0) {
+    return { present: false, declarations, problems, range: null };
+  }
+  if (begins.length !== 1 || ends.length !== 1 || ends[0] < begins[0]) {
+    problems.push(
+      `TASKBOARD.md has ${begins.length} "${SCOPE_BEGIN}" and ${ends.length} "${SCOPE_END}" marker(s) ` +
+        "in that order; the release-scope block must be exactly one region",
+    );
+    return { present: true, declarations, problems, range: null };
+  }
+  const range = { start: begins[0], end: ends[0] };
+  for (let lineNumber = range.start + 1; lineNumber < range.end; lineNumber += 1) {
+    const line = lines[lineNumber - 1].trim();
+    if (line === "" || SCOPE_HEADER.test(line) || SCOPE_SEPARATOR.test(line)) continue;
+    const cells =
+      line.startsWith("|") && line.endsWith("|")
+        ? line.slice(1, -1).split("|").map((cell) => cell.trim())
+        : null;
+    if (!cells || cells.length !== 3) {
+      problems.push(
+        `TASKBOARD.md line ${lineNumber} is inside the release-scope block but is neither its header ` +
+          "nor a three-cell declaration; a line this parser skips is a row the scope gate cannot see",
+      );
+      continue;
+    }
+    const [key, scope, reason] = cells;
+    if (!SCOPE_KEY.test(key)) {
+      problems.push(
+        `TASKBOARD.md line ${lineNumber} declares a scope for "${key}", which is not an item key`,
+      );
+      continue;
+    }
+    if (!SCOPE_ORDER.includes(scope)) {
+      problems.push(
+        `TASKBOARD.md line ${lineNumber} puts ${key} in scope "${scope}"; the scopes are ${SCOPE_ORDER.join(", ")}`,
+      );
+      continue;
+    }
+    if (reason.length < MIN_REASON_LENGTH) {
+      problems.push(
+        `TASKBOARD.md line ${lineNumber} puts ${key} in ${scope} without stating what closes it; ` +
+          "a scope with no closure condition is a row moved out of the deploy gate without a reason anyone can read",
+      );
+      continue;
+    }
+    const existing = declarations.get(key);
+    if (existing) {
+      problems.push(
+        `TASKBOARD.md declares a scope for ${key} twice (lines ${existing.line} and ${lineNumber})`,
+      );
+      continue;
+    }
+    declarations.set(key, { scope, reason, line: lineNumber });
+  }
+  return { present: true, declarations, problems, range };
+}
+
+// A candidate SHA cannot contain a truthful TASKBOARD row saying that the same
+// SHA's future CI run succeeded: editing the row changes the SHA and starts the
+// proof over. The deploy wrapper instead verifies the exact candidate run from
+// required-jobs.json, while a later TASKBOARD-only closure SHA records that
+// already-observed evidence. This manifest map makes that split machine-readable
+// and prevents an evidence-dependent row from drifting back into predeploy.
+export function auditClosureEvidenceModel(taskboard, manifest) {
+  const problems = [];
+  const parsed = parseScopeBlock(taskboard);
+  const items = findTaskboardItemKeys(taskboard, parsed.range);
+  const requiredJobs = new Set(
+    Array.isArray(manifest?.required_jobs)
+      ? manifest.required_jobs.map((entry) => entry?.name).filter((name) => typeof name === "string" && name)
+      : [],
+  );
+  const entries = manifest?.taskboard_closure_evidence;
+  if (!Array.isArray(entries) || entries.length === 0) {
+    problems.push("infra/release/required-jobs.json has no taskboard_closure_evidence map");
+    return problems;
+  }
+
+  const seen = new Set();
+  const allowedEvidence = new Set([
+    "all_required_jobs",
+    "required_job",
+    "post_main_workflow_delivery",
+  ]);
+  for (const [index, entry] of entries.entries()) {
+    const label = `taskboard_closure_evidence[${index}]`;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      problems.push(`${label} is not an object`);
+      continue;
+    }
+    const { item, evidence, job } = entry;
+    if (typeof item !== "string" || !SCOPE_KEY.test(item)) {
+      problems.push(`${label} has no valid item key`);
+      continue;
+    }
+    if (seen.has(item)) {
+      problems.push(`infra/release/required-jobs.json maps TASKBOARD row ${item} twice`);
+      continue;
+    }
+    seen.add(item);
+    if (!items.has(item)) {
+      problems.push(`infra/release/required-jobs.json maps missing TASKBOARD row ${item}`);
+    }
+    if (!allowedEvidence.has(evidence)) {
+      problems.push(`${label} for ${item} has unknown evidence kind ${JSON.stringify(evidence)}`);
+    }
+    if (evidence === "required_job") {
+      if (typeof job !== "string" || !requiredJobs.has(job)) {
+        problems.push(`${label} for ${item} names a job that is not required by this manifest`);
+      }
+    } else if (job !== undefined) {
+      problems.push(`${label} for ${item} must not name a job for evidence kind ${evidence}`);
+    }
+
+    const declaration = parsed.declarations.get(item);
+    if (declaration && declaration.scope !== "postdeploy_acceptance") {
+      problems.push(
+        `TASKBOARD.md row ${item} depends on ${evidence} evidence and must be ` +
+          `postdeploy_acceptance; putting it in predeploy_ready makes the candidate SHA prove its own future run`,
+      );
+    }
+  }
+
+  const evidenceDependent = /exact-head|workflow_run|Hermes(?: webhook| delivery)?|合并后的 main|必需 CI/i;
+  for (const [item, declaration] of parsed.declarations) {
+    if (evidenceDependent.test(declaration.reason) && !seen.has(item)) {
+      problems.push(
+        `TASKBOARD.md row ${item} has an exact-head or post-main closure condition but is absent from ` +
+          "infra/release/required-jobs.json taskboard_closure_evidence",
+      );
+    }
+  }
+  return problems;
 }
 
 export function runTaskboardCheck({
   projectRoot = defaultProjectRoot,
   log = console.log,
   requireComplete = false,
+  requireScope = null,
+  requireCredentialRemediation = false,
 } = {}) {
   const result = { pass: 0, fail: 0, warn: 0 };
   const pass = (message) => {
@@ -148,11 +351,95 @@ export function runTaskboardCheck({
   else if (t1_12 === "❌") fail("TASKBOARD.md marks T1-12 not started");
   else warn("TASKBOARD.md marks T1-12 partial or malformed — manual verification pending");
 
-  const unfinishedRows = findUnfinishedRows(taskboard);
+  const scopeBlock = parseScopeBlock(taskboard);
+  const unfinishedRows = findUnfinishedRows(taskboard, scopeBlock.range);
+  const openByScope = new Map(SCOPE_ORDER.map((scope) => [scope, []]));
+
+  if (scopeBlock.present || unfinishedRows.length > 0) {
+    if (!scopeBlock.present) {
+      fail(
+        `TASKBOARD.md has ${unfinishedRows.length} unfinished row(s) and no "${SCOPE_BEGIN}" … ` +
+          `"${SCOPE_END}" block: with no declarations, no unfinished row can be attributed to a ` +
+          "release milestone and the predeploy gate would be measuring nothing",
+      );
+    } else {
+      for (const problem of scopeBlock.problems) fail(problem);
+      const openKeys = [...new Set(unfinishedRows.map((row) => row.key))];
+      const undeclared = openKeys.filter((key) => !scopeBlock.declarations.has(key));
+      const stale = [...scopeBlock.declarations.keys()].filter((key) => !openKeys.includes(key));
+      for (const key of undeclared) {
+        fail(
+          `TASKBOARD.md row ${key} is unfinished but declares no release scope; ` +
+            `add it to the release-scope block as one of ${SCOPE_ORDER.join(", ")}`,
+        );
+      }
+      for (const key of stale) {
+        fail(
+          `TASKBOARD.md declares a release scope for ${key}, which has no unfinished row; ` +
+            "remove the declaration so the block keeps naming only load-bearing rows",
+        );
+      }
+      if (scopeBlock.problems.length === 0 && undeclared.length === 0 && stale.length === 0) {
+        pass(
+          `every unfinished TASKBOARD row declares exactly one release scope ` +
+            `(${scopeBlock.declarations.size} row(s) declared)`,
+        );
+      }
+    }
+  }
+
+  if (hasFile(projectRoot, "infra/release/required-jobs.json")) {
+    try {
+      const manifest = JSON.parse(source("infra/release/required-jobs.json"));
+      const evidenceProblems = auditClosureEvidenceModel(taskboard, manifest);
+      for (const problem of evidenceProblems) fail(problem);
+      if (evidenceProblems.length === 0) {
+        pass(
+          `TASKBOARD closure-only evidence rows are machine-bound to the candidate gate manifest ` +
+            `(${manifest.taskboard_closure_evidence.length} row(s))`,
+        );
+      }
+    } catch (error) {
+      fail(`infra/release/required-jobs.json is not valid JSON (${error.message})`);
+    }
+  }
+
+  for (const row of unfinishedRows) {
+    // An undeclared row falls into the earliest milestone, which is the direction
+    // that blocks the most: it has already been reported as a FAIL above, and it
+    // must not be able to sit outside every gate while that is being fixed.
+    const scope = scopeBlock.declarations.get(row.key)?.scope ?? SCOPE_ORDER[0];
+    openByScope.get(scope).push(row);
+  }
+
   if (unfinishedRows.length > 0) {
     log("Tracked unfinished TASKBOARD rows:");
     for (const row of unfinishedRows) {
-      log(`  UNFINISHED line=${row.line} status=${row.status} ${row.source}`);
+      const scope = scopeBlock.declarations.get(row.key)?.scope ?? "UNDECLARED";
+      log(`  UNFINISHED line=${row.line} status=${row.status} scope=${scope} ${row.source}`);
+    }
+  }
+
+  if (requireCredentialRemediation) {
+    const predeployRows = openByScope.get(SCOPE_ORDER[0]);
+    const exactBlocker =
+      predeployRows.length === 1 &&
+      predeployRows[0].key === REMEDIATION_BLOCKER_ITEM &&
+      predeployRows[0].status === "BLOCKED";
+    if (exactBlocker) {
+      pass(
+        `credential remediation has exactly the permitted predeploy blocker: ` +
+          `${REMEDIATION_BLOCKER_ITEM} (BLOCKED)`,
+      );
+    } else {
+      const observed =
+        predeployRows.length === 0
+          ? "none"
+          : predeployRows.map((row) => `${row.key} (${row.status}, line ${row.line})`).join(", ");
+      fail(
+        `credential remediation requires exactly one predeploy blocker, ` +
+          `${REMEDIATION_BLOCKER_ITEM} (BLOCKED); observed: ${observed}`,
+      );
     }
   }
 
@@ -160,17 +447,48 @@ export function runTaskboardCheck({
     `PASS: ${result.pass} FAIL: ${result.fail} WARN: ${result.warn} ` +
       `UNFINISHED: ${unfinishedRows.length}`,
   );
+  log(`SCOPES: ${SCOPE_ORDER.map((scope) => `${scope}=${openByScope.get(scope).length}`).join(" ")}`);
+
+  const requestedScope = requireScope ?? (requireComplete ? SCOPE_ORDER[SCOPE_ORDER.length - 1] : null);
+  let blocking = [];
+  if (requestedScope) {
+    // Cumulative on purpose: postdeploy acceptance cannot be green while a
+    // predeploy row is open, because the release should never have reached
+    // production while that row was unfinished.
+    for (const scope of SCOPE_ORDER.slice(0, SCOPE_ORDER.indexOf(requestedScope) + 1)) {
+      blocking = blocking.concat(openByScope.get(scope).map((row) => ({ ...row, scope })));
+    }
+  }
 
   let exitCode = 0;
   if (result.fail > 0) {
     log(`TASKBOARD EVIDENCE GATE: ${result.fail} code-evidence check(s) failed.`);
     exitCode = 1;
-  } else if (requireComplete && unfinishedRows.length > 0) {
+  } else if (requireCredentialRemediation) {
     log(
-      `TASKBOARD COMPLETION GATE: ${unfinishedRows.length} unfinished row(s). ` +
+      `Credential remediation taskboard gate is satisfied; only ${REMEDIATION_BLOCKER_ITEM} ` +
+        "may remain open before the protected credential cutover.",
+    );
+  } else if (requestedScope === SCOPE_ORDER[SCOPE_ORDER.length - 1] && blocking.length > 0) {
+    log(
+      `TASKBOARD COMPLETION GATE: ${blocking.length} unfinished row(s). ` +
         "RELEASE FINALIZATION BLOCKED.",
     );
     exitCode = 1;
+  } else if (requestedScope && blocking.length > 0) {
+    log(
+      `TASKBOARD SCOPE GATE: ${requestedScope} requires ${blocking.length} more row(s): ` +
+        `${blocking.map((row) => `${row.key} (${row.scope}, line ${row.line})`).join(", ")}. ` +
+        "DEPLOYMENT BLOCKED.",
+    );
+    exitCode = 1;
+  } else if (requestedScope) {
+    log(
+      `Taskboard scope gate ${requestedScope} is satisfied` +
+        (unfinishedRows.length > 0
+          ? `; ${unfinishedRows.length} row(s) remain in later milestones.`
+          : "; no unfinished rows at all."),
+    );
   } else if (unfinishedRows.length > 0) {
     log(
       `Taskboard evidence checks passed with ${unfinishedRows.length} tracked unfinished row(s). ` +
@@ -185,12 +503,33 @@ export function runTaskboardCheck({
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  if (args.length > 1 || (args.length === 1 && args[0] !== "--require-complete")) {
-    console.error("Usage: node scripts/check-taskboard.mjs [--require-complete]");
+  const usage = () => {
+    console.error(
+      `Usage: node scripts/check-taskboard.mjs [--require-complete | --require-scope=<${SCOPE_ORDER.join("|")}> | --require-credential-remediation]`,
+    );
+    process.exitCode = 64;
+  };
+  const scopeArgument = args.find((arg) => arg.startsWith("--require-scope="));
+  const requireScope = scopeArgument ? scopeArgument.slice("--require-scope=".length) : null;
+  const unknown = args.filter(
+    (arg) =>
+      arg !== "--require-complete" &&
+      arg !== "--require-credential-remediation" &&
+      arg !== scopeArgument,
+  );
+  if (args.length > 1 || unknown.length > 0) {
+    // One mode per invocation. Two modes on one command line is a caller that
+    // does not know which milestone it is gating, and guessing for it is how a
+    // deploy ends up satisfied by the wrong scope.
+    usage();
+  } else if (requireScope !== null && !SCOPE_ORDER.includes(requireScope)) {
+    console.error(`Unknown scope "${requireScope}"; the scopes are ${SCOPE_ORDER.join(", ")}`);
     process.exitCode = 64;
   } else {
     process.exitCode = runTaskboardCheck({
       requireComplete: args[0] === "--require-complete",
+      requireScope,
+      requireCredentialRemediation: args[0] === "--require-credential-remediation",
     }).exitCode;
   }
 }

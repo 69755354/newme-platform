@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
-import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { validateSupplyChain } from "../../scripts/check-supply-chain.mjs";
+import { validateSupplyChain, validateToolchain } from "../../scripts/check-supply-chain.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const XREF = path.join(ROOT, "scripts/_supply_chain_xref.py");
-const GATE = path.join(ROOT, "scripts/check-supply-chain.sh");
+const SAFE_NPM_CONFIG = {
+  strictAllowScripts: "true",
+  dangerouslyAllowAllScripts: "false",
+  ignoreScripts: "false",
+  allowScripts: "",
+  omit: "",
+  registry: "https://registry.npmjs.org/",
+};
 const advisory = (id = "GHSA-qx2v-qp2m-jg93") => ({
   source: 123456,
   name: "postcss",
@@ -59,127 +63,27 @@ const accepted = (overrides = {}) => ({
     risk_reason: "Fixture has no attacker-controlled CSS input.",
     mitigation: "Only trusted build-time CSS is processed.",
     owner: "security-owner",
-    expires: "2999-01-01",
+    expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
     audit_ref: "docs/security.md#fixture",
     ...overrides,
   }],
 });
 
-async function withTempDir(run) {
-  const dir = await mkdtemp(path.join(tmpdir(), "newme-supply-chain-"));
-  try {
-    return await run(dir);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
-
-async function runXref(auditJson, acceptedJson) {
-  return withTempDir(async (dir) => {
-    const auditFile = path.join(dir, "audit.json");
-    const acceptFile = path.join(dir, "accept.json");
-    await writeFile(auditFile, JSON.stringify(auditJson));
-    await writeFile(acceptFile, JSON.stringify(acceptedJson));
-    return spawnSync("python3", [XREF, auditFile, acceptFile], { encoding: "utf8" });
-  });
-}
-
-async function makeGateFixture(dir, auditPayload, acceptPayload) {
-  await mkdir(path.join(dir, "scripts"), { recursive: true });
-  await mkdir(path.join(dir, "node_modules/xlsx"), { recursive: true });
-  await mkdir(path.join(dir, "fake-bin"), { recursive: true });
-  await cp(GATE, path.join(dir, "scripts/check-supply-chain.sh"));
-  await cp(XREF, path.join(dir, "scripts/_supply_chain_xref.py"));
-  await writeFile(path.join(dir, "package.json"), JSON.stringify({
-    packageManager: "npm@10.0.0",
-    engines: { node: process.versions.node, npm: "10.0.0" },
-    dependencies: { next: "16.2.12", react: "19.2.4", "react-dom": "19.2.4" },
-  }));
-  await writeFile(path.join(dir, "package-lock.json"), "{}\n");
-  await writeFile(path.join(dir, ".nvmrc"), `${process.versions.node.split(".")[0]}\n`);
-  await writeFile(path.join(dir, ".supply-chain-accept.json"), JSON.stringify(acceptPayload));
-  await cp(
-    path.join(ROOT, "node_modules/xlsx/package.json"),
-    path.join(dir, "node_modules/xlsx/package.json"),
-  );
-  await writeFile(path.join(dir, "audit.json"), typeof auditPayload === "string" ? auditPayload : JSON.stringify(auditPayload));
-
-  const fakeNpm = path.join(dir, "fake-bin/npm");
-  await writeFile(fakeNpm, `#!/usr/bin/env bash\nset -euo pipefail\ncase "\${1:-}" in\n  --version) echo 10.0.0 ;;\n  ls) exit 0 ;;\n  audit) cat "\${FAKE_AUDIT_FILE}"; exit "\${FAKE_AUDIT_RC:-1}" ;;\n  *) exit 2 ;;\nesac\n`);
-  await chmod(fakeNpm, 0o755);
-
-}
-
-async function runGate({ auditPayload, acceptPayload = accepted(), acceptKnown = true }) {
-  return withTempDir(async (dir) => {
-    await makeGateFixture(dir, auditPayload, acceptPayload);
-    return spawnSync("bash", ["scripts/check-supply-chain.sh", ...(acceptKnown ? ["--accept-known"] : [])], {
-      cwd: dir,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: `${path.join(dir, "fake-bin")}${path.delimiter}${process.env.PATH}`,
-        FAKE_AUDIT_FILE: path.join(dir, "audit.json"),
-        FAKE_AUDIT_RC: "1",
-      },
-    });
-  });
-}
-
-test.skip("legacy Python xref parity (superseded by Node gate contract)", async () => {
-  const exact = await runXref(audit(), accepted());
-  assert.equal(exact.status, 0, exact.stderr);
-  assert.match(exact.stdout, /COUNT=0/);
-
-  const wrongId = await runXref(audit(), accepted({ vuln_id: "GHSA-0000-0000-0000" }));
-  assert.equal(wrongId.status, 0, wrongId.stderr);
-  assert.doesNotMatch(wrongId.stdout, /COUNT=0/);
-});
-
-test.skip("legacy Python exception validation (superseded by Node gate contract)", async () => {
-  const expired = await runXref(audit(), accepted({ expires: "2000-01-01" }));
-  assert.notEqual(expired.status, 0);
-
-  const incomplete = accepted();
-  delete incomplete.accepted[0].owner;
-  const missingOwner = await runXref(audit(), incomplete);
-  assert.notEqual(missingOwner.status, 0);
-});
-
-test.skip("legacy Bash gate (superseded by Node gate contract)", async () => {
-  const acceptedAudit = await runGate({ auditPayload: audit() });
-  assert.equal(acceptedAudit.status, 0, acceptedAudit.stdout + acceptedAudit.stderr);
-
-  const noException = await runGate({ auditPayload: audit(), acceptKnown: false });
-  assert.notEqual(noException.status, 0);
-
-  const expiredException = await runGate({
-    auditPayload: audit(),
-    acceptPayload: accepted({ expires: "2000-01-01" }),
-  });
-  assert.notEqual(expiredException.status, 0);
-
-  const malformed = await runGate({ auditPayload: "not-json" });
-  assert.notEqual(malformed.status, 0);
-
-  const registryError = await runGate({
-    auditPayload: { error: { code: "EAI_AGAIN", summary: "registry unavailable" } },
-  });
-  assert.notEqual(registryError.status, 0);
-});
-
 async function nodeGate(input = {}) {
   const packageJson = JSON.parse(await readFile(path.join(ROOT, "package.json"), "utf8"));
   const packageLock = JSON.parse(await readFile(path.join(ROOT, "package-lock.json"), "utf8"));
-  const exceptions = JSON.parse(await readFile(path.join(ROOT, ".supply-chain-accept.json"), "utf8"));
+  const exceptions = accepted();
   const xlsx = await readFile(path.join(ROOT, "node_modules/xlsx/package.json"));
   return validateSupplyChain({
     packageJson,
     packageLock,
     exceptions,
     nvmrc: process.versions.node,
+    npmrc: "registry=https://registry.npmjs.org/\nstrict-allow-scripts=true\n",
     nodeVersion: process.versions.node,
     npmVersion: packageJson.packageManager.slice(4),
+    npmConfig: SAFE_NPM_CONFIG,
+    alternativeLockfiles: [],
     xlsxHash: createHash("sha256").update(xlsx).digest("hex"),
     audit: audit(),
     acceptKnown: true,
@@ -191,10 +95,24 @@ test("Node supply-chain gate fails closed on malformed audit, registry failure, 
   assert.deepEqual(await nodeGate(), []);
   assert.notDeepEqual(await nodeGate({ audit: "not-json" }), []);
   assert.notDeepEqual(await nodeGate({ audit: { error: { code: "EAI_AGAIN" } } }), []);
+  assert.match((await nodeGate({ audit: {
+    auditReportVersion: 2,
+    vulnerabilities: {},
+    metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 99, critical: 0, total: 99 } },
+  } })).join("\n"), /does not match vulnerability details/);
+  assert.match((await nodeGate({ audit: { ...audit(), auditReportVersion: 1 } })).join("\n"), /unsupported report version/);
   assert.notDeepEqual(await nodeGate({ acceptKnown: false }), []);
   assert.notDeepEqual(await nodeGate({ exceptions: accepted({ expires: "2000-01-01" }) }), []);
+  assert.match(
+    (await nodeGate({ exceptions: accepted({ vuln_id: "GHSA-6g55-p6wh-862q" }) })).join("\n"),
+    /stale supply-chain exception/,
+  );
   assert.notDeepEqual(await nodeGate({ xlsxHash: "0".repeat(64) }), []);
   assert.notDeepEqual(await nodeGate({ nvmrc: "0.0.0" }), []);
+  assert.match(
+    (await nodeGate({ alternativeLockfiles: ["pnpm-lock.yaml"] })).join("\n"),
+    /only declared package manager.*pnpm-lock\.yaml/,
+  );
   const packageLock = JSON.parse(await readFile(path.join(ROOT, "package-lock.json"), "utf8"));
   packageLock.packages[""].dependencies.next = "0.0.0";
   assert.notDeepEqual(await nodeGate({ packageLock }), []);
@@ -204,6 +122,125 @@ test("Node supply-chain gate fails closed on malformed audit, registry failure, 
     (await nodeGate({ packageLock: engineDriftLock })).join("\n"),
     /package-lock engines are not in sync/,
   );
+  const mirroredLock = JSON.parse(await readFile(path.join(ROOT, "package-lock.json"), "utf8"));
+  mirroredLock.packages["node_modules/next"].resolved = "https://registry.npmmirror.com/next/-/next-16.3.1.tgz";
+  assert.match(
+    (await nodeGate({ packageLock: mirroredLock })).join("\n"),
+    /resolved origin is not approved/,
+  );
+  const missingIntegrity = JSON.parse(await readFile(path.join(ROOT, "package-lock.json"), "utf8"));
+  delete missingIntegrity.packages["node_modules/next"].integrity;
+  assert.match(
+    (await nodeGate({ packageLock: missingIntegrity })).join("\n"),
+    /must carry sha512 integrity/,
+  );
+});
+
+test("pre-install toolchain gate exists and validates exact Node, npm, and root lock metadata", async () => {
+  const packageJson = JSON.parse(await readFile(path.join(ROOT, "package.json"), "utf8"));
+  const packageLock = JSON.parse(await readFile(path.join(ROOT, "package-lock.json"), "utf8"));
+  const nvmrc = (await readFile(path.join(ROOT, ".nvmrc"), "utf8")).trim();
+  const npmrc = await readFile(path.join(ROOT, ".npmrc"), "utf8");
+  assert.equal(packageJson.scripts["check:toolchain"], "node scripts/check-toolchain.mjs");
+  await readFile(path.join(ROOT, "scripts", "check-toolchain.mjs"), "utf8");
+  assert.deepEqual(validateToolchain({
+    packageJson,
+    packageLock,
+    nvmrc,
+    npmrc,
+    nodeVersion: nvmrc,
+    npmVersion: packageJson.engines.npm,
+    npmConfig: SAFE_NPM_CONFIG,
+    alternativeLockfiles: [],
+  }), []);
+
+  const drifted = structuredClone(packageLock);
+  drifted.lockfileVersion = 2;
+  assert.match(validateToolchain({
+    packageJson,
+    packageLock: drifted,
+    nvmrc,
+    npmrc,
+    nodeVersion: nvmrc,
+    npmVersion: packageJson.engines.npm,
+    npmConfig: SAFE_NPM_CONFIG,
+    alternativeLockfiles: [],
+  }).join("\n"), /lockfileVersion 3/);
+
+  const devDependencyDrift = structuredClone(packageLock);
+  devDependencyDrift.packages[""].devDependencies.typescript = "0.0.0";
+  assert.match(validateToolchain({
+    packageJson,
+    packageLock: devDependencyDrift,
+    nvmrc,
+    npmrc,
+    nodeVersion: nvmrc,
+    npmVersion: packageJson.engines.npm,
+    npmConfig: SAFE_NPM_CONFIG,
+    alternativeLockfiles: [],
+  }).join("\n"), /devDependencies are not in sync/);
+
+  const unreviewedScripts = structuredClone(packageJson);
+  unreviewedScripts.allowScripts["unexpected-package@1.0.0"] = true;
+  assert.match(validateToolchain({
+    packageJson: unreviewedScripts,
+    packageLock,
+    nvmrc,
+    npmrc,
+    nodeVersion: nvmrc,
+    npmVersion: packageJson.engines.npm,
+    npmConfig: SAFE_NPM_CONFIG,
+    alternativeLockfiles: [],
+  }).join("\n"), /install-script approvals/);
+
+  assert.match(validateToolchain({
+    packageJson,
+    packageLock,
+    nvmrc,
+    npmrc: "strict-allow-scripts=false\n",
+    nodeVersion: nvmrc,
+    npmVersion: packageJson.engines.npm,
+    npmConfig: SAFE_NPM_CONFIG,
+    alternativeLockfiles: [],
+  }).join("\n"), /fail closed/);
+
+  assert.match(validateToolchain({
+    packageJson,
+    packageLock,
+    nvmrc,
+    npmrc,
+    nodeVersion: nvmrc,
+    npmVersion: packageJson.engines.npm,
+    npmConfig: { ...SAFE_NPM_CONFIG, strictAllowScripts: "false" },
+    alternativeLockfiles: [],
+  }).join("\n"), /configuration is unsafe or overridden/);
+
+  assert.match(validateToolchain({
+    packageJson,
+    packageLock,
+    nvmrc,
+    npmrc,
+    nodeVersion: nvmrc,
+    npmVersion: packageJson.engines.npm,
+    npmConfig: { ...SAFE_NPM_CONFIG, omit: "optional" },
+    alternativeLockfiles: [],
+  }).join("\n"), /configuration is unsafe or overridden/);
+
+  assert.match(validateToolchain({
+    packageJson,
+    packageLock,
+    nvmrc,
+    npmrc,
+    nodeVersion: nvmrc,
+    npmVersion: packageJson.engines.npm,
+    npmConfig: { ...SAFE_NPM_CONFIG, registry: "https://registry.npmmirror.com/" },
+    alternativeLockfiles: [],
+  }).join("\n"), /configuration is unsafe or overridden/);
+});
+
+test("the checked-in advisory exception registry contains no entries absent from the current audit", async () => {
+  const exceptions = JSON.parse(await readFile(path.join(ROOT, ".supply-chain-accept.json"), "utf8"));
+  assert.deepEqual(exceptions.accepted, []);
 });
 
 async function listCodeFiles(dir) {

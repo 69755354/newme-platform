@@ -35,32 +35,6 @@ function getSupabaseAdmin() {
   return createClient(url, key);
 }
 
-/** Generate quote number: NM-YYYY-XXXX (sequential) */
-async function generateQuoteNo(supabase: any): Promise<string> {
-  const year = new Date().getFullYear().toString();
-
-  // Find current max sequence for this year
-  const { data } = await (supabase as any)
-    .from("quotations")
-    .select("quote_no")
-    .like("quote_no", `NM-${year}-%`)
-    .order("quote_no", { ascending: false })
-    .limit(1);
-
-  let nextSeq = 1;
-  if (data && data.length > 0) {
-    const lastNo: string = data[0].quote_no;
-    const parts = lastNo.split("-");
-    const lastSeq = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastSeq)) {
-      nextSeq = lastSeq + 1;
-    }
-  }
-
-  const seqStr = nextSeq.toString().padStart(4, "0");
-  return `NM-${year}-${seqStr}`;
-}
-
 export async function POST(request: NextRequest) {
   const request_id = genReqId();
   try {
@@ -157,15 +131,13 @@ export async function POST(request: NextRequest) {
       return respond({ error: "Lead not found" }, { status: 404 });
     }
 
-    // 3. Generate quote number
-    const quoteNo = await generateQuoteNo(supabaseAdmin);
-
-    // 4. Save quotation to DB
+    // 3. Save quotation to DB. The BEFORE INSERT trigger allocates quote_no
+    // in this same transaction and the returned row is the source of truth.
     const { data: quote, error: quoteErr } = await supabaseAdmin
       .from("quotations")
       .insert({
         lead_id,
-        quote_no: quoteNo,
+        quote_no: "ALLOCATED_BY_DATABASE",
         version: 1,
         created_by: user.id,
         subtotal: calculation.subtotal,
@@ -196,6 +168,7 @@ export async function POST(request: NextRequest) {
       );
       return respond({ error: "Failed to save quotation" }, { status: 500 });
     }
+    const quoteNo = quote.quote_no;
 
     // 5. Create activity (quote_sent)
     const { error: activityErr } = await supabaseAdmin.from("activities").insert({

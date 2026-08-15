@@ -92,8 +92,18 @@ export async function POST(request: NextRequest) {
     if (email || phone) {
       // Sanitize inputs before interpolation to prevent Supabase filter injection
       const sanitizeEmail = (e: string) => {
-        const m = e.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
-        return m ? e : "";
+        if (e.length < 3 || e.length > 254 || e.trim() !== e) return "";
+        const at = e.indexOf("@");
+        if (at <= 0 || at !== e.lastIndexOf("@") || at > 64) return "";
+        const local = e.slice(0, at);
+        const domain = e.slice(at + 1);
+        if (local.startsWith(".") || local.endsWith(".") || local.includes("..")) return "";
+        if (!domain.includes(".") || domain.startsWith(".") || domain.endsWith(".")) return "";
+        const localAllowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._%+-";
+        const domainAllowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-";
+        if ([...local].some((character) => !localAllowed.includes(character))) return "";
+        if ([...domain].some((character) => !domainAllowed.includes(character))) return "";
+        return e;
       };
       const sanitizePhone = (p: string) => p.replace(/[^0-9+\-()]/g, "");
       const sanitizedEmail = email ? sanitizeEmail(email) : "";

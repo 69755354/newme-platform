@@ -22,20 +22,29 @@ test("session cookies use dynamic names and secure server refresh attributes", a
   const cookieNames = await read("src/lib/supabase-cookie-names.ts");
   const server = await read("src/lib/supabase-server.ts");
   const session = await read("src/app/api/auth/session/route.ts");
+  const login = await read("src/app/api/auth/login/route.ts");
+  // Cookie attributes live in one shared module so the login and bootstrap
+  // endpoints cannot drift apart. Both must route through it and neither may
+  // hand-roll its own Set-Cookie.
+  const cookies = await read("src/lib/session-cookies.ts");
   assert.match(cookieNames, /new URL\(supabaseUrl/);
-  assert.doesNotMatch(cookieNames + server + session, /vfopmpxlhwzpxqegayew/);
+  assert.doesNotMatch(cookieNames + server + session + login + cookies, /vfopmpxlhwzpxqegayew/);
   assert.match(server, /httpOnly: true/);
-  assert.match(session, /JSON\.stringify\(\{[\s\S]*access_token: accessToken/);
-  assert.doesNotMatch(session, /const cookiePayload = JSON\.stringify\(\{[\s\S]*refresh_token: refreshToken/);
+  assert.match(cookies, /JSON\.stringify\(\{[\s\S]*access_token: tokens\.accessToken/);
+  assert.doesNotMatch(cookies, /const cookiePayload = JSON\.stringify\(\{[\s\S]*refresh_token/);
   assert.doesNotMatch(server, /_cookieStore\.set/);
-  assert.match(session, /httpOnly: true/);
-  assert.match(session, /sameSite: "strict"/);
-  assert.match(session, /secure: true/);
+  assert.match(cookies, /httpOnly: true/);
+  assert.match(cookies, /sameSite: "strict"/);
+  assert.match(cookies, /secure: true/);
+  for (const [name, source] of [["session", session], ["login", login]]) {
+    assert.match(source, /applySessionCookies\(/, `${name} must use the shared cookie contract`);
+    assert.doesNotMatch(source, /cookies\.set\(/, `${name} must not set cookies directly`);
+  }
 });
 
 test("middleware uses the custom split-session refresh boundary", async () => {
   const middleware = await read("src/lib/supabase-middleware.ts");
-  assert.match(middleware, /createServerSupabase\(undefined, request\.headers\.get\("cookie"\)/);
+  assert.match(middleware, /createServerSupabase\([\s\S]*bearerToken,[\s\S]*request\.headers\.get\("cookie"\)/);
   assert.match(middleware, /getRefreshedCookies\(supabase\)/);
   assert.match(middleware, /request\.cookies\.set\(name, value\)/);
   assert.match(middleware, /response\.cookies\.set\(name, value, options/);
@@ -47,11 +56,19 @@ test("middleware uses the custom split-session refresh boundary", async () => {
   assert.match(proxy, /return getResponse\(\)/);
 });
 
-test("login delegates cookie creation to the same-origin server endpoint", async () => {
+test("login delegates the whole password grant to the same-origin server", async () => {
   const login = await read("src/app/login/page.tsx");
+  const route = await read("src/app/api/auth/login/route.ts");
   const proxy = await read("src/proxy.ts");
-  assert.match(login, /\/api\/auth\/session/);
-  assert.doesNotMatch(login, /document\.cookie\s*=.*refresh/);
+  // The browser must never hold a raw token or speak to Supabase Auth itself:
+  // that both bypassed the edge and put the grant response in page scripts.
+  assert.match(login, /fetch\("\/api\/auth\/login"/);
+  assert.doesNotMatch(login, /auth\/v1\//);
+  assert.doesNotMatch(login, /access_token|refresh_token/);
+  assert.doesNotMatch(login, /NEXT_PUBLIC_SUPABASE/);
+  assert.doesNotMatch(login, /document\.cookie\s*=/);
+  assert.match(route, /grant_type=password/);
+  assert.match(proxy, /"\/api\/auth\/login"/);
   assert.match(proxy, /"\/api\/auth\/session"/);
 });
 
@@ -66,8 +83,10 @@ test("session cookie payload is consumable by the SSR token parser contract", as
   const parsed = JSON.parse(payload);
   assert.equal(parsed.access_token, "access-token");
   assert.equal(parsed.refresh_token, "refresh-token");
-  assert.match(session, /const cookiePayload = JSON\.stringify\(\{[\s\S]*access_token: accessToken,\s*expires_at:/);
-  assert.doesNotMatch(session, /const cookiePayload = JSON\.stringify\(\{[\s\S]*refresh_token: refreshToken/);
-  assert.match(session, /response\.cookies\.set\(refreshCookie, refreshToken/);
+  const cookies = await read("src/lib/session-cookies.ts");
+  assert.match(cookies, /const cookiePayload = JSON\.stringify\(\{[\s\S]*access_token: tokens\.accessToken,\s*expires_at:/);
+  assert.doesNotMatch(cookies, /const cookiePayload = JSON\.stringify\(\{[\s\S]*refresh_token/);
+  assert.match(cookies, /response\.cookies\.set\(refreshCookie, tokens\.refreshToken/);
+  assert.match(session, /applySessionCookies\(/);
   assert.match(server, /parseSsrCookie/);
 });

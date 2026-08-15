@@ -124,30 +124,94 @@ test("the server proxy denies inactive sessions before protected APIs or pages",
   assert.match(proxy, /pathname\.startsWith\(["']\/api\//);
   assert.match(proxy, /status: 401/);
   assert.match(proxy, /reason["']?, ["']inactive_account["']/);
-  assert.match(proxy, /const PUBLIC_API_PATHS = new Set\(\[\s*["']\/api\/auth\/logout["']\s*,\s*["']\/api\/auth\/me["']\s*,?\s*\]\)/);
+  const publicSet = proxy.slice(
+    proxy.indexOf("const PUBLIC_API_PATHS = new Set(["),
+    proxy.indexOf("]);", proxy.indexOf("const PUBLIC_API_PATHS = new Set([")),
+  );
+  assert.notEqual(publicSet, "", "PUBLIC_API_PATHS must be a literal set");
+  // Exact allowlist. /api/auth/login is pre-authentication by definition; it
+  // enforces its own origin check, rate limit and active-profile gate.
+  assert.deepEqual(publicSet.match(/["'][^"']+["']/g).map((v) => v.slice(1, -1)), [
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/auth/me",
+  ]);
   assert.match(proxy, /EXTERNAL_AUTHORIZED_API_PATHS/);
   assert.match(proxy, /"\/api\/leads\/meta-capi"/);
   assert.match(proxy, /EXTERNAL_AUTHORIZED_API_PREFIXES = \["\/api\/cron\/"\]/);
   assert.ok(proxy.indexOf("isActiveProfile(profile)") < proxy.indexOf("Track activity"));
 });
 
-test("login and the dashboard guard require an active /api/auth/me result", async () => {
-  const [login, authMe, hook] = await Promise.all([
+test("login and the dashboard guard require an active profile", async () => {
+  const [login, loginRoute, authMe, hook, identity] = await Promise.all([
     read("src/app/login/page.tsx"),
+    read("src/app/api/auth/login/route.ts"),
     read("src/app/api/auth/me/route.ts"),
     read("src/hooks/useAuthRedirect.ts"),
+    read("src/lib/session-identity.ts"),
   ]);
 
-  assert.match(login, /\/api\/auth\/me/);
-  assert.match(login, /Authorization["']\s*:\s*[`"']Bearer/);
-  assert.match(login, /revokeRejectedSession\(data\.access_token\)/);
-  assert.match(login, /\/auth\/v1\/logout/);
+  // The active-profile gate moved from the browser into the login endpoint,
+  // where it runs before any cookie is issued instead of after.
+  assert.match(login, /data\?\.isActive !== true/);
+  assert.doesNotMatch(login, /clearStaleSession|fetch\(["']\/api\/auth\/logout["']/);
+  assert.match(loginRoute, /isActiveProfile\(profile\)/);
+  assert.match(loginRoute, /Authorization: `Bearer \$\{accessToken\}`/);
+  assert.match(loginRoute, /revokeIssuedToken\(supabaseUrl, anonKey, accessToken\)/);
+  assert.match(loginRoute, /\/auth\/v1\/logout/);
+  // Cookies must be issued only after the gate, never before it.
+  assert.ok(
+    loginRoute.indexOf("isActiveProfile(profile)") < loginRoute.indexOf("applySessionCookies("),
+    "the active-profile gate must precede cookie issue",
+  );
   assert.match(authMe, /profile(?:\?\.)?\.is_active !== true/);
   assert.match(authMe, /status: 401/);
   assert.doesNotMatch(authMe, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(authMe, /@supabase\/supabase-js/);
   assert.match(authMe, /await supabase\s*\.from\("profiles"\)/s);
-  assert.match(hook, /data\.isActive !== true/);
+  // The dashboard guard rejects an inactive profile on every mount. The check
+  // moved into the shared reader; the guard consumes its verdict.
+  assert.match(identity, /body\.isActive !== true/);
+  assert.match(identity, /return \{ status: "unauthenticated" \}/);
+  assert.match(hook, /outcome\.status === "unauthenticated"/);
+  assert.match(hook, /router\.push\("\/login"\)/);
+  // The revocation boundary must never be answered from reusable state: only
+  // the analytics reader may reuse a previous result.
+  const authorizationRead = identity.slice(
+    identity.indexOf("export async function readSessionIdentity"),
+    identity.indexOf("export async function peekSessionIdentity"),
+  );
+  assert.notEqual(authorizationRead, "", "the live reader must exist");
+  assert.doesNotMatch(authorizationRead, /lastActive/);
+  assert.match(hook, /readSessionIdentity\(\)/);
+  assert.doesNotMatch(hook, /peekSessionIdentity/);
+});
+
+test("session identity distinguishes revoked credentials from upstream outages", async (t) => {
+  const previousFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = previousFetch;
+  });
+
+  const identity = loadTypeScriptModule("src/lib/session-identity.ts", {});
+
+  for (const status of [401, 403]) {
+    globalThis.fetch = async () => ({ ok: false, status });
+    assert.deepEqual(
+      await identity.readSessionIdentity(),
+      { status: "unauthenticated" },
+      `${status} must revoke browser authorization`,
+    );
+  }
+
+  for (const status of [429, 500, 503]) {
+    globalThis.fetch = async () => ({ ok: false, status });
+    assert.deepEqual(
+      await identity.readSessionIdentity(),
+      { status: "unavailable" },
+      `${status} must not be misreported as an invalid session`,
+    );
+  }
 });
 
 test("real lead stage handler rejects an inactive old session before business access", async () => {

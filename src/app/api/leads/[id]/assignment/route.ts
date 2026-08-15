@@ -5,6 +5,7 @@ import {
   RequestAuthError,
   requestAuthErrorResponse,
 } from "@/lib/request-auth-context";
+import { isLeadUpdatedAtToken } from "@/lib/lead-transfer-batch.mjs";
 
 function validUuid(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -23,7 +24,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!validUuid(body.assignedTo) || !validUuid(body.idempotencyKey)) {
       return respond({ error: "assignedTo and idempotencyKey must be UUIDs", code: "INVALID_REQUEST" }, { status: 400 });
     }
-    const expectedUpdatedAt = typeof body.expectedUpdatedAt === "string" ? body.expectedUpdatedAt : null;
+    // R6. reassign_lead_atomic() only compares when p_expected_updated_at is not
+    // null, so `?? null` here was a way to switch the compare-and-set off by
+    // leaving a field out of the body — no error, no comparison, and whoever
+    // reassigned the lead in the meantime is overwritten. The token is required.
+    // Both callers already send it (useLeadMutations.ts:145 and
+    // useLeadDetailMutations.ts:166, from rows that select updated_at), so the
+    // only request this refuses is one that was skipping the check.
+    if (!isLeadUpdatedAtToken(body.expectedUpdatedAt)) {
+      return respond(
+        { error: "expectedUpdatedAt must be the lead's current updated_at", code: "INVALID_REQUEST" },
+        { status: 400 }
+      );
+    }
+    const expectedUpdatedAt = body.expectedUpdatedAt;
     const reason = typeof body.reason === "string" ? body.reason.slice(0, 500) : "manual_reassign";
     const { id: leadId } = await params;
     const { data, error } = await context.supabase.rpc("reassign_lead_atomic", {

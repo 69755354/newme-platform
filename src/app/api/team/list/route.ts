@@ -1,7 +1,7 @@
 // RBAC: user (authenticated)
 import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
-import { getCached, setCache } from "@/lib/api-cache"
+import { getCached, setCache } from "@/lib/api-cache.mjs"
 
 export async function GET(request: Request) {
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;

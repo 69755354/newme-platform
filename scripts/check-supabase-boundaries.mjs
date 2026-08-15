@@ -75,22 +75,66 @@ function resolveImport(fromFile, specifier, files) {
   ];
   return candidates.find((candidate) => files.has(path.resolve(candidate))) ?? null;
 }
+function stripLeadingTrivia(source) {
+  let rest = source.replace(/^\uFEFF/, "");
+  while (true) {
+    const next = rest.replace(/^(?:\s+|\/\/[^\r\n]*(?:\r?\n|$)|\/\*[\s\S]*?\*\/)/, "");
+    if (next === rest) return rest;
+    rest = next;
+  }
+}
+function hasModuleDirective(text, directive) {
+  let rest = stripLeadingTrivia(text);
+  while (true) {
+    const match = rest.match(/^(["'])([^"'\r\n]+)\1\s*;?/);
+    if (!match) return false;
+    if (match[2] === directive) return true;
+    rest = stripLeadingTrivia(rest.slice(match[0].length));
+  }
+}
+function isTypeOnlyClause(clause) {
+  const trimmed = clause.trim();
+  if (/^type(?:\s|\{)/.test(trimmed)) return true;
+  const named = trimmed.match(/^\{([\s\S]*)\}$/);
+  if (!named) return false;
+  const specifiers = named[1].split(",").map((value) => value.trim()).filter(Boolean);
+  return specifiers.length > 0 && specifiers.every((value) => /^type\s/.test(value));
+}
 function importsOf(file, text, files) {
   const dependencies = [];
-  const pattern = /(?:import|export)\s+(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']|require\(\s*["']([^"']+)["']\s*\)/g;
-  for (const match of text.matchAll(pattern)) {
-    const resolved = resolveImport(file, match[1] ?? match[2], files);
-    if (resolved) dependencies.push(path.resolve(resolved));
+  const addDependency = (specifier, offset) => {
+    const resolved = resolveImport(file, specifier, files);
+    if (resolved) {
+      dependencies.push({
+        file: path.resolve(resolved),
+        lineNo: lineAt(text, offset),
+        specifier,
+      });
+    }
+  };
+
+  const staticFrom = /(?:^|[;\r\n])\s*(import|export)\s+([^;]*?)\s+from\s*["']([^"']+)["']/g;
+  for (const match of text.matchAll(staticFrom)) {
+    if (!isTypeOnlyClause(match[2])) addDependency(match[3], match.index);
   }
+  const sideEffect = /(?:^|[;\r\n])\s*import\s*["']([^"']+)["']/g;
+  for (const match of text.matchAll(sideEffect)) addDependency(match[1], match.index);
+  const dynamic = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
+  for (const match of text.matchAll(dynamic)) addDependency(match[1], match.index);
+  const required = /\brequire\(\s*["']([^"']+)["']\s*\)/g;
+  for (const match of text.matchAll(required)) addDependency(match[1], match.index);
   return dependencies;
 }
 function isBrowserRoot(file, text) {
   const name = rel(file);
   return name.startsWith("src/") && (
-    text.split(/\r?\n/, 8).some((line) => /["']use client["']/.test(line)) ||
+    hasModuleDirective(text, "use client") ||
     name.includes("/components/") ||
     name.includes("/shared/hooks/")
   );
+}
+function isServerOnlyModule(text) {
+  return /(?:^|[;\r\n])\s*import\s*["']server-only["']\s*;?/.test(text);
 }
 function isServerOnlyPath(name) {
   return name.startsWith("src/app/api/") ||
@@ -109,25 +153,60 @@ function add(findings, rule, file, lineNo, evidence) {
 const fileList = walk(root).map((file) => path.resolve(file));
 const fileSet = new Set(fileList);
 const contents = new Map(fileList.map((file) => [file, fs.readFileSync(file, "utf8")]));
+const serverActionModules = new Set(
+  fileList.filter((file) => hasModuleDirective(contents.get(file), "use server")),
+);
+const serverOnlyModules = new Set(
+  fileList.filter((file) => isServerOnlyModule(contents.get(file))),
+);
 const browserReachable = new Set();
 const queue = [];
+const serverOnlyViolations = [];
 for (const file of fileList) {
   if (isBrowserRoot(file, contents.get(file))) {
     browserReachable.add(file);
     queue.push(file);
+    if (serverOnlyModules.has(file)) {
+      serverOnlyViolations.push({
+        importer: file,
+        dependency: file,
+        lineNo: 1,
+      });
+    }
   }
 }
 while (queue.length) {
   const file = queue.shift();
   for (const dependency of importsOf(file, contents.get(file), fileSet)) {
-    if (!browserReachable.has(dependency)) {
-      browserReachable.add(dependency);
-      queue.push(dependency);
+    // A top-level `use server` file is compiled as a Server Function entrypoint.
+    // Client modules receive action references; the implementation and its DAL
+    // imports stay in Next's server-only layer.
+    if (serverActionModules.has(dependency.file)) continue;
+    if (serverOnlyModules.has(dependency.file)) {
+      serverOnlyViolations.push({
+        importer: file,
+        dependency: dependency.file,
+        lineNo: dependency.lineNo,
+      });
+      continue;
+    }
+    if (!browserReachable.has(dependency.file)) {
+      browserReachable.add(dependency.file);
+      queue.push(dependency.file);
     }
   }
 }
 
 const findings = [];
+for (const violation of serverOnlyViolations) {
+  add(
+    findings,
+    "server-only-module-imported-by-browser",
+    violation.importer,
+    violation.lineNo,
+    `runtime import reaches ${rel(violation.dependency)}`,
+  );
+}
 for (const file of fileList) {
   const name = rel(file);
   if (name === "scripts/check-supabase-boundaries.mjs") continue;

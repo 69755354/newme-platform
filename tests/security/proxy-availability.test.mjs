@@ -18,9 +18,17 @@ function loadProxy(mocks) {
   });
   const loaded = new Module(filename);
   const previousLoad = Module._load;
-  Module._load = (request, parent, isMain) => Object.hasOwn(mocks, request)
-    ? mocks[request]
-    : previousLoad.call(Module, request, parent, isMain);
+  Module._load = (request, parent, isMain) => {
+    if (Object.hasOwn(mocks, request)) return mocks[request];
+    // A pure shared module the proxy imports is part of the behaviour under test,
+    // not a dependency to stub: resolve the path alias to the real file. Without
+    // this, adding one such import turns every test in this file red for a reason
+    // that has nothing to do with what they assert.
+    if (request.startsWith("@/")) {
+      return previousLoad.call(Module, path.join(root, "src", request.slice(2)), parent, isMain);
+    }
+    return previousLoad.call(Module, request, parent, isMain);
+  };
   try {
     loaded._compile(outputText, filename);
     return loaded.exports;

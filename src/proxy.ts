@@ -1,7 +1,14 @@
 import { NextResponse, NextRequest } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase-middleware";
 import { reportServerError } from "@/lib/report-server-error";
+import { shouldRecordActivity } from "@/lib/activity-throttle.mjs";
 import { isActiveProfile } from "@/lib/auth-profile.mjs";
+import {
+  FORCED_SESSION_ERROR,
+  FORCED_SESSION_REDIRECT_PATH,
+  isForcedPasswordChange,
+  isForcedSessionAllowedPath,
+} from "@/lib/forced-password-change.mjs";
 
 const PROTECTED_ROUTES: Record<string, string[]> = {
   "/settings": ["admin", "boss", "operator"],
@@ -10,6 +17,10 @@ const PROTECTED_ROUTES: Record<string, string[]> = {
 };
 
 const PUBLIC_API_PATHS = new Set([
+  // Pre-authentication by definition: the password grant is what creates a
+  // session, so it can never require one. It rate-limits and origin-checks
+  // itself, and never sets cookies for a profile that fails the active gate.
+  "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/me",
 ]);
@@ -28,6 +39,7 @@ type ActiveProfile = {
   role?: string | null;
   is_active?: boolean | null;
   password_changed_at?: string | null;
+  force_password_change?: boolean | null;
 };
 
 function isExternalAuthorizedApi(pathname: string): boolean {
@@ -66,8 +78,14 @@ function authUnavailable(request: NextRequest, isApiRequest: boolean) {
   return NextResponse.redirect(loginUrl);
 }
 
-// Track user activity — update last_active_at, but throttle to once per 5 min per user
-const activityThrottle = new Map<string, number>();
+// Track user activity — update last_active_at, but throttle to once per 5 min
+// per user. The bookkeeping lives in @/lib/activity-throttle: it used to be a
+// `Map<string, number>` here that was only ever written to, so it retained one
+// entry per user id for the life of the process to enforce a 5-minute window
+// (R8). The write itself stays in this file — tests/security/
+// profiles-grant-coupling.test.mjs requires the proxy to be the only
+// caller-scoped writer of public.profiles.
+const ACTIVITY_WINDOW_MS = 300_000;
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -108,10 +126,16 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // Use createMiddlewareClient to validate session (no service_role needed)
+  // Resolve credentials once, with the same Bearer-first precedence used by
+  // createServerSupabase in route handlers. The old cookie-first/fallback flow
+  // could authorize cookie user A here and then execute as Bearer user B below.
+  const authHeader = request.headers.get("authorization");
+  const bearerToken = authHeader?.match(/^Bearer\s+([^\s]+)$/i)?.[1];
+
+  // Use createMiddlewareClient to validate session (no service_role needed).
   let middlewareClient: Awaited<ReturnType<typeof createMiddlewareClient>>;
   try {
-    middlewareClient = await withAuthTimeout(createMiddlewareClient(request));
+    middlewareClient = await withAuthTimeout(createMiddlewareClient(request, bearerToken));
   } catch {
     return authUnavailable(request, isApiRequest);
   }
@@ -120,31 +144,10 @@ export async function proxy(request: NextRequest) {
   let user: { id: string } | null = null;
   let authInfrastructureFailed = false;
   try {
-    const { data } = await withAuthTimeout(supabase.auth.getUser());
+    const { data } = await withAuthTimeout(supabase.auth.getUser(bearerToken));
     user = data.user;
   } catch {
     authInfrastructureFailed = true;
-  }
-
-  // Fallback: also check Authorization Bearer header (for localhost/dev testing,
-  // where SSR cookies may fail to parse correctly)
-  let usedBearerFallback = false;
-  let bearerToken: string | undefined;
-  if (!user) {
-    const authHeader = request.headers.get("authorization");
-    if (authHeader?.startsWith("Bearer ")) {
-      const token = authHeader.slice(7);
-      bearerToken = token;
-      try {
-        const { data: authUser } = await withAuthTimeout(supabase.auth.getUser(token));
-        user = authUser?.user ?? null;
-        if (user) {
-          usedBearerFallback = true;
-        }
-      } catch {
-        authInfrastructureFailed = true;
-      }
-    }
   }
 
   if (!user && protectedApiMutation) {
@@ -166,7 +169,7 @@ export async function proxy(request: NextRequest) {
     let profile: ActiveProfile | null = null;
     let profileErr: unknown = null;
 
-    if (usedBearerFallback) {
+    if (bearerToken) {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
       const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
       if (!supabaseUrl || !publishableKey || !bearerToken) {
@@ -174,7 +177,7 @@ export async function proxy(request: NextRequest) {
       } else {
         try {
           const res = await withAuthTimeout(fetch(
-            `${supabaseUrl}/rest/v1/profiles?select=id,is_active,role,password_changed_at&id=eq.${user.id}`,
+            `${supabaseUrl}/rest/v1/profiles?select=id,is_active,role,password_changed_at,force_password_change&id=eq.${user.id}`,
             {
               headers: {
                 apikey: publishableKey,
@@ -197,7 +200,7 @@ export async function proxy(request: NextRequest) {
     } else {
       const { data, error } = await withAuthTimeout(supabase
         .from("profiles")
-        .select("role, is_active, password_changed_at")
+        .select("role, is_active, password_changed_at, force_password_change")
         .eq("id", user.id)
         .single());
       profile = data;
@@ -216,6 +219,20 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
     activeProfile = profile;
+
+    // A2: a forced session may change its password, look at itself and leave.
+    // Everything else — reads included, and every service-role route with it —
+    // is refused here, before the request reaches a handler. The exceptions live
+    // in one list in src/lib/forced-password-change.mjs so this boundary and
+    // getRequestAuthContext() cannot disagree about what they are.
+    if (isForcedPasswordChange(profile) && !isForcedSessionAllowedPath(pathname)) {
+      if (isApiRequest) {
+        return NextResponse.json({ error: FORCED_SESSION_ERROR }, { status: 403 });
+      }
+      const changeUrl = new URL(FORCED_SESSION_REDIRECT_PATH, request.url);
+      changeUrl.searchParams.set("reason", FORCED_SESSION_ERROR);
+      return NextResponse.redirect(changeUrl);
+    }
   }
 
   // Q6: Password reset session invalidation — if password was changed after the
@@ -250,17 +267,12 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // Track activity: update last_active_at (throttled to once per 5 min)
-  // Also capture client IP for audit_log (x-forwarded-for → first IP)
+  // Track activity: update last_active_at (throttled to once per 5 min).
+  // The client-IP capture that used to accompany this existed only to populate
+  // the audit row below; see the note there.
   if (user && !pathname.startsWith("/_next") && !pathname.startsWith("/api")) {
-    const now = Date.now();
-    const last = activityThrottle.get(user.id) || 0;
-    if (now - last > 300_000) {
-      activityThrottle.set(user.id, now);
-      const clientIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-        || request.headers.get("x-real-ip")
-        || "unknown";
-      // Fire-and-forget: update profile activity + log IP audit
+    if (shouldRecordActivity(user.id, ACTIVITY_WINDOW_MS)) {
+      // Fire-and-forget: update profile activity.
       supabase.from("profiles").update({ last_active_at: new Date().toISOString() }).eq("id", user.id).then(({ error }) => {
         if (error) {
           // Production monitoring requirement - report server errors
@@ -274,27 +286,19 @@ export async function proxy(request: NextRequest) {
           console.error("Activity tracking error:", error.message);
         }
       });
-      supabase.from("audit_logs").insert({
-        // NOTE: audit_logs.actor_id is the genuine column (NOT a business_events alias).
-        // Migration 20260613000000_audit_logs.sql:6 declares it. Unlike business_events
-        // (where actor_id was the wrong alias), audit_logs always used actor_id. Do NOT rename.
-        actor_id: user.id,
-        action: "PAGE_VISIT",
-        details: { page: pathname },
-        ip_address: clientIp,
-      }).then(({ error }) => {
-        if (error) {
-          // Production monitoring requirement - report server errors
-          reportServerError({
-            message: error.message,
-            type: "audit_log_error",
-            url: pathname,
-          }).catch(() => {
-            // Silent fail to prevent circular reporting
-          });
-          console.error("Audit log error:", error.message);
-        }
-      });
+      // The PAGE_VISIT insert into audit_logs that used to sit here has been
+      // removed. It wrote to audit_logs with the CALLER'S OWN RLS client, which
+      // is why the table needed a permissive `WITH CHECK (true)` INSERT policy
+      // for `authenticated` — and that policy let any user forge an audit entry
+      // under any actor_id (F-08). audit_logs is now server-write-only
+      // (20260811100000_f08_audit_logs_actor_identity.sql), matching the
+      // "server-owned evidence, never browser-submitted facts" rule that
+      // 20260723130000_lock_definer_boundaries.sql already set.
+      //
+      // Nothing read these rows: they were page telemetry, not audit evidence.
+      // last_active_at above still carries the activity signal. If page-visit
+      // telemetry is wanted back, it has to be written server-side with
+      // supabaseAdmin — the service-role key must not enter this runtime.
     }
   }
 
@@ -332,6 +336,16 @@ export const config = {
     "/quotes/:path*",
     "/projects/:path*",
     "/products/:path*",
+    // A2: /payments, /tasks and /workbench are authenticated pages under
+    // src/app/(dashboard) that this matcher never listed, so no edge check ran
+    // for them — neither the forced-password-change refusal added below nor the
+    // older is_active revocation boundary. Server actions POST to the page's own
+    // path, so an unlisted page was also an unchecked action entry point.
+    // tests/security/forced-password-change-boundary.test.mjs asserts that every
+    // page under (dashboard) is covered, so a new page cannot reopen this.
+    "/payments/:path*",
+    "/tasks/:path*",
+    "/workbench/:path*",
     "/api/:path*",
     // P3_6 (PRD §六 6.5): legacy URL redirects at the edge.
     // /quotations has no :path* so /quotations/[id] stays reachable.

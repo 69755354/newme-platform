@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const migration = new URL("../../supabase/migrations/20260723130000_lock_definer_boundaries.sql", import.meta.url);
 
 test("SAM-61 fixes the search path of every current public function", async () => {
@@ -28,7 +30,7 @@ test("SAM-61 fixes the search path of every current public function", async () =
   ];
 
   for (const fn of functions) {
-    const escaped = fn.replace(/[()]/g, "\\$&").replace(/ /g, "\\s+");
+    const escaped = escapeRegExp(fn).replace(/ /g, "\\s+");
     if (fn.startsWith("transition_lead_stage")) {
       assert.ok(sql.includes(`to_regprocedure('public.${fn.replace(/ /g, "")}')`));
       assert.match(sql, new RegExp(`ALTER FUNCTION public\\.${escaped} SET search_path = pg_catalog, public, pg_temp`));
@@ -41,7 +43,7 @@ test("SAM-61 fixes the search path of every current public function", async () =
 test("SAM-61 preserves only authenticated sales workflow RPCs", async () => {
   const sql = await readFile(migration, "utf8");
   for (const fn of ["get_my_role()", "next_quote_no()", "recomplete_lead_milestone(uuid, text, text)", "reopen_lead_milestone(uuid, text, text)", "transition_lead_stage(uuid, text, text, text)", "transition_lead_stage(uuid, text, text, text, uuid)"]) {
-    const escaped = fn.replace(/[()]/g, "\\$&").replace(/ /g, "\\s+");
+    const escaped = escapeRegExp(fn).replace(/ /g, "\\s+");
     assert.match(sql, new RegExp(`REVOKE EXECUTE ON FUNCTION public\\.${escaped} FROM PUBLIC, anon`));
     assert.match(sql, new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${escaped} TO authenticated`));
   }

@@ -42,8 +42,8 @@ supersedes: MEMORY.md § Team / § CRM Accounts (conflated version)
 These are SYSTEM accounts — may not map 1:1 to operating team.
 | Email | Password | Role | verified |
 |-------|----------|------|----------|
-| tanya@newme.ae | 654321 | Boss | unverified |
-| ayana@newme.ae | 123456 | Operator | unverified |
+| tanya@newme.ae | [REDACTED — round-4 A0] | Boss | unverified |
+| ayana@newme.ae | [REDACTED — round-4 A0] | Operator | unverified |
 | mohamed@newme.ae | — | Sales | unverified |
 | faheem@newme.ae | — | Sales | unverified |
 | assem@newme.ae | — | Sales | unverified |

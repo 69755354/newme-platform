@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "lock_version": "2026-08-15.1",
+  "actions": [
+    {
+      "uses": "actions/checkout",
+      "version": "v4.4.0",
+      "commit_sha": "11d5960a326750d5838078e36cf38b85af677262",
+      "source": "https://api.github.com/repos/actions/checkout/git/ref/tags/v4.4.0"
+    },
+    {
+      "uses": "actions/setup-node",
+      "version": "v4.4.0",
+      "commit_sha": "49933ea5288caeca8642d1e84afbd3f7d6820020",
+      "source": "https://api.github.com/repos/actions/setup-node/git/ref/tags/v4.4.0"
+    },
+    {
+      "uses": "actions/dependency-review-action",
+      "version": "v5.0.0",
+      "commit_sha": "a1d282b36b6f3519aa1f3fc636f609c47dddb294",
+      "source": "https://api.github.com/repos/actions/dependency-review-action/git/ref/tags/v5.0.0"
+    },
+    {
+      "uses": "github/codeql-action/init",
+      "version": "v4.37.7",
+      "commit_sha": "ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd",
+      "source": "https://api.github.com/repos/github/codeql-action/git/ref/tags/v4.37.7"
+    },
+    {
+      "uses": "github/codeql-action/analyze",
+      "version": "v4.37.7",
+      "commit_sha": "ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd",
+      "source": "https://api.github.com/repos/github/codeql-action/git/ref/tags/v4.37.7"
+    }
+  ],
+  "images": [
+    {
+      "reference": "docker.io/library/node:24.18.0-bookworm",
+      "digest": "sha256:5711a0d445a1af54af9589066c646df387d1831a608226f4cd694fc59e745059",
+      "source": "https://hub.docker.com/_/node"
+    },
+    {
+      "reference": "docker.io/library/postgres:17.11-trixie",
+      "digest": "sha256:f86c774c7a51d0f05133f2ab70e4c384b589170458ab1df1ba83426d7cc30da7",
+      "source": "https://hub.docker.com/_/postgres"
+    },
+    {
+      "reference": "mcr.microsoft.com/playwright:v1.60.0-noble",
+      "digest": "sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948",
+      "source": "https://mcr.microsoft.com/product/playwright/about"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "supabase-cli-linux-amd64",
+      "version": "2.113.0",
+      "asset_name": "supabase_2.113.0_linux_amd64.tar.gz",
+      "url": "https://github.com/supabase/cli/releases/download/v2.113.0/supabase_2.113.0_linux_amd64.tar.gz",
+      "sha256": "14659e7148ad17b77e69e5c36b27be572110519c76c796da1b53c07c3590f593",
+      "source": "https://github.com/supabase/cli/releases/download/v2.113.0/checksums.txt",
+      "source_sha256": "382922f32499e9bccbb41538fe400a4fb9d5ad5c3c35b9fe6dfd0b708e513aab"
+    }
+  ]
+}

@@ -121,27 +121,61 @@ function NewContractPageInner() {
     const pctList = pcts.split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
     const dayList = dueDays.split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
 
-    if (pctList.length < 1 || dayList.length < 1) {
+    if (pctList.length < 1 || dayList.length < 1 || pctList.some(n => n <= 0)) {
       toast.error(t("contracts.invalidInstallment"));
       setSaving(false);
       return;
     }
 
-    const installCount = Math.min(pctList.length, dayList.length);
+    // Mismatched lengths used to be resolved with Math.min(), which silently threw
+    // away the trailing installments: four percentages and three due days produced
+    // a three-installment schedule covering part of the contract, and the contract
+    // was created anyway. The schedule has to describe the whole contract now, so
+    // this is a question for the person filling in the form.
+    if (pctList.length !== dayList.length) {
+      toast.error(t("contracts.installmentCountMismatch"));
+      setSaving(false);
+      return;
+    }
 
-    // Build installment data
-    const now = new Date();
+    const pctTotal = pctList.reduce((sum, n) => sum + n, 0);
+    if (pctTotal !== 100) {
+      toast.error(t("contracts.installmentPctTotal").replace("{total}", String(pctTotal)));
+      setSaving(false);
+      return;
+    }
+
+    const installCount = pctList.length;
+
+    // Built in cents, with the remainder on the last installment. Percentages of an
+    // amount do not generally divide into cents — 33/33/34 of 10,000.01 rounds to a
+    // total that is a cent or two off — and the schedule now has to equal the
+    // contract exactly, so the last installment absorbs whatever the earlier
+    // roundings left over instead of the total being wrong. Percentages are checked
+    // to add to 100 above, so this shifts cents rather than hiding a real shortfall.
+    const totalCents = Math.round(amount * 100);
     const installments = [];
+    let allocatedCents = 0;
     for (let i = 0; i < installCount; i++) {
-      const instAmount = Math.round((amount * pctList[i]) / 100 * 100) / 100;
+      const isLast = i === installCount - 1;
+      const instCents = isLast
+        ? totalCents - allocatedCents
+        : Math.round((totalCents * pctList[i]) / 100);
+      allocatedCents += instCents;
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + dayList[i]);
       installments.push({
         seq: i + 1,
-        amount: instAmount,
+        amount: instCents / 100,
         due_date: dueDate.toISOString().slice(0, 10),
-        description: i === 0 ? t("contracts.installmentFirst") : i === installCount - 1 ? t("contracts.installmentLast") : t("contracts.installmentNth").replace("{n}", String(i + 1)),
+        description: i === 0 ? t("contracts.installmentFirst") : isLast ? t("contracts.installmentLast") : t("contracts.installmentNth").replace("{n}", String(i + 1)),
       });
+    }
+
+    if (installments.some(inst => inst.amount <= 0)) {
+      toast.error(t("contracts.invalidInstallment"));
+      setSaving(false);
+      return;
     }
 
     // Create contract via server API (avoids direct browser-side DB inserts)

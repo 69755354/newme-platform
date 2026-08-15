@@ -191,7 +191,7 @@ export default function LeadCustomerProfile({
         {lead.created_by && (
           <div className="border-t border-border pt-3 space-y-1.5">
             <Field label={t("leadDetail.createdBy")}>
-              <span className="text-sm">{lead.creator_name || "—"}</span>
+              <span data-newme-uat-sensitive="true" className="text-sm">{lead.creator_name || "—"}</span>
             </Field>
             {lead.created_at && (
               <Field label={t("leadDetail.createdAt") || "Created"}>
@@ -211,7 +211,7 @@ export default function LeadCustomerProfile({
               <div key={tr.id || i} className="text-xs text-muted-foreground flex items-start gap-1.5">
                 <span className="text-[10px] mt-0.5 shrink-0">→</span>
                 <div>
-                  <span>{tr.description || (tr.operator?.full_name ? `Reassigned by ${tr.operator.full_name}` : "Reassigned")}</span>
+                  <span data-newme-uat-sensitive="true">{tr.description || (tr.operator?.full_name ? `Reassigned by ${tr.operator.full_name}` : "Reassigned")}</span>
                   <span className="block text-[10px] opacity-60">
                     {fmtDubai(tr.created_at, { locale: "zh-CN", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </span>
@@ -226,6 +226,7 @@ export default function LeadCustomerProfile({
           <div className="relative flex items-center justify-between">
             <span className="text-muted-foreground text-xs">{t("leadDetail.owner")}</span>
             <button
+              data-newme-uat-sensitive="true"
               onClick={() => setShowSalesDropdown(!showSalesDropdown)}
               disabled={reassigning}
               className="flex items-center gap-1.5 text-foreground text-sm hover:text-copper-400 transition-colors disabled:opacity-50"
@@ -266,7 +267,7 @@ export default function LeadCustomerProfile({
                       )}
                     />
                     <div className="flex-1 min-w-0">
-                      <p className="truncate">{u.full_name || u.email}</p>
+                      <p data-newme-uat-sensitive="true" className="truncate">{u.full_name || u.email}</p>
                       <p className="text-[10px] text-muted-foreground">{u.role}</p>
                     </div>
                   </button>

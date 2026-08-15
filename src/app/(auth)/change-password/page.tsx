@@ -44,6 +44,14 @@ export default function ChangePasswordPage() {
       const data = await res.json();
 
       if (!res.ok) {
+        if (data.passwordChanged === true) {
+          setOldPassword("");
+          setNewPassword("");
+          setConfirmPassword("");
+          toast.error(data.error || "Password changed, but the security workflow did not complete.");
+          window.location.href = "/login";
+          return;
+        }
         toast.error(data.error || t("changePassword.failed"));
         return;
       }

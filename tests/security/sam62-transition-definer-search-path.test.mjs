@@ -7,10 +7,11 @@ const migration = new URL(
   import.meta.url,
 );
 const signature = "transition_lead_stage(uuid, text, text, text, uuid)";
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 test("SAM-62 fixes the five-argument stage RPC search path and execution boundary", async () => {
   const sql = await readFile(migration, "utf8");
-  const escapedSignature = signature.replace(/[()]/g, "\\$&").replace(/ /g, "\\s+");
+  const escapedSignature = escapeRegExp(signature).replace(/ /g, "\\s+");
 
   assert.match(
     sql,

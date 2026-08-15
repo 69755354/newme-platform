@@ -46,30 +46,6 @@ function getSupabaseAdmin() {
   return createClient(url, key);
 }
 
-/** Generate quote number: NM-YYYY-XXXX (sequential) */
-async function generateQuoteNo(supabase: any): Promise<string> {
-  const year = new Date().getFullYear().toString();
-  const { data } = await (supabase as any)
-    .from("quotations")
-    .select("quote_no")
-    .like("quote_no", `NM-${year}-%`)
-    .order("quote_no", { ascending: false })
-    .limit(1);
-
-  let nextSeq = 1;
-  if (data && data.length > 0) {
-    const lastNo: string = data[0].quote_no;
-    const parts = lastNo.split("-");
-    const lastSeq = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastSeq)) {
-      nextSeq = lastSeq + 1;
-    }
-  }
-
-  const seqStr = nextSeq.toString().padStart(4, "0");
-  return `NM-${year}-${seqStr}`;
-}
-
 /**
  * Derive device quantities from lead data.
  * If lead has devices_json, use it directly.
@@ -191,15 +167,13 @@ export async function POST(request: NextRequest) {
       discount_rate: 0,
     });
 
-    // 4. Generate quote number
-    const quoteNo = await generateQuoteNo(supabaseAdmin);
-
-    // 5. Save quotation to DB (quotations table)
+    // 4. Save quotation to DB. The BEFORE INSERT trigger allocates quote_no
+    // in this same transaction and the returned row is the source of truth.
     const { data: quote, error: quoteErr } = await (supabaseAdmin as any)
       .from("quotations")
       .insert({
         lead_id,
-        quote_no: quoteNo,
+        quote_no: "ALLOCATED_BY_DATABASE",
         version: 1,
         created_by: profile.userId,
         subtotal: calculation.subtotal,
@@ -229,6 +203,7 @@ export async function POST(request: NextRequest) {
       );
       return NextResponse.json({ error: "Failed to save quotation" }, { status: 500 });
     }
+    const quoteNo = quote.quote_no;
 
     // 6. Record activity
     const { error: activityErr } = await (supabaseAdmin as any).from("activities").insert({

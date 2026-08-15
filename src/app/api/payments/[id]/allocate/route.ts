@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+import { isVoided } from "@/lib/payment-state.mjs";
 import type { Json } from "@/types/database";
 
 interface AllocationItem {
@@ -74,10 +76,21 @@ export async function POST(
       }
     }
 
-    // Verify the payment exists
+    // Verify the payment exists and can still be allocated.
+    //
+    // Round-4 finding R5: this precheck selected `confirmed` and stopped there, and so
+    // answered every reversed payment with "Payment must be confirmed before
+    // allocation" — void_payment() clears `confirmed`, which makes that the literally
+    // true but actively misleading refusal for money that has been reversed. It tells
+    // an operator to confirm the payment first, and confirm_payment() then refuses
+    // with 22023 'a voided payment cannot be confirmed': a two-step loop with no exit.
+    // Testing voided_at first is what names the terminal state, and it also covers the
+    // row a compat-mode direct write can leave carrying both voided_at and
+    // confirmed = true, which allocate_payment() itself would report as unconfirmed
+    // because its guards are ordered the other way.
     const { data: payment, error: paymentErr } = await supabase
       .from("payments")
-      .select("id, confirmed")
+      .select("id, confirmed, voided_at")
       .eq("id", paymentId)
       .single();
 
@@ -85,9 +98,18 @@ export async function POST(
       return NextResponse.json({ error: "Payment not found" }, { status: 404 });
     }
 
+    // The routine's own messages and status (22023 → 400, src/lib/money-rpc.mjs), so
+    // the precheck and the database speak with one voice.
+    if (isVoided(payment)) {
+      return NextResponse.json(
+        { error: "a voided payment cannot be allocated", code: "22023" },
+        { status: 400 }
+      );
+    }
+
     if (!payment.confirmed) {
       return NextResponse.json(
-        { error: "Payment must be confirmed before allocation" },
+        { error: "payment must be confirmed before allocation", code: "22023" },
         { status: 400 }
       );
     }
@@ -101,20 +123,21 @@ export async function POST(
     });
 
     if (rpcErr) {
-      logger.error(
+      const failure = moneyRpcFailure(rpcErr, "Failed to allocate payment");
+      const log = failure.status >= 500 ? logger.error : logger.warn;
+      log(
         {
           err: rpcErr,
           request_id,
           operation: "payment_allocate",
           user_id: user.id,
           payment_id: paymentId,
+          error_code: rpcErr.code,
+          http_status: failure.status,
         },
-        "[API Payments Allocate] RPC failed",
+        "[API Payments Allocate] allocate_payment refused the request",
       );
-      return NextResponse.json(
-        { error: rpcErr.message || "Failed to allocate payment" },
-        { status: 500 }
-      );
+      return NextResponse.json(failure.body, { status: failure.status });
     }
 
     return NextResponse.json({ data: result });

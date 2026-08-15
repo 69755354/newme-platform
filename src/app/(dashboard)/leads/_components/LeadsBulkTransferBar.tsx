@@ -31,6 +31,7 @@
  */
 
 import { Fragment } from "react";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import type { SalesUser } from "../_hooks/useLeadMutations";
 
 /* ─── Props ─── */
@@ -74,6 +75,7 @@ export function LeadsBulkTransferBar({
   onSelectAll,
   onClear,
 }: LeadsBulkTransferBarProps) {
+  const { t } = useLanguage();
   if (selectedCount <= 0) return <Fragment />;
   if (salesRole !== "admin" && salesRole !== "boss") return <Fragment />;
 
@@ -86,33 +88,33 @@ export function LeadsBulkTransferBar({
         className="sticky bottom-0 z-10 bg-background/95 backdrop-blur-sm border-t -mx-4 px-4 py-2.5"
       >
         <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-copper-500/10 border border-copper-500/30">
-          <span className="text-sm font-medium text-copper-300">{selectedCount} leads selected</span>
+          <span className="text-sm font-medium text-copper-300">{t("leads.bulkSelected").replace("{n}", String(selectedCount))}</span>
           <div className="flex items-center gap-2">
             <button onClick={onSelectAll}
-              className="text-xs text-copper-400 hover:text-copper-300">Select all {totalFiltered}</button>
+              className="text-xs text-copper-400 hover:text-copper-300">{t("leads.selectAllCount").replace("{n}", String(totalFiltered))}</button>
             <button onClick={onClear}
-              className="text-xs text-muted-foreground hover:text-foreground">Clear</button>
+              className="text-xs text-muted-foreground hover:text-foreground">{t("leads.clear")}</button>
             {selectedCount > 0 && !showBulkTransfer && (
               <button onClick={() => { setShowBulkTransfer(true); setBulkTransferTargetId(""); }}
                 className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-copper-500 text-foreground rounded-md hover:bg-copper-400 transition-colors">
-                Transfer →
+                {t("leads.transferAction")}
               </button>
             )}
             {showBulkTransfer && (
               <>
                 <select value={bulkTransferTargetId} onChange={e => setBulkTransferTargetId(e.target.value)}
                   className="text-xs bg-card border border-border/50 rounded px-2 py-1 text-foreground">
-                  <option value="">Select user...</option>
+                  <option value="">{t("leads.selectUser")}</option>
                   {salesUsers.map((u: SalesUser) => (
                     <option key={u.id} value={u.id}>{u.full_name || u.email}</option>
                   ))}
                 </select>
                 <button onClick={bulkTransfer} disabled={reassigning || !bulkTransferTargetId}
                   className="px-3 py-1 text-xs font-medium bg-emerald-600 text-foreground rounded-md hover:bg-emerald-500 disabled:opacity-40 transition-colors">
-                  {reassigning ? "Transferring..." : `Transfer ${selectedCount}`}
+                  {reassigning ? t("leads.transferring") : t("leads.transferCount").replace("{n}", String(selectedCount))}
                 </button>
                 <button onClick={() => setShowBulkTransfer(false)}
-                  className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+                  className="text-xs text-muted-foreground hover:text-foreground">{t("common.cancel")}</button>
               </>
             )}
           </div>

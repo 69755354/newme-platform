@@ -2,6 +2,16 @@
 export const translations = {
   en: {
     common: {
+      // t() falls back to the KEY PATH, never to a blank or to the English word —
+      // see src/lib/i18n/LanguageContext.tsx. So a caller writing
+      // `t("common.page") || "Page"` renders the literal string "common.page" and
+      // the `||` branch is dead code. These four were exactly that: the contracts
+      // list shipped a filter chip reading "common.all" and a pager reading
+      // "common.page 1 / 3" in both languages.
+      all: "All",
+      page: "Page",
+      prev: "Prev",
+      next: "Next",
       search: "Search",
       loading: "Loading...",
       saving: "Saving...",
@@ -234,6 +244,12 @@ export const translations = {
       moveTo: "Move to {stage}",
       nameOrPhoneRequired: "Name or phone required",
       quickCreate: "Quick Create Lead",
+      bulkSelected: "{n} leads selected",
+      selectAllCount: "Select all {n}",
+      transferAction: "Transfer →",
+      selectUser: "Select user...",
+      transferring: "Transferring...",
+      transferCount: "Transfer {n}",
       customerNamePlaceholder: "Customer name",
       phone2: "Phone *",
       creating: "Creating...",
@@ -353,6 +369,8 @@ export const translations = {
       transferAll: "Transfer All",
       // Password change
       changePassword: "Change Password",
+      currentPassword: "Current Password",
+      currentPasswordPlaceholder: "Enter your current password",
       newPassword: "New Password",
       newPasswordPlaceholder: "At least 6 characters",
       confirmPassword: "Confirm Password",
@@ -536,6 +554,23 @@ export const translations = {
       allocating: "Allocating",
       of: "of",
       allocationExceeds: "Total allocation exceeds payment amount",
+      voidedStatus: "Voided",
+      totalVoided: "voided, excluded",
+      voidPayment: "Void",
+      voidPaymentTitle: "Void Payment",
+      voidReason: "Reason",
+      voidReasonPlaceholder: "Why is this payment being reversed?",
+      voidReasonRequired: "A reason is required to void a payment",
+      voidWarning:
+        "Voiding releases every allocation of this payment and recomputes the contract, project and collection totals. The record is kept, not deleted.",
+      voidConfirm: "Void payment",
+      voided: "Payment voided",
+      voidFailed: "Failed to void payment",
+      voidedOn: "Voided on",
+      allocationUnknown: "Allocation unavailable",
+      allocationReplaces:
+        "Submitting replaces this payment's whole allocation. The amounts below are what is allocated now.",
+      remainingToAllocate: "Unallocated",
     },
     tasks: {
       title: "Tasks",
@@ -658,6 +693,11 @@ export const translations = {
       dueDate: "Due",
       confirmed: "Confirmed",
       pendingConfirm: "Pending",
+      // R5: the trace badge's other state. Deliberately not "Pending": v_lead_trace
+      // carries `confirmed` and no void column, so `confirmed = false` covers a
+      // payment still awaiting confirmation AND one that has been reversed, and
+      // calling both "pending" told an operator that reversed money was on its way.
+      paymentNotConfirmed: "Not confirmed",
       installment: "Installment",
       payment: "Payment",
       quotationLabel: "Quotation",
@@ -950,6 +990,9 @@ export const translations = {
       signingIn: "Signing in...",
       failed: "Login failed",
       networkError: "Network error",
+      rateLimited: "Too many attempts. Please wait and try again.",
+      inactiveAccount: "This account is disabled. Contact an administrator.",
+      unavailable: "Sign-in is temporarily unavailable. Please try again.",
     },
     changePassword: {
       title: "Change Password",
@@ -986,6 +1029,8 @@ export const translations = {
       selectLead: "Please select a customer lead",
       validAmount: "Please enter a valid contract amount",
       invalidInstallment: "Invalid installment format, please use comma separation",
+      installmentCountMismatch: "Give the same number of percentages and due days",
+      installmentPctTotal: "The installment percentages must add up to 100 ({total} given)",
       createFailed: "Failed to create contract",
       created: "Contract {no} created",
       customerLead: "Customer Lead",
@@ -1020,6 +1065,28 @@ export const translations = {
       statusRevoking: "Revoking",
       statusSuperseded: "Superseded",
       statusSuspended: "Suspended",
+      // The list page and the detail page both label this status; neither had a key
+      // for it, so both rendered "contracts.statusCancelled".
+      statusCancelled: "Cancelled",
+      // The first-payment badge. These five were hardcoded English in the list
+      // page's getFirstPaymentBadge(), so the Chinese UI showed "✓ Paid",
+      // "⚠ Partial", "Overdue", "Due Soon" and "Unpaid".
+      firstPaymentPaid: "Paid",
+      firstPaymentPartial: "Partial",
+      firstPaymentOverdue: "Overdue",
+      firstPaymentDueSoon: "Due Soon",
+      firstPaymentUnpaid: "Unpaid",
+      firstDue: "1st due",
+      // The contract detail page's status control. `confirmStatusChange` was the
+      // clearest case of what a missing key costs: the dialog compared t()'s return
+      // value against the string "contracts.confirmStatusChange" and substituted a
+      // hardcoded English sentence when they matched, because t() answers a missing
+      // key with the key path and can never be falsy. The other three rendered
+      // through `t("…") || "Literal"`, which is the same dead branch written shorter.
+      changeStatus: "Change Status",
+      confirmStatusChange: "Change status to {status}?",
+      statusUpdated: "Status updated",
+      signedAt: "Signed At",
       approve: "Approve",
       reject: "Reject",
       revoke: "Revoke",
@@ -1028,6 +1095,7 @@ export const translations = {
       approvalFailed: "Action failed",
       rejectPrompt: "Rejection reason",
       revokePrompt: "Revoke reason",
+      terminateReasonPrompt: "Termination reason (required)",
       uploading: "Uploading...",
       uploadSuccess: "Contract uploaded",
       uploadFailed: "Upload failed",
@@ -1511,6 +1579,10 @@ export const translations = {
   },
   zh: {
     common: {
+      all: "全部",
+      page: "页码",
+      prev: "上一页",
+      next: "下一页",
       search: "搜索",
       loading: "加载中...",
       saving: "保存中...",
@@ -1740,6 +1812,12 @@ export const translations = {
       moveTo: "移到{stage}",
       nameOrPhoneRequired: "至少填写姓名或电话",
       quickCreate: "快速创建线索",
+      bulkSelected: "已选择 {n} 条线索",
+      selectAllCount: "全选 {n} 条",
+      transferAction: "转移 →",
+      selectUser: "选择用户...",
+      transferring: "转移中...",
+      transferCount: "转移 {n} 条",
       customerNamePlaceholder: "客户姓名",
       phone2: "电话 *",
       creating: "创建中...",
@@ -1859,6 +1937,8 @@ export const translations = {
       transferAll: "执行转移",
       // Password change
       changePassword: "修改密码",
+      currentPassword: "当前密码",
+      currentPasswordPlaceholder: "请输入当前密码",
       newPassword: "新密码",
       newPasswordPlaceholder: "至少6个字符",
       confirmPassword: "确认密码",
@@ -2042,6 +2122,22 @@ export const translations = {
       allocating: "正在分配",
       of: "共",
       allocationExceeds: "分配总额超过付款金额",
+      voidedStatus: "已作废",
+      totalVoided: "笔已作废，不计入",
+      voidPayment: "作废",
+      voidPaymentTitle: "作废付款",
+      voidReason: "原因",
+      voidReasonPlaceholder: "请说明作废这笔付款的原因",
+      voidReasonRequired: "作废付款必须填写原因",
+      voidWarning:
+        "作废将释放这笔付款的全部分配，并重算合同、项目与回款目标金额。记录会保留，不会删除。",
+      voidConfirm: "确认作废",
+      voided: "付款已作废",
+      voidFailed: "作废付款失败",
+      voidedOn: "作废于",
+      allocationUnknown: "无法获取分配数据",
+      allocationReplaces: "提交后将整体替换这笔付款的分配。下方金额为当前已分配的数额。",
+      remainingToAllocate: "未分配",
     },
     tasks: {
       title: "任务",
@@ -2164,6 +2260,7 @@ export const translations = {
       dueDate: "到期",
       confirmed: "已确认",
       pendingConfirm: "待确认",
+      paymentNotConfirmed: "未确认",
       installment: "分期",
       payment: "付款",
       quotationLabel: "报价单",
@@ -2456,6 +2553,9 @@ export const translations = {
       signingIn: "登录中...",
       failed: "登录失败",
       networkError: "网络错误",
+      rateLimited: "尝试次数过多，请稍后再试。",
+      inactiveAccount: "该账号已停用，请联系管理员。",
+      unavailable: "登录服务暂时不可用，请重试。",
     },
     changePassword: {
       title: "修改密码",
@@ -2492,6 +2592,8 @@ export const translations = {
       selectLead: "请选择客户线索",
       validAmount: "请输入有效合同金额",
       invalidInstallment: "分期比例或天数格式有误，请用逗号分隔",
+      installmentCountMismatch: "分期比例与到期天数的数量必须一致",
+      installmentPctTotal: "分期比例合计必须为 100（当前为 {total}）",
       createFailed: "创建合同失败",
       created: "合同 {no} 已创建",
       customerLead: "客户线索",
@@ -2526,6 +2628,17 @@ export const translations = {
       statusRevoking: "撤销中",
       statusSuperseded: "已替代",
       statusSuspended: "已暂停",
+      statusCancelled: "已取消",
+      firstPaymentPaid: "已付",
+      firstPaymentPartial: "部分",
+      firstPaymentOverdue: "逾期",
+      firstPaymentDueSoon: "即将到期",
+      firstPaymentUnpaid: "未付",
+      firstDue: "首款到期",
+      changeStatus: "变更状态",
+      confirmStatusChange: "确认将状态变更为{status}？",
+      statusUpdated: "状态已更新",
+      signedAt: "签署日期",
       approve: "通过",
       reject: "驳回",
       revoke: "撤销",
@@ -2534,6 +2647,7 @@ export const translations = {
       approvalFailed: "操作失败",
       rejectPrompt: "驳回原因",
       revokePrompt: "撤销原因",
+      terminateReasonPrompt: "终止原因（必填）",
       uploading: "上传中...",
       uploadSuccess: "合同已上传",
       uploadFailed: "上传失败",

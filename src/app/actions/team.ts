@@ -1,6 +1,6 @@
 'use server'
 
-import { createServerSupabase } from '@/lib/supabase-server'
+import { getActionAuthContext } from '@/lib/action-auth-context'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { resolveActiveLeadReassignmentTarget } from '@/lib/lead-reassignment.mjs'
 
@@ -18,18 +18,10 @@ interface AddTeamMemberInput {
  * Add a new team member.
  */
 export async function addTeamMember(data: AddTeamMemberInput) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
+  const { role } = await getActionAuthContext()
 
   // Role check
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile?.role || !['admin', 'boss'].includes(profile.role)) {
+  if (!role || !['admin', 'boss'].includes(role)) {
     throw new Error('Forbidden')
   }
 
@@ -86,6 +78,7 @@ export async function addTeamMember(data: AddTeamMemberInput) {
           body: `${data.full_name} added as ${data.role}`,
           relatedId: authData.user.id,
           relatedType: 'user',
+          eventKey: `team_member_added:${authData.user.id}`,
         }))
       )
     }
@@ -106,18 +99,10 @@ export async function addTeamMember(data: AddTeamMemberInput) {
  * Remove (soft-delete) a team member.
  */
 export async function removeTeamMember(userId: string) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
+  const { user, role } = await getActionAuthContext()
 
   // Role check
-  const { data: caller } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (!caller?.role || !['admin', 'boss'].includes(caller.role)) {
+  if (!role || !['admin', 'boss'].includes(role)) {
     throw new Error('Forbidden')
   }
 
@@ -188,6 +173,25 @@ export async function resetUserPassword(userId: string, password: string) {
     throw new Error('Password must be at least 6 characters')
   }
 
+  // R1 · the caller's role now comes from the same place every other action gets
+  // it, through the caller's own client rather than the service key. It used to
+  // be read with adminClient, which meant an administrator reset resolved its own
+  // authorization with a privilege that bypasses RLS to read a row the caller can
+  // read anyway — and it skipped is_active and force_password_change entirely.
+  //
+  // It also comes first now. The service-role client below used to be built
+  // before anything had authenticated the caller, so an unauthenticated, revoked
+  // or forced session got a client holding SUPABASE_SERVICE_ROLE_KEY constructed
+  // on its behalf before being turned away. Nothing was reachable through it, but
+  // "authenticate, then take the privilege" is the order that stays true when the
+  // next line is added.
+  const { role } = await getActionAuthContext()
+
+  // Role check: only admin/boss
+  if (!role || !['admin', 'boss'].includes(role)) {
+    throw new Error('Forbidden')
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
   const { createClient } = await import('@supabase/supabase-js')
@@ -195,30 +199,60 @@ export async function resetUserPassword(userId: string, password: string) {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
-
-  // Role check: only admin/boss
-  const { data: profile } = await adminClient
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile || !['admin', 'boss'].includes(profile.role)) {
-    throw new Error('Forbidden')
-  }
-
   // Reset target user's password
   const { error } = await adminClient.auth.admin.updateUserById(userId, { password })
   if (error) throw new Error(error.message)
 
-  // Invalidate sessions by marking password change time
-  await adminClient
+  // A3 · the same two writes, in the same order, as
+  // src/app/api/users/[id]/password/route.ts — this server action is the second
+  // administrator reset path and had the same gap. password_changed_at is what the
+  // restrictive session policy compares an access token's `iat` against;
+  // force_password_change makes the target replace the password the administrator
+  // chose. The result of the update was previously not even read, so a failure
+  // here was reported to the caller as a successful reset.
+  const { error: profileError } = await adminClient
     .from('profiles')
-    .update({ password_changed_at: new Date().toISOString() })
+    .update({ password_changed_at: new Date().toISOString(), force_password_change: true })
     .eq('id', userId)
+
+  // R2 · the timestamp failing does not make the revocation optional.
+  //
+  // This used to `throw` here, before the RPC, and the route did the same with a
+  // 500. So the one failure that leaves the target's password already changed by
+  // an administrator — and therefore the one where the target's live sessions are
+  // most certainly not the target's any more — was also the one failure that
+  // skipped the only step that removes them. The two writes are independent: the
+  // timestamp is what makes an already-minted access token fail the iat check,
+  // and the revocation is what deletes the refresh tokens. Losing the first is a
+  // reason to try harder at the second, not to abandon it.
+  //
+  // Order is unchanged: timestamp first when it works, so the window in which a
+  // pre-reset token is still accepted stays as short as it was.
+  const { data: revocation, error: revokeError } = await adminClient.rpc('revoke_user_sessions', {
+    p_user_id: userId,
+    p_reason: 'admin_password_reset',
+  })
+  const sessionsRevoked =
+    !revokeError && (revocation as { verified?: boolean } | null)?.verified === true
+
+  // Fail closed: no verified revocation, no successful reset. See the migration
+  // 20260817120000_admin_reset_session_revocation.sql for why an inherited GoTrue
+  // side effect is not enough. The unrevoked case is reported first because it is
+  // the more dangerous of the two: an unrecorded timestamp with the sessions gone
+  // leaves nothing to sign in with, while a recorded timestamp with the sessions
+  // intact leaves a refresh token that mints tokens whose iat passes the check.
+  if (!sessionsRevoked) {
+    throw new Error(
+      "Password changed, but the target's existing sessions could not be verifiably revoked; retry or ban the identity in Supabase Auth before relying on this reset",
+    )
+  }
+
+  if (profileError) {
+    throw new Error(
+      'Password changed and the existing sessions were revoked, but the revocation timestamp could not be recorded; '
+        + 'force_password_change is unset too, so repeat the reset to make the target replace this password',
+    )
+  }
 
   return { success: true }
 }

@@ -6,11 +6,15 @@ import {
   getAdminUserIds,
 } from "@/lib/notifications";
 import { logger, genReqId } from "@/lib/logger";
+import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
 
 /**
  * POST /api/contracts/[id]/revoke
  * Initiate contract revocation or superseding.
- * Only admin/boss can revoke.
+ *
+ * Authorization is decided inside revoke_contract() by money_actor(), which reads
+ * the actor from the JWT subject rather than from anything the caller sends, and
+ * requires an active admin/boss profile. A 403 from this route is that check.
  */
 export async function POST(
   request: NextRequest,
@@ -29,23 +33,6 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Verify admin/boss role
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    const isAdminOrBoss =
-      profile?.role && ["admin", "boss"].includes(profile.role);
-
-    if (!isAdminOrBoss) {
-      return NextResponse.json(
-        { error: "Only admin or boss can revoke contracts" },
-        { status: 403 }
-      );
-    }
-
     const body = await request.json();
     const { reason, supersede } = body;
 
@@ -56,61 +43,43 @@ export async function POST(
       );
     }
 
-    // Fetch the contract
-    const { data: contract, error: contractErr } = await supabase
-      .from("contracts")
-      .select("id, contract_no, status, sales_id")
-      .eq("id", contractId)
-      .single();
+    // revoke_contract() takes the row FOR UPDATE, re-reads the status inside the
+    // same transaction and checks the role against the token subject. The
+    // read-then-write this replaces let two concurrent requests both pass the
+    // "already superseded" test, and its role check was a separate statement from
+    // the write — while trg_guard_contracts_write now refuses a direct status
+    // write from the caller's client outright.
+    const { data: result, error: rpcErr } = await supabase.rpc("revoke_contract", {
+      p_contract_id: contractId,
+      p_reason: reason,
+      p_supersede: supersede === true,
+    });
 
-    if (contractErr || !contract) {
-      return NextResponse.json(
-        { error: "Contract not found" },
-        { status: 404 }
-      );
-    }
-
-    if (contract.status === "superseded") {
-      return NextResponse.json(
-        { error: "Contract is already superseded" },
-        { status: 400 }
-      );
-    }
-
-    if (contract.status === "revoked") {
-      return NextResponse.json(
-        { error: "Contract is already revoked" },
-        { status: 400 }
-      );
-    }
-
-    const newStatus = supersede ? "superseded" : "revoking";
-
-    // Update contract status
-    const { error: updateErr } = await supabase
-      .from("contracts")
-      .update({
-        status: newStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", contractId);
-
-    if (updateErr) {
-      logger.error(
+    if (rpcErr) {
+      const failure = moneyRpcFailure(rpcErr, "Failed to update contract status");
+      const log = failure.status >= 500 ? logger.error : logger.warn;
+      log(
         {
-          err: updateErr,
+          err: rpcErr,
           request_id,
           operation: "contract_revoke",
           user_id: user.id,
           contract_id: contractId,
+          error_code: rpcErr.code,
+          http_status: failure.status,
         },
-        "[Revoke Contract] DB update failed",
+        "[Revoke Contract] revoke_contract refused the request",
       );
-      return NextResponse.json(
-        { error: "Failed to update contract status" },
-        { status: 500 }
-      );
+      return NextResponse.json(failure.body, { status: failure.status });
     }
+
+    const contract = result as {
+      status: string;
+      previous_status: string;
+      contract_no: string;
+      sales_id: string | null;
+    };
+    const newStatus = contract.status;
 
     // Send notifications to relevant parties
     try {
@@ -129,7 +98,8 @@ export async function POST(
         }
       }
 
-      const actionLabel = supersede ? "superseded" : "revocation initiated";
+      // The label follows the status the routine actually set, not the request.
+      const actionLabel = newStatus === "superseded" ? "superseded" : "revocation initiated";
       const notifications = notificationTargets.map((userId) => ({
         userId,
         type: "contract_superseded",
@@ -159,6 +129,7 @@ export async function POST(
       success: true,
       contract_id: contractId,
       status: newStatus,
+      previous_status: contract.previous_status,
     });
   } catch (err: any) {
     const message =

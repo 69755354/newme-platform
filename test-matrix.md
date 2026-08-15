@@ -1,9 +1,9 @@
 # NewMe CRM Test Matrix v1
 
 ## Roles
-- admin (admin@newme.ae / 123456)
-- boss (tanya@newme.ae / Newme@2026)
-- sales (faheem@newme.ae / Faheem@2026)
+- admin (admin@newme.ae / — redacted; rotate per supabase/preflight/f02-credential-cutover.md §7)
+- boss (tanya@newme.ae / — redacted; rotate per supabase/preflight/f02-credential-cutover.md §7)
+- sales (faheem@newme.ae / — redacted; rotate per supabase/preflight/f02-credential-cutover.md §7)
 - operator — TODO: no test account yet
 
 ## Pages × Expected Access

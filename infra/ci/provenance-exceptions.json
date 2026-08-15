@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "policy_version": "2026-08-15.1",
+  "exceptions": [
+    {
+      "id": "github-hosted-ubuntu-24-04-v1",
+      "version": 1,
+      "kind": "github-hosted-runner",
+      "subject": "ubuntu-24.04",
+      "risk_reason": "GitHub-hosted runner images are not exposed as digest-addressable artifacts; the fixed OS label still receives image updates.",
+      "mitigation": "The OS family is fixed, every external action and OCI image is digest-bound, Node is exact, and release jobs fail closed on their required tool versions.",
+      "owner": "release-engineering",
+      "expires": "2026-09-01",
+      "audit_ref": "https://github.com/actions/runner-images/blob/739226172a10f2b5797297e716debc858698f73e/images/ubuntu/Ubuntu2404-Readme.md"
+    },
+    {
+      "id": "github-hosted-windows-2025-v1",
+      "version": 1,
+      "kind": "github-hosted-runner",
+      "subject": "windows-2025",
+      "risk_reason": "GitHub-hosted runner images are not exposed as digest-addressable artifacts; the fixed Windows Server label still receives image updates.",
+      "mitigation": "The OS family is fixed, checkout and Node setup are commit-pinned, Node is exact, and this job has no remote package installation.",
+      "owner": "release-engineering",
+      "expires": "2026-09-01",
+      "audit_ref": "https://github.com/actions/runner-images/blob/739226172a10f2b5797297e716debc858698f73e/images/windows/Windows2025-VS2026-Readme.md"
+    }
+  ]
+}

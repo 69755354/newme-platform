@@ -25,7 +25,9 @@ Not available in this session context. Referenced in compaction handoff.
 
 ### Tanya's Login Credentials (per this session)
 - Email: tanya@newme.ae
-- Password: Newme2024!
+- Password: [REDACTED — round-4 A0. The value was published here in plaintext and
+  remains in this repository's public git history, so it must be treated as
+  compromised until rotated. See supabase/preflight/f02-credential-cutover.md §7]
 - Role: boss
 
 ### Additional Context

@@ -12,6 +12,24 @@ WorkingDirectory=/opt/newme/current
 Environment=NODE_ENV=production
 Environment=PORT=3001
 EnvironmentFile=/etc/newme/newme-runtime.env
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=full
+ProtectHome=true
+ReadOnlyPaths=/opt/newme/releases
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ExecStart=/usr/bin/node /opt/newme/current/node_modules/next/dist/bin/next start -p 3001
 ExecStartPost=+/usr/local/libexec/newme/newme-readiness.sh
 ExecStopPost=+/usr/local/libexec/newme/newme-forensic.sh

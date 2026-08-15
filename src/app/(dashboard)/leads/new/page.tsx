@@ -83,9 +83,9 @@ export default function NewLeadPage() {
       });
       if (taskErr) toast.warning("Lead created but follow-up task creation failed");
       // Notify admins about new lead
-      import("@/lib/notify").then(({ notify }) => {
-        notify({ type: "lead_created", lead_id: data.id, customer_name: form.customer_name || "Unknown" });
-      });
+      void import("@/lib/notify")
+        .then(({ notify }) => notify({ type: "lead_created", lead_id: data.id, customer_name: form.customer_name || "Unknown" }))
+        .catch((error) => console.error("lead_notification_failed", error));
       // Meta Pixel: track Lead conversion
       if (typeof window !== "undefined" && (window as any).fbq) {
         (window as any).fbq("track", "Lead", {

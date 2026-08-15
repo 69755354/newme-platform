@@ -1,7 +1,7 @@
 // RBAC: user (authenticated)
 import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
-import { getCached, setCache } from "@/lib/api-cache"
+import { getCached, setCache } from "@/lib/api-cache.mjs"
 
 // Dubai GST = UTC+4. All "day"/"week" math below is done in GST, then
 // converted back to UTC ISO strings for DB queries.

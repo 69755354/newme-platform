@@ -1,0 +1,616 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://newme.ae/schemas/postdeploy-evidence-v1.schema.json",
+  "title": "NewMe postdeploy acceptance evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "policy",
+    "schema",
+    "receipt_key_sha256",
+    "release",
+    "roles",
+    "browser_uat",
+    "flows",
+    "fixtures",
+    "alert_drill",
+    "performance",
+    "delayed_verification",
+    "artifacts",
+    "generated_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "newme-postdeploy-evidence/v1" },
+    "policy": { "$ref": "#/$defs/versionedFile" },
+    "schema": { "$ref": "#/$defs/versionedFile" },
+    "receipt_key_sha256": { "$ref": "#/$defs/sha256" },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git_sha", "build_id", "deploy_run_id", "deploy_run_url", "deployed_at"],
+      "properties": {
+        "git_sha": { "$ref": "#/$defs/sha40" },
+        "build_id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\s]+$" },
+        "deploy_run_id": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+        "deploy_run_url": { "type": "string", "format": "uri", "maxLength": 256 },
+        "deployed_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "actor_id", "status", "completed_at", "flow_ids", "artifact_id"],
+        "properties": {
+          "role": { "enum": ["admin", "boss", "operator", "sales"] },
+          "actor_id": { "$ref": "#/$defs/uuid" },
+          "status": { "const": "pass" },
+          "completed_at": { "$ref": "#/$defs/timestamp" },
+          "flow_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/identifier" }
+          },
+          "artifact_id": { "$ref": "#/$defs/identifier" }
+        }
+      }
+    },
+    "browser_uat": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/browserUatSummary" }
+    },
+    "flows": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "role", "status", "started_at", "completed_at", "artifact_id"],
+        "properties": {
+          "id": { "$ref": "#/$defs/identifier" },
+          "role": { "enum": ["admin", "boss", "operator", "sales"] },
+          "status": { "const": "pass" },
+          "started_at": { "$ref": "#/$defs/timestamp" },
+          "completed_at": { "$ref": "#/$defs/timestamp" },
+          "artifact_id": { "$ref": "#/$defs/identifier" }
+        }
+      }
+    },
+    "fixtures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["created_ids", "cleaned_ids", "residual_count", "verified_at", "payment_id", "payment_status", "payment_void_request_id", "payment_void_receipt_sha256", "payment_voided_at", "kpi_baseline_sha256", "kpi_restored_sha256", "artifact_id"],
+      "properties": {
+        "created_ids": { "$ref": "#/$defs/uuidSet" },
+        "cleaned_ids": { "$ref": "#/$defs/uuidSet" },
+        "residual_count": { "type": "integer", "minimum": 0 },
+        "verified_at": { "$ref": "#/$defs/timestamp" },
+        "payment_id": { "$ref": "#/$defs/uuid" },
+        "payment_status": { "const": "voided" },
+        "payment_void_request_id": { "$ref": "#/$defs/eventId" },
+        "payment_void_receipt_sha256": { "$ref": "#/$defs/sha256" },
+        "payment_voided_at": { "$ref": "#/$defs/timestamp" },
+        "kpi_baseline_sha256": { "$ref": "#/$defs/sha256" },
+        "kpi_restored_sha256": { "$ref": "#/$defs/sha256" },
+        "artifact_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "alert_drill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["failure_event_id", "recovery_event_id", "failure_provider_delivery_id", "recovery_provider_delivery_id", "failure_provider_operation_id", "recovery_provider_operation_id", "failure_trigger_sha256", "recovery_trigger_sha256", "failure_receipt_sha256", "recovery_receipt_sha256", "failed_at", "recovered_at", "final_status", "artifact_id"],
+      "properties": {
+        "failure_event_id": { "$ref": "#/$defs/eventId" },
+        "recovery_event_id": { "$ref": "#/$defs/eventId" },
+        "failure_provider_delivery_id": { "$ref": "#/$defs/eventId" },
+        "recovery_provider_delivery_id": { "$ref": "#/$defs/eventId" },
+        "failure_provider_operation_id": { "$ref": "#/$defs/eventId" },
+        "recovery_provider_operation_id": { "$ref": "#/$defs/eventId" },
+        "failure_trigger_sha256": { "$ref": "#/$defs/sha256" },
+        "recovery_trigger_sha256": { "$ref": "#/$defs/sha256" },
+        "failure_receipt_sha256": { "$ref": "#/$defs/sha256" },
+        "recovery_receipt_sha256": { "$ref": "#/$defs/sha256" },
+        "failed_at": { "$ref": "#/$defs/timestamp" },
+        "recovered_at": { "$ref": "#/$defs/timestamp" },
+        "final_status": { "const": "ok" },
+        "artifact_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["samples_ms", "p75_ms", "p95_ms", "measured_at", "artifact_id"],
+      "properties": {
+        "samples_ms": {
+          "type": "array",
+          "minItems": 20,
+          "maxItems": 10000,
+          "items": { "type": "integer", "minimum": 0, "maximum": 600000 }
+        },
+        "p75_ms": { "type": "integer", "minimum": 0, "maximum": 600000 },
+        "p95_ms": { "type": "integer", "minimum": 0, "maximum": 600000 },
+        "measured_at": { "$ref": "#/$defs/timestamp" },
+        "artifact_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "delayed_verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["not_before", "completed_at", "status", "provider_trigger_sha256", "provider_event_id", "provider_delivery_id", "provider_query_id", "provider_receipt_sha256", "provider_observed_at", "artifact_id"],
+      "properties": {
+        "not_before": { "$ref": "#/$defs/timestamp" },
+        "completed_at": { "$ref": "#/$defs/timestamp" },
+        "status": { "const": "pass" },
+        "provider_trigger_sha256": { "$ref": "#/$defs/sha256" },
+        "provider_event_id": { "$ref": "#/$defs/eventId" },
+        "provider_delivery_id": { "$ref": "#/$defs/eventId" },
+        "provider_query_id": { "$ref": "#/$defs/eventId" },
+        "provider_receipt_sha256": { "$ref": "#/$defs/sha256" },
+        "provider_observed_at": { "$ref": "#/$defs/timestamp" },
+        "artifact_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 16,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "generated_at": { "$ref": "#/$defs/timestamp" }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "path", "sha256", "media_type"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "kind": { "enum": ["role_uat", "browser_uat", "fixture_cleanup", "alert_drill", "performance", "delayed_verification"] },
+        "path": { "type": "string", "minLength": 1, "maxLength": 240, "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "media_type": { "const": "application/json" }
+      }
+    },
+    "artifactRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git_sha", "build_id", "deploy_run_id"],
+      "properties": {
+        "git_sha": { "$ref": "#/$defs/sha40" },
+        "build_id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\s]+$" },
+        "deploy_run_id": { "type": "string", "pattern": "^[1-9][0-9]*$" }
+      }
+    },
+    "browserSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lead_id", "contract_id", "marker_sha256"],
+      "properties": {
+        "lead_id": { "$ref": "#/$defs/uuid" },
+        "contract_id": { "$ref": "#/$defs/uuid" },
+        "marker_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "browserUatSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "actor_id", "locale", "subject", "status", "completed_at", "artifact_id"],
+      "properties": {
+        "role": { "enum": ["admin", "boss", "operator", "sales"] },
+        "actor_id": { "$ref": "#/$defs/uuid" },
+        "locale": { "enum": ["en", "zh"] },
+        "subject": { "$ref": "#/$defs/browserSubject" },
+        "status": { "const": "pass" },
+        "completed_at": { "$ref": "#/$defs/timestamp" },
+        "artifact_id": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "browserScreenshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "media_type", "redaction_version"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 240, "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "media_type": { "const": "image/png" },
+        "redaction_version": { "const": "newme-postdeploy-browser-redaction/v2" }
+      }
+    },
+    "browserSemanticAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "value"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "value": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "browserStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "id", "status", "started_at", "completed_at", "path", "semantic_assertions", "evidence_sha256", "screenshot"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 14 },
+        "id": { "$ref": "#/$defs/identifier" },
+        "status": { "const": "pass" },
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "completed_at": { "$ref": "#/$defs/timestamp" },
+        "path": { "type": "string", "minLength": 1, "maxLength": 240, "pattern": "^/[A-Za-z0-9._/-]*$" },
+        "semantic_assertions": { "type": "array", "maxItems": 4, "items": { "$ref": "#/$defs/browserSemanticAssertion" } },
+        "evidence_sha256": { "$ref": "#/$defs/sha256" },
+        "screenshot": {
+          "anyOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/browserScreenshot" }
+          ]
+        }
+      }
+    },
+    "browserHttpCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "method", "path", "http_status", "response_sha256", "completed_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "method": { "enum": ["GET", "POST"] },
+        "path": { "enum": ["/api/auth/login", "/api/auth/me", "/api/auth/logout"] },
+        "http_status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "response_sha256": { "$ref": "#/$defs/sha256" },
+        "completed_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "browserQuality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["console_error_count", "page_error_count", "critical_http_failure_count", "overflow_violation_count", "overlap_violation_count", "raw_i18n_key_count"],
+      "properties": {
+        "console_error_count": { "const": 0 },
+        "page_error_count": { "const": 0 },
+        "critical_http_failure_count": { "const": 0 },
+        "overflow_violation_count": { "const": 0 },
+        "overlap_violation_count": { "const": 0 },
+        "raw_i18n_key_count": { "const": 0 }
+      }
+    },
+    "browserTraceMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trace_version", "path", "sha256", "media_type"],
+      "properties": {
+        "trace_version": { "const": "newme-postdeploy-browser-trace/v1" },
+        "path": { "type": "string", "minLength": 1, "maxLength": 240, "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "media_type": { "const": "application/json" }
+      }
+    },
+    "passingCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "completed_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "status": { "const": "pass" },
+        "completed_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "sessionCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "completed_at", "http_status", "response_sha256"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "status": { "const": "pass" },
+        "completed_at": { "$ref": "#/$defs/timestamp" },
+        "http_status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "response_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "flowAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "completed_at", "request_id", "fixture_id", "http_status", "actor_role", "actor_id", "readback_sha256"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "status": { "const": "pass" },
+        "completed_at": { "$ref": "#/$defs/timestamp" },
+        "request_id": { "$ref": "#/$defs/eventId" },
+        "fixture_id": { "$ref": "#/$defs/uuid" },
+        "http_status": { "type": "integer", "minimum": 200, "maximum": 299 },
+        "actor_role": { "enum": ["admin", "boss", "operator", "sales"] },
+        "actor_id": { "$ref": "#/$defs/uuid" },
+        "readback_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "flowParticipant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "actor_id"],
+      "properties": {
+        "role": { "enum": ["admin", "boss", "operator", "sales"] },
+        "actor_id": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "httpRequestEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "actor_role", "actor_id", "method", "path", "http_status", "completed_at", "response_sha256"],
+      "properties": {
+        "id": { "$ref": "#/$defs/eventId" },
+        "actor_role": { "enum": ["admin", "boss", "operator", "sales"] },
+        "actor_id": { "$ref": "#/$defs/uuid" },
+        "method": { "enum": ["GET", "POST", "PATCH", "DELETE"] },
+        "path": { "type": "string", "minLength": 1, "maxLength": 240, "pattern": "^/api/[A-Za-z0-9?&=._/-]+$" },
+        "http_status": { "type": "integer", "minimum": 200, "maximum": 299 },
+        "completed_at": { "$ref": "#/$defs/timestamp" },
+        "response_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "roleFlowResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "started_at", "completed_at", "participants", "requests", "fixture_ids", "assertions"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "status": { "const": "pass" },
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "completed_at": { "$ref": "#/$defs/timestamp" },
+        "participants": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/$defs/flowParticipant" } },
+        "requests": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "$ref": "#/$defs/httpRequestEvidence" } },
+        "fixture_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/uuid" } },
+        "assertions": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/flowAssertion" } }
+      }
+    },
+    "roleUatArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_version", "kind", "release", "observed_at", "payload", "receipt"],
+      "properties": {
+        "artifact_version": { "const": "newme-postdeploy-artifact/v1" },
+        "kind": { "const": "role_uat" },
+        "release": { "$ref": "#/$defs/artifactRelease" },
+        "observed_at": { "$ref": "#/$defs/timestamp" },
+        "receipt": { "$ref": "#/$defs/receipt" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runner", "runner_run_id", "role", "actor_id", "status", "started_at", "completed_at", "session_checks", "flows"],
+          "properties": {
+            "runner": { "const": "newme-postdeploy-uat/v1" },
+            "runner_run_id": { "$ref": "#/$defs/eventId" },
+            "role": { "enum": ["admin", "boss", "operator", "sales"] },
+            "actor_id": { "$ref": "#/$defs/uuid" },
+            "status": { "const": "pass" },
+            "started_at": { "$ref": "#/$defs/timestamp" },
+            "completed_at": { "$ref": "#/$defs/timestamp" },
+            "session_checks": { "type": "array", "minItems": 5, "maxItems": 5, "uniqueItems": true, "items": { "$ref": "#/$defs/sessionCheck" } },
+            "flows": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/roleFlowResult" } }
+          }
+        }
+      }
+    },
+    "browserUatArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_version", "kind", "release", "observed_at", "payload", "receipt"],
+      "properties": {
+        "artifact_version": { "const": "newme-postdeploy-artifact/v1" },
+        "kind": { "const": "browser_uat" },
+        "release": { "$ref": "#/$defs/artifactRelease" },
+        "observed_at": { "$ref": "#/$defs/timestamp" },
+        "receipt": { "$ref": "#/$defs/receipt" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runner", "runner_run_id", "runner_source_path", "runner_source_sha256", "playwright_image", "browser_name", "browser_version", "role", "actor_id", "locale", "subject", "viewport", "status", "started_at", "completed_at", "ordered_steps", "http_checks", "quality", "redaction", "trace"],
+          "properties": {
+            "runner": { "const": "newme-postdeploy-browser-uat/v1" },
+            "runner_run_id": { "$ref": "#/$defs/eventId" },
+            "runner_source_path": { "const": "scripts/run-postdeploy-browser-uat.mjs" },
+            "runner_source_sha256": { "$ref": "#/$defs/sha256" },
+            "playwright_image": { "const": "mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948" },
+            "browser_name": { "const": "chromium" },
+            "browser_version": { "const": "148.0.7778.96" },
+            "role": { "enum": ["admin", "boss", "operator", "sales"] },
+            "actor_id": { "$ref": "#/$defs/uuid" },
+            "locale": { "enum": ["en", "zh"] },
+            "subject": { "$ref": "#/$defs/browserSubject" },
+            "viewport": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["width", "height"],
+              "properties": {
+                "width": { "const": 1440 },
+                "height": { "const": 900 }
+              }
+            },
+            "status": { "const": "pass" },
+            "started_at": { "$ref": "#/$defs/timestamp" },
+            "completed_at": { "$ref": "#/$defs/timestamp" },
+            "ordered_steps": { "type": "array", "minItems": 14, "maxItems": 14, "items": { "$ref": "#/$defs/browserStep" } },
+            "http_checks": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "$ref": "#/$defs/browserHttpCheck" } },
+            "quality": { "$ref": "#/$defs/browserQuality" },
+            "redaction": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["redaction_version", "non_subject_dynamic_text_hidden", "evidence_copy_visible", "input_values_hidden", "screenshot_images_hidden", "trace_closed_fields_only", "storage_state_written"],
+              "properties": {
+                "redaction_version": { "const": "newme-postdeploy-browser-redaction/v2" },
+                "non_subject_dynamic_text_hidden": { "const": true },
+                "evidence_copy_visible": { "const": true },
+                "input_values_hidden": { "const": true },
+                "screenshot_images_hidden": { "const": true },
+                "trace_closed_fields_only": { "const": true },
+                "storage_state_written": { "const": false }
+              }
+            },
+            "trace": { "$ref": "#/$defs/browserTraceMetadata" }
+          }
+        }
+      }
+    },
+    "fixtureCleanupArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_version", "kind", "release", "observed_at", "payload", "receipt"],
+      "properties": {
+        "artifact_version": { "const": "newme-postdeploy-artifact/v1" },
+        "kind": { "const": "fixture_cleanup" },
+        "release": { "$ref": "#/$defs/artifactRelease" },
+        "observed_at": { "$ref": "#/$defs/timestamp" },
+        "receipt": { "$ref": "#/$defs/receipt" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runner", "query_run_id", "created_ids", "cleaned_ids", "residual_count", "verified_at", "payment_id", "payment_status", "payment_void_request_id", "payment_void_receipt_sha256", "payment_voided_at", "kpi_baseline_sha256", "kpi_restored_sha256"],
+          "properties": {
+            "runner": { "const": "newme-postdeploy-fixture-audit/v1" },
+            "query_run_id": { "$ref": "#/$defs/eventId" },
+            "created_ids": { "$ref": "#/$defs/uuidSet" },
+            "cleaned_ids": { "$ref": "#/$defs/uuidSet" },
+            "residual_count": { "const": 0 },
+            "verified_at": { "$ref": "#/$defs/timestamp" },
+            "payment_id": { "$ref": "#/$defs/uuid" },
+            "payment_status": { "const": "voided" },
+            "payment_void_request_id": { "$ref": "#/$defs/eventId" },
+            "payment_void_receipt_sha256": { "$ref": "#/$defs/sha256" },
+            "payment_voided_at": { "$ref": "#/$defs/timestamp" },
+            "kpi_baseline_sha256": { "$ref": "#/$defs/sha256" },
+            "kpi_restored_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      }
+    },
+    "alertDrillArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_version", "kind", "release", "observed_at", "payload", "receipt"],
+      "properties": {
+        "artifact_version": { "const": "newme-postdeploy-artifact/v1" },
+        "kind": { "const": "alert_drill" },
+        "release": { "$ref": "#/$defs/artifactRelease" },
+        "observed_at": { "$ref": "#/$defs/timestamp" },
+        "receipt": { "$ref": "#/$defs/receipt" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runner", "drill_run_id", "failure_event_id", "recovery_event_id", "failure_provider_delivery_id", "recovery_provider_delivery_id", "failure_provider_operation_id", "recovery_provider_operation_id", "failure_trigger_sha256", "recovery_trigger_sha256", "failure_receipt_sha256", "recovery_receipt_sha256", "failed_at", "recovered_at", "final_status"],
+          "properties": {
+            "runner": { "const": "newme-postdeploy-alert-drill/v1" },
+            "drill_run_id": { "$ref": "#/$defs/eventId" },
+            "failure_event_id": { "$ref": "#/$defs/eventId" },
+            "recovery_event_id": { "$ref": "#/$defs/eventId" },
+            "failure_provider_delivery_id": { "$ref": "#/$defs/eventId" },
+            "recovery_provider_delivery_id": { "$ref": "#/$defs/eventId" },
+            "failure_provider_operation_id": { "$ref": "#/$defs/eventId" },
+            "recovery_provider_operation_id": { "$ref": "#/$defs/eventId" },
+            "failure_trigger_sha256": { "$ref": "#/$defs/sha256" },
+            "recovery_trigger_sha256": { "$ref": "#/$defs/sha256" },
+            "failure_receipt_sha256": { "$ref": "#/$defs/sha256" },
+            "recovery_receipt_sha256": { "$ref": "#/$defs/sha256" },
+            "failed_at": { "$ref": "#/$defs/timestamp" },
+            "recovered_at": { "$ref": "#/$defs/timestamp" },
+            "final_status": { "const": "ok" }
+          }
+        }
+      }
+    },
+    "performanceArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_version", "kind", "release", "observed_at", "payload", "receipt"],
+      "properties": {
+        "artifact_version": { "const": "newme-postdeploy-artifact/v1" },
+        "kind": { "const": "performance" },
+        "release": { "$ref": "#/$defs/artifactRelease" },
+        "observed_at": { "$ref": "#/$defs/timestamp" },
+        "receipt": { "$ref": "#/$defs/receipt" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runner", "measurement_run_id", "samples_ms", "p75_ms", "p95_ms", "measured_at"],
+          "properties": {
+            "runner": { "const": "newme-postdeploy-performance/v1" },
+            "measurement_run_id": { "$ref": "#/$defs/eventId" },
+            "samples_ms": { "type": "array", "minItems": 20, "maxItems": 10000, "items": { "type": "integer", "minimum": 0, "maximum": 600000 } },
+            "p75_ms": { "type": "integer", "minimum": 0, "maximum": 600000 },
+            "p95_ms": { "type": "integer", "minimum": 0, "maximum": 600000 },
+            "measured_at": { "$ref": "#/$defs/timestamp" }
+          }
+        }
+      }
+    },
+    "delayedVerificationArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_version", "kind", "release", "observed_at", "payload", "receipt"],
+      "properties": {
+        "artifact_version": { "const": "newme-postdeploy-artifact/v1" },
+        "kind": { "const": "delayed_verification" },
+        "release": { "$ref": "#/$defs/artifactRelease" },
+        "observed_at": { "$ref": "#/$defs/timestamp" },
+        "receipt": { "$ref": "#/$defs/receipt" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runner", "verification_run_id", "not_before", "completed_at", "status", "checks", "provider_trigger_sha256", "provider_event_id", "provider_delivery_id", "provider_query_id", "provider_receipt_sha256", "provider_observed_at"],
+          "properties": {
+            "runner": { "const": "newme-postdeploy-delayed-verification/v1" },
+            "verification_run_id": { "$ref": "#/$defs/eventId" },
+            "not_before": { "$ref": "#/$defs/timestamp" },
+            "completed_at": { "$ref": "#/$defs/timestamp" },
+            "status": { "const": "pass" },
+            "checks": { "type": "array", "minItems": 4, "maxItems": 4, "uniqueItems": true, "items": { "$ref": "#/$defs/passingCheck" } },
+            "provider_trigger_sha256": { "$ref": "#/$defs/sha256" },
+            "provider_event_id": { "$ref": "#/$defs/eventId" },
+            "provider_delivery_id": { "$ref": "#/$defs/eventId" },
+            "provider_query_id": { "$ref": "#/$defs/eventId" },
+            "provider_receipt_sha256": { "$ref": "#/$defs/sha256" },
+            "provider_observed_at": { "$ref": "#/$defs/timestamp" }
+          }
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt_version", "algorithm", "producer", "key_sha256", "signed_at", "signature"],
+      "properties": {
+        "receipt_version": { "const": "newme-postdeploy-receipt/v1" },
+        "algorithm": { "const": "Ed25519" },
+        "producer": { "type": "string", "pattern": "^newme-postdeploy-[a-z-]+/v1$", "maxLength": 96 },
+        "key_sha256": { "$ref": "#/$defs/sha256" },
+        "signed_at": { "$ref": "#/$defs/timestamp" },
+        "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+      }
+    },
+    "eventId": { "type": "string", "minLength": 6, "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" },
+    "identifier": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[a-z][a-z0-9_-]*$" },
+    "sha40": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "timestamp": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" },
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "uuidSet": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/uuid" }
+    },
+    "versionedFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

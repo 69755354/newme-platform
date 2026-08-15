@@ -47,6 +47,55 @@ interface Quotation {
   leads: { customer_name: string | null; phone: string | null } | null;
 }
 
+/**
+ * One row of the payment schedule the conversion requires.
+ *
+ * Round-3 P1-5: this dialog used to POST /convert with no body at all, the route
+ * turned that into `installments: []`, and convert_quotation_to_contract() created
+ * a contract with an approval row and no schedule that nothing could repair. The
+ * schedule is now part of the request, the amounts must add up to the quotation
+ * total before the button enables, and the routine re-checks the same invariant
+ * inside the conversion's transaction against the authoritative total.
+ */
+interface Installment {
+  seq: number;
+  amount: number;
+  due_date: string;
+  description: string;
+}
+
+/** The default split: 50% on signing, 30% at delivery, 20% on completion. */
+const DEFAULT_SPLIT = [
+  { fraction: 0.5, description: "On signing", offsetDays: 0 },
+  { fraction: 0.3, description: "On delivery", offsetDays: 30 },
+  { fraction: 0.2, description: "On completion", offsetDays: 60 },
+];
+
+/** Cents, so a percentage split of an odd total still sums to the total exactly. */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function defaultSchedule(total: number): Installment[] {
+  const today = new Date();
+  const rows = DEFAULT_SPLIT.map((part, index) => {
+    const due = new Date(today);
+    due.setDate(due.getDate() + part.offsetDays);
+    return {
+      seq: index + 1,
+      amount: round2(total * part.fraction),
+      due_date: due.toISOString().slice(0, 10),
+      description: part.description,
+    };
+  });
+  // The rounding remainder goes on the last row, so the sum is the total.
+  const drift = round2(total - rows.reduce((sum, row) => sum + row.amount, 0));
+  if (drift !== 0 && rows.length > 0) {
+    rows[rows.length - 1].amount = round2(rows[rows.length - 1].amount + drift);
+  }
+  return rows;
+}
+
 interface QuoteDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -88,6 +137,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
   const [loadingDownload, setLoadingDownload] = useState<string | null>(null);
   const [loadingConvert, setLoadingConvert] = useState(false);
   const [activeStatus, setActiveStatus] = useState("");
+  const [schedule, setSchedule] = useState<Installment[] | null>(null);
 
   useEffect(() => {
     if (quote) {
@@ -174,13 +224,77 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
     toast.success(`${t("quotes.statusChangedTo")} ${t("quotes." + newStatus)}`);
   };
 
+  const quoteTotal = round2(quote.total_amount || 0);
+  const scheduleTotal = round2((schedule ?? []).reduce((sum, row) => sum + (row.amount || 0), 0));
+  const scheduleRemainder = round2(quoteTotal - scheduleTotal);
+  // Exactly, not within a cent. `abs(remainder) <= 0.01` is the tolerance
+  // convert_quotation_to_contract() itself used until 20260817000000 replaced it
+  // with equality after rounding to two decimals; leaving it here would put the
+  // label and the button one cent ahead of the routine, so a schedule this dialog
+  // calls a match would come back as a 22023 the operator cannot act on.
+  const scheduleBalanced = scheduleRemainder === 0;
+  const scheduleIsValid =
+    schedule !== null &&
+    schedule.length > 0 &&
+    schedule.every((row) => Number.isFinite(row.amount) && row.amount > 0) &&
+    scheduleBalanced;
+
+  const updateInstallment = (index: number, patch: Partial<Installment>) => {
+    setSchedule((rows) =>
+      (rows ?? []).map((row, i) => (i === index ? { ...row, ...patch } : row)),
+    );
+  };
+
+  const addInstallment = () => {
+    setSchedule((rows) => {
+      const current = rows ?? [];
+      return [
+        ...current,
+        {
+          seq: current.length + 1,
+          amount: Math.max(round2(scheduleRemainder), 0),
+          due_date: new Date().toISOString().slice(0, 10),
+          description: "",
+        },
+      ];
+    });
+  };
+
+  const removeInstallment = (index: number) => {
+    setSchedule((rows) =>
+      (rows ?? [])
+        .filter((_, i) => i !== index)
+        .map((row, i) => ({ ...row, seq: i + 1 })),
+    );
+  };
+
   const handleConvert = async () => {
+    // The schedule is the request. Without it the routine answers 22023 and
+    // writes nothing, so the button must not be reachable in that state.
+    if (!schedule || !scheduleIsValid) return;
     setLoadingConvert(true);
     try {
-      const res = await fetch(`/api/quotations/${quote.id}/convert`, { method: "POST" });
+      const res = await fetch(`/api/quotations/${quote.id}/convert`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          installments: schedule.map((row, index) => ({
+            seq: index + 1,
+            amount: row.amount,
+            due_date: row.due_date || null,
+            description: row.description,
+          })),
+          first_payment_due_date: schedule[0]?.due_date || null,
+        }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Conversion failed");
-      toast.success(`Contract ${data.contract_no} created successfully`);
+      toast.success(
+        data.already_converted
+          ? `Contract ${data.contract_no} already existed; missing records were repaired`
+          : `Contract ${data.contract_no} created successfully`,
+      );
+      setSchedule(null);
       onStatusChange(quote.id, "contract_created");
       setActiveStatus("contract_created");
     } catch (err: any) {
@@ -378,17 +492,17 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
             <XCircle className="w-3 h-3" /> Reject
           </Button>
 
-          {/* Convert to Contract */}
+          {/* Convert to Contract — opens the schedule step; the POST needs it */}
           {quote.status === "accepted" && !quote.contract_id && (
             <Button
               size="sm"
               variant="outline"
               className="text-xs gap-1.5 text-purple-400 border-purple-500/20 hover:bg-purple-500/10"
-              onClick={handleConvert}
+              onClick={() => setSchedule(schedule ? null : defaultSchedule(quoteTotal))}
               disabled={loadingConvert}
             >
               <FileText className="w-3 h-3" />
-              {loadingConvert ? "Converting..." : "Convert to Contract"}
+              {schedule ? "Cancel conversion" : "Convert to Contract"}
             </Button>
           )}
 
@@ -434,6 +548,85 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
             <span className="text-xs text-muted-foreground">{t("quotes.noFilesAttached")}</span>
           )}
         </div>
+
+        {/* ── Payment schedule step (required for a conversion) ───────────── */}
+        {schedule && (
+          <div className="mt-4 rounded-lg border border-purple-500/20 bg-purple-500/[0.04] p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-purple-300">Payment schedule</p>
+              <p className="text-xs text-muted-foreground">
+                Quotation total {fmtAED(quoteTotal)}
+              </p>
+            </div>
+
+            {schedule.map((row, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <span className="w-5 text-xs text-muted-foreground">#{index + 1}</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={Number.isFinite(row.amount) ? row.amount : ""}
+                  onChange={(e) => updateInstallment(index, { amount: Number(e.target.value) })}
+                  className="h-8 w-32 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-copper-500"
+                  aria-label={`Installment ${index + 1} amount`}
+                />
+                <input
+                  type="date"
+                  value={row.due_date}
+                  onChange={(e) => updateInstallment(index, { due_date: e.target.value })}
+                  className="h-8 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-copper-500"
+                  aria-label={`Installment ${index + 1} due date`}
+                />
+                <input
+                  type="text"
+                  value={row.description}
+                  onChange={(e) => updateInstallment(index, { description: e.target.value })}
+                  placeholder="Description"
+                  className="h-8 flex-1 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-copper-500"
+                  aria-label={`Installment ${index + 1} description`}
+                />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-xs text-rose-400 hover:bg-rose-500/10"
+                  onClick={() => removeInstallment(index)}
+                  disabled={schedule.length <= 1}
+                >
+                  <XCircle className="w-3 h-3" />
+                </Button>
+              </div>
+            ))}
+
+            <div className="flex items-center gap-2 pt-1">
+              <Button size="sm" variant="secondary" className="text-xs" onClick={addInstallment}>
+                Add installment
+              </Button>
+              <span
+                className={cn(
+                  "text-xs",
+                  scheduleBalanced ? "text-emerald-400" : "text-amber-400",
+                )}
+              >
+                {scheduleBalanced
+                  ? `Scheduled ${fmtAED(scheduleTotal)} — matches the quotation total`
+                  : `Scheduled ${fmtAED(scheduleTotal)} — ${fmtAED(Math.abs(scheduleRemainder))} ${
+                      scheduleRemainder > 0 ? "unallocated" : "over the quotation total"
+                    }`}
+              </span>
+              <div className="flex-1" />
+              <Button
+                size="sm"
+                className="text-xs gap-1.5"
+                onClick={handleConvert}
+                disabled={loadingConvert || !scheduleIsValid}
+              >
+                <FileText className="w-3 h-3" />
+                {loadingConvert ? "Converting..." : "Create contract"}
+              </Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

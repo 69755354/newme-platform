@@ -1,8 +1,26 @@
 // RBAC: user (authenticated)
-// GET /api/dashboard/summary — Aggregated dashboard data with 30s cache
+// GET /api/dashboard/summary — Aggregated dashboard data
+//
+// Round-4 finding R5. This route reads payments, installment_plans and kpi_targets,
+// and it did both of the things that finding is about:
+//
+//   * `received`, and through it `outstanding` and the collection rate, filtered on
+//     `p.confirmed === true` alone. Every derived total in the database counts
+//     `confirmed = true and voided_at is null` — see src/lib/payment-state.mjs — so
+//     this was a second, looser definition of cash sitting next to the ledger's.
+//   * the whole response was cached in src/lib/api-cache.ts for 30 seconds under
+//     `dashboard-summary:${role}:${userId}:${month}`, a Map with no eviction path
+//     that `revalidatePath()` cannot reach. Confirm a payment and the dashboard kept
+//     reporting the old received/outstanding figures and the old KPI actuals for the
+//     rest of the TTL, while the payments page reported the new ones.
+//
+// So: no module cache, force-dynamic and no-store, and one predicate.
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { getCached, setCache } from "@/lib/api-cache";
+import { applyPrivateNoStore } from "@/lib/request-auth-context";
+import { countsAsCash } from "@/lib/payment-state.mjs";
+
+export const dynamic = "force-dynamic";
 
 /* ─── Types ─── */
 interface TopAction {
@@ -63,13 +81,6 @@ export async function GET(request: Request) {
     const [year, monthNumber] = month.split("-").map(Number);
     monthStart = new Date(year, monthNumber - 1, 1).toISOString();
     monthEnd = new Date(year, monthNumber, 1).toISOString();
-  }
-
-  // ── Cache key ──
-  const cacheKey = `dashboard-summary:${role}:${userId}:${month || ""}`;
-  const cached = getCached(cacheKey);
-  if (cached) {
-    return NextResponse.json(cached);
   }
 
   // ── 3. Sales users ──
@@ -200,7 +211,7 @@ export async function GET(request: Request) {
   // ── 4d–m. Second batch: everything with contract-id or independent ──
   const buildPaymentsQuery = () => {
     if (isSales && contractIds.length === 0) return Promise.resolve({ data: [], error: null });
-    let q = supabase.from("payments").select("amount,confirmed,payment_date");
+    let q = supabase.from("payments").select("amount,confirmed,voided_at,payment_date");
     if (isSales && userId) q = q.in("contract_id", contractIds);
     return q;
   };
@@ -212,7 +223,13 @@ export async function GET(request: Request) {
     let q = supabase
       .from("payments")
       .select("amount")
+      // Both halves of the ledger predicate. This total is compared against
+      // kpi_targets.actual_amount, which confirm_payment() and void_payment()
+      // maintain from `confirmed = true and voided_at is null`; with only the first
+      // half, the period figure shown next to the KPI is computed from a wider set
+      // than the KPI itself.
       .eq("confirmed", true)
+      .is("voided_at", null)
       .gte("payment_date", monthStart)
       .lt("payment_date", monthEnd);
     if (isSales && userId) q = q.in("contract_id", contractIds);
@@ -383,8 +400,8 @@ export async function GET(request: Request) {
     0
   );
 
-  const confirmedPayments = ((payments as any[]) || []).filter(
-    (p: any) => p.confirmed === true
+  const confirmedPayments = ((payments as any[]) || []).filter((p: any) =>
+    countsAsCash(p)
   );
   const received = confirmedPayments.reduce(
     (sum: number, p: any) => sum + (p.amount || 0),
@@ -577,8 +594,5 @@ export async function GET(request: Request) {
       : {}),
   };
 
-  // ── Cache write (30s) ──
-  setCache(cacheKey, result, 30);
-
-  return NextResponse.json(result);
+  return applyPrivateNoStore(NextResponse.json(result));
 }

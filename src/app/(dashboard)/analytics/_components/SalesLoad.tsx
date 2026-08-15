@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
@@ -10,6 +10,10 @@ import {
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
+import {
+  acquireLeadRebalanceBatchKey,
+  clearLeadRebalanceBatchKey,
+} from "@/lib/lead-rebalance-intent.mjs";
 
 /* ─── Types ─── */
 interface RepStat {
@@ -99,16 +103,58 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
 }
 
 /* ─── CEO View ─── */
-function CEOSalesLoad({ data, t }: { data: SalesLoadData; t: (path: string) => string }) {
+function CEOSalesLoad({ data, t, actorId, canRebalance }: {
+  data: SalesLoadData;
+  t: (path: string) => string;
+  actorId: string | null;
+  canRebalance: boolean;
+}) {
   const [rebalancing, setRebalancing] = useState(false);
   const [rebalMsg, setRebalMsg] = useState<string | null>(null);
+
+  // R6. The route derives one idempotency key per lead from this batch key, so a
+  // second click, a retried fetch or a dropped response cannot run the
+  // round-robin twice. It is held in a ref and minted once per *attempt series*:
+  // regenerated only after a rebalance we know landed, so the retry of a request
+  // whose answer we never saw presents the same key the first attempt did.
+  const batchKeyRef = useRef<string | null>(null);
 
   const handleRebalance = useCallback(async () => {
     setRebalancing(true);
     setRebalMsg(null);
     try {
-      const res = await fetch("/api/dashboard/sales-load/rebalance", { method: "POST" });
+      if (!batchKeyRef.current) {
+        batchKeyRef.current = acquireLeadRebalanceBatchKey(
+          window.sessionStorage,
+          actorId ?? "",
+          () => crypto.randomUUID(),
+        );
+      }
+    } catch {
+      setRebalMsg(t('analytics.rebalanceFailed'));
+      setRebalancing(false);
+      return;
+    }
+    const batchKey = batchKeyRef.current;
+    if (!batchKey) {
+      setRebalMsg(t('analytics.rebalanceFailed'));
+      setRebalancing(false);
+      return;
+    }
+    try {
+      const res = await fetch("/api/dashboard/sales-load/rebalance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batchKey }),
+      });
       const result = await res.json();
+      if (!res.ok) {
+        setRebalMsg(result.error || t('analytics.rebalanceFailed'));
+        return;
+      }
+      if (clearLeadRebalanceBatchKey(window.sessionStorage, actorId ?? "", batchKey)) {
+        batchKeyRef.current = null;
+      }
       setRebalMsg(result.message || `Transferred ${result.transferred} leads`);
       // Reload after 2s
       setTimeout(() => window.location.reload(), 2000);
@@ -117,7 +163,7 @@ function CEOSalesLoad({ data, t }: { data: SalesLoadData; t: (path: string) => s
     } finally {
       setRebalancing(false);
     }
-  }, []);
+  }, [actorId, t]);
 
   // Chart data
   const chartData = data.repStats.map((r) => ({
@@ -143,14 +189,16 @@ function CEOSalesLoad({ data, t }: { data: SalesLoadData; t: (path: string) => s
               {data.underloaded.length} {t('analytics.underloaded').toLowerCase()} {t('analytics.reps')} {t('common.available')}).
             </p>
           </div>
-          <button
-            onClick={handleRebalance}
-            disabled={rebalancing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 text-xs font-medium hover:bg-amber-500/30 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${rebalancing ? "animate-spin" : ""}`} />
-            {rebalancing ? t('analytics.rebalancing') : t('analytics.rebalance')}
-          </button>
+          {canRebalance && (
+            <button
+              onClick={handleRebalance}
+              disabled={rebalancing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 text-xs font-medium hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${rebalancing ? "animate-spin" : ""}`} />
+              {rebalancing ? t('analytics.rebalancing') : t('analytics.rebalance')}
+            </button>
+          )}
         </div>
       )}
       {rebalMsg && (
@@ -302,7 +350,7 @@ function SalesView({ data, t }: { data: SalesMyData; t: (path: string) => string
 
 /* ─── Main Component ─── */
 export default function SalesLoad() {
-  const { isCEO } = useUserRole();
+  const { isCEO, userId, role } = useUserRole();
   const { t } = useLanguage();
   const [data, setData] = useState<SalesLoadData | SalesMyData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -339,7 +387,14 @@ export default function SalesLoad() {
   }
 
   if (isCEO && "repStats" in data) {
-    return <CEOSalesLoad data={data as SalesLoadData} t={t} />;
+    return (
+      <CEOSalesLoad
+        data={data as SalesLoadData}
+        t={t}
+        actorId={userId}
+        canRebalance={role === "admin" || role === "boss"}
+      />
+    );
   }
 
   if (!isCEO && "followupRate" in data) {

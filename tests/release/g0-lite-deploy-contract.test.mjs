@@ -28,7 +28,8 @@ test("release preflight runs before build or service mutations", () => {
 test("build is sourced from the exact verified release SHA", () => {
   assert.match(deploy, /\[\[ "\$SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/);
   assert.match(deploy, /git -C "\$ROOT" archive "\$SHA"/);
-  assert.match(deploy, /npm ci --no-audit --no-fund/);
+  assert.match(deploy, /node scripts\/check-toolchain\.mjs\s*\nnpm ci --registry=https:\/\/registry\.npmjs\.org --strict-allow-scripts=true --include=optional --no-audit --no-fund/);
+  assert.match(deploy, /npm ci --registry=https:\/\/registry\.npmjs\.org --strict-allow-scripts=true --include=optional --no-audit --no-fund/);
   assert.doesNotMatch(deploy, /^\s*rsync\b/m);
 });
 
@@ -39,7 +40,7 @@ test("exit cleanup contains the candidate and incomplete release", () => {
   assert.doesNotMatch(deploy, /(?:fuser\s+-k|pkill)/);
 });
 
-test("deploy evidence remains bound to CI, migration, UAT, and rollback", () => {
+test("deploy evidence remains bound to CI, migration, postdeploy acceptance boundary, and rollback", () => {
   for (const token of ["CI_RUN_ID", "CI_RUN_URL", "CI_HEAD_SHA", "CI_CONCLUSION", "MIGRATION_STATUS", "MIGRATION_IDS", "ROLLBACK_GIT_SHA", '"release_status": "awaiting_uat"']) {
     assert.ok(deploy.includes(token), `missing evidence token: ${token}`);
   }
@@ -60,7 +61,7 @@ test("legacy Hermes authorization gates are not part of deployment", () => {
 
 test("release shell scripts have valid Bash syntax", () => {
   for (const script of ["scripts/verify-release-preflight.sh", "scripts/deploy.sh", "scripts/deploy-immutable.sh", "scripts/install-systemd-assets.sh", "scripts/rollback-systemd-assets.sh", "scripts/finalize-deploy-evidence.sh"]) {
-    const result = spawnSync("bash", ["-n", script], { cwd: repoRoot, encoding: "utf8" });
+    const result = spawnSync(process.execPath, ["scripts/run-bash.mjs", "-n", script], { cwd: repoRoot, encoding: "utf8" });
     assert.equal(result.status, 0, `${script}: ${result.stderr}`);
   }
 });

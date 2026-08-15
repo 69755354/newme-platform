@@ -28,6 +28,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--release-env", type=Path, required=True)
     parser.add_argument("--runtime-env", type=Path, required=True)
+    parser.add_argument("--require-runtime-service-key", action="store_true")
+    parser.add_argument("--require-no-release-service-key", action="store_true")
     parser.add_argument("--network", action="store_true")
     return parser.parse_args()
 
@@ -62,10 +64,10 @@ def require_exact(values: dict[str, str], key: str, expected: str, source: str) 
         raise ConfigError(f"{source} {key} is missing or unexpected")
 
 
-def require_api_key(values: dict[str, str], key: str) -> str:
+def require_api_key(values: dict[str, str], key: str, source: str) -> str:
     value = values.get(key, "")
     if not API_KEY_PATTERN.fullmatch(value):
-        raise ConfigError(f"release {key} is missing or malformed")
+        raise ConfigError(f"{source} {key} is missing or malformed")
     return value
 
 
@@ -134,8 +136,27 @@ def main() -> int:
         if not TOKEN_PATTERN.fullmatch(runtime.get("NEWME_READINESS_TOKEN", "")):
             raise ConfigError("runtime NEWME_READINESS_TOKEN is missing or malformed")
         require_exact(release, "NEXT_PUBLIC_SUPABASE_URL", EXPECTED_SUPABASE_URL, "release")
-        publishable_key = require_api_key(release, "NEXT_PUBLIC_SUPABASE_ANON_KEY")
-        service_key = require_api_key(release, "SUPABASE_SERVICE_ROLE_KEY")
+        publishable_key = require_api_key(
+            release, "NEXT_PUBLIC_SUPABASE_ANON_KEY", "release"
+        )
+        release_has_service_key = "SUPABASE_SERVICE_ROLE_KEY" in release
+        runtime_has_service_key = "SUPABASE_SERVICE_ROLE_KEY" in runtime
+        if args.require_no_release_service_key and release_has_service_key:
+            raise ConfigError(
+                "release SUPABASE_SERVICE_ROLE_KEY must be absent; use the fixed runtime store"
+            )
+        if args.require_runtime_service_key or args.require_no_release_service_key:
+            service_key = require_api_key(
+                runtime, "SUPABASE_SERVICE_ROLE_KEY", "runtime"
+            )
+        elif runtime_has_service_key:
+            service_key = require_api_key(
+                runtime, "SUPABASE_SERVICE_ROLE_KEY", "runtime"
+            )
+        else:
+            service_key = require_api_key(
+                release, "SUPABASE_SERVICE_ROLE_KEY", "release"
+            )
         if publishable_key == service_key:
             raise ConfigError("publishable and service Supabase credentials are identical")
         publishable_role, publishable_format = classify_supabase_key(publishable_key)

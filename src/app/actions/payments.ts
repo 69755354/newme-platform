@@ -1,15 +1,28 @@
 'use server'
 
-import { createServerSupabase } from '@/lib/supabase-server'
+import { revalidatePath } from 'next/cache'
+import { getActionAuthContext } from '@/lib/action-auth-context'
+import { isVoided } from '@/lib/payment-state.mjs'
 import type { Json } from '@/types/database'
 
-interface CreatePaymentInput {
-  contract_id: string
-  amount: number
-  payment_date: string
-  payment_method: string
-  reference_no?: string | null
-  notes?: string | null
+/**
+ * The pages whose server-rendered totals a settlement changes.
+ *
+ * Round-4 B8, the cache half: POST /api/payments/[id]/void revalidated these three
+ * and the two settlement actions revalidated nothing, so confirming a payment
+ * moved projects.paid_amount, kpi_targets.actual_amount and
+ * contracts.first_payment_status in the database while a previously-visited
+ * /contracts or /dashboard kept rendering the figures from before the write.
+ * Allocation is the same story: it is the writer that decides
+ * first_payment_status, per 20260817000000 §12.
+ *
+ * The payments dashboard itself re-fetches /api/payments/list after every write and
+ * that route is force-dynamic and no-store, so it is never the stale one.
+ */
+const SETTLEMENT_PATHS = ['/contracts', '/payments', '/dashboard']
+
+function revalidateSettlementPaths() {
+  for (const path of SETTLEMENT_PATHS) revalidatePath(path)
 }
 
 interface AllocationItem {
@@ -18,94 +31,53 @@ interface AllocationItem {
 }
 
 /**
- * Record a new payment against a contract.
+ * Recording a payment is not a server action.
+ *
+ * There used to be a `createPayment` here, called by the payments dashboard. It
+ * inserted into `payments` directly and carried no idempotency key, so the same
+ * form submitted twice recorded two payments. Reproduced on an isolated
+ * PostgreSQL 17 against this branch's migrations, as the sales identity owning
+ * the fixture contract: the same insert twice gave `sqlstate=00000 rows=2`.
+ * Under the round-4 payment guard in strict mode that same insert instead raises
+ * `22023 a payment must carry request_key, the idempotency key of the creating
+ * request` — so the button was heading for two payments today and none later.
+ *
+ * The single recording boundary is `POST /api/payments`, which requires a
+ * caller-minted key, stores it as `payments.request_key`, and is the only place
+ * that can tell an honest retry from a key reused for a different payment.
+ * Confirming and allocating stay here because they already go through
+ * `confirm_payment()` and `allocate_payment()`.
  */
-export async function createPayment(data: CreatePaymentInput) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
-
-  // Validation
-  if (!data.contract_id) throw new Error('contract_id is required')
-  if (!data.amount || typeof data.amount !== 'number' || data.amount <= 0) {
-    throw new Error('Valid amount is required')
-  }
-  if (!data.payment_date) throw new Error('payment_date is required')
-  if (!data.payment_method) throw new Error('payment_method is required')
-
-  // Verify the contract exists
-  const { data: contract, error: contractErr } = await supabase
-    .from('contracts')
-    .select('id, sales_id')
-    .eq('id', data.contract_id)
-    .single()
-
-  if (contractErr || !contract) throw new Error('Contract not found')
-
-  // Fetch user role for access control
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  const userRole = profile?.role
-  const isPrivileged = userRole ? ['admin', 'boss', 'finance', 'operator'].includes(userRole) : false
-
-  // Sales can only record payments against their own contracts
-  if (!isPrivileged && contract.sales_id !== user.id) {
-    throw new Error('Forbidden')
-  }
-
-  const { data: payment, error: insertErr } = await supabase
-    .from('payments')
-    .insert({
-      contract_id: data.contract_id,
-      created_by: user.id,
-      amount: data.amount,
-      payment_date: data.payment_date,
-      payment_method: data.payment_method,
-      reference_no: data.reference_no || null,
-      confirmed: false,
-      notes: data.notes || null,
-    })
-    .select('id, amount')
-    .single()
-
-  if (insertErr) throw new Error('Failed to record payment')
-
-  return { id: payment.id, amount: payment.amount }
-}
 
 /**
  * Confirm a payment (admin/boss/finance only).
  */
 export async function confirmPayment(paymentId: string) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
-
-  // Fetch user role for access control
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile) throw new Error('Profile not found')
+  const { supabase, user, role } = await getActionAuthContext()
 
   const allowedRoles = ['admin', 'boss', 'finance']
-  if (!profile.role || !allowedRoles.includes(profile.role)) throw new Error('Forbidden')
+  if (!role || !allowedRoles.includes(role)) throw new Error('Forbidden')
 
-  // Verify the payment exists and is not already confirmed
+  // Verify the payment exists, is not reversed, and is not already confirmed.
+  //
+  // R5: `select('id, confirmed')` gave this precheck no column with which to see a
+  // reversal, and void_payment() clears `confirmed` — so a voided payment passed the
+  // check and confirm_payment() refused it with 22023 'a voided payment cannot be
+  // confirmed'. The message the operator saw was that raw SQLSTATE text, one
+  // round-trip later. voided_at is tested first because a reversal is terminal: a row
+  // carrying both voided_at and confirmed = true (representable only through a
+  // compat-mode direct write) is reversed money, not confirmed money.
   const { data: payment, error: paymentErr } = await supabase
     .from('payments')
-    .select('id, confirmed')
+    .select('id, confirmed, voided_at')
     .eq('id', paymentId)
     .single()
 
   if (paymentErr || !payment) throw new Error('Payment not found')
-  if (payment.confirmed) throw new Error('Payment is already confirmed')
+  // The routine's own wording, so the toast reads the same whether the precheck or
+  // the database refused it.
+  if (isVoided(payment)) throw new Error('a voided payment cannot be confirmed')
+  if (payment.confirmed) throw new Error('payment is already confirmed')
 
   // Call the RPC function to confirm the payment with cascading updates
   const { data: result, error: rpcErr } = await supabase.rpc('confirm_payment', {
@@ -115,6 +87,7 @@ export async function confirmPayment(paymentId: string) {
 
   if (rpcErr) throw new Error(rpcErr.message || 'Failed to confirm payment')
 
+  revalidateSettlementPaths()
   return { data: result }
 }
 
@@ -122,21 +95,10 @@ export async function confirmPayment(paymentId: string) {
  * Allocate a confirmed payment to installment plans (admin/boss/finance only).
  */
 export async function allocatePayment(paymentId: string, allocations: AllocationItem[]) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Unauthorized')
-
-  // Fetch user role for access control
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (!profile) throw new Error('Profile not found')
+  const { supabase, user, role } = await getActionAuthContext()
 
   const allowedRoles = ['admin', 'boss', 'finance']
-  if (!profile?.role || !allowedRoles.includes(profile.role)) throw new Error('Forbidden')
+  if (!role || !allowedRoles.includes(role)) throw new Error('Forbidden')
 
   // Validate allocations
   if (!allocations || !Array.isArray(allocations) || allocations.length === 0) {
@@ -151,15 +113,25 @@ export async function allocatePayment(paymentId: string, allocations: Allocation
     }
   }
 
-  // Verify the payment exists and is confirmed
+  // Verify the payment exists and can still be allocated.
+  //
+  // R5: with only `confirmed` selected, every reversed payment was refused with
+  // "Payment must be confirmed before allocation" — true, because void_payment()
+  // clears the flag, and useless, because confirming it is exactly what
+  // confirm_payment() refuses for a voided payment. That pair of messages is a loop
+  // with no exit. Testing voided_at first names the terminal state instead, and also
+  // covers the row a compat-mode direct write can leave carrying both voided_at and
+  // confirmed = true, which allocate_payment()'s own guard order reports as
+  // unconfirmed.
   const { data: payment, error: paymentErr } = await supabase
     .from('payments')
-    .select('id, confirmed, contract_id')
+    .select('id, confirmed, voided_at, contract_id')
     .eq('id', paymentId)
     .single()
 
   if (paymentErr || !payment) throw new Error('Payment not found')
-  if (!payment.confirmed) throw new Error('Payment must be confirmed before allocation')
+  if (isVoided(payment)) throw new Error('a voided payment cannot be allocated')
+  if (!payment.confirmed) throw new Error('payment must be confirmed before allocation')
 
   const planIds = [...new Set(allocations.map((allocation) => allocation.plan_id))]
   const { data: plans, error: plansErr } = await supabase
@@ -186,5 +158,6 @@ export async function allocatePayment(paymentId: string, allocations: Allocation
 
   if (rpcErr) throw new Error(rpcErr.message || 'Failed to allocate payment')
 
+  revalidateSettlementPaths()
   return { data: result }
 }

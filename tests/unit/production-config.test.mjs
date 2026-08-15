@@ -21,6 +21,7 @@ function fixture({
   duplicate = false,
   publishable = publishableKey,
   service = serviceKey,
+  releaseService = null,
   sentryDsn = `https://${sentryPublicKey}@o1.ingest.sentry.io/12345`,
   sentryLine,
 } = {}) {
@@ -30,30 +31,63 @@ function fixture({
   writeFileSync(release, [
     "NEXT_PUBLIC_SUPABASE_URL=https://vfopmpxlhwzpxqegayew.supabase.co",
     `NEXT_PUBLIC_SUPABASE_ANON_KEY=${publishable}`,
-    `SUPABASE_SERVICE_ROLE_KEY=${service}`,
+    ...(releaseService === null ? [] : [`SUPABASE_SERVICE_ROLE_KEY=${releaseService}`]),
     sentryLine ?? `NEXT_PUBLIC_SENTRY_DSN=${sentryDsn}`,
     "",
   ].join("\n"));
   writeFileSync(runtime, [
     `NEWME_READINESS_TOKEN=${"c".repeat(64)}`,
     `NEXT_PUBLIC_SITE_URL=${site}`,
+    ...(service === null ? [] : [`SUPABASE_SERVICE_ROLE_KEY=${service}`]),
     ...(duplicate ? ["NEXT_PUBLIC_SITE_URL=https://app.newme.ae"] : []),
     "",
   ].join("\n"));
   return { release, runtime };
 }
 
-function run(files) {
-  return spawnSync("python3", [script, "--release-env", files.release, "--runtime-env", files.runtime], {
+function run(files, extraArgs = []) {
+  return spawnSync("python3", [
+    script,
+    "--release-env",
+    files.release,
+    "--runtime-env",
+    files.runtime,
+    ...extraArgs,
+  ], {
     encoding: "utf8",
   });
 }
 
 test("production config validator accepts only the exact production boundaries", () => {
-  const result = run(fixture());
+  const result = run(fixture(), [
+    "--require-runtime-service-key",
+    "--require-no-release-service-key",
+  ]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^CONFIG_VALIDATION=PASS$/m);
   assert.doesNotMatch(result.stdout, new RegExp(`${publishableKey}|${serviceKey}`));
+});
+
+test("production config validator confines bootstrap fallback to non-strict validation", () => {
+  const legacyLayout = fixture({ service: null, releaseService: serviceKey });
+  const fallback = run(legacyLayout);
+  assert.equal(fallback.status, 0, fallback.stderr);
+
+  const strict = run(legacyLayout, ["--require-runtime-service-key"]);
+  assert.equal(strict.status, 1);
+  assert.match(strict.stderr, /runtime SUPABASE_SERVICE_ROLE_KEY is missing or malformed/);
+
+  const duplicated = fixture({ releaseService: serviceKey });
+  const isolated = run(duplicated, [
+    "--require-runtime-service-key",
+    "--require-no-release-service-key",
+  ]);
+  assert.equal(isolated.status, 1);
+  assert.match(isolated.stderr, /must be absent/);
+  assert.doesNotMatch(
+    `${strict.stdout}\n${strict.stderr}\n${isolated.stdout}\n${isolated.stderr}`,
+    new RegExp(serviceKey),
+  );
 });
 
 test("production config validator rejects a wrong site URL and duplicate managed keys", () => {

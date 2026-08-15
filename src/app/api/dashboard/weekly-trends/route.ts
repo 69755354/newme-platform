@@ -1,6 +1,11 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { applyPrivateNoStore } from "@/lib/request-auth-context";
+
+// R5: the collection curve below is derived from payments, so this read is
+// force-dynamic and private/no-store like every other money-derived read.
+export const dynamic = "force-dynamic";
 
 function dateInRange(value: string | null, start: string, end: string): boolean {
   if (!value) return false;
@@ -109,12 +114,21 @@ export async function GET(request: NextRequest) {
     if (contractsErr) throw contractsErr;
 
     // ─── Fetch payments (for collected amount) ───
+    //
+    // R5: `confirmed = true` alone was a second, looser definition of cash. Every
+    // derived total in the database counts `confirmed = true and voided_at is null`
+    // (src/lib/payment-state.mjs names that predicate for JavaScript), so a voided
+    // payment whose `confirmed` flag was set by a direct compat-mode write counted
+    // as collected here and not in kpi_targets.actual_amount — two collection
+    // curves for one month. The set is selected in SQL, so the predicate belongs in
+    // SQL too; nothing below re-derives it from the row.
     let paymentsQuery = supabase
       .from("payments")
       .select("id, amount, confirmed, payment_date, contract_id")
       .gte("payment_date", rangeStart)
       .lte("payment_date", rangeEnd)
-      .eq("confirmed", true);
+      .eq("confirmed", true)
+      .is("voided_at", null);
 
     let payments: any[] = [];
 
@@ -223,10 +237,12 @@ export async function GET(request: NextRequest) {
       ),
     };
 
-    return NextResponse.json({
-      weeks: weeklyData,
-      wow_comparison: wowComparison,
-    });
+    return applyPrivateNoStore(
+      NextResponse.json({
+        weeks: weeklyData,
+        wow_comparison: wowComparison,
+      }),
+    );
   } catch (err: any) {
     console.error("[Weekly Trends] Error:", err);
     const message =

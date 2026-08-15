@@ -1,6 +1,15 @@
 // RBAC: cron (x-cron-secret)
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { applyPrivateNoStore } from "@/lib/request-auth-context";
+
+// R5: this route reads installment_plans and answers with the ids it moved to
+// overdue, so it takes the same posture as every other money-derived read — no
+// prerender, no store. The gate that checks this
+// (tests/security/api-cache-money-boundary.test.mjs) derives the rule from what a
+// route queries and carries no exemption list, so a scheduled reader is held to it
+// too rather than being carved out.
+export const dynamic = "force-dynamic";
 
 type OverduePlan = { id: string; contract_id: string; seq: number; amount: number; due_date: string };
 type NotificationFailure = { installment_id: string; reason: string };
@@ -110,9 +119,9 @@ export async function GET(request: NextRequest) {
       failures: notificationFailures,
     };
     if (notificationFailures.length > 0) {
-      return NextResponse.json(result, { status: 502 });
+      return applyPrivateNoStore(NextResponse.json(result, { status: 502 }));
     }
-    return NextResponse.json(result);
+    return applyPrivateNoStore(NextResponse.json(result));
   } catch (err: unknown) {
     console.error("[Cron Overdue] Error:", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

@@ -134,6 +134,14 @@ test("release-candidate CI requires the isolated control-plane SIGTERM and reent
     new URL("scripts/control-plane-restore-drill.sh", ROOT),
     "utf8",
   );
+  assert.match(
+    controlPlaneDrill,
+    /git -c safe\.directory="\$REPO" -C "\$REPO" show f37c203:scripts\/install-systemd-assets\.sh/,
+  );
+  assert.match(
+    controlPlaneDrill,
+    /git -c safe\.directory="\$REPO" -C "\$REPO" show 03f53ab08c61dcfff830e3e6d219f7c374c914f9:scripts\/install-systemd-assets\.sh/,
+  );
   assert.match(controlPlaneDrill, /03f53ab08c61dcfff830e3e6d219f7c374c914f9:scripts\/install-systemd-assets\.sh/);
   assert.doesNotMatch(controlPlaneDrill, /show HEAD:scripts\/install-systemd-assets\.sh/);
   const alertPreflightDrill = await readFile(new URL("scripts/alert-state-preflight-drill.sh", ROOT), "utf8");

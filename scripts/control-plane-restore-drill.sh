@@ -206,7 +206,7 @@ build_legacy() {
   if [ -n "${NEWME_DRILL_F37:-}" ] && [ -f "${NEWME_DRILL_F37:-}" ]; then
     sed 's/\r$//' "$NEWME_DRILL_F37" >"$LEGACY/scripts/install-systemd-assets.sh"
   else
-    git -C "$REPO" show f37c203:scripts/install-systemd-assets.sh >"$LEGACY/scripts/install-systemd-assets.sh" 2>/dev/null || return 1
+    git -c safe.directory="$REPO" -C "$REPO" show f37c203:scripts/install-systemd-assets.sh >"$LEGACY/scripts/install-systemd-assets.sh" 2>/dev/null || return 1
   fi
   [ -s "$LEGACY/scripts/install-systemd-assets.sh" ] || return 1
   cp -a "$TREE/infra" "$LEGACY/"
@@ -223,7 +223,7 @@ build_before_tree() {
   if [ -n "${NEWME_DRILL_INSTALL_BEFORE:-}" ] && [ -f "${NEWME_DRILL_INSTALL_BEFORE:-}" ]; then
     sed 's/\r$//' "$NEWME_DRILL_INSTALL_BEFORE" >"$BEFORE_TREE/scripts/install-systemd-assets.sh"
   else
-    git -C "$REPO" show 03f53ab08c61dcfff830e3e6d219f7c374c914f9:scripts/install-systemd-assets.sh >"$BEFORE_TREE/scripts/install-systemd-assets.sh" 2>/dev/null || return 1
+    git -c safe.directory="$REPO" -C "$REPO" show 03f53ab08c61dcfff830e3e6d219f7c374c914f9:scripts/install-systemd-assets.sh >"$BEFORE_TREE/scripts/install-systemd-assets.sh" 2>/dev/null || return 1
   fi
   [ -s "$BEFORE_TREE/scripts/install-systemd-assets.sh" ] || return 1
 }

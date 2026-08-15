@@ -67,6 +67,7 @@ mkdir -p /etc/newme /etc/systemd/system /etc/tmpfiles.d /etc/cron.d \
 chown root:root "$STATE_ROOT" /var/backups/newme-systemd-assets
 chmod 0700 "$STATE_ROOT" /var/backups/newme-systemd-assets
 cp -a "$TREE/infra/systemd/newme-platform.service" /etc/systemd/system/newme-platform.service
+chown root:root /etc/systemd/system/newme-platform.service
 chmod 0644 /etc/systemd/system/newme-platform.service
 SYNTHETIC_SERVICE_KEY="sb_${SYNTHETIC_SERVICE_KIND:-secret}_$(printf '0%.0s' $(seq 1 48))"
 printf 'NEWME_READINESS_TOKEN=%s\nNEXT_PUBLIC_SITE_URL=https://app.newme.ae\nSUPABASE_SERVICE_ROLE_KEY=%s\n' \

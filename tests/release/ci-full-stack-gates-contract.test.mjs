@@ -156,6 +156,14 @@ test("release-candidate CI requires the isolated control-plane SIGTERM and reent
     new URL("scripts/credential-live-attestation-drill.mjs", ROOT),
     "utf8",
   );
+  const credentialAssetDrill = await readFile(
+    new URL("scripts/credential-assets-transaction-drill.sh", ROOT),
+    "utf8",
+  );
+  assert.match(
+    credentialAssetDrill,
+    /chown root:root \/etc\/systemd\/system\/newme-platform\.service\s+chmod 0644 \/etc\/systemd\/system\/newme-platform\.service/,
+  );
   assert.match(credentialLiveDrill, /removeTrustedRootFileMatching/);
   assert.match(credentialLiveDrill, /readCredentialEscrow/);
   assert.match(credentialLiveDrill, /credential_live_attestation_drill_checks=/);

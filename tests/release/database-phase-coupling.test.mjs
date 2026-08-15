@@ -49,8 +49,11 @@ import {
 } from "../../scripts/check-release-manifest.mjs";
 import {
   OPERATIONS as COMPANION_OPERATIONS,
+  auditRecordedPhaseHistory,
   parseArgs as parseCompanionArgs,
 } from "../../scripts/db-companion-run.mjs";
+import { splitSqlStatements } from "../../scripts/split-sql-statements.mjs";
+import { statementsFingerprint } from "../../scripts/verify-remote-migration-history.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const GATE = path.join(ROOT, "scripts", "check-release-phase.mjs");
@@ -407,6 +410,39 @@ test("the companion helper accepts operation names, never caller-selected SQL", 
   assert.match(helper, /rollback_money_direct_write_contract_phase\.sql/);
   assert.match(helper, /recontract_money_direct_write_contract_phase\.sql/);
   assert.doesNotMatch(helper, /readFileSync\(options\.operation|path\.join\([^\n]*options\.operation/);
+});
+
+test("contract reentry requires the exact deferred migration history before any posture write", () => {
+  const manifest = readManifest();
+  const entries = manifest.deferred_contract;
+  const sqlByFile = new Map(entries.map((entry) => [entry.file, read(`supabase/migrations/${entry.file}`)]));
+  const rows = entries.map((entry) => {
+    const statements = splitSqlStatements(sqlByFile.get(entry.file));
+    return {
+      version: entry.version,
+      name: entry.file.replace(new RegExp(`^${entry.version}_|\\.sql$`, "g"), ""),
+      statement_count: statements.length,
+      statements_sha256: statementsFingerprint(statements),
+    };
+  });
+  assert.deepEqual(auditRecordedPhaseHistory({ entries, sqlByFile, rows }), []);
+
+  const mutations = [
+    [],
+    [...rows, rows[0]],
+    rows.map((row) => ({ ...row, name: `${row.name}_wrong` })),
+    rows.map((row) => ({ ...row, statement_count: Number(row.statement_count) + 1 })),
+    rows.map((row) => ({ ...row, statements_sha256: "0".repeat(64) })),
+  ];
+  for (const mutatedRows of mutations) {
+    assert.notDeepEqual(auditRecordedPhaseHistory({ entries, sqlByFile, rows: mutatedRows }), []);
+  }
+  const source = read("scripts/db-companion-run.mjs");
+  const historyGate = source.indexOf('if (options.operation === "contract-reenter")');
+  const companionWrite = source.indexOf("await client.query(sql)");
+  assert.ok(historyGate >= 0 && historyGate < companionWrite, "history must be verified before companion SQL runs");
+  assert.match(source.slice(historyGate, companionWrite), /begin read only/);
+  assert.match(source.slice(historyGate, companionWrite), /auditRecordedPhaseHistory/);
 });
 
 test("the observed phase is part of the durable transaction record", () => {

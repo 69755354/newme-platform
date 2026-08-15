@@ -199,7 +199,7 @@ export function nonTransactional(statement) {
  * neither side could see. This tool did carry one — the superseded space-joined
  * form, under a comment claiming it could not collide.
  */
-const HISTORY_CONTENT_QUERY = `select m.version,
+export const HISTORY_CONTENT_QUERY = `select m.version,
        m.name,
        coalesce(array_length(m.statements, 1), 0) as statement_count,
        ${STATEMENTS_FINGERPRINT_SQL} as statements_sha256

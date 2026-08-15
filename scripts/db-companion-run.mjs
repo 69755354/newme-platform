@@ -15,12 +15,15 @@ import {
   ROOT,
   auditManifest,
   contentHash,
+  manifestEntries,
   readBaseline,
   readManifest,
   readMigration,
   readTreeFiles,
 } from "./check-release-manifest.mjs";
-import { loadPg, readUrlFile } from "./db-phase-push.mjs";
+import { HISTORY_CONTENT_QUERY, loadPg, readUrlFile } from "./db-phase-push.mjs";
+import { splitSqlStatements } from "./split-sql-statements.mjs";
+import { statementsFingerprint } from "./verify-remote-migration-history.mjs";
 
 const MIGRATIONS_DIR = path.join(ROOT, "supabase", "migrations");
 
@@ -76,6 +79,54 @@ export function parseArgs(argv) {
   return options;
 }
 
+/**
+ * Prove that every migration in a phase was recorded from the exact shipped
+ * statements before a hand-run companion is allowed to change database posture.
+ * The caller supplies only server-side counts/digests, never statement text.
+ */
+export function auditRecordedPhaseHistory({ entries, sqlByFile, rows }) {
+  const problems = [];
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return ["the required recorded phase is empty"];
+  }
+  const rowsByVersion = new Map();
+  for (const row of rows ?? []) {
+    const version = String(row?.version ?? "");
+    if (rowsByVersion.has(version)) problems.push(`migration ${version || "<empty>"} is recorded more than once`);
+    rowsByVersion.set(version, row);
+  }
+  for (const entry of entries) {
+    const version = String(entry.version);
+    const file = String(entry.file);
+    const match = new RegExp(`^${version}_(.+)\\.sql$`).exec(file);
+    const sql = sqlByFile.get(file);
+    if (!match || typeof sql !== "string") {
+      problems.push(`migration ${version} cannot be reproduced from ${file}`);
+      continue;
+    }
+    const expectedStatements = splitSqlStatements(sql);
+    const expectedFingerprint = statementsFingerprint(expectedStatements);
+    const row = rowsByVersion.get(version);
+    if (!row) {
+      problems.push(`migration ${version} is not recorded`);
+      continue;
+    }
+    if (String(row.name ?? "") !== match[1]) {
+      problems.push(`migration ${version} is recorded under a different name`);
+    }
+    if (Number(row.statement_count) !== expectedStatements.length) {
+      problems.push(`migration ${version} has a different statement count`);
+    }
+    if (String(row.statements_sha256 ?? "") !== expectedFingerprint) {
+      problems.push(`migration ${version} has a different statement fingerprint`);
+    }
+  }
+  if (rowsByVersion.size !== entries.length) {
+    problems.push("the recorded phase row set is not exact");
+  }
+  return problems;
+}
+
 export async function main(argv) {
   const options = parseArgs(argv);
   const selected = OPERATIONS[options.operation];
@@ -120,6 +171,30 @@ export async function main(argv) {
 
   let failures = 0;
   try {
+    if (options.operation === "contract-reenter") {
+      const entries = manifestEntries(manifest, "deferred_contract");
+      const versions = entries.map((entry) => String(entry.version));
+      const sqlByFile = new Map(
+        entries.map((entry) => [String(entry.file), readMigration(MIGRATIONS_DIR, String(entry.file))]),
+      );
+      let rows;
+      try {
+        await client.query("begin read only");
+        rows = (await client.query(HISTORY_CONTENT_QUERY, [versions])).rows;
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback").catch(() => {});
+        console.error(`refusing: deferred migration history could not be verified (SQLSTATE ${error.code ?? "unknown"})`);
+        return 1;
+      }
+      const historyProblems = auditRecordedPhaseHistory({ entries, sqlByFile, rows });
+      if (historyProblems.length > 0) {
+        for (const problem of historyProblems) console.error(`history: ${problem}`);
+        console.error("refusing: contract-reenter requires the exact deferred migration history");
+        return 1;
+      }
+    }
+
     try {
       await client.query(sql);
     } catch (error) {

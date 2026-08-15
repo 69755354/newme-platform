@@ -1644,14 +1644,25 @@ if [ "$ROLLBACK_SHA" != "$LEGACY_EVIDENCELESS_BASELINE" ]; then
     echo "current release must have exactly one finalized deployment evidence file before another deployment" >&2
     exit 65
   }
-  python3 - "${CURRENT_EVIDENCE_FILES[0]}" "$ROLLBACK_SHA" <<'PY'
+  python3 - "${CURRENT_EVIDENCE_FILES[0]}" "$ROLLBACK_SHA" "$DB_TRANSITION_ONLY" "$DB_TRANSITION_OPERATION" <<'PY'
 import json
 import sys
 
-path, expected_sha = sys.argv[1:]
+path, expected_sha, db_transition_only, operation = sys.argv[1:]
 with open(path, encoding="utf-8") as handle:
     evidence = json.load(handle)
-if evidence.get("git_sha") != expected_sha or evidence.get("release_status") != "complete":
+if evidence.get("git_sha") != expected_sha:
+    raise SystemExit(65)
+release_status = evidence.get("release_status")
+if db_transition_only == "1" and operation in {
+    "contract-apply",
+    "contract-verify",
+    "contract-rollback",
+    "contract-reenter",
+}:
+    if release_status not in {"awaiting_uat", "acceptance_verified", "complete"}:
+        raise SystemExit(65)
+elif release_status != "complete":
     raise SystemExit(65)
 PY
 fi

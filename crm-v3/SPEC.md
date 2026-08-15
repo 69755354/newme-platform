@@ -1001,3 +1001,20 @@ SAM-44 记录的登录实现为“浏览器请求 Supabase token 后再调 `/api
 - **一个与本轮无关但已确认的仓库事实**：本仓没有 `.gitattributes`，`core.autocrlf=true` 的 Windows 上**新 clone** 会把 `*.sh` 检出成 CRLF，于是 8 条以 `\n` 锚定 shell 脚本内容的 release 契约测试在新检出上失败；index 里是 LF，Linux CI 因此为绿。这不是本次提交引入的，但它意味着"Windows 上跑一遍全绿"在新检出上并不成立。
 - **仍需单独生产授权、本轮一律未做**：轮换八个已发布身份的口令与生产数据库口令；**轮换 Supabase PAT**（`test_matrix.py` 已把提权配方发布出去，本轮新增的一项）；封禁 Auth 身份并吊销会话；仓库转 private 与 git 历史清除；origin 防火墙限定。**把值从工作区删掉与让它停止生效是两件事，本节不得把前者说成后者。**
 - Batch 1（资金路径与不变量）与 Batch 2（发布控制面）按管理层要求各自独立成批、独立复审，不与本批混提。
+## 2026-08-15 audited release-control path coverage
+
+This section records the remaining paths reported by `scripts/check-spec.sh` for the audited release candidate. It is a source-and-gate inventory only: it does not claim that the candidate is deployed or that production acceptance is complete.
+
+| Path | Contract covered by this release |
+| --- | --- |
+| `infra/observability/dependency-probe.sh` | Runs the bounded production dependency probe used by the alert and postdeploy evidence chains. |
+| `infra/systemd/newme-production-rollback.sh` | Provides the protected rollback/status boundary, including credential-transition and receipt-key inspection states. |
+| `next-env.d.ts` | Keeps the generated Next.js TypeScript environment reference aligned with the pinned build toolchain. |
+| `scripts/alert-state-preflight-drill.sh` | Proves an untrusted or symlinked alert-state tree is rejected before installer writes. |
+| `scripts/control-plane-restore-drill.sh` | Exercises interrupted control-plane installation and exact recovery in an isolated container. |
+| `scripts/credential-assets-transaction-drill.sh` | Exercises credential-asset install, finalize, rollback, and all protected-asset recovery checkpoints without production credentials. |
+| `scripts/validate-production-config.py` | Validates the fixed production origin, runtime credential placement, and Sentry configuration before switching service bytes. |
+| `src/app/(dashboard)/analytics/_components/SalesLoad.tsx` | Binds the lead-rebalance UI request and cleanup behavior to the actor-scoped batch intent. |
+| `supabase/replay/24_rollback_companion_guards.sh` | Verifies rollback companions preserve the declared guard and dependency closure. |
+| `supabase/replay/26_notification_event_idempotency.sh` | Exercises notification idempotency, lock behavior, ACLs, and residue cleanup on PostgreSQL 17. |
+| `supabase/replay/27_lead_rebalance_plan_idempotency.sh` | Exercises first-caller plan identity, actor isolation, locking, ACLs, and zero residue on PostgreSQL 17. |

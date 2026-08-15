@@ -5347,10 +5347,10 @@ select pg_temp.assert_eval($q$
 $q$, 'r9-rebalance-plan-rpc-is-authenticated-only');
 
 select pg_temp.assert_eval($q$
-  coalesce((select pg_catalog.position(
+  coalesce((select strpos(
+                       pg_catalog.lower(p.prosrc),
                        pg_catalog.chr(10) || 'begin' || pg_catalog.chr(10)
                        || '  perform public.assert_current_session_at_entry();'
-                       in pg_catalog.lower(p.prosrc)
                      ) > 0
                     and strpos(p.prosrc, 'pg_catalog.pg_advisory_xact_lock')
                         < strpos(p.prosrc, 'insert into public.lead_rebalance_batches')

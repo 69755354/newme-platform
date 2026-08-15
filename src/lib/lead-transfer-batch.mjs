@@ -86,12 +86,12 @@ export function deriveLeadTransferKey(batchKey, leadId) {
   if (typeof leadId !== "string" || !LEAD_TRANSFER_BATCH_KEY_PATTERN.test(leadId)) {
     throw new Error("deriveLeadTransferKey requires a uuid lead id");
   }
-  const digest = createHash("sha1")
+  const digest = createHash("sha256")
     .update(uuidBytes(LEAD_TRANSFER_KEY_NAMESPACE))
     .update(Buffer.from(`${batchKey.toLowerCase()}:${leadId.toLowerCase()}`, "utf8"))
     .digest();
   const bytes = digest.subarray(0, 16);
-  bytes[6] = (bytes[6] & 0x0f) | 0x50; // version 5
+  bytes[6] = (bytes[6] & 0x0f) | 0x50; // version-5-shaped deterministic key
   bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
   const hex = bytes.toString("hex");
   return [

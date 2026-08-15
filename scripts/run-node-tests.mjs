@@ -10,7 +10,7 @@ function testEnvironment() {
   const gitBin = path.join(programFiles, "Git", "bin");
   const gitBash = path.join(gitBin, "bash.exe");
   if (!fs.existsSync(gitBash)) {
-    console.error(`Git Bash is required for the repository test suite: ${gitBash}`);
+    console.error("Git Bash is required for the repository test suite");
     process.exit(1);
   }
 

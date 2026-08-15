@@ -626,7 +626,26 @@ function validateImage(reference, location, failures, imageLock, usedImages) {
 }
 
 function shellTokens(value) {
-  return [...value.matchAll(/"(?:\\.|[^"])*"|'[^']*'|\S+/g)].map((match) => stripQuotes(match[0]));
+  const tokens = [];
+  let token = "";
+  let quote = null;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (quote) {
+      if (character === quote) quote = null;
+      else if (quote === '"' && character === "\\" && index + 1 < value.length) token += value[++index];
+      else token += character;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (/\s/.test(character)) {
+      if (token) tokens.push(token);
+      token = "";
+    } else {
+      token += character;
+    }
+  }
+  if (token) tokens.push(token);
+  return tokens;
 }
 
 function dockerRunImage(command) {

@@ -207,8 +207,6 @@ function expect(condition, description) {
     oldRefreshStatus: refreshed.status,
     oldRefreshError: refreshed.body?.error_code ?? refreshed.body?.error ?? null,
     adminUpdateStatus: updated.status,
-    newPasswordLoginStatus: newPassword.status,
-    oldPasswordLoginStatus: oldPassword.status,
   };
 
   expect(tokensBefore === "1", "probe B: there was no refresh token to delete, so the delete proves nothing");

@@ -37,6 +37,8 @@ import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFile
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 import {
   COMPANION_NAME,
   auditCompanions,
@@ -147,7 +149,7 @@ test("editing a companion without restamping is refused, and named", () => {
     (mutated) => {
       mutated.companions.at(-1).sha256 = "c".repeat(64);
     },
-    new RegExp(`${victim.replace(/\./g, "\\.")} has changed since the manifest was stamped`),
+    new RegExp(`${escapeRegExp(victim)} has changed since the manifest was stamped`),
   );
 });
 
@@ -210,7 +212,7 @@ test("a companion smuggled into a phase array is refused as a companion, not as 
   assert.ok(
     problems.some((problem) =>
       new RegExp(
-        `required_for_app lists the hand-run companion ${victim.file.replace(/\./g, "\\.")}; companions are declared under "companions"`,
+        `required_for_app lists the hand-run companion ${escapeRegExp(victim.file)}; companions are declared under "companions"`,
       ).test(problem),
     ),
     problems.join("\n"),
@@ -274,7 +276,7 @@ test("--verify-companions refuses a mutated tree and passes the committed one", 
       encoding: "utf8",
     });
     assert.equal(escalated.status, 1);
-    assert.match(escalated.stdout, new RegExp(`companion BAD\\s+rollback\\s+${victim.replace(/\./g, "\\.")}`));
+    assert.match(escalated.stdout, new RegExp(`companion BAD\\s+rollback\\s+${escapeRegExp(victim)}`));
     assert.match(escalated.stderr, /has changed since the manifest was stamped/);
     assert.match(escalated.stderr, /refusing: 1 problem\(s\)/);
 

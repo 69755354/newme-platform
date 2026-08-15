@@ -73,6 +73,7 @@ const expandSetSql = readdirSync(path.join(ROOT, "supabase/migrations"))
 const contractSql = read(`supabase/migrations/${CONTRACT_FILE}`);
 const companionSql = read(`supabase/migrations/${COMPANION}`);
 const recontractSql = read(`supabase/migrations/${RECONTRACT}`);
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** The contents of a ```<tag> fenced block, as trimmed non-empty lines. */
 function fence(tag) {
@@ -277,7 +278,7 @@ test("the RPC signatures the previous release calls are the declared ones", () =
     // The identity-argument form appears verbatim in the grant/revoke lines of a
     // migration, so a changed argument list cannot leave the document standing.
     const declared = new RegExp(
-      `(?:revoke all|grant execute) on function public\\.${name}\\(${args.replace(/[()]/g, "\\$&")}\\)`,
+      `(?:revoke all|grant execute) on function public\\.${name}\\(${escapeRegExp(args)}\\)`,
     );
     assert.ok(
       declared.test(expandSetSql),
@@ -318,7 +319,7 @@ test("the three release-mode values are the values the SQL writes", () => {
   assert.match(doc, /\| 6 · recontract run \|.*`strict` \|/);
   assert.match(doc, /State 3 is the rollback boundary/);
   assert.match(doc, /point of no return is step 7/);
-  assert.match(doc, new RegExp(COMPANION.replace(/\./g, "\\.")));
+  assert.match(doc, new RegExp(escapeRegExp(COMPANION)));
 });
 
 test("the way back out of compat is an artifact, not a migration that cannot re-run", () => {
@@ -338,7 +339,7 @@ test("the way back out of compat is an artifact, not a migration that cannot re-
   );
   assert.match(
     recontractSql,
-    new RegExp(`^-- RECONTRACTS: ${CONTRACT_FILE.replace(/\./g, "\\.")}$`, "m"),
+    new RegExp(`^-- RECONTRACTS: ${escapeRegExp(CONTRACT_FILE)}$`, "m"),
     "the artifact must declare which migration it re-enters, which is what the harness's coverage gate reads",
   );
 
@@ -587,9 +588,9 @@ test("the contract-phase migration points at this document and this test", () =>
   // The header of the contract phase promises both artifacts by name. If either moves,
   // the promise becomes a dead reference in a file an operator reads at a
   // deployment.
-  assert.match(contractSql, new RegExp(DOC_PATH.replace(/\//g, "\\/")));
+  assert.match(contractSql, new RegExp(escapeRegExp(DOC_PATH)));
   const self = path.relative(ROOT, import.meta.filename).replace(/\\/g, "/");
-  assert.match(contractSql, new RegExp(self.replace(/\//g, "\\/")));
+  assert.match(contractSql, new RegExp(escapeRegExp(self)));
 });
 
 test("the document does not close anything a code round cannot close", () => {

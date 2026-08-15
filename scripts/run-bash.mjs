@@ -15,7 +15,7 @@ if (process.platform === "win32") {
   const gitBin = path.join(programFiles, "Git", "bin");
   bash = path.join(gitBin, "bash.exe");
   if (!fs.existsSync(bash)) {
-    console.error(`Git Bash is required: ${bash}`);
+    console.error("Git Bash is required");
     process.exit(1);
   }
   const pathKey = Object.keys(env).find((key) => key.toLowerCase() === "path") || "PATH";

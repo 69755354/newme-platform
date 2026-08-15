@@ -54,6 +54,7 @@ const NOW_MS = 1_700_000_000_000;
 
 function stateRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "newme-gate-record-"));
+  fs.chmodSync(dir, 0o700);
   return dir;
 }
 
@@ -61,6 +62,7 @@ function stateRoot() {
 function writeRecord(root, lines, { ageSeconds = 0, basename = "deploy-gates.AbC123" } = {}) {
   const file = path.join(root, basename);
   fs.writeFileSync(file, `${lines.join("\n")}\n`);
+  fs.chmodSync(file, 0o600);
   const mtime = new Date(NOW_MS - ageSeconds * 1000);
   fs.utimesSync(file, mtime, mtime);
   return file;

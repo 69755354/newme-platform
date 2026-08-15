@@ -149,6 +149,7 @@ test("release-candidate CI requires the isolated control-plane SIGTERM and reent
   assert.match(alertPreflightDrill, /untrusted_directory/);
   assert.match(alertPreflightDrill, /untrusted_file/);
   assert.match(alertPreflightDrill, /state-symlink symlink/);
+  assert.match(alertPreflightDrill, /chown -R root:root "\$FIXTURE_ROOT"\s+git -C "\$FIXTURE_ROOT" init -q/);
   assert.match(alertPreflightDrill, /leaves the complete target tree unchanged/);
   assert.match(alertPreflightDrill, /installer lock write/);
   assert.match(alertPreflightDrill, /before deploy-state creation/);

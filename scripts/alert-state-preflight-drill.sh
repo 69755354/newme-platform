@@ -17,6 +17,7 @@ tar -C "$SOURCE_ROOT" \
   --exclude=./.git --exclude=./node_modules --exclude=./.next \
   --exclude=./.audit --exclude=./test-results -cf - . |
   tar -C "$FIXTURE_ROOT" -xf -
+chown -R root:root "$FIXTURE_ROOT"
 git -C "$FIXTURE_ROOT" init -q
 git -C "$FIXTURE_ROOT" config user.email drill@invalid.example
 git -C "$FIXTURE_ROOT" config user.name newme-drill

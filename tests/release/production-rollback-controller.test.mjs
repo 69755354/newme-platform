@@ -269,7 +269,7 @@ test("canonical chaining gate admits only post-switch contract operations before
   const source = await read("infra/systemd/newme-deploy.sh");
   const code = extractPythonHeredoc(
     source,
-    'python3 - "${CURRENT_EVIDENCE_FILES[0]}" "$ROLLBACK_SHA" "$DB_TRANSITION_ONLY" "$DB_TRANSITION_OPERATION" <<\'PY\'',
+    'python3 - "${CURRENT_EVIDENCE_FILES[0]}" "$ROLLBACK_SHA" "$SHA" "$DB_TRANSITION_ONLY" "$DB_TRANSITION_OPERATION" <<\'PY\'',
   );
   const directory = await mkdtemp(join(tmpdir(), "newme-deploy-chain-"));
   const evidencePath = join(directory, "deploy.json");
@@ -278,13 +278,13 @@ test("canonical chaining gate admits only post-switch contract operations before
   try {
     for (const [releaseStatus, expectedStatus] of [["complete", 0], ["awaiting_uat", 65], ["acceptance_verified", 65], ["uat_failed", 65]]) {
       await writeFile(evidencePath, JSON.stringify({ git_sha: sha, release_status: releaseStatus }));
-      assert.equal(runEmbeddedPython(code, [evidencePath, sha, "0", ""]).status, expectedStatus, `deploy:${releaseStatus}`);
+      assert.equal(runEmbeddedPython(code, [evidencePath, sha, "f".repeat(40), "0", ""]).status, expectedStatus, `deploy:${releaseStatus}`);
     }
     for (const operation of ["contract-apply", "contract-verify", "contract-rollback", "contract-reenter"]) {
       for (const [releaseStatus, expectedStatus] of [["complete", 0], ["awaiting_uat", 0], ["acceptance_verified", 0], ["uat_failed", 65]]) {
         await writeFile(evidencePath, JSON.stringify({ git_sha: sha, release_status: releaseStatus }));
         assert.equal(
-          runEmbeddedPython(code, [evidencePath, sha, "1", operation]).status,
+          runEmbeddedPython(code, [evidencePath, sha, sha, "1", operation]).status,
           expectedStatus,
           `${operation}:${releaseStatus}`,
         );
@@ -292,10 +292,22 @@ test("canonical chaining gate admits only post-switch contract operations before
     }
     for (const operation of ["expand-plan", "expand-apply"]) {
       await writeFile(evidencePath, JSON.stringify({ git_sha: sha, release_status: "awaiting_uat" }));
-      assert.equal(runEmbeddedPython(code, [evidencePath, sha, "1", operation]).status, 65, operation);
+      assert.equal(runEmbeddedPython(code, [evidencePath, sha, "f".repeat(40), "1", operation]).status, 65, operation);
+      await writeFile(evidencePath, JSON.stringify({ git_sha: sha, release_status: "complete" }));
+      assert.equal(
+        runEmbeddedPython(code, [evidencePath, sha, "f".repeat(40), "1", operation]).status,
+        0,
+        `${operation}:live-complete-candidate-main`,
+      );
     }
+    await writeFile(evidencePath, JSON.stringify({ git_sha: sha, release_status: "awaiting_uat" }));
+    assert.equal(
+      runEmbeddedPython(code, [evidencePath, sha, "f".repeat(40), "1", "contract-apply"]).status,
+      65,
+      "post-switch contract operations must target the live deployed release SHA",
+    );
     await writeFile(evidencePath, JSON.stringify({ git_sha: "f".repeat(40), release_status: "complete" }));
-    assert.equal(runEmbeddedPython(code, [evidencePath, sha, "1", "contract-apply"]).status, 65);
+    assert.equal(runEmbeddedPython(code, [evidencePath, sha, sha, "1", "contract-apply"]).status, 65);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -436,7 +448,7 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   const controlSourceStart = deploy.indexOf("\nservice_control_source=", liveReleaseGateStart);
   const liveReleaseGate = deploy.slice(liveReleaseGateStart, controlSourceStart).replaceAll("\r\n", "\n").trimEnd();
   assert.match(liveReleaseGate, /fi\nif \[ "\$ROLLBACK_SHA" != "\$LEGACY_EVIDENCELESS_BASELINE" \]; then/);
-  assert.match(liveReleaseGate, /if evidence\.get\("git_sha"\) != expected_sha:[\s\S]*operation in \{[\s\S]*"contract-apply",[\s\S]*"contract-verify",[\s\S]*"contract-rollback",[\s\S]*"contract-reenter",[\s\S]*elif release_status != "complete":[\s\S]*PY\nfi$/);
+  assert.match(liveReleaseGate, /if evidence\.get\("git_sha"\) != expected_sha:[\s\S]*operation in \{[\s\S]*"contract-apply",[\s\S]*"contract-verify",[\s\S]*"contract-rollback",[\s\S]*"contract-reenter",[\s\S]*if transition_sha != expected_sha:[\s\S]*elif release_status != "complete":[\s\S]*PY\nfi$/);
 
   assert.match(immutableDeploy, /ROLLBACK=.*current\.rollback/);
   const immutableExecutableLines = immutableDeploy.split(/\r?\n/).map((line) => line.trim());

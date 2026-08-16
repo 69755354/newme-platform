@@ -14,7 +14,9 @@ export const dynamic = "force-dynamic";
 type OverduePlan = { id: string; contract_id: string; seq: number; amount: number; due_date: string };
 type NotificationFailure = { installment_id: string; reason: string };
 
-async function createOverdueNotifications(plan: OverduePlan): Promise<{ ok: true } | { ok: false; reason: string }> {
+async function createOverdueNotifications(
+  plan: OverduePlan,
+): Promise<{ ok: true; deduplicated: boolean } | { ok: false; reason: string }> {
   const [{ data: admins, error: adminsError }, { data: contract, error: contractError }] = await Promise.all([
     supabaseAdmin.from("profiles").select("id").in("role", ["admin", "boss"]).eq("is_active", true),
     supabaseAdmin.from("contracts").select("sales_id").eq("id", plan.contract_id).single(),
@@ -36,7 +38,7 @@ async function createOverdueNotifications(plan: OverduePlan): Promise<{ ok: true
 
   const existingRecipientIds = new Set((existingNotifications ?? []).map((notification: { user_id: string }) => notification.user_id));
   const missingRecipientIds = [...recipientIds].filter((userId) => !existingRecipientIds.has(userId));
-  if (missingRecipientIds.length === 0) return { ok: true };
+  if (missingRecipientIds.length === 0) return { ok: true, deduplicated: false };
 
   const { error: insertError } = await supabaseAdmin.from("notifications").insert(
     missingRecipientIds.map((userId) => ({
@@ -46,10 +48,32 @@ async function createOverdueNotifications(plan: OverduePlan): Promise<{ ok: true
       body: `Installment ${plan.seq} was due on ${plan.due_date}.`,
       related_id: plan.id,
       related_type: "payment",
+      idempotency_key: plan.id,
     })),
   );
-  if (insertError) return { ok: false, reason: "notification_insert_failed" };
-  return { ok: true };
+  if (!insertError) return { ok: true, deduplicated: false };
+  if (insertError.code !== "23505") return { ok: false, reason: "notification_insert_failed" };
+
+  const { data: deduplicatedNotifications, error: deduplicatedLookupError } = await supabaseAdmin
+    .from("notifications")
+    .select("user_id")
+    .eq("type", "payment_overdue")
+    .eq("related_id", plan.id)
+    .eq("related_type", "payment");
+  if (deduplicatedLookupError) return { ok: false, reason: "notification_lookup_failed" };
+
+  const deduplicatedRecipientIds = new Set(
+    (deduplicatedNotifications ?? []).map((notification: { user_id: string }) => notification.user_id),
+  );
+  if (![...recipientIds].every((userId) => deduplicatedRecipientIds.has(userId))) {
+    return { ok: false, reason: "notification_insert_failed" };
+  }
+
+  console.info("[Cron Overdue] Notification delivery deduplicated", {
+    installment_id: plan.id,
+    contract_id: plan.contract_id,
+  });
+  return { ok: true, deduplicated: true };
 }
 
 /**
@@ -81,6 +105,7 @@ export async function GET(request: NextRequest) {
 
     // Notify about newly overdue installments
     const notified: string[] = [];
+    let deduplicated = 0;
     const notificationFailures: NotificationFailure[] = [];
     if (overdue && overdue.length > 0) {
       for (const plan of overdue) {
@@ -100,6 +125,7 @@ export async function GET(request: NextRequest) {
             console.error("[Cron Overdue] Status update failed", { installment_id: plan.id, statusUpdateError });
           } else {
             notified.push(plan.id);
+            if (delivery.deduplicated) deduplicated += 1;
           }
         } else {
           notificationFailures.push({ installment_id: plan.id, reason: delivery.reason });
@@ -115,6 +141,7 @@ export async function GET(request: NextRequest) {
     const result = {
       overdue_count: overdue?.length ?? 0,
       notified: notified.length,
+      notification_deduplicated: deduplicated,
       notification_failures: notificationFailures.length,
       failures: notificationFailures,
     };

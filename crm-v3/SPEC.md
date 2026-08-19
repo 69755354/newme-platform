@@ -1040,3 +1040,23 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 - 与 Excel 母版的黄金基准逐项比对是**在仓库之外**用真实费率跑的（真实数字不能进公开仓库）：278/278 项差值 ≤0.01，含单点线长 7.5246/12.6066/20.9066、总线长 8303.8091、按米 22652.6695、按整卷 23806、组·天 38.2768、人工 19138.3988、两档报价与含税总额。仓库内的单测 `tests/unit/cable-costing.test.mjs` 用 `tests/fixtures/cable-costing-synthetic-config.mjs` 的**合成**费率，只证明算法与边界，不证明价格。
 - 生产要生效必须先把 `CABLE_COSTING_CONFIG` 追加进 `/etc/newme/newme-runtime.env`（0600 root:root，单行 base64，不折行）并重启 `newme-platform`；未注入时页面给 503 而不是错的数字。
 - **仍未闭环**：三种反推价线材（Motor 4x0.75 / FCU 6x0.75 / RVV 2x1.5）仍是估价，占材料价值约 75%，`warnings` 会提示；分包包干价待供应商回价后再切换 `labour.basis`。
+
+## 2026-08-20 报价单人工口径切换（百分比 → 自下而上，带回退）
+
+报价引擎此前把安装人工估成产品价格的一个百分比（`install_labor_pct`）。本次让它在拿得到点位数量与几何信息时改用线材模型的工时结果，**并且保留百分比口径作为回退**：口径切换属于钱的口径变更，不可逆的一刀切会让历史报价与新报价不可比较。**不新增数据库迁移**（加迁移会连带触发架构、RLS、schema 快照与发布清单一整条闸门链），口径标记写在已有的、仅内部可见的 `quotations.internal_notes` 里。
+
+| Path | Contract covered by this release |
+| --- | --- |
+| `src/lib/quotation-labour-basis.mjs` | 口径判定与回退的全部逻辑：六种情形（未注入费率、缺面积/层数、无点位数量、未知或停用的点位 id、引擎拒绝输入、模型算出非正人工）一律回退到历史百分比并给出**具名原因**。矩阵测试钉住「任何入参形状都不可能产出 0 或非有限的人工金额」——那会报出低价，比报错危险得多。 |
+| `src/lib/quotation-labour-basis.d.mts` | 上述模块的手写类型声明（仓库既有做法：可被 `node --test` 直接 import 的逻辑放 `.mjs` + `.d.mts`）。 |
+| `src/lib/quotation-labour-request.ts` | `server-only`：读运行时费率并把线材引擎**注入**给报价引擎。注入而非静态 import —— 第一版直接 import 会把模型算术带进 `/quotes` 的浏览器包（约 76 KB），公开仓库里那等于把算法结构送出去。 |
+| `src/lib/quotation-engine.ts` | `CalculateResult` 增补 `install_labor_basis` / `install_labor_pct` / `install_labor_fallback_reason` / `cable_material` / `install_labor_detail`，全部**新增字段，不改任何既有字段含义**。百分比口径下 `cable_material` 为 0，故税基与总额与改动前逐位相同。 |
+| `src/app/api/quotations/calculate/route.ts` | 接受可选的 `bottom_up_labour` 入参，回包带上实际用了哪个口径与回退原因。 |
+| `src/app/api/quotations/generate/route.ts` | 同上；自下而上定价的报价单会把口径、模型版本与人工/线材拆分写成一行机器可读标记进 `internal_notes`。 |
+| `src/app/api/quotations/export/route.ts` | 带标记的报价单导出时人工行改名并多一行 Cable Material；**没有标记的旧报价单走原路径，逐字不变** —— 已存的报价单不能被追溯改写。 |
+
+### 验证边界（本轮）
+
+- 单测 `tests/unit/quotation-labour-basis.test.mjs` 覆盖走新口径 / 回退老口径 / 缺配置三条路径，费率用 `tests/fixtures/cable-costing-synthetic-config.mjs` 的合成数字。
+- **前端本轮零变化**：报价向导是客户端组件，拿不到费率也拿不到点位 id，因此始终解析为百分比口径。要让业务真正用上自下而上口径，还需把点位数量接进向导（第二阶段）。
+- **代价（刻意接受）**：口径标记是文本而不是可查询列，暂时无法用 SQL 统计「多少报价用了哪个口径」；有人手工把那行注释改坏，导出会静默退回旧行。这是换掉迁移闸门链的价格，日后可单独加列。

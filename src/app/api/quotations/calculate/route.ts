@@ -3,13 +3,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { calculateQuotation } from "../../../../lib/quotation-engine";
 import { logger, genReqId } from "@/lib/logger";
+import { buildBottomUpLabourRequest } from "@/lib/quotation-labour-request";
 
 /**
  * POST /api/quotations/calculate
  * 实时计算报价（不保存到数据库）
  *
- * Input:  { lead_id?, devices: { "dali_gateway_4": 3, ... }, discount_rate?, notes? }
- * Output: { subtotal, discount_amount, after_discount, install_labor, commissioning, ... }
+ * Input:  { lead_id?, devices: { "dali_gateway_4": 3, ... }, discount_rate?, notes?,
+ *           bottom_up_labour?: { area_sqm, floors, point_quantities, tier? } }
+ * Output: { subtotal, discount_amount, after_discount, install_labor,
+ *           install_labor_basis, cable_material, commissioning, ... }
+ *
+ * `bottom_up_labour` prices the labour line from the cable/threading model
+ * instead of a percentage of the product total. `point_quantities` is keyed on
+ * the cabling point ids from GET /api/cable-costing/catalogue, which are NOT
+ * device catalogue ids. Leave it out and the labour line keeps the historic
+ * percentage; `install_labor_basis` always states which one was used.
  */
 export async function POST(request: NextRequest) {
   const request_id = genReqId();
@@ -24,7 +33,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { devices, discount_rate, notes } = body;
+    const { devices, discount_rate, notes, bottom_up_labour } = body;
 
     if (!devices || typeof devices !== "object" || Object.keys(devices).length === 0) {
       return NextResponse.json(
@@ -48,6 +57,10 @@ export async function POST(request: NextRequest) {
       devices,
       discount_rate: typeof discount_rate === "number" ? discount_rate : 0,
       notes,
+      bottom_up_labour: buildBottomUpLabourRequest(bottom_up_labour, {
+        request_id,
+        operation: "quotation_calculate",
+      }),
     });
 
     return NextResponse.json(result);

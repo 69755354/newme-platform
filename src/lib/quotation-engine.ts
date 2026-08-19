@@ -4,6 +4,12 @@
  */
 
 import { DEVICE_CATALOG, QUOTATION_DEFAULTS, buildDeviceLookup } from "./device-catalog";
+import { resolveInstallLabour } from "./quotation-labour-basis.mjs";
+import type {
+  BottomUpLabourRequest,
+  InstallLabourBasis,
+  InstallLabourDetail,
+} from "./quotation-labour-basis.mjs";
 
 // ──────────────────────────────────────────────
 // Types
@@ -14,6 +20,16 @@ export interface CalculateInput {
   devices: Record<string, number>;
   discount_rate?: number;
   notes?: string;
+  /**
+   * Opt in to the bottom-up cable/threading labour model. Omit it (or leave the
+   * rate card null) and the labour line stays on the historic percentage of the
+   * product total — see `./quotation-labour-basis.mjs` for the fallback rules.
+   *
+   * Build it with `./quotation-labour-request.ts` (server-only): it carries both
+   * the rate card and the cable-costing entry point, so this module — which the
+   * browser quote wizard imports — has no runtime dependency on either.
+   */
+  bottom_up_labour?: BottomUpLabourRequest | null;
 }
 
 export interface BreakdownItem {
@@ -28,6 +44,19 @@ export interface CalculateResult {
   discount_amount: number;
   after_discount: number;
   install_labor: number;
+  /** Which basis priced `install_labor`. */
+  install_labor_basis: InstallLabourBasis;
+  /** The percentage applied, or null when the bottom-up model was used. */
+  install_labor_pct: number | null;
+  /** Why the percentage was used; null when the bottom-up model was used. */
+  install_labor_fallback_reason: string | null;
+  /**
+   * Cable material incl. markup, ex-VAT, from the bottom-up model. Always 0 on
+   * the percentage basis, where wire was assumed to be inside the percentage.
+   */
+  cable_material: number;
+  /** Metres, crew-days and engine warnings; null on the percentage basis. */
+  install_labor_detail: InstallLabourDetail | null;
   commissioning: number;
   project_management: number;
   subtotal_services: number;
@@ -95,15 +124,28 @@ export function calculateQuotation(input: CalculateInput): CalculateResult {
   const discountAmount = subtotal * effectiveDiscountRate;
   const afterDiscount = subtotal - discountAmount;
 
-  // Service percentages apply to after-discount device total
-  const installLaborPct = QUOTATION_DEFAULTS.install_labor_pct / 100;
+  // Commissioning and project management remain a percentage of the
+  // after-discount device total: only the labour basis is being changed here.
   const commissioningPct = QUOTATION_DEFAULTS.commissioning_pct / 100;
   const pmPct = QUOTATION_DEFAULTS.pm_pct / 100;
 
-  const installLabor = Math.round(afterDiscount * installLaborPct * 100) / 100;
+  // Labour: bottom-up cable/threading model when the caller supplied a rate
+  // card and point counts, otherwise the historic percentage. The resolver
+  // never returns 0 for a missing rate card — that would under-quote the job.
+  const labour = resolveInstallLabour({
+    afterDiscount,
+    installLaborPct: QUOTATION_DEFAULTS.install_labor_pct,
+    request: input.bottom_up_labour ?? null,
+  });
+
+  const installLabor = labour.install_labor;
+  const cableMaterial = labour.cable_material;
   const commissioning = Math.round(afterDiscount * commissioningPct * 100) / 100;
   const projectManagement = Math.round(afterDiscount * pmPct * 100) / 100;
-  const subtotalServices = installLabor + commissioning + projectManagement;
+  // `cable_material` is 0 on the percentage basis, so this sum — and therefore
+  // the tax base and the total — is unchanged for every quotation that falls
+  // back to the historic basis.
+  const subtotalServices = installLabor + cableMaterial + commissioning + projectManagement;
 
   const taxable = afterDiscount + subtotalServices;
   const taxRate = QUOTATION_DEFAULTS.tax_rate / 100;
@@ -138,6 +180,11 @@ export function calculateQuotation(input: CalculateInput): CalculateResult {
     discount_amount: discountAmount,
     after_discount: afterDiscount,
     install_labor: installLabor,
+    install_labor_basis: labour.install_labor_basis,
+    install_labor_pct: labour.install_labor_pct,
+    install_labor_fallback_reason: labour.install_labor_fallback_reason,
+    cable_material: cableMaterial,
+    install_labor_detail: labour.install_labor_detail,
     commissioning,
     project_management: projectManagement,
     subtotal_services: subtotalServices,

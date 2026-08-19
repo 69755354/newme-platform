@@ -11,6 +11,8 @@ import {
 import { calculateQuotation, CalculateResult } from "../../../../lib/quotation-engine";
 import { DEVICE_CATALOG } from "@/lib/device-catalog";
 import { logger, genReqId } from "@/lib/logger";
+import { buildBottomUpLabourRequest } from "@/lib/quotation-labour-request";
+import { formatInstallLabourNote } from "@/lib/quotation-labour-basis.mjs";
 
 const VALID_DEVICE_IDS = new Set<string>(
   DEVICE_CATALOG.flatMap((cat) => cat.devices.map((d) => d.id)),
@@ -20,8 +22,15 @@ const VALID_DEVICE_IDS = new Set<string>(
  * POST /api/quotations/generate
  * 计算报价并保存到数据库，生成 quote_no，更新 lead 阶段
  *
- * Input:  { lead_id, devices, discount_rate?, notes? }
- * Output: { status, quote_id, quote_no, total, valid_until }
+ * Input:  { lead_id, devices, discount_rate?, notes?,
+ *           bottom_up_labour?: { area_sqm, floors, point_quantities, tier? } }
+ * Output: { status, quote_id, quote_no, total, valid_until, install_labor_basis }
+ *
+ * `bottom_up_labour` switches the labour line from a percentage of the product
+ * total to the cable/threading model; `point_quantities` is keyed on the cabling
+ * point ids of GET /api/cable-costing/catalogue. Omitted, unusable, or with no
+ * rate card injected on this server, the labour line keeps the historic
+ * percentage and `install_labor_basis` says so.
  */
 
 function getSupabaseAdmin() {
@@ -44,7 +53,7 @@ export async function POST(request: NextRequest) {
       applyRequestAuthCookies(context, NextResponse.json(body, init));
 
     const body = await request.json();
-    const { lead_id, devices, discount_rate, notes } = body;
+    const { lead_id, devices, discount_rate, notes, bottom_up_labour } = body;
 
     if (!lead_id) {
       return respond({ error: "lead_id is required" }, { status: 400 });
@@ -96,6 +105,10 @@ export async function POST(request: NextRequest) {
       devices,
       discount_rate: typeof discount_rate === "number" ? discount_rate : 0,
       notes,
+      bottom_up_labour: buildBottomUpLabourRequest(bottom_up_labour, {
+        request_id,
+        operation: "quotation_generate",
+      }),
     });
 
     // Guard: calculation.total maps to the DB total_amount column which has a
@@ -151,6 +164,13 @@ export async function POST(request: NextRequest) {
         status: "draft",
         devices_json: calculation.devices_json,
         notes: notes || null,
+        // The service lines have never had columns of their own; the export
+        // route re-derives them from `subtotal`. Record the basis and the
+        // amounts here so a bottom-up quotation can be restated exactly as it
+        // was priced, without a migration. Quotations on the percentage basis
+        // get no marker, which is what keeps every earlier quotation — and
+        // every fallback quotation — on its original export path.
+        internal_notes: formatInstallLabourNote(calculation),
       })
       .select("id, quote_no")
       .single();
@@ -252,6 +272,10 @@ export async function POST(request: NextRequest) {
       total: calculation.total,
       currency: calculation.currency,
       valid_until: calculation.valid_until,
+      // Which basis priced the labour line, so the caller never has to guess
+      // whether the bottom-up model actually applied.
+      install_labor_basis: calculation.install_labor_basis,
+      install_labor_fallback_reason: calculation.install_labor_fallback_reason,
     });
   } catch (err: any) {
     if (err instanceof RequestAuthError) return requestAuthErrorResponse(err);

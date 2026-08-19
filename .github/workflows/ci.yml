@@ -615,7 +615,8 @@ jobs:
           psql --version
           case "$(psql --version)" in
             "psql (PostgreSQL) 16.14 (Ubuntu 16.14-1.pgdg24.04+"*) ;;
-            *) echo "unexpected psql client for this replay: $(psql --version)" >&2; exit 1 ;;
+            "psql (PostgreSQL) 16.15 (Ubuntu 16.15-1.pgdg24.04+"*) ;;
+            *) echo "unexpected psql client for this replay (accepted: 16.14 or 16.15 from pgdg24.04): $(psql --version)" >&2; exit 1 ;;
           esac
           command -v createdb >/dev/null
 

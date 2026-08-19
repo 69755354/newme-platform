@@ -336,6 +336,11 @@ export const config = {
     "/quotes/:path*",
     "/projects/:path*",
     "/products/:path*",
+    // /cable-costing is an authenticated employee tool under src/app/(dashboard);
+    // listing it keeps the edge checks (is_active revocation, forced-password-change
+    // refusal) in front of both the page and any server action posted to its path.
+    // It is deliberately NOT in PROTECTED_ROUTES: every signed-in role may use it.
+    "/cable-costing/:path*",
     // A2: /payments, /tasks and /workbench are authenticated pages under
     // src/app/(dashboard) that this matcher never listed, so no edge check ran
     // for them — neither the forced-password-change refusal added below nor the

@@ -1060,3 +1060,22 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 - 单测 `tests/unit/quotation-labour-basis.test.mjs` 覆盖走新口径 / 回退老口径 / 缺配置三条路径，费率用 `tests/fixtures/cable-costing-synthetic-config.mjs` 的合成数字。
 - **前端本轮零变化**：报价向导是客户端组件，拿不到费率也拿不到点位 id，因此始终解析为百分比口径。要让业务真正用上自下而上口径，还需把点位数量接进向导（第二阶段）。
 - **代价（刻意接受）**：口径标记是文本而不是可查询列，暂时无法用 SQL 统计「多少报价用了哪个口径」；有人手工把那行注释改坏，导出会静默退回旧行。这是换掉迁移闸门链的价格，日后可单独加列。
+
+## 2026-08-20 迁移回放的 psql 客户端版本钉法修正
+
+| Path | Contract covered by this release |
+| --- | --- |
+| `.github/workflows/ci.yml` | `Verify hosted psql client` 改为钉住版本（16.14 / pgdg24.04）而不钉 Debian 打包修订号；失败时打印实际版本 |
+| `tests/release/ci-full-stack-gates-contract.test.mjs` | 合约断言随之改为匹配新的判据文本，并继续禁止 apt 在发布作业里做可变解析 |
+
+验证边界：
+
+- 症状：ubuntu-24.04 runner 镜像把同一个 16.14 客户端重新打包成 `16.14-1.pgdg24.04+2`，
+  旧判据要求字符串完全等于 `+1`，于是**整个仓库**的 CI 变成看作业落到哪个镜像的抛硬币 ——
+  同一个 commit 重跑三次，两次过一次不过。
+- 保留的部分：主次版本号仍然钉死在 16.14，仓库来源仍然钉死在 pgdg24.04，
+  发布作业里仍然不允许出现 `apt-get install/update`。放开的只有打包修订号。
+- 为什么打包修订号不是回放风险：迁移回放依赖的是客户端的 SQL 语法与 `createdb` 行为，
+  这两者由主次版本决定；同版本重新打包不改变它们。
+- 附带修正：旧判据用裸 `test` 比较，失败时**一个字都不打印**，无法区分"版本漂移"和
+  "客户端不存在"。新判据先 `psql --version`，不匹配时再打印实际值。

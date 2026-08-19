@@ -285,9 +285,13 @@ test("migration replay job gates on a negative control and never reaches product
   assert.doesNotMatch(job, /history-replay-expectation\.txt/);
 
   // The fixed hosted-runner label remains a time-bounded exception, so its
-  // preinstalled client is asserted exactly and no mutable apt resolution is
-  // allowed back into the release job.
-  assert.match(job, /test "\$\(psql --version\)" = "psql \(PostgreSQL\) 16\.14 \(Ubuntu 16\.14-1\.pgdg24\.04\+1\)"/);
+  // preinstalled client is asserted against a pinned version and no mutable apt
+  // resolution is allowed back into the release job. The Debian packaging
+  // revision is deliberately not pinned: the runner image re-spun the same
+  // 16.14 client as +2, which is not a replay risk, and pinning it turned every
+  // run in the repository into a coin flip on which image the job landed.
+  assert.match(job, /"psql \(PostgreSQL\) 16\.14 \(Ubuntu 16\.14-1\.pgdg24\.04\+"\*\)/);
+  assert.match(job, /unexpected psql client for this replay/);
   assert.doesNotMatch(job, /\bapt(?:-get)?\s+(?:update|install)\b/);
 
   // The history immutability gate is a precondition for every replay below it:

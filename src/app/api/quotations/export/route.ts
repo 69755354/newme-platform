@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import { parseInstallLabourNote } from "@/lib/quotation-labour-basis.mjs";
 
 /**
  * GET /api/quotations/export?id=<quote_id>
@@ -123,19 +124,38 @@ export async function GET(request: NextRequest) {
     rows.push(["Discount Amount:", "", "", "", `-${String(quote.discount_amount || 0)}`]);
     rows.push(["After Discount:", "", "", "", String((quote.subtotal || 0) - (quote.discount_amount || 0))]);
 
-    // Service fees (calculate from stored values or from devices_json)
+    // Service fees. There are no columns for them: they are either restated from
+    // the labour-basis marker this quotation was saved with, or — for every
+    // quotation saved without one, which is all of the older ones — re-derived
+    // from `subtotal` exactly as before, so their exports do not change.
     const subtotal = quote.subtotal || 0;
     const discountAmount = quote.discount_amount || 0;
     const afterDiscount = subtotal - discountAmount;
+    const labourNote = parseInstallLabourNote(quote.internal_notes);
 
-    // Estimate service fees — store them if generate saved them, otherwise calculate
-    const installLabor = afterDiscount * 0.3;
-    const commissioning = afterDiscount * 0.12;
-    const projectMgmt = afterDiscount * 0.08;
+    if (labourNote) {
+      const stored = (value: number | null, fallbackRate: number) =>
+        String(value === null ? Math.round(afterDiscount * fallbackRate * 100) / 100 : value);
+      rows.push([
+        "Installation & Labor (cable & threading model):",
+        "",
+        "",
+        "",
+        String(labourNote.install_labor),
+      ]);
+      rows.push(["Cable Material:", "", "", "", String(labourNote.cable_material)]);
+      rows.push(["Commissioning (12%):", "", "", "", stored(labourNote.commissioning, 0.12)]);
+      rows.push(["Project Management (8%):", "", "", "", stored(labourNote.project_management, 0.08)]);
+    } else {
+      // Estimate service fees — store them if generate saved them, otherwise calculate
+      const installLabor = afterDiscount * 0.3;
+      const commissioning = afterDiscount * 0.12;
+      const projectMgmt = afterDiscount * 0.08;
 
-    rows.push(["Installation & Labor (30%):", "", "", "", String(Math.round(installLabor * 100) / 100)]);
-    rows.push(["Commissioning (12%):", "", "", "", String(Math.round(commissioning * 100) / 100)]);
-    rows.push(["Project Management (8%):", "", "", "", String(Math.round(projectMgmt * 100) / 100)]);
+      rows.push(["Installation & Labor (30%):", "", "", "", String(Math.round(installLabor * 100) / 100)]);
+      rows.push(["Commissioning (12%):", "", "", "", String(Math.round(commissioning * 100) / 100)]);
+      rows.push(["Project Management (8%):", "", "", "", String(Math.round(projectMgmt * 100) / 100)]);
+    }
     rows.push([EMPTY]);
     rows.push(["Tax Rate:", "", "", "", `${quote.tax_rate || 5}%`]);
     rows.push(["Tax Amount:", "", "", "", String(quote.tax_amount || 0)]);

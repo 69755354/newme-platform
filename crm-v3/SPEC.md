@@ -1065,17 +1065,19 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 
 | Path | Contract covered by this release |
 | --- | --- |
-| `.github/workflows/ci.yml` | `Verify hosted psql client` 改为钉住版本（16.14 / pgdg24.04）而不钉 Debian 打包修订号；失败时打印实际版本 |
+| `.github/workflows/ci.yml` | `Verify hosted psql client` 改为接受一个封闭的客户端集合（pgdg24.04 的 16.14 与 16.15），不再钉 Debian 打包修订号；失败时打印实际版本 |
 | `tests/release/ci-full-stack-gates-contract.test.mjs` | 合约断言随之改为匹配新的判据文本，并继续禁止 apt 在发布作业里做可变解析 |
 
 验证边界：
 
-- 症状：ubuntu-24.04 runner 镜像把同一个 16.14 客户端重新打包成 `16.14-1.pgdg24.04+2`，
-  旧判据要求字符串完全等于 `+1`，于是**整个仓库**的 CI 变成看作业落到哪个镜像的抛硬币 ——
-  同一个 commit 重跑三次，两次过一次不过。
-- 保留的部分：主次版本号仍然钉死在 16.14，仓库来源仍然钉死在 pgdg24.04，
-  发布作业里仍然不允许出现 `apt-get install/update`。放开的只有打包修订号。
-- 为什么打包修订号不是回放风险：迁移回放依赖的是客户端的 SQL 语法与 `createdb` 行为，
-  这两者由主次版本决定；同版本重新打包不改变它们。
+- 症状：旧判据要求 `psql --version` 完全等于 `psql (PostgreSQL) 16.14 (Ubuntu 16.14-1.pgdg24.04+1)`，
+  而 ubuntu-24.04 runner 机群正在滚动升级，同一个 commit 重跑三次两次过一次不过 ——
+  **整个仓库**的 CI 变成看作业落到哪台机器的抛硬币。
+- 实测到的实际版本（不是推测）：放开修订号后判据把版本打了出来，主分支那次是
+  `16.15 (Ubuntu 16.15-1.pgdg24.04+2)`，而几分钟前 PR 那次落在 16.14 上 —— 机群同时在供两个次版本。
+- 保留的部分：客户端仍然是**封闭集合**（只接受 16.14 与 16.15），仓库来源仍然钉死 pgdg24.04，
+  发布作业里仍然不允许出现 `apt-get install/update`，且合约测试禁止把次版本写成通配。
+- 为什么次版本不是回放风险：PostgreSQL 次版本只含缺陷修复；回放依赖的 SQL 语法与 `createdb`
+  行为由主版本决定，服务端则是另外一个按 digest 钉死的容器。
 - 附带修正：旧判据用裸 `test` 比较，失败时**一个字都不打印**，无法区分"版本漂移"和
   "客户端不存在"。新判据先 `psql --version`，不匹配时再打印实际值。

@@ -130,6 +130,11 @@ test("quotation generate executes the insert once and propagates the database qu
     "../../../../lib/quotation-engine": { calculateQuotation: calculation },
     "@/lib/device-catalog": { DEVICE_CATALOG: [{ devices: [{ id: "device-1" }] }] },
     "@/lib/logger": { logger: quietLogger, genReqId: () => "request-1" },
+    // The bottom-up labour basis is exercised by tests/unit/quotation-labour-basis.test.mjs.
+    // Here it must stay inert: returning undefined makes the route keep the
+    // percentage basis, so this test still observes the unmodified insert path.
+    "@/lib/quotation-labour-request": { buildBottomUpLabourRequest: () => undefined },
+    "@/lib/quotation-labour-basis.mjs": { formatInstallLabourNote: () => "" },
   });
 
   const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

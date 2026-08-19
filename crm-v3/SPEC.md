@@ -1018,3 +1018,25 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 | `supabase/replay/24_rollback_companion_guards.sh` | Verifies rollback companions preserve the declared guard and dependency closure. |
 | `supabase/replay/26_notification_event_idempotency.sh` | Exercises notification idempotency, lock behavior, ACLs, and residue cleanup on PostgreSQL 17. |
 | `supabase/replay/27_lead_rebalance_plan_idempotency.sh` | Exercises first-caller plan identity, actor isolation, locking, ACLs, and zero residue on PostgreSQL 17. |
+
+## 2026-08-20 线材与穿线报价计算器（自下而上人工模型）
+
+把线材用量与穿线人工从「按产品价格取百分比」改成按拓扑与工时自下而上算，并做成员工自助页面。**费率、系数、工时定额一律不进本仓库** —— 本仓库是公开仓库，报价模型是公司机密；配置在运行时由 base64 环境变量 `CABLE_COSTING_CONFIG` 注入，缺配置时返回 503 并点名该变量，**不回落到默认值**（回落到默认值等于用错的费率报出一个看起来正常的价格）。
+
+| Path | Contract covered by this release |
+| --- | --- |
+| `src/lib/cable-costing/types.ts` | 冻结引擎的对外接口：`CableCostingInput`（面积/层数/点位数量/口径）、`CableCostingResult`（线材与人工分项、损耗、加成、分包毛利、税前、VAT、含税、warnings）、以及 `CableCostingConfig` 的形状。其他所有代码只对着这里编程。 |
+| `src/lib/cable-costing/engine.ts` | 纯函数计算：按三种拓扑（bus/radial/star）算单点线长 → 总米数 → 整卷采购 → 敷线与端接工时 → 组·天 → 金额。**不含任何数字**，全部系数由 config 传入。估价线材与过期报价单产生 `warnings`。 |
+| `src/lib/cable-costing/config.ts` | `import "server-only"`，只从 `CABLE_COSTING_CONFIG`（base64 JSON）读费率，**无 fallback 默认值**，失败抛 `CableCostingConfigError`。这是唯一允许接触真实费率的模块，且它不被 barrel 导出，避免被客户端代码顺手 import。 |
+| `src/lib/cable-costing/index.ts` | 引擎与类型的 barrel，**故意不再导出 `config.ts`**。 |
+| `src/app/api/cable-costing/catalogue/route.ts` | `GET`：返回点位清单（id/中英文名/系统/拓扑）与口径枚举，**不含任何价格**，供前端渲染输入框。 |
+| `src/app/api/cable-costing/calculate/route.ts` | `POST`：鉴权后调引擎返回分项结果。401 未登录 / 400 输入非法 / **503 未注入费率（点名变量名）** / 500 其他且生产环境不外泄细节。 |
+| `src/app/api/cable-costing/export/route.ts` | `POST`：同样的输入导出 xlsx（Inputs / Cables / Labour / Summary 四页，`private, no-store`），文件名 `cable_costing_<tier>_<YYYYMMDD>.xlsx`。 |
+| `src/app/(dashboard)/cable-costing/page.tsx` | 页面服务端入口，走 `supabase.auth.getUser()` 网关；已登记进 `src/proxy.ts` 的 matcher（安全测试会枚举 `page.tsx`）。不限角色 —— 这是估算员的日常工具。 |
+| `src/app/(dashboard)/cable-costing/cable-costing-client.tsx` | 全部交互：面积/层数/按点位数量、internal（成本）与 client（对客）两档互斥切换、分项表与合计卡、导出按钮。**warnings 渲染在所有数字之前**，因为它决定这份数字能不能发客户；切换口径时主动清空旧结果，避免旧数字挂在新标签下被误读。零 Supabase、零价格字面量。 |
+
+### 验证边界（本轮）
+
+- 与 Excel 母版的黄金基准逐项比对是**在仓库之外**用真实费率跑的（真实数字不能进公开仓库）：278/278 项差值 ≤0.01，含单点线长 7.5246/12.6066/20.9066、总线长 8303.8091、按米 22652.6695、按整卷 23806、组·天 38.2768、人工 19138.3988、两档报价与含税总额。仓库内的单测 `tests/unit/cable-costing.test.mjs` 用 `tests/fixtures/cable-costing-synthetic-config.mjs` 的**合成**费率，只证明算法与边界，不证明价格。
+- 生产要生效必须先把 `CABLE_COSTING_CONFIG` 追加进 `/etc/newme/newme-runtime.env`（0600 root:root，单行 base64，不折行）并重启 `newme-platform`；未注入时页面给 503 而不是错的数字。
+- **仍未闭环**：三种反推价线材（Motor 4x0.75 / FCU 6x0.75 / RVV 2x1.5）仍是估价，占材料价值约 75%，`warnings` 会提示；分包包干价待供应商回价后再切换 `labour.basis`。

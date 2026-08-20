@@ -1081,3 +1081,33 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
   行为由主版本决定，服务端则是另外一个按 digest 钉死的容器。
 - 附带修正：旧判据用裸 `test` 比较，失败时**一个字都不打印**，无法区分"版本漂移"和
   "客户端不存在"。新判据先 `psql --version`，不匹配时再打印实际值。
+
+## 2026-08-20 前端可观测性与发布后闸门
+
+前端产品分析集成整体移除，Cloudflare 边缘注入的 RUM beacon 改为放行 + 闸门存根，
+浏览器质量闸门的失败码带上出错的计数器与上下文。
+
+| Path | Contract covered by this release |
+| --- | --- |
+| `src/components/PostHogProvider.tsx` | 已删除。project key 在供应商侧已失效，provider 初始化时的两个请求（`/array/<key>/config` 与 `/decide`）在每个登录后页面都返回 404，即这套埋点从未送出任何数据；且它开着 `maskAllInputs: false` 的会话回放，等于把 CRM 输入框原文录进第三方 |
+| `src/components/PostHogProviderInner.tsx` | 已删除（同上，客户端边界内层） |
+| `src/lib/web-vitals.ts` | 已删除。唯一消费者是上面的 provider，没有别的接收端 |
+| `src/lib/WebVitalsReporter.tsx` | 已删除。仓库内无任何引用，从未挂载过 |
+| `src/components/error-boundary.tsx` | 只保留 Sentry 上报分支；分析侧的 `$exception` 分支随集成一起去掉 |
+| `src/lib/session-identity.ts` | 只保留**实时**读取器 `readSessionIdentity()`。另一份带缓存的读取器只为分析识别存在，而登出吊销边界不得从可复用状态回答，因此模块作用域内不再有任何身份状态 |
+| `src/hooks/useAuthRedirect.ts` | 不再调用已删除的缓存清理函数 |
+| `next.config.ts` | CSP `script-src` 增加 `https://static.cloudflareinsights.com`（边缘注入，仓库里没有这个标签），并移除分析源；beacon 带 `version` 时 POST 同源 `/cdn-cgi/rum`，因此 `connect-src` 不放宽 |
+| `src/app/(dashboard)/ads/page.tsx` | 守卫放行 operator：其后端 `/api/ads/leads` 本来就把 operator 当管理角色服务，侧边栏也一直给它这个链接 |
+| `src/app/(dashboard)/analytics/page.tsx` | 同上；`/api/analytics/summary` 自己就把 operator 算进 `isManagement` |
+
+发布后浏览器闸门（`scripts/run-postdeploy-browser-uat.mjs`、`scripts/canonical-browser-uat.mjs`）：
+
+- 第三方源不再一律 abort：边缘注入的脚本源回一个空 body 的 200 存根。单靠 CSP 放行修不好这条 ——
+  闸门 abort 后 Chromium 的 `Log.entryAdded` 会被 Playwright 当成 console error 转发，counter 照样非零。
+- 失败码从单一的 `browser_quality_gate_failed` 变为 `quality_<counter>_<role>_<locale>_<step>`。
+  长度预算由消费者决定（`/^[a-z][a-z0-9_]{1,62}$/`，不是 runner 自己的 80 字符），
+  测试枚举全部角色 × 语言 × 步骤重算最坏情况并要求同时满足两条正则；超预算时降级回笼统码而不是放宽契约。
+- 路由判定抽成纯函数 `routeDecision()`，默认拒绝（含不可解析的 URL），真值表不用起浏览器就能测。
+
+重新引入真实用户指标的三个前置条件记在 `docs/lighthouse-baseline.md`：输入默认打码、CSP 显式放行、
+以及闸门侧的存根或放行判据。三者缺一条，这套东西就会以本次发现的形式再回来。

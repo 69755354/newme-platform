@@ -429,25 +429,34 @@ test("middleware passes the explicit Cookie header and writes custom refresh coo
 
 const LOGOUT_COOKIE_NAMES = { authToken: "sb-demo-auth-token", refreshToken: "sb-demo-refresh-token" };
 
-function loadLogout(signOut) {
-  const calls = [];
+const USER_ID = "11111111-2222-3333-4444-555555555555";
+
+function loadLogout({ user = { id: USER_ID }, getUserError = null, rpc } = {}) {
+  const rpcCalls = [];
   const logout = loadTypeScriptModule("src/app/api/auth/logout/route.ts", {
     "@/lib/supabase-server": {
       createServerSupabase: async () => ({
         auth: {
-          signOut: async (options) => {
-            calls.push(options);
-            return signOut();
-          },
+          getUser: async () => ({ data: { user }, error: getUserError }),
         },
       }),
+    },
+    "@/lib/supabase-admin": {
+      supabaseAdmin: {
+        rpc: async (name, args) => {
+          rpcCalls.push({ name, args });
+          return rpc ? rpc() : { data: { verified: true }, error: null };
+        },
+      },
     },
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => LOGOUT_COOKIE_NAMES },
     "@/lib/logger": { logger: { error: () => {}, warn: () => {}, info: () => {} } },
     "next/server": createCookieResponseMock(),
   });
-  return { logout, calls };
+  return { logout, rpcCalls };
 }
+
+const post = (logout) => logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
 
 function assertCookiesCleared(response) {
   assert.deepEqual(
@@ -457,24 +466,43 @@ function assertCookiesCleared(response) {
   assert.ok(response.cookiesSet.every((cookie) => cookie.value === "" && cookie.options.maxAge === 0));
 }
 
-test("same-origin logout clears dynamic and legacy cookies", async () => {
-  const { logout, calls } = loadLogout(() => ({ error: null }));
-  const response = await logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
+test("logout revokes the caller's sessions upstream and clears both cookie generations", async () => {
+  const { logout, rpcCalls } = loadLogout();
+  const response = await post(logout);
+
   assert.equal(response.status, 200);
   assert.deepEqual(response.body, { ok: true, revoked: true });
   assertCookiesCleared(response);
 
-  // Anything less than a global sign-out leaves every other copy of the refresh
-  // token minting access tokens after the user believes they signed out.
-  assert.deepEqual(calls, [{ scope: "global" }]);
+  // Anything less than a global revocation leaves every other copy of the
+  // refresh token minting access tokens after the user believes they signed out.
+  assert.deepEqual(rpcCalls, [
+    { name: "revoke_user_sessions", args: { p_user_id: USER_ID, p_reason: "self_logout" } },
+  ]);
+});
+
+test("a revocation that reports no verified postcondition is not a sign-out", async () => {
+  // The arm the previous mock could not express. `revoke_user_sessions` returns
+  // `verified: true` only after re-reading auth.sessions and auth.refresh_tokens
+  // and finding nothing left; a response without it means the release cannot
+  // claim the sessions are gone.
+  for (const data of [{ verified: false }, {}, null]) {
+    const { logout } = loadLogout({ rpc: () => ({ data, error: null }) });
+    const response = await post(logout);
+    assert.equal(response.status, 502);
+    assert.equal(response.body.ok, false);
+    assert.equal(response.body.revoked, false);
+    assert.equal(response.body.error, "revocation_failed");
+    assertCookiesCleared(response);
+  }
 });
 
 test("a failed upstream revocation is reported, not answered with ok:true", async () => {
-  // The old implementation discarded the signOut() result and always returned
+  // The original implementation discarded the result and always returned
   // { ok: true }: a silent upstream failure was indistinguishable from a real
   // sign-out, and the refresh token stayed valid.
-  const { logout } = loadLogout(() => ({ error: { message: "upstream unavailable" } }));
-  const response = await logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
+  const { logout } = loadLogout({ rpc: () => ({ data: null, error: { message: "upstream unavailable" } }) });
+  const response = await post(logout);
   assert.equal(response.status, 502);
   assert.equal(response.body.ok, false);
   assert.equal(response.body.revoked, false);
@@ -485,12 +513,47 @@ test("a failed upstream revocation is reported, not answered with ok:true", asyn
 });
 
 test("a thrown revocation still clears cookies and never claims success", async () => {
-  const { logout } = loadLogout(() => {
-    throw new Error("network down");
+  const { logout } = loadLogout({
+    rpc: () => {
+      throw new Error("network down");
+    },
   });
-  const response = await logout.POST(new Request("http://localhost/api/auth/logout", { method: "POST" }));
+  const response = await post(logout);
   assert.equal(response.status, 500);
   assert.equal(response.body.ok, false);
   assert.equal(response.body.revoked, false);
   assertCookiesCleared(response);
+});
+
+test("a call with no live credential clears cookies and claims no revocation", async () => {
+  const { logout, rpcCalls } = loadLogout({ user: null });
+  const response = await post(logout);
+
+  // The login page calls this endpoint to discard a session the server rejected.
+  // There is no identity to revoke, so the honest answer is "cookies gone, no
+  // revocation performed" -- not `revoked: true`, which is exactly the lie the
+  // previous implementation told for *every* call.
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { ok: true, revoked: false, reason: "no_active_session" });
+  assertCookiesCleared(response);
+  assert.deepEqual(rpcCalls, []);
+});
+
+test("logout does not rely on auth-js signOut, which cannot see a header-borne token", async () => {
+  // auth-js `_signOut()` performs its network revocation only `if (accessToken)`
+  // read from the client's *stored* session. `createServerSupabase` builds the
+  // client with `persistSession: false` and passes the token as a global
+  // Authorization header, never calling `setSession()`, so that branch is never
+  // taken and `signOut()` resolves `{error: null}` without a request. Production
+  // acceptance caught it: the replayed cookie still authenticated after a logout
+  // that answered `revoked: true` (`uat_sales_post_logout_credential_active`).
+  const route = await readFile(path.join(repoRoot, "src/app/api/auth/logout/route.ts"), "utf8");
+  // Comments are stripped first: the reason this route does not call signOut is
+  // written in its own doc comment, which would otherwise match.
+  const code = route.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(code, /auth\.signOut\(/);
+  assert.match(code, /getUser\(\)/);
+  assert.match(route, /revoke_user_sessions/);
+  assert.match(route, /p_reason: "self_logout"/);
+  assert.match(route, /verified\?: boolean/);
 });

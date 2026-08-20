@@ -131,8 +131,12 @@ test("every third-party origin the CSP grants is accounted for", async () => {
     }
     // Edge-injected means exactly that: not in the repository, and stubbed by
     // the browser gate, because aborting it is reported as a console error.
+    // Substring, not a regex: building a pattern out of the host meant escaping
+    // dots, which CodeQL flagged as incomplete escaping (it left backslashes
+    // alone). An exact substring search needs no escaping and is the stronger
+    // statement anyway.
     const host = origin.replace("https://", "");
-    assert.doesNotMatch(corpus, new RegExp(host.replace(/\./g, "\\.")), `${origin} is not edge-injected`);
+    assert.ok(!corpus.includes(host), `${origin} is not edge-injected: src/ references it`);
     assert.ok(EDGE_INJECTED_SCRIPT_ORIGINS.has(origin), `${origin} must be stubbed by the browser gate`);
   }
 });

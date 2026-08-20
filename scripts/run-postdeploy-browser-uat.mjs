@@ -66,7 +66,7 @@ const FIXTURE_MARKER = /^postdeploy-uat-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89
 const CONTRACT_NO = /^UAT-C-[0-9a-f]{8}$/;
 const TIMESTAMP = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/;
 const MAX_STDIN_BYTES = 256 * 1024;
-const STEP_TIMEOUT_MS = 30_000;
+export const STEP_TIMEOUT_MS = 30_000;
 const SCREENSHOT_MEDIA_TYPE = "image/png";
 const TRACE_MEDIA_TYPE = "application/json";
 const ALLOWED_HTTP_ORIGINS = new Set([CANONICAL_ORIGIN, CANONICAL_DATA_ORIGIN]);
@@ -425,10 +425,28 @@ function canonicalNavigation(role) {
     : ["/dashboard", "/leads", "/quotes", "/contracts", "/pipeline", "/analytics", "/ads", "/products", "/team", "/projects", "/settings"];
 }
 
-async function visible(locator, code) {
-  if (await locator.count() < 1) fail(code);
-  await locator.first().waitFor({ state: "visible", timeout: STEP_TIMEOUT_MS });
-  return locator.first();
+/**
+ * Wait for a control, and refuse with `code` only once waiting has failed.
+ *
+ * Several production pages render client side: /login answers 200 with nothing
+ * but `Loading...` inside a bailout boundary, and its inputs appear tens of
+ * milliseconds later. Counting matches before waiting therefore measured the
+ * first paint rather than the page, and every acceptance run refused on the
+ * first step. waitFor retries on its own, which is exactly what this needs.
+ *
+ * A non-timeout rejection is a different defect -- a closed page, a navigation
+ * error -- so it propagates unlabelled rather than being reported as a missing
+ * control.
+ */
+export async function visible(locator, code) {
+  const first = locator.first();
+  try {
+    await first.waitFor({ state: "visible", timeout: STEP_TIMEOUT_MS });
+  } catch (error) {
+    if (error?.name !== "TimeoutError") throw error;
+    fail(code);
+  }
+  return first;
 }
 
 async function runSession({ browser, input, credential, locale, runnerSourceSha256 }) {

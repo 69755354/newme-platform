@@ -17,12 +17,14 @@ import {
   REQUIRED_ROLES,
   REQUIRED_SCREENSHOT_STEPS,
   REQUIRED_STEPS,
+  STEP_TIMEOUT_MS,
   VIEWPORT,
   browserRunnerSourceSha256,
   buildSafeFailureOutput,
   buildSafeSuccessOutput,
   captureRedactedScreenshot,
   validateBrowserUatInput,
+  visible,
 } from "../../scripts/run-postdeploy-browser-uat.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
@@ -293,4 +295,74 @@ test("real Chromium PNG keeps app markers while exposing only safe copy inside d
   for (const id of ["app-pii", "subject-pii", "foreign-customer", "foreign-amount", "private-input"]) {
     assert.equal(nonWhitePixels[id], 0, `${id} leaked pixels: ${JSON.stringify(nonWhitePixels)}`);
   }
+});
+
+/**
+ * A locator that only ever answers waitFor.
+ *
+ * count() throws: production pages render client side, so any count taken
+ * before the wait measures the first paint instead of the page. If a future
+ * edit reintroduces one, this stub turns that into a failing test rather than
+ * an acceptance run that refuses on its first step.
+ */
+function waitOnlyLocator(waitFor) {
+  const handle = { waitFor };
+  return {
+    first: () => handle,
+    count: () => {
+      throw new Error("count_consulted_before_waiting");
+    },
+  };
+}
+
+function timeoutError() {
+  const error = new Error("locator.waitFor: Timeout 30000ms exceeded.");
+  error.name = "TimeoutError";
+  return error;
+}
+
+test("visible waits for a control that is absent at first paint", async () => {
+  const calls = [];
+  const locator = waitOnlyLocator(async (options) => {
+    calls.push(options);
+  });
+
+  const handle = await visible(locator, "email_control_missing");
+
+  assert.equal(handle, locator.first());
+  assert.deepEqual(calls, [{ state: "visible", timeout: STEP_TIMEOUT_MS }]);
+});
+
+test("visible still refuses with its own code once the wait times out", async () => {
+  const locator = waitOnlyLocator(async () => {
+    throw timeoutError();
+  });
+
+  await assert.rejects(
+    () => visible(locator, "email_control_missing"),
+    (error) => error.code === "email_control_missing" && error.message === "email_control_missing",
+  );
+});
+
+test("visible propagates a non-timeout failure instead of calling it a missing control", async () => {
+  const closed = new Error("Target page, context or browser has been closed");
+  const locator = waitOnlyLocator(async () => {
+    throw closed;
+  });
+
+  await assert.rejects(() => visible(locator, "email_control_missing"), (error) => {
+    assert.equal(error, closed);
+    assert.equal(error.code, undefined);
+    return true;
+  });
+});
+
+test("the login step waits for the control the production page renders client side", () => {
+  // Guards the call site, not just the helper: the first step must consult
+  // visible() for both credentials fields, because /login answers 200 with an
+  // empty bailout boundary and fills it in afterwards.
+  const step = SOURCE.slice(SOURCE.indexOf('recordStep("login_page_visible"'), SOURCE.indexOf('recordStep("login_submitted"'));
+  assert.match(step, /await visible\(page\.locator\("#email"\), "email_control_missing"\)/);
+  assert.match(step, /await visible\(page\.locator\("#password"\), "password_control_missing"\)/);
+  assert.doesNotMatch(step, /#email"\)\.count\(\)/);
 });

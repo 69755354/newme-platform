@@ -67,7 +67,18 @@ if ! curl -sf --max-time 5 http://127.0.0.1:3001/api/health >/dev/null 2>&1; the
   ALERTS="${ALERTS}[SERVICE_DOWN] newme-platform:3001 unavailable\n"
 fi
 
+# A masked unit is an operator declaration that it must not run, so asserting
+# its liveness would be a permanent false positive. Only an explicit mask counts:
+# a missing or merely disabled unit still alerts, so a failed asset install
+# cannot hide here.
 for service in hermes-bridge hermes-dashboard hermes-worker; do
+  service_enablement="$(systemctl is-enabled "$service" 2>/dev/null)" || true
+  case "$service_enablement" in
+    masked | masked-runtime)
+      echo "[$TIMESTAMP] retired service skipped: ${service} (${service_enablement})"
+      continue
+      ;;
+  esac
   if ! systemctl is-active --quiet "$service" 2>/dev/null; then
     ALERTS="${ALERTS}[HERMES_DOWN] ${service} inactive\n"
   fi

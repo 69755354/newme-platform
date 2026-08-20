@@ -595,3 +595,151 @@ test("a failed fixture seed reports the database's identifiers, never the row", 
   assert.match(seed, /describeDatabaseFailure\(error\)/);
   assert.doesNotMatch(seed, /\} catch \{/);
 });
+
+/**
+ * Reads one JavaScript string literal starting at `start` (which must be the
+ * opening quote) and returns its raw text plus the index just past the closing
+ * quote. Template literals are returned verbatim, `${...}` included: the SQL
+ * this producer writes never interpolates a parameter placeholder, and the
+ * parameter scan below only looks for `$<digits>`.
+ */
+function readLiteral(source, start) {
+  const quote = source[start];
+  let index = start + 1;
+  let braceDepth = 0;
+  while (index < source.length) {
+    const character = source[index];
+    if (character === "\\") {
+      index += 2;
+      continue;
+    }
+    if (quote === "`" && character === "$" && source[index + 1] === "{") {
+      braceDepth += 1;
+      index += 2;
+      continue;
+    }
+    if (braceDepth > 0) {
+      if (character === "{") braceDepth += 1;
+      else if (character === "}") braceDepth -= 1;
+      index += 1;
+      continue;
+    }
+    if (character === quote) return { text: source.slice(start + 1, index), end: index + 1 };
+    index += 1;
+  }
+  throw new Error(`unterminated literal at ${start}`);
+}
+
+/**
+ * Counts the top-level elements of the array literal starting at `start` (which
+ * must be `[`). Nested literals, calls, and template interpolations all carry
+ * commas of their own, so only commas at depth zero are separators.
+ */
+function countArrayElements(source, start) {
+  let index = start + 1;
+  let depth = 0;
+  let elements = 0;
+  let sawValue = false;
+  while (index < source.length) {
+    const character = source[index];
+    if (character === "\"" || character === "'" || character === "`") {
+      index = readLiteral(source, index).end;
+      sawValue = true;
+      continue;
+    }
+    if ("([{".includes(character)) {
+      depth += 1;
+      sawValue = true;
+      index += 1;
+      continue;
+    }
+    if (character === ")" || character === "}") {
+      depth -= 1;
+      index += 1;
+      continue;
+    }
+    if (character === "]") {
+      if (depth === 0) return { count: sawValue ? elements + 1 : elements, end: index + 1 };
+      depth -= 1;
+      index += 1;
+      continue;
+    }
+    if (character === "," && depth === 0) {
+      if (sawValue) elements += 1;
+      sawValue = false;
+      index += 1;
+      continue;
+    }
+    if (!/\s/.test(character)) sawValue = true;
+    index += 1;
+  }
+  throw new Error(`unterminated array literal at ${start}`);
+}
+
+function producerQueries() {
+  const calls = [];
+  let dynamic = 0;
+  const needle = "db.query(";
+  for (let at = PRODUCER.indexOf(needle); at !== -1; at = PRODUCER.indexOf(needle, at + 1)) {
+    let index = at + needle.length;
+    while (/\s/.test(PRODUCER[index])) index += 1;
+    if (!"\"'`".includes(PRODUCER[index])) {
+      dynamic += 1;
+      continue;
+    }
+    const literal = readLiteral(PRODUCER, index);
+    let cursor = literal.end;
+    while (/\s/.test(PRODUCER[cursor])) cursor += 1;
+    let bound = 0;
+    if (PRODUCER[cursor] === ",") {
+      cursor += 1;
+      while (/\s/.test(PRODUCER[cursor])) cursor += 1;
+      if (PRODUCER[cursor] === "[") bound = countArrayElements(PRODUCER, cursor).count;
+      else if (PRODUCER[cursor] !== ")") bound = -1;
+    }
+    calls.push({ sql: literal.text, bound, offset: at });
+  }
+  return { calls, dynamic };
+}
+
+test("the scanner used below can actually see a parameter gap", () => {
+  // Without this arm a broken scanner would report every producer query clean.
+  const source = 'db.query(`insert into t (a, b) values ($1, $3)`, [one, two, three]);';
+  const saved = PRODUCER;
+  assert.equal(typeof saved, "string");
+  const calls = [];
+  const needle = "db.query(";
+  const at = source.indexOf(needle);
+  const literal = readLiteral(source, at + needle.length);
+  const array = countArrayElements(source, source.indexOf("[", literal.end));
+  calls.push({ used: [...new Set([...literal.text.matchAll(/\$(\d+)/g)].map((m) => Number(m[1])))], bound: array.count });
+  assert.deepEqual(calls[0].used, [1, 3]);
+  assert.equal(calls[0].bound, 3);
+});
+
+test("every producer query numbers its parameters contiguously", () => {
+  const { calls, dynamic } = producerQueries();
+  // A parameter PostgreSQL never sees used has no inferable type: the statement
+  // fails to parse with 42P18 and not one row is written. This is exactly how
+  // the contracts insert failed on production on 2026-08-20 with an unused $8.
+  assert.ok(calls.length >= 12, `expected the producer's queries to be visible, saw ${calls.length}`);
+  assert.equal(dynamic, 0, "a query with a non-literal SQL argument cannot be checked statically");
+  for (const call of calls) {
+    const used = [...new Set([...call.sql.matchAll(/\$(\d+)/g)].map((match) => Number(match[1])))].sort((a, b) => a - b);
+    const label = call.sql.replace(/\s+/g, " ").slice(0, 70);
+    assert.notEqual(call.bound, -1, `parameter array is not a literal: ${label}`);
+    assert.equal(used.length, call.bound, `bound ${call.bound} value(s) but used ${used.length}: ${label}`);
+    assert.deepEqual(
+      used,
+      used.map((_value, position) => position + 1),
+      `parameter numbering has a gap: ${label}`,
+    );
+  }
+});
+
+test("the contract insert binds the sales actor and never an unused admin", () => {
+  const insert = PRODUCER.slice(PRODUCER.indexOf("insert into public.contracts"));
+  const body = insert.slice(0, insert.indexOf("],") + 2);
+  assert.doesNotMatch(body, /actorIds\.admin/);
+  assert.match(body, /actorIds\.sales/);
+});

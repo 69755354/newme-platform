@@ -1,5 +1,6 @@
 // RBAC: user (authenticated)
 import { NextResponse } from "next/server"
+import { canReadContracts, contractsScopedToOwner } from "@/lib/contract-access.mjs"
 import { createServerSupabase } from "@/lib/supabase-server"
 import { applyPrivateNoStore } from "@/lib/request-auth-context"
 import { logger, genReqId } from "@/lib/logger"
@@ -75,12 +76,21 @@ export async function GET(request: Request) {
   const role = profile.role
   const userId = user.id
 
+  // The database is the boundary -- the RLS SELECT policies on public.contracts
+  // return no rows to a role that is not one of these -- but an unlisted role
+  // used to receive 200 with an empty page, which reads as "no contracts yet"
+  // rather than "not for you". Refusing explicitly says which one it is, and
+  // keeps this route's answer identical to GET /api/contracts.
+  if (!canReadContracts(role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
   const { searchParams } = new URL(request.url)
   const statusFilter = searchParams.get("status") || "all"
   const page = parseInt(searchParams.get("page") || "1", 10)
   const pageSize = parseInt(searchParams.get("pageSize") || "10", 10)
 
-  const isSales = role === "sales"
+  const isSales = contractsScopedToOwner(role)
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
 

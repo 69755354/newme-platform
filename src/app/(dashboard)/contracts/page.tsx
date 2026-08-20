@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { CONTRACT_READ_ROLES } from "@/lib/contract-access.mjs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,10 @@ import type { ContractListResponse, ContractListRow } from "@/types/contracts";
 type Contract = ContractListRow;
 
 export default function ContractsPage() {
-  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss"]);
+  // Was ["admin", "boss"], which bounced the sales owner of a contract and the
+  // operator who administers it off the list their own API serves them. The
+  // roles live in src/lib/contract-access.mjs with the evidence.
+  const { loading: roleLoading, blocked } = useRequireRole([...CONTRACT_READ_ROLES]);
   const { t, lang } = useLanguage();
 
   const STATUS_LABELS: Record<string, string> = {

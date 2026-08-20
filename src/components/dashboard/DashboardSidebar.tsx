@@ -6,7 +6,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { LanguageToggle } from "@/components/LanguageToggle";
-import { MGMT_NAV, SALES_NAV } from "@/lib/nav";
+import { navForRole } from "@/lib/nav";
 
 /**
  * DashboardSidebar — DashboardLayout 左侧 sidebar (含 mobile hamburger + overlay)
@@ -49,7 +49,10 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t } = useLanguage();
-  const nav = isManagement ? MGMT_NAV : SALES_NAV;
+  // navForRole owns both the array choice and the per-item narrowing (/team is
+  // admin/boss, not every management role) so the sidebar cannot offer a link
+  // the target page will bounce this role off.
+  const nav = navForRole(role);
 
   const isItemActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";

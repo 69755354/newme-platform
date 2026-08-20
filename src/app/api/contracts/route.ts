@@ -1,5 +1,6 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
+import { canReadContracts, contractsScopedToOwner } from "@/lib/contract-access.mjs";
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
@@ -280,7 +281,7 @@ export async function GET(request: NextRequest) {
     const userRole = profile.role;
 
     // Deny access to roles that shouldn't see contracts
-    if (!["admin", "boss", "sales", "finance", "operator"].includes(userRole)) {
+    if (!canReadContracts(userRole)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -291,7 +292,7 @@ export async function GET(request: NextRequest) {
     if (leadId) q = q.eq("lead_id", leadId);
 
     // sales role: only see own contracts
-    if (userRole === "sales") {
+    if (contractsScopedToOwner(userRole)) {
       q = q.eq("sales_id", user.id);
     }
     // admin/boss/finance/operator: see all (no additional filter)

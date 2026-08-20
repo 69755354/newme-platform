@@ -40,7 +40,10 @@ function fmtAED(v: number | null | undefined): string {
 }
 
 export default function AdsPage() {
-  const { loading: roleLoading, blocked, role: userRole } = useRequireRole(["admin", "boss"]);
+  // operator included: /api/ads/leads answers every non-sales role, and the
+  // sidebar offers this link to operator, so excluding them here was a bounce
+  // to /dashboard rather than a decision.
+  const { loading: roleLoading, blocked, role: userRole } = useRequireRole(["admin", "boss", "operator"]);
   const { t } = useLanguage();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);

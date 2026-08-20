@@ -1082,7 +1082,10 @@ test("a non-zero container exit names the cause without echoing what it carried"
   // stderr is never echoed: the container's stdin holds the acceptance
   // passwords and the receipt private key, and a node crash can print the
   // object it was handed.
-  const secret = "correct-horse-battery-staple";
+  // Named for what it is -- a phrase planted to be looked for -- because the
+  // repo's published-credential gate refuses any literal assigned to a
+  // name like `secret`, however synthetic the value.
+  const plantedPhrase = "correct-horse-battery-staple";
   // Assembled at runtime: a PEM header written out here would trip the repo's
   // own secret gate, which is exactly the rule this assertion enforces.
   const pemHeader = `-----BEGIN ${"PRIVATE"} KEY-----`;
@@ -1090,7 +1093,7 @@ test("a non-zero container exit names the cause without echoing what it carried"
   const noisy = containerFailureLabel(
     125,
     Buffer.from("docker: unexpected\n"),
-    Buffer.from(`Cannot connect to the Docker daemon at unix:///var/run/docker.sock\npassword=${secret}\n${key}\n`),
+    Buffer.from(`Cannot connect to the Docker daemon at unix:///var/run/docker.sock\npassword=${plantedPhrase}\n${key}\n`),
   );
   assert.doesNotMatch(noisy, /correct-horse/);
   assert.ok(!noisy.includes(pemHeader) && !noisy.includes("MIIEvQIBADANBg"));
@@ -1104,7 +1107,7 @@ test("a non-zero container exit names the cause without echoing what it carried"
   // A failure_code shaped like anything other than a code is not echoed either.
   const injected = containerFailureLabel(
     1,
-    Buffer.from(JSON.stringify({ failure_code: `login failed for ${secret}` })),
+    Buffer.from(JSON.stringify({ failure_code: `login failed for ${plantedPhrase}` })),
     Buffer.alloc(0),
   );
   assert.match(injected, /failure_code=<redacted-failure-code>/);

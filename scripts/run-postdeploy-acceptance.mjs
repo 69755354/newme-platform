@@ -358,7 +358,7 @@ function validateJournal(journal, releaseSha) {
   if (
     typeof journal.fixture_plan.marker !== "string"
     || !/^postdeploy-uat-[0-9a-f-]{36}$/.test(journal.fixture_plan.marker)
-    || !/^uat-[0-9a-f-]{36}$/.test(journal.fixture_plan.kpi_period)
+    || !KPI_UAT_PERIOD.test(journal.fixture_plan.kpi_period)
     || !isObject(journal.fixture_plan.ids)
   ) refuse("journal_fixture_plan_invalid");
   exactKeys(journal.fixture_plan.ids, FIXTURE_ID_KEYS, "journal_fixture_plan_invalid");
@@ -788,8 +788,31 @@ class ApiSession {
   }
 }
 
-function ensureSuccess(request, code) {
-  if (request.http_status < 200 || request.http_status > 299) refuse(code);
+/**
+ * Redact an HTTP error field down to the route-authored constant it usually is.
+ *
+ * The API's error strings are literals in the route ("Forbidden",
+ * "Internal server error", "period and targets required"). Anything carrying a
+ * digit, a quote, or punctuation could be echoing a row value, an id, or an
+ * address, so it never reaches the log.
+ */
+export function httpErrorLabel(value) {
+  if (value === null || value === undefined) return "<no-error-field>";
+  if (typeof value !== "string") return "<not-a-string>";
+  if (/^[A-Za-z][A-Za-z ]{0,58}[A-Za-z]$/.test(value)) return value;
+  return "<redacted-error-body>";
+}
+
+export function ensureSuccess(request, code) {
+  if (request.http_status >= 200 && request.http_status <= 299) return;
+  // One opaque refusal code for every possible non-2xx answer costs a whole
+  // deploy/accept cycle to diagnose. The status plus the route's own error
+  // constant separates 403 (wrong actor) from 500 (the database refused the
+  // write the route makes) without putting any payload in the log.
+  console.error(
+    `postdeploy producer: ${request.method} ${request.path} answered ${request.http_status} ${httpErrorLabel(request.json?.error)}`,
+  );
+  refuse(code);
 }
 
 function requestEvidence(request) {
@@ -815,9 +838,29 @@ function requestEvidence(request) {
   };
 }
 
+/**
+ * The shape of an acceptance KPI period.
+ *
+ * `public.kpi_targets` is not free text: kpi_targets_period_check admits only
+ * `YYYY-MM`, so the `uat-<uuid>` period this used to plan could never be
+ * inserted and the flow failed at the HTTP call on every single run. A reserved
+ * far-future decade satisfies the constraint while staying out of every real
+ * reporting period.
+ */
+export const KPI_UAT_PERIOD = /^29[0-9]{2}-(0[1-9]|1[0-2])$/;
+
+/** kpi_targets_target_type_check admits `signing` and `collection`, nothing else. */
+export const KPI_UAT_TARGET_TYPE = "signing";
+
+export function kpiUatPeriodCandidate(random = Math.random) {
+  const year = 2990 + Math.floor(random() * 10);
+  const month = 1 + Math.floor(random() * 12);
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
 async function chooseKpiPeriod(db) {
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const period = `uat-${randomUUID()}`;
+    const period = kpiUatPeriodCandidate();
     const result = await db.query("select count(*)::int as count from public.kpi_targets where period = $1", [period]);
     if (Number(result.rows[0]?.count) === 0) return period;
   }
@@ -1364,7 +1407,15 @@ async function runBusinessFlows({ db, sessions, fixture }) {
   results.push(await flow("kpi_period_replace", ids.leadApproval, async () => {
     const request = await sessions.admin.request("POST", "/api/kpi/targets", {
       period: kpiPeriod,
-      targets: [{ target_type: "revenue", target_amount: 1000, assigned_to: actorIds.sales, notes: "postdeploy acceptance fixture" }],
+      // The notes value is not decoration: both the readback below and the
+      // cleanup delete identify this row by `notes = fixture.marker`, so a
+      // literal string here would fail the readback and then leak the row.
+      targets: [{
+        target_type: KPI_UAT_TARGET_TYPE,
+        target_amount: 1000,
+        assigned_to: actorIds.sales,
+        notes: fixture.marker,
+      }],
     });
     ensureSuccess(request, "flow_kpi_replace_http_failed");
     const readback = await db.query(
@@ -1375,7 +1426,7 @@ async function runBusinessFlows({ db, sessions, fixture }) {
     );
     if (
       readback.rows.length !== 1
-      || readback.rows[0].target_type !== "revenue"
+      || readback.rows[0].target_type !== KPI_UAT_TARGET_TYPE
       || Number(readback.rows[0].target_amount) !== 1000
       || readback.rows[0].assigned_to !== actorIds.sales
       || readback.rows[0].notes !== fixture.marker

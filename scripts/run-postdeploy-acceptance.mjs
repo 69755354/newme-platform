@@ -885,10 +885,10 @@ async function seedFixtures(db, actorIds, fixture) {
       `insert into public.contracts
         (id, lead_id, sales_id, created_by, contract_no, contract_amount, party_a_name, status, notes)
        values
-        ($1, $4, $7, $7, $10, 1000, $9, 'approved', $9),
-        ($2, $5, $7, $7, $11, 1000, $9, 'pending_admin', $9),
-         ($3, $6, $7, $7, $12, 1000, $9, 'active', $9),
-         ($13, $14, $7, $7, $15, 1000, $9, 'active', $9)`,
+        ($1, $4, $7, $7, $9, 1000, $8, 'approved', $8),
+        ($2, $5, $7, $7, $10, 1000, $8, 'pending_admin', $8),
+        ($3, $6, $7, $7, $11, 1000, $8, 'active', $8),
+        ($12, $13, $7, $7, $14, 1000, $8, 'active', $8)`,
       [
         ids.transitionContract,
         ids.approvalContract,
@@ -897,7 +897,6 @@ async function seedFixtures(db, actorIds, fixture) {
         ids.leadApproval,
         ids.leadPayment,
         actorIds.sales,
-        actorIds.admin,
         marker,
         `UAT-C-${ids.transitionContract.slice(0, 8)}`,
         `UAT-C-${ids.approvalContract.slice(0, 8)}`,

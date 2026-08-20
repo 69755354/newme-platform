@@ -10,7 +10,13 @@ import {
   assertNoServiceRestartSinceDeploy,
   compareFixtureInventory,
   describeDatabaseFailure,
+  ensureSuccess,
   FIXTURE_LEAD_SOURCE,
+  httpErrorLabel,
+  KPI_JOURNAL_PERIOD,
+  KPI_UAT_PERIOD,
+  KPI_UAT_TARGET_TYPE,
+  kpiUatPeriodCandidate,
   LEAD_WON_APPROVAL_STATUS,
   LEAD_WON_APPROVAL_STEP,
   LEAD_WON_CONTRACT_APPROVAL_STATUS,
@@ -33,6 +39,7 @@ const ALERT_STATE = readFileSync(path.join(ROOT, "infra/observability/hermes-ale
 const ALERT_POLICY = readFileSync(path.join(ROOT, "infra/observability/hermes-alert-v1.env.example"), "utf8");
 const INSTALLER = readFileSync(path.join(ROOT, "scripts/install-systemd-assets.sh"), "utf8");
 const REQUIRED_JOBS = JSON.parse(readFileSync(path.join(ROOT, "infra/release/required-jobs.json"), "utf8"));
+const BASELINE = readFileSync(path.join(ROOT, "supabase/replay/production-schema-baseline.sql"), "utf8");
 const digest = (value) => createHash("sha256").update(canonicalJsonBytes(value)).digest("hex");
 
 function predeployCiPython() {
@@ -876,4 +883,116 @@ test("the admin_review assertion reads the approval table it claims to verify", 
   // It used to re-read the contract rows, so the pending approval row was never
   // part of the evidence the assertion digested.
   assert.doesNotMatch(flow, /admin_review_pending: contract\.rows/);
+});
+
+// The four tests below exist because the kpi_period_replace flow had never once
+// succeeded: it planned a period the table's CHECK constraint cannot hold and a
+// target_type the table does not admit, so every run died at the HTTP call with
+// one opaque code. Each assertion therefore reads the constraint out of the
+// schema rather than restating what the flow happens to send.
+function baselineCheck(constraint) {
+  const at = BASELINE.indexOf(`ADD CONSTRAINT ${constraint} CHECK (`);
+  assert.ok(at >= 0, `${constraint} is not in the schema baseline`);
+  const open = BASELINE.indexOf("CHECK (", at) + "CHECK (".length;
+  const end = BASELINE.indexOf(");", open);
+  return BASELINE.slice(open, end);
+}
+
+test("the KPI fixture period satisfies the constraint the table actually enforces", () => {
+  const check = baselineCheck("kpi_targets_period_check");
+  const pattern = check.match(/period ~ '([^']+)'/);
+  assert.ok(pattern, `unexpected period check shape: ${check}`);
+  const schema = new RegExp(pattern[1]);
+
+  // Every value the planner can emit, not a sample of one: 400 draws over a
+  // 120-value space covers the range with room to spare.
+  for (let i = 0; i < 400; i += 1) {
+    const candidate = kpiUatPeriodCandidate();
+    assert.match(candidate, schema, "the planner emitted a period the table would reject");
+    assert.match(candidate, KPI_UAT_PERIOD);
+  }
+  // Both ends of the reserved decade, deterministically.
+  assert.match(kpiUatPeriodCandidate(() => 0), schema);
+  assert.match(kpiUatPeriodCandidate(() => 0.999999), schema);
+
+  // The negative control is the period this used to plan. Without it the test
+  // would pass just as happily against the broken producer.
+  assert.doesNotMatch("uat-4f1c2b90-2a3d-4a3e-9f1b-0c7d5e8a1b23", schema);
+  assert.doesNotMatch("uat-4f1c2b90-2a3d-4a3e-9f1b-0c7d5e8a1b23", KPI_UAT_PERIOD);
+  assert.doesNotMatch(PRODUCER, /`uat-\$\{randomUUID\(\)\}`/);
+
+  // A real reporting period must not be reachable, or the flow would delete a
+  // month of live targets on its way in.
+  for (const real of ["2026-08", "2025-12", "2030-01"]) assert.doesNotMatch(real, KPI_UAT_PERIOD);
+});
+
+test("the KPI fixture target_type is one the table admits", () => {
+  const check = baselineCheck("kpi_targets_target_type_check");
+  const admitted = [...check.matchAll(/'([a-z_]+)'::text/g)].map((m) => m[1]);
+  assert.ok(admitted.length >= 2, `unexpected target_type check shape: ${check}`);
+  assert.ok(
+    admitted.includes(KPI_UAT_TARGET_TYPE),
+    `the flow sends ${KPI_UAT_TARGET_TYPE}, the table admits ${admitted.join("/")}`,
+  );
+  // The literal the flow used to send. It is not in the admitted set, which is
+  // the whole reason the insert was refused.
+  assert.ok(!admitted.includes("revenue"));
+  assert.doesNotMatch(PRODUCER, /target_type: "revenue"/);
+});
+
+test("the KPI row is tagged with the marker its own cleanup deletes on", () => {
+  const flow = PRODUCER.slice(
+    PRODUCER.indexOf('flow("kpi_period_replace"'),
+    PRODUCER.indexOf("return results;", PRODUCER.indexOf('flow("kpi_period_replace"')),
+  );
+  assert.match(flow, /notes: fixture\.marker/);
+  assert.match(flow, /readback\.rows\[0\]\.notes !== fixture\.marker/);
+  // A literal notes string would have failed the readback and then leaked the
+  // row, because the delete keys on notes = the marker.
+  assert.doesNotMatch(flow, /notes: "/);
+  assert.match(PRODUCER, /delete from public\.kpi_targets where id = any\(\$1::uuid\[\]\) and period = \$2 and notes = \$3/);
+});
+
+test("a non-2xx answer names the route and status instead of one opaque code", () => {
+  const errors = [];
+  const original = console.error;
+  console.error = (line) => errors.push(line);
+  try {
+    assert.throws(
+      () => ensureSuccess({ method: "POST", path: "/api/kpi/targets", http_status: 500, json: { error: "Internal server error" } }, "flow_kpi_replace_http_failed"),
+      /flow_kpi_replace_http_failed/,
+    );
+  } finally {
+    console.error = original;
+  }
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /POST \/api\/kpi\/targets answered 500 Internal server error/);
+
+  // The route's own constants are readable; anything that could be echoing a
+  // row value, an id, or an address is not.
+  assert.equal(httpErrorLabel("Forbidden"), "Forbidden");
+  assert.equal(httpErrorLabel(null), "<no-error-field>");
+  assert.equal(httpErrorLabel(undefined), "<no-error-field>");
+  assert.equal(httpErrorLabel({ error: "x" }), "<not-a-string>");
+  assert.equal(httpErrorLabel('duplicate key value violates unique constraint "leads_pkey"'), "<redacted-error-body>");
+  assert.equal(httpErrorLabel("lead 4f1c2b90 already won"), "<redacted-error-body>");
+  assert.equal(httpErrorLabel("fahad@example.ae is not a user"), "<redacted-error-body>");
+});
+
+test("a journal written by the previous release stays readable", () => {
+  // The state root holds one journal per release, and the operations-clear gate
+  // parses all of them with the live release's scripts. If this release could
+  // not read its predecessor's `uat-<uuid>` period, the failed journal that
+  // motivated this very fix could never be recovered or aborted -- the deploy
+  // path would be wedged with no way forward.
+  assert.match("uat-4f1c2b90-2a3d-4a3e-9f1b-0c7d5e8a1b23", KPI_JOURNAL_PERIOD);
+  assert.match("2994-07", KPI_JOURNAL_PERIOD);
+  assert.match(PRODUCER, /KPI_JOURNAL_PERIOD\.test\(journal\.fixture_plan\.kpi_period\)/);
+  // Readable is not the same as plannable: nothing may plan the legacy shape.
+  assert.doesNotMatch("uat-4f1c2b90-2a3d-4a3e-9f1b-0c7d5e8a1b23", KPI_UAT_PERIOD);
+  for (let i = 0; i < 200; i += 1) assert.match(kpiUatPeriodCandidate(), KPI_UAT_PERIOD);
+  // And the read rule is still closed: free text remains rejected.
+  for (const bad of ["", "uat-", "1994-07", "2994-13", "2994-7", "postdeploy", "2994-07 "]) {
+    assert.doesNotMatch(bad, KPI_JOURNAL_PERIOD);
+  }
 });

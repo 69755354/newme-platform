@@ -16,7 +16,7 @@ interface State {
  * Global React ErrorBoundary — catches rendering errors in the component tree
  * and shows a fallback UI instead of a white screen.
  * 
- * Reports errors to Sentry and PostHog for tracking.
+ * Reports errors to Sentry for tracking.
  */
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
@@ -39,16 +39,6 @@ export class ErrorBoundary extends Component<Props, State> {
             componentStack: errorInfo.componentStack,
           },
         },
-      });
-    }
-
-    // Report to PostHog
-    if (typeof window !== "undefined" && (window as any).posthog) {
-      (window as any).posthog.capture("$exception", {
-        $exception_message: error.message,
-        $exception_type: error.name,
-        $exception_stack: error.stack,
-        component_stack: errorInfo.componentStack,
       });
     }
   }

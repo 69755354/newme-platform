@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { forgetSessionIdentity, readSessionIdentity } from "@/lib/session-identity";
+import { readSessionIdentity } from "@/lib/session-identity";
 
 /**
  * useAuthRedirect — DashboardLayout 的鉴权 + 角色解析 + 重定向副作用集中点
@@ -112,7 +112,6 @@ export function useAuthRedirect() {
   }, [role, pathname, router]);
 
   const handleLogout = async () => {
-    forgetSessionIdentity();
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch {

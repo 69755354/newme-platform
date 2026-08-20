@@ -70,6 +70,55 @@ export const STEP_TIMEOUT_MS = 30_000;
 const SCREENSHOT_MEDIA_TYPE = "image/png";
 const TRACE_MEDIA_TYPE = "application/json";
 const ALLOWED_HTTP_ORIGINS = new Set([CANONICAL_ORIGIN, CANONICAL_DATA_ORIGIN]);
+
+/**
+ * Origins whose scripts are injected by the edge, not by this repository.
+ *
+ * Cloudflare Web Analytics rewrites the HTML on the way out and appends its
+ * beacon tag; nothing in `src/**` references it, so it cannot be removed from
+ * the application. Aborting it is what used to fail the gate: Playwright
+ * surfaces Chromium's Log.entryAdded for a blocked script as a console error,
+ * so the counter went non-zero on every page of every role.
+ *
+ * These origins are therefore fetched for real, and the cheaper answer was
+ * measured before it was rejected: the tag the edge injects carries
+ * `integrity="sha512-..."` and `crossorigin="anonymous"`, so fulfilling the
+ * request with an empty body fails the SRI digest and Chromium reports *that*
+ * as a console error instead. No synthesised body can satisfy a digest we
+ * cannot preimage.
+ *
+ * Fetching it is also the stronger gate. The beacon is served by the same edge
+ * that serves the app, so it adds no availability coupling; its own request
+ * goes to same-origin `/cdn-cgi/rum`, which is neither a document nor one of
+ * the critical API prefixes and so cannot manufacture an HTTP failure; and
+ * letting it load is what keeps proving the CSP admits it. A stub would make
+ * this gate blind to exactly the regression it exists to catch.
+ *
+ * `tests/security/sam15-boundaries.test.mjs` binds this set to the CSP origin
+ * inventory, so adding an origin here without justifying it there fails.
+ */
+export const EDGE_INJECTED_SCRIPT_ORIGINS = new Set(["https://static.cloudflareinsights.com"]);
+
+/**
+ * What the container should do with one request. Pure, so it is testable.
+ *
+ * Returns "continue" | "abort". Anything unparsable is aborted: a URL the
+ * runner cannot reason about must not reach the network. The two allow branches
+ * stay separate so a reader can see which set admitted the URL.
+ */
+export function routeDecision(url) {
+  if (typeof url !== "string") return "abort";
+  if (/^(?:about|blob|data):/.test(url)) return "continue";
+  let origin;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    return "abort";
+  }
+  if (ALLOWED_HTTP_ORIGINS.has(origin)) return "continue";
+  if (EDGE_INJECTED_SCRIPT_ORIGINS.has(origin)) return "continue";
+  return "abort";
+}
 const UI_COPY = Object.freeze({
   en: Object.freeze({
     leads: "Leads", contracts: "Contracts", settings: "Admin Panel", create: "Create", signIn: "Sign In", logout: "Logout",
@@ -244,7 +293,7 @@ async function hashedResponse(response) {
   };
 }
 
-function qualityCounts() {
+export function qualityCounts() {
   return {
     console_error_count: 0,
     page_error_count: 0,
@@ -255,8 +304,49 @@ function qualityCounts() {
   };
 }
 
-function assertZeroQuality(quality) {
-  if (Object.values(quality).some((value) => value !== 0)) fail("browser_quality_gate_failed");
+/**
+ * Counter name -> the token that goes in the failure code.
+ *
+ * Frozen and exported so the test can assert its keys are exactly the counters
+ * `qualityCounts()` produces. A counter added without a label here would
+ * silently fall back to the opaque code this change exists to remove.
+ */
+export const QUALITY_FAILURE_LABELS = Object.freeze({
+  console_error_count: "console_error",
+  page_error_count: "page_error",
+  critical_http_failure_count: "critical_http",
+  overflow_violation_count: "overflow",
+  overlap_violation_count: "overlap",
+  raw_i18n_key_count: "raw_i18n_key",
+});
+
+/**
+ * The shape a failure code must satisfy to survive its consumer.
+ *
+ * Deliberately the consumer's regex, not this file's looser one: a 70-character
+ * code passes `buildSafeFailureOutput` and then arrives as
+ * `<redacted-failure-code>` at the other end, which is worse than the opaque
+ * code because it looks like a redaction decision rather than a length bug.
+ */
+export const QUALITY_FAILURE_CODE = /^[a-z][a-z0-9_]{1,62}$/;
+
+/**
+ * Name the first non-zero counter, with the role/locale/step that produced it.
+ * Returns null when nothing is broken.
+ */
+export function qualityFailureCode(quality, context = {}) {
+  const broken = Object.keys(QUALITY_FAILURE_LABELS).filter((counter) => (quality?.[counter] ?? 0) !== 0);
+  if (broken.length === 0) return null;
+  const parts = ["quality", QUALITY_FAILURE_LABELS[broken[0]], context.role, context.locale, context.step];
+  const code = parts.filter((part) => typeof part === "string" && part.length > 0).join("_");
+  // Never widen the contract to fit a long code: fall back instead, so a future
+  // step name cannot turn a diagnostic into a redaction.
+  return QUALITY_FAILURE_CODE.test(code) ? code : "browser_quality_gate_failed";
+}
+
+function assertZeroQuality(quality, context = {}) {
+  const code = qualityFailureCode(quality, context);
+  if (code !== null) fail(code);
 }
 
 async function auditVisibleUi(page) {
@@ -504,23 +594,11 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
     serviceWorkers: "block",
   });
   await context.route("**/*", async (route) => {
-    const requestUrl = route.request().url();
-    if (/^(?:about|blob|data):/.test(requestUrl)) {
+    if (routeDecision(route.request().url()) === "continue") {
       await route.continue();
       return;
     }
-    let origin;
-    try {
-      origin = new URL(requestUrl).origin;
-    } catch {
-      await route.abort("blockedbyclient");
-      return;
-    }
-    if (!ALLOWED_HTTP_ORIGINS.has(origin)) {
-      await route.abort("blockedbyclient");
-      return;
-    }
-    await route.continue();
+    await route.abort("blockedbyclient");
   });
   await context.routeWebSocket("**/*", async (webSocketRoute) => {
     let origin;
@@ -587,7 +665,7 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
     runtimeQuality.overflow_violation_count += layoutQuality.overflow_violation_count;
     runtimeQuality.overlap_violation_count += layoutQuality.overlap_violation_count;
     runtimeQuality.raw_i18n_key_count += layoutQuality.raw_i18n_key_count;
-    assertZeroQuality(runtimeQuality);
+    assertZeroQuality(runtimeQuality, { role: credential.role, locale, step: id });
     const stepCompletedAt = utcSecond();
     const provisional = {
       sequence: steps.length + 1,
@@ -887,7 +965,7 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
     if (steps.length !== REQUIRED_STEPS.length || httpChecks.map((check) => check.id).join(",") !== REQUIRED_HTTP_CHECKS.join(",")) {
       fail("browser_evidence_incomplete");
     }
-    assertZeroQuality(runtimeQuality);
+    assertZeroQuality(runtimeQuality, { role: credential.role, locale, step: "final" });
     const completedAt = steps.at(-1).completed_at;
     const trace = {
       trace_version: TRACE_VERSION,

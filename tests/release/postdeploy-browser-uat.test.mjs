@@ -20,16 +20,24 @@ import {
   REQUIRED_STEPS,
   STEP_TIMEOUT_MS,
   VIEWPORT,
+  EDGE_INJECTED_SCRIPT_ORIGINS,
+  QUALITY_FAILURE_CODE,
+  QUALITY_FAILURE_LABELS,
   browserRunnerSourceSha256,
   buildSafeFailureOutput,
   buildSafeSuccessOutput,
   captureRedactedScreenshot,
+  qualityCounts,
+  qualityFailureCode,
+  routeDecision,
   validateBrowserUatInput,
   visible,
 } from "../../scripts/run-postdeploy-browser-uat.mjs";
+import { CONTAINER_FAILURE_CODE } from "../../scripts/canonical-browser-uat.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const SOURCE = readFileSync(path.join(ROOT, BROWSER_RUNNER_SOURCE_PATH), "utf8");
+const ALLOWED_ORIGIN_STRINGS = [CANONICAL_ORIGIN, "https://vfopmpxlhwzpxqegayew.supabase.co"];
 const BULK_BAR = readFileSync(path.join(ROOT, "src/app/(dashboard)/leads/_components/LeadsBulkTransferBar.tsx"), "utf8");
 const TRANSLATIONS = readFileSync(path.join(ROOT, "src/lib/i18n/translations.ts"), "utf8");
 const SENSITIVE_UI = [
@@ -89,7 +97,12 @@ test("browser UAT runtime is immutable, stdin-only, desktop, dual-locale, and ha
   assert.match(browserRunnerSourceSha256(), /^[0-9a-f]{64}$/);
   assert.match(SOURCE, /for \(const credential of validated\.roles\)[\s\S]*for \(const locale of REQUIRED_LOCALES\)/);
   assert.match(SOURCE, /readClosedStdin\(process\.stdin\)|readClosedStdin\(stream = process\.stdin\)/);
-  assert.match(SOURCE, /context\.route\("\*\*\/\*"[\s\S]*!ALLOWED_HTTP_ORIGINS\.has\(origin\)[\s\S]*route\.abort\("blockedbyclient"\)/);
+  // The HTTP decision moved into the pure `routeDecision`, whose truth table is
+  // tested below; this stays a source assertion because the container must not
+  // grow a second, inline copy of the rule. Default-deny is asserted inside the
+  // function, not at the call site.
+  assert.match(SOURCE, /context\.route\("\*\*\/\*"[\s\S]*routeDecision\(route\.request\(\)\.url\(\)\)[\s\S]*route\.abort\("blockedbyclient"\)/);
+  assert.match(SOURCE, /export function routeDecision\(url\)[\s\S]*ALLOWED_HTTP_ORIGINS\.has\(origin\)[\s\S]*return "abort";\n\}/);
   assert.match(SOURCE, /context\.routeWebSocket\("\*\*\/\*"[\s\S]*!ALLOWED_HTTP_ORIGINS\.has\(origin\)[\s\S]*webSocketRoute\.close\([\s\S]*webSocketRoute\.connectToServer\(\)/);
   assert.match(SOURCE, /openFixtureCollection\(\)[\s\S]*recordStep\("contract_list_visible"/);
   assert.match(SOURCE, /fixture_contract_link_missing[\s\S]*fixture_contract_marker_missing/);
@@ -417,4 +430,70 @@ test("the acceptance navigation contract matches src/lib/nav.ts for every role",
       .map((entry) => entry.href);
     assert.deepEqual([...CANONICAL_NAV_BY_ROLE[role]], expected, `sidebar contract for ${role}`);
   }
+});
+test("every quality counter has a failure label", () => {
+  // Recomputed from the producer, not restated: a counter added to
+  // qualityCounts() without a label here would fall back to the opaque code.
+  assert.deepEqual(Object.keys(QUALITY_FAILURE_LABELS).sort(), Object.keys(qualityCounts()).sort());
+  for (const label of Object.values(QUALITY_FAILURE_LABELS)) {
+    assert.match(label, /^[a-z][a-z0-9_]*$/);
+  }
+  assert.equal(new Set(Object.values(QUALITY_FAILURE_LABELS)).size, Object.keys(QUALITY_FAILURE_LABELS).length);
+});
+
+test("quality failure codes survive both regexes in the worst case", () => {
+  // The runner writes any code matching /^[a-z0-9_]{3,80}$/ but its consumer
+  // redacts anything over 63 characters, so the real budget belongs to the
+  // consumer. Enumerate instead of reasoning about lengths.
+  let longest = "";
+  for (const counter of Object.keys(qualityCounts())) {
+    for (const role of REQUIRED_ROLES) {
+      for (const locale of REQUIRED_LOCALES) {
+        for (const step of [...REQUIRED_STEPS, "final"]) {
+          const quality = { ...qualityCounts(), [counter]: 1 };
+          const code = qualityFailureCode(quality, { role, locale, step });
+          assert.notEqual(code, "browser_quality_gate_failed", `${counter}/${role}/${locale}/${step} fell back`);
+          assert.match(code, QUALITY_FAILURE_CODE);
+          assert.match(code, CONTAINER_FAILURE_CODE);
+          assert.equal(buildSafeFailureOutput(code).failure_code, code);
+          assert.ok(code.includes(QUALITY_FAILURE_LABELS[counter]) && code.includes(role) && code.includes(step));
+          if (code.length > longest.length) longest = code;
+        }
+      }
+    }
+  }
+  // Guard the enumeration itself: an empty loop would pass every assertion above.
+  assert.ok(longest.length >= 40, `worst case was only ${longest.length} characters`);
+  assert.ok(longest.length <= 63, `worst case ${longest} exceeds the consumer budget`);
+  assert.equal(qualityFailureCode(qualityCounts(), { role: "admin", locale: "en", step: "logout" }), null);
+  // A step name long enough to break the budget must degrade to the opaque code,
+  // never to a redaction at the far end.
+  const overlong = qualityFailureCode({ ...qualityCounts(), raw_i18n_key_count: 1 }, {
+    role: "operator", locale: "zh", step: "x".repeat(64),
+  });
+  assert.equal(overlong, "browser_quality_gate_failed");
+  assert.match(overlong, CONTAINER_FAILURE_CODE);
+});
+
+test("route decisions allow canonical and edge-injected origins and nothing else", () => {
+  assert.equal(routeDecision(`${CANONICAL_ORIGIN}/leads`), "continue");
+  assert.equal(routeDecision("data:text/html,<p>x</p>"), "continue");
+  assert.equal(routeDecision("about:blank"), "continue");
+  assert.equal(routeDecision("https://app.evil.example/x.js"), "abort");
+  assert.equal(routeDecision("https://us.i.posthog.com/array.js"), "abort");
+  assert.equal(routeDecision("not a url"), "abort");
+  assert.equal(routeDecision(undefined), "abort");
+  assert.ok(EDGE_INJECTED_SCRIPT_ORIGINS.size >= 1);
+  for (const origin of EDGE_INJECTED_SCRIPT_ORIGINS) {
+    assert.equal(routeDecision(`${origin}/beacon.min.js`), "continue");
+    // The rule covers the origin, not one path: the beacon filename carries a
+    // version that changes without notice.
+    assert.equal(routeDecision(`${origin}/beacon.min.js/vcd15cbe.js`), "continue");
+    assert.ok(!ALLOWED_ORIGIN_STRINGS.includes(origin), "an edge-injected origin is not a canonical one");
+  }
+  // The gate must never synthesise a response body. The edge injects its beacon
+  // tag with an `integrity` attribute, so a stub cannot satisfy the digest, and
+  // Chromium counts the SRI rejection as a console error -- the very failure a
+  // stub would be added to remove.
+  assert.doesNotMatch(SOURCE, /route\.fulfill\(/);
 });

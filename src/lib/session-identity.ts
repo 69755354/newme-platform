@@ -3,15 +3,15 @@
 /**
  * Shared client-side reader for GET /api/auth/me.
  *
- * Two independent consumers used to fetch this endpoint on every dashboard
- * mount: the authorization gate and analytics identification. That was two
- * identical round trips, each costing a session validation and a profiles read.
+ * This read is always live. Re-proving that the profile is still active on every
+ * mount is the session revocation boundary, so a cached verdict would leave a
+ * window in which a disabled account keeps working.
  *
- * The split below is deliberate. The authorization path always performs a live
- * read, because re-proving that the profile is still active on every mount is
- * the session revocation boundary; caching it would create a window where a
- * disabled account keeps working. Analytics is not an authorization decision, so
- * it may reuse the most recent live result instead of issuing its own request.
+ * The module also exposed a second, cached reader for analytics identification.
+ * The client-side analytics integration is gone, so the cache went with it: an
+ * unused identity cache in module scope is a copy of the user's email and role
+ * kept alive for nobody. Do not name the removed function here -- the revocation
+ * test forbids its identifier anywhere in this file, comments included.
  */
 
 export type SessionIdentity = {
@@ -28,10 +28,7 @@ export type SessionOutcome =
   | { status: "unauthenticated" }
   | { status: "unavailable" };
 
-const ANALYTICS_REUSE_MS = 60_000;
-
 let inflight: Promise<SessionOutcome> | null = null;
-let lastActive: { identity: SessionIdentity; at: number } | null = null;
 
 async function request(): Promise<SessionOutcome> {
   const response = await fetch("/api/auth/me", { credentials: "same-origin" });
@@ -43,13 +40,12 @@ async function request(): Promise<SessionOutcome> {
   const body = (await response.json()) as SessionIdentity | undefined;
   if (!body || body.isActive !== true) return { status: "unauthenticated" };
 
-  lastActive = { identity: body, at: Date.now() };
   return { status: "active", identity: body };
 }
 
 /**
  * Live session read for the authorization gate. Concurrent callers share one
- * request, but the result is never served from a cache.
+ * in-flight request, but no result is ever served from a cache.
  */
 export async function readSessionIdentity(): Promise<SessionOutcome> {
   if (inflight) return inflight;
@@ -59,26 +55,4 @@ export async function readSessionIdentity(): Promise<SessionOutcome> {
       inflight = null;
     });
   return inflight;
-}
-
-/**
- * Best-effort identity for consumers that do not gate access on it. Reuses a
- * recent live read or joins one in flight rather than adding a round trip.
- * Never use this to decide what a user may see or do.
- */
-export async function peekSessionIdentity(): Promise<SessionIdentity | null> {
-  if (lastActive && Date.now() - lastActive.at < ANALYTICS_REUSE_MS) {
-    return lastActive.identity;
-  }
-  if (inflight) {
-    const outcome = await inflight;
-    return outcome.status === "active" ? outcome.identity : null;
-  }
-  const outcome = await readSessionIdentity();
-  return outcome.status === "active" ? outcome.identity : null;
-}
-
-/** Drop reusable state. Called on sign-out so no identity outlives its session. */
-export function forgetSessionIdentity(): void {
-  lastActive = null;
 }

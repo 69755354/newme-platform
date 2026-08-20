@@ -175,16 +175,14 @@ test("login and the dashboard guard require an active profile", async () => {
   assert.match(identity, /return \{ status: "unauthenticated" \}/);
   assert.match(hook, /outcome\.status === "unauthenticated"/);
   assert.match(hook, /router\.push\("\/login"\)/);
-  // The revocation boundary must never be answered from reusable state: only
-  // the analytics reader may reuse a previous result.
-  const authorizationRead = identity.slice(
-    identity.indexOf("export async function readSessionIdentity"),
-    identity.indexOf("export async function peekSessionIdentity"),
-  );
-  assert.notEqual(authorizationRead, "", "the live reader must exist");
-  assert.doesNotMatch(authorizationRead, /lastActive/);
+  // The revocation boundary must never be answered from reusable state. This
+  // used to be checked by slicing the live reader out of the module and looking
+  // for the cache inside it, because a second, cached reader existed for
+  // analytics. That reader is gone, so the stronger statement now holds: the
+  // module has no reusable identity state at all.
+  assert.match(identity, /export async function readSessionIdentity/);
+  assert.doesNotMatch(identity, /lastActive|peekSessionIdentity/);
   assert.match(hook, /readSessionIdentity\(\)/);
-  assert.doesNotMatch(hook, /peekSessionIdentity/);
 });
 
 test("session identity distinguishes revoked credentials from upstream outages", async (t) => {

@@ -475,7 +475,7 @@ test("quality failure codes survive both regexes in the worst case", () => {
   assert.match(overlong, CONTAINER_FAILURE_CODE);
 });
 
-test("route decisions allow only canonical origins and stub edge-injected scripts", () => {
+test("route decisions allow canonical and edge-injected origins and nothing else", () => {
   assert.equal(routeDecision(`${CANONICAL_ORIGIN}/leads`), "continue");
   assert.equal(routeDecision("data:text/html,<p>x</p>"), "continue");
   assert.equal(routeDecision("about:blank"), "continue");
@@ -485,13 +485,15 @@ test("route decisions allow only canonical origins and stub edge-injected script
   assert.equal(routeDecision(undefined), "abort");
   assert.ok(EDGE_INJECTED_SCRIPT_ORIGINS.size >= 1);
   for (const origin of EDGE_INJECTED_SCRIPT_ORIGINS) {
-    assert.equal(routeDecision(`${origin}/beacon.min.js`), "stub");
-    // The stub covers the origin, not one path: the beacon filename carries a
-    // hash that changes without notice.
-    assert.equal(routeDecision(`${origin}/beacon.min.js/vcd15cbe.js`), "stub");
-    assert.ok(!ALLOWED_ORIGIN_STRINGS.includes(origin), "an allowed origin must not also be stubbed");
+    assert.equal(routeDecision(`${origin}/beacon.min.js`), "continue");
+    // The rule covers the origin, not one path: the beacon filename carries a
+    // version that changes without notice.
+    assert.equal(routeDecision(`${origin}/beacon.min.js/vcd15cbe.js`), "continue");
+    assert.ok(!ALLOWED_ORIGIN_STRINGS.includes(origin), "an edge-injected origin is not a canonical one");
   }
-  // The handler must consume the decision rather than re-deriving it.
-  assert.match(SOURCE, /const decision = routeDecision\(route\.request\(\)\.url\(\)\)/);
-  assert.match(SOURCE, /decision === "stub"[\s\S]*route\.fulfill\(\{ status: 200/);
+  // The gate must never synthesise a response body. The edge injects its beacon
+  // tag with an `integrity` attribute, so a stub cannot satisfy the digest, and
+  // Chromium counts the SRI rejection as a console error -- the very failure a
+  // stub would be added to remove.
+  assert.doesNotMatch(SOURCE, /route\.fulfill\(/);
 });

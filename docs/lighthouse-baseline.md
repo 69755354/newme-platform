@@ -228,15 +228,32 @@ customer names, phone numbers and payment amounts. It produced no data and would
 exfiltrated PII the day it started to.
 
 So the thresholds in this document are a **review baseline, measured on demand** with
-the Lighthouse commands above, not a live dashboard. Server-side errors still go to
-Sentry.
+the Lighthouse commands above, not a live dashboard.
+
+**Sentry is the only other browser-side sink, and it is inert rather than absent.**
+`sentry.client.config.ts` initialises the browser SDK, and `browserTracingIntegration`
+is a *default* integration of `@sentry/nextjs`, so with a DSN present it would collect
+real-user transactions and their performance measurements at `tracesSampleRate: 0.1`.
+That is real-user monitoring whatever it is called. It sends nothing today because
+`NEXT_PUBLIC_SENTRY_DSN` is unset: it is absent from the production runtime
+environment, and because `NEXT_PUBLIC_*` values are inlined at build time the deployed
+client bundle was checked too — no DSN-shaped string appears anywhere under
+`.next/static` (measured 2026-08-20). Setting that one variable turns real-user
+monitoring back on, so the paragraph below applies to it as much as to any new sink.
+Server-side error and trace reporting is separate and unaffected.
+
+Session replay was never enabled here despite two `replays*SampleRate` settings: replay
+is not a default integration and nothing added it. That dead configuration was removed
+on 2026-08-20 rather than left to read as "replay is on at 10%".
 
 Re-introducing real-user monitoring is a decision with a privacy review attached, not
 a dependency install. Whatever the sink, three things have to hold: masking on by
 default, an origin added to the CSP in `next.config.ts` (the browser quality gate
 counts every CSP violation as a console error and refuses the release), and the origin
-either stubbed or allow-listed in `scripts/run-postdeploy-browser-uat.mjs`, which
-blocks all third-party origins.
+allow-listed in `scripts/run-postdeploy-browser-uat.mjs`, which blocks every origin it
+does not know. Allow-listed, not stubbed: an edge-injected tag arrives with an
+`integrity` attribute, and an empty stub body fails that digest, which Chromium reports
+as a console error just the same.
 
 ---
 

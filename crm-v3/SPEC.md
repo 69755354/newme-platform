@@ -1096,14 +1096,20 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 | `src/components/error-boundary.tsx` | 只保留 Sentry 上报分支；分析侧的 `$exception` 分支随集成一起去掉 |
 | `src/lib/session-identity.ts` | 只保留**实时**读取器 `readSessionIdentity()`。另一份带缓存的读取器只为分析识别存在，而登出吊销边界不得从可复用状态回答，因此模块作用域内不再有任何身份状态 |
 | `src/hooks/useAuthRedirect.ts` | 不再调用已删除的缓存清理函数 |
+| `sentry.client.config.ts` | 删掉两个 `replays*SampleRate`：会话回放不是默认集成、也没有任何地方加它，这两行是死配置却读起来像“回放开着 10%”。同时注明 `browserTracingIntegration` 是 `@sentry/nextjs` 的**默认**集成，所以只要 `NEXT_PUBLIC_SENTRY_DSN` 有值，`tracesSampleRate: 0.1` 就是真实用户监测；实测该变量在生产运行时环境与已部署 bundle 里都不存在 |
 | `next.config.ts` | CSP `script-src` 增加 `https://static.cloudflareinsights.com`（边缘注入，仓库里没有这个标签），并移除分析源；beacon 带 `version` 时 POST 同源 `/cdn-cgi/rum`，因此 `connect-src` 不放宽 |
 | `src/app/(dashboard)/ads/page.tsx` | 守卫放行 operator：其后端 `/api/ads/leads` 本来就把 operator 当管理角色服务，侧边栏也一直给它这个链接 |
 | `src/app/(dashboard)/analytics/page.tsx` | 同上；`/api/analytics/summary` 自己就把 operator 算进 `isManagement` |
 
 发布后浏览器闸门（`scripts/run-postdeploy-browser-uat.mjs`、`scripts/canonical-browser-uat.mjs`）：
 
-- 第三方源不再一律 abort：边缘注入的脚本源回一个空 body 的 200 存根。单靠 CSP 放行修不好这条 ——
-  闸门 abort 后 Chromium 的 `Log.entryAdded` 会被 Playwright 当成 console error 转发，counter 照样非零。
+- 第三方源不再一律 abort：边缘注入的脚本源**真实放行**。单靠改 CSP 修不好这条 —— 闸门 abort 后
+  Chromium 的 `Log.entryAdded` 会被 Playwright 当成 console error 转发，counter 照样非零；
+  而回一个空 body 的 200 存根同样修不好：2026-08-20 从边缘取回的注入标签带
+  `integrity="sha512-…" crossorigin="anonymous"`，空 body 过不了 SRI 校验，Chromium 把 SRI 拒绝
+  也记成 console error。放行还是更强的判据：beacon 与应用由同一个边缘提供（不引入新的可用性耦合），
+  它自己的请求打到同源 `/cdn-cgi/rum`（既不是 document 也不在关键 API 前缀里，因此制造不出 HTTP 失败），
+  而让它真的加载正是持续证明 CSP 放行有效的那条判据 —— 存根会让闸门对本次要修的回归彻底失明。
 - 失败码从单一的 `browser_quality_gate_failed` 变为 `quality_<counter>_<role>_<locale>_<step>`。
   长度预算由消费者决定（`/^[a-z][a-z0-9_]{1,62}$/`，不是 runner 自己的 80 字符），
   测试枚举全部角色 × 语言 × 步骤重算最坏情况并要求同时满足两条正则；超预算时降级回笼统码而不是放宽契约。

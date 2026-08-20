@@ -94,8 +94,8 @@ test("every third-party origin the CSP grants is accounted for", async () => {
   // One boundary, three copies: the CSP here, the runner's route decision, and
   // whatever `src/**` actually talks to. This test is the thing that compares
   // them. `evidence` must match somewhere under src/ for an application origin;
-  // an edge_injected origin must appear in the runner's stub set and nowhere in
-  // the application.
+  // an edge_injected origin must be named as such by the runner, allowed through
+  // its route rule, and referenced nowhere in the application.
   const INVENTORY = Object.freeze({
     "https://*.supabase.co": { reason: "application", evidence: /NEXT_PUBLIC_SUPABASE_URL|createBrowserClient/ },
     "https://*.sentry.io": { reason: "application", evidence: /@sentry\/nextjs/ },
@@ -123,20 +123,31 @@ test("every third-party origin the CSP grants is accounted for", async () => {
   const sources = await Promise.all(srcFiles.map((file) => read(file)));
   const corpus = sources.join("\u000a");
 
-  const { EDGE_INJECTED_SCRIPT_ORIGINS } = await import("../../scripts/run-postdeploy-browser-uat.mjs");
+  const { EDGE_INJECTED_SCRIPT_ORIGINS, routeDecision } = await import(
+    "../../scripts/run-postdeploy-browser-uat.mjs"
+  );
   for (const [origin, entry] of Object.entries(INVENTORY)) {
     if (entry.reason === "application") {
       assert.match(corpus, entry.evidence, `${origin} is granted but nothing under src/ references it`);
       continue;
     }
-    // Edge-injected means exactly that: not in the repository, and stubbed by
-    // the browser gate, because aborting it is reported as a console error.
+    // Edge-injected means exactly that: not in the repository, and allowed
+    // through by the browser gate, because aborting it is reported as a console
+    // error and stubbing it fails the injected SRI digest.
     // Substring, not a regex: building a pattern out of the host meant escaping
     // dots, which CodeQL flagged as incomplete escaping (it left backslashes
     // alone). An exact substring search needs no escaping and is the stronger
     // statement anyway.
     const host = origin.replace("https://", "");
     assert.ok(!corpus.includes(host), `${origin} is not edge-injected: src/ references it`);
-    assert.ok(EDGE_INJECTED_SCRIPT_ORIGINS.has(origin), `${origin} must be stubbed by the browser gate`);
+    assert.ok(
+      EDGE_INJECTED_SCRIPT_ORIGINS.has(origin),
+      `${origin} must be declared edge-injected in the browser gate`,
+    );
+    assert.equal(
+      routeDecision(`${origin}/beacon.min.js`),
+      "continue",
+      `${origin} is granted by the CSP but the browser gate does not let it through`,
+    );
   }
 });

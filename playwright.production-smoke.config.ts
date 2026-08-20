@@ -54,8 +54,6 @@ Object.assign(webServerEnv, {
   NEXT_PUBLIC_SENTRY_DSN: "",
   SENTRY_DSN: "",
   SENTRY_AUTH_TOKEN: "",
-  NEXT_PUBLIC_POSTHOG_KEY: "",
-  NEXT_PUBLIC_POSTHOG_HOST: "",
 });
 
 export default defineConfig({

@@ -43,11 +43,13 @@ supabase.from("audit_log").insert({
 | 登录不记 | `auth.users` 建 DB trigger `on_user_login`，`last_sign_in_at` 变化时自动写 `user_session_daily` |
 | proxy.ts 写错表 | `audit_log` → `audit_logs`，修正列名：`actor_id`、`action`、`details` |
 | 登录页多余代码 | 移除 `log_activity('login')`（已由trigger替代）、移除未使用的 import |
-| PostHog | 其实早就配了（capture_pageview/capture_exceptions/session_recording全开），之前被 audit_log 报错刷屏掩盖 |
+| PostHog | 其实早就配了（capture_pageview/capture_exceptions/session_recording全开），之前被 audit_log 报错刷屏掩盖。**2026-08-20 已整体移除**——"全开"里就包括未打码的会话回放 |
 
 ### 4. 既有基础设施（之前不知道已经存在的）
 
-- **PostHog**：`.env.local` 有 key+host，`PHProvider` 在 root layout，`posthog.identify()` 登录后自动调用
+- ~~**PostHog**：`.env.local` 有 key+host，`PHProvider` 在 root layout，`posthog.identify()` 登录后自动调用~~
+  —— **2026-08-20 已不成立**：整套前端集成（provider、web-vitals 采集、分析用的会话身份缓存）已删除，
+  key 早已在供应商侧失效。不要再按这一条假设前端有埋点。
 - **error-monitor.py**：每15分钟查 Sentry API + journalctl，发现错误发TG DM
 - **audit_logs** 表：有正确schema，Supabase Auth 自动在写（USER_SIGN_IN等）
 - **activity_logs** 表：有完整 schema（tenant_id, user_id, action, entity_type, entity_id, details, page_path, duration_seconds）

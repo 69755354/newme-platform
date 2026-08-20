@@ -299,8 +299,25 @@ test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives au
   }
 });
 
+/**
+ * Every client module under src/, as [repo-relative path, source] pairs.
+ *
+ * Used to recompute which files talk to the session endpoint instead of naming
+ * them, so the invariants below cannot be satisfied by a file this test has
+ * never heard of.
+ */
+function clientSources(directory = path.join(repoRoot, "src")) {
+  const found = [];
+  for (const entry of fsSync.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) found.push(...clientSources(full));
+    else if (/\.(?:ts|tsx|mjs)$/.test(entry.name)) found.push([path.relative(repoRoot, full), fsSync.readFileSync(full, "utf8")]);
+  }
+  return found;
+}
+
 test("cookie-only browser session does not use localStorage or client persistence", async () => {
-  const [login, client, logout, session, cookies, loginRoute, server, redirect, posthog, identity] = await Promise.all([
+  const [login, client, logout, session, cookies, loginRoute, server, redirect, identity] = await Promise.all([
     readFile(new URL("src/app/login/page.tsx", root), "utf8"),
     readFile(new URL("src/lib/supabase.ts", root), "utf8"),
     readFile(new URL("src/app/api/auth/logout/route.ts", root), "utf8"),
@@ -309,7 +326,6 @@ test("cookie-only browser session does not use localStorage or client persistenc
     readFile(new URL("src/app/api/auth/login/route.ts", root), "utf8"),
     readFile(new URL("src/lib/supabase-server.ts", root), "utf8"),
     readFile(new URL("src/hooks/useAuthRedirect.ts", root), "utf8"),
-    readFile(new URL("src/components/PostHogProviderInner.tsx", root), "utf8"),
     readFile(new URL("src/lib/session-identity.ts", root), "utf8"),
   ]);
 
@@ -327,12 +343,35 @@ test("cookie-only browser session does not use localStorage or client persistenc
   assert.doesNotMatch(login, /auth\/v1\/logout/);
   assert.match(loginRoute, /auth\/v1\/logout/);
   assert.doesNotMatch(redirect, /localStorage|auth-token/);
-  assert.doesNotMatch(posthog + identity, /localStorage|access_token|atob\(/);
-  // Identity still comes from the server endpoint, now through one shared
-  // reader instead of a second identical round trip per dashboard mount.
-  assert.match(posthog, /peekSessionIdentity\(\)/);
-  assert.doesNotMatch(posthog, /fetch\(/);
+  assert.doesNotMatch(identity, /localStorage|access_token|atob\(/);
   assert.match(identity, /fetch\("\/api\/auth\/me", \{ credentials: "same-origin" \}\)/);
+
+  // The session endpoint has exactly one client-side caller. This used to be
+  // pinned by naming the two files that read it, which could not notice a third
+  // one; it is now recomputed from the tree. A second caller is how the
+  // analytics integration ended up holding its own copy of the user's identity.
+  const sources = clientSources();
+  assert.ok(sources.length > 100, "the source walk must actually find the client tree");
+  const meCallers = sources
+    .filter(([, source]) => /fetch\(\s*["'`]\/api\/auth\/me/.test(source))
+    .map(([file]) => file)
+    .sort();
+  // The new-lead form is the one caller outside the shared reader: it needs the
+  // acting user id at submit time. Any further caller has to be reviewed here,
+  // because a private copy of the session is how client-side analytics ended up
+  // holding the user's email and role.
+  assert.deepEqual(meCallers, [
+    "src/app/(dashboard)/leads/new/page.tsx",
+    "src/lib/session-identity.ts",
+  ]);
+
+  // No consumer of the shared reader may reach for the raw token either.
+  const consumers = sources.filter(([file, source]) => file !== "src/lib/session-identity.ts"
+    && /["']@\/lib\/session-identity["']/.test(source));
+  assert.ok(consumers.length >= 1, "the shared reader must have at least one consumer");
+  for (const [file, source] of consumers) {
+    assert.doesNotMatch(source, /localStorage|access_token|atob\(/, file);
+  }
 });
 
 test("server component refresh path never writes through the read-only cookies store", async (t) => {

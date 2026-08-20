@@ -36,7 +36,7 @@ This document establishes the performance baseline for NewMe CRM's critical user
 | **FCP** (First Contentful Paint) | < 1800ms | 1800-3000ms | > 3000ms |
 | **TTFB** (Time to First Byte) | < 800ms | 800-1800ms | > 1800ms |
 
-**Note:** FID was deprecated in web-vitals v4 and replaced by INP. Our monitoring tracks the 5 current metrics: LCP, CLS, INP, FCP, TTFB.
+**Note:** FID was deprecated in web-vitals v4 and replaced by INP, so the five metrics reviewed here are LCP, CLS, INP, FCP and TTFB.
 
 ---
 
@@ -219,53 +219,24 @@ This document establishes the performance baseline for NewMe CRM's critical user
 
 ## Monitoring & Alerting
 
-### PostHog Integration
+**No real-user metrics are collected.** Client-side Web Vitals collection and the
+PostHog integration that received it were removed on 2026-08-20: the project key was
+dead at the provider, so every authenticated page load spent two failed requests on
+remote config, and the same integration had session replay configured with
+`maskAllInputs: false` and an empty `maskTextSelector` on a CRM whose forms carry
+customer names, phone numbers and payment amounts. It produced no data and would have
+exfiltrated PII the day it started to.
 
-Web Vitals are automatically collected via `src/lib/web-vitals.ts` and sent to PostHog as custom events.
+So the thresholds in this document are a **review baseline, measured on demand** with
+the Lighthouse commands above, not a live dashboard. Server-side errors still go to
+Sentry.
 
-**Event Name:** `web_vitals`
-
-**Properties:**
-- `metric_name`: LCP | CLS | INP | FCP | TTFB
-- `metric_value`: Numeric value (ms or unitless for CLS)
-- `metric_rating`: "good" | "needs-improvement" | "poor"
-- `page_path`: Current route (e.g., `/leads`)
-- `page_url`: Full URL
-
-### PostHog Dashboard Setup
-
-Create a PostHog dashboard with the following insights:
-
-1. **LCP P75 by Page**
-   ```
-   Event: web_vitals
-   Filter: metric_name = "LCP"
-   Aggregation: P75(metric_value)
-   Breakdown: page_path
-   ```
-
-2. **CLS P75 by Page**
-   ```
-   Event: web_vitals
-   Filter: metric_name = "CLS"
-   Aggregation: P75(metric_value)
-   Breakdown: page_path
-   ```
-
-3. **Poor Ratings Over Time**
-   ```
-   Event: web_vitals
-   Filter: metric_rating = "poor"
-   Aggregation: Count
-   Breakdown: metric_name, page_path
-   ```
-
-### Alerting (PostHog + Slack/Email)
-
-Set up PostHog alerts for:
-- **LCP P75 > 2500ms** on any critical page
-- **CLS P75 > 0.1** on any critical page
-- **Poor rating count > 10%** of page views in last 24h
+Re-introducing real-user monitoring is a decision with a privacy review attached, not
+a dependency install. Whatever the sink, three things have to hold: masking on by
+default, an origin added to the CSP in `next.config.ts` (the browser quality gate
+counts every CSP violation as a console error and refuses the release), and the origin
+either stubbed or allow-listed in `scripts/run-postdeploy-browser-uat.mjs`, which
+blocks all third-party origins.
 
 ---
 
@@ -273,7 +244,7 @@ Set up PostHog alerts for:
 
 ### Immediate (Next Sprint)
 - [ ] Capture actual baseline scores after deployment
-- [ ] Set up PostHog dashboards for Web Vitals
+- [ ] Decide whether real-user monitoring returns, and under which privacy review
 - [ ] Configure alerts for threshold violations
 
 ### Short-term (1-2 Months)

@@ -355,7 +355,11 @@ function removeContainer(containerName) {
 }
 
 /** A container failure code is a lowercase identifier authored by the runner. */
-const CONTAINER_FAILURE_CODE = /^[a-z][a-z0-9_]{1,62}$/;
+// Exported so the runner's own failure codes can be tested against the regex
+// that actually judges them. Measured 2026-08-20: the runner accepted codes up
+// to 80 characters while this rejected anything over 63, and nothing compared
+// the two.
+export const CONTAINER_FAILURE_CODE = /^[a-z][a-z0-9_]{1,62}$/;
 
 /**
  * A closed vocabulary for what the container's stderr looked like.

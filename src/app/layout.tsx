@@ -3,7 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { HtmlLangSync } from "@/components/HtmlLangSync";
 import MetaPixel from "@/components/MetaPixel";
-import { PostHogProviderWrapper } from "@/components/PostHogProvider";
 import { ErrorBoundary } from "@/components/error-boundary";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -20,11 +19,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#F5F3EF]`}>
         <HtmlLangSync />
         <MetaPixel />
-        <PostHogProviderWrapper>
-          <ErrorBoundary>
-            {children}
-          </ErrorBoundary>
-        </PostHogProviderWrapper>
+        <ErrorBoundary>
+          {children}
+        </ErrorBoundary>
       </body>
     </html>
   );

@@ -90,3 +90,49 @@ test("session cookie payload is consumable by the SSR token parser contract", as
   assert.match(session, /applySessionCookies\(/);
   assert.match(server, /parseSsrCookie/);
 });
+test("every third-party origin the CSP grants is accounted for", async () => {
+  // One boundary, three copies: the CSP here, the runner's route decision, and
+  // whatever `src/**` actually talks to. This test is the thing that compares
+  // them. `evidence` must match somewhere under src/ for an application origin;
+  // an edge_injected origin must appear in the runner's stub set and nowhere in
+  // the application.
+  const INVENTORY = Object.freeze({
+    "https://*.supabase.co": { reason: "application", evidence: /NEXT_PUBLIC_SUPABASE_URL|createBrowserClient/ },
+    "https://*.sentry.io": { reason: "application", evidence: /@sentry\/nextjs/ },
+    "https://static.cloudflareinsights.com": { reason: "edge_injected" },
+  });
+
+  const config = await read("next.config.ts");
+  const csp = config.match(/key: "Content-Security-Policy",[\s\S]{0,40}?value: "([^"]+)"/)?.[1];
+  assert.ok(csp, "could not read the CSP value out of next.config.ts");
+  const granted = new Set(csp.split(/[;\s]+/).filter((token) => token.startsWith("https://")));
+  // Guard the parser: a regex that matched nothing would make the comparison
+  // below trivially true.
+  assert.ok(granted.size >= 3, `parsed only ${granted.size} origins out of the CSP`);
+  assert.deepEqual([...granted].sort(), Object.keys(INVENTORY).sort());
+
+  const srcFiles = [];
+  const walk = async (dir) => {
+    for (const entry of await fs.readdir(new URL(`../../${dir}`, import.meta.url), { withFileTypes: true })) {
+      if (entry.isDirectory()) await walk(`${dir}/${entry.name}`);
+      else if (/\.(?:ts|tsx|mjs|js)$/.test(entry.name)) srcFiles.push(`${dir}/${entry.name}`);
+    }
+  };
+  await walk("src");
+  assert.ok(srcFiles.length >= 100, `walked only ${srcFiles.length} source files`);
+  const sources = await Promise.all(srcFiles.map((file) => read(file)));
+  const corpus = sources.join("\u000a");
+
+  const { EDGE_INJECTED_SCRIPT_ORIGINS } = await import("../../scripts/run-postdeploy-browser-uat.mjs");
+  for (const [origin, entry] of Object.entries(INVENTORY)) {
+    if (entry.reason === "application") {
+      assert.match(corpus, entry.evidence, `${origin} is granted but nothing under src/ references it`);
+      continue;
+    }
+    // Edge-injected means exactly that: not in the repository, and stubbed by
+    // the browser gate, because aborting it is reported as a console error.
+    const host = origin.replace("https://", "");
+    assert.doesNotMatch(corpus, new RegExp(host.replace(/\./g, "\\.")), `${origin} is not edge-injected`);
+    assert.ok(EDGE_INJECTED_SCRIPT_ORIGINS.has(origin), `${origin} must be stubbed by the browser gate`);
+  }
+});

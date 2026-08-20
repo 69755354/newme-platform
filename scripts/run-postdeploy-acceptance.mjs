@@ -137,6 +137,27 @@ function refuse(code) {
   throw new ProducerError(code);
 }
 
+/**
+ * Render a database failure as PostgreSQL's own identifiers, for the operator
+ * reading a refusal in the deploy log.
+ *
+ * `detail` is deliberately excluded: on a constraint violation it embeds the
+ * offending row. Everything printed here either names a schema object or is
+ * PostgreSQL's own message, which names those same objects.
+ */
+export function describeDatabaseFailure(error) {
+  if (!isObject(error)) return "code=unknown";
+  const parts = [];
+  for (const field of ["code", "constraint", "table", "column", "routine"]) {
+    const value = error[field];
+    if (typeof value === "string" && value.length > 0) parts.push(`${field}=${value}`);
+  }
+  if (typeof error.message === "string" && error.message.length > 0) {
+    parts.push(`message=${JSON.stringify(error.message.slice(0, 300))}`);
+  }
+  return parts.length > 0 ? parts.join(" ") : "code=unknown";
+}
+
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -825,6 +846,19 @@ async function planFixtures(db) {
   return { ids, marker, kpiPeriod };
 }
 
+/**
+ * The `public.leads.source` value the acceptance fixture writes.
+ *
+ * That column carries `leads_source_check`, a closed taxonomy owned by sales
+ * (supabase/migrations/20260714000001_normalize_lead_sources.sql). The fixture
+ * used to write the descriptive value `postdeploy_uat`, which the constraint has
+ * never admitted, so `seedFixtures` refused on every database carrying it.
+ * Fixture rows are identified by `marker` in `customer_name` and `notes`, never
+ * by `source`, so any admitted value serves; `other` is the taxonomy's own
+ * bucket for a lead belonging to no named channel.
+ */
+export const FIXTURE_LEAD_SOURCE = "other";
+
 async function seedFixtures(db, actorIds, fixture) {
   const { ids, marker } = fixture;
   await db.query("begin");
@@ -833,13 +867,13 @@ async function seedFixtures(db, actorIds, fixture) {
       `insert into public.leads
         (id, source, customer_name, assigned_to, stage, quotation_value, next_followup_date, next_action, notes, created_by)
        values
-        ($1, 'postdeploy_uat', $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
-        ($2, 'postdeploy_uat', $6, $5, 'quotation_submitted', 1000, current_date + 30, 'call', $6, $5),
-        ($3, 'postdeploy_uat', $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
-        ($4, 'postdeploy_uat', $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
-        ($7, 'postdeploy_uat', $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
-        ($8, 'postdeploy_uat', $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5)`,
-      [ids.leadWon, ids.leadQuotation, ids.leadTransition, ids.leadApproval, actorIds.sales, marker, ids.leadPayment, ids.browserLead],
+        ($1, $9, $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
+        ($2, $9, $6, $5, 'quotation_submitted', 1000, current_date + 30, 'call', $6, $5),
+        ($3, $9, $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
+        ($4, $9, $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
+        ($7, $9, $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
+        ($8, $9, $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5)`,
+      [ids.leadWon, ids.leadQuotation, ids.leadTransition, ids.leadApproval, actorIds.sales, marker, ids.leadPayment, ids.browserLead, FIXTURE_LEAD_SOURCE],
     );
     await db.query(
       `insert into public.quotations
@@ -888,8 +922,13 @@ async function seedFixtures(db, actorIds, fixture) {
       [ids.payment, ids.paymentContract, ids.installmentPlan, actorIds.boss, marker, randomUUID()],
     );
     await db.query("commit");
-  } catch {
+  } catch (error) {
     await db.query("rollback").catch(() => {});
+    // The bare `catch` this replaces made a seed defect undiagnosable: acceptance
+    // refused with nothing but `fixture_seed_failed`, and the real cause -- the
+    // Lead source taxonomy rejecting the fixture's value -- had to be recovered
+    // by replaying these statements by hand against production.
+    console.error(`postdeploy producer: fixture seed failed ${describeDatabaseFailure(error)}`);
     refuse("fixture_seed_failed");
   }
   return fixture;

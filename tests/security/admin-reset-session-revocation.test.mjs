@@ -464,7 +464,7 @@ test("a caller who is neither admin nor boss never reaches the reset at all", as
 // self-change path call the RPC, and the RPC remains server-only.
 // ---------------------------------------------------------------------------
 
-test("revoke_user_sessions is called from exactly the intended password-change paths", () => {
+test("revoke_user_sessions is called from exactly the intended session-ending paths", () => {
   const sources = fs
     .readdirSync(path.join(root, "src"), { recursive: true, encoding: "utf8" })
     .filter((entry) => /\.(ts|tsx|mts|mjs)$/.test(entry))
@@ -475,6 +475,16 @@ test("revoke_user_sessions is called from exactly the intended password-change p
     [
       "app/actions/team.ts",
       "app/api/auth/change-password/route.ts",
+      // Sign-out. Clearing cookies ends the session in one browser only: the
+      // refresh token keeps minting access tokens for its full 30-day life, and
+      // auth-js `signOut()` cannot revoke a token this codebase carries in a
+      // request header rather than in client-side session storage, so it
+      // returned `{error: null}` having sent nothing. Postdeploy acceptance
+      // measured the consequence -- the replayed cookie still authenticated
+      // after a logout that answered `revoked: true`. This RPC is the same
+      // verified mechanism the password paths use, and it is the only one that
+      // also works when the presented access token has already expired.
+      "app/api/auth/logout/route.ts",
       "app/api/users/[id]/password/route.ts",
       // The typed signature the callers share; a caller inventing different
       // argument names is a compile error rather than a silent no-op.

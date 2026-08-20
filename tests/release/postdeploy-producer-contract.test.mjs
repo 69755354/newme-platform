@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, createHmac } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -9,6 +9,8 @@ import {
   assertExactPaymentKpiRestoration,
   assertNoServiceRestartSinceDeploy,
   compareFixtureInventory,
+  describeDatabaseFailure,
+  FIXTURE_LEAD_SOURCE,
   requireProtectedAncestors,
   verifyAlertProviderReadback,
 } from "../../scripts/run-postdeploy-acceptance.mjs";
@@ -512,4 +514,84 @@ test("the ancestor rule stays tied to the ownership the deploy path enforces", (
     PRODUCER.slice(PRODUCER.indexOf("function requireProtectedAncestors"), PRODUCER.indexOf("function readProtectedFile")),
     /metadata\.gid !== 0/,
   );
+});
+
+// --- fixture Lead source vs the sales taxonomy -------------------------------
+//
+// `public.leads.source` carries `leads_source_check`, a closed set. The fixture
+// wrote `postdeploy_uat`, which the set has never contained, so acceptance
+// refused `fixture_seed_failed` on production. These tests bind the fixture's
+// value to the constraint's own text, in both the owning migration and the
+// production schema baseline, so the two cannot drift apart again.
+
+function allowedLeadSources(sql, label) {
+  const at = sql.lastIndexOf("CONSTRAINT leads_source_check");
+  assert.notEqual(at, -1, `${label} does not define leads_source_check`);
+  const end = sql.indexOf(";", at);
+  assert.ok(end > at, `${label} has an unterminated leads_source_check statement`);
+  const values = [...sql.slice(at, end).matchAll(/'([a-z_]+)'/g)].map((match) => match[1]);
+  assert.ok(values.length >= 5, `${label} yielded no source values: ${values.join(",")}`);
+  return values;
+}
+
+function owningLeadSourceMigration() {
+  const dir = path.join(ROOT, "supabase/migrations");
+  const owning = readdirSync(dir)
+    .filter((name) => name.endsWith(".sql") && !name.startsWith("rollback") && !name.startsWith("recontract"))
+    .sort()
+    .filter((name) => readFileSync(path.join(dir, name), "utf8").includes("ADD CONSTRAINT leads_source_check"))
+    .at(-1);
+  assert.ok(owning, "no migration adds leads_source_check");
+  return { name: owning, sql: readFileSync(path.join(dir, owning), "utf8") };
+}
+
+test("the fixture Lead source is a value the live taxonomy admits", () => {
+  const migration = owningLeadSourceMigration();
+  const fromMigration = allowedLeadSources(migration.sql, migration.name);
+  const baseline = readFileSync(path.join(ROOT, "supabase/replay/production-schema-baseline.sql"), "utf8");
+  const fromBaseline = allowedLeadSources(baseline, "production-schema-baseline.sql");
+
+  assert.ok(
+    fromMigration.includes(FIXTURE_LEAD_SOURCE),
+    `${migration.name} forbids the fixture source ${FIXTURE_LEAD_SOURCE}: ${fromMigration.join(",")}`,
+  );
+  assert.ok(
+    fromBaseline.includes(FIXTURE_LEAD_SOURCE),
+    `the production baseline forbids the fixture source ${FIXTURE_LEAD_SOURCE}: ${fromBaseline.join(",")}`,
+  );
+  // The regression that shipped: a descriptive value invented by the fixture.
+  assert.doesNotMatch(FIXTURE_LEAD_SOURCE, /uat|postdeploy/);
+});
+
+test("the fixture Lead insert binds its source instead of writing a literal", () => {
+  const start = PRODUCER.indexOf("insert into public.leads");
+  assert.ok(start > 0, "the fixture Lead insert was not found");
+  const insert = PRODUCER.slice(start, PRODUCER.indexOf("`,", start));
+  assert.doesNotMatch(insert, /'[a-z_]*(uat|postdeploy)[a-z_]*'/);
+  assert.equal((insert.match(/\$9/g) ?? []).length, 6, "every seeded Lead must take the bound source");
+  assert.match(PRODUCER, /ids\.browserLead, FIXTURE_LEAD_SOURCE\]/);
+});
+
+test("a failed fixture seed reports the database's identifiers, never the row", () => {
+  const described = describeDatabaseFailure({
+    code: "23514",
+    constraint: "leads_source_check",
+    table: "leads",
+    detail: "Failing row contains (0000, postdeploy_uat, Some Customer Name).",
+    message: 'new row for relation "leads" violates check constraint "leads_source_check"',
+  });
+  assert.match(described, /code=23514/);
+  assert.match(described, /constraint=leads_source_check/);
+  assert.match(described, /table=leads/);
+  assert.match(described, /leads_source_check/);
+  // `detail` embeds the offending row, so it must never be printed.
+  assert.doesNotMatch(described, /Failing row|Some Customer Name/);
+  assert.equal(describeDatabaseFailure(undefined), "code=unknown");
+  assert.equal(describeDatabaseFailure({}), "code=unknown");
+
+  const start = PRODUCER.indexOf("async function seedFixtures");
+  const seed = PRODUCER.slice(start, PRODUCER.indexOf("\nfunction ", start));
+  assert.match(seed, /catch \(error\)/);
+  assert.match(seed, /describeDatabaseFailure\(error\)/);
+  assert.doesNotMatch(seed, /\} catch \{/);
 });

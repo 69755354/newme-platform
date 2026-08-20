@@ -502,11 +502,27 @@ test("no service-role route is reachable by a forced session", async () => {
     assert.ok(route.startsWith("/api/"), `${route} is a service-role route outside /api`);
   }
 
-  // Of those, exactly one is in the escape hatch, and it is the one that clears
-  // the flag. Any other overlap would mean a forced session keeps service-role
-  // reach — for example the admin reset route, which is what A2 reported.
+  // Of those, exactly two are in the escape hatch: the one that clears the flag
+  // and the one that ends the session. Any other overlap would mean a forced
+  // session keeps service-role reach — for example the admin reset route, which
+  // is what A2 reported.
   const exempt = routes.filter((route) => FORCED_SESSION_ALLOWED_API_PATHS.has(route));
-  assert.deepEqual(exempt, ["/api/auth/change-password"]);
+  assert.deepEqual(exempt, ["/api/auth/change-password", "/api/auth/logout"]);
+
+  // Logout's service-role use is the narrowest possible, and is asserted rather
+  // than described: one RPC, revoking the caller's own sessions. It exists
+  // because clearing cookies is not a sign-out — the refresh token keeps minting
+  // access tokens for 30 days — and because auth-js `signOut()` cannot revoke a
+  // token this codebase carries in a request header rather than in client-side
+  // session storage (see src/app/api/auth/logout/route.ts). Signing out is the
+  // one capability a forced session must keep, and revoking one's own sessions
+  // removes access rather than granting any, so this overlap is not a hole of
+  // the shape A2 reported. The bound below is what stops it from becoming one.
+  const logoutRoute = fs.readFileSync(path.join(root, "src/app/api/auth/logout/route.ts"), "utf8");
+  const logoutAdminCalls = [...logoutRoute.matchAll(/supabaseAdmin\.([A-Za-z_.]+)\(\s*"?([A-Za-z_]*)/g)]
+    .map((match) => `${match[1]}:${match[2]}`);
+  assert.deepEqual(logoutAdminCalls, ["rpc:revoke_user_sessions"]);
+  assert.match(logoutRoute, /p_user_id: userId/);
   assert.ok(
     routes.includes("/api/users/[id]/password"),
     "the admin reset route disappeared from the inventory; re-check what replaced it",

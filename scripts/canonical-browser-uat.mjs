@@ -36,7 +36,6 @@ const WORK_ROOT = "/var/lib/newme/postdeploy-browser-uat-v1";
 const CONTAINER_EVIDENCE_PARENT = "/evidence";
 const CONTAINER_ARTIFACT_ROOT = "/evidence/output";
 const MAX_STDOUT_BYTES = 1024 * 1024;
-const MAX_STDERR_BYTES = 64 * 1024;
 const MAX_EVIDENCE_BYTES = 128 * 1024 * 1024;
 const CONTAINER_TIMEOUT_MS = 30 * 60 * 1000;
 const SHA40 = /^[0-9a-f]{40}$/;
@@ -366,6 +365,9 @@ const CONTAINER_FAILURE_CODE = /^[a-z][a-z0-9_]{1,62}$/;
  * reaches the log verbatim. Matching it against a fixed list and printing only
  * our own names keeps the diagnosis while making a leak structurally impossible.
  */
+/** Kept between chunks so a signature split across a boundary is still matched. */
+const SIGNATURE_OVERLAP_BYTES = 128;
+
 const CONTAINER_STDERR_SIGNATURES = Object.freeze([
   ["docker_daemon_unreachable", /Cannot connect to the Docker daemon/],
   ["docker_daemon_error", /Error response from daemon/],
@@ -391,6 +393,49 @@ function containerFailureCode(stdout) {
 }
 
 /**
+ * Enough of the container's stderr to act on, computed as it arrives.
+ *
+ * Buffering the stream is not an option -- a node fatal dump is unbounded, and
+ * the stream may hold the request object, so it may not be echoed either. But
+ * summarising only a captured prefix is worse than useless: the byte count and
+ * the digest would describe different things, two different dumps sharing an
+ * opening 64 KiB would look identical, and the signature naming the cause is
+ * exactly what a long dump pushes past the cap. So the digest covers every
+ * byte, and signatures are matched per chunk against a short overlap window,
+ * which is all that is retained.
+ */
+export class ContainerStderrSummary {
+  constructor() {
+    this.bytes = 0;
+    this.matched = new Set();
+    this.digest = createHash("sha256");
+    this.tail = Buffer.alloc(0);
+  }
+
+  update(chunk) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    this.bytes += bytes.length;
+    this.digest.update(bytes);
+    const window = Buffer.concat([this.tail, bytes]);
+    const text = window.toString("utf8");
+    for (const [name, pattern] of CONTAINER_STDERR_SIGNATURES) {
+      if (pattern.test(text)) this.matched.add(name);
+    }
+    this.tail = window.subarray(Math.max(0, window.length - SIGNATURE_OVERLAP_BYTES));
+    return this;
+  }
+
+  describe() {
+    return {
+      bytes: this.bytes,
+      signatures: [...this.matched],
+      // copy(), so a summary can be described more than once.
+      sha256: this.digest.copy().digest("hex").slice(0, 16),
+    };
+  }
+}
+
+/**
  * Describe a non-zero container exit without echoing anything it produced.
  *
  * The runner answers a machine-readable `{status,failure_code}` on stdout even
@@ -398,17 +443,14 @@ function containerFailureCode(stdout) {
  * and refusing with a single opaque code is what made `stdin_empty` cost a full
  * deploy/accept cycle to place.
  */
-export function containerFailureLabel(status, stdout, stderr) {
-  const stderrText = stderr.toString("utf8");
-  const signatures = CONTAINER_STDERR_SIGNATURES
-    .filter(([, pattern]) => pattern.test(stderrText))
-    .map(([name]) => name);
+export function containerFailureLabel(status, stdout, stderrSummary) {
+  const { bytes, signatures, sha256 } = stderrSummary.describe();
   return [
     `status=${Number.isInteger(status) ? status : "<no-status>"}`,
     `failure_code=${containerFailureCode(stdout)}`,
-    `stderr_bytes=${stderr.length}`,
+    `stderr_bytes=${bytes}`,
     `stderr_signatures=${signatures.length > 0 ? signatures.join(",") : "<none>"}`,
-    `stderr_sha256=${createHash("sha256").update(stderr).digest("hex").slice(0, 16)}`,
+    `stderr_sha256=${sha256}`,
   ].join(" ");
 }
 
@@ -443,9 +485,8 @@ function runBrowserContainer(args, inputBytes, { containerName, signal }) {
     let overflow = false;
     let interrupted = false;
     const stdout = [];
-    const stderr = [];
+    const stderrSummary = new ContainerStderrSummary();
     let stdoutBytes = 0;
-    let stderrBytes = 0;
     const child = spawn(DOCKER_BIN, args, {
       env: DOCKER_ENV,
       stdio: ["pipe", "pipe", "pipe"],
@@ -480,8 +521,7 @@ function runBrowserContainer(args, inputBytes, { containerName, signal }) {
       } else stdout.push(chunk);
     });
     child.stderr.on("data", (chunk) => {
-      stderrBytes += chunk.length;
-      if (stderrBytes <= MAX_STDERR_BYTES) stderr.push(chunk);
+      stderrSummary.update(chunk);
     });
     child.on("error", () => finish(new BrowserProducerError("browser_container_start_failed")));
     child.on("close", (status) => {
@@ -489,7 +529,7 @@ function runBrowserContainer(args, inputBytes, { containerName, signal }) {
       if (overflow) return finish(new BrowserProducerError("browser_container_limit_exceeded"));
       if (status !== 0) {
         console.error(
-          `postdeploy browser uat: container exited non-zero ${containerFailureLabel(status, Buffer.concat(stdout), Buffer.concat(stderr))}`,
+          `postdeploy browser uat: container exited non-zero ${containerFailureLabel(status, Buffer.concat(stdout), stderrSummary)}`,
         );
         return finish(new BrowserProducerError("browser_container_failed"));
       }

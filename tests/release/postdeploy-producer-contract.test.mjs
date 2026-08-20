@@ -30,6 +30,7 @@ import {
 import {
   browserContainerArgs,
   containerFailureLabel,
+  ContainerStderrSummary,
   BROWSER_RUNNER_PATH,
   PLAYWRIGHT_IMAGE,
 } from "../../scripts/canonical-browser-uat.mjs";
@@ -1066,6 +1067,10 @@ test("the runner really does refuse an empty stdin, and says which way it failed
   assert.doesNotMatch(garbage.stdout, /stdin_empty/);
 });
 
+function summaryOf(text) {
+  return new ContainerStderrSummary().update(Buffer.from(text, "utf8"));
+}
+
 test("a non-zero container exit names the cause without echoing what it carried", () => {
   // The runner writes a machine-readable failure to stdout even when it fails,
   // so discarding it and refusing with one opaque code is what made this defect
@@ -1073,7 +1078,7 @@ test("a non-zero container exit names the cause without echoing what it carried"
   const label = containerFailureLabel(
     1,
     Buffer.from(JSON.stringify({ output_version: "newme-postdeploy-browser-uat-output/v1", status: "fail", failure_code: "stdin_empty" })),
-    Buffer.alloc(0),
+    new ContainerStderrSummary(),
   );
   assert.match(label, /status=1/);
   assert.match(label, /failure_code=stdin_empty/);
@@ -1093,7 +1098,7 @@ test("a non-zero container exit names the cause without echoing what it carried"
   const noisy = containerFailureLabel(
     125,
     Buffer.from("docker: unexpected\n"),
-    Buffer.from(`Cannot connect to the Docker daemon at unix:///var/run/docker.sock\npassword=${plantedPhrase}\n${key}\n`),
+    summaryOf(`Cannot connect to the Docker daemon at unix:///var/run/docker.sock\npassword=${plantedPhrase}\n${key}\n`),
   );
   assert.doesNotMatch(noisy, /correct-horse/);
   assert.ok(!noisy.includes(pemHeader) && !noisy.includes("MIIEvQIBADANBg"));
@@ -1108,16 +1113,49 @@ test("a non-zero container exit names the cause without echoing what it carried"
   const injected = containerFailureLabel(
     1,
     Buffer.from(JSON.stringify({ failure_code: `login failed for ${plantedPhrase}` })),
-    Buffer.alloc(0),
+    new ContainerStderrSummary(),
   );
   assert.match(injected, /failure_code=<redacted-failure-code>/);
   assert.doesNotMatch(injected, /correct-horse/);
-  assert.match(containerFailureLabel(1, Buffer.from(JSON.stringify({ status: "fail" })), Buffer.alloc(0)), /failure_code=<no-failure-code>/);
-  assert.match(containerFailureLabel(1, Buffer.alloc(0), Buffer.alloc(0)), /failure_code=<no-stdout>/);
-  assert.match(containerFailureLabel(null, Buffer.alloc(0), Buffer.alloc(0)), /status=<no-status>/);
+  assert.match(containerFailureLabel(1, Buffer.from(JSON.stringify({ status: "fail" })), new ContainerStderrSummary()), /failure_code=<no-failure-code>/);
+  assert.match(containerFailureLabel(1, Buffer.alloc(0), new ContainerStderrSummary()), /failure_code=<no-stdout>/);
+  assert.match(containerFailureLabel(null, Buffer.alloc(0), new ContainerStderrSummary()), /status=<no-status>/);
 
   // And the diagnostic is wired into the refusal path, not merely exported.
-  assert.match(CANONICAL_BROWSER, /containerFailureLabel\(status, Buffer\.concat\(stdout\), Buffer\.concat\(stderr\)\)/);
+  assert.match(CANONICAL_BROWSER, /containerFailureLabel\(status, Buffer\.concat\(stdout\), stderrSummary\)/);
+});
+
+test("the stderr summary covers the whole stream, not the prefix it could afford to keep", () => {
+  // A node fatal dump is unbounded and may hold the request object, so stderr is
+  // never buffered whole -- but a summary of a truncated prefix is a trap: it
+  // reports the full byte count beside a digest of the first chunks, so two
+  // different long failures with the same opening become one failure in the log.
+  const filler = "x".repeat(70 * 1024);
+  const first = summaryOf(`${filler}\nAAAA`).describe();
+  const second = summaryOf(`${filler}\nBBBB`).describe();
+  assert.notEqual(first.sha256, second.sha256, "a digest of a captured prefix cannot tell these apart");
+  assert.equal(first.bytes, filler.length + 5);
+
+  // The signature naming the cause is exactly what a long dump pushes past any
+  // cap, so matching runs on the stream rather than on what was retained.
+  const late = summaryOf(`${filler}\nFATAL ERROR: Reached heap limit\n`).describe();
+  assert.deepEqual(late.signatures, ["node_fatal"]);
+
+  // Chunked delivery must not change any of it, including a signature that
+  // straddles a chunk boundary.
+  const whole = summaryOf("Cannot connect to the Docker daemon\n").describe();
+  const split = new ContainerStderrSummary();
+  for (const piece of ["Cannot connect to the ", "Docker daemon\n"]) split.update(Buffer.from(piece));
+  assert.deepEqual(split.describe(), whole);
+
+  // Describing a summary twice must not consume the digest.
+  const twice = summaryOf("Error response from daemon: No such image\n");
+  assert.deepEqual(twice.describe(), twice.describe());
+  assert.deepEqual(twice.describe().signatures, ["docker_daemon_error", "image_missing"]);
+
+  // Nothing beyond the overlap window is retained.
+  const bounded = summaryOf(filler);
+  assert.ok(bounded.tail.length <= 128);
 });
 
 test("an unexpected failure is placed at a file and a line", () => {

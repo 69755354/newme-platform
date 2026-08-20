@@ -859,6 +859,83 @@ async function planFixtures(db) {
  */
 export const FIXTURE_LEAD_SOURCE = "other";
 
+/**
+ * The state `public.on_lead_won()` leaves behind when a Lead is marked won.
+ *
+ * 20260812000000_money_actor_identity_and_atomicity.sql §12 changed this
+ * deliberately and says so: the trigger used to insert the contract with
+ * `status = 'active'`, so a lead field update produced a fully active contract
+ * that had never been through admin_review or ceo_review. It now creates a
+ * `draft` contract with a pending `admin_review` row, exactly like
+ * `create_contract()`. 20260817000000 carries the same body forward.
+ *
+ * The flow asserted `pending_admin`, which is a status this path has never
+ * written -- `pending_admin` is what `set_contract_status()` moves a draft *to*
+ * once someone submits it for review. Bound to the owning migration by contract
+ * test so the expectation cannot drift away from the trigger again.
+ */
+export const LEAD_WON_CONTRACT_STATUS = "draft";
+export const LEAD_WON_CONTRACT_APPROVAL_STATUS = "none";
+export const LEAD_WON_APPROVAL_STEP = "admin_review";
+export const LEAD_WON_APPROVAL_STATUS = "pending";
+
+/**
+ * Print a closed-taxonomy value, redact anything else.
+ *
+ * The rows behind these expectations also carry customer names and notes, and a
+ * diagnostic is worthless if using it risks writing business data into a deploy
+ * log. Every value this describes is a status/stage enum, so anything outside
+ * that shape is a sign the field was not what the caller thought -- which is
+ * itself the useful part of the report.
+ */
+export function taxonomyValue(value) {
+  if (value === null || value === undefined) return "<null>";
+  if (typeof value === "number") return String(value);
+  if (typeof value === "string" && /^[a-z][a-z0-9_]{0,39}$/.test(value)) return value;
+  return "<not-a-taxonomy-value>";
+}
+
+/**
+ * The lead->contract expectations that are not met, named one by one.
+ *
+ * Returns an empty array when the readback matches. Kept pure so a contract
+ * test can prove it fails for the pre-migration behaviour it exists to catch.
+ */
+export function leadWonUnmetExpectations({ leadRows, contractRows, approvalRows }) {
+  const unmet = [];
+  const lead = leadRows[0];
+  if (leadRows.length !== 1) unmet.push(`leads rows=${leadRows.length} expected=1`);
+  if (lead?.stage !== "won") unmet.push(`leads.stage=${taxonomyValue(lead?.stage)} expected=won`);
+  if (lead?.final_status !== "won") {
+    unmet.push(`leads.final_status=${taxonomyValue(lead?.final_status)} expected=won`);
+  }
+  if (contractRows.length !== 1) {
+    unmet.push(`contracts rows=${contractRows.length} expected=1`);
+  }
+  const contract = contractRows[0];
+  if (contract && contract.status !== LEAD_WON_CONTRACT_STATUS) {
+    unmet.push(`contracts.status=${taxonomyValue(contract.status)} expected=${LEAD_WON_CONTRACT_STATUS}`);
+  }
+  if (contract && contract.approval_status !== LEAD_WON_CONTRACT_APPROVAL_STATUS) {
+    unmet.push(
+      `contracts.approval_status=${taxonomyValue(contract.approval_status)} ` +
+        `expected=${LEAD_WON_CONTRACT_APPROVAL_STATUS}`,
+    );
+  }
+  const pending = approvalRows.filter(
+    (row) => row.step === LEAD_WON_APPROVAL_STEP && row.status === LEAD_WON_APPROVAL_STATUS,
+  );
+  if (pending.length !== 1) {
+    unmet.push(
+      `contract_approvals ${LEAD_WON_APPROVAL_STEP}/${LEAD_WON_APPROVAL_STATUS} rows=${pending.length} ` +
+        `expected=1 (observed=${approvalRows
+          .map((row) => `${taxonomyValue(row.step)}/${taxonomyValue(row.status)}`)
+          .join(",") || "none"})`,
+    );
+  }
+  return unmet;
+}
+
 async function seedFixtures(db, actorIds, fixture) {
   const { ids, marker } = fixture;
   await db.query("begin");
@@ -1150,8 +1227,22 @@ async function runBusinessFlows({ db, sessions, fixture }) {
     });
     ensureSuccess(request, "flow_lead_to_contract_http_failed");
     const lead = await db.query("select id, stage, final_status from public.leads where id = $1", [ids.leadWon]);
-    const contract = await db.query("select id, lead_id, status from public.contracts where lead_id = $1 order by created_at, id", [ids.leadWon]);
-    if (lead.rows[0]?.stage !== "won" || lead.rows[0]?.final_status !== "won" || contract.rows.length !== 1 || contract.rows[0].status !== "pending_admin") {
+    const contract = await db.query(
+      "select id, lead_id, status, approval_status from public.contracts where lead_id = $1 order by created_at, id",
+      [ids.leadWon],
+    );
+    const approval = await db.query(
+      `select step, status from public.contract_approvals
+        where contract_id = any($1::uuid[]) order by created_at, id`,
+      [contract.rows.map((row) => row.id)],
+    );
+    const unmet = leadWonUnmetExpectations({
+      leadRows: lead.rows,
+      contractRows: contract.rows,
+      approvalRows: approval.rows,
+    });
+    if (unmet.length > 0) {
+      console.error(`postdeploy producer: lead_to_contract readback unmet ${unmet.join("; ")}`);
       refuse("flow_lead_to_contract_readback_failed");
     }
     return {
@@ -1159,7 +1250,7 @@ async function runBusinessFlows({ db, sessions, fixture }) {
       readbacks: {
         lead_marked_won: lead.rows,
         draft_contract_created: contract.rows,
-        admin_review_pending: contract.rows,
+        admin_review_pending: approval.rows,
       },
     };
   }));

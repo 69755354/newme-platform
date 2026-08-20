@@ -11,7 +11,13 @@ import {
   compareFixtureInventory,
   describeDatabaseFailure,
   FIXTURE_LEAD_SOURCE,
+  LEAD_WON_APPROVAL_STATUS,
+  LEAD_WON_APPROVAL_STEP,
+  LEAD_WON_CONTRACT_APPROVAL_STATUS,
+  LEAD_WON_CONTRACT_STATUS,
+  leadWonUnmetExpectations,
   requireProtectedAncestors,
+  taxonomyValue,
   verifyAlertProviderReadback,
 } from "../../scripts/run-postdeploy-acceptance.mjs";
 import { canonicalJsonBytes } from "../../scripts/postdeploy-receipt.mjs";
@@ -742,4 +748,132 @@ test("the contract insert binds the sales actor and never an unused admin", () =
   const body = insert.slice(0, insert.indexOf("],") + 2);
   assert.doesNotMatch(body, /actorIds\.admin/);
   assert.match(body, /actorIds\.sales/);
+});
+
+// ---------------------------------------------------------------------------
+// The lead -> contract flow expected a status the trigger never writes
+// ---------------------------------------------------------------------------
+//
+// `on_lead_won()` creates a `draft` contract with a pending `admin_review` row;
+// 20260812000000 §12 made that change deliberately, to stop a lead field update
+// from producing a contract that had skipped both approvals. The flow demanded
+// `pending_admin`, so `accept` refused with `flow_lead_to_contract_readback_failed`
+// on production and said nothing further.
+
+function owningLeadWonMigration() {
+  const dir = path.join(ROOT, "supabase/migrations");
+  const owning = readdirSync(dir)
+    .filter((name) => name.endsWith(".sql") && !name.startsWith("rollback") && !name.startsWith("recontract"))
+    .sort()
+    .filter((name) => /function public\.on_lead_won/i.test(readFileSync(path.join(dir, name), "utf8")))
+    .at(-1);
+  assert.ok(owning, "no migration defines public.on_lead_won()");
+  return { name: owning, sql: readFileSync(path.join(dir, owning), "utf8") };
+}
+
+// The contract insert inside a given on_lead_won() body: its final two literals
+// are `status` and `approval_status`, in the column order the statement lists.
+function leadWonContractState(sql, label) {
+  const lower = sql.toLowerCase();
+  // The last CREATE of the function, not the last mention of its name: the
+  // migrations also revoke privileges on it below the body, and matching that
+  // line puts the scan past the insert it is looking for.
+  const definitions = [...lower.matchAll(/create (?:or replace )?function public\.on_lead_won/g)].map((match) => match.index);
+  assert.ok(definitions.length > 0, `${label} does not define on_lead_won()`);
+  const fn = definitions.at(-1);
+  const candidates = ["insert into public.contracts (", "insert into contracts ("]
+    .map((needle) => lower.indexOf(needle, fn))
+    .filter((index) => index >= 0);
+  assert.ok(candidates.length > 0, `${label} has no contract insert inside on_lead_won()`);
+  const at = Math.min(...candidates);
+  const end = lower.indexOf("returning", at);
+  assert.ok(end > at, `${label} has an unterminated contract insert`);
+  const literals = [...sql.slice(at, end).matchAll(/'([A-Za-z_][A-Za-z0-9_ ]*)'/g)].map((match) => match[1]);
+  assert.ok(literals.length >= 3, `${label} yielded too few literals: ${literals.join(",")}`);
+  return { status: literals.at(-2), approval_status: literals.at(-1) };
+}
+
+test("the lead-won expectation is the state the owning migration's trigger writes", () => {
+  const migration = owningLeadWonMigration();
+  const observed = leadWonContractState(migration.sql, migration.name);
+  assert.equal(observed.status, LEAD_WON_CONTRACT_STATUS, `${migration.name} writes ${observed.status}`);
+  assert.equal(observed.approval_status, LEAD_WON_CONTRACT_APPROVAL_STATUS);
+
+  // The approval row the same trigger inserts, which is where the pending
+  // admin step actually lives.
+  const approvalInsert = migration.sql.slice(migration.sql.lastIndexOf("insert into public.contract_approvals"));
+  assert.match(approvalInsert.slice(0, 400), new RegExp(`'${LEAD_WON_APPROVAL_STEP}'`));
+  assert.match(approvalInsert.slice(0, 400), new RegExp(`'${LEAD_WON_APPROVAL_STATUS}'`));
+
+  // Not copied from the pre-migration schema: the baseline still writes the
+  // status this migration removed, so a constant tracking the baseline would
+  // fail here.
+  const baseline = readFileSync(path.join(ROOT, "supabase/replay/production-schema-baseline.sql"), "utf8");
+  assert.equal(leadWonContractState(baseline, "production-schema-baseline.sql").status, "active");
+  assert.notEqual(LEAD_WON_CONTRACT_STATUS, "active");
+
+  // The regression that shipped: a status no code on this path ever writes.
+  assert.notEqual(LEAD_WON_CONTRACT_STATUS, "pending_admin");
+  const flow = PRODUCER.slice(PRODUCER.indexOf('flow("lead_to_contract"'), PRODUCER.indexOf('flow("contract_status_transition"'));
+  assert.doesNotMatch(flow, /pending_admin/);
+});
+
+test("the lead-won readback names each unmet expectation instead of one opaque code", () => {
+  const won = { stage: "won", final_status: "won" };
+  const contract = { id: "c", status: LEAD_WON_CONTRACT_STATUS, approval_status: LEAD_WON_CONTRACT_APPROVAL_STATUS };
+  const approvals = [{ step: LEAD_WON_APPROVAL_STEP, status: LEAD_WON_APPROVAL_STATUS }];
+
+  assert.deepEqual(
+    leadWonUnmetExpectations({ leadRows: [won], contractRows: [contract], approvalRows: approvals }),
+    [],
+    "the state the production trigger produces must satisfy the flow",
+  );
+
+  // Positive control 1: the pre-migration behaviour this expectation exists to
+  // catch. Without it, an always-empty implementation would pass.
+  const preMigration = leadWonUnmetExpectations({
+    leadRows: [won],
+    contractRows: [{ ...contract, status: "active" }],
+    approvalRows: approvals,
+  });
+  assert.equal(preMigration.length, 1);
+  assert.match(preMigration[0], /contracts\.status=active expected=draft/);
+
+  // Positive control 2: the approval row missing -- the half of the behaviour
+  // change the old assertion never looked at.
+  const noApproval = leadWonUnmetExpectations({ leadRows: [won], contractRows: [contract], approvalRows: [] });
+  assert.equal(noApproval.length, 1);
+  assert.match(noApproval[0], /contract_approvals admin_review\/pending rows=0 expected=1/);
+  assert.match(noApproval[0], /observed=none/);
+
+  // Positive control 3: a lead the request never moved.
+  const notWon = leadWonUnmetExpectations({
+    leadRows: [{ stage: "pending_decision", final_status: null }],
+    contractRows: [],
+    approvalRows: [],
+  });
+  assert.match(notWon.join("; "), /leads\.stage=pending_decision expected=won/);
+  assert.match(notWon.join("; "), /leads\.final_status=<null> expected=won/);
+  assert.match(notWon.join("; "), /contracts rows=0 expected=1/);
+});
+
+test("the lead-won diagnostic prints taxonomy values and redacts everything else", () => {
+  assert.equal(taxonomyValue("pending_admin"), "pending_admin");
+  assert.equal(taxonomyValue(null), "<null>");
+  assert.equal(taxonomyValue(undefined), "<null>");
+  assert.equal(taxonomyValue(3), "3");
+  // These rows also carry customer names and free-text notes; a diagnostic that
+  // could print them would be unusable in a deploy log.
+  assert.equal(taxonomyValue("Fahad Al Mansoori"), "<not-a-taxonomy-value>");
+  assert.equal(taxonomyValue("+971 50 123 4567"), "<not-a-taxonomy-value>");
+  assert.equal(taxonomyValue({ id: 1 }), "<not-a-taxonomy-value>");
+});
+
+test("the admin_review assertion reads the approval table it claims to verify", () => {
+  const flow = PRODUCER.slice(PRODUCER.indexOf('flow("lead_to_contract"'), PRODUCER.indexOf('flow("contract_status_transition"'));
+  assert.match(flow, /from public\.contract_approvals/);
+  assert.match(flow, /admin_review_pending: approval\.rows/);
+  // It used to re-read the contract rows, so the pending approval row was never
+  // part of the evidence the assertion digested.
+  assert.doesNotMatch(flow, /admin_review_pending: contract\.rows/);
 });

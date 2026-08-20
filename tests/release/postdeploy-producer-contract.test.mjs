@@ -272,6 +272,22 @@ test("predeploy CI is bound to the canonical live workflow and a fresh ordered r
   const durableAudit = WRAPPER.indexOf("materialize_ci_gate_audit_record", assetBoundary);
   assert.ok(durableAudit > assetBoundary && durableAudit < assetMutation);
   assert.match(WRAPPER, /CI_GATE_AUDIT_RECORD="\$CI_GATE_AUDIT_RECORD"/);
+  // Once the record is materialized, CI_GATE_AUDIT_BASE64 is unset on purpose, so a
+  // re-check that could only read that variable would fail every deploy with a
+  // bogus "evidence expired". It must fall back to the durable record -- under the
+  // same ownership/mode trust, and still bound by the sha256 comparison.
+  const freshness = WRAPPER.slice(
+    WRAPPER.indexOf("require_ci_gate_still_fresh() {"),
+    WRAPPER.indexOf("materialize_ci_gate_audit_record() {"),
+  );
+  assert.ok(freshness.length > 0);
+  assert.match(freshness, /record="\$\{CI_GATE_AUDIT_RECORD:-\}"/);
+  assert.match(freshness, /\[ "\$record" = "\$STATE_ROOT\/ci-gate-audit\.pending" \] \|\| return 65/);
+  assert.match(freshness, /O_NOFOLLOW/);
+  assert.match(freshness, /metadata\.st_uid != 0/);
+  assert.match(freshness, /stat\.S_IMODE\(metadata\.st_mode\) != 0o600/);
+  assert.match(freshness, /hashlib\.sha256\(audit_bytes\)\.hexdigest\(\) != expected_digest/);
+  assert.match(WRAPPER, /unset CI_GATE_AUDIT_BASE64/);
   assert.match(WRAPPER, /CI_MAX_RUN_AGE_SECONDS="\$CI_MAX_RUN_AGE_SECONDS"/);
 });
 

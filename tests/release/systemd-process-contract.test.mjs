@@ -42,7 +42,13 @@ test("both versioned units directly supervise the immutable Next.js release", as
     assert.match(unit, /^RestrictRealtime=true$/m);
     assert.match(unit, /^RestrictNamespaces=true$/m);
     assert.match(unit, /^SystemCallArchitectures=native$/m);
-    assert.match(unit, /^RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6$/m);
+    // AF_NETLINK must stay: os.networkInterfaces() in Next 16's listen handler
+    // needs it, and without it the service crash-loops on EAFNOSUPPORT.
+    assert.match(unit, /^RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK$/m);
+    // ...and the set stays closed: raw/packet families remain unreachable.
+    assert.doesNotMatch(unit, /^RestrictAddressFamilies=.*\b(?:AF_PACKET|AF_RAW|AF_BLUETOOTH)\b/m);
+    assert.equal(unit.match(/^RestrictAddressFamilies=/gm).length, 1,
+      "a second assignment would silently widen the allowlist");
   }
 });
 

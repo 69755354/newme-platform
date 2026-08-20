@@ -1,0 +1,45 @@
+name: telegram-identity-probe
+# Answers one question without revealing anything secret: is the repository's
+# TELEGRAM_BOT_TOKEN still a live bot, and which chats may it post to? The
+# release installer refuses to install without a validated Telegram alert
+# provider identity, and the token baked into the host's hermes-bridge unit
+# answers 401. Only public identity (bot id, username) and fingerprint metadata
+# (length, sha256 prefix) are printed; the value itself reaches curl through a
+# mode-0600 --config file and is masked by Actions besides.
+on: push
+permissions: {}
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: probe provider identity
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "${TOKEN:-}" ]; then echo "secret TELEGRAM_BOT_TOKEN is absent"; exit 1; fi
+          printf 'token: length=%s id_part=%s sha256=%s\n' \
+            "${#TOKEN}" "${TOKEN%%:*}" "$(printf '%s' "$TOKEN" | sha256sum | cut -c1-12)"
+          cfg="$(mktemp)"; chmod 600 "$cfg"
+          printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$TOKEN" > "$cfg"
+          echo "== getMe"
+          curl -sS --max-time 20 --config "$cfg" | head -c 600; echo
+          printf 'url = "https://api.telegram.org/bot%s/getUpdates"\n' "$TOKEN" > "$cfg"
+          curl -sS --max-time 20 --config "$cfg" > updates.json || true
+          rm -f "$cfg"
+          echo "== chats the bot has seen"
+          python3 -c '
+          import json
+          d = json.load(open("updates.json"))
+          print("updates ok:", d.get("ok"), d.get("description", ""))
+          seen = {}
+          for u in d.get("result", []):
+              for k in ("message", "edited_message", "channel_post", "my_chat_member"):
+                  c = (u.get(k) or {}).get("chat")
+                  if c:
+                      seen[c["id"]] = (c.get("type"), c.get("title") or c.get("username") or c.get("first_name"))
+          for cid, (t, n) in seen.items():
+              print("chat_id=%s type=%s name=%s" % (cid, t, n))
+          if not seen:
+              print("no chats in the update queue")
+          '

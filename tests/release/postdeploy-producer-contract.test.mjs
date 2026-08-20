@@ -22,15 +22,24 @@ import {
   LEAD_WON_CONTRACT_APPROVAL_STATUS,
   LEAD_WON_CONTRACT_STATUS,
   leadWonUnmetExpectations,
+  refusalDiagnostic,
   requireProtectedAncestors,
   taxonomyValue,
   verifyAlertProviderReadback,
 } from "../../scripts/run-postdeploy-acceptance.mjs";
+import {
+  browserContainerArgs,
+  containerFailureLabel,
+  ContainerStderrSummary,
+  BROWSER_RUNNER_PATH,
+  PLAYWRIGHT_IMAGE,
+} from "../../scripts/canonical-browser-uat.mjs";
 import { canonicalJsonBytes } from "../../scripts/postdeploy-receipt.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const PRODUCER = readFileSync(path.join(ROOT, "scripts/run-postdeploy-acceptance.mjs"), "utf8");
 const CANONICAL_BROWSER = readFileSync(path.join(ROOT, "scripts/canonical-browser-uat.mjs"), "utf8");
+const PRODUCER_BROWSER_CALL_SITE = CANONICAL_BROWSER.slice(CANONICAL_BROWSER.indexOf("export async function runCanonicalBrowserUat"));
 const BROWSER_RUNNER = readFileSync(path.join(ROOT, "scripts/run-postdeploy-browser-uat.mjs"), "utf8");
 const WRAPPER = readFileSync(path.join(ROOT, "infra/systemd/newme-deploy.sh"), "utf8");
 const PROVIDER = readFileSync(path.join(ROOT, "infra/observability/newme-alert-provider-v1.mjs"), "utf8");
@@ -210,17 +219,27 @@ test("canonical acceptance runs the exact browser matrix in a locked local image
   assert.match(PRODUCER, /mkdirSync\(parent, \{ recursive: true, mode: 0o700 \}\)/);
 
   assert.match(CANONICAL_BROWSER, /mcr\.microsoft\.com\/playwright:v1\.60\.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948/);
-  for (const marker of [
-    '"--pull=never"',
-    '"--read-only"',
-    '"--user", "pwuser"',
-    '"--group-add", String(identity.releaseGid)',
-    '"--cap-drop=ALL"',
-    '"--security-opt=no-new-privileges"',
-    '"--pids-limit=512"',
-    '"--mount", `type=bind,src=${releaseRoot},dst=/release,readonly`',
-    '"--entrypoint", "/usr/bin/node"',
-  ]) assert.ok(CANONICAL_BROWSER.includes(marker), `browser container omitted ${marker}`);
+  // Read the flags off the list that is actually handed to docker rather than
+  // grepping the source, so a rename cannot quietly drop one.
+  const containerArgs = browserContainerArgs({
+    containerName: "newme-browser-uat-3ad290a92ce4-2",
+    releaseGid: 1000,
+    releaseRoot: "/opt/newme/releases/3ad290a",
+    evidenceParent: "/var/lib/newme/postdeploy-browser-uat-v1/attempt/evidence",
+  });
+  for (const marker of ["--pull=never", "--read-only", "pwuser", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=512"]) {
+    assert.ok(containerArgs.includes(marker), `browser container omitted ${marker}`);
+  }
+  assert.deepEqual(
+    containerArgs.slice(containerArgs.indexOf("--group-add"), containerArgs.indexOf("--group-add") + 2),
+    ["--group-add", "1000"],
+  );
+  assert.ok(containerArgs.includes("type=bind,src=/opt/newme/releases/3ad290a,dst=/release,readonly"));
+  assert.deepEqual(
+    containerArgs.slice(containerArgs.indexOf("--entrypoint"), containerArgs.indexOf("--entrypoint") + 2),
+    ["--entrypoint", "/usr/bin/node"],
+  );
+  assert.match(PRODUCER_BROWSER_CALL_SITE, /browserContainerArgs\(\{/);
   assert.match(CANONICAL_BROWSER, /image", "inspect", "--format", "\{\{json \.RepoDigests\}\}"/);
   assert.match(CANONICAL_BROWSER, /child\.stdin\.end\(inputBytes\)/);
   assert.match(CANONICAL_BROWSER, /fixture: \{ \.\.\.fixture \}/);
@@ -995,4 +1014,177 @@ test("a journal written by the previous release stays readable", () => {
   for (const bad of ["", "uat-", "1994-07", "2994-13", "2994-7", "postdeploy", "2994-07 "]) {
     assert.doesNotMatch(bad, KPI_JOURNAL_PERIOD);
   }
+});
+test("the browser UAT container is started with its stdin attached", () => {
+  // Measured on production 2026-08-20 (release 3ad290a): the container exited 1
+  // having answered {"status":"fail","failure_code":"stdin_empty"}. docker
+  // attaches the container's stdin only when --interactive is passed, and the
+  // runner reads its entire request from stdin, so without the flag the browser
+  // stage could not pass on any release, ever.
+  const args = browserContainerArgs({
+    containerName: "newme-browser-uat-3ad290a92ce4-1",
+    releaseGid: 1000,
+    releaseRoot: "/opt/newme/releases/3ad290a",
+    evidenceParent: "/var/lib/newme/postdeploy-browser-uat-v1/attempt/evidence",
+  });
+  assert.ok(args.includes("--interactive"), "docker run must attach the container's stdin");
+
+  // The flag has to reach docker, not the container: everything after the image
+  // name is the container's own argv, so a flag placed there is silently a
+  // script argument instead.
+  const image = args.indexOf(PLAYWRIGHT_IMAGE);
+  assert.ok(image > 0);
+  assert.ok(args.indexOf("--interactive") < image);
+  assert.deepEqual(args.slice(image + 1), [`/release/${BROWSER_RUNNER_PATH}`]);
+  assert.equal(args[0], "run");
+
+  // Negative control: the flag is worth asserting only because the runner
+  // genuinely depends on stdin and refuses with this exact code without it.
+  assert.match(BROWSER_RUNNER, /for await \(const chunk of stream\)/);
+  assert.match(BROWSER_RUNNER, /if \(total === 0\) fail\("stdin_empty"\)/);
+  assert.match(CANONICAL_BROWSER, /child\.stdin\.end\(inputBytes\)/);
+
+  // The hardening that made the failure silent must survive the fix.
+  for (const flag of ["--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pull=never"]) {
+    assert.ok(args.includes(flag), `${flag} must stay on the container`);
+  }
+  assert.ok(!args.includes("--tty"), "a tty would corrupt the JSON the runner writes back");
+  assert.ok(!args.includes("--network=none"), "the runner has to reach app.newme.ae");
+});
+
+test("the runner really does refuse an empty stdin, and says which way it failed", () => {
+  // Reproduce the production symptom directly: feed the runner nothing and it
+  // answers the same failure_code the container answered on the host.
+  const empty = spawnSync(process.execPath, [path.join(ROOT, BROWSER_RUNNER_PATH)], { input: "", encoding: "utf8" });
+  assert.notEqual(empty.status, 0);
+  assert.match(empty.stdout, /"failure_code":"stdin_empty"/);
+
+  // Positive control: a runner that answered `stdin_empty` to everything would
+  // pass the assertion above while proving nothing.
+  const garbage = spawnSync(process.execPath, [path.join(ROOT, BROWSER_RUNNER_PATH)], { input: "{", encoding: "utf8" });
+  assert.notEqual(garbage.status, 0);
+  assert.match(garbage.stdout, /"failure_code":"stdin_invalid_json"/);
+  assert.doesNotMatch(garbage.stdout, /stdin_empty/);
+});
+
+function summaryOf(text) {
+  return new ContainerStderrSummary().update(Buffer.from(text, "utf8"));
+}
+
+test("a non-zero container exit names the cause without echoing what it carried", () => {
+  // The runner writes a machine-readable failure to stdout even when it fails,
+  // so discarding it and refusing with one opaque code is what made this defect
+  // cost a full deploy/accept cycle to place.
+  const label = containerFailureLabel(
+    1,
+    Buffer.from(JSON.stringify({ output_version: "newme-postdeploy-browser-uat-output/v1", status: "fail", failure_code: "stdin_empty" })),
+    new ContainerStderrSummary(),
+  );
+  assert.match(label, /status=1/);
+  assert.match(label, /failure_code=stdin_empty/);
+  assert.match(label, /stderr_bytes=0/);
+
+  // stderr is never echoed: the container's stdin holds the acceptance
+  // passwords and the receipt private key, and a node crash can print the
+  // object it was handed.
+  // Named for what it is -- a phrase planted to be looked for -- because the
+  // repo's published-credential gate refuses any literal assigned to a
+  // name like `secret`, however synthetic the value.
+  const plantedPhrase = "correct-horse-battery-staple";
+  // Assembled at runtime: a PEM header written out here would trip the repo's
+  // own secret gate, which is exactly the rule this assertion enforces.
+  const pemHeader = `-----BEGIN ${"PRIVATE"} KEY-----`;
+  const key = `${pemHeader}MIIEvQIBADANBg`;
+  const noisy = containerFailureLabel(
+    125,
+    Buffer.from("docker: unexpected\n"),
+    summaryOf(`Cannot connect to the Docker daemon at unix:///var/run/docker.sock\npassword=${plantedPhrase}\n${key}\n`),
+  );
+  assert.doesNotMatch(noisy, /correct-horse/);
+  assert.ok(!noisy.includes(pemHeader) && !noisy.includes("MIIEvQIBADANBg"));
+  assert.doesNotMatch(noisy, /var\/run\/docker\.sock/);
+  // What survives is still enough to act on.
+  assert.match(noisy, /status=125/);
+  assert.match(noisy, /stderr_signatures=docker_daemon_unreachable/);
+  assert.match(noisy, /failure_code=<unparsable-stdout>/);
+  assert.match(noisy, /stderr_sha256=[0-9a-f]{16}/);
+
+  // A failure_code shaped like anything other than a code is not echoed either.
+  const injected = containerFailureLabel(
+    1,
+    Buffer.from(JSON.stringify({ failure_code: `login failed for ${plantedPhrase}` })),
+    new ContainerStderrSummary(),
+  );
+  assert.match(injected, /failure_code=<redacted-failure-code>/);
+  assert.doesNotMatch(injected, /correct-horse/);
+  assert.match(containerFailureLabel(1, Buffer.from(JSON.stringify({ status: "fail" })), new ContainerStderrSummary()), /failure_code=<no-failure-code>/);
+  assert.match(containerFailureLabel(1, Buffer.alloc(0), new ContainerStderrSummary()), /failure_code=<no-stdout>/);
+  assert.match(containerFailureLabel(null, Buffer.alloc(0), new ContainerStderrSummary()), /status=<no-status>/);
+
+  // And the diagnostic is wired into the refusal path, not merely exported.
+  assert.match(CANONICAL_BROWSER, /containerFailureLabel\(status, Buffer\.concat\(stdout\), stderrSummary\)/);
+});
+
+test("the stderr summary covers the whole stream, not the prefix it could afford to keep", () => {
+  // A node fatal dump is unbounded and may hold the request object, so stderr is
+  // never buffered whole -- but a summary of a truncated prefix is a trap: it
+  // reports the full byte count beside a digest of the first chunks, so two
+  // different long failures with the same opening become one failure in the log.
+  const filler = "x".repeat(70 * 1024);
+  const first = summaryOf(`${filler}\nAAAA`).describe();
+  const second = summaryOf(`${filler}\nBBBB`).describe();
+  assert.notEqual(first.sha256, second.sha256, "a digest of a captured prefix cannot tell these apart");
+  assert.equal(first.bytes, filler.length + 5);
+
+  // The signature naming the cause is exactly what a long dump pushes past any
+  // cap, so matching runs on the stream rather than on what was retained.
+  const late = summaryOf(`${filler}\nFATAL ERROR: Reached heap limit\n`).describe();
+  assert.deepEqual(late.signatures, ["node_fatal"]);
+
+  // Chunked delivery must not change any of it, including a signature that
+  // straddles a chunk boundary.
+  const whole = summaryOf("Cannot connect to the Docker daemon\n").describe();
+  const split = new ContainerStderrSummary();
+  for (const piece of ["Cannot connect to the ", "Docker daemon\n"]) split.update(Buffer.from(piece));
+  assert.deepEqual(split.describe(), whole);
+
+  // Describing a summary twice must not consume the digest.
+  const twice = summaryOf("Error response from daemon: No such image\n");
+  assert.deepEqual(twice.describe(), twice.describe());
+  assert.deepEqual(twice.describe().signatures, ["docker_daemon_error", "image_missing"]);
+
+  // Nothing beyond the overlap window is retained.
+  const bounded = summaryOf(filler);
+  assert.ok(bounded.tail.length <= 128);
+});
+
+test("an unexpected failure is placed at a file and a line", () => {
+  // `refused code=unexpected_failure` with nothing beside it is unplaceable:
+  // diagnosing this one took a deploy, an accept, and a patched copy of the
+  // live release.
+  const error = new Error("browser_container_failed");
+  error.name = "BrowserProducerError";
+  error.code = "browser_container_failed";
+  const placed = refusalDiagnostic(error);
+  assert.match(placed, /error=BrowserProducerError/);
+  assert.match(placed, /identity=browser_container_failed/);
+  assert.match(placed, /at=[a-z0-9._-]+\.mjs:[0-9]+/);
+
+  // node's errno constants are just as useful and just as safe.
+  const errno = new Error("connect ECONNREFUSED 10.0.0.4:5432");
+  errno.code = "ECONNREFUSED";
+  assert.match(refusalDiagnostic(errno), /identity=ECONNREFUSED/);
+
+  // A message is echoed only when it is one of our own codes, because a thrown
+  // error can carry a connection string, a row value or the request body.
+  const leaky = new Error('duplicate key value violates unique constraint "leads_pkey" for fahad@newme.ae');
+  assert.match(refusalDiagnostic(leaky), /identity=<redacted-message>/);
+  assert.doesNotMatch(refusalDiagnostic(leaky), /newme\.ae|leads_pkey/);
+  assert.equal(refusalDiagnostic("browser_container_failed"), "error=<not-an-error> identity=<none> at=<no-frame>");
+  const nameless = new Error("x");
+  nameless.name = "Bad Name!";
+  assert.match(refusalDiagnostic(nameless), /error=<redacted-name>/);
+
+  // Wired into the only place that can reach it.
+  assert.match(PRODUCER, /refused code=\$\{code\} \$\{refusalDiagnostic\(error\)\}/);
 });

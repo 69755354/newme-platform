@@ -17,6 +17,11 @@ CREDENTIAL_GATE_CONSUMED="$STATE_ROOT/credential-remediation-gate.consumed"
 CREDENTIAL_TRANSITION_PENDING="$STATE_ROOT/credential-transition.pending.json"
 readonly TRANSITION_BACKUP_RECORD="$STATE_ROOT/credential-transition.previous.env"
 readonly TRANSITION_LAST_RECORD="$STATE_ROOT/credential-transition.last.json"
+readonly CREDENTIAL_ADOPT_PENDING="$STATE_ROOT/credential-adopt.pending.json"
+readonly CREDENTIAL_ADOPT_PENDING_NEXT="$STATE_ROOT/credential-adopt.pending.next"
+readonly CREDENTIAL_ADOPT_BACKUP="$STATE_ROOT/credential-adopt.previous.env"
+readonly CREDENTIAL_ADOPT_BACKUP_PREPARING="$STATE_ROOT/credential-adopt.previous.env.preparing"
+readonly CREDENTIAL_ADOPT_RUNTIME_NEXT=/etc/newme/newme-runtime.env.credential-adopt.next
 readonly PROTECTION_MARKER_RECORD="$STATE_ROOT/credential-remediation.protected.json"
 readonly CREDENTIAL_LIVE_HELPER=/usr/local/libexec/newme/newme-credential-live-attestation.mjs
 readonly CREDENTIAL_LIVE_POLICY=/usr/local/share/newme/credential-live-attestation-policy-v1.json
@@ -970,6 +975,77 @@ credential-transition)
   [ "$(readlink -f /opt/newme/current 2>/dev/null || true)" = "$CREDENTIAL_LIVE_RELEASE" ] || exit 66
   require_canonical_main_sha "$CREDENTIAL_SHA" || { echo "canonical main moved during credential cutover" >&2; exit 66; }
   echo "credential_transition=awaiting_provider_revocation release=$CREDENTIAL_SHA run=$CREDENTIAL_RUN_ID run_attempt=$CREDENTIAL_RUN_ATTEMPT transaction_id=$CREDENTIAL_TRANSACTION_ID"
+  exit 0
+  ;;
+credential-adopt)
+  # Relocation of the server credential into the fixed runtime store, which the
+  # deploy contract requires and this host never had. It is not a rotation: no
+  # value is created or retired, the one-use inbox must be absent, and no
+  # provider evidence is claimed. Any unresolved transaction blocks it.
+  [ "$#" -eq 2 ] || { echo "usage: newme-deploy credential-adopt <canonical-main-sha>" >&2; exit 64; }
+  CREDENTIAL_SHA=${2:-}
+  [[ "$CREDENTIAL_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "credential-adopt arguments are invalid" >&2
+    exit 64
+  }
+  validate_deploy_state_root || exit 65
+  for blocker in \
+    "$PENDING_ASSET_RECORD" "$CREDENTIAL_ASSET_PENDING" "$CREDENTIAL_GATE_CONSUMED" \
+    "$CREDENTIAL_TRANSITION_PENDING" "$TRANSITION_BACKUP_RECORD" \
+    "$STATE_ROOT/credential-transition.pending.next" "$STATE_ROOT/credential-transition.previous.env.preparing" \
+    /etc/newme/newme-runtime.env.credential-transition.next \
+    "$CREDENTIAL_ADOPT_PENDING" "$CREDENTIAL_ADOPT_PENDING_NEXT" "$CREDENTIAL_ADOPT_BACKUP" \
+    "$CREDENTIAL_ADOPT_BACKUP_PREPARING" "$CREDENTIAL_ADOPT_RUNTIME_NEXT" \
+    "$CREDENTIAL_INBOX" "$PRODUCTION_ROLLBACK_PENDING"; do
+    if [ -e "$blocker" ] || [ -L "$blocker" ]; then
+      echo "an unresolved production or credential transaction must be recovered before credential adoption" >&2
+      exit 75
+    fi
+  done
+  CREDENTIAL_LIVE_RELEASE="$(readlink -f /opt/newme/current 2>/dev/null || true)"
+  case "$CREDENTIAL_LIVE_RELEASE" in
+    /opt/newme/releases/[0-9a-f][0-9a-f]*) ;;
+    *) echo "current immutable release is invalid" >&2; exit 65 ;;
+  esac
+  require_postdeploy_operations_clear "$CREDENTIAL_LIVE_RELEASE" || exit $?
+  require_canonical_main_sha "$CREDENTIAL_SHA" || {
+    echo "the named SHA is not canonical main" >&2
+    exit 65
+  }
+  CREDENTIAL_ADOPT_RESULT="$(credential_transition_exec adopt "$CREDENTIAL_SHA")" || exit 65
+  [ "$CREDENTIAL_ADOPT_RESULT" = credential_adopt=complete ] || exit 66
+  systemctl is-active --quiet newme-platform.service || exit 66
+  /usr/local/libexec/newme/newme-readiness.sh >/dev/null || exit 66
+  /usr/local/libexec/newme/newme-validate-production-config.py \
+    --release-env /opt/newme/current/.env.local \
+    --runtime-env /etc/newme/newme-runtime.env \
+    --require-runtime-service-key --network >/dev/null || exit 66
+  /opt/hermes-scripts/observability/dependency-probe.sh >/dev/null || exit 66
+  [ "$(readlink -f /opt/newme/current 2>/dev/null || true)" = "$CREDENTIAL_LIVE_RELEASE" ] || exit 66
+  for residue in "$CREDENTIAL_ADOPT_PENDING" "$CREDENTIAL_ADOPT_PENDING_NEXT" \
+    "$CREDENTIAL_ADOPT_BACKUP" "$CREDENTIAL_ADOPT_BACKUP_PREPARING" \
+    "$CREDENTIAL_ADOPT_RUNTIME_NEXT"; do
+    [ ! -e "$residue" ] && [ ! -L "$residue" ] || exit 66
+  done
+  require_canonical_main_sha "$CREDENTIAL_SHA" || {
+    echo "canonical main moved during credential adoption" >&2
+    exit 66
+  }
+  echo "credential_adopt=complete release=$CREDENTIAL_SHA credential_adopt_transaction=none"
+  exit 0
+  ;;
+credential-adopt-recover)
+  [ "$#" -eq 1 ] || { echo "usage: newme-deploy credential-adopt-recover" >&2; exit 64; }
+  validate_deploy_state_root || exit 65
+  CREDENTIAL_ADOPT_RECOVERY="$(credential_transition_exec adopt-recover)" || exit 65
+  case "$CREDENTIAL_ADOPT_RECOVERY" in
+    credential_adopt=none|credential_adopt=complete|credential_adopt=rolled_back) ;;
+    credential_adopt=interrupted_before_switch) ;;
+    *) exit 66 ;;
+  esac
+  systemctl is-active --quiet newme-platform.service || exit 66
+  /usr/local/libexec/newme/newme-readiness.sh >/dev/null || exit 66
+  echo "$CREDENTIAL_ADOPT_RECOVERY"
   exit 0
   ;;
 credential-recover)

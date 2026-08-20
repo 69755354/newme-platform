@@ -20,6 +20,11 @@ CREDENTIAL_TRANSITION_BACKUP="$STATE_ROOT/credential-transition.previous.env"
 CREDENTIAL_TRANSITION_PENDING_NEXT="$STATE_ROOT/credential-transition.pending.next"
 CREDENTIAL_TRANSITION_BACKUP_PREPARING="$STATE_ROOT/credential-transition.previous.env.preparing"
 CREDENTIAL_RUNTIME_NEXT=/etc/newme/newme-runtime.env.credential-transition.next
+CREDENTIAL_ADOPT_PENDING="$STATE_ROOT/credential-adopt.pending.json"
+CREDENTIAL_ADOPT_PENDING_NEXT="$STATE_ROOT/credential-adopt.pending.next"
+CREDENTIAL_ADOPT_BACKUP="$STATE_ROOT/credential-adopt.previous.env"
+CREDENTIAL_ADOPT_BACKUP_PREPARING="$STATE_ROOT/credential-adopt.previous.env.preparing"
+CREDENTIAL_ADOPT_RUNTIME_NEXT=/etc/newme/newme-runtime.env.credential-adopt.next
 CREDENTIAL_ASSET_PENDING="$STATE_ROOT/credential-assets.pending"
 CREDENTIAL_GATE_CONSUMED="$STATE_ROOT/credential-remediation-gate.consumed"
 CREDENTIAL_LIVE_HELPER=/usr/local/libexec/newme/newme-credential-live-attestation.mjs
@@ -748,11 +753,22 @@ case "$action" in
       [ -e "$CREDENTIAL_RUNTIME_NEXT" ] || [ -L "$CREDENTIAL_RUNTIME_NEXT" ]; then
       credential_transition_transaction=recovery_required
     fi
-    printf 'current=%s\nrollback=%s\nservice=%s\nhealth_http=%s\nrollback_transaction=%s\nsystemd_asset_transaction=%s\ncredential_asset_transaction=%s\ncredential_transition_transaction=%s\nrollback_db_phase=%s\n' \
+    # The adoption journal is reported the same way the rotation journal is: from
+    # the durable records only, with no database connection and no credential
+    # read, so a monitoring probe never needs either.
+    credential_adopt_transaction=none
+    if [ -e "$CREDENTIAL_ADOPT_PENDING" ] || [ -L "$CREDENTIAL_ADOPT_PENDING" ] ||
+      [ -e "$CREDENTIAL_ADOPT_PENDING_NEXT" ] || [ -L "$CREDENTIAL_ADOPT_PENDING_NEXT" ] ||
+      [ -e "$CREDENTIAL_ADOPT_BACKUP" ] || [ -L "$CREDENTIAL_ADOPT_BACKUP" ] ||
+      [ -e "$CREDENTIAL_ADOPT_BACKUP_PREPARING" ] || [ -L "$CREDENTIAL_ADOPT_BACKUP_PREPARING" ] ||
+      [ -e "$CREDENTIAL_ADOPT_RUNTIME_NEXT" ] || [ -L "$CREDENTIAL_ADOPT_RUNTIME_NEXT" ]; then
+      credential_adopt_transaction=recovery_required
+    fi
+    printf 'current=%s\nrollback=%s\nservice=%s\nhealth_http=%s\nrollback_transaction=%s\nsystemd_asset_transaction=%s\ncredential_asset_transaction=%s\ncredential_transition_transaction=%s\ncredential_adopt_transaction=%s\nrollback_db_phase=%s\n' \
       "$current" "$rollback" "$(systemctl is-active newme-platform.service)" \
       "$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:3001/api/health || true)" \
       "$transaction" "$systemd_asset_transaction" "$credential_asset_transaction" \
-      "$credential_transition_transaction" "$transaction_db_phase"
+      "$credential_transition_transaction" "$credential_adopt_transaction" "$transaction_db_phase"
     ;;
   execute)
     [ "$#" -eq 2 ] && [ -n "$2" ] || {

@@ -355,6 +355,88 @@ function removeContainer(containerName) {
   }
 }
 
+/** A container failure code is a lowercase identifier authored by the runner. */
+const CONTAINER_FAILURE_CODE = /^[a-z][a-z0-9_]{1,62}$/;
+
+/**
+ * A closed vocabulary for what the container's stderr looked like.
+ *
+ * The container's stdin carries the acceptance passwords and the receipt private
+ * key, and a node crash can print the object it was handed, so stderr never
+ * reaches the log verbatim. Matching it against a fixed list and printing only
+ * our own names keeps the diagnosis while making a leak structurally impossible.
+ */
+const CONTAINER_STDERR_SIGNATURES = Object.freeze([
+  ["docker_daemon_unreachable", /Cannot connect to the Docker daemon/],
+  ["docker_daemon_error", /Error response from daemon/],
+  ["image_missing", /Unable to find image|No such image/],
+  ["permission_denied", /permission denied|EACCES/],
+  ["path_missing", /no such file or directory|Cannot find module|ENOENT/],
+  ["out_of_memory", /out of memory|Killed|SIGKILL/],
+  ["node_fatal", /FATAL ERROR/],
+  ["unhandled_rejection", /UnhandledPromiseRejection|unhandledRejection/],
+  ["playwright_launch", /browserType\.launch|Executable doesn't exist/],
+]);
+
+function containerFailureCode(stdout) {
+  let parsed;
+  try {
+    parsed = JSON.parse(stdout.toString("utf8"));
+  } catch {
+    return stdout.length === 0 ? "<no-stdout>" : "<unparsable-stdout>";
+  }
+  const code = parsed?.failure_code;
+  if (typeof code !== "string") return "<no-failure-code>";
+  return CONTAINER_FAILURE_CODE.test(code) ? code : "<redacted-failure-code>";
+}
+
+/**
+ * Describe a non-zero container exit without echoing anything it produced.
+ *
+ * The runner answers a machine-readable `{status,failure_code}` on stdout even
+ * when it fails, so the cause is almost always already in hand -- discarding it
+ * and refusing with a single opaque code is what made `stdin_empty` cost a full
+ * deploy/accept cycle to place.
+ */
+export function containerFailureLabel(status, stdout, stderr) {
+  const stderrText = stderr.toString("utf8");
+  const signatures = CONTAINER_STDERR_SIGNATURES
+    .filter(([, pattern]) => pattern.test(stderrText))
+    .map(([name]) => name);
+  return [
+    `status=${Number.isInteger(status) ? status : "<no-status>"}`,
+    `failure_code=${containerFailureCode(stdout)}`,
+    `stderr_bytes=${stderr.length}`,
+    `stderr_signatures=${signatures.length > 0 ? signatures.join(",") : "<none>"}`,
+    `stderr_sha256=${createHash("sha256").update(stderr).digest("hex").slice(0, 16)}`,
+  ].join(" ");
+}
+
+/**
+ * The argument list that starts the browser UAT container.
+ *
+ * `--interactive` is load bearing, not cosmetic: docker attaches the container's
+ * stdin only when it is present, and the runner reads its entire request from
+ * stdin. Without it the container reads zero bytes and refuses with
+ * `failure_code=stdin_empty` before it ever opens a browser -- which is exactly
+ * how this release behaved in production. The list is built here so a test can
+ * hold the flag in place.
+ */
+export function browserContainerArgs({ containerName, releaseGid, releaseRoot, evidenceParent }) {
+  return [
+    "run", "--rm", "--name", containerName, "--pull=never", "--read-only", "--user", "pwuser",
+    "--interactive",
+    "--group-add", String(releaseGid),
+    "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=512", "--memory=2g", "--cpus=2",
+    "--shm-size=1g", "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=512m",
+    "--tmpfs", "/home/pwuser:rw,nosuid,nodev,size=64m",
+    "--mount", `type=bind,src=${releaseRoot},dst=/release,readonly`,
+    "--mount", `type=bind,src=${evidenceParent},dst=${CONTAINER_EVIDENCE_PARENT}`,
+    "--workdir", "/release", "--entrypoint", "/usr/bin/node", PLAYWRIGHT_IMAGE,
+    `/release/${BROWSER_RUNNER_PATH}`,
+  ];
+}
+
 function runBrowserContainer(args, inputBytes, { containerName, signal }) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -405,7 +487,12 @@ function runBrowserContainer(args, inputBytes, { containerName, signal }) {
     child.on("close", (status) => {
       if (interrupted) return finish(new BrowserProducerError("uat_interrupted"));
       if (overflow) return finish(new BrowserProducerError("browser_container_limit_exceeded"));
-      if (status !== 0) return finish(new BrowserProducerError("browser_container_failed"));
+      if (status !== 0) {
+        console.error(
+          `postdeploy browser uat: container exited non-zero ${containerFailureLabel(status, Buffer.concat(stdout), Buffer.concat(stderr))}`,
+        );
+        return finish(new BrowserProducerError("browser_container_failed"));
+      }
       finish(null, Buffer.concat(stdout));
     });
     child.stdin.on("error", () => {});
@@ -469,17 +556,12 @@ export async function runCanonicalBrowserUat({
       })),
     };
     const inputBytes = Buffer.from(JSON.stringify(input), "utf8");
-    const args = [
-      "run", "--rm", "--name", containerName, "--pull=never", "--read-only", "--user", "pwuser",
-      "--group-add", String(identity.releaseGid),
-      "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=512", "--memory=2g", "--cpus=2",
-      "--shm-size=1g", "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=512m",
-      "--tmpfs", "/home/pwuser:rw,nosuid,nodev,size=64m",
-      "--mount", `type=bind,src=${releaseRoot},dst=/release,readonly`,
-      "--mount", `type=bind,src=${evidenceParent},dst=${CONTAINER_EVIDENCE_PARENT}`,
-      "--workdir", "/release", "--entrypoint", "/usr/bin/node", PLAYWRIGHT_IMAGE,
-      `/release/${BROWSER_RUNNER_PATH}`,
-    ];
+    const args = browserContainerArgs({
+      containerName,
+      releaseGid: identity.releaseGid,
+      releaseRoot,
+      evidenceParent,
+    });
     const stdout = await runBrowserContainer(args, inputBytes, { containerName, signal });
     const output = parseJson(stdout, "browser_output_json_invalid");
     return collectCanonicalBrowserEvidence({

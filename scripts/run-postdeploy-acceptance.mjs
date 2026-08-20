@@ -2546,6 +2546,33 @@ function errorCode(error) {
   return error instanceof ProducerError ? error.code : "unexpected_failure";
 }
 
+/** Our own refusal codes, and node's errno constants, are safe to echo. */
+const REFUSAL_IDENTITY = /^[A-Za-z][A-Za-z0-9_]{1,62}$/;
+const ERROR_NAME = /^[A-Za-z][A-Za-z0-9]{0,39}$/;
+const STACK_FRAME = /[^\s()]*?\/([a-z0-9][a-z0-9._-]{0,63}\.(?:mjs|cjs|js)):([0-9]{1,7}):[0-9]{1,7}/;
+
+/**
+ * Name an otherwise anonymous failure without echoing what it was carrying.
+ *
+ * `refused code=unexpected_failure` on its own is unplaceable: diagnosing one
+ * costs a deploy, an accept and a patched copy of the release. The error's
+ * class, its identity and the file and line that raised it are enough to point
+ * at a defect, while the message is echoed only when it is one of our own codes
+ * -- a thrown node error can carry a path, a row value or the request body.
+ */
+export function refusalDiagnostic(error) {
+  if (!(error instanceof Error)) return "error=<not-an-error> identity=<none> at=<no-frame>";
+  const name = ERROR_NAME.test(error.name ?? "") ? error.name : "<redacted-name>";
+  const identity = typeof error.code === "string" && REFUSAL_IDENTITY.test(error.code)
+    ? error.code
+    : typeof error.message === "string" && REFUSAL_IDENTITY.test(error.message)
+      ? error.message
+      : "<redacted-message>";
+  const stack = typeof error.stack === "string" ? error.stack.split("\n").slice(1).join("\n") : "";
+  const frame = STACK_FRAME.exec(stack);
+  return `error=${name} identity=${identity} at=${frame ? `${frame[1]}:${frame[2]}` : "<no-frame>"}`;
+}
+
 function fixtureFromJournal(journal) {
   return {
     ids: { ...journal.fixture_plan.ids },
@@ -2881,7 +2908,7 @@ export async function main(argv = process.argv.slice(2)) {
     return 0;
   } catch (error) {
     const code = errorCode(error);
-    console.error(`postdeploy producer: refused code=${code}`);
+    console.error(`postdeploy producer: refused code=${code} ${refusalDiagnostic(error)}`);
     return 1;
   } finally {
     process.removeListener("SIGINT", interrupt);

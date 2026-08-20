@@ -159,7 +159,7 @@ test("production rollback controller restores app and versioned assets transacti
   assert.match(statusBody, /if ! load_systemd_pending; then\n        systemd_asset_transaction=invalid\n      elif \[ "\$current" = "\/opt\/newme\/releases\/\$SYSTEMD_PENDING_SHA" \]; then\n        systemd_asset_transaction=candidate_active\n      elif \[ "\$current" = "\$SYSTEMD_PENDING_PREVIOUS" \]; then\n        systemd_asset_transaction=pre_switch\n      else\n        systemd_asset_transaction=mismatch/);
   assert.match(
     statusBody,
-    /rollback_transaction=%s\\nsystemd_asset_transaction=%s\\ncredential_asset_transaction=%s\\ncredential_transition_transaction=%s\\nrollback_db_phase=%s/,
+    /rollback_transaction=%s\\nsystemd_asset_transaction=%s\\ncredential_asset_transaction=%s\\ncredential_transition_transaction=%s\\ncredential_adopt_transaction=%s\\nrollback_db_phase=%s/,
   );
   assert.match(statusBody, /credential_asset_transaction=recovery_required/);
   assert.match(statusBody, /credential_transition_transaction=recovery_required/);

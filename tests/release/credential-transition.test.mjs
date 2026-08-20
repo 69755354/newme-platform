@@ -18,12 +18,14 @@ import { fileURLToPath } from "node:url";
 import {
   TransitionError,
   PROTECTED_VERSIONED_ASSETS,
+  adoptServiceKeyStore,
   applyCredentialTransition,
   assertFixedRuntimeEnvironmentFile,
   assertMetadata,
   finalizeCredentialTransitionLive,
   inspectCredentialAwaitingState,
   recoverCredentialTransition,
+  recoverServiceKeyAdoption,
 } from "../../scripts/credential-transition.mjs";
 import { validateCredentialRemediationCi } from "../../scripts/verify-credential-remediation-ci.mjs";
 
@@ -1083,4 +1085,376 @@ test("retired manual server credential consumers fail closed", () => {
     assert.equal(result.status, 64, `${relative} must fail closed`);
     assert.match(result.stderr, /retired utility/);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Service-key store adoption: relocation of the credential already in use into
+// the fixed runtime store, which the deploy contract requires and which the
+// rotation cannot perform (it needs a provider-issued replacement that does not
+// exist here). A host stuck in the old shape -- key in the release environment,
+// nothing in the store -- cannot deploy at all, because the deploy strips the
+// key from the candidate environment and then fails its own validator.
+// ---------------------------------------------------------------------------
+
+function adoptFixture(t) {
+  const root = mkdtempSync(join(tmpdir(), "newme-credential-adopt-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const stateDir = join(root, "state");
+  const inboxDir = join(root, "inbox");
+  mkdirSync(stateDir, { mode: 0o700 });
+  mkdirSync(inboxDir, { mode: 0o700 });
+  const runtime = join(root, "runtime.env");
+  const releaseEnv = join(root, "release.env");
+  // The production shape this operation exists for: a runtime store with real
+  // settings but no service credential, and a live release that still carries it.
+  writeFileSync(runtime, [
+    `NEWME_READINESS_TOKEN=${"c".repeat(64)}`,
+    "NEXT_PUBLIC_SITE_URL=https://app.newme.ae",
+    "CABLE_COSTING_CONFIG={\"v\":1}",
+    "",
+  ].join("\n"));
+  chmodSync(runtime, 0o600);
+  writeFileSync(releaseEnv, [
+    "NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co",
+    `SUPABASE_SERVICE_ROLE_KEY=${oldCredential}`,
+    "",
+  ].join("\n"));
+  chmodSync(releaseEnv, 0o600);
+
+  const paths = {
+    runtimeDir: root,
+    runtime,
+    runtimeNext: `${runtime}.next`,
+    runtimeAdoptNext: `${runtime}.adopt.next`,
+    inboxDir,
+    inbox: join(inboxDir, "supabase-service-key.env"),
+    stateDir,
+    pending: join(stateDir, "pending.json"),
+    pendingNext: join(stateDir, "pending.next"),
+    systemdPending: join(stateDir, "systemd-assets.pending"),
+    credentialAssetsPending: join(stateDir, "credential-assets.pending"),
+    productionRollbackPending: join(stateDir, "production-rollback.pending"),
+    backup: join(stateDir, "previous.env"),
+    backupPreparing: join(stateDir, "previous.env.preparing"),
+    last: join(stateDir, "last.json"),
+    lastNext: join(stateDir, "last.next"),
+    adoptPending: join(stateDir, "credential-adopt.pending.json"),
+    adoptPendingNext: join(stateDir, "credential-adopt.pending.next"),
+    adoptBackup: join(stateDir, "credential-adopt.previous.env"),
+    adoptBackupPreparing: join(stateDir, "credential-adopt.previous.env.preparing"),
+    adoptLast: join(stateDir, "credential-adopt.last.json"),
+    adoptLastNext: join(stateDir, "credential-adopt.last.next"),
+    protection: join(stateDir, "credential-remediation.protected.json"),
+    protectionNext: join(stateDir, "credential-remediation.protected.next"),
+    releaseEnv,
+    validator: join(root, "validator.py"),
+    readiness: join(root, "readiness.sh"),
+    python: "python3",
+    systemctl: "systemctl",
+  };
+  const calls = { validate: 0, restart: 0 };
+  const options = {
+    paths,
+    securityChecks: false,
+    durable: false,
+    now: () => "2026-08-20T00:00:00.000Z",
+    validateCandidate(candidate) {
+      calls.validate += 1;
+      // The candidate must carry the value the live release is already using,
+      // and must not have lost the settings that were already in the store.
+      const value = readFileSync(candidate, "utf8");
+      assert.match(value, new RegExp(`SUPABASE_SERVICE_ROLE_KEY=${oldCredential}`));
+      assert.match(value, /NEWME_READINESS_TOKEN=/);
+      assert.match(value, /CABLE_COSTING_CONFIG=/);
+    },
+    restartAndVerify() {
+      calls.restart += 1;
+    },
+  };
+  return { root, paths, calls, options };
+}
+
+function adopt(fix, overrides = {}) {
+  return adoptServiceKeyStore({ sha, ...fix.options, ...overrides });
+}
+
+function adoptRecovery(fix, overrides = {}) {
+  return recoverServiceKeyAdoption({ ...fix.options, ...overrides });
+}
+
+function serviceKeyOf(path) {
+  const match = readFileSync(path, "utf8").match(/^SUPABASE_SERVICE_ROLE_KEY=(.*)$/mu);
+  return match === null ? null : match[1];
+}
+
+test("adoption relocates the live release credential into the fixed runtime store", (t) => {
+  const fix = adoptFixture(t);
+  const before = readFileSync(fix.paths.runtime, "utf8");
+  assert.equal(adopt(fix).status, "complete");
+  assert.equal(serviceKeyOf(fix.paths.runtime), oldCredential);
+  // Everything the store already held survives, in place.
+  for (const line of before.split("\n").filter(Boolean)) {
+    assert.match(readFileSync(fix.paths.runtime, "utf8"), new RegExp(line.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")));
+  }
+  // The validator ran on the candidate before any switch, and the service was
+  // restarted and verified afterwards.
+  assert.equal(fix.calls.validate, 1);
+  assert.equal(fix.calls.restart, 1);
+  // No transaction residue: a status probe must report "none" afterwards.
+  for (const path of [
+    fix.paths.adoptPending,
+    fix.paths.adoptPendingNext,
+    fix.paths.adoptBackup,
+    fix.paths.adoptBackupPreparing,
+    fix.paths.runtimeAdoptNext,
+  ]) {
+    assert.equal(existsSync(path), false, path);
+  }
+  const last = JSON.parse(readFileSync(fix.paths.adoptLast, "utf8"));
+  assert.equal(last.kind, "service_key_store_adoption");
+  assert.equal(last.status, "complete");
+  assert.equal(last.candidate_sha, sha);
+  // The journal is digests only. A record that echoed the value would turn a
+  // 0600 state file into a second copy of the credential.
+  assert.doesNotMatch(JSON.stringify(last), new RegExp(oldCredential));
+  assert.equal(last.before_sha256, createHash("sha256").update(before).digest("hex"));
+  assert.equal(
+    last.after_sha256,
+    createHash("sha256").update(readFileSync(fix.paths.runtime, "utf8")).digest("hex"),
+  );
+});
+
+test("adoption refuses when a rotation is staged or already in flight", (t) => {
+  const rotationInput = adoptFixture(t);
+  // A staged replacement means the value in the release is about to stop being
+  // the live one; relocating it would install the wrong credential.
+  writeFileSync(rotationInput.paths.inbox, `SUPABASE_SERVICE_ROLE_KEY=${newCredential}\n`, { mode: 0o600 });
+  assert.throws(() => adopt(rotationInput), (error) => error instanceof TransitionError &&
+    /rotation_input_present/.test(error.message));
+  assert.equal(serviceKeyOf(rotationInput.paths.runtime), null);
+
+  const rotationPending = adoptFixture(t);
+  writeFileSync(rotationPending.paths.pending, "{}\n", { mode: 0o600 });
+  assert.throws(() => adopt(rotationPending), (error) => error instanceof TransitionError &&
+    /pending_transition_requires_recovery/.test(error.message));
+
+  const releasePending = adoptFixture(t);
+  writeFileSync(releasePending.paths.productionRollbackPending, "x\n", { mode: 0o600 });
+  assert.throws(() => adopt(releasePending), (error) => error instanceof TransitionError &&
+    /another_release_transaction_requires_recovery/.test(error.message));
+});
+
+test("adoption refuses inputs that make relocation meaningless or ambiguous", (t) => {
+  const already = adoptFixture(t);
+  writeFileSync(
+    already.paths.runtime,
+    `${readFileSync(already.paths.runtime, "utf8")}SUPABASE_SERVICE_ROLE_KEY=${oldCredential}\n`,
+    { mode: 0o600 },
+  );
+  // Nothing to relocate, and overwriting a store that already has a credential
+  // is the rotation's job, under the rotation's evidence.
+  assert.throws(() => adopt(already), (error) => error instanceof TransitionError &&
+    /runtime_service_key_already_present/.test(error.message));
+
+  const missing = adoptFixture(t);
+  writeFileSync(missing.paths.releaseEnv, "NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co\n", { mode: 0o600 });
+  assert.throws(() => adopt(missing), (error) => error instanceof TransitionError &&
+    /release_service_key_missing/.test(error.message));
+
+  const duplicate = adoptFixture(t);
+  writeFileSync(
+    duplicate.paths.releaseEnv,
+    `SUPABASE_SERVICE_ROLE_KEY=${oldCredential}\nexport SUPABASE_SERVICE_ROLE_KEY=${thirdCredential}\n`,
+    { mode: 0o600 },
+  );
+  assert.throws(() => adopt(duplicate), (error) => error instanceof TransitionError &&
+    /release_service_key_duplicate/.test(error.message));
+
+  const malformed = adoptFixture(t);
+  writeFileSync(malformed.paths.releaseEnv, "SUPABASE_SERVICE_ROLE_KEY=short\n", { mode: 0o600 });
+  assert.throws(() => adopt(malformed), (error) => error instanceof TransitionError &&
+    /release_environment_service_key_invalid/.test(error.message));
+
+  for (const fix of [already, missing, duplicate, malformed]) {
+    assert.equal(existsSync(fix.paths.adoptPending), false);
+    assert.equal(existsSync(fix.paths.adoptBackup), false);
+    assert.equal(existsSync(fix.paths.runtimeAdoptNext), false);
+  }
+});
+
+test("adoption refuses a candidate the validator rejects, before switching anything", (t) => {
+  const fix = adoptFixture(t);
+  const before = readFileSync(fix.paths.runtime, "utf8");
+  assert.throws(() => adopt(fix, {
+    validateCandidate() {
+      throw new Error("validator said no");
+    },
+  }), (error) => error instanceof TransitionError && /candidate_config_validation_failed/.test(error.message));
+  assert.equal(readFileSync(fix.paths.runtime, "utf8"), before);
+  assert.equal(fix.calls.restart, 0);
+  // The staged candidate is the only place the credential was written; it must
+  // not survive a refusal.
+  assert.equal(existsSync(fix.paths.runtimeAdoptNext), false);
+  assert.equal(existsSync(fix.paths.adoptBackup), false);
+  assert.equal(existsSync(fix.paths.adoptPending), false);
+});
+
+test("a service that will not come back healthy is rolled back to the keyless store", (t) => {
+  const fix = adoptFixture(t);
+  const before = readFileSync(fix.paths.runtime, "utf8");
+  let attempts = 0;
+  assert.throws(() => adopt(fix, {
+    restartAndVerify() {
+      attempts += 1;
+      if (attempts === 1) throw new Error("readiness failed");
+    },
+  }), (error) => error instanceof TransitionError &&
+    /service_verification_failed_rolled_back/.test(error.message));
+  assert.equal(attempts, 2);
+  assert.equal(readFileSync(fix.paths.runtime, "utf8"), before);
+  assert.equal(serviceKeyOf(fix.paths.runtime), null);
+  assert.equal(JSON.parse(readFileSync(fix.paths.adoptLast, "utf8")).status, "rolled_back");
+  assert.equal(existsSync(fix.paths.adoptPending), false);
+  assert.equal(existsSync(fix.paths.adoptBackup), false);
+});
+
+test("a rollback that cannot restart the service stays open for recovery", (t) => {
+  const fix = adoptFixture(t);
+  assert.throws(() => adopt(fix, {
+    restartAndVerify() {
+      throw new Error("dead either way");
+    },
+  }), (error) => error instanceof TransitionError && /adopt_recovery_failed/.test(error.message));
+  // Refusing to declare a state it could not verify is the point: the journal
+  // and the preserved store both remain for the operator.
+  const pending = JSON.parse(readFileSync(fix.paths.adoptPending, "utf8"));
+  assert.equal(pending.phase, "recovery_failed");
+  assert.equal(existsSync(fix.paths.adoptBackup), true);
+  assert.equal(existsSync(fix.paths.adoptLast), false);
+});
+
+test("adoption interrupted after the runtime switch is completed by recovery", (t) => {
+  const fix = adoptFixture(t);
+  assert.throws(() => adopt(fix, {
+    checkpoint(stage) {
+      if (stage === "after_switched_record") throw new Error("power loss");
+    },
+  }), /power loss/);
+  assert.equal(serviceKeyOf(fix.paths.runtime), oldCredential);
+  assert.equal(JSON.parse(readFileSync(fix.paths.adoptPending, "utf8")).phase, "runtime_switched");
+
+  assert.equal(adoptRecovery(fix).status, "complete");
+  assert.equal(serviceKeyOf(fix.paths.runtime), oldCredential);
+  assert.equal(JSON.parse(readFileSync(fix.paths.adoptLast, "utf8")).status, "complete");
+  assert.equal(existsSync(fix.paths.adoptPending), false);
+  assert.equal(existsSync(fix.paths.adoptBackup), false);
+});
+
+test("adoption interrupted before the runtime switch is closed without changing the store", (t) => {
+  const fix = adoptFixture(t);
+  const before = readFileSync(fix.paths.runtime, "utf8");
+  assert.throws(() => adopt(fix, {
+    checkpoint(stage) {
+      if (stage === "after_pending") throw new Error("power loss");
+    },
+  }), /power loss/);
+  assert.equal(adoptRecovery(fix).status, "interrupted_before_switch");
+  assert.equal(readFileSync(fix.paths.runtime, "utf8"), before);
+  assert.equal(JSON.parse(readFileSync(fix.paths.adoptLast, "utf8")).status, "interrupted_before_switch");
+  assert.equal(existsSync(fix.paths.runtimeAdoptNext), false);
+});
+
+test("recovery rolls back when the interrupted run had already failed its restart", (t) => {
+  const fix = adoptFixture(t);
+  assert.throws(() => adopt(fix, {
+    restartAndVerify() {
+      throw new Error("dead either way");
+    },
+  }), (error) => error instanceof TransitionError && /adopt_recovery_failed/.test(error.message));
+  // The service is repaired by other means; recovery must now finish the story
+  // rather than leave the transaction open forever.
+  assert.equal(adoptRecovery(fix).status, "rolled_back");
+  assert.equal(serviceKeyOf(fix.paths.runtime), null);
+  assert.equal(existsSync(fix.paths.adoptPending), false);
+});
+
+test("recovery is a no-op with nothing pending, and refuses states it cannot attribute", (t) => {
+  const clean = adoptFixture(t);
+  assert.equal(adoptRecovery(clean).status, "none");
+
+  const orphan = adoptFixture(t);
+  writeFileSync(orphan.paths.adoptBackup, "SOMETHING=1\n", { mode: 0o600 });
+  assert.throws(() => adoptRecovery(orphan), (error) => error instanceof TransitionError &&
+    /orphan_adoption_backup_requires_operator/.test(error.message));
+  // The preserved copy is never destroyed by a guess.
+  assert.equal(existsSync(orphan.paths.adoptBackup), true);
+
+  const drifted = adoptFixture(t);
+  assert.throws(() => adopt(drifted, {
+    checkpoint(stage) {
+      if (stage === "after_switched_record") throw new Error("power loss");
+    },
+  }), /power loss/);
+  writeFileSync(drifted.paths.runtime, "EDITED_BY_HAND=1\n", { mode: 0o600 });
+  assert.throws(() => adoptRecovery(drifted), (error) => error instanceof TransitionError &&
+    /runtime_digest_unrecognized/.test(error.message));
+
+  const tampered = adoptFixture(t);
+  assert.throws(() => adopt(tampered, {
+    checkpoint(stage) {
+      if (stage === "after_switched_record") throw new Error("power loss");
+    },
+  }), /power loss/);
+  writeFileSync(tampered.paths.adoptPending, "{\"version\":1}\n", { mode: 0o600 });
+  assert.throws(() => adoptRecovery(tampered), (error) => error instanceof TransitionError &&
+    /adopt_pending_invalid/.test(error.message));
+});
+
+test("the coordinator exposes adoption as its own subcommand pair", () => {
+  const wrapper = readFileSync(join(repository, "infra", "systemd", "newme-deploy.sh"), "utf8");
+  assert.match(wrapper, /^credential-adopt\)$/mu);
+  assert.match(wrapper, /^credential-adopt-recover\)$/mu);
+  // Adoption must be blocked by exactly the same unresolved-transaction set as
+  // the rotation, plus the rotation's own staging files and its one-use input.
+  const block = wrapper.slice(wrapper.indexOf("\ncredential-adopt)"), wrapper.indexOf("\ncredential-adopt-recover)"));
+  for (const blocker of [
+    "PENDING_ASSET_RECORD",
+    "CREDENTIAL_ASSET_PENDING",
+    "CREDENTIAL_GATE_CONSUMED",
+    "CREDENTIAL_TRANSITION_PENDING",
+    "TRANSITION_BACKUP_RECORD",
+    "CREDENTIAL_INBOX",
+    "PRODUCTION_ROLLBACK_PENDING",
+    "CREDENTIAL_ADOPT_PENDING",
+    "CREDENTIAL_ADOPT_BACKUP",
+    "CREDENTIAL_ADOPT_RUNTIME_NEXT",
+  ]) {
+    assert.match(block, new RegExp(`\\$${blocker}"`), blocker);
+  }
+  // It only accepts canonical main, and re-verifies the release pointer, the
+  // service, readiness, and the full deploy-contract validator afterwards.
+  assert.match(block, /require_canonical_main_sha/);
+  assert.match(block, /require_postdeploy_operations_clear/);
+  assert.match(block, /--require-runtime-service-key --network/);
+  assert.match(block, /newme-readiness\.sh/);
+  assert.match(block, /credential_adopt=complete/);
+  // No CI run id, no provider attestation, no gate consumption: this is a
+  // relocation and must not be able to masquerade as remediation.
+  assert.doesNotMatch(block, /credential_live_exec|verify_credential_ci_live|check-taskboard/);
+
+  const rollback = readFileSync(join(repository, "infra", "systemd", "newme-production-rollback.sh"), "utf8");
+  assert.match(rollback, /credential_adopt_transaction=%s/);
+  assert.match(rollback, /credential_adopt_transaction=recovery_required/);
+});
+
+test("the installed adoption helper is the versioned one and refuses non-root use", () => {
+  const helper = join(repository, "scripts", "credential-transition.mjs");
+  const source = readFileSync(helper, "utf8");
+  // The value must never become an argument: adopt takes a SHA only, and reads
+  // the credential from a root-only file in process.
+  assert.match(source, /argv\[0\] === "adopt" && argv\.length === 2/u);
+  assert.match(source, /argv\[0\] === "adopt-recover" && argv\.length === 1/u);
+  const result = spawnSync(process.execPath, [helper, "adopt", sha], { encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /SUPABASE_SERVICE_ROLE_KEY=/);
 });

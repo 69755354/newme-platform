@@ -24,6 +24,7 @@ export const PRODUCTION_PATHS = Object.freeze({
   runtimeDir: "/etc/newme",
   runtime: "/etc/newme/newme-runtime.env",
   runtimeNext: "/etc/newme/newme-runtime.env.credential-transition.next",
+  runtimeAdoptNext: "/etc/newme/newme-runtime.env.credential-adopt.next",
   inboxDir: "/run/newme-credential-inbox",
   inbox: "/run/newme-credential-inbox/supabase-service-key.env",
   stateDir: "/var/lib/newme/deploy-state",
@@ -36,6 +37,12 @@ export const PRODUCTION_PATHS = Object.freeze({
   backupPreparing: "/var/lib/newme/deploy-state/credential-transition.previous.env.preparing",
   last: "/var/lib/newme/deploy-state/credential-transition.last.json",
   lastNext: "/var/lib/newme/deploy-state/credential-transition.last.next",
+  adoptPending: "/var/lib/newme/deploy-state/credential-adopt.pending.json",
+  adoptPendingNext: "/var/lib/newme/deploy-state/credential-adopt.pending.next",
+  adoptBackup: "/var/lib/newme/deploy-state/credential-adopt.previous.env",
+  adoptBackupPreparing: "/var/lib/newme/deploy-state/credential-adopt.previous.env.preparing",
+  adoptLast: "/var/lib/newme/deploy-state/credential-adopt.last.json",
+  adoptLastNext: "/var/lib/newme/deploy-state/credential-adopt.last.next",
   protection: "/var/lib/newme/deploy-state/credential-remediation.protected.json",
   protectionNext: "/var/lib/newme/deploy-state/credential-remediation.protected.next",
   releaseEnv: "/opt/newme/current/.env.local",
@@ -574,9 +581,14 @@ function parseInbox(paths, options) {
   };
 }
 
-function runtimeServiceKeyDigest(runtime) {
+// Every service-key assignment in an environment file, parsed the way systemd
+// and the validator read one. Shared by the rotation (which needs the digest of
+// the single runtime value) and the adoption (which needs the value itself, from
+// the live release environment) so the two can never disagree about what counts
+// as an assignment.
+function serviceAssignmentValues(content, label) {
   const values = [];
-  for (const rawLine of runtime.replace(/\r\n/g, "\n").split("\n")) {
+  for (const rawLine of content.replace(/\r\n/g, "\n").split("\n")) {
     let line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
     if (line.startsWith("export ")) line = line.slice(7).trimStart();
@@ -588,9 +600,14 @@ function runtimeServiceKeyDigest(runtime) {
     if (value.length >= 2 && value[0] === value.at(-1) && ["\"", "'"].includes(value[0])) {
       value = value.slice(1, -1);
     }
-    if (!SERVICE_VALUE_PATTERN.test(value)) refuse("runtime_service_key_invalid");
+    if (!SERVICE_VALUE_PATTERN.test(value)) refuse(`${label}_service_key_invalid`);
     values.push(value);
   }
+  return values;
+}
+
+function runtimeServiceKeyDigest(runtime) {
+  const values = serviceAssignmentValues(runtime, "runtime");
   if (values.length !== 1) refuse(values.length === 0 ? "runtime_service_key_missing" : "runtime_service_key_duplicate");
   return digest(values[0]);
 }
@@ -820,6 +837,261 @@ function restorePrevious(record, paths, options) {
   }
   completeRollback(record, paths, options);
   return { status: "rolled_back" };
+}
+
+const ADOPT_PHASES = new Set([
+  "prepared",
+  "runtime_switched",
+  "restart_failed",
+  "healthy",
+  "recovery_failed",
+]);
+
+function adoptRecord(sha, before, after, options) {
+  return {
+    version: 1,
+    kind: "service_key_store_adoption",
+    phase: "prepared",
+    candidate_sha: sha,
+    started_at: options.now(),
+    before_sha256: digest(before),
+    after_sha256: digest(after),
+  };
+}
+
+function writeAdoptPending(record, paths, options) {
+  secureCleanup(paths.adoptPendingNext, paths.stateDir, "adopt_pending_staging", options);
+  replaceAtomically(
+    paths.adoptPending,
+    paths.adoptPendingNext,
+    pendingPayload(record),
+    paths.stateDir,
+    options,
+  );
+}
+
+function writeAdoptLast(status, record, paths, options) {
+  const last = {
+    version: 1,
+    kind: "service_key_store_adoption",
+    status,
+    candidate_sha: record.candidate_sha,
+    started_at: record.started_at,
+    finished_at: options.now(),
+    before_sha256: record.before_sha256,
+    after_sha256: record.after_sha256,
+  };
+  secureCleanup(paths.adoptLastNext, paths.stateDir, "adopt_last_staging", options);
+  replaceAtomically(
+    paths.adoptLast,
+    paths.adoptLastNext,
+    `${JSON.stringify(last)}\n`,
+    paths.stateDir,
+    options,
+  );
+}
+
+function parseAdoptPending(paths, options) {
+  requireNode(paths.adoptPending, { kind: "file", modes: [0o600], label: "adopt_pending" }, options);
+  const raw = readBounded(paths.adoptPending, 65536, "adopt_pending_invalid");
+  let record;
+  try {
+    record = JSON.parse(raw);
+  } catch {
+    refuse("adopt_pending_invalid");
+  }
+  if (
+    record === null ||
+    typeof record !== "object" ||
+    Array.isArray(record) ||
+    record.version !== 1 ||
+    record.kind !== "service_key_store_adoption" ||
+    !ADOPT_PHASES.has(record.phase) ||
+    !SHA_PATTERN.test(record.candidate_sha ?? "") ||
+    !TIMESTAMP_PATTERN.test(record.started_at ?? "") ||
+    !DIGEST_PATTERN.test(record.before_sha256 ?? "") ||
+    !DIGEST_PATTERN.test(record.after_sha256 ?? "") ||
+    record.before_sha256 === record.after_sha256 ||
+    raw !== pendingPayload(record)
+  ) {
+    refuse("adopt_pending_invalid");
+  }
+  return record;
+}
+
+function cleanupAdoptStaging(paths, options) {
+  secureCleanup(paths.runtimeAdoptNext, dirname(paths.runtime), "adopt_runtime_staging", options);
+  secureCleanup(paths.adoptBackupPreparing, paths.stateDir, "adopt_backup_staging", options);
+  secureCleanup(paths.adoptPendingNext, paths.stateDir, "adopt_pending_staging", options);
+  secureCleanup(paths.adoptLastNext, paths.stateDir, "adopt_last_staging", options);
+}
+
+// The preserved copy is the runtime file *before* adoption, which by definition
+// carries no service credential -- the value it gains is the one the live
+// release still holds. Discarding it after a healthy switch therefore destroys
+// no identity, which is why this is safe here and deliberately forbidden for the
+// rotation's backup (that one is the only remaining record of a key awaiting
+// provider-side revocation).
+function finishAdoption(status, record, paths, options) {
+  writeAdoptLast(status, record, paths, options);
+  removeDurably(paths.adoptPending, paths.stateDir, options);
+  removeDurably(paths.adoptBackup, paths.stateDir, options);
+  cleanupAdoptStaging(paths, options);
+  return { status };
+}
+
+function restoreAdoptPrevious(record, paths, options) {
+  requireNode(paths.adoptBackup, { kind: "file", modes: [0o600], label: "adopt_backup" }, options);
+  const previous = readBounded(paths.adoptBackup, 262144, "adopt_backup_invalid");
+  if (digest(previous) !== record.before_sha256) refuse("adopt_backup_digest_mismatch");
+  secureCleanup(paths.runtimeAdoptNext, dirname(paths.runtime), "adopt_runtime_staging", options);
+  writeExclusive(paths.runtimeAdoptNext, previous, options);
+  commitRuntime(paths.runtimeAdoptNext, paths.runtime, options);
+  try {
+    options.restartAndVerify(paths);
+  } catch {
+    record.phase = "recovery_failed";
+    writeAdoptPending(record, paths, options);
+    refuse("adopt_recovery_failed");
+  }
+  return finishAdoption("rolled_back", record, paths, options);
+}
+
+// Relocation, not rotation. The deploy contract introduced by the server-side
+// login change requires the server credential to live only in the fixed
+// root-only runtime store; a production host that still keeps it in the live
+// release environment cannot deploy that contract at all, because the candidate
+// environment is stripped and the validator then finds nothing in the store.
+// This moves the value already in use, under the same transactional discipline
+// as the rotation, and asserts nothing about the provider.
+export function adoptServiceKeyStore({ sha, paths = PRODUCTION_PATHS, ...overrides }) {
+  if (!SHA_PATTERN.test(sha ?? "")) refuse("arguments_invalid");
+  const options = normalizedOptions(overrides);
+  validateStaticPaths(paths, options, false);
+  // A staged replacement means a rotation is in flight or half-finished. Reading
+  // the live value while that is true would relocate the wrong credential.
+  if (pathEntryExists(paths.inbox)) refuse("rotation_input_present");
+  if (pathEntryExists(paths.adoptPending)) refuse("pending_adoption_requires_recovery");
+  if (pathEntryExists(paths.pending)) refuse("pending_transition_requires_recovery");
+  if (pathEntryExists(paths.backup)) refuse("pending_transition_requires_recovery");
+  if (
+    pathEntryExists(paths.systemdPending) ||
+    pathEntryExists(paths.credentialAssetsPending) ||
+    pathEntryExists(paths.productionRollbackPending)
+  ) {
+    refuse("another_release_transaction_requires_recovery");
+  }
+  const runtime = readBounded(paths.runtime, 262144, "runtime_invalid");
+  if (serviceAssignmentValues(runtime, "runtime").length !== 0) {
+    refuse("runtime_service_key_already_present");
+  }
+  const releaseValues = serviceAssignmentValues(
+    readBounded(paths.releaseEnv, 262144, "release_environment_invalid"),
+    "release_environment",
+  );
+  if (releaseValues.length !== 1) {
+    refuse(releaseValues.length === 0
+      ? "release_service_key_missing"
+      : "release_service_key_duplicate");
+  }
+  const replacement = renderRuntime(runtime, `SUPABASE_SERVICE_ROLE_KEY=${releaseValues[0]}`);
+  if (digest(replacement) === digest(runtime)) refuse("adoption_would_not_change_runtime");
+
+  cleanupAdoptStaging(paths, options);
+  if (pathEntryExists(paths.adoptBackup)) refuse("orphan_adoption_backup_requires_recovery");
+
+  writeExclusive(paths.runtimeAdoptNext, replacement, options);
+  try {
+    // The validator's --network probe is the positive control: it proves the
+    // relocated value still authenticates against the project as a server-only
+    // key, before anything is switched.
+    options.validateCandidate(paths.runtimeAdoptNext, paths);
+  } catch {
+    secureCleanup(paths.runtimeAdoptNext, dirname(paths.runtime), "adopt_runtime_staging", options);
+    refuse("candidate_config_validation_failed");
+  }
+
+  writeExclusive(paths.adoptBackupPreparing, runtime, options);
+  renameSync(paths.adoptBackupPreparing, paths.adoptBackup);
+  fsyncDirectory(paths.stateDir, options);
+  options.checkpoint("after_backup");
+
+  const record = adoptRecord(sha, runtime, replacement, options);
+  writeAdoptPending(record, paths, options);
+  options.checkpoint("after_pending");
+
+  commitRuntime(paths.runtimeAdoptNext, paths.runtime, options);
+  options.checkpoint("after_runtime_switch");
+
+  record.phase = "runtime_switched";
+  writeAdoptPending(record, paths, options);
+  options.checkpoint("after_switched_record");
+
+  try {
+    options.restartAndVerify(paths);
+  } catch {
+    record.phase = "restart_failed";
+    writeAdoptPending(record, paths, options);
+    restoreAdoptPrevious(record, paths, options);
+    refuse("service_verification_failed_rolled_back");
+  }
+
+  record.phase = "healthy";
+  writeAdoptPending(record, paths, options);
+  options.checkpoint("after_healthy_record");
+  if (digest(readBounded(paths.runtime, 262144, "runtime_invalid")) !== record.after_sha256) {
+    refuse("runtime_candidate_digest_mismatch");
+  }
+  return finishAdoption("complete", record, paths, options);
+}
+
+export function recoverServiceKeyAdoption({ paths = PRODUCTION_PATHS, ...overrides } = {}) {
+  const options = normalizedOptions(overrides);
+  validateStaticPaths(paths, options, false);
+  if (!pathEntryExists(paths.adoptPending)) {
+    cleanupAdoptStaging(paths, options);
+    // A backup with no journal cannot be attributed to a runtime file by
+    // guessing, and the guess that matters -- whether the store should keep the
+    // credential -- is the whole point of the operation. Preserve it and stop.
+    if (pathEntryExists(paths.adoptBackup)) refuse("orphan_adoption_backup_requires_operator");
+    return { status: "none" };
+  }
+  secureCleanup(paths.adoptPendingNext, paths.stateDir, "adopt_pending_staging", options);
+  const record = parseAdoptPending(paths, options);
+  requireNode(paths.adoptBackup, { kind: "file", modes: [0o600], label: "adopt_backup" }, options);
+  const backup = readBounded(paths.adoptBackup, 262144, "adopt_backup_invalid");
+  if (digest(backup) !== record.before_sha256) refuse("adopt_backup_digest_mismatch");
+  const currentDigest = digest(readBounded(paths.runtime, 262144, "runtime_invalid"));
+
+  if (record.phase === "prepared" && currentDigest === record.before_sha256) {
+    return finishAdoption("interrupted_before_switch", record, paths, options);
+  }
+
+  if (currentDigest === record.after_sha256) {
+    try {
+      options.restartAndVerify(paths);
+    } catch {
+      record.phase = "restart_failed";
+      writeAdoptPending(record, paths, options);
+      return restoreAdoptPrevious(record, paths, options);
+    }
+    return finishAdoption("complete", record, paths, options);
+  }
+
+  if (currentDigest === record.before_sha256) {
+    try {
+      options.restartAndVerify(paths);
+    } catch {
+      record.phase = "recovery_failed";
+      writeAdoptPending(record, paths, options);
+      refuse("adopt_recovery_failed");
+    }
+    return finishAdoption("rolled_back", record, paths, options);
+  }
+
+  record.phase = "recovery_failed";
+  writeAdoptPending(record, paths, options);
+  refuse("runtime_digest_unrecognized");
 }
 
 export function applyCredentialTransition({
@@ -1239,6 +1511,16 @@ async function main(argv) {
       transitionAfterSha256: argv[7],
     });
     process.stdout.write(`credential_transition=${result.status}\n`);
+    return 0;
+  }
+  if (argv[0] === "adopt" && argv.length === 2) {
+    const result = adoptServiceKeyStore({ sha: argv[1] });
+    process.stdout.write(`credential_adopt=${result.status}\n`);
+    return 0;
+  }
+  if (argv[0] === "adopt-recover" && argv.length === 1) {
+    const result = recoverServiceKeyAdoption();
+    process.stdout.write(`credential_adopt=${result.status}\n`);
     return 0;
   }
   if (argv[0] === "recover" && argv.length === 1) {

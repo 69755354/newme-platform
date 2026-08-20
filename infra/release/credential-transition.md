@@ -38,6 +38,69 @@ canonical deploy wrapper, installed systemd/cron control plane, or GitHub
 workflows. They are not authorized production consumers and must not be used as
 a substitute for the protected database transition or application paths.
 
+## Relocation of an existing credential (adoption, not rotation)
+
+Everything below this section is a **rotation**: it retires the value in use and
+installs a provider-issued replacement, which is why it demands provider
+attestation, a dedicated `credential_remediation=true` CI run, and a signed
+two-phase cutover. A host that simply never moved its existing credential into
+the fixed store needs none of that, and cannot supply it -- there is no new key
+to attest.
+
+That gap is not hypothetical. The deploy contract requires
+`SUPABASE_SERVICE_ROLE_KEY` in `/etc/newme/newme-runtime.env` and forbids it in
+the release environment, and `scripts/deploy-immutable.sh` enforces both by
+stripping the assignment from the candidate `.env.local` and then validating with
+`--require-runtime-service-key --require-no-release-service-key --network`. On a
+host still in the old shape -- credential in the live release, no assignment in
+the store -- that validation fails by construction, so **every** deploy fails and
+rolls back with `runtime SUPABASE_SERVICE_ROLE_KEY is missing or malformed`. The
+installer only adds `--require-runtime-service-key` when the store already has an
+assignment, so no install path ever seeds it either.
+
+`newme-deploy credential-adopt <canonical-main-sha>` closes that gap. It reads the
+value the live release is already using and writes it into the fixed store,
+creating nothing, retiring nothing, and claiming nothing about the provider:
+
+- Refused outright if `/run/newme-credential-inbox/supabase-service-key.env`
+  exists (a rotation is staged, so the live value is about to stop being the live
+  one), if the store already carries an assignment (overwriting one is the
+  rotation's job), if the release environment has zero or more than one
+  assignment, or if any deploy, asset, rollback, rotation, or earlier adoption
+  transaction is unresolved.
+- The candidate store file is written `root:root` `0600` with `O_EXCL`, then
+  validated by `scripts/validate-production-config.py` with
+  `--require-runtime-service-key --network`. The network probe is the positive
+  control: the relocated value must actually authenticate as a server-only key
+  against the expected project before anything is switched.
+- The previous store file is preserved, a durable journal is written, and only
+  then is the new file committed by `rename` with the directory fsynced. The
+  service is restarted and must pass both `is-active` and the readiness probe;
+  if it does not, the previous file is restored, the service is restarted again,
+  and the operation reports `service_verification_failed_rolled_back`. A restart
+  that fails in both directions leaves the journal and the preserved copy in
+  place and refuses -- it never reports a state it could not verify.
+- `newme-deploy credential-adopt-recover` resolves an interrupted run from the
+  journal and the on-disk digests: `interrupted_before_switch` (store untouched),
+  `complete` (switch had landed and the service verifies), or `rolled_back`. A
+  store file matching neither recorded digest, or a preserved copy with no
+  journal, is refused for an operator rather than guessed at.
+- The credential never appears in `argv`, the environment, standard input, or any
+  record. Both the journal and `credential-adopt.last.json` store whole-file
+  sha256 digests only.
+- `newme-production-rollback status` reports `credential_adopt_transaction=`, so
+  an interrupted adoption is visible to the same probe as every other
+  transaction.
+
+Unlike the rotation's backup, the preserved store file is discarded once the
+switch is healthy. It is the file *before* adoption and therefore contains no
+credential, so nothing that must be independently proven revoked is being thrown
+away.
+
+Adoption is a one-time migration per host. Once the store carries the assignment,
+adoption refuses, and subsequent credential changes go through the rotation
+procedure below.
+
 ## Preconditions
 
 1. Select an exact 40-character commit on canonical `main` and a successful

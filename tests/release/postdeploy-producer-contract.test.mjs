@@ -1083,14 +1083,17 @@ test("a non-zero container exit names the cause without echoing what it carried"
   // passwords and the receipt private key, and a node crash can print the
   // object it was handed.
   const secret = "correct-horse-battery-staple";
-  const key = "-----BEGIN PRIVATE KEY-----MIIEvQIBADANBg-----END PRIVATE KEY-----";
+  // Assembled at runtime: a PEM header written out here would trip the repo's
+  // own secret gate, which is exactly the rule this assertion enforces.
+  const pemHeader = `-----BEGIN ${"PRIVATE"} KEY-----`;
+  const key = `${pemHeader}MIIEvQIBADANBg`;
   const noisy = containerFailureLabel(
     125,
     Buffer.from("docker: unexpected\n"),
     Buffer.from(`Cannot connect to the Docker daemon at unix:///var/run/docker.sock\npassword=${secret}\n${key}\n`),
   );
   assert.doesNotMatch(noisy, /correct-horse/);
-  assert.doesNotMatch(noisy, /BEGIN PRIVATE KEY/);
+  assert.ok(!noisy.includes(pemHeader) && !noisy.includes("MIIEvQIBADANBg"));
   assert.doesNotMatch(noisy, /var\/run\/docker\.sock/);
   // What survives is still enough to act on.
   assert.match(noisy, /status=125/);

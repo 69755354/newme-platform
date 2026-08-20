@@ -358,7 +358,7 @@ function validateJournal(journal, releaseSha) {
   if (
     typeof journal.fixture_plan.marker !== "string"
     || !/^postdeploy-uat-[0-9a-f-]{36}$/.test(journal.fixture_plan.marker)
-    || !KPI_UAT_PERIOD.test(journal.fixture_plan.kpi_period)
+    || !KPI_JOURNAL_PERIOD.test(journal.fixture_plan.kpi_period)
     || !isObject(journal.fixture_plan.ids)
   ) refuse("journal_fixture_plan_invalid");
   exactKeys(journal.fixture_plan.ids, FIXTURE_ID_KEYS, "journal_fixture_plan_invalid");
@@ -848,6 +848,19 @@ function requestEvidence(request) {
  * reporting period.
  */
 export const KPI_UAT_PERIOD = /^29[0-9]{2}-(0[1-9]|1[0-2])$/;
+
+/**
+ * The period shapes a journal may legitimately carry.
+ *
+ * Planning and reading are deliberately different: this release must be able to
+ * read a journal written by its predecessor, whose period was `uat-<uuid>`. The
+ * operations-clear gate parses every journal under the state root with the
+ * scripts of the *live* release, so a read rule narrower than the write history
+ * would refuse the previous release's journal and leave the only path out of it
+ * -- accept-recover then accept-abort -- unreachable. That is a deadlock, not a
+ * validation failure, and this repository has already paid for one of them.
+ */
+export const KPI_JOURNAL_PERIOD = /^(?:uat-[0-9a-f-]{36}|29[0-9]{2}-(?:0[1-9]|1[0-2]))$/;
 
 /** kpi_targets_target_type_check admits `signing` and `collection`, nothing else. */
 export const KPI_UAT_TARGET_TYPE = "signing";

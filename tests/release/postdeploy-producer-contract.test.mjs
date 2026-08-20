@@ -13,6 +13,7 @@ import {
   ensureSuccess,
   FIXTURE_LEAD_SOURCE,
   httpErrorLabel,
+  KPI_JOURNAL_PERIOD,
   KPI_UAT_PERIOD,
   KPI_UAT_TARGET_TYPE,
   kpiUatPeriodCandidate,
@@ -976,4 +977,22 @@ test("a non-2xx answer names the route and status instead of one opaque code", (
   assert.equal(httpErrorLabel('duplicate key value violates unique constraint "leads_pkey"'), "<redacted-error-body>");
   assert.equal(httpErrorLabel("lead 4f1c2b90 already won"), "<redacted-error-body>");
   assert.equal(httpErrorLabel("fahad@example.ae is not a user"), "<redacted-error-body>");
+});
+
+test("a journal written by the previous release stays readable", () => {
+  // The state root holds one journal per release, and the operations-clear gate
+  // parses all of them with the live release's scripts. If this release could
+  // not read its predecessor's `uat-<uuid>` period, the failed journal that
+  // motivated this very fix could never be recovered or aborted -- the deploy
+  // path would be wedged with no way forward.
+  assert.match("uat-4f1c2b90-2a3d-4a3e-9f1b-0c7d5e8a1b23", KPI_JOURNAL_PERIOD);
+  assert.match("2994-07", KPI_JOURNAL_PERIOD);
+  assert.match(PRODUCER, /KPI_JOURNAL_PERIOD\.test\(journal\.fixture_plan\.kpi_period\)/);
+  // Readable is not the same as plannable: nothing may plan the legacy shape.
+  assert.doesNotMatch("uat-4f1c2b90-2a3d-4a3e-9f1b-0c7d5e8a1b23", KPI_UAT_PERIOD);
+  for (let i = 0; i < 200; i += 1) assert.match(kpiUatPeriodCandidate(), KPI_UAT_PERIOD);
+  // And the read rule is still closed: free text remains rejected.
+  for (const bad of ["", "uat-", "1994-07", "2994-13", "2994-7", "postdeploy", "2994-07 "]) {
+    assert.doesNotMatch(bad, KPI_JOURNAL_PERIOD);
+  }
 });

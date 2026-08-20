@@ -29,7 +29,11 @@ LockPersonality=true
 RestrictRealtime=true
 RestrictNamespaces=true
 SystemCallArchitectures=native
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# AF_NETLINK is required, not optional: Next 16 calls os.networkInterfaces()
+# from its listen handler and libuv opens an AF_NETLINK socket to answer it.
+# Blocking it makes `next start` die with EAFNOSUPPORT before readiness
+# (production outage, 2026-08-20). The set stays closed: no AF_PACKET/AF_RAW.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 ExecStart=/usr/bin/node /opt/newme/current/node_modules/next/dist/bin/next start -p 3001
 ExecStartPost=+/usr/local/libexec/newme/newme-readiness.sh
 ExecStopPost=+/usr/local/libexec/newme/newme-forensic.sh

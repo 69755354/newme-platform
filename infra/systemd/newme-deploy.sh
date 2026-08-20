@@ -216,16 +216,28 @@ require_postdeploy_operations_clear() {
 }
 
 require_ci_gate_still_fresh() {
+  # The base64 blob only exists in the environment until
+  # materialize_ci_gate_audit_record() has written it to the root-owned record and
+  # unset the variable, so every re-check after that point must read the record.
+  # A check that could only read CI_GATE_AUDIT_BASE64 decoded an empty string and
+  # failed every non-bootstrap deploy with a misleading "evidence expired".
+  local record=""
+  if [ -z "${CI_GATE_AUDIT_BASE64:-}" ]; then
+    record="${CI_GATE_AUDIT_RECORD:-}"
+    [ "$record" = "$STATE_ROOT/ci-gate-audit.pending" ] || return 65
+  fi
   python3 - "${CI_RUN_COMPLETED_AT:-}" "${CI_GATE_AUDITED_AT:-}" "${CI_MAX_RUN_AGE_SECONDS:-}" \
-    "${CI_GATE_AUDIT_BASE64:-}" "${CI_GATE_AUDIT_SHA256:-}" <<'PY'
+    "${CI_GATE_AUDIT_BASE64:-}" "${CI_GATE_AUDIT_SHA256:-}" "$record" <<'PY'
 import base64
 import hashlib
 import json
+import os
 import re
+import stat
 import sys
 from datetime import datetime, timezone
 
-completed_raw, audited_raw, maximum_raw, encoded, expected_digest = sys.argv[1:]
+completed_raw, audited_raw, maximum_raw, encoded, expected_digest, record_path = sys.argv[1:]
 pattern = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$")
 if pattern.fullmatch(completed_raw) is None or pattern.fullmatch(audited_raw) is None:
     raise SystemExit(65)
@@ -233,10 +245,38 @@ if not maximum_raw.isdigit() or not 1 <= int(maximum_raw) <= 86400:
     raise SystemExit(65)
 completed = datetime.fromisoformat(completed_raw.replace("Z", "+00:00"))
 audited = datetime.fromisoformat(audited_raw.replace("Z", "+00:00"))
+def read_durable_record(path):
+    # Same trust the writer applied: regular file, root-owned, 0600, not a symlink,
+    # bounded size. The sha256 binding below is what actually authenticates it.
+    if not path.startswith("/"):
+        raise SystemExit(65)
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != 0
+            or metadata.st_gid != 0
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or not 0 < metadata.st_size <= 65536
+        ):
+            raise SystemExit(65)
+        payload = os.read(descriptor, metadata.st_size)
+    finally:
+        os.close(descriptor)
+    if len(payload) != metadata.st_size:
+        raise SystemExit(65)
+    return payload
+
+
 try:
-    audit_bytes = base64.b64decode(encoded, validate=True)
+    audit_bytes = (
+        base64.b64decode(encoded, validate=True)
+        if encoded
+        else read_durable_record(record_path)
+    )
     audit = json.loads(audit_bytes)
-except (ValueError, UnicodeError, json.JSONDecodeError):
+except (ValueError, UnicodeError, OSError, json.JSONDecodeError):
     raise SystemExit(65)
 if hashlib.sha256(audit_bytes).hexdigest() != expected_digest:
     raise SystemExit(65)

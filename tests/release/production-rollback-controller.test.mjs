@@ -125,6 +125,17 @@ test("production rollback controller restores app and versioned assets transacti
   assert.match(source, /NEWME_ASSET_SNAPSHOT_RECORD="\$SNAPSHOT_RECORD"/);
   assert.match(source, /NEWME_ASSET_SOURCE_ROOT="\$current" bash "\$ASSET_SNAPSHOT_HELPER" snapshot/);
   assert.match(source, /bash "\$ASSET_ROLLBACK_HELPER" "\$target_asset_backup"/);
+  // The helper refuses to restore while a versioned asset record is unresolved unless
+  // the caller declares recovery. Both sanctioned exits must declare it, or they are
+  // unreachable -- which is exactly how the pre-switch recovery path once bricked a
+  // stuck production deployment.
+  assert.match(source, /NEWME_VERSIONED_ASSET_RECOVERY=1 bash "\$ASSET_ROLLBACK_HELPER" "\$expected_backup"/);
+  assert.match(source, /NEWME_VERSIONED_ASSET_RECOVERY="\$asset_recovery" bash "\$ASSET_ROLLBACK_HELPER" "\$target_asset_backup"/);
+  // ...and the declaration stays conditional on the record naming that same backup,
+  // so an ordinary rollback never runs with the guard disarmed.
+  assert.match(source, /grep -Fxc "backup=\$target_asset_backup" "\$SYSTEMD_PENDING_RECORD"/);
+  assert.match(source, /asset_recovery=0/);
+  assert.doesNotMatch(source, /NEWME_VERSIONED_ASSET_RECOVERY=1 bash "\$ASSET_ROLLBACK_HELPER" "\$PENDING_LIVE_ASSET_BACKUP"/);
   assert.match(source, /bash "\$ASSET_ROLLBACK_HELPER" "\$PENDING_LIVE_ASSET_BACKUP"/);
   assert.match(source, /restore_original_transaction/);
   assert.match(source, /finalize_completed_transaction/);

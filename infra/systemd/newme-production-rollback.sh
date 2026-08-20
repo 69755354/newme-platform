@@ -438,7 +438,11 @@ recover_preswitch_deploy() {
   local expected_previous_rollback="$SYSTEMD_PENDING_PREVIOUS_ROLLBACK"
   local rollback_next="/opt/newme/current.rollback.transaction-$$"
   [ "$(readlink -f /opt/newme/current 2>/dev/null || true)" = "$expected_previous" ] || return 1
-  bash "$ASSET_ROLLBACK_HELPER" "$expected_backup" || return 1
+  # This is the canonical recovery path the helper's guard defers to, and the record
+  # is still on disk, so the restore has to declare itself as such. The helper
+  # re-verifies everything that matters: this process holds the release lock on fd 9,
+  # and "$expected_backup" must be the very backup the pending record names.
+  NEWME_VERSIONED_ASSET_RECOVERY=1 bash "$ASSET_ROLLBACK_HELPER" "$expected_backup" || return 1
   rm -f -- "$rollback_next" || return 1
   if [ -n "$expected_previous_rollback" ]; then
     ln -s "$expected_previous_rollback" "$rollback_next" || return 1
@@ -620,6 +624,11 @@ clear_pending_record() {
 restore_original_transaction() {
   load_pending_state || return 1
   switch_release_links "$PENDING_ORIGINAL_CURRENT" "$PENDING_ORIGINAL_ROLLBACK" || return 1
+  # Known gap, not a weakening: this restores the snapshot taken during *this*
+  # transaction, which by construction is not the backup a versioned asset record
+  # names, so recovery mode cannot honestly be declared here. If an interrupted
+  # deploy_recovery ever needs this path while such a record still exists, the
+  # helper will refuse and the operator must resolve the record first.
   bash "$ASSET_ROLLBACK_HELPER" "$PENDING_LIVE_ASSET_BACKUP" || return 1
   /usr/local/sbin/newme-service-control reset-failed \
     "automatic-rollback-recovery:reset-before-restart" || true
@@ -851,7 +860,16 @@ case "$action" in
 
     switch_release_links "$target_release" "$target_rollback"
     write_pending_state app_switched
-    bash "$ASSET_ROLLBACK_HELPER" "$target_asset_backup"
+    # deploy_recovery runs with the deployment's asset record still on disk and
+    # restores exactly the backup that record names, which is the helper's sanctioned
+    # recovery case; every other transaction leaves the guard fully armed. Asking the
+    # same question the helper asks keeps the declaration honest rather than blanket.
+    asset_recovery=0
+    if [ -f "$SYSTEMD_PENDING_RECORD" ] && [ ! -L "$SYSTEMD_PENDING_RECORD" ] &&
+      [ "$(grep -Fxc "backup=$target_asset_backup" "$SYSTEMD_PENDING_RECORD" || true)" = 1 ]; then
+      asset_recovery=1
+    fi
+    NEWME_VERSIONED_ASSET_RECOVERY="$asset_recovery" bash "$ASSET_ROLLBACK_HELPER" "$target_asset_backup"
     write_pending_state target_assets_restored
     safe_reason=${reason//[^A-Za-z0-9._:\/@+-]/-}
     safe_reason=${safe_reason:0:160}

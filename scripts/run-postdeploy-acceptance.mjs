@@ -162,16 +162,36 @@ function digestValue(value) {
   return sha256(canonicalJsonBytes(value));
 }
 
-function requireProtectedAncestors(filePath, label) {
+/**
+ * Every ancestor of a protected input must be a real directory, owned by root,
+ * granting no write permission to group or other.
+ *
+ * Group *identity* is deliberately not constrained. The immutable release tree
+ * is `root:<service group>` with mode 0550 by contract: `deploy-immutable.sh`
+ * sets that ownership and then verifies it, and `canonical-browser-uat.mjs`
+ * refuses a release root whose gid is 0, because the acceptance container is
+ * given precisely that group in order to read the tree. Requiring gid 0 here
+ * made `<release>/.audit/deploy-*.json` permanently unreadable, so acceptance
+ * refused every real release with `deployment_evidence_ancestor_untrusted`.
+ *
+ * Nothing is given up by dropping it: a directory entry can only be added,
+ * renamed, or removed by a writer, and the 0o022 mask below is what denies that
+ * to everyone except root. Read access to a directory cannot change what it
+ * contains.
+ *
+ * `readMetadata` is injectable because CI cannot create a root-owned directory,
+ * so the accepting half of this rule can only be proven against synthetic
+ * metadata.
+ */
+export function requireProtectedAncestors(filePath, label, readMetadata = lstatSync) {
   if (process.platform === "win32") refuse(`${label}_requires_posix`);
   let cursor = path.dirname(path.resolve(filePath));
   while (true) {
-    const metadata = lstatSync(cursor);
+    const metadata = readMetadata(cursor);
     if (
       !metadata.isDirectory()
       || metadata.isSymbolicLink()
       || metadata.uid !== 0
-      || metadata.gid !== 0
       || (metadata.mode & 0o022) !== 0
     ) refuse(`${label}_ancestor_untrusted`);
     const parent = path.dirname(cursor);

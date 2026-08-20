@@ -145,7 +145,11 @@ only after the same cleanup proof. Neither mode fabricates a ready bundle.
 The canonical producer creates the bundle and artifacts in a root-owned `0700`
 directory and makes every input file root-owned and `0400` or `0600`. Every
 ancestor directory to `/` is required to be root-owned and non-writable by group
-or other users. The verifier opens input files with `O_NOFOLLOW`, validates the
+or other users. Group *ownership* of an ancestor is not constrained, because the
+immutable release tree — which holds the deployment evidence the producer reads —
+is `root:<service group>` mode 0550 by contract, and the acceptance container
+reads that tree through exactly that group. A directory nobody but root may write
+cannot have its entries changed, whoever may read it. The verifier opens input files with `O_NOFOLLOW`, validates the
 opened descriptor with `fstat`, and reads from that same descriptor. It accepts
 only the fixed intake path and a journal in the exact `ready` state:
 

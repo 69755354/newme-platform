@@ -9,6 +9,7 @@ import {
   assertExactPaymentKpiRestoration,
   assertNoServiceRestartSinceDeploy,
   compareFixtureInventory,
+  requireProtectedAncestors,
   verifyAlertProviderReadback,
 } from "../../scripts/run-postdeploy-acceptance.mjs";
 import { canonicalJsonBytes } from "../../scripts/postdeploy-receipt.mjs";
@@ -408,5 +409,107 @@ test("deploy-time service identity rejects a restart even when NRestarts is unch
   assert.throws(
     () => assertNoServiceRestartSinceDeploy(baseline, { ...baseline, main_pid: 4101, invocation_id: "b".repeat(32), exec_main_start_monotonic: 100100 }),
     /service_restarted_since_deploy/,
+  );
+});
+
+// The acceptance producer reads the deployment evidence from inside the
+// immutable release tree, which the deploy path owns as root:<service group>
+// mode 0550. These four arms pin the rule that made that readable without
+// making it lax: root ownership and the absence of any group/other write bit are
+// what is required, and the group id is not.
+function ancestorMetadata({ uid = 0, gid = 0, mode = 0o550, directory = true, symlink = false } = {}) {
+  return {
+    uid,
+    gid,
+    mode,
+    isDirectory: () => directory,
+    isSymbolicLink: () => symlink,
+  };
+}
+
+function ancestorChain(overridesByPath = {}) {
+  return (cursor) => ancestorMetadata(overridesByPath[cursor] ?? {});
+}
+
+const RELEASE_EVIDENCE_PATH =
+  "/opt/newme/releases/" + "a".repeat(40) + "/.audit/deploy-20260820T025658Z-747121.json";
+
+test("protected ancestors accept the release tree's non-root read group", () => {
+  // Exactly what the host has: the release directory is root:ubuntu 0550 and its
+  // .audit directory is root:root 0700. Before the fix this threw
+  // deployment_evidence_ancestor_untrusted, which is what blocked acceptance.
+  const releaseDir = "/opt/newme/releases/" + "a".repeat(40);
+  assert.doesNotThrow(() =>
+    requireProtectedAncestors(
+      RELEASE_EVIDENCE_PATH,
+      "deployment_evidence",
+      ancestorChain({
+        [releaseDir + "/.audit"]: { gid: 0, mode: 0o700 },
+        [releaseDir]: { gid: 1000, mode: 0o550 },
+        "/opt/newme/releases": { mode: 0o755 },
+        "/opt/newme": { mode: 0o755 },
+        "/opt": { mode: 0o755 },
+        "/": { mode: 0o755 },
+      }),
+    ),
+  );
+});
+
+test("protected ancestors still refuse a group-writable directory", () => {
+  // The negative control for the arm above. Without it, relaxing the group id
+  // would be indistinguishable from deleting the ancestor check: this is the
+  // case where a non-root group could replace the evidence file.
+  const releaseDir = "/opt/newme/releases/" + "a".repeat(40);
+  assert.throws(
+    () =>
+      requireProtectedAncestors(
+        RELEASE_EVIDENCE_PATH,
+        "deployment_evidence",
+        ancestorChain({
+          [releaseDir + "/.audit"]: { gid: 0, mode: 0o700 },
+          [releaseDir]: { gid: 1000, mode: 0o570 },
+        }),
+      ),
+    (error) => error.code === "deployment_evidence_ancestor_untrusted",
+  );
+});
+
+test("protected ancestors refuse a world-writable or non-root ancestor", () => {
+  assert.throws(
+    () =>
+      requireProtectedAncestors(RELEASE_EVIDENCE_PATH, "deployment_evidence", ancestorChain({
+        "/opt": { mode: 0o757 },
+      })),
+    (error) => error.code === "deployment_evidence_ancestor_untrusted",
+  );
+  assert.throws(
+    () =>
+      requireProtectedAncestors(RELEASE_EVIDENCE_PATH, "deployment_evidence", ancestorChain({
+        "/opt/newme": { uid: 1000 },
+      })),
+    (error) => error.code === "deployment_evidence_ancestor_untrusted",
+  );
+  assert.throws(
+    () =>
+      requireProtectedAncestors(RELEASE_EVIDENCE_PATH, "deployment_evidence", ancestorChain({
+        "/opt/newme/releases": { symlink: true },
+      })),
+    (error) => error.code === "deployment_evidence_ancestor_untrusted",
+  );
+});
+
+test("the ancestor rule stays tied to the ownership the deploy path enforces", () => {
+  // If the deploy path ever stops owning the release tree as root:<group> 0550,
+  // or the browser runner stops requiring a non-root group, the reasoning behind
+  // the rule above no longer holds and this test must be revisited.
+  const deploy = readFileSync(path.join(ROOT, "scripts/deploy-immutable.sh"), "utf8");
+  assert.match(deploy, /chown -hR root:ubuntu "\$STAGE"/);
+  assert.match(deploy, /type d -exec chmod 0550/);
+  assert.match(deploy, /protected release ownership is not root:ubuntu/);
+  assert.match(CANONICAL_BROWSER, /browser_release_group_invalid/);
+  // And the producer must not have quietly regained the gid requirement.
+  assert.doesNotMatch(
+    PRODUCER.slice(PRODUCER.indexOf("function requireProtectedAncestors"), PRODUCER.indexOf("function readProtectedFile")),
+    /metadata\.gid !== 0/,
   );
 });

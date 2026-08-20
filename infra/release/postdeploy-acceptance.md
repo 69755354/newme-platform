@@ -40,6 +40,13 @@ gate.
 
 ## Produce the redacted bundle
 
+The fixture's Lead rows carry `source = other`, exported as `FIXTURE_LEAD_SOURCE`
+and bound by contract test to the closed taxonomy `leads_source_check` defines.
+Fixture rows are identified by their `marker` in `customer_name` and `notes`, so
+`source` carries no identification duty; an invented value such as
+`postdeploy_uat` merely made the seed unrunnable against production, where that
+constraint has always been in force.
+
 Use `infra/release/postdeploy-evidence-v1.schema.json` and
 `infra/release/postdeploy-acceptance-policy-v1.json`. The bundle must bind the
 deployed release SHA, build ID, release-candidate GitHub Actions run ID and

@@ -37,7 +37,10 @@ export function useAnalyticsData() {
 }
 
 export default function AnalyticsPage() {
-  const { loading: roleLoading, blocked, role } = useRequireRole(["admin", "boss", "sales"]);
+  // operator included: /api/analytics/summary computes isManagement as
+  // ["admin","boss","operator"], so the server already serves this role the
+  // management view the sidebar sends them to.
+  const { loading: roleLoading, blocked, role } = useRequireRole(["admin", "boss", "operator", "sales"]);
   const { t } = useLanguage();
 
   const [analyticsData, setAnalyticsData] = useState<AnalyticsSummary | null>(null);

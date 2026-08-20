@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { CONTRACT_READ_ROLES } from "@/lib/contract-access.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
@@ -117,9 +118,7 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
 const STATUS_REASON_REQUIRED = new Set(["terminated"]);
 
 export default function ContractDetailPage() {
-  const { loading: roleLoading, blocked } = useRequireRole([
-    "admin", "boss", "sales", "finance", "operator",
-  ]);
+  const { loading: roleLoading, blocked } = useRequireRole([...CONTRACT_READ_ROLES]);
   const params = useParams();
   const router = useRouter();
   const { t } = useLanguage();

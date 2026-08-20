@@ -419,10 +419,44 @@ function semanticAssertion(id, value) {
   return { id, value };
 }
 
+/**
+ * The sidebar the signed-in role must see, in order.
+ *
+ * This duplicates src/lib/nav.ts, and the duplication is forced: only this file
+ * and canonical-browser-uat.mjs are mounted into the digest-pinned browser
+ * image, so there is nothing to import at runtime, and nav.ts is TypeScript in
+ * any case. What is NOT forced is the drift -- /cable-costing was added to both
+ * arrays in nav.ts and this list did not follow, so every session refused on
+ * navigation_visible. tests/release/postdeploy-browser-uat.test.mjs parses the
+ * hrefs out of nav.ts and compares them to these arrays, in order, so the next
+ * sidebar entry breaks CI rather than a production acceptance run.
+ */
+export const CANONICAL_NAV_BY_ROLE = Object.freeze({
+  admin: Object.freeze([
+    "/dashboard", "/leads", "/quotes", "/cable-costing", "/contracts",
+    "/pipeline", "/analytics", "/ads", "/products", "/team", "/projects", "/settings",
+  ]),
+  boss: Object.freeze([
+    "/dashboard", "/leads", "/quotes", "/cable-costing", "/contracts",
+    "/pipeline", "/analytics", "/ads", "/products", "/team", "/projects", "/settings",
+  ]),
+  // No /team: src/app/actions/team.ts refuses operator, so the sidebar does not
+  // offer the link. Keyed per role rather than "sales vs everyone else" because
+  // that assumption is what let /team stay in operator's sidebar unnoticed.
+  operator: Object.freeze([
+    "/dashboard", "/leads", "/quotes", "/cable-costing", "/contracts",
+    "/pipeline", "/analytics", "/ads", "/products", "/projects", "/settings",
+  ]),
+  sales: Object.freeze([
+    "/workbench", "/leads", "/quotes", "/cable-costing", "/contracts",
+    "/payments", "/pipeline", "/analytics", "/products",
+  ]),
+});
+
 function canonicalNavigation(role) {
-  return role === "sales"
-    ? ["/workbench", "/leads", "/quotes", "/contracts", "/payments", "/pipeline", "/analytics", "/products"]
-    : ["/dashboard", "/leads", "/quotes", "/contracts", "/pipeline", "/analytics", "/ads", "/products", "/team", "/projects", "/settings"];
+  const expected = CANONICAL_NAV_BY_ROLE[role];
+  if (!expected) fail("navigation_contract_role_unknown");
+  return [...expected];
 }
 
 /**

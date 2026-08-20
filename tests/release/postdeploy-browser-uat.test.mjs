@@ -9,6 +9,7 @@ import {
   BROWSER_NAME,
   BROWSER_RUNNER_SOURCE_PATH,
   BROWSER_VERSION,
+  CANONICAL_NAV_BY_ROLE,
   CANONICAL_ORIGIN,
   INPUT_VERSION,
   OUTPUT_VERSION,
@@ -365,4 +366,55 @@ test("the login step waits for the control the production page renders client si
   assert.match(step, /await visible\(page\.locator\("#email"\), "email_control_missing"\)/);
   assert.match(step, /await visible\(page\.locator\("#password"\), "password_control_missing"\)/);
   assert.doesNotMatch(step, /#email"\)\.count\(\)/);
+});
+
+/**
+ * The runner's navigation contract must equal the sidebar it is judging.
+ *
+ * nav.ts is the single source of truth and this file is the only thing that can
+ * hold the runner's copy of it to account: the browser image mounts the two
+ * acceptance scripts and nothing else, so the runner cannot read nav.ts at the
+ * time it matters. Parsing hrefs in declaration order is enough -- order is
+ * asserted on the server too, because the runner compares the rendered list to
+ * this one with JSON.stringify.
+ */
+function navHrefs(source, arrayName) {
+  const start = source.indexOf(`export const ${arrayName}: NavItem[] = [`);
+  assert.ok(start >= 0, `${arrayName} not found in src/lib/nav.ts`);
+  const end = source.indexOf("\n];", start);
+  assert.ok(end > start, `${arrayName} is not terminated in src/lib/nav.ts`);
+  const body = source.slice(start, end);
+  // One entry per `{ href: ... }` object, carrying its optional `roles` audience
+  // so a role-narrowed item can be filtered exactly as navForRole() filters it.
+  return [...body.matchAll(/\{\s*href:\s*"([^"]+)"([^}]*)\}/g)].map((match) => {
+    const roles = [...match[2].matchAll(/"([a-z_]+)"/g)].map((role) => role[1]);
+    const declaresRoles = /roles:\s*\[/.test(match[2]);
+    return { href: match[1], roles: declaresRoles ? roles : null };
+  });
+}
+
+test("the acceptance navigation contract matches src/lib/nav.ts for every role", () => {
+  const nav = readFileSync(path.join(ROOT, "src/lib/nav.ts"), "utf8");
+
+  const mgmt = navHrefs(nav, "MGMT_NAV");
+  const sales = navHrefs(nav, "SALES_NAV");
+
+  // Guard the parser itself: a regex that silently matched nothing would make
+  // every comparison below trivially pass.
+  assert.ok(mgmt.length >= 10, `parsed only ${mgmt.length} management hrefs`);
+  assert.ok(sales.length >= 8, `parsed only ${sales.length} sales hrefs`);
+  assert.ok(mgmt.some((entry) => entry.roles), "no MGMT_NAV item declares a narrowed audience");
+  for (const array of [mgmt, sales]) {
+    assert.ok(array.some((entry) => entry.href === "/cable-costing"));
+  }
+
+  assert.deepEqual(Object.keys(CANONICAL_NAV_BY_ROLE).sort(), [...REQUIRED_ROLES].sort());
+
+  for (const role of REQUIRED_ROLES) {
+    const source = role === "sales" ? sales : mgmt;
+    const expected = source
+      .filter((entry) => !entry.roles || entry.roles.includes(role))
+      .map((entry) => entry.href);
+    assert.deepEqual([...CANONICAL_NAV_BY_ROLE[role]], expected, `sidebar contract for ${role}`);
+  }
 });

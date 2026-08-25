@@ -23,6 +23,10 @@ const PUBLIC_API_PATHS = new Set([
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/me",
+  // Anonymous website intake owns its origin, validation and abuse boundaries.
+  // Keeping this exact path here lets the handler run without weakening any
+  // other API route or exposing a generic public prefix.
+  "/api/public/leads",
 ]);
 const SESSION_BOOTSTRAP_PATH = "/api/auth/session";
 const EXTERNAL_AUTHORIZED_API_PATHS = new Set([

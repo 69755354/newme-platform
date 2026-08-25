@@ -64,6 +64,26 @@ const nextConfig: NextConfig = {
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
         ],
       },
+      {
+        source: "/api/public/leads",
+        has: [{ type: "header", key: "Origin", value: "https://newme.ae" }],
+        headers: [
+          { key: "Access-Control-Allow-Credentials", value: "true" },
+          { key: "Access-Control-Allow-Origin", value: "https://newme.ae" },
+          { key: "Access-Control-Allow-Methods", value: "POST,OPTIONS" },
+          { key: "Access-Control-Allow-Headers", value: "Content-Type" },
+        ],
+      },
+      {
+        source: "/api/public/leads",
+        has: [{ type: "header", key: "Origin", value: "https://www.newme.ae" }],
+        headers: [
+          { key: "Access-Control-Allow-Credentials", value: "true" },
+          { key: "Access-Control-Allow-Origin", value: "https://www.newme.ae" },
+          { key: "Access-Control-Allow-Methods", value: "POST,OPTIONS" },
+          { key: "Access-Control-Allow-Headers", value: "Content-Type" },
+        ],
+      },
     ];
   },
 

@@ -135,6 +135,7 @@ test("the server proxy denies inactive sessions before protected APIs or pages",
     "/api/auth/login",
     "/api/auth/logout",
     "/api/auth/me",
+    "/api/public/leads",
   ]);
   assert.match(proxy, /EXTERNAL_AUTHORIZED_API_PATHS/);
   assert.match(proxy, /"\/api\/leads\/meta-capi"/);

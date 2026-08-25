@@ -40,6 +40,7 @@ test("Dashboard defaults the review to Today and exposes custom range selection"
 test("Dashboard navigation aborts the ownership request without a console error", async () => {
   const page = await read("src/app/(dashboard)/dashboard/page.tsx");
   assert.match(page, /fetch\("\/api\/dashboard\/team-ownership", \{ signal: controller\.signal \}\)/);
-  assert.match(page, /if \(!controller\.signal\.aborted\) console\.error\("team-ownership fetch failed", e\)/);
+  assert.match(page, /if \(!controller\.signal\.aborted\) console\.warn\("team-ownership fetch failed", e\)/);
+  assert.doesNotMatch(page, /console\.error\("team-ownership fetch failed"/);
   assert.match(page, /return \(\) => controller\.abort\(\)/);
 });

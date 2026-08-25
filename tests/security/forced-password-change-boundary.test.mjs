@@ -489,7 +489,7 @@ function serviceRoleRoutes() {
   return found.sort();
 }
 
-test("no service-role route is reachable by a forced session", async () => {
+test("no authenticated service-role route is reachable by a forced session", async () => {
   const routes = serviceRoleRoutes();
   assert.ok(routes.length >= 15, `only ${routes.length} service-role routes found — the inventory has drifted`);
 
@@ -541,11 +541,22 @@ test("no service-role route is reachable by a forced session", async () => {
     assertRefused(await forcedProxy.proxy(request(route, "POST")), `forced session on ${route}`);
   }
 
-  // And every remaining service-role route, exercised through the proxy rather
+  // Public website ingress does not derive any authority from a carried OS
+  // session: anonymous visitors and forced-session callers receive the same
+  // narrow Origin-gated submission surface. Keep that exception exact so a new
+  // service-role route cannot silently become public by sharing the prefix.
+  const publicIngress = routes.filter((route) => route.startsWith("/api/public/"));
+  assert.deepEqual(publicIngress, ["/api/public/leads"]);
+  for (const method of ["GET", "POST"]) {
+    const response = await forcedProxy.proxy(request("/api/public/leads", method));
+    assert.equal(response.status, 200, `public website ingress was not session-neutral for ${method}`);
+  }
+
+  // And every remaining authenticated service-role route, exercised through the proxy rather
   // than reasoned about: this is the "behavior-test every service-role route"
   // half of the closure.
   for (const route of routes) {
-    if (FORCED_SESSION_ALLOWED_API_PATHS.has(route)) continue;
+    if (FORCED_SESSION_ALLOWED_API_PATHS.has(route) || route === "/api/public/leads") continue;
     const concrete = route.replaceAll(/\[[^\]]+\]/g, "00000000-0000-0000-0000-000000000001");
     for (const method of ["GET", "POST"]) {
       assertRefused(await forcedProxy.proxy(request(concrete, method)), `forced ${method} ${concrete}`);

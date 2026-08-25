@@ -55,6 +55,7 @@ function websiteRequest(body, headers = {}) {
 function loadRoute({ insertError = null, taskError = null } = {}) {
   const inserts = [];
   const tasks = [];
+  const capi = [];
   const chain = {
     insert(value) { inserts.push(value); return this; },
     select() { return this; },
@@ -76,12 +77,15 @@ function loadRoute({ insertError = null, taskError = null } = {}) {
         return { error: taskError };
       },
     },
+    "@/lib/meta-capi": {
+      sendMetaCapiLead: async (input) => { capi.push(input); },
+    },
     "@/lib/logger": {
       genReqId: () => "request-1",
       logger: { error() {}, warn() {}, info() {} },
     },
   });
-  return { route, inserts, tasks };
+  return { route, inserts, tasks, capi };
 }
 
 test.beforeEach(() => {
@@ -111,6 +115,25 @@ test("website payloads are normalized into bounded CRM fields", () => {
     notes: "Message: Please call after 5pm.\nFloors: G+2\nWebsite reference: NM-ABC123",
     turnstileToken: null,
     honeypot: false,
+    attribution: {
+      eventId: null,
+      fbclid: null,
+      fbc: null,
+      fbp: null,
+      landingPage: null,
+      referrer: null,
+      utmSource: null,
+      utmMedium: null,
+      utmCampaign: null,
+      utmContent: null,
+      utmTerm: null,
+      campaignId: null,
+      campaignName: null,
+      adsetId: null,
+      adsetName: null,
+      adId: null,
+      adName: null,
+    },
   });
 });
 
@@ -151,8 +174,8 @@ test("only the two canonical website origins receive CORS access", async () => {
   assert.equal(preflight.headers.get("access-control-allow-credentials"), null);
 });
 
-test("a valid request creates an unassigned website lead and follow-up", async () => {
-  const { route, inserts, tasks } = loadRoute();
+test("a valid request creates an attributed website lead, follow-up, and CAPI event", async () => {
+  const { route, inserts, tasks, capi } = loadRoute();
   const result = await route.POST(websiteRequest({
     name: "Nadia",
     phone: "+971 50 123 4567",
@@ -160,6 +183,18 @@ test("a valid request creates an unassigned website lead and follow-up", async (
     type: "Villa",
     systems: ["Lighting", "Climate"],
     message: "Please call.",
+    event_id: "web-123",
+    fbclid: "fb-click",
+    fbc: "fb.1.123.fb-click",
+    fbp: "fb.1.123.456",
+    landing_page: "https://newme.ae/budget-estimator/?utm_source=meta",
+    referrer: "https://facebook.com/",
+    utm_source: "meta",
+    utm_medium: "paid_social",
+    utm_campaign: "villa-leads",
+    campaign_id: "cmp-1",
+    adset_id: "set-1",
+    ad_id: "ad-1",
   }));
   assert.equal(result.status, 201);
   assert.deepEqual(await result.json(), { ok: true });
@@ -174,6 +209,27 @@ test("a valid request creates an unassigned website lead and follow-up", async (
     property_type: "Villa",
     service_needs: ["Lighting", "Climate"],
     notes: "Message: Please call.",
+    source_channel: "paid_social",
+    source_platform: "meta",
+    landing_page: "https://newme.ae/budget-estimator/?utm_source=meta",
+    referrer: "https://facebook.com/",
+    fbclid: "fb-click",
+    meta_click_id: "fb.1.123.fb-click",
+    utm_source: "meta",
+    utm_medium: "paid_social",
+    utm_campaign: "villa-leads",
+    utm_content: null,
+    utm_term: null,
+    campaign_id: "cmp-1",
+    campaign_name: null,
+    adset_id: "set-1",
+    adset_name: null,
+    ad_id: "ad-1",
+    ad_name: null,
+    meta_ad_id: "ad-1",
+    meta_campaign: null,
+    first_touch_at: inserts[0].first_touch_at,
+    raw_import_data: { intake: "newme.ae", event_id: "web-123", fbp: "fb.1.123.456" },
     quality: "pending",
     stage: "new",
     assigned_to: null,
@@ -181,9 +237,13 @@ test("a valid request creates an unassigned website lead and follow-up", async (
     next_followup_date: inserts[0].next_followup_date,
   });
   assert.match(inserts[0].next_followup_date, /^\d{4}-\d{2}-\d{2}$/);
+  assert.match(inserts[0].first_touch_at, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(tasks.length, 1);
   assert.equal(tasks[0].leadId, "11111111-1111-4111-8111-111111111111");
   assert.equal(tasks[0].assigneeId, null);
+  assert.equal(capi.length, 1);
+  assert.equal(capi[0].leadId, "11111111-1111-4111-8111-111111111111");
+  assert.equal(capi[0].input.attribution.eventId, "web-123");
 });
 
 test("honeypot submissions look successful but never touch the database", async () => {

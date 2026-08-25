@@ -10,6 +10,7 @@ import {
 } from "@/lib/public-lead";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createFollowUpTask } from "@/lib/tasks";
+import { sendMetaCapiLead } from "@/lib/meta-capi";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -122,6 +123,31 @@ export async function POST(request: Request) {
       property_type: parsed.value.propertyType,
       service_needs: parsed.value.serviceNeeds,
       notes: parsed.value.notes,
+      source_channel: parsed.value.attribution.utmMedium || "website",
+      source_platform: parsed.value.attribution.utmSource || "website",
+      landing_page: parsed.value.attribution.landingPage,
+      referrer: parsed.value.attribution.referrer,
+      fbclid: parsed.value.attribution.fbclid,
+      meta_click_id: parsed.value.attribution.fbc,
+      utm_source: parsed.value.attribution.utmSource,
+      utm_medium: parsed.value.attribution.utmMedium,
+      utm_campaign: parsed.value.attribution.utmCampaign,
+      utm_content: parsed.value.attribution.utmContent,
+      utm_term: parsed.value.attribution.utmTerm,
+      campaign_id: parsed.value.attribution.campaignId,
+      campaign_name: parsed.value.attribution.campaignName,
+      adset_id: parsed.value.attribution.adsetId,
+      adset_name: parsed.value.attribution.adsetName,
+      ad_id: parsed.value.attribution.adId,
+      ad_name: parsed.value.attribution.adName,
+      meta_ad_id: parsed.value.attribution.adId,
+      meta_campaign: parsed.value.attribution.campaignName,
+      first_touch_at: new Date().toISOString(),
+      raw_import_data: {
+        intake: "newme.ae",
+        event_id: parsed.value.attribution.eventId,
+        fbp: parsed.value.attribution.fbp,
+      },
       quality: "pending",
       stage: "new",
       assigned_to: null,
@@ -156,6 +182,23 @@ export async function POST(request: Request) {
       lead_id: data.id,
       code: taskError.code,
     }, "website_lead_followup_failed");
+  }
+
+  try {
+    await sendMetaCapiLead({
+      leadId: data.id,
+      input: parsed.value,
+      clientIp: ip,
+      clientUserAgent: request.headers.get("user-agent"),
+    });
+  } catch (capiError) {
+    logger.warn({
+      route: "/api/public/leads",
+      operation: "send_meta_capi_lead",
+      request_id: requestId,
+      lead_id: data.id,
+      error: capiError instanceof Error ? capiError.message : "unknown_error",
+    }, "website_lead_capi_failed");
   }
 
   logger.info({

@@ -700,7 +700,7 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
   const alternateLocale = locale === "en" ? "zh" : "en";
   const alternateCopy = UI_COPY[alternateLocale];
   const leadsHeading = () => page.getByRole("heading", { name: copy.leads, exact: true });
-  const fixtureCard = () => page.locator('div[draggable="true"]').filter({ hasText: input.fixture.marker });
+  const fixtureCard = () => page.locator(`div[draggable="true"][data-lead-id="${input.fixture.lead_id}"]`);
   const openFixtureCollection = async () => {
     if (safePathname(page.url()) !== "/leads") {
       await page.goto("/leads", { waitUntil: "domcontentloaded" });

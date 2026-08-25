@@ -39,6 +39,7 @@ const ROOT = path.resolve(import.meta.dirname, "../..");
 const SOURCE = readFileSync(path.join(ROOT, BROWSER_RUNNER_SOURCE_PATH), "utf8");
 const ALLOWED_ORIGIN_STRINGS = [CANONICAL_ORIGIN, "https://vfopmpxlhwzpxqegayew.supabase.co"];
 const BULK_BAR = readFileSync(path.join(ROOT, "src/app/(dashboard)/leads/_components/LeadsBulkTransferBar.tsx"), "utf8");
+const LEAD_CARD = readFileSync(path.join(ROOT, "src/app/(dashboard)/leads/_components/LeadCard.tsx"), "utf8");
 const TRANSLATIONS = readFileSync(path.join(ROOT, "src/lib/i18n/translations.ts"), "utf8");
 const SENSITIVE_UI = [
   "src/components/dashboard/DashboardSidebar.tsx",
@@ -105,6 +106,9 @@ test("browser UAT runtime is immutable, stdin-only, desktop, dual-locale, and ha
   assert.match(SOURCE, /export function routeDecision\(url\)[\s\S]*ALLOWED_HTTP_ORIGINS\.has\(origin\)[\s\S]*return "abort";\n\}/);
   assert.match(SOURCE, /context\.routeWebSocket\("\*\*\/\*"[\s\S]*!ALLOWED_HTTP_ORIGINS\.has\(origin\)[\s\S]*webSocketRoute\.close\([\s\S]*webSocketRoute\.connectToServer\(\)/);
   assert.match(SOURCE, /openFixtureCollection\(\)[\s\S]*recordStep\("contract_list_visible"/);
+  assert.match(LEAD_CARD, /<Card[\s\S]*draggable[\s\S]*data-lead-id=\{lead\.id\}/);
+  assert.match(SOURCE, /div\[draggable="true"\]\[data-lead-id="\$\{input\.fixture\.lead_id\}"\]/);
+  assert.doesNotMatch(SOURCE, /fixtureCard = \(\) =>[\s\S]*filter\(\{ hasText: input\.fixture\.marker \}\)/);
   assert.match(SOURCE, /fixture_contract_link_missing[\s\S]*fixture_contract_marker_missing/);
   assert.match(SOURCE, /"Leads"[\s\S]*"线索"[\s\S]*"合同管理"/);
   assert.match(SOURCE, /non_subject_dynamic_text_hidden: true[\s\S]*evidence_copy_visible: true[\s\S]*input_values_hidden: true/);

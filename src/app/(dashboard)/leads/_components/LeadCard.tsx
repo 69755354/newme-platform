@@ -182,6 +182,7 @@ export function LeadCard({
   return (
     <Card
       draggable
+      data-lead-id={lead.id}
       onDragStart={(e) => onDragStart(e, lead.id)}
       className={cn(
         "cursor-pointer transition-all duration-150 group relative shrink-0",

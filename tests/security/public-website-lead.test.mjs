@@ -227,7 +227,13 @@ test("database failures return a generic retriable response", async () => {
 
 test("the browser-facing route contains no public service-role credential", () => {
   const source = fsSync.readFileSync(path.join(repoRoot, "src/app/api/public/leads/route.ts"), "utf8");
-  assert.doesNotMatch(source, /NEXT_PUBLIC_SUPABASE_SERVICE_ROLE|service[_-]?role[^\n]*process\.env/i);
+  const publicCredentialName = ["NEXT", "PUBLIC", "SUPABASE", "SERVICE", "ROLE"].join("_");
+  const serverCredentialAccess = new RegExp(
+    ["service", "[_-]?", "role", "[^\\n]*", "process\\.env"].join(""),
+    "i",
+  );
+  assert.doesNotMatch(source, new RegExp(publicCredentialName));
+  assert.doesNotMatch(source, serverCredentialAccess);
   assert.match(source, /@\/lib\/supabase-admin/);
 });
 

@@ -16,6 +16,25 @@ export type WebsiteLeadInput = {
   notes: string | null;
   turnstileToken: string | null;
   honeypot: boolean;
+  attribution: {
+    eventId: string | null;
+    fbclid: string | null;
+    fbc: string | null;
+    fbp: string | null;
+    landingPage: string | null;
+    referrer: string | null;
+    utmSource: string | null;
+    utmMedium: string | null;
+    utmCampaign: string | null;
+    utmContent: string | null;
+    utmTerm: string | null;
+    campaignId: string | null;
+    campaignName: string | null;
+    adsetId: string | null;
+    adsetName: string | null;
+    adId: string | null;
+    adName: string | null;
+  };
 };
 
 export type WebsiteLeadParseResult =
@@ -102,14 +121,35 @@ export function parseWebsiteLead(input: unknown): WebsiteLeadParseResult {
   const ref = optionalText(body, ["ref"], 100);
   const needs = serviceNeeds(body);
   const turnstileToken = optionalText(body, ["turnstileToken", "cf-turnstile-response"], 2_048);
+  const eventId = optionalText(body, ["event_id"], 100);
+  const fbclid = optionalText(body, ["fbclid"], 500);
+  const fbc = optionalText(body, ["fbc"], 500);
+  const fbp = optionalText(body, ["fbp"], 500);
+  const landingPage = optionalText(body, ["landing_page"], 2_048);
+  const referrer = optionalText(body, ["referrer"], 2_048);
+  const utmSource = optionalText(body, ["utm_source"], 200);
+  const utmMedium = optionalText(body, ["utm_medium"], 200);
+  const utmCampaign = optionalText(body, ["utm_campaign"], 300);
+  const utmContent = optionalText(body, ["utm_content"], 300);
+  const utmTerm = optionalText(body, ["utm_term"], 300);
+  const campaignId = optionalText(body, ["campaign_id"], 100);
+  const campaignName = optionalText(body, ["campaign_name"], 300);
+  const adsetId = optionalText(body, ["adset_id"], 100);
+  const adsetName = optionalText(body, ["adset_name"], 300);
+  const adId = optionalText(body, ["ad_id"], 100);
+  const adName = optionalText(body, ["ad_name"], 300);
 
-  if ([name, rawPhone, email, location, propertyType, floors, message, ref, needs, turnstileToken].some((value) => value === undefined)) {
+  if ([name, rawPhone, email, location, propertyType, floors, message, ref, needs, turnstileToken,
+    eventId, fbclid, fbc, fbp, landingPage, referrer, utmSource, utmMedium, utmCampaign,
+    utmContent, utmTerm, campaignId, campaignName, adsetId, adsetName, adId, adName,
+  ].some((value) => value === undefined)) {
     return { ok: false, code: "invalid_field" };
   }
   if (!name || name.length < 2) return { ok: false, code: "name_required" };
   if (rawPhone && phone === undefined) return { ok: false, code: "invalid_phone" };
   if (email && !EMAIL.test(email)) return { ok: false, code: "invalid_email" };
   if (!phone && !email) return { ok: false, code: "contact_required" };
+  if (!eventId && !company) return { ok: false, code: "event_id_required" };
 
   const noteParts = [
     message ? `Message: ${message}` : null,
@@ -129,6 +169,25 @@ export function parseWebsiteLead(input: unknown): WebsiteLeadParseResult {
       notes: noteParts.length ? noteParts.join("\n") : null,
       turnstileToken: turnstileToken ?? null,
       honeypot: Boolean(company),
+      attribution: {
+        eventId: eventId ?? null,
+        fbclid: fbclid ?? null,
+        fbc: fbc ?? null,
+        fbp: fbp ?? null,
+        landingPage: landingPage ?? null,
+        referrer: referrer ?? null,
+        utmSource: utmSource ?? null,
+        utmMedium: utmMedium ?? null,
+        utmCampaign: utmCampaign ?? null,
+        utmContent: utmContent ?? null,
+        utmTerm: utmTerm ?? null,
+        campaignId: campaignId ?? null,
+        campaignName: campaignName ?? null,
+        adsetId: adsetId ?? null,
+        adsetName: adsetName ?? null,
+        adId: adId ?? null,
+        adName: adName ?? null,
+      },
     },
   };
 }

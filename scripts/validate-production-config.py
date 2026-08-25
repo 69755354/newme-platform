@@ -18,6 +18,8 @@ EXPECTED_SUPABASE_URL = "https://vfopmpxlhwzpxqegayew.supabase.co"
 TOKEN_PATTERN = re.compile(r"[0-9a-f]{64}")
 API_KEY_PATTERN = re.compile(r"[A-Za-z0-9._-]{20,2048}")
 KEY_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+META_PIXEL_PATTERN = re.compile(r"[0-9]{5,32}")
+META_GRAPH_VERSION_PATTERN = re.compile(r"v[0-9]{1,3}\.[0-9]{1,3}")
 
 
 class ConfigError(RuntimeError):
@@ -135,6 +137,11 @@ def main() -> int:
         require_exact(runtime, "NEXT_PUBLIC_SITE_URL", EXPECTED_SITE_URL, "runtime")
         if not TOKEN_PATTERN.fullmatch(runtime.get("NEWME_READINESS_TOKEN", "")):
             raise ConfigError("runtime NEWME_READINESS_TOKEN is missing or malformed")
+        if not META_PIXEL_PATTERN.fullmatch(runtime.get("META_PIXEL_ID", "")):
+            raise ConfigError("runtime META_PIXEL_ID is missing or malformed")
+        require_api_key(runtime, "META_CAPI_ACCESS_TOKEN", "runtime")
+        if not META_GRAPH_VERSION_PATTERN.fullmatch(runtime.get("META_GRAPH_API_VERSION", "")):
+            raise ConfigError("runtime META_GRAPH_API_VERSION is missing or malformed")
         require_exact(release, "NEXT_PUBLIC_SUPABASE_URL", EXPECTED_SUPABASE_URL, "release")
         publishable_key = require_api_key(
             release, "NEXT_PUBLIC_SUPABASE_ANON_KEY", "release"

@@ -73,8 +73,8 @@ export async function GET(request: Request) {
     // ─── 2. Leads from meta ───
     const { data: metaLeads, error: leadsErr } = await supabase
       .from("leads")
-      .select("id, campaign_name, stage, quotation_value, ai_quality, source, final_status")
-      .in("source", ["ins", "fb"])
+      .select("id, campaign_name, stage, quotation_value, ai_quality, source, source_platform, utm_source, fbclid, meta_click_id, final_status")
+      .or("source.in.(ins,fb),source_platform.in.(meta,facebook,instagram,fb,ins),utm_source.in.(meta,facebook,instagram,fb,ins),fbclid.not.is.null,meta_click_id.not.is.null")
       .eq("archived", false);
 
     if (leadsErr) throw leadsErr;

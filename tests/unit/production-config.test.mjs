@@ -24,6 +24,9 @@ function fixture({
   releaseService = null,
   sentryDsn = `https://${sentryPublicKey}@o1.ingest.sentry.io/12345`,
   sentryLine,
+  metaPixel = "4476894535908766",
+  metaToken = `EAA${"m".repeat(40)}`,
+  metaVersion = "v25.0",
 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "newme-production-config-"));
   const release = join(dir, ".env.local");
@@ -38,6 +41,9 @@ function fixture({
   writeFileSync(runtime, [
     `NEWME_READINESS_TOKEN=${"c".repeat(64)}`,
     `NEXT_PUBLIC_SITE_URL=${site}`,
+    ...(metaPixel === null ? [] : [`META_PIXEL_ID=${metaPixel}`]),
+    ...(metaToken === null ? [] : [`META_CAPI_ACCESS_TOKEN=${metaToken}`]),
+    ...(metaVersion === null ? [] : [`META_GRAPH_API_VERSION=${metaVersion}`]),
     ...(service === null ? [] : [`SUPABASE_SERVICE_ROLE_KEY=${service}`]),
     ...(duplicate ? ["NEXT_PUBLIC_SITE_URL=https://app.newme.ae"] : []),
     "",
@@ -96,6 +102,21 @@ test("production config validator rejects a wrong site URL and duplicate managed
     assert.equal(result.status, 1);
     assert.match(result.stderr, /production config validation failed/);
     assert.doesNotMatch(result.stderr, new RegExp(`${publishableKey}|${serviceKey}`));
+  }
+});
+
+test("production config validator requires well-formed Meta CAPI runtime settings", () => {
+  for (const files of [
+    fixture({ metaPixel: null }),
+    fixture({ metaPixel: "not-a-pixel" }),
+    fixture({ metaToken: null }),
+    fixture({ metaToken: "short" }),
+    fixture({ metaVersion: null }),
+    fixture({ metaVersion: "latest" }),
+  ]) {
+    const result = run(files);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /runtime META_(?:PIXEL_ID|CAPI_ACCESS_TOKEN|GRAPH_API_VERSION)/);
   }
 });
 

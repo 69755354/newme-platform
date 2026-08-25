@@ -10,6 +10,7 @@ import {
 } from "@/lib/public-lead";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createFollowUpTask } from "@/lib/tasks";
+import { buildMetaCapiLeadPayload, sendMetaCapiPayload } from "@/lib/meta-capi";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -122,6 +123,31 @@ export async function POST(request: Request) {
       property_type: parsed.value.propertyType,
       service_needs: parsed.value.serviceNeeds,
       notes: parsed.value.notes,
+      source_channel: parsed.value.attribution.utmMedium || "website",
+      source_platform: parsed.value.attribution.utmSource || "website",
+      landing_page: parsed.value.attribution.landingPage,
+      referrer: parsed.value.attribution.referrer,
+      fbclid: parsed.value.attribution.fbclid,
+      meta_click_id: parsed.value.attribution.fbc,
+      utm_source: parsed.value.attribution.utmSource,
+      utm_medium: parsed.value.attribution.utmMedium,
+      utm_campaign: parsed.value.attribution.utmCampaign,
+      utm_content: parsed.value.attribution.utmContent,
+      utm_term: parsed.value.attribution.utmTerm,
+      campaign_id: parsed.value.attribution.campaignId,
+      campaign_name: parsed.value.attribution.campaignName,
+      adset_id: parsed.value.attribution.adsetId,
+      adset_name: parsed.value.attribution.adsetName,
+      ad_id: parsed.value.attribution.adId,
+      ad_name: parsed.value.attribution.adName,
+      meta_ad_id: parsed.value.attribution.adId,
+      meta_campaign: parsed.value.attribution.campaignName,
+      first_touch_at: new Date().toISOString(),
+      raw_import_data: {
+        intake: "newme.ae",
+        event_id: parsed.value.attribution.eventId,
+        fbp: parsed.value.attribution.fbp,
+      },
       quality: "pending",
       stage: "new",
       assigned_to: null,
@@ -156,6 +182,79 @@ export async function POST(request: Request) {
       lead_id: data.id,
       code: taskError.code,
     }, "website_lead_followup_failed");
+  }
+
+  const capiPayload = buildMetaCapiLeadPayload({
+    leadId: data.id,
+    input: parsed.value,
+    clientIp: ip,
+    clientUserAgent: request.headers.get("user-agent"),
+  });
+  const queuedAt = new Date().toISOString();
+  const { data: delivery, error: deliveryError } = await supabaseAdmin
+    .from("business_events")
+    .insert({
+      lead_id: data.id,
+      event_type: "meta_capi_lead_delivery",
+      description: "Meta CAPI Lead delivery",
+      event_data: {
+        status: "pending",
+        attempts: 0,
+        queued_at: queuedAt,
+        event_id: parsed.value.attribution.eventId,
+        payload: capiPayload,
+      },
+    })
+    .select("id")
+    .single();
+
+  if (deliveryError || !delivery?.id) {
+    logger.error({
+      route: "/api/public/leads",
+      operation: "queue_meta_capi_lead",
+      request_id: requestId,
+      lead_id: data.id,
+      code: deliveryError?.code || "missing_delivery_id",
+    }, "website_lead_capi_queue_failed");
+    return response(origin, { error: "temporarily_unavailable" }, 503);
+  }
+
+  try {
+    await sendMetaCapiPayload(capiPayload);
+    await supabaseAdmin
+      .from("business_events")
+      .update({
+        event_data: {
+          status: "delivered",
+          attempts: 1,
+          queued_at: queuedAt,
+          delivered_at: new Date().toISOString(),
+          event_id: parsed.value.attribution.eventId,
+          payload: capiPayload,
+        },
+      })
+      .eq("id", delivery.id);
+  } catch (capiError) {
+    await supabaseAdmin
+      .from("business_events")
+      .update({
+        event_data: {
+          status: "failed",
+          attempts: 1,
+          queued_at: queuedAt,
+          failed_at: new Date().toISOString(),
+          event_id: parsed.value.attribution.eventId,
+          payload: capiPayload,
+        },
+      })
+      .eq("id", delivery.id);
+    logger.warn({
+      route: "/api/public/leads",
+      operation: "send_meta_capi_lead",
+      request_id: requestId,
+      lead_id: data.id,
+      error: capiError instanceof Error ? capiError.message : "unknown_error",
+    }, "website_lead_capi_failed");
   }
 
   logger.info({

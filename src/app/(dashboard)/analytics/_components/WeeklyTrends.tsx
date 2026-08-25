@@ -46,7 +46,8 @@ interface WeeklyTrendsData {
   wow_comparison: WoWComparison;
 }
 
-function fmtAED(v: number): string {
+function fmtAED(value: number | null | undefined): string {
+  const v = Number.isFinite(value) ? Number(value) : 0;
   if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
   if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
   return `AED ${v.toFixed(0)}`;

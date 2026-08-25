@@ -283,7 +283,9 @@ EOF
   printf '# f37c203 nginx\n' >"$NGINX_AVAILABLE"; chmod 0644 "$NGINX_AVAILABLE"
   ln -sfn ../sites-available/newme-platform "$NGINX_ENABLED"
   printf '# f37c203 forensic drop-in\n' >/etc/systemd/system/newme-platform.service.d/forensic.conf
-  printf 'NEWME_READINESS_TOKEN=%s\n' "$(printf 'f%.0s' $(seq 1 64))" >/etc/newme/newme-runtime.env
+  printf 'NEWME_READINESS_TOKEN=%s\nMETA_PIXEL_ID=4476894535908766\nMETA_CAPI_ACCESS_TOKEN=EAA%s\nMETA_GRAPH_API_VERSION=v25.0\n' \
+    "$(printf 'f%.0s' $(seq 1 64))" "$(printf 'm%.0s' $(seq 1 40))" \
+    >/etc/newme/newme-runtime.env
   chmod 0600 /etc/newme/newme-runtime.env
 
   # The release pointers snapshot and install both require.

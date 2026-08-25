@@ -70,8 +70,9 @@ cp -a "$TREE/infra/systemd/newme-platform.service" /etc/systemd/system/newme-pla
 chown root:root /etc/systemd/system/newme-platform.service
 chmod 0644 /etc/systemd/system/newme-platform.service
 SYNTHETIC_SERVICE_KEY="sb_${SYNTHETIC_SERVICE_KIND:-secret}_$(printf '0%.0s' $(seq 1 48))"
-printf 'NEWME_READINESS_TOKEN=%s\nNEXT_PUBLIC_SITE_URL=https://app.newme.ae\nSUPABASE_SERVICE_ROLE_KEY=%s\n' \
-  "$(printf 'f%.0s' $(seq 1 64))" "$SYNTHETIC_SERVICE_KEY" >/etc/newme/newme-runtime.env
+printf 'NEWME_READINESS_TOKEN=%s\nNEXT_PUBLIC_SITE_URL=https://app.newme.ae\nSUPABASE_SERVICE_ROLE_KEY=%s\nMETA_PIXEL_ID=4476894535908766\nMETA_CAPI_ACCESS_TOKEN=EAA%s\nMETA_GRAPH_API_VERSION=v25.0\n' \
+  "$(printf 'f%.0s' $(seq 1 64))" "$SYNTHETIC_SERVICE_KEY" "$(printf 'm%.0s' $(seq 1 40))" \
+  >/etc/newme/newme-runtime.env
 chmod 0600 /etc/newme/newme-runtime.env
 : >"/opt/newme/releases/$TREE_SHA/.newme-protect"
 cp -a "$TREE"/. "/opt/newme/releases/$TREE_SHA/"

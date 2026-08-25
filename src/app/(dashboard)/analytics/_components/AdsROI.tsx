@@ -23,12 +23,12 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 interface AdsROIData {
   period: { start_date: string | null; end_date: string | null } | null;
   summary: {
-    total_spend: number;
+    total_spend: number | null;
     total_leads: number;
-    cpl: number;
+    cpl: number | null;
     conversions: number;
     signed_amount: number;
-    roas: number;
+    roas: number | null;
   } | null;
   campaign_breakdown: CampaignRow[];
   source_quality: SourceQualityRow[];
@@ -36,12 +36,12 @@ interface AdsROIData {
 
 interface CampaignRow {
   campaign: string;
-  spend: number;
+  spend: number | null;
   leads: number;
-  cpl: number;
+  cpl: number | null;
   conversions: number;
   signed_amount: number;
-  roas: number;
+  roas: number | null;
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -61,12 +61,13 @@ interface SourceQualityRow {
   conv_rate: number;
 }
 
-function finite(value: number | null | undefined): number {
-  return Number.isFinite(value) ? Number(value) : 0;
+function finite(value: number | null | undefined): number | null {
+  return Number.isFinite(value) ? Number(value) : null;
 }
 
 function fmtAED(value: number | null | undefined): string {
   const v = finite(value);
+  if (v === null) return "—";
   if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
   if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
   return `AED ${v.toFixed(2)}`;
@@ -74,6 +75,7 @@ function fmtAED(value: number | null | undefined): string {
 
 function fmtNum(value: number | null | undefined): string {
   const v = finite(value);
+  if (v === null) return "—";
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
   if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K`;
   return String(v);
@@ -154,7 +156,7 @@ export default function AdsROI() {
           { label: t("analytics.cpl"), value: fmtAED(summary.cpl) },
           { label: t("analytics.conversions"), value: fmtNum(summary.conversions) },
           { label: t("analytics.signedAmount"), value: fmtAED(summary.signed_amount) },
-          { label: t("analytics.roas"), value: finite(summary.roas).toFixed(2) + "x" },
+          { label: t("analytics.roas"), value: finite(summary.roas) === null ? "—" : `${finite(summary.roas)!.toFixed(2)}x` },
         ].map((card) => (
           <div
             key={card.label}
@@ -209,15 +211,15 @@ export default function AdsROI() {
                   </TableCell>
                   <TableCell className="text-right">
                     <Badge
-                      variant={finite(row.roas) >= 1 ? "default" : "secondary"}
+                      variant={row.roas !== null && row.roas >= 1 ? "default" : "secondary"}
                       className={cn(
                         "text-[10px]",
-                        finite(row.roas) >= 1
+                        row.roas !== null && row.roas >= 1
                           ? "bg-emerald-500/10 text-emerald-400"
                           : "bg-rose-500/10 text-rose-400"
                       )}
                     >
-                      {finite(row.roas).toFixed(2)}x
+                      {row.roas === null ? "—" : `${row.roas.toFixed(2)}x`}
                     </Badge>
                   </TableCell>
                 </TableRow>

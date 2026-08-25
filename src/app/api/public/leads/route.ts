@@ -10,7 +10,7 @@ import {
 } from "@/lib/public-lead";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createFollowUpTask } from "@/lib/tasks";
-import { sendMetaCapiLead } from "@/lib/meta-capi";
+import { buildMetaCapiLeadPayload, sendMetaCapiPayload } from "@/lib/meta-capi";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -184,14 +184,70 @@ export async function POST(request: Request) {
     }, "website_lead_followup_failed");
   }
 
+  const capiPayload = buildMetaCapiLeadPayload({
+    leadId: data.id,
+    input: parsed.value,
+    clientIp: ip,
+    clientUserAgent: request.headers.get("user-agent"),
+  });
+  const queuedAt = new Date().toISOString();
+  const { data: delivery, error: deliveryError } = await supabaseAdmin
+    .from("business_events")
+    .insert({
+      lead_id: data.id,
+      event_type: "meta_capi_lead_delivery",
+      description: "Meta CAPI Lead delivery",
+      event_data: {
+        status: "pending",
+        attempts: 0,
+        queued_at: queuedAt,
+        event_id: parsed.value.attribution.eventId,
+        payload: capiPayload,
+      },
+    })
+    .select("id")
+    .single();
+
+  if (deliveryError || !delivery?.id) {
+    logger.error({
+      route: "/api/public/leads",
+      operation: "queue_meta_capi_lead",
+      request_id: requestId,
+      lead_id: data.id,
+      code: deliveryError?.code || "missing_delivery_id",
+    }, "website_lead_capi_queue_failed");
+    return response(origin, { error: "temporarily_unavailable" }, 503);
+  }
+
   try {
-    await sendMetaCapiLead({
-      leadId: data.id,
-      input: parsed.value,
-      clientIp: ip,
-      clientUserAgent: request.headers.get("user-agent"),
-    });
+    await sendMetaCapiPayload(capiPayload);
+    await supabaseAdmin
+      .from("business_events")
+      .update({
+        event_data: {
+          status: "delivered",
+          attempts: 1,
+          queued_at: queuedAt,
+          delivered_at: new Date().toISOString(),
+          event_id: parsed.value.attribution.eventId,
+          payload: capiPayload,
+        },
+      })
+      .eq("id", delivery.id);
   } catch (capiError) {
+    await supabaseAdmin
+      .from("business_events")
+      .update({
+        event_data: {
+          status: "failed",
+          attempts: 1,
+          queued_at: queuedAt,
+          failed_at: new Date().toISOString(),
+          event_id: parsed.value.attribution.eventId,
+          payload: capiPayload,
+        },
+      })
+      .eq("id", delivery.id);
     logger.warn({
       route: "/api/public/leads",
       operation: "send_meta_capi_lead",

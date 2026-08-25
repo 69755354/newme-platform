@@ -73,7 +73,8 @@ test("all source selectors and analytics use canonical source values", async () 
   }
 
   const ads = await read("src/app/api/dashboard/ads-roi/route.ts");
-  assert.match(ads, /\.in\("source", \["ins", "fb"\]\)/);
+  assert.match(ads, /source\.in\.\(ins,fb\)/);
+  assert.match(ads, /source_platform\.in\.\(meta,facebook,instagram,fb,ins\)/);
   const analytics = await read("src/app/api/analytics/summary/route.ts");
   assert.match(analytics, /\["ins", "fb"\]\.includes\(l\.source\)/);
   const webhook = await read("src/app/api/leads/meta-capi/route.ts");

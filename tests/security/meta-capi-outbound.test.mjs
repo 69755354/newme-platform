@@ -24,7 +24,7 @@ function loadTypeScriptModule(relativePath) {
   return loaded.exports;
 }
 
-const { sendMetaCapiLead } = loadTypeScriptModule("src/lib/meta-capi.ts");
+const { normalizedPhone, sendMetaCapiLead } = loadTypeScriptModule("src/lib/meta-capi.ts");
 
 test("CAPI hashes contact data and preserves browser event id for deduplication", async () => {
   const originalFetch = globalThis.fetch;
@@ -82,19 +82,24 @@ test("CAPI hashes contact data and preserves browser event id for deduplication"
     assert.match(event.user_data.em[0], /^[a-f0-9]{64}$/);
     assert.notEqual(event.user_data.em[0], "NADIA@example.com");
     assert.match(event.user_data.ph[0], /^[a-f0-9]{64}$/);
+    assert.equal(normalizedPhone("0501234567"), "971501234567");
+    assert.equal(normalizedPhone("501234567"), "971501234567");
   } finally {
     globalThis.fetch = originalFetch;
     process.env = originalEnv;
   }
 });
 
-test("CAPI is a no-op when server credentials are absent", async () => {
+test("CAPI fails closed when server credentials are absent", async () => {
   delete process.env.META_PIXEL_ID;
   delete process.env.META_CAPI_ACCESS_TOKEN;
-  await sendMetaCapiLead({
-    leadId: "lead",
-    clientIp: "unknown",
-    clientUserAgent: null,
-    input: { customerName: "Name", phone: null, email: null, attribution: {} },
-  });
+  await assert.rejects(
+    sendMetaCapiLead({
+      leadId: "lead",
+      clientIp: "unknown",
+      clientUserAgent: null,
+      input: { customerName: "Name", phone: null, email: null, attribution: {} },
+    }),
+    /configuration is unavailable/,
+  );
 });

@@ -149,6 +149,7 @@ export function parseWebsiteLead(input: unknown): WebsiteLeadParseResult {
   if (rawPhone && phone === undefined) return { ok: false, code: "invalid_phone" };
   if (email && !EMAIL.test(email)) return { ok: false, code: "invalid_email" };
   if (!phone && !email) return { ok: false, code: "contact_required" };
+  if (!eventId && !company) return { ok: false, code: "event_id_required" };
 
   const noteParts = [
     message ? `Message: ${message}` : null,

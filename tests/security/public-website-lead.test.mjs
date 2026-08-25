@@ -52,11 +52,13 @@ function websiteRequest(body, headers = {}) {
   });
 }
 
-function loadRoute({ insertError = null, taskError = null } = {}) {
+function loadRoute({ insertError = null, taskError = null, capiError = null } = {}) {
   const inserts = [];
   const tasks = [];
   const capi = [];
-  const chain = {
+  const deliveries = [];
+  const deliveryUpdates = [];
+  const leadChain = {
     insert(value) { inserts.push(value); return this; },
     select() { return this; },
     async single() {
@@ -65,7 +67,20 @@ function loadRoute({ insertError = null, taskError = null } = {}) {
         : { data: { id: "11111111-1111-4111-8111-111111111111" }, error: null };
     },
   };
-  const admin = { from(table) { assert.equal(table, "leads"); return chain; } };
+  const deliveryChain = {
+    insert(value) { deliveries.push(value); return this; },
+    update(value) { deliveryUpdates.push(value); return this; },
+    select() { return this; },
+    single() { return Promise.resolve({ data: { id: "delivery-1" }, error: null }); },
+    eq() { return Promise.resolve({ error: null }); },
+  };
+  const admin = {
+    from(table) {
+      if (table === "leads") return leadChain;
+      if (table === "business_events") return deliveryChain;
+      assert.fail(`unexpected table: ${table}`);
+    },
+  };
   const route = loadTypeScriptModule("src/app/api/public/leads/route.ts", {
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "@/lib/public-lead": publicLead,
@@ -78,14 +93,18 @@ function loadRoute({ insertError = null, taskError = null } = {}) {
       },
     },
     "@/lib/meta-capi": {
-      sendMetaCapiLead: async (input) => { capi.push(input); },
+      buildMetaCapiLeadPayload: (input) => ({ data: [{ event_id: input.input.attribution.eventId }] }),
+      sendMetaCapiPayload: async (payload) => {
+        capi.push(payload);
+        if (capiError) throw capiError;
+      },
     },
     "@/lib/logger": {
       genReqId: () => "request-1",
       logger: { error() {}, warn() {}, info() {} },
     },
   });
-  return { route, inserts, tasks, capi };
+  return { route, inserts, tasks, capi, deliveries, deliveryUpdates };
 }
 
 test.beforeEach(() => {
@@ -103,6 +122,7 @@ test("website payloads are normalized into bounded CRM fields", () => {
     systems: ["Lighting", "Climate", "Lighting"],
     message: "Please call after 5pm.",
     ref: "NM-ABC123",
+    event_id: "normalize-1",
   });
   assert.equal(result.ok, true);
   assert.deepEqual(result.value, {
@@ -116,7 +136,7 @@ test("website payloads are normalized into bounded CRM fields", () => {
     turnstileToken: null,
     honeypot: false,
     attribution: {
-      eventId: null,
+      eventId: "normalize-1",
       fbclid: null,
       fbc: null,
       fbp: null,
@@ -154,6 +174,10 @@ test("invalid contacts and overlong fields are rejected", () => {
     ok: false,
     code: "invalid_field",
   });
+  assert.deepEqual(publicLead.parseWebsiteLead({ name: "Nadia", phone: "+971501234567" }), {
+    ok: false,
+    code: "event_id_required",
+  });
 });
 
 test("only the two canonical website origins receive CORS access", async () => {
@@ -175,7 +199,7 @@ test("only the two canonical website origins receive CORS access", async () => {
 });
 
 test("a valid request creates an attributed website lead, follow-up, and CAPI event", async () => {
-  const { route, inserts, tasks, capi } = loadRoute();
+  const { route, inserts, tasks, capi, deliveries, deliveryUpdates } = loadRoute();
   const result = await route.POST(websiteRequest({
     name: "Nadia",
     phone: "+971 50 123 4567",
@@ -242,8 +266,11 @@ test("a valid request creates an attributed website lead, follow-up, and CAPI ev
   assert.equal(tasks[0].leadId, "11111111-1111-4111-8111-111111111111");
   assert.equal(tasks[0].assigneeId, null);
   assert.equal(capi.length, 1);
-  assert.equal(capi[0].leadId, "11111111-1111-4111-8111-111111111111");
-  assert.equal(capi[0].input.attribution.eventId, "web-123");
+  assert.equal(capi[0].data[0].event_id, "web-123");
+  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries[0].event_type, "meta_capi_lead_delivery");
+  assert.equal(deliveries[0].event_data.status, "pending");
+  assert.equal(deliveryUpdates.at(-1).event_data.status, "delivered");
 });
 
 test("honeypot submissions look successful but never touch the database", async () => {
@@ -259,18 +286,35 @@ test("honeypot submissions look successful but never touch the database", async 
   assert.equal(tasks.length, 0);
 });
 
+test("failed CAPI sends remain in a durable retryable business event", async () => {
+  const { route, deliveries, deliveryUpdates } = loadRoute({ capiError: new Error("Meta unavailable") });
+  const result = await route.POST(websiteRequest({
+    name: "Nadia",
+    phone: "+971501234567",
+    event_id: "retryable-1",
+  }));
+  assert.equal(result.status, 201);
+  assert.equal(deliveries[0].event_data.status, "pending");
+  assert.equal(deliveries[0].event_data.event_id, "retryable-1");
+  assert.equal(deliveryUpdates.at(-1).event_data.status, "failed");
+  assert.equal(deliveryUpdates.at(-1).event_data.event_id, "retryable-1");
+  assert.deepEqual(deliveryUpdates.at(-1).event_data.payload, deliveries[0].event_data.payload);
+});
+
 test("request and contact budgets are enforced before database writes", async () => {
   const { route, inserts } = loadRoute();
   for (let index = 0; index < 5; index += 1) {
     const result = await route.POST(websiteRequest({
       name: `Visitor ${index}`,
       phone: `+9715012345${index}`,
+      event_id: `budget-${index}`,
     }));
     assert.equal(result.status, 201);
   }
   const limited = await route.POST(websiteRequest({
     name: "Visitor Six",
     phone: "+971501234599",
+    event_id: "budget-six",
   }));
   assert.equal(limited.status, 429);
   assert.equal((await limited.json()).error, "rate_limited");
@@ -280,7 +324,7 @@ test("request and contact budgets are enforced before database writes", async ()
 
 test("database failures return a generic retriable response", async () => {
   const { route } = loadRoute({ insertError: { code: "db-private-detail", message: "secret" } });
-  const result = await route.POST(websiteRequest({ name: "Nadia", phone: "+971501234567" }));
+  const result = await route.POST(websiteRequest({ name: "Nadia", phone: "+971501234567", event_id: "db-failure" }));
   assert.equal(result.status, 503);
   assert.deepEqual(await result.json(), { error: "temporarily_unavailable" });
 });

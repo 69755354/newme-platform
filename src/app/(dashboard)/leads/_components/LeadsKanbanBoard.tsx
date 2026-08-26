@@ -115,36 +115,45 @@ export const LeadsKanbanBoard = forwardRef<HTMLDivElement, Props>(function Leads
   }, []);
 
   return (
-    <div className="relative -mx-4 px-4">
-      {/* Left arrow */}
-      {canScrollLeft && (
-        <button
-          onClick={() =>
-            (ref as React.RefObject<HTMLDivElement>)?.current?.scrollBy({
-              left: -310,
-              behavior: "smooth",
-            })
-          }
-          className="absolute left-6 top-3 z-20 bg-background/80 rounded-full p-1.5 shadow hover:bg-background"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-      )}
+    <div className="-mx-4 px-4">
+      {/* Keep scroll controls in their own normal-flow rail. Overlay controls
+          can cover card or column-header actions at production viewport sizes. */}
+      <div
+        data-kanban-scroll-controls
+        className="flex h-9 items-center justify-between px-6 pb-1"
+      >
+        <div className="w-7">
+          {canScrollLeft && (
+            <button
+              onClick={() =>
+                (ref as React.RefObject<HTMLDivElement>)?.current?.scrollBy({
+                  left: -310,
+                  behavior: "smooth",
+                })
+              }
+              className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          )}
+        </div>
 
-      {/* Right arrow */}
-      {canScrollRight && (
-        <button
-          onClick={() =>
-            (ref as React.RefObject<HTMLDivElement>)?.current?.scrollBy({
-              left: 310,
-              behavior: "smooth",
-            })
-          }
-          className="absolute right-6 top-3 z-20 bg-background/80 rounded-full p-1.5 shadow hover:bg-background"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      )}
+        <div className="w-7">
+          {canScrollRight && (
+            <button
+              onClick={() =>
+                (ref as React.RefObject<HTMLDivElement>)?.current?.scrollBy({
+                  left: 310,
+                  behavior: "smooth",
+                })
+              }
+              className="rounded-full bg-background/80 p-1.5 shadow hover:bg-background"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Scroll container */}
       <div

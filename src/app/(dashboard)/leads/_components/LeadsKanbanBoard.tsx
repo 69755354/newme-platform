@@ -125,7 +125,7 @@ export const LeadsKanbanBoard = forwardRef<HTMLDivElement, Props>(function Leads
               behavior: "smooth",
             })
           }
-          className="absolute left-6 top-1/2 -translate-y-1/2 z-20 bg-background/80 rounded-full p-1.5 shadow hover:bg-background"
+          className="absolute left-6 top-3 z-20 bg-background/80 rounded-full p-1.5 shadow hover:bg-background"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
@@ -140,7 +140,7 @@ export const LeadsKanbanBoard = forwardRef<HTMLDivElement, Props>(function Leads
               behavior: "smooth",
             })
           }
-          className="absolute right-6 top-1/2 -translate-y-1/2 z-20 bg-background/80 rounded-full p-1.5 shadow hover:bg-background"
+          className="absolute right-6 top-3 z-20 bg-background/80 rounded-full p-1.5 shadow hover:bg-background"
         >
           <ChevronRight className="w-4 h-4" />
         </button>

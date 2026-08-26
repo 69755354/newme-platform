@@ -62,6 +62,13 @@ test("SAM-38 focuses either selected stage control on its Kanban column", () => 
   assert.match(page, /onStageChange=\{\(v\) => \{ selectPipelineStage\(v\); setAlertFilter\("all"\); \}\}/);
 });
 
+test("SAM-38 keeps horizontal scroll controls in the non-interactive column-header rail", () => {
+  const board = read("src/app/(dashboard)/leads/_components/LeadsKanbanBoard.tsx");
+
+  assert.equal((board.match(/top-3 z-20/g) || []).length, 2);
+  assert.doesNotMatch(board, /top-1\/2 -translate-y-1\/2/);
+});
+
 test("SAM-38 renders exactly one prioritized action prompt per card", () => {
   const card = read("src/app/(dashboard)/leads/_components/LeadCard.tsx");
 

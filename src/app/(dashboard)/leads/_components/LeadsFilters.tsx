@@ -125,7 +125,7 @@ export function LeadsFilters({
           <button
             onClick={() => setSearch("")}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground"
-            aria-label={t("common.clear")}
+            aria-label={t("leads.clear")}
           >
             <X className="w-4 h-4" />
           </button>

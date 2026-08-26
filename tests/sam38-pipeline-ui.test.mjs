@@ -71,6 +71,14 @@ test("SAM-38 keeps horizontal scroll controls in a dedicated normal-flow rail", 
   assert.doesNotMatch(board, /top-(?:3|1\/2)/);
 });
 
+test("SAM-38 keeps the bulk checkbox in normal flow beside the quotation", () => {
+  const card = read("src/app/(dashboard)/leads/_components/LeadCard.tsx");
+
+  assert.match(card, /flex shrink-0 items-start gap-2/);
+  assert.match(card, /type="checkbox" checked=\{selected\}/);
+  assert.doesNotMatch(card, /absolute top-2 right-2/);
+});
+
 test("SAM-38 renders exactly one prioritized action prompt per card", () => {
   const card = read("src/app/(dashboard)/leads/_components/LeadCard.tsx");
 

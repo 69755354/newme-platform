@@ -195,14 +195,6 @@ export function LeadCard({
       onClick={handleCardClick}
     >
       <CardContent className="p-3 space-y-2">
-        {/* Bulk select checkbox — top-right */}
-        {(salesRole === "admin" || salesRole === "boss") && (
-          <div className="absolute top-2 right-2 z-10" onClick={e => e.stopPropagation()}>
-            <input type="checkbox" checked={selected}
-              onChange={onToggleSelect}
-              className="w-4 h-4 rounded border-border/50 bg-card accent-copper-500 cursor-pointer opacity-40 group-hover:opacity-100 checked:opacity-100 transition-opacity" />
-          </div>
-        )}
         {/* Header row */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
@@ -216,9 +208,18 @@ export function LeadCard({
               </div>
             )}
           </div>
-          {lead.quotation_value != null && lead.quotation_value > 0 && (
-            <span className="text-xs font-semibold text-copper-400 shrink-0">{fmtAED(lead.quotation_value)}</span>
-          )}
+          <div className="flex shrink-0 items-start gap-2">
+            {lead.quotation_value != null && lead.quotation_value > 0 && (
+              <span className="text-xs font-semibold text-copper-400">{fmtAED(lead.quotation_value)}</span>
+            )}
+            {(salesRole === "admin" || salesRole === "boss") && (
+              <div className="flex h-5 items-center" onClick={e => e.stopPropagation()}>
+                <input type="checkbox" checked={selected}
+                  onChange={onToggleSelect}
+                  className="h-4 w-4 rounded border-border/50 bg-card accent-copper-500 cursor-pointer opacity-40 group-hover:opacity-100 checked:opacity-100 transition-opacity" />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* One action-oriented signal; open detail for the complete workflow. */}

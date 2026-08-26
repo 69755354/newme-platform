@@ -79,6 +79,14 @@ test("SAM-38 keeps the bulk checkbox in normal flow beside the quotation", () =>
   assert.doesNotMatch(card, /absolute top-2 right-2/);
 });
 
+test("SAM-38 keeps the search clear button outside the input rectangle", () => {
+  const filters = read("src/app/(dashboard)/leads/_components/LeadsFilters.tsx");
+
+  assert.match(filters, /flex flex-1 min-w-\[180px\] max-w-xs items-center gap-1/);
+  assert.match(filters, /inline-flex h-9 w-9 shrink-0/);
+  assert.doesNotMatch(filters, /absolute right-2\.5 top-1\/2/);
+});
+
 test("SAM-38 renders exactly one prioritized action prompt per card", () => {
   const card = read("src/app/(dashboard)/leads/_components/LeadCard.tsx");
 

@@ -116,10 +116,20 @@ export function LeadsFilters({
 
   return (
     <div className="flex gap-2 flex-wrap items-center">
-      <div className="relative flex-1 min-w-[180px] max-w-xs">
-        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <Input placeholder={t("leads.searchPlaceholder")} value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />
-        {search && <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>}
+      <div className="flex flex-1 min-w-[180px] max-w-xs items-center gap-1">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input placeholder={t("leads.searchPlaceholder")} value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />
+        </div>
+        {search && (
+          <button
+            onClick={() => setSearch("")}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground"
+            aria-label={t("common.clear")}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
       <select value={stageFilter} onChange={(e) => onStageChange(e.target.value)}
         className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[130px]">

@@ -349,13 +349,15 @@ function assertZeroQuality(quality, context = {}) {
   if (code !== null) fail(code);
 }
 
-async function auditVisibleUi(page) {
+export async function auditVisibleUi(page) {
   return page.evaluate(() => {
     const visible = (element) => {
       const style = getComputedStyle(element);
       const rectangle = element.getBoundingClientRect();
       return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0
-        && rectangle.width > 0 && rectangle.height > 0;
+        && rectangle.width > 0 && rectangle.height > 0
+        && rectangle.right > 0 && rectangle.bottom > 0
+        && rectangle.left < window.innerWidth && rectangle.top < window.innerHeight;
     };
     const rootOverflow = document.documentElement.scrollWidth > window.innerWidth + 1
       || document.body.scrollWidth > window.innerWidth + 1;

@@ -1117,3 +1117,18 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 
 重新引入真实用户指标的三个前置条件记在 `docs/lighthouse-baseline.md`：输入默认打码、CSP 显式放行、
 以及闸门侧的存根或放行判据。三者缺一条，这套东西就会以本次发现的形式再回来。
+
+## 2026-08-28 网站线索归因与语言状态同步
+
+本节补齐网站线索进入 OS、Meta CAPI 单发送端以及生产浏览器验收发现的语言属性竞态。它描述代码与门禁覆盖；上线状态仍由 exact-head CI、生产部署和 postdeploy acceptance 单独证明。
+
+| Path | Contract covered by this release |
+| --- | --- |
+| `src/app/api/public/leads/route.ts` | 提供仅允许 `newme.ae`/`www.newme.ae` 来源的公开 JSON 线索入口，执行大小、频率、蜜罐和可选 Turnstile 校验；以 service role 写入 website lead 与跟进任务，并以同一个 `event_id` 排队和发送 Meta Lead CAPI 事件。 |
+| `src/lib/public-lead.ts` | 集中定义允许来源、CORS、字段长度/类型、联系方式要求及 UTM、Meta click、landing/referrer 归因解析，避免公开路由和网站端各写一份边界。 |
+| `src/lib/meta-capi.ts` | 构造 Meta Lead CAPI 载荷；邮箱、电话、姓名和 external id 在发送前规范化并 SHA-256，发送端只从服务端运行时读取 Pixel/token，保持 OS 为唯一 CAPI sender。 |
+| `src/app/(dashboard)/analytics/_components/WeeklyTrends.tsx` | 金额格式化对缺失或非有限值收敛为 0，防止归因/趋势聚合的空值让分析卡片渲染失败。 |
+| `src/lib/i18n/LanguageContext.tsx` | 同标签页切换语言时，在更新可见翻译状态前同步写入 `document.documentElement.lang`，使辅助技术、SEO 语义与屏幕文案处于同一次状态变化中。 |
+| `src/components/HtmlLangSync.tsx` | 保留首次载入、跨标签页 storage event 以及旧写入方的有界轮询协调；同标签页按钮切换不再依赖 500ms 轮询。 |
+
+验证边界：`tests/security/public-website-lead.test.mjs`、`tests/security/meta-capi-outbound.test.mjs` 和 `tests/security/i18n-document-language.test.mjs` 分别钉住公开入口、CAPI 脱敏/发送契约和 HTML 语言更新顺序；完整浏览器双语流程仍必须在生产 postdeploy acceptance 通过后才可关闭发布。

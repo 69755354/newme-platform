@@ -504,10 +504,25 @@ export async function captureRedactedScreenshot(page, file, safeLocators) {
       const snapshot = window.__newmeUatScrollSnapshot;
       if (snapshot) {
         for (const entry of snapshot.elements) {
-          entry.element.scrollLeft = entry.left;
-          entry.element.scrollTop = entry.top;
+          const inlineBehavior = entry.element.style.getPropertyValue("scroll-behavior");
+          const inlinePriority = entry.element.style.getPropertyPriority("scroll-behavior");
+          entry.element.style.setProperty("scroll-behavior", "auto", "important");
+          entry.element.scrollTo({ left: entry.left, top: entry.top, behavior: "auto" });
+          if (inlineBehavior) entry.element.style.setProperty("scroll-behavior", inlineBehavior, inlinePriority);
+          else entry.element.style.removeProperty("scroll-behavior");
         }
-        window.scrollTo(snapshot.windowX, snapshot.windowY);
+        const roots = [document.documentElement, document.body];
+        const rootBehaviors = roots.map((element) => ({
+          element,
+          value: element.style.getPropertyValue("scroll-behavior"),
+          priority: element.style.getPropertyPriority("scroll-behavior"),
+        }));
+        for (const { element } of rootBehaviors) element.style.setProperty("scroll-behavior", "auto", "important");
+        window.scrollTo({ left: snapshot.windowX, top: snapshot.windowY, behavior: "auto" });
+        for (const { element, value, priority } of rootBehaviors) {
+          if (value) element.style.setProperty("scroll-behavior", value, priority);
+          else element.style.removeProperty("scroll-behavior");
+        }
       }
       delete window.__newmeUatScrollSnapshot;
       for (const root of document.querySelectorAll('[data-newme-uat-safe-copy="true"]')) {

@@ -360,8 +360,26 @@ export async function auditVisibleUi(page) {
     const visibleInViewport = (element) => {
       if (!visible(element)) return false;
       const rectangle = element.getBoundingClientRect();
-      return rectangle.right > 0 && rectangle.bottom > 0
-        && rectangle.left < window.innerWidth && rectangle.top < window.innerHeight;
+      let left = Math.max(0, rectangle.left);
+      let right = Math.min(window.innerWidth, rectangle.right);
+      let top = Math.max(0, rectangle.top);
+      let bottom = Math.min(window.innerHeight, rectangle.bottom);
+      for (let ancestor = element.parentElement; ancestor && right > left && bottom > top; ancestor = ancestor.parentElement) {
+        const style = getComputedStyle(ancestor);
+        const clipX = ["auto", "scroll", "hidden", "clip"].includes(style.overflowX);
+        const clipY = ["auto", "scroll", "hidden", "clip"].includes(style.overflowY);
+        if (!clipX && !clipY) continue;
+        const bounds = ancestor.getBoundingClientRect();
+        if (clipX) {
+          left = Math.max(left, bounds.left);
+          right = Math.min(right, bounds.right);
+        }
+        if (clipY) {
+          top = Math.max(top, bounds.top);
+          bottom = Math.min(bottom, bounds.bottom);
+        }
+      }
+      return right > left && bottom > top;
     };
     const rootOverflow = document.documentElement.scrollWidth > window.innerWidth + 1
       || document.body.scrollWidth > window.innerWidth + 1;

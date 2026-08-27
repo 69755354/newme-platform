@@ -327,14 +327,17 @@ test("layout quality ignores fully offscreen compatibility controls but still de
       .visible { position: fixed; left: 20px; top: 20px; width: 80px; height: 40px; }
     </style>
     <input class="offscreen"><input class="offscreen"><input class="offscreen">
-    <button class="visible">One</button><button class="visible">Two</button>`);
+    <button class="visible">One</button><button class="visible">Two</button>
+    <span style="position: absolute; top: 1200px">common.missingBelowFold</span>`);
 
   const withVisibleOverlap = await auditVisibleUi(page);
   assert.equal(withVisibleOverlap.overlap_violation_count, 1);
+  assert.equal(withVisibleOverlap.raw_i18n_key_count, 1);
 
   await page.locator("button").evaluateAll((buttons) => buttons.forEach((button) => button.remove()));
   const offscreenOnly = await auditVisibleUi(page);
   assert.equal(offscreenOnly.overlap_violation_count, 0);
+  assert.equal(offscreenOnly.raw_i18n_key_count, 1);
 });
 
 /**

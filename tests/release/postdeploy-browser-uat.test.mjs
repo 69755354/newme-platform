@@ -316,6 +316,15 @@ test("real Chromium PNG keeps app markers while exposing only safe copy inside d
   }
 });
 
+test("scrollable business screenshots use bounded local proof surfaces", () => {
+  assert.match(SOURCE, /collection_card_visible[\s\S]*?safeLocators: \[marker\]/);
+  assert.match(SOURCE, /bulk_action_verified[\s\S]*?safeLocators: \[cancel, clear\]/);
+  assert.match(SOURCE, /bulk_access", "denied"[\s\S]*?safeLocators: \[dialogTitle\]|safeLocators: \[dialogTitle\][\s\S]*?bulk_access", "denied"/);
+  assert.match(SOURCE, /contract_list_visible[\s\S]*?safeLocators: \[link, marker\]/);
+  assert.match(SOURCE, /settings_contract_verified[\s\S]*?safeLocators: \[marker\]/);
+  assert.match(SOURCE, /locale_content_verified[\s\S]*?safeLocators: \[marker\]/);
+});
+
 test("layout quality ignores fully offscreen compatibility controls but still detects visible overlaps", async (t) => {
   const browser = await chromium.launch({ headless: true });
   t.after(() => browser.close());

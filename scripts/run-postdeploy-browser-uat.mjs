@@ -349,13 +349,19 @@ function assertZeroQuality(quality, context = {}) {
   if (code !== null) fail(code);
 }
 
-async function auditVisibleUi(page) {
+export async function auditVisibleUi(page) {
   return page.evaluate(() => {
     const visible = (element) => {
       const style = getComputedStyle(element);
       const rectangle = element.getBoundingClientRect();
       return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0
         && rectangle.width > 0 && rectangle.height > 0;
+    };
+    const visibleInViewport = (element) => {
+      if (!visible(element)) return false;
+      const rectangle = element.getBoundingClientRect();
+      return rectangle.right > 0 && rectangle.bottom > 0
+        && rectangle.left < window.innerWidth && rectangle.top < window.innerHeight;
     };
     const rootOverflow = document.documentElement.scrollWidth > window.innerWidth + 1
       || document.body.scrollWidth > window.innerWidth + 1;
@@ -366,7 +372,7 @@ async function auditVisibleUi(page) {
     const dialog = [...document.querySelectorAll('[role="dialog"]')].find(visible);
     const scope = dialog ?? document.body;
     const interactives = [...scope.querySelectorAll('a,button,input,select,textarea,[role="button"]')]
-      .filter(visible)
+      .filter(visibleInViewport)
       .filter((element) => element.closest('a,button,[role="button"]') === element || !element.closest('a,button,[role="button"]'))
       .map((element) => ({ element, rectangle: element.getBoundingClientRect() }));
     let overlaps = 0;

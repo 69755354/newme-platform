@@ -398,6 +398,16 @@ export async function auditVisibleUi(page) {
 
 export async function captureRedactedScreenshot(page, file, safeLocators) {
   if (!Array.isArray(safeLocators) || safeLocators.length === 0) fail("screenshot_safe_surface_missing");
+  await page.evaluate(() => {
+    window.__newmeUatScrollSnapshot = {
+      windowX: window.scrollX,
+      windowY: window.scrollY,
+      elements: [...document.querySelectorAll("*")]
+        .filter((element) => element.scrollLeft !== 0 || element.scrollTop !== 0)
+        .map((element) => ({ element, left: element.scrollLeft, top: element.scrollTop })),
+    };
+  });
+  try {
   const safeElements = [];
   for (const locator of safeLocators) {
     if (await locator.count() < 1) fail("screenshot_safe_surface_missing");
@@ -489,6 +499,31 @@ export async function captureRedactedScreenshot(page, file, safeLocators) {
     });
   }
   if (process.platform !== "win32") chmodSync(file, 0o600);
+  } finally {
+    await page.evaluate(() => {
+      const snapshot = window.__newmeUatScrollSnapshot;
+      if (snapshot) {
+        for (const entry of snapshot.elements) {
+          entry.element.scrollLeft = entry.left;
+          entry.element.scrollTop = entry.top;
+        }
+        window.scrollTo(snapshot.windowX, snapshot.windowY);
+      }
+      delete window.__newmeUatScrollSnapshot;
+      for (const root of document.querySelectorAll('[data-newme-uat-safe-copy="true"]')) {
+        root.removeAttribute("data-newme-uat-safe-copy");
+      }
+      for (const element of document.querySelectorAll('[style*="--newme-uat-original-color"]')) {
+        element.style.removeProperty("--newme-uat-original-color");
+      }
+      for (const element of document.querySelectorAll('[data-newme-uat-runtime-mask="true"]')) {
+        element.removeAttribute("data-newme-uat-runtime-mask");
+      }
+      for (const element of document.querySelectorAll('[data-newme-uat-runtime-sensitive-value="true"]')) {
+        element.removeAttribute("data-newme-uat-runtime-sensitive-value");
+      }
+    });
+  }
   const bytes = readFileSync(file);
   if (bytes.length < 8 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
     fail("invalid_screenshot_bytes");

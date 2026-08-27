@@ -316,6 +316,37 @@ test("real Chromium PNG keeps app markers while exposing only safe copy inside d
   }
 });
 
+test("screenshot capture restores nested and window scroll positions", async (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "newme-browser-scroll-"));
+  const screenshot = path.join(directory, "scroll-proof.png");
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+
+  const browser = await chromium.launch({ headless: true });
+  t.after(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 900, height: 700 } });
+  const page = await context.newPage();
+  await page.setContent(`<!doctype html>
+    <style>
+      html, body { margin: 0; width: 1800px; height: 1400px; }
+      #scroller { width: 400px; height: 180px; overflow: auto; }
+      #content { position: relative; width: 1200px; height: 600px; }
+      #proof { position: absolute; left: 1050px; top: 500px; }
+    </style>
+    <div id="scroller"><div id="content"><button id="proof">Safe proof</button></div></div>`);
+  await page.evaluate(() => {
+    window.scrollTo(120, 90);
+    const scroller = document.querySelector("#scroller");
+    scroller.scrollLeft = 35;
+    scroller.scrollTop = 25;
+  });
+  await captureRedactedScreenshot(page, screenshot, [page.locator("#proof")]);
+  const positions = await page.evaluate(() => {
+    const scroller = document.querySelector("#scroller");
+    return { windowX: window.scrollX, windowY: window.scrollY, left: scroller.scrollLeft, top: scroller.scrollTop };
+  });
+  assert.deepEqual(positions, { windowX: 120, windowY: 90, left: 35, top: 25 });
+});
+
 test("scrollable business screenshots use bounded local proof surfaces", () => {
   assert.match(SOURCE, /collection_card_visible[\s\S]*?safeLocators: \[marker\]/);
   assert.match(SOURCE, /bulk_action_verified[\s\S]*?safeLocators: \[cancel, clear\][\s\S]*?bulk_fixture_lead_id/);

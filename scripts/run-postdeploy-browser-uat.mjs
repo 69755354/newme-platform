@@ -357,11 +357,31 @@ export async function auditVisibleUi(page) {
       return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0
         && rectangle.width > 0 && rectangle.height > 0;
     };
-    const visibleInViewport = (element) => {
-      if (!visible(element)) return false;
+    const visibleRectangle = (element) => {
+      if (!visible(element)) return null;
       const rectangle = element.getBoundingClientRect();
-      return rectangle.right > 0 && rectangle.bottom > 0
-        && rectangle.left < window.innerWidth && rectangle.top < window.innerHeight;
+      let left = Math.max(0, rectangle.left);
+      let right = Math.min(window.innerWidth, rectangle.right);
+      let top = Math.max(0, rectangle.top);
+      let bottom = Math.min(window.innerHeight, rectangle.bottom);
+      for (let ancestor = element.parentElement; ancestor && right > left && bottom > top; ancestor = ancestor.parentElement) {
+        const style = getComputedStyle(ancestor);
+        const clipX = ["auto", "scroll", "hidden", "clip"].includes(style.overflowX);
+        const clipY = ["auto", "scroll", "hidden", "clip"].includes(style.overflowY);
+        if (!clipX && !clipY) continue;
+        const bounds = ancestor.getBoundingClientRect();
+        if (clipX) {
+          left = Math.max(left, bounds.left);
+          right = Math.min(right, bounds.right);
+        }
+        if (clipY) {
+          top = Math.max(top, bounds.top);
+          bottom = Math.min(bottom, bounds.bottom);
+        }
+      }
+      return right > left && bottom > top
+        ? { left, right, top, bottom, width: right - left, height: bottom - top }
+        : null;
     };
     const rootOverflow = document.documentElement.scrollWidth > window.innerWidth + 1
       || document.body.scrollWidth > window.innerWidth + 1;
@@ -372,9 +392,9 @@ export async function auditVisibleUi(page) {
     const dialog = [...document.querySelectorAll('[role="dialog"]')].find(visible);
     const scope = dialog ?? document.body;
     const interactives = [...scope.querySelectorAll('a,button,input,select,textarea,[role="button"]')]
-      .filter(visibleInViewport)
       .filter((element) => element.closest('a,button,[role="button"]') === element || !element.closest('a,button,[role="button"]'))
-      .map((element) => ({ element, rectangle: element.getBoundingClientRect() }));
+      .map((element) => ({ element, rectangle: visibleRectangle(element) }))
+      .filter((entry) => entry.rectangle !== null);
     let overlaps = 0;
     for (let left = 0; left < interactives.length; left += 1) {
       for (let right = left + 1; right < interactives.length; right += 1) {

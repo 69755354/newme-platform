@@ -392,6 +392,28 @@ test("layout quality ignores fully offscreen compatibility controls but still de
   assert.equal(offscreenOnly.raw_i18n_key_count, 1);
 });
 
+test("layout quality ignores interactives clipped outside an overflow ancestor", async (t) => {
+  const browser = await chromium.launch({ headless: true });
+  t.after(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 900, height: 700 } });
+  const page = await context.newPage();
+  await page.setContent(`<!doctype html>
+    <style>
+      #sidebar { position: fixed; left: 0; top: 0; width: 270px; height: 700px; }
+      #scroller { position: fixed; left: 280px; top: 0; width: 500px; height: 300px; overflow-x: auto; overflow-y: hidden; }
+      #content { position: relative; width: 1200px; height: 300px; }
+      #clipped { position: absolute; left: -240px; top: 40px; width: 80px; height: 40px; }
+      #partially-clipped { position: absolute; left: -180px; top: 100px; width: 200px; height: 40px; }
+    </style>
+    <a id="sidebar" href="/team">Team</a>
+    <div id="scroller"><div id="content">
+      <input id="clipped" type="checkbox"><input id="partially-clipped" type="checkbox">
+    </div></div>`);
+
+  const quality = await auditVisibleUi(page);
+  assert.equal(quality.overlap_violation_count, 0);
+});
+
 /**
  * A locator that only ever answers waitFor.
  *

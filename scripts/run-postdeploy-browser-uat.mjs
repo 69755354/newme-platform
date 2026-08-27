@@ -821,6 +821,7 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
           safeLocators: [cancel, clear],
           semanticAssertions: [
             semanticAssertion("bulk_access", "allowed"),
+            semanticAssertion("bulk_fixture_lead_id", input.fixture.lead_id),
             semanticAssertion("bulk_transfer_copy", copy.transferAction),
             semanticAssertion("bulk_cancel_copy", copy.cancel),
           ],
@@ -841,6 +842,7 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
         safeLocators: [dialogTitle],
         semanticAssertions: [
           semanticAssertion("bulk_access", "denied"),
+          semanticAssertion("bulk_fixture_lead_id", input.fixture.lead_id),
           semanticAssertion("permitted_create_copy", copy.create),
           semanticAssertion("create_dialog_copy", copy.quickCreate),
         ],
@@ -932,11 +934,15 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
       const expectedLang = await page.locator("html").getAttribute("lang");
       if (expectedLang !== alternateLocale) fail("html_locale_mismatch");
       return {
-        safeLocators: [marker],
+        // Keep locale-specific visual evidence in this step. The signed
+        // assertion binds the same record marker, while the bounded Create
+        // control proves the copy actually switched in the captured viewport.
+        safeLocators: [create],
         semanticAssertions: [
           semanticAssertion("alternate_leads_heading_copy", alternateCopy.leads),
           semanticAssertion("alternate_create_copy", alternateCopy.create),
           semanticAssertion("alternate_html_locale", alternateLocale),
+          semanticAssertion("alternate_fixture_marker_sha256", sha256(input.fixture.marker)),
         ],
       };
     });

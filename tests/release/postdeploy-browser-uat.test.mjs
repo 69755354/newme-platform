@@ -336,15 +336,15 @@ test("screenshot capture restores nested and window scroll positions", async (t)
   await page.evaluate(() => {
     window.scrollTo(120, 90);
     const scroller = document.querySelector("#scroller");
-    scroller.scrollLeft = 35;
-    scroller.scrollTop = 25;
+    scroller.scrollLeft = 0;
+    scroller.scrollTop = 0;
   });
   await captureRedactedScreenshot(page, screenshot, [page.locator("#proof")]);
   const positions = await page.evaluate(() => {
     const scroller = document.querySelector("#scroller");
     return { windowX: window.scrollX, windowY: window.scrollY, left: scroller.scrollLeft, top: scroller.scrollTop };
   });
-  assert.deepEqual(positions, { windowX: 120, windowY: 90, left: 35, top: 25 });
+  assert.deepEqual(positions, { windowX: 120, windowY: 90, left: 0, top: 0 });
 });
 
 test("scrollable business screenshots use bounded local proof surfaces", () => {

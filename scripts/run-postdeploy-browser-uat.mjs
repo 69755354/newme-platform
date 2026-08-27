@@ -403,7 +403,7 @@ export async function captureRedactedScreenshot(page, file, safeLocators) {
       windowX: window.scrollX,
       windowY: window.scrollY,
       elements: [...document.querySelectorAll("*")]
-        .filter((element) => element.scrollLeft !== 0 || element.scrollTop !== 0)
+        .filter((element) => element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight)
         .map((element) => ({ element, left: element.scrollLeft, top: element.scrollTop })),
     };
   });

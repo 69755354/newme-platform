@@ -326,6 +326,14 @@ test("scrollable business screenshots use bounded local proof surfaces", () => {
   assert.match(SOURCE, /locale_content_verified[\s\S]*?safeLocators: \[create\][\s\S]*?alternate_fixture_marker_sha256/);
 });
 
+test("settings UAT includes assigned fixtures by selecting the localized all filter", () => {
+  const settingsBlock = SOURCE.slice(SOURCE.indexOf('recordStep("settings_contract_verified"'), SOURCE.indexOf('recordStep("locale_switched"'));
+  assert.match(SOURCE, /settingsAll: "All"/);
+  assert.match(SOURCE, /settingsAll: "全部"/);
+  assert.match(settingsBlock, /getByRole\("button", \{ name: copy\.settingsAll, exact: true \}\)[\s\S]*await all\.click\(\)[\s\S]*await search\.fill\(input\.fixture\.marker\)/);
+  assert.match(settingsBlock, /semanticAssertion\("settings_assignment_filter", "all"\)/);
+});
+
 test("layout quality ignores fully offscreen compatibility controls but still detects visible overlaps", async (t) => {
   const browser = await chromium.launch({ headless: true });
   t.after(() => browser.close());

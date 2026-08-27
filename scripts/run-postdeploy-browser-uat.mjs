@@ -791,7 +791,11 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
       const { heading, card } = await openFixtureCollection();
       const marker = await visible(card.getByText(input.fixture.marker, { exact: true }), "fixture_marker_copy_missing");
       return {
-        safeLocators: [heading, marker],
+        // The Kanban lane can be horizontally distant from the page heading.
+        // Screenshot evidence must be a bounded, simultaneously visible proof
+        // surface; heading copy is already covered by the signed semantic
+        // assertion below.
+        safeLocators: [marker],
         semanticAssertions: [
           semanticAssertion("leads_heading_copy", copy.leads),
           semanticAssertion("fixture_lead_id", input.fixture.lead_id),
@@ -814,9 +818,10 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
         const cancel = await visible(bulk.getByRole("button", { name: copy.cancel, exact: true }), "bulk_copy_mismatch");
         const clear = await visible(bulk.getByRole("button", { name: copy.clear, exact: true }), "bulk_copy_mismatch");
         return {
-          safeLocators: [heading, marker, cancel, clear],
+          safeLocators: [cancel, clear],
           semanticAssertions: [
             semanticAssertion("bulk_access", "allowed"),
+            semanticAssertion("bulk_fixture_lead_id", input.fixture.lead_id),
             semanticAssertion("bulk_transfer_copy", copy.transferAction),
             semanticAssertion("bulk_cancel_copy", copy.cancel),
           ],
@@ -834,9 +839,10 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
       const dialog = await visible(page.locator('[role="dialog"]'), "allowed_dialog_missing");
       const dialogTitle = await visible(dialog.getByText(copy.quickCreate, { exact: true }), "allowed_dialog_copy_mismatch");
       return {
-        safeLocators: [heading, marker, dialogTitle],
+        safeLocators: [dialogTitle],
         semanticAssertions: [
           semanticAssertion("bulk_access", "denied"),
+          semanticAssertion("bulk_fixture_lead_id", input.fixture.lead_id),
           semanticAssertion("permitted_create_copy", copy.create),
           semanticAssertion("create_dialog_copy", copy.quickCreate),
         ],
@@ -870,7 +876,7 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
       const contractCard = await visible(link.locator('xpath=ancestor::*[@data-slot="card"][1]'), "fixture_contract_card_missing");
       const marker = await visible(contractCard.getByText(input.fixture.marker, { exact: true }), "fixture_contract_marker_missing");
       return {
-        safeLocators: [heading, link, marker],
+        safeLocators: [link, marker],
         semanticAssertions: [
           semanticAssertion("contracts_heading_copy", copy.contracts),
           semanticAssertion("fixture_contract_id", input.fixture.contract_id),
@@ -888,7 +894,7 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
         const { heading, card } = await openFixtureCollection();
         const marker = await visible(card.getByText(input.fixture.marker, { exact: true }), "fixture_marker_copy_missing");
         return {
-          safeLocators: [heading, marker],
+          safeLocators: [marker],
           semanticAssertions: [semanticAssertion("settings_access", "denied")],
         };
       } else {
@@ -901,7 +907,7 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
         if (await page.locator("tbody tr", { hasText: input.fixture.marker }).count() !== 1) fail("settings_fixture_row_ambiguous");
         const marker = await visible(row.getByText(input.fixture.marker, { exact: true }), "settings_fixture_marker_missing");
         return {
-          safeLocators: [heading, marker],
+          safeLocators: [marker],
           semanticAssertions: [
             semanticAssertion("settings_access", "allowed"),
             semanticAssertion("settings_heading_copy", copy.settings),
@@ -928,11 +934,15 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
       const expectedLang = await page.locator("html").getAttribute("lang");
       if (expectedLang !== alternateLocale) fail("html_locale_mismatch");
       return {
-        safeLocators: [heading, marker, create],
+        // Keep locale-specific visual evidence in this step. The signed
+        // assertion binds the same record marker, while the bounded Create
+        // control proves the copy actually switched in the captured viewport.
+        safeLocators: [create],
         semanticAssertions: [
           semanticAssertion("alternate_leads_heading_copy", alternateCopy.leads),
           semanticAssertion("alternate_create_copy", alternateCopy.create),
           semanticAssertion("alternate_html_locale", alternateLocale),
+          semanticAssertion("alternate_fixture_marker_sha256", sha256(input.fixture.marker)),
         ],
       };
     });

@@ -27,6 +27,10 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setLang = useCallback((l: Language) => {
+    // Keep the document language in the same synchronous transaction as the
+    // visible copy. Storage events do not fire in the tab that performed the
+    // write, so HtmlLangSync's cross-tab fallback cannot own this update.
+    document.documentElement.lang = l;
     setLangState(l);
     localStorage.setItem("newme-lang", l);
   }, []);

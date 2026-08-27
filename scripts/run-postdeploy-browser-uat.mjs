@@ -955,8 +955,9 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
         await all.click();
         const search = await visible(page.getByPlaceholder(copy.settingsSearch, { exact: true }), "settings_search_copy_missing");
         await search.fill(input.fixture.marker);
-        const row = await visible(page.locator("tbody tr", { hasText: input.fixture.marker }), "settings_fixture_row_missing");
-        if (await page.locator("tbody tr", { hasText: input.fixture.marker }).count() !== 1) fail("settings_fixture_row_ambiguous");
+        const fixtureRow = page.locator(`tbody tr[data-lead-id="${input.fixture.lead_id}"]`, { hasText: input.fixture.marker });
+        const row = await visible(fixtureRow, "settings_fixture_row_missing");
+        if (await fixtureRow.count() !== 1) fail("settings_fixture_row_ambiguous");
         const marker = await visible(row.getByText(input.fixture.marker, { exact: true }), "settings_fixture_marker_missing");
         return {
           safeLocators: [marker],

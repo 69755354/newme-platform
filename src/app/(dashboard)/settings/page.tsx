@@ -510,7 +510,7 @@ export default function SettingsPage() {
                 const isSel = selected.has(lead.id);
                 const ownerProfile = lead.assigned_to ? profiles.find(p => p.id === lead.assigned_to) : null;
                 return (
-                  <tr key={lead.id} className={cn("border-b border-border/20 hover:bg-accent/30 transition-colors", isSel && "bg-copper-500/5")}>
+                  <tr key={lead.id} data-lead-id={lead.id} className={cn("border-b border-border/20 hover:bg-accent/30 transition-colors", isSel && "bg-copper-500/5")}>
                     <td className="py-2.5 px-3">
                       <input type="checkbox" checked={isSel} onChange={() => toggleLead(lead.id)}
                         className="w-4 h-4 rounded border-border accent-copper-500" />

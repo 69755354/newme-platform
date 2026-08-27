@@ -363,6 +363,9 @@ test("settings UAT includes assigned fixtures by selecting the localized all fil
   assert.match(SOURCE, /settingsAll: "全部"/);
   assert.match(settingsBlock, /getByRole\("button", \{ name: copy\.settingsAll, exact: true \}\)[\s\S]*await all\.click\(\)[\s\S]*await search\.fill\(input\.fixture\.marker\)/);
   assert.match(settingsBlock, /semanticAssertion\("settings_assignment_filter", "all"\)/);
+  assert.match(settingsBlock, /tbody tr\[data-lead-id="\$\{input\.fixture\.lead_id\}"\]/);
+  const settingsPage = readFileSync(path.join(ROOT, "src/app/(dashboard)/settings/page.tsx"), "utf8");
+  assert.match(settingsPage, /<tr key=\{lead\.id\} data-lead-id=\{lead\.id\}/);
 });
 
 test("layout quality ignores fully offscreen compatibility controls but still detects visible overlaps", async (t) => {

@@ -321,6 +321,19 @@ export function isExpectedDeniedResourceConsole({ type, text, url }) {
   return /^Failed to load resource: the server responded with a status of (?:401|403)(?: \([^\r\n]{0,32}\))?$/.test(text);
 }
 
+export function runtimeFailureCode(error, { role, locale, step }) {
+  if (typeof error?.code === "string" && /^[a-z][a-z0-9_]{1,62}$/.test(error.code)) return error.code;
+  const kind = ({
+    TimeoutError: "timeout",
+    TargetClosedError: "target_closed",
+    ProtocolError: "protocol",
+    TypeError: "type",
+    Error: "error",
+  })[error?.name] || "unexpected";
+  const code = `runtime_${kind}_${role}_${locale}_${step}`;
+  return /^[a-z][a-z0-9_]{1,62}$/.test(code) ? code : `runtime_${kind}_${role}_${locale}`;
+}
+
 /**
  * Counter name -> the token that goes in the failure code.
  *
@@ -751,6 +764,7 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
   const steps = [];
   const httpChecks = [];
   const recordStep = async (id, action) => {
+    try {
     if (REQUIRED_STEPS[steps.length] !== id) fail("noncanonical_step_order");
     const stepStartedAt = utcSecond();
     const evidence = await action() ?? {};
@@ -794,6 +808,9 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
       await evidence.afterScreenshot?.();
     }
     steps.push({ ...provisional, evidence_sha256: evidenceSha256, screenshot });
+    } catch (error) {
+      fail(runtimeFailureCode(error, { role: credential.role, locale, step: id }));
+    }
   };
   const copy = UI_COPY[locale];
   const alternateLocale = locale === "en" ? "zh" : "en";
@@ -1174,7 +1191,11 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
       },
     };
   } finally {
-    await context.close();
+    try {
+      await context.close();
+    } catch (error) {
+      fail(runtimeFailureCode(error, { role: credential.role, locale, step: "context_close" }));
+    }
   }
 }
 
@@ -1218,7 +1239,12 @@ export async function runBrowserUat(input, { browserType = chromium } = {}) {
     const artifacts = [];
     for (const credential of validated.roles) {
       for (const locale of REQUIRED_LOCALES) {
-        const result = await runSession({ browser, input: validated, credential, locale, runnerSourceSha256: sourceSha256 });
+        let result;
+        try {
+          result = await runSession({ browser, input: validated, credential, locale, runnerSourceSha256: sourceSha256 });
+        } catch (error) {
+          fail(runtimeFailureCode(error, { role: credential.role, locale, step: "session" }));
+        }
         sessions.push(result.summary);
         artifacts.push(result.artifact);
       }
@@ -1231,7 +1257,11 @@ export async function runBrowserUat(input, { browserType = chromium } = {}) {
       artifacts,
     });
   } finally {
-    await browser.close();
+    try {
+      await browser.close();
+    } catch (error) {
+      fail(runtimeFailureCode(error, { role: "all", locale: "all", step: "browser_close" }));
+    }
   }
 }
 

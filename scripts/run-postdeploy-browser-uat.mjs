@@ -123,12 +123,12 @@ const UI_COPY = Object.freeze({
   en: Object.freeze({
     leads: "Leads", contracts: "Contracts", settings: "Admin Panel", create: "Create", signIn: "Sign In", logout: "Logout",
     managementLeadsNav: "Leads", salesLeadsNav: "My Leads", managementContractsNav: "Contracts & Payments", salesContractsNav: "My Contracts",
-    transferAction: "Transfer →", cancel: "Cancel", clear: "Clear", quickCreate: "Quick Create Lead", settingsSearch: "Search name/phone/area...",
+    transferAction: "Transfer →", cancel: "Cancel", clear: "Clear", quickCreate: "Quick Create Lead", settingsSearch: "Search name/phone/area...", settingsAll: "All",
   }),
   zh: Object.freeze({
     leads: "线索", contracts: "合同管理", settings: "系统管理", create: "新建", signIn: "登录", logout: "退出",
     managementLeadsNav: "线索", salesLeadsNav: "我的线索", managementContractsNav: "合同&回款", salesContractsNav: "我的合同",
-    transferAction: "转移 →", cancel: "取消", clear: "清除", quickCreate: "快速创建线索", settingsSearch: "搜索姓名/电话/区域...",
+    transferAction: "转移 →", cancel: "取消", clear: "清除", quickCreate: "快速创建线索", settingsSearch: "搜索姓名/电话/区域...", settingsAll: "全部",
   }),
 });
 
@@ -901,6 +901,8 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
         await page.locator('aside a[href="/settings"]').click();
         await page.waitForURL((url) => url.pathname === "/settings", { timeout: STEP_TIMEOUT_MS });
         const heading = await visible(page.getByRole("heading", { name: copy.settings, exact: true }), "settings_heading_copy_missing");
+        const all = await visible(page.getByRole("button", { name: copy.settingsAll, exact: true }), "settings_all_filter_copy_missing");
+        await all.click();
         const search = await visible(page.getByPlaceholder(copy.settingsSearch, { exact: true }), "settings_search_copy_missing");
         await search.fill(input.fixture.marker);
         const row = await visible(page.locator("tbody tr", { hasText: input.fixture.marker }), "settings_fixture_row_missing");
@@ -911,6 +913,7 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
           semanticAssertions: [
             semanticAssertion("settings_access", "allowed"),
             semanticAssertion("settings_heading_copy", copy.settings),
+            semanticAssertion("settings_assignment_filter", "all"),
             semanticAssertion("settings_fixture_lead_id", input.fixture.lead_id),
           ],
         };

@@ -328,7 +328,7 @@ test("screenshot capture restores nested and window scroll positions", async (t)
   await page.setContent(`<!doctype html>
     <style>
       html, body { margin: 0; width: 1800px; height: 1400px; }
-      #scroller { width: 400px; height: 180px; overflow: auto; }
+      #scroller { width: 400px; height: 180px; overflow: auto; scroll-behavior: smooth; }
       #content { position: relative; width: 1200px; height: 600px; }
       #proof { position: absolute; left: 1050px; top: 500px; }
     </style>

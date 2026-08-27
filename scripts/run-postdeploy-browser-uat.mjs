@@ -304,6 +304,23 @@ export function qualityCounts() {
   };
 }
 
+export function isExpectedDeniedResourceConsole({ type, text, url }) {
+  if (type !== "error" || typeof text !== "string" || typeof url !== "string") return false;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (
+    parsed.origin !== CANONICAL_ORIGIN
+    || parsed.pathname !== "/api/auth/me"
+    || parsed.search !== ""
+    || parsed.hash !== ""
+  ) return false;
+  return /^Failed to load resource: the server responded with a status of (?:401|403)(?: \([^\r\n]{0,32}\))?$/.test(text);
+}
+
 /**
  * Counter name -> the token that goes in the failure code.
  *
@@ -698,7 +715,13 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
 
   const runtimeQuality = qualityCounts();
   page.on("console", (message) => {
-    if (message.type() === "error") runtimeQuality.console_error_count += 1;
+    if (message.type() !== "error") return;
+    if (isExpectedDeniedResourceConsole({
+      type: message.type(),
+      text: message.text(),
+      url: message.location().url,
+    })) return;
+    runtimeQuality.console_error_count += 1;
   });
   page.on("pageerror", () => { runtimeQuality.page_error_count += 1; });
   page.on("response", (response) => {

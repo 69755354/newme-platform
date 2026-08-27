@@ -30,6 +30,7 @@ import {
   captureRedactedScreenshot,
   qualityCounts,
   qualityFailureCode,
+  isExpectedDeniedResourceConsole,
   routeDecision,
   validateBrowserUatInput,
   visible,
@@ -599,4 +600,21 @@ test("route decisions allow canonical and edge-injected origins and nothing else
   // Chromium counts the SRI rejection as a console error -- the very failure a
   // stub would be added to remove.
   assert.doesNotMatch(SOURCE, /route\.fulfill\(/);
+});
+
+test("only Chromium resource errors for the expected signed-out identity denial are ignored", () => {
+  const observed = {
+    type: "error",
+    text: "Failed to load resource: the server responded with a status of 401 ()",
+    url: `${CANONICAL_ORIGIN}/api/auth/me`,
+  };
+  assert.equal(isExpectedDeniedResourceConsole(observed), true);
+  assert.equal(isExpectedDeniedResourceConsole({ ...observed, text: "Failed to load resource: the server responded with a status of 403 (Forbidden)" }), true);
+  assert.equal(isExpectedDeniedResourceConsole({ ...observed, url: `${CANONICAL_ORIGIN}/api/leads/list` }), false);
+  assert.equal(isExpectedDeniedResourceConsole({ ...observed, url: `${CANONICAL_ORIGIN}/api/auth/me?probe=1` }), false);
+  assert.equal(isExpectedDeniedResourceConsole({ ...observed, url: "https://example.invalid/api/auth/me" }), false);
+  assert.equal(isExpectedDeniedResourceConsole({ ...observed, text: "Failed to load resource: the server responded with a status of 500 ()" }), false);
+  assert.equal(isExpectedDeniedResourceConsole({ ...observed, text: "application console failure" }), false);
+  assert.equal(isExpectedDeniedResourceConsole({ ...observed, type: "warning" }), false);
+  assert.match(SOURCE, /page\.on\("console"[\s\S]*isExpectedDeniedResourceConsole\(\{[\s\S]*message\.location\(\)\.url/);
 });

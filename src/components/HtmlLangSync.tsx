@@ -13,7 +13,8 @@ export function HtmlLangSync() {
       document.documentElement.lang = browserLang;
     }
 
-    // Listen for storage changes (from LanguageProvider toggle)
+    // Listen for changes made by another tab. Same-tab changes are applied
+    // synchronously by LanguageProvider before it updates the visible copy.
     const handler = (e: StorageEvent) => {
       if (e.key === "newme-lang" && (e.newValue === "en" || e.newValue === "zh")) {
         document.documentElement.lang = e.newValue;
@@ -21,7 +22,7 @@ export function HtmlLangSync() {
     };
     window.addEventListener("storage", handler);
 
-    // Also poll for changes in the same tab (since LanguageProvider sets via setItem)
+    // Retain a bounded reconciliation fallback for legacy or external writers.
     const observer = setInterval(() => {
       const current = localStorage.getItem("newme-lang");
       if (current === "en" || current === "zh") {

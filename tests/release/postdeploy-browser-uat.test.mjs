@@ -638,4 +638,5 @@ test("unclassified browser failures retain bounded role, locale, and step diagno
   assert.match(SOURCE, /recordStep = async[\s\S]*runtimeFailureCode\(error, \{ role: credential\.role, locale, step: id \}\)/);
   assert.match(SOURCE, /runSession\([\s\S]*runtimeFailureCode\(error, \{ role: credential\.role, locale, step: "session" \}\)/);
   assert.match(SOURCE, /context\.close\(\)[\s\S]*runtimeFailureCode\(error, \{ role: credential\.role, locale, step: "context_close" \}\)/);
+  assert.match(SOURCE, /browserType\.launch\(\{ headless: true \}\)[\s\S]*runtimeFailureCode\(error, \{ role: "all", locale: "all", step: "browser_launch" \}\)/);
 });

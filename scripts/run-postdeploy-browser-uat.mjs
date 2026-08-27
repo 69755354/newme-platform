@@ -1232,7 +1232,12 @@ export async function runBrowserUat(input, { browserType = chromium } = {}) {
   const validated = validateBrowserUatInput(input);
   createArtifactDirectory(validated.artifact_directory);
   const sourceSha256 = browserRunnerSourceSha256();
-  const browser = await browserType.launch({ headless: true });
+  let browser;
+  try {
+    browser = await browserType.launch({ headless: true });
+  } catch (error) {
+    fail(runtimeFailureCode(error, { role: "all", locale: "all", step: "browser_launch" }));
+  }
   try {
     if (browser.version() !== BROWSER_VERSION) fail("browser_version_mismatch");
     const sessions = [];

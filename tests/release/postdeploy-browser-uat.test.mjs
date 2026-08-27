@@ -31,6 +31,7 @@ import {
   qualityCounts,
   qualityFailureCode,
   isExpectedDeniedResourceConsole,
+  runtimeFailureCode,
   routeDecision,
   validateBrowserUatInput,
   visible,
@@ -617,4 +618,25 @@ test("only Chromium resource errors for the expected signed-out identity denial 
   assert.equal(isExpectedDeniedResourceConsole({ ...observed, text: "application console failure" }), false);
   assert.equal(isExpectedDeniedResourceConsole({ ...observed, type: "warning" }), false);
   assert.match(SOURCE, /page\.on\("console"[\s\S]*isExpectedDeniedResourceConsole\(\{[\s\S]*message\.location\(\)\.url/);
+});
+
+test("unclassified browser failures retain bounded role, locale, and step diagnostics", () => {
+  assert.equal(
+    runtimeFailureCode({ name: "TimeoutError" }, { role: "operator", locale: "zh", step: "post_logout_denied" }),
+    "runtime_timeout_operator_zh_post_logout_denied",
+  );
+  assert.equal(
+    runtimeFailureCode({ name: "TargetClosedError" }, { role: "admin", locale: "en", step: "session" }),
+    "runtime_target_closed_admin_en_session",
+  );
+  assert.equal(
+    runtimeFailureCode({ name: "Error", code: "fixture_lead_card_missing" }, { role: "admin", locale: "en", step: "detail_visible" }),
+    "fixture_lead_card_missing",
+  );
+  const fallback = runtimeFailureCode({ name: "UnknownRuntime" }, { role: "operator", locale: "zh", step: "x".repeat(80) });
+  assert.equal(fallback, "runtime_unexpected_operator_zh");
+  assert.match(SOURCE, /recordStep = async[\s\S]*runtimeFailureCode\(error, \{ role: credential\.role, locale, step: id \}\)/);
+  assert.match(SOURCE, /runSession\([\s\S]*runtimeFailureCode\(error, \{ role: credential\.role, locale, step: "session" \}\)/);
+  assert.match(SOURCE, /context\.close\(\)[\s\S]*runtimeFailureCode\(error, \{ role: credential\.role, locale, step: "context_close" \}\)/);
+  assert.match(SOURCE, /browserType\.launch\(\{ headless: true \}\)[\s\S]*runtimeFailureCode\(error, \{ role: "all", locale: "all", step: "browser_launch" \}\)/);
 });

@@ -730,11 +730,13 @@ function expectedBrowserSemantics(stepId, { role, locale, subject }) {
     bulk_action_verified: bulkAllowed
       ? [
           semanticAssertion("bulk_access", "allowed"),
+          semanticAssertion("bulk_fixture_lead_id", subject.lead_id),
           semanticAssertion("bulk_transfer_copy", copy.transferAction),
           semanticAssertion("bulk_cancel_copy", copy.cancel),
         ]
       : [
           semanticAssertion("bulk_access", "denied"),
+          semanticAssertion("bulk_fixture_lead_id", subject.lead_id),
           semanticAssertion("permitted_create_copy", copy.create),
           semanticAssertion("create_dialog_copy", copy.quickCreate),
         ],
@@ -751,6 +753,7 @@ function expectedBrowserSemantics(stepId, { role, locale, subject }) {
       ? [
           semanticAssertion("settings_access", "allowed"),
           semanticAssertion("settings_heading_copy", copy.settings),
+          semanticAssertion("settings_assignment_filter", "all"),
           semanticAssertion("settings_fixture_lead_id", subject.lead_id),
         ]
       : [semanticAssertion("settings_access", "denied")],
@@ -759,6 +762,7 @@ function expectedBrowserSemantics(stepId, { role, locale, subject }) {
       semanticAssertion("alternate_leads_heading_copy", alternateCopy.leads),
       semanticAssertion("alternate_create_copy", alternateCopy.create),
       semanticAssertion("alternate_html_locale", alternateLocale),
+      semanticAssertion("alternate_fixture_marker_sha256", subject.marker_sha256),
     ],
     locale_restored: [semanticAssertion("locale_restored", locale)],
     logout: [semanticAssertion("logout_copy", copy.logout)],

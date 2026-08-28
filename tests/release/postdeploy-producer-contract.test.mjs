@@ -253,6 +253,18 @@ test("canonical acceptance runs the exact browser matrix in a locked local image
   assert.match(BROWSER_RUNNER, /context\.route\("\*\*\/\*"[\s\S]*!ALLOWED_HTTP_ORIGINS\.has\(origin\)/);
 });
 
+test("the independent verifier requires every strengthened subject-bound browser assertion", () => {
+  const verifier = readFileSync(path.join(ROOT, "scripts/verify-postdeploy-acceptance.mjs"), "utf8");
+  for (const assertionId of [
+    "bulk_fixture_lead_id",
+    "settings_assignment_filter",
+    "alternate_fixture_marker_sha256",
+  ]) {
+    assert.match(BROWSER_RUNNER, new RegExp(`semanticAssertion\\(\\"${assertionId}\\"`));
+    assert.match(verifier, new RegExp(`semanticAssertion\\(\\"${assertionId}\\"`));
+  }
+});
+
 test("performance probes keep public health metadata-minimal and bind responses through protected readiness", async () => {
   const releaseSha = "a".repeat(40);
   const readinessToken = "b".repeat(64);

@@ -95,8 +95,8 @@ function browserSemantics(stepId, role, locale) {
       assertion("fixture_marker_sha256", BROWSER_SUBJECT.marker_sha256),
     ],
     bulk_action_verified: role === "admin" || role === "boss"
-      ? [assertion("bulk_access", "allowed"), assertion("bulk_transfer_copy", copy.transferAction), assertion("bulk_cancel_copy", copy.cancel)]
-      : [assertion("bulk_access", "denied"), assertion("permitted_create_copy", copy.create), assertion("create_dialog_copy", copy.quickCreate)],
+      ? [assertion("bulk_access", "allowed"), assertion("bulk_fixture_lead_id", BROWSER_SUBJECT.lead_id), assertion("bulk_transfer_copy", copy.transferAction), assertion("bulk_cancel_copy", copy.cancel)]
+      : [assertion("bulk_access", "denied"), assertion("bulk_fixture_lead_id", BROWSER_SUBJECT.lead_id), assertion("permitted_create_copy", copy.create), assertion("create_dialog_copy", copy.quickCreate)],
     detail_visible: [assertion("fixture_detail_id", BROWSER_SUBJECT.lead_id), assertion("fixture_detail_copy_sha256", BROWSER_SUBJECT.marker_sha256)],
     contract_list_visible: [
       assertion("contracts_heading_copy", copy.contracts),
@@ -105,12 +105,13 @@ function browserSemantics(stepId, role, locale) {
     ],
     settings_contract_verified: role === "sales"
       ? [assertion("settings_access", "denied")]
-      : [assertion("settings_access", "allowed"), assertion("settings_heading_copy", copy.settings), assertion("settings_fixture_lead_id", BROWSER_SUBJECT.lead_id)],
+      : [assertion("settings_access", "allowed"), assertion("settings_heading_copy", copy.settings), assertion("settings_assignment_filter", "all"), assertion("settings_fixture_lead_id", BROWSER_SUBJECT.lead_id)],
     locale_switched: [assertion("locale_target", alternateLocale)],
     locale_content_verified: [
       assertion("alternate_leads_heading_copy", alternateCopy.leads),
       assertion("alternate_create_copy", alternateCopy.create),
       assertion("alternate_html_locale", alternateLocale),
+      assertion("alternate_fixture_marker_sha256", BROWSER_SUBJECT.marker_sha256),
     ],
     locale_restored: [assertion("locale_restored", locale)],
     logout: [assertion("logout_copy", copy.logout)],

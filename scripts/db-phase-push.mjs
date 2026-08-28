@@ -61,10 +61,15 @@
  *   node scripts/db-phase-push.mjs --phase required_for_app --url-file FILE --plan
  *   node scripts/db-phase-push.mjs --phase required_for_app --url-file FILE --apply
  *   node scripts/db-phase-push.mjs --phase deferred_contract --url-file FILE --verify-only
+ *   node scripts/db-phase-push.mjs --phase required_for_app --url-file FILE --verify-recorded-posture
  *
  * --plan (default) reports what would be applied and runs every precondition,
  * including the hash check, without writing. --apply writes. --verify-only skips
- * applying and checks the phase's history and posture as it stands.
+ * applying and checks the phase's history and posture as it stands, including
+ * normal phase ordering. --verify-recorded-posture is the recovery-only read
+ * path: it requires every selected-phase row to be recorded under its exact name
+ * and verifies content plus posture, but does not reject merely because a later
+ * phase is also recorded. It never writes and cannot initialize history.
  *
  * Exit 0 only when everything asked for passed.
  */
@@ -274,6 +279,37 @@ export function planPhase({ manifest, phase, recorded }) {
   return { problems, toApply, alreadyApplied };
 }
 
+/**
+ * Read-only recovery verification for a phase whose later phase is already in
+ * history. Unlike planPhase this is not an application plan: every selected row
+ * must already exist under its exact name, and no missing row is returned as
+ * work to apply. The content and posture checks still run in main().
+ */
+export function planRecordedPhase({ manifest, phase, recorded }) {
+  const problems = [];
+  const recordedByVersion = new Map(
+    (recorded ?? []).map((row) => [String(row.version), String(row.name ?? "").trim()]),
+  );
+  const alreadyApplied = [];
+  for (const entry of manifestEntries(manifest, phase)) {
+    const version = String(entry.version);
+    const expectedName = CLI_MIGRATION.exec(String(entry.file))?.[2] ?? "";
+    if (!recordedByVersion.has(version)) {
+      problems.push(`${entry.file} is not recorded; recovery verification never applies missing migrations`);
+      continue;
+    }
+    const recordedName = recordedByVersion.get(version);
+    if (recordedName !== "" && recordedName !== expectedName) {
+      problems.push(
+        `the database records ${version} as ${JSON.stringify(recordedName)} but this release calls it ${JSON.stringify(expectedName)}`,
+      );
+      continue;
+    }
+    alreadyApplied.push(entry);
+  }
+  return { problems, toApply: [], alreadyApplied };
+}
+
 // --- arguments -------------------------------------------------------------
 
 function parseArgs(argv) {
@@ -318,6 +354,9 @@ function parseArgs(argv) {
       case "--verify-only":
         options.mode = "verify";
         break;
+      case "--verify-recorded-posture":
+        options.mode = "verify-recorded";
+        break;
       case "--init-history":
         options.initHistory = true;
         break;
@@ -333,6 +372,9 @@ function parseArgs(argv) {
     throw new Error(`--phase must be one of ${PHASES.join(", ")}`);
   }
   if (!options.urlFile) throw new Error("--url-file is required");
+  if (options.mode === "verify-recorded" && options.initHistory) {
+    throw new Error("--verify-recorded-posture cannot initialize migration history");
+  }
   return options;
 }
 
@@ -447,7 +489,7 @@ async function main(argv) {
     console.log(`recorded versions   : ${recorded.length}`);
 
     // 4 · The preconditions.
-    const { problems, toApply, alreadyApplied } = planPhase({
+    const { problems, toApply, alreadyApplied } = (options.mode === "verify-recorded" ? planRecordedPhase : planPhase)({
       manifest,
       phase: options.phase,
       recorded,
@@ -595,7 +637,7 @@ async function main(argv) {
     }
 
     const predicates = manifest.posture?.[options.phase]?.predicates ?? [];
-    const postureApplies = options.mode === "apply" || options.mode === "verify";
+    const postureApplies = options.mode === "apply" || options.mode === "verify" || options.mode === "verify-recorded";
     if (postureApplies) {
       for (const predicate of predicates) {
         let value;

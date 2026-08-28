@@ -1689,13 +1689,13 @@ else
   MIGRATION_IDS=${4:-}
   ROLLBACK_SHA=${5:-}
   if [ "$#" -ne 5 ] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || ! [[ "$ROLLBACK_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "usage: newme-deploy <main-sha> <successful-run-id> <not_required|applied_verified> <migration-ids> <rollback-sha>" >&2
-    echo "   or: newme-deploy bootstrap <main-sha> <successful-run-id> <not_required|applied_verified> <migration-ids> <rollback-sha>" >&2
+    echo "usage: newme-deploy <main-sha> <successful-run-id> <not_required|applied_verified|reentry_verified> <migration-ids> <rollback-sha>" >&2
+    echo "   or: newme-deploy bootstrap <main-sha> <successful-run-id> <not_required|applied_verified|reentry_verified> <migration-ids> <rollback-sha>" >&2
     exit 64
   fi
   case "$MIGRATION_STATUS" in
     not_required) [ -z "$MIGRATION_IDS" ] || exit 64 ;;
-    applied_verified) [[ "$MIGRATION_IDS" =~ ^[0-9A-Za-z_.-]+(,[0-9A-Za-z_.-]+)*$ ]] || exit 64 ;;
+    applied_verified|reentry_verified) [[ "$MIGRATION_IDS" =~ ^[0-9A-Za-z_.-]+(,[0-9A-Za-z_.-]+)*$ ]] || exit 64 ;;
     *) exit 64 ;;
   esac
 fi
@@ -2405,7 +2405,7 @@ MIGRATION_HISTORY_ARGS=(
   --history-fixture "$WORKTREE/supabase/migration-history-reconciliation.json"
 )
 case "$MIGRATION_STATUS" in
-  applied_verified)
+  applied_verified|reentry_verified)
     # The derived list, never $MIGRATION_IDS: the two are equal by the gate above,
     # and using the derived one means a future change to that gate cannot leave this
     # line quietly enforcing the operator's scope again.
@@ -2413,7 +2413,6 @@ case "$MIGRATION_STATUS" in
       echo "the release manifest yielded no required migration set to verify" >&2
       exit 65
     }
-    MIGRATION_HISTORY_ARGS+=(--require-applied "$REQUIRED_IDS")
     # The other half of the phase split, as a fact about production rather than an
     # ordering rule inside the manifest: the contract phase must not be applied yet.
     if [ -n "$DEFERRED_IDS" ]; then
@@ -2421,7 +2420,17 @@ case "$MIGRATION_STATUS" in
         echo "the release manifest's deferred contract set is not a list of migration versions" >&2
         exit 65
       }
-      MIGRATION_HISTORY_ARGS+=(--require-unapplied "$DEFERRED_IDS")
+      if [ "$MIGRATION_STATUS" = reentry_verified ]; then
+        MIGRATION_HISTORY_ARGS+=(--require-applied "$REQUIRED_IDS,$DEFERRED_IDS")
+      else
+        MIGRATION_HISTORY_ARGS+=(--require-applied "$REQUIRED_IDS")
+        MIGRATION_HISTORY_ARGS+=(--require-unapplied "$DEFERRED_IDS")
+      fi
+    elif [ "$MIGRATION_STATUS" = reentry_verified ]; then
+      echo "reentry_verified requires a deferred contract migration set" >&2
+      exit 65
+    else
+      MIGRATION_HISTORY_ARGS+=(--require-applied "$REQUIRED_IDS")
     fi
     ;;
   not_required)     MIGRATION_HISTORY_ARGS+=(--require-no-pending) ;;
@@ -2430,6 +2439,27 @@ esac
   echo "production migration history does not match the release being deployed" >&2
   exit 65
 }
+
+# A protected contract rollback leaves the deferred migration recorded while its
+# companion returns the live posture to compat. Reentry is therefore explicit:
+# exact required+deferred history above, plus an exact compat posture here and at
+# the immediate pre-switch gate. Strict, absent or unreadable state is refused
+# before the control-plane asset transaction begins.
+if [ "$MIGRATION_STATUS" = reentry_verified ]; then
+  REENTRY_PHASE_OUTPUT="$("$NODE_BIN" "$WORKTREE/scripts/check-release-phase.mjs" \
+    --for-switch \
+    --release-dir "$WORKTREE" \
+    --url-file "$MIGRATION_DB_URL_FILE" \
+    --modules-dir "$LIVE_RELEASE/node_modules")" || {
+    printf '%s\n' "$REENTRY_PHASE_OUTPUT"
+    echo "reentry deployment database phase could not be verified" >&2
+    exit 65
+  }
+  [ "$REENTRY_PHASE_OUTPUT" = "NEWME_DB_PHASE=compat" ] || {
+    echo "reentry_verified requires live database phase compat" >&2
+    exit 65
+  }
+fi
 
 # Hand-run companions (round-4 review C4-5). The gate above covers what production
 # recorded; rollback_*.sql and recontract_*.sql are never recorded, because they

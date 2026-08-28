@@ -227,9 +227,9 @@ test("a run id that is not a GitHub run id is rejected", () => {
 test("migration claims must be internally consistent", () => {
   // The original bug: MIGRATION_STATUS=applied with no ids was recorded as a
   // verified migration. "applied" is not even a value either layer accepts now.
-  assertRejected({ MIGRATION_STATUS: "applied" }, /MIGRATION_STATUS must be 'applied_verified' or 'not_required'/);
-  assertRejected({ MIGRATION_STATUS: "pending" }, /MIGRATION_STATUS must be 'applied_verified' or 'not_required'/);
-  assertRejected({ MIGRATION_STATUS: "skipped" }, /MIGRATION_STATUS must be 'applied_verified' or 'not_required'/);
+  assertRejected({ MIGRATION_STATUS: "applied" }, /MIGRATION_STATUS must be 'applied_verified', 'reentry_verified' or 'not_required'/);
+  assertRejected({ MIGRATION_STATUS: "pending" }, /MIGRATION_STATUS must be 'applied_verified', 'reentry_verified' or 'not_required'/);
+  assertRejected({ MIGRATION_STATUS: "skipped" }, /MIGRATION_STATUS must be 'applied_verified', 'reentry_verified' or 'not_required'/);
 
   assertRejected(
     { MIGRATION_STATUS: "applied_verified", MIGRATION_IDS: "" },
@@ -254,6 +254,14 @@ test("migration claims must be internally consistent", () => {
   }
   assert.equal(
     validate({ MIGRATION_STATUS: "applied_verified", MIGRATION_IDS: "20260811100000_f08,20260811100100_f06" }).accepted,
+    true,
+  );
+  assertRejected(
+    { MIGRATION_STATUS: "reentry_verified", MIGRATION_IDS: "" },
+    /reentry_verified requires MIGRATION_IDS/,
+  );
+  assert.equal(
+    validate({ MIGRATION_STATUS: "reentry_verified", MIGRATION_IDS: "20260811100000_f08,20260811100100_f06" }).accepted,
     true,
   );
 });
@@ -517,6 +525,7 @@ test("the wrapper enforces the predeploy taskboard scope and remote migration hi
   // tests/release/release-claim-derivation.test.mjs for the finding (round-4 C4-1)
   // and for the derivation itself.
   assert.match(wrapper, /MIGRATION_HISTORY_ARGS\+=\(--require-applied "\$REQUIRED_IDS"\)/);
+  assert.match(wrapper, /MIGRATION_HISTORY_ARGS\+=\(--require-applied "\$REQUIRED_IDS,\$DEFERRED_IDS"\)/);
   assert.doesNotMatch(wrapper, /--require-applied "\$MIGRATION_IDS"/);
   assert.match(wrapper, /not_required\)\s+MIGRATION_HISTORY_ARGS\+=\(--require-no-pending\)/);
 

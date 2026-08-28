@@ -211,9 +211,9 @@ validate_release_claims() {
   # Values are the ones infra/systemd/newme-deploy.sh accepts on its command
   # line, so the two layers cannot disagree about what a valid claim looks like.
   case "$migration_status" in
-    applied_verified)
+    applied_verified|reentry_verified)
       [ -n "$migration_ids" ] ||
-        { echo "MIGRATION_STATUS=applied_verified requires MIGRATION_IDS" >&2; return 1; }
+        { echo "MIGRATION_STATUS=$migration_status requires MIGRATION_IDS" >&2; return 1; }
       [[ "$migration_ids" =~ ^[0-9A-Za-z_.-]+(,[0-9A-Za-z_.-]+)*$ ]] ||
         { echo "MIGRATION_IDS must be a comma-separated list of migration ids" >&2; return 1; }
       ;;
@@ -222,7 +222,7 @@ validate_release_claims() {
         { echo "MIGRATION_STATUS=not_required must not carry MIGRATION_IDS" >&2; return 1; }
       ;;
     *)
-      echo "MIGRATION_STATUS must be 'applied_verified' or 'not_required' (got: $migration_status)" >&2
+      echo "MIGRATION_STATUS must be 'applied_verified', 'reentry_verified' or 'not_required' (got: $migration_status)" >&2
       return 1
       ;;
   esac

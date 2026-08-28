@@ -59,8 +59,8 @@ export function parseArgs(argv) {
   if (!path.isAbsolute(options.modulesDir)) refuse("--modules-dir must be absolute");
   if (!VERSION_LIST.test(options.expectedRequired)) refuse("--expect-required is not a migration-version list");
   if (!VERSION_LIST.test(options.expectedDeferred)) refuse("--expect-deferred is not a migration-version list");
-  if (!new Set(["applied_verified", "not_required"]).has(options.status)) {
-    refuse("--status must be applied_verified or not_required");
+  if (!new Set(["applied_verified", "reentry_verified", "not_required"]).has(options.status)) {
+    refuse("--status must be applied_verified, reentry_verified or not_required");
   }
   return options;
 }
@@ -152,10 +152,13 @@ export function main(argv) {
     "--history-fixture", historyFixture,
     "--release-manifest", releaseManifest,
   ];
-  if (options.status === "applied_verified") {
-    if (required === "") refuse("applied_verified derived no required migration set");
-    historyArgs.push("--require-applied", required);
-    if (deferred !== "") historyArgs.push("--require-unapplied", deferred);
+  if (options.status === "applied_verified" || options.status === "reentry_verified") {
+    if (required === "") refuse(`${options.status} derived no required migration set`);
+    if (options.status === "reentry_verified" && deferred === "") {
+      refuse("reentry_verified requires a deferred contract migration set");
+    }
+    historyArgs.push("--require-applied", options.status === "reentry_verified" ? `${required},${deferred}` : required);
+    if (options.status === "applied_verified" && deferred !== "") historyArgs.push("--require-unapplied", deferred);
   } else {
     historyArgs.push("--require-no-pending");
   }
@@ -167,7 +170,7 @@ export function main(argv) {
       "--phase", "required_for_app",
       "--url-file", options.urlFile,
       "--modules-dir", options.modulesDir,
-      "--verify-only",
+      options.status === "reentry_verified" ? "--verify-recorded-posture" : "--verify-only",
     ],
     { cwd: options.releaseDir },
   );
@@ -184,7 +187,10 @@ export function main(argv) {
     ],
     { cwd: options.releaseDir },
   );
-  oneLine(phase, "NEWME_DB_PHASE");
+  const livePhase = oneLine(phase, "NEWME_DB_PHASE");
+  if (options.status === "reentry_verified" && livePhase !== "compat") {
+    refuse(`reentry_verified requires live database phase compat, not ${JSON.stringify(livePhase)}`);
+  }
   console.log(`pre-switch revalidation: required=${required === "" ? 0 : required.split(",").length} deferred=${deferred === "" ? 0 : deferred.split(",").length} history=verified posture=verified companions=verified phase=verified`);
   return 0;
 }

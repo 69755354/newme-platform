@@ -137,14 +137,22 @@ test("not_required is refused for a release that requires migrations", () => {
   assert.match(problemsOf("not_required", REQUIRED).join("\n"), /not_required must not carry migration ids/);
 });
 
-test("an unknown status is refused rather than treated as one of the two", () => {
+test("an unknown status is refused rather than treated as a verified shape", () => {
   for (const status of ["applied", "APPLIED_VERIFIED", "", "verified", null, undefined, "not_required "]) {
     assert.match(
       problemsOf(status, REQUIRED).join("\n"),
-      /the migration status must be applied_verified or not_required/,
+      /the migration status must be applied_verified, reentry_verified or not_required/,
       JSON.stringify(status),
     );
   }
+});
+
+test("reentry_verified derives the same exact required claim without accepting deferred ids", () => {
+  const exact = claimOf("reentry_verified", REQUIRED);
+  assert.deepEqual(exact.problems, []);
+  assert.deepEqual(exact.required, REQUIRED);
+  assert.deepEqual(exact.deferred, DEFERRED);
+  assert.match(problemsOf("reentry_verified", [...REQUIRED, ...DEFERRED]).join("\n"), /deferred contract-phase migration/);
 });
 
 test("a manifest the set cannot be derived from yields problems AND empty sets", () => {
@@ -331,6 +339,8 @@ test("the wrapper derives the set from its own worktree and verifies the derived
   assert.match(wrapper, /MIGRATION_HISTORY_ARGS\+=\(--require-applied "\$REQUIRED_IDS"\)/);
   assert.doesNotMatch(wrapper, /--require-applied "\$MIGRATION_IDS"/);
   assert.match(wrapper, /MIGRATION_HISTORY_ARGS\+=\(--require-unapplied "\$DEFERRED_IDS"\)/);
+  assert.match(wrapper, /MIGRATION_HISTORY_ARGS\+=\(--require-applied "\$REQUIRED_IDS,\$DEFERRED_IDS"\)/);
+  assert.match(wrapper, /\[ "\$MIGRATION_STATUS" = reentry_verified \]/);
   // Empty or malformed derivation is a refusal, never an empty --require-applied.
   assert.match(wrapper, /\[\[ "\$REQUIRED_IDS" =~ \^\[0-9\]\{14\}\(,\[0-9\]\{14\}\)\*\$ \]\] \|\|/);
   assert.match(wrapper, /the release manifest yielded no required migration set to verify/);
@@ -342,6 +352,9 @@ test("the wrapper derives the set from its own worktree and verifies the derived
   const assets = at(/^\s*bash "\$WORKTREE\/scripts\/install-systemd-assets\.sh"$/);
   assert.ok(claim > 0 && claim < history, "the claim must be derived before the history gate consumes it");
   assert.ok(history < assets);
+  const reentryPhase = at(/REENTRY_PHASE_OUTPUT=/);
+  assert.ok(history < reentryPhase && reentryPhase < assets, "reentry posture must be exact before assets change");
+  assert.match(wrapper, /REENTRY_PHASE_OUTPUT[\s\S]*--for-switch[\s\S]*NEWME_DB_PHASE=compat/);
 
   // Recorded as its own gate, so the installer can tell a wrapper that derives the
   // set from one that takes the operator's word (scripts/verify-deploy-gate-record.mjs).

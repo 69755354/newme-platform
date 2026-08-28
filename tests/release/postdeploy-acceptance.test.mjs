@@ -827,13 +827,18 @@ test("browser evidence rejects missing locale, identity, source, step, quality, 
   }
 });
 
-test("canonical attest reads through O_NOFOLLOW descriptors behind a root-only ancestor chain", () => {
+test("canonical attest accepts root-owned non-writable ancestors with a service group", () => {
   const verifier = readFileSync(path.join(ROOT, "scripts/verify-postdeploy-acceptance.mjs"), "utf8");
   const deploy = readFileSync(path.join(ROOT, "infra/systemd/newme-deploy.sh"), "utf8");
   assert.match(verifier, /openSync\(resolved, constants\.O_RDONLY \| \(constants\.O_NOFOLLOW \?\? 0\)\)/);
   assert.match(verifier, /fstatSync\(descriptor\)/);
   assert.match(verifier, /readFileSync\(descriptor\)/);
   assert.match(verifier, /metadata\.uid !== 0[\s\S]*metadata\.mode & 0o022/);
+  const ancestorGuard = verifier.slice(
+    verifier.indexOf("function requireRootOwnedAncestorChain"),
+    verifier.indexOf("function requireSafeFile"),
+  );
+  assert.doesNotMatch(ancestorGuard, /metadata\.gid !== 0/);
   assert.match(deploy, /postdeploy bundle ancestor trust is invalid/);
   assert.match(deploy, /metadata\.st_uid != 0[\s\S]*stat\.S_IMODE\(metadata\.st_mode\) & 0o022/);
   assert.ok(deploy.indexOf("postdeploy bundle ancestor trust is invalid") < deploy.indexOf('"$NODE_BIN" "$ATTEST_VERIFIER"'));

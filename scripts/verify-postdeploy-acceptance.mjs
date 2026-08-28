@@ -436,7 +436,6 @@ function requireRootOwnedAncestorChain(filePath, label) {
       !metadata.isDirectory()
       || metadata.isSymbolicLink()
       || metadata.uid !== 0
-      || metadata.gid !== 0
       || (metadata.mode & 0o022) !== 0
     ) {
       fail(`${label} traverses an ancestor that is not a root-owned, non-writable directory`);

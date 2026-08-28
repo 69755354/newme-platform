@@ -321,6 +321,17 @@ export function isExpectedDeniedResourceConsole({ type, text, url }) {
   return /^Failed to load resource: the server responded with a status of (?:401|403)(?: \([^\r\n]{0,32}\))?$/.test(text);
 }
 
+export function shouldCountCriticalRequestFailure({ resourceType, pathname, errorText }) {
+  const critical = resourceType === "document"
+    || /^\/api\/(?:auth|leads|settings|contracts)(?:\/|$)/.test(pathname);
+  if (!critical) return false;
+  // Chromium reports a navigation-cancelled fetch as net::ERR_ABORTED even
+  // when the server completed it successfully. That is not an HTTP failure.
+  // Never apply this exception to a document navigation, and keep every other
+  // transport error fail-closed.
+  return !(resourceType !== "document" && errorText === "net::ERR_ABORTED");
+}
+
 export function runtimeFailureCode(error, { role, locale, step }) {
   if (typeof error?.code === "string" && /^[a-z][a-z0-9_]{1,62}$/.test(error.code)) return error.code;
   const kind = ({
@@ -750,7 +761,11 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
   });
   page.on("requestfailed", (request) => {
     const pathname = safePathname(request.url());
-    if (request.resourceType() === "document" || /^\/api\/(?:auth|leads|settings|contracts)(?:\/|$)/.test(pathname)) {
+    if (shouldCountCriticalRequestFailure({
+      resourceType: request.resourceType(),
+      pathname,
+      errorText: request.failure()?.errorText,
+    })) {
       runtimeQuality.critical_http_failure_count += 1;
     }
   });

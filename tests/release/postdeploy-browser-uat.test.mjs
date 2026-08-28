@@ -31,6 +31,7 @@ import {
   qualityCounts,
   qualityFailureCode,
   isExpectedDeniedResourceConsole,
+  shouldCountCriticalRequestFailure,
   runtimeFailureCode,
   routeDecision,
   validateBrowserUatInput,
@@ -625,6 +626,25 @@ test("only Chromium resource errors for the expected signed-out identity denial 
   assert.equal(isExpectedDeniedResourceConsole({ ...observed, text: "application console failure" }), false);
   assert.equal(isExpectedDeniedResourceConsole({ ...observed, type: "warning" }), false);
   assert.match(SOURCE, /page\.on\("console"[\s\S]*isExpectedDeniedResourceConsole\(\{[\s\S]*message\.location\(\)\.url/);
+});
+
+test("navigation-cancelled API fetches are not classified as critical transport failures", () => {
+  assert.equal(shouldCountCriticalRequestFailure({
+    resourceType: "fetch", pathname: "/api/contracts/list", errorText: "net::ERR_ABORTED",
+  }), false);
+  assert.equal(shouldCountCriticalRequestFailure({
+    resourceType: "document", pathname: "/settings", errorText: "net::ERR_ABORTED",
+  }), true);
+  assert.equal(shouldCountCriticalRequestFailure({
+    resourceType: "fetch", pathname: "/api/contracts/list", errorText: "net::ERR_CONNECTION_RESET",
+  }), true);
+  assert.equal(shouldCountCriticalRequestFailure({
+    resourceType: "fetch", pathname: "/api/contracts/list", errorText: undefined,
+  }), true);
+  assert.equal(shouldCountCriticalRequestFailure({
+    resourceType: "fetch", pathname: "/api/metrics/funnel", errorText: "net::ERR_FAILED",
+  }), false);
+  assert.match(SOURCE, /page\.on\("requestfailed"[\s\S]*shouldCountCriticalRequestFailure\(\{[\s\S]*request\.failure\(\)\?\.errorText/);
 });
 
 test("unclassified browser failures retain bounded role, locale, and step diagnostics", () => {

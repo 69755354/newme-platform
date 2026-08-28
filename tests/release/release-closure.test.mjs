@@ -48,10 +48,14 @@ This historical prose must remain under this heading.
 | --- | --- | --- | --- |
 | 1 | src/release.ts | MODIFY | exact historical evidence |
 | 2 | src/second.ts | VERIFY | second ordered historical row |
+| HISTORICAL-OPEN | REVIEW | production acceptance required |
 `;
 const CLOSURE_BOARD = RELEASE_BOARD.replace(
   "| RELEASE-ITEM | REVIEW | Codex | 2026-08-14 |",
   "| RELEASE-ITEM | DONE | Codex | 2026-08-15 |",
+).replace(
+  "| HISTORICAL-OPEN | REVIEW | production acceptance required |",
+  "| HISTORICAL-OPEN | DONE | production acceptance required |",
 ) + `\n${ACCEPTANCE_MARKER}\n`;
 
 function git(repo, ...args) {
@@ -252,6 +256,18 @@ test("closure preserves the complete active inventory and every historical table
 
   const deletedHistory = CLOSURE_BOARD.replace("| 1 | src/release.ts | MODIFY | exact historical evidence |\n", "");
   assert.match(auditReleaseClosure({ ...base, taskboardText: deletedHistory }).join("\n"), /historical table row/);
+
+  const rewrittenHistoricalEvidence = CLOSURE_BOARD.replace(
+    "| HISTORICAL-OPEN | DONE | production acceptance required |",
+    "| HISTORICAL-OPEN | DONE | different evidence |",
+  );
+  assert.match(auditReleaseClosure({ ...base, taskboardText: rewrittenHistoricalEvidence }).join("\n"), /historical/);
+
+  const historicalStatusNotClosed = CLOSURE_BOARD.replace(
+    "| HISTORICAL-OPEN | DONE | production acceptance required |",
+    "| HISTORICAL-OPEN | IN_PROGRESS | production acceptance required |",
+  );
+  assert.match(auditReleaseClosure({ ...base, taskboardText: historicalStatusNotClosed }).join("\n"), /historical/);
 
   const unknownStatus = CLOSURE_BOARD.replace(
     "| RELEASE-ITEM | DONE | Codex | 2026-08-15 |",

@@ -366,7 +366,13 @@ export function runTaskboardCheck({
       for (const problem of scopeBlock.problems) fail(problem);
       const openKeys = [...new Set(unfinishedRows.map((row) => row.key))];
       const undeclared = openKeys.filter((key) => !scopeBlock.declarations.has(key));
-      const stale = [...scopeBlock.declarations.keys()].filter((key) => !openKeys.includes(key));
+      // Once every row is DONE the declaration block becomes immutable closure
+      // history. Keeping it is required by the TASKBOARD-only release-closure
+      // proof, so only treat declarations as stale while another open row still
+      // makes the block operational.
+      const stale = unfinishedRows.length === 0
+        ? []
+        : [...scopeBlock.declarations.keys()].filter((key) => !openKeys.includes(key));
       for (const key of undeclared) {
         fail(
           `TASKBOARD.md row ${key} is unfinished but declares no release scope; ` +
@@ -380,10 +386,14 @@ export function runTaskboardCheck({
         );
       }
       if (scopeBlock.problems.length === 0 && undeclared.length === 0 && stale.length === 0) {
-        pass(
-          `every unfinished TASKBOARD row declares exactly one release scope ` +
-            `(${scopeBlock.declarations.size} row(s) declared)`,
-        );
+        if (unfinishedRows.length === 0) {
+          pass(`release-scope declarations are retained as closure history (${scopeBlock.declarations.size} row(s))`);
+        } else {
+          pass(
+            `every unfinished TASKBOARD row declares exactly one release scope ` +
+              `(${scopeBlock.declarations.size} row(s) declared)`,
+          );
+        }
       }
     }
   }

@@ -22,6 +22,7 @@ import {
   LEAD_WON_CONTRACT_APPROVAL_STATUS,
   LEAD_WON_CONTRACT_STATUS,
   leadWonUnmetExpectations,
+  measurePerformance,
   refusalDiagnostic,
   requireProtectedAncestors,
   taxonomyValue,
@@ -250,6 +251,43 @@ test("canonical acceptance runs the exact browser matrix in a locked local image
   assert.doesNotMatch(CANONICAL_BROWSER, /password.*(?:args|env)|email.*(?:args|env)/i);
   assert.match(BROWSER_RUNNER, /CANONICAL_DATA_ORIGIN = "https:\/\/vfopmpxlhwzpxqegayew\.supabase\.co"/);
   assert.match(BROWSER_RUNNER, /context\.route\("\*\*\/\*"[\s\S]*!ALLOWED_HTTP_ORIGINS\.has\(origin\)/);
+});
+
+test("performance probes keep public health metadata-minimal and bind responses through protected readiness", async () => {
+  const releaseSha = "a".repeat(40);
+  const readinessToken = "b".repeat(64);
+  const result = await measurePerformance(
+    releaseSha,
+    readinessToken,
+    async (url, options) => {
+      assert.equal(url, "https://app.newme.ae/api/ready");
+      assert.equal(options.headers["x-newme-readiness-token"], readinessToken);
+      return new Response(JSON.stringify({ status: "ready", release_sha: releaseSha }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+      });
+    },
+    2,
+    null,
+  );
+  assert.equal(result.samples.length, 2);
+  assert.doesNotMatch(PRODUCER, /health\?\.(?:release|version)/);
+
+  await assert.rejects(
+    measurePerformance(
+      releaseSha,
+      readinessToken,
+      async () => new Response(JSON.stringify({ status: "ready", release_sha: "c".repeat(40) }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+      1,
+      null,
+    ),
+    /performance_probe_release_mismatch/,
+  );
+  assert.match(PRODUCER, /readProtectedFile\(RUNTIME_ENV_FILE, "runtime_environment"/);
+  assert.doesNotMatch(PRODUCER, /console\.(?:log|error)[^\n]*readinessToken/);
 });
 
 test("predeploy CI is bound to the canonical live workflow and a fresh ordered run", () => {

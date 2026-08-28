@@ -44,6 +44,7 @@ const UTC_SECOND = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/;
 const PRODUCTION_ORIGIN = "https://app.newme.ae";
 const ACCEPTANCE_INPUT_FILE = "/etc/newme/postdeploy-acceptance-credentials-v1.json";
 const DATABASE_URL_FILE = "/etc/newme/migration-db.url";
+const RUNTIME_ENV_FILE = "/etc/newme/newme-runtime.env";
 const RECEIPT_PRIVATE_KEY_FILE = "/etc/newme/postdeploy-acceptance-receipt.key";
 const RECEIPT_PUBLIC_KEY_FILE = "/etc/newme/postdeploy-acceptance-receipt.pub";
 const OUTPUT_ROOT = "/var/lib/newme/postdeploy-intake-v1";
@@ -1688,14 +1689,24 @@ async function cleanupFixtures(db, fixture, { expectedObjects = null, allowAlrea
   };
 }
 
-async function measurePerformance(releaseSha, fetchImpl = fetch, sampleCount = 20, signal = null) {
+export async function measurePerformance(
+  releaseSha,
+  readinessToken,
+  fetchImpl = fetch,
+  sampleCount = 20,
+  signal = null,
+) {
   const samples = [];
   for (let index = 0; index < sampleCount; index += 1) {
     const started = performance.now();
     let response;
     try {
-      response = await fetchImpl(`${PRODUCTION_ORIGIN}/api/health`, {
-        headers: { accept: "application/json", "cache-control": "no-store" },
+      response = await fetchImpl(`${PRODUCTION_ORIGIN}/api/ready`, {
+        headers: {
+          accept: "application/json",
+          "cache-control": "no-store",
+          "x-newme-readiness-token": readinessToken,
+        },
         redirect: "error",
         signal: signal ? AbortSignal.any([AbortSignal.timeout(10_000), signal]) : AbortSignal.timeout(10_000),
       });
@@ -1711,7 +1722,8 @@ async function measurePerformance(releaseSha, fetchImpl = fetch, sampleCount = 2
     } catch {
       refuse("performance_probe_response_invalid");
     }
-    if (![health?.release, health?.version].includes(releaseSha)) refuse("performance_probe_release_mismatch");
+    if (!isObject(health) || health.status !== "ready") refuse("performance_probe_health_invalid");
+    if (health.release_sha !== releaseSha) refuse("performance_probe_release_mismatch");
     samples.push(elapsed);
   }
   const sorted = [...samples].sort((left, right) => left - right);
@@ -1766,6 +1778,7 @@ async function delayedReadback({
   recoveryProviderDeliveryId,
   recoveryProviderOperationId,
   serviceRuntimeBaseline,
+  readinessToken,
   signal,
   fetchImpl = fetch,
   sleep = (milliseconds) => sleepWithSignal(milliseconds, signal),
@@ -1777,13 +1790,18 @@ async function delayedReadback({
   const checkTimes = {};
   let health;
   try {
-    const response = await fetchImpl(`${PRODUCTION_ORIGIN}/api/health`, {
-      headers: { accept: "application/json", "cache-control": "no-store" },
+    const response = await fetchImpl(`${PRODUCTION_ORIGIN}/api/ready`, {
+      headers: {
+        accept: "application/json",
+        "cache-control": "no-store",
+        "x-newme-readiness-token": readinessToken,
+      },
       redirect: "error",
       signal: signal ? AbortSignal.any([AbortSignal.timeout(10_000), signal]) : AbortSignal.timeout(10_000),
     });
     health = await response.json();
-    if (response.status !== 200 || ![health?.release, health?.version].includes(releaseSha)) refuse("delayed_service_release_mismatch");
+    if (response.status !== 200 || !isObject(health) || health.status !== "ready") refuse("delayed_service_health_invalid");
+    if (health.release_sha !== releaseSha) refuse("delayed_service_release_mismatch");
   } catch (error) {
     if (error instanceof ProducerError) throw error;
     if (signal?.aborted) refuse("uat_interrupted");
@@ -2700,6 +2718,10 @@ export async function runCanonicalPostdeployAcceptance(releaseSha, { signal = nu
   if (!RELEASE_SHA.test(releaseSha)) refuse("release_sha_invalid");
   const { releaseRoot, release, serviceRuntime } = releaseEvidence(releaseSha);
   const credentials = credentialsFromBytes(readProtectedFile(ACCEPTANCE_INPUT_FILE, "credentials"));
+  const runtimeEnvironment = readProtectedFile(RUNTIME_ENV_FILE, "runtime_environment", 64 * 1024).toString("utf8");
+  const readinessTokens = [...runtimeEnvironment.matchAll(/(?:^|\n)NEWME_READINESS_TOKEN=([0-9a-f]{64})(?=\n|$)/g)];
+  if (readinessTokens.length !== 1) refuse("readiness_token_invalid");
+  const readinessToken = readinessTokens[0][1];
   const databaseUrl = readProtectedFile(DATABASE_URL_FILE, "database_url", 64 * 1024).toString("utf8").trim();
   if (!databaseUrl || /[\r\n]/.test(databaseUrl)) refuse("database_url_invalid");
   const receiptPrivateKeyBytes = readProtectedFile(RECEIPT_PRIVATE_KEY_FILE, "receipt_private_key", 64 * 1024);
@@ -2826,7 +2848,7 @@ export async function runCanonicalPostdeployAcceptance(releaseSha, { signal = nu
   }
   try {
     if (!browserResult) refuse("browser_uat_result_missing");
-    const performanceResult = await measurePerformance(releaseSha, fetch, 20, signal);
+    const performanceResult = await measurePerformance(releaseSha, readinessToken, fetch, 20, signal);
     if (performanceResult.p75 > 2000 || performanceResult.p95 > 5000) refuse("performance_threshold_exceeded");
     recordJournalStep(journal, "performance_measured", performanceResult.samples);
     const alertPair = await runCanonicalAlertDrill({
@@ -2847,6 +2869,7 @@ export async function runCanonicalPostdeployAcceptance(releaseSha, { signal = nu
       recoveryProviderDeliveryId: alertPair.recovery.provider_delivery_id,
       recoveryProviderOperationId: alertPair.recovery.provider_operation_id,
       serviceRuntimeBaseline: serviceRuntime,
+      readinessToken,
       signal,
     });
     recordJournalStep(journal, "delayed_provider_readback_verified", [delayedResult.providerReadback.body_sha256]);

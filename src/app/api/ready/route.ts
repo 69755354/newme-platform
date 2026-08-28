@@ -8,7 +8,10 @@ const noStoreHeaders = { "Cache-Control": "no-store, max-age=0" };
 const exactReleaseSha = /^[0-9a-f]{40}$/;
 
 function stagingReleaseMetadata() {
-  if (process.env.NEWME_RELEASE_METADATA_REQUIRED !== "1") return null;
+  if (process.env.NEWME_RELEASE_METADATA_REQUIRED !== "1") {
+    const releaseSha = process.env.NEXT_PUBLIC_APP_VERSION || "";
+    return exactReleaseSha.test(releaseSha) ? { release_sha: releaseSha } : false;
+  }
   const releaseSha = process.env.NEWME_RELEASE_SHA || "";
   const buildId = process.env.NEWME_BUILD_ID || "";
   if (

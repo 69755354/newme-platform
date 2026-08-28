@@ -35,6 +35,8 @@ test("SAM-60/SAM-68 contracts", async () => {
   assert.match(health, /Cache-Control": "no-store, max-age=0"/);
   assert.match(ready, /401|AbortController/);
   assert.match(ready, /NEXT_PUBLIC_SUPABASE_ANON_KEY/);
+  assert.match(ready, /NEXT_PUBLIC_APP_VERSION/);
+  assert.match(ready, /release_sha/);
   assert.doesNotMatch(ready, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(ready, /error\.message|responseTime|writeFileSync|readFileSync/);
   assert.match(ready, /export const dynamic = "force-dynamic"/);

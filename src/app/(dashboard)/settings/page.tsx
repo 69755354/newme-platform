@@ -35,6 +35,7 @@ interface Profile {
 }
 
 const STAGES = PIPELINE_STAGES.map((stage) => stage.key);
+const SETTINGS_ROLES = ["admin", "boss", "operator"];
 /* ════════════════════════════════════════ */
 
 function PasswordChange() {
@@ -118,7 +119,7 @@ function PasswordChange() {
 /* ════════════════════════════════════════ */
 export default function SettingsPage() {
   const { t } = useLanguage();
-  const { loading: roleLoading, role, blocked } = useRequireRole(["admin", "boss", "operator"]);
+  const { loading: roleLoading, role, blocked } = useRequireRole(SETTINGS_ROLES);
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -166,7 +167,11 @@ export default function SettingsPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    if (roleLoading || blocked || !role || !SETTINGS_ROLES.includes(role)) return;
+    const timer = window.setTimeout(() => { void fetchData(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchData, roleLoading, blocked, role]);
 
   // Role guard — must be AFTER all hooks
   if (roleLoading || blocked) return <div className="text-center py-16 text-muted-foreground">{t("common.loading")}</div>;

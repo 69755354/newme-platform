@@ -54,7 +54,7 @@ set -Eeuo pipefail
 
 sha='<40-lowercase-hex release SHA>'
 run='<positive successful exact-head workflow_dispatch run id>'
-migration_status='<not_required|applied_verified>'
+migration_status='<not_required|applied_verified|reentry_verified>'
 migration_ids='<exact comma-separated 14-digit manifest-derived required list, or empty>'
 rollback_sha='<40-lowercase-hex current immutable production SHA>'
 
@@ -65,9 +65,9 @@ case "$migration_status" in
   not_required)
     [ -z "$migration_ids" ] || { echo "not_required must carry no migration ids" >&2; exit 64; }
     ;;
-  applied_verified)
+  applied_verified|reentry_verified)
     [[ "$migration_ids" =~ ^[0-9]{14}(,[0-9]{14})*$ ]] || {
-      echo "applied_verified requires comma-separated 14-digit migration ids" >&2
+      echo "$migration_status requires comma-separated 14-digit migration ids" >&2
       exit 64
     }
     ;;

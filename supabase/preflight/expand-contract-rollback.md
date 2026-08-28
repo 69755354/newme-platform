@@ -684,8 +684,24 @@ So the return is the companion's mirror image,
 rollback companion its name does not match `^[0-9]{14}_`, so the CLI never applies
 it and it can be run as many times as there are attempts.
 
-1. **Redeploy the candidate release** (§4 step 5) and verify state 3 (§6.2). The
-   mode is still `compat` at this point, so both releases work — do not skip
+1. **Redeploy the candidate release** with the explicit recovery claim, then
+   verify state 3 (§6.2):
+
+```text
+sudo /usr/local/sbin/newme-deploy \
+  <release-sha> <successful-run-id> reentry_verified \
+  <exact required_for_app migration ids> <rollback-sha>
+```
+
+   `reentry_verified` is deliberately distinct from the first-deploy
+   `applied_verified` claim. The first-deploy path requires every deferred
+   migration to be unapplied; the reentry path requires the exact required and
+   deferred sets to be recorded and the live mode to equal `compat`, both before
+   the asset transaction and immediately before the traffic switch. It does not
+   edit or repair migration history. A partial deferred set, `strict`, `absent`,
+   an unreadable mode or a release that cannot run under `compat` is refused.
+
+   The mode is still `compat` at this point, so both releases work — do not skip
    ahead: re-entering `strict` while the previous release is the deployed one
    breaks it immediately.
 2. **[AUTHORISED ACTION] Re-enter the contract phase.** Use the coordinator's

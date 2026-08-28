@@ -33,6 +33,7 @@ import {
   isTransactionControl,
   nonTransactional,
   planPhase,
+  planRecordedPhase,
 } from "../../scripts/db-phase-push.mjs";
 import { splitSqlStatements } from "../../scripts/split-sql-statements.mjs";
 import {
@@ -255,6 +256,24 @@ test("the expand phase is refused once the contract phase is recorded", () => {
   assert.ok(
     problems.some((problem) => /already records the contract phase/.test(problem)),
     problems.join("\n"),
+  );
+});
+
+test("recovery-only posture verification requires exact recorded expand rows without rewriting history", () => {
+  const everything = recordedFor(manifestEntries(manifest));
+  const verified = planRecordedPhase({ manifest, phase: "required_for_app", recorded: everything });
+  assert.deepEqual(verified.problems, []);
+  assert.equal(verified.toApply.length, 0);
+  assert.equal(verified.alreadyApplied.length, EXPAND_COUNT);
+
+  const missing = planRecordedPhase({ manifest, phase: "required_for_app", recorded: everything.slice(1) });
+  assert.match(missing.problems.join("\n"), /is not recorded; recovery verification never applies/);
+  assert.equal(missing.toApply.length, 0);
+
+  const renamed = everything.map((row, index) => (index === 0 ? { ...row, name: "wrong_name" } : row));
+  assert.match(
+    planRecordedPhase({ manifest, phase: "required_for_app", recorded: renamed }).problems.join("\n"),
+    /records 20260806000000 as "wrong_name"/,
   );
 });
 

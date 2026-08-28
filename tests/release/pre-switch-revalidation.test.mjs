@@ -33,7 +33,7 @@ if (logical === "claim") {
   console.log("deferred_contract=" + (process.env.DERIVED_DEFERRED ?? ""));
   console.log("release claim fixture OK");
 } else if (base === "check-release-phase.mjs") {
-  console.log("NEWME_DB_PHASE=compat");
+  console.log("NEWME_DB_PHASE=" + (process.env.LIVE_PHASE ?? "compat"));
 } else {
   console.log(logical + " fixture OK");
 }
@@ -76,6 +76,7 @@ function invoke(fx, {
   derivedRequired = REQUIRED,
   derivedDeferred = DEFERRED,
   failTool = "",
+  livePhase = "compat",
 } = {}) {
   return spawnSync(
     process.execPath,
@@ -98,6 +99,7 @@ function invoke(fx, {
         DERIVED_REQUIRED: derivedRequired,
         DERIVED_DEFERRED: derivedDeferred,
         FAIL_TOOL: failTool,
+        LIVE_PHASE: livePhase,
       },
     },
   );
@@ -190,6 +192,25 @@ test("not_required re-measures the whole release as no-pending", () => {
     assert.ok(history.includes("--require-no-pending"));
     assert.ok(!history.includes("--require-applied"));
     assert.ok(!history.includes("--require-unapplied"));
+  } finally {
+    rmSync(fx.work, { recursive: true, force: true });
+  }
+});
+
+test("reentry_verified requires complete required plus deferred history and exact compat posture", () => {
+  const fx = fixture();
+  try {
+    const result = invoke(fx, { status: "reentry_verified" });
+    assert.equal(result.status, 0, result.stderr);
+    const history = calls(fx)[1].args;
+    assert.equal(history[history.indexOf("--require-applied") + 1], `${REQUIRED},${DEFERRED}`);
+    assert.ok(!history.includes("--require-unapplied"));
+    assert.ok(calls(fx)[2].args.includes("--verify-recorded-posture"));
+
+    writeFileSync(fx.callLog, "");
+    const strict = invoke(fx, { status: "reentry_verified", livePhase: "strict" });
+    assert.equal(strict.status, 1);
+    assert.match(strict.stderr, /requires live database phase compat/);
   } finally {
     rmSync(fx.work, { recursive: true, force: true });
   }

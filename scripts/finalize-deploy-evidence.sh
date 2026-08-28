@@ -91,9 +91,9 @@ if ci.get("conclusion") != "success" or ci.get("head_sha") != git_sha:
     fail("CI evidence is not bound to release SHA")
 
 migration = evidence.get("migration", {})
-if migration.get("status") not in {"not_required", "applied_verified"}:
+if migration.get("status") not in {"not_required", "applied_verified", "reentry_verified"}:
     fail("migration status is not verified")
-if migration.get("status") == "applied_verified" and not migration.get("ids"):
+if migration.get("status") in {"applied_verified", "reentry_verified"} and not migration.get("ids"):
     fail("applied migration IDs are required")
 if migration.get("status") == "not_required" and migration.get("ids"):
     fail("migration IDs must be empty when not required")

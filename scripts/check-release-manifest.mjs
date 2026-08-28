@@ -326,7 +326,7 @@ export function auditReleaseClaim({ manifest, status, claimed = [] }) {
     claimedVersions.add(version);
   }
 
-  if (status === "applied_verified") {
+  if (status === "applied_verified" || status === "reentry_verified") {
     for (const version of claimedVersions) {
       if (required.includes(version)) continue;
       fail(
@@ -342,7 +342,7 @@ export function auditReleaseClaim({ manifest, status, claimed = [] }) {
       );
     }
     if (required.length === 0) {
-      fail("applied_verified was claimed but this release's manifest requires no migrations before the switch; use not_required");
+      fail(`${status} was claimed but this release's manifest requires no migrations before the switch; use not_required`);
     }
   } else if (status === "not_required") {
     if (claimedVersions.size > 0) fail("not_required must not carry migration ids");
@@ -352,7 +352,7 @@ export function auditReleaseClaim({ manifest, status, claimed = [] }) {
       );
     }
   } else {
-    fail(`the migration status must be applied_verified or not_required, not ${JSON.stringify(String(status ?? ""))}`);
+    fail(`the migration status must be applied_verified, reentry_verified or not_required, not ${JSON.stringify(String(status ?? ""))}`);
   }
 
   return { problems, required, deferred };
@@ -674,7 +674,7 @@ function verifyClaim(argv) {
   const dirArg = value("--migrations-dir");
   const dir = dirArg === "" ? MIGRATIONS_DIR : dirArg;
   if (status === "") {
-    console.error("--verify-claim requires --status applied_verified|not_required");
+    console.error("--verify-claim requires --status applied_verified|reentry_verified|not_required");
     return 1;
   }
 

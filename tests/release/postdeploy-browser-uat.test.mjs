@@ -359,6 +359,13 @@ test("scrollable business screenshots use bounded local proof surfaces", () => {
   assert.match(SOURCE, /locale_content_verified[\s\S]*?safeLocators: \[create\][\s\S]*?alternate_fixture_marker_sha256/);
 });
 
+test("restricted-role quick create cleanup targets the localized cancel button unambiguously", () => {
+  const bulkBlock = SOURCE.slice(SOURCE.indexOf('recordStep("bulk_action_verified"'), SOURCE.indexOf('recordStep("detail_visible"'));
+  assert.match(bulkBlock, /const cancel = await visible\(dialog\.getByRole\("button", \{ name: copy\.cancel, exact: true \}\), "allowed_dialog_copy_mismatch"\)/);
+  assert.match(bulkBlock, /afterScreenshot: async \(\) => \{\s*await cancel\.click\(\);\s*await dialog\.waitFor/);
+  assert.doesNotMatch(bulkBlock, /dialog\.locator\('\[data-slot="dialog-close"\]'\)\.click\(\)/);
+});
+
 test("settings UAT includes assigned fixtures by selecting the localized all filter", () => {
   const settingsBlock = SOURCE.slice(SOURCE.indexOf('recordStep("settings_contract_verified"'), SOURCE.indexOf('recordStep("locale_switched"'));
   assert.match(SOURCE, /settingsAll: "All"/);

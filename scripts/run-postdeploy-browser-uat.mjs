@@ -948,6 +948,7 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
       await create.click();
       const dialog = await visible(page.locator('[role="dialog"]'), "allowed_dialog_missing");
       const dialogTitle = await visible(dialog.getByText(copy.quickCreate, { exact: true }), "allowed_dialog_copy_mismatch");
+      const cancel = await visible(dialog.getByRole("button", { name: copy.cancel, exact: true }), "allowed_dialog_copy_mismatch");
       return {
         safeLocators: [dialogTitle],
         semanticAssertions: [
@@ -957,7 +958,7 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
           semanticAssertion("create_dialog_copy", copy.quickCreate),
         ],
         afterScreenshot: async () => {
-          await dialog.locator('[data-slot="dialog-close"]').click();
+          await cancel.click();
           await dialog.waitFor({ state: "hidden", timeout: STEP_TIMEOUT_MS });
         },
       };

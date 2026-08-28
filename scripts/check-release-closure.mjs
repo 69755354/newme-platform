@@ -33,6 +33,7 @@ export const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/;
 export const ACCEPTANCE_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 export const ACCEPTANCE_MARKER_PATTERN = /<!-- postdeploy-acceptance-sha256:([0-9a-f]{64}) -->/g;
 export const TASKBOARD_STATUS = Object.freeze(["TODO", "IN_PROGRESS", "REVIEW", "DONE", "BLOCKED"]);
+const UNFINISHED_TASKBOARD_STATUS = new Set(TASKBOARD_STATUS.filter((status) => status !== "DONE"));
 export const UTC_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 function activeSectionBounds(lines) {
@@ -89,8 +90,22 @@ function historicalTableRows(taskboardText) {
     if (start >= 0 && index >= start && index < end) return [];
     const cells = tableCells(line);
     if (!cells || /^(?:TASK_ID|item|#|里程碑|File)$/i.test(cells[0])) return [];
-    return [JSON.stringify(cells)];
+    return [line];
   });
+}
+
+function isHistoricalStatusOnlyClosure(beforeLine, afterLine) {
+  const before = tableCells(beforeLine);
+  const after = tableCells(afterLine);
+  if (!before || !after || before.length !== after.length || before[0] !== after[0]) return false;
+  const changed = [];
+  for (let index = 0; index < before.length; index += 1) {
+    if (before[index] !== after[index]) changed.push(index);
+  }
+  if (changed.length !== 1) return false;
+  const index = changed[0];
+  const previousStatus = before[index].replace(/^⚠️\s*/u, "");
+  return UNFINISHED_TASKBOARD_STATUS.has(previousStatus) && after[index] === "DONE";
 }
 
 function auditAppendOnlyTaskboardShape(releaseText, closureText) {
@@ -131,9 +146,11 @@ function auditAppendOnlyTaskboardShape(releaseText, closureText) {
 
   const releaseHistory = releaseLines.slice(releaseBounds.end);
   const closureHistory = closureLines.slice(closureBounds.end);
-  const historyPrefixIsExact = closureHistory.length >= releaseHistory.length
-    && releaseHistory.every((line, index) => closureHistory[index] === line);
-  if (!historyPrefixIsExact) {
+  const historyPrefixIsValid = closureHistory.length >= releaseHistory.length
+    && releaseHistory.every((line, index) => (
+      closureHistory[index] === line || isHistoricalStatusOnlyClosure(line, closureHistory[index])
+    ));
+  if (!historyPrefixIsValid) {
     problems.push("closure TASKBOARD must preserve all historical headings, prose, tables, order, and section ownership exactly");
   } else {
     const appended = closureHistory.slice(releaseHistory.length).join("\n");
@@ -175,14 +192,15 @@ export function auditTaskboardClosureTransition(releaseText, closureText) {
   for (const id of closure.rows.keys()) {
     if (!release.rows.has(id)) problems.push(`closure TASKBOARD introduced unknown stable item ${id}`);
   }
-  const closureHistoricalCounts = new Map();
-  for (const row of historicalTableRows(closureText)) {
-    closureHistoricalCounts.set(row, (closureHistoricalCounts.get(row) ?? 0) + 1);
-  }
+  const closureHistoricalRows = historicalTableRows(closureText);
+  const matchedClosureRows = new Set();
   for (const row of historicalTableRows(releaseText)) {
-    const remaining = closureHistoricalCounts.get(row) ?? 0;
-    if (remaining === 0) problems.push(`closure TASKBOARD deleted or rewrote historical table row ${row}`);
-    else closureHistoricalCounts.set(row, remaining - 1);
+    const match = closureHistoricalRows.findIndex((candidate, index) => (
+      !matchedClosureRows.has(index)
+      && (candidate === row || isHistoricalStatusOnlyClosure(row, candidate))
+    ));
+    if (match < 0) problems.push(`closure TASKBOARD deleted or rewrote historical table row ${JSON.stringify(tableCells(row))}`);
+    else matchedClosureRows.add(match);
   }
   problems.push(...auditAppendOnlyTaskboardShape(releaseText, closureText));
   return problems;

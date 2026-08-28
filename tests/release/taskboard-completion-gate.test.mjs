@@ -273,6 +273,23 @@ test("a declaration with no unfinished row is named as a failure", () => {
   assert.doesNotMatch(output, /TRACKED-TODO, which has no unfinished row/);
 });
 
+test("an all-DONE closure retains its release-scope declarations as immutable history", () => {
+  const board = [
+    "| TRACKED-FIRST | DONE |",
+    "| TRACKED-SECOND | DONE |",
+    scopeBlock([
+      ["TRACKED-FIRST", "predeploy_ready"],
+      ["TRACKED-SECOND", "postdeploy_acceptance"],
+    ]),
+  ].join("\n");
+  for (const options of [{}, { requireComplete: true }]) {
+    const { result, output } = runFixture(board, options);
+    assert.equal(result.exitCode, 0, output);
+    assert.match(output, /release-scope declarations are retained as closure history \(2 row\(s\)\)/);
+    assert.doesNotMatch(output, /which has no unfinished row/);
+  }
+});
+
 test("the scope block refuses malformed declarations by line and by reason", () => {
   const cases = [
     {

@@ -9,14 +9,6 @@ BEGIN;
 -- 1. final_status
 -- ═══════════════════════════════════════════════
 
--- 补 won 的 final_status（幂等：仅补 NULL 的）
-UPDATE leads SET final_status = 'won'
-WHERE stage = 'won' AND final_status IS NULL;
-
--- 补 lost 的 final_status（幂等）
-UPDATE leads SET final_status = 'lost'
-WHERE stage = 'lost' AND final_status IS NULL;
-
 -- ═══════════════════════════════════════════════
 -- 2. Won 线索里程碑（补全 7 步）
 -- ═══════════════════════════════════════════════
@@ -97,6 +89,16 @@ WHERE l.stage = 'lost'
     SELECT 1 FROM lead_milestones lm
     WHERE lm.lead_id = l.id AND lm.milestone_key = 'first_contact'
   );
+
+-- Complete historical milestones before final_status is set: the normal
+-- milestone trigger correctly rejects completed won/lost leads.
+-- 补 won 的 final_status（幂等：仅补 NULL 的）
+UPDATE leads SET final_status = 'won'
+WHERE stage = 'won' AND final_status IS NULL;
+
+-- 补 lost 的 final_status（幂等）
+UPDATE leads SET final_status = 'lost'
+WHERE stage = 'lost' AND final_status IS NULL;
 
 -- ═══════════════════════════════════════════════
 -- 4. 更新 current_milestone

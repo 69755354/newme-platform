@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "policy_version": "2026-08-15.1",
+  "policy_version": "2026-09-11.1",
   "exceptions": [
     {
       "id": "github-hosted-ubuntu-24-04-v1",
@@ -8,10 +8,10 @@
       "kind": "github-hosted-runner",
       "subject": "ubuntu-24.04",
       "risk_reason": "GitHub-hosted runner images are not exposed as digest-addressable artifacts; the fixed OS label still receives image updates.",
-      "mitigation": "The OS family is fixed, every external action and OCI image is digest-bound, Node is exact, and release jobs fail closed on their required tool versions.",
+      "mitigation": "The OS family is fixed, every external action and OCI image is digest-bound, Node is exact, and release jobs fail closed on their required tool versions. Reviewed image 20260907.300.1 on 2026-09-11 (OS 24.04.5 LTS, kernel 6.17.0-1022-azure).",
       "owner": "release-engineering",
-      "expires": "2026-09-01",
-      "audit_ref": "https://github.com/actions/runner-images/blob/739226172a10f2b5797297e716debc858698f73e/images/ubuntu/Ubuntu2404-Readme.md"
+      "expires": "2026-10-24",
+      "audit_ref": "https://github.com/actions/runner-images/blob/cf6f08e1bc2b902d44a33500d2c4c63b65882bce/images/ubuntu/Ubuntu2404-Readme.md"
     },
     {
       "id": "github-hosted-windows-2025-v1",
@@ -19,10 +19,10 @@
       "kind": "github-hosted-runner",
       "subject": "windows-2025",
       "risk_reason": "GitHub-hosted runner images are not exposed as digest-addressable artifacts; the fixed Windows Server label still receives image updates.",
-      "mitigation": "The OS family is fixed, checkout and Node setup are commit-pinned, Node is exact, and this job has no remote package installation.",
+      "mitigation": "The OS family is fixed, checkout and Node setup are commit-pinned, Node is exact, and this job has no remote package installation. Reviewed image 20260907.229.1 on 2026-09-11 (OS 10.0.26100 Build 33296).",
       "owner": "release-engineering",
-      "expires": "2026-09-01",
-      "audit_ref": "https://github.com/actions/runner-images/blob/739226172a10f2b5797297e716debc858698f73e/images/windows/Windows2025-VS2026-Readme.md"
+      "expires": "2026-10-24",
+      "audit_ref": "https://github.com/actions/runner-images/blob/b19fd28d160e1a6d49e5482a1b3788ad7d9e2034/images/windows/Windows2025-VS2026-Readme.md"
     }
   ]
 }

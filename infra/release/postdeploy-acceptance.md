@@ -210,3 +210,36 @@ before the evidence write, and binds final CI to workflow ID `310914082`, path
 ordered timestamps, and the versioned freshness SLO. It also requires the strict
 database phase. Only then may it atomically write `release_status=complete`. The
 former freeform actor/fixture arguments are not accepted.
+
+## When the closure slot is already gone
+
+The closure commit must be the release SHA's single direct child, and main is
+append-only, so a release has exactly one chance to be closed and it is destroyed
+by the next commit that lands. `release_status` therefore stops at
+`acceptance_verified` for good, and because an ordinary deployment required the
+live release to be `complete`, nothing could be deployed afterwards either --
+a frozen control plane, reached on 2026-09-11 when the runner provenance
+exceptions expired on 2026-09-01 and the only way to make main mergeable again
+was a pull request that consumed 8373de8's closure slot.
+
+`verify_live_release_permits_new_release()` in `infra/systemd/newme-deploy.sh`
+now separates the two states that rule conflated, and
+`tests/release/live-release-supersession.test.mjs` executes both:
+
+- the candidate is still a TASKBOARD.md-only single child of the live release, so
+  the closure is reachable and the release was merely not finalized yet: refused,
+  finalize it;
+- the candidate contains the live release but the slot is provably consumed (more
+  than one commit, or any non-TASKBOARD path) and the live release is
+  `acceptance_verified`: the deployment proceeds and prints
+  `superseded_release=<sha> superseded_status=... closure_slot=consumed`, which is
+  the release's closing record in place of a TASKBOARD marker it can never carry.
+
+A live release that was never attested (`awaiting_uat`, `uat_failed`) is still
+refused: there is no verified production evidence to supersede. Its exit is
+`newme-production-rollback execute <reason>`, whose `release_recovery`
+transaction undoes it.
+
+The order that avoids all of this: close a release before merging anything else,
+and renew `infra/ci/provenance-exceptions.json` well before its 45-day expiry, so
+the calendar never forces a commit between a release and its closure.

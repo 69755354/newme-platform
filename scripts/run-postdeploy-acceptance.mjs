@@ -916,6 +916,31 @@ async function planFixtures(db) {
 export const FIXTURE_LEAD_SOURCE = "other";
 
 /**
+ * The `customer_name` an acceptance lead carries.
+ *
+ * This is one half of a contract whose other half lives in the browser gate:
+ * `openFixtureCollection` types the marker into the leads filter and then
+ * refuses unless exactly one card carries it. That filter is a case-insensitive
+ * substring match over `customer_name`, `phone`, `location` and `assigned_to`;
+ * the fixture writes none of the middle two and `assigned_to` holds a uuid,
+ * which cannot contain the marker, so `customer_name` is the only column that
+ * can put a card in front of the gate -- and the card renders `customer_name`.
+ * Every lead named with the bare marker is therefore a card the gate counts.
+ * All six used to be, which is why `accept` refused with
+ * `fixture_lead_card_ambiguous` -- a defect the gate reported honestly and that
+ * no amount of retrying could clear.
+ *
+ * The browser lead keeps the bare marker so the gate's `exact: true` text
+ * assertions still hold. Every other lead is named from its own id, which is a
+ * different UUID and therefore cannot contain the marker as a substring. Six
+ * identically named cards were also simply wrong to leave on a real sales board.
+ */
+export function fixtureLeadCustomerName(marker, leadId, browserLeadId) {
+  if (leadId === browserLeadId) return marker;
+  return `postdeploy-uat-flow-${leadId.slice(0, 8)}`;
+}
+
+/**
  * The state `public.on_lead_won()` leaves behind when a Lead is marked won.
  *
  * 20260812000000_money_actor_identity_and_atomicity.sql §12 changed this
@@ -996,17 +1021,28 @@ async function seedFixtures(db, actorIds, fixture) {
   const { ids, marker } = fixture;
   await db.query("begin");
   try {
+    // $6 is still the marker and still lands in `notes` on every row: the
+    // producer's readbacks key on it. Only `customer_name` differs per row,
+    // because that is the one column the leads filter searches and the card
+    // renders. See fixtureLeadCustomerName. The comment stays outside the call:
+    // the parameter-contiguity gate reads the SQL argument statically.
+    const leadName = (leadId) => fixtureLeadCustomerName(marker, leadId, ids.browserLead);
     await db.query(
       `insert into public.leads
         (id, source, customer_name, assigned_to, stage, quotation_value, next_followup_date, next_action, notes, created_by)
        values
-        ($1, $9, $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
-        ($2, $9, $6, $5, 'quotation_submitted', 1000, current_date + 30, 'call', $6, $5),
-        ($3, $9, $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
-        ($4, $9, $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
-        ($7, $9, $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
-        ($8, $9, $6, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5)`,
-      [ids.leadWon, ids.leadQuotation, ids.leadTransition, ids.leadApproval, actorIds.sales, marker, ids.leadPayment, ids.browserLead, FIXTURE_LEAD_SOURCE],
+        ($1, $9, $10, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
+        ($2, $9, $11, $5, 'quotation_submitted', 1000, current_date + 30, 'call', $6, $5),
+        ($3, $9, $12, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
+        ($4, $9, $13, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
+        ($7, $9, $14, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5),
+        ($8, $9, $15, $5, 'pending_decision', 1000, current_date + 30, 'call', $6, $5)`,
+      [
+        ids.leadWon, ids.leadQuotation, ids.leadTransition, ids.leadApproval, actorIds.sales, marker,
+        ids.leadPayment, ids.browserLead, FIXTURE_LEAD_SOURCE,
+        leadName(ids.leadWon), leadName(ids.leadQuotation), leadName(ids.leadTransition),
+        leadName(ids.leadApproval), leadName(ids.leadPayment), leadName(ids.browserLead),
+      ],
     );
     await db.query(
       `insert into public.quotations

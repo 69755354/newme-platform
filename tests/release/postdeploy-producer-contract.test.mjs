@@ -12,6 +12,7 @@ import {
   describeDatabaseFailure,
   ensureSuccess,
   FIXTURE_LEAD_SOURCE,
+  fixtureLeadCustomerName,
   httpErrorLabel,
   KPI_JOURNAL_PERIOD,
   KPI_UAT_PERIOD,
@@ -601,7 +602,99 @@ test("the fixture Lead insert binds its source instead of writing a literal", ()
   const insert = PRODUCER.slice(start, PRODUCER.indexOf("`,", start));
   assert.doesNotMatch(insert, /'[a-z_]*(uat|postdeploy)[a-z_]*'/);
   assert.equal((insert.match(/\$9/g) ?? []).length, 6, "every seeded Lead must take the bound source");
-  assert.match(PRODUCER, /ids\.browserLead, FIXTURE_LEAD_SOURCE\]/);
+  assert.match(PRODUCER, /ids\.leadPayment, ids\.browserLead, FIXTURE_LEAD_SOURCE,/);
+});
+
+/**
+ * The leads filter, read off the page that implements it. The fixture naming
+ * scheme below is only safe if it survives *this* predicate, not the one the
+ * comments remember.
+ */
+const LEADS_FILTERING = readFileSync(path.join(ROOT, "src/app/(dashboard)/leads/_hooks/useLeadsFiltering.ts"), "utf8");
+
+function searchedLeadColumns() {
+  const at = LEADS_FILTERING.indexOf("if (search.trim())");
+  assert.ok(at > 0, "the leads search filter was not found");
+  const block = LEADS_FILTERING.slice(at, LEADS_FILTERING.indexOf("result.sort", at));
+  const columns = [...block.matchAll(/l\.([a-z_]+)\s*\|\|/g)].map((match) => match[1]);
+  assert.ok(columns.includes("customer_name"), `the leads search no longer reads customer_name: ${columns.join(",")}`);
+  return [...new Set(columns)];
+}
+
+/**
+ * What the browser gate ends up counting: the filter is a case-insensitive
+ * substring match, and the card renders `customer_name`, so a card is counted
+ * exactly when its name contains the marker.
+ */
+function cardsTheGateCounts(names, marker) {
+  const needle = marker.toLowerCase().trim();
+  return names.filter((name) => name.toLowerCase().includes(needle));
+}
+
+const SAMPLE_MARKER = "postdeploy-uat-4b7d2f10-8a31-4c62-9f05-1d6e3a90b7c4";
+const SAMPLE_LEAD_IDS = [
+  "0f1e2d3c-4b5a-4967-8899-aabbccddeeff",
+  "1a2b3c4d-5e6f-4708-9192-a3b4c5d6e7f8",
+  "2b3c4d5e-6f70-4819-a2a3-b4c5d6e7f809",
+  "3c4d5e6f-7081-492a-b3b4-c5d6e7f8091a",
+  "4d5e6f70-8192-4a3b-c4c5-d6e7f8091a2b",
+  "5e6f7081-92a3-4b4c-d5d6-e7f8091a2b3c",
+];
+
+test("exactly one acceptance Lead is named with the bare marker", () => {
+  const browserLeadId = SAMPLE_LEAD_IDS.at(-1);
+  const names = SAMPLE_LEAD_IDS.map((leadId) => fixtureLeadCustomerName(SAMPLE_MARKER, leadId, browserLeadId));
+
+  // The defect that refused: six cards the gate could not tell apart.
+  assert.equal(new Set(names).size, names.length, `fixture Leads share a name: ${names.join(",")}`);
+  const counted = cardsTheGateCounts(names, SAMPLE_MARKER);
+  assert.deepEqual(counted, [SAMPLE_MARKER], `the gate would count ${counted.length} cards, not 1`);
+  // `getByText(marker, { exact: true })` runs against that one card.
+  assert.equal(fixtureLeadCustomerName(SAMPLE_MARKER, browserLeadId, browserLeadId), SAMPLE_MARKER);
+
+  for (const [index, name] of names.entries()) {
+    assert.ok(name.trim().length > 0, "a fixture Lead would render as unnamed");
+    if (SAMPLE_LEAD_IDS[index] === browserLeadId) continue;
+    assert.ok(
+      name.includes(SAMPLE_LEAD_IDS[index].slice(0, 8)),
+      `${name} cannot be traced back to its Lead id`,
+    );
+  }
+
+  // Negative control: the naming this replaced must still trip the assertion,
+  // otherwise the check above proves nothing.
+  assert.equal(cardsTheGateCounts(SAMPLE_LEAD_IDS.map(() => SAMPLE_MARKER), SAMPLE_MARKER).length, 6);
+});
+
+test("the browser gate still counts the cards this naming scheme is aimed at", () => {
+  const cardAt = BROWSER_RUNNER.indexOf("const fixtureCard =");
+  const gateAt = BROWSER_RUNNER.indexOf("const openFixtureCollection");
+  assert.ok(cardAt > 0 && gateAt > cardAt, "the fixture collection gate was not found");
+  const card = BROWSER_RUNNER.slice(cardAt, gateAt);
+  const gate = BROWSER_RUNNER.slice(gateAt, BROWSER_RUNNER.indexOf("\n  };", gateAt));
+
+  assert.match(card, /hasText: input\.fixture\.marker/);
+  assert.match(gate, /search\.fill\(input\.fixture\.marker\)/);
+  assert.match(gate, /fixtureCard\(\)\.count\(\) !== 1/);
+  assert.match(gate, /fail\("fixture_lead_card_ambiguous"\)/);
+  assert.match(BROWSER_RUNNER, /getByText\(input\.fixture\.marker, \{ exact: true \}\)/);
+});
+
+test("no other column the leads search reads can carry the marker", () => {
+  const start = PRODUCER.indexOf("insert into public.leads");
+  const insert = PRODUCER.slice(start, PRODUCER.indexOf("`,", start));
+  const columnList = insert.slice(insert.indexOf("(id,") + 1, insert.indexOf(")", insert.indexOf("(id,")));
+  const written = columnList.split(",").map((name) => name.trim());
+
+  // A uuid cannot contain the marker, so a uuid-valued column is harmless.
+  assert.doesNotMatch(SAMPLE_MARKER, /^[0-9a-f-]+$/);
+  for (const column of searchedLeadColumns()) {
+    if (column === "customer_name" || !written.includes(column)) continue;
+    assert.equal(column, "assigned_to", `the fixture writes ${column}, which the leads search also reads`);
+  }
+  assert.ok(!written.includes("phone") && !written.includes("location"), `fixture Leads now write ${written.join(",")}`);
+  // The marker still lands in notes on every row: the readbacks key on it.
+  assert.equal((insert.match(/\$6/g) ?? []).length, 6);
 });
 
 test("a failed fixture seed reports the database's identifiers, never the row", () => {

@@ -11,7 +11,21 @@ import {
 } from "../../scripts/check-ci-provenance.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const TODAY = "2026-08-15";
+function policyToday(policy) {
+  // Single source of truth for "now" in this test: the policy's own
+  // date.revision version. A second hardcoded date here would be a copy of the
+  // expiry boundary that check-ci-provenance.mjs evaluates against the real
+  // clock, and the two would silently drift apart.
+  const [date] = String(policy.policy_version).split(".");
+  assert.match(date, /^\d{4}-\d{2}-\d{2}$/, "policy_version must begin with an ISO date");
+  return date;
+}
+
+function shiftDate(date, days) {
+  const shifted = new Date(`${date}T00:00:00Z`);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted.toISOString().slice(0, 10);
+}
 
 async function fixture() {
   const directory = path.join(ROOT, ".github", "workflows");
@@ -39,7 +53,7 @@ function mutateWorkflow(input, file, before, after) {
 }
 
 function failures(input) {
-  return validateWorkflowProvenance({ ...input, today: TODAY });
+  return validateWorkflowProvenance({ ...input, today: policyToday(input.policy) });
 }
 
 function officialSourceFetch(reviewed) {
@@ -333,8 +347,10 @@ test("checkout credentials, CodeQL permissions, and downloaded release artifacts
 test("runner exceptions and provenance lock entries fail closed when expired, overlong, missing, stale, or altered", async () => {
   const input = await fixture();
 
+  const today = policyToday(input.policy);
+
   const expired = clone(input);
-  expired.policy.exceptions[0].expires = "2026-08-14";
+  expired.policy.exceptions[0].expires = shiftDate(today, -1);
   assert.match(failures(expired).join("\n"), /expired or invalid/);
 
   const invalidDate = clone(input);
@@ -342,8 +358,15 @@ test("runner exceptions and provenance lock entries fail closed when expired, ov
   assert.match(failures(invalidDate).join("\n"), /expired or invalid/);
 
   const overlong = clone(input);
-  overlong.policy.exceptions[0].expires = "2027-08-15";
+  overlong.policy.exceptions[0].expires = shiftDate(today, 46);
   assert.match(failures(overlong).join("\n"), /45-day maximum/);
+
+  // Negative control for the boundary itself: exactly 45 days is still
+  // acceptable, so the case above fails for the lifetime and not merely
+  // because any future date was rejected.
+  const boundary = clone(input);
+  boundary.policy.exceptions[0].expires = shiftDate(today, 45);
+  assert.doesNotMatch(failures(boundary).join("\n"), /45-day maximum|expired or invalid/);
 
   const missing = clone(input);
   missing.policy.exceptions = missing.policy.exceptions.filter((entry) => entry.subject !== "windows-2025");

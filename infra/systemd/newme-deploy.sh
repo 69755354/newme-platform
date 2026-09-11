@@ -1516,6 +1516,113 @@ PY
   ;;
 esac
 
+# ---- May another release be stacked on the one that is live right now? ----
+#
+# The reviewed rule was `release_status == "complete"`, and it was written for a
+# real operator error: a release whose TASKBOARD closure was never recorded must
+# not be silently buried by the next one. But `complete` is written by exactly one
+# thing -- `newme-deploy finalize` -- and finalize refuses unless the closure
+# commit is the SINGLE DIRECT CHILD of the release SHA and changes nothing but
+# TASKBOARD.md (scripts/check-release-closure.mjs). main is append-only
+# (infra/release/branch-protection.json: allow_force_pushes false,
+# required_linear_history true, enforce_admins true), so the moment any other
+# commit lands on main after a release, that release's one closure slot is gone
+# and `complete` is unreachable forever. A precondition that can never be
+# satisfied is not a gate: it freezes every future production deployment,
+# security fixes included. That is what happened on 2026-09-11 -- 8373de8 was
+# deployed and attested, its two runner provenance exceptions expired on
+# 2026-09-01 so `Repository validation` failed for every pull request including
+# the closure pull request, and the remediation that made main mergeable again
+# had to consume the closure slot in order to exist.
+#
+# So this function separates the two states the old check conflated:
+#
+#   * the closure is STILL REACHABLE -- the candidate is a TASKBOARD.md-only
+#     single child of the live release. That is the operator error the rule was
+#     written for, and it is still refused: finalize, do not deploy;
+#   * the closure is UNREACHABLE and the live release was ATTESTED
+#     (`acceptance_verified` means postdeploy acceptance was gathered, verified
+#     and sealed by `newme-deploy attest`; only the taskboard paperwork became
+#     impossible). The live release is superseded by a candidate that strictly
+#     contains it. Allowed, and the supersession is printed so the claim is
+#     recorded rather than silent;
+#   * anything else -- notably `awaiting_uat` and `uat_failed`, which were never
+#     attested and so have no production evidence to supersede -- is still
+#     refused, and the exit is newme-production-rollback's release_recovery
+#     transaction, not this wrapper.
+#
+# A contract-phase transition is not a new release: it operates on the live
+# release itself, so its own status set is unchanged.
+#
+# tests/release/live-release-supersession.test.mjs EXECUTES this function against
+# real temporary repositories, including the refusals, because a regex over shell
+# text cannot tell a check from a comment about a check.
+verify_live_release_permits_new_release() (
+  set -Eeuo pipefail
+  local evidence_file=${1:-} live_sha=${2:-} candidate_sha=${3:-}
+  local db_transition_only=${4:-} operation=${5:-} mirror=${6:-}
+  local release_status commits changed
+
+  release_status="$(python3 - "$evidence_file" "$live_sha" <<'PY'
+import json
+import sys
+
+path, expected_sha = sys.argv[1:]
+with open(path, encoding="utf-8") as handle:
+    evidence = json.load(handle)
+if evidence.get("git_sha") != expected_sha:
+    raise SystemExit(65)
+status = evidence.get("release_status")
+if not isinstance(status, str) or not status:
+    raise SystemExit(65)
+print(status)
+PY
+  )" || return 65
+
+  case "$db_transition_only:$operation" in
+    1:contract-apply|1:contract-verify|1:contract-rollback|1:contract-reenter)
+      [ "$candidate_sha" = "$live_sha" ] || {
+        echo "a contract transition must name the live release" >&2
+        return 65
+      }
+      case "$release_status" in
+        awaiting_uat|acceptance_verified|complete) return 0 ;;
+        *)
+          echo "the live release's status ($release_status) does not permit a contract transition" >&2
+          return 65
+          ;;
+      esac
+      ;;
+  esac
+
+  [ "$release_status" != complete ] || return 0
+
+  if [ "$release_status" != acceptance_verified ]; then
+    echo "the live release is $release_status: it was never attested, so it cannot be superseded" >&2
+    echo "attest and close it, or recover it with: newme-production-rollback execute <reason>" >&2
+    return 65
+  fi
+
+  git --git-dir="$mirror" merge-base --is-ancestor "$live_sha" "$candidate_sha" || {
+    echo "the candidate does not contain the live release" >&2
+    return 65
+  }
+  commits="$(git --git-dir="$mirror" rev-list --count "$live_sha..$candidate_sha")" || return 65
+  [[ "$commits" =~ ^[0-9]+$ ]] || return 65
+  [ "$commits" -ge 1 ] || {
+    echo "the candidate is the live release" >&2
+    return 65
+  }
+  changed="$(git --git-dir="$mirror" diff --name-only "$live_sha" "$candidate_sha")" || return 65
+  if [ "$commits" -eq 1 ] && [ "$changed" = TASKBOARD.md ]; then
+    echo "the live release's closure commit is still reachable; finalize it instead of deploying" >&2
+    return 65
+  fi
+
+  echo "superseded_release=$live_sha superseded_status=$release_status closure_slot=consumed commits_since=$commits"
+  return 0
+)
+
 if [ "${1:-}" = "finalize" ]; then
   [ "$#" -eq 5 ] || {
     echo "usage: newme-deploy finalize <release-sha> <acceptance-sha256> <closure-sha> <successful-final-run-id>" >&2
@@ -1760,29 +1867,9 @@ if [ "$ROLLBACK_SHA" != "$LEGACY_EVIDENCELESS_BASELINE" ]; then
     echo "current release must have exactly one finalized deployment evidence file before another deployment" >&2
     exit 65
   }
-  python3 - "${CURRENT_EVIDENCE_FILES[0]}" "$ROLLBACK_SHA" "$SHA" "$DB_TRANSITION_ONLY" "$DB_TRANSITION_OPERATION" <<'PY'
-import json
-import sys
-
-path, expected_sha, transition_sha, db_transition_only, operation = sys.argv[1:]
-with open(path, encoding="utf-8") as handle:
-    evidence = json.load(handle)
-if evidence.get("git_sha") != expected_sha:
-    raise SystemExit(65)
-release_status = evidence.get("release_status")
-if db_transition_only == "1" and operation in {
-    "contract-apply",
-    "contract-verify",
-    "contract-rollback",
-    "contract-reenter",
-}:
-    if transition_sha != expected_sha:
-        raise SystemExit(65)
-    if release_status not in {"awaiting_uat", "acceptance_verified", "complete"}:
-        raise SystemExit(65)
-elif release_status != "complete":
-    raise SystemExit(65)
-PY
+  verify_live_release_permits_new_release \
+    "${CURRENT_EVIDENCE_FILES[0]}" "$ROLLBACK_SHA" "$SHA" \
+    "$DB_TRANSITION_ONLY" "$DB_TRANSITION_OPERATION" "$MIRROR" || exit $?
 fi
 
 service_control_source=$(git --git-dir="$MIRROR" show \

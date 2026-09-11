@@ -1796,13 +1796,13 @@ else
   MIGRATION_IDS=${4:-}
   ROLLBACK_SHA=${5:-}
   if [ "$#" -ne 5 ] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || ! [[ "$ROLLBACK_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "usage: newme-deploy <main-sha> <successful-run-id> <not_required|applied_verified|reentry_verified> <migration-ids> <rollback-sha>" >&2
-    echo "   or: newme-deploy bootstrap <main-sha> <successful-run-id> <not_required|applied_verified|reentry_verified> <migration-ids> <rollback-sha>" >&2
+    echo "usage: newme-deploy <main-sha> <successful-run-id> <not_required|applied_verified|reentry_verified|contract_verified> <migration-ids> <rollback-sha>" >&2
+    echo "   or: newme-deploy bootstrap <main-sha> <successful-run-id> <not_required|applied_verified|reentry_verified|contract_verified> <migration-ids> <rollback-sha>" >&2
     exit 64
   fi
   case "$MIGRATION_STATUS" in
     not_required) [ -z "$MIGRATION_IDS" ] || exit 64 ;;
-    applied_verified|reentry_verified) [[ "$MIGRATION_IDS" =~ ^[0-9A-Za-z_.-]+(,[0-9A-Za-z_.-]+)*$ ]] || exit 64 ;;
+    applied_verified|reentry_verified|contract_verified) [[ "$MIGRATION_IDS" =~ ^[0-9A-Za-z_.-]+(,[0-9A-Za-z_.-]+)*$ ]] || exit 64 ;;
     *) exit 64 ;;
   esac
 fi
@@ -2492,7 +2492,7 @@ MIGRATION_HISTORY_ARGS=(
   --history-fixture "$WORKTREE/supabase/migration-history-reconciliation.json"
 )
 case "$MIGRATION_STATUS" in
-  applied_verified|reentry_verified)
+  applied_verified|reentry_verified|contract_verified)
     # The derived list, never $MIGRATION_IDS: the two are equal by the gate above,
     # and using the derived one means a future change to that gate cannot leave this
     # line quietly enforcing the operator's scope again.
@@ -2507,14 +2507,14 @@ case "$MIGRATION_STATUS" in
         echo "the release manifest's deferred contract set is not a list of migration versions" >&2
         exit 65
       }
-      if [ "$MIGRATION_STATUS" = reentry_verified ]; then
+      if [ "$MIGRATION_STATUS" = reentry_verified ] || [ "$MIGRATION_STATUS" = contract_verified ]; then
         MIGRATION_HISTORY_ARGS+=(--require-applied "$REQUIRED_IDS,$DEFERRED_IDS")
       else
         MIGRATION_HISTORY_ARGS+=(--require-applied "$REQUIRED_IDS")
         MIGRATION_HISTORY_ARGS+=(--require-unapplied "$DEFERRED_IDS")
       fi
-    elif [ "$MIGRATION_STATUS" = reentry_verified ]; then
-      echo "reentry_verified requires a deferred contract migration set" >&2
+    elif [ "$MIGRATION_STATUS" = reentry_verified ] || [ "$MIGRATION_STATUS" = contract_verified ]; then
+      echo "$MIGRATION_STATUS requires a deferred contract migration set" >&2
       exit 65
     else
       MIGRATION_HISTORY_ARGS+=(--require-applied "$REQUIRED_IDS")
@@ -2527,23 +2527,39 @@ esac
   exit 65
 }
 
-# A protected contract rollback leaves the deferred migration recorded while its
-# companion returns the live posture to compat. Reentry is therefore explicit:
-# exact required+deferred history above, plus an exact compat posture here and at
-# the immediate pre-switch gate. Strict, absent or unreadable state is refused
-# before the control-plane asset transaction begins.
-if [ "$MIGRATION_STATUS" = reentry_verified ]; then
-  REENTRY_PHASE_OUTPUT="$("$NODE_BIN" "$WORKTREE/scripts/check-release-phase.mjs" \
+# Both claims that say the contract phase is already recorded are coupled to an
+# exact live posture, because each one is a statement about where production sits
+# in the runbook's compatibility matrix rather than about this release's tree:
+#
+#   * reentry_verified  - a protected contract rollback left the deferred migration
+#     recorded while its companion returned the live mode to compat (state 5), so
+#     compat is the only posture that claim can be true under;
+#   * contract_verified - the contract phase is applied and the live mode is already
+#     strict (state 4 or 6), which is what production looks like once an earlier
+#     release finished its contract step. Without this claim a strict production
+#     could not be described at all, and every deploy was refused here.
+#
+# The complementary posture, an absent one and an unreadable one are all refused,
+# before the control-plane asset transaction begins and again immediately before
+# the traffic switch. The candidate must also declare it runs under that phase;
+# check-release-phase.mjs --for-switch is what says so.
+case "$MIGRATION_STATUS" in
+  reentry_verified)  EXPECTED_LIVE_PHASE=compat ;;
+  contract_verified) EXPECTED_LIVE_PHASE=strict ;;
+  *)                 EXPECTED_LIVE_PHASE="" ;;
+esac
+if [ -n "$EXPECTED_LIVE_PHASE" ]; then
+  PHASE_COUPLING_OUTPUT="$("$NODE_BIN" "$WORKTREE/scripts/check-release-phase.mjs" \
     --for-switch \
     --release-dir "$WORKTREE" \
     --url-file "$MIGRATION_DB_URL_FILE" \
     --modules-dir "$LIVE_RELEASE/node_modules")" || {
-    printf '%s\n' "$REENTRY_PHASE_OUTPUT"
-    echo "reentry deployment database phase could not be verified" >&2
+    printf '%s\n' "$PHASE_COUPLING_OUTPUT"
+    echo "$MIGRATION_STATUS deployment database phase could not be verified" >&2
     exit 65
   }
-  [ "$REENTRY_PHASE_OUTPUT" = "NEWME_DB_PHASE=compat" ] || {
-    echo "reentry_verified requires live database phase compat" >&2
+  [ "$PHASE_COUPLING_OUTPUT" = "NEWME_DB_PHASE=$EXPECTED_LIVE_PHASE" ] || {
+    echo "$MIGRATION_STATUS requires live database phase $EXPECTED_LIVE_PHASE" >&2
     exit 65
   }
 fi

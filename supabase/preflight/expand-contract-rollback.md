@@ -810,6 +810,53 @@ cannot undo is a one-way door, so it must either declare `-- RECONTRACTS:` in a
 `recontract_*.sql` file or say why not with `-- NO_RECONTRACT:` in the rollback
 companion.
 
+### 5.2 · Deploying a later release while production is already at `strict` (state 4 or 6)
+
+Once a release has finished its contract phase, production stays at state 4 (or 6
+after a re-contract) until something moves it. Every release deployed from then on
+faces a database where **all** of this release's manifest — expand *and* deferred
+contract — is recorded and `money_release_mode.direct_write_mode` is `strict`.
+
+None of the first three claims can say that, and each is refused for a different
+reason: `applied_verified` requires the deferred set to be **unapplied**,
+`reentry_verified` requires the live mode to be **`compat`**, and `not_required`
+requires the manifest to demand nothing before the switch. So the fourth claim
+exists, and it is the ordinary one for a steady-state production:
+
+```text
+sudo /usr/local/sbin/newme-deploy \
+  <release-sha> <successful-run-id> contract_verified \
+  <exact required_for_app migration ids> <rollback-sha>
+```
+
+`contract_verified` requires, before the control-plane asset transaction and again
+immediately before the traffic switch:
+
+* the exact required **and** deferred sets recorded in production — the same
+  history check `reentry_verified` makes, using the manifest-derived list, never the
+  operator's;
+* a live database phase of exactly `strict`; `compat`, `absent` and an unreadable
+  mode are all refused, and so is a candidate that does not declare it runs under
+  `strict` in `runs_under.database_phases`;
+* the `deferred_contract` posture predicates holding, read through
+  `db-phase-push.mjs --phase deferred_contract --verify-recorded-posture` — the
+  read-only recovery path, which verifies content and posture and writes nothing.
+  This is a stronger statement than the expand-phase posture the other claims
+  check, and it is the point: at state 4 the guards that matter are the strict ones.
+
+A release whose manifest has no deferred contract phase cannot make this claim; it
+is refused with `contract_verified requires a deferred contract migration set`
+rather than degraded into `applied_verified`.
+
+**Why this is written down as a state and not a workaround.** Before this claim
+existed, a production sitting at state 4 could be described by no claim at all, so
+every deploy — and every control-plane bootstrap, which is gated behind the same
+preamble — was refused with `exit 65` and no claim available to replace it. That is
+the same permanent-deadlock shape as the release-closure slot: a vocabulary that
+cannot name the state the system is actually in stops being a gate and becomes a
+wall. When a new state becomes reachable, the claim vocabulary has to learn it in
+the same commit.
+
 ---
 
 ## 6 · Read-only verification

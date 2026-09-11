@@ -206,11 +206,51 @@ test("reentry_verified requires complete required plus deferred history and exac
     assert.equal(history[history.indexOf("--require-applied") + 1], `${REQUIRED},${DEFERRED}`);
     assert.ok(!history.includes("--require-unapplied"));
     assert.ok(calls(fx)[2].args.includes("--verify-recorded-posture"));
+    // Still the expand phase: reentry says the contract migration is recorded but
+    // its posture has been taken back out, so the contract phase's predicates do
+    // not hold and must not be the ones checked.
+    assert.equal(calls(fx)[2].args[calls(fx)[2].args.indexOf("--phase") + 1], "required_for_app");
 
     writeFileSync(fx.callLog, "");
     const strict = invoke(fx, { status: "reentry_verified", livePhase: "strict" });
     assert.equal(strict.status, 1);
     assert.match(strict.stderr, /requires live database phase compat/);
+  } finally {
+    rmSync(fx.work, { recursive: true, force: true });
+  }
+});
+
+test("contract_verified requires the same complete history but an exact strict contract posture", () => {
+  const fx = fixture();
+  try {
+    const result = invoke(fx, { status: "contract_verified", livePhase: "strict" });
+    assert.equal(result.status, 0, result.stderr);
+    const observed = calls(fx);
+    const history = observed[1].args;
+    assert.equal(history[history.indexOf("--require-applied") + 1], `${REQUIRED},${DEFERRED}`);
+    assert.ok(!history.includes("--require-unapplied"));
+    // The posture statement is about the contract phase itself: a strict production
+    // has that phase's rows recorded AND its predicates holding, which is exactly
+    // what --phase deferred_contract --verify-recorded-posture measures.
+    assert.equal(observed[2].args[observed[2].args.indexOf("--phase") + 1], "deferred_contract");
+    assert.ok(observed[2].args.includes("--verify-recorded-posture"));
+
+    // Negative control 1: the reentry posture is not this claim's posture.
+    writeFileSync(fx.callLog, "");
+    const compat = invoke(fx, { status: "contract_verified", livePhase: "compat" });
+    assert.equal(compat.status, 1);
+    assert.match(compat.stderr, /contract_verified requires live database phase strict/);
+
+    // Negative control 2: a release with no contract phase cannot make this claim.
+    writeFileSync(fx.callLog, "");
+    const noContract = invoke(fx, {
+      status: "contract_verified",
+      livePhase: "strict",
+      expectedDeferred: "",
+      derivedDeferred: "",
+    });
+    assert.equal(noContract.status, 1);
+    assert.match(noContract.stderr, /contract_verified requires a deferred contract migration set/);
   } finally {
     rmSync(fx.work, { recursive: true, force: true });
   }

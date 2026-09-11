@@ -326,7 +326,7 @@ export function auditReleaseClaim({ manifest, status, claimed = [] }) {
     claimedVersions.add(version);
   }
 
-  if (status === "applied_verified" || status === "reentry_verified") {
+  if (status === "applied_verified" || status === "reentry_verified" || status === "contract_verified") {
     for (const version of claimedVersions) {
       if (required.includes(version)) continue;
       fail(
@@ -352,7 +352,7 @@ export function auditReleaseClaim({ manifest, status, claimed = [] }) {
       );
     }
   } else {
-    fail(`the migration status must be applied_verified, reentry_verified or not_required, not ${JSON.stringify(String(status ?? ""))}`);
+    fail(`the migration status must be applied_verified, reentry_verified, contract_verified or not_required, not ${JSON.stringify(String(status ?? ""))}`);
   }
 
   return { problems, required, deferred };
@@ -674,7 +674,7 @@ function verifyClaim(argv) {
   const dirArg = value("--migrations-dir");
   const dir = dirArg === "" ? MIGRATIONS_DIR : dirArg;
   if (status === "") {
-    console.error("--verify-claim requires --status applied_verified|reentry_verified|not_required");
+    console.error("--verify-claim requires --status applied_verified|reentry_verified|contract_verified|not_required");
     return 1;
   }
 

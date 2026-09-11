@@ -52,12 +52,12 @@ case "$MIGRATION_STATUS" in
     [[ -z "$MIGRATION_IDS" ]] ||
       fail "MIGRATION_IDS must be empty when migration is not_required"
     ;;
-  applied_verified|reentry_verified)
+  applied_verified|reentry_verified|contract_verified)
     [[ -n "$MIGRATION_IDS" ]] ||
       fail "MIGRATION_IDS is required for $MIGRATION_STATUS"
     ;;
   *)
-    fail "MIGRATION_STATUS must be not_required, applied_verified or reentry_verified"
+    fail "MIGRATION_STATUS must be not_required, applied_verified, reentry_verified or contract_verified"
     ;;
 esac
 

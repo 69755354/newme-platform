@@ -59,8 +59,8 @@ export function parseArgs(argv) {
   if (!path.isAbsolute(options.modulesDir)) refuse("--modules-dir must be absolute");
   if (!VERSION_LIST.test(options.expectedRequired)) refuse("--expect-required is not a migration-version list");
   if (!VERSION_LIST.test(options.expectedDeferred)) refuse("--expect-deferred is not a migration-version list");
-  if (!new Set(["applied_verified", "reentry_verified", "not_required"]).has(options.status)) {
-    refuse("--status must be applied_verified, reentry_verified or not_required");
+  if (!new Set(["applied_verified", "reentry_verified", "contract_verified", "not_required"]).has(options.status)) {
+    refuse("--status must be applied_verified, reentry_verified, contract_verified or not_required");
   }
   return options;
 }
@@ -152,12 +152,17 @@ export function main(argv) {
     "--history-fixture", historyFixture,
     "--release-manifest", releaseManifest,
   ];
-  if (options.status === "applied_verified" || options.status === "reentry_verified") {
+  // The two claims that say the contract phase is already recorded in production.
+  // They differ only in the posture each is true under, which is why the phase is
+  // paired with the claim here instead of being derived from the history alone.
+  const CONTRACT_RECORDED = new Set(["reentry_verified", "contract_verified"]);
+  const COUPLED_LIVE_PHASE = { reentry_verified: "compat", contract_verified: "strict" };
+  if (options.status === "applied_verified" || CONTRACT_RECORDED.has(options.status)) {
     if (required === "") refuse(`${options.status} derived no required migration set`);
-    if (options.status === "reentry_verified" && deferred === "") {
-      refuse("reentry_verified requires a deferred contract migration set");
+    if (CONTRACT_RECORDED.has(options.status) && deferred === "") {
+      refuse(`${options.status} requires a deferred contract migration set`);
     }
-    historyArgs.push("--require-applied", options.status === "reentry_verified" ? `${required},${deferred}` : required);
+    historyArgs.push("--require-applied", CONTRACT_RECORDED.has(options.status) ? `${required},${deferred}` : required);
     if (options.status === "applied_verified" && deferred !== "") historyArgs.push("--require-unapplied", deferred);
   } else {
     historyArgs.push("--require-no-pending");
@@ -167,10 +172,12 @@ export function main(argv) {
   runNode(
     scripts["db-phase-push.mjs"],
     [
-      "--phase", "required_for_app",
+      // contract_verified is the one claim whose posture statement is about the
+      // contract phase itself: its rows recorded and its predicates holding.
+      "--phase", options.status === "contract_verified" ? "deferred_contract" : "required_for_app",
       "--url-file", options.urlFile,
       "--modules-dir", options.modulesDir,
-      options.status === "reentry_verified" ? "--verify-recorded-posture" : "--verify-only",
+      CONTRACT_RECORDED.has(options.status) ? "--verify-recorded-posture" : "--verify-only",
     ],
     { cwd: options.releaseDir },
   );
@@ -188,8 +195,9 @@ export function main(argv) {
     { cwd: options.releaseDir },
   );
   const livePhase = oneLine(phase, "NEWME_DB_PHASE");
-  if (options.status === "reentry_verified" && livePhase !== "compat") {
-    refuse(`reentry_verified requires live database phase compat, not ${JSON.stringify(livePhase)}`);
+  const coupledPhase = COUPLED_LIVE_PHASE[options.status];
+  if (coupledPhase !== undefined && livePhase !== coupledPhase) {
+    refuse(`${options.status} requires live database phase ${coupledPhase}, not ${JSON.stringify(livePhase)}`);
   }
   console.log(`pre-switch revalidation: required=${required === "" ? 0 : required.split(",").length} deferred=${deferred === "" ? 0 : deferred.split(",").length} history=verified posture=verified companions=verified phase=verified`);
   return 0;

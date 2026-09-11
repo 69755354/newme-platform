@@ -227,9 +227,9 @@ test("a run id that is not a GitHub run id is rejected", () => {
 test("migration claims must be internally consistent", () => {
   // The original bug: MIGRATION_STATUS=applied with no ids was recorded as a
   // verified migration. "applied" is not even a value either layer accepts now.
-  assertRejected({ MIGRATION_STATUS: "applied" }, /MIGRATION_STATUS must be 'applied_verified', 'reentry_verified' or 'not_required'/);
-  assertRejected({ MIGRATION_STATUS: "pending" }, /MIGRATION_STATUS must be 'applied_verified', 'reentry_verified' or 'not_required'/);
-  assertRejected({ MIGRATION_STATUS: "skipped" }, /MIGRATION_STATUS must be 'applied_verified', 'reentry_verified' or 'not_required'/);
+  assertRejected({ MIGRATION_STATUS: "applied" }, /MIGRATION_STATUS must be 'applied_verified', 'reentry_verified', 'contract_verified' or 'not_required'/);
+  assertRejected({ MIGRATION_STATUS: "pending" }, /MIGRATION_STATUS must be 'applied_verified', 'reentry_verified', 'contract_verified' or 'not_required'/);
+  assertRejected({ MIGRATION_STATUS: "skipped" }, /MIGRATION_STATUS must be 'applied_verified', 'reentry_verified', 'contract_verified' or 'not_required'/);
 
   assertRejected(
     { MIGRATION_STATUS: "applied_verified", MIGRATION_IDS: "" },
@@ -262,6 +262,14 @@ test("migration claims must be internally consistent", () => {
   );
   assert.equal(
     validate({ MIGRATION_STATUS: "reentry_verified", MIGRATION_IDS: "20260811100000_f08,20260811100100_f06" }).accepted,
+    true,
+  );
+  assertRejected(
+    { MIGRATION_STATUS: "contract_verified", MIGRATION_IDS: "" },
+    /contract_verified requires MIGRATION_IDS/,
+  );
+  assert.equal(
+    validate({ MIGRATION_STATUS: "contract_verified", MIGRATION_IDS: "20260811100000_f08,20260811100100_f06" }).accepted,
     true,
   );
 });

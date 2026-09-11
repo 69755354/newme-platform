@@ -141,7 +141,7 @@ test("an unknown status is refused rather than treated as a verified shape", () 
   for (const status of ["applied", "APPLIED_VERIFIED", "", "verified", null, undefined, "not_required "]) {
     assert.match(
       problemsOf(status, REQUIRED).join("\n"),
-      /the migration status must be applied_verified, reentry_verified or not_required/,
+      /the migration status must be applied_verified, reentry_verified, contract_verified or not_required/,
       JSON.stringify(status),
     );
   }
@@ -153,6 +153,19 @@ test("reentry_verified derives the same exact required claim without accepting d
   assert.deepEqual(exact.required, REQUIRED);
   assert.deepEqual(exact.deferred, DEFERRED);
   assert.match(problemsOf("reentry_verified", [...REQUIRED, ...DEFERRED]).join("\n"), /deferred contract-phase migration/);
+});
+
+test("contract_verified derives the same exact required claim as the reentry one", () => {
+  // contract_verified says the same thing about this release's TREE as the reentry
+  // claim - required and deferred both recorded - and differs only in the live
+  // posture it is true under, which no manifest can know. Held here so a change to
+  // the claim gate cannot start accepting the contract id in the operator's list.
+  const exact = claimOf("contract_verified", REQUIRED);
+  assert.deepEqual(exact.problems, []);
+  assert.deepEqual(exact.required, REQUIRED);
+  assert.deepEqual(exact.deferred, DEFERRED);
+  assert.match(problemsOf("contract_verified", [...REQUIRED, ...DEFERRED]).join("\n"), /deferred contract-phase migration/);
+  assert.match(problemsOf("contract_verified", REQUIRED.slice(1)).join("\n"), /missing /);
 });
 
 test("a manifest the set cannot be derived from yields problems AND empty sets", () => {
@@ -352,9 +365,17 @@ test("the wrapper derives the set from its own worktree and verifies the derived
   const assets = at(/^\s*bash "\$WORKTREE\/scripts\/install-systemd-assets\.sh"$/);
   assert.ok(claim > 0 && claim < history, "the claim must be derived before the history gate consumes it");
   assert.ok(history < assets);
-  const reentryPhase = at(/REENTRY_PHASE_OUTPUT=/);
-  assert.ok(history < reentryPhase && reentryPhase < assets, "reentry posture must be exact before assets change");
-  assert.match(wrapper, /REENTRY_PHASE_OUTPUT[\s\S]*--for-switch[\s\S]*NEWME_DB_PHASE=compat/);
+  const phaseCoupling = at(/PHASE_COUPLING_OUTPUT=/);
+  assert.ok(history < phaseCoupling && phaseCoupling < assets, "the coupled posture must be exact before assets change");
+  assert.match(wrapper, /PHASE_COUPLING_OUTPUT[\s\S]*--for-switch[\s\S]*NEWME_DB_PHASE=\$EXPECTED_LIVE_PHASE/);
+  // Each contract-phase claim is coupled to exactly one live posture, and the pair
+  // is the whole reason the vocabulary can describe production at all: a strict
+  // production matches neither applied_verified (deferred must be unapplied) nor
+  // reentry_verified (compat), so before contract_verified existed every deploy
+  // was refused here with no claim able to replace it.
+  assert.match(wrapper, /^\s*reentry_verified\)\s+EXPECTED_LIVE_PHASE=compat ;;$/m);
+  assert.match(wrapper, /^\s*contract_verified\)\s+EXPECTED_LIVE_PHASE=strict ;;$/m);
+  assert.match(wrapper, /^\s*\*\)\s+EXPECTED_LIVE_PHASE="" ;;$/m);
 
   // Recorded as its own gate, so the installer can tell a wrapper that derives the
   // set from one that takes the operator's word (scripts/verify-deploy-gate-record.mjs).
@@ -424,4 +445,52 @@ test("the installer knows the derived-claim gate and bootstrap delegates it to t
   assert.match(doc, /candidate-manifest claim derivation and exact operator-claim comparison/);
   assert.match(doc, /machine generation of the one-use installer gate record/);
   assert.doesNotMatch(doc, /^\s*gate=/m);
+});
+
+test("every layer of the control plane accepts exactly the same claim vocabulary", () => {
+  // Seven files enumerate the claim vocabulary. The defect class this repo has been
+  // bitten by is a boundary asserted in one place and quietly different in another,
+  // so this compares the enumerations instead of restating them: a status the
+  // wrapper accepts but the evidence writer rejects is a deploy that stages
+  // everything and then cannot write its own record.
+  const VOCABULARY = ["applied_verified", "contract_verified", "not_required", "reentry_verified"];
+  const read = (rel) => readFileSync(path.join(ROOT, rel), "utf8").replaceAll("\r\n", "\n");
+  const quoted = (list) => list.split(",").map((item) => item.trim().replace(/^["']|["']$/g, "")).sort();
+
+  // Shell case labels, parsed as labels: a comment ABOUT a status cannot satisfy
+  // this, because a comment line cannot open a case branch.
+  const caseLabels = (source) => {
+    const found = new Set();
+    const pattern = /^[ \t]*((?:not_required|applied_verified|reentry_verified|contract_verified)(?:\|[a-z_]+)*)\)/gm;
+    for (const match of source.matchAll(pattern)) {
+      for (const label of match[1].split("|")) found.add(label);
+    }
+    return [...found].sort();
+  };
+  for (const rel of [
+    "infra/systemd/newme-deploy.sh",
+    "scripts/deploy-immutable.sh",
+    "scripts/verify-release-preflight.sh",
+  ]) {
+    assert.deepEqual(caseLabels(read(rel)), VOCABULARY, `${rel} does not accept the whole vocabulary`);
+  }
+
+  // The evidence writer's Python set and the pre-switch coordinator's allow-list.
+  const evidence = read("scripts/finalize-deploy-evidence.sh");
+  const evidenceSet = /migration\.get\("status"\) not in \{([^}]+)\}/.exec(evidence);
+  assert.ok(evidenceSet, "the evidence writer no longer enumerates the accepted statuses");
+  assert.deepEqual(quoted(evidenceSet[1]), VOCABULARY);
+
+  const preSwitch = read("scripts/check-pre-switch-release.mjs");
+  const preSwitchSet = /new Set\(\[([^\]]+)\]\)\.has\(options\.status\)/.exec(preSwitch);
+  assert.ok(preSwitchSet, "the pre-switch coordinator no longer enumerates the accepted statuses");
+  assert.deepEqual(quoted(preSwitchSet[1]), VOCABULARY);
+
+  // The manifest gate is executed rather than read: each status either derives a
+  // claim or names itself in the refusal.
+  for (const status of VOCABULARY) {
+    const problems = problemsOf(status, status === "not_required" ? [] : REQUIRED).join("\n");
+    assert.ok(!/the migration status must be/.test(problems), `${status} is not a status the claim gate knows`);
+  }
+  assert.match(problemsOf("contract_applied", REQUIRED).join("\n"), /the migration status must be/);
 });

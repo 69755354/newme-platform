@@ -8,7 +8,7 @@
 -- PHASE 1: 新建5表（依赖顺序：products → quotations → contracts → installment_plans → payments）
 -- ═══════════════════════════════════════════════════
 
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sku TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
@@ -21,9 +21,10 @@ CREATE TABLE products (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
-CREATE INDEX idx_products_sku ON products(sku);
-CREATE INDEX idx_products_category ON products(category);
-CREATE INDEX idx_products_active ON products(is_active) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active) WHERE is_active = true;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS brand TEXT;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "products_auth_all" ON products FOR ALL
   USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid()));

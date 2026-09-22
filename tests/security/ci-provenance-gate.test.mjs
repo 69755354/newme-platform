@@ -242,7 +242,7 @@ test("provenance mutations reject tags, short or unreviewed SHAs, unknown owners
 test("provenance mutations reject tag-only, latest, unknown, variable, or digest-drifted images", async () => {
   const input = await fixture();
   const file = ".github/workflows/ci.yml";
-  const postgres = "docker.io/library/postgres:17.11-trixie@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675";
+  const postgres = "docker.io/library/postgres:17.11-trixie@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232";
   const node = "docker.io/library/node:24.18.0-bookworm@sha256:5711a0d445a1af54af9589066c646df387d1831a608226f4cd694fc59e745059";
   const playwright = "mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948";
 

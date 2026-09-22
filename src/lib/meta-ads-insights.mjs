@@ -25,10 +25,48 @@
 
 export const META_API_SOURCE = "meta_api";
 export const EXCEL_SOURCE = "meta";
+/** `meta_api:<digits>` — see apiSourceForAccount(). */
+export const API_SOURCE_PREFIX = `${META_API_SOURCE}:`;
+
+/**
+ * Every reader of ad_spend sums `amount` and labels the total AED
+ * (src/app/api/dashboard/ads-roi/route.ts, src/app/api/analytics/summary/route.ts),
+ * so a row in another currency does not read as a different unit — it reads as a
+ * wrong number. The sync refuses such a row instead of converting it: a rate
+ * invented at import time would be indistinguishable from spend afterwards.
+ */
+export const ACCOUNT_CURRENCY = "AED";
+
+/**
+ * The namespace one sync run owns: `meta_api:<account digits>`.
+ *
+ * A bare 'meta_api' was wrong the moment a second ad account could be configured.
+ * Two accounts would claim the same namespace, and because a run replaces whole
+ * date windows inside its namespace, syncing account B would delete account A's
+ * rows for those days — silently, and only for the overlapping dates. Keying the
+ * namespace by account makes the delete fence exact. ad_spend.source is TEXT with
+ * no CHECK constraint (supabase/migrations/20260608000000_ad_spend.sql), so this
+ * needs no migration, and 'meta' — the Excel importer's default — remains a value
+ * no API run can ever produce.
+ *
+ * @param {string | null | undefined} accountId
+ * @returns {string}
+ */
+export function apiSourceForAccount(accountId) {
+  const account = normaliseAccountId(accountId);
+  if (!account) throw new Error("invalid_ad_account_id");
+  return `${API_SOURCE_PREFIX}${account.slice("act_".length)}`;
+}
+
+/** True for any namespace produced by apiSourceForAccount(), false for 'meta'. */
+export function isApiSource(source) {
+  return typeof source === "string" && source.startsWith(API_SOURCE_PREFIX);
+}
 
 /** level=ad + time_increment=1 is what makes one row mean "one ad on one day". */
 export const INSIGHTS_FIELDS = [
   "date_start",
+  "ad_id",
   "campaign_name",
   "adset_name",
   "ad_name",
@@ -100,11 +138,19 @@ function toInteger(value) {
  * silently: a window that returned 40 rows and inserted 31 has to say so, because
  * the dashboard sums amount and a missing row reads as cheaper advertising.
  */
-export function toAdSpendRow(insight) {
+export function toAdSpendRow(insight, { source = META_API_SOURCE } = {}) {
   const spendDate = insight?.date_start;
   if (!isIsoDate(spendDate)) return { ok: false, reason: "bad_date", insight };
   const amount = toNumber(insight?.spend);
   if (amount === null) return { ok: false, reason: "bad_spend", insight };
+
+  // Passing the currency straight through was the bug: an account reporting USD
+  // would land next to AED rows in a column nobody reads, and the dashboard would
+  // add the two together. The row is refused, the run fails closed, and a human
+  // decides what the number should mean.
+  const currency = typeof insight?.account_currency === "string" ? insight.account_currency.trim().toUpperCase() : "";
+  if (currency === "") return { ok: false, reason: "missing_currency", insight };
+  if (currency !== ACCOUNT_CURRENCY) return { ok: false, reason: "wrong_currency", insight };
 
   return {
     ok: true,
@@ -114,10 +160,10 @@ export function toAdSpendRow(insight) {
       ad_name: insight.ad_name ?? null,
       spend_date: spendDate,
       amount,
-      currency: insight.account_currency ?? null,
+      currency: ACCOUNT_CURRENCY,
       impressions: toInteger(insight.impressions),
       clicks: toInteger(insight.clicks),
-      source: META_API_SOURCE,
+      source,
     },
   };
 }
@@ -137,6 +183,26 @@ export function naturalKey(row) {
 }
 
 /**
+ * What makes one ad-day unique, preferring the identifier Graph assigns.
+ *
+ * naturalKey() alone was not enough. Two ads in the same ad set may carry the
+ * same name — the Ads Manager duplicate flow produces exactly that — and those
+ * two ads then collapsed into one row, dropping one ad's spend from the window.
+ * ad_id is stable across renames as well, so a mid-window rename no longer forks
+ * one ad into two rows.
+ *
+ * The two key shapes cannot collide: this one has two segments, naturalKey() has
+ * four, and no Meta object name can contain the separator.
+ */
+export function insightKey(insight, row) {
+  const adId = insight?.ad_id;
+  if (typeof adId === "string" && /^\d+$/.test(adId.trim())) {
+    return [row.spend_date, `ad_id:${adId.trim()}`].join("\u0000");
+  }
+  return naturalKey(row);
+}
+
+/**
  * @typedef {{ campaign_name: string | null, adset_name: string | null, ad_name: string | null,
  *             spend_date: string, amount: number, currency: string | null,
  *             impressions: number | null, clicks: number | null, source: string }} AdSpendRow
@@ -148,14 +214,14 @@ export function naturalKey(row) {
  *             rejected: { reason: string, date_start: string | null, ad_name: string | null }[],
  *             duplicates: number }}
  */
-export function mapInsights(insights) {
+export function mapInsights(insights, { source = META_API_SOURCE } = {}) {
   const rows = /** @type {AdSpendRow[]} */ ([]);
   const rejected = /** @type {{ reason: string, date_start: string | null, ad_name: string | null }[]} */ ([]);
   const seen = new Map();
   let duplicates = 0;
 
   for (const insight of Array.isArray(insights) ? insights : []) {
-    const mapped = toAdSpendRow(insight);
+    const mapped = toAdSpendRow(insight, { source });
     if (!mapped.ok) {
       rejected.push({
         reason: mapped.reason,
@@ -164,7 +230,7 @@ export function mapInsights(insights) {
       });
       continue;
     }
-    const key = naturalKey(mapped.row);
+    const key = insightKey(insight, mapped.row);
     const at = seen.get(key);
     if (at !== undefined) {
       // Graph can repeat a key across pages when an ad is edited mid-fetch. Last
@@ -264,6 +330,32 @@ export function chooseTokenSource({ tokenRow, envToken, now = new Date() } = {})
   }
   if (hasDb && dbExpired) return { kind: "none", reason: "token_expired", env_available: false };
   return { kind: "none", reason: "no_token", env_available: false };
+}
+
+/**
+ * After Graph has rejected the chosen credential, the credential to try instead.
+ *
+ * chooseTokenSource() prefers the database token because a human authorised it
+ * deliberately, but src/app/api/meta/oauth-callback/route.ts stores a token even
+ * when the long-lived exchange failed, stamped with a made-up expires_in of 3600.
+ * Such a row looks live and is not. Without this hop the sync would answer 401
+ * every night while a perfectly good system user token sat unused in the
+ * environment, and the failure would look like a Meta problem.
+ *
+ * Deliberately one-way and one-shot: only db → env, only on code 190, and the
+ * caller bounds the attempts. Retrying the database token after the environment
+ * token failed would just replay a known-bad credential, and repeated attempts on
+ * a revoked token are how an app gets rate limited.
+ *
+ * @param {{ kind: string } | null | undefined} choice
+ * @param {{ envToken?: string | null }} [input]
+ * @returns {{ kind: "env" | "none", reason: string }}
+ */
+export function nextTokenSource(choice, { envToken } = {}) {
+  const hasEnv = typeof envToken === "string" && envToken.trim() !== "";
+  if (choice?.kind !== "db") return { kind: "none", reason: "no_alternative_credential" };
+  if (!hasEnv) return { kind: "none", reason: "no_alternative_credential" };
+  return { kind: "env", reason: "oauth_token_rejected_env_retry" };
 }
 
 /** Graph's error shapes, reduced to something a route can return without leaking. */

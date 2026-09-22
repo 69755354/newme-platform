@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { resolveReleaseScript } from "@/lib/release-script";
+import { API_SOURCE_PREFIX } from "@/lib/meta-ads-insights.mjs";
 
 /**
  * POST /api/dashboard/ads-roi/import
@@ -85,6 +86,54 @@ export async function POST(request: NextRequest) {
         { error: rows[0].error },
         { status: 500 }
       );
+    }
+
+    // One spend_date, one source.
+    //
+    // Both readers of this table — src/app/api/dashboard/ads-roi/route.ts and
+    // src/app/api/analytics/summary/route.ts — sum every row in ad_spend without
+    // filtering on source, which is correct only while no day is described twice.
+    // A day covered by both this Excel export and /api/meta/ads-sync would be
+    // counted twice: total spend reads high, cost per lead reads low, and nothing
+    // in the response says so. ads-sync refuses to write a window that already
+    // holds rows from another source; this is the same fence facing the other way.
+    // Refusing the import is recoverable in a minute; a silently doubled number is
+    // not, because afterwards there is no way to tell which rows were the copy.
+    const incomingDates = new Set(
+      (rows as { spend_date?: unknown }[])
+        .map((r) => (typeof r.spend_date === "string" ? r.spend_date.slice(0, 10) : ""))
+        .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)),
+    );
+    if (incomingDates.size > 0) {
+      const ordered = [...incomingDates].sort();
+      const { data: owned, error: ownedErr } = await supabase
+        .from("ad_spend")
+        .select("spend_date")
+        .like("source", `${API_SOURCE_PREFIX}%`)
+        .gte("spend_date", ordered[0])
+        .lte("spend_date", ordered[ordered.length - 1]);
+
+      // A failed check is not an absent conflict: without this the fence would
+      // fall open exactly when the database is unhappy.
+      if (ownedErr) {
+        console.error("[Ads Import] source overlap check failed:", ownedErr);
+        return NextResponse.json({ error: "Overlap check failed" }, { status: 500 });
+      }
+
+      const clash = [...new Set((owned ?? []).map((r) => String(r.spend_date).slice(0, 10)))]
+        .filter((d) => incomingDates.has(d))
+        .sort();
+      if (clash.length > 0) {
+        return NextResponse.json(
+          {
+            error: "api_sourced_days_would_be_double_counted",
+            days: clash.slice(0, 20),
+            day_count: clash.length,
+            next: "retire_the_api_sourced_rows_for_those_days_or_trim_the_export",
+          },
+          { status: 409 },
+        );
+      }
     }
 
     // Insert rows in batches of 500

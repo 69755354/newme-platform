@@ -18,21 +18,28 @@
  * No dependencies and no build step: `node --test tests/security/`.
  */
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  ACCOUNT_CURRENCY,
+  API_SOURCE_PREFIX,
+  EXCEL_SOURCE,
   META_API_SOURCE,
+  apiSourceForAccount,
   chooseTokenSource,
   classifyGraphError,
   defaultWindow,
   describeToken,
+  insightKey,
   insightsUrl,
+  isApiSource,
   isIsoDate,
   mapInsights,
   naturalKey,
+  nextTokenSource,
   normaliseAccountId,
   windowFromRequest,
 } from "../../src/lib/meta-ads-insights.mjs";
@@ -40,6 +47,10 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SYNC = "src/app/api/meta/ads-sync/route.ts";
 const STATUS = "src/app/api/meta/ads-status/route.ts";
+const IMPORTER = "src/app/api/dashboard/ads-roi/import/route.ts";
+const INSIGHTS = "src/lib/meta-ads-insights.mjs";
+/** One AED ad-day, as Graph returns it. */
+const AED = { account_currency: "AED" };
 
 const read = (rel) => readFile(path.join(ROOT, rel), "utf8");
 
@@ -82,11 +93,16 @@ test("a backwards or malformed window is refused before it reaches Graph", () =>
 });
 
 test("every mapped row is claimed by this feature's namespace", () => {
-  const { rows } = mapInsights([
-    { date_start: "2026-09-01", campaign_name: "C", adset_name: "A", ad_name: "Ad1", spend: "12.34", impressions: "1000", clicks: "7", account_currency: "AED" },
-  ]);
+  const namespace = apiSourceForAccount("968615798111277");
+  const { rows } = mapInsights(
+    [
+      { date_start: "2026-09-01", campaign_name: "C", adset_name: "A", ad_name: "Ad1", spend: "12.34", impressions: "1000", clicks: "7", account_currency: "AED" },
+    ],
+    { source: namespace },
+  );
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].source, META_API_SOURCE);
+  assert.equal(rows[0].source, namespace);
+  assert.ok(rows[0].source.startsWith(META_API_SOURCE));
   assert.equal(rows[0].amount, 12.34);
   assert.equal(rows[0].impressions, 1000);
   assert.equal(rows[0].clicks, 7);
@@ -96,8 +112,8 @@ test("every mapped row is claimed by this feature's namespace", () => {
 
 test("a repeated ad-day is collapsed, never summed", () => {
   const { rows, duplicates } = mapInsights([
-    { date_start: "2026-09-01", campaign_name: "C", adset_name: "A", ad_name: "Ad1", spend: "10" },
-    { date_start: "2026-09-01", campaign_name: "C", adset_name: "A", ad_name: "Ad1", spend: "11" },
+    { ...AED, date_start: "2026-09-01", campaign_name: "C", adset_name: "A", ad_name: "Ad1", spend: "10" },
+    { ...AED, date_start: "2026-09-01", campaign_name: "C", adset_name: "A", ad_name: "Ad1", spend: "11" },
   ]);
   assert.equal(rows.length, 1, "one ad on one day is one row");
   assert.equal(duplicates, 1);
@@ -106,9 +122,9 @@ test("a repeated ad-day is collapsed, never summed", () => {
 
 test("an unmappable row is reported, not dropped quietly", () => {
   const { rows, rejected } = mapInsights([
-    { date_start: "2026-09-01", ad_name: "good", spend: "5" },
-    { date_start: "not-a-date", ad_name: "bad date", spend: "5" },
-    { date_start: "2026-09-02", ad_name: "no spend" },
+    { ...AED, date_start: "2026-09-01", ad_name: "good", spend: "5" },
+    { ...AED, date_start: "not-a-date", ad_name: "bad date", spend: "5" },
+    { ...AED, date_start: "2026-09-02", ad_name: "no spend" },
   ]);
   assert.equal(rows.length, 1);
   assert.equal(rejected.length, 2);
@@ -137,8 +153,8 @@ test("the key separator cannot occur inside a Meta object name", () => {
   );
 
   const { rows, duplicates } = mapInsights([
-    { date_start: "2026-09-01", campaign_name: "A B", adset_name: "C", ad_name: "Ad1", spend: "10" },
-    { date_start: "2026-09-01", campaign_name: "A", adset_name: "B C", ad_name: "Ad1", spend: "20" },
+    { ...AED, date_start: "2026-09-01", campaign_name: "A B", adset_name: "C", ad_name: "Ad1", spend: "10" },
+    { ...AED, date_start: "2026-09-01", campaign_name: "A", adset_name: "B C", ad_name: "Ad1", spend: "20" },
   ]);
   assert.equal(rows.length, 2, "two different ads must stay two rows");
   assert.equal(duplicates, 0);
@@ -266,7 +282,7 @@ function deleteIsFenced(source) {
   if (!call) return false;
   const tail = call[1];
   return (
-    /\.eq\("source",\s*META_API_SOURCE\)/.test(tail) &&
+    /\.eq\("source",\s*namespace\)/.test(tail) &&
     /\.gte\("spend_date",\s*since\)/.test(tail) &&
     /\.lte\("spend_date",\s*until\)/.test(tail)
   );
@@ -274,12 +290,14 @@ function deleteIsFenced(source) {
 
 test("the sync only ever clears rows it wrote itself", async () => {
   const source = await read(SYNC);
-  assert.ok(deleteIsFenced(source), "delete must be scoped to source='meta_api' and to the window");
+  assert.ok(deleteIsFenced(source), "delete must be scoped to this account's namespace and to the window");
 
   // Negative control: drop the namespace fence and the check must go red, or it
   // was never looking. Without this fence the sync would delete the manually
-  // imported Excel spend (source='meta') for the same dates.
-  const unfenced = source.replace(/\.eq\("source",\s*META_API_SOURCE\)\s*\n/, "\n");
+  // imported Excel spend (source='meta') for the same dates — and before the
+  // namespace carried the account id, a second ad account would have deleted the
+  // first one's rows for every overlapping day.
+  const unfenced = source.replace(/\.eq\("source",\s*namespace\)\s*\n/, "\n");
   assert.notEqual(unfenced, source, "the negative control must actually mutate the source");
   assert.equal(deleteIsFenced(unfenced), false, "the check must fail once the fence is gone");
 });
@@ -304,7 +322,7 @@ const ACCESS_TOKEN_ALLOWED = [
   /\.select\(/, // asking the database for it
   /Authorization: `Bearer/, // handing it to Graph
   /!secret\?\.access_token/, // guarding on its absence
-  /^\s*const credential = /, // choosing between the two sources
+  /^\s*(const|let) credential = /, // choosing between the two sources; `let` because of the one retry
 ];
 // `if (` was in this list first and made the whole check vacuous: the first
 // NextResponse.json in each route sits on an `if (authError || !user) return ...`
@@ -384,4 +402,272 @@ test("a partially written window is reported as a failure, not a success", async
   assert.ok(/error: "insert_failed"/.test(insertBlock));
   assert.ok(/status: 500/.test(insertBlock), "a half-written window must not return 200");
   assert.ok(/ok: inserted === rows\.length/.test(source), "ok must mean every mappable row landed");
+});
+
+// --------------------------------------------------------------------------
+// 3 · the review fixes, and what each one is preventing
+// --------------------------------------------------------------------------
+
+test("ad_id is requested, or the key quietly falls back to names", () => {
+  assert.ok(INSIGHTS_FIELDS_INCLUDES("ad_id"), "level=ad without ad_id gives no stable identity");
+});
+
+function INSIGHTS_FIELDS_INCLUDES(field) {
+  const url = insightsUrl({ accountId: "968615798111277", since: "2026-09-01", until: "2026-09-01" });
+  return url.searchParams.get("fields").split(",").includes(field);
+}
+
+test("two ads sharing a name stay two rows, one ad twice stays one row", () => {
+  // The Ads Manager duplicate flow produces two ads with the same name in the same
+  // ad set. Keyed on names alone they collapsed into one row and half the spend
+  // left the window — invisibly, because the run still reported success.
+  const day = { ...AED, date_start: "2026-09-01", campaign_name: "C", adset_name: "A", ad_name: "Villa retarget", spend: "10" };
+  const distinct = mapInsights([{ ...day, ad_id: "1111" }, { ...day, ad_id: "2222", spend: "20" }]);
+  assert.equal(distinct.rows.length, 2, "two ad ids are two ads, whatever they are called");
+  assert.equal(distinct.duplicates, 0);
+  assert.equal(distinct.rows.reduce((s, r) => s + r.amount, 0), 30);
+
+  // Negative control for the same key: the SAME ad id twice must still collapse,
+  // otherwise the key has stopped identifying anything and every page boundary
+  // would duplicate spend.
+  const repeated = mapInsights([{ ...day, ad_id: "1111" }, { ...day, ad_id: "1111", spend: "11" }]);
+  assert.equal(repeated.rows.length, 1);
+  assert.equal(repeated.duplicates, 1);
+  assert.equal(repeated.rows[0].amount, 11, "last page wins; 21 would be invented spend");
+
+  // A rename mid-window is one ad, not two, once ad_id is present.
+  const renamed = mapInsights([{ ...day, ad_id: "1111" }, { ...day, ad_id: "1111", ad_name: "Villa retarget v2" }]);
+  assert.equal(renamed.rows.length, 1);
+
+  // Without an ad id the key falls back to names, and the two shapes cannot
+  // collide: two segments against four.
+  const row = { spend_date: "2026-09-01", campaign_name: "C", adset_name: "A", ad_name: "Ad1" };
+  assert.equal(insightKey({}, row), naturalKey(row));
+  assert.notEqual(insightKey({ ad_id: "1111" }, row), naturalKey(row));
+  assert.equal(insightKey({ ad_id: " 1111 " }, row), insightKey({ ad_id: "1111" }, row), "Graph pads ids in some responses");
+  assert.equal(insightKey({ ad_id: "not-a-number" }, row), naturalKey(row), "a non-numeric id is not an id");
+});
+
+test("a row in another currency is refused, never converted", () => {
+  // Every reader sums `amount` and labels the total AED, so a USD row is not a
+  // different unit in the output — it is a wrong number. Converting it here would
+  // bake a made-up rate into the ledger with nothing recording that it happened.
+  const day = { date_start: "2026-09-01", campaign_name: "C", adset_name: "A", ad_name: "Ad1", spend: "10" };
+  const { rows, rejected } = mapInsights([
+    { ...day, ad_id: "1", account_currency: "AED" },
+    { ...day, ad_id: "2", account_currency: "USD" },
+    { ...day, ad_id: "3" },
+    { ...day, ad_id: "4", account_currency: "   " },
+  ]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].currency, ACCOUNT_CURRENCY);
+  // Blank is missing, not wrong: there is nothing to disagree with.
+  assert.deepEqual(rejected.map((r) => r.reason).sort(), ["missing_currency", "missing_currency", "wrong_currency"]);
+
+  // Case and padding are the account's, not a second currency.
+  const lax = mapInsights([{ ...day, ad_id: "5", account_currency: " aed " }]);
+  assert.equal(lax.rows.length, 1);
+  assert.equal(lax.rejected.length, 0);
+});
+
+test("the namespace carries the ad account, so two accounts cannot erase each other", () => {
+  const a = apiSourceForAccount("968615798111277");
+  const b = apiSourceForAccount("act_973440948936910");
+  assert.notEqual(a, b, "a shared namespace means syncing B deletes A's overlapping days");
+  assert.ok(a.startsWith(API_SOURCE_PREFIX) && b.startsWith(API_SOURCE_PREFIX));
+  assert.equal(apiSourceForAccount(" 968615798111277 "), a, "the same account is one namespace");
+  assert.throws(() => apiSourceForAccount("junk"), /invalid_ad_account_id/);
+  assert.throws(() => apiSourceForAccount(null), /invalid_ad_account_id/);
+
+  // The Excel importer's rows must stay outside every API namespace, in both
+  // directions: no API namespace may equal or prefix-match 'meta'.
+  assert.ok(isApiSource(a));
+  assert.equal(isApiSource(EXCEL_SOURCE), false);
+  assert.equal(isApiSource("meta_api"), false, "the bare namespace is no longer produced");
+  assert.notEqual(a, EXCEL_SOURCE);
+  assert.ok(!EXCEL_SOURCE.startsWith(API_SOURCE_PREFIX));
+});
+
+test("the credential retry is one-way, and only when there is somewhere to go", () => {
+  // oauth-callback stores a token even when the long-lived exchange failed,
+  // stamped with a made-up expires_in of 3600, so a row can look live and be
+  // rejected by Graph. Without this hop the nightly sync would answer 401 while a
+  // working system user token sat unused in the environment.
+  assert.deepEqual(nextTokenSource({ kind: "db" }, { envToken: "SYSUSER" }), {
+    kind: "env",
+    reason: "oauth_token_rejected_env_retry",
+  });
+  assert.equal(nextTokenSource({ kind: "db" }, { envToken: "" }).kind, "none");
+  assert.equal(nextTokenSource({ kind: "db" }, {}).kind, "none");
+  assert.equal(nextTokenSource({ kind: "db" }).kind, "none");
+  // Never the other way: replaying a credential Graph has already refused is how
+  // an app gets rate limited, and there is nothing left to try.
+  assert.equal(nextTokenSource({ kind: "env" }, { envToken: "SYSUSER" }).kind, "none");
+  assert.equal(nextTokenSource({ kind: "none" }, { envToken: "SYSUSER" }).kind, "none");
+  assert.equal(nextTokenSource(null, { envToken: "SYSUSER" }).kind, "none");
+});
+
+test("the retry is bounded, so a refused credential is not replayed all night", async () => {
+  const source = await read(SYNC);
+  assert.ok(/MAX_CREDENTIAL_ATTEMPTS = 2/.test(source), "the bound has to be a constant, not a while(true)");
+  assert.ok(/attempt < MAX_CREDENTIAL_ATTEMPTS/.test(source));
+  assert.ok(/nextTokenSource\(/.test(source), "the sync must not re-implement the fallback rule");
+  assert.ok(/MAX_PAGES = \d+/.test(source), "the paging loop needs a bound too");
+});
+
+test("a rejected row stops the run before the window is deleted", async () => {
+  // Fail closed. Deleting a window and then replacing it with fewer rows than
+  // Graph returned reads as cheaper advertising, and nothing afterwards can tell
+  // that a row went missing.
+  const source = await read(SYNC);
+  const rejectAt = source.indexOf('error: "insight_rows_rejected"');
+  const deleteAt = source.indexOf(".delete(");
+  assert.ok(rejectAt > -1, "the sync must refuse a window it could not fully map");
+  assert.ok(deleteAt > -1);
+  assert.ok(rejectAt < deleteAt, "the refusal must come before the delete");
+  assert.ok(/status: 422/.test(source.slice(rejectAt, rejectAt + 400)));
+
+  // Negative control: let the rejected rows through and require this to go red.
+  const permissive = source.replace('error: "insight_rows_rejected"', 'ignored: "rejected"');
+  assert.notEqual(permissive, source, "the negative control must mutate the source");
+  assert.equal(permissive.indexOf('error: "insight_rows_rejected"'), -1);
+});
+
+/** A writer of ad_spend has to refuse a window another source already covers. */
+function writerRefusesForeignWindow(source) {
+  return (
+    /overlapping_spend_window/.test(source) ||
+    /api_sourced_days_would_be_double_counted/.test(source)
+  );
+}
+
+test("no writer of ad_spend may cover a day another source already covers", async () => {
+  // This is the whole reason src/app/api/dashboard/ads-roi/route.ts and
+  // src/app/api/analytics/summary/route.ts can sum every row without filtering on
+  // `source`. If a day were described twice, total spend would read high and cost
+  // per lead low, with nothing in either response saying so — and afterwards no
+  // way to tell which rows were the copy. So the invariant is enforced on the
+  // writers, and this test enumerates them rather than naming them, so that a
+  // third writer added later fails here instead of doubling the ledger.
+  const files = (await readdir(path.join(ROOT, "src/app"), { recursive: true }))
+    .filter((f) => typeof f === "string" && f.endsWith(".ts"))
+    .map((f) => path.join("src/app", f));
+  const writers = [];
+  for (const rel of files) {
+    const source = await read(rel);
+    if (/\.from\("ad_spend"\)/.test(source) && /\.insert\(/.test(source)) writers.push(rel);
+  }
+
+  assert.ok(writers.includes(SYNC), "the sync writes ad_spend");
+  assert.ok(writers.includes(IMPORTER), "the Excel importer writes ad_spend");
+  for (const rel of writers) {
+    assert.ok(writerRefusesForeignWindow(await read(rel)), `${rel} may not write over another source's days`);
+  }
+
+  // Negative controls, one per writer: remove the fence and require red.
+  for (const [rel, marker] of [[SYNC, "overlapping_spend_window"], [IMPORTER, "api_sourced_days_would_be_double_counted"]]) {
+    const source = await read(rel);
+    const stripped = source.split(marker).join("removed");
+    assert.notEqual(stripped, source, `the negative control must mutate ${rel}`);
+    assert.equal(writerRefusesForeignWindow(stripped), false, `${rel}: the check must fail once the fence is gone`);
+  }
+});
+
+test("the sync's overlap fence looks outside its own namespace, in the same window", async () => {
+  const source = await read(SYNC);
+  const fence = source.slice(source.indexOf("overlapping_spend_window") - 1500, source.indexOf("overlapping_spend_window"));
+  assert.ok(/\.neq\("source",\s*namespace\)/.test(fence), "the fence must look at OTHER sources");
+  assert.ok(/\.gte\("spend_date",\s*since\)/.test(fence) && /\.lte\("spend_date",\s*until\)/.test(fence));
+  assert.ok(/head: true/.test(fence), "counting rows is enough; the rows themselves are not needed");
+  assert.ok(/status: 409/.test(source.slice(source.indexOf("overlapping_spend_window"), source.indexOf("overlapping_spend_window") + 500)));
+
+  // Negative control: a failed count must not be treated as "no overlap".
+  assert.ok(/overlap_probe_failed/.test(source), "the fence must fail closed when the count itself errors");
+});
+
+test("the importer's fence checks the days it is about to write, not the whole table", async () => {
+  const source = await read(IMPORTER);
+  assert.ok(/API_SOURCE_PREFIX/.test(source), "the importer must use the shared prefix, not a literal");
+  assert.ok(/\.like\("source",\s*`\$\{API_SOURCE_PREFIX\}%`\)/.test(source));
+  assert.ok(/incomingDates/.test(source) && /clash/.test(source), "only the days in the export can clash");
+  assert.ok(/status: 409/.test(source.slice(source.indexOf("api_sourced_days_would_be_double_counted"))));
+  // A failed check is not an absent conflict.
+  const checkBlock = source.slice(source.indexOf("ownedErr"), source.indexOf("api_sourced_days_would_be_double_counted"));
+  assert.ok(/status: 500/.test(checkBlock), "the importer must stop if the overlap query itself fails");
+});
+
+test("two syncs cannot replace the same window at once", async () => {
+  // delete-then-insert is not atomic here: two overlapping runs can interleave so
+  // that the second delete removes the first insert, and both report success while
+  // the window ends up holding one run's rows or none. A cron plus an impatient
+  // click is enough to produce it.
+  const source = await read(SYNC);
+  assert.ok(/let writeInFlight = false/.test(source), "the latch has to be module scope, not per request");
+  assert.ok(/if \(writeInFlight\)/.test(source));
+  assert.ok(/error: "sync_already_running"/.test(source));
+  const latchAt = source.indexOf("writeInFlight = true");
+  const deleteAt = source.indexOf(".delete(");
+  assert.ok(latchAt > -1 && latchAt < deleteAt, "the latch must close before the delete");
+  assert.ok(/finally \{[\s\S]{0,120}writeInFlight = false/.test(source), "a thrown error must not wedge the latch shut");
+
+  // Negative control: remove the guard and require the check to go red.
+  const unlatched = source.replace(/if \(writeInFlight\)/, "if (false)");
+  assert.notEqual(unlatched, source);
+  assert.equal(/if \(writeInFlight\)/.test(unlatched), false);
+});
+
+test("the sync reads the window back after writing it", async () => {
+  // PostgREST reports what it was asked to do, not what the table now holds: a
+  // policy or a trigger can drop rows from an insert that returns no error. The
+  // count is the only evidence the window is what it claims.
+  const source = await read(SYNC);
+  const verifyAt = source.indexOf("window_row_count_mismatch");
+  assert.ok(verifyAt > -1, "a run with no read-back cannot claim the window is correct");
+  const insertAt = source.indexOf("for (let i = 0; i < rows.length");
+  assert.ok(insertAt > -1 && insertAt < verifyAt, "the read-back comes after the insert");
+  const block = source.slice(insertAt, verifyAt);
+  assert.ok(/head: true/.test(block) && /count: "exact"/.test(block));
+  assert.ok(/\.eq\("source",\s*namespace\)/.test(block), "count this namespace's rows, not the table's");
+  assert.ok(/status: 409/.test(source.slice(verifyAt, verifyAt + 600)));
+});
+
+test("the status route pages the ad account list to the end", async () => {
+  // A credential assigned more than one page of ad accounts would otherwise report
+  // the configured account as invisible and skip the insights probe — a health
+  // check that says "broken" about a working connection sends the next person back
+  // through the authorisation flow for nothing.
+  const source = await read(STATUS);
+  assert.ok(/paging\?\.next/.test(source), "the first page is not the list");
+  assert.ok(/while \(nextPage\)/.test(source));
+  assert.ok(/MAX_ACCOUNT_PAGES/.test(source), "and the loop has to be bounded");
+  assert.ok(/ad_account_pages_exhausted/.test(source), "hitting the bound must be visible in the answer");
+
+  // Negative control: without the loop the check must go red.
+  const single = source.replace(/paging\?\.next/g, "data");
+  assert.notEqual(single, source);
+  assert.equal(/paging\?\.next/.test(single), false);
+});
+
+test("the status route never rounds a database failure down to 'no token'", async () => {
+  // Discarding the error on the second meta_tokens query made a permission or
+  // connectivity failure look like an absent credential, while checks.token.present
+  // in the same response said the row was right there. A diagnostic route that can
+  // contradict itself is worse than none.
+  const source = await read(STATUS);
+  assert.ok(/secretLookupError/.test(source), "the second query's error has to be captured");
+  const block = source.slice(source.indexOf("secretLookupError"));
+  assert.ok(/token_secret_lookup_failed/.test(block));
+  assert.ok(/status: 500/.test(block), "a failed read is a server error, not an empty result");
+  assert.ok(/tokenError/.test(source) && /token_lookup_failed/.test(source), "and so is the first query's");
+
+  // Negative control.
+  const swallowed = source.replace(/if \(secretLookupError\)/, "if (false)");
+  assert.notEqual(swallowed, source);
+  assert.equal(/if \(secretLookupError\)/.test(swallowed), false);
+});
+
+test("the mapping module still carries no raw NUL byte after the ad_id key", async () => {
+  const bytes = await readFile(path.join(ROOT, INSIGHTS));
+  assert.equal(bytes.includes(0), false);
+  assert.ok(/\\u0000/.test(bytes.toString("utf8")), "the separator must be written as an escape");
 });

@@ -12,6 +12,13 @@
  * returning the SHORT token stamped with a made-up expires_in of 3600. So a
  * separate, read-only check is the only way to tell those steps apart.
  *
+ * Because the point of the route is diagnosis, every failure it meets has to come
+ * back as itself: a database error while reading the credential is reported as a
+ * database error and never rounded down to "no token", and the ad account list is
+ * paged to the end before the configured account is called invisible. A
+ * false-negative health check is worse than no health check — it sends the next
+ * person back to the authorisation flow that was already working.
+ *
  * This route writes nothing and touches no Meta object other than reading. It
  * never returns the access token, and never logs it.
  */
@@ -30,8 +37,17 @@ import {
 
 const GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || "v22.0";
 const AD_ACCOUNT_ID = process.env.META_AD_ACCOUNT_ID || null;
+/** A system user can be assigned more than one page worth of ad accounts. */
+const MAX_ACCOUNT_PAGES = 10;
 
 export const dynamic = "force-dynamic";
+
+type AdAccountSummary = { account_id?: string; name?: string; account_status?: number; currency?: string };
+type AdAccountsPage = {
+  data?: AdAccountSummary[];
+  paging?: { next?: string | null } | null;
+  error?: { code?: number; error_subcode?: number } | null;
+};
 
 async function requireAdmin(request: NextRequest) {
   const bearerToken = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || undefined;
@@ -104,9 +120,20 @@ export async function GET(request: NextRequest) {
   // Two possible credentials. The OAuth flow is not the only one, and as of
   // 2026-09-15 it is the broken one — see chooseTokenSource() for the evidence.
   const envToken = process.env.META_SYSTEM_USER_TOKEN;
-  const { data: secret } = tokenRow
+  const { data: secret, error: secretLookupError } = tokenRow
     ? await admin.from("meta_tokens").select("access_token").eq("id", 1).maybeSingle()
-    : { data: null };
+    : { data: null, error: null };
+
+  // Discarding this error used to make a permission or connectivity failure on the
+  // second query look like an absent credential, while checks.token.present said
+  // the row was right there — the one contradiction this route exists to prevent.
+  if (secretLookupError) {
+    logger.error(
+      { err: secretLookupError, request_id, operation: "meta_ads_status" },
+      "[MetaAds] credential column read failed",
+    );
+    return NextResponse.json({ ok: false, checks, error: "token_secret_lookup_failed" }, { status: 500 });
+  }
 
   const choice = chooseTokenSource({ tokenRow: { ...tokenRow, ...secret }, envToken });
   checks.token_source = choice;
@@ -121,41 +148,66 @@ export async function GET(request: NextRequest) {
   const credential = choice.kind === "env" ? (envToken as string) : (secret?.access_token as string);
 
   // Does the token see any ad account at all, and specifically the configured one?
+  // Paged to the end: a credential with more than one page of ad accounts would
+  // otherwise report the configured account as invisible and skip the probe
+  // below, i.e. call a working connection broken.
+  const wanted = normaliseAccountId(AD_ACCOUNT_ID || "");
   const accountsUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/me/adaccounts`);
   accountsUrl.searchParams.set("fields", "account_id,name,account_status,currency");
   accountsUrl.searchParams.set("limit", "100");
 
-  let visible: Array<{ account_id?: string; name?: string; account_status?: number; currency?: string }> = [];
-  try {
-    const resp = await fetch(accountsUrl, {
-      cache: "no-store",
-      headers: { Authorization: `Bearer ${credential}` },
-    });
-    const payload = await resp.json();
-    if (!resp.ok || payload?.error) {
-      const classified = classifyGraphError(payload, resp.status);
-      logger.error(
-        { request_id, operation: "meta_ads_status", graph_kind: classified.kind, fb_error_code: classified.code },
-        "[MetaAds] /me/adaccounts refused",
-      );
-      return NextResponse.json({ ok: false, checks, graph_error: classified }, { status: classified.status });
+  const visible: AdAccountSummary[] = [];
+  const seesWanted = () => Boolean(wanted) && visible.some((a) => `act_${a.account_id}` === wanted);
+  let nextPage: string | null = accountsUrl.toString();
+  let accountPages = 0;
+  let accountPagesExhausted = true;
+
+  while (nextPage) {
+    if (accountPages >= MAX_ACCOUNT_PAGES) {
+      accountPagesExhausted = false;
+      break;
     }
-    visible = Array.isArray(payload?.data) ? payload.data : [];
-  } catch (e) {
-    logger.error({ err: e, request_id, operation: "meta_ads_status" }, "[MetaAds] /me/adaccounts unreachable");
-    return NextResponse.json({ ok: false, checks, error: "graph_unreachable" }, { status: 502 });
+    let payload: AdAccountsPage | null = null;
+    try {
+      const resp: Response = await fetch(nextPage, {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${credential}` },
+      });
+      payload = await resp.json();
+      if (!resp.ok || payload?.error) {
+        const classified = classifyGraphError(payload, resp.status);
+        logger.error(
+          { request_id, operation: "meta_ads_status", graph_kind: classified.kind, fb_error_code: classified.code },
+          "[MetaAds] /me/adaccounts refused",
+        );
+        return NextResponse.json({ ok: false, checks, graph_error: classified }, { status: classified.status });
+      }
+    } catch (e) {
+      logger.error({ err: e, request_id, operation: "meta_ads_status" }, "[MetaAds] /me/adaccounts unreachable");
+      return NextResponse.json({ ok: false, checks, error: "graph_unreachable" }, { status: 502 });
+    }
+
+    if (Array.isArray(payload?.data)) visible.push(...payload.data);
+    accountPages += 1;
+    if (seesWanted()) break;
+    nextPage = typeof payload?.paging?.next === "string" ? payload.paging.next : null;
   }
 
-  const wanted = normaliseAccountId(AD_ACCOUNT_ID || "");
+  checks.ad_account_pages = accountPages;
+  checks.ad_account_pages_exhausted = accountPagesExhausted;
   checks.visible_ad_accounts = visible.map((a) => ({
     account_id: a.account_id ?? null,
     name: a.name ?? null,
     account_status: a.account_status ?? null,
     currency: a.currency ?? null,
   }));
-  checks.configured_ad_account_visible = wanted
-    ? visible.some((a) => `act_${a.account_id}` === wanted)
-    : null;
+  checks.configured_ad_account_visible = wanted ? seesWanted() : null;
+
+  // The sync refuses any row that is not AED, because every reader of ad_spend
+  // sums amount and formats it as AED. Saying so here turns that refusal into a
+  // preflight answer instead of a surprise on the first scheduled run.
+  const wantedAccount = visible.find((a) => `act_${a.account_id}` === wanted);
+  checks.configured_ad_account_currency = wantedAccount?.currency ?? null;
 
   // One-day insights probe: the smallest call that proves ads_read works on THIS
   // account. Reads only; nothing is written to ad_spend by this route.

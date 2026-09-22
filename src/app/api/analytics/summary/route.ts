@@ -148,6 +148,10 @@ export async function GET(request: Request) {
   const contractsPromise = contractQuery;
 
   // ── 3c. Ad spend ──
+  // Unfiltered by `source` on purpose — see the note in
+  // src/app/api/dashboard/ads-roi/route.ts: the two writers of ad_spend each
+  // refuse a date window another source already covers, so summing everything
+  // counts each ad-day once.
   const adSpendPromise = supabase.from("ad_spend").select("campaign_name, amount, spend_date").order("spend_date", { ascending: true });
 
   // ── 3d. Sales profiles ──

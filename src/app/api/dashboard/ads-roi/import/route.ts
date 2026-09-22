@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { resolveReleaseScript } from "@/lib/release-script";
-import { API_SOURCE_PREFIX } from "@/lib/meta-ads-insights.mjs";
+import { EXCEL_SOURCE } from "@/lib/meta-ads-insights.mjs";
 
 /**
  * POST /api/dashboard/ads-roi/import
@@ -97,6 +97,10 @@ export async function POST(request: NextRequest) {
     // counted twice: total spend reads high, cost per lead reads low, and nothing
     // in the response says so. ads-sync refuses to write a window that already
     // holds rows from another source; this is the same fence facing the other way.
+    // It asks for every source that is not this one rather than naming the API
+    // prefix: scripts/import-ads-manager-export.mjs is a third writer with a third
+    // namespace, and a fence that lists its siblings goes stale the moment one is
+    // added.
     // Refusing the import is recoverable in a minute; a silently doubled number is
     // not, because afterwards there is no way to tell which rows were the copy.
     const incomingDates = new Set(
@@ -108,8 +112,8 @@ export async function POST(request: NextRequest) {
       const ordered = [...incomingDates].sort();
       const { data: owned, error: ownedErr } = await supabase
         .from("ad_spend")
-        .select("spend_date")
-        .like("source", `${API_SOURCE_PREFIX}%`)
+        .select("spend_date, source")
+        .neq("source", EXCEL_SOURCE)
         .gte("spend_date", ordered[0])
         .lte("spend_date", ordered[ordered.length - 1]);
 
@@ -120,16 +124,16 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Overlap check failed" }, { status: 500 });
       }
 
-      const clash = [...new Set((owned ?? []).map((r) => String(r.spend_date).slice(0, 10)))]
-        .filter((d) => incomingDates.has(d))
-        .sort();
+      const foreign = (owned ?? []).filter((r) => incomingDates.has(String(r.spend_date).slice(0, 10)));
+      const clash = [...new Set(foreign.map((r) => String(r.spend_date).slice(0, 10)))].sort();
       if (clash.length > 0) {
         return NextResponse.json(
           {
-            error: "api_sourced_days_would_be_double_counted",
+            error: "days_already_covered_by_another_source",
             days: clash.slice(0, 20),
             day_count: clash.length,
-            next: "retire_the_api_sourced_rows_for_those_days_or_trim_the_export",
+            sources: [...new Set(foreign.map((r) => String(r.source)))].sort(),
+            next: "retire_the_other_source_rows_for_those_days_or_trim_the_export",
           },
           { status: 409 },
         );

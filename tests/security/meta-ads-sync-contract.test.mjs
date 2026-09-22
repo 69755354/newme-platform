@@ -537,7 +537,7 @@ test("a rejected row stops the run before the window is deleted", async () => {
 function writerRefusesForeignWindow(source) {
   return (
     /overlapping_spend_window/.test(source) ||
-    /api_sourced_days_would_be_double_counted/.test(source)
+    /days_already_covered_by_another_source/.test(source)
   );
 }
 
@@ -565,7 +565,7 @@ test("no writer of ad_spend may cover a day another source already covers", asyn
   }
 
   // Negative controls, one per writer: remove the fence and require red.
-  for (const [rel, marker] of [[SYNC, "overlapping_spend_window"], [IMPORTER, "api_sourced_days_would_be_double_counted"]]) {
+  for (const [rel, marker] of [[SYNC, "overlapping_spend_window"], [IMPORTER, "days_already_covered_by_another_source"]]) {
     const source = await read(rel);
     const stripped = source.split(marker).join("removed");
     assert.notEqual(stripped, source, `the negative control must mutate ${rel}`);
@@ -587,12 +587,16 @@ test("the sync's overlap fence looks outside its own namespace, in the same wind
 
 test("the importer's fence checks the days it is about to write, not the whole table", async () => {
   const source = await read(IMPORTER);
-  assert.ok(/API_SOURCE_PREFIX/.test(source), "the importer must use the shared prefix, not a literal");
-  assert.ok(/\.like\("source",\s*`\$\{API_SOURCE_PREFIX\}%`\)/.test(source));
+  // The fence asks for every source that is not this one, so a namespace added
+  // later is covered without editing the route. Naming a sibling prefix would have
+  // let scripts/import-ads-manager-export.mjs write over the same days.
+  assert.ok(/EXCEL_SOURCE/.test(source), "the importer must use the shared constant, not a literal");
+  assert.ok(/\.neq\("source",\s*EXCEL_SOURCE\)/.test(source));
+  assert.ok(!/API_SOURCE_PREFIX/.test(source), "a fence that enumerates its siblings goes stale");
   assert.ok(/incomingDates/.test(source) && /clash/.test(source), "only the days in the export can clash");
-  assert.ok(/status: 409/.test(source.slice(source.indexOf("api_sourced_days_would_be_double_counted"))));
+  assert.ok(/status: 409/.test(source.slice(source.indexOf("days_already_covered_by_another_source"))));
   // A failed check is not an absent conflict.
-  const checkBlock = source.slice(source.indexOf("ownedErr"), source.indexOf("api_sourced_days_would_be_double_counted"));
+  const checkBlock = source.slice(source.indexOf("ownedErr"), source.indexOf("days_already_covered_by_another_source"));
   assert.ok(/status: 500/.test(checkBlock), "the importer must stop if the overlap query itself fails");
 });
 

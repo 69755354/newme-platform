@@ -439,7 +439,7 @@ jobs:
     # supabase/ci-local/supabase/config.toml puts the local database on 56432.
     services:
       postgres:
-        image: docker.io/library/postgres:17.11-trixie@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+        image: docker.io/library/postgres:17.11-trixie@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
         ports:
@@ -538,7 +538,7 @@ jobs:
     # and the only database reachable from this job is the service container.
     services:
       postgres:
-        image: docker.io/library/postgres:17.11-trixie@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+        image: docker.io/library/postgres:17.11-trixie@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
         ports:

@@ -44,6 +44,14 @@ export async function GET(request: Request) {
     }
 
     // ─── 1. Ad spend totals ───
+    // Every ad_spend row is summed, with no filter on `source`. That is correct
+    // only because no spend_date is described by two sources at once: both writers
+    // refuse a window that another source already covers
+    // (src/app/api/meta/ads-sync/route.ts -> overlapping_spend_window,
+    //  src/app/api/dashboard/ads-roi/import/route.ts -> api_sourced_days_would_be_double_counted),
+    // and tests/security/meta-ads-sync-contract.test.mjs fails if either fence is
+    // removed. Filtering to one source here instead would be worse: it would hide
+    // the Excel history rather than total the advertising.
     const { data: adSpend, error: adErr } = await supabase
       .from("ad_spend")
       .select("campaign_name, amount");

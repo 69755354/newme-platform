@@ -27,7 +27,7 @@ ALTER TABLE leads ADD COLUMN IF NOT EXISTS days_since_last_contact INTEGER DEFAU
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason TEXT;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_price BOOLEAN DEFAULT false;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_competitor BOOLEAN DEFAULT false;
-ALTER TABLE TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_no_budget BOOLEAN DEFAULT false;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_no_budget BOOLEAN DEFAULT false;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_project_cancelled BOOLEAN DEFAULT false;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_project_delayed BOOLEAN DEFAULT false;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_reason_no_response BOOLEAN DEFAULT false;
@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS business_events (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Preserve compatibility with the earlier business_events shape created by
+-- 20260602010000_crm_mvp_final.sql. Existing rows remain valid.
+ALTER TABLE business_events ADD COLUMN IF NOT EXISTS entity_type TEXT;
+ALTER TABLE business_events ADD COLUMN IF NOT EXISTS entity_id UUID;
+ALTER TABLE business_events ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES profiles(id);
+
 -- 添加索引
 CREATE INDEX IF NOT EXISTS idx_business_events_lead_id ON business_events(lead_id);
 CREATE INDEX IF NOT EXISTS idx_business_events_entity_type ON business_events(entity_type);
@@ -94,6 +100,7 @@ CREATE POLICY "business_events_sales_create" ON business_events FOR INSERT
 
 -- ═══════════════ 更新 views ═══════════════
 -- 更新销售绩效视图，包含新字段
+DROP VIEW IF EXISTS sales_performance;
 CREATE OR REPLACE VIEW sales_performance AS
 SELECT 
   p.id,

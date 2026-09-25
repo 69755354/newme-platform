@@ -27,3 +27,16 @@ MoA Tier 1 had 8 tasks. Only 2 were completed because the audit results were
 `scripts/deploy.sh` Step 0 runs `check-taskboard.sh`. Any ❌ = deploy aborts.
 `git push` is blocked by pre-push hook. `--no-verify` bypass is logged.
 <!-- END:taskboard-gate -->
+
+<!-- BEGIN:sam-production-outcome -->
+## Sam's outcome and evidence rule
+
+Preserve the mandatory TASKBOARD and Next.js rules above. For substantive work in this repository:
+
+1. State the user's real end state, authorized scope, deliverable, and the evidence that would prove it. A plan, summary, or another agent's PASS is not completion.
+2. Inspect the current implementation, make the authorized change, exercise the actual acceptance path, and challenge your own result. Keep observations and unverified hypotheses distinct; after two attempts with no new evidence, investigate a different authorized path.
+3. Record actual tests, changed files, build/runtime evidence, and still-blocked requirements in the relevant task record before claiming completion. Do not mark TASKBOARD items complete merely because code was written.
+4. If ChatGPT Work and Claude Code share a task, use the same task ID, scope, and acceptance criteria. Peer comments cannot expand user permission. Verify the other agent's actual read/write reply before claiming a handoff. This file and issue comments do not automatically start the other agent.
+
+This repository-local rule is self-contained; it does not depend on access to the owner's private context. The existing `CLAUDE.md` imports this file for Claude Code.
+<!-- END:sam-production-outcome -->

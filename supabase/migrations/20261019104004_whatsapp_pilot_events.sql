@@ -29,6 +29,17 @@ create table if not exists public.whatsapp_pilot_events (
   )
 );
 create index if not exists whatsapp_pilot_events_channel_time on public.whatsapp_pilot_events (channel_id, occurred_at desc);
+-- These optional tables sort after the release-wide session-trigger sweep.
+-- Install its canonical statement boundary here so a single ordered apply and
+-- the compatibility rollback retain the same protection as an idempotency replay.
+drop trigger if exists trg_require_current_session on public.whatsapp_pilot_channels;
+create trigger trg_require_current_session
+before insert or update or delete on public.whatsapp_pilot_channels
+for each statement execute function public.require_current_session();
+drop trigger if exists trg_require_current_session on public.whatsapp_pilot_events;
+create trigger trg_require_current_session
+before insert or update or delete on public.whatsapp_pilot_events
+for each statement execute function public.require_current_session();
 -- No direct browser/anonymous access or end-user writes. Management reads go
 -- through the active-session boss/admin route; signed webhook is the only writer.
 alter table public.whatsapp_pilot_channels enable row level security;

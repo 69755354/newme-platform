@@ -57,6 +57,23 @@ Official references checked 2026-10-19:
 - [WhatsApp Business Tools MCP](https://developers.facebook.com/documentation/mcp/whatsapp-business-tools-mcp)
 - [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security)
 
+### Direct access and coexistence are separate eligibility checks
+
+Meta offers direct platform access without an additional access fee; delivered
+API messages can still incur usage charges. Its October 1, 2026 pricing includes
+1,000 free service messages per business phone number per month, with subsequent
+service messages charged. Do not describe direct access as unlimited free usage.
+See [official costs FAQ](https://whatsappbusiness.com/resources/faq/) and
+[current pricing](https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing).
+
+Retaining the existing Business App requires the documented coexistence flow.
+Its provider must already qualify as a Solution Partner or Tech Provider. Meta
+documents an independent Tech Provider path without a Solution Partner, including
+business verification and App Review for advanced WhatsApp permissions. A verified
+business, a registered developer, a successful ordinary Cloud API test, or an
+existing Conversions API app is not proof that this coexistence eligibility is met.
+See [independent Tech Provider onboarding](https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/get-started-for-tech-providers).
+
 ## Configuration and rollout gates
 
 1. Confirm the actual deployed OS commit and database project. Git main is not
@@ -64,7 +81,8 @@ Official references checked 2026-10-19:
    returned 404 during the read-only audit.
 2. Review and apply the new migration in a disposable full-schema staging
    environment first. The draft's SQL has been executed in isolated PostgreSQL
-   with minimal `profiles`/roles and grant/constraint checks; that is not a full
+   with minimal platform/profile fixtures, canonical session-boundary functions
+   and grant/constraint checks; that is not a full
    Supabase replay. Pilot table types were derived from that isolated schema;
    regenerate the full database types against the approved staging schema and
    run advisors before merge/deployment. Docker was unavailable locally.
@@ -73,6 +91,12 @@ Official references checked 2026-10-19:
    application has no dependency on these tables. Existing financial phase
    gates and migration order remain in force. Keep the flag off until this later
    provisioning and both physical-phone acceptance checks have completed.
+   Both late-created tables explicitly install the canonical statement-level
+   current-session trigger, which must remain enabled through compatibility
+   rollback. The runtime posture checks its table/function/event binding.
+   Isolated checks reject inactive, banned, stale and forced-password-change
+   identities on privileged zero-row writes, and detect a disabled trigger;
+   identity-free service webhook writes and event-preserving re-apply still work.
 3. Add exactly the two approved channel rows, initially **disabled**. Verify each
    `owner_profile_id`, `waba_id`, `phone_number_id` and canonical digit-only
    `business_phone` from current authoritative records. Do not reuse an old

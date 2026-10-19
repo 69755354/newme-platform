@@ -133,3 +133,22 @@ events rather than silently treating an incomplete page as a full observation.
 To stop capture, set `WHATSAPP_PILOT_ENABLED=false` or disable either channel.
 Keep stored evidence for review; disabling does not delete facts or unregister
 numbers. Remove an app/WABA subscription only after checking other consumers.
+
+## CI image provenance refresh
+
+The official `postgres:17.11-trixie` tag moved from index digest
+`sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232`
+to `sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3`.
+On 2026-10-19, both index bodies, their Linux/amd64 manifests and configuration
+blobs were read from Docker's official registry and checked against SHA256.
+The official-images [source record](https://github.com/docker-library/official-images/blob/1b851c635e093e70beddd58d633ddaf5e307abfc/library/postgres)
+maps this tag and platform to the same PostgreSQL [build recipe](https://github.com/docker-library/postgres/blob/2603e26e245e558218728ee14e0a42dcb020dc7f/17/trixie/Dockerfile)
+as the old image. Both report PostgreSQL `17.11-1.pgdg13+2`; the Debian
+`trixie-slim` base digest and build date changed. This establishes the source
+and platform correspondence, not an application acceptance result.
+
+The two CI service references and provenance lock now pin the verified new
+index. The mutation test fixture uses that same pin so tag-only, unknown and
+drifted digests still fail. The provenance verifier, exception policy and
+workflow permissions are unchanged. Full CI must run again on the new commit;
+earlier runs do not validate this refreshed runtime.

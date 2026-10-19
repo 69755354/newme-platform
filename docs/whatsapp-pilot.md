@@ -68,6 +68,11 @@ Official references checked 2026-10-19:
    Supabase replay. Pilot table types were derived from that isolated schema;
    regenerate the full database types against the approved staging schema and
    run advisors before merge/deployment. Docker was unavailable locally.
+   The release manifest schedules this optional provisioning in its later
+   `deferred_contract` phase, after the existing money contract; the default-off
+   application has no dependency on these tables. Existing financial phase
+   gates and migration order remain in force. Keep the flag off until this later
+   provisioning and both physical-phone acceptance checks have completed.
 3. Add exactly the two approved channel rows, initially **disabled**. Verify each
    `owner_profile_id`, `waba_id`, `phone_number_id` and canonical digit-only
    `business_phone` from current authoritative records. Do not reuse an old

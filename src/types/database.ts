@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=74df222d0a256ffe92bca5dfbf32afd6a665db103118f6621e43ad94c2439500
+// Migration fingerprint: sha256=d985cea762d96afe365ceb5ea935b48455e32239c7e4a0d9b61167a52c7c2edf
 export type Json =
   | string
   | number
@@ -15,6 +15,82 @@ export type Database = {
   }
   public: {
     Tables: {
+      whatsapp_pilot_channels: {
+        Row: {
+          accept_since: string
+          business_phone: string
+          created_at: string
+          enabled: boolean
+          id: string
+          label: string
+          owner_profile_id: string
+          phone_number_id: string
+          purpose: string
+          waba_id: string
+        }
+        Insert: {
+          accept_since?: string
+          business_phone: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          label: string
+          owner_profile_id: string
+          phone_number_id: string
+          purpose: string
+          waba_id: string
+        }
+        Update: {
+          accept_since?: string
+          business_phone?: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          label?: string
+          owner_profile_id?: string
+          phone_number_id?: string
+          purpose?: string
+          waba_id?: string
+        }
+        Relationships: [
+          { foreignKeyName: "whatsapp_pilot_channels_owner_profile_id_fkey"; columns: ["owner_profile_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+        ]
+      }
+      whatsapp_pilot_events: {
+        Row: {
+          channel_id: string
+          customer_key: string
+          direction: string
+          message_id: string
+          message_type: string
+          occurred_at: string
+          received_at: string
+          source: string
+        }
+        Insert: {
+          channel_id: string
+          customer_key: string
+          direction: string
+          message_id: string
+          message_type: string
+          occurred_at: string
+          received_at?: string
+          source: string
+        }
+        Update: {
+          channel_id?: string
+          customer_key?: string
+          direction?: string
+          message_id?: string
+          message_type?: string
+          occurred_at?: string
+          received_at?: string
+          source?: string
+        }
+        Relationships: [
+          { foreignKeyName: "whatsapp_pilot_events_channel_id_fkey"; columns: ["channel_id"]; isOneToOne: false; referencedRelation: "whatsapp_pilot_channels"; referencedColumns: ["id"] },
+        ]
+      }
       activities: {
         Row: {
           ai_generated: boolean | null

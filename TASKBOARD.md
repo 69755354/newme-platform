@@ -2,6 +2,12 @@
 # Last updated: 2026-07-19
 # Format: Frozen v2 (MoA签发版) — 4状态模型
 
+## 活动任务 — WhatsApp coexistence pilot (2026-10-19)
+
+| ID | Status | Scope | Evidence |
+|---|---|---|---|
+| WA-PILOT-1 | DONE | Local draft: opt-in intake/follow-up metadata ingestion and management view; no production rollout | 2026-10-19: typecheck, lint baseline, webhook/auth behavior tests, isolated PostgreSQL migration/grant/idempotency checks; full-schema staging and live phone acceptance remain rollout gates in docs/whatsapp-pilot.md |
+
 ## ⚠️ STATE MACHINE (唯一状态流)
 ```
 TODO → IN_PROGRESS → REVIEW → DONE

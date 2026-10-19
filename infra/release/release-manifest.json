@@ -192,7 +192,7 @@
       "$comment": "Optional post-deployment pilot provisioning. The app and both routes work with WHATSAPP_PILOT_ENABLED=false before these tables exist. Keep the flag off until this later phase and independent phone acceptance complete; no existing money migration or phase order is changed.",
       "version": "20261019104004",
       "file": "20261019104004_whatsapp_pilot_events.sql",
-      "sha256": "1220a16fe976f8fcedf0af2e3b900d7896a97838eb43f399efcee75108fa262c"
+      "sha256": "7547924ccdfb58391e4a46b94ab9e581688e3abf4174b5ed89788c6cd6f1d6bc"
     }
   ],
   "companions": [

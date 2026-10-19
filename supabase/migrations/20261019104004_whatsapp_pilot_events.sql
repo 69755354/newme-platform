@@ -1,6 +1,7 @@
 -- Metadata-only, opt-in coexistence pilot. No CRM facts, roles or assignments change.
+-- NO_ROLLBACK: Additive observer tables retain event evidence; roll back the app with the pilot flag disabled instead of automatically dropping collected data.
 begin;
-create table public.whatsapp_pilot_channels (
+create table if not exists public.whatsapp_pilot_channels (
   id uuid primary key default gen_random_uuid(),
   label text not null check (char_length(label) between 1 and 80),
   purpose text not null check (purpose in ('intake', 'follow_up')),
@@ -12,7 +13,7 @@ create table public.whatsapp_pilot_channels (
   accept_since timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
-create table public.whatsapp_pilot_events (
+create table if not exists public.whatsapp_pilot_events (
   channel_id uuid not null references public.whatsapp_pilot_channels(id),
   message_id text not null check (char_length(message_id) between 1 and 256),
   customer_key text not null check (customer_key ~ '^[a-f0-9]{64}$'),
@@ -27,7 +28,7 @@ create table public.whatsapp_pilot_events (
     (direction = 'outbound' and source = 'smb_message_echoes')
   )
 );
-create index whatsapp_pilot_events_channel_time on public.whatsapp_pilot_events (channel_id, occurred_at desc);
+create index if not exists whatsapp_pilot_events_channel_time on public.whatsapp_pilot_events (channel_id, occurred_at desc);
 -- No direct browser/anonymous access or end-user writes. Management reads go
 -- through the active-session boss/admin route; signed webhook is the only writer.
 alter table public.whatsapp_pilot_channels enable row level security;

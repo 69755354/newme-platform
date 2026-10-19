@@ -331,7 +331,7 @@ export function auditReleaseClaim({ manifest, status, claimed = [] }) {
       if (required.includes(version)) continue;
       fail(
         deferred.includes(version)
-          ? `the claim names ${version}, which is this release's deferred contract-phase migration: it closes the previous release's direct money-write path and must not be applied until the candidate is live and verified (runbook §4). Roll the phase back before deploying.`
+          ? `the claim names ${version}, which is this release's deferred contract-phase migration: deferred IDs must not be claimed as required_for_app before the app switch. This phase includes the money-mode transition, but not every file changes money mode. Use the exact derived required set; if deferred migrations already ran, use the reviewed contract/reentry recovery procedure and verify live money mode (runbook §§4–5). Do not delete provisioned observer data to repair a claim.`
           : `the claim names ${version}, which this release's manifest does not list as required before the app switch`,
       );
     }

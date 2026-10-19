@@ -14,7 +14,8 @@
 //   * the expand set is the real pending migration set, computed from the
 //     directory and the production stamp — adding a migration and forgetting the
 //     document fails this test
-//   * the contract phase is the one file the document names, no more
+//   * the ordered phases partition every pending file, with the money contract
+//     first in the deferred suffix and no undeclared later migrations
 //   * the status graph in the document is the graph in
 //     contract_transition_is_allowed(), pair for pair
 //   * the RPC signatures the previous release calls are the signatures the
@@ -43,6 +44,7 @@ const DOC_PATH = "supabase/preflight/expand-contract-rollback.md";
 const GUARDS_FILE = "20260814000000_l0_round3_authorization_and_integrity.sql";
 const CONTRACT_FILE = "20260818000000_money_direct_write_contract_phase.sql";
 const MANIFEST_PATH = "infra/release/release-manifest.json";
+const manifest = JSON.parse(read(MANIFEST_PATH));
 const COMPANION = "rollback_money_direct_write_contract_phase.sql";
 /**
  * The way back. Round-4 review B9: the rollback companion enters `compat` and
@@ -64,10 +66,7 @@ const expandSql = read(`supabase/migrations/${GUARDS_FILE}`);
  * void_payment() in 20260814000000. Signature and predicate lookups are made
  * against the whole set, because "the expand phase declares this" is the claim.
  */
-const expandSetSql = readdirSync(path.join(ROOT, "supabase/migrations"))
-  .filter((name) => /^\d{14}_.*\.sql$/.test(name))
-  .filter((name) => name.slice(0, 14) > PRODUCTION_STAMP && name !== CONTRACT_FILE)
-  .sort()
+const expandSetSql = manifest.required_for_app.map((entry) => entry.file)
   .map((name) => read(`supabase/migrations/${name}`))
   .join("\n");
 const contractSql = read(`supabase/migrations/${CONTRACT_FILE}`);
@@ -109,18 +108,21 @@ test("the documented expand set is the real pending migration set", () => {
     .sort();
 
   assert.ok(pending.includes(CONTRACT_FILE), "the contract phase must be one of the pending files");
-  const expected = pending.filter((name) => name !== CONTRACT_FILE);
+  const deferred = manifest.deferred_contract.map((entry) => entry.file);
+  assert.equal(deferred[0], CONTRACT_FILE, "the money posture transition remains first in the deferred phase");
+  const expected = pending.filter((name) => !deferred.includes(name));
+  assert.deepEqual([...expected, ...deferred], pending, "expand and deferred phases must partition the complete pending set in version order");
 
   assert.deepEqual(
     fence("expand"),
     expected,
-    "the expand list in the document must be every pending migration except the contract phase, in order",
+    "the expand list must contain every pending migration outside the declared deferred suffix, in order",
   );
   assert.ok(
     expected.includes(GUARDS_FILE),
     "the migration that installs the write guards and seeds the mode row must be in the expand phase",
   );
-  assert.deepEqual(fence("contract"), [CONTRACT_FILE]);
+  assert.deepEqual(fence("contract"), deferred);
 
   // And the document has to say why the split cannot be left to the tooling.
   assert.match(doc, /supabase db push` applies every pending migration in one\s*\n?run/);
@@ -133,25 +135,23 @@ test("the two phases in the document are the two phases in the release manifest"
   // push — so the phases now live in infra/release/release-manifest.json and
   // scripts/db-phase-push.mjs applies one of them. The document and the manifest
   // must therefore say the same thing.
-  const manifest = JSON.parse(read(MANIFEST_PATH));
   const required = manifest.required_for_app.map((entry) => entry.file);
   const deferred = manifest.deferred_contract.map((entry) => entry.file);
 
   assert.deepEqual(fence("expand"), required, "the document's expand list is not the manifest's required_for_app");
   assert.deepEqual(fence("contract"), deferred, "the document's contract list is not the manifest's deferred_contract");
-  assert.deepEqual(deferred, [CONTRACT_FILE]);
+  assert.equal(deferred[0], CONTRACT_FILE);
 
-  // The contract phase is the highest version in the release. That is what makes
-  // the expand set a contiguous prefix again: an operator who uses the CLI cannot
-  // apply the contract phase before the round-4 migrations, and production's
-  // application order is the version order the replay harness tests.
+  // Required files stay a contiguous prefix. Any file after the money posture
+  // transition must be explicitly declared in the ordered deferred suffix;
+  // an added, omitted or reordered migration still fails this contract.
   const afterContract = readdirSync(path.join(ROOT, "supabase/migrations"))
     .filter((name) => /^\d{14}_.*\.sql$/.test(name))
     .filter((name) => name.slice(0, 14) > CONTRACT_FILE.slice(0, 14));
   assert.deepEqual(
-    afterContract,
-    [],
-    "a migration sorts after the contract phase: either renumber it below 20260818000000 or the phase split stops being a prefix",
+    afterContract.sort(),
+    deferred.slice(1),
+    "a migration after the money contract is absent or out of order in the deferred suffix",
   );
 
   // And the document must give the operator the tool, not a file-moving ritual.
@@ -174,8 +174,8 @@ test("the two phases in the document are the two phases in the release manifest"
     new RegExp(`expect ${newestRequired} first`),
     "§6.1 query 3 must expect the highest required_for_app version as the newest",
   );
-  // …and §6.3 the contract phase itself.
-  assert.match(doc, new RegExp(`expect ${CONTRACT_FILE.slice(0, 14)}$`, "m"));
+  // …and §6.3 the newest migration in the complete deferred phase.
+  assert.match(doc, new RegExp(`expect ${deferred.at(-1).slice(0, 14)}$`, "m"));
 });
 
 test("the round-4 refusals the document calls mode-gated are mode-gated in the SQL", () => {

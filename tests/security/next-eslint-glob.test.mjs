@@ -76,8 +76,8 @@ test("actual Next helper discovers equivalent directories across patterns and wo
     { label: "missing", cwd: ROOT, rootDir: `${prefix}/missing/*`, expected: [] },
     { label: "file excluded", cwd: ROOT, rootDir: `${prefix}/apps/file.txt`, expected: [] },
     { label: "working directory changed", cwd: path.dirname(directory), rootDir: `${prefix}/apps/*`, expected: all },
+    { label: "backslash separators", cwd: ROOT, rootDir: `${directory}\\apps\\*`, expected: all },
   ];
-  if (process.platform === "win32") cases.push({ label: "Windows backslashes", cwd: ROOT, rootDir: `${directory}\\apps\\*`, expected: all });
   for (const item of cases) {
     const settings = item.rootDir === undefined ? {} : { next: { rootDir: item.rootDir } };
     const program = `const {getRootDirs}=require(${JSON.stringify(helper)});const fs=require('node:fs');const dirs=getRootDirs({cwd:process.cwd(),settings:${JSON.stringify(settings)}});console.log(JSON.stringify(dirs.map(x=>fs.realpathSync(x).replaceAll('\\\\','/')).sort()));`;

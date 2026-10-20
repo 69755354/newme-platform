@@ -243,3 +243,9 @@ transaction undoes it.
 The order that avoids all of this: close a release before merging anything else,
 and renew `infra/ci/provenance-exceptions.json` well before its 45-day expiry, so
 the calendar never forces a commit between a release and its closure.
+
+## Prepare a later application release
+
+Before deploying a later application release, inspect TASKBOARD.md for the active marker from a previously completed release. In the ordinary reviewed application-preparation commit, archive that marker as plain historical prose while retaining its complete digest and the source commit. Do this before deployment: the closure commit must preserve the candidate history exactly and append its sole fresh marker. Never edit an immutable deployed release, erase the old digest, or relax the closure checker to make a stale marker pass.
+
+If a deployed candidate already inherited a prior active marker, complete and attest its authentic acceptance evidence first. Then use the existing accepted-release supersession path for a reviewed successor whose preparation archives the stale marker; the superseded candidate must not be described as finalized. Validate the successor TASKBOARD against auditTaskboardClosureTransition with a separately labelled synthetic future marker before publishing the preparation change. This validation is not deployment or acceptance evidence.

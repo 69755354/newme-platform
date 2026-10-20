@@ -80,12 +80,22 @@ See [independent Tech Provider onboarding](https://developers.facebook.com/docum
    evidence of what production runs. Existing production Meta status routes
    returned 404 during the read-only audit.
 2. Review and apply the new migration in a disposable full-schema staging
-   environment first. The draft's SQL has been executed in isolated PostgreSQL
-   with minimal platform/profile fixtures, canonical session-boundary functions
-   and grant/constraint checks; that is not a full
-   Supabase replay. Pilot table types were derived from that isolated schema;
-   regenerate the full database types against the approved staging schema and
-   run advisors before merge/deployment. Docker was unavailable locally.
+   environment first. On 2026-10-20 the production-derived application schema
+   (public, auth, extensions, supabase_migrations; 41 public tables and
+   13 views) was restored without customer/auth rows into a fresh, internal-only
+   PostgreSQL 17.11 container using the CI-pinned official image. The exact-hash
+   pilot migration and idempotent re-apply passed, producing 43 public tables.
+   Catalog and behavioral checks verified RLS, revoked browser grants, the
+   canonical statement-level current-session guard, subject-free service writes,
+   rejection of identities without a current session, and denied service deletes.
+   Full public database types were regenerated with Supabase CLI 2.108.0 and
+   postgres-meta 0.96.1 against this schema. The existing PostgREST 14.5 client
+   hint and migration fingerprint were retained. This also refreshes older type
+   omissions in five existing tables and sixteen existing functions; it grants
+   no new database permissions. Security advisors reported no errors, nine
+   existing function search-path warnings and two informational no-policy
+   notices for the intentionally server-only pilot tables. This validates the
+   application schema, not the complete Supabase service stack or real phones.
    The release manifest schedules this optional provisioning in its later
    `deferred_contract` phase, after the existing money contract; the default-off
    application has no dependency on these tables. Existing financial phase

@@ -27,6 +27,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_whatsapp_webhook_log_privacy_code | DONE | Codex | 2026-10-20 |
 | task_whatsapp_strict_provisioning_code | DONE | Codex | 2026-10-20 |
 || task_P1-C | DONE | Hermes | 2026-07-04 |
 || task_P1-D | DONE | Codex→Hermes | 2026-07-04 |
@@ -615,3 +616,9 @@ HOTFIX-2 | DEPLOYED | hermes | 2026-07-20 | SAM-45+SAM-46 closed; ca4cfdc(删quo
 ## WhatsApp strict provisioning code verification — 2026-10-20
 
 Code-only: the root coordinator now has narrowly allowlisted WhatsApp plan/provision operations for an already strict database. The immutable observer SQL hash, unchanged live migration prefix, strict compatibility, table/history agreement, ancestry and fresh CI are required. The 37 policy/coordinator tests pass, including refusals before the applier on every failed antecedent. Shell syntax and unchanged migration/companion checks pass. This row does not claim a production control-plane upgrade, migration, application deployment, phone onboarding or message capture. Full CI and the two-stage release remain separate production evidence.
+
+## WhatsApp callback ingress privacy code evidence (2026-10-20)
+
+Code-only completion: the exact callback location uses a fixed-field structured access log with request ID, client IP, status and upstream timing; query strings, headers and bodies are excluded. Raw Nginx error logging is replaced at this location because it can contain verification queries. HTTPS callback request size remains capped at 1 MiB, body buffering stays in memory and proxy streaming preserves the signed bytes; plaintext callback requests are rejected. Existing ingress rules remain in place.
+
+Validation: 14 targeted security/release tests pass. An isolated loopback-only instance of the actual installed server Nginx passed 85 synthetic requests including normal GET/POST, 400, 413, 429 and upstream 502; all outcomes were recorded, a 256 KiB body was preserved, sensitive synthetic query/body markers were absent from log files, and no body temporary files were created. Production Nginx, database data and app release were untouched by this test. This is not proof of Meta callback verification, phone onboarding or production message capture.

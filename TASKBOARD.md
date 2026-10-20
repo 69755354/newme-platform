@@ -21,6 +21,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_whatsapp_strict_provisioning_code | DONE | Codex | 2026-10-20 |
 || task_P1-C | DONE | Hermes | 2026-07-04 |
 || task_P1-D | DONE | Codex→Hermes | 2026-07-04 |
 || task_P1-E | DONE | Codex→Hermes | 2026-07-04 |
@@ -603,3 +604,8 @@ Note: All four are independent of P3 PRD G1/G2/G3 (quality API, weekly-review, w
 HOTFIX-2 | DEPLOYED | hermes | 2026-07-20 | SAM-45+SAM-46 closed; ca4cfdc(删quotes fallback+导入原始数据面板)+fd2b35e(insert schema对齐); BUILD_ID odB7DlnFp-Er6a5NbVmv0; CI 29705110814 green; K3审计 PASS_WITH_WARNINGS(Ship); 生产API验收通过+基线零漂移; SAM-49登记(hermes路由静默零总价姊妹项+K3 P2)
 
 <!-- postdeploy-acceptance-sha256:31fb1c3341de7c5144368f31016054d686e2bb63d4dfc0091652865c4c92c922 -->
+
+
+## WhatsApp strict provisioning code verification — 2026-10-20
+
+Code-only: the root coordinator now has narrowly allowlisted WhatsApp plan/provision operations for an already strict database. The immutable observer SQL hash, unchanged live migration prefix, strict compatibility, table/history agreement, ancestry and fresh CI are required. The 37 policy/coordinator tests pass, including refusals before the applier on every failed antecedent. Shell syntax and unchanged migration/companion checks pass. This row does not claim a production control-plane upgrade, migration, application deployment, phone onboarding or message capture. Full CI and the two-stage release remain separate production evidence.

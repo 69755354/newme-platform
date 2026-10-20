@@ -627,3 +627,9 @@ Validation: 14 targeted security/release tests pass. An isolated loopback-only i
 ## Prior release marker archival preparation (2026-10-20)
 
 The previous acceptance digest remains in ordinary historical prose, with its source commit retained. Its executable closure-marker syntax is archived before the successor application release, so the unchanged closure checker can require exactly one newly appended acceptance marker. The checker, acceptance policy, provider receipts and immutable deployed trees are unchanged. Code/document preparation only: the current application release still needs its own real acceptance; this entry does not claim that it is complete.
+
+## WhatsApp observer release acceptance closure (2026-10-20)
+
+Canonical acceptance is verified for application release 8a78be8134441aae8560626cd56b07d9f5ab11d2, build 4Cj0UZFVwGjggyYNlRgUF, deployment CI 39449460527. All four role actors, six business flows and eight English/Chinese browser sessions passed; 56 redacted screenshots and 16 top-level JSON artifacts were verified. 42 dedicated fixture IDs were created and cleaned with zero residual rows; the test payment was voided and its KPI baseline restored. Failure/recovery provider delivery and the delayed same-message readback passed. Performance: 20 samples, p75 256 ms, p95 324 ms. This records authentic acceptance; the coordinator separately gates finalization. WhatsApp phone onboarding and capture remain disabled.
+
+<!-- postdeploy-acceptance-sha256:cc24edf5869c4da41748be22aded9a00c17430f5e769480b2998ae461f405bd6 -->

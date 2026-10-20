@@ -27,6 +27,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_archive_prior_release_marker_code | DONE | Codex | 2026-10-20 |
 | task_whatsapp_webhook_log_privacy_code | DONE | Codex | 2026-10-20 |
 | task_whatsapp_strict_provisioning_code | DONE | Codex | 2026-10-20 |
 || task_P1-C | DONE | Hermes | 2026-07-04 |
@@ -610,7 +611,7 @@ Note: All four are independent of P3 PRD G1/G2/G3 (quality API, weekly-review, w
 - `d085078` proxy.ts config.matcher 加 "/"（**根因**：matcher 缺 / 导致 proxy 完全没注册到 middleware-manifest.json）
 HOTFIX-2 | DEPLOYED | hermes | 2026-07-20 | SAM-45+SAM-46 closed; ca4cfdc(删quotes fallback+导入原始数据面板)+fd2b35e(insert schema对齐); BUILD_ID odB7DlnFp-Er6a5NbVmv0; CI 29705110814 green; K3审计 PASS_WITH_WARNINGS(Ship); 生产API验收通过+基线零漂移; SAM-49登记(hermes路由静默零总价姊妹项+K3 P2)
 
-<!-- postdeploy-acceptance-sha256:31fb1c3341de7c5144368f31016054d686e2bb63d4dfc0091652865c4c92c922 -->
+Historical postdeploy acceptance SHA-256 retained from TASKBOARD.md at 46b0f091c10f4dbc565a0cd506f21dbc7352db5f: 31fb1c3341de7c5144368f31016054d686e2bb63d4dfc0091652865c4c92c922 (archived record).
 
 
 ## WhatsApp strict provisioning code verification — 2026-10-20
@@ -622,3 +623,7 @@ Code-only: the root coordinator now has narrowly allowlisted WhatsApp plan/provi
 Code-only completion: the exact callback location uses a fixed-field structured access log with request ID, client IP, status and upstream timing; query strings, headers and bodies are excluded. Raw Nginx error logging is replaced at this location because it can contain verification queries. HTTPS callback request size remains capped at 1 MiB, body buffering stays in memory and proxy streaming preserves the signed bytes; plaintext callback requests are rejected. Existing ingress rules remain in place.
 
 Validation: 14 targeted security/release tests pass. An isolated loopback-only instance of the actual installed server Nginx passed 85 synthetic requests including normal GET/POST, 400, 413, 429 and upstream 502; all outcomes were recorded, a 256 KiB body was preserved, sensitive synthetic query/body markers were absent from log files, and no body temporary files were created. Production Nginx, database data and app release were untouched by this test. This is not proof of Meta callback verification, phone onboarding or production message capture.
+
+## Prior release marker archival preparation (2026-10-20)
+
+The previous acceptance digest remains in ordinary historical prose, with its source commit retained. Its executable closure-marker syntax is archived before the successor application release, so the unchanged closure checker can require exactly one newly appended acceptance marker. The checker, acceptance policy, provider receipts and immutable deployed trees are unchanged. Code/document preparation only: the current application release still needs its own real acceptance; this entry does not claim that it is complete.

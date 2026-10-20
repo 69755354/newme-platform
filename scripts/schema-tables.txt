@@ -35,3 +35,5 @@ user_features
 user_session_daily
 v_lead_trace
 v_risk_pool
+whatsapp_pilot_channels
+whatsapp_pilot_events

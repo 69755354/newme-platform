@@ -187,6 +187,12 @@
       "version": "20260818000000",
       "file": "20260818000000_money_direct_write_contract_phase.sql",
       "sha256": "6896a66f684e4597a06e5f8366d3578deeaff846ea6444e173524ee3307b9dec"
+    },
+    {
+      "$comment": "Optional post-deployment pilot provisioning. The app and both routes work with WHATSAPP_PILOT_ENABLED=false before these tables exist. Keep the flag off until this later phase and independent phone acceptance complete; no existing money migration or phase order is changed.",
+      "version": "20261019104004",
+      "file": "20261019104004_whatsapp_pilot_events.sql",
+      "sha256": "1b37cc05c022f11c2d6a5a982a53c6dd56ffab82461c22c5f092eccb34ed49c6"
     }
   ],
   "companions": [
@@ -338,6 +344,16 @@
     "deferred_contract": {
       "$comment": "State 4: direct end-user money writes are refused. This is past the rollback boundary for the previous release; see §5. Round-4 C4-2: this phase asserts everything required_for_app asserts, with the mode reversed, and it is the ONLY posture an operator re-checks after running the re-contract companion — so a claim that appears in the expand phase and not here is a claim nobody makes again on the way back. Measured on PG 17.10 before this was widened: with three of the six mode-controlled guard triggers dropped, `--verify-only --phase deferred_contract` exited 0 with three of three posture predicates OK; with public.replace_kpi_targets(text, jsonb, uuid) dropped by the rollback path and never restored, the same command exited 0 again.",
       "predicates": [
+        {
+          "name": "whatsapp-pilot-tables-have-private-rls",
+          "sql": "select count(*) = 2 and bool_and(c.relrowsecurity) and bool_and(not has_table_privilege('anon', c.oid, 'select')) and bool_and(not has_table_privilege('authenticated', c.oid, 'select')) from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname in ('whatsapp_pilot_channels','whatsapp_pilot_events') and c.relkind = 'r'",
+          "expect": true
+        },
+        {
+          "name": "whatsapp-pilot-tables-have-current-session-guards",
+          "sql": "select count(*) = 2 and bool_and(exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = c.oid and t.tgname = 'trg_require_current_session' and not t.tgisinternal and t.tgenabled = 'O' and t.tgfoid = to_regprocedure('public.require_current_session()') and t.tgtype = 30 and t.tgattr::text = '' and t.tgqual is null)) from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname in ('whatsapp_pilot_channels','whatsapp_pilot_events') and c.relkind = 'r'",
+          "expect": true
+        },
         {
           "name": "release-mode-row-is-strict",
           "sql": "select coalesce((select direct_write_mode = 'strict' from public.money_release_mode where id = 'only'), false)",

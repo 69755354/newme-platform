@@ -1788,7 +1788,8 @@ if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
     exit 64
   fi
   case "$DB_TRANSITION_OPERATION" in
-    expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter|whatsapp-plan|whatsapp-provision) ;;
+    expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter) ;;
+    whatsapp-plan|whatsapp-provision) ;;
     *) exit 64 ;;
   esac
 else

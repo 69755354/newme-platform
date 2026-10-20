@@ -4,6 +4,8 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import { judgeProvisioning, OBSERVER } from "../../scripts/check-whatsapp-provisioning.mjs";
 
+const bash = process.env.NEWME_TEST_BASH || (process.platform === "win32" &&
+  fs.existsSync("C:/Program Files/Git/bin/bash.exe") ? "C:/Program Files/Git/bin/bash.exe" : "bash");
 const sql = fs.readFileSync(new URL("../fixtures/whatsapp-pilot-events.sql.txt", import.meta.url), "utf8");
 const old = { version: "20260818000000", file: "20260818000000_money_direct_write_contract_phase.sql", sha256: "a".repeat(64) };
 function input() {
@@ -79,8 +81,6 @@ const end = wrapper.indexOf('  case "$DB_TRANSITION_OPERATION" in', start);
 const preconditions = wrapper.slice(start, end);
 const arm = wrapper.match(/    whatsapp-plan\|whatsapp-provision\)\n([\s\S]*?)      ;;/)?.[1];
 assert.ok(arm);
-const bash = process.env.NEWME_TEST_BASH || (process.platform === "win32" &&
-  fs.existsSync("C:/Program Files/Git/bin/bash.exe") ? "C:/Program Files/Git/bin/bash.exe" : "bash");
 function coordinator(operation, fail = "none") {
   const script = `set -Eeuo pipefail
 DB_TRANSITION_OPERATION=${operation}

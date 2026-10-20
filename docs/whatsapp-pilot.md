@@ -107,6 +107,10 @@ See [independent Tech Provider onboarding](https://developers.facebook.com/docum
    Isolated checks reject inactive, banned, stale and forced-password-change
    identities on privileged zero-row writes, and detect a disabled trigger;
    identity-free service webhook writes and event-preserving re-apply still work.
+   For an existing strict production release, first install the separately
+   reviewed coordinator capability, then use its exact-hash WhatsApp plan and
+   provision operations before the application switch. See
+   [the guarded two-stage procedure](whatsapp-provisioning-release.md).
 3. Add exactly the two approved channel rows, initially **disabled**. Verify each
    `owner_profile_id`, `waba_id`, `phone_number_id` and canonical digit-only
    `business_phone` from current authoritative records. Do not reuse an old

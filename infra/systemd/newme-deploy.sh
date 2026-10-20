@@ -1784,11 +1784,11 @@ ROLLBACK_SHA=""
 if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
   DB_TRANSITION_OPERATION=${3:-}
   if [ "$#" -ne 3 ] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "usage: newme-deploy db-transition <main-sha> <successful-run-id> <expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter>" >&2
+    echo "usage: newme-deploy db-transition <main-sha> <successful-run-id> <expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter|whatsapp-plan|whatsapp-provision>" >&2
     exit 64
   fi
   case "$DB_TRANSITION_OPERATION" in
-    expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter) ;;
+    expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter|whatsapp-plan|whatsapp-provision) ;;
     *) exit 64 ;;
   esac
 else
@@ -2186,6 +2186,24 @@ if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
     echo "GitHub Actions evidence expired before the database transition" >&2
     exit 65
   }
+  # A completed strict release cannot deploy a new deferred suffix until it is
+  # provisioned; ordinary contract-apply correctly requires the candidate live.
+  # This narrow path retains exact-main CI/lock gates and permits only the one
+  # reviewed observer hash after verifying the live release's full strict posture.
+  if [ "$DB_TRANSITION_OPERATION" = whatsapp-plan ] || [ "$DB_TRANSITION_OPERATION" = whatsapp-provision ]; then
+    git --git-dir="$MIRROR" merge-base --is-ancestor "$ROLLBACK_SHA" "$SHA" || {
+      echo "observer candidate must contain the live release" >&2
+      exit 65
+    }
+    "$NODE_BIN" "$LIVE_RELEASE/scripts/db-phase-push.mjs" \
+      --phase deferred_contract --verify-only \
+      --url-file "$MIGRATION_DB_URL_FILE" --modules-dir "$LIVE_RELEASE/node_modules"
+    "$NODE_BIN" "$WORKTREE/scripts/check-whatsapp-provisioning.mjs" \
+      --live-release "$LIVE_RELEASE" --candidate-release "$WORKTREE" \
+      --url-file "$MIGRATION_DB_URL_FILE" --modules-dir "$LIVE_RELEASE/node_modules"
+    require_canonical_main_sha "$SHA" || exit 65
+    require_ci_gate_still_fresh || exit 65
+  fi
   case "$DB_TRANSITION_OPERATION" in
     expand-plan)
       "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
@@ -2202,6 +2220,14 @@ if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
     contract-apply)
       "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
         --phase deferred_contract --apply \
+        --url-file "$MIGRATION_DB_URL_FILE" \
+        --modules-dir "$LIVE_RELEASE/node_modules"
+      ;;
+    whatsapp-plan|whatsapp-provision)
+      observer_mode=--plan
+      [ "$DB_TRANSITION_OPERATION" != whatsapp-provision ] || observer_mode=--apply
+      "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
+        --phase deferred_contract "$observer_mode" \
         --url-file "$MIGRATION_DB_URL_FILE" \
         --modules-dir "$LIVE_RELEASE/node_modules"
       ;;

@@ -27,6 +27,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_whatsapp_review_ci_metadata_code | DONE | Codex | 2026-10-22 |
 | task_whatsapp_review_tools_code | DONE | Codex | 2026-10-22 |
 | task_archive_prior_release_marker_code | DONE | Codex | 2026-10-20 |
 | task_whatsapp_webhook_log_privacy_code | DONE | Codex | 2026-10-20 |
@@ -640,3 +641,7 @@ Historical postdeploy acceptance SHA-256 retained from TASKBOARD.md at c8dff02b0
 Code-only preparation: Settings > WhatsApp now includes a default-off review panel for a fixed Meta test WABA, its verified test sender and the existing internal recipient ending 9388. Active current-session boss/admin access, exact same-origin JSON, bounded requests, process-local replay protection, per-user/global hourly limits and an explicitly bounded activation window of at most 24 hours protect the operations. Arbitrary recipients, WABAs, messages and template content are refused. Uncertain mutation outcomes are retained without automatic retry; process restarts are not represented as delivery cancellation or durable idempotency.
 
 Local validation: 17 targeted observer/review-tool tests passed, including invalid/stale windows, wrong test assets, unchanged fixed targets, rejected roles/origins/body shapes, budget exhaustion, expired sessions, concurrent retry sharing, credential redaction and ambiguous upstream outcomes. Type checking and targeted lint passed. The route convention and tracked credential checks passed. No new database migration, Graph token grant, real send, template creation, production deployment or message capture is claimed here. Full CI, guarded deployment, actual Meta account checks and authorised recordings remain separate acceptance evidence. The prior acceptance digest is retained above as ordinary history so the successor release can acquire its own canonical closure.
+
+## Review-tools CI metadata readiness (2026-10-22)
+
+The SPEC supplement now records the actual WhatsApp routes, the sandbox-only review panel, the unchanged existing Ads bridge and outstanding acceptance gates. The official PostgreSQL 17.11-trixie index was rebuilt upstream; the active CI references, provenance lock and mutation-test fixture now agree with digest b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe. Docker Hub metadata and an isolated no-network, read-only container verified PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2). Production database and containers were not modified. All 25 targeted observer/review/provenance tests, official online provenance readback, workflow syntax and SPEC coverage checks passed locally. The original pin checks and their refusal cases are retained. This does not claim that the revised PR's full CI or production rollout has completed.

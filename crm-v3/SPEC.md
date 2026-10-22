@@ -1,5 +1,27 @@
 # SPEC — NewMe CRM
 
+## 2026-10-22 WhatsApp 审核测试补充（代码准备，尚未发布）
+
+本节记录当前代码与验收边界；下方早期状态保留其原有日期，不据此推定当前线上状态。
+
+独立 Tech Provider 审核要求应用发送消息和创建模板的实际演示。新增测试入口默认关闭，只允许 Meta 测试 WABA `2153400175580231`、测试发送号码及已经验证的内部 Tanya 尾号 9388。需要独立的服务器端测试令牌和最长 24 小时的启用窗口。号码归属校验、当前有效的 boss/admin 会话、同源请求、请求大小限制、操作频率限制和不自动重试的结果处理均由服务器执行。接收请求成功不代表手机已收到消息，创建模板不代表 Meta 已批准模板。
+
+| 文件 | 当前职责及限制 |
+|---|---|
+| `src/app/(dashboard)/settings/whatsapp-pilot.tsx` | WhatsApp 接收与手机回复事件的管理视图；空通道或缺失事件不产生销售行为结论，并承载审核测试入口。 |
+| `src/app/(dashboard)/settings/whatsapp-review-tools.tsx` | 连接检查、固定 hello_world 内部测试消息、固定内容的审核模板创建；执行前展示对象和内容，结果不明时停止再次操作。 |
+| `src/app/api/whatsapp/pilot-status/route.ts` | 当前有效的 boss/admin 会话下查询白名单通道的有限元数据；不返回聊天正文或完整客户号码。 |
+| `src/app/api/whatsapp/webhook/route.ts` | 验证 Meta 原始请求签名，只写入明确启用的号码通道，按通道和消息 ID 去重；默认不接入真实号码。 |
+| `src/app/api/whatsapp/review-tools/route.ts` | 受限的审核测试操作入口；拒绝其他角色、跨站请求、自定义号码和自定义消息。 |
+| `src/lib/whatsapp-review-tools.mjs` | 固定测试账户绑定、Graph 请求、到期控制、有限的进程内重试去重；不持久保存访问令牌，不是生产发送队列。 |
+| `tests/security/whatsapp-review-tools.test.mjs` | 验证默认关闭、到期、固定对象、拒绝路径、并发请求、错误与凭据输出边界；模拟 API 测试不替代真实 Meta 验收。 |
+| `src/app/api/meta/ads-status/route.ts` | 既有广告集成状态接口，本次不改变其行为；本节不声称已经验证广告数据同步或 MCP OAuth。 |
+| `src/app/api/meta/ads-sync/route.ts` | 既有广告同步接口，本次不改变其授权、资产或行为。 |
+
+测试入口部署后也保持关闭。真实 Meta 测试令牌授权、发送、模板创建、手机收件确认、两段录屏、审核提交和批准均为独立步骤。启用两个实际号码的采集前，仍必须完成 30 天保留/删除控制、官方共存接入及两个手机的收发验收。现有生产数据库迁移和 Ads 集成均不在本次改动范围。
+
+详见 `docs/whatsapp-review-tools.md`。CI 同时固定官方 PostgreSQL 17.11 测试镜像的当前摘要；只更新测试环境来源记录，不更改生产 PostgreSQL 或放宽来源校验。
+
 > ⚠️ **COMPACT 后:用户最后 3 条消息 > 本文件 > handoff 摘要**
 > (本文件是参考手册,不是圣经。compaction 时用户的尾消息是唯一权威。)
 

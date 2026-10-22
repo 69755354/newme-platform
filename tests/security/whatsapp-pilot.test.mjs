@@ -3,7 +3,7 @@ import test from "node:test";
 import { createHmac } from "node:crypto";
 import { createRequire } from "node:module";
 import fs from "node:fs";
-import { extractWhatsAppEvents, summarizeWhatsAppEvents, verifyWhatsAppSignature } from "../../src/lib/whatsapp-pilot.mjs";
+import { extractWhatsAppEvents, isWhatsAppEventFresh, WHATSAPP_EVENT_MAX_AGE_MS, summarizeWhatsAppEvents, verifyWhatsAppSignature } from "../../src/lib/whatsapp-pilot.mjs";
 
 const start = "2026-10-19T00:00:00.000Z";
 const now = Date.parse("2026-10-19T12:00:00Z");
@@ -82,6 +82,7 @@ const nextMock = { NextResponse: { json: (body, init) => Response.json(body, ini
 
 test("webhook route fails closed, validates challenge and retries storage failures without logging customer data", async () => {
   const saved = { ...process.env };
+  const savedClock = Date.now;
   const calls = [];
   let failStorage = false;
   const admin = { from: (table) => ({
@@ -90,6 +91,7 @@ test("webhook route fails closed, validates challenge and retries storage failur
   }) };
   const route = loadRoute("../../src/app/api/whatsapp/webhook/route.ts", { "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin }, "@/lib/whatsapp-pilot.mjs": require("../../src/lib/whatsapp-pilot.mjs") });
   try {
+    Date.now = () => now;
     delete process.env.WHATSAPP_PILOT_ENABLED;
     assert.equal((await route.POST(new Request("https://example.test", { method: "POST" }))).status, 503);
     Object.assign(process.env, { WHATSAPP_PILOT_ENABLED: "true", WHATSAPP_APP_SECRET: "secret", WHATSAPP_PILOT_CONTACT_SALT: "salt", WHATSAPP_WEBHOOK_VERIFY_TOKEN: "verify" });
@@ -105,7 +107,71 @@ test("webhook route fails closed, validates challenge and retries storage failur
     assert.equal((await route.POST(request())).status, 503);
     const big = new Request("https://example.test", { method: "POST", headers: { "content-type": "application/json" }, body: "x".repeat(1024 * 1024 + 1) });
     assert.equal((await route.POST(big)).status, 413);
-  } finally { process.env = saved; }
+  } finally { process.env = saved; Date.now = savedClock; }
+});
+
+test("retention admission refuses exactly 30 days, older retries and invalid clocks", () => {
+  assert.equal(isWhatsAppEventFresh(now - WHATSAPP_EVENT_MAX_AGE_MS + 1, now), true);
+  assert.equal(isWhatsAppEventFresh(now - WHATSAPP_EVENT_MAX_AGE_MS, now), false);
+  assert.equal(isWhatsAppEventFresh(now - WHATSAPP_EVENT_MAX_AGE_MS - 1, now), false);
+  assert.equal(isWhatsAppEventFresh(now + 300_000, now), true);
+  assert.equal(isWhatsAppEventFresh(now + 300_001, now), false);
+  for (const invalid of [NaN, Infinity, -1, "0", null, 0.5]) {
+    assert.equal(isWhatsAppEventFresh(invalid, now), false);
+    assert.equal(isWhatsAppEventFresh(now, invalid), false);
+  }
+});
+
+test("age rejection covers incoming messages and handset echoes on long-running channels", () => {
+  const longRunning = { ...channel, accept_since: "2026-01-01T00:00:00Z" };
+  const iso = ms => new Date(ms).toISOString();
+  for (const field of ["messages", "smb_message_echoes"]) {
+    const extra = field === "messages" ? {} : { from: channel.business_phone, to: "15559876543" };
+    const body = payload(field, [
+      message("expired", iso(now - WHATSAPP_EVENT_MAX_AGE_MS), extra),
+      message("older", iso(now - WHATSAPP_EVENT_MAX_AGE_MS - 1000), extra),
+      message("live", iso(now - WHATSAPP_EVENT_MAX_AGE_MS + 1000), extra),
+    ]);
+    assert.deepEqual(extractWhatsAppEvents(body, [longRunning], "salt", now).map(e => e.message_id), ["live"]);
+    // No stored-key cache is needed to refuse a repeated delivery after expiry.
+    assert.deepEqual(extractWhatsAppEvents(body, [longRunning], "salt", now + 1000), []);
+  }
+});
+
+test("webhook drops a batch that ages out during parsing, preserves fresh rows, and acknowledges expired retries", async () => {
+  const saved = { ...process.env }; const savedClock = Date.now;
+  const longRunning = { ...channel, accept_since: "2026-01-01T00:00:00Z" };
+  let clock = now; const writes = [];
+  const admin = { from: () => ({
+    select: () => ({ eq: async () => ({ data: [longRunning], error: null }) }),
+    upsert: async rows => { writes.push(rows); return { error: null }; },
+  }) };
+  const actual = require("../../src/lib/whatsapp-pilot.mjs");
+  const route = loadRoute("../../src/app/api/whatsapp/webhook/route.ts", {
+    "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin },
+    "@/lib/whatsapp-pilot.mjs": { ...actual, extractWhatsAppEvents: (...args) => {
+      const rows = actual.extractWhatsAppEvents(...args);
+      clock += 1000; // Represents elapsed time while parsing a batch, before dispatch.
+      return rows;
+    } },
+  });
+  const post = async includeFresh => {
+    const messages = [message("boundary", new Date(now - WHATSAPP_EVENT_MAX_AGE_MS + 1000).toISOString())];
+    if (includeFresh) messages.push(message("fresh", new Date(now).toISOString()));
+    const raw = JSON.stringify(payload("messages", messages));
+    const signature = `sha256=${createHmac("sha256", "secret").update(raw).digest("hex")}`;
+    return route.POST(new Request("https://example.test", { method: "POST", body: raw,
+      headers: { "content-type": "application/json", "x-hub-signature-256": signature } }));
+  };
+  try {
+    Date.now = () => clock;
+    Object.assign(process.env, { WHATSAPP_PILOT_ENABLED: "true", WHATSAPP_APP_SECRET: "secret", WHATSAPP_PILOT_CONTACT_SALT: "salt" });
+    assert.equal((await post(false)).status, 200); assert.equal(writes.length, 0);
+    assert.equal((await post(false)).status, 200); assert.equal(writes.length, 0);
+    clock = now;
+    assert.equal((await post(true)).status, 200);
+    assert.deepEqual(writes.map(rows => rows.map(e => e.message_id)), [["fresh"]]);
+  } finally { process.env = saved; Date.now = savedClock; }
 });
 
 test("pilot status requires current boss/admin context before any service-role query", async () => {

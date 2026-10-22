@@ -208,6 +208,30 @@ if [ "$SUPABASE_URL" = "$EXPECTED_SUPABASE_URL" ]; then
 fi
 
 probe_status=0
+if [ -f "$CURRENT_LINK/scripts/whatsapp-privacy-maintenance.mjs" ]; then
+  if ! python3 - <<'PY'
+import json, os, stat, time
+from datetime import datetime
+path = '/run/newme-whatsapp-privacy-last-success.json'
+try:
+    info = os.lstat(path)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
+        raise ValueError()
+    now = time.time()
+    if not 0 <= now - info.st_mtime < 900:
+        raise ValueError()
+    with open(path, encoding='utf-8') as handle:
+        receipt = json.load(handle)
+    stamp = datetime.fromisoformat(receipt['completed_at'].replace('Z', '+00:00')).timestamp()
+    if not -30 <= now - stamp < 900 or receipt['backlog'] is not False:
+        raise ValueError()
+except (OSError, ValueError, KeyError, TypeError):
+    raise SystemExit(1)
+PY
+  then
+    add_alert WHATSAPP_PRIVACY "WhatsApp cleanup has no fresh successful receipt; capture admission stops after 15 minutes"
+  fi
+fi
 [ -z "$ALERTS" ] || probe_status=1
 
 alert_status=0

@@ -1,7 +1,14 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const MAX_WEBHOOK_BYTES = 1024 * 1024;
+export const WHATSAPP_EVENT_MAX_AGE_MS = 30 * 86_400_000;
 const digits = (value) => typeof value === "string" && /^\+?\d{7,15}$/.test(value) ? value.replace(/^\+/, "") : null;
+
+/** Admission boundary only: physical erasure still needs a database maintenance job. */
+export function isWhatsAppEventFresh(time, now = Date.now()) {
+  return Number.isSafeInteger(time) && Number.isSafeInteger(now) && now >= 0 && time >= 0
+    && time > now - WHATSAPP_EVENT_MAX_AGE_MS && time <= now + 300_000;
+}
 
 export function verifyWhatsAppSignature(bytes, signature, secret) {
   if (!secret || !/^sha256=[a-f0-9]{64}$/.test(signature ?? "")) return false;
@@ -36,7 +43,7 @@ export function extractWhatsAppEvents(payload, channels, contactSalt, now = Date
         if (["unsupported", "unknown", "system", "call"].includes(message.type) || message.errors) continue;
         if (!inbound && digits(message.from) !== phone) continue;
         const acceptSince = Date.parse(channel.accept_since);
-        if (!Number.isFinite(time) || !Number.isFinite(acceptSince) || time < acceptSince || time > now + 300_000) continue;
+        if (!isWhatsAppEventFresh(time, now) || !Number.isFinite(acceptSince) || time < acceptSince) continue;
         const customerKey = createHmac("sha256", contactSalt).update(customer).digest("hex");
         const event = {
           channel_id: channel.id,

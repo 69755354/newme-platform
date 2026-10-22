@@ -27,6 +27,8 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_whatsapp_privacy_code | DONE | Codex | 2026-10-23 |
+| task_whatsapp_retention_admission_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_privacy_security_refresh_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_privacy_provisioning_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_review_window_recheck_code | DONE | Codex | 2026-10-22 |
@@ -661,7 +663,7 @@ Code-only: an exhausted per-user review budget now returns 429 before consuming 
 
 Canonical acceptance is verified for application release 1f1b894655e98388d51efe49d33e038d7e467bb8, build kAnvzAkuvFHJF9CXiSwFw, deployment CI 39792415132. All four role actors, six business flows and eight English/Chinese browser sessions passed; 56 redacted screenshots and 16 top-level JSON artifacts were verified. 42 dedicated fixture IDs were created and cleaned with zero residual rows; the test payment was voided and its KPI baseline restored. Failure/recovery provider delivery and the delayed same-message readback passed. Performance: 20 samples, p75 426 ms, p95 435 ms. This records authentic application acceptance; the coordinator separately gates finalization. The WhatsApp review tools are default-off and restricted to sandbox assets. This closure does not claim real-number onboarding or any actual message capture; zero-channel/zero-event posture requires its own fresh production readback.
 
-<!-- postdeploy-acceptance-sha256:61f8a99cea0345b4b2239b9da3b21f6b62bfad37dfaa2054116d73ef3f6c5788 -->
+Prior release acceptance digest (archived for this successor): 61f8a99cea0345b4b2239b9da3b21f6b62bfad37dfaa2054116d73ef3f6c5788
 
 ## WhatsApp privacy provisioning capability (2026-10-23)
 
@@ -670,3 +672,11 @@ Code-only: a separate exact-hash gate permits the reviewed privacy lifecycle suf
 ## Privacy release dependency security prerequisite (2026-10-23)
 
 The first privacy control-plane CI run was correctly blocked by newly indexed Next.js and Sentry advisories. The candidate now pins Next/ESLint/analyzer 16.4.1 and Sentry 10.75.2, retains the exact-hash glob compatibility patch, explicitly denies every locked third-party install script and has zero high/critical findings in the official npm audit. No exception or gate bypass was introduced. Full CI and actual application deployment remain separate evidence.
+
+## WhatsApp privacy lifecycle candidate (2026-10-23)
+
+Code complete: current-session owner/admin deletion across all pilot channels, opaque idempotent receipts, atomic replay suppression, database-controlled expiry and commit-age checks, bounded five-minute physical cleanup, stale-job admission closure and existing alert integration. A NOLOGIN maintenance role has event erasure privileges without CRM access; service_role has no direct event erasure. Restore quarantine is operator-only and disables every channel before restored observer history can be reused. Twelve full-schema PostgreSQL behavior groups passed, including actual two-session races in both orders and a 5001-row backlog. Public types were regenerated from the migrated isolated schema. Provider backup rotation and actual phone launch remain separate launch checks. This candidate does not connect either real number or send any message.
+
+Prepublication Linux checks and canonical CI are recorded separately below. Production migration, worker receipt, administrator UI verification and canonical release acceptance are required before calling the mechanism live.
+
+Prepublication validation on 2026-10-23: dependency installation, generated types, TypeScript, manifest, Supabase boundary, official zero-finding npm audit and full repository tests passed. Full tests ran in the pinned Playwright container without host runtime/configuration mounts or external networking. Thirteen isolated PostgreSQL behavior groups passed, including a service-role channel-enable race against provisioning. Canonical CI, deployment and live acceptance remain required.

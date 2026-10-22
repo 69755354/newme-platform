@@ -1,7 +1,7 @@
 // External authorization: Meta App Secret HMAC, exact opt-in channel allowlist.
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { MAX_WEBHOOK_BYTES, extractWhatsAppEvents, verifyWhatsAppSignature, type PilotChannel } from "@/lib/whatsapp-pilot.mjs";
+import { MAX_WEBHOOK_BYTES, extractWhatsAppEvents, isWhatsAppEventFresh, verifyWhatsAppSignature, type PilotChannel } from "@/lib/whatsapp-pilot.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,8 +54,14 @@ export async function POST(request: Request) {
     let events;
     try { events = extractWhatsAppEvents(payload, (channels ?? []) as PilotChannel[], salt); }
     catch { return reply({ error: "invalid_payload" }, 400); }
+    // Parsing a bounded batch may cross the age boundary. Recheck just before
+    // dispatch. Database admission independently enforces expiry, maintenance
+    // health and deletion cutoffs under its transaction lock.
+    const writeTime = Date.now();
+    events = events.filter(event => isWhatsAppEventFresh(Date.parse(event.occurred_at), writeTime));
     if (events.length) {
-      // A single statement is atomic. Retries never update or duplicate old facts.
+      // A single statement is atomic. Existing rows are never updated; surviving
+      // keys deduplicate retries. The database suppresses deleted-customer retries.
       const { error: writeError } = await supabaseAdmin.from("whatsapp_pilot_events").upsert(events, {
         onConflict: "channel_id,message_id", ignoreDuplicates: true,
       });

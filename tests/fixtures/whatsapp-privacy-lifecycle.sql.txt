@@ -1,0 +1,244 @@
+-- NO_ROLLBACK: Erasure cannot be undone. Keep admission/suppression guards when reverting the app.
+-- This migration never enables a channel and never changes CRM/accounting records.
+begin;
+create schema if not exists whatsapp_privacy;
+revoke all on schema whatsapp_privacy from public, anon, authenticated, service_role;
+do $$ begin
+  if not exists (select from pg_roles where rolname = 'newme_whatsapp_maintenance') then
+    create role newme_whatsapp_maintenance nologin noinherit nosuperuser nocreatedb nocreaterole nobypassrls;
+  end if;
+  if exists (select from pg_roles where rolname = 'newme_whatsapp_maintenance'
+    and (rolcanlogin or rolsuper or rolcreatedb or rolcreaterole or rolbypassrls or rolinherit)) then
+    raise exception 'whatsapp_maintenance_role_unsafe';
+  end if;
+end $$;
+grant newme_whatsapp_maintenance to postgres;
+grant usage on schema public, whatsapp_privacy, auth to newme_whatsapp_maintenance;
+-- The existing statement trigger is SECURITY INVOKER and calls the canonical
+-- assertion itself when erasure carries an administrator's identity.
+grant execute on function auth.uid(), public.assert_current_session_at_entry(), public.assert_current_session() to newme_whatsapp_maintenance;
+
+create table if not exists whatsapp_privacy.requests (
+  request_id uuid primary key,
+  customer_key text not null check (customer_key ~ '^[a-f0-9]{64}$'),
+  verified_by uuid not null,
+  received_at timestamptz not null,
+  deadline_at timestamptz not null,
+  cutoff_at timestamptz not null,
+  state text not null check (state in ('pending','completed')),
+  completed_at timestamptz,
+  deleted_count bigint not null default 0 check (deleted_count >= 0)
+);
+create index if not exists whatsapp_privacy_requests_pending on whatsapp_privacy.requests(received_at) where state = 'pending';
+create index if not exists whatsapp_privacy_requests_expiry on whatsapp_privacy.requests(deadline_at);
+create table if not exists whatsapp_privacy.suppressions (
+  customer_key text primary key check (customer_key ~ '^[a-f0-9]{64}$'),
+  cutoff_at timestamptz not null,
+  expires_at timestamptz not null
+);
+create index if not exists whatsapp_privacy_suppressions_expiry on whatsapp_privacy.suppressions(expires_at);
+create table if not exists whatsapp_privacy.maintenance (
+  id boolean primary key default true check (id),
+  last_completed_at timestamptz,
+  deleted_expired bigint not null default 0,
+  completed_requests integer not null default 0,
+  oldest_remaining_expiry timestamptz
+);
+insert into whatsapp_privacy.maintenance(id) values(true) on conflict do nothing;
+revoke all on all tables in schema whatsapp_privacy from public, anon, authenticated, service_role;
+grant select, update, delete on whatsapp_privacy.requests to newme_whatsapp_maintenance;
+grant select, delete on whatsapp_privacy.suppressions to newme_whatsapp_maintenance;
+grant select, update on whatsapp_privacy.maintenance to newme_whatsapp_maintenance;
+grant select, delete on public.whatsapp_pilot_events to newme_whatsapp_maintenance;
+drop policy if exists whatsapp_privacy_maintenance on public.whatsapp_pilot_events;
+create policy whatsapp_privacy_maintenance on public.whatsapp_pilot_events
+  for all to newme_whatsapp_maintenance using (true) with check (false);
+-- The web service still cannot DELETE, UPDATE or TRUNCATE event rows directly.
+revoke delete, update, truncate on public.whatsapp_pilot_events from service_role;
+
+alter table public.whatsapp_pilot_events add column if not exists expires_at timestamptz;
+update public.whatsapp_pilot_events set expires_at = least(occurred_at,received_at) + interval '30 days' where expires_at is null;
+alter table public.whatsapp_pilot_events alter column expires_at set not null;
+create index if not exists whatsapp_pilot_events_expiry on public.whatsapp_pilot_events(expires_at);
+create index if not exists whatsapp_pilot_events_customer_time on public.whatsapp_pilot_events(customer_key,occurred_at);
+
+-- One short transaction lock serializes the small pilot's batches, erasure and
+-- maintenance. This avoids deadlocks from differently ordered customer batches.
+create or replace function whatsapp_privacy.lock_pilot() returns void
+language plpgsql volatile security definer set search_path = '' as $$
+begin
+  if current_setting('transaction_isolation') <> 'read committed' then
+    raise exception using errcode='25001', message='whatsapp_requires_read_committed';
+  end if;
+  perform pg_catalog.pg_advisory_xact_lock(1463899728, 19194620);
+end $$;
+revoke all on function whatsapp_privacy.lock_pilot() from public, anon, authenticated, service_role;
+grant execute on function whatsapp_privacy.lock_pilot() to newme_whatsapp_maintenance;
+
+create or replace function whatsapp_privacy.admit_event() returns trigger
+language plpgsql volatile security definer set search_path = '' as $$
+declare v_now timestamptz;
+begin
+  perform public.assert_current_session_at_entry();
+  perform whatsapp_privacy.lock_pilot();
+  v_now := clock_timestamp();
+  if not exists (select from whatsapp_privacy.maintenance where id
+      and last_completed_at > v_now - interval '15 minutes')
+      or exists (select from public.whatsapp_pilot_events where expires_at <= v_now) then
+    raise exception using errcode='55000', message='whatsapp_maintenance_stale';
+  end if;
+  if not exists (select from public.whatsapp_pilot_channels c
+      where c.id=new.channel_id and c.enabled and new.occurred_at >= c.accept_since)
+    or new.occurred_at <= v_now - interval '29 days'
+    or new.occurred_at > v_now + interval '5 minutes'
+    or exists (select from whatsapp_privacy.suppressions s
+      where s.customer_key=new.customer_key and new.occurred_at <= s.cutoff_at) then
+    return null;
+  end if;
+  new.received_at := v_now;
+  new.expires_at := least(new.occurred_at,v_now) + interval '30 days';
+  return new;
+end $$;
+revoke all on function whatsapp_privacy.admit_event() from public, anon, authenticated, service_role;
+drop trigger if exists whatsapp_privacy_admission on public.whatsapp_pilot_events;
+create trigger whatsapp_privacy_admission before insert on public.whatsapp_pilot_events
+  for each row execute function whatsapp_privacy.admit_event();
+
+create or replace function whatsapp_privacy.check_commit_age() returns trigger
+language plpgsql volatile security definer set search_path = '' as $$
+begin
+  -- Deferred evaluation catches a transaction waiting across the age boundary.
+  if new.expires_at <= clock_timestamp() + interval '1 day'
+    and exists (select from public.whatsapp_pilot_events e where e.channel_id=new.channel_id and e.message_id=new.message_id) then
+    raise exception using errcode='40001', message='whatsapp_event_expired_before_commit';
+  end if;
+  return null;
+end $$;
+revoke all on function whatsapp_privacy.check_commit_age() from public, anon, authenticated, service_role;
+drop trigger if exists whatsapp_privacy_commit_age on public.whatsapp_pilot_events;
+create constraint trigger whatsapp_privacy_commit_age after insert on public.whatsapp_pilot_events
+  deferrable initially deferred for each row execute function whatsapp_privacy.check_commit_age();
+
+create or replace function whatsapp_privacy.process_requests() returns integer
+language plpgsql volatile security definer set search_path = '' as $$
+declare r record; n bigint; completed integer := 0;
+begin
+  perform public.assert_current_session_at_entry();
+  perform whatsapp_privacy.lock_pilot();
+  for r in select * from whatsapp_privacy.requests where state='pending' order by received_at limit 20 loop
+    delete from public.whatsapp_pilot_events where customer_key=r.customer_key and occurred_at <= r.cutoff_at;
+    get diagnostics n = row_count;
+    update whatsapp_privacy.requests set state='completed',completed_at=clock_timestamp(),deleted_count=n where request_id=r.request_id;
+    completed := completed+1;
+  end loop;
+  return completed;
+end $$;
+grant create on schema whatsapp_privacy to newme_whatsapp_maintenance;
+alter function whatsapp_privacy.process_requests() owner to newme_whatsapp_maintenance;
+revoke create on schema whatsapp_privacy from newme_whatsapp_maintenance;
+revoke all on function whatsapp_privacy.process_requests() from public, anon, authenticated, service_role;
+grant execute on function whatsapp_privacy.process_requests() to postgres;
+
+create or replace function public.request_whatsapp_deletion(p_request_id uuid,p_customer_key text) returns jsonb
+language plpgsql volatile security definer set search_path = '' as $$
+declare r whatsapp_privacy.requests; v_now timestamptz; v_cutoff timestamptz;
+begin
+  -- Authenticate before idempotency, validation and every early return.
+  perform public.assert_current_session_at_entry();
+  if auth.uid() is null or not exists(select from public.profiles where id=auth.uid() and is_active is true and role in ('admin','boss')) then
+    raise exception using errcode='42501', message='whatsapp_deletion_forbidden';
+  end if;
+  if p_request_id is null or p_customer_key is null or p_customer_key !~ '^[a-f0-9]{64}$' then
+    raise exception using errcode='22023', message='invalid_whatsapp_deletion_request';
+  end if;
+  perform whatsapp_privacy.lock_pilot();
+  select * into r from whatsapp_privacy.requests where request_id=p_request_id;
+  if found then
+    if r.customer_key<>p_customer_key or r.verified_by<>auth.uid() then
+      raise exception using errcode='22023', message='whatsapp_request_id_reused';
+    end if;
+  else
+    v_now := clock_timestamp();
+    if (select count(*) from whatsapp_privacy.requests where received_at > v_now-interval '1 hour') >= 60 then
+      raise exception using errcode='54000', message='whatsapp_request_budget_exceeded';
+    end if;
+    -- Include previously accepted five-minute clock-skew events in this erasure.
+    select greatest(v_now,coalesce(max(occurred_at),v_now)) into v_cutoff
+      from public.whatsapp_pilot_events where customer_key=p_customer_key;
+    insert into whatsapp_privacy.suppressions values(p_customer_key,v_cutoff,v_cutoff+interval '30 days')
+      on conflict(customer_key) do update set cutoff_at=greatest(whatsapp_privacy.suppressions.cutoff_at,excluded.cutoff_at),
+        expires_at=greatest(whatsapp_privacy.suppressions.expires_at,excluded.expires_at);
+    insert into whatsapp_privacy.requests values(p_request_id,p_customer_key,auth.uid(),v_now,v_now+interval '30 days',v_cutoff,'pending',null,0);
+  end if;
+  perform whatsapp_privacy.process_requests();
+  select * into r from whatsapp_privacy.requests where request_id=p_request_id;
+  return jsonb_build_object('request_id',r.request_id,'state',r.state,'received_at',r.received_at,
+    'deadline_at',r.deadline_at,'completed_at',r.completed_at,'deleted_count',r.deleted_count,'scope','all_pilot_channels');
+end $$;
+revoke all on function public.request_whatsapp_deletion(uuid,text) from public, anon, authenticated, service_role;
+grant execute on function public.request_whatsapp_deletion(uuid,text) to authenticated;
+
+create or replace function public.maintain_whatsapp_privacy() returns jsonb
+language plpgsql volatile security definer set search_path = '' as $$
+declare v_now timestamptz; n bigint; completed integer; oldest timestamptz;
+begin
+  if auth.uid() is not null then raise exception using errcode='42501',message='whatsapp_maintenance_server_only'; end if;
+  perform whatsapp_privacy.lock_pilot();
+  v_now := clock_timestamp();
+  completed := whatsapp_privacy.process_requests();
+  delete from public.whatsapp_pilot_events where (channel_id,message_id) in
+    (select channel_id,message_id from public.whatsapp_pilot_events
+      where expires_at <= v_now+interval '1 day' order by expires_at limit 5000);
+  get diagnostics n = row_count;
+  delete from whatsapp_privacy.suppressions where expires_at <= v_now;
+  delete from whatsapp_privacy.requests where state='completed' and deadline_at <= v_now;
+  select min(expires_at) into oldest from public.whatsapp_pilot_events;
+  update whatsapp_privacy.maintenance set last_completed_at=clock_timestamp(),deleted_expired=n,
+    completed_requests=completed,oldest_remaining_expiry=oldest where id;
+  return jsonb_build_object('completed_at',clock_timestamp(),'deleted_expired',n,'completed_requests',completed,
+    'oldest_remaining_expiry',oldest,'backlog',coalesce(oldest<=v_now+interval '1 day',false));
+end $$;
+grant create on schema public to newme_whatsapp_maintenance;
+alter function public.maintain_whatsapp_privacy() owner to newme_whatsapp_maintenance;
+revoke create on schema public from newme_whatsapp_maintenance;
+revoke all on function public.maintain_whatsapp_privacy() from public, anon, authenticated, service_role;
+grant execute on function public.maintain_whatsapp_privacy() to service_role, postgres;
+
+create or replace function public.whatsapp_privacy_status() returns jsonb
+language plpgsql volatile security definer set search_path = '' as $$
+declare m whatsapp_privacy.maintenance; receipts jsonb;
+begin
+  perform public.assert_current_session_at_entry();
+  if auth.uid() is null or not exists(select from public.profiles where id=auth.uid() and is_active is true and role in ('admin','boss')) then
+    raise exception using errcode='42501', message='whatsapp_privacy_forbidden';
+  end if;
+  select * into m from whatsapp_privacy.maintenance where id;
+  select coalesce(jsonb_agg(to_jsonb(r)),'[]'::jsonb) into receipts from
+    (select request_id,state,received_at,deadline_at,completed_at,deleted_count from whatsapp_privacy.requests order by received_at desc limit 20) r;
+  return jsonb_build_object('retention_days',30,'purge_after_days',29,'last_cleanup_at',m.last_completed_at,
+    'healthy',coalesce(m.last_completed_at>clock_timestamp()-interval '15 minutes',false)
+      and not exists(select from public.whatsapp_pilot_events where expires_at<=clock_timestamp()),
+    'expired_records', (select count(*) from public.whatsapp_pilot_events where expires_at<=clock_timestamp()),
+    'pending_requests',(select count(*) from whatsapp_privacy.requests where state='pending'),
+    'receipts',receipts);
+end $$;
+revoke all on function public.whatsapp_privacy_status() from public, anon, authenticated, service_role;
+grant execute on function public.whatsapp_privacy_status() to authenticated;
+
+-- Disaster recovery deliberately discards observer history rather than risk
+-- resurrecting deleted customers from a backup. Never callable by the app.
+create or replace function whatsapp_privacy.reset_after_restore() returns bigint
+language plpgsql volatile security definer set search_path = '' as $$
+declare n bigint;
+begin
+  perform whatsapp_privacy.lock_pilot();
+  update public.whatsapp_pilot_channels set enabled=false,accept_since=clock_timestamp()+interval '5 minutes';
+  delete from public.whatsapp_pilot_events;
+  get diagnostics n = row_count;
+  delete from whatsapp_privacy.requests;
+  delete from whatsapp_privacy.suppressions;
+  update whatsapp_privacy.maintenance set last_completed_at=null,oldest_remaining_expiry=null where id;
+  return n;
+end $$;
+revoke all on function whatsapp_privacy.reset_after_restore() from public, anon, authenticated, service_role, newme_whatsapp_maintenance;
+commit;

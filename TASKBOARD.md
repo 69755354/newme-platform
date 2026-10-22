@@ -27,6 +27,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_whatsapp_privacy_provisioning_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_review_window_recheck_code | DONE | Codex | 2026-10-22 |
 | task_whatsapp_review_ci_metadata_code | DONE | Codex | 2026-10-22 |
 | task_whatsapp_review_tools_code | DONE | Codex | 2026-10-22 |
@@ -660,3 +661,7 @@ Code-only: an exhausted per-user review budget now returns 429 before consuming 
 Canonical acceptance is verified for application release 1f1b894655e98388d51efe49d33e038d7e467bb8, build kAnvzAkuvFHJF9CXiSwFw, deployment CI 39792415132. All four role actors, six business flows and eight English/Chinese browser sessions passed; 56 redacted screenshots and 16 top-level JSON artifacts were verified. 42 dedicated fixture IDs were created and cleaned with zero residual rows; the test payment was voided and its KPI baseline restored. Failure/recovery provider delivery and the delayed same-message readback passed. Performance: 20 samples, p75 426 ms, p95 435 ms. This records authentic application acceptance; the coordinator separately gates finalization. The WhatsApp review tools are default-off and restricted to sandbox assets. This closure does not claim real-number onboarding or any actual message capture; zero-channel/zero-event posture requires its own fresh production readback.
 
 <!-- postdeploy-acceptance-sha256:61f8a99cea0345b4b2239b9da3b21f6b62bfad37dfaa2054116d73ef3f6c5788 -->
+
+## WhatsApp privacy provisioning capability (2026-10-23)
+
+Code-only: a separate exact-hash gate permits the reviewed privacy lifecycle suffix after the complete unchanged strict prefix, recorded observer and disabled channels. Existing observer-only permissions are unchanged. Forty new policy/coordinator tests and the existing observer gate tests passed; the SQL review fixture passed twelve full-schema PostgreSQL behavior groups including real concurrent erasure in both orders. This capability alone applies no migration, enables no channel and changes no live app. Canonical bootstrap, actual migration/application release and acceptance remain separate operations.

@@ -650,3 +650,7 @@ The SPEC supplement now records the actual WhatsApp routes, the sandbox-only rev
 ## Review-tools activation-window boundary (2026-10-22)
 
 Code-only: the helper now reads a fresh clock immediately before each Graph request. If the test-phone lookup finishes at or after the activation deadline, sending and template creation stop before any POST. A deterministic asynchronous regression covers both mutations exactly at expiry and after expiry. All 26 targeted observer/review/provenance tests, full TypeScript checking and targeted ESLint passed locally. WhatsApp requests in these tests are mocked; this evidence does not claim a real Graph action, message delivery, template creation or production deployment.
+
+## Review-tools shared-budget isolation (2026-10-22)
+
+Code-only: an exhausted per-user review budget now returns 429 before consuming the shared sandbox budget. A route regression uses the actual rate limiter: one administrator completes four operations, eight fresh-request retries are denied without any shared-budget consumption, and a second administrator can still complete four operations. All 27 targeted observer/review/provenance tests, full TypeScript checking and targeted ESLint passed locally. WhatsApp operations are mocked in these tests; no real Graph action, message delivery, template creation or deployment is claimed.

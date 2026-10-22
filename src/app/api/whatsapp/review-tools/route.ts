@@ -55,8 +55,9 @@ export async function POST(request: Request) {
     try {
       const result = await runReviewAttempt(context.user.id, action, requestId, async () => {
         const userBudget = consumeRateLimit(context.user.id, { namespace: "whatsapp-review-user", limit: 4, windowMs: 3_600_000 });
+        if (!userBudget.allowed) throw new ReviewToolsError("review_rate_limit", { status: 429 });
         const totalBudget = consumeRateLimit("fixed-sandbox", { namespace: "whatsapp-review-total", limit: 8, windowMs: 3_600_000 });
-        if (!userBudget.allowed || !totalBudget.allowed) throw new ReviewToolsError("review_rate_limit", { status: 429 });
+        if (!totalBudget.allowed) throw new ReviewToolsError("review_rate_limit", { status: 429 });
         return performReviewAction(action, requestId);
       });
       return respond(result);

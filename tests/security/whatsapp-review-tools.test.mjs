@@ -201,3 +201,34 @@ test("disabled access, exhausted budgets and expired sessions stop before any Gr
   assert.equal((await route.GET(new Request("https://app.newme.ae/api/whatsapp/review-tools"))).status, 401);
   assert.equal(calls, 0);
 });
+
+test("an exhausted user's fresh retries leave the shared budget available to another administrator", async () => {
+  const ts = require("typescript");
+  const out = ts.transpileModule(fs.readFileSync(new URL("../../src/lib/rate-limit.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const limiter = {}; new Function("require", "exports", out)(require, limiter);
+  let actor = "exhausted-review-admin"; let globalConsumptions = 0; let graphCalls = 0;
+  const route = loadRoute({
+    "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
+    "@/lib/request-auth-context": {
+      getRequestAuthContext: async () => ({ role: "admin", user: { id: actor } }),
+      applyRequestAuthCookies: (_context, response) => response, RequestAuthError: class extends Error {},
+    },
+    "@/lib/rate-limit": { consumeRateLimit: (key, options) => {
+      if (options.namespace === "whatsapp-review-total") globalConsumptions++;
+      return limiter.consumeRateLimit(key, options, now);
+    } },
+    "@/lib/whatsapp-review-tools.mjs": { ...require("../../src/lib/whatsapp-review-tools.mjs"), reviewToolsConfig: () => ({ enabled: true }), performReviewAction: async () => { graphCalls++; return { ok: true }; } },
+  });
+  const request = () => new Request("https://app.newme.ae/api/whatsapp/review-tools", {
+    method: "POST", headers: { origin: "https://app.newme.ae", "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "send_hello_world", request_id: randomUUID() }),
+  });
+  for (let i = 0; i < 4; i++) assert.equal((await route.POST(request())).status, 200);
+  for (let i = 0; i < 8; i++) assert.equal((await route.POST(request())).status, 429);
+  assert.equal(globalConsumptions, 4);
+  assert.equal(graphCalls, 4);
+  actor = "other-review-admin";
+  for (let i = 0; i < 4; i++) assert.equal((await route.POST(request())).status, 200);
+  assert.equal(globalConsumptions, 8);
+  assert.equal(graphCalls, 8);
+});

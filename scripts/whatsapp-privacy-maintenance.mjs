@@ -1,6 +1,5 @@
 /** Fixed, bounded cleanup RPC. No HTTP endpoint, user selector or SQL argument. */
 import fs from "node:fs";
-import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export async function runWhatsAppMaintenance({ url, key, fetchImpl = fetch }) {
@@ -63,7 +62,14 @@ async function main() {
   console.log(JSON.stringify({ whatsapp_privacy: "complete", ...receipt }));
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+function invokedAsMain() {
+  try {
+    // Node resolves module URLs through the release symlink used by cron.
+    return Boolean(process.argv[1]) && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch { return false; }
+}
+
+if (invokedAsMain()) {
   main().catch(() => {
     // Even filesystem/provider exceptions can contain sensitive values or paths.
     console.error("WHATSAPP_PRIVACY_MAINTENANCE_FAILED"); process.exitCode = 1;

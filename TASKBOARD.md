@@ -654,3 +654,9 @@ Code-only: the helper now reads a fresh clock immediately before each Graph requ
 ## Review-tools shared-budget isolation (2026-10-22)
 
 Code-only: an exhausted per-user review budget now returns 429 before consuming the shared sandbox budget. A route regression uses the actual rate limiter: one administrator completes four operations, eight fresh-request retries are denied without any shared-budget consumption, and a second administrator can still complete four operations. All 27 targeted observer/review/provenance tests, full TypeScript checking and targeted ESLint passed locally. WhatsApp operations are mocked in these tests; no real Graph action, message delivery, template creation or deployment is claimed.
+
+## WhatsApp review-tools release acceptance closure (2026-10-22)
+
+Canonical acceptance is verified for application release 1f1b894655e98388d51efe49d33e038d7e467bb8, build kAnvzAkuvFHJF9CXiSwFw, deployment CI 39792415132. All four role actors, six business flows and eight English/Chinese browser sessions passed; 56 redacted screenshots and 16 top-level JSON artifacts were verified. 42 dedicated fixture IDs were created and cleaned with zero residual rows; the test payment was voided and its KPI baseline restored. Failure/recovery provider delivery and the delayed same-message readback passed. Performance: 20 samples, p75 426 ms, p95 435 ms. This records authentic application acceptance; the coordinator separately gates finalization. The WhatsApp review tools are default-off and restricted to sandbox assets. This closure does not claim real-number onboarding or any actual message capture; zero-channel/zero-event posture requires its own fresh production readback.
+
+<!-- postdeploy-acceptance-sha256:61f8a99cea0345b4b2239b9da3b21f6b62bfad37dfaa2054116d73ef3f6c5788 -->

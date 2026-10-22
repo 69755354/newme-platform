@@ -746,6 +746,13 @@ grep -Fqx "{\"git_sha\":\"$SHA\",\"build_id\":\"$BUILD\"}" "$TARGET/manifest.jso
 [ "$(tr -d '\r\n' < "$TARGET/.next/BUILD_ID")" = "$BUILD" ] || { fail "BUILD_ID mismatch"; exit 1; }
 curl -fsS --max-time 10 http://127.0.0.1:3001/api/health >/dev/null || { fail "post-switch health failed"; exit 1; }
 bash "$TARGET/scripts/check-smoke.sh" http://127.0.0.1:3001
+if [ -f "$TARGET/scripts/whatsapp-privacy-maintenance.mjs" ]; then
+  grep -Fqx '*/5 * * * * root /usr/bin/flock -n /run/lock/newme-whatsapp-privacy.lock /usr/bin/node /opt/newme/current/scripts/whatsapp-privacy-maintenance.mjs' /etc/cron.d/newme-observability || { fail "WhatsApp cleanup cron drift"; exit 1; }
+  # Establish an actual successful RPC receipt before the independent monitor
+  # checks the newly activated release. Failure uses the existing rollback path.
+  /usr/bin/flock -w 180 /run/lock/newme-whatsapp-privacy.lock \
+    /usr/bin/node "$TARGET/scripts/whatsapp-privacy-maintenance.mjs" || { fail "WhatsApp initial cleanup failed"; exit 1; }
+fi
 bash /opt/hermes-scripts/observability/l0-composite-probe.sh
 INVOCATION_ID="$(systemctl show newme-platform.service -p InvocationID --value)"
 [[ "$INVOCATION_ID" =~ ^[0-9a-f]{32}$ ]] || { fail "service invocation id missing"; exit 1; }

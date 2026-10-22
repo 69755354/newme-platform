@@ -91,11 +91,12 @@ phase):
 20260817230000_lead_rebalance_plan_idempotency.sql
 ```
 
-Contract phase — these two files, in order, pushed only after §4 step 6 passes:
+Contract phase — these three files, in order, pushed only after §4 step 6 passes:
 
 ```contract
 20260818000000_money_direct_write_contract_phase.sql
 20261019104004_whatsapp_pilot_events.sql
+20261022194620_whatsapp_privacy_lifecycle.sql
 ```
 
 ### How the split is executed: a manifest, not a moved file
@@ -1019,10 +1020,10 @@ select count(*) from supabase_migrations.schema_migrations
 -- expect 1
 
 -- the newest recorded version is the last declared deferred migration,
--- which provisions the optional observer without enabling capture
+-- which provisions the optional observer privacy lifecycle without enabling capture
 select version from supabase_migrations.schema_migrations
  order by version desc limit 1;
--- expect 20261019104004
+-- expect 20261022194620
 ```
 
 `sudo /usr/local/sbin/newme-deploy db-transition <release-sha>

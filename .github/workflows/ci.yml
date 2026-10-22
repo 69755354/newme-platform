@@ -661,6 +661,11 @@ jobs:
           createdb history
           MODE=history PGDATABASE=history bash scripts/replay-migrations.sh
 
+      - name: WhatsApp privacy lifecycle and two-session erasure tests
+        run: |
+          createdb --template history newme_whatsapp_privacy_test
+          PGDATABASE=newme_whatsapp_privacy_test python3 tests/database/whatsapp-privacy.py
+
       # Round-4 C4. The remote-history gate decides "production ran this release's
       # SQL" by comparing a digest the server computes over the recorded
       # statements with one this repository computes over its own migration files.

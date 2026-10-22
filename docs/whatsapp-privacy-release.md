@@ -2,13 +2,21 @@
 
 The observer-only provisioning gate remains unchanged. A separate operation
 admits only the reviewed `20261022194620_whatsapp_privacy_lifecycle.sql` hash
-`a1a4a9d34fb56d81fa0a42c0d355b6370f05811c1b2b10e196aaacf8e391aeab`.
+`8b0a7d9fde56398884d0274f44cf3091c9664d9d2b64c241c4efb4e87ff608c4`.
 The review fixture is byte-identical SQL, not an alternative deployment path.
 
 First merge the coordinator, the new policy gate, its refusal tests and fixture,
 without adding a production migration. Run fresh protected manual CI on canonical
 main, then bootstrap those control-plane assets using the existing
 `contract_verified` claim and derived required IDs. Retain the current app.
+
+The coordinator capability was bootstrapped from `38fae1272622a6fdf76acf69ad2503f75f671c24`
+with successful protected CI `39855358493`; the application remained on its prior
+release. The candidate's reviewed SQL now also puts the canonical session assertion
+first in each public security-definer entry. Its immutable hash, fixture and body
+posture predicates change together. The installed coordinator validates the
+candidate policy under fresh exact-main CI; its operations and the observer-only
+allowlist remain unchanged.
 
 Then merge the application release with the new migration as exactly one later
 `deferred_contract` suffix. Run fresh protected manual CI on that exact main SHA.

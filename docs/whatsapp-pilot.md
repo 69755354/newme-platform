@@ -133,9 +133,17 @@ See [independent Tech Provider onboarding](https://developers.facebook.com/docum
    real reply from the phone. Test **incoming and outgoing** for both numbers,
    the shared customer reference, delivery retry deduplication and event order.
    A missing event is a coverage failure to investigate, not staff misconduct.
-8. Only call the pilot live after webhook storage, the management view and both
-   physical-phone flows pass. Validate retention and retrieval needs with the
-   owner; this draft has no automatic deletion or history backfill job.
+8. Only call the pilot live after webhook storage, the management view, both
+   physical-phone flows and the [privacy lifecycle gates](whatsapp-privacy-operations.md)
+   pass. Verify the deployed cleanup worker and fresh receipt before capture.
+
+Application admission rejects events at or beyond 30 days and rechecks before
+dispatch. The new database lifecycle is stricter: it rejects at 29 days, guards
+commit time, physically purges with a safety margin and serializes verified
+customer deletion against callback insertion. Its scheduled worker, alerts and
+restore quarantine are described in [privacy operations](whatsapp-privacy-operations.md).
+Keep actual channels disabled until the guarded release, privacy launch checks
+and Meta advanced permissions are verified.
 
 The management endpoint is active-session boss/admin only and returns no full
 phone IDs, credentials or chat content. Both tables have RLS enabled and all

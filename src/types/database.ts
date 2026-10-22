@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=f469f48d89a5309849b222b63b888cacfb2f83eebfb423861b01677978af494b
+// Migration fingerprint: sha256=a778f95711ac3be9dc47ac53dbcce6d80b68bd2720d60d8da5397c6b23e7c87f
 export type Json =
   | string
   | number
@@ -8,10 +8,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-
   public: {
     Tables: {
       activities: {
@@ -3890,6 +3891,7 @@ export type Database = {
           channel_id: string
           customer_key: string
           direction: string
+          expires_at: string
           message_id: string
           message_type: string
           occurred_at: string
@@ -3900,6 +3902,7 @@ export type Database = {
           channel_id: string
           customer_key: string
           direction: string
+          expires_at: string
           message_id: string
           message_type: string
           occurred_at: string
@@ -3910,6 +3913,7 @@ export type Database = {
           channel_id?: string
           customer_key?: string
           direction?: string
+          expires_at?: string
           message_id?: string
           message_type?: string
           occurred_at?: string
@@ -4487,6 +4491,7 @@ export type Database = {
             }
             Returns: string
           }
+      maintain_whatsapp_privacy: { Args: never; Returns: Json }
       milestone_order: { Args: { milestone: string }; Returns: number }
       money_actor: {
         Args: { p_allowed_roles: string[]; p_claimed: string }
@@ -4561,6 +4566,10 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      request_whatsapp_deletion: {
+        Args: { p_customer_key: string; p_request_id: string }
+        Returns: Json
+      }
       revoke_contract: {
         Args: { p_contract_id: string; p_reason: string; p_supersede?: boolean }
         Returns: Json
@@ -4599,6 +4608,7 @@ export type Database = {
         Args: { p_payment_id: string; p_reason: string }
         Returns: Json
       }
+      whatsapp_privacy_status: { Args: never; Returns: Json }
     }
     Enums: {
       [_ in never]: never

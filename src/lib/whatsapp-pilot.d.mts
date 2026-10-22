@@ -1,4 +1,5 @@
 export const MAX_WEBHOOK_BYTES: number;
+export const WHATSAPP_EVENT_MAX_AGE_MS: number;
 export interface PilotChannel {
   id: string; label: string; purpose: "intake" | "follow_up";
   phone_number_id: string; waba_id: string; business_phone: string;
@@ -15,5 +16,6 @@ export interface PilotConversation {
   observed_response_seconds: number[];
 }
 export function verifyWhatsAppSignature(bytes: Uint8Array, signature: string | null, secret: string): boolean;
+export function isWhatsAppEventFresh(time: number, now?: number): boolean;
 export function extractWhatsAppEvents(payload: unknown, channels: PilotChannel[], contactSalt: string, now?: number): PilotEvent[];
 export function summarizeWhatsAppEvents(events: PilotEvent[]): PilotConversation[];

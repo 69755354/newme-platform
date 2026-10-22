@@ -9,7 +9,7 @@ import { OBSERVER } from "./check-whatsapp-provisioning.mjs";
 
 export const PRIVACY = Object.freeze({
   version: "20261022194620", file: "20261022194620_whatsapp_privacy_lifecycle.sql",
-  sha256: "a1a4a9d34fb56d81fa0a42c0d355b6370f05811c1b2b10e196aaacf8e391aeab",
+  sha256: "8b0a7d9fde56398884d0274f44cf3091c9664d9d2b64c241c4efb4e87ff608c4",
   objects: ["schema:whatsapp_privacy", "whatsapp_privacy.requests", "whatsapp_privacy.suppressions", "whatsapp_privacy.maintenance",
     "whatsapp_privacy.requests_pkey", "whatsapp_privacy.suppressions_pkey", "whatsapp_privacy.maintenance_pkey",
     "whatsapp_privacy.whatsapp_privacy_requests_pending", "whatsapp_privacy.whatsapp_privacy_requests_expiry",

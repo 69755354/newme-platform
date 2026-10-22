@@ -150,8 +150,8 @@ grant execute on function whatsapp_privacy.process_requests() to postgres;
 create or replace function public.request_whatsapp_deletion(p_request_id uuid,p_customer_key text) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 declare r whatsapp_privacy.requests; v_now timestamptz; v_cutoff timestamptz;
+-- Authenticate before idempotency, validation and every early return.
 begin
-  -- Authenticate before idempotency, validation and every early return.
   perform public.assert_current_session_at_entry();
   if auth.uid() is null or not exists(select from public.profiles where id=auth.uid() and is_active is true and role in ('admin','boss')) then
     raise exception using errcode='42501', message='whatsapp_deletion_forbidden';
@@ -190,6 +190,7 @@ create or replace function public.maintain_whatsapp_privacy() returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 declare v_now timestamptz; n bigint; completed integer; oldest timestamptz;
 begin
+  perform public.assert_current_session_at_entry();
   if auth.uid() is not null then raise exception using errcode='42501',message='whatsapp_maintenance_server_only'; end if;
   perform whatsapp_privacy.lock_pilot();
   v_now := clock_timestamp();

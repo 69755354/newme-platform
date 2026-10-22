@@ -197,7 +197,7 @@
     {
       "version": "20261022194620",
       "file": "20261022194620_whatsapp_privacy_lifecycle.sql",
-      "sha256": "a1a4a9d34fb56d81fa0a42c0d355b6370f05811c1b2b10e196aaacf8e391aeab"
+      "sha256": "8b0a7d9fde56398884d0274f44cf3091c9664d9d2b64c241c4efb4e87ff608c4"
     }
   ],
   "companions": [
@@ -471,7 +471,7 @@
         },
         {
           "name": "whatsapp-privacy-functions-match-reviewed-bodies",
-          "sql": "select count(*)=8 and bool_and(coalesce(p.prosecdef and p.provolatile='v' and l.lanname='plpgsql' and pg_get_userbyid(p.proowner)=d.owner and p.proconfig=array['search_path=\"\"']::text[] and encode(sha256(convert_to(p.prosrc,'UTF8')),'hex')=d.sha256,false)) from (values ('whatsapp_privacy.process_requests()','1c054e282884b59043bfa5c6a42363219bff59259c184a55d9faeed4f85a8f1f','newme_whatsapp_maintenance'),('whatsapp_privacy.lock_pilot()','a1c91bd66469da068754980ef182cf06aa5305e0feb91cd688261b5b926565bc','postgres'),('whatsapp_privacy.reset_after_restore()','b748f71d9a5af45840a7709f43968476b2b5ae4a4f834a039c80af8eb6ae4219','postgres'),('public.request_whatsapp_deletion(uuid,text)','4b1fcc7be05fb9156a173c50921bc8012ccb9d492a37165f965954724300fc98','postgres'),('public.whatsapp_privacy_status()','9b26bedde705e537b1218fac7687c8414aec3319e7f461b27d129c2e6fe28a83','postgres'),('whatsapp_privacy.admit_event()','2b201238dcabbc8ec3bd67574edfb947b8000ed23312b628d3b58385f770c860','postgres'),('whatsapp_privacy.check_commit_age()','15e36120fcf481e6dc2c50ba53107ded5e8b7059696f023396d615dec8284ad1','postgres'),('public.maintain_whatsapp_privacy()','4a4dbf12c719f5142b76f4c8e1dff5666b807ceb5d4e23df2d79b30745acbea1','newme_whatsapp_maintenance')) d(signature,sha256,owner) left join pg_proc p on p.oid=to_regprocedure(d.signature) left join pg_language l on l.oid=p.prolang",
+          "sql": "select count(*)=8 and bool_and(coalesce(p.prosecdef and p.provolatile='v' and l.lanname='plpgsql' and pg_get_userbyid(p.proowner)=d.owner and p.proconfig=array['search_path=\"\"']::text[] and encode(sha256(convert_to(p.prosrc,'UTF8')),'hex')=d.sha256,false)) from (values ('whatsapp_privacy.process_requests()','1c054e282884b59043bfa5c6a42363219bff59259c184a55d9faeed4f85a8f1f','newme_whatsapp_maintenance'),('whatsapp_privacy.lock_pilot()','a1c91bd66469da068754980ef182cf06aa5305e0feb91cd688261b5b926565bc','postgres'),('whatsapp_privacy.reset_after_restore()','b748f71d9a5af45840a7709f43968476b2b5ae4a4f834a039c80af8eb6ae4219','postgres'),('public.request_whatsapp_deletion(uuid,text)','3ceaadeed064888f472f8c2a6b68fde8b12ccffbd57a3e22b88528ed9a11babc','postgres'),('public.whatsapp_privacy_status()','9b26bedde705e537b1218fac7687c8414aec3319e7f461b27d129c2e6fe28a83','postgres'),('whatsapp_privacy.admit_event()','2b201238dcabbc8ec3bd67574edfb947b8000ed23312b628d3b58385f770c860','postgres'),('whatsapp_privacy.check_commit_age()','15e36120fcf481e6dc2c50ba53107ded5e8b7059696f023396d615dec8284ad1','postgres'),('public.maintain_whatsapp_privacy()','6eef166a7b1fd1a92d342d68b878000fa992418e136e72d6c19c331bbb03bafc','newme_whatsapp_maintenance')) d(signature,sha256,owner) left join pg_proc p on p.oid=to_regprocedure(d.signature) left join pg_language l on l.oid=p.prolang",
           "expect": true
         },
         {

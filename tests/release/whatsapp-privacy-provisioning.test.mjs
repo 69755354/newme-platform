@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { judgePrivacyProvisioning, PRIVACY } from "../../scripts/check-whatsapp-privacy-provisioning.mjs";
 import { OBSERVER } from "../../scripts/check-whatsapp-provisioning.mjs";
 
+const bash = process.env.NEWME_TEST_BASH || (process.platform === "win32" && fs.existsSync("C:/Program Files/Git/bin/bash.exe") ? "C:/Program Files/Git/bin/bash.exe" : "bash");
 const sql = fs.readFileSync(new URL("../fixtures/whatsapp-privacy-lifecycle.sql.txt", import.meta.url), "utf8");
 const entry = ({ version, file, sha256 }) => ({ version, file, sha256 });
 function input() {
@@ -43,7 +44,6 @@ for (const object of PRIVACY.objects) {
   });
 }
 
-const bash = process.env.NEWME_TEST_BASH || (process.platform === "win32" && fs.existsSync("C:/Program Files/Git/bin/bash.exe") ? "C:/Program Files/Git/bin/bash.exe" : "bash");
 const wrapper = fs.readFileSync(new URL("../../infra/systemd/newme-deploy.sh", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 const begin = wrapper.indexOf("  # The privacy lifecycle has a different reviewed hash");
 const end = wrapper.indexOf('  case "$DB_TRANSITION_OPERATION" in', begin);

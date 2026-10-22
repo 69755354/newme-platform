@@ -27,6 +27,9 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_whatsapp_review_window_recheck_code | DONE | Codex | 2026-10-22 |
+| task_whatsapp_review_ci_metadata_code | DONE | Codex | 2026-10-22 |
+| task_whatsapp_review_tools_code | DONE | Codex | 2026-10-22 |
 | task_archive_prior_release_marker_code | DONE | Codex | 2026-10-20 |
 | task_whatsapp_webhook_log_privacy_code | DONE | Codex | 2026-10-20 |
 | task_whatsapp_strict_provisioning_code | DONE | Codex | 2026-10-20 |
@@ -632,4 +635,22 @@ The previous acceptance digest remains in ordinary historical prose, with its so
 
 Canonical acceptance is verified for application release 8a78be8134441aae8560626cd56b07d9f5ab11d2, build 4Cj0UZFVwGjggyYNlRgUF, deployment CI 39449460527. All four role actors, six business flows and eight English/Chinese browser sessions passed; 56 redacted screenshots and 16 top-level JSON artifacts were verified. 42 dedicated fixture IDs were created and cleaned with zero residual rows; the test payment was voided and its KPI baseline restored. Failure/recovery provider delivery and the delayed same-message readback passed. Performance: 20 samples, p75 256 ms, p95 324 ms. This records authentic acceptance; the coordinator separately gates finalization. WhatsApp phone onboarding and capture remain disabled.
 
-<!-- postdeploy-acceptance-sha256:cc24edf5869c4da41748be22aded9a00c17430f5e769480b2998ae461f405bd6 -->
+Historical postdeploy acceptance SHA-256 retained from TASKBOARD.md at c8dff02b067e6866df85f52cce1e3c3f9cd8206c: cc24edf5869c4da41748be22aded9a00c17430f5e769480b2998ae461f405bd6 (archived record before the next application release).
+
+## WhatsApp App Review tools code preparation (2026-10-22)
+
+Code-only preparation: Settings > WhatsApp now includes a default-off review panel for a fixed Meta test WABA, its verified test sender and the existing internal recipient ending 9388. Active current-session boss/admin access, exact same-origin JSON, bounded requests, process-local replay protection, per-user/global hourly limits and an explicitly bounded activation window of at most 24 hours protect the operations. Arbitrary recipients, WABAs, messages and template content are refused. Uncertain mutation outcomes are retained without automatic retry; process restarts are not represented as delivery cancellation or durable idempotency.
+
+Local validation: 17 targeted observer/review-tool tests passed, including invalid/stale windows, wrong test assets, unchanged fixed targets, rejected roles/origins/body shapes, budget exhaustion, expired sessions, concurrent retry sharing, credential redaction and ambiguous upstream outcomes. Type checking and targeted lint passed. The route convention and tracked credential checks passed. No new database migration, Graph token grant, real send, template creation, production deployment or message capture is claimed here. Full CI, guarded deployment, actual Meta account checks and authorised recordings remain separate acceptance evidence. The prior acceptance digest is retained above as ordinary history so the successor release can acquire its own canonical closure.
+
+## Review-tools CI metadata readiness (2026-10-22)
+
+The SPEC supplement now records the actual WhatsApp routes, the sandbox-only review panel, the unchanged existing Ads bridge and outstanding acceptance gates. The official PostgreSQL 17.11-trixie index was rebuilt upstream; the active CI references, provenance lock and mutation-test fixture now agree with digest b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe. Docker Hub metadata and an isolated no-network, read-only container verified PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2). Production database and containers were not modified. All 25 targeted observer/review/provenance tests, official online provenance readback, workflow syntax and SPEC coverage checks passed locally. The original pin checks and their refusal cases are retained. This does not claim that the revised PR's full CI or production rollout has completed.
+
+## Review-tools activation-window boundary (2026-10-22)
+
+Code-only: the helper now reads a fresh clock immediately before each Graph request. If the test-phone lookup finishes at or after the activation deadline, sending and template creation stop before any POST. A deterministic asynchronous regression covers both mutations exactly at expiry and after expiry. All 26 targeted observer/review/provenance tests, full TypeScript checking and targeted ESLint passed locally. WhatsApp requests in these tests are mocked; this evidence does not claim a real Graph action, message delivery, template creation or production deployment.
+
+## Review-tools shared-budget isolation (2026-10-22)
+
+Code-only: an exhausted per-user review budget now returns 429 before consuming the shared sandbox budget. A route regression uses the actual rate limiter: one administrator completes four operations, eight fresh-request retries are denied without any shared-budget consumption, and a second administrator can still complete four operations. All 27 targeted observer/review/provenance tests, full TypeScript checking and targeted ESLint passed locally. WhatsApp operations are mocked in these tests; no real Graph action, message delivery, template creation or deployment is claimed.

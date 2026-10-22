@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import type { PilotConversation } from "@/lib/whatsapp-pilot.mjs";
+import WhatsAppReviewTools from "./whatsapp-review-tools";
 
 type Status = {
   state: string; configured: boolean; since?: string; last_received_at?: string | null;
@@ -71,5 +72,6 @@ export default function WhatsAppPilot() {
       })}
       <p className="text-xs text-muted-foreground">{zh ? "跨号码交接以 OS 的分配记录另行核对；本页不将主号收件时间当成销售接单时间。" : "Cross-number handoff must be checked against OS assignment records. Intake time is not a salesperson's assignment time."}</p>
     </>}
+    <WhatsAppReviewTools />
   </section>;
 }

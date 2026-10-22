@@ -2,7 +2,7 @@
 
 The observer-only provisioning gate remains unchanged. A separate operation
 admits only the reviewed `20261022194620_whatsapp_privacy_lifecycle.sql` hash
-`b9b608b7a66b9b684bbd99a408ebee37c7d5f9a7edf8691d0494aeef13190748`.
+`a1a4a9d34fb56d81fa0a42c0d355b6370f05811c1b2b10e196aaacf8e391aeab`.
 The review fixture is byte-identical SQL, not an alternative deployment path.
 
 First merge the coordinator, the new policy gate, its refusal tests and fixture,

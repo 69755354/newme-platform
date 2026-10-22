@@ -13,7 +13,7 @@ function input() {
     required_for_app: [{ version: "20260806000000", file: "20260806000000_expand.sql", sha256: "a".repeat(64) }],
     deferred_contract: [{ version: "20260818000000", file: "20260818000000_contract.sql", sha256: "b".repeat(64) }, entry(OBSERVER)] };
   const candidate = structuredClone(live); candidate.deferred_contract.push(entry(PRIVACY));
-  return { live, candidate, sql, phase: "strict", recordedVersions: [OBSERVER.version], existingObjects: [], enabledChannels: 0 };
+  return { live, candidate, sql, phase: "strict", recordedVersions: [OBSERVER.version], existingObjects: [], ownershipMismatches: [], enabledChannels: 0 };
 }
 const refuses = (state, pattern) => assert.match(judgePrivacyProvisioning(state).problems.join("; "), pattern);
 test("only the reviewed privacy suffix with disabled channels is accepted", () => {
@@ -36,6 +36,15 @@ test("missing observer, additional migration and edited SQL each refuse", () => 
   refuses({ ...input(), sql: sql + "\ngrant all on public.leads to anon;" }, /immutable hash/);
 });
 test("SQL hash normalizes Windows line endings", () => assert.deepEqual(judgePrivacyProvisioning({ ...input(), sql: sql.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n") }).problems, []));
+test("missing ownership proof and unexpected object owners refuse", () => {
+  refuses({ ...input(), ownershipMismatches: undefined }, /ownership/);
+  refuses({ ...input(), ownershipMismatches: ["whatsapp_privacy.admit_event()"] }, /ownership/);
+  assert.ok(PRIVACY.objects.includes("schema:whatsapp_privacy"));
+  assert.ok(PRIVACY.objects.includes("whatsapp_privacy.admit_event()"));
+  assert.ok(PRIVACY.objects.includes("trigger:whatsapp_privacy_admission"));
+  assert.ok(sql.indexOf("lock table public.whatsapp_pilot_channels in share row exclusive mode") < sql.indexOf("create schema"));
+  assert.match(sql, /raise exception 'whatsapp_channels_must_be_disabled'/);
+});
 for (const object of PRIVACY.objects) {
   test(`unrecorded collision or missing recorded ${object} refuses`, () => {
     refuses({ ...input(), existingObjects: [object] }, /presence.*recorded/);

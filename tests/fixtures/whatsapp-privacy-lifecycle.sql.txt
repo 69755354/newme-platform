@@ -1,6 +1,14 @@
 -- NO_ROLLBACK: Erasure cannot be undone. Keep admission/suppression guards when reverting the app.
 -- This migration never enables a channel and never changes CRM/accounting records.
 begin;
+-- Serialize the disabled-channel invariant with concurrent service updates.
+-- The lock remains held through every schema change and migration commit.
+lock table public.whatsapp_pilot_channels in share row exclusive mode;
+do $$ begin
+  if exists (select from public.whatsapp_pilot_channels where enabled) then
+    raise exception 'whatsapp_channels_must_be_disabled';
+  end if;
+end $$;
 create schema if not exists whatsapp_privacy;
 revoke all on schema whatsapp_privacy from public, anon, authenticated, service_role;
 do $$ begin

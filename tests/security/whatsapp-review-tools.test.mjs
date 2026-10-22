@@ -28,9 +28,9 @@ test("test access is off by default and requires a bounded explicit UTC window a
 
 test("disabled or malformed actions make no network calls", async () => {
   let calls = 0; const fetchImpl = async () => { calls++; throw new Error("must not run"); };
-  await assert.rejects(performReviewAction("send_hello_world", randomUUID(), { env: {}, now, fetchImpl }), failure("review_tools_disabled"));
-  await assert.rejects(performReviewAction("send_arbitrary_message", randomUUID(), { env: environment(), now, fetchImpl }), failure("invalid_action"));
-  await assert.rejects(performReviewAction("send_hello_world", "../../anything", { env: environment(), now, fetchImpl }), failure("invalid_action"));
+  await assert.rejects(performReviewAction("send_hello_world", randomUUID(), { env: {}, clock: () => now, fetchImpl }), failure("review_tools_disabled"));
+  await assert.rejects(performReviewAction("send_arbitrary_message", randomUUID(), { env: environment(), clock: () => now, fetchImpl }), failure("invalid_action"));
+  await assert.rejects(performReviewAction("send_hello_world", "../../anything", { env: environment(), clock: () => now, fetchImpl }), failure("invalid_action"));
   assert.equal(calls, 0);
 });
 
@@ -38,14 +38,14 @@ test("a mismatch in either test phone ID or visible test sender prevents every m
   for (const data of [{ data: [] }, { data: {} }, { data: [{ id: "actual-business-phone", display_phone_number: "+1 555 664 0296" }] },
     { data: [{ id: REVIEW_SANDBOX.phoneId, display_phone_number: "+971 54 442 6461" }] }]) {
     let calls = 0;
-    await assert.rejects(performReviewAction("send_hello_world", randomUUID(), { env: environment(), now, fetchImpl: async () => { calls++; return json(data); } }), failure("sandbox_binding_failed"));
+    await assert.rejects(performReviewAction("send_hello_world", randomUUID(), { env: environment(), clock: () => now, fetchImpl: async () => { calls++; return json(data); } }), failure("sandbox_binding_failed"));
     assert.equal(calls, 1);
   }
 });
 
 test("the send operation uses only the fixed test sender, fixed recipient and official hello_world template", async () => {
   const calls = []; const env = environment();
-  const result = await performReviewAction("send_hello_world", randomUUID(), { env, now, fetchImpl: async (url, init) => {
+  const result = await performReviewAction("send_hello_world", randomUUID(), { env, clock: () => now, fetchImpl: async (url, init) => {
     calls.push({ url, init }); return json(calls.length === 1 ? phones() : { messages: [{ id: "wamid.review-message-1" }] });
   } });
   assert.equal(calls.length, 2);
@@ -62,7 +62,7 @@ test("the send operation uses only the fixed test sender, fixed recipient and of
 
 test("creating a template addresses only the fixed test WABA and never calls messages", async () => {
   const calls = []; const id = randomUUID();
-  const result = await performReviewAction("create_template", id, { env: environment(), now, fetchImpl: async (url, init) => {
+  const result = await performReviewAction("create_template", id, { env: environment(), clock: () => now, fetchImpl: async (url, init) => {
     calls.push({ url, init }); return json(calls.length === 1 ? phones() : { id: "123456", status: "PENDING" });
   } });
   assert.equal(calls[1].url, `https://graph.facebook.com/v26.0/${REVIEW_SANDBOX.wabaId}/message_templates`);
@@ -76,17 +76,48 @@ test("creating a template addresses only the fixed test WABA and never calls mes
 
 test("connection checks do not issue a mutation", async () => {
   let calls = 0;
-  const result = await performReviewAction("check_connection", randomUUID(), { env: environment(), now, fetchImpl: async (_url, init) => {
+  const result = await performReviewAction("check_connection", randomUUID(), { env: environment(), clock: () => now, fetchImpl: async (_url, init) => {
     calls++; assert.equal(init.method, "GET"); return json(phones());
   } });
   assert.equal(calls, 1); assert.equal(result.ok, true);
+});
+
+test("expiry while the binding lookup is pending prevents either mutation at or after the deadline", async () => {
+  for (const action of ["send_hello_world", "create_template"]) {
+    for (const offset of [0, 1]) {
+      const env = environment();
+      const expiry = Date.parse(env.WHATSAPP_REVIEW_TOOLS_UNTIL);
+      let currentTime = expiry - 1;
+      const calls = [];
+      let releaseLookup;
+      const lookupPending = new Promise(resolve => { releaseLookup = resolve; });
+      let markLookupStarted;
+      const lookupStarted = new Promise(resolve => { markLookupStarted = resolve; });
+      const operation = performReviewAction(action, randomUUID(), {
+        env, clock: () => currentTime,
+        fetchImpl: async (_url, init) => {
+          calls.push(init.method);
+          markLookupStarted();
+          await lookupPending;
+          return json(phones());
+        },
+      });
+      const refused = assert.rejects(operation, error => error instanceof ReviewToolsError
+        && error.code === "review_tools_disabled" && error.status === 503 && error.uncertain === false);
+      await lookupStarted;
+      currentTime = expiry + offset;
+      releaseLookup();
+      await refused;
+      assert.deepEqual(calls, ["GET"], `${action}, deadline offset ${offset}`);
+    }
+  }
 });
 
 test("network loss and upstream 5xx after a mutation are uncertain and never auto-retried", async () => {
   for (const kind of ["network", "server", "oversize", "malformed", "secret_echo"]) {
     let calls = 0; const env = environment();
     try {
-      await performReviewAction("send_hello_world", randomUUID(), { env, now, fetchImpl: async () => {
+      await performReviewAction("send_hello_world", randomUUID(), { env, clock: () => now, fetchImpl: async () => {
         calls++; if (calls === 1) return json(phones());
         if (kind === "network") throw new Error(`private detail ${env.WHATSAPP_REVIEW_ACCESS_TOKEN}`);
         if (kind === "server") return json({ error: { code: 2, message: env.WHATSAPP_APP_SECRET } }, 500);

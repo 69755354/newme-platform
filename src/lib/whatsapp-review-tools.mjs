@@ -48,15 +48,18 @@ function safeBody(data, action) {
 }
 
 export async function performReviewAction(action, requestId, {
-  env = process.env, now = Date.now(), fetchImpl = fetch,
+  env = process.env, clock = Date.now, fetchImpl = fetch,
 } = {}) {
-  if (!reviewToolsConfig(env, now).enabled) throw new ReviewToolsError("review_tools_disabled", { status: 503 });
+  if (!reviewToolsConfig(env, clock()).enabled) throw new ReviewToolsError("review_tools_disabled", { status: 503 });
   if (!REVIEW_ACTIONS.includes(action) || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(requestId)) {
     throw new ReviewToolsError("invalid_action", { status: 400 });
   }
   const token = env.WHATSAPP_REVIEW_ACCESS_TOKEN;
   const proof = createHmac("sha256", env.WHATSAPP_APP_SECRET).update(token).digest("hex");
   async function graph(path, payload) {
+    // The preceding lookup can outlive the activation window. Check again
+    // immediately before each request, before a mutation can reach Meta.
+    if (!reviewToolsConfig(env, clock()).enabled) throw new ReviewToolsError("review_tools_disabled", { status: 503 });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15_000);
     let response;

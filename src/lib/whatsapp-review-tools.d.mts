@@ -8,5 +8,5 @@ export class ReviewToolsError extends Error {
   code: string; status: number; metaCode?: number; uncertain: boolean;
   constructor(code: string, options?: { status?: number; metaCode?: number; uncertain?: boolean });
 }
-export function performReviewAction(action: ReviewAction, requestId: string, options?: { env?: NodeJS.ProcessEnv; now?: number; fetchImpl?: typeof fetch }): Promise<ReviewResult>;
+export function performReviewAction(action: ReviewAction, requestId: string, options?: { env?: NodeJS.ProcessEnv; clock?: () => number; fetchImpl?: typeof fetch }): Promise<ReviewResult>;
 export function runReviewAttempt(actor: string, action: ReviewAction, requestId: string, work: () => Promise<ReviewResult>, now?: number): Promise<ReviewResult>;

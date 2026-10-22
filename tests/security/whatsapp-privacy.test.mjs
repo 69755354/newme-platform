@@ -46,7 +46,8 @@ test("scheduled worker executes through a release symlink but remains inert when
     const current = join(root, "current");
     fs.mkdirSync(release);
     fs.copyFileSync(new URL("../../scripts/whatsapp-privacy-maintenance.mjs", import.meta.url), join(release, "worker.mjs"));
-    fs.symlinkSync(release, current, process.platform === "win32" ? "junction" : "dir");
+    // Junction selects a directory link on Windows; other platforms ignore the type.
+    fs.symlinkSync(release, current, "junction");
     const preload = join(root, "deny-root.mjs");
     // Stop at the first CLI guard: the child cannot read a real runtime file or call the network.
     fs.writeFileSync(preload, "process.getuid = () => 1000;\n");

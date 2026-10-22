@@ -27,6 +27,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_whatsapp_privacy_security_refresh_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_privacy_provisioning_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_review_window_recheck_code | DONE | Codex | 2026-10-22 |
 | task_whatsapp_review_ci_metadata_code | DONE | Codex | 2026-10-22 |
@@ -665,3 +666,7 @@ Canonical acceptance is verified for application release 1f1b894655e98388d51efe4
 ## WhatsApp privacy provisioning capability (2026-10-23)
 
 Code-only: a separate exact-hash gate permits the reviewed privacy lifecycle suffix after the complete unchanged strict prefix, recorded observer and disabled channels. Existing observer-only permissions are unchanged. Forty new policy/coordinator tests and the existing observer gate tests passed; the SQL review fixture passed twelve full-schema PostgreSQL behavior groups including real concurrent erasure in both orders. This capability alone applies no migration, enables no channel and changes no live app. Canonical bootstrap, actual migration/application release and acceptance remain separate operations.
+
+## Privacy release dependency security prerequisite (2026-10-23)
+
+The first privacy control-plane CI run was correctly blocked by newly indexed Next.js and Sentry advisories. The candidate now pins Next/ESLint/analyzer 16.4.1 and Sentry 10.75.2, retains the exact-hash glob compatibility patch, explicitly denies every locked third-party install script and has zero high/critical findings in the official npm audit. No exception or gate bypass was introduced. Full CI and actual application deployment remain separate evidence.

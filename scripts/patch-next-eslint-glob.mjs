@@ -9,7 +9,7 @@ const ORIGINAL = "886677432990a735e5ebdfb345ff1cbd40e264f9947a8432eeeb254b3a926b
 const PATCHED = "1f503e07e1a7ca2889f8be8efbe5330f787f0febb7bd5ce024b7d7b103bf4470";
 const digest = (source) => createHash("sha256").update(source).digest("hex");
 
-// The verified 16.3.8 npm tarball is documented in docs/security/next-eslint-glob.md.
+// The verified 16.4.1 npm tarball is documented in docs/security/next-eslint-glob.md.
 // tinyglobby's default relative output differs on cross-volume Windows paths.
 // Explicit absolute paths preserve the directory consumers' path.join/existsSync
 // behavior; expandDirectories:false preserves fast-glob's literal-root behavior.
@@ -29,7 +29,7 @@ export function applyNextEslintGlobPatch(root = ROOT) {
   // helper or vulnerable development chain to patch.
   if (!existsSync(manifest)) return "Next ESLint dev tooling absent; no patch needed";
   const plugin = JSON.parse(readFileSync(manifest, "utf8"));
-  if (plugin.name !== "@next/eslint-plugin-next" || plugin.version !== "16.3.8") {
+  if (plugin.name !== "@next/eslint-plugin-next" || plugin.version !== "16.4.1") {
     throw new Error("Next ESLint version changed; review the compatibility patch before installing");
   }
   const require = createRequire(manifest);

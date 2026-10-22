@@ -56,3 +56,7 @@ published fix removes the moderate finding. Existing supply-chain thresholds,
 exception policy, registry/integrity checks and dependency script denials remain
 in force. Future Next upgrades must review or retire this scoped override and
 two-option patch together, and rerun the consumer behavior tests.
+
+## Security refresh (2026-10-23)
+
+Next, its ESLint configuration and analyzer are upgraded together to 16.4.1; Sentry Next.js is pinned to 10.75.2. Official advisories GHSA-2464-fhr4-w9xw, GHSA-p3m5-59mp-jv5r, GHSA-673q-mjm6-r5xr and GHSA-mchm-gjx6-7h55 required these fixes. The official 16.4.1 ESLint plugin tarball was checked against its npm SHA512 integrity; its original get-root-dirs helper has the identical reviewed SHA256 886677432990a735e5ebdfb345ff1cbd40e264f9947a8432eeeb254b3a926bde. The existing byte-checked compatibility transformation and refusal on unknown bytes remain unchanged. All locked third-party install scripts remain explicitly denied. Official npm audit returned zero high/critical findings before publication; full CI follows on the new head. No vulnerability exception is added.

@@ -46,7 +46,7 @@ export default function WhatsAppPrivacy() {
   return <section className="rounded-xl border border-border p-4 space-y-3" aria-label={zh ? "WhatsApp 数据删除" : "WhatsApp data deletion"}>
     <div className="flex items-center justify-between gap-3"><h3 className="font-semibold">{zh ? "数据保留与客户删除" : "Retention and customer deletion"}</h3>
       <button type="button" onClick={load} className="text-sm underline">{zh ? "刷新回执" : "Refresh receipts"}</button></div>
-    <p className="text-sm text-muted-foreground">{zh ? "试点事件最多保留 30 天，从第 29 天开始自动清理。此处删除两个试点号码的关联记录；不会删除手机聊天或 CRM 合同、交易记录。" : "Pilot events are retained for at most 30 days; cleanup starts on day 29. Deletion covers both pilot channels, not phone chats or CRM contracts and transactions."}</p>
+    <p className="text-sm text-muted-foreground">{zh ? "试点事件按 30 天保留策略处理，从第 29 天开始定期清理。连续 15 分钟未清理成功时暂停新增采集并提醒管理员；已有记录需等待清理恢复。此处删除两个试点号码的关联记录，不会删除手机聊天或 CRM 合同、交易记录。" : "Pilot events follow a 30-day retention policy, with scheduled cleanup from day 29. After 15 minutes without successful cleanup, new collection pauses and an administrator is alerted; existing records await resumed cleanup. Deletion covers both pilot channels, excluding phone chats and CRM contracts and transactions."}</p>
     <p role="status" className={data?.healthy ? "text-sm" : "text-sm text-amber-600"}>{data ? (data.healthy ? (zh ? "自动清理正常" : "Cleanup healthy") : (zh ? "清理需要处理，采集暂不应开启" : "Cleanup needs attention; keep capture disabled")) : (zh ? "清理状态暂不可用" : "Cleanup status unavailable")}
       {data && ` · ${zh ? "最近清理" : "Last cleanup"}: ${date(data.last_cleanup_at)}`}</p>
     {data && (data.pending_requests > 0 || data.expired_records > 0) && <p className="text-sm text-amber-600">
@@ -64,6 +64,6 @@ export default function WhatsAppPrivacy() {
     {data && data.receipts.length > 0 && <div className="overflow-auto"><table className="w-full text-left text-xs"><thead><tr>
       {(zh ? ["请求编号", "状态", "删除条数", "完成时间（迪拜）"] : ["Request ID", "Status", "Deleted", "Completed (Dubai)"]).map(title => <th key={title} className="p-2">{title}</th>)}
       </tr></thead><tbody>{data.receipts.map(r => <tr key={r.request_id} className="border-t border-border"><td className="p-2 font-mono">{r.request_id}</td><td className="p-2">{r.state === "completed" ? (zh ? "已完成" : "Completed") : (zh ? "待处理" : "Pending")}</td><td className="p-2">{r.deleted_count}</td><td className="p-2 whitespace-nowrap">{date(r.completed_at)}</td></tr>)}</tbody></table></div>}
-    <p className="text-xs text-muted-foreground">{zh ? "这里只显示不含手机号的回执。邮件或其他支持记录需另行处理；隔离备份按轮换和恢复程序处理。" : "Receipts exclude phone numbers. Correspondence and other support records need separate handling. Isolated backups follow rotation and restore procedures."}</p>
+    <p className="text-xs text-muted-foreground">{zh ? "这里只显示不含手机号的回执。邮件或其他支持记录需另行处理；备份副本需按单独的保留和恢复流程处理。" : "Receipts exclude phone numbers. Correspondence and other support records need separate handling. Backup copies require separate retention and restore handling."}</p>
   </section>;
 }

@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import test from "node:test";
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { deletionCustomerKey, readDeletionInput } from "../../src/lib/whatsapp-privacy.mjs";
 import { runWhatsAppMaintenance } from "../../scripts/whatsapp-privacy-maintenance.mjs";
@@ -34,6 +38,33 @@ test("bounded input rejects declared and streamed oversize before parsing", asyn
 
 const config = { url: "https://vfopmpxlhwzpxqegayew.supabase.co", key: "synthetic-test-value-not-a-credential" };
 const receipt = { completed_at: "2026-10-22T19:00:00Z", deleted_expired: 2, completed_requests: 1, backlog: false };
+
+test("scheduled worker executes through a release symlink but remains inert when imported", () => {
+  const root = fs.mkdtempSync(join(tmpdir(), "newme-wa-entry-"));
+  try {
+    const release = join(root, "release");
+    const current = join(root, "current");
+    fs.mkdirSync(release);
+    fs.copyFileSync(new URL("../../scripts/whatsapp-privacy-maintenance.mjs", import.meta.url), join(release, "worker.mjs"));
+    // Junction selects a directory link on Windows; other platforms ignore the type.
+    fs.symlinkSync(release, current, "junction");
+    const preload = join(root, "deny-root.mjs");
+    // Stop at the first CLI guard: the child cannot read a real runtime file or call the network.
+    fs.writeFileSync(preload, "process.getuid = () => 1000;\n");
+    const worker = join(current, "worker.mjs");
+    const cli = spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, worker], { encoding: "utf8", timeout: 10_000 });
+    assert.equal(cli.status, 1, cli.stderr);
+    assert.equal(cli.stdout, "");
+    assert.match(cli.stderr, /^WHATSAPP_PRIVACY_MAINTENANCE_FAILED\r?\n$/);
+    const imported = spawnSync(process.execPath, ["--input-type=module", "-e", `await import(${JSON.stringify(pathToFileURL(worker).href)})`], { encoding: "utf8", timeout: 10_000 });
+    assert.equal(imported.status, 0, imported.stderr);
+    assert.equal(imported.stdout + imported.stderr, "");
+  } finally {
+    assert.equal(fs.realpathSync(dirname(root)), fs.realpathSync(tmpdir()));
+    assert.match(basename(root), /^newme-wa-entry-/);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 test("worker invokes only the fixed cleanup RPC and returns an allowlisted receipt", async () => {
   let calls = 0;
   const result = await runWhatsAppMaintenance({ ...config, fetchImpl: async (url, options) => {

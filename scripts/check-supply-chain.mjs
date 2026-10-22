@@ -11,7 +11,6 @@ const XLSX_HASH = "7385d8ea33c4feaa85e0f27430f7631c142d07c0a052f9f5e73b5fddb88ac
 const ALTERNATIVE_LOCKFILES = ["pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"];
 const OFFICIAL_NPM_REGISTRY = "https://registry.npmjs.org/";
 const EXPECTED_ALLOW_SCRIPTS = {
-  "@0.1.0": false,
   "@sentry/cli@2.58.6": false,
   "fsevents@2.3.2": false,
   "unrs-resolver@1.12.2": false

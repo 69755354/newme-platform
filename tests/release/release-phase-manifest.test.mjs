@@ -65,10 +65,11 @@ test("the committed manifest describes this tree", () => {
   // disabled-pilot provisioning. No historical migration is renumbered.
   const pending = cliFiles.filter((file) => file.slice(0, 14) > manifest.production_stamp);
   assert.equal(manifest.required_for_app.length + manifest.deferred_contract.length, pending.length);
-  assert.equal(manifest.deferred_contract.length, 3);
+  assert.equal(manifest.deferred_contract.length, 4);
   assert.match(manifest.deferred_contract[0].file, /^20260818000000_money_direct_write_contract_phase\.sql$/);
   assert.equal(manifest.deferred_contract[1].file, "20261019104004_whatsapp_pilot_events.sql");
   assert.equal(manifest.deferred_contract[2].file, "20261022194620_whatsapp_privacy_lifecycle.sql");
+  assert.equal(manifest.deferred_contract[3].file, "20261023020000_whatsapp_privacy_rpc_owner.sql");
 });
 
 test("a pending migration that no phase claims fails the gate", () => {

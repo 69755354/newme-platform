@@ -60,6 +60,12 @@ def event(mid, channel=channel_a, customer=key_a, at="clock_timestamp()-interval
 assert query("select count(*) from public.whatsapp_pilot_channels;") == "0"
 assert query("select count(*) from public.whatsapp_pilot_events;") == "0"
 assert query("select current_setting('server_version_num')::int/10000;") == "17"
+# Hosted auth schemas need not give a migration account grant option. The fixed
+# RPC must work without granting that schema to the retired NOLOGIN role.
+query("revoke usage on schema auth from newme_whatsapp_maintenance;")
+query("set role newme_whatsapp_maintenance; select auth.uid();", "42501")
+assert query("select (select pg_get_userbyid(proowner) from pg_proc where oid='public.maintain_whatsapp_privacy()'::regprocedure)='postgres';") == "t"
+passed("hosted auth-schema grant restriction is reproduced and cleanup has the reviewed trusted owner")
 query(f"""
 insert into auth.users(id,email,email_confirmed_at) values
 ('{boss}','privacy-boss@example.invalid',now()),('{sales}','privacy-sales@example.invalid',now()),

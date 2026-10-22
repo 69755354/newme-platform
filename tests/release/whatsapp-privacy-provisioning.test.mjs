@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
-import { judgePrivacyProvisioning, PRIVACY } from "../../scripts/check-whatsapp-privacy-provisioning.mjs";
+import { judgePrivacyProvisioning, PRIVACY, PRIVACY_REPAIR } from "../../scripts/check-whatsapp-privacy-provisioning.mjs";
 import { OBSERVER } from "../../scripts/check-whatsapp-provisioning.mjs";
 
 const bash = process.env.NEWME_TEST_BASH || (process.platform === "win32" && fs.existsSync("C:/Program Files/Git/bin/bash.exe") ? "C:/Program Files/Git/bin/bash.exe" : "bash");
 const sql = fs.readFileSync(new URL("../fixtures/whatsapp-privacy-lifecycle.sql.txt", import.meta.url), "utf8");
+const repairSql = fs.readFileSync(new URL("../fixtures/whatsapp-privacy-rpc-owner.sql.txt", import.meta.url), "utf8");
 const entry = ({ version, file, sha256 }) => ({ version, file, sha256 });
 function input() {
   const live = { runs_under: { database_phases: ["compat", "strict"] },
@@ -32,8 +33,27 @@ for (const field of ["version", "file", "sha256"]) {
 }
 test("missing observer, additional migration and edited SQL each refuse", () => {
   const a = input(); a.recordedVersions = []; refuses(a, /observer prerequisite/);
-  const b = input(); b.candidate.deferred_contract.push(entry(PRIVACY)); refuses(b, /exactly one/);
+  const b = input(); b.candidate.deferred_contract.push(entry(PRIVACY)); refuses(b, /additional migrations/);
   refuses({ ...input(), sql: sql + "\ngrant all on public.leads to anon;" }, /immutable hash/);
+});
+
+for (const liveHasPrivacy of [false, true]) test(`exact owner repair after recorded privacy, live declaration ${liveHasPrivacy}`, () => {
+  const s = input(); s.recordedVersions.push(PRIVACY.version); s.existingObjects = [...PRIVACY.objects];
+  s.repairSql = repairSql; s.candidate.deferred_contract.push(entry(PRIVACY_REPAIR));
+  if (liveHasPrivacy) s.live.deferred_contract.push(entry(PRIVACY));
+  assert.deepEqual(judgePrivacyProvisioning(s), { problems: [], version: PRIVACY_REPAIR.version, alreadyRecorded: false });
+  s.recordedVersions.push(PRIVACY_REPAIR.version);
+  assert.deepEqual(judgePrivacyProvisioning(s), { problems: [], version: PRIVACY_REPAIR.version, alreadyRecorded: true });
+});
+
+test("owner repair refuses unrecorded prerequisite, changed bytes, other suffixes and missing declaration", () => {
+  const s = input(); s.repairSql = repairSql; s.candidate.deferred_contract.push(entry(PRIVACY_REPAIR));
+  refuses(s, /reviewed privacy/);
+  s.recordedVersions.push(PRIVACY.version); s.existingObjects = [...PRIVACY.objects];
+  refuses({ ...s, repairSql: repairSql + "\ngrant all on public.leads to anon;" }, /repair SQL/);
+  const changed = structuredClone(s); changed.candidate.deferred_contract.at(-1).sha256 += "x"; refuses(changed, /reviewed privacy/);
+  const undeclared = input(); undeclared.recordedVersions.push(PRIVACY.version, PRIVACY_REPAIR.version);
+  undeclared.existingObjects = [...PRIVACY.objects]; refuses(undeclared, /must remain declared/);
 });
 test("SQL hash normalizes Windows line endings", () => assert.deepEqual(judgePrivacyProvisioning({ ...input(), sql: sql.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n") }).problems, []));
 test("missing ownership proof and unexpected object owners refuse", () => {

@@ -20,6 +20,13 @@ allowlist remain unchanged.
 
 Then merge the application release with the new migration as exactly one later
 `deferred_contract` suffix. Run fresh protected manual CI on that exact main SHA.
+If its initial cleanup triggers an application rollback because a hosted auth
+schema refused the dedicated role, keep that already recorded migration intact.
+The exact later owner repair is separately hash-bound; the gate admits only that
+recorded-original repair path, described in
+[fixed RPC compatibility](whatsapp-privacy-rpc-repair.md). It changes two fixed
+routine owners and retires direct table rights from the unused role; it does not
+change function bodies or external EXECUTE grants.
 The candidate must contain the live release; the complete live strict posture,
 unchanged required set and deferred prefix, observer history, disabled channels,
 new-object inventory and immutable SQL bytes are checked before any application:

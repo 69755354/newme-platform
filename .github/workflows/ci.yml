@@ -666,6 +666,11 @@ jobs:
           createdb --template history newme_whatsapp_privacy_test
           PGDATABASE=newme_whatsapp_privacy_test python3 tests/database/whatsapp-privacy.py
 
+      - name: Meta ads atomic writer and cross-process coordination
+        run: |
+          createdb --template history newme_ads_atomic_test
+          PGDATABASE=newme_ads_atomic_test python3 tests/database/meta-ads-atomic.py
+
       # Round-4 C4. The remote-history gate decides "production ran this release's
       # SQL" by comparing a digest the server computes over the recorded
       # statements with one this repository computes over its own migration files.

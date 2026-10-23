@@ -1784,13 +1784,14 @@ ROLLBACK_SHA=""
 if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
   DB_TRANSITION_OPERATION=${3:-}
   if [ "$#" -ne 3 ] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "usage: newme-deploy db-transition <main-sha> <successful-run-id> <expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter|whatsapp-plan|whatsapp-provision|whatsapp-privacy-plan|whatsapp-privacy-provision>" >&2
+    echo "usage: newme-deploy db-transition <main-sha> <successful-run-id> <expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter|whatsapp-plan|whatsapp-provision|whatsapp-privacy-plan|whatsapp-privacy-provision|meta-ads-plan|meta-ads-provision>" >&2
     exit 64
   fi
   case "$DB_TRANSITION_OPERATION" in
     expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter) ;;
     whatsapp-plan|whatsapp-provision) ;;
     whatsapp-privacy-plan|whatsapp-privacy-provision) ;;
+    meta-ads-plan|meta-ads-provision) ;;
     *) exit 64 ;;
   esac
 else
@@ -2222,6 +2223,18 @@ if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
     require_canonical_main_sha "$SHA" || exit 65
     require_ci_gate_still_fresh || exit 65
   fi
+  # Additive ads writer: exact reviewed SQL only, after the complete live prefix.
+  if [ "$DB_TRANSITION_OPERATION" = meta-ads-plan ] || [ "$DB_TRANSITION_OPERATION" = meta-ads-provision ]; then
+    git --git-dir="$MIRROR" merge-base --is-ancestor "$ROLLBACK_SHA" "$SHA" || exit 65
+    "$NODE_BIN" "$LIVE_RELEASE/scripts/db-phase-push.mjs" \
+      --phase deferred_contract --verify-only \
+      --url-file "$MIGRATION_DB_URL_FILE" --modules-dir "$LIVE_RELEASE/node_modules"
+    "$NODE_BIN" "$WORKTREE/scripts/check-meta-ads-provisioning.mjs" \
+      --live-release "$LIVE_RELEASE" --candidate-release "$WORKTREE" \
+      --url-file "$MIGRATION_DB_URL_FILE" --modules-dir "$LIVE_RELEASE/node_modules"
+    require_canonical_main_sha "$SHA" || exit 65
+    require_ci_gate_still_fresh || exit 65
+  fi
   case "$DB_TRANSITION_OPERATION" in
     expand-plan)
       "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
@@ -2254,6 +2267,14 @@ if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
       [ "$DB_TRANSITION_OPERATION" != whatsapp-privacy-provision ] || privacy_mode=--apply
       "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
         --phase deferred_contract "$privacy_mode" \
+        --url-file "$MIGRATION_DB_URL_FILE" \
+        --modules-dir "$LIVE_RELEASE/node_modules"
+      ;;
+    meta-ads-plan|meta-ads-provision)
+      ads_mode=--plan
+      [ "$DB_TRANSITION_OPERATION" != meta-ads-provision ] || ads_mode=--apply
+      "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
+        --phase deferred_contract "$ads_mode" \
         --url-file "$MIGRATION_DB_URL_FILE" \
         --modules-dir "$LIVE_RELEASE/node_modules"
       ;;

@@ -682,3 +682,7 @@ Prepublication Linux checks and canonical CI are recorded separately below. Prod
 Prepublication validation on 2026-10-23: dependency installation, generated types, TypeScript, manifest, Supabase boundary, official zero-finding npm audit and full repository tests passed. Full tests ran in the pinned Playwright container without host runtime/configuration mounts or external networking. Thirteen isolated PostgreSQL behavior groups passed, including a service-role channel-enable race against provisioning. Canonical CI, deployment and live acceptance remain required.
 
 Public-definer entry correction: every public privacy routine now begins with the canonical session assertion, including the identity-free server maintenance entry. The SQL fixture, exact provisioning hash and two changed function-body digests are bound together. Thirteen isolated database behavior groups, the global definer-entry inventory, exact owner/body posture and full isolated repository suite passed again. Production application deployment remains separately gated.
+
+Postdeploy acceptance verified.
+
+<!-- postdeploy-acceptance-sha256:f4ff68478e6ad6ad8e9d35ec41c9ba5de4dd37964c6039c936e785bd3497db45 -->

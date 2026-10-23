@@ -1,11 +1,31 @@
 // RBAC: user (authenticated)
-import { createServerSupabase, getRefreshedCookies, getRefreshAttempted, getRefreshFailure } from "@/lib/supabase-server";
+import { createServerSupabase, getRefreshedCookies, getRefreshAttempted, getRefreshFailure, type RefreshedCookie } from "@/lib/supabase-server";
 import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
 import { logger } from "@/lib/logger";
 import { NextResponse } from "next/server";
 
 const LEGACY_COOKIE_NAMES = ["sb-access-token", "sb-refresh-token"];
 const PRIVATE_NO_STORE = "private, no-store, max-age=0, must-revalidate";
+
+const AUTH_TIMEOUT_MS = 3_000;
+
+class AuthTimeoutError extends Error {}
+
+async function withAuthTimeout<T>(operation: PromiseLike<T>, deadline: number): Promise<T> {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new AuthTimeoutError("auth_timeout");
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new AuthTimeoutError("auth_timeout")), remaining);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
 
 function applyPrivateNoStore(response: NextResponse) {
   response.headers.set("Cache-Control", PRIVATE_NO_STORE);
@@ -61,31 +81,34 @@ function presentedTokenIssuedAt(bearerToken: string | undefined, cookieHeader: s
  */
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
+  const deadline = Date.now() + AUTH_TIMEOUT_MS;
+  let refreshedCookies: RefreshedCookie[] = [];
+  const respond = (body: Record<string, unknown>, init?: ResponseInit) => {
+    const response = applyPrivateNoStore(NextResponse.json(body, init));
+    for (const cookie of refreshedCookies) {
+      response.cookies.set(
+        cookie.name,
+        cookie.value,
+        cookie.options as Parameters<typeof response.cookies.set>[2],
+      );
+    }
+    return response;
+  };
   try {
     const bearerToken = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
     const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(bearerToken, cookieHeader);
-    const refreshedCookies = getRefreshedCookies(supabase);
+    const supabase = await withAuthTimeout(createServerSupabase(bearerToken, cookieHeader), deadline);
+    refreshedCookies = getRefreshedCookies(supabase);
     const refreshAttempted = getRefreshAttempted(supabase);
     const refreshFailure = getRefreshFailure(supabase);
-    const respond = (body: Record<string, unknown>, init?: ResponseInit) => {
-      const response = applyPrivateNoStore(NextResponse.json(body, init));
-      for (const cookie of refreshedCookies) {
-        response.cookies.set(
-          cookie.name,
-          cookie.value,
-          cookie.options as Parameters<typeof response.cookies.set>[2],
-        );
-      }
-      return response;
-    };
 
     const {
       data: { user },
       error: authError,
-    } = bearerToken
-      ? await supabase.auth.getUser(bearerToken)
-      : await supabase.auth.getUser();
+    } = await withAuthTimeout(
+      bearerToken ? supabase.auth.getUser(bearerToken) : supabase.auth.getUser(),
+      deadline,
+    );
 
     // Invalid or missing session → 401
     if (!user || authError) {
@@ -111,11 +134,14 @@ export async function GET(request: Request) {
 
     // Read the current user's own profile through RLS. Authentication must not
     // depend on a privileged service-role key that can be rotated independently.
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("role, is_active, force_password_change, full_name, email, password_changed_at")
-      .eq("id", user.id)
-      .single();
+    const { data: profile, error: profileError } = await withAuthTimeout(
+      supabase
+        .from("profiles")
+        .select("role, is_active, force_password_change, full_name, email, password_changed_at")
+        .eq("id", user.id)
+        .single(),
+      deadline,
+    );
 
     if (profileError) {
       logger.error({ request_id: requestId, operation: "auth_me", err: profileError });
@@ -175,6 +201,9 @@ export async function GET(request: Request) {
       fullName: profile.full_name ?? null,
     });
   } catch (err) {
+    if (err instanceof AuthTimeoutError) {
+      return respond({ error: "auth_unavailable" }, { status: 503 });
+    }
     logger.error({ request_id: requestId, operation: "auth_me", err });
     return applyPrivateNoStore(
       NextResponse.json({ error: "internal_error" }, { status: 500 }),

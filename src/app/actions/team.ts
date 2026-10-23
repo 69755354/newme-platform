@@ -47,10 +47,10 @@ export async function addTeamMember(data: AddTeamMemberInput) {
     throw new Error('Failed to create user')
   }
 
-  // Insert into public.profiles
+  // Complete the profile created by the auth.users trigger.
   const { error: profileError } = await supabaseAdmin
     .from('profiles')
-    .insert({
+    .upsert({
       id: authData.user.id,
       email: data.email,
       full_name: data.full_name,
@@ -58,7 +58,7 @@ export async function addTeamMember(data: AddTeamMemberInput) {
       phone: data.phone || null,
       is_active: true,
       force_password_change: true,
-    })
+    }, { onConflict: 'id' })
 
   if (profileError) {
     await supabaseAdmin.auth.admin.deleteUser(authData.user.id)

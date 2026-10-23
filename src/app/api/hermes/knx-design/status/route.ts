@@ -1,7 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/knx-task-store";
-import { getAuthProfile, isAdminOrBoss } from "@/lib/lead-auth";
+import { getAuthProfile, isAdminOrBoss, canAccessLead } from "@/lib/lead-auth";
 
 /**
  * GET /api/hermes/knx-design/status?task_id=xxx
@@ -42,7 +42,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
 
-    return NextResponse.json(task);
+    // Recheck current lead access on every poll, including after reassignment.
+    if (!task.lead_id || !(await canAccessLead(task.lead_id, profile, bearerToken, cookieHeader))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    return NextResponse.json({
+      status: task.status,
+      progress_pct: task.progress_pct,
+      progress_label: task.progress_label,
+      result: task.result,
+      error: task.error,
+    });
   } catch (err: any) {
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
     return NextResponse.json(

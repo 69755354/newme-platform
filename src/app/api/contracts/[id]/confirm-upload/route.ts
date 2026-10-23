@@ -50,6 +50,14 @@ export async function POST(
       );
     }
 
+    // Accept only keys the upload-url endpoint can issue, including its version.
+    const objectName = key.slice(expectedPrefix.length);
+    const versionMatch = /^(draft|sealed)_[a-zA-Z0-9_. -]+$/.exec(objectName);
+    if (!versionMatch) {
+      return NextResponse.json({ error: "Invalid contract upload key" }, { status: 400 });
+    }
+    const uploadVersion = versionMatch[1];
+
     // Verify the contract exists
     const { data: contract, error: contractErr } = await supabase
       .from("contracts")
@@ -77,6 +85,13 @@ export async function POST(
 
     if (!isAdminOrBoss && !isOwner) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (uploadVersion === "sealed" && !isAdminOrBoss) {
+      return NextResponse.json(
+        { error: "Only admin/boss can upload sealed contracts" },
+        { status: 403 }
+      );
     }
 
     // Build the file URL from COS config

@@ -27,6 +27,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_review_findings_fix_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_privacy_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_retention_admission_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_privacy_security_refresh_code | DONE | Codex | 2026-10-23 |
@@ -686,3 +687,7 @@ Public-definer entry correction: every public privacy routine now begins with th
 Postdeploy acceptance verified.
 
 <!-- postdeploy-acceptance-sha256:f4ff68478e6ad6ad8e9d35ec41c9ba5de4dd37964c6039c936e785bd3497db45 -->
+
+## Main review fixes (2026-10-23)
+
+Code-only follow-up to review of 43011dac66390d74ba37d82454edd3316ae44cb5: team profile provisioning with the Auth trigger, contract upload version authorization, KNX task lead access, and bounded authentication refresh. Completed source fixes with 26 targeted regressions, existing authentication boundary tests, typecheck, lint baseline and production build validation. Both team creation paths also passed against isolated local Supabase Auth with its real profile trigger, with synthetic users cleaned afterward. CI provenance source readback passed using the environment proxy. Full repository validation and independent review evidence are retained with the fix PR; production deployment and runtime acceptance are not claimed.

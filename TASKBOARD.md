@@ -27,6 +27,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_https_acceptance_channel_preparation_code | DONE | Codex | 2026-10-23 |
 | task_review_findings_fix_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_privacy_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_retention_admission_code | DONE | Codex | 2026-10-23 |
@@ -686,8 +687,12 @@ Public-definer entry correction: every public privacy routine now begins with th
 
 Postdeploy acceptance verified.
 
-<!-- postdeploy-acceptance-sha256:f4ff68478e6ad6ad8e9d35ec41c9ba5de4dd37964c6039c936e785bd3497db45 -->
+Prior release acceptance digest (archived for this successor from 43011dac66390d74ba37d82454edd3316ae44cb5): f4ff68478e6ad6ad8e9d35ec41c9ba5de4dd37964c6039c936e785bd3497db45
 
 ## Main review fixes (2026-10-23)
 
 Code-only follow-up to review of 43011dac66390d74ba37d82454edd3316ae44cb5: team profile provisioning with the Auth trigger, contract upload version authorization, KNX task lead access, and bounded authentication refresh. Completed source fixes with 26 targeted regressions, existing authentication boundary tests, typecheck, lint baseline and production build validation. Both team creation paths also passed against isolated local Supabase Auth with its real profile trigger, with synthetic users cleaned afterward. CI provenance source readback passed using the environment proxy. Full repository validation and independent review evidence are retained with the fix PR; production deployment and runtime acceptance are not claimed.
+
+## HTTPS acceptance channel and successor preparation (2026-10-23)
+
+Documented the production operator's Ed25519 acceptance API, fixed coordinator actions, durable run tokens, signed log continuation and the distinction between a log buffer's EOF and a completed process. Application release 30fff359feb8bad9f6021933118cdf86b8c971e7 deployed successfully with build BWKi8efvreZTbKRa_rTo1 through canonical CI 39929391068. Its canonical accept and attest completed with exit 0; signed status confirmed acceptance_verified and bundle digest 0056081f18764e918e08e43995a58a46af8864b459ff25de24c543965e99c0ff. Its inherited prior-release marker prevents a valid TASKBOARD-only closure, so it is not finalized. This ordinary successor preparation archives that complete prior digest and source commit before deployment. It changes no application source, migration, workflow, policy or verifier, and claims no acceptance for the successor. The existing accepted-release supersession path still gates deployment; the successor requires its own deployment, acceptance, closure CI and finalization.

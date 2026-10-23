@@ -75,13 +75,13 @@ function extractBearerToken(request: Request): string | undefined {
   return match?.[1];
 }
 
-async function withAuthTimeout<T>(operation: PromiseLike<T>, deadline: number): Promise<T> {
+async function withAuthTimeout<T>(operation: () => PromiseLike<T>, deadline: number): Promise<T> {
   const remaining = deadline - Date.now();
   if (remaining <= 0) throw new Error("auth_timeout");
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      operation,
+      operation(),
       new Promise<never>((_, reject) => {
         timeout = setTimeout(() => reject(new Error("auth_timeout")), remaining);
       }),
@@ -139,7 +139,7 @@ export async function getRequestAuthContext(
   const deadline = Date.now() + AUTH_TIMEOUT_MS;
   let supabase: Awaited<ReturnType<typeof createServerSupabase>>;
   try {
-    supabase = await withAuthTimeout(createServerSupabase(
+    supabase = await withAuthTimeout(() => createServerSupabase(
       extractBearerToken(request),
       request.headers.get("cookie") ?? "",
     ), deadline);
@@ -151,7 +151,7 @@ export async function getRequestAuthContext(
   let user: User | null = null;
   let authError: unknown = null;
   try {
-    const { data, error } = await withAuthTimeout(supabase.auth.getUser(), deadline);
+    const { data, error } = await withAuthTimeout(() => supabase.auth.getUser(), deadline);
     user = data.user;
     authError = error;
   } catch {
@@ -183,7 +183,7 @@ export async function getRequestAuthContext(
   // refusal, so it cannot be used as the freshness check itself.
   let boundaryState: unknown;
   try {
-    const { data, error } = await withAuthTimeout(supabase.rpc("session_boundary_state"), deadline);
+    const { data, error } = await withAuthTimeout(() => supabase.rpc("session_boundary_state"), deadline);
     if (error) throw error;
     boundaryState = data;
   } catch {
@@ -210,7 +210,7 @@ export async function getRequestAuthContext(
   let profileError: unknown = null;
   try {
     const { data, error } = await withAuthTimeout(
-      supabase
+      () => supabase
         .from("profiles")
         .select("id, role, is_active, full_name, email, force_password_change")
         .eq("id", user.id)

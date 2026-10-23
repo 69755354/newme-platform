@@ -170,7 +170,7 @@ test("login and the dashboard guard require an active profile", async () => {
   assert.doesNotMatch(authMe, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(authMe, /@supabase\/supabase-js/);
   // The caller-scoped RLS read now shares the authentication deadline.
-  assert.match(authMe, /await withAuthTimeout\(\s*supabase\s*\.from\("profiles"\)/s);
+  assert.match(authMe, /await withAuthTimeout\(\s*\(\)\s*=>\s*supabase\s*\.from\("profiles"\)/s);
   // The dashboard guard rejects an inactive profile on every mount. The check
   // moved into the shared reader; the guard consumes its verdict.
   assert.match(identity, /body\.isActive !== true/);

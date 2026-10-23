@@ -11,13 +11,13 @@ const AUTH_TIMEOUT_MS = 3_000;
 
 class AuthTimeoutError extends Error {}
 
-async function withAuthTimeout<T>(operation: PromiseLike<T>, deadline: number): Promise<T> {
+async function withAuthTimeout<T>(operation: () => PromiseLike<T>, deadline: number): Promise<T> {
   const remaining = deadline - Date.now();
   if (remaining <= 0) throw new AuthTimeoutError("auth_timeout");
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      operation,
+      operation(),
       new Promise<never>((_, reject) => {
         timeout = setTimeout(() => reject(new AuthTimeoutError("auth_timeout")), remaining);
       }),
@@ -97,7 +97,7 @@ export async function GET(request: Request) {
   try {
     const bearerToken = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
     const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await withAuthTimeout(createServerSupabase(bearerToken, cookieHeader), deadline);
+    const supabase = await withAuthTimeout(() => createServerSupabase(bearerToken, cookieHeader), deadline);
     refreshedCookies = getRefreshedCookies(supabase);
     const refreshAttempted = getRefreshAttempted(supabase);
     const refreshFailure = getRefreshFailure(supabase);
@@ -106,7 +106,7 @@ export async function GET(request: Request) {
       data: { user },
       error: authError,
     } = await withAuthTimeout(
-      bearerToken ? supabase.auth.getUser(bearerToken) : supabase.auth.getUser(),
+      () => bearerToken ? supabase.auth.getUser(bearerToken) : supabase.auth.getUser(),
       deadline,
     );
 
@@ -135,7 +135,7 @@ export async function GET(request: Request) {
     // Read the current user's own profile through RLS. Authentication must not
     // depend on a privileged service-role key that can be rotated independently.
     const { data: profile, error: profileError } = await withAuthTimeout(
-      supabase
+      () => supabase
         .from("profiles")
         .select("role, is_active, force_password_change, full_name, email, password_changed_at")
         .eq("id", user.id)

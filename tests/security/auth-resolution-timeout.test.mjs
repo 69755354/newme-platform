@@ -38,12 +38,13 @@ const profile = { id: user.id, role: "sales", is_active: true, force_password_ch
 const pending = () => new Promise(() => {});
 const request = () => new Request("https://example.test/api", { headers: { cookie: `${names.refreshToken}=refresh` } });
 
-function authModules(stage, delay = {}) {
+function authModules(stage, delay = {}, onComplete = () => {}) {
   const calls = [];
   async function run(name, value) {
     calls.push(name);
     if (name === stage) return pending();
     if (delay[name]) await new Promise(resolve => setTimeout(resolve, delay[name]));
+    onComplete(name);
     return value;
   }
   const client = {
@@ -131,6 +132,33 @@ for (const entry of ["context", "me"]) {
     const resolved = await result;
     assert.equal(entry === "context" ? resolved.error.status : resolved.status, 503);
   });
+}
+
+for (const entry of ["context", "me"]) {
+  for (const lastStage of entry === "context" ? ["create", "getUser", "boundary"] : ["create", "getUser"]) {
+    test(`${entry} does not start another operation when ${lastStage} completes at the deadline`, async (t) => {
+      const started = Date.now();
+      t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: started });
+      let reachedDeadline = false;
+      const modules = authModules(null, {}, (name) => {
+        if (reachedDeadline) throw new Error("an expired-budget operation must not be started");
+        if (name === lastStage) {
+          reachedDeadline = true;
+          // Simulate a completion at the deadline before the timer callback runs.
+          t.mock.timers.setTime(started + 3000);
+        }
+      });
+      if (entry === "context") {
+        await assert.rejects(modules.context.getRequestAuthContext(request()), error => error.status === 503 && !error.clearSession);
+      } else {
+        const response = await modules.me.GET(request());
+        assert.equal(response.status, 503);
+        assert.doesNotMatch(response.headers.get("set-cookie") ?? "", /Max-Age=0/);
+      }
+      await flush();
+      assert.equal(modules.calls.at(-1), lastStage, "no rejected or pending operation may be created after budget exhaustion");
+    });
+  }
 }
 
 for (const stalledStage of ["headers", "body"]) {

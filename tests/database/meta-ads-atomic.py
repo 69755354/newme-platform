@@ -3,7 +3,7 @@ import concurrent.futures,hashlib,json,os,pathlib,re,subprocess,time
 assert os.environ.get('PGDATABASE')=='newme_ads_atomic_test','isolated database required'
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 SQL=(ROOT/'supabase/preflight/meta-ads-atomic-window.sql').read_text()
-assert hashlib.sha256(SQL.encode()).hexdigest()=='ae14cc118b6b03e6d2eb882c510d20b7a4a03ee9696895fac5406322853063d0'
+assert hashlib.sha256(SQL.encode()).hexdigest()=='76a530de097e9b7cfea8099daa642e6bbadfbc257c46fc4867af219652779487'
 CMD=['psql','-U','postgres','-XqAt','-v','ON_ERROR_STOP=1']
 container=os.environ.get('NEWME_ADS_TEST_CONTAINER')
 if container:
@@ -120,4 +120,6 @@ finish(pause,False);assert snapshot()==baseline
 assert write([row(),row('2026-01-02')])['present']==2
 assert query("select row_to_json(t)::text from public.ad_spend t where source='meta'")==protected
 groups.append('lock timeout preserves data, releases safely and permits a later retry')
+before=snapshot();query(SQL);assert snapshot()==before
+groups.append('idempotent SQL reapply preserves all existing rows')
 print(json.dumps({'ok':True,'isolated_database':True,'behavior_groups':len(groups),'groups':groups,'protected_rows_unchanged':True}))

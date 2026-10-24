@@ -105,12 +105,15 @@ BEGIN
 END;
 $guard$;
 REVOKE ALL ON FUNCTION public.coordinate_ad_spend_writes() FROM PUBLIC, anon, authenticated;
+DROP TRIGGER IF EXISTS ad_spend_coordinate_writers ON public.ad_spend;
 CREATE TRIGGER ad_spend_coordinate_writers
   BEFORE INSERT OR UPDATE OR DELETE ON public.ad_spend
   FOR EACH STATEMENT EXECUTE FUNCTION public.coordinate_ad_spend_writes();
+DROP TRIGGER IF EXISTS ad_spend_insert_source_guard ON public.ad_spend;
 CREATE TRIGGER ad_spend_insert_source_guard
   AFTER INSERT ON public.ad_spend REFERENCING NEW TABLE AS new_ad_spend_rows
   FOR EACH STATEMENT EXECUTE FUNCTION public.coordinate_ad_spend_writes();
+DROP TRIGGER IF EXISTS ad_spend_update_source_guard ON public.ad_spend;
 CREATE TRIGGER ad_spend_update_source_guard
   AFTER UPDATE ON public.ad_spend REFERENCING NEW TABLE AS new_ad_spend_rows
   FOR EACH STATEMENT EXECUTE FUNCTION public.coordinate_ad_spend_writes();

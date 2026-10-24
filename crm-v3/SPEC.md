@@ -1171,3 +1171,9 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 | `tests/database/meta-ads-atomic.py` | 真实双连接验证锁的两个获取顺序、中途暂停时的读一致性、写入失败回滚、超时及重试。 |
 
 本前置发布只建立受保护的数据库发布能力和隔离测试，不应用生产迁移、不切换手动接口，也不启用广告定时任务。手动接口与定时程序改用同一写入例程及线上并发验收属于后续发布步骤。
+
+## 2026-10-23 广告同步原子写入应用变更
+
+`src/app/api/meta/ads-sync/route.ts` 在完整分页与映射成功后，只调用 `replace_meta_ad_spend_window` 执行整批写入，保留既有管理员权限边界。`src/lib/meta-ads-write.mjs` 校验原子回执，并将竞争、缺失迁移和数据库失败转为有限的错误码。`supabase/migrations/20261023123323_meta_ads_atomic_window.sql` 与前置审核 SQL 的字节哈希一致；例程以 SECURITY INVOKER 运行，只向 service_role 授予执行权限，包含跨进程事务锁、来源与日期范围限制和完整字段回读。共享事务回滚后不会留下已提交的空窗或半批数据。
+
+应用代码与部署状态分别记录。定时程序的安装、默认关闭状态、实际 HTTP 与程序的并发验收由私有运维回执证明；本节不声明定时同步已经运行。

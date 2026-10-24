@@ -1257,3 +1257,21 @@ $fn$;
 
 REVOKE EXECUTE ON FUNCTION public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text) TO authenticated;
+
+-- Existing advertising dependency: exact columns from the captured baseline.
+-- Replay fixture only; never applies a production schema change.
+CREATE TABLE public.ad_spend (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    campaign_name text,
+    adset_name text,
+    ad_name text,
+    spend_date date,
+    amount numeric(12,2),
+    currency text DEFAULT 'AED'::text,
+    impressions integer,
+    clicks integer,
+    source text DEFAULT 'meta'::text,
+    created_at timestamp with time zone DEFAULT now());
+
+ALTER TABLE public.ad_spend ADD PRIMARY KEY (id);
+CREATE INDEX idx_ad_spend_date ON public.ad_spend(spend_date);

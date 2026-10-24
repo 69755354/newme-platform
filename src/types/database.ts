@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=b8bc650a32266cc70710f9ab5d12e1da10acb52fa17df185a074eb2b64a41f53
+// Migration fingerprint: sha256=d45e08aa405da4be869c9252300ea5fb4f95909736fff2141b317a082fe1d5c5
 export type Json =
   | string
   | number
@@ -4543,6 +4543,10 @@ export type Database = {
       }
       reopen_lead_milestone: {
         Args: { p_lead_id: string; p_milestone_key: string; p_reason: string }
+        Returns: Json
+      }
+      replace_meta_ad_spend_window: {
+        Args: { p_account_id: string; p_rows: Json; p_since: string; p_until: string }
         Returns: Json
       }
       replace_kpi_targets: {

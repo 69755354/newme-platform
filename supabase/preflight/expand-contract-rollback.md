@@ -91,13 +91,14 @@ phase):
 20260817230000_lead_rebalance_plan_idempotency.sql
 ```
 
-Contract phase — these four files, in order, pushed only after §4 step 6 passes:
+Contract phase — these five files, in order, pushed only after §4 step 6 passes:
 
 ```contract
 20260818000000_money_direct_write_contract_phase.sql
 20261019104004_whatsapp_pilot_events.sql
 20261022194620_whatsapp_privacy_lifecycle.sql
 20261023020000_whatsapp_privacy_rpc_owner.sql
+20261023123323_meta_ads_atomic_window.sql
 ```
 
 ### How the split is executed: a manifest, not a moved file
@@ -111,7 +112,7 @@ artifacts:
 
 * [`infra/release/release-manifest.json`](../../infra/release/release-manifest.json)
   names every pending migration in exactly one phase — `required_for_app` (the
-  twenty-five above) or `deferred_contract` (the two above) — with the SHA-256 of each
+  twenty-five above) or `deferred_contract` (the five above) — with the SHA-256 of each
   file and the runtime posture each phase must produce.
 * [`scripts/db-phase-push.mjs`](../../scripts/db-phase-push.mjs) applies one named
   phase and nothing else. In production it is reachable only through the canonical
@@ -1024,7 +1025,7 @@ select count(*) from supabase_migrations.schema_migrations
 -- which provisions the optional observer privacy lifecycle without enabling capture
 select version from supabase_migrations.schema_migrations
  order by version desc limit 1;
--- expect 20261023020000
+-- expect 20261023123323
 ```
 
 `sudo /usr/local/sbin/newme-deploy db-transition <release-sha>

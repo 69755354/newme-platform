@@ -48,6 +48,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const SYNC = "src/app/api/meta/ads-sync/route.ts";
 const STATUS = "src/app/api/meta/ads-status/route.ts";
 const IMPORTER = "src/app/api/dashboard/ads-roi/import/route.ts";
+const ATOMIC_SQL = "supabase/preflight/meta-ads-atomic-window.sql";
 const INSIGHTS = "src/lib/meta-ads-insights.mjs";
 /** One AED ad-day, as Graph returns it. */
 const AED = { account_currency: "AED" };
@@ -161,7 +162,7 @@ test("the key separator cannot occur inside a Meta object name", () => {
 });
 
 test("no new file carries a raw NUL byte", async () => {
-  // U+0000 belongs in the separator, but as the escape "\\u0000". Written as a
+  // U+0000 belongs in the separator, but as the escape "\u0000". Written as a
   // literal byte it makes git classify the file as binary — `git diff` emits
   // "Bin 0 -> 8712 bytes" and the patch then refuses to apply with "cannot apply
   // binary patch without full index line". Found exactly that way.
@@ -278,28 +279,19 @@ test("Graph's refusals are told apart, because they need different fixes", () =>
 
 /** The delete has to be fenced to this feature's namespace AND to the window. */
 function deleteIsFenced(source) {
-  const call = source.match(/\.from\("ad_spend"\)\s*\.delete\([^)]*\)([\s\S]{0,300})/);
-  if (!call) return false;
-  const tail = call[1];
-  return (
-    /\.eq\("source",\s*namespace\)/.test(tail) &&
-    /\.gte\("spend_date",\s*since\)/.test(tail) &&
-    /\.lte\("spend_date",\s*until\)/.test(tail)
-  );
+  const call=source.match(/DELETE FROM public\.ad_spend([\s\S]*?);/i);
+  return !!call && /source = v_source/.test(call[1]) &&
+    /spend_date BETWEEN p_since AND p_until/.test(call[1]);
 }
 
 test("the sync only ever clears rows it wrote itself", async () => {
-  const source = await read(SYNC);
-  assert.ok(deleteIsFenced(source), "delete must be scoped to this account's namespace and to the window");
-
-  // Negative control: drop the namespace fence and the check must go red, or it
-  // was never looking. Without this fence the sync would delete the manually
-  // imported Excel spend (source='meta') for the same dates — and before the
-  // namespace carried the account id, a second ad account would have deleted the
-  // first one's rows for every overlapping day.
-  const unfenced = source.replace(/\.eq\("source",\s*namespace\)\s*\n/, "\n");
-  assert.notEqual(unfenced, source, "the negative control must actually mutate the source");
-  assert.equal(deleteIsFenced(unfenced), false, "the check must fail once the fence is gone");
+  const source = await read(ATOMIC_SQL);
+  assert.ok(deleteIsFenced(source));
+  assert.match(await read(SYNC), /p_account_id: account\.slice\(4\)/);
+  assert.match(source, /v_source := 'meta_api:' \|\| p_account_id/);
+  const unfenced = source.replace(/WHERE source = v_source AND spend_date BETWEEN p_since AND p_until;/, "WHERE spend_date BETWEEN p_since AND p_until;");
+  assert.notEqual(unfenced, source);
+  assert.equal(deleteIsFenced(unfenced), false);
 });
 
 test("the sync never reads or rewrites the Excel importer's rows", async () => {
@@ -390,23 +382,22 @@ test("no ad account id is hardcoded in the new code", async () => {
 
 test("the whole window is fetched before anything is deleted", async () => {
   const source = await read(SYNC);
-  const deleteAt = source.indexOf('.from("ad_spend")');
+  const writeAt = source.indexOf('admin.rpc("replace_meta_ad_spend_window"');
   const fetchLoopAt = source.indexOf("while (pages < MAX_PAGES)");
-  assert.ok(fetchLoopAt > -1 && deleteAt > -1);
-  assert.ok(fetchLoopAt < deleteAt, "a Graph failure must not be able to leave a window deleted with no replacement");
+  assert.ok(fetchLoopAt > -1 && writeAt > fetchLoopAt);
+  assert.doesNotMatch(source, /\.delete\(/);
 });
 
 test("a partially written window is reported as a failure, not a success", async () => {
   const source = await read(SYNC);
-  const insertBlock = source.slice(source.indexOf("for (let i = 0; i < rows.length"));
-  assert.ok(/error: "insert_failed"/.test(insertBlock));
-  assert.ok(/status: 500/.test(insertBlock), "a half-written window must not return 200");
-  assert.ok(/ok: inserted === rows\.length/.test(source), "ok must mean every mappable row landed");
+  assert.match(source, /atomicWriteError\(error\)/);
+  assert.match(source, /if \(!receipt.ok\)/);
+  assert.match(source, /status: 500/);
+  assert.doesNotMatch(source, /\.insert\(/);
+  const sql=await read(ATOMIC_SQL);
+  assert.match(sql,/RAISE EXCEPTION[\s\S]*window_row_readback_mismatch/);
+  assert.doesNotMatch(sql,/EXCEPTION WHEN/);
 });
-
-// --------------------------------------------------------------------------
-// 3 · the review fixes, and what each one is preventing
-// --------------------------------------------------------------------------
 
 test("ad_id is requested, or the key quietly falls back to names", () => {
   assert.ok(INSIGHTS_FIELDS_INCLUDES("ad_id"), "level=ad without ad_id gives no stable identity");
@@ -521,7 +512,7 @@ test("a rejected row stops the run before the window is deleted", async () => {
   // that a row went missing.
   const source = await read(SYNC);
   const rejectAt = source.indexOf('error: "insight_rows_rejected"');
-  const deleteAt = source.indexOf(".delete(");
+  const deleteAt = source.indexOf('admin.rpc("replace_meta_ad_spend_window"');
   assert.ok(rejectAt > -1, "the sync must refuse a window it could not fully map");
   assert.ok(deleteAt > -1);
   assert.ok(rejectAt < deleteAt, "the refusal must come before the delete");
@@ -537,7 +528,7 @@ test("a rejected row stops the run before the window is deleted", async () => {
 function writerRefusesForeignWindow(source) {
   return (
     /overlapping_spend_window/.test(source) ||
-    /days_already_covered_by_another_source/.test(source)
+    /days_already_covered_by_another_source/.test(source) || /replace_meta_ad_spend_window/.test(source)
   );
 }
 
@@ -551,11 +542,11 @@ test("no writer of ad_spend may cover a day another source already covers", asyn
   // third writer added later fails here instead of doubling the ledger.
   const files = (await readdir(path.join(ROOT, "src/app"), { recursive: true }))
     .filter((f) => typeof f === "string" && f.endsWith(".ts"))
-    .map((f) => path.join("src/app", f));
+    .map((f) => path.join("src/app", f).split(path.sep).join("/"));
   const writers = [];
   for (const rel of files) {
     const source = await read(rel);
-    if (/\.from\("ad_spend"\)/.test(source) && /\.insert\(/.test(source)) writers.push(rel);
+    if ((/\.from\("ad_spend"\)/.test(source) && /\.insert\(/.test(source)) || /replace_meta_ad_spend_window/.test(source)) writers.push(rel);
   }
 
   assert.ok(writers.includes(SYNC), "the sync writes ad_spend");
@@ -565,7 +556,7 @@ test("no writer of ad_spend may cover a day another source already covers", asyn
   }
 
   // Negative controls, one per writer: remove the fence and require red.
-  for (const [rel, marker] of [[SYNC, "overlapping_spend_window"], [IMPORTER, "days_already_covered_by_another_source"]]) {
+  for (const [rel, marker] of [[SYNC, "replace_meta_ad_spend_window"], [IMPORTER, "days_already_covered_by_another_source"]]) {
     const source = await read(rel);
     const stripped = source.split(marker).join("removed");
     assert.notEqual(stripped, source, `the negative control must mutate ${rel}`);
@@ -574,15 +565,11 @@ test("no writer of ad_spend may cover a day another source already covers", asyn
 });
 
 test("the sync's overlap fence looks outside its own namespace, in the same window", async () => {
-  const source = await read(SYNC);
-  const fence = source.slice(source.indexOf("overlapping_spend_window") - 1500, source.indexOf("overlapping_spend_window"));
-  assert.ok(/\.neq\("source",\s*namespace\)/.test(fence), "the fence must look at OTHER sources");
-  assert.ok(/\.gte\("spend_date",\s*since\)/.test(fence) && /\.lte\("spend_date",\s*until\)/.test(fence));
-  assert.ok(/head: true/.test(fence), "counting rows is enough; the rows themselves are not needed");
-  assert.ok(/status: 409/.test(source.slice(source.indexOf("overlapping_spend_window"), source.indexOf("overlapping_spend_window") + 500)));
-
-  // Negative control: a failed count must not be treated as "no overlap".
-  assert.ok(/overlap_probe_failed/.test(source), "the fence must fail closed when the count itself errors");
+  const source = await read(ATOMIC_SQL);
+  assert.match(source,/source IS DISTINCT FROM v_source/);
+  assert.match(source,/spend_date BETWEEN p_since AND p_until/);
+  assert.match(source,/MESSAGE = 'overlapping_spend_window'/);
+  assert.ok(source.indexOf("overlapping_spend_window") < source.indexOf("DELETE FROM"));
 });
 
 test("the importer's fence checks the days it is about to write, not the whole table", async () => {
@@ -601,38 +588,26 @@ test("the importer's fence checks the days it is about to write, not the whole t
 });
 
 test("two syncs cannot replace the same window at once", async () => {
-  // delete-then-insert is not atomic here: two overlapping runs can interleave so
-  // that the second delete removes the first insert, and both report success while
-  // the window ends up holding one run's rows or none. A cron plus an impatient
-  // click is enough to produce it.
-  const source = await read(SYNC);
-  assert.ok(/let writeInFlight = false/.test(source), "the latch has to be module scope, not per request");
-  assert.ok(/if \(writeInFlight\)/.test(source));
-  assert.ok(/error: "sync_already_running"/.test(source));
-  const latchAt = source.indexOf("writeInFlight = true");
-  const deleteAt = source.indexOf(".delete(");
-  assert.ok(latchAt > -1 && latchAt < deleteAt, "the latch must close before the delete");
-  assert.ok(/finally \{[\s\S]{0,120}writeInFlight = false/.test(source), "a thrown error must not wedge the latch shut");
-
-  // Negative control: remove the guard and require the check to go red.
-  const unlatched = source.replace(/if \(writeInFlight\)/, "if (false)");
-  assert.notEqual(unlatched, source);
-  assert.equal(/if \(writeInFlight\)/.test(unlatched), false);
+  const source = await read(SYNC), sql=await read(ATOMIC_SQL);
+  assert.match(source,/admin.rpc\("replace_meta_ad_spend_window"/);
+  assert.doesNotMatch(source,/writeInFlight/);
+  const lockAt=sql.indexOf("pg_catalog.pg_advisory_xact_lock(1313685843, 1)");
+  assert.ok(lockAt>0 && lockAt<sql.indexOf("DELETE FROM"));
+  assert.match(sql,/CREATE TRIGGER ad_spend_coordinate_writers/);
+  assert.match(sql,/BEFORE INSERT OR UPDATE OR DELETE ON public.ad_spend/);
+  assert.match(sql,/CREATE TRIGGER ad_spend_insert_source_guard/);
+  const unlatched=sql.replaceAll("pg_catalog.pg_advisory_xact_lock(1313685843, 1)","disabled_lock()");
+  assert.ok(!unlatched.includes("pg_catalog.pg_advisory_xact_lock(1313685843, 1)"));
 });
 
 test("the sync reads the window back after writing it", async () => {
-  // PostgREST reports what it was asked to do, not what the table now holds: a
-  // policy or a trigger can drop rows from an insert that returns no error. The
-  // count is the only evidence the window is what it claims.
-  const source = await read(SYNC);
-  const verifyAt = source.indexOf("window_row_count_mismatch");
-  assert.ok(verifyAt > -1, "a run with no read-back cannot claim the window is correct");
-  const insertAt = source.indexOf("for (let i = 0; i < rows.length");
-  assert.ok(insertAt > -1 && insertAt < verifyAt, "the read-back comes after the insert");
-  const block = source.slice(insertAt, verifyAt);
-  assert.ok(/head: true/.test(block) && /count: "exact"/.test(block));
-  assert.ok(/\.eq\("source",\s*namespace\)/.test(block), "count this namespace's rows, not the table's");
-  assert.ok(/status: 409/.test(source.slice(verifyAt, verifyAt + 600)));
+  const source=await read(ATOMIC_SQL);
+  const insertAt=source.indexOf("INSERT INTO public.ad_spend");
+  const verifyAt=source.indexOf("window_row_readback_mismatch");
+  assert.ok(insertAt>0 && verifyAt>insertAt);
+  assert.match(source,/SELECT \* FROM expected EXCEPT ALL SELECT \* FROM actual/);
+  assert.match(source,/SELECT \* FROM actual EXCEPT ALL SELECT \* FROM expected/);
+  assert.match(await read(SYNC),/atomicWriteResult\(data, rows.length\)/);
 });
 
 test("the status route pages the ad account list to the end", async () => {
@@ -674,4 +649,13 @@ test("the mapping module still carries no raw NUL byte after the ad_id key", asy
   const bytes = await readFile(path.join(ROOT, INSIGHTS));
   assert.equal(bytes.includes(0), false);
   assert.ok(/\\u0000/.test(bytes.toString("utf8")), "the separator must be written as an escape");
+});
+
+test("normalised Graph account maps to the digit-only SQL namespace",()=>{
+ for(const raw of ['123456789','act_123456789',' act_123456789 ']){
+  const account=normaliseAccountId(raw);
+  assert.ok(account && account.startsWith('act_'));
+  const sqlAccount=account.slice(4);assert.match(sqlAccount,/^[0-9]{1,32}$/);
+  assert.equal('meta_api:'+sqlAccount,apiSourceForAccount(raw));
+ }
 });

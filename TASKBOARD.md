@@ -28,6 +28,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
 | task_https_acceptance_channel_preparation_code | DONE | Codex | 2026-10-23 |
+| task_meta_ads_atomic_sync_code | DONE | Codex | 2026-10-23 |
 | task_meta_ads_atomic_provisioning_code | DONE | Codex | 2026-10-23 |
 | task_review_findings_fix_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_privacy_code | DONE | Codex | 2026-10-23 |
@@ -707,3 +708,7 @@ Prior release acceptance digest (archived for the advertising successor from fdc
 ## Atomic advertising writer provisioning prerequisite (2026-10-23)
 
 Code-only: exact-hash additive provisioning preserves every prior migration and manifest declaration. Twenty-eight focused provisioning checks, twelve isolated PostgreSQL behavior groups, seven actual catalog-drift negative controls and ten worker unit checks passed. Both independent worker/manual SQL lock orders preserve complete rows; the maximum 20,000-row window is bounded. The new writer and statement-wide source guards retain existing roles and null metrics. No live advertising data or scheduler state has changed; canonical release and real HTTP/worker concurrency acceptance remain pending.
+
+## Shared atomic advertising sync candidate (2026-10-23)
+
+Code-only: administrator HTTP sync and the prepared private scheduler use one atomic, fully verified database writer. All existing advertising writers share the transaction lock and statement-wide source guards. Seventy-two focused advertising/provisioning checks, twelve PostgreSQL behavior groups, seven catalog-drift negative controls and ten worker unit checks passed. Canonical release, real authenticated HTTP/worker concurrency, session revocation and disabled/inactive timer readback remain required; no production scheduling or actual WhatsApp-number onboarding is claimed.

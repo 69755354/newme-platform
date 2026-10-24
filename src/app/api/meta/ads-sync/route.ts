@@ -1,39 +1,10 @@
 // RBAC: active boss/admin only
 /**
- * The missing hop: Meta ad insights → public.ad_spend.
- *
- * Nothing in this repository read public.meta_tokens before this route existed.
- * ad_spend was populated only by scripts/parse-ad-spend.py via
- * src/app/api/dashboard/ads-roi/import/route.ts, i.e. by hand, from an Excel
- * export sitting in COS. The ROI dashboard therefore showed CRM attribution
- * against manually imported spend, and a completed OAuth authorisation changed
- * nothing on screen.
- *
- * Idempotence: this route owns one namespace of ad_spend per ad account —
- * apiSourceForAccount(), i.e. the 'meta_api' prefix plus the account id — and
- * replaces whole date windows inside it (delete then insert). Manually imported
- * rows keep the column default and are never read, deleted or rewritten here.
- * Re-running the same window twice is a no-op, which is what makes it safe to
- * schedule. See src/lib/meta-ads-insights.mjs for why replace-window rather than
- * upsert, and why the account id is part of the namespace.
- *
- * Deliberately not atomic: delete-then-insert is two statements, so a crash
- * between them leaves the window empty rather than doubled. That direction is the
- * safe one — ad_spend is derived data, re-running the window restores it, whereas
- * a doubled window silently inflates spend in the dashboard. Two guards make the
- * gap observable rather than merely hoped about: a single-flight latch around the
- * write phase, and a row count read back afterwards.
- *
- * Four things this route refuses to do rather than do approximately, because every
- * reader of ad_spend (src/app/api/dashboard/ads-roi/route.ts,
- * src/app/api/analytics/summary/route.ts) sums every row it can see without
- * looking at source or currency:
- *   1. write into a window that already holds rows from another source — that is
- *      double counting, not merging;
- *   2. write a window in which any row failed to map — a silently short window
- *      reads as cheaper advertising;
- *   3. write non-AED amounts, which the dashboard would format as AED;
- *   4. share one namespace between ad accounts.
+ * Admin-only read of Meta insights followed by one atomic window replacement.
+ * All pages map successfully before the database is touched. The server-only
+ * SECURITY INVOKER RPC owns the cross-process transaction lock, foreign-source
+ * fence, delete/insert and full-row readback. The scheduler calls the same RPC.
+ * No client can observe a committed empty/partial window after a failed write.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -49,6 +20,8 @@ import {
   normaliseAccountId,
   windowFromRequest,
 } from "@/lib/meta-ads-insights.mjs";
+
+import { atomicWriteError, atomicWriteResult } from "@/lib/meta-ads-write.mjs";
 
 const GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || "v22.0";
 const AD_ACCOUNT_ID = process.env.META_AD_ACCOUNT_ID || null;
@@ -67,18 +40,6 @@ type Refusal = { kind: string; status: number; code: number | null; subcode: num
 
 const MAX_PAGES = 40;
 const MAX_CREDENTIAL_ATTEMPTS = 2;
-
-/**
- * Single-flight latch over the write phase.
- *
- * delete-then-insert has no unique key behind it, so two overlapping runs — a
- * schedule and a manual retry, say — can both finish deleting before either
- * inserts, and the window ends up holding both copies. Node keeps one module
- * instance per server process, so this latch serialises the case that actually
- * occurs. It is not a distributed lock, which is why the row count is read back
- * after the insert: that check catches the multi-process case this cannot.
- */
-let writeInFlight = false;
 
 export const dynamic = "force-dynamic";
 
@@ -255,130 +216,42 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (writeInFlight) {
-    return NextResponse.json({ error: "sync_already_running", window: { since, until } }, { status: 409 });
-  }
-  writeInFlight = true;
-  try {
-    // Every reader sums ad_spend without filtering on source, so an overlapping
-    // window is double counting rather than a merge: the manually imported rows
-    // for those dates stay, these rows are added, and CPL/ROAS inflate. The
-    // overlap is named instead of resolved here — deciding which source wins for a
-    // given date is a data migration, not a side effect of a sync.
-    const { count: foreign, error: foreignError } = await admin
-      .from("ad_spend")
-      .select("id", { count: "exact", head: true })
-      .neq("source", namespace)
-      .gte("spend_date", since)
-      .lte("spend_date", until);
-
-    if (foreignError) {
-      logger.error({ err: foreignError, request_id, operation: "meta_ads_sync" }, "[MetaAds] overlap probe failed");
-      return NextResponse.json({ error: "overlap_probe_failed" }, { status: 500 });
-    }
-
-    if ((foreign ?? 0) > 0) {
-      logger.error(
-        { request_id, operation: "meta_ads_sync", since, until, foreign },
-        "[MetaAds] window refused: spend from another source already covers it",
-      );
-      return NextResponse.json(
-        {
-          error: "overlapping_spend_window",
-          window: { since, until },
-          foreign_rows: foreign,
-          next: "retire_or_re_source_the_overlapping_rows_before_syncing_this_window",
-        },
-        { status: 409 },
-      );
-    }
-
-    const { error: deleteError, count: deleted } = await admin
-      .from("ad_spend")
-      .delete({ count: "exact" })
-      .eq("source", namespace)
-      .gte("spend_date", since)
-      .lte("spend_date", until);
-
-    if (deleteError) {
-      logger.error({ err: deleteError, request_id, operation: "meta_ads_sync" }, "[MetaAds] window clear failed");
-      return NextResponse.json({ error: "window_clear_failed" }, { status: 500 });
-    }
-
-    let inserted = 0;
-    const batchSize = 500;
-    for (let i = 0; i < rows.length; i += batchSize) {
-      const { data, error: insertError } = await admin
-        .from("ad_spend")
-        .insert(rows.slice(i, i + batchSize))
-        .select("id");
-
-      if (insertError) {
-        // The window is now partially written. Say so with a 500 — a caller that
-        // treats this as success would report a fraction of the real spend.
-        logger.error(
-          { err: insertError, request_id, operation: "meta_ads_sync", offset: i, inserted },
-          "[MetaAds] insert failed mid-window",
-        );
-        return NextResponse.json(
-          { error: "insert_failed", window: { since, until }, deleted: deleted ?? null, inserted, expected: rows.length },
-          { status: 500 },
-        );
-      }
-      inserted += data?.length || 0;
-    }
-
-    // Read the window back. The latch above only covers this process; if a second
-    // process replaced the same window concurrently, the count is the evidence.
-    const { count: present, error: verifyError } = await admin
-      .from("ad_spend")
-      .select("id", { count: "exact", head: true })
-      .eq("source", namespace)
-      .gte("spend_date", since)
-      .lte("spend_date", until);
-
-    if (verifyError) {
-      logger.error({ err: verifyError, request_id, operation: "meta_ads_sync" }, "[MetaAds] read-back failed");
-      return NextResponse.json({ error: "window_verify_failed", inserted }, { status: 500 });
-    }
-
-    if ((present ?? -1) !== rows.length) {
-      logger.error(
-        { request_id, operation: "meta_ads_sync", since, until, present, expected: rows.length },
-        "[MetaAds] window holds an unexpected row count",
-      );
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "window_row_count_mismatch",
-          window: { since, until },
-          present: present ?? null,
-          expected: rows.length,
-          next: "re_run_this_window_alone",
-        },
-        { status: 409 },
-      );
-    }
-
-    logger.info(
-      { request_id, operation: "meta_ads_sync", since, until, fetched: insights.length, inserted, deleted: deleted ?? null },
-      "[MetaAds] window replaced",
+  const { data, error } = await admin.rpc("replace_meta_ad_spend_window", {
+    p_account_id: account.slice(4),
+    p_since: since,
+    p_until: until,
+    p_rows: rows,
+  });
+  if (error) {
+    const refusal = atomicWriteError(error);
+    logger.error(
+      { request_id, operation: "meta_ads_sync", error_code: error.code, since, until },
+      "[MetaAds] atomic window replacement refused",
     );
-
-    return NextResponse.json({
-      ok: inserted === rows.length,
-      window: { since, until },
-      namespace,
-      token_source: choice.kind,
-      pages,
-      fetched: insights.length,
-      mappable: rows.length,
-      inserted,
-      deleted: deleted ?? null,
-      duplicates_collapsed: duplicates,
-      rejected,
-    });
-  } finally {
-    writeInFlight = false;
+    return NextResponse.json({ error: refusal.error, window: { since, until } }, { status: refusal.status });
   }
+  const receipt = atomicWriteResult(data, rows.length);
+  if (!receipt.ok) {
+    return NextResponse.json({ error: receipt.error, window: { since, until } }, { status: 500 });
+  }
+  logger.info(
+    { request_id, operation: "meta_ads_sync", since, until, fetched: insights.length,
+      inserted: receipt.inserted, deleted: receipt.deleted },
+    "[MetaAds] atomic window replaced",
+  );
+  return NextResponse.json({
+    ok: true,
+    atomic: true,
+    window: { since, until },
+    namespace,
+    token_source: choice.kind,
+    pages,
+    fetched: insights.length,
+    mappable: rows.length,
+    inserted: receipt.inserted,
+    deleted: receipt.deleted,
+    present: receipt.present,
+    duplicates_collapsed: duplicates,
+    rejected,
+  });
 }

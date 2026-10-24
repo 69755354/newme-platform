@@ -203,6 +203,12 @@
       "version": "20261023020000",
       "file": "20261023020000_whatsapp_privacy_rpc_owner.sql",
       "sha256": "0cd32f6d1316b391838bcf4ce5742bca577f1db708ae13363302927494cff425"
+    },
+    {
+      "$comment": "Additive server-only atomic advertising writer. The separate exact-hash pre-switch capability preserves the complete recorded strict prefix. This does not activate any scheduler.",
+      "version": "20261023123323",
+      "file": "20261023123323_meta_ads_atomic_window.sql",
+      "sha256": "76a530de097e9b7cfea8099daa642e6bbadfbc257c46fc4867af219652779487"
     }
   ],
   "companions": [
@@ -508,6 +514,11 @@
           "name": "whatsapp-privacy-retired-role-has-no-observer-data-rights",
           "sql": "select bool_and(not has_table_privilege('newme_whatsapp_maintenance',target,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')) from unnest(array['whatsapp_privacy.requests','whatsapp_privacy.suppressions','whatsapp_privacy.maintenance','public.whatsapp_pilot_events']) target",
           "expect": true
+        },
+        {
+          "name": "meta-ads-atomic-writer-is-reviewed-and-server-only",
+          "expect": true,
+          "sql": "SELECT coalesce((SELECT (p.proowner='postgres'::regrole AND p.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql') AND p.prokind='f' AND p.provolatile='v' AND p.proparallel='u' AND NOT p.prosecdef AND NOT p.proisstrict AND NOT p.proleakproof AND NOT p.proretset AND p.prorettype='jsonb'::regtype AND p.pronargdefaults=0 AND p.provariadic=0 AND p.prosupport=0 AND p.proallargtypes IS NULL AND p.proargmodes IS NULL AND p.protrftypes IS NULL AND p.probin IS NULL AND p.procost=100 AND p.prorows=0 AND encode(sha256(convert_to(p.prosrc,'UTF8')),'hex')='b3a825023573cb6248a6bb1d5a3ccd60131a9bc77250c37e4130593618d78749' AND cardinality(p.proconfig)=3 AND p.proconfig @> ARRAY['search_path=\"\"','lock_timeout=5s','statement_timeout=20s']::text[] AND p.proargnames =ARRAY['p_account_id','p_since','p_until','p_rows']::text[] AND (SELECT count(*)=2 AND bool_and(x.privilege_type='EXECUTE' AND x.grantor=p.proowner AND (x.grantee=p.proowner OR (x.grantee='service_role'::regrole AND NOT x.is_grantable))) FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) x)) AND (SELECT count(*)=3 AND bool_and(tgenabled='O' AND NOT tgisinternal AND NOT tgdeferrable AND NOT tginitdeferred AND tgconstraint=0 AND tgparentid=0 AND tgconstrrelid=0 AND tgconstrindid=0 AND tgattr::text='' AND octet_length(tgargs)=0 AND tgqual IS NULL AND tgnargs=0 AND tgoldtable IS NULL AND CASE tgname WHEN 'ad_spend_coordinate_writers' THEN tgtype=30 AND tgnewtable IS NULL WHEN 'ad_spend_insert_source_guard' THEN tgtype=4 AND tgnewtable='new_ad_spend_rows' WHEN 'ad_spend_update_source_guard' THEN tgtype=16 AND tgnewtable='new_ad_spend_rows' ELSE false END) FROM pg_trigger WHERE tgrelid='public.ad_spend'::regclass AND tgfoid=to_regprocedure('public.coordinate_ad_spend_writes()')) AND (SELECT (g.proowner='postgres'::regrole AND g.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql') AND g.prokind='f' AND g.provolatile='v' AND g.proparallel='u' AND NOT g.prosecdef AND NOT g.proisstrict AND NOT g.proleakproof AND NOT g.proretset AND g.prorettype='trigger'::regtype AND g.pronargdefaults=0 AND g.provariadic=0 AND g.prosupport=0 AND g.proallargtypes IS NULL AND g.proargmodes IS NULL AND g.protrftypes IS NULL AND g.probin IS NULL AND g.procost=100 AND g.prorows=0 AND encode(sha256(convert_to(g.prosrc,'UTF8')),'hex')='c3f138ccc8b32e3b5d36c9445af0c092b11d5d71bb152cd1b54a8c731372b8ea' AND cardinality(g.proconfig)=2 AND g.proconfig @> ARRAY['search_path=\"\"','lock_timeout=5s']::text[] AND g.proargnames IS NULL AND (SELECT count(*)=1 AND bool_and(x.privilege_type='EXECUTE' AND x.grantor=g.proowner AND (x.grantee=g.proowner)) FROM aclexplode(coalesce(g.proacl,acldefault('f',g.proowner))) x)) FROM pg_proc g WHERE g.oid=to_regprocedure('public.coordinate_ad_spend_writes()')) FROM pg_proc p WHERE p.oid=to_regprocedure('public.replace_meta_ad_spend_window(text,date,date,jsonb)')),false)"
         }
       ]
     }

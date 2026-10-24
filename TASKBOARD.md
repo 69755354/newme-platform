@@ -28,6 +28,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
 | task_https_acceptance_channel_preparation_code | DONE | Codex | 2026-10-23 |
+| task_meta_ads_atomic_provisioning_code | DONE | Codex | 2026-10-23 |
 | task_review_findings_fix_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_privacy_code | DONE | Codex | 2026-10-23 |
 | task_whatsapp_retention_admission_code | DONE | Codex | 2026-10-23 |
@@ -701,4 +702,8 @@ Documented the production operator's Ed25519 acceptance API, fixed coordinator a
 
 Canonical acceptance is verified for immutable application release d5cf3dcd254b4ee175e29a68a173005fc8184085, build f0pxF7OeM9R9IcdyHk2Xl, deployment CI 39965566063. Current Codex directly executed the protected deployment and acceptance coordinator over the registered Ed25519 gateway. The producer completed with exit 0 after 847 seconds, including the policy-required delayed verification; root attestation completed with exit 0 and signed status confirmed acceptance_verified at 2026-10-23T14:23:33.194Z. The exact release policy and schema verifier accepted the four role API journeys, eight English/Chinese browser journeys, exact fixture cleanup with zero residual rows, provider failure/recovery drill, performance samples and delayed verification. The sealed bundle digest is recorded below. This closes the accepted release evidence; the exact-closure final CI and protected finalization remain separate machine gates.
 
-<!-- postdeploy-acceptance-sha256:61ace5de77d90b05e090e3f82e82fb64d3ffcd82d7420dc0eab419d9fb818076 -->
+Prior release acceptance digest (archived for the advertising successor from fdcd308e5e24251dfc727f3d3f8da7c5d968eb81): 61ace5de77d90b05e090e3f82e82fb64d3ffcd82d7420dc0eab419d9fb818076
+
+## Atomic advertising writer provisioning prerequisite (2026-10-23)
+
+Code-only: exact-hash additive provisioning preserves every prior migration and manifest declaration. Twenty-eight focused provisioning checks, twelve isolated PostgreSQL behavior groups, seven actual catalog-drift negative controls and ten worker unit checks passed. Both independent worker/manual SQL lock orders preserve complete rows; the maximum 20,000-row window is bounded. The new writer and statement-wide source guards retain existing roles and null metrics. No live advertising data or scheduler state has changed; canonical release and real HTTP/worker concurrency acceptance remain pending.

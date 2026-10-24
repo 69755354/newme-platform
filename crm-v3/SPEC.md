@@ -1154,3 +1154,20 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 | `src/components/HtmlLangSync.tsx` | 保留首次载入、跨标签页 storage event 以及旧写入方的有界轮询协调；同标签页按钮切换不再依赖 500ms 轮询。 |
 
 验证边界：`tests/security/public-website-lead.test.mjs`、`tests/security/meta-capi-outbound.test.mjs` 和 `tests/security/i18n-document-language.test.mjs` 分别钉住公开入口、CAPI 脱敏/发送契约和 HTML 语言更新顺序；完整浏览器双语流程仍必须在生产 postdeploy acceptance 通过后才可关闭发布。
+
+## 2026-10-23 隐私处理与广告写入协调前置
+
+以下是代码契约及验证入口，生产状态仍由发布和实际验收单独证明。
+
+| Path | Contract |
+| --- | --- |
+| `src/app/(dashboard)/settings/whatsapp-privacy.tsx` | 管理员在设置页发起试点事件删除并查看回执。 |
+| `src/app/api/whatsapp/privacy/route.ts` | 隐私操作的会话、角色及请求校验入口。 |
+| `tests/database/whatsapp-privacy.py` | 在隔离 PostgreSQL 中验证删除、保留期限、并发和重放边界。 |
+| `src/lib/knx-task-store.ts` | KNX 任务存储和调用者访问范围；不以拿到任务编号代替访问授权。 |
+| `src/lib/request-auth-context.ts` | 共享请求鉴权上下文及有界的认证解析。 |
+| `scripts/check-meta-ads-provisioning.mjs` | 只允许在完整现有 strict 迁移前缀后增加一份固定哈希的广告原子写入迁移，拒绝无记录对象碰撞和内容漂移。 |
+| `supabase/preflight/meta-ads-atomic-window.sql` | 仅供服务端调用的事务写入契约：共享事务锁、来源和日期边界、整批替换及完整字段回读；失败不提交部分数据。 |
+| `tests/database/meta-ads-atomic.py` | 真实双连接验证锁的两个获取顺序、中途暂停时的读一致性、写入失败回滚、超时及重试。 |
+
+本前置发布只建立受保护的数据库发布能力和隔离测试，不应用生产迁移、不切换手动接口，也不启用广告定时任务。手动接口与定时程序改用同一写入例程及线上并发验收属于后续发布步骤。

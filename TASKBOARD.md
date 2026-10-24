@@ -712,3 +712,13 @@ Code-only: exact-hash additive provisioning preserves every prior migration and 
 ## Shared atomic advertising sync candidate (2026-10-23)
 
 Code-only: administrator HTTP sync and the prepared private scheduler use one atomic, fully verified database writer. All existing advertising writers share the transaction lock and statement-wide source guards. Seventy-two focused advertising/provisioning checks, twelve PostgreSQL behavior groups, seven catalog-drift negative controls and ten worker unit checks passed. Canonical release, real authenticated HTTP/worker concurrency, session revocation and disabled/inactive timer readback remain required; no production scheduling or actual WhatsApp-number onboarding is claimed.
+
+## Advertising sync release acceptance closure (2026-10-24)
+
+Verified application release bfc7233f7ab9906a52461bd667e2b6c184dd3da0: four role API journeys, eight English/Chinese browser journeys and business flows passed. All 42 dedicated test records were cleaned, with zero residual rows. Alert recovery and delayed verification passed.
+
+Live administrator HTTP sync and the installed worker passed both execution orders. Manual writes committed atomically; worker validation rolled back; complete report rows and other records were preserved; dedicated acceptance sessions were revoked. The advertising timer remains disabled and inactive. No Meta role or scope was expanded.
+
+Advertising concurrency receipt SHA-256: 9c3e3f68c52e0218aec71e1c7bf4c55a46301f017e768676b502a321f9a62535.
+
+<!-- postdeploy-acceptance-sha256:e420685fdc2c38dce031d703d8e07f452a0a800b95ca21f20a3fe588adef17a9 -->

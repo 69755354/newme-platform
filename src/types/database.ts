@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=805d76ce862b015ed2dfb7ac0cdfae3673c274f3e23f1ee02099acc06919ff93
+// Migration fingerprint: sha256=59b76af1fc63fcf91c2f157dac95e843ceae72c43bad9aec43a0b50f9fe48eac
 export type Json =
   | string
   | number
@@ -2002,6 +2002,7 @@ export type Database = {
           meta_ad_id: string | null
           meta_campaign: string | null
           meta_click_id: string | null
+          meta_leadgen_id: string | null
           next_action: string | null
           next_followup_date: string | null
           no_answer_flag: boolean
@@ -2122,6 +2123,7 @@ export type Database = {
           meta_ad_id?: string | null
           meta_campaign?: string | null
           meta_click_id?: string | null
+          meta_leadgen_id?: string | null
           next_action?: string | null
           next_followup_date?: string | null
           no_answer_flag?: boolean
@@ -2242,6 +2244,7 @@ export type Database = {
           meta_ad_id?: string | null
           meta_campaign?: string | null
           meta_click_id?: string | null
+          meta_leadgen_id?: string | null
           next_action?: string | null
           next_followup_date?: string | null
           no_answer_flag?: boolean
@@ -2482,6 +2485,59 @@ export type Database = {
           total_spent_aed?: number | null
         }
         Relationships: []
+      }
+      meta_crm_stage_events: {
+        Row: {
+          id: string
+          lead_id: string
+          meta_leadgen_id: string
+          crm_stage: string
+          event_name: string
+          event_time: number
+          status: string
+          attempts: number
+          lease_id: string | null
+          lease_until: string | null
+          created_at: string
+          delivered_at: string | null
+        }
+        Insert: {
+          id?: string
+          lead_id: string
+          meta_leadgen_id: string
+          crm_stage: string
+          event_name: string
+          event_time: number
+          status?: string
+          attempts?: number
+          lease_id?: string | null
+          lease_until?: string | null
+          created_at?: string
+          delivered_at?: string | null
+        }
+        Update: {
+          id?: string
+          lead_id?: string
+          meta_leadgen_id?: string
+          crm_stage?: string
+          event_name?: string
+          event_time?: number
+          status?: string
+          attempts?: number
+          lease_id?: string | null
+          lease_until?: string | null
+          created_at?: string
+          delivered_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_crm_stage_events_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       meta_tokens: {
         Row: {

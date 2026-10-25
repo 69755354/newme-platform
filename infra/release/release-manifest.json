@@ -214,6 +214,11 @@
       "version": "20261025151000",
       "file": "20261025151000_website_capi_delivery_event.sql",
       "sha256": "0928b05c7c5037479bc0b59434a0b7af417d50af2624524279adbea82153fc56"
+    },
+    {
+      "version": "20261025180000",
+      "file": "20261025180000_meta_crm_lead_stage_events.sql",
+      "sha256": "21a3da79167aa95aae254e000feb9b73966fb9a59e5c8db4d7ed1ebeaa13f4f2"
     }
   ],
   "companions": [
@@ -529,6 +534,11 @@
           "name": "meta-capi-delivery-event-type-allowed",
           "expect": true,
           "sql": "SELECT coalesce((SELECT contype='c' AND NOT convalidated AND encode(sha256(convert_to(pg_get_constraintdef(oid),'UTF8')),'hex')='b148b0597bde5c74974176f275ace685d50c888e3885e25cc8fa1408e48a8682' FROM pg_constraint WHERE conrelid='public.business_events'::regclass AND conname='chk_event_type'),false)"
+        },
+        {
+          "name": "meta-crm-lead-stage-schema-present",
+          "expect": true,
+          "sql": "SELECT coalesce((SELECT to_regclass('public.meta_crm_stage_events') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='leads' AND column_name='meta_leadgen_id' AND data_type='text') AND (SELECT c.relrowsecurity AND NOT has_table_privilege('anon',c.oid,'SELECT,INSERT,UPDATE,DELETE') AND NOT has_table_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE,DELETE') AND EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid=c.oid AND t.tgname='trg_require_current_session' AND NOT t.tgisinternal) FROM pg_class c WHERE c.oid=to_regclass('public.meta_crm_stage_events'))),false)"
         }
       ]
     }

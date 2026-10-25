@@ -20,11 +20,12 @@ export const META_CRM_STAGE_EVENTS: Readonly<Record<string, string>> = {
   lost: "Lost",
 };
 
-const LEADGEN_ID = /^\d{8,32}$/;
+const LEADGEN_ID = /^[1-9]\d{7,31}$/;
 
 /** Accepts "123", 123 or the Meta export form "l:123"; returns null if not a valid id. */
 export function normalizeLeadgenId(raw: unknown): string | null {
   if (typeof raw !== "string" && typeof raw !== "number") return null;
+  if (typeof raw === "number" && !Number.isSafeInteger(raw)) return null;
   const value = String(raw).trim().replace(/^l:/i, "");
   return LEADGEN_ID.test(value) ? value : null;
 }
@@ -34,7 +35,7 @@ export type MetaCrmPayload = {
     event_name: string;
     event_time: number;
     action_source: "system_generated";
-    user_data: { lead_id: number };
+    user_data: { lead_id: string };
     custom_data: { lead_event_source: "crm"; event_source: "crm" };
   }>;
 };
@@ -49,16 +50,27 @@ export function buildMetaCrmPayload(input: {
       event_name: input.eventName,
       event_time: input.eventTime,
       action_source: "system_generated",
-      // Meta documents lead_id as a number; ids exceed 2^53 only in theory, so
-      // reject unsafe values rather than silently rounding them.
-      user_data: { lead_id: (() => {
-        const n = Number(leadId);
-        if (!Number.isSafeInteger(n)) throw new Error("Meta leadgen id is not a safe integer");
-        return n;
-      })() },
+      // Retain exact digits until the numeric JSON wire serializer.
+      user_data: { lead_id: leadId },
       custom_data: { lead_event_source: "crm", event_source: "crm" },
     }],
   };
+}
+
+/** Emit Meta's numeric lead_id without passing its digits through Number. */
+export function serializeMetaCrmPayload(payload: MetaCrmPayload): string {
+  const rawJSON = (JSON as unknown as { rawJSON?: (text: string) => unknown }).rawJSON;
+  if (!rawJSON) throw new Error("Exact Meta CRM ID serialization is unavailable");
+  return JSON.stringify({
+    ...payload,
+    data: payload.data.map((event) => {
+      const id = event.user_data.lead_id;
+      if (typeof id !== "string" || normalizeLeadgenId(id) !== id) {
+        throw new Error("Invalid Meta CRM payload lead id");
+      }
+      return { ...event, user_data: { ...event.user_data, lead_id: rawJSON(id) } };
+    }),
+  });
 }
 
 /**
@@ -98,7 +110,7 @@ export async function sendMetaCrmPayload(payload: MetaCrmPayload): Promise<void>
     result = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify(payload),
+      body: serializeMetaCrmPayload(payload),
       cache: "no-store",
       redirect: "error",
       signal: AbortSignal.timeout(5_000),

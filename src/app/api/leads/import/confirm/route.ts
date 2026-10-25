@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { enqueueMetaCrmStageEvent, normalizeLeadgenId } from "@/lib/meta-crm-events";
 
 function importFingerprint(row: Record<string, unknown>): string {
   // Includes the source row number so intentional identical rows in one workbook
@@ -142,6 +143,8 @@ export async function POST(request: NextRequest) {
         property_type: row.property_type || null,
         quotation_value: row.quotation_value || null,
         raw_import_data: row.raw_import_data ? JSON.stringify(row.raw_import_data) : null,
+        // Only set when the workbook carries a valid Meta lead id (optional schema).
+        ...(normalizeLeadgenId(rawImportData.raw_leadgen_id) ? { meta_leadgen_id: normalizeLeadgenId(rawImportData.raw_leadgen_id) } : {}),
         import_batch_id: importBatchId,
         import_fingerprint: importFingerprint(row),
         imported_by: user.id,
@@ -162,6 +165,8 @@ export async function POST(request: NextRequest) {
     const errors: { row: number; error: string }[] = [];
     const rowNumToLeadId = new Map<number, string>();
     let skippedDuplicates = 0;
+    // Leads newly stored WITH their Meta id; only these get the initial "Lead" event.
+    const leadgenByLeadId = new Map<string, string>();
 
     for (let i = 0; i < leadsToInsert.length; i += BATCH_SIZE) {
       const batch = leadsToInsert.slice(i, i + BATCH_SIZE);
@@ -182,14 +187,24 @@ export async function POST(request: NextRequest) {
         // semantics to every fallback row.
         for (const row of batch) {
           const { row_number, ...cleanRow } = row;
-          const { data: single, error: singleErr } = await adminClient
+          const upsertRow = (value: typeof cleanRow) => adminClient
             .from("leads")
-            .upsert(cleanRow, {
+            .upsert(value, {
               onConflict: "import_fingerprint",
               ignoreDuplicates: true,
             })
             .select("id, import_fingerprint")
             .maybeSingle();
+          let attempt = await upsertRow(cleanRow);
+          const storedLeadgen = "meta_leadgen_id" in cleanRow && !attempt.error;
+          if (attempt.error && "meta_leadgen_id" in cleanRow) {
+            // Never lose a lead over the optional Meta id (schema not yet
+            // applied, or the id already belongs to another lead).
+            const { meta_leadgen_id: _omitted, ...withoutLeadgen } = cleanRow;
+            void _omitted;
+            attempt = await upsertRow(withoutLeadgen as typeof cleanRow);
+          }
+          const { data: single, error: singleErr } = attempt;
           if (singleErr) {
             errors.push({ row: row_number, error: singleErr.message });
           } else if (!single) {
@@ -197,16 +212,31 @@ export async function POST(request: NextRequest) {
           } else {
             imported++;
             rowNumToLeadId.set(row_number, single.id);
+            if (storedLeadgen && "meta_leadgen_id" in cleanRow && cleanRow.meta_leadgen_id) {
+              leadgenByLeadId.set(single.id, cleanRow.meta_leadgen_id);
+            }
           }
         }
       } else {
         imported += data.length;
         skippedDuplicates += batch.length - data.length;
+        const leadgenByFingerprint = new Map(
+          batch.flatMap((row) => ("meta_leadgen_id" in row && row.meta_leadgen_id
+            ? [[row.import_fingerprint, row.meta_leadgen_id] as const] : [])),
+        );
         for (const lead of data) {
           const rowNumber = rowByFingerprint.get(lead.import_fingerprint);
           if (rowNumber != null) rowNumToLeadId.set(rowNumber, lead.id);
+          const leadgenId = leadgenByFingerprint.get(lead.import_fingerprint);
+          if (leadgenId) leadgenByLeadId.set(lead.id, leadgenId);
         }
       }
+    }
+
+    // Initial Meta CRM "Lead" event for newly imported leads that kept their Meta id.
+    // Duplicates and rows whose id was dropped on fallback are excluded above.
+    for (const [leadId, leadgenId] of leadgenByLeadId) {
+      await enqueueMetaCrmStageEvent(adminClient, { id: leadId, meta_leadgen_id: leadgenId }, "new");
     }
 
     // Insert follow_up_logs for notes — use rowNumToLeadId Map for correct mapping

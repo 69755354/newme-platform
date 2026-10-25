@@ -254,6 +254,8 @@ test("real lead stage handler rejects an inactive old session before business ac
     },
     "@/lib/request-auth-context": requestAuth,
     "@/shared/kanban/types": { PIPELINE_STAGES: [{ key: "new" }] },
+    "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async () => "skipped" },
+    "@/lib/supabase-admin": { get supabaseAdmin() { throw new Error("not reached before authorization"); } },
     "next/server": nextServer,
   });
 

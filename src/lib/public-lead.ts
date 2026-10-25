@@ -58,8 +58,8 @@ function optionalText(
   return null;
 }
 
-// Tracking and free-text fields must never cost us the inquiry itself: an
-// over-long value (Meta click ids grow, and the bridge appends attribution to
+// Free-text fields must never cost us the inquiry itself: an
+// over-long value (the bridge appends attribution to
 // the message) is truncated instead of rejecting the whole lead. Numbers are
 // accepted as text. Contact fields keep the strict optionalText rules.
 function lenientText(
@@ -75,6 +75,22 @@ function lenientText(
     if (typeof value !== "string") return undefined;
     const normalized = value.trim().slice(0, maxLength).trim();
     return normalized || null;
+  }
+  return null;
+}
+
+// Attribution identifiers are opaque: shortening one produces a different ID.
+// Omit an overlong optional identifier while retaining the customer inquiry.
+function attributionIdentifier(
+  input: Record<string, unknown>,
+  keys: string[],
+  maxLength: number,
+): string | null | undefined {
+  const value = optionalText(input, keys, maxLength);
+  if (value !== undefined) return value;
+  for (const key of keys) {
+    if (!Object.hasOwn(input, key)) continue;
+    return typeof input[key] === "string" ? null : undefined;
   }
   return null;
 }
@@ -145,9 +161,9 @@ export function parseWebsiteLead(input: unknown): WebsiteLeadParseResult {
   const needs = serviceNeeds(body);
   const turnstileToken = optionalText(body, ["turnstileToken", "cf-turnstile-response"], 2_048);
   const eventId = optionalText(body, ["event_id"], 100);
-  const fbclid = lenientText(body, ["fbclid"], 500);
-  const fbc = lenientText(body, ["fbc"], 500);
-  const fbp = lenientText(body, ["fbp"], 500);
+  const fbclid = attributionIdentifier(body, ["fbclid"], 500);
+  const fbc = attributionIdentifier(body, ["fbc"], 500);
+  const fbp = attributionIdentifier(body, ["fbp"], 500);
   const landingPage = lenientText(body, ["landing_page"], 2_048);
   const referrer = lenientText(body, ["referrer"], 2_048);
   const utmSource = lenientText(body, ["utm_source"], 200);
@@ -155,11 +171,11 @@ export function parseWebsiteLead(input: unknown): WebsiteLeadParseResult {
   const utmCampaign = lenientText(body, ["utm_campaign"], 300);
   const utmContent = lenientText(body, ["utm_content"], 300);
   const utmTerm = lenientText(body, ["utm_term"], 300);
-  const campaignId = lenientText(body, ["campaign_id"], 100);
+  const campaignId = attributionIdentifier(body, ["campaign_id"], 100);
   const campaignName = lenientText(body, ["campaign_name"], 300);
-  const adsetId = lenientText(body, ["adset_id"], 100);
+  const adsetId = attributionIdentifier(body, ["adset_id"], 100);
   const adsetName = lenientText(body, ["adset_name"], 300);
-  const adId = lenientText(body, ["ad_id"], 100);
+  const adId = attributionIdentifier(body, ["ad_id"], 100);
   const adName = lenientText(body, ["ad_name"], 300);
 
   if ([name, rawPhone, email, location, propertyType, floors, message, ref, needs, turnstileToken,

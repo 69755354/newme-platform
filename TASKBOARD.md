@@ -732,3 +732,13 @@ Thirty-five synthetic behavior checks passed, including concurrent requests, par
 CI prerequisite: the two existing hosted-runner review records expired on 2026-10-24. The actual Ubuntu/Windows image versions were checked against official immutable inventories and renewed for seven days through 2026-11-01. Eight provenance/refusal tests passed; the checker, maximum lifetime, action/image pins and workflow permissions are unchanged. Current-head official source readback and complete CI remain required. Review evidence is in docs/ci-runner-review-20261025.md.
 
 Prior release acceptance digest (archived for the website CAPI successor from eecf002023873e2098a751bf4c7e13bced11bea5): e420685fdc2c38dce031d703d8e07f452a0a800b95ca21f20a3fe588adef17a9
+
+## Website CAPI release acceptance closure (2026-10-25)
+
+Verified application release de1d5d88559d2b15cb0dc77e3e83fa25a59a2d3e: four role journeys, eight English/Chinese browser journeys and six business flows passed. All 42 dedicated test records were cleaned, with zero residual rows. Alert recovery and delayed verification passed.
+
+Live PostgreSQL/REST CAPI checks passed: concurrent senders acquire one claim, expired leases are reclaimed, stale owners are fenced, and the original payload is preserved. Both synthetic outbox records were cleaned, with zero residual rows, zero CRM leads and zero Meta Graph calls. This does not establish genuine customer attribution. Advertising scheduling and CAPI automatic replay remain off; no Meta permission was expanded.
+
+CAPI concurrency receipt SHA-256: c884d4e71a3aa5630465a625a3f2b9ca81648a80e49db50d293f2008db366f55.
+
+<!-- postdeploy-acceptance-sha256:40a910259f3fa852ea836f6768cccf594512473ce3dced4042a0dcd3613240c7 -->

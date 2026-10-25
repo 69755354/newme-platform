@@ -58,6 +58,27 @@ function optionalText(
   return null;
 }
 
+// Tracking and free-text fields must never cost us the inquiry itself: an
+// over-long value (Meta click ids grow, and the bridge appends attribution to
+// the message) is truncated instead of rejecting the whole lead. Numbers are
+// accepted as text. Contact fields keep the strict optionalText rules.
+function lenientText(
+  input: Record<string, unknown>,
+  keys: string[],
+  maxLength: number,
+): string | null | undefined {
+  for (const key of keys) {
+    if (!Object.hasOwn(input, key)) continue;
+    const value = input[key];
+    if (value === null || value === undefined || value === "") return null;
+    if (typeof value === "number" && Number.isFinite(value)) return String(value).slice(0, maxLength);
+    if (typeof value !== "string") return undefined;
+    const normalized = value.trim().slice(0, maxLength).trim();
+    return normalized || null;
+  }
+  return null;
+}
+
 function normalizePhone(value: string | null | undefined): string | null | undefined {
   if (!value) return null;
   let normalized = value.replace(/[\s().-]/g, "");
@@ -73,10 +94,12 @@ function serviceNeeds(input: Record<string, unknown>): string[] | null | undefin
     : typeof raw === "string"
       ? raw.split(",")
       : null;
-  if (!values || values.length > 12) return undefined;
-  const normalized = values.map((value) => typeof value === "string" ? value.trim() : "");
-  if (normalized.some((value) => !value || value.length > 80)) return undefined;
-  return [...new Set(normalized)];
+  if (!values) return undefined;
+  const normalized = values
+    .map((value) => typeof value === "string" ? value.trim() : "")
+    .filter((value) => value && value.length <= 80)
+    .slice(0, 12);
+  return normalized.length ? [...new Set(normalized)] : null;
 }
 
 export function isAllowedPublicLeadOrigin(origin: string | null): boolean {
@@ -114,30 +137,30 @@ export function parseWebsiteLead(input: unknown): WebsiteLeadParseResult {
   const rawPhone = optionalText(body, ["phone", "whatsapp"], 40);
   const phone = normalizePhone(rawPhone);
   const email = optionalText(body, ["email"], 254);
-  const location = optionalText(body, ["area", "location"], 120);
-  const propertyType = optionalText(body, ["type", "property_type"], 80);
-  const floors = optionalText(body, ["floors"], 30);
-  const message = optionalText(body, ["message", "notes"], 2_000);
-  const ref = optionalText(body, ["ref"], 100);
+  const location = lenientText(body, ["area", "location"], 120);
+  const propertyType = lenientText(body, ["type", "property_type"], 80);
+  const floors = lenientText(body, ["floors"], 30);
+  const message = lenientText(body, ["message", "notes"], 2_000);
+  const ref = lenientText(body, ["ref"], 100);
   const needs = serviceNeeds(body);
   const turnstileToken = optionalText(body, ["turnstileToken", "cf-turnstile-response"], 2_048);
   const eventId = optionalText(body, ["event_id"], 100);
-  const fbclid = optionalText(body, ["fbclid"], 500);
-  const fbc = optionalText(body, ["fbc"], 500);
-  const fbp = optionalText(body, ["fbp"], 500);
-  const landingPage = optionalText(body, ["landing_page"], 2_048);
-  const referrer = optionalText(body, ["referrer"], 2_048);
-  const utmSource = optionalText(body, ["utm_source"], 200);
-  const utmMedium = optionalText(body, ["utm_medium"], 200);
-  const utmCampaign = optionalText(body, ["utm_campaign"], 300);
-  const utmContent = optionalText(body, ["utm_content"], 300);
-  const utmTerm = optionalText(body, ["utm_term"], 300);
-  const campaignId = optionalText(body, ["campaign_id"], 100);
-  const campaignName = optionalText(body, ["campaign_name"], 300);
-  const adsetId = optionalText(body, ["adset_id"], 100);
-  const adsetName = optionalText(body, ["adset_name"], 300);
-  const adId = optionalText(body, ["ad_id"], 100);
-  const adName = optionalText(body, ["ad_name"], 300);
+  const fbclid = lenientText(body, ["fbclid"], 500);
+  const fbc = lenientText(body, ["fbc"], 500);
+  const fbp = lenientText(body, ["fbp"], 500);
+  const landingPage = lenientText(body, ["landing_page"], 2_048);
+  const referrer = lenientText(body, ["referrer"], 2_048);
+  const utmSource = lenientText(body, ["utm_source"], 200);
+  const utmMedium = lenientText(body, ["utm_medium"], 200);
+  const utmCampaign = lenientText(body, ["utm_campaign"], 300);
+  const utmContent = lenientText(body, ["utm_content"], 300);
+  const utmTerm = lenientText(body, ["utm_term"], 300);
+  const campaignId = lenientText(body, ["campaign_id"], 100);
+  const campaignName = lenientText(body, ["campaign_name"], 300);
+  const adsetId = lenientText(body, ["adset_id"], 100);
+  const adsetName = lenientText(body, ["adset_name"], 300);
+  const adId = lenientText(body, ["ad_id"], 100);
+  const adName = lenientText(body, ["ad_name"], 300);
 
   if ([name, rawPhone, email, location, propertyType, floors, message, ref, needs, turnstileToken,
     eventId, fbclid, fbc, fbp, landingPage, referrer, utmSource, utmMedium, utmCampaign,

@@ -483,3 +483,36 @@ test("the exact public route bypasses session auth and has origin-specific produ
   assert.match(config, /Access-Control-Allow-Origin", value: "https:\/\/www\.newme\.ae"/);
   assert.doesNotMatch(config, /Access-Control-Allow-Origin[^\n]*value: "\*"/);
 });
+
+test("over-long tracking fields and numeric floors no longer cost the inquiry", () => {
+  const longClick = "IwY2xjawF".padEnd(520, "x");
+  const result = publicLead.parseWebsiteLead({
+    name: "Nadia",
+    phone: "+971501234567",
+    event_id: "newme-lead-1-abc",
+    floors: 2,
+    systems: ["lighting", "", 7, "climate"],
+    fbclid: longClick,
+    fbc: `fb.1.1761400000000.${longClick}`,
+    utm_campaign: "c".repeat(400),
+    message: "m".repeat(2_500),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.attribution.fbclid.length, 500);
+  assert.equal(result.value.attribution.fbc.length, 500);
+  assert.equal(result.value.attribution.utmCampaign.length, 300);
+  assert.deepEqual(result.value.serviceNeeds, ["lighting", "climate"]);
+  assert.match(result.value.notes, /^Message: m+\nFloors: 2$/);
+  assert.ok(result.value.notes.length <= "Message: ".length + 2_000 + "\nFloors: 2".length);
+});
+
+test("contact fields stay strict while tracking fields are lenient", () => {
+  assert.deepEqual(
+    publicLead.parseWebsiteLead({ name: "Nadia", phone: 501234567, event_id: "e1" }),
+    { ok: false, code: "invalid_field" },
+  );
+  assert.deepEqual(
+    publicLead.parseWebsiteLead({ name: "Nadia", phone: "+971501234567", event_id: "e1", fbclid: { nested: true } }),
+    { ok: false, code: "invalid_field" },
+  );
+});

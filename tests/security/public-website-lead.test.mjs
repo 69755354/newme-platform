@@ -498,8 +498,8 @@ test("over-long tracking fields and numeric floors no longer cost the inquiry", 
     message: "m".repeat(2_500),
   });
   assert.equal(result.ok, true);
-  assert.equal(result.value.attribution.fbclid.length, 500);
-  assert.equal(result.value.attribution.fbc.length, 500);
+  assert.equal(result.value.attribution.fbclid, null);
+  assert.equal(result.value.attribution.fbc, null);
   assert.equal(result.value.attribution.utmCampaign.length, 300);
   assert.deepEqual(result.value.serviceNeeds, ["lighting", "climate"]);
   assert.match(result.value.notes, /^Message: m+\nFloors: 2$/);
@@ -515,4 +515,16 @@ test("contact fields stay strict while tracking fields are lenient", () => {
     publicLead.parseWebsiteLead({ name: "Nadia", phone: "+971501234567", event_id: "e1", fbclid: { nested: true } }),
     { ok: false, code: "invalid_field" },
   );
+});
+
+test("opaque attribution identifiers are never shortened into different identifiers", () => {
+  for (const [field, limit, key] of [["fbclid",500,"fbclid"],["fbc",500,"fbc"],["fbp",500,"fbp"],["campaign_id",100,"campaignId"],["adset_id",100,"adsetId"],["ad_id",100,"adId"]]) {
+    const id="x".repeat(limit);
+    const exact=publicLead.parseWebsiteLead({name:"Nadia",phone:"+971501234567",event_id:"id-preserve", [field]:id});
+    assert.equal(exact.ok,true);
+    assert.equal(exact.value.attribution[key],id,field+" preserves a bounded ID");
+    const over=publicLead.parseWebsiteLead({name:"Nadia",phone:"+971501234567",event_id:"id-over", [field]:id+"x"});
+    assert.equal(over.ok,true,field+" never loses the inquiry");
+    assert.equal(over.value.attribution[key],null,field+" omits an overlong ID");
+  }
 });

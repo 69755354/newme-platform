@@ -91,7 +91,7 @@ phase):
 20260817230000_lead_rebalance_plan_idempotency.sql
 ```
 
-Contract phase — these five files, in order, pushed only after §4 step 6 passes:
+Contract phase — these six files, in order, pushed only after §4 step 6 passes:
 
 ```contract
 20260818000000_money_direct_write_contract_phase.sql
@@ -99,6 +99,7 @@ Contract phase — these five files, in order, pushed only after §4 step 6 pass
 20261022194620_whatsapp_privacy_lifecycle.sql
 20261023020000_whatsapp_privacy_rpc_owner.sql
 20261023123323_meta_ads_atomic_window.sql
+20261025151000_website_capi_delivery_event.sql
 ```
 
 ### How the split is executed: a manifest, not a moved file
@@ -112,7 +113,7 @@ artifacts:
 
 * [`infra/release/release-manifest.json`](../../infra/release/release-manifest.json)
   names every pending migration in exactly one phase — `required_for_app` (the
-  twenty-five above) or `deferred_contract` (the five above) — with the SHA-256 of each
+  twenty-five above) or `deferred_contract` (the six above) — with the SHA-256 of each
   file and the runtime posture each phase must produce.
 * [`scripts/db-phase-push.mjs`](../../scripts/db-phase-push.mjs) applies one named
   phase and nothing else. In production it is reachable only through the canonical
@@ -229,9 +230,9 @@ production now. **C** = the candidate release on this branch.
 | 1 · today | base, stamp `20260805202917` | table does not exist | yes | **no** — the RPCs it calls do not all exist yet |
 | 2 · expand applied | + the twenty-five files | `compat` | yes, with the seven deliberate exceptions in §3 | yes |
 | 3 · candidate deployed | + the twenty-five files | `compat` | yes (this is the overlap window) | yes |
-| 4 · contract applied | + all twenty-seven | `strict` | **no** — its direct money writes are refused | yes |
-| 5 · companion run | + all twenty-seven | `compat` | yes, as in state 2 | yes |
-| 6 · recontract run | + all twenty-seven | `strict` | **no** — as in state 4 | yes |
+| 4 · contract applied | + all thirty-one | `strict` | **no** — its direct money writes are refused | yes |
+| 5 · companion run | + all thirty-one | `compat` | yes, as in state 2 | yes |
+| 6 · recontract run | + all thirty-one | `strict` | **no** — as in state 4 | yes |
 
 State 3 is the rollback boundary: both releases work against the same schema, so
 the application can be rolled back without touching the database. State 5 is how
@@ -1022,10 +1023,10 @@ select count(*) from supabase_migrations.schema_migrations
 -- expect 1
 
 -- the newest recorded version is the last declared deferred migration,
--- which provisions the optional observer privacy lifecycle without enabling capture
+-- which allows the CAPI delivery event without enabling automatic replay
 select version from supabase_migrations.schema_migrations
  order by version desc limit 1;
--- expect 20261023123323
+-- expect 20261025151000
 ```
 
 `sudo /usr/local/sbin/newme-deploy db-transition <release-sha>

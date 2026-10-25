@@ -1,3 +1,4 @@
+-- NO_ROLLBACK: additive event type; old clients remain compatible and durable outbox rows must stay valid.
 -- Add only the website CAPI delivery event; retain every existing event type.
 -- NOT VALID preserves the existing posture and still checks all new writes.
 SET LOCAL lock_timeout = '5s';

@@ -5,7 +5,12 @@ import { createHash } from 'node:crypto';
 import { CAPI_EVENT, CAPI_EVENT_POSTURE_SQL, judgeCapiProvisioning } from '../../scripts/check-meta-capi-provisioning.mjs';
 
 const live=JSON.parse(fs.readFileSync(new URL('../../infra/release/release-manifest.json',import.meta.url),'utf8'));
-live.deferred_contract=live.deferred_contract.filter(x=>x.version!==CAPI_EVENT.version);
+// The live release is the one before CAPI: drop CAPI and every later additive
+// suffix (each appended exactly one deferred entry and one posture predicate).
+const capiAt=live.deferred_contract.findIndex(x=>x.version===CAPI_EVENT.version);
+const laterSuffixes=live.deferred_contract.length-capiAt-1;
+live.deferred_contract=live.deferred_contract.slice(0,capiAt);
+live.posture.deferred_contract.predicates=live.posture.deferred_contract.predicates.slice(0,live.posture.deferred_contract.predicates.length-laterSuffixes);
 live.posture.deferred_contract.predicates=live.posture.deferred_contract.predicates.filter(x=>x.name!=='meta-capi-delivery-event-type-allowed');
 const sql=fs.readFileSync(new URL('../fixtures/website-capi-delivery-event.sql',import.meta.url),'utf8');
 const candidate=structuredClone(live);

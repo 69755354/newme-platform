@@ -27,6 +27,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_meta_crm_import_id_precision_code | DONE | Codex | 2026-10-26 |
 | task_meta_crm_id_precision_code | DONE | Codex | 2026-10-26 |
 | task_ci_runner_provenance_refresh_code | DONE | Codex | 2026-10-25 |
 | task_meta_capi_intake_recovery_code | DONE | Codex | 2026-10-25 |
@@ -747,3 +748,7 @@ CAPI concurrency receipt SHA-256: c884d4e71a3aa5630465a625a3f2b9ca81648a80e49db5
 ## Meta CRM identifier precision (2026-10-26)
 
 Code-only: retain the exact Meta Lead ID digits through payload construction and serialize the documented numeric JSON field with the pinned Node runtime's raw JSON support. Rounded unsafe numeric inputs and noncanonical leading-zero IDs are refused. Nine CRM unit checks and 23 website/advertising checks passed locally; the earlier implementation fails the 17-digit regression. Formal CI, merge, database provisioning, production acceptance and genuine Meta receipt remain separate evidence. No Graph call, credential, permission or scheduler change was performed.
+
+## Meta CRM spreadsheet ID boundary (2026-10-26)
+
+Code-only: validate each original Meta ID cell before general string normalization. Preserve exact text IDs, omit unsafe or more-than-15-digit numeric spreadsheet IDs with a visible warning, and keep the customer row importable. Existing role checks and legacy raw-import fingerprint shape remain intact. Five route regression checks and 32 related website/CRM checks passed locally; two new checks fail against the earlier preview handler. Official CI and production acceptance are separate gates. No real workbook, customer event, permission, credential or scheduler was accessed or changed.

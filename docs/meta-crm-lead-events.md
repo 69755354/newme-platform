@@ -35,14 +35,13 @@ creation), `action_source: "system_generated"`, `user_data.lead_id`,
 
 ## Not yet done (needs an authorised operator)
 
-- **Schema.** `docs/meta-crm-lead-events.proposed.sql` adds `leads.meta_leadgen_id`
-  and the service-only `meta_crm_stage_events` table. It is deliberately **not** in
-  `supabase/migrations/`: the release gate only permits the reviewed CAPI event as
-  the deferred suffix (`scripts/check-meta-capi-provisioning.mjs`), and the manifest
-  requires every expand-phase version to sort before every deferred one. Promoting it
-  needs a reviewed gate change, a manifest entry and the guarded plan/apply.
+- **Schema.** Provided by PR #485 (`20261025180000_meta_crm_lead_stage_events.sql`,
+  gate `meta-crm-plan`/`meta-crm-provision`); see `docs/meta-crm-provisioning.md`.
+  Apply it before deploying this code.
 - Until the schema exists the code is inert: stage changes are unaffected, a lead
   carrying a Meta id is still stored (without the id), and no event is queued.
+- Stage events are derived from the committed RPC result; idempotent replays never
+  queue a stage. Workbooks without a Meta id keep their previous import fingerprint.
 - **Dataset.** The sender reuses `META_PIXEL_ID`; confirm it is the dataset the CRM
   integration is configured on in Events Manager (`4476894535908766`).
 - **Live acceptance.** Use Meta's test-event flow with one real form lead before

@@ -886,6 +886,10 @@ create table public.business_events (
   created_at  timestamptz default now()
 );
 
+-- Match the captured production allowlist so additive event migrations can
+-- verify their exact predecessor. This does not remediate a control assertion.
+ALTER TABLE ONLY public.business_events ADD CONSTRAINT chk_event_type CHECK (event_type = ANY (ARRAY['stage_change'::text, 'lead_stale_detected'::text, 'transfer'::text, 'quotation_sent'::text, 'quotation_accepted'::text, 'quotation_rejected'::text, 'won'::text, 'lost'::text, 'contract_activated'::text, 'contract_completed'::text, 'payment_recorded'::text, 'owner_change'::text, 'quality_checked'::text, 'project_info_updated'::text, 'note_added'::text, 'probability_changed'::text, 'status_changed'::text, 'lost_reason_set'::text, 'followup_scheduled'::text, 'leads_archived'::text])) NOT VALID;
+
 -- src/types/database.ts, follow_up_logs. record_lead_note_atomic() writes one
 -- row here per note.
 create table public.follow_up_logs (

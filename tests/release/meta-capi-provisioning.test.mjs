@@ -46,3 +46,11 @@ test('the future migration preserves every old event type and adds only CAPI',()
   assert.match(sql,/NOT VALID;/);
   assert.doesNotMatch(sql,/\b(?:GRANT|REVOKE|DISABLE|DELETE|TRUNCATE)\b/i);
 });
+
+test('the branch replay floor retains the captured production event constraint',()=>{
+  const constraint=source=>source.split(/\r?\n/).find(line=>line.startsWith('ALTER TABLE ONLY public.business_events ADD CONSTRAINT chk_event_type '));
+  const read=name=>fs.readFileSync(new URL(`../../supabase/replay/${name}`,import.meta.url),'utf8');
+  const baseline=constraint(read('production-schema-baseline.sql'));
+  assert.ok(baseline);
+  assert.equal(constraint(read('01_floor_schema.sql')),baseline);
+});

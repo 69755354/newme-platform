@@ -9,8 +9,10 @@ nothing here is deployed, the schema is not applied and no event has been sent.
 1. A Meta lead arrives with its `leadgen_id` (`POST /api/leads/meta-capi` as
    `custom_data.leadgen_id`, or an import workbook column `Meta Lead ID`/`leadgen_id`).
    It is validated (`normalizeLeadgenId`) and stored in `leads.meta_leadgen_id`.
-2. On each stage change (`PATCH /api/leads/[id]/stage`) and on arrival ("Lead"), one
-   row per (lead, stage) is queued in `meta_crm_stage_events`. Queueing never fails
+2. On arrival or import ("Lead"), on each committed stage change
+   (`PATCH /api/leads/[id]/stage`) and on each committed lead-detail milestone
+   (`POST /api/leads/[id]/milestone`), one row per (lead, Meta event) is queued in
+   `meta_crm_stage_events`; the stage and milestone paths for the same step dedupe. Queueing never fails
    the user's action and is skipped for leads without a Meta id.
 3. `node scripts/meta-crm-events-send.mjs` (read-only by default; `--execute` sends)
    posts at most 50 queued events, with a lease and compare-and-set, using the
@@ -21,13 +23,16 @@ Payload per event: `event_name`, `event_time` (transition moment, after lead
 creation), `action_source: "system_generated"`, `user_data.lead_id`,
 `custom_data.lead_event_source: "crm"`.
 
-| CRM stage | Meta event |
+| CRM stage / milestone | Meta event |
 | --- | --- |
 | new | Lead |
-| contacted | Contacted |
-| requirement_confirmed | **Qualified** (optimisation target) |
-| solution_submitted | Solution Submitted |
-| quotation_submitted | Quoted |
+| contacted / first_contact | Contacted |
+| basic_info | Basic Info Collected |
+| drawings | Drawings Received |
+| requirement_confirmed / requirements | **Qualified** (optimisation target) |
+| solution_submitted / solution | Solution Submitted |
+| quotation_submitted / quotation | Quoted |
+| meeting | Meeting |
 | negotiation | Negotiation |
 | pending_decision | Pending Decision |
 | won | Won |

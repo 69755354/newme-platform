@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { canCompleteMilestone } from "@/lib/milestones";
+import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
 import {
   applyRequestAuthCookies,
   getRequestAuthContext,
@@ -175,6 +176,8 @@ export async function POST(
       return respond({ error: message }, { status });
     }
 
+    // Best-effort Meta CRM feedback for the committed milestone; never fails the request.
+    await enqueueMetaCrmEventForLead(supabaseAdmin, leadId, milestoneKey);
     return respond({
       success: true,
       result: recompleted,
@@ -228,6 +231,8 @@ export async function POST(
     }
   }
 
+  // Best-effort Meta CRM feedback for the committed milestone; never fails the request.
+  await enqueueMetaCrmEventForLead(supabaseAdmin, leadId, milestoneKey);
   return respond({ success: true, milestone: inserted });
 }
 

@@ -21,6 +21,14 @@ test("payload uses CRM source fields and the numeric lead id", () => {
   assert.throws(() => buildMetaCrmPayload({ leadgenId: "9".repeat(20), eventName: "Lead", eventTime: 1 }));
 });
 
+test("every lead-detail milestone has an event name; Qualified is requirements", () => {
+  for (const m of ["first_contact", "basic_info", "drawings", "requirements", "solution", "quotation", "meeting"]) {
+    assert.ok(META_CRM_STAGE_EVENTS[m], m);
+  }
+  assert.equal(META_CRM_STAGE_EVENTS.requirements, "Qualified");
+  assert.equal(META_CRM_STAGE_EVENTS.first_contact, META_CRM_STAGE_EVENTS.contacted);
+});
+
 test("every pipeline stage has an event name; Qualified is requirement_confirmed", () => {
   for (const s of ["new", "contacted", "requirement_confirmed", "solution_submitted", "quotation_submitted",
     "negotiation", "pending_decision", "won", "lost"]) assert.ok(META_CRM_STAGE_EVENTS[s], s);
@@ -42,6 +50,11 @@ test("enqueue skips leads without a Meta id or unknown stages and never throws",
   assert.equal(await enqueueMetaCrmStageEvent(db, { id: "a", meta_leadgen_id: "123456789012345" }, "contacted", 1_800_000_000), "queued");
   assert.equal(db.rows.length, 1);
   assert.equal(db.rows[0].event_name, "Contacted");
+  // The outbox key is the funnel event, so the milestone path reporting the
+  // same step collapses onto the same (lead, crm_stage) row.
+  assert.equal(db.rows[0].crm_stage, "Contacted");
+  assert.equal(await enqueueMetaCrmStageEvent(db, { id: "a", meta_leadgen_id: "123456789012345" }, "first_contact", 1_800_000_000), "queued");
+  assert.equal(db.rows[1].crm_stage, "Contacted");
   assert.equal(await enqueueMetaCrmStageEvent({ from() { throw new Error("boom"); } }, { id: "a", meta_leadgen_id: "123456789012345" }, "won"), "skipped");
 });
 

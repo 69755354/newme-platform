@@ -101,3 +101,66 @@ test("workbooks without a Meta id keep their legacy import fingerprint shape", (
   assert.match(preview, /\.\.\.\(norm\.leadgen_id \? \{ raw_leadgen_id: norm\.leadgen_id \} : \{\}\)/);
   assert.doesNotMatch(preview, /raw_leadgen_id: norm\.leadgen_id \|\| ""/);
 });
+
+function loadMilestoneRoute({ queued, insertError = null, existing = [] }) {
+  const chain = (result) => {
+    const c = { select: () => c, eq: () => c, order: () => c, single: async () => result, maybeSingle: async () => result,
+      insert: () => c, update: () => c, then: (resolve) => Promise.resolve(result).then(resolve) };
+    return c;
+  };
+  const supabase = {
+    from: (table) => {
+      if (table === "leads") return chain({ data: { id: "lead-1", current_milestone: "drawings", final_status: null, assigned_to: "user-1", quality: "good" }, error: null });
+      if (table === "lead_milestones") {
+        const c = chain({ data: existing, error: null });
+        c.insert = () => chain(insertError ? { data: null, error: insertError } : { data: { id: "m1", milestone_key: "requirements" }, error: null });
+        return c;
+      }
+      return chain({ data: [], error: null });
+    },
+    rpc: async () => ({ data: { ok: true }, error: null }),
+  };
+  return loadTypeScriptModule("src/app/api/leads/[id]/milestone/route.ts", {
+    "@/lib/supabase-admin": { supabaseAdmin: { tag: "admin" } },
+    "@/lib/milestones": { canCompleteMilestone: () => ({ allowed: true }) },
+    "@/lib/request-auth-context": {
+      applyRequestAuthCookies: (_c, response) => response,
+      getRequestAuthContext: async () => ({ supabase, role: "sales", user: { id: "user-1" } }),
+      RequestAuthError: class extends Error {},
+      requestAuthErrorResponse: () => nextServer.NextResponse.json({}, { status: 401 }),
+    },
+    "@/lib/first-contact-gate.mjs": { isAssessedQuality: () => true, isCompleteContact: () => true },
+    "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: async (db, leadId, key) => { queued.push([db.tag, leadId, key]); return "queued"; } },
+    "next/server": nextServer,
+  });
+}
+
+async function completeMilestone(route, milestoneKey) {
+  const request = new Request("http://localhost/api/leads/lead-1/milestone", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ milestoneKey, notes: "confirmed scope with client" }),
+  });
+  return route.POST(request, { params: Promise.resolve({ id: "lead-1" }) });
+}
+
+test("completing the requirements milestone in the lead UI queues the Qualified step", async () => {
+  const queued = [];
+  const route = loadMilestoneRoute({ queued });
+  assert.equal((await completeMilestone(route, "requirements")).status, 200);
+  assert.deepEqual(queued, [["admin", "lead-1", "requirements"]]);
+});
+
+test("an already-completed or failed milestone queues nothing", async () => {
+  const queued = [];
+  const done = loadMilestoneRoute({ queued, existing: [{ id: "m0", milestone_key: "requirements", completed_at: "2026-10-01T00:00:00Z", notes: "x" }] });
+  assert.equal((await completeMilestone(done, "requirements")).status, 200);
+  const failed = loadMilestoneRoute({ queued, insertError: { code: "XX000", message: "boom" } });
+  assert.equal((await completeMilestone(failed, "requirements")).status, 500);
+  assert.deepEqual(queued, []);
+});
+
+test("the import route queues the initial Lead event only for leads stored with their Meta id", () => {
+  const confirm = fsSync.readFileSync(path.join(repoRoot, "src/app/api/leads/import/confirm/route.ts"), "utf8");
+  assert.match(confirm, /const storedLeadgen = "meta_leadgen_id" in cleanRow && !attempt\.error;/);
+  assert.match(confirm, /for \(const \[leadId, leadgenId\] of leadgenByLeadId\) \{\s+await enqueueMetaCrmStageEvent\(adminClient, \{ id: leadId, meta_leadgen_id: leadgenId \}, "new"\);/);
+});

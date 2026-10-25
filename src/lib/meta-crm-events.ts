@@ -6,9 +6,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * action_source "system_generated" and lead_event_source "crm".
  */
 
-// CRM pipeline stage -> event name reported to Meta. Every stage is sent so
-// Meta can learn the funnel; "Qualified" (requirement confirmed) is the target.
+// CRM progress key -> event name reported to Meta. Two UI paths move a lead:
+// the pipeline stage endpoint (stage keys) and the lead-detail milestone flow
+// (milestone keys). Both map onto one funnel; "Qualified" is the target.
 export const META_CRM_STAGE_EVENTS: Readonly<Record<string, string>> = {
+  // pipeline stages
   new: "Lead",
   contacted: "Contacted",
   requirement_confirmed: "Qualified",
@@ -18,6 +20,14 @@ export const META_CRM_STAGE_EVENTS: Readonly<Record<string, string>> = {
   pending_decision: "Pending Decision",
   won: "Won",
   lost: "Lost",
+  // lead-detail milestones
+  first_contact: "Contacted",
+  basic_info: "Basic Info Collected",
+  drawings: "Drawings Received",
+  requirements: "Qualified",
+  solution: "Solution Submitted",
+  quotation: "Quoted",
+  meeting: "Meeting",
 };
 
 const LEADGEN_ID = /^\d{8,32}$/;
@@ -62,7 +72,7 @@ export function buildMetaCrmPayload(input: {
 }
 
 /**
- * Queue one event for a stage change. Idempotent per (lead, stage) and never
+ * Queue one event for a stage or milestone. Idempotent per (lead, event) and never
  * throws: a tracking problem must not block a salesperson's stage change.
  * event_time is the transition moment, so it is after the lead's creation.
  */
@@ -76,8 +86,10 @@ export async function enqueueMetaCrmStageEvent(
     const eventName = META_CRM_STAGE_EVENTS[stage];
     const leadgenId = normalizeLeadgenId(lead.meta_leadgen_id);
     if (!eventName || !leadgenId) return "skipped";
+    // crm_stage stores the funnel event, so the stage and milestone paths
+    // reporting the same step (e.g. contacted / first_contact) send it once.
     const { error } = await db.from("meta_crm_stage_events").upsert({
-      lead_id: lead.id, meta_leadgen_id: leadgenId, crm_stage: stage,
+      lead_id: lead.id, meta_leadgen_id: leadgenId, crm_stage: eventName,
       event_name: eventName, event_time: nowSeconds,
     }, { onConflict: "lead_id,crm_stage", ignoreDuplicates: true });
     return error ? "skipped" : "queued";
@@ -113,5 +125,22 @@ export async function sendMetaCrmPayload(payload: MetaCrmPayload): Promise<void>
     || "error" in receipt || !("events_received" in receipt)
     || (receipt as { events_received: unknown }).events_received !== payload.data.length) {
     throw new Error("Meta CRM did not acknowledge every event");
+  }
+}
+
+/**
+ * Route helper: read the lead's Meta id with the server client and queue the
+ * event. Tolerates the optional schema being absent; never throws.
+ */
+export async function enqueueMetaCrmEventForLead(
+  db: SupabaseClient, leadId: string, progressKey: string,
+): Promise<"queued" | "skipped"> {
+  try {
+    if (!META_CRM_STAGE_EVENTS[progressKey]) return "skipped";
+    const { data, error } = await db.from("leads").select("meta_leadgen_id").eq("id", leadId).maybeSingle();
+    if (error || !data?.meta_leadgen_id) return "skipped";
+    return await enqueueMetaCrmStageEvent(db, { id: leadId, meta_leadgen_id: data.meta_leadgen_id }, progressKey);
+  } catch {
+    return "skipped";
   }
 }

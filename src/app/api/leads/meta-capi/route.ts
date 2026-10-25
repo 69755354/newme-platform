@@ -1,6 +1,7 @@
 // RBAC: public
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { enqueueMetaCrmStageEvent, normalizeLeadgenId } from "@/lib/meta-crm-events";
 
 /**
  * Meta CAPI (Conversions API) — 接收 Meta 转化的 lead 事件
@@ -84,6 +85,10 @@ export async function POST(request: NextRequest) {
       created_at: now,
     };
 
+    // Opt-in: only present when the sender supplies a valid Meta lead id, so
+    // existing senders are unaffected until the optional schema is applied.
+    const metaLeadgenId = normalizeLeadgenId(custom_data?.leadgen_id ?? custom_data?.lead_id ?? body.leadgen_id);
+
     const supabaseAdmin = getSupabaseAdmin();
 
     // 处理重复: 根据 email 或 phone 查找已有线索
@@ -162,13 +167,32 @@ export async function POST(request: NextRequest) {
       }
 
       result = { id: updated.id, duplicate: true };
+      // Best-effort: remember the Meta form id only if this lead has none yet.
+      // A unique-index conflict must never fail the existing duplicate flow.
+      if (metaLeadgenId) {
+        const { data: tagged } = await supabaseAdmin
+          .from("leads")
+          .update({ meta_leadgen_id: metaLeadgenId })
+          .eq("id", updated.id)
+          .is("meta_leadgen_id", null)
+          .select("id")
+          .maybeSingle();
+        if (tagged) await enqueueMetaCrmStageEvent(supabaseAdmin, { id: updated.id, meta_leadgen_id: metaLeadgenId }, "new", Math.floor(Date.now() / 1000));
+      }
     } else {
       // 新线索: 插入
-      const { data: inserted, error: insertErr } = await supabaseAdmin
+      let insertAttempt = await supabaseAdmin
         .from("leads")
-        .insert(leadData)
+        .insert((metaLeadgenId ? { ...leadData, meta_leadgen_id: metaLeadgenId } : leadData) as typeof leadData)
         .select("id")
         .single();
+      let leadgenStored = Boolean(metaLeadgenId);
+      if (insertAttempt.error && metaLeadgenId) {
+        // Never lose a lead because the optional column is missing or the id repeats.
+        leadgenStored = false;
+        insertAttempt = await supabaseAdmin.from("leads").insert(leadData).select("id").single();
+      }
+      const { data: inserted, error: insertErr } = insertAttempt;
 
       if (insertErr) {
         console.error("[Meta CAPI] Failed to insert lead:", insertErr);
@@ -179,6 +203,8 @@ export async function POST(request: NextRequest) {
       }
 
       result = { id: inserted.id, duplicate: false };
+      // First CRM stage ("Lead") so Meta sees the full funnel from the start.
+      if (leadgenStored) await enqueueMetaCrmStageEvent(supabaseAdmin, { id: inserted.id, meta_leadgen_id: metaLeadgenId }, "new", Math.floor(Date.now() / 1000));
     }
 
     return NextResponse.json({

@@ -30,6 +30,9 @@ const COLUMN_MAP: Record<string, string> = {
   "opportunity level": "opportunity",
   "status": "raw_status",
   "notes": "notes",
+  "meta lead id": "leadgen_id",
+  "leadgen id": "leadgen_id",
+  "leadgen_id": "leadgen_id",
 };
 
 // ─── Value mapping ───
@@ -111,6 +114,7 @@ interface NormalizedRow {
     raw_system: string;
     raw_quotation: string;
     raw_opportunity: string;
+    raw_leadgen_id: string;
   };
   // Internal markers
   _warnings: string[];
@@ -238,6 +242,7 @@ export async function POST(request: NextRequest) {
           raw_system: norm.system || "",
           raw_quotation: norm.quotation_value || "",
           raw_opportunity: norm.opportunity || "",
+          raw_leadgen_id: norm.leadgen_id || "",
         },
         _warnings: rowWarnings,
       };

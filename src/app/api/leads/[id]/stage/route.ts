@@ -9,6 +9,8 @@ import {
 } from "@/lib/request-auth-context";
 import { evaluateFirstContactGate, isCompleteContact } from "@/lib/first-contact-gate.mjs";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
+import { createClient } from "@supabase/supabase-js";
+import { enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
 
 const VALID_STAGES = new Set([
   ...PIPELINE_STAGES.map((stage) => stage.key),
@@ -99,6 +101,23 @@ export async function PATCH(
         : message.includes("not found") ? 404
         : 400;
       return respond({ error: message }, { status });
+    }
+
+    // Meta CRM feedback is best-effort and queued server-side; it never blocks
+    // or fails a salesperson's stage change.
+    // The column is read separately and tolerantly so this route keeps working
+    // before the optional Meta CRM schema exists.
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { data: tag, error: tagError } = await admin.from("leads")
+          .select("meta_leadgen_id").eq("id", leadId).maybeSingle();
+        if (!tagError && tag?.meta_leadgen_id) {
+          await enqueueMetaCrmStageEvent(admin, { id: leadId, meta_leadgen_id: tag.meta_leadgen_id }, stage);
+        }
+      } catch { /* tracking must never fail a stage change */ }
     }
 
     return respond({ success: true, lead: updated, eventLogged: true });

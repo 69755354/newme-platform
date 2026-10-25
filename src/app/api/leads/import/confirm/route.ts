@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { normalizeLeadgenId } from "@/lib/meta-crm-events";
 
 function importFingerprint(row: Record<string, unknown>): string {
   // Includes the source row number so intentional identical rows in one workbook
@@ -142,6 +143,8 @@ export async function POST(request: NextRequest) {
         property_type: row.property_type || null,
         quotation_value: row.quotation_value || null,
         raw_import_data: row.raw_import_data ? JSON.stringify(row.raw_import_data) : null,
+        // Only set when the workbook carries a valid Meta lead id (optional schema).
+        ...(normalizeLeadgenId(rawImportData.raw_leadgen_id) ? { meta_leadgen_id: normalizeLeadgenId(rawImportData.raw_leadgen_id) } : {}),
         import_batch_id: importBatchId,
         import_fingerprint: importFingerprint(row),
         imported_by: user.id,

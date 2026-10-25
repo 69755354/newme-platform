@@ -731,4 +731,4 @@ Thirty-five synthetic behavior checks passed, including concurrent requests, par
 
 CI prerequisite: the two existing hosted-runner review records expired on 2026-10-24. The actual Ubuntu/Windows image versions were checked against official immutable inventories and renewed for seven days through 2026-11-01. Eight provenance/refusal tests passed; the checker, maximum lifetime, action/image pins and workflow permissions are unchanged. Current-head official source readback and complete CI remain required. Review evidence is in docs/ci-runner-review-20261025.md.
 
-<!-- postdeploy-acceptance-sha256:e420685fdc2c38dce031d703d8e07f452a0a800b95ca21f20a3fe588adef17a9 -->
+Prior release acceptance digest (archived for the website CAPI successor from eecf002023873e2098a751bf4c7e13bced11bea5): e420685fdc2c38dce031d703d8e07f452a0a800b95ca21f20a3fe588adef17a9

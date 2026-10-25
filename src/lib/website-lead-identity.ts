@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import type { WebsiteLeadInput } from "./public-lead";
 
 // Fixed UUID namespace, separate from IDs supplied by any other CRM intake.
-const NAMESPACE = Buffer.from("81f966413a555c698fd1a1ad8539e05c", "hex");
+const NAMESPACE = new Uint8Array([
+  0x81, 0xf9, 0x66, 0x41, 0x3a, 0x55, 0x5c, 0x69,
+  0x8f, 0xd1, 0xa1, 0xad, 0x85, 0x39, 0xe0, 0x5c,
+]);
 
 export function websiteEventUuid(kind: "lead" | "task" | "delivery", eventId: string): string {
   const bytes = createHash("sha1").update(NAMESPACE).update(`${kind}:${eventId}`).digest().subarray(0, 16);

@@ -23,15 +23,25 @@ export async function attemptCapiDelivery(
   now = Date.now(),
 ): Promise<"delivered" | "busy" | "failed" | "review_required"> {
   const prior = delivery.event_data;
+  if (!prior || typeof prior !== "object" || Array.isArray(prior)) return "review_required";
   if (prior.status === "delivered") return "delivered";
   const queuedAt = Date.parse(prior.queued_at);
+  const event = prior.payload?.data?.[0];
+  const eventTime = Number.isInteger(event?.event_time) ? event.event_time * 1000 : NaN;
   // Bound ambiguous retries to 24h, inside Meta's deduplication window. Never
   // change event_id/event_time on a retry, or blindly resend an old conversion.
   if (!Number.isFinite(queuedAt) || queuedAt > now || now - queuedAt >= 86_400_000
     || !Number.isInteger(prior.attempts) || prior.attempts < 0 || prior.attempts >= 5
-    || prior.payload?.data?.length !== 1 || prior.payload.data[0].event_id !== prior.event_id) {
+    || prior.payload?.data?.length !== 1 || event?.event_id !== prior.event_id
+    || event.event_name !== "Lead" || event.action_source !== "website"
+    || !Number.isFinite(eventTime) || eventTime > now || now - eventTime >= 86_400_000) {
     return "review_required";
   }
+  try {
+    if (!["https://newme.ae", "https://www.newme.ae"].includes(new URL(event.event_source_url).origin)) {
+      return "review_required";
+    }
+  } catch { return "review_required"; }
   if (prior.status === "sending" && Date.parse(prior.lease_until || "") > now) return "busy";
   if (!["pending", "failed", "sending"].includes(prior.status)
     || (prior.status === "sending" && (!prior.lease_id || !Number.isFinite(Date.parse(prior.lease_until || ""))))) {

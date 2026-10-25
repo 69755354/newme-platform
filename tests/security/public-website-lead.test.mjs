@@ -107,7 +107,8 @@ function loadRoute({ insertError = null, taskError = null, capiError = null, cap
       },
     },
     "@/lib/meta-capi": {
-      buildMetaCapiLeadPayload: (input) => ({ data: [{ event_id: input.input.attribution.eventId, event_time: input.eventTime }] }),
+      buildMetaCapiLeadPayload: (input) => ({ data: [{ event_id: input.input.attribution.eventId, event_time: input.eventTime,
+        event_name: "Lead", action_source: "website", event_source_url: "https://newme.ae/" }] }),
       sendMetaCapiPayload: async (payload) => {
         capi.push(payload);
         await beforeCapi();

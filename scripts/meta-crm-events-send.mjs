@@ -8,7 +8,7 @@ import { buildMetaCrmPayload, sendMetaCrmPayload } from "../src/lib/meta-crm-eve
 
 const MAX_AGE_SECONDS = 7 * 86_400; // Meta accepts CRM events well inside its 28-day window.
 
-export async function sendMetaCrmEvents(db, { execute = false, limit = 50, nowMs = Date.now(),
+export async function sendMetaCrmEvents(db, { execute = false, limit = 50, clock = () => Date.now(),
   send = sendMetaCrmPayload } = {}) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Invalid send limit");
   const queue = await db.from("meta_crm_stage_events")
@@ -22,11 +22,16 @@ export async function sendMetaCrmEvents(db, { execute = false, limit = 50, nowMs
     summary.examined++;
     if (!execute) continue;
     try {
+      // Read the clock per row: a batch can outlive its start time, and a row
+      // queued while the queue query ran must not look like it is from the future.
+      const nowMs = clock();
       if (row.status === "sending" && Date.parse(row.lease_until || "") > nowMs) { summary.busy++; continue; }
-      let payload;
       const ageSeconds = Math.floor(nowMs / 1000) - row.event_time;
+      // Clock skew between app and sender: defer, never retire, a not-yet-due event.
+      if (ageSeconds < 0) { summary.busy++; continue; }
+      let payload;
       try {
-        if (ageSeconds < 0 || ageSeconds > MAX_AGE_SECONDS) throw new Error("age");
+        if (ageSeconds > MAX_AGE_SECONDS) throw new Error("age");
         payload = buildMetaCrmPayload({ leadgenId: row.meta_leadgen_id, eventName: row.event_name, eventTime: row.event_time });
       } catch {
         await db.from("meta_crm_stage_events").update({ status: "review_required" })
@@ -38,7 +43,7 @@ export async function sendMetaCrmEvents(db, { execute = false, limit = 50, nowMs
       const claimed = await db.from("meta_crm_stage_events").update({
         status: "sending", attempts: row.attempts + 1, lease_id: leaseId,
         // Lease from the claim moment: a slow batch must not claim with an already-expired lease.
-        lease_until: new Date(Date.now() + 60_000).toISOString(),
+        lease_until: new Date(clock() + 60_000).toISOString(),
       }).eq("id", row.id).eq("status", row.status).eq("attempts", row.attempts).select("id").maybeSingle();
       if (claimed.error) throw new Error("claim");
       if (!claimed.data) { summary.busy++; continue; }

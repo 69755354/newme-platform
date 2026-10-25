@@ -164,3 +164,24 @@ test("the import route queues the initial Lead event only for leads stored with 
   assert.match(confirm, /const storedLeadgen = "meta_leadgen_id" in cleanRow && !attempt\.error;/);
   assert.match(confirm, /for \(const \[leadId, leadgenId\] of leadgenByLeadId\) \{\s+await enqueueMetaCrmStageEvent\(adminClient, \{ id: leadId, meta_leadgen_id: leadgenId \}, "new"\);/);
 });
+
+test("a quotation converted to a contract reports Won only for a committed won Meta lead", async () => {
+  const { enqueueMetaCrmWonForQuotation } = await import("../../src/lib/meta-crm-events.ts");
+  const fake = (lead) => {
+    const rows = [];
+    const chain = (result) => { const c = { select: () => c, eq: () => c, maybeSingle: async () => result }; return c; };
+    return { rows, from: (t) => t === "quotations" ? chain({ data: { lead_id: "lead-1" }, error: null })
+      : t === "leads" ? chain({ data: lead, error: null })
+      : { upsert: (row) => { rows.push(row); return Promise.resolve({ error: null }); } } };
+  };
+  const won = fake({ final_status: "won", meta_leadgen_id: "123456789012345" });
+  assert.equal(await enqueueMetaCrmWonForQuotation(won, "q1"), "queued");
+  assert.equal(won.rows[0].event_name, "Won");
+  for (const lead of [{ final_status: null, meta_leadgen_id: "123456789012345" }, { final_status: "won", meta_leadgen_id: null }]) {
+    const db = fake(lead);
+    assert.equal(await enqueueMetaCrmWonForQuotation(db, "q1"), "skipped");
+    assert.equal(db.rows.length, 0);
+  }
+  const convert = fsSync.readFileSync(path.join(repoRoot, "src/app/api/quotations/[id]/convert/route.ts"), "utf8");
+  assert.ok(convert.indexOf("enqueueMetaCrmWonForQuotation(supabaseAdmin, quotationId)") > convert.indexOf("if (rpcErr)"));
+});

@@ -5,6 +5,8 @@ import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
 import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { enqueueMetaCrmWonForQuotation } from "@/lib/meta-crm-events";
 import type { Json } from "@/types/database";
 
 /**
@@ -199,6 +201,9 @@ export async function POST(
         contract_id: conversion.contract_id,
       }, "[Quotation Convert] Notification failed");
     }
+
+    // Best-effort Meta CRM "Won" feedback once the lead is committed as won.
+    await enqueueMetaCrmWonForQuotation(supabaseAdmin, quotationId);
 
     // Revalidate cached pages to reflect new contract
     revalidatePath("/quotes");

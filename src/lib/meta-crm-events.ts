@@ -144,3 +144,22 @@ export async function enqueueMetaCrmEventForLead(
     return "skipped";
   }
 }
+
+/**
+ * A quotation converted to a contract wins its lead inside the database routine,
+ * outside the lead endpoints. Queue "Won" only once the lead is committed as won.
+ */
+export async function enqueueMetaCrmWonForQuotation(
+  db: SupabaseClient, quotationId: string,
+): Promise<"queued" | "skipped"> {
+  try {
+    const { data: quote, error } = await db.from("quotations").select("lead_id").eq("id", quotationId).maybeSingle();
+    if (error || !quote?.lead_id) return "skipped";
+    const { data: lead, error: leadError } = await db.from("leads")
+      .select("final_status, meta_leadgen_id").eq("id", quote.lead_id).maybeSingle();
+    if (leadError || lead?.final_status !== "won" || !lead.meta_leadgen_id) return "skipped";
+    return await enqueueMetaCrmStageEvent(db, { id: quote.lead_id, meta_leadgen_id: lead.meta_leadgen_id }, "won");
+  } catch {
+    return "skipped";
+  }
+}

@@ -78,10 +78,10 @@ test("send tool: dry run sends nothing; execute sends once and records delivery"
     event_time: 1_800_000_000, status: "pending", attempts: 0 };
   let sent = 0;
   const send = async (payload) => { sent++; assert.equal(payload.data[0].action_source, "system_generated"); };
-  const dry = await sendMetaCrmEvents(queueDb({ row }), { nowMs: now, send });
+  const dry = await sendMetaCrmEvents(queueDb({ row }), { clock: () => now, send });
   assert.equal(dry.mode, "dry_run"); assert.equal(sent, 0);
   const db = queueDb({ row });
-  const done = await sendMetaCrmEvents(db, { execute: true, nowMs: now, send });
+  const done = await sendMetaCrmEvents(db, { execute: true, clock: () => now, send });
   assert.equal(done.delivered, 1); assert.equal(sent, 1);
   assert.ok(db.state.updates.some((u) => u.status === "delivered"));
 });
@@ -92,16 +92,29 @@ test("send tool: stale events go to review and are never sent", async () => {
     event_time: 1_800_000_000, status: "pending", attempts: 0 };
   let sent = 0;
   const db = queueDb({ row });
-  const out = await sendMetaCrmEvents(db, { execute: true, nowMs: now, send: async () => { sent++; } });
+  const out = await sendMetaCrmEvents(db, { execute: true, clock: () => now, send: async () => { sent++; } });
   assert.equal(out.review_required, 1); assert.equal(sent, 0);
 });
 
 test("send tool: each claim leases from the claim moment, not the batch start", async () => {
-  const batchStart = Date.now() - 10 * 60_000; // a batch that started ten minutes ago
+  const start = 1_800_000_000_000;
+  let calls = 0;
+  const clock = () => (calls++ === 0 ? start : start + 10 * 60_000); // batch runs ten minutes
   const row = { id: "r3", meta_leadgen_id: "123456789012345", event_name: "Lead",
-    event_time: Math.floor(batchStart / 1000) - 60, status: "pending", attempts: 0 };
+    event_time: Math.floor(start / 1000) - 60, status: "pending", attempts: 0 };
   const db = queueDb({ row });
-  await sendMetaCrmEvents(db, { execute: true, nowMs: batchStart, send: async () => {} });
+  await sendMetaCrmEvents(db, { execute: true, clock, send: async () => {} });
   const claim = db.state.updates.find((u) => u.status === "sending");
-  assert.ok(Date.parse(claim.lease_until) > Date.now(), "lease must not already be expired");
+  assert.ok(Date.parse(claim.lease_until) >= start + 10 * 60_000 + 60_000, "lease must start at the claim");
+});
+
+test("send tool: an event newer than the sender's clock is deferred, never retired", async () => {
+  const now = 1_800_000_000_000;
+  const row = { id: "r4", meta_leadgen_id: "123456789012345", event_name: "Qualified",
+    event_time: Math.floor(now / 1000) + 2, status: "pending", attempts: 0 };
+  let sent = 0;
+  const db = queueDb({ row });
+  const out = await sendMetaCrmEvents(db, { execute: true, clock: () => now, send: async () => { sent++; } });
+  assert.equal(out.busy, 1); assert.equal(out.review_required, 0); assert.equal(sent, 0);
+  assert.deepEqual(db.state.updates, []);
 });

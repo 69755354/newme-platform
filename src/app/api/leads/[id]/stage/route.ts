@@ -114,8 +114,16 @@ export async function PATCH(
         });
         const { data: tag, error: tagError } = await admin.from("leads")
           .select("meta_leadgen_id").eq("id", leadId).maybeSingle();
-        if (!tagError && tag?.meta_leadgen_id) {
-          await enqueueMetaCrmStageEvent(admin, { id: leadId, meta_leadgen_id: tag.meta_leadgen_id }, stage);
+        // Derive the event from the committed RPC result, not the request: an
+        // idempotent replay returns the cached earlier transition unchanged.
+        const committed = (updated && typeof updated === "object" && !Array.isArray(updated))
+          ? updated as { id?: unknown; stage?: unknown; idempotent_replay?: unknown }
+          : null;
+        const committedStage = committed && committed.idempotent_replay !== true
+          && (committed.id === undefined || committed.id === leadId)
+          && typeof committed.stage === "string" ? committed.stage : null;
+        if (!tagError && tag?.meta_leadgen_id && committedStage === stage) {
+          await enqueueMetaCrmStageEvent(admin, { id: leadId, meta_leadgen_id: tag.meta_leadgen_id }, committedStage);
         }
       } catch { /* tracking must never fail a stage change */ }
     }

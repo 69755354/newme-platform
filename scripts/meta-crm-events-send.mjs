@@ -37,7 +37,8 @@ export async function sendMetaCrmEvents(db, { execute = false, limit = 50, nowMs
       const leaseId = randomUUID();
       const claimed = await db.from("meta_crm_stage_events").update({
         status: "sending", attempts: row.attempts + 1, lease_id: leaseId,
-        lease_until: new Date(nowMs + 60_000).toISOString(),
+        // Lease from the claim moment: a slow batch must not claim with an already-expired lease.
+        lease_until: new Date(Date.now() + 60_000).toISOString(),
       }).eq("id", row.id).eq("status", row.status).eq("attempts", row.attempts).select("id").maybeSingle();
       if (claimed.error) throw new Error("claim");
       if (!claimed.data) { summary.busy++; continue; }

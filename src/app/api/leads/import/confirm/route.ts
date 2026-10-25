@@ -185,14 +185,23 @@ export async function POST(request: NextRequest) {
         // semantics to every fallback row.
         for (const row of batch) {
           const { row_number, ...cleanRow } = row;
-          const { data: single, error: singleErr } = await adminClient
+          const upsertRow = (value: typeof cleanRow) => adminClient
             .from("leads")
-            .upsert(cleanRow, {
+            .upsert(value, {
               onConflict: "import_fingerprint",
               ignoreDuplicates: true,
             })
             .select("id, import_fingerprint")
             .maybeSingle();
+          let attempt = await upsertRow(cleanRow);
+          if (attempt.error && "meta_leadgen_id" in cleanRow) {
+            // Never lose a lead over the optional Meta id (schema not yet
+            // applied, or the id already belongs to another lead).
+            const { meta_leadgen_id: _omitted, ...withoutLeadgen } = cleanRow;
+            void _omitted;
+            attempt = await upsertRow(withoutLeadgen as typeof cleanRow);
+          }
+          const { data: single, error: singleErr } = attempt;
           if (singleErr) {
             errors.push({ row: row_number, error: singleErr.message });
           } else if (!single) {

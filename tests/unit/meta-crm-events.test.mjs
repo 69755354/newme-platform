@@ -82,3 +82,13 @@ test("send tool: stale events go to review and are never sent", async () => {
   const out = await sendMetaCrmEvents(db, { execute: true, nowMs: now, send: async () => { sent++; } });
   assert.equal(out.review_required, 1); assert.equal(sent, 0);
 });
+
+test("send tool: each claim leases from the claim moment, not the batch start", async () => {
+  const batchStart = Date.now() - 10 * 60_000; // a batch that started ten minutes ago
+  const row = { id: "r3", meta_leadgen_id: "123456789012345", event_name: "Lead",
+    event_time: Math.floor(batchStart / 1000) - 60, status: "pending", attempts: 0 };
+  const db = queueDb({ row });
+  await sendMetaCrmEvents(db, { execute: true, nowMs: batchStart, send: async () => {} });
+  const claim = db.state.updates.find((u) => u.status === "sending");
+  assert.ok(Date.parse(claim.lease_until) > Date.now(), "lease must not already be expired");
+});

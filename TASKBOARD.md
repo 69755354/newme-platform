@@ -743,7 +743,7 @@ Live PostgreSQL/REST CAPI checks passed: concurrent senders acquire one claim, e
 
 CAPI concurrency receipt SHA-256: c884d4e71a3aa5630465a625a3f2b9ca81648a80e49db50d293f2008db366f55.
 
-<!-- postdeploy-acceptance-sha256:40a910259f3fa852ea836f6768cccf594512473ce3dced4042a0dcd3613240c7 -->
+Prior release acceptance digest (archived for the website and CRM successor from de1d5d88559d2b15cb0dc77e3e83fa25a59a2d3e): 40a910259f3fa852ea836f6768cccf594512473ce3dced4042a0dcd3613240c7
 
 ## Meta CRM identifier precision (2026-10-26)
 
@@ -752,3 +752,7 @@ Code-only: retain the exact Meta Lead ID digits through payload construction and
 ## Meta CRM spreadsheet ID boundary (2026-10-26)
 
 Code-only: validate each original Meta ID cell before general string normalization. Preserve exact text IDs, omit unsafe or more-than-15-digit numeric spreadsheet IDs with a visible warning, and keep the customer row importable. Existing role checks and legacy raw-import fingerprint shape remain intact. Five route regression checks and 32 related website/CRM checks passed locally; two new checks fail against the earlier preview handler. Official CI and production acceptance are separate gates. No real workbook, customer event, permission, credential or scheduler was accessed or changed.
+
+## Website and CRM successor preparation (2026-10-26)
+
+Archives the complete predecessor acceptance digest and its immutable source release before the next application deployment. This is preparation only; it does not claim acceptance for the successor. Normal exact-main CI, guarded schema provisioning, deployment, independent acceptance and a new append-only closure remain required. Advertising scheduling and CAPI automatic replay remain off.

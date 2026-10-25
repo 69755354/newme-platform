@@ -27,6 +27,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_meta_crm_id_precision_code | DONE | Codex | 2026-10-26 |
 | task_ci_runner_provenance_refresh_code | DONE | Codex | 2026-10-25 |
 | task_meta_capi_intake_recovery_code | DONE | Codex | 2026-10-25 |
 | task_https_acceptance_channel_preparation_code | DONE | Codex | 2026-10-23 |
@@ -742,3 +743,7 @@ Live PostgreSQL/REST CAPI checks passed: concurrent senders acquire one claim, e
 CAPI concurrency receipt SHA-256: c884d4e71a3aa5630465a625a3f2b9ca81648a80e49db50d293f2008db366f55.
 
 <!-- postdeploy-acceptance-sha256:40a910259f3fa852ea836f6768cccf594512473ce3dced4042a0dcd3613240c7 -->
+
+## Meta CRM identifier precision (2026-10-26)
+
+Code-only: retain the exact Meta Lead ID digits through payload construction and serialize the documented numeric JSON field with the pinned Node runtime's raw JSON support. Rounded unsafe numeric inputs and noncanonical leading-zero IDs are refused. Nine CRM unit checks and 23 website/advertising checks passed locally; the earlier implementation fails the 17-digit regression. Formal CI, merge, database provisioning, production acceptance and genuine Meta receipt remain separate evidence. No Graph call, credential, permission or scheduler change was performed.

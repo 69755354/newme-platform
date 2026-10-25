@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  META_CRM_STAGE_EVENTS, buildMetaCrmPayload, enqueueMetaCrmStageEvent, normalizeLeadgenId,
+  META_CRM_STAGE_EVENTS, buildMetaCrmPayload, enqueueMetaCrmStageEvent, normalizeLeadgenId, serializeMetaCrmPayload,
 } from "../../src/lib/meta-crm-events.ts";
 import { sendMetaCrmEvents } from "../../scripts/meta-crm-events-send.mjs";
 
@@ -11,14 +11,14 @@ test("normalizeLeadgenId accepts Meta ids and rejects junk", () => {
   for (const bad of ["", "abc", "12", null, undefined, {}, "1; drop table"]) assert.equal(normalizeLeadgenId(bad), null);
 });
 
-test("payload uses CRM source fields and the numeric lead id", () => {
+test("payload preserves CRM source fields and exact lead id digits", () => {
   const p = buildMetaCrmPayload({ leadgenId: "123456789012345", eventName: "Qualified", eventTime: 1_800_000_000 });
   assert.deepEqual(p.data[0], {
     event_name: "Qualified", event_time: 1_800_000_000, action_source: "system_generated",
-    user_data: { lead_id: 123456789012345 }, custom_data: { lead_event_source: "crm", event_source: "crm" },
+    user_data: { lead_id: "123456789012345" }, custom_data: { lead_event_source: "crm", event_source: "crm" },
   });
   assert.throws(() => buildMetaCrmPayload({ leadgenId: "x", eventName: "Lead", eventTime: 1 }));
-  assert.throws(() => buildMetaCrmPayload({ leadgenId: "9".repeat(20), eventName: "Lead", eventTime: 1 }));
+  assert.equal(buildMetaCrmPayload({ leadgenId: "9".repeat(20), eventName: "Lead", eventTime: 1 }).data[0].user_data.lead_id, "9".repeat(20));
 });
 
 test("every lead-detail milestone has an event name; Qualified is requirements", () => {
@@ -117,4 +117,21 @@ test("send tool: an event newer than the sender's clock is deferred, never retir
   const out = await sendMetaCrmEvents(db, { execute: true, clock: () => now, send: async () => { sent++; } });
   assert.equal(out.busy, 1); assert.equal(out.review_required, 0); assert.equal(sent, 0);
   assert.deepEqual(db.state.updates, []);
+});
+
+test("17 digit Meta lead ids remain exact in the prepared payload", () => {
+  const leadgenId="12345678901234567";
+  const payload=buildMetaCrmPayload({leadgenId,eventName:"Qualified",eventTime:1800000000});
+  assert.equal(String(payload.data[0].user_data.lead_id),leadgenId);
+});
+
+test("numeric JSON preserves all 17 digits and rejects rounded numeric inputs", () => {
+  const leadgenId="12345678901234567";
+  const payload=buildMetaCrmPayload({leadgenId,eventName:"Qualified",eventTime:1800000000});
+  const wire=serializeMetaCrmPayload(payload);
+  assert.match(wire, /"lead_id":12345678901234567(?=[,}])/);
+  assert.doesNotMatch(wire, /"lead_id":"|12345678901234568/);
+  assert.equal(normalizeLeadgenId(Number(leadgenId)),null);
+  assert.equal(normalizeLeadgenId("000123456789012345"),null);
+  assert.throws(()=>serializeMetaCrmPayload({data:[{...payload.data[0],user_data:{lead_id:'12345678901234567, "injected":true'}}]}));
 });

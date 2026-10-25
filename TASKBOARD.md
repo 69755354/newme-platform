@@ -27,6 +27,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_ci_runner_provenance_refresh_code | DONE | Codex | 2026-10-25 |
 | task_meta_capi_intake_recovery_code | DONE | Codex | 2026-10-25 |
 | task_https_acceptance_channel_preparation_code | DONE | Codex | 2026-10-23 |
 | task_meta_ads_atomic_sync_code | DONE | Codex | 2026-10-23 |
@@ -727,5 +728,7 @@ Advertising concurrency receipt SHA-256: 9c3e3f68c52e0218aec71e1c7bf4c55a46301f0
 Code-only: stable per-event lead/task/delivery IDs prevent duplicate intake and repair partial retries without overwriting CRM edits. A shared conditional claim coordinates senders, recovers expired leases and bounds replay to five attempts within 24 hours using the original payload. Meta acknowledgement is checked explicitly, credentials stay out of URLs and raw errors, and a prepared retry tool defaults to read-only without installing any scheduler.
 
 Thirty-five synthetic behavior checks passed, including concurrent requests, partial queue recovery, conflicting payloads, late lease owners and invalid Meta receipts. TypeScript and targeted lint passed. Storage and Graph responses are mocked in these tests; real PostgreSQL concurrency, protected release, production acceptance and genuine customer attribution remain unverified. No live customer event, timer or Meta permission was changed.
+
+CI prerequisite: the two existing hosted-runner review records expired on 2026-10-24. The actual Ubuntu/Windows image versions were checked against official immutable inventories and renewed for seven days through 2026-11-01. Eight provenance/refusal tests passed; the checker, maximum lifetime, action/image pins and workflow permissions are unchanged. Current-head official source readback and complete CI remain required. Review evidence is in docs/ci-runner-review-20261025.md.
 
 <!-- postdeploy-acceptance-sha256:e420685fdc2c38dce031d703d8e07f452a0a800b95ca21f20a3fe588adef17a9 -->

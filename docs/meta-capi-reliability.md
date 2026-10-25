@@ -38,6 +38,9 @@ bodies are not logged. Credentials use an Authorization header; redirects fail.
 queue counts without contacts or payloads. In an approved server runtime,
 `node scripts/meta-capi-retry.mjs --execute` processes at most 20 recent delivery
 records sequentially, using the same conditional claim as the public route.
+Exhausted attempts are excluded before the batch limit. Validation failures move
+to a review-required status using a conditional update so later runs can advance
+to newer records without replacing a concurrent sender's receipt.
 Only the existing private Supabase and CAPI runtime configuration is used.
 
 No timer/service is created, installed or enabled by this candidate. The existing
@@ -52,3 +55,9 @@ concurrent requests, failed-send replay, lease ownership and acknowledgement
 failures using synthetic in-memory storage and mocked Graph responses. They do
 not prove production PostgreSQL lock behavior, a live Meta send or customer
 attribution. No real WhatsApp number is connected and no permission is expanded.
+
+Code-review follow-up: the complete targeted suite now passes 37 synthetic checks.
+The two additional regressions prove that 20 exhausted oldest deliveries cannot
+block a newer eligible one, and that 20 invalid records move to review so a later
+bounded batch can advance. This supplements the taskboard's earlier 35-check
+code-only evidence; production deployment and live acceptance remain separate.

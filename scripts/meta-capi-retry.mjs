@@ -11,6 +11,7 @@ export async function retryCapiDeliveries(db, { execute = false, limit = 20, now
   const result = await db.from("business_events").select("id, event_data")
     .eq("event_type", "meta_capi_lead_delivery")
     .in("event_data->>status", ["pending", "failed", "sending"])
+    .in("event_data->>attempts", ["0", "1", "2", "3", "4"])
     .gte("created_at", new Date(now - 86_400_000).toISOString())
     .order("created_at", { ascending: true }).limit(limit);
   if (result.error) throw new Error("CAPI retry queue unavailable");
@@ -19,7 +20,23 @@ export async function retryCapiDeliveries(db, { execute = false, limit = 20, now
   for (const row of result.data || []) {
     summary.examined++;
     if (!execute) continue;
-    try { summary[await attemptCapiDelivery(db, row, send, Date.now())]++; }
+    try {
+      const outcome = await attemptCapiDelivery(db, row, send, Date.now());
+      if (outcome === "review_required") {
+        // Persist terminal validation failures so subsequent batches advance.
+        // Compare the observed state; never replace a concurrent sender's receipt.
+        let mark = db.from("business_events").update({ event_data: {
+          ...row.event_data, status: "review_required", review_required_at: new Date().toISOString(),
+        } }).eq("id", row.id).eq("event_type", "meta_capi_lead_delivery")
+          .eq("event_data->>status", row.event_data.status)
+          .eq("event_data->>attempts", String(row.event_data.attempts));
+        if (row.event_data.lease_id) mark = mark.eq("event_data->>lease_id", row.event_data.lease_id);
+        const marked = await mark.select("id").maybeSingle();
+        if (marked.error) throw new Error("CAPI review receipt unavailable");
+        if (!marked.data) { summary.busy++; continue; }
+      }
+      summary[outcome]++;
+    }
     catch { summary.errors++; }
   }
   // Only aggregate counts leave this tool; no payloads, contacts or credentials.

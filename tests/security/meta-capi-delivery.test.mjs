@@ -27,7 +27,7 @@ function storage(initial) {
     const query = {
       select() { return this; }, update(value) { mutation = value; return this; },
       eq(key, value) { filters.push((row) => String(valueOf(row, key)) === String(value)); return this; },
-      in(key, values) { filters.push((row) => values.includes(valueOf(row, key))); return this; },
+      in(key, values) { filters.push((row) => values.map(String).includes(String(valueOf(row, key)))); return this; },
       gte(key, value) { filters.push((row) => valueOf(row, key) >= value); return this; },
       order() { return this; }, limit(value) { maximum = value; return this; },
       async maybeSingle() { return run(true); },
@@ -123,4 +123,38 @@ test("the prepared retry tool defaults to reads, uses the shared claim and bound
   assert.equal(run.delivered, 1);
   assert.equal(sends, 1);
   await assert.rejects(retryCapiDeliveries(state.db, { limit: 101 }), /Invalid retry limit/);
+});
+
+test("twenty exhausted oldest records cannot starve a newer retryable delivery", async () => {
+  const exhausted = Array.from({ length: 20 }, (_, index) => {
+    const row = queue(); row.id = `exhausted-${index}`; row.event_data.attempts = 5; row.event_data.status = "failed";
+    return row;
+  });
+  const eligible = queue(); eligible.id = "eligible";
+  const state = storage([...exhausted, eligible]);
+  let sends = 0;
+  const result = await retryCapiDeliveries(state.db, { execute: true, send: async () => { sends++; } });
+  assert.equal(result.examined, 1);
+  assert.equal(result.delivered, 1);
+  assert.equal(sends, 1);
+  for (const row of state.rows.slice(0, 20)) assert.equal(row.event_data.attempts, 5);
+});
+
+test("invalid records move to review so the next bounded batch advances", async () => {
+  const invalid = Array.from({ length: 20 }, (_, index) => {
+    const row = queue(); row.id = `invalid-${index}`; row.event_data.payload.data[0].event_source_url = "https://foreign.example/";
+    return row;
+  });
+  const eligible = queue(); eligible.id = "eligible";
+  const state = storage([...invalid, eligible]);
+  let sends = 0;
+  const options = { execute: true, send: async () => { sends++; } };
+  const first = await retryCapiDeliveries(state.db, options);
+  assert.equal(first.review_required, 20);
+  assert.equal(sends, 0);
+  const second = await retryCapiDeliveries(state.db, options);
+  assert.equal(second.examined, 1);
+  assert.equal(second.delivered, 1);
+  assert.equal(sends, 1);
+  for (const row of state.rows.slice(0, 20)) assert.equal(row.event_data.status, "review_required");
 });

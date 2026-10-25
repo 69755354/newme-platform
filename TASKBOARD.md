@@ -29,6 +29,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 |---------|--------|-------|------------|
 | task_meta_crm_import_id_precision_code | DONE | Codex | 2026-10-26 |
 | task_meta_crm_id_precision_code | DONE | Codex | 2026-10-26 |
+| task_website_opaque_attribution_identifiers_code | DONE | Codex | 2026-10-26 |
 | task_ci_runner_provenance_refresh_code | DONE | Codex | 2026-10-25 |
 | task_meta_capi_intake_recovery_code | DONE | Codex | 2026-10-25 |
 | task_https_acceptance_channel_preparation_code | DONE | Codex | 2026-10-23 |
@@ -756,3 +757,8 @@ Code-only: validate each original Meta ID cell before general string normalizati
 ## Website and CRM successor preparation (2026-10-26)
 
 Archives the complete predecessor acceptance digest and its immutable source release before the next application deployment. This is preparation only; it does not claim acceptance for the successor. Normal exact-main CI, guarded schema provisioning, deployment, independent acceptance and a new append-only closure remain required. Advertising scheduling and CAPI automatic replay remain off.
+
+
+## Website attribution identifier preservation (2026-10-26)
+
+Code-only follow-up to the website intake parser: keep each bounded click, browser, campaign, ad-set and ad identifier intact; omit an overlong optional identifier while retaining the inquiry. Free-text truncation and strict contact/event identity checks are unchanged. The targeted website and advertising regression suites passed all 23 checks, including a negative control against the earlier truncation behavior. Formal CI, merge, production deployment and genuine customer attribution remain separate evidence. No credentials, permissions or scheduler state changed.

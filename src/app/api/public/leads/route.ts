@@ -59,7 +59,10 @@ export function OPTIONS(request: Request) {
 export async function POST(request: Request) {
   const origin = request.headers.get("origin");
   const requestId = genReqId();
-  if (!isAllowedPublicLeadOrigin(origin)) return response(origin, { error: "invalid_origin" }, 403);
+  if (!isAllowedPublicLeadOrigin(origin)) {
+    console.warn(JSON.stringify({ event: "website_lead_rejected", code: "invalid_origin" }));
+    return response(origin, { error: "invalid_origin" }, 403);
+  }
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
     return response(origin, { error: "json_required" }, 415);
   }
@@ -85,7 +88,12 @@ export async function POST(request: Request) {
     return response(origin, { error: "invalid_json" }, 400);
   }
   const parsed = parseWebsiteLead(json);
-  if (!parsed.ok) return response(origin, { error: parsed.code }, 400);
+  if (!parsed.ok) {
+    // Rejections were silent: the website bridge ignores the response, so a
+    // lost inquiry left no trace anywhere. Log the reason code only (no PII).
+    console.warn(JSON.stringify({ event: "website_lead_rejected", code: parsed.code }));
+    return response(origin, { error: parsed.code }, 400);
+  }
   if (parsed.value.honeypot) return response(origin, { ok: true }, 202);
 
   const ip = clientIdentifier(request);
@@ -110,6 +118,7 @@ export async function POST(request: Request) {
   }
 
   if (!await verifyTurnstile(parsed.value.turnstileToken, ip)) {
+    console.warn(JSON.stringify({ event: "website_lead_rejected", code: "verification_failed" }));
     return response(origin, { error: "verification_failed" }, 403);
   }
 

@@ -27,6 +27,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_website_opaque_attribution_identifiers_code | DONE | Codex | 2026-10-26 |
 | task_ci_runner_provenance_refresh_code | DONE | Codex | 2026-10-25 |
 | task_meta_capi_intake_recovery_code | DONE | Codex | 2026-10-25 |
 | task_https_acceptance_channel_preparation_code | DONE | Codex | 2026-10-23 |
@@ -742,3 +743,7 @@ Live PostgreSQL/REST CAPI checks passed: concurrent senders acquire one claim, e
 CAPI concurrency receipt SHA-256: c884d4e71a3aa5630465a625a3f2b9ca81648a80e49db50d293f2008db366f55.
 
 <!-- postdeploy-acceptance-sha256:40a910259f3fa852ea836f6768cccf594512473ce3dced4042a0dcd3613240c7 -->
+
+## Website attribution identifier preservation (2026-10-26)
+
+Code-only follow-up to the website intake parser: keep each bounded click, browser, campaign, ad-set and ad identifier intact; omit an overlong optional identifier while retaining the inquiry. Free-text truncation and strict contact/event identity checks are unchanged. The targeted website and advertising regression suites passed all 23 checks, including a negative control against the earlier truncation behavior. Formal CI, merge, production deployment and genuine customer attribution remain separate evidence. No credentials, permissions or scheduler state changed.

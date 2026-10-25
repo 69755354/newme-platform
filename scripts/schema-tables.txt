@@ -20,6 +20,7 @@ lead_files
 lead_milestones
 leads
 lead_workflow_stages
+meta_crm_stage_events
 meta_tokens
 notifications
 payment_allocations

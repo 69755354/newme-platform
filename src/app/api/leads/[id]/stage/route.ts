@@ -9,7 +9,7 @@ import {
 } from "@/lib/request-auth-context";
 import { evaluateFirstContactGate, isCompleteContact } from "@/lib/first-contact-gate.mjs";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
 
 const VALID_STAGES = new Set([
@@ -107,26 +107,21 @@ export async function PATCH(
     // or fails a salesperson's stage change.
     // The column is read separately and tolerantly so this route keeps working
     // before the optional Meta CRM schema exists.
-    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      try {
-        const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
-          auth: { autoRefreshToken: false, persistSession: false },
-        });
-        const { data: tag, error: tagError } = await admin.from("leads")
-          .select("meta_leadgen_id").eq("id", leadId).maybeSingle();
-        // Derive the event from the committed RPC result, not the request: an
-        // idempotent replay returns the cached earlier transition unchanged.
-        const committed = (updated && typeof updated === "object" && !Array.isArray(updated))
-          ? updated as { id?: unknown; stage?: unknown; idempotent_replay?: unknown }
-          : null;
-        const committedStage = committed && committed.idempotent_replay !== true
-          && (committed.id === undefined || committed.id === leadId)
-          && typeof committed.stage === "string" ? committed.stage : null;
-        if (!tagError && tag?.meta_leadgen_id && committedStage === stage) {
-          await enqueueMetaCrmStageEvent(admin, { id: leadId, meta_leadgen_id: tag.meta_leadgen_id }, committedStage);
-        }
-      } catch { /* tracking must never fail a stage change */ }
-    }
+    try {
+      const { data: tag, error: tagError } = await supabaseAdmin.from("leads")
+        .select("meta_leadgen_id").eq("id", leadId).maybeSingle();
+      // Derive the event from the committed RPC result, not the request: an
+      // idempotent replay returns the cached earlier transition unchanged.
+      const committed = (updated && typeof updated === "object" && !Array.isArray(updated))
+        ? updated as { id?: unknown; stage?: unknown; idempotent_replay?: unknown }
+        : null;
+      const committedStage = committed && committed.idempotent_replay !== true
+        && (committed.id === undefined || committed.id === leadId)
+        && typeof committed.stage === "string" ? committed.stage : null;
+      if (!tagError && tag?.meta_leadgen_id && committedStage === stage) {
+        await enqueueMetaCrmStageEvent(supabaseAdmin, { id: leadId, meta_leadgen_id: tag.meta_leadgen_id }, committedStage);
+      }
+    } catch { /* tracking must never fail a stage change */ }
 
     return respond({ success: true, lead: updated, eventLogged: true });
   } catch (error) {

@@ -60,14 +60,12 @@ function loadStageRoute({ rpcResult, enqueued }) {
     },
     "@/shared/kanban/types": { PIPELINE_STAGES: [{ key: "contacted" }, { key: "requirement_confirmed" }] },
     "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async (_db, lead, stage) => { enqueued.push([lead.id, stage]); return "queued"; } },
-    "@supabase/supabase-js": { createClient: () => admin },
+    "@/lib/supabase-admin": { supabaseAdmin: admin },
     "next/server": nextServer,
   });
 }
 
 async function patch(route, stage) {
-  process.env.NEXT_PUBLIC_SUPABASE_URL = "http://supabase.test";
-  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-only";
   const request = new Request("http://localhost/api/leads/lead-1/stage", {
     method: "PATCH", headers: { "content-type": "application/json" },
     body: JSON.stringify({ stage, note: "called", idempotencyKey: "0f8fad5b-d9cb-469f-a165-70867728950e" }),

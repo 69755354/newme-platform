@@ -1,6 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { normalizeLeadgenId } from "@/lib/meta-crm-events";
 
 // ─── Column mapping ───
 // Excel header text → snake_case field name
@@ -160,7 +161,20 @@ export async function POST(request: NextRequest) {
       for (const [k, v] of Object.entries(raw)) {
         const key = k.trim();
         const mapped = COLUMN_MAP[key.toLowerCase()] || key.toLowerCase().replace(/\s+/g, "_");
-        norm[mapped] = v == null ? "" : String(v).trim();
+        if (mapped === "leadgen_id") {
+          // Validate the original cell before String can hide numeric precision loss.
+          // Spreadsheet numeric cells only preserve 15 significant digits.
+          const numericPrecisionLost = typeof v === "number"
+            && (!Number.isSafeInteger(v) || String(v).length > 15);
+          const id = numericPrecisionLost ? null : normalizeLeadgenId(v);
+          norm[mapped] = id || "";
+          if (v != null && String(v).trim() !== "" && !id) {
+            // Metadata is optional: warn visibly without blocking the customer row.
+            warnings.push(`Row ${rowNum}: Meta Lead ID omitted. Use the original ID stored as text; numeric cells with 16+ digits can lose precision.`);
+          }
+        } else {
+          norm[mapped] = v == null ? "" : String(v).trim();
+        }
       }
 
       const rowWarnings: string[] = [];

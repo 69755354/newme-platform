@@ -6,6 +6,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export type TaskSource = "manual" | "follow_up" | "cron" | "system";
 
 export interface FollowUpTaskInput {
+  /** Optional stable ID for an idempotent intake; never updates an existing task. */
+  taskId?: string;
   leadId: string;
   /**
    * 用户给的到期日：YYYY-MM-DD 或 ISO 字符串。
@@ -47,6 +49,7 @@ export async function createFollowUpTask(
   return supabase
     .from("tasks")
     .insert({
+      ...(input.taskId ? { id: input.taskId } : {}),
       lead_id: input.leadId,
       title: input.title?.trim() || "Follow up",
       assignee_id: input.assigneeId ?? null,

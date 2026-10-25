@@ -1148,7 +1148,10 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 | --- | --- |
 | `src/app/api/public/leads/route.ts` | 提供仅允许 `newme.ae`/`www.newme.ae` 来源的公开 JSON 线索入口，执行大小、频率、蜜罐和可选 Turnstile 校验；以 service role 写入 website lead 与跟进任务，并以同一个 `event_id` 排队和发送 Meta Lead CAPI 事件。 |
 | `src/lib/public-lead.ts` | 集中定义允许来源、CORS、字段长度/类型、联系方式要求及 UTM、Meta click、landing/referrer 归因解析，避免公开路由和网站端各写一份边界。 |
-| `src/lib/meta-capi.ts` | 构造 Meta Lead CAPI 载荷；邮箱、电话、姓名和 external id 在发送前规范化并 SHA-256，发送端只从服务端运行时读取 Pixel/token，保持 OS 为唯一 CAPI sender。 |
+| `src/lib/meta-capi.ts` | 构造 Meta Lead CAPI 载荷；邮箱、电话、姓名和 external id 在发送前规范化并 SHA-256，发送端只从服务端运行时读取 Pixel/token，保持 OS 为唯一 CAPI sender；只在 Meta 回执明确确认完整接收后标记成功，令牌不进入 URL 或错误日志。 |
+| `src/lib/website-lead-identity.ts` | 为新官网咨询生成按事件隔离的线索、任务及发送记录 UUIDv5；同事件、同咨询重试恢复原流程，内容冲突返回 409，不覆盖销售编辑。 |
+| `src/lib/meta-capi-delivery.ts` | 共享数据库条件更新协调发送所有权，租约 60 秒；最多 5 次、24 小时内沿用原 event_id 和 event_time 重试，拒绝格式异常、次数耗尽或过期记录自动补发。 |
+| `scripts/meta-capi-retry.mjs` | 默认只读、最多检查 20 条的补发准备工具；显式 --execute 才调用同一发送协调器，无定时器安装或启用。 |
 | `src/app/(dashboard)/analytics/_components/WeeklyTrends.tsx` | 金额格式化对缺失或非有限值收敛为 0，防止归因/趋势聚合的空值让分析卡片渲染失败。 |
 | `src/lib/i18n/LanguageContext.tsx` | 同标签页切换语言时，在更新可见翻译状态前同步写入 `document.documentElement.lang`，使辅助技术、SEO 语义与屏幕文案处于同一次状态变化中。 |
 | `src/components/HtmlLangSync.tsx` | 保留首次载入、跨标签页 storage event 以及旧写入方的有界轮询协调；同标签页按钮切换不再依赖 500ms 轮询。 |

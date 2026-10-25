@@ -6,6 +6,7 @@ export type MetaCapiLead = {
   input: WebsiteLeadInput;
   clientIp: string;
   clientUserAgent: string | null;
+  eventTime?: number;
 };
 
 export type MetaCapiPayload = {
@@ -36,7 +37,7 @@ function normalizedName(name: string): string {
   return name.trim().toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 }
 
-export function buildMetaCapiLeadPayload({ leadId, input, clientIp, clientUserAgent }: MetaCapiLead): MetaCapiPayload {
+export function buildMetaCapiLeadPayload({ leadId, input, clientIp, clientUserAgent, eventTime }: MetaCapiLead): MetaCapiPayload {
   const userData: Record<string, string | string[]> = {
     external_id: [hash(leadId)],
   };
@@ -54,7 +55,7 @@ export function buildMetaCapiLeadPayload({ leadId, input, clientIp, clientUserAg
   return {
     data: [{
       event_name: "Lead",
-      event_time: Math.floor(Date.now() / 1_000),
+      event_time: eventTime ?? Math.floor(Date.now() / 1_000),
       event_id: input.attribution.eventId || leadId,
       event_source_url: input.attribution.landingPage || "https://newme.ae/",
       action_source: "website",
@@ -73,15 +74,34 @@ export async function sendMetaCapiPayload(payload: MetaCapiPayload): Promise<voi
   if (!pixelId || !accessToken) throw new Error("Meta CAPI configuration is unavailable");
   const graphVersion = process.env.META_GRAPH_API_VERSION || "v25.0";
   const endpoint = new URL(`https://graph.facebook.com/${graphVersion}/${encodeURIComponent(pixelId)}/events`);
-  endpoint.searchParams.set("access_token", accessToken);
-  const result = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-    signal: AbortSignal.timeout(5_000),
-  });
+  // Keep credentials out of URLs, redirect targets and transport error messages.
+  let result: Response;
+  try {
+    result = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    // A timeout may follow acceptance. Preserve the stored event id/time for retry.
+    throw new Error("Meta CAPI transport failed");
+  }
   if (!result.ok) throw new Error(`Meta CAPI returned ${result.status}`);
+  let receipt: unknown;
+  try {
+    receipt = await result.json();
+  } catch {
+    throw new Error("Meta CAPI returned an invalid receipt");
+  }
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)
+    || "error" in receipt || !("events_received" in receipt)
+    || !Number.isInteger(receipt.events_received)
+    || payload.data.length === 0 || receipt.events_received !== payload.data.length) {
+    throw new Error("Meta CAPI did not acknowledge every event");
+  }
 }
 
 export async function sendMetaCapiLead(input: MetaCapiLead): Promise<void> {

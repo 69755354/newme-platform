@@ -53,7 +53,7 @@ function websiteRequest(body, headers = {}) {
 }
 
 function loadRoute({ insertError = null, taskError = null, capiError = null, capiFailures = 0,
-  beforeCapi = async () => {}, deliveryErrorOnce = false } = {}) {
+  beforeCapi = async () => {}, deliveryErrorOnce = false, taskFailures = 0 } = {}) {
   const inserts = [];
   const tasks = [];
   const capi = [];
@@ -101,14 +101,14 @@ function loadRoute({ insertError = null, taskError = null, capiError = null, cap
     "@/lib/tasks": {
       createFollowUpTask: async (_db, input) => {
         if (rows.tasks.has(input.taskId)) return { error: { code: "23505" } };
+        if (taskFailures-- > 0) return { error: { code: "task_unavailable" } };
         if (!taskError) rows.tasks.set(input.taskId, input);
         tasks.push(input);
         return { error: taskError };
       },
     },
     "@/lib/meta-capi": {
-      buildMetaCapiLeadPayload: (input) => ({ data: [{ event_id: input.input.attribution.eventId, event_time: input.eventTime,
-        event_name: "Lead", action_source: "website", event_source_url: "https://newme.ae/" }] }),
+      buildMetaCapiLeadPayload: loadTypeScriptModule("src/lib/meta-capi.ts").buildMetaCapiLeadPayload,
       sendMetaCapiPayload: async (payload) => {
         capi.push(payload);
         await beforeCapi();
@@ -275,7 +275,8 @@ test("a valid request creates an attributed website lead, follow-up, and CAPI ev
     first_touch_at: inserts[0].first_touch_at,
     raw_import_data: { intake: "newme.ae", event_id: "web-123", fbp: "fb.1.123.456",
       intake_fingerprint: inserts[0].raw_import_data.intake_fingerprint,
-      intake_at: inserts[0].raw_import_data.intake_at },
+      intake_at: inserts[0].raw_import_data.intake_at,
+      capi_payload: inserts[0].raw_import_data.capi_payload },
     quality: "pending",
     stage: "new",
     assigned_to: null,
@@ -355,6 +356,47 @@ test("an outbox insertion failure is repaired by retry without duplicating the i
   assert.equal(state.rows.tasks.size, 1);
   assert.equal(state.rows.business_events.size, 1);
   assert.equal(state.capi.length, 1);
+});
+
+for (const failure of ["task", "outbox"]) {
+  test(`missing ${failure} recovery retains the original attribution and client context`, async () => {
+    const state = loadRoute(failure === "task" ? { taskFailures: 1 } : { deliveryErrorOnce: true });
+    const input = { name: "Nadia", phone: "+971501234567", event_id: `original-${failure}`,
+      fbc: "fb.1.123.original-click", fbp: "fb.1.123.original-browser",
+      landing_page: "https://newme.ae/budget-estimator/?utm_source=original" };
+    assert.equal((await state.route.POST(websiteRequest(input, { "user-agent": "original-browser" }))).status, 503);
+    const lead = [...state.rows.leads.values()][0];
+    const saved = structuredClone(lead.raw_import_data.capi_payload);
+    lead.phone = "+971501111111"; // Sales edits cannot replace the original event either.
+    assert.equal((await state.route.POST(websiteRequest({ ...input, fbc: null, fbp: "fresh-browser",
+      landing_page: "https://newme.ae/?utm_source=another-click" }, {
+      "x-real-ip": "203.0.113.11", "user-agent": "different-browser",
+    }))).status, 201);
+    assert.equal(state.capi.length, 1);
+    assert.deepEqual(state.capi[0], saved);
+    const event = state.capi[0].data[0];
+    assert.equal(event.user_data.fbc, "fb.1.123.original-click");
+    assert.equal(event.user_data.fbp, "fb.1.123.original-browser");
+    assert.equal(event.user_data.client_ip_address, "203.0.113.10");
+    assert.equal(event.user_data.client_user_agent, "original-browser");
+    assert.equal(event.event_source_url, input.landing_page);
+    assert.equal(event.event_time, Math.floor(Date.parse(lead.raw_import_data.intake_at) / 1000));
+    assert.equal(lead.phone, "+971501111111");
+    assert.equal(state.rows.leads.size, 1);
+    assert.equal(state.rows.tasks.size, 1);
+    assert.equal(state.rows.business_events.size, 1);
+  });
+}
+
+test("a missing original event snapshot cannot be replaced by retry attribution", async () => {
+  const state = loadRoute({ deliveryErrorOnce: true });
+  const input = { name: "Nadia", phone: "+971501234567", event_id: "missing-snapshot" };
+  assert.equal((await state.route.POST(websiteRequest(input))).status, 503);
+  delete [...state.rows.leads.values()][0].raw_import_data.capi_payload;
+  const result = await state.route.POST(websiteRequest({ ...input, fbc: "another-click" }));
+  assert.equal(result.status, 503);
+  assert.equal(state.capi.length, 0);
+  assert.equal(state.rows.business_events.size, 0);
 });
 
 test("a failed send retries the stored payload including its original event time", async () => {

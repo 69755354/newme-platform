@@ -10,7 +10,7 @@ import {
 } from "@/lib/public-lead";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createFollowUpTask } from "@/lib/tasks";
-import { buildMetaCapiLeadPayload, sendMetaCapiPayload } from "@/lib/meta-capi";
+import { buildMetaCapiLeadPayload, sendMetaCapiPayload, type MetaCapiPayload } from "@/lib/meta-capi";
 import { websiteEventUuid, websiteLeadFingerprint } from "@/lib/website-lead-identity";
 import { attemptCapiDelivery, type CapiDelivery } from "@/lib/meta-capi-delivery";
 
@@ -118,6 +118,13 @@ export async function POST(request: Request) {
   const leadId = websiteEventUuid("lead", eventId);
   const fingerprint = websiteLeadFingerprint(parsed.value);
   let intakeAt = new Date().toISOString();
+  let capiPayload = buildMetaCapiLeadPayload({
+    leadId,
+    input: parsed.value,
+    clientIp: ip,
+    clientUserAgent: request.headers.get("user-agent"),
+    eventTime: Math.floor(Date.parse(intakeAt) / 1_000),
+  });
   const { data, error } = await supabaseAdmin
     .from("leads")
     .insert({
@@ -156,6 +163,7 @@ export async function POST(request: Request) {
         intake_fingerprint: fingerprint,
         intake_at: intakeAt,
         fbp: parsed.value.attribution.fbp,
+        capi_payload: capiPayload,
       },
       quality: "pending",
       stage: "new",
@@ -178,6 +186,15 @@ export async function POST(request: Request) {
       return response(origin, { error: "temporarily_unavailable" }, 503);
     }
     intakeAt = raw.intake_at;
+    // Recover from the first committed request, including its cookies, URL and
+    // client context. The retry's attribution is deliberately not fingerprinted.
+    const snapshot = raw.capi_payload as MetaCapiPayload | undefined;
+    if (!snapshot || !Array.isArray(snapshot.data) || snapshot.data.length !== 1
+      || snapshot.data[0]?.event_id !== eventId
+      || snapshot.data[0]?.event_time !== Math.floor(Date.parse(intakeAt) / 1_000)) {
+      return response(origin, { error: "temporarily_unavailable" }, 503);
+    }
+    capiPayload = snapshot;
   } else if (error || !data?.id) {
     logger.error({
       route: "/api/public/leads",
@@ -207,13 +224,6 @@ export async function POST(request: Request) {
     return response(origin, { error: "temporarily_unavailable" }, 503);
   }
 
-  const capiPayload = buildMetaCapiLeadPayload({
-    leadId,
-    input: parsed.value,
-    clientIp: ip,
-    clientUserAgent: request.headers.get("user-agent"),
-    eventTime: Math.floor(Date.parse(intakeAt) / 1_000),
-  });
   const queuedAt = new Date().toISOString();
   const { data: delivery, error: deliveryError } = await supabaseAdmin
     .from("business_events")

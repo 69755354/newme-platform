@@ -16,6 +16,9 @@ acceptance and genuine customer attribution require separate receipts.
 - A retry repairs a missing task or outbox record. Existing records are never
   upserted over sales edits. This is recoverable multi-step intake, not an atomic
   transaction: a crash can temporarily leave a lead before its task or outbox.
+  The lead's first committed intake stores the original CAPI snapshot, including
+  attribution and client context, so a missing outbox never uses a retry's new
+  tracking cookies or a later CRM edit. A missing snapshot requires review.
 - Delivery acquisition uses one conditional database update on status, attempt
   count and prior lease ownership. Only its owner may finish the receipt. A
   crashed sender's 60-second lease can be recovered by a later retry.
@@ -56,8 +59,10 @@ failures using synthetic in-memory storage and mocked Graph responses. They do
 not prove production PostgreSQL lock behavior, a live Meta send or customer
 attribution. No real WhatsApp number is connected and no permission is expanded.
 
-Code-review follow-up: the complete targeted suite now passes 37 synthetic checks.
-The two additional regressions prove that 20 exhausted oldest deliveries cannot
+Code-review follow-up: the complete targeted suite now passes 40 synthetic checks.
+Two additional regressions prove that 20 exhausted oldest deliveries cannot
 block a newer eligible one, and that 20 invalid records move to review so a later
-bounded batch can advance. This supplements the taskboard's earlier 35-check
+bounded batch can advance. Three more cover original attribution/client-context
+recovery after task/outbox failure and refusal to replace a missing snapshot.
+This supplements the taskboard's earlier 35-check
 code-only evidence; production deployment and live acceptance remain separate.

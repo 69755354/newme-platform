@@ -9,7 +9,7 @@ import { readLiveMode, readReleaseManifest } from "./check-release-phase.mjs";
 export const CAPI_EVENT = Object.freeze({
   "version": "20261025151000",
   "file": "20261025151000_website_capi_delivery_event.sql",
-  "sha256": "67329b240a724e51a14f632576584a92eed9e59c56c5a8eff1e0e920935d524a"
+  "sha256": "0928b05c7c5037479bc0b59434a0b7af417d50af2624524279adbea82153fc56"
 });
 export const CAPI_EVENT_POSTURE_SQL = "SELECT coalesce((SELECT contype='c' AND NOT convalidated AND encode(sha256(convert_to(pg_get_constraintdef(oid),'UTF8')),'hex')='b148b0597bde5c74974176f275ace685d50c888e3885e25cc8fa1408e48a8682' FROM pg_constraint WHERE conrelid='public.business_events'::regclass AND conname='chk_event_type'),false)";
 export const CAPI_EVENT_PRIOR_SQL = "SELECT coalesce((SELECT contype='c' AND NOT convalidated AND encode(sha256(convert_to(pg_get_constraintdef(oid),'UTF8')),'hex')='dfd24c8549869aa0dbdd03a919f6e79a623c095d1b5be8664b4ac5d02adc974e' FROM pg_constraint WHERE conrelid='public.business_events'::regclass AND conname='chk_event_type'),false)";

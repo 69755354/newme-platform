@@ -24,6 +24,8 @@ production CRM held 0 leads created in that window and 0 rows with
   `--since-days` (default 45, max 90) and prints, per day, Meta's count against
   the CRM's. `--execute` stores the missing ones once and queues their event.
   Output is aggregate counts only.
+- The pull script reads `NEXT_PUBLIC_SUPABASE_URL` from the release `.env.local`
+  when the environment does not set it (the runtime env holds only server secrets).
 - Storage rule (`storeMetaLead`): an existing leadgen id is a duplicate; an
   untagged CRM lead with the same phone or email is tagged and only its empty
   attribution fields are filled (existing values are never overwritten);
@@ -56,6 +58,9 @@ the default (Page admins and connected CRMs), so no Leads Access change is neede
    with `leads_retrieval`, `pages_show_list`, `pages_read_engagement`,
    `pages_manage_metadata`. The token is shown once: it goes straight into
    /etc/newme as `META_LEADS_ACCESS_TOKEN`, never into chat or a ticket.
+   Leadgen edges accept only a Page Access Token; the webhook and the pull
+   script exchange this token per page (`GET /{page}?fields=access_token`) at
+   run time, so no Page token is stored anywhere.
 2. Deploy this release with `META_LEADGEN_PAGE_IDS=770232832850803`.
 3. Dry run: `node scripts/meta-leads-pull.mjs --since-days 45` — Meta's count must
    match Ads Manager (24 form leads for 2026-09-26..10-25).

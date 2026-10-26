@@ -4,9 +4,12 @@
 // reports, per day, how many Meta has versus how many the CRM holds by leadgen id.
 // --execute stores the missing ones (idempotent) and queues their "Lead" event.
 // Only aggregate counts are printed: no names, contacts, answers or tokens.
+import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
-import { LEAD_FIELDS, graphGet, isCrmEventDeliverable, graphUrl, mapMetaLeadToRow, normalizeMetaId, storeMetaLead } from "../src/lib/meta-lead-ads.mjs";
+import {
+  LEAD_FIELDS, graphGet, isCrmEventDeliverable, graphUrl, mapMetaLeadToRow, normalizeMetaId, resolvePageAccessToken, storeMetaLead,
+} from "../src/lib/meta-lead-ads.mjs";
 import { enqueueMetaCrmStageEvent } from "../src/lib/meta-crm-events.ts";
 import { lookupTestForm } from "../src/lib/meta-lead-test-isolation.mjs";
 
@@ -30,15 +33,16 @@ export async function listMetaLeads(fetchImpl, { version, token, pageIds, sinceS
   for (const rawPage of pageIds) {
     const pageId = normalizeMetaId(rawPage);
     if (!pageId) throw new Error("invalid_page_id");
+    const pageToken = await resolvePageAccessToken(fetchImpl, { version, token, pageId });
     const formsUrl = graphUrl(version, `${pageId}/leadgen_forms`, { fields: "id,name,status", limit: 100 });
-    for await (const form of paged(fetchImpl, formsUrl, token)) {
+    for await (const form of paged(fetchImpl, formsUrl, pageToken)) {
       const formId = normalizeMetaId(form?.id);
       if (!formId) continue;
       const leadsUrl = graphUrl(version, `${formId}/leads`, {
         fields: LEAD_FIELDS, limit: 100,
         filtering: JSON.stringify([{ field: "time_created", operator: "GREATER_THAN", value: sinceSeconds }]),
       });
-      for await (const lead of paged(fetchImpl, leadsUrl, token)) leads.push({ lead, formName: form?.name ?? null });
+      for await (const lead of paged(fetchImpl, leadsUrl, pageToken)) leads.push({ lead, formName: form?.name ?? null });
     }
   }
   return leads;
@@ -108,6 +112,16 @@ export async function pullMetaLeads(db, fetchImpl, { version, token, pageIds, si
   return summary;
 }
 
+// The public Supabase URL lives in the release's .env.local, not in
+// /etc/newme/newme-runtime.env; read it from there when the env lacks it.
+function releaseSupabaseUrl() {
+  try {
+    const text = fs.readFileSync(new URL("../.env.local", import.meta.url), "utf8");
+    const value = text.match(/^NEXT_PUBLIC_SUPABASE_URL=(.*)$/m)?.[1]?.trim().replace(/^(["'])(.*)\1$/, "$2");
+    return value || undefined;
+  } catch { return undefined; }
+}
+
 function parseArgs(argv) {
   const args = { execute: argv.includes("--execute"), sinceDays: 45 };
   const i = argv.indexOf("--since-days");
@@ -120,7 +134,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const { execute, sinceDays } = parseArgs(process.argv.slice(2));
   const env = process.env;
   const pageIds = (env.META_LEADGEN_PAGE_IDS ?? "").split(",").map((v) => v.trim()).filter(Boolean);
-  const url = env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = env.NEXT_PUBLIC_SUPABASE_URL || releaseSupabaseUrl();
   const key = env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key || !env.META_LEADS_ACCESS_TOKEN || !pageIds.length) {
     console.error("missing configuration: Supabase server credentials, META_LEADS_ACCESS_TOKEN or META_LEADGEN_PAGE_IDS");

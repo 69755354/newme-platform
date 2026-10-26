@@ -23,4 +23,6 @@ export function mapMetaLeadToRow(lead: unknown, options?: { formName?: string | 
 export function storeMetaLead(db: SupabaseClient, row: MetaLeadRow, origin?: "webhook" | "backfill"): Promise<{ outcome: StoreOutcome; id: string | null }>;
 export function graphUrl(version: string, path: string, params?: Record<string, unknown>): URL;
 export function graphGet(fetchImpl: typeof fetch, url: URL, token: string): Promise<unknown>;
+export function resolvePageAccessToken(fetchImpl: typeof fetch, options: { version: string; token: string; pageId: string; nowMs?: number }): Promise<string>;
+export function clearPageTokenCache(): void;
 export function fetchMetaLead(fetchImpl: typeof fetch, options: { version: string; token: string; leadgenId: string }): Promise<unknown>;

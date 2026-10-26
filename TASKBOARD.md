@@ -28,6 +28,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
 | task_meta_lead_ads_intake_code | DONE | Claude | 2026-10-26 |
+| task_meta_lead_ads_page_token_code | DONE | Claude | 2026-10-27 |
 | task_meta_crm_import_id_precision_code | DONE | Codex | 2026-10-26 |
 | task_meta_crm_id_precision_code | DONE | Codex | 2026-10-26 |
 | task_website_opaque_attribution_identifiers_code | DONE | Codex | 2026-10-26 |
@@ -831,3 +832,6 @@ the provider test lead remains retrievable.
 
 <!-- postdeploy-acceptance-sha256:cb4e6ae6d0a53e84490b853cdaaa7dc93f5d3792cea9cced44e88474b76474b8 -->
 
+## Meta Lead Ads Page token exchange (2026-10-27)
+
+Code-only. The first production backfill showed Graph rejects the system-user token on leadgen edges with (#190) "must be called with a Page Access Token", and that the pull script found no Supabase URL in the runtime environment. The webhook and the pull script now exchange the configured token for the page's own token (`GET /{page}?fields=access_token`, header token, 10-minute in-memory cache; a Page token passes through), and the script reads NEXT_PUBLIC_SUPABASE_URL from the release .env.local when the environment lacks it. Targeted suite 24/24 including the new exchange/cache/denial test; typecheck passes. No credentials, permissions or scheduler state changed.

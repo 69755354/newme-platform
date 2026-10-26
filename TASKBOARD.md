@@ -801,3 +801,33 @@ Offline contracts cover 31/107, boundary/floor values, warning visibility and
 continued hard failures for health, missing names and excessive notifications.
 Production deployment and isolated Facebook callback acceptance remain pending.
 
+
+## Meta isolation release technical acceptance (2026-10-27)
+
+Release `547f7cdda82b6693ddfe5e8862e3b2b1c3a6ea8c` passed candidate CI
+`40403859500` and was deployed through the protected coordinator at
+`2026-10-26T21:35:46Z`, with database phase still strict and no migration applied.
+The assignment backlog remains visible as 31/107, without modifying customer
+ownership or relaxing other technical, integrity or security checks.
+Canonical production acceptance verified all four roles, eight browser sessions,
+56 redacted screenshots and 16 bound artifacts. All 42 fixture objects were
+cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 61 ms / p95 87 ms over 20 samples. Delayed health, logs, alert-provider
+readback and restart checks passed at `2026-10-26T21:50:47Z`; canonical attestation
+sealed the bundle below. Finalization still requires the exact closure CI.
+
+Meta-specific boundary: the dedicated unused form was registered and read back;
+valid challenge succeeds and unsigned webhook requests are rejected. One real
+Meta Testing Tool submission was created. Graph retrieval and repeated isolated
+backfill storage succeeded with one backfill receipt, zero formal leads and zero
+CRM conversion events. As of this technical acceptance, Meta's delivery tracker
+still says Pending and no origin=webhook receipt exists: actual Meta callback
+end-to-end acceptance is NOT claimed. The application is also Unpublished with
+an existing WhatsApp App Review in progress; its relationship to the pending
+test delivery is unproven. Existing User/WhatsApp configuration and review were
+not changed. Retain the permanent test-form registration and the pending Meta
+test lead for tracing; never roll back to intake code without isolation while
+the provider test lead remains retrievable.
+
+<!-- postdeploy-acceptance-sha256:cb4e6ae6d0a53e84490b853cdaaa7dc93f5d3792cea9cced44e88474b76474b8 -->
+

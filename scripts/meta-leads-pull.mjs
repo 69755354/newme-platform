@@ -44,6 +44,11 @@ export async function listMetaLeads(fetchImpl, { version, token, pageIds, sinceS
 }
 
 const day = (iso) => (iso ?? "").slice(0, 10) || "unknown";
+// Submission hour in Dubai time, used to choose pull times around real demand.
+const dubaiHour = (iso) => {
+  const t = Date.parse(iso ?? "");
+  return Number.isFinite(t) ? String(new Date(t + 4 * 3_600_000).getUTCHours()).padStart(2, "0") : "unknown";
+};
 
 export async function pullMetaLeads(db, fetchImpl, { version, token, pageIds, sinceSeconds, execute = false, nowMs = Date.now() }) {
   const metaLeads = await listMetaLeads(fetchImpl, { version, token, pageIds, sinceSeconds });
@@ -65,12 +70,14 @@ export async function pullMetaLeads(db, fetchImpl, { version, token, pageIds, si
   };
   const byDay = {};
   const summary = { mode: execute ? "execute" : "dry_run", meta_leads: metaLeads.length,
-    already_in_crm: 0, missing: 0, inserted: 0, merged: 0, duplicate: 0, failed: 0, event_too_old: 0, by_day: byDay };
+    already_in_crm: 0, missing: 0, inserted: 0, merged: 0, duplicate: 0, failed: 0, event_too_old: 0, by_day: byDay, by_hour_dubai: {} };
   for (const { lead, formName } of metaLeads) {
     let row;
     try { row = mapMetaLeadToRow(lead, { formName }); } catch { summary.failed++; continue; }
     const bucket = (byDay[day(row.created_at)] ??= { meta: 0, crm_before: 0 });
     bucket.meta++;
+    const hour = dubaiHour(row.created_at);
+    summary.by_hour_dubai[hour] = (summary.by_hour_dubai[hour] ?? 0) + 1;
     if (stored.has(row.meta_leadgen_id)) {
       summary.already_in_crm++; bucket.crm_before++;
       // Idempotent repair: re-ensure the Lead event for leads already stored.

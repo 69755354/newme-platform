@@ -60,8 +60,12 @@ the default (Page admins and connected CRMs), so no Leads Access change is neede
 3. Dry run: `node scripts/meta-leads-pull.mjs --since-days 45` — Meta's count must
    match Ads Manager (24 form leads for 2026-09-26..10-25).
 4. `--execute` once to backfill, then re-run the dry run: `missing` must be 0.
-5. Until the webhook is subscribed, run the pull every 15 minutes (it is
-   idempotent); this alone makes intake automatic.
+5. Until the webhook is subscribed, run `--execute` three times a day, Dubai time
+   08:30, 13:00 and 18:00 (Sam's choice, 2026-10-26). Ad spend runs around the
+   clock with its heaviest hours 20:00–01:00, so the morning run catches the
+   overnight leads before sales starts. The pull reports `by_hour_dubai`; after
+   the first backfill, move the three times to just after the real peaks.
+   Keep one daily dry run permanently as the reconciliation check.
 6. Realtime (optional, needs App dashboard access, i.e. a verified developer
    account): App → Webhooks → Page → subscribe `leadgen` with callback
    `https://app.newme.ae/api/meta/leadgen-webhook`, set `META_APP_SECRET`,

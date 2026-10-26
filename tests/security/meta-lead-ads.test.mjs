@@ -208,6 +208,7 @@ test("pull: dry run reconciles per day without writing; execute fills the gap on
   const dry = await pullMetaLeads(db, fakeFetch, opts);
   assert.deepEqual([dry.meta_leads, dry.already_in_crm, dry.missing, dry.inserted], [2, 1, 1, 0]);
   assert.deepEqual(dry.by_day["2026-10-20"], { meta: 2, crm_before: 1 });
+  assert.deepEqual(dry.by_hour_dubai, { "13": 2 }, "09:15 UTC is 13:15 in Dubai");
   assert.equal(db.rows.length, 1);
   const run = await pullMetaLeads(db, fakeFetch, { ...opts, execute: true });
   assert.equal(run.inserted, 1);

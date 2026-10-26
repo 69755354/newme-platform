@@ -136,7 +136,8 @@ const ATTRIBUTION_KEYS = ["ad_id", "meta_ad_id", "ad_name", "adset_id", "adset_n
 /**
  * Store one mapped lead. Idempotent by meta_leadgen_id:
  *  - already stored            -> "duplicate"
- *  - same phone/email untagged -> tag it, fill empty attribution -> "merged"
+ *  - same phone/email on an active, untagged lead -> tag it, fill empty attribution -> "merged"
+ *    (archived leads are never revived silently; a new active lead is inserted instead)
  *  - otherwise                 -> insert -> "inserted"
  * The unique partial index on meta_leadgen_id is the final race guard (23505).
  */
@@ -151,7 +152,7 @@ export async function storeMetaLead(db, row) {
   ].filter(Boolean);
   if (contactFilters.length) {
     const match = await db.from("leads").select(`id, meta_leadgen_id, ${ATTRIBUTION_KEYS.join(", ")}`)
-      .or(contactFilters.join(",")).is("meta_leadgen_id", null).limit(1);
+      .or(contactFilters.join(",")).is("meta_leadgen_id", null).eq("archived", false).limit(1);
     if (match.error) throw new Error("lead_lookup_failed");
     const target = match.data?.[0];
     if (target) {
@@ -161,14 +162,22 @@ export async function storeMetaLead(db, row) {
       }
       const tagged = await db.from("leads").update(patch).eq("id", target.id).is("meta_leadgen_id", null)
         .select("id").maybeSingle();
-      if (tagged.error?.code === "23505") return { outcome: "duplicate", id: target.id };
+      if (tagged.error?.code === "23505") {
+        const winner = await db.from("leads").select("id").eq("meta_leadgen_id", row.meta_leadgen_id).limit(1);
+        return { outcome: "duplicate", id: winner.data?.[0]?.id ?? null };
+      }
       if (tagged.error) throw new Error("lead_merge_failed");
       if (tagged.data) return { outcome: "merged", id: tagged.data.id };
     }
   }
 
   const inserted = await db.from("leads").insert(row).select("id").single();
-  if (inserted.error?.code === "23505") return { outcome: "duplicate", id: null };
+  if (inserted.error?.code === "23505") {
+    // Lost a race with a concurrent delivery: return the winner's id so the
+    // caller can still (idempotently) ensure its Lead event is queued.
+    const winner = await db.from("leads").select("id").eq("meta_leadgen_id", row.meta_leadgen_id).limit(1);
+    return { outcome: "duplicate", id: winner.data?.[0]?.id ?? null };
+  }
   if (inserted.error) throw new Error("lead_insert_failed");
   return { outcome: "inserted", id: inserted.data.id };
 }

@@ -73,11 +73,13 @@ export async function POST(request: Request) {
       const lead = await fetchMetaLead(fetch, { version: cfg.version, token: cfg.accessToken, leadgenId: note.leadgen_id });
       const row = mapMetaLeadToRow(lead);
       const stored = await storeMetaLead(supabaseAdmin, row);
+      if (!stored.id) throw new Error("lead_id_unavailable");
+      // Always (re)queue: the outbox upsert is idempotent per (lead, event), so a
+      // retried delivery repairs an event lost after the lead itself was stored.
+      const eventTime = Math.floor(Date.parse(row.first_touch_at) / 1000);
+      const queued = await enqueueMetaCrmStageEvent(supabaseAdmin, { id: stored.id, meta_leadgen_id: row.meta_leadgen_id }, "new", eventTime);
+      if (queued !== "queued") throw new Error("lead_event_not_queued");
       counts[stored.outcome as keyof typeof counts] += 1;
-      if (stored.id && stored.outcome !== "duplicate") {
-        const eventTime = Math.floor(Date.parse(row.first_touch_at) / 1000);
-        await enqueueMetaCrmStageEvent(supabaseAdmin, { id: stored.id, meta_leadgen_id: row.meta_leadgen_id }, "new", eventTime);
-      }
     } catch {
       // No customer data, tokens or Graph bodies are logged. Meta retries on non-2xx;
       // storage is idempotent by leadgen id, and the pull script reconciles any gap.

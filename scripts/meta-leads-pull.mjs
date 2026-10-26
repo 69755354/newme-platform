@@ -9,11 +9,12 @@ import { createClient } from "@supabase/supabase-js";
 import { LEAD_FIELDS, graphGet, graphUrl, mapMetaLeadToRow, normalizeMetaId, storeMetaLead } from "../src/lib/meta-lead-ads.mjs";
 import { enqueueMetaCrmStageEvent } from "../src/lib/meta-crm-events.ts";
 
-const MAX_PAGES = 50;
+const MAX_PAGES = 500; // safety stop only; reaching it with pages left is a failure, never a silent truncation
 
 async function* paged(fetchImpl, firstUrl, token) {
   let url = firstUrl;
-  for (let i = 0; url && i < MAX_PAGES; i++) {
+  for (let i = 0; url; i++) {
+    if (i >= MAX_PAGES) throw new Error("pagination_limit_reached");
     const body = await graphGet(fetchImpl, url, token);
     for (const item of Array.isArray(body?.data) ? body.data : []) yield item;
     const next = body?.paging?.next;
@@ -47,13 +48,18 @@ const day = (iso) => (iso ?? "").slice(0, 10) || "unknown";
 export async function pullMetaLeads(db, fetchImpl, { version, token, pageIds, sinceSeconds, execute = false }) {
   const metaLeads = await listMetaLeads(fetchImpl, { version, token, pageIds, sinceSeconds });
   const ids = metaLeads.map(({ lead }) => normalizeMetaId(lead?.id)).filter(Boolean);
-  const stored = new Set();
+  const stored = new Map();
   for (let i = 0; i < ids.length; i += 200) {
     const chunk = ids.slice(i, i + 200);
-    const { data, error } = await db.from("leads").select("meta_leadgen_id").in("meta_leadgen_id", chunk);
+    const { data, error } = await db.from("leads").select("id, meta_leadgen_id").in("meta_leadgen_id", chunk);
     if (error) throw new Error("crm_lookup_failed");
-    for (const row of data ?? []) stored.add(row.meta_leadgen_id);
+    for (const row of data ?? []) stored.set(row.meta_leadgen_id, row.id);
   }
+  const queueLead = async (id, row) => {
+    const queued = await enqueueMetaCrmStageEvent(db, { id, meta_leadgen_id: row.meta_leadgen_id }, "new",
+      Math.floor(Date.parse(row.created_at) / 1000));
+    if (queued !== "queued") throw new Error("lead_event_not_queued");
+  };
   const byDay = {};
   const summary = { mode: execute ? "execute" : "dry_run", meta_leads: metaLeads.length,
     already_in_crm: 0, missing: 0, inserted: 0, merged: 0, duplicate: 0, failed: 0, by_day: byDay };
@@ -62,16 +68,19 @@ export async function pullMetaLeads(db, fetchImpl, { version, token, pageIds, si
     try { row = mapMetaLeadToRow(lead, { formName }); } catch { summary.failed++; continue; }
     const bucket = (byDay[day(row.created_at)] ??= { meta: 0, crm_before: 0 });
     bucket.meta++;
-    if (stored.has(row.meta_leadgen_id)) { summary.already_in_crm++; bucket.crm_before++; continue; }
+    if (stored.has(row.meta_leadgen_id)) {
+      summary.already_in_crm++; bucket.crm_before++;
+      // Idempotent repair: re-ensure the Lead event for leads already stored.
+      if (execute) { try { await queueLead(stored.get(row.meta_leadgen_id), row); } catch { summary.failed++; } }
+      continue;
+    }
     summary.missing++;
     if (!execute) continue;
     try {
       const result = await storeMetaLead(db, row);
+      if (!result.id) throw new Error("lead_id_unavailable");
+      await queueLead(result.id, row);
       summary[result.outcome]++;
-      if (result.id && result.outcome !== "duplicate") {
-        await enqueueMetaCrmStageEvent(db, { id: result.id, meta_leadgen_id: row.meta_leadgen_id }, "new",
-          Math.floor(Date.parse(row.created_at) / 1000));
-      }
     } catch { summary.failed++; }
   }
   return summary;

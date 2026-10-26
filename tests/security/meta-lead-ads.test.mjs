@@ -66,18 +66,26 @@ test("mapping: attribution, normalized contacts, creation time and raw answers",
 });
 
 function fakeDb(initial = []) {
-  const rows = initial.map((r) => ({ ...r }));
+  const rows = initial.map((r) => ({ archived: false, ...r }));
+  const events = new Map();
+  const control = { queueFails: false };
   let nextId = 1;
   const builder = (table) => {
     const state = { op: "select", filters: [], payload: null };
     const matches = (r) => state.filters.every((f) => f(r));
     const run = () => {
+      if (table === "meta_crm_stage_events") {
+        if (control.queueFails) return { data: null, error: { code: "unavailable" } };
+        const key = `${state.payload.lead_id}:${state.payload.crm_stage}`;
+        if (!events.has(key)) events.set(key, state.payload);
+        return { data: null, error: null };
+      }
       if (table !== "leads") return { data: null, error: null };
       if (state.op === "insert") {
         if (state.payload.meta_leadgen_id && rows.some((r) => r.meta_leadgen_id === state.payload.meta_leadgen_id)) {
           return { data: null, error: { code: "23505" } };
         }
-        const row = { id: `lead-${nextId++}`, ...state.payload };
+        const row = { id: `lead-${nextId++}`, archived: false, ...state.payload };
         rows.push(row);
         return { data: [row], error: null };
       }
@@ -94,7 +102,7 @@ function fakeDb(initial = []) {
       select() { return api; },
       insert(p) { state.op = "insert"; state.payload = p; return api; },
       update(p) { state.op = "update"; state.payload = p; return api; },
-      upsert() { state.op = "noop"; return api; },
+      upsert(p) { state.op = "upsert"; state.payload = p; return api; },
       eq(k, v) { state.filters.push((r) => r[k] === v); return api; },
       is(k, v) { state.filters.push((r) => (r[k] ?? null) === v); return api; },
       in(k, vs) { state.filters.push((r) => vs.includes(r[k])); return api; },
@@ -110,7 +118,7 @@ function fakeDb(initial = []) {
     };
     return api;
   };
-  return { rows, from: builder };
+  return { rows, events, control, from: builder };
 }
 
 test("store: insert, idempotent replay, and merge into an untagged contact", async () => {
@@ -127,6 +135,37 @@ test("store: insert, idempotent replay, and merge into an untagged contact", asy
   assert.equal(target.meta_leadgen_id, "2234567890123456");
   assert.equal(target.campaign_name, "kept", "existing attribution is never overwritten");
   assert.equal(target.ad_name, "Static-2", "empty attribution is filled");
+});
+
+test("store: an archived contact is never revived silently; a new active lead is inserted", async () => {
+  const db = fakeDb([{ id: "arch-1", phone: "+971508888888", meta_leadgen_id: null, archived: true }]);
+  const row = mapMetaLeadToRow(graphLead("5234567890123456", { field_data: [{ name: "phone_number", values: ["+971508888888"] }] }));
+  const result = await storeMetaLead(db, row);
+  assert.equal(result.outcome, "inserted");
+  assert.equal(db.rows.find((r) => r.id === "arch-1").meta_leadgen_id, null);
+  assert.equal(db.rows.find((r) => r.id === result.id).archived, false);
+});
+
+test("pull: a lost Lead event is repaired on the next run; pagination never truncates silently", async () => {
+  const db = fakeDb();
+  const graph = {
+    [`${PAGE}/leadgen_forms`]: { data: [{ id: "998877665544", name: "Villa form" }] },
+    ["998877665544/leads"]: { data: [graphLead()] },
+  };
+  const fakeFetch = async (url) => ({ ok: true, json: async () => graph[url.pathname.split("/").slice(2).join("/")] ?? { data: [] } });
+  const opts = { version: "v22.0", token: "t", pageIds: [PAGE], sinceSeconds: 1, execute: true };
+  db.control.queueFails = true;
+  const first = await pullMetaLeads(db, fakeFetch, opts);
+  assert.equal(first.failed, 1, "a lead stored without its event is a failure, not a success");
+  assert.equal(db.events.size, 0);
+  db.control.queueFails = false;
+  const second = await pullMetaLeads(db, fakeFetch, opts);
+  assert.deepEqual([second.already_in_crm, second.failed, db.events.size], [1, 0, 1]);
+
+  let calls = 0;
+  const endless = async () => { calls++; return { ok: true, json: async () => ({ data: [], paging: { next: "https://graph.facebook.com/v22.0/x?after=1" } }) }; };
+  await assert.rejects(pullMetaLeads(fakeDb(), endless, { ...opts, execute: false }), /pagination_limit_reached/);
+  assert.ok(calls >= 500);
 });
 
 test("pull: dry run reconciles per day without writing; execute fills the gap once", async () => {
@@ -168,11 +207,15 @@ test("webhook route: fails closed, verifies challenge and signature, stores once
   const savedFetch = globalThis.fetch;
   const db = fakeDb();
   const queued = [];
+  let failQueue = false;
   const lib = await import("../../src/lib/meta-lead-ads.mjs");
   const route = loadRoute("../../src/app/api/meta/leadgen-webhook/route.ts", {
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "@/lib/supabase-admin": { supabaseAdmin: db },
-    "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async (_db, lead, stage) => { queued.push([lead.meta_leadgen_id, stage]); return "queued"; } },
+    "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async (_db, lead, stage) => {
+      if (failQueue) return "skipped";
+      queued.push([lead.meta_leadgen_id, stage]); return "queued";
+    } },
     "@/lib/meta-lead-ads.mjs": lib,
   });
   try {
@@ -192,12 +235,15 @@ test("webhook route: fails closed, verifies challenge and signature, stores once
       headers: { "content-type": "application/json", "x-hub-signature-256": sig }, body: raw });
     assert.equal((await route.POST(post("sha256=" + "0".repeat(64)))).status, 403);
     assert.equal(db.rows.length, 0);
+    failQueue = true;
+    assert.equal((await route.POST(post(sign(raw, "secret")))).status, 503, "a lost Lead event asks Meta to retry");
+    assert.equal(db.rows.length, 1);
+    failQueue = false;
     const ok = await route.POST(post(sign(raw, "secret")));
     assert.equal(ok.status, 200);
-    assert.equal((await ok.json()).inserted, 1);
-    assert.equal((await route.POST(post(sign(raw, "secret")))).status, 200);
+    assert.equal((await ok.json()).duplicate, 1);
     assert.equal(db.rows.length, 1, "Meta retries are idempotent");
-    assert.deepEqual(queued, [[LEAD, "new"]]);
+    assert.deepEqual(queued, [[LEAD, "new"]], "the retry repaired the lost event");
     globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: { code: 190 } }) });
     const other = raw.replace(LEAD, "4234567890123456");
     assert.equal((await route.POST(new Request("https://example.test", { method: "POST",

@@ -790,3 +790,14 @@ read/insert/delete rights; no business contents were read. These checks do not
 prove a live write. Full pinned CI, gated release and actual Facebook test-lead
 callback acceptance remain outstanding.
 
+## CRM assignment backlog release policy (2026-10-27)
+
+User-authorized narrow correction: keep the existing 20 percent / ten-record
+assignment backlog threshold as a visible business warning, persisted in the
+regression JSON and printed even in quiet successful runs. It no longer blocks
+an otherwise healthy release. No customer ownership or data is changed; health,
+credentials, integrity, security and test-isolation gates remain mandatory.
+Offline contracts cover 31/107, boundary/floor values, warning visibility and
+continued hard failures for health, missing names and excessive notifications.
+Production deployment and isolated Facebook callback acceptance remain pending.
+

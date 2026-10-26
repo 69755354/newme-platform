@@ -5,6 +5,7 @@
 //
 // Never logs or returns customer answers; callers only see aggregate outcomes.
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { isolateTestLead } from "./meta-lead-test-isolation.mjs";
 
 export const MAX_LEADGEN_WEBHOOK_BYTES = 256 * 1024;
 // Single age policy for CRM Lead events: the sender retires anything older, so
@@ -160,7 +161,10 @@ const ATTRIBUTION_KEYS = ["ad_id", "meta_ad_id", "ad_name", "adset_id", "adset_n
  *  - otherwise                 -> insert -> "inserted"
  * The unique partial index on meta_leadgen_id is the final race guard (23505).
  */
-export async function storeMetaLead(db, row) {
+export async function storeMetaLead(db, row, origin = "backfill") {
+  // This check is at the shared execution site, before even contact lookup.
+  // A registry/receipt failure throws; never fall through to customer storage.
+  if (await isolateTestLead(db, row, origin)) return { outcome: "isolated", id: null };
   const existing = await db.from("leads").select("id").eq("meta_leadgen_id", row.meta_leadgen_id).limit(1);
   if (existing.error) throw new Error("lead_lookup_failed");
   if (existing.data?.length) return { outcome: "duplicate", id: existing.data[0].id };

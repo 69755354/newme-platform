@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { LEAD_FIELDS, graphGet, isCrmEventDeliverable, graphUrl, mapMetaLeadToRow, normalizeMetaId, storeMetaLead } from "../src/lib/meta-lead-ads.mjs";
 import { enqueueMetaCrmStageEvent } from "../src/lib/meta-crm-events.ts";
+import { lookupTestForm } from "../src/lib/meta-lead-test-isolation.mjs";
 
 const MAX_PAGES = 500; // safety stop only; reaching it with pages left is a failure, never a silent truncation
 
@@ -70,10 +71,20 @@ export async function pullMetaLeads(db, fetchImpl, { version, token, pageIds, si
   };
   const byDay = {};
   const summary = { mode: execute ? "execute" : "dry_run", meta_leads: metaLeads.length,
-    already_in_crm: 0, missing: 0, inserted: 0, merged: 0, duplicate: 0, failed: 0, event_too_old: 0, by_day: byDay, by_hour_dubai: {} };
+    already_in_crm: 0, missing: 0, inserted: 0, merged: 0, duplicate: 0, isolated: 0, failed: 0, event_too_old: 0, by_day: byDay, by_hour_dubai: {} };
   for (const { lead, formName } of metaLeads) {
     let row;
     try { row = mapMetaLeadToRow(lead, { formName }); } catch { summary.failed++; continue; }
+    try {
+      if (await lookupTestForm(db, row.form_id)) {
+        if (execute) {
+          const result = await storeMetaLead(db, row, "backfill");
+          if (result.outcome !== "isolated") throw Error("test_isolation_changed");
+        }
+        summary.isolated++;
+        continue;
+      }
+    } catch { summary.failed++; continue; }
     const bucket = (byDay[day(row.created_at)] ??= { meta: 0, crm_before: 0 });
     bucket.meta++;
     const hour = dubaiHour(row.created_at);
@@ -88,6 +99,7 @@ export async function pullMetaLeads(db, fetchImpl, { version, token, pageIds, si
     if (!execute) continue;
     try {
       const result = await storeMetaLead(db, row);
+      if (result.outcome === "isolated") { summary.isolated++; continue; }
       if (!result.id) throw new Error("lead_id_unavailable");
       await queueLead(result.id, row);
       summary[result.outcome]++;

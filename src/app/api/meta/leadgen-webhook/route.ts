@@ -67,12 +67,16 @@ export async function POST(request: Request) {
     return reply({ error: "invalid_payload" }, 400);
   }
 
-  const counts = { inserted: 0, merged: 0, duplicate: 0, failed: 0 };
+  const counts = { inserted: 0, merged: 0, duplicate: 0, isolated: 0, failed: 0 };
   for (const note of notifications) {
     try {
       const lead = await fetchMetaLead(fetch, { version: cfg.version, token: cfg.accessToken, leadgenId: note.leadgen_id });
       const row = mapMetaLeadToRow(lead);
-      const stored = await storeMetaLead(supabaseAdmin, row);
+      if (row.meta_leadgen_id !== note.leadgen_id || (note.form_id && note.form_id !== row.form_id)) {
+        throw new Error("lead_identity_mismatch");
+      }
+      const stored = await storeMetaLead(supabaseAdmin, row, "webhook");
+      if (stored.outcome === "isolated") { counts.isolated++; continue; }
       if (!stored.id) throw new Error("lead_id_unavailable");
       // Always (re)queue: the outbox upsert is idempotent per (lead, event), so a
       // retried delivery repairs an event lost after the lead itself was stored.

@@ -226,6 +226,26 @@ export async function graphGet(fetchImpl, url, token) {
   return body;
 }
 
+// Graph's leadgen edges (/{page}/leadgen_forms, /{form}/leads, /{leadgen_id})
+// accept only a Page Access Token (#190 otherwise). The configured token is a
+// system-user token, so it is exchanged per page and cached briefly in memory.
+const PAGE_TOKEN_TTL_MS = 10 * 60 * 1000;
+const pageTokenCache = new Map();
+
+/** Exchange the configured token for the page's own token; a Page token passes through. */
+export async function resolvePageAccessToken(fetchImpl, { version, token, pageId, nowMs = Date.now() }) {
+  const id = normalizeMetaId(pageId);
+  if (!id) throw new Error("invalid_page_id");
+  const cached = pageTokenCache.get(id);
+  if (cached && cached.source === token && cached.expires > nowMs) return cached.token;
+  const body = await graphGet(fetchImpl, graphUrl(version, id, { fields: "access_token" }), token);
+  const pageToken = typeof body?.access_token === "string" && body.access_token ? body.access_token : token;
+  pageTokenCache.set(id, { source: token, token: pageToken, expires: nowMs + PAGE_TOKEN_TTL_MS });
+  return pageToken;
+}
+
+export function clearPageTokenCache() { pageTokenCache.clear(); }
+
 export async function fetchMetaLead(fetchImpl, { version, token, leadgenId }) {
   const id = normalizeMetaId(leadgenId, LEADGEN_ID);
   if (!id) throw new Error("invalid_lead");

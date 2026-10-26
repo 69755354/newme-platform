@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
 import {
   MAX_LEADGEN_WEBHOOK_BYTES, extractLeadgenNotifications, fetchMetaLead, isCrmEventDeliverable, mapMetaLeadToRow,
-  storeMetaLead, verifyMetaSignature,
+  resolvePageAccessToken, storeMetaLead, verifyMetaSignature,
 } from "@/lib/meta-lead-ads.mjs";
 
 export const runtime = "nodejs";
@@ -70,7 +70,8 @@ export async function POST(request: Request) {
   const counts = { inserted: 0, merged: 0, duplicate: 0, isolated: 0, failed: 0 };
   for (const note of notifications) {
     try {
-      const lead = await fetchMetaLead(fetch, { version: cfg.version, token: cfg.accessToken, leadgenId: note.leadgen_id });
+      const token = await resolvePageAccessToken(fetch, { version: cfg.version, token: cfg.accessToken, pageId: note.page_id });
+      const lead = await fetchMetaLead(fetch, { version: cfg.version, token, leadgenId: note.leadgen_id });
       const row = mapMetaLeadToRow(lead);
       if (row.meta_leadgen_id !== note.leadgen_id || (note.form_id && note.form_id !== row.form_id)) {
         throw new Error("lead_identity_mismatch");

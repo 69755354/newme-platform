@@ -339,6 +339,35 @@ function loadRoute(file, mocks) {
   return exports;
 }
 
+test("page token: leadgen edges use the exchanged Page token, cached per page", async () => {
+  const { clearPageTokenCache, resolvePageAccessToken } = await import("../../src/lib/meta-lead-ads.mjs");
+  clearPageTokenCache();
+  const seen = [];
+  const graph = {
+    [PAGE]: { id: PAGE, access_token: "page-token" },
+    [`${PAGE}/leadgen_forms`]: { data: [{ id: "998877665544", name: "Villa form" }] },
+    ["998877665544/leads"]: { data: [graphLead()] },
+  };
+  const fakeFetch = async (url, init) => {
+    const path = url.pathname.split("/").slice(2).join("/");
+    seen.push([path, init.headers.Authorization, url.searchParams.get("access_token")]);
+    return { ok: true, json: async () => graph[path] ?? { data: [] } };
+  };
+  const opts = { version: "v22.0", token: "system-user", pageIds: [PAGE], sinceSeconds: 1, nowMs: NOW };
+  const dry = await pullMetaLeads(fakeDb(), fakeFetch, opts);
+  assert.equal(dry.meta_leads, 1);
+  assert.deepEqual(seen[0], [PAGE, "Bearer system-user", null], "only the exchange uses the configured token");
+  assert.ok(seen.slice(1).every(([, auth, query]) => auth === "Bearer page-token" && query === null));
+  await pullMetaLeads(fakeDb(), fakeFetch, opts);
+  assert.equal(seen.filter(([path]) => path === PAGE).length, 1, "the exchange is cached");
+  assert.equal(await resolvePageAccessToken(fakeFetch, { version: "v22.0", token: "system-user", pageId: PAGE, nowMs: Date.now() + 11 * 60_000 }), "page-token");
+  assert.equal(seen.filter(([path]) => path === PAGE).length, 2, "the cache expires");
+  clearPageTokenCache();
+  const denied = async () => ({ ok: false, status: 400, json: async () => ({ error: { code: 190 } }) });
+  await assert.rejects(pullMetaLeads(fakeDb(), denied, opts), /graph_error_190/);
+  clearPageTokenCache();
+});
+
 test("webhook route: fails closed, verifies challenge and signature, stores once and queues Lead", async () => {
   const saved = { ...process.env };
   const savedFetch = globalThis.fetch;

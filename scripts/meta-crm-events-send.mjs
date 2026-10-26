@@ -5,8 +5,10 @@ import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { buildMetaCrmPayload, sendMetaCrmPayload } from "../src/lib/meta-crm-events.ts";
+import { META_CRM_EVENT_MAX_AGE_SECONDS } from "../src/lib/meta-lead-ads.mjs";
 
-const MAX_AGE_SECONDS = 7 * 86_400; // Meta accepts CRM events well inside its 28-day window.
+// Meta accepts CRM events well inside its 28-day window; intake shares this limit.
+const MAX_AGE_SECONDS = META_CRM_EVENT_MAX_AGE_SECONDS;
 
 export async function sendMetaCrmEvents(db, { execute = false, limit = 50, clock = () => Date.now(),
   send = sendMetaCrmPayload } = {}) {

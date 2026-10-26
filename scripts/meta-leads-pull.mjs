@@ -6,7 +6,7 @@
 // Only aggregate counts are printed: no names, contacts, answers or tokens.
 import { pathToFileURL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
-import { LEAD_FIELDS, graphGet, graphUrl, mapMetaLeadToRow, normalizeMetaId, storeMetaLead } from "../src/lib/meta-lead-ads.mjs";
+import { LEAD_FIELDS, graphGet, isCrmEventDeliverable, graphUrl, mapMetaLeadToRow, normalizeMetaId, storeMetaLead } from "../src/lib/meta-lead-ads.mjs";
 import { enqueueMetaCrmStageEvent } from "../src/lib/meta-crm-events.ts";
 
 const MAX_PAGES = 500; // safety stop only; reaching it with pages left is a failure, never a silent truncation
@@ -45,7 +45,7 @@ export async function listMetaLeads(fetchImpl, { version, token, pageIds, sinceS
 
 const day = (iso) => (iso ?? "").slice(0, 10) || "unknown";
 
-export async function pullMetaLeads(db, fetchImpl, { version, token, pageIds, sinceSeconds, execute = false }) {
+export async function pullMetaLeads(db, fetchImpl, { version, token, pageIds, sinceSeconds, execute = false, nowMs = Date.now() }) {
   const metaLeads = await listMetaLeads(fetchImpl, { version, token, pageIds, sinceSeconds });
   const ids = metaLeads.map(({ lead }) => normalizeMetaId(lead?.id)).filter(Boolean);
   const stored = new Map();
@@ -55,14 +55,17 @@ export async function pullMetaLeads(db, fetchImpl, { version, token, pageIds, si
     if (error) throw new Error("crm_lookup_failed");
     for (const row of data ?? []) stored.set(row.meta_leadgen_id, row.id);
   }
+  // Leads older than the sender's age limit are stored but their Lead event is
+  // not queued (it could never be sent); they are counted as event_too_old.
   const queueLead = async (id, row) => {
-    const queued = await enqueueMetaCrmStageEvent(db, { id, meta_leadgen_id: row.meta_leadgen_id }, "new",
-      Math.floor(Date.parse(row.created_at) / 1000));
+    const eventTime = Math.floor(Date.parse(row.created_at) / 1000);
+    if (!isCrmEventDeliverable(eventTime, nowMs)) { summary.event_too_old++; return; }
+    const queued = await enqueueMetaCrmStageEvent(db, { id, meta_leadgen_id: row.meta_leadgen_id }, "new", eventTime);
     if (queued !== "queued") throw new Error("lead_event_not_queued");
   };
   const byDay = {};
   const summary = { mode: execute ? "execute" : "dry_run", meta_leads: metaLeads.length,
-    already_in_crm: 0, missing: 0, inserted: 0, merged: 0, duplicate: 0, failed: 0, by_day: byDay };
+    already_in_crm: 0, missing: 0, inserted: 0, merged: 0, duplicate: 0, failed: 0, event_too_old: 0, by_day: byDay };
   for (const { lead, formName } of metaLeads) {
     let row;
     try { row = mapMetaLeadToRow(lead, { formName }); } catch { summary.failed++; continue; }

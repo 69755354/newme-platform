@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const MAX_LEADGEN_WEBHOOK_BYTES: number;
 export const LEAD_FIELDS: string;
+export const META_CRM_EVENT_MAX_AGE_SECONDS: number;
+export function isCrmEventDeliverable(eventTimeSeconds: number, nowMs?: number): boolean;
 export interface LeadgenNotification {
   leadgen_id: string; page_id: string; form_id: string | null; ad_id: string | null; created_time: number | null;
 }

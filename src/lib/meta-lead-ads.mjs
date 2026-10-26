@@ -7,6 +7,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const MAX_LEADGEN_WEBHOOK_BYTES = 256 * 1024;
+// Single age policy for CRM Lead events: the sender retires anything older, so
+// intake must never report an older event as queued feedback.
+export const META_CRM_EVENT_MAX_AGE_SECONDS = 7 * 86_400;
+export const isCrmEventDeliverable = (eventTimeSeconds, nowMs = Date.now()) =>
+  Number.isFinite(eventTimeSeconds) && Math.floor(nowMs / 1000) - eventTimeSeconds <= META_CRM_EVENT_MAX_AGE_SECONDS;
 const LEADGEN_ID = /^[1-9]\d{7,31}$/;
 const GRAPH_ID = /^[1-9]\d{4,31}$/;
 export const LEAD_FIELDS = [

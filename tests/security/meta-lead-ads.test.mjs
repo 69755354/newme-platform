@@ -8,7 +8,8 @@ import {
 } from "../../src/lib/meta-lead-ads.mjs";
 import { pullMetaLeads } from "../../scripts/meta-leads-pull.mjs";
 
-const PAGE = "61582805446880";
+const PAGE = "770232832850803";
+const NOW = Date.parse("2026-10-26T00:00:00Z"); // graphLead() is created 2026-10-20
 const LEAD = "1234567890123456";
 const sign = (body, secret) => `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
 
@@ -176,7 +177,7 @@ test("pull: a lost Lead event is repaired on the next run; pagination never trun
     ["998877665544/leads"]: { data: [graphLead()] },
   };
   const fakeFetch = async (url) => ({ ok: true, json: async () => graph[url.pathname.split("/").slice(2).join("/")] ?? { data: [] } });
-  const opts = { version: "v22.0", token: "t", pageIds: [PAGE], sinceSeconds: 1, execute: true };
+  const opts = { version: "v22.0", token: "t", pageIds: [PAGE], sinceSeconds: 1, execute: true, nowMs: NOW };
   db.control.queueFails = true;
   const first = await pullMetaLeads(db, fakeFetch, opts);
   assert.equal(first.failed, 1, "a lead stored without its event is a failure, not a success");
@@ -203,7 +204,7 @@ test("pull: dry run reconciles per day without writing; execute fills the gap on
     const key = url.pathname.split("/").slice(2).join("/");
     return { ok: true, json: async () => graph[key] ?? { data: [] } };
   };
-  const opts = { version: "v22.0", token: "t", pageIds: [PAGE], sinceSeconds: 1 };
+  const opts = { version: "v22.0", token: "t", pageIds: [PAGE], sinceSeconds: 1, nowMs: NOW };
   const dry = await pullMetaLeads(db, fakeFetch, opts);
   assert.deepEqual([dry.meta_leads, dry.already_in_crm, dry.missing, dry.inserted], [2, 1, 1, 0]);
   assert.deepEqual(dry.by_day["2026-10-20"], { meta: 2, crm_before: 1 });
@@ -213,6 +214,21 @@ test("pull: dry run reconciles per day without writing; execute fills the gap on
   const again = await pullMetaLeads(db, fakeFetch, { ...opts, execute: true });
   assert.deepEqual([again.missing, again.inserted], [0, 0]);
   assert.ok(!JSON.stringify(run).includes("Test Person"), "summary carries no customer data");
+});
+
+test("backfill: leads older than the sender's age limit are stored but never reported as queued", async () => {
+  const db = fakeDb();
+  const old = graphLead("8234567890123456", { created_time: "2026-09-25T10:00:00+0000" });
+  const graph = {
+    [`${PAGE}/leadgen_forms`]: { data: [{ id: "998877665544", name: "Villa form" }] },
+    ["998877665544/leads"]: { data: [old, graphLead()] },
+  };
+  const fakeFetch = async (url) => ({ ok: true, json: async () => graph[url.pathname.split("/").slice(2).join("/")] ?? { data: [] } });
+  const run = await pullMetaLeads(db, fakeFetch, { version: "v22.0", token: "t", pageIds: [PAGE], sinceSeconds: 1, execute: true, nowMs: NOW });
+  assert.deepEqual([run.inserted, run.event_too_old, run.failed], [2, 1, 0]);
+  assert.equal(db.events.size, 1, "only the deliverable Lead event is queued");
+  const again = await pullMetaLeads(db, fakeFetch, { version: "v22.0", token: "t", pageIds: [PAGE], sinceSeconds: 1, execute: true, nowMs: NOW });
+  assert.deepEqual([again.failed, db.events.size], [0, 1]);
 });
 
 const require = createRequire(import.meta.url);
@@ -228,6 +244,8 @@ function loadRoute(file, mocks) {
 test("webhook route: fails closed, verifies challenge and signature, stores once and queues Lead", async () => {
   const saved = { ...process.env };
   const savedFetch = globalThis.fetch;
+  const savedNow = Date.now;
+  Date.now = () => NOW;
   const db = fakeDb();
   const queued = [];
   let failQueue = false;
@@ -275,5 +293,6 @@ test("webhook route: fails closed, verifies challenge and signature, stores once
   } finally {
     process.env = saved;
     globalThis.fetch = savedFetch;
+    Date.now = savedNow;
   }
 });

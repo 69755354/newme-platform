@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
 import {
-  MAX_LEADGEN_WEBHOOK_BYTES, extractLeadgenNotifications, fetchMetaLead, mapMetaLeadToRow,
+  MAX_LEADGEN_WEBHOOK_BYTES, extractLeadgenNotifications, fetchMetaLead, isCrmEventDeliverable, mapMetaLeadToRow,
   storeMetaLead, verifyMetaSignature,
 } from "@/lib/meta-lead-ads.mjs";
 
@@ -77,8 +77,10 @@ export async function POST(request: Request) {
       // Always (re)queue: the outbox upsert is idempotent per (lead, event), so a
       // retried delivery repairs an event lost after the lead itself was stored.
       const eventTime = Math.floor(Date.parse(row.first_touch_at) / 1000);
-      const queued = await enqueueMetaCrmStageEvent(supabaseAdmin, { id: stored.id, meta_leadgen_id: row.meta_leadgen_id }, "new", eventTime);
-      if (queued !== "queued") throw new Error("lead_event_not_queued");
+      if (isCrmEventDeliverable(eventTime)) {
+        const queued = await enqueueMetaCrmStageEvent(supabaseAdmin, { id: stored.id, meta_leadgen_id: row.meta_leadgen_id }, "new", eventTime);
+        if (queued !== "queued") throw new Error("lead_event_not_queued");
+      }
       counts[stored.outcome as keyof typeof counts] += 1;
     } catch {
       // No customer data, tokens or Graph bodies are logged. Meta retries on non-2xx;

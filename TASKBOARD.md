@@ -27,6 +27,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_meta_lead_ads_intake_code | DONE | Claude | 2026-10-26 |
 | task_meta_crm_import_id_precision_code | DONE | Codex | 2026-10-26 |
 | task_meta_crm_id_precision_code | DONE | Codex | 2026-10-26 |
 | task_website_opaque_attribution_identifiers_code | DONE | Codex | 2026-10-26 |
@@ -768,3 +769,8 @@ Code-only follow-up to the website intake parser: keep each bounded click, brows
 Verified application release 23b0409cfa38fba419bf268d78234c6811386b78 (includes the website inquiry/attribution fix #486 and the inert Meta CRM preparation #483/#485): four role journeys, eight English/Chinese browser journeys and six business flows passed. All 42 dedicated test records were cleaned, with zero residual rows. Alert failure and recovery were delivered, p75 87 ms / p95 246 ms over 20 samples, and delayed verification passed. The Meta CRM lead-stage schema remains unprovisioned; advertising scheduling and CAPI automatic replay remain off.
 
 <!-- postdeploy-acceptance-sha256:24c75f401ce83d793c86ef6b22ae3b186a9bbaa5bd76d3aa1227e8a027687303 -->
+
+## Meta Lead Ads intake (2026-10-26)
+
+Code-only, disabled by default. Evidence of the gap: Meta reported 24 Instant Form leads for the last 30 days while production held 0 leads created in that window and 0 rows with meta_leadgen_id; the CRM token is ads_read only, so form leads were never fetched. Adds the signed Page leadgen webhook (exact path, App Secret HMAC, page allowlist, Graph fetch with header token, idempotent store by leadgen id, contact merge that never overwrites attribution, Lead event queued) and a read-only-by-default backfill/reconciliation script. Targeted suite 6/6 including route fail-closed, signature, idempotent replay and Graph-failure retry; forced-session boundary updated for the exact new ingress (13/13). typecheck and lint baseline pass. Production rollout needs a leads_retrieval token, settings in /etc/newme, deploy, backfill and Lead Ads Testing Tool acceptance (docs/meta-lead-ads-intake.md). No credentials, permissions or scheduler state changed.
+

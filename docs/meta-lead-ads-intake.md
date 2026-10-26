@@ -43,20 +43,30 @@ The route is disabled unless every setting below is present; with
 | `META_LEADGEN_VERIFY_TOKEN` | random string, also entered in the App's webhook setup |
 | `META_APP_SECRET` | the Meta App's secret (signature key) |
 | `META_LEADS_ACCESS_TOKEN` | system-user or Page token with `leads_retrieval`, `pages_show_list`, `pages_read_engagement`, `pages_manage_metadata`, `ads_management` (Meta requires these for lead access) |
-| `META_LEADGEN_PAGE_IDS` | comma-separated Page ids, e.g. `61582805446880` |
+| `META_LEADGEN_PAGE_IDS` | comma-separated Page ids; NEWME Smart Home is `770232832850803` |
 
 ## Operator steps (need Sam's click in Meta)
 
-1. Business Settings → System users → generate a token for the CRM app with
-   the permissions above, assigned the NewMe Page; Leads Access Manager must
-   allow the CRM app.
-2. Put the settings in /etc/newme and deploy this release.
-3. Dry run: `node scripts/meta-leads-pull.mjs --since-days 45` — expect Meta's
-   count to match Ads Manager (24 form leads for 2026-09-26..10-25).
+Business 1499096268056690 owns one app, NEWME OS Messaging (2295611971276443),
+and the Page NEWME Smart Home (770232832850803). Leads access on the Page is
+the default (Page admins and connected CRMs), so no Leads Access change is needed.
+
+1. Business Settings → System users → create "NewMe CRM Lead Intake"; assign the
+   Page with lead access and the app; generate a token for NEWME OS Messaging
+   with `leads_retrieval`, `pages_show_list`, `pages_read_engagement`,
+   `pages_manage_metadata`. The token is shown once: it goes straight into
+   /etc/newme as `META_LEADS_ACCESS_TOKEN`, never into chat or a ticket.
+2. Deploy this release with `META_LEADGEN_PAGE_IDS=770232832850803`.
+3. Dry run: `node scripts/meta-leads-pull.mjs --since-days 45` — Meta's count must
+   match Ads Manager (24 form leads for 2026-09-26..10-25).
 4. `--execute` once to backfill, then re-run the dry run: `missing` must be 0.
-5. App → Webhooks → Page → subscribe `leadgen` with the callback
-   `https://app.newme.ae/api/meta/leadgen-webhook`, and subscribe the Page to the
-   app (`POST /{page-id}/subscribed_apps?subscribed_fields=leadgen`).
-6. Acceptance: submit one test lead with Meta's Lead Ads Testing Tool; it must
-   appear in the CRM within a minute, exactly once, with ad/ad set/campaign ids.
-7. Daily: the dry run is the reconciliation check (Meta count = CRM count per day).
+5. Until the webhook is subscribed, run the pull every 15 minutes (it is
+   idempotent); this alone makes intake automatic.
+6. Realtime (optional, needs App dashboard access, i.e. a verified developer
+   account): App → Webhooks → Page → subscribe `leadgen` with callback
+   `https://app.newme.ae/api/meta/leadgen-webhook`, set `META_APP_SECRET`,
+   `META_LEADGEN_VERIFY_TOKEN`, `META_LEADGEN_ENABLED=true`, and subscribe the Page
+   (`POST /770232832850803/subscribed_apps?subscribed_fields=leadgen`).
+7. Acceptance: one lead from Meta's Lead Ads Testing Tool appears in the CRM
+   exactly once with ad / ad set / campaign ids.
+8. Daily: the dry run is the reconciliation check (Meta count = CRM count per day).

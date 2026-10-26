@@ -89,11 +89,13 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const { execute, sinceDays } = parseArgs(process.argv.slice(2));
   const env = process.env;
   const pageIds = (env.META_LEADGEN_PAGE_IDS ?? "").split(",").map((v) => v.trim()).filter(Boolean);
-  if (!env.NEXT_PUBLIC_SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY || !env.META_LEADS_ACCESS_TOKEN || !pageIds.length) {
-    console.error("missing configuration: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, META_LEADS_ACCESS_TOKEN, META_LEADGEN_PAGE_IDS");
+  const url = env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key || !env.META_LEADS_ACCESS_TOKEN || !pageIds.length) {
+    console.error("missing configuration: Supabase server credentials, META_LEADS_ACCESS_TOKEN or META_LEADGEN_PAGE_IDS");
     process.exit(2);
   }
-  const db = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+  const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   try {
     const summary = await pullMetaLeads(db, fetch, {
       version: env.META_GRAPH_API_VERSION || "v22.0", token: env.META_LEADS_ACCESS_TOKEN, pageIds,

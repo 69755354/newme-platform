@@ -74,3 +74,36 @@ the default (Page admins and connected CRMs), so no Leads Access change is neede
 7. Acceptance: one lead from Meta's Lead Ads Testing Tool appears in the CRM
    exactly once with ad / ad set / campaign ids.
 8. Daily: the dry run is the reconciliation check (Meta count = CRM count per day).
+# Isolated acceptance tests (candidate; not yet deployed)
+
+Use a dedicated, unused test-only form, never a live campaign's form. The operator
+must verify that the chosen Page owns it and it has no real submissions or ad use.
+Form IDs are globally unique. Do not publish or attach this form to a real ad later.
+
+Before creating any Meta test lead, deploy the isolation code through normal CI
+and protected release gates, then use `scripts/meta-lead-test-control.mjs` with
+`--page-id`, `--form-id`, and a fresh UUID v4 `--batch-id`. `--action register` is
+read-only unless `--execute` is given and requires
+`--dedicated-unused-form-confirmed`. Read back registration with `--action status`.
+Do not supply credentials in arguments; use the protected server environment.
+
+The permanent server-owned registration and minimal receipts use separate action
+names in Supabase `audit_logs`, NOT `leads`, `customers`, business events, sales
+tasks or the CRM conversion outbox. No schema change or public access grant is
+needed. Every shared intake store checks the exact form registration before any
+customer lookup. Lookup/write/readback errors fail closed. Missing form identity
+also fails closed. Names containing "test" do not determine routing.
+
+Now create one Facebook test lead. `--action status` must show its exact Lead ID
+with origin `webhook`. A `backfill` receipt alone is NOT callback acceptance.
+Confirm the exact Lead ID is absent from formal leads and the conversion outbox,
+and retain the provider delivery status, callback time, and OS receipt as evidence.
+This proves the isolated OS ingestion path, not creation of a real sales customer.
+
+`--action cleanup` previews exact receipt IDs. Add `--execute` to delete only
+those receipts and verify zero remaining. It NEVER deletes the registration or
+any customer record. Keep registration permanently: late callbacks/backfills
+remain isolated and can recreate minimal receipts (no answers/contact details).
+Never run an older release or another importer lacking the isolation check while
+test records remain retrievable from Meta; delete provider test leads first and
+verify no outstanding delivery before such a rollback.

@@ -7,6 +7,8 @@ import {
   extractLeadgenNotifications, mapMetaLeadToRow, storeMetaLead, verifyMetaSignature,
 } from "../../src/lib/meta-lead-ads.mjs";
 import { pullMetaLeads } from "../../scripts/meta-leads-pull.mjs";
+import { testFormRegistration, TEST_RECEIPT_ACTION } from "../../src/lib/meta-lead-test-isolation.mjs";
+import { controlTestForm } from "../../scripts/meta-lead-test-control.mjs";
 
 const PAGE = "770232832850803";
 const NOW = Date.parse("2026-10-26T00:00:00Z"); // graphLead() is created 2026-10-20
@@ -69,12 +71,25 @@ test("mapping: attribution, normalized contacts, creation time and raw answers",
 function fakeDb(initial = []) {
   const rows = initial.map((r) => ({ archived: false, ...r }));
   const events = new Map();
-  const control = { queueFails: false };
+  const audit = [];
+  const control = { queueFails: false, auditFails: false, receiptFails: false };
   let nextId = 1;
   const builder = (table) => {
     const state = { op: "select", filters: [], payload: null };
     const matches = (r) => state.filters.every((f) => f(r));
     const run = () => {
+      if (table === "audit_logs") {
+        if (control.auditFails) return { data: null, error: { code: "unavailable" } };
+        if (state.op === "insert") {
+          if (control.receiptFails && state.payload.action === TEST_RECEIPT_ACTION) return { data: null, error: { code: "failed" } };
+          if (audit.some(r => r.id === state.payload.id)) return { data: null, error: { code: "23505" } };
+          audit.push(structuredClone(state.payload));
+        }
+        if (state.op === "delete") {
+          for (let i = audit.length - 1; i >= 0; i--) if (matches(audit[i])) audit.splice(i, 1);
+        }
+        return { data: audit.filter(matches), error: null };
+      }
       if (table === "meta_crm_stage_events") {
         if (control.queueFails) return { data: null, error: { code: "unavailable" } };
         const key = `${state.payload.lead_id}:${state.payload.crm_stage}`;
@@ -97,14 +112,15 @@ function fakeDb(initial = []) {
         }
         hit.forEach((r) => Object.assign(r, state.payload));
       }
-      return { data: hit, error: null };
+      return { data: hit, count: hit.length, error: null };
     };
     const api = {
       select() { return api; },
       insert(p) { state.op = "insert"; state.payload = p; return api; },
       update(p) { state.op = "update"; state.payload = p; return api; },
+      delete() { state.op = "delete"; return api; },
       upsert(p) { state.op = "upsert"; state.payload = p; return api; },
-      eq(k, v) { state.filters.push((r) => r[k] === v); return api; },
+      eq(k, v) { state.filters.push((r) => k.includes("->>") ? r[k.split("->>")[0]]?.[k.split("->>")[1]] === v : r[k] === v); return api; },
       is(k, v) { state.filters.push((r) => (r[k] ?? null) === v); return api; },
       in(k, vs) { state.filters.push((r) => vs.includes(r[k])); return api; },
       or(expr) {
@@ -119,8 +135,89 @@ function fakeDb(initial = []) {
     };
     return api;
   };
-  return { rows, events, control, from: builder };
+  return { rows, events, audit, control, from: builder };
 }
+
+const registration = () => testFormRegistration({ pageId: PAGE, formId: "998877665544", batchId: "61baad53-a842-42d0-a6bc-b66df4e01c3a" });
+
+test("isolation: registered form never merges contacts, inserts customers or queues conversions; replay is idempotent", async () => {
+  const db = fakeDb([{ id: "real", email: "test@example.com", meta_leadgen_id: null }]);
+  db.audit.push(registration());
+  const before = structuredClone(db.rows);
+  const row = mapMetaLeadToRow(graphLead());
+  assert.deepEqual(await storeMetaLead(db, row, "webhook"), { outcome: "isolated", id: null });
+  await storeMetaLead(db, row, "webhook");
+  await storeMetaLead(db, row, "backfill");
+  assert.deepEqual(db.rows, before);
+  assert.equal(db.events.size, 0);
+  const receipts = db.audit.filter(r => r.action === TEST_RECEIPT_ACTION);
+  assert.equal(receipts.length, 2);
+  assert.deepEqual(receipts.map(r => r.details.origin).sort(), ["backfill", "webhook"]);
+  const privateFields = {
+    name: "Test Person",
+    email: "test@example.com",
+    phone: "+971501234567",
+    location: "Palm Jumeirah",
+  };
+  for (const secret of Object.values(privateFields)) {
+    assert.ok(!JSON.stringify(receipts).includes(secret));
+  }
+});
+
+test("isolation: missing form, registry error or corrupt registration fails closed before any customer write", async () => {
+  const db = fakeDb();
+  const row = mapMetaLeadToRow(graphLead());
+  db.control.auditFails = true;
+  await assert.rejects(storeMetaLead(db, row), /test_registry_lookup_failed/);
+  db.control.auditFails = false;
+  db.audit.push(registration());
+  db.control.receiptFails = true;
+  await assert.rejects(storeMetaLead(db, row), /test_receipt_write_failed/);
+  db.control.receiptFails = false;
+  db.audit.length = 0;
+  await assert.rejects(storeMetaLead(db, { ...row, form_id: null }), /test_identity_invalid/);
+  db.audit.push({ ...registration(), action: "WRONG" });
+  await assert.rejects(storeMetaLead(db, row), /test_registry_invalid/);
+  assert.equal(db.rows.length, 0);
+});
+
+test("operator control: registration is explicit, cleanup is exact and dry-run, replay remains isolated afterward", async () => {
+  const db = fakeDb();
+  const opts = { pageId: PAGE, formId: "998877665544", batchId: registration().details.batch_id };
+  await assert.rejects(controlTestForm(db, { ...opts, action: "register", execute: true }), /confirmation_required/);
+  await controlTestForm(db, { ...opts, action: "register", dedicated: true });
+  assert.equal(db.audit.length, 0);
+  await controlTestForm(db, { ...opts, action: "register", dedicated: true, execute: true });
+  await assert.rejects(controlTestForm(db, { ...opts, batchId: "71baad53-a842-42d0-a6bc-b66df4e01c3a" }), /conflict/);
+  await storeMetaLead(db, mapMetaLeadToRow(graphLead()), "webhook");
+  db.audit.push({ id: "unrelated", action: "REAL_AUDIT", details: {} });
+  assert.equal((await controlTestForm(db, { ...opts, action: "cleanup" })).receipts.length, 1);
+  assert.equal(db.audit.length, 3);
+  assert.equal((await controlTestForm(db, { ...opts, action: "cleanup", execute: true })).cleaned, 1);
+  assert.equal(db.audit.length, 2);
+  assert.ok(db.audit.some(r => r.id === "unrelated"));
+  assert.deepEqual(await storeMetaLead(db, mapMetaLeadToRow(graphLead()), "webhook"), { outcome: "isolated", id: null });
+  assert.equal(db.rows.length, 0);
+  const used = fakeDb([{ id: "real", form_id: opts.formId }]);
+  await assert.rejects(controlTestForm(used, { ...opts, action: "register", dedicated: true, execute: true }), /has_customers/);
+  assert.equal(used.audit.length, 0);
+});
+
+test("isolation: dry run and repeated backfill exclude tests from reconciliation and never queue them", async () => {
+  const db = fakeDb();
+  db.audit.push(registration());
+  const fetcher = async url => ({ ok: true, json: async () => url.pathname.endsWith("/leadgen_forms")
+    ? { data: [{ id: "998877665544" }] } : { data: [graphLead()] } });
+  const opts = { version: "v26.0", token: "fictional", pageIds: [PAGE], sinceSeconds: 1, nowMs: NOW };
+  const dry = await pullMetaLeads(db, fetcher, opts);
+  assert.deepEqual([dry.isolated, dry.missing, db.audit.length], [1, 0, 1]);
+  assert.deepEqual(dry.by_day, {});
+  for (let i = 0; i < 2; i++) {
+    const result = await pullMetaLeads(db, fetcher, { ...opts, execute: true });
+    assert.deepEqual([result.isolated, result.failed, db.rows.length, db.events.size], [1, 0, 0, 0]);
+  }
+  assert.equal(db.audit.length, 2);
+});
 
 test("store: insert, idempotent replay, and merge into an untagged contact", async () => {
   const db = fakeDb([{ id: "old-1", phone: "+971509999999", meta_leadgen_id: null, campaign_name: "kept" }]);
@@ -286,6 +383,17 @@ test("webhook route: fails closed, verifies challenge and signature, stores once
     assert.equal((await ok.json()).duplicate, 1);
     assert.equal(db.rows.length, 1, "Meta retries are idempotent");
     assert.deepEqual(queued, [[LEAD, "new"]], "the retry repaired the lost event");
+    db.audit.push(registration());
+    const baseline = structuredClone(db.rows);
+    const isolated = await route.POST(post(sign(raw, "secret")));
+    assert.equal(isolated.status, 200);
+    assert.equal((await isolated.json()).isolated, 1);
+    assert.deepEqual(db.rows, baseline);
+    assert.equal(queued.length, 1, "isolated callback must never enqueue a real Lead event");
+    db.control.auditFails = true;
+    assert.equal((await route.POST(post(sign(raw, "secret")))).status, 503);
+    assert.equal(queued.length, 1);
+    db.control.auditFails = false;
     globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: { code: 190 } }) });
     const other = raw.replace(LEAD, "4234567890123456");
     assert.equal((await route.POST(new Request("https://example.test", { method: "POST",

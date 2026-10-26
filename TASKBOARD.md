@@ -762,3 +762,9 @@ Archives the complete predecessor acceptance digest and its immutable source rel
 ## Website attribution identifier preservation (2026-10-26)
 
 Code-only follow-up to the website intake parser: keep each bounded click, browser, campaign, ad-set and ad identifier intact; omit an overlong optional identifier while retaining the inquiry. Free-text truncation and strict contact/event identity checks are unchanged. The targeted website and advertising regression suites passed all 23 checks, including a negative control against the earlier truncation behavior. Formal CI, merge, production deployment and genuine customer attribution remain separate evidence. No credentials, permissions or scheduler state changed.
+
+## Website and CRM release acceptance closure (2026-10-26)
+
+Verified application release 23b0409cfa38fba419bf268d78234c6811386b78 (includes the website inquiry/attribution fix #486 and the inert Meta CRM preparation #483/#485): four role journeys, eight English/Chinese browser journeys and six business flows passed. All 42 dedicated test records were cleaned, with zero residual rows. Alert failure and recovery were delivered, p75 87 ms / p95 246 ms over 20 samples, and delayed verification passed. The Meta CRM lead-stage schema remains unprovisioned; advertising scheduling and CAPI automatic replay remain off.
+
+<!-- postdeploy-acceptance-sha256:24c75f401ce83d793c86ef6b22ae3b186a9bbaa5bd76d3aa1227e8a027687303 -->

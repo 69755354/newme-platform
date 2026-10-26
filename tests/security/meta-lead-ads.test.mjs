@@ -137,6 +137,29 @@ test("store: insert, idempotent replay, and merge into an untagged contact", asy
   assert.equal(target.ad_name, "Static-2", "empty attribution is filled");
 });
 
+test("store: merged leads keep the form answers; contact values cannot inject filters", async () => {
+  const db = fakeDb([
+    { id: "keep-1", email: "owner@villa.ae", meta_leadgen_id: null, raw_import_data: { excel_row: 7 } },
+    { id: "victim", phone: "+971507777777", meta_leadgen_id: null },
+  ]);
+  const merged = await storeMetaLead(db, mapMetaLeadToRow(graphLead("6234567890123456", { field_data: [
+    { name: "email", values: ["Owner@Villa.ae"] }, { name: "which_community?", values: ["Emirates Hills"] },
+  ] })));
+  assert.equal(merged.id, "keep-1");
+  const kept = db.rows.find((r) => r.id === "keep-1").raw_import_data;
+  assert.equal(kept.excel_row, 7, "existing import data is untouched");
+  assert.equal(kept.meta_lead_form.answers["which_community?"], "Emirates Hills");
+
+  const hostile = mapMetaLeadToRow(graphLead("7234567890123456", { field_data: [
+    { name: "email", values: ["x,phone.not.is.null,email.eq.a@b.com"] },
+  ] }));
+  assert.equal(hostile.email, null, "filter punctuation is rejected at mapping");
+  const forced = { ...hostile, email: "x,phone.not.is.null,email.eq.a@b.com" };
+  const result = await storeMetaLead(db, forced);
+  assert.equal(result.outcome, "inserted", "even a raw hostile value only ever matches by exact equality");
+  assert.equal(db.rows.find((r) => r.id === "victim").meta_leadgen_id, null);
+});
+
 test("store: an archived contact is never revived silently; a new active lead is inserted", async () => {
   const db = fakeDb([{ id: "arch-1", phone: "+971508888888", meta_leadgen_id: null, archived: true }]);
   const row = mapMetaLeadToRow(graphLead("5234567890123456", { field_data: [{ name: "phone_number", values: ["+971508888888"] }] }));

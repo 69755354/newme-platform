@@ -79,7 +79,9 @@ const pick = (answers, keys) => {
 
 function cleanEmail(raw) {
   const value = clip(raw, 254)?.toLowerCase();
-  return value && /^[^\s@]{1,64}@[^\s@]+\.[^\s@]+$/.test(value) ? value : null;
+  // Conservative address charset: no commas, parentheses, quotes or spaces, so a
+  // value can never carry PostgREST filter grammar even if a caller interpolated it.
+  return value && /^[a-z0-9._%+-]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(value) ? value : null;
 }
 
 function cleanPhone(raw) {
@@ -130,6 +132,18 @@ export function mapMetaLeadToRow(lead, { formName = null, now = new Date() } = {
   };
 }
 
+/** Add this submission's answers to a merged lead without touching any other import data. */
+export function mergeFormAnswers(existing, row) {
+  const form = row.raw_import_data?.meta_lead_form;
+  if (!form) return existing ?? null;
+  const base = existing && typeof existing === "object" && !Array.isArray(existing)
+    ? { ...existing }
+    : existing === null || existing === undefined ? {} : { previous_import: existing };
+  const key = base.meta_lead_form ? `meta_lead_form_${row.meta_leadgen_id}` : "meta_lead_form";
+  base[key] = form;
+  return base;
+}
+
 const ATTRIBUTION_KEYS = ["ad_id", "meta_ad_id", "ad_name", "adset_id", "adset_name", "campaign_id",
   "campaign_name", "meta_campaign", "form_id", "form_name"];
 
@@ -146,29 +160,30 @@ export async function storeMetaLead(db, row) {
   if (existing.error) throw new Error("lead_lookup_failed");
   if (existing.data?.length) return { outcome: "duplicate", id: existing.data[0].id };
 
-  const contactFilters = [
-    row.email ? `email.eq.${row.email}` : null,
-    row.phone ? `phone.eq.${row.phone}` : null,
-  ].filter(Boolean);
-  if (contactFilters.length) {
-    const match = await db.from("leads").select(`id, meta_leadgen_id, ${ATTRIBUTION_KEYS.join(", ")}`)
-      .or(contactFilters.join(",")).is("meta_leadgen_id", null).eq("archived", false).limit(1);
+  // One parameterized equality lookup per contact field (never an interpolated
+  // .or() filter), email first, active untagged leads only.
+  let target = null;
+  for (const [column, value] of [["email", row.email], ["phone", row.phone]]) {
+    if (!value || target) continue;
+    const match = await db.from("leads").select(`id, meta_leadgen_id, raw_import_data, ${ATTRIBUTION_KEYS.join(", ")}`)
+      .eq(column, value).is("meta_leadgen_id", null).eq("archived", false).limit(1);
     if (match.error) throw new Error("lead_lookup_failed");
-    const target = match.data?.[0];
-    if (target) {
-      const patch = { meta_leadgen_id: row.meta_leadgen_id, updated_at: new Date().toISOString() };
-      for (const key of ATTRIBUTION_KEYS) {
-        if (row[key] && !target[key]) patch[key] = row[key];
-      }
-      const tagged = await db.from("leads").update(patch).eq("id", target.id).is("meta_leadgen_id", null)
-        .select("id").maybeSingle();
-      if (tagged.error?.code === "23505") {
-        const winner = await db.from("leads").select("id").eq("meta_leadgen_id", row.meta_leadgen_id).limit(1);
-        return { outcome: "duplicate", id: winner.data?.[0]?.id ?? null };
-      }
-      if (tagged.error) throw new Error("lead_merge_failed");
-      if (tagged.data) return { outcome: "merged", id: tagged.data.id };
+    target = match.data?.[0] ?? null;
+  }
+  if (target) {
+    const patch = { meta_leadgen_id: row.meta_leadgen_id, updated_at: new Date().toISOString(),
+      raw_import_data: mergeFormAnswers(target.raw_import_data, row) };
+    for (const key of ATTRIBUTION_KEYS) {
+      if (row[key] && !target[key]) patch[key] = row[key];
     }
+    const tagged = await db.from("leads").update(patch).eq("id", target.id).is("meta_leadgen_id", null)
+      .select("id").maybeSingle();
+    if (tagged.error?.code === "23505") {
+      const winner = await db.from("leads").select("id").eq("meta_leadgen_id", row.meta_leadgen_id).limit(1);
+      return { outcome: "duplicate", id: winner.data?.[0]?.id ?? null };
+    }
+    if (tagged.error) throw new Error("lead_merge_failed");
+    if (tagged.data) return { outcome: "merged", id: tagged.data.id };
   }
 
   const inserted = await db.from("leads").insert(row).select("id").single();

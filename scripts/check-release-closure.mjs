@@ -159,9 +159,6 @@ function auditAppendOnlyTaskboardShape(releaseText, closureText) {
       problems.push("closure TASKBOARD acceptance evidence must be appended after all release history");
     }
   }
-  if ([...releaseText.matchAll(ACCEPTANCE_MARKER_PATTERN)].length !== 0) {
-    problems.push("release TASKBOARD already contains a postdeploy acceptance digest marker");
-  }
   return problems;
 }
 
@@ -276,11 +273,19 @@ export function auditReleaseClosure({
   if (typeof taskboardText !== "string") {
     problems.push("closure TASKBOARD.md content was not measured");
   } else {
+    // Earlier releases' closures leave their markers in the append-only
+    // history, so only the marker this closure appends binds this release.
     const markers = [...taskboardText.matchAll(ACCEPTANCE_MARKER_PATTERN)].map((match) => match[1]);
-    if (markers.length !== 1) {
-      problems.push(`closure TASKBOARD.md must contain exactly one postdeploy acceptance digest marker (found ${markers.length})`);
-    } else if (markers[0] !== digest) {
+    const priorMarkers = typeof releaseTaskboardText === "string"
+      ? [...releaseTaskboardText.matchAll(ACCEPTANCE_MARKER_PATTERN)].map((match) => match[1])
+      : [];
+    const added = markers.length - priorMarkers.length;
+    if (added !== 1) {
+      problems.push(`closure TASKBOARD.md must add exactly one postdeploy acceptance digest marker (found ${added})`);
+    } else if (markers.at(-1) !== digest) {
       problems.push("closure TASKBOARD.md acceptance digest does not match the attested bundle");
+    } else if (priorMarkers.includes(digest)) {
+      problems.push("closure TASKBOARD.md reuses an acceptance digest already recorded by an earlier release");
     }
   }
   problems.push(...auditTaskboardClosureTransition(releaseTaskboardText, taskboardText));

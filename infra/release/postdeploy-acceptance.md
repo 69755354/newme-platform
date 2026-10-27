@@ -183,7 +183,8 @@ rerun the producer and ordinary attestation.
 
 ## Bind closure and final CI
 
-The subsequent TASKBOARD-only closure commit must include exactly one marker:
+The subsequent TASKBOARD-only closure commit must append exactly one new marker
+(markers left by earlier releases' closures stay in the append-only history):
 
 ```text
 <!-- postdeploy-acceptance-sha256:<the 64 lowercase hexadecimal digest> -->

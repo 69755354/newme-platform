@@ -56,7 +56,7 @@ export function DashboardTopBar({
       )}
       {/* Notification bell */}
       <NotificationBell />
-      <div className="flex items-center gap-2">
+      <div data-newme-uat-sensitive="true" className="flex items-center gap-2">
         <div className="w-7 h-7 rounded-full bg-slate-600/20 flex items-center justify-center text-slate-600 text-xs font-bold">
           {userEmail ? userEmail.charAt(0).toUpperCase() : "?"}
         </div>

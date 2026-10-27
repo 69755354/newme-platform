@@ -110,7 +110,7 @@ export function usePipelineDragDrop<T extends LeadBase>(
     // ─── Persist to Supabase ───
     const supabase = createClient();
     const now = new Date().toISOString();
-    const updates: Record<string, any> = targetStage === "won" || targetStage === "lost"
+    const updates: import("@/types/database").Database["public"]["Tables"]["leads"]["Update"] = targetStage === "won" || targetStage === "lost"
       ? { final_status: targetStage, updated_at: now, last_contact_date: now }
       : { stage: targetStage, updated_at: now, last_contact_date: now };
 

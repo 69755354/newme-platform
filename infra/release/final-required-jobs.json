@@ -1,0 +1,31 @@
+{
+  "_comment": [
+    "The job that must conclude success on the closure SHA after the already",
+    "deployed release SHA has produced the evidence needed to close TASKBOARD.md.",
+    "This is intentionally separate from required-jobs.json: deployment is gated",
+    "at the release SHA, while final acceptance is gated at a later closure SHA.",
+    "scripts/check-release-closure.mjs proves that the release is an ancestor of",
+    "the closure and that their non-empty diff changes only TASKBOARD.md.",
+    "The closure TASKBOARD must contain the exact SHA-256 produced by canonical",
+    "postdeploy attestation; canonical finalize reuses the same digest."
+  ],
+  "workflow": "ci",
+  "workflow_path": ".github/workflows/ci.yml",
+  "workflow_id": 310914082,
+  "event": "workflow_dispatch",
+  "head_branch": "main",
+  "max_run_age_seconds": 86400,
+  "required_jobs": [
+    {
+      "name": "Release-final taskboard completion",
+      "why": "runs at the closure SHA, requires the workflow's release_sha input to name the deployed release SHA and acceptance_digest to name the canonically attested bundle, checks that exact release-to-closure relationship, and requires every TASKBOARD row to be complete"
+    }
+  ],
+  "tolerated_conclusions": ["success"],
+  "notes": [
+    "The closure SHA is not a second application release and must never replace",
+    "the exact SHA recorded by canonical deployment evidence.",
+    "A missing job, skipped job, non-success conclusion, missing release_sha or",
+    "acceptance_digest input, or failed release-closure check is a refusal."
+  ]
+}

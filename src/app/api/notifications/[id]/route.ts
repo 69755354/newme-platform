@@ -27,7 +27,10 @@ export async function PATCH(
       .eq("id", user.id)
       .single();
 
-    const isAdmin = profile && ["admin", "boss"].includes(profile.role);
+    if (!profile?.role) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const isAdmin = ["admin", "boss"].includes(profile.role);
 
     let query = supabase
       .from("notifications")

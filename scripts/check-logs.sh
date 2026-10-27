@@ -26,8 +26,18 @@ PATTERNS=(
 # Build grep pattern
 PATTERN=$(IFS='|'; echo "${PATTERNS[*]}")
 
-# Scan for the newme-platform service (stdout/stderr from systemd unit)
-LOG_LINES=$(journalctl _SYSTEMD_UNIT=newme-platform.service --since "$SINCE" --no-pager 2>/dev/null | grep -iE "$PATTERN" || true)
+# Scan either the exact deployed service invocation or, for manual use, the
+# requested time window. Invocation scoping prevents pre-switch release errors
+# from being attributed to the new immutable release.
+if [[ -n "${NEWME_INVOCATION_ID:-}" ]]; then
+  [[ "$NEWME_INVOCATION_ID" =~ ^[0-9a-f]{32}$ ]] || {
+    echo "Invalid NEWME_INVOCATION_ID" >&2
+    exit 64
+  }
+  LOG_LINES=$(journalctl "_SYSTEMD_INVOCATION_ID=$NEWME_INVOCATION_ID" --no-pager 2>/dev/null | grep -iE "$PATTERN" || true)
+else
+  LOG_LINES=$(journalctl _SYSTEMD_UNIT=newme-platform.service --since "$SINCE" --no-pager 2>/dev/null | grep -iE "$PATTERN" || true)
+fi
 
 if [[ -z "$LOG_LINES" ]]; then
   echo -e "${GREEN}✓ No suspicious errors in journald${NC}"

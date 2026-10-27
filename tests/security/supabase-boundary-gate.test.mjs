@@ -72,3 +72,80 @@ void createTask;
   assert.notEqual(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout + result.stderr, /src\/lib\/tasks.ts/);
 });
+
+test("gate stops at a top-level use-server action boundary", () => {
+  const result = runFixture({
+    "src/components/Example.tsx": `"use client";
+import { runTask } from "@/app/actions";
+void runTask;
+`,
+    "src/app/actions.ts": `"use server";
+import { readTask } from "@/lib/task-dal";
+export async function runTask() { return readTask(); }
+`,
+    "src/lib/task-dal.ts": `import "server-only";
+export function readTask() { return supabase.from("tasks").select("id"); }
+`,
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("gate rejects a direct runtime import of a server-only module", () => {
+  const result = runFixture({
+    "src/components/Example.tsx": `"use client";
+import { readTask } from "@/lib/task-dal";
+void readTask;
+`,
+    "src/lib/task-dal.ts": `import "server-only";
+export function readTask() { return supabase.from("tasks").select("id"); }
+`,
+  });
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /server-only-module-imported-by-browser/);
+});
+
+test("gate ignores erased type-only imports of server-only modules", () => {
+  const result = runFixture({
+    "src/components/Example.tsx": `"use client";
+import type { TaskRow } from "@/lib/task-dal";
+const row: TaskRow | null = null;
+void row;
+`,
+    "src/lib/task-dal.ts": `import "server-only";
+export type TaskRow = { id: string };
+export function readTask() { return supabase.from("tasks").select("id"); }
+`,
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("gate follows dynamic imports into shared libraries", () => {
+  const result = runFixture({
+    "src/components/Example.tsx": `"use client";
+void import("@/lib/tasks");
+`,
+    "src/lib/tasks.ts": `export function createTask() {
+  return supabase.from("tasks").insert({ title: "dynamic mutation" });
+}
+`,
+  });
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /client-side-supabase-mutation/);
+});
+
+test("gate still follows mixed type-and-runtime named imports", () => {
+  const result = runFixture({
+    "src/components/Example.tsx": `"use client";
+import { type TaskRow, createTask } from "@/lib/tasks";
+void (null as TaskRow | null);
+void createTask;
+`,
+    "src/lib/tasks.ts": `export type TaskRow = { id: string };
+export function createTask() {
+  return supabase.from("tasks").insert({ title: "mixed import" });
+}
+`,
+  });
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /client-side-supabase-mutation/);
+});

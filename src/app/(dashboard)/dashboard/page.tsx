@@ -32,17 +32,13 @@ interface Lead {
   owner: string | null; sales_manager: string | null;
 }
 
-interface Contract {
-  id: string; contract_amount: number; status: string; created_at: string;
-}
-
-interface Payment {
-  id: string; amount: number; confirmed: boolean; payment_date: string;
-}
-
-interface InstallmentPlan {
-  id: string; amount: number; due_date: string; status: string; paid_amount: number | null;
-}
+// R5: three local declarations of money rows used to sit here — Contract, Payment
+// and InstallmentPlan — and none of them was referenced anywhere in the file. This
+// page reads its finance figures from /api/dashboard/summary, which derives them
+// with countsAsCash() from src/lib/payment-state.mjs. `Payment` in particular
+// declared `confirmed: boolean` and no void field, i.e. the two-state model B8
+// removed from the payments dashboard, sitting unused next to code that would
+// otherwise have been the obvious thing to type against.
 
 interface FollowupTask {
   lead_id: string;
@@ -180,9 +176,13 @@ export default function DashboardPage() {
 
   // Fetch team ownership
   useEffect(() => {
-    fetch("/api/dashboard/team-ownership").then(r => r.json()).then(d => {
-      if (d.users) setTeamOwnership(d.users);
-    }).catch((e) => console.error("team-ownership fetch failed", e));
+    const controller = new AbortController();
+    fetch("/api/dashboard/team-ownership", { signal: controller.signal }).then(r => r.json()).then(d => {
+      if (!controller.signal.aborted && d.users) setTeamOwnership(d.users);
+    }).catch((e) => {
+      if (!controller.signal.aborted) console.warn("team-ownership fetch failed", e);
+    });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {

@@ -1,19 +1,36 @@
 name: crm-ci
 
+# The hermes-contract job below is gated on `workflow_dispatch` or
+# `workflow_run`, but `workflow_run` was never a trigger for this workflow — the
+# triggers were workflow_dispatch, pull_request and push. So on every pull
+# request and every push to main the workflow started, evaluated the job
+# condition to false, skipped the only job, and reported success. The Telegram
+# notification step, whose entire purpose is to alert on a FAILED main-branch CI
+# run, was gated on `workflow_run` as well and could therefore never execute:
+# main CI has been failing silently for as long as this file has existed, behind
+# a green check mark.
+#
+# The triggers now match what the job actually consumes. `pull_request` and
+# `push` are removed rather than left in place: a workflow that can only ever
+# report a skipped job is a false green, and this repository has already paid for
+# that pattern once (F-05).
 on:
-  workflow_run:
-    workflows:
-      - ci
-    types:
-      - completed
   workflow_dispatch:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
 
 permissions: {}
 
 jobs:
   hermes-contract:
     name: Hermes CI webhook contract
-    runs-on: ubuntu-latest
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main') }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Record upstream CI result
@@ -22,23 +39,44 @@ jobs:
           echo "Upstream workflow: ${{ github.event.workflow_run.name }}"
           echo "Conclusion: ${{ github.event.workflow_run.conclusion }}"
 
-      - name: Require upstream ci success
-        if: ${{ github.event_name == 'workflow_run' }}
-        run: |
-          if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
-            echo "FAIL: upstream ci did not succeed"
-            exit 1
-          fi
-          echo "PASS: upstream ci succeeded — Hermes OK"
-
       - name: Notify Telegram
-        if: ${{ github.event_name == 'workflow_run' }}
+        if: >-
+          ${{ github.event_name == 'workflow_run' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          (github.event.workflow_run.conclusion == 'failure' ||
+          github.event.workflow_run.conclusion == 'cancelled') }}
+        # No continue-on-error. The reviewed revision had one, which made the
+        # `exit 1` below decorative: a non-2xx Telegram response — expired bot
+        # token, revoked chat, rate limit, missing secret — annotated the log and
+        # left the job green. That is the same failure this workflow exists to
+        # fix, one layer down: the alert that says main CI is broken silently
+        # failing to be delivered. If the channel cannot deliver, this job is red,
+        # because an alerting path that cannot alert is an outage.
         env:
           TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          UPSTREAM_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
         run: |
-          MSG="ci ${{ github.event.workflow_run.conclusion }} — ${{ github.event.workflow_run.head_commit.message }}"
-          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+          set -euo pipefail
+          MSG="ci ${UPSTREAM_CONCLUSION} — ${UPSTREAM_MESSAGE}"
+          if ! curl --fail-with-body --silent --show-error \
+            -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             -d chat_id=8459729760 \
             --data-urlencode "text=${MSG}" \
             -d disable_notification=true \
-            -o /dev/null -w "TG: %{http_code}\n"
+            -o /dev/null -w "TG: %{http_code}\n"; then
+            echo "::error::Telegram notification delivery failed for main push CI"
+            exit 1
+          fi
+
+      - name: Require upstream ci success
+        if: >-
+          ${{ always() &&
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion != 'success' }}
+        env:
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          echo "::error::Upstream main-push ci concluded ${UPSTREAM_CONCLUSION}"
+          exit 1

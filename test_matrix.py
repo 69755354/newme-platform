@@ -2,6 +2,20 @@
 """Reset sales passwords and run full CRM matrix test"""
 import json, urllib.request, os
 
+
+def credential(name):
+    """Test credentials come from the environment.
+
+    Plaintext passwords for four identities were published below until
+    2026-08-12; see supabase/preflight/f02-credential-cutover.md §7. This
+    refuses rather than defaulting: a default is how the published value got
+    here in the first place.
+    """
+    configured = os.environ.get(name)
+    if not configured:
+        raise SystemExit(f"{name} is not set; this harness does not run unconfigured")
+    return configured
+
 os.chdir('/home/ubuntu/newme-platform')
 with open('.env.local') as f:
     env = dict(line.strip().split('=', 1) for line in f if '=' in line and not line.startswith('#'))
@@ -26,7 +40,7 @@ sales_users = {
     "3666d8d0-baf4-45cb-8e7f-4243c999b2b1": "Mohamed"
 }
 for uid, name in sales_users.items():
-    data = json.dumps({"password": "Sales@2026"}).encode()
+    data = json.dumps({"password": credential("NEWME_TEST_SALES_PASSWORD")}).encode()
     req = urllib.request.Request(
         f"{url_base}/auth/v1/admin/users/{uid}",
         data=data,
@@ -46,10 +60,10 @@ for uid, name in sales_users.items():
 
 # Step 3: Login all accounts
 accounts = [
-    ("admin@newme.ae", "123456", "admin"),
-    ("tanya@newme.ae", "Newme@2026", "boss"),
-    ("faheem@newme.ae", "Sales@2026", "sales-Faheem"),
-    ("mohamed@newme.ae", "Sales@2026", "sales-Mohamed"),
+    ("admin@newme.ae", credential("NEWME_TEST_ADMIN_PASSWORD"), "admin"),
+    ("tanya@newme.ae", credential("NEWME_TEST_TANYA_PASSWORD"), "boss"),
+    ("faheem@newme.ae", credential("NEWME_TEST_FAHEEM_PASSWORD"), "sales-Faheem"),
+    ("mohamed@newme.ae", credential("NEWME_TEST_MOHAMED_PASSWORD"), "sales-Mohamed"),
 ]
 
 tokens = {}

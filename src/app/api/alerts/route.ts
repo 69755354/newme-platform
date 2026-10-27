@@ -2,7 +2,7 @@
 // GET /api/alerts — Active lead alerts with 30s cache
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { getCached, setCache } from "@/lib/api-cache";
+import { getCached, setCache } from "@/lib/api-cache.mjs";
 
 export async function GET(request: Request) {
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     .eq("id", user.id)
     .single();
 
-  if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 403 });
+  if (!profile?.role) return NextResponse.json({ error: "Profile not found" }, { status: 403 });
 
   const isManagement = ["admin", "boss", "operator"].includes(profile.role);
   const cacheKey = `alerts:${isManagement ? profile.role : "sales"}:${isManagement ? "all" : user.id}`;

@@ -1,6 +1,9 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { applyPrivateNoStore } from "@/lib/request-auth-context";
+
+export const dynamic = "force-dynamic";
 
 /**
  * GET /api/dashboard/team-performance
@@ -20,7 +23,7 @@ export async function GET(request: NextRequest) {
 
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return applyPrivateNoStore(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
   }
 
   const { data: profile } = await supabase
@@ -114,7 +117,7 @@ export async function GET(request: NextRequest) {
       const teamRevenue = repStats.reduce((s: number, r: any) => s + r.revenue, 0);
       const activeReps = repStats.length || 1;
 
-      return NextResponse.json({
+      return applyPrivateNoStore(NextResponse.json({
         isCEO: true,
         repStats,
         team: {
@@ -131,7 +134,7 @@ export async function GET(request: NextRequest) {
         sources: Object.entries(sourceStats)
           .map(([source, v]) => ({ source, ...v }))
           .sort((a, b) => b.count - a.count),
-      });
+      }));
     }
 
     // ── Sales: own data only ──
@@ -175,7 +178,7 @@ export async function GET(request: NextRequest) {
     const totalLeads = myLeadRows.length;
     const wonLeads = myLeadRows.filter((l: any) => l.final_status === "won").length;
 
-    return NextResponse.json({
+    return applyPrivateNoStore(NextResponse.json({
       isCEO: false,
       repStats: [
         {
@@ -194,9 +197,9 @@ export async function GET(request: NextRequest) {
       sources: Object.entries(sourceStats)
         .map(([source, v]) => ({ source, ...v }))
         .sort((a, b) => b.count - a.count),
-    });
+    }));
   } catch (err: any) {
     console.error("[team-performance] error:", err);
-    return NextResponse.json({ error: "Failed to fetch team performance" }, { status: 500 });
+    return applyPrivateNoStore(NextResponse.json({ error: "Failed to fetch team performance" }, { status: 500 }));
   }
 }

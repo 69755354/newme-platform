@@ -23,8 +23,8 @@ Log in once a day. Glance at the dashboard. You don't need to operate anything �
 **Notes**
 - Login: https://app.newme.ae
 - Account: tanya@newme.ae
-- Password: `123456` (change on first login)
-- You can view all sales accounts and passwords under the "Team" page, just in case.
+- Password: [REDACTED — round-4 A0; treat as compromised until rotated] (change on first login)
+- You can see all sales accounts under the "Team" page and **reset** their passwords. Nobody's password is displayed there, and the system does not store one in plaintext.
 
 ---
 
@@ -45,8 +45,8 @@ You're the operations hub. Sales uses the system to track clients — you make s
 **Notes**
 - Login: https://app.newme.ae
 - Account: ayana@newme.ae
-- Password: `123456` (change on first login)
-- You can view all sales passwords under the "Team" page
+- Password: [REDACTED — round-4 A0; treat as compromised until rotated] (change on first login)
+- You can see all sales accounts under the "Team" page and reset their passwords; the page does not display anyone's password
 - Whatever problems sales report, no matter how small, write it down and send to SAM
 
 ---
@@ -72,7 +72,7 @@ This is your daily workbench. It replaces Excel and trying to remember everythin
 - Login: https://app.newme.ae
 - Faheem: faheem@newme.ae
 - Mohamed: mohamed@newme.ae
-- Password: `123456` (change on first login)
+- Password: [REDACTED — round-4 A0; treat as compromised until rotated] (change on first login)
 - If something gets stuck or a stage looks wrong, tell Ayana — she'll sort it out
 - If you don't log it, it didn't happen. When the boss looks at the data and sees your clients piling up with no activity — that means you didn't log, not that you didn't work
 
@@ -84,6 +84,6 @@ This is your daily workbench. It replaces Excel and trying to remember everythin
 2. Log in with your email and password
 3. Go to Settings → Password tab to change to your own password
 
-**Default password** (all accounts): `123456`
+**Default password** (all accounts): [REDACTED — round-4 A0; treat as compromised until rotated]
 
-> Change your password on first login. Tanya and Ayana can view all sales passwords under the "Team" page. If you forget your password, ask Ayana or Tanya to reset it.
+> Change your password on first login. Tanya and Ayana can reset a sales password from the "Team" page; they cannot see it. If you forget your password, ask Ayana or Tanya to reset it.

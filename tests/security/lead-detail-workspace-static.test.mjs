@@ -35,9 +35,9 @@ test("contact deletion is owner-authorized, exact, and excludes audit notes", as
   assert.ok(timeline.includes("await onContactUpdated()"));
   for (const token of [
     "export async function DELETE",
-    "getAuthProfile",
-    "isAdminOrBoss",
-    'lead.assigned_to !== profile.userId',
+    "getRequestAuthContext",
+    "applyRequestAuthCookies",
+    'lead.assigned_to !== context.user.id',
     '.eq("id", contactId)',
     '.eq("lead_id", leadId)',
     '["note", "import_note"]',

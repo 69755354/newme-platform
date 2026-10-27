@@ -214,29 +214,26 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
     if (!s.selectedLeadId) return;
     d({ type: "SV", saving: true });
     try {
-      const { data: rpcQuoteNo, error: rpcError } = await supabase.rpc('next_quote_no');
-      if (rpcError || !rpcQuoteNo) { console.error("RPC error:", rpcError); toast.error(t("quotes.calc.saveFailed") + (rpcError?.message || "Failed to generate quote number")); return; }
-      const qn = rpcQuoteNo as string;
       const dp = Object.entries(flatQ).map(([id, qty]) => {
         const dev = findDevice(id);
         return { device_id: id, name: dev?.name || id, price: dev?.price || 0, quantity: qty, unit: dev?.unit || "pcs", subtotal: (dev?.price || 0) * qty };
       });
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from("quotations").insert({
-        lead_id: s.selectedLeadId, quote_no: qn, version: 1,
+      const { data: quote, error } = await supabase.from("quotations").insert({
+        lead_id: s.selectedLeadId, quote_no: "ALLOCATED_BY_DATABASE", version: 1,
         subtotal: calc.subtotal, discount_rate: s.discountRate,
         discount_amount: calc.discount_amount, tax_rate: 5, tax_amount: calc.tax_amount,
         total_amount: calc.total, currency: "AED", status: "draft",
         devices_json: dp, created_by: user?.id || null,
         notes: `${t("quotes.calc.property")}: ${s.propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${s.area}㎡\n${t("quotes.calc.installLabor")} (30%): ${calc.install_labor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")} (12%): ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")} (8%): ${calc.project_management.toFixed(2)} AED`,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      });
-      if (error) { console.error("Save error:", error); toast.error(t("quotes.calc.saveFailed") + error.message); return; }
+      }).select("id, quote_no").single();
+      if (error || !quote?.quote_no) { console.error("Save error:", error); toast.error(t("quotes.calc.saveFailed") + (error?.message || "Missing database quote number")); return; }
       // Notify about new quotation
-      import("@/lib/notify").then(({ notify }) => {
-        notify({ type: "quote_created", quote_id: qn, lead_id: s.selectedLeadId, quote_no: qn });
-      }).catch(() => {});
-      d({ type: "SQ", id: qn }); onSaved?.(); onOpenChange(false);
+      void import("@/lib/notify")
+        .then(({ notify }) => notify({ type: "quote_created", quote_id: quote.id, lead_id: s.selectedLeadId, quote_no: quote.quote_no }))
+        .catch((notifyError) => console.error("quote_notification_failed", notifyError));
+      d({ type: "SQ", id: quote.id }); onSaved?.(); onOpenChange(false);
     } finally { d({ type: "SV", saving: false }); }
   };
 

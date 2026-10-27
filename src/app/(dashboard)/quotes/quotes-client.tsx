@@ -226,31 +226,30 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
       const taxAmount = taxableBase * (taxRate / 100);
       const totalAmount = taxableBase + taxAmount;
 
-      const quoteNo = `Q-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
       const { data: { user } } = await supabase.auth.getUser();
 
-      const { error: err } = await supabase.from("quotations").insert({
+      const { data: quote, error: err } = await supabase.from("quotations").insert({
         lead_id: createForm.leadId,
-        quote_no: quoteNo,
+        quote_no: "ALLOCATED_BY_DATABASE",
         version: 1,
         subtotal, discount_rate: discountRate, discount_amount: discountAmount,
         tax_rate: taxRate, tax_amount: taxAmount,
         total_amount: totalAmount,
         currency: createForm.currency,
-        valid_until: createForm.validUntil || null,
+        valid_until: createForm.validUntil || undefined,
         payment_terms: createForm.paymentTerms || null,
         delivery_terms: createForm.deliveryTerms || null,
         notes: createForm.notes || null,
         status: "draft",
-        created_by: user?.id || null,
+        created_by: user?.id || undefined,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      });
-      if (err) { console.error("Create quote error:", err); toast.error(t("quotes.createFailed")); return; }
+      }).select("id, quote_no").single();
+      if (err || !quote?.quote_no) { console.error("Create quote error:", err); toast.error(t("quotes.createFailed")); return; }
       // Notify about new quotation
-      import("@/lib/notify").then(({ notify }) => {
-        notify({ type: "quote_created", quote_id: quoteNo, lead_id: createForm.leadId, quote_no: quoteNo });
-      }).catch(() => {});
+      void import("@/lib/notify")
+        .then(({ notify }) => notify({ type: "quote_created", quote_id: quote.id, lead_id: createForm.leadId, quote_no: quote.quote_no }))
+        .catch((notifyError) => console.error("quote_notification_failed", notifyError));
       setCreateOpen(false);
       resetCreateForm();
       fetchQuotes();

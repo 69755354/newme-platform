@@ -2,11 +2,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
-import { createServerSupabase } from "@/lib/supabase-server";
-import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
+import {
+  applyRequestAuthCookies,
+  getRequestAuthContext,
+  RequestAuthError,
+  requestAuthErrorResponse,
+} from "@/lib/request-auth-context";
 import { calculateQuotation, CalculateResult } from "../../../../lib/quotation-engine";
 import { DEVICE_CATALOG } from "@/lib/device-catalog";
 import { logger, genReqId } from "@/lib/logger";
+import { buildBottomUpLabourRequest } from "@/lib/quotation-labour-request";
+import { formatInstallLabourNote } from "@/lib/quotation-labour-basis.mjs";
 
 const VALID_DEVICE_IDS = new Set<string>(
   DEVICE_CATALOG.flatMap((cat) => cat.devices.map((d) => d.id)),
@@ -16,8 +22,15 @@ const VALID_DEVICE_IDS = new Set<string>(
  * POST /api/quotations/generate
  * 计算报价并保存到数据库，生成 quote_no，更新 lead 阶段
  *
- * Input:  { lead_id, devices, discount_rate?, notes? }
- * Output: { status, quote_id, quote_no, total, valid_until }
+ * Input:  { lead_id, devices, discount_rate?, notes?,
+ *           bottom_up_labour?: { area_sqm, floors, point_quantities, tier? } }
+ * Output: { status, quote_id, quote_no, total, valid_until, install_labor_basis }
+ *
+ * `bottom_up_labour` switches the labour line from a percentage of the product
+ * total to the cable/threading model; `point_quantities` is keyed on the cabling
+ * point ids of GET /api/cable-costing/catalogue. Omitted, unusable, or with no
+ * rate card injected on this server, the labour line keeps the historic
+ * percentage and `install_labor_basis` says so.
  */
 
 function getSupabaseAdmin() {
@@ -31,62 +44,36 @@ function getSupabaseAdmin() {
   return createClient(url, key);
 }
 
-/** Generate quote number: NM-YYYY-XXXX (sequential) */
-async function generateQuoteNo(supabase: any): Promise<string> {
-  const year = new Date().getFullYear().toString();
-
-  // Find current max sequence for this year
-  const { data } = await (supabase as any)
-    .from("quotations")
-    .select("quote_no")
-    .like("quote_no", `NM-${year}-%`)
-    .order("quote_no", { ascending: false })
-    .limit(1);
-
-  let nextSeq = 1;
-  if (data && data.length > 0) {
-    const lastNo: string = data[0].quote_no;
-    const parts = lastNo.split("-");
-    const lastSeq = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastSeq)) {
-      nextSeq = lastSeq + 1;
-    }
-  }
-
-  const seqStr = nextSeq.toString().padStart(4, "0");
-  return `NM-${year}-${seqStr}`;
-}
-
 export async function POST(request: NextRequest) {
   const request_id = genReqId();
   try {
-    const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const cookieHeader = request.headers.get("cookie") ?? "";
-    const supabase = await createServerSupabase(bearerToken, cookieHeader);
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
-    if (authErr || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const context = await getRequestAuthContext(request);
+    const { supabase, user } = context;
+    const respond = (body: Record<string, unknown>, init?: ResponseInit) =>
+      applyRequestAuthCookies(context, NextResponse.json(body, init));
 
     const body = await request.json();
-    const { lead_id, devices, discount_rate, notes } = body;
+    const { lead_id, devices, discount_rate, notes, bottom_up_labour } = body;
 
     if (!lead_id) {
-      return NextResponse.json({ error: "lead_id is required" }, { status: 400 });
+      return respond({ error: "lead_id is required" }, { status: 400 });
     }
 
     // Ownership check: caller must have access to this lead (admin/boss bypass).
     // Verified before any service_role write.
-    const profile = await getAuthProfile(bearerToken, cookieHeader);
-    if (!profile) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    if (!(await canAccessLead(lead_id, profile, bearerToken, cookieHeader))) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!["admin", "boss", "operator"].includes(context.role)) {
+      const { data: accessibleLead } = await supabase
+        .from("leads")
+        .select("id, assigned_to")
+        .eq("id", lead_id)
+        .maybeSingle();
+      if (!accessibleLead || accessibleLead.assigned_to !== user.id) {
+        return respond({ error: "Forbidden" }, { status: 403 });
+      }
     }
 
     if (!devices || typeof devices !== "object" || Object.keys(devices).length === 0) {
-      return NextResponse.json(
+      return respond(
         { error: "devices object is required with at least one device" },
         { status: 400 },
       );
@@ -95,7 +82,7 @@ export async function POST(request: NextRequest) {
     // Validate quantities
     for (const [key, val] of Object.entries(devices)) {
       if (typeof val !== "number" || val < 0) {
-        return NextResponse.json(
+        return respond(
           { error: `Invalid quantity for "${key}": must be a non-negative number` },
           { status: 400 },
         );
@@ -106,7 +93,7 @@ export async function POST(request: NextRequest) {
     // matching quotation-engine.ts lookup). Prevents silent skip → zero-total.
     const unknownDevices = Object.keys(devices).filter((id) => !VALID_DEVICE_IDS.has(id));
     if (unknownDevices.length > 0) {
-      return NextResponse.json(
+      return respond(
         { error: "Unknown device_ids", unknown_devices: unknownDevices },
         { status: 400 },
       );
@@ -118,13 +105,17 @@ export async function POST(request: NextRequest) {
       devices,
       discount_rate: typeof discount_rate === "number" ? discount_rate : 0,
       notes,
+      bottom_up_labour: buildBottomUpLabourRequest(bottom_up_labour, {
+        request_id,
+        operation: "quotation_generate",
+      }),
     });
 
     // Guard: calculation.total maps to the DB total_amount column which has a
     // CHECK > 0. Reject here (400) instead of letting convert hit a 500 later.
     // Catches all-qty-zero, all-skipped, and zero-price paths.
     if (calculation.total <= 0) {
-      return NextResponse.json(
+      return respond(
         { error: "Quotation total must be greater than zero" },
         { status: 400 },
       );
@@ -150,18 +141,16 @@ export async function POST(request: NextRequest) {
         },
         "[Quotation Generate] Lead not found",
       );
-      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+      return respond({ error: "Lead not found" }, { status: 404 });
     }
 
-    // 3. Generate quote number
-    const quoteNo = await generateQuoteNo(supabaseAdmin);
-
-    // 4. Save quotation to DB
+    // 3. Save quotation to DB. The BEFORE INSERT trigger allocates quote_no
+    // in this same transaction and the returned row is the source of truth.
     const { data: quote, error: quoteErr } = await supabaseAdmin
       .from("quotations")
       .insert({
         lead_id,
-        quote_no: quoteNo,
+        quote_no: "ALLOCATED_BY_DATABASE",
         version: 1,
         created_by: user.id,
         subtotal: calculation.subtotal,
@@ -175,6 +164,13 @@ export async function POST(request: NextRequest) {
         status: "draft",
         devices_json: calculation.devices_json,
         notes: notes || null,
+        // The service lines have never had columns of their own; the export
+        // route re-derives them from `subtotal`. Record the basis and the
+        // amounts here so a bottom-up quotation can be restated exactly as it
+        // was priced, without a migration. Quotations on the percentage basis
+        // get no marker, which is what keeps every earlier quotation — and
+        // every fallback quotation — on its original export path.
+        internal_notes: formatInstallLabourNote(calculation),
       })
       .select("id, quote_no")
       .single();
@@ -190,8 +186,9 @@ export async function POST(request: NextRequest) {
         },
         "[Quotation Generate] Failed to insert quotation",
       );
-      return NextResponse.json({ error: "Failed to save quotation" }, { status: 500 });
+      return respond({ error: "Failed to save quotation" }, { status: 500 });
     }
+    const quoteNo = quote.quote_no;
 
     // 5. Create activity (quote_sent)
     const { error: activityErr } = await supabaseAdmin.from("activities").insert({
@@ -268,15 +265,20 @@ export async function POST(request: NextRequest) {
     revalidatePath("/quotes");
     revalidatePath("/leads");
 
-    return NextResponse.json({
+    return respond({
       status: "ok",
       quote_id: quote.id,
       quote_no: quoteNo,
       total: calculation.total,
       currency: calculation.currency,
       valid_until: calculation.valid_until,
+      // Which basis priced the labour line, so the caller never has to guess
+      // whether the bottom-up model actually applied.
+      install_labor_basis: calculation.install_labor_basis,
+      install_labor_fallback_reason: calculation.install_labor_fallback_reason,
     });
   } catch (err: any) {
+    if (err instanceof RequestAuthError) return requestAuthErrorResponse(err);
     logger.error(
       {
         err,

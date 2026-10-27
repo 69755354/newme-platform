@@ -17,7 +17,7 @@
 | Full Name | Assem |
 | Active | true |
 | Force Password Change | true |
-| Password | Assem2024! |
+| Password | [REDACTED — round-4 A0; still live in git history until rotated] |
 | Email Confirmed | true |
 
 **What happened:**

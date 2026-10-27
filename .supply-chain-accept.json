@@ -1,0 +1,6 @@
+{
+  "_note": "Temporary high/critical vulnerability exceptions. The gate requires every entry to match the current official npm audit, expire within 90 days, and carry review ownership.",
+  "_audit_source": "https://registry.npmjs.org/-/npm/v1/security/advisories/bulk",
+  "_updated": "2026-08-15",
+  "accepted": []
+}

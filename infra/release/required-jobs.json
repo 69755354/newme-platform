@@ -1,0 +1,120 @@
+{
+  "_comment": [
+    "The set of GitHub Actions jobs that must have concluded 'success' before",
+    "infra/systemd/newme-deploy.sh will deploy a commit to production.",
+    "",
+    "Why a manifest and not a list inside the wrapper: the wrapper reads this file",
+    "out of the root-owned release mirror at the canonical main SHA being deployed",
+    "(`git --git-dir=/opt/newme/repository.git show <main-sha>:infra/release/required-jobs.json`),",
+    "so the required set is versioned with the release it gates and cannot be",
+    "loosened on the host without changing main. A local edit to this file in a",
+    "working copy has no effect on a deployment.",
+    "",
+    "Why job conclusions and not the run conclusion: a workflow run is 'success'",
+    "when none of the jobs that RAN failed. Jobs skipped by an `if:` condition do",
+    "not make the run anything other than green, so 'run.conclusion == success'",
+    "answers 'nothing that ran failed', never 'everything that had to run, ran'.",
+    "The reviewed revision of the wrapper checked only the run and accepted a",
+    "push event, while the explicit predeploy taskboard job runs only on a manual",
+    "release-candidate dispatch. The accepted run shape therefore could not carry",
+    "the required predeploy set.",
+    "",
+    "Release-final taskboard completion is intentionally not listed here. It runs",
+    "after production evidence exists, at a later closure SHA, and is governed by",
+    "infra/release/final-required-jobs.json plus check-release-closure.mjs. Making",
+    "that postdeploy fact a precondition of this release would be circular."
+  ],
+  "workflow": "ci",
+  "workflow_path": ".github/workflows/ci.yml",
+  "workflow_id": 310914082,
+  "event": "workflow_dispatch",
+  "head_branch": "main",
+  "max_run_age_seconds": 86400,
+  "required_jobs": [
+    {
+      "name": "Repository validation",
+      "why": "taskboard, spec, lint, supply-chain, database-types, typecheck, unit tests, release hygiene, production smoke and build"
+    },
+    {
+      "name": "CodeQL analysis",
+      "why": "isolated JavaScript and TypeScript code scanning completed independently for the exact release SHA; it has no upstream needs that could turn the required scan into skipped/neutral"
+    },
+    {
+      "name": "Windows checkout and SPEC gate",
+      "why": "the SPEC gate under a case-insensitive filesystem and CRLF checkout; reachable on the release-candidate dispatch"
+    },
+    {
+      "name": "Predeploy taskboard readiness",
+      "why": "every predeploy_ready TASKBOARD row is closed at the exact release SHA; postdeploy rows remain independently gated"
+    },
+    {
+      "name": "Control-plane restore interruption drill",
+      "why": "the candidate control plane is restorable after SIGTERM during atomic copy, repeated restore converges, and bootstrap finalization leaves no pending asset transaction"
+    },
+    {
+      "name": "Narrow task follow-up database contract",
+      "why": "pgTAP contract under supabase/ci-local, with the reset verified twice"
+    },
+    {
+      "name": "Migration replay and release contracts",
+      "why": "migration history immutability, negative control, full branch replay with behaviour assertions, rollback state assertions, recorded history failure point"
+    }
+  ],
+  "taskboard_closure_evidence": [
+    {
+      "item": "PROD-CHECKOUT-REWRITES-RELEASE-BYTES",
+      "evidence": "required_job",
+      "job": "Windows checkout and SPEC gate"
+    },
+    {
+      "item": "PROD-DEPLOY-TASKBOARD-GATE-UNSATISFIABLE",
+      "evidence": "required_job",
+      "job": "Predeploy taskboard readiness"
+    },
+    {
+      "item": "PROD-CI-CRM-HERMES-FALSE-GREEN",
+      "evidence": "post_main_workflow_delivery"
+    },
+    {
+      "item": "PROD-COMPANIONS-UNBOUND-TO-RELEASE",
+      "evidence": "required_job",
+      "job": "Migration replay and release contracts"
+    },
+    {
+      "item": "PROD-DEPLOY-TRUSTS-OPERATOR-MIGRATION-SET",
+      "evidence": "all_required_jobs"
+    },
+    {
+      "item": "PROD-FINGERPRINT-AND-TXCONTROL-COERCION",
+      "evidence": "required_job",
+      "job": "Migration replay and release contracts"
+    },
+    {
+      "item": "PROD-L0-MIGRATION-REPLAY-GATE",
+      "evidence": "required_job",
+      "job": "Migration replay and release contracts"
+    },
+    {
+      "item": "PROD-STRICT-POSTURE-UNDERVERIFIED",
+      "evidence": "required_job",
+      "job": "Migration replay and release contracts"
+    },
+    {
+      "item": "SAM-6",
+      "evidence": "all_required_jobs"
+    },
+    {
+      "item": "hermes-ci",
+      "evidence": "post_main_workflow_delivery"
+    }
+  ],
+  "tolerated_conclusions": ["success"],
+  "notes": [
+    "tolerated_conclusions is exhaustive on purpose: 'skipped', 'neutral' and",
+    "'stale' are refused for a required job, and no job in the run may have",
+    "concluded anything other than success or skipped. A required job that is",
+    "absent from the run is refused by name. Release-final taskboard completion is",
+    "intentionally not a deploy precondition; it is required only after production",
+    "has produced the evidence needed to close postdeploy acceptance rows."
+  ]
+}

@@ -109,9 +109,9 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
     }
 
     // Notify admins about new lead
-    import("@/lib/notify").then(({ notify }) => {
-      notify({ type: "lead_created", lead_id: data!.id, customer_name: form.customer_name || "Unknown" });
-    });
+    void import("@/lib/notify")
+      .then(({ notify }) => notify({ type: "lead_created", lead_id: data!.id, customer_name: form.customer_name || "Unknown" }))
+      .catch((error) => console.error("lead_notification_failed", error));
 
     // Meta Pixel tracking
     if (typeof window !== "undefined" && (window as any).fbq) {

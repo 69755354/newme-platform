@@ -1,5 +1,27 @@
 # SPEC — NewMe CRM
 
+## 2026-10-22 WhatsApp 审核测试补充（代码准备，尚未发布）
+
+本节记录当前代码与验收边界；下方早期状态保留其原有日期，不据此推定当前线上状态。
+
+独立 Tech Provider 审核要求应用发送消息和创建模板的实际演示。新增测试入口默认关闭，只允许 Meta 测试 WABA `2153400175580231`、测试发送号码及已经验证的内部 Tanya 尾号 9388。需要独立的服务器端测试令牌和最长 24 小时的启用窗口。号码归属校验、当前有效的 boss/admin 会话、同源请求、请求大小限制、操作频率限制和不自动重试的结果处理均由服务器执行。接收请求成功不代表手机已收到消息，创建模板不代表 Meta 已批准模板。
+
+| 文件 | 当前职责及限制 |
+|---|---|
+| `src/app/(dashboard)/settings/whatsapp-pilot.tsx` | WhatsApp 接收与手机回复事件的管理视图；空通道或缺失事件不产生销售行为结论，并承载审核测试入口。 |
+| `src/app/(dashboard)/settings/whatsapp-review-tools.tsx` | 连接检查、固定 hello_world 内部测试消息、固定内容的审核模板创建；执行前展示对象和内容，结果不明时停止再次操作。 |
+| `src/app/api/whatsapp/pilot-status/route.ts` | 当前有效的 boss/admin 会话下查询白名单通道的有限元数据；不返回聊天正文或完整客户号码。 |
+| `src/app/api/whatsapp/webhook/route.ts` | 验证 Meta 原始请求签名，只写入明确启用的号码通道，按通道和消息 ID 去重；默认不接入真实号码。 |
+| `src/app/api/whatsapp/review-tools/route.ts` | 受限的审核测试操作入口；拒绝其他角色、跨站请求、自定义号码和自定义消息。 |
+| `src/lib/whatsapp-review-tools.mjs` | 固定测试账户绑定、Graph 请求、到期控制、有限的进程内重试去重；不持久保存访问令牌，不是生产发送队列。 |
+| `tests/security/whatsapp-review-tools.test.mjs` | 验证默认关闭、到期、固定对象、拒绝路径、并发请求、错误与凭据输出边界；模拟 API 测试不替代真实 Meta 验收。 |
+| `src/app/api/meta/ads-status/route.ts` | 既有广告集成状态接口，本次不改变其行为；本节不声称已经验证广告数据同步或 MCP OAuth。 |
+| `src/app/api/meta/ads-sync/route.ts` | 既有广告同步接口，本次不改变其授权、资产或行为。 |
+
+测试入口部署后也保持关闭。真实 Meta 测试令牌授权、发送、模板创建、手机收件确认、两段录屏、审核提交和批准均为独立步骤。启用两个实际号码的采集前，仍必须完成 30 天保留/删除控制、官方共存接入及两个手机的收发验收。现有生产数据库迁移和 Ads 集成均不在本次改动范围。
+
+详见 `docs/whatsapp-review-tools.md`。CI 同时固定官方 PostgreSQL 17.11 测试镜像的当前摘要；只更新测试环境来源记录，不更改生产 PostgreSQL 或放宽来源校验。
+
 > ⚠️ **COMPACT 后:用户最后 3 条消息 > 本文件 > handoff 摘要**
 > (本文件是参考手册,不是圣经。compaction 时用户的尾消息是唯一权威。)
 
@@ -144,13 +166,13 @@ NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.n
 || `src/app/actions/contracts.ts` | Contracts server actions (approveContract, revokeContract) | 171 | 🟢 P2 mutations core |
 || `src/app/actions/team.ts` | Team server actions (addTeamMember, removeTeamMember, resetUserPassword) | — | 🟢 P2 mutations low |
 || `src/app/actions/payments.ts` | Payments server actions (createPayment, confirmPayment, allocatePayment) | — | 🟢 P2 mutations low |
-|| `src/app/actions/tasks.ts` | Tasks server actions (updateTask, updateTaskStatus) | — | 🟢 P2 mutations low |
+|| `src/app/api/tasks/route.ts` | Tasks BFF API (assigned list, successor create, batch status update) | — | 🟢 P2 reads + mutations |
 || `src/app/actions/settings.ts` | Settings server actions (assignLead, bulkAssignLeads, bulkUnassignLeads, transferAllLeads) | 115 | 🟢 P2 mutations settings |
 || `src/app/api/pipeline/list/route.ts` | Pipeline BFF API (leads + role + salesUsers) | — | 🟢 P2 reads |
 || `src/app/api/contracts/list/route.ts` | Contracts BFF API (contracts + joins + pagination) | — | 🟢 P2 reads |
 || `src/app/api/settings/data/route.ts` | Settings BFF API (leads + profiles + kpiTargets) | — | 🟢 P2 reads |
 || `src/app/api/tasks/list/route.ts` | Tasks BFF API (tasks + filters + pagination) | — | 🟢 P2 reads |
-|| `src/app/api/tasks/[id]/route.ts` | Task Detail BFF API | — | 🟢 P2 reads |
+|| `src/app/api/tasks/[id]/route.ts` | Task Detail BFF API | — | 🟢 P2 reads + mutations |
 || `src/app/api/team/list/route.ts` | Team BFF API (userId + role) | — | 🟢 P2 reads |
 || `src/app/api/payments/list/route.ts` | Payments BFF API (payments + contracts summary) | — | 🟢 P2 reads |
 || `src/app/api/workbench/route.ts` | Workbench BFF API (6 并行查询 + 30s cache) | — | 🟢 P1-F |
@@ -795,7 +817,7 @@ The optional `period=YYYY-MM` query parameter applies only to `noAnswerCount`. I
 | --- | --- | --- | --- |
 | \`scripts/crm-regression.py\` | 版本控制的 CRM 回归 harness；生产部署前/后运行 \`--pre-deploy\` 与 \`--post-deploy\`，CI 可运行离线 \`--self-test\`；将本地审计结果写到 \`.audit/crm-regression-latest.json\`（可用环境变量覆盖）。它验证“可停用离职人员、候选人仅为启用的 sales/operator/boss、历史负责人在停用后仍可解析”这三项契约。 | 运行时读取 \`NEXT_PUBLIC_SUPABASE_URL\` 与 \`SUPABASE_SERVICE_ROLE_KEY\`；通过 Supabase REST/RPC 做探测，不能在仓库内保存凭据。harness 会调用 \`get_team_activity\` RPC，因此不能将其描述为零写入的业务操作。 | \`scripts/deploy-verify.sh\` 默认调用仓库内 harness；可用显式 \`CRM_REGRESSION_SCRIPT\` 覆盖。若验证失败，停止发布；回滚到上一个已验证 release SHA，保留既有私有 fallback，不能在本事项删除。 |
 | \`scripts/deploy-verify.sh\` | 部署验证 wrapper，默认定位同目录 \`crm-regression.py\` 并执行 pre/post 回归；普通部署可传 \`--no-git\` 避免在服务器端推送。 | \`set -euo pipefail\`，先验证脚本可读；不把 \`.hermes\` 作为默认依赖。它继承部署环境的凭据边界，不自行存储凭据。 | pre/post 任一失败即非零退出。恢复路径为回滚到先前 release，或显式设置 \`CRM_REGRESSION_SCRIPT\` 指向已保留的 fallback。 |
-| \`scripts/finalize-deploy-evidence.sh\` | G0-Lite 的 UAT 证据收口器：校验 release 正在等待 UAT、部署段均通过、CI success 且 head SHA 与 evidence 的 git SHA 一致、迁移与 rollback 元数据完整，再原子写入一份 evidence JSON。 | 需要 UAT 运行时值和通过认证的操作者；只写 evidence JSON（临时文件后 \`os.replace\`），不部署服务、不写业务数据库。 | \`UAT_STATUS=fail\` 留下失败证据并退出 1；\`pass\` 缺少审计、清理或 SHA 绑定时同样失败。回滚目标由 evidence 的 rollback 元数据保留。 |
+| \`scripts/finalize-deploy-evidence.sh\` | G0-Lite 的 UAT 证据收口器：校验 release 正在等待 UAT、部署段均通过、CI success 且 head SHA 与 evidence 的 git SHA 一致、迁移与 rollback 元数据完整，再原子写入一份 evidence JSON。 | 需要 UAT 运行时值和通过认证的操作者；只写 evidence JSON（临时文件后 \`os.replace\`），不部署服务、不写业务数据库。 | \`UAT_STATUS=fail\` 持久写入 \`uat_failed\` 后退出 0，供 canonical \`newme-deploy finalize ... fail\` 复核证据并返回 1；\`pass\` 缺少审计、清理或 SHA 绑定时同样失败。回滚目标由 evidence 的 rollback 元数据保留。 |
 | \`scripts/fix-null-names.py\` | 人工、一次性的 leads 数据修复工具：查找名称为 null 的 lead、以来源生成受控占位名称、PATCH 后再次验证。它不属于正常部署调用链。 | 需要运行时 \`NEXT_PUBLIC_SUPABASE_URL\` 与 \`SUPABASE_SERVICE_ROLE_KEY\`，会写业务数据；不得自动运行，必须获得单独的数据修复授权。仓库中不得出现 service-role 凭据。 | 无自动回滚：恢复需要原始值或审计记录。因此失败时停止并按独立数据修复流程处理，而不是作为发布 workaround。 |
 | \`scripts/verify-release-preflight.sh\` | 发布前 fail-closed 检查：要求符号分支为 \`main\`、\`HEAD == origin/main\`、工作区干净、CI 对应 SHA 成功、迁移已声明、rollback SHA 可解析。 | 仅读取/获取 Git 与 CI 元数据；不连接或写入生产业务数据。它将部署证据绑定到准备发布的精确 SHA。 | 任一条件不满足即阻断。解析得到的 rollback SHA 是部署失败时恢复服务的必要前提。 |
 | \`src/lib/lead-auth.ts\` | 服务端 lead 授权 helper：\`admin\`、\`boss\`、\`operator\` 具备全 Case 访问；其他已认证角色仅能访问 \`assigned_to\` 为自身 user id 的 lead。 | 使用服务端 Supabase 会话和 \`auth.getUser()\`/profiles 角色；该 helper 不写数据，且不得削弱 owner 约束或把客户端输入当作授权依据。 | 授权回归必须阻断发布；恢复路径是回滚到上一已验证 release commit，不以放宽权限换取可用性。 |
@@ -811,3 +833,350 @@ SAM-41 只补文档事实；SAM-6 候选基线只有在以下条件全部满足�
 5. 仅在生产只读验证确认三项人员契约（可停用离职人员、候选人只包含启用的 sales/operator/boss、停用历史负责人仍可解析）后，才可认定发布对销售 Case 推进可靠；上述代码或 CI 的局部通过不等同于业务收敛。
 6. SAM-43 的登录态视觉/交互 UAT 必须完成并留存通过证据后，才能关闭本轮 M1 发布门禁；登录超时、断言失败或证据缺失均保持 In Review，不得宣称完成。
 
+
+
+## SPEC freshness correction — SAM-44（2026-07-23）
+
+本节以 GitHub `main@49054606284a6f36d467899d4db8670f4fb455f5` 和 `scripts/check-spec.sh` 的逐路径匹配为准，覆盖该脚本在 Windows CI 中报告的当前 16 项未覆盖路径。它只记录实现事实与操作边界；不代表这些内容已部署，也不授权生产变更。
+
+| 路径 | 实际职责 | 权限、安全与部署/回滚边界 |
+| --- | --- | --- |
+| `e2e/playwright.config.ts` | 根 E2E 配置：运行 `./e2e`、使用 boss/sales storage state、失败时保留 trace，并以生产域名为默认 base URL。 | E2E 运行会使用已有登录态；不得把认证状态或凭据提交到仓库。此文件本身不部署或写入业务数据。 |
+| `playwright.config.ts` | 另一套 Playwright 配置：运行仓库根测试目录、默认生产域名、失败截图，并使用 JSON 结果文件。 | 生产目标意味着运行前须有显式授权和受控凭据；配置变更不等同于发布或 UAT 通过。 |
+| `infra/observability/health-check.sh` | 定时采集磁盘、内存、CPU、进程、CRM health 与 Hermes 服务状态；异常时触发 incident capture，并发送 Sentry cron check-in。 | 在部署主机运行，读取系统状态并可启动后台证据采集；不应作为业务数据写入或发布脚本。失败监控不应掩盖发布门禁。 |
+| `infra/observability/incident-capture.sh` | 将近期 systemd 日志、系统/网络状态、监控日志和最近 Git 记录快照到临时 incident 目录，并清理超过保留期的旧快照。 | 有主机日志与临时文件访问面；只用于取证。清理范围限于其 incident 临时目录，不能当作生产回滚。 |
+| `infra/observability/incident-review.sh` | 列出或读取已采集 incident 的摘要和指定文件。 | 只读查看本地 incident 证据；输出可能含运行环境信息，访问应限于获授权操作者。 |
+| `infra/observability/login-probe.sh` | 定时探测 health 与未认证 `/api/auth/me` 链路，有限重试；异常时采集 incident 并更新 Sentry cron 状态。 | 不保存测试凭据；对认证接口只验证可用性。探测失败是告警/取证输入，不是自动部署或权限绕过信号。 |
+| `infra/observability/sentry-cron-checkin.sh` | 为监控脚本发送 Sentry Cron 开始/结束 check-in；未取得 DSN 时降级为不阻塞的 no-op。 | DSN 只可由运行环境或受限凭据文件提供；不得写入 SPEC、源码日志或仓库。 |
+| `infra/observability/sentry-release.sh` | 在有运行时 Sentry token 时创建 release 与 production deploy 关联；缺少 token 时明确跳过。 | 对 Sentry API 有外部写入能力，须由部署环境授权；它不替代 GitHub CI、发布审批或应用回滚。 |
+| `infra/observability/supabase-pool-monitor.sh` | 定时检查 Supabase REST 可达性并在连接/5xx 异常时采集 incident 与报告 Sentry cron 状态。 | 凭据必须来自受控运行环境，不能被硬编码或记录；监控是只读可用性探测，不得用于业务修复写入。 |
+| `instrumentation.ts` | Next.js instrumentation 注册点；当前实现明确保持 server-side Sentry instrumentation 为 no-op。 | 这会限制服务端观测能力，但不改变应用授权或数据；恢复初始化应由独立改动、测试和发布审查处理。 |
+| `scripts/deploy-immutable.sh` | 不可变 release 部署编排：创建 release 标识、管理 current/previous release、处理构建产物外部 symlink，并含候选清理 self-test。 | 会操作 release、锁和进程/端口，属于受控部署脚本；只能在批准窗口运行。失败应保留 previous release 用于回滚，禁止把 self-test 当作生产操作。 |
+| `src/app/api/ready/route.ts` | 公开 readiness 端点：检查数据库、Supabase REST 与临时磁盘读写，读取 BUILD_ID，并以 200/503 返回 ready/degraded。 | 虽为 public，内部检查细节不应用作认证替代；临时磁盘探测仅服务 readiness，部署失败应由发布流程回滚而非伪造健康。 |
+| `src/app/login/page.tsx` | 浏览器登录页：请求 Supabase token 后先调用服务端 `/api/auth/me` 验证 active profile；被拒绝时尝试注销并清除本地 token/cookie，再写入兼容的会话格式并跳转。 | 密码与 token 不得被记录；profile active gate 是登录边界，客户端清理失败也不能放宽服务端拒绝。 |
+| `src/lib/logger.ts` | Pino 结构化日志与错误序列化：注入 service/environment/release/build 元数据，并遮蔽密码、token、cookie、授权头及常见 PII 字段。 | 日志仍可能暴露上下文，调用方不得放入敏感业务数据；日志不是审计授权或回滚机制。 |
+| `src/lib/supabase-server.ts` | 服务端 Supabase client：解析 cookie/header token、以 refresh token 为键合并并发刷新、返回刷新 cookie 元数据，并优先使用显式 bearer token。 | 令牌刷新与 cookie 设置必须保持服务端会话边界；不得把 token 写入日志或客户端输入当作高权限凭据。认证回归应阻断发布并回滚到已验证 release。 |
+| `tests/unit/auth-me.test.ts` | `/api/auth/me` 的 Node 单元测试：覆盖无效/有效 bearer 与 cookie、刷新成功/失败、inactive profile、异常处理，以及响应/日志不泄露调试键或 token/cookie 值。 | 测试只使用 mock 值；它验证认证边界但不提供生产登录或部署证据。 |
+
+### 验证与残余 CI 边界
+
+- 上述路径来自 Windows job `29931715552` 的 `check-spec.sh` 输出；该 job 因 16 个未覆盖路径失败。
+- 该次 Linux `Repository validation` 另在 `npm run lint:baseline` 失败并因此跳过后续 typecheck、tests 与 build；该失败属于与本 docs-only 变更分离的既有 lint 债务，不能写成 SAM-44 已修复的业务/发布结论。
+- 本节合并前，SAM-44 保持 In Progress；合并后仍须记录实际 main SHA、对应 CI run 和部署证据。没有新的、受控的部署证据，不得关闭事项或宣称生产已恢复。
+
+
+## SAM-73 integration typed-contract paths (2026-07-23)
+
+The integration draft carries the completed typed-contract fixes from PRs #80, #82, #83, #84, and #86. The following affected paths are part of this release-train scope:
+- `src/app/(dashboard)/leads/[id]/utils.ts`: typed lead-detail project draft helper.
+- `src/app/(dashboard)/projects/page.tsx`: role guard narrowed against nullable profile roles.
+- `src/app/(dashboard)/quotes/page.tsx`: role guard narrowed against nullable profile roles.
+- `src/app/(dashboard)/settings/ads/page.tsx`: nullable stage guard in quotation funnel aggregation.
+- `src/app/(dashboard)/tasks/[id]/page.tsx`: task detail contract fields and required due date.
+- `src/types/database.ts`: generated database type source, including task and quotation contract fields.
+
+
+## SAM-60/SAM-68 release and readiness contract
+
+The stacked release uses one immutable deployment authority with SHA-bound npm ci, private release node_modules, atomic lock/symlink switch, isolated candidate cleanup, exact manifest SHA and BUILD_ID checks, audited rollback, and fail-closed FragmentPath/DropInPaths ownership checks. The installer creates timestamped manifest backups, removes legacy forensic.conf and restart-always.conf after backup, preserves observability transport and secret configuration, installs versioned observability scripts and cron targets, and provides rollback. Public health is liveness-only; internal readiness requires a root-owned runtime token, one bounded Supabase probe, generic responses, and no synchronous disk I/O. Forensic logs are root:adm 0640. Sentry sanitization honors caller maxDepth.
+
+Changed paths: scripts/deploy.sh, scripts/deploy-immutable.sh, scripts/install-systemd-assets.sh, scripts/rollback-systemd-assets.sh, infra/observability/newme-observability.cron, infra/systemd/newme-platform.service, infra/systemd/newme-readiness.sh, infra/systemd/newme-forensic.sh, newme-platform.service, src/app/api/health/route.ts, src/app/api/ready/route.ts, src/lib/observability.mjs, tests/unit/observability.test.mjs, tests/release/sam60-deployment-contract.test.mjs.
+
+
+Path consistency: systemd, next.config.ts, installer, deploy preflight and release tests all require /opt/newme/current to be an atomic symlink into /opt/newme/releases/<sha>; the historical /home/ubuntu/newme-platform mutable root is not a release target.
+
+Unified main integration coverage: infra/observability/hermes-alert-notifier-v1.sh, infra/observability/hermes-alert-state-v1.sh, infra/observability/newme-service-health.py, infra/systemd/newme-forensic.sh, infra/systemd/newme-readiness.sh, infra/systemd/newme-service-control.sh, scripts/install-systemd-assets.sh, scripts/rollback-systemd-assets.sh, scripts/systemd-recovery-drill.sh, sentry.client.config.ts, sentry.edge.config.ts, sentry.server.config.ts, src/app/api/auth/session/route.ts, src/lib/supabase-cookie-names.ts.
+
+
+## 登录延迟修复与服务端 password grant — 2026-08-11
+
+本节记录 `scripts/check-spec.sh` 报告的 9 项未覆盖路径的实现事实与边界。它不代表已部署：本轮改动截至写时仅有本地门禁证据（typecheck clean、`npm test` 376/373 pass/0 fail/3 skipped、`check:security` 107 findings 无超基线、`check:workflows` 3/3、`check:release` smoke 14/14、build exit 0），生产登录耗时尚未实测。
+
+### 行为变更（更正 SAM-44 对 `src/app/login/page.tsx` 的描述）
+
+SAM-44 记录的登录实现为“浏览器请求 Supabase token 后再调 `/api/auth/me`”。该描述已过时。旧实现由**浏览器直连 GoTrue** 做 password grant，因此登录会离开 Cloudflare 边缘、向 Auth 区付一次冷 TLS 握手，随后再串行 `/api/auth/session` 与 `/api/auth/me` —— 共 3 次串行往返才渲染 dashboard。已测分层：Node 1.8ms / nginx+TLS 6ms / 过 Cloudflare 60-65ms / 生产→Supabase 45-48ms。
+
+新实现把 grant 与 active-profile 门禁收到服务端，浏览器只发 1 次同源请求（走已建立的边缘连接），服务器侧走热连接完成 grant + profile 读取。
+
+安全边界是加强而非交换：浏览器不再接触裸 access/refresh token；未通过 active 门禁的 profile 根本不会拿到任何 cookie，且其刚签发的 token 在响应返回前已向上游 `/auth/v1/logout` 注销；上游失败文本（可能回引提交的密码）既不转发也不入日志，所有被拒凭据返回同一泛化错误。
+
+把鉴权收到服务端会把全部用户汇入单一 origin IP，从而把 GoTrue 的 per-IP 爆破保护塌缩成一个桶。因此该端点必须自带替代边界（见 `src/lib/rate-limit.ts`）。
+
+### 路径覆盖索引
+
+| 路径 | 实际职责 | 权限、安全与部署/回滚边界 |
+| --- | --- | --- |
+| `src/app/api/auth/login/route.ts` | 服务端 password grant 端点（本轮新增）。顺序固定为：content-type → origin → 配置 → body 解析 → 限流 → GoTrue `grant_type=password` → 用**刚签发的用户 token** 经 RLS 读 profiles → active 门禁 → 写会话 cookie。上游 5xx 返 503 `auth_unavailable`，其他非 2xx 一律返 401 `invalid_credentials`。 | 属 `PUBLIC_API_PATHS`（pre-authentication 端点无法要求已有会话），因此自带 origin 校验与限流。profile 门禁使用用户自身 token 而非任何特权 key，鉴权边界仍是 profiles 自查 RLS。**active 门禁必须早于 cookie 签发**（由 `tests/security/session-revocation.test.mjs` 断言顺序）；被拒请求零 `Set-Cookie`。认证回归须阻断发布并回滚到上一已验证 release。 |
+| `src/lib/session-cookies.ts` | 会话 cookie 契约的唯一来源（本轮新增）：`sb-<ref>-auth-token` 为脚本可读（`httpOnly:false`，仅含 access_token 与 expires_at），`sb-<ref>-refresh-token` 为 `httpOnly:true`；两者均 `sameSite:"strict"` + `secure:true`。同时提供 `expectedSessionOrigin`（生产 host 不因 `x-forwarded-host` 被削弱）与 `normalizeExpiresIn`。 | 两个端点各自手写 `Set-Cookie` 是最终会漏掉 `secure`、或漏掉 refresh 半边 `httpOnly` 的成因，故 login 与 session 两个 route 均只能经 `applySessionCookies(`，且均不得直接调 `cookies.set(`（`tests/security/sam15-boundaries.test.mjs` 循环断言）。该模块用 `import type { NextResponse }`，因此无运行时 `next/server` 依赖。 |
+| `src/lib/rate-limit.ts` | 进程内固定窗口限流器（本轮新增）。`clientIdentifier` 依次读 `cf-connecting-ip` → `x-forwarded-for` 首段 → `x-real-ip`。login 端点应用每 IP 20/5min 与每账号 8/15min（账号键大小写归一）。超限返 429 带 `Retry-After`，且**不转发上游**。 | 这是服务端鉴权后替代 GoTrue per-IP 保护的必要边界，不是可选优化。**已知作用域限制：计数器在单 Node 进程内存中**，`MAX_TRACKED_KEYS=10000` 为内存兜底；多进程/多实例部署必须先改为共享存储，否则实际上限被进程数放大。 |
+| `src/lib/session-identity.ts` | 客户端会话身份读取（本轮新增），故意拆成两个入口：`readSessionIdentity()` 始终发起真实 `/api/auth/me`（仅做 in-flight 去重），`peekSessionIdentity()` 允许复用 60s 内缓存，仅供分析用途；`forgetSessionIdentity()` 在登出时清除。 | **鉴权路径永不读缓存**：`readSessionIdentity` 函数体不得出现 `lastActive`，`useAuthRedirect.ts` 只能用 `readSessionIdentity()` 且不得用 `peekSessionIdentity`（`tests/security/session-revocation.test.mjs` 断言）。缓存身份用于路由准入会让已停用账号在缓存窗口内继续通过。 |
+| `src/components/PostHogProviderInner.tsx` | 分析身份识别改为 `await peekSessionIdentity()`，不再自行 `fetch("/api/auth/me")`，消除挂载时与 `useAuthRedirect` 的重复并发往返（2 次 → 1 次）。 | 该组件不得直接 `fetch(`（断言）；它只消费分析用身份，不构成任何授权判断。 |
+| `e2e/production-anonymous.spec.ts` | 匿名生产发布边界 E2E：断言 `/api/health` 200 且 `status:"ok"`、`/` 307 → `/dashboard`、未认证 `/api/auth/me` 的拒绝行为，且页面无浏览器错误。 | 仅覆盖匿名可达面，不使用任何登录凭据；通过不等于登录态 UAT 通过（SAM-43 门禁不可由此替代）。 |
+| `playwright.production-smoke.config.ts` | 匿名生产 smoke 的 Playwright 配置：**强制 base URL 为 loopback HTTP 且端口为显式非特权端口**，否则构造期直接 throw；并绑定 `E2E_EXPECTED_SHA`。 | 该 fail-closed 约束是防止把生产域名当作 smoke 目标的边界，不得放宽为任意 origin。 |
+| `scripts/check-schema-refs.py` | 当 `.from("table")` 的字面表引用不在 `scripts/schema-tables.txt` 评审清单中时失败（含多行调用）。 | 属 `check:release` 链的一环；它防止引用未经验证的表名（对应 Freeze Rule 6），失败必须阻断发布而非加白。 |
+| `src/components/MetaPixel.tsx` | Meta Pixel 客户端加载器，按 `NO_PIXEL_PATHS` 排除全部登录后与内部路径（含 `/login`、`/change-password` 及各业务页）。 | 该排除列表是不向第三方像素泄露内部路径与登录态浏览行为的边界；新增内部路由时必须同步加入排除列表。 |
+
+### 验证边界
+
+- 本节路径清单来自本地 `scripts/check-spec.sh` 输出（9 项未覆盖，hard limit 5）。其中 4 项（`e2e/production-anonymous.spec.ts`、`playwright.production-smoke.config.ts`、`scripts/check-schema-refs.py`、`src/components/MetaPixel.tsx`）为本轮之前既存的文档欠账，一并补齐。
+- 本轮同时更正了 4 个把**旧行为**钉成必要条件的安全门禁：其一钉住了 F-07 漏洞本身，其三钉住了 3 次往返的客户端舞步。断言均迁至属性新位置，无一被削弱，其三被加强（解析式精确 `PUBLIC_API_PATHS` allowlist、gate-before-cookie 顺序、鉴权不读缓存）。
+- `supabase/migrations/20260811100*.sql` 共 5 个迁移已写入但**未应用**（F-02/F-06/F-08/F-09/F-10）。阻塞原因为 Supabase MCP 连接只读。未应用前不得把相关发现写成已修复。
+- 生产登录耗时未实测，TASKBOARD 相关行保持 `REVIEW`。没有部署后的实测证据，不得关闭本轮性能事项。
+
+## L0 复审收口：迁移可重放门禁、发布声明校验与开放重定向 — 2026-08-11
+
+本节记录独立复审（PR #397）后新增/修改的路径。它同样不代表已部署，也不代表迁移已应用：证据仅为本地与 GitHub CI 门禁。
+
+### 本轮行为变更（摘要）
+
+- **迁移目录不是可重放历史**（新发现，未修）。**修订记录（2026-08-11，三审后）**：本条上一版记录的四项"修复"——把 `1780601210_workflow_stages.sql` 改名为 `20260604192650_`、把 `20260603000000_add_crm_fields.sql` 改为墓碑、新增回填日期 `20260601010000` 的 baseline、以及改写 `supabase/seed.sql`——是对**已应用迁移历史的重写**，三审全部否决，本轮已按 PR base `81956f2ff3bf` **逐字节还原**（`scripts/check-migration-history.mjs` 对 103 个既有文件核对 sha256 并与 base 的 git blob 比对）。已确证的成因不变且仍未修：`1780601210_` 的 10 位前缀不匹配 CLI 的 `^[0-9]{14}_`，故该文件从未被 CLI 看见而其表在线上存在；`20260603000000_add_crm_fields.sql` 含 `ALTER TABLE TABLE` 且 CLI 单文件单事务，故从未在任何环境应用；`20260604000002` 从不存在的 `leads.metadata` 回填；`meta_tokens`、`profiles.password_changed_at`、`profiles.force_password_change`、`leads.rep_name` 无任何迁移声明。本轮改为 forward-only：新增文件一律排在历史末尾（`20260806000000` baseline、`20260812000000`、`20260813000000`），因此 `MODE=history` 的停止点回到真实值——**2 个文件后停在 `20260602010000_crm_mvp_final.sql`**（`lead_alerts` 视图选 `l.rep_name`）。该数字被 `supabase/replay/history-replay-expectation.txt` 钉死为门禁。真正的修复需线上 schema 真相（`supabase db dump` 压平 baseline），且若干死文件含会改写生产行的 backfill，属运维任务，不在本分支猜测。
+- **F-02 由删除改为停用**：不再 `delete from auth.users`/`profiles`，改为 `is_active=false` + `force_password_change=true` + 最后特权账号互锁，1514 条 `audit_logs.actor_id` 归属全部保留，且可由 `supabase/migrations/rollback_l0_20260811.sql` 逆转。**修订记录（2026-08-11，三审后）**：该迁移只改 `public.profiles` 的两列，它**既不封禁 `auth.users` 身份，也不吊销任何已签发会话**。凭 `DEV_EMAIL`/`DEV_PASSWORD` 仍可向 GoTrue 完成 password grant 并直连 Supabase Auth/PostgREST——`profiles.is_active` 只被 Next.js 的 `/api/auth/login` 与 proxy 读取，PostgREST 路径不读它，且 admin 相关 RLS policy 判的是 `role` 而非 `is_active`。因此**该公开凭据在得到单独授权的生产封禁 + 会话吊销动作及其后置证据之前，必须视为仍然有效**；F-02 在 TASKBOARD 上保持未关闭。本轮只交付代码侧的 fail-closed 切换契约（`supabase/preflight/f02-credential-cutover.md` + `20260813000000_session_revocation_boundary.sql`），未执行任何生产 Auth 动作。
+- **F-09 phase 1 只改函数权限**：EXECUTE 经 PUBLIC 泄漏给 `anon` 是缺陷本身；对 `contracts`/`payments`/`installment_plans`/`contract_approvals`/`quotations` 的表级 REVOKE 已删除——大量写入走调用者自身 client（Postgres 角色 `authenticated`），照原样发布会造成资金路径全线 42501 停摆。**phase 2（2026-08-11，三审后新增 `20260812000000_money_actor_identity_and_atomicity.sql`）**：授权判定不再取自调用方参数。`money_actor(p_claimed, p_allowed_roles)` 在 `auth.uid()` 非空时以 **token subject 为唯一 actor**，参数不符即 42501，并检查 profile 存在、`is_active`、角色属实；五个 `trg_guard_*` 触发器（**故意 SECURITY INVOKER**，因为判别式 `money_write_is_direct()` 读 `current_user`，改成 DEFINER 会让判别式对所有人放行）对以 `authenticated`/`anon` 到达的直写抬手 42501，而 definer 例程与 `service_role` 不受影响。见本节下方"资金路径原子化"。
+- **发布声明校验**：`scripts/deploy-immutable.sh` 写入的永久证据里 `ci.*`/`migration.*` 原为环境变量直接串行化，无任何校验；现新增 `validate_release_claims()`，在任何 mkdir/symlink/服务动作之前 `exit 64`。
+
+### 路径覆盖索引
+
+| 路径 | 实际职责 | 权限、安全与部署/回滚边界 |
+| --- | --- | --- |
+| `src/lib/safe-redirect.ts` | 登录后跳转目标的唯一净化入口：仅接受同源绝对路径（保留 query/hash），拒绝任意 scheme 的绝对 URL、`//host`、`///host`、反斜杠 authority、`FORBIDDEN_CHARS` 覆盖的控制字符、非字符串，以及超过 `MAX_REDIRECT_LENGTH=512` 的输入；兜底为 `DEFAULT_REDIRECT="/dashboard"`。 | `?redirect=` 由攻击者控制，未净化即为开放重定向；配合脚本可读的 `sb-<ref>-auth-token` cookie，跳转目标能取得刚建立的会话上下文，因此这是会话令牌链的一环而非 UX 细节。负向断言在 `tests/unit/l0-auth-hardening.test.mjs`，任何放宽都必须先改该文件。 |
+| `src/lib/release-script.ts` | 把仓库相对路径解析为发布树内的真实文件；`null` 表示拒绝。拒绝空串/纯空白/非字符串、绝对路径、任何含 `..` 的路径段、解析后逃出仓库根的路径，以及目录（`statSync().isFile()`）。 | 修订记录（2026-08-11）：上一版对空输入 fail-open 返回 `process.cwd()`，且用前缀包含判断而非 `path.relative` 归一。它是脚本执行前的 fail-closed 边界，只能返回仓库内既存文件；`scripts/cos-presign.py`、`scripts/parse-ad-spend.py` 均在版本控制内，故属可解析目标——本函数负责路径边界，不负责授权。 |
+| `scripts/replay-migrations.sh` | 一次性迁移重放，三种模式，**三者皆为门禁**（修订记录 2026-08-11：上一版 `MODE=history` 以 `continue-on-error: true` 运行，即不可能让 job 变红，属 false-green，已改）：`MODE=branch` floor → 本分支 9 个迁移 → fixtures → 再次应用（幂等）→ 131 条契约断言 → rollback 伴随文件 → 30 条 post-rollback 断言；`MODE=control` floor + fixtures **不含**迁移，要求 `CONTROL_MUST_FAIL` 中 100 条断言全部失败，且 `100 + 31 = ASSERT_TOTAL` 必须闭合（任何断言都不得游离于两个集合之外，也不得因文件首条即中止而"零断言通过"）；`MODE=history` 从空库按序重放全部 14 位迁移，必须**恰好**在 `supabase/replay/history-replay-expectation.txt` 记录的第 2 个文件后停在 `20260602010000_crm_mvp_final.sql`——更好与更坏同样红。另含文件名 lint：非 14 位且非 `rollback_` 前缀即硬失败。 | 只连接 `PGDATABASE` 指向的一次性库，且目标库已有应用表时拒绝启动；不读任何密钥，CI 用 `postgres:17` service container + trust 认证。它**不是**生产迁移工具，也不证明生产已应用。`rollback_*.sql` 不匹配 CLI 的 `^[0-9]{14}_` 规则，因此永不被自动应用，只能由运维显式执行。 |
+| `infra/systemd/newme-deploy.sh` | 唯一 canonical 部署入口（root，systemd）。查询 GitHub API 后要求 run 的 `id`/`head_sha`/`name=ci`/`conclusion=success`/`event=push`/`head_branch=main` 全部匹配，再把声明以环境变量传给 `scripts/deploy-immutable.sh` 复核。 | 修订记录（2026-08-11）：原检查只比对 `id`/`head_sha`/`name`/`conclusion`，因此**任一分支上绿色的 `pull_request` run 都被当作 main 证据**；而 release-final 作业以 `github.event_name` 为条件，故 `pull_request` run 的门禁集严格更小——不完整门禁被记成完整门禁。`event` 与 `head_branch` 现为声明的一部分（`tests/release/deploy-release-claim-validation.test.mjs` 直接执行该校验块与 `validate_release_claims()`）。GitHub token 只经 `--config` 文件传入 curl 且随即 `unset`，不得出现在命令行。 |
+
+`supabase/replay/01_floor_schema.sql`、`supabase/replay/05_seed_behaviour_fixtures.sql`、`supabase/replay/10_assert_release_contracts.sql`、`supabase/replay/20_assert_post_rollback.sql`、`supabase/migrations/20260806000000_baseline_undeclared_production_objects.sql`、`supabase/migrations/20260811100500_kpi_targets_atomic_replace.sql`、`supabase/migrations/20260812000000_money_actor_identity_and_atomicity.sql`、`supabase/migrations/20260813000000_session_revocation_boundary.sql`、`supabase/migrations/rollback_l0_20260811.sql` 属同一门禁资产：floor 复现**未修复的线上姿态**（含 `meta_tokens` 的宽松 policy 与 grant），fixtures 建立行为断言所需数据，断言文件以 `has_table_privilege`/`has_column_privilege`/`has_function_privilege` 与 `set local role authenticated` 的真实执行验证边界，并自校验断言总数为 131；`20_assert_post_rollback.sql` 的 30 条断言证明回滚**不削弱安全**（回滚后 `audit_logs`/`user_sessions` 的伪造插入仍被拒、`meta_tokens` 不回到 `authenticated` 可读、资金 definer 例程的 `anon` EXECUTE 不回来）。
+
+### 验证边界
+
+- 无线上数据库证据：`supabase-prod` MCP 需要交互式 OAuth，本会话不可用。所有结论来自源码、`src/types/database.ts`（由生产生成）与 `docs/rls-explorer.md`，未执行任何生产查询、迁移、部署或重启。
+- 5 个 L0 迁移加本轮新增的 4 个（末尾 baseline / KPI 原子替换 / 资金 actor 原子化 / 会话吊销边界）与 rollback 伴随文件**仍未应用于生产**。`MODE=branch` 通过只证明它们在一次性库上可应用、幂等、可回滚且行为断言成立。
+- `MODE=history` 仍不通过，但**已是门禁**（修订记录 2026-08-11：上一版的 `continue-on-error: true` 使该步骤不可能让 job 变红）。停止点被 `history-replay-expectation.txt` 钉为 `EXPECTED_APPLIED=2` / `EXPECTED_STOPPED_AT=20260602010000_crm_mvp_final.sql`；把它变成通过需要运维先用线上 schema 压平 baseline。
+- `src/types/database.ts` 正常由生产 schema 生成，但本轮**手工补入** `replace_kpi_targets`、`create_contract`、`convert_quotation_to_contract`、`set_contract_status`、`revoke_contract` 的 `Args`/`Returns`：这些函数由本轮迁移创建、生产尚不存在，不手工补入则对应的 `supabase.rpc(...)` 无法通过 `typecheck`。迁移应用后下一次 `npm run generate:database-types` 会以生产真相覆盖它们；在此之前这些条目是**声明而非观测**（`tests/security/money-route-rpc-coupling.test.mjs` 因此另行核对每个 route 传的实参与迁移里的形参一致——typecheck 无法发现"手工声明与迁移不符"）。指纹已按新的 `supabase/migrations/` 内容重新 stamp。
+- `crm-ci.yml` 的 `workflow_run` 修复在本 PR 上**无法观测**：GitHub 只从默认分支读取 `workflow_run` 触发器定义，`hermes-contract` 另有 `head_branch == 'main'` 条件。故本 PR 的 `ci` 成功不触发 `crm-ci`，`gh run list --workflow crm-ci.yml` 对本 PR head 无 run —— 这是预期，不是回归。真实证据须在合入 main 后的首次 main push 取得。本轮未 dispatch `crm-ci`：该 workflow 会向外部 Hermes 端点投递 webhook，属对外动作。
+- AGENTS.md 声称 `scripts/deploy.sh` Step 0 运行 `check-taskboard.sh`；三审前 `scripts/deploy.sh` 只有 4 行 `exec`，`deploy-immutable.sh` 与 canonical wrapper 均不调用该门禁。**修订记录（2026-08-11，三审后）**：canonical wrapper 现在按顺序硬门禁三件事——(1) 从 `/actions/runs/{id}/jobs` 逐 job 读 `conclusion`（run 级 `success` 会把"被 skip 的必需 job"记成绿），要求 `infra/release/required-jobs.json` 列出的每个 job 都 `success`，其中 `Release-final taskboard completion` 只可能出现在 `release_final=true` 的 dispatch run 里（`workflow_dispatch` 的 inputs 不由 runs API 暴露，该 job 存在与否是唯一可得的证明）；(2) `scripts/check-taskboard.mjs --require-scope=predeploy_ready`（`infra/systemd/newme-deploy.sh:674`）；(3) `scripts/verify-remote-migration-history.mjs`（`newme-deploy.sh:623`）比对远端 `supabase_migrations.schema_migrations` 与仓库目录。**新增运维前置条件**：canonical deploy 需要 root 拥有的 `/etc/newme/migration-db.url`（mode 0400/0600）与 root PATH 上的 `node`，缺失即 `exit 65`。**修订记录（2026-08-14，第 4 轮 C4-4）**：(2) 由 `--require-complete` 改为 `--require-scope=predeploy_ready`。原门禁不可满足——TASKBOARD 多数行的关闭条件就是"生产已跑过本次发布"，"要求整块看板完成"等于把部署自身的结果当作部署的前置条件；不可满足的门禁不是严格门禁，而是必然被绕过的门禁。三个里程碑（`predeploy_ready` < `bootstrap_ready` < `postdeploy_acceptance`）在 `TASKBOARD.md` 的 `<!-- taskboard-scopes:begin/end -->` 块内逐行声明，`scripts/check-taskboard.mjs` 每次运行都双向校验：未声明的未完成行是 FAIL 且仍计入 `predeploy_ready`（fail-closed），没有对应未完成行的声明也是 FAIL。要求后一个里程碑累积要求前一个；release-final 的 `check:taskboard:complete` CI job 仍要求整块看板。部署门禁记录名同步为 `gate=taskboard-predeploy-ready`（`scripts/verify-deploy-gate-record.mjs` 的 `REQUIRED_GATES` 对缺失名与未知名都拒绝），控制面 bootstrap 运行手册在接受新控制面为 live 之前额外跑 `--require-scope=bootstrap_ready`。
+
+## L0 三审复审收口：资金调用者身份、原子化与 forward-only 迁移 — 2026-08-11
+
+三名独立复审否决了 head `fb7fe7ca51e3170e5b3a9285457023c59d89c334`。本节记录逐条复现后的改动。**它不代表已部署，也不代表迁移已应用**：本轮同样无任何线上库通道（`supabase-prod` MCP 需交互式 OAuth），生产未被修改——未应用迁移、未部署、未重启/reload、未触碰 Auth 用户/会话、未改生产数据或控制面。
+
+### 迁移历史：只做 forward-only
+
+上一版把已应用的迁移改名、墓碑化并回填了一个早于全部历史的 baseline。这是历史重写，三审全部否决，本轮**按 PR base `81956f2ff3bf` 逐字节还原**（含 `supabase/seed.sql`）。新增门禁 `scripts/check-migration-history.mjs`：以 `supabase/migration-history-baseline.sha256` 为清单，核对 103 个既有文件的 sha256 未变、并与 base 的 git blob 逐一比对，任何改名/改字节/删除即红。新增文件一律排在历史末尾（`20260806000000` / `20260812000000` / `20260813000000`）。代价已在 `supabase/replay/history-replay-expectation.txt` 里写明：末尾 baseline 对 `MODE=history` 毫无帮助，停止点从 9 回到真实的 2——这个更小的数字才是诚实的。
+
+### 资金路径：调用者身份与原子性（`20260812000000_money_actor_identity_and_atomicity.sql`）
+
+复审确认的缺陷是**授权判定取自调用方参数**：`approve_contract`/`confirm_payment`/`allocate_payment` 相信调用者传来的 approver/confirmer/allocator id，而 EXECUTE 已授予全部 `authenticated`；同时资金写入分散在多个事务里，失败留下已提交的半成品并以 HTTP 200 + `warning` 上报。本轮：
+
+- `money_actor(p_claimed, p_allowed_roles)`：`auth.uid()` 非空时以 token subject 为唯一 actor，参数不符即 42501；service_role/无 JWT 上下文必须显式传 `p_claimed`；随后校验 profile 存在、`is_active`、角色属实。
+- 五个 `trg_guard_*` 触发器（**故意 SECURITY INVOKER**）：判别式 `money_write_is_direct()` 读 `current_user`，若改为 DEFINER 则 `current_user` 变成 owner、判别式对所有人放行——这是本设计不可改动的理由。`contracts` 直插全拒、UPDATE 冻结 status/contract_amount/contract_no/sales_id/created_by/lead_id/quotation_id/currency/contract_date（`file_url`/`file_metadata`/`first_payment_status` 仍可直写，故 `confirm-upload` 与 PUT 无需改）；`payments` 只许 `created_by = auth.uid()` 的未确认插入、已确认行除 notes 外不可变；`installment_plans` 直插/直删全拒且冻结金额与序号；`contract_approvals`/`payment_allocations` 直写全拒。
+- 新增 definer 例程 `create_contract` / `convert_quotation_to_contract` / `set_contract_status` / `revoke_contract`，与既有 `approve_contract` 一起在**单事务**内完成合同、分期、审批行与状态流转；`allocate_payment` 现把分期计划绑定到该笔付款自己的合同（跨合同即 42501）并在前后各重算一次。SQLSTATE 词汇固定为 42501/22023/23505/P0002。
+- `on_lead_won()` 改为创建 **draft** 合同（原为 `active`）+ 待审 `admin_review` 行，合同号取自 `next_contract_no()`，并以"该 lead 已有合同即 return"保持幂等（转换例程在同一事务里置 `final_status='won'`，因此不会双建）。**这是有意的行为变更，需登录态 UAT。**
+
+### 路径覆盖索引（本轮）
+
+| 路径 | 实际职责 | 权限、安全与部署/回滚边界 |
+| --- | --- | --- |
+| `src/lib/money-rpc.mjs` + `src/lib/money-rpc.d.mts` | 资金例程 SQLSTATE → HTTP 的唯一映射：42501→403、22023→400、23505→409、P0002→404，其余→500。 | 未映射的错误一律 500 且**不回引数据库消息**（unique/check 违例的 detail 会带行值）；已映射的消息是迁移里自撰文案，故可回传。它被替代的行为是"多数情况返 HTTP 200 + `{error}`/`{warning}`"——客户端无法区分拒绝与成功。写成 `.mjs` 是为了让 `node --test` 执行**与 route 完全同一份**函数，而不是另写一份等价实现（`tests/security/money-route-rpc-coupling.test.mjs`）。 |
+| `src/app/api/contracts/[id]/route.ts` | 新增 `PATCH`（原模块只导出 `GET`）。 | 合同详情页自诞生起就在 PATCH 这个路由（`page.tsx:307`），因此**每个状态按钮一直是 405**——该页的状态变更从未生效过。修复不是补一个写 `body.status` 的 handler：那会把该页的九宫格变成审批链旁路（`approved`/`pending_ceo` 曾在按钮里）。状态由 `set_contract_status()` 按转移表决定，越界返 400。 |
+| `src/app/(dashboard)/contracts/[id]/page.tsx` | 状态按钮从固定九宫格改为按当前状态渲染 `STATUS_TRANSITIONS[status]`；`terminated` 强制填原因才可提交。 | `STATUS_TRANSITIONS` 与 `set_contract_status()` 的转移表被测试断言为**双向相等**（页面不得提供例程会拒的转移，例程允许的也不得被页面藏起来），且审批链状态不得出现在网格里。`signed`/`cancelled` 连 `contracts_status_check` 都没有。 |
+| `scripts/check-migration-history.mjs` + `supabase/migration-history-baseline.sha256` + `scripts/regenerate-history-baseline.sh` | 迁移历史不可变门禁与其基线生成器。 | 基线只能由 `regenerate-history-baseline.sh` 在**显式说明理由**的 commit 里重生成；日常路径是新增末尾文件而非改动既有文件。 |
+| `scripts/verify-remote-migration-history.mjs` + `infra/release/required-jobs.json` | 远端 `supabase_migrations.schema_migrations` 与仓库目录的比对；canonical deploy 的必需 job 清单。 | 前者只读迁移元数据，不读任何业务行；连接串只从 root 拥有的 `/etc/newme/migration-db.url`（0400/0600）读入，不经命令行参数。后者要求逐 job `conclusion=success`，修正了"run 级 success + 必需 job 被 skip"这一 false-green。 |
+| `supabase/preflight/f02-credential-cutover.md` + `supabase/migrations/20260813000000_session_revocation_boundary.sql` | F-02 的 fail-closed 切换契约与会话吊销边界。 | 迁移侧只做数据库能做的部分（token `iat` 与 `password_changed_at` 比对边界、`auth.users` 需要 SELECT 权限）。**refresh token 只能由 GoTrue 吊销**，故直连 Auth 的重放缺口在数据库层无法关闭；F-02 因此保持未关闭，且封禁 + 会话吊销必须由单独授权的生产动作执行并留后置证据。 |
+| `supabase/replay/20_assert_post_rollback.sql` | 回滚后的 30 条安全断言。 | 回滚必须能撤销**业务姿态**而不得撤销**安全边界**：回滚后伪造 `audit_logs`/`user_sessions` 插入仍被拒、`meta_tokens` 不回到 `authenticated` 可读、资金 definer 例程的 `anon` EXECUTE 不回来。"回滚 SQL 能执行"不是回滚证据。 |
+
+### 验证边界（本轮）
+
+- 无线上库证据。本节所有结论来自源码与在一次性 `postgres:17.10` 容器上的重放，未执行任何生产查询、迁移、部署、重启，未触碰 Auth 用户/会话。
+- **仍需单独生产授权的动作**：应用 9 个待应用迁移（其中 `20260813000000` 要求执行角色对 `auth.users` 有 SELECT）；封禁 `dev@newme.ae` 的 Auth 身份并吊销其会话（F-02 的真正关闭条件）；轮换已公开的凭据；仓库转 private 与 git 历史清除；origin 防火墙限定 Cloudflare 段；`/etc/newme/migration-db.url` 的落地。
+- **仍需登录态 UAT**：`on_lead_won()` 由 active 改 draft 后的 lead→合同链；合同详情页状态按钮（此前一直 405）；报价转换与审批两步链；付款分配与 KPI 周期替换。KPI 遗留重复键的前置检查会**按设计**中止生产部署（fail-closed），需运维先清理。
+- 应用 `20260812000000` 后，任何仍以调用者 client 直写资金表的代码路径会立刻 42501。本轮已改的五个 route 由 `tests/security/money-route-rpc-coupling.test.mjs` 钉住；新增此类写入必须同 commit 改测试与 replay 断言。
+
+## L0 四审 A0（Batch 0）：已发布凭据的扫描范围收口 — 2026-08-12
+
+管理层在三份独立只读复审之后把余下工作切成三批，本节只记 Batch 0：**源码侧已发布凭据这一个 P0**。它同样**不代表已部署、也不代表迁移已应用**：本轮无任何线上库通道，生产未被修改 —— 未应用迁移、未部署、未重启/reload、未触碰 Auth 用户/会话、未改生产数据或控制面，也**未轮换任何凭据**（明确未获授权）。
+
+### 上一版的门禁是假绿的，成因有三个且彼此独立
+
+`scripts/check-published-credentials.mjs` 上一版对本树报 OK。核对后成立，而且比复审指出的更宽：
+
+1. **范围**。门禁的 `SKIP_PREFIX` 把 `.next.backup/` 整个目录排除在扫描外，而那里躺着 **1634 个被 git 跟踪的构建产物**，其中两份 `.js.map` 的 `sourcesContent` 仍带着 `/api/dev/setup` 早已删除的那个明文口令。把生成物当作"门禁已读过的源码的派生物"而豁免，推理成立、结论错误：**生成物是一份更旧的源码的切片**，源码改了、快照没改。根因在 `.gitignore` —— 它写的是 `.next.backup.*`（带点），永远匹配不到目录 `.next.backup/`，少一个斜杠就把一次构建备份提交进了仓库。
+2. **编码**。sourcemap 里每个引号都是 JSON 转义的，任何面向源码的正则都匹配不过转义。`.map`/`.json` 现在先解转义、再按真实行号判定。
+3. **表格识别**。`OC-MIGRATION-BRIEF.md` 是**带行号栏**保存的（每行以自己的行号加一个竖线开头），于是没有一行以竖线开头 —— 这个文件在门禁眼里既没有表格行、没有表头，也没有口令列。
+
+已修：扫描范围改成**恰好等于 `git ls-files`，不再排除任何东西**（978 个跟踪文件、17.9MB，其中 9 个含 NUL 的按二进制跳过并计数；5.5MB 的跟踪生产日志也是第一次被扫到）；1634 个产物移出索引并补上 `.gitignore` 的斜杠；"跟踪了构建产物"本身成为一条结构性 finding；规则五条增到九条；测试 11 条增到 19 条，并给行号栏与 JSON 转义各配**一个变异对照** —— 把被替换掉的旧判定原地重写一份、断言它在同一夹具上返回 `[]`，否则夹具失效时测试会静默变成永真。
+
+范围一改，又暴露四处**非生成物**的发布：`test-matrix-runner.mjs`、`test-matrix.md`、`test_matrix.py`、`OC-MIGRATION-BRIEF.md`。它们带出**第八个身份**，并且其中三个身份**各有不止一个已发布的值**（所以轮换按身份算、不按值算），`test_matrix.py` 另外把一条完整的 Supabase PAT 提权配方写在可执行位置上。**`git rm --cached` 只是停止跟踪，不是抹除**：这些文件仍在 git 历史里，凡 clone 过本仓、或读过本仓任一次构建产物的人都已知这些值。
+
+### 路径覆盖索引（本轮）
+
+| 路径 | 实际职责 | 权限、安全与部署/回滚边界 |
+| --- | --- | --- |
+| `scripts/check-published-credentials.mjs` + `tests/security/published-credentials.test.mjs` | 已发布凭据门禁与其反向回归。范围 = `git ls-files`，九条规则，只报路径与规则名。 | **从不打印命中的值** —— 会打印值的门禁等于把凭据重新发布到每一次 CI 日志里；`tests/release/ci-full-stack-gates-contract.test.mjs` 把这条钉成结构性质：finding 对象只有 `rule`/`line`/`detail` 三个键，没有能装值的字段，且门禁每条输出的插值里不得出现 value/secret/password 一类标识符。ALLOWLIST 按标识符而非行号键入，并有一条测试要求每个条目对应的文件仍被 git 跟踪 —— 豁免活得比文件久，是门禁悄悄失效的典型方式。 |
+| `src/lib/dev-identity.mjs` + `src/app/api/dev/setup/route.ts` + `src/app/api/auth/dev-login/route.ts` | dev 身份只能来自环境变量，未配置即**拒绝**而不是回落到字面量。 | 被替代的写法是 `process.env.DEV_PASSWORD || "<字面量>"`：它让"没配环境变量"等于"用 git 历史里那个口令"。未配置时两条 route **完全不触达 Supabase**；Supabase 未配置返 503 而不是把 `!` 断言抛成堆栈；`/api/dev/setup` 不再对已存在身份重设口令（那让 bootstrap 端点变成无鉴权的改密端点）。拒绝理由码里不含任何值。 |
+| `test_matrix.py` + `test-matrix-runner.mjs` | 角色矩阵测试脚本。口令改为按环境变量名读取，缺失即以 `SystemExit` 拒绝。 | 这两个文件此前把四个身份的明文口令写在可执行位置上，且不含任何 credential 关键词（是"地址 + 值"的形状），因此所有基于标签的规则都走了过去 —— 新增的 `credential-pair` 规则就是为这个形状写的，并带七种"必须保持干净"的相邻形状作为反向夹具（UUID、常量、函数调用、DSN 路径、文档引用、第二个地址、散文）。 |
+| `src/app/api/payments/[id]/void/route.ts` | 付款的**受支持撤销路径**（admin/boss/finance）：调用 `void_payment()`，在单事务内释放分配、标记作废并重算派生总额。 | 三审 P1-2：`trg_guard_*` 覆盖了 INSERT/UPDATE 但没覆盖 DELETE，而 `authenticated` 持有 payments 的 DELETE，浏览器会话可以删掉一笔已确认付款；分配行随 CASCADE 一起消失，而 `allocated_amount`/`paid_amount`/`actual_amount`/`first_payment_status` 仍把这笔钱算在总额里。`20260814000000` 撤销并拒绝五张资金表上的 DELETE，撤销改由 `void_payment()` 完成 —— **行保留**才是可审计的，删掉的行不可审计。授权边界在例程侧（`money_actor()` 绑定 JWT subject），route 里的角色检查只是提前给出同样的 403。 |
+| `supabase/replay/15_concurrency_two_session.sh` | `allocate_payment()` 的双会话并发门禁，两种 replay 模式下必须给出**不同**结果。 | 三审 P1-7 的丢失更新（两个会话各分配 100/200，双双成功，计划总额 200 而分配之和 300）此前只被手工复现过一次：**只在单会话里跑的断言看不见丢失更新**，把 `for update` 删掉不会有任何东西变红。现在 `EXPECT=consistent`（MODE=branch）与 `EXPECT=lost`（MODE=control，未修复地板）互为正反证据；交错由 advisory lock 决定而非 sleep，因为靠时序的门禁会 flaky，而一条 flaky 的"无丢失更新"门禁比没有更糟。 |
+
+### 验证边界（本轮）
+
+- **对着提交跑，而不是对着工作区跑**。本轮把候选 commit 单独 checkout 成一个 worktree 再验，这一步立刻抓出一个假绿：门禁读的是 `git ls-files`，而新写的 `tests/security/dev-identity-bootstrap.test.mjs` 当时还未被跟踪，所以工作区里那次 OK **根本没扫到它**。方向是对的（CI 读的是提交，提交才是"已发布"），但**本地一次 OK 只覆盖 git 已经跟踪的东西**。
+- 提交树上的证据：`npm test` 595 tests / 592 pass / 0 fail / 3 skipped；`node --test tests/release/*.test.mjs` 198/198；`npm run check:security`（含新门禁）OK：974 个跟踪文本文件、0 处发布点、9 个二进制跳过；`tsc --noEmit` 0；lint baseline 406 无新增；工作流、database-types、migration-history、taskboard 全 PASS；production build exit 0。
+- **一个与本轮无关但已确认的仓库事实**：本仓没有 `.gitattributes`，`core.autocrlf=true` 的 Windows 上**新 clone** 会把 `*.sh` 检出成 CRLF，于是 8 条以 `\n` 锚定 shell 脚本内容的 release 契约测试在新检出上失败；index 里是 LF，Linux CI 因此为绿。这不是本次提交引入的，但它意味着"Windows 上跑一遍全绿"在新检出上并不成立。
+- **仍需单独生产授权、本轮一律未做**：轮换八个已发布身份的口令与生产数据库口令；**轮换 Supabase PAT**（`test_matrix.py` 已把提权配方发布出去，本轮新增的一项）；封禁 Auth 身份并吊销会话；仓库转 private 与 git 历史清除；origin 防火墙限定。**把值从工作区删掉与让它停止生效是两件事，本节不得把前者说成后者。**
+- Batch 1（资金路径与不变量）与 Batch 2（发布控制面）按管理层要求各自独立成批、独立复审，不与本批混提。
+## 2026-08-15 audited release-control path coverage
+
+This section records the remaining paths reported by `scripts/check-spec.sh` for the audited release candidate. It is a source-and-gate inventory only: it does not claim that the candidate is deployed or that production acceptance is complete.
+
+| Path | Contract covered by this release |
+| --- | --- |
+| `infra/observability/dependency-probe.sh` | Runs the bounded production dependency probe used by the alert and postdeploy evidence chains. |
+| `infra/systemd/newme-production-rollback.sh` | Provides the protected rollback/status boundary, including credential-transition and receipt-key inspection states. |
+| `next-env.d.ts` | Keeps the generated Next.js TypeScript environment reference aligned with the pinned build toolchain. |
+| `scripts/alert-state-preflight-drill.sh` | Proves an untrusted or symlinked alert-state tree is rejected before installer writes. |
+| `scripts/control-plane-restore-drill.sh` | Exercises interrupted control-plane installation and exact recovery in an isolated container. |
+| `scripts/credential-assets-transaction-drill.sh` | Exercises credential-asset install, finalize, rollback, and all protected-asset recovery checkpoints without production credentials. |
+| `scripts/validate-production-config.py` | Validates the fixed production origin, runtime credential placement, and Sentry configuration before switching service bytes. |
+| `src/app/(dashboard)/analytics/_components/SalesLoad.tsx` | Binds the lead-rebalance UI request and cleanup behavior to the actor-scoped batch intent. |
+| `supabase/replay/24_rollback_companion_guards.sh` | Verifies rollback companions preserve the declared guard and dependency closure. |
+| `supabase/replay/26_notification_event_idempotency.sh` | Exercises notification idempotency, lock behavior, ACLs, and residue cleanup on PostgreSQL 17. |
+| `supabase/replay/27_lead_rebalance_plan_idempotency.sh` | Exercises first-caller plan identity, actor isolation, locking, ACLs, and zero residue on PostgreSQL 17. |
+
+## 2026-08-20 线材与穿线报价计算器（自下而上人工模型）
+
+把线材用量与穿线人工从「按产品价格取百分比」改成按拓扑与工时自下而上算，并做成员工自助页面。**费率、系数、工时定额一律不进本仓库** —— 本仓库是公开仓库，报价模型是公司机密；配置在运行时由 base64 环境变量 `CABLE_COSTING_CONFIG` 注入，缺配置时返回 503 并点名该变量，**不回落到默认值**（回落到默认值等于用错的费率报出一个看起来正常的价格）。
+
+| Path | Contract covered by this release |
+| --- | --- |
+| `src/lib/cable-costing/types.ts` | 冻结引擎的对外接口：`CableCostingInput`（面积/层数/点位数量/口径）、`CableCostingResult`（线材与人工分项、损耗、加成、分包毛利、税前、VAT、含税、warnings）、以及 `CableCostingConfig` 的形状。其他所有代码只对着这里编程。 |
+| `src/lib/cable-costing/engine.ts` | 纯函数计算：按三种拓扑（bus/radial/star）算单点线长 → 总米数 → 整卷采购 → 敷线与端接工时 → 组·天 → 金额。**不含任何数字**，全部系数由 config 传入。估价线材与过期报价单产生 `warnings`。 |
+| `src/lib/cable-costing/config.ts` | `import "server-only"`，只从 `CABLE_COSTING_CONFIG`（base64 JSON）读费率，**无 fallback 默认值**，失败抛 `CableCostingConfigError`。这是唯一允许接触真实费率的模块，且它不被 barrel 导出，避免被客户端代码顺手 import。 |
+| `src/lib/cable-costing/index.ts` | 引擎与类型的 barrel，**故意不再导出 `config.ts`**。 |
+| `src/app/api/cable-costing/catalogue/route.ts` | `GET`：返回点位清单（id/中英文名/系统/拓扑）与口径枚举，**不含任何价格**，供前端渲染输入框。 |
+| `src/app/api/cable-costing/calculate/route.ts` | `POST`：鉴权后调引擎返回分项结果。401 未登录 / 400 输入非法 / **503 未注入费率（点名变量名）** / 500 其他且生产环境不外泄细节。 |
+| `src/app/api/cable-costing/export/route.ts` | `POST`：同样的输入导出 xlsx（Inputs / Cables / Labour / Summary 四页，`private, no-store`），文件名 `cable_costing_<tier>_<YYYYMMDD>.xlsx`。 |
+| `src/app/(dashboard)/cable-costing/page.tsx` | 页面服务端入口，走 `supabase.auth.getUser()` 网关；已登记进 `src/proxy.ts` 的 matcher（安全测试会枚举 `page.tsx`）。不限角色 —— 这是估算员的日常工具。 |
+| `src/app/(dashboard)/cable-costing/cable-costing-client.tsx` | 全部交互：面积/层数/按点位数量、internal（成本）与 client（对客）两档互斥切换、分项表与合计卡、导出按钮。**warnings 渲染在所有数字之前**，因为它决定这份数字能不能发客户；切换口径时主动清空旧结果，避免旧数字挂在新标签下被误读。零 Supabase、零价格字面量。 |
+
+### 验证边界（本轮）
+
+- 与 Excel 母版的黄金基准逐项比对是**在仓库之外**用真实费率跑的（真实数字不能进公开仓库）：278/278 项差值 ≤0.01，含单点线长 7.5246/12.6066/20.9066、总线长 8303.8091、按米 22652.6695、按整卷 23806、组·天 38.2768、人工 19138.3988、两档报价与含税总额。仓库内的单测 `tests/unit/cable-costing.test.mjs` 用 `tests/fixtures/cable-costing-synthetic-config.mjs` 的**合成**费率，只证明算法与边界，不证明价格。
+- 生产要生效必须先把 `CABLE_COSTING_CONFIG` 追加进 `/etc/newme/newme-runtime.env`（0600 root:root，单行 base64，不折行）并重启 `newme-platform`；未注入时页面给 503 而不是错的数字。
+- **仍未闭环**：三种反推价线材（Motor 4x0.75 / FCU 6x0.75 / RVV 2x1.5）仍是估价，占材料价值约 75%，`warnings` 会提示；分包包干价待供应商回价后再切换 `labour.basis`。
+
+## 2026-08-20 报价单人工口径切换（百分比 → 自下而上，带回退）
+
+报价引擎此前把安装人工估成产品价格的一个百分比（`install_labor_pct`）。本次让它在拿得到点位数量与几何信息时改用线材模型的工时结果，**并且保留百分比口径作为回退**：口径切换属于钱的口径变更，不可逆的一刀切会让历史报价与新报价不可比较。**不新增数据库迁移**（加迁移会连带触发架构、RLS、schema 快照与发布清单一整条闸门链），口径标记写在已有的、仅内部可见的 `quotations.internal_notes` 里。
+
+| Path | Contract covered by this release |
+| --- | --- |
+| `src/lib/quotation-labour-basis.mjs` | 口径判定与回退的全部逻辑：六种情形（未注入费率、缺面积/层数、无点位数量、未知或停用的点位 id、引擎拒绝输入、模型算出非正人工）一律回退到历史百分比并给出**具名原因**。矩阵测试钉住「任何入参形状都不可能产出 0 或非有限的人工金额」——那会报出低价，比报错危险得多。 |
+| `src/lib/quotation-labour-basis.d.mts` | 上述模块的手写类型声明（仓库既有做法：可被 `node --test` 直接 import 的逻辑放 `.mjs` + `.d.mts`）。 |
+| `src/lib/quotation-labour-request.ts` | `server-only`：读运行时费率并把线材引擎**注入**给报价引擎。注入而非静态 import —— 第一版直接 import 会把模型算术带进 `/quotes` 的浏览器包（约 76 KB），公开仓库里那等于把算法结构送出去。 |
+| `src/lib/quotation-engine.ts` | `CalculateResult` 增补 `install_labor_basis` / `install_labor_pct` / `install_labor_fallback_reason` / `cable_material` / `install_labor_detail`，全部**新增字段，不改任何既有字段含义**。百分比口径下 `cable_material` 为 0，故税基与总额与改动前逐位相同。 |
+| `src/app/api/quotations/calculate/route.ts` | 接受可选的 `bottom_up_labour` 入参，回包带上实际用了哪个口径与回退原因。 |
+| `src/app/api/quotations/generate/route.ts` | 同上；自下而上定价的报价单会把口径、模型版本与人工/线材拆分写成一行机器可读标记进 `internal_notes`。 |
+| `src/app/api/quotations/export/route.ts` | 带标记的报价单导出时人工行改名并多一行 Cable Material；**没有标记的旧报价单走原路径，逐字不变** —— 已存的报价单不能被追溯改写。 |
+
+### 验证边界（本轮）
+
+- 单测 `tests/unit/quotation-labour-basis.test.mjs` 覆盖走新口径 / 回退老口径 / 缺配置三条路径，费率用 `tests/fixtures/cable-costing-synthetic-config.mjs` 的合成数字。
+- **前端本轮零变化**：报价向导是客户端组件，拿不到费率也拿不到点位 id，因此始终解析为百分比口径。要让业务真正用上自下而上口径，还需把点位数量接进向导（第二阶段）。
+- **代价（刻意接受）**：口径标记是文本而不是可查询列，暂时无法用 SQL 统计「多少报价用了哪个口径」；有人手工把那行注释改坏，导出会静默退回旧行。这是换掉迁移闸门链的价格，日后可单独加列。
+
+## 2026-08-20 迁移回放的 psql 客户端版本钉法修正
+
+| Path | Contract covered by this release |
+| --- | --- |
+| `.github/workflows/ci.yml` | `Verify hosted psql client` 改为接受一个封闭的客户端集合（pgdg24.04 的 16.14 与 16.15），不再钉 Debian 打包修订号；失败时打印实际版本 |
+| `tests/release/ci-full-stack-gates-contract.test.mjs` | 合约断言随之改为匹配新的判据文本，并继续禁止 apt 在发布作业里做可变解析 |
+
+验证边界：
+
+- 症状：旧判据要求 `psql --version` 完全等于 `psql (PostgreSQL) 16.14 (Ubuntu 16.14-1.pgdg24.04+1)`，
+  而 ubuntu-24.04 runner 机群正在滚动升级，同一个 commit 重跑三次两次过一次不过 ——
+  **整个仓库**的 CI 变成看作业落到哪台机器的抛硬币。
+- 实测到的实际版本（不是推测）：放开修订号后判据把版本打了出来，主分支那次是
+  `16.15 (Ubuntu 16.15-1.pgdg24.04+2)`，而几分钟前 PR 那次落在 16.14 上 —— 机群同时在供两个次版本。
+- 保留的部分：客户端仍然是**封闭集合**（只接受 16.14 与 16.15），仓库来源仍然钉死 pgdg24.04，
+  发布作业里仍然不允许出现 `apt-get install/update`，且合约测试禁止把次版本写成通配。
+- 为什么次版本不是回放风险：PostgreSQL 次版本只含缺陷修复；回放依赖的 SQL 语法与 `createdb`
+  行为由主版本决定，服务端则是另外一个按 digest 钉死的容器。
+- 附带修正：旧判据用裸 `test` 比较，失败时**一个字都不打印**，无法区分"版本漂移"和
+  "客户端不存在"。新判据先 `psql --version`，不匹配时再打印实际值。
+
+## 2026-08-20 前端可观测性与发布后闸门
+
+前端产品分析集成整体移除，Cloudflare 边缘注入的 RUM beacon 改为放行 + 闸门存根，
+浏览器质量闸门的失败码带上出错的计数器与上下文。
+
+| Path | Contract covered by this release |
+| --- | --- |
+| `src/components/PostHogProvider.tsx` | 已删除。project key 在供应商侧已失效，provider 初始化时的两个请求（`/array/<key>/config` 与 `/decide`）在每个登录后页面都返回 404，即这套埋点从未送出任何数据；且它开着 `maskAllInputs: false` 的会话回放，等于把 CRM 输入框原文录进第三方 |
+| `src/components/PostHogProviderInner.tsx` | 已删除（同上，客户端边界内层） |
+| `src/lib/web-vitals.ts` | 已删除。唯一消费者是上面的 provider，没有别的接收端 |
+| `src/lib/WebVitalsReporter.tsx` | 已删除。仓库内无任何引用，从未挂载过 |
+| `src/components/error-boundary.tsx` | 只保留 Sentry 上报分支；分析侧的 `$exception` 分支随集成一起去掉 |
+| `src/lib/session-identity.ts` | 只保留**实时**读取器 `readSessionIdentity()`。另一份带缓存的读取器只为分析识别存在，而登出吊销边界不得从可复用状态回答，因此模块作用域内不再有任何身份状态 |
+| `src/hooks/useAuthRedirect.ts` | 不再调用已删除的缓存清理函数 |
+| `sentry.client.config.ts` | 删掉两个 `replays*SampleRate`：会话回放不是默认集成、也没有任何地方加它，这两行是死配置却读起来像“回放开着 10%”。同时注明 `browserTracingIntegration` 是 `@sentry/nextjs` 的**默认**集成，所以只要 `NEXT_PUBLIC_SENTRY_DSN` 有值，`tracesSampleRate: 0.1` 就是真实用户监测；实测该变量在生产运行时环境与已部署 bundle 里都不存在 |
+| `next.config.ts` | CSP `script-src` 增加 `https://static.cloudflareinsights.com`（边缘注入，仓库里没有这个标签），并移除分析源；beacon 带 `version` 时 POST 同源 `/cdn-cgi/rum`，因此 `connect-src` 不放宽 |
+| `src/app/(dashboard)/ads/page.tsx` | 守卫放行 operator：其后端 `/api/ads/leads` 本来就把 operator 当管理角色服务，侧边栏也一直给它这个链接 |
+| `src/app/(dashboard)/analytics/page.tsx` | 同上；`/api/analytics/summary` 自己就把 operator 算进 `isManagement` |
+
+发布后浏览器闸门（`scripts/run-postdeploy-browser-uat.mjs`、`scripts/canonical-browser-uat.mjs`）：
+
+- 第三方源不再一律 abort：边缘注入的脚本源**真实放行**。单靠改 CSP 修不好这条 —— 闸门 abort 后
+  Chromium 的 `Log.entryAdded` 会被 Playwright 当成 console error 转发，counter 照样非零；
+  而回一个空 body 的 200 存根同样修不好：2026-08-20 从边缘取回的注入标签带
+  `integrity="sha512-…" crossorigin="anonymous"`，空 body 过不了 SRI 校验，Chromium 把 SRI 拒绝
+  也记成 console error。放行还是更强的判据：beacon 与应用由同一个边缘提供（不引入新的可用性耦合），
+  它自己的请求打到同源 `/cdn-cgi/rum`（既不是 document 也不在关键 API 前缀里，因此制造不出 HTTP 失败），
+  而让它真的加载正是持续证明 CSP 放行有效的那条判据 —— 存根会让闸门对本次要修的回归彻底失明。
+- 失败码从单一的 `browser_quality_gate_failed` 变为 `quality_<counter>_<role>_<locale>_<step>`。
+  长度预算由消费者决定（`/^[a-z][a-z0-9_]{1,62}$/`，不是 runner 自己的 80 字符），
+  测试枚举全部角色 × 语言 × 步骤重算最坏情况并要求同时满足两条正则；超预算时降级回笼统码而不是放宽契约。
+- 路由判定抽成纯函数 `routeDecision()`，默认拒绝（含不可解析的 URL），真值表不用起浏览器就能测。
+
+重新引入真实用户指标的三个前置条件记在 `docs/lighthouse-baseline.md`：输入默认打码、CSP 显式放行、
+以及闸门侧的存根或放行判据。三者缺一条，这套东西就会以本次发现的形式再回来。
+
+## 2026-08-28 网站线索归因与语言状态同步
+
+本节补齐网站线索进入 OS、Meta CAPI 单发送端以及生产浏览器验收发现的语言属性竞态。它描述代码与门禁覆盖；上线状态仍由 exact-head CI、生产部署和 postdeploy acceptance 单独证明。
+
+| Path | Contract covered by this release |
+| --- | --- |
+| `src/app/api/public/leads/route.ts` | 提供仅允许 `newme.ae`/`www.newme.ae` 来源的公开 JSON 线索入口，执行大小、频率、蜜罐和可选 Turnstile 校验；以 service role 写入 website lead 与跟进任务，并以同一个 `event_id` 排队和发送 Meta Lead CAPI 事件。 |
+| `src/lib/public-lead.ts` | 集中定义允许来源、CORS、字段长度/类型、联系方式要求及 UTM、Meta click、landing/referrer 归因解析，避免公开路由和网站端各写一份边界。 |
+| `src/lib/meta-capi.ts` | 构造 Meta Lead CAPI 载荷；邮箱、电话、姓名和 external id 在发送前规范化并 SHA-256，发送端只从服务端运行时读取 Pixel/token，保持 OS 为唯一 CAPI sender；只在 Meta 回执明确确认完整接收后标记成功，令牌不进入 URL 或错误日志。 |
+| `src/lib/website-lead-identity.ts` | 为新官网咨询生成按事件隔离的线索、任务及发送记录 UUIDv5；同事件、同咨询重试恢复原流程，内容冲突返回 409，不覆盖销售编辑。 |
+| `src/lib/meta-capi-delivery.ts` | 共享数据库条件更新协调发送所有权，租约 60 秒；最多 5 次、24 小时内沿用原 event_id 和 event_time 重试，拒绝格式异常、次数耗尽或过期记录自动补发。 |
+| `scripts/meta-capi-retry.mjs` | 默认只读、最多检查 20 条的补发准备工具；显式 --execute 才调用同一发送协调器，无定时器安装或启用。 |
+| `src/app/(dashboard)/analytics/_components/WeeklyTrends.tsx` | 金额格式化对缺失或非有限值收敛为 0，防止归因/趋势聚合的空值让分析卡片渲染失败。 |
+| `src/lib/i18n/LanguageContext.tsx` | 同标签页切换语言时，在更新可见翻译状态前同步写入 `document.documentElement.lang`，使辅助技术、SEO 语义与屏幕文案处于同一次状态变化中。 |
+| `src/components/HtmlLangSync.tsx` | 保留首次载入、跨标签页 storage event 以及旧写入方的有界轮询协调；同标签页按钮切换不再依赖 500ms 轮询。 |
+
+验证边界：`tests/security/public-website-lead.test.mjs`、`tests/security/meta-capi-outbound.test.mjs` 和 `tests/security/i18n-document-language.test.mjs` 分别钉住公开入口、CAPI 脱敏/发送契约和 HTML 语言更新顺序；完整浏览器双语流程仍必须在生产 postdeploy acceptance 通过后才可关闭发布。
+
+## 2026-10-23 隐私处理与广告写入协调前置
+
+以下是代码契约及验证入口，生产状态仍由发布和实际验收单独证明。
+
+| Path | Contract |
+| --- | --- |
+| `src/app/(dashboard)/settings/whatsapp-privacy.tsx` | 管理员在设置页发起试点事件删除并查看回执。 |
+| `src/app/api/whatsapp/privacy/route.ts` | 隐私操作的会话、角色及请求校验入口。 |
+| `tests/database/whatsapp-privacy.py` | 在隔离 PostgreSQL 中验证删除、保留期限、并发和重放边界。 |
+| `src/lib/knx-task-store.ts` | KNX 任务存储和调用者访问范围；不以拿到任务编号代替访问授权。 |
+| `src/lib/request-auth-context.ts` | 共享请求鉴权上下文及有界的认证解析。 |
+| `scripts/check-meta-ads-provisioning.mjs` | 只允许在完整现有 strict 迁移前缀后增加一份固定哈希的广告原子写入迁移，拒绝无记录对象碰撞和内容漂移。 |
+| `supabase/preflight/meta-ads-atomic-window.sql` | 仅供服务端调用的事务写入契约：共享事务锁、来源和日期边界、整批替换及完整字段回读；失败不提交部分数据。 |
+| `tests/database/meta-ads-atomic.py` | 真实双连接验证锁的两个获取顺序、中途暂停时的读一致性、写入失败回滚、超时及重试。 |
+
+本前置发布只建立受保护的数据库发布能力和隔离测试，不应用生产迁移、不切换手动接口，也不启用广告定时任务。手动接口与定时程序改用同一写入例程及线上并发验收属于后续发布步骤。
+
+## 2026-10-23 广告同步原子写入应用变更
+
+`src/app/api/meta/ads-sync/route.ts` 在完整分页与映射成功后，只调用 `replace_meta_ad_spend_window` 执行整批写入，保留既有管理员权限边界。`src/lib/meta-ads-write.mjs` 校验原子回执，并将竞争、缺失迁移和数据库失败转为有限的错误码。`supabase/migrations/20261023123323_meta_ads_atomic_window.sql` 与前置审核 SQL 的字节哈希一致；例程以 SECURITY INVOKER 运行，只向 service_role 授予执行权限，包含跨进程事务锁、来源与日期范围限制和完整字段回读。共享事务回滚后不会留下已提交的空窗或半批数据。
+
+应用代码与部署状态分别记录。定时程序的安装、默认关闭状态、实际 HTTP 与程序的并发验收由私有运维回执证明；本节不声明定时同步已经运行。

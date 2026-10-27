@@ -3,7 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 const root = process.cwd();
 const migDir = path.join(root, 'supabase/migrations');
-const files = fs.readdirSync(migDir).filter(f => f.endsWith('.sql') && !f.startsWith('rollback_')).sort();
+// Hand-run companions are not migrations: the Supabase CLI never applies them, so
+// they carry no timestamp and must not be read as one. `recontract_` joined
+// `rollback_` in round 4 (B9) — without it the timestamp-uniqueness check below
+// would read the whole name up to the first `_` as the stamp and call a second
+// companion a duplicate of the first.
+const COMPANION_NAME = /^(rollback|recontract)_.*\.sql$/;
+const files = fs.readdirSync(migDir).filter(f => f.endsWith('.sql') && !COMPANION_NAME.test(f)).sort();
 let failures = 0;
 function fail(msg) { console.error(`FAIL ${msg}`); failures++; }
 function pass(msg) { console.log(`PASS ${msg}`); }

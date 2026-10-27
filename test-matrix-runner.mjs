@@ -6,10 +6,21 @@
 import puppeteer from 'puppeteer';
 
 const BASE = 'https://app.newme.ae';
+
+// Credentials come from the environment. Plaintext passwords for four
+// identities were published on the lines below until 2026-08-12; see
+// supabase/preflight/f02-credential-cutover.md §7. Refusing when unset is
+// deliberate: a harness that silently types nothing reports every role as
+// broken and hides the reason.
+const credential = (name) => {
+  const configured = process.env[name];
+  if (!configured) throw new Error(`${name} is not set; this harness does not run unconfigured`);
+  return configured;
+};
 const ROLES = {
-  admin: { email: 'admin@newme.ae', password: '123456' },
-  boss: { email: 'tanya@newme.ae', password: 'Newme@2026' },
-  sales: { email: 'faheem@newme.ae', password: 'Faheem@2026' },
+  admin: { email: 'admin@newme.ae', password: credential('NEWME_TEST_ADMIN_PASSWORD') },
+  boss: { email: 'tanya@newme.ae', password: credential('NEWME_TEST_BOSS_PASSWORD') },
+  sales: { email: 'faheem@newme.ae', password: credential('NEWME_TEST_SALES_PASSWORD') },
 };
 
 const results = { pass: [], fail: [], warn: [] };

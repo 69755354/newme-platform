@@ -8,9 +8,9 @@ test("stage endpoint enforces ownership, complete-contact gate, concurrency, and
   const source = await read("src/app/api/leads/[id]/stage/route.ts");
   const transition = await read("supabase/migrations/20260714000003_atomic_stage_transition.sql");
   for (const token of [
-    "getAuthProfile",
-    "isAdminOrBoss",
-    "lead.assigned_to !== profile.userId",
+    "getRequestAuthContext",
+    "applyRequestAuthCookies",
+    "lead.assigned_to !== context.user.id",
     '.from("follow_up_logs")',
     '.select("contact_time, contact_result")',
     "isCompleteContact",
@@ -25,11 +25,12 @@ test("stage endpoint enforces ownership, complete-contact gate, concurrency, and
 test("quality endpoint accepts assessment only after the first complete contact", async () => {
   const source = await read("src/app/api/leads/[id]/quality/route.ts");
   for (const token of [
-    "getAuthProfile",
+    "getRequestAuthContext",
     '.select(\'contact_time, contact_result\')',
     "isCompleteContact",
     ".some(isCompleteContact)",
   ]) assert.ok(source.includes(token), `missing quality protection: ${token}`);
+  assert.match(source, /applyRequestAuthCookies\(context, NextResponse\.json/);
 });
 
 test("contact creation and editing are server-authorized and return stored rows", async () => {
@@ -37,16 +38,15 @@ test("contact creation and editing are server-authorized and return stored rows"
   const edit = await read("src/app/api/leads/[id]/contacts/[contactId]/route.ts");
   for (const [source, label] of [[create, "create"], [edit, "edit"]]) {
     for (const token of [
-      "getAuthProfile",
-      "isAdminOrBoss",
-      "supabaseAdmin",
-      "lead.assigned_to !== profile.userId",
+      "getRequestAuthContext",
+      "applyRequestAuthCookies",
+      "lead.assigned_to !== context.user.id",
       ".select(",
       ".single()",
     ]) assert.ok(source.includes(token), `missing contact ${label} protection: ${token}`);
   }
   assert.ok(create.includes('method: "POST"') === false, "route must not self-fetch");
-  assert.ok(create.includes('.upsert({'));
+  assert.ok(create.includes('record_lead_contact_atomic'));
   assert.ok(create.includes("contactTime.getTime() > Date.now()"));
   assert.ok(create.includes("contact_time cannot be in the future"));
   assert.ok(edit.includes('.eq("id", contactId)'));

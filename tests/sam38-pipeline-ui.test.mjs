@@ -62,6 +62,31 @@ test("SAM-38 focuses either selected stage control on its Kanban column", () => 
   assert.match(page, /onStageChange=\{\(v\) => \{ selectPipelineStage\(v\); setAlertFilter\("all"\); \}\}/);
 });
 
+test("SAM-38 keeps horizontal scroll controls in a dedicated normal-flow rail", () => {
+  const board = read("src/app/(dashboard)/leads/_components/LeadsKanbanBoard.tsx");
+
+  assert.match(board, /data-kanban-scroll-controls/);
+  assert.match(board, /flex h-9 items-center justify-between/);
+  assert.doesNotMatch(board, /className="absolute (?:left|right)-6/);
+  assert.doesNotMatch(board, /top-(?:3|1\/2)/);
+});
+
+test("SAM-38 keeps the bulk checkbox in normal flow beside the quotation", () => {
+  const card = read("src/app/(dashboard)/leads/_components/LeadCard.tsx");
+
+  assert.match(card, /flex shrink-0 items-start gap-2/);
+  assert.match(card, /type="checkbox" checked=\{selected\}/);
+  assert.doesNotMatch(card, /absolute top-2 right-2/);
+});
+
+test("SAM-38 keeps the search clear button outside the input rectangle", () => {
+  const filters = read("src/app/(dashboard)/leads/_components/LeadsFilters.tsx");
+
+  assert.match(filters, /flex flex-1 min-w-\[180px\] max-w-xs items-center gap-1/);
+  assert.match(filters, /inline-flex h-9 w-9 shrink-0/);
+  assert.doesNotMatch(filters, /absolute right-2\.5 top-1\/2/);
+});
+
 test("SAM-38 renders exactly one prioritized action prompt per card", () => {
   const card = read("src/app/(dashboard)/leads/_components/LeadCard.tsx");
 

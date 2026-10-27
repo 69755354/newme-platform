@@ -1,7 +1,7 @@
 // RBAC: user (authenticated)
 import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
-import { getCached, setCache } from "@/lib/api-cache"
+import { getCached, setCache } from "@/lib/api-cache.mjs"
 
 // Dubai GST = UTC+4. All "day"/"week" math below is done in GST, then
 // converted back to UTC ISO strings for DB queries.
@@ -94,7 +94,7 @@ export async function GET(request: Request) {
       .from("tasks")
       .select(taskCols)
       .eq("assignee_id", user.id)
-      .is("completed_at", null)
+      .eq("status", "pending")
       .order("due_at", { ascending: true })
       .limit(20),
 
@@ -103,7 +103,7 @@ export async function GET(request: Request) {
       .from("tasks")
       .select(taskCols)
       .eq("assignee_id", user.id)
-      .is("completed_at", null)
+      .eq("status", "pending")
       .lt("due_at", nowIso)
       .order("due_at", { ascending: true })
       .limit(20),
@@ -155,7 +155,7 @@ export async function GET(request: Request) {
         .filter(Boolean),
     ),
   )
-  const leadNameById: Record<string, string> = {}
+  const leadNameById: Record<string, string | null> = {}
   if (taskLeadIds.length > 0) {
     const { data: leadRows } = await supabase
       .from("leads")
@@ -213,7 +213,7 @@ export async function GET(request: Request) {
     .from("tasks")
     .select("id,lead_id,title,due_at,assignee_id,status")
     .eq("assignee_id", user.id)
-    .neq("status", "done")
+    .eq("status", "pending")
     .gte("due_at", tomorrowBounds.startIso)
     .lte("due_at", tomorrowBounds.endIso)
     .order("due_at", { ascending: true })
@@ -226,7 +226,7 @@ export async function GET(request: Request) {
         .filter((v): v is string => Boolean(v)),
     ),
   )
-  const tomorrowLeadNameById: Record<string, string> = {}
+  const tomorrowLeadNameById: Record<string, string | null> = {}
   if (tomorrowLeadIds.length > 0) {
     const { data: tomorrowLeadRows } = await supabase
       .from("leads")

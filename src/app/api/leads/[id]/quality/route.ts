@@ -1,9 +1,12 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { parseCookieHeader } from '@/lib/supabase-server';
 import { logger, genReqId } from '@/lib/logger';
-import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
+import {
+  applyRequestAuthCookies,
+  getRequestAuthContext,
+  RequestAuthError,
+  requestAuthErrorResponse,
+} from '@/lib/request-auth-context';
 import { isCompleteContact } from '@/lib/first-contact-gate.mjs';
 
 export async function POST(
@@ -13,29 +16,17 @@ export async function POST(
   const request_id = genReqId();
   const { id: leadId } = await params;
   try {
-    const cookieHeader = req.headers.get("cookie") ?? "";
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() { return parseCookieHeader(cookieHeader); },
-          setAll() {},
-        },
-      }
-    );
-
-    const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const profile = await getAuthProfile(bearerToken, cookieHeader);
-    if (!profile) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const context = await getRequestAuthContext(req);
+    const { supabase } = context;
+    const isAdminOrBoss = ["admin", "boss", "operator"].includes(context.role);
+    const respond = (body: Record<string, unknown>, init?: ResponseInit) =>
+      applyRequestAuthCookies(context, NextResponse.json(body, init));
 
     const body = await req.json();
     const rawQuality = (body?.quality ?? '').toString().toLowerCase().trim();
     const ALLOWED = ['poor', 'normal', 'good'] as const;
     if (!ALLOWED.includes(rawQuality as typeof ALLOWED[number])) {
-      return NextResponse.json(
+      return respond(
         { error: 'quality must be one of: poor, normal, good' },
         { status: 400 }
       );
@@ -43,7 +34,7 @@ export async function POST(
     const quality = rawQuality as typeof ALLOWED[number];
     const poor_reason_raw = (body?.poor_reason ?? '').toString().trim();
     if (quality === 'poor' && poor_reason_raw.length < 3) {
-      return NextResponse.json(
+      return respond(
         { error: 'poor_reason is required when quality is poor (min 3 chars)' },
         { status: 400 }
       );
@@ -57,10 +48,30 @@ export async function POST(
       .eq('id', leadId)
       .single();
     if (leadError || !lead) {
-      return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
+      logger.warn(
+        {
+          request_id: context.requestId,
+          operation: 'quality_update',
+          lead_id: leadId,
+          user_id: context.user.id,
+          reason: leadError?.code ?? 'lead_not_visible',
+        },
+        'quality update lead was not visible to authenticated user',
+      );
+      return respond({ error: 'Lead not found' }, { status: 404 });
     }
-    if (!isAdminOrBoss(profile) && lead.assigned_to !== profile.userId) {
-      return NextResponse.json(
+    if (!isAdminOrBoss && lead.assigned_to !== context.user.id) {
+      logger.warn(
+        {
+          request_id: context.requestId,
+          operation: 'quality_update',
+          lead_id: leadId,
+          user_id: context.user.id,
+          reason: 'lead_not_assigned',
+        },
+        'quality update denied because lead is assigned to another user',
+      );
+      return respond(
         { error: 'Forbidden: lead not assigned to you' },
         { status: 403 }
       );
@@ -73,13 +84,13 @@ export async function POST(
       .eq('lead_id', leadId);
 
     if (contactError) {
-      return NextResponse.json(
+      return respond(
         { error: 'Unable to verify contact records' },
         { status: 500 }
       );
     }
     if (!(contacts ?? []).some(isCompleteContact)) {
-      return NextResponse.json(
+      return respond(
         { error: 'At least one complete contact record is required before setting Lead Quality' },
         { status: 409 }
       );
@@ -93,7 +104,7 @@ export async function POST(
       .select('id, quality, poor_reason, updated_at')
       .single();
     if (updateError || !updated) {
-      return NextResponse.json(
+      return respond(
         { error: 'Failed to update quality', detail: updateError?.message },
         { status: 500 }
       );
@@ -105,7 +116,7 @@ export async function POST(
     try {
       const { error: eventErr } = await supabase.from('business_events').insert({
         lead_id: leadId,
-        user_id: profile.userId,
+        user_id: context.user.id,
         event_type: 'quality_checked',
         event_data: { quality, poor_reason },
         created_at: new Date().toISOString(),
@@ -128,7 +139,7 @@ export async function POST(
       eventError = (e as Error).message;
     }
 
-    return NextResponse.json({
+    return respond({
       success: true,
       leadId: updated.id,
       quality: updated.quality,
@@ -138,6 +149,18 @@ export async function POST(
       ...(eventError && process.env.NODE_ENV !== 'production' ? { eventError } : {}),
     });
   } catch (e) {
+    if (e instanceof RequestAuthError) {
+      logger.warn(
+        {
+          request_id,
+          operation: 'quality_update',
+          lead_id: leadId,
+          reason: e.code,
+        },
+        'quality update authentication boundary rejected request',
+      );
+      return requestAuthErrorResponse(e);
+    }
     logger.error(
       {
         err: e,

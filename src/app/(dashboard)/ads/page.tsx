@@ -12,6 +12,9 @@ import {
 import Link from "next/link";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
+const VALID_QUALITIES = new Set(["good", "normal"]);
+const QUOTED_STAGES = new Set(["quotation_submitted", "negotiation", "pending_decision"]);
+
 interface Lead {
   id: string; customer_name: string | null;
   source: string; stage: string; final_status: string | null; quotation_value: number | null;
@@ -40,7 +43,10 @@ function fmtAED(v: number | null | undefined): string {
 }
 
 export default function AdsPage() {
-  const { loading: roleLoading, blocked, role: userRole } = useRequireRole(["admin", "boss"]);
+  // operator included: /api/ads/leads answers every non-sales role, and the
+  // sidebar offers this link to operator, so excluding them here was a bounce
+  // to /dashboard rather than a decision.
+  const { loading: roleLoading, blocked, role: userRole } = useRequireRole(["admin", "boss", "operator"]);
   const { t } = useLanguage();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +82,9 @@ export default function AdsPage() {
 
     const getKey = (l: Lead): string => {
       switch (viewMode) {
-        case "source": return l.source_platform || l.source || "other";
+        // source_platform is "meta" on imported rows and empty on older ones;
+        // keying on it split one channel ("ins") into two identical-looking rows.
+        case "source": return l.source || l.source_platform || "other";
         case "campaign": return l.campaign_name || l.utm_campaign || l.meta_campaign || "uncategorized";
         case "adset": return l.adset_name || "uncategorized";
         case "ad": return l.ad_name || "uncategorized";
@@ -88,10 +96,15 @@ export default function AdsPage() {
       const key = getKey(l);
       if (!groups[key]) groups[key] = { total: 0, valid: 0, quoted: 0, won: 0, value: 0 };
       groups[key].total++;
-      if (l.quality === "valid") groups[key].valid++;
-      if (l.stage === "quotation_submitted" || l.stage === "negotiation" || l.stage === "pending_decision" || l.final_status === "won") groups[key].quoted++;
-      if (l.final_status === "won") groups[key].won++;
-      groups[key].value += l.quotation_value || 0;
+      // Lead quality is good/normal/poor/pending in the database; "valid" never
+      // occurs, which kept this column at 0 for every source.
+      if (VALID_QUALITIES.has(l.quality ?? "")) groups[key].valid++;
+      const won = l.final_status === "won" || l.stage === "won";
+      if (won || QUOTED_STAGES.has(l.stage ?? "")) groups[key].quoted++;
+      if (won) groups[key].won++;
+      // Only count money that is actually quoted or won, so the amount column
+      // matches the quoted/won counts beside it.
+      if (won || QUOTED_STAGES.has(l.stage ?? "")) groups[key].value += l.quotation_value || 0;
     }
 
     return Object.entries(groups)

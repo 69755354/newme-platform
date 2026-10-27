@@ -13,7 +13,7 @@
 第二步：授权我们的应用
 ============================================
 打开这个链接：
-https://www.facebook.com/v22.0/dialog/oauth?client_id=1612447067166445&redirect_uri=https://app.newme.ae/api/meta/oauth-callback&scope=ads_read&response_type=code
+https://app.newme.ae/api/meta/oauth-start
 
 点击「继续」或「授权」，允许读取广告数据即可。
 只需要 ads_read（只读）权限，我们不会动你的广告设置。

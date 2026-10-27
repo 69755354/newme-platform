@@ -11,7 +11,7 @@ async function authorize() {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) redirect("/login");
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-  if (!profile || !["admin", "boss", "sales"].includes(profile.role)) redirect("/dashboard");
+  if (!profile?.role || !["admin", "boss", "sales"].includes(profile.role)) redirect("/dashboard");
   return { user, role: profile.role };
 }
 

@@ -121,15 +121,14 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
     if (!selectedLeadId) return;
     setSaving(true);
     try {
-      const quoteNo = `Q-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
       const devicesPayload = Object.entries(quantities).map(([id, qty]) => {
         const d = findDevice(id);
         return { device_id: id, name: d?.name || id, price: d?.price || 0,
           quantity: qty, unit: d?.unit || "pcs", subtotal: (d?.price || 0) * qty };
       });
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from("quotations").insert({
-        lead_id: selectedLeadId, quote_no: quoteNo, version: 1,
+      const { data: quote, error } = await supabase.from("quotations").insert({
+        lead_id: selectedLeadId, quote_no: "ALLOCATED_BY_DATABASE", version: 1,
         subtotal: calc.deviceSubtotal, discount_rate: discountRate,
         discount_amount: calc.discountAmount, tax_rate: 5, tax_amount: calc.vat,
         total_amount: calc.total, currency: "AED", status: "draft",
@@ -137,13 +136,13 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
         created_by: user?.id || null,
 notes: `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${area}㎡\n${t("quotes.calc.installLabor")} (30%): ${calc.installLabor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")} (12%): ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")} (8%): ${calc.pm.toFixed(2)} AED`,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      });
-      if (error) { console.error("Save error:", error); toast.error(t("quotes.calc.saveFailed") + error.message); return; }
+      }).select("id, quote_no").single();
+      if (error || !quote?.quote_no) { console.error("Save error:", error); toast.error(t("quotes.calc.saveFailed") + (error?.message || "Missing database quote number")); return; }
       // Notify about new quotation
-      import("@/lib/notify").then(({ notify }) => {
-        notify({ type: "quote_created", quote_id: quoteNo, lead_id: selectedLeadId, quote_no: quoteNo });
-      }).catch(() => {});
-      setSavedQuoteId(quoteNo); onSaved?.(); onOpenChange(false);
+      void import("@/lib/notify")
+        .then(({ notify }) => notify({ type: "quote_created", quote_id: quote.id, lead_id: selectedLeadId, quote_no: quote.quote_no }))
+        .catch((notifyError) => console.error("quote_notification_failed", notifyError));
+      setSavedQuoteId(quote.id); onSaved?.(); onOpenChange(false);
     } finally { setSaving(false); }
   };
 

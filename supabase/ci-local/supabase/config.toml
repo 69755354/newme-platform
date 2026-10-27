@@ -1,0 +1,11 @@
+project_id = "newme-ci-task-followup-v1"
+
+[db]
+port = 56432
+shadow_port = 56430
+major_version = 17
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+

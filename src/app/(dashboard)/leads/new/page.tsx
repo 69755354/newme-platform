@@ -29,7 +29,9 @@ export default function NewLeadPage() {
     e.preventDefault();
     setSaving(true);
     const authResponse = await fetch("/api/auth/me", { cache: "no-store" });
-    const authContext = authResponse.ok ? await authResponse.json() : null;
+    const authContext: { userId?: string; role?: string; isActive?: boolean } | null = authResponse.ok
+      ? await authResponse.json()
+      : null;
     const userId = typeof authContext?.userId === "string" ? authContext.userId : null;
     const assigneeId = userId && isLeadTransferCandidate({
       role: authContext?.role,
@@ -58,15 +60,18 @@ export default function NewLeadPage() {
     }
 
     if (data) {
-      if (form.notes) {
+      if (form.notes && userId) {
         const { error: newLeadNoteErr } = await supabase.from("follow_up_logs").insert({
           lead_id: data.id, contact_type: "note", summary: form.notes,
+          contact_time: new Date().toISOString(),
           user_id: userId,
           no_answer: false,
         });
         if (newLeadNoteErr) {
           toast.error("Note save failed");
         }
+      } else if (form.notes) {
+        toast.warning("Lead created but note requires a signed-in user");
       }
       // P0-7: 建 lead 时同步写一条跟进 task，确保 Workbench 今日待办立即可见
       const { error: taskErr } = await createFollowUpTask(supabase, {
@@ -78,9 +83,9 @@ export default function NewLeadPage() {
       });
       if (taskErr) toast.warning("Lead created but follow-up task creation failed");
       // Notify admins about new lead
-      import("@/lib/notify").then(({ notify }) => {
-        notify({ type: "lead_created", lead_id: data.id, customer_name: form.customer_name || "Unknown" });
-      });
+      void import("@/lib/notify")
+        .then(({ notify }) => notify({ type: "lead_created", lead_id: data.id, customer_name: form.customer_name || "Unknown" }))
+        .catch((error) => console.error("lead_notification_failed", error));
       // Meta Pixel: track Lead conversion
       if (typeof window !== "undefined" && (window as any).fbq) {
         (window as any).fbq("track", "Lead", {

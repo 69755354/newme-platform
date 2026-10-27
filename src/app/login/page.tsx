@@ -7,36 +7,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LanguageProvider, useLanguage } from "@/lib/i18n/LanguageContext";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-function clearBrowserSession() {
-  localStorage.removeItem("sb-vfopmpxlhwzpxqegayew-auth-token");
-  for (const name of [
-    "sb-vfopmpxlhwzpxqegayew-auth-token",
-    "sb-vfopmpxlhwzpxqegayew-refresh-token",
-    "sb-access-token",
-    "sb-refresh-token",
-  ]) {
-    document.cookie = `${name}=; path=/; max-age=0; SameSite=Strict; Secure`;
-  }
-}
-
-async function revokeRejectedSession(accessToken: string) {
-  try {
-    await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
-      method: "POST",
-      headers: {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${accessToken}`,
-      },
-    });
-  } catch {
-    // The server-side profile gate still rejects the token if Auth logout fails.
-  }
-  clearBrowserSession();
-}
+/**
+ * Sign-in is a single same-origin request to POST /api/auth/login.
+ *
+ * It used to be three serial round trips from the browser: a password grant sent
+ * straight to Supabase Auth (leaving the CDN edge and paying a cold TLS
+ * handshake to the Auth region), then /api/auth/session to exchange the tokens
+ * for cookies, then /api/auth/me to check the profile was active. The server now
+ * does all three over warm origin-to-Supabase connections, so the browser pays
+ * one round trip on a connection it already has open.
+ *
+ * The browser therefore never handles a raw token, and a rejected profile never
+ * receives a cookie at all: the server revokes its token before responding.
+ */
 
 function LoginPageInner() {
   const [email, setEmail] = useState("");
@@ -47,81 +32,47 @@ function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  function messageFor(code: unknown): string {
+    switch (code) {
+      case "rate_limited":
+        return t("login.rateLimited");
+      case "inactive_account":
+        return t("login.inactiveAccount");
+      case "auth_unavailable":
+        return t("login.unavailable");
+      default:
+        // Never distinguish a wrong password from an unknown address.
+        return t("login.failed");
+    }
+  }
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
 
     try {
-      const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      const res = await fetch("/api/auth/login", {
         method: "POST",
-        headers: {
-          "apikey": SUPABASE_ANON_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-          gotrue_meta_security: {},
-        }),
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
       });
+      const data = await res.json().catch(() => null);
 
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        setError(data.error_description || data.msg || t("login.failed"));
+      if (!res.ok || data?.ok !== true || data?.isActive !== true) {
+        setError(messageFor(data?.error));
         setLoading(false);
         return;
       }
 
-      // Supabase Auth may still issue a token for a profile deactivated in the
-      // application database. Validate the token at the server boundary before
-      // persisting it in browser storage or cookies.
-      let activeCheck: Response;
-      try {
-        activeCheck = await fetch("/api/auth/me", {
-          headers: { "Authorization": `Bearer ${data.access_token}` },
-        });
-      } catch (error) {
-        await revokeRejectedSession(data.access_token);
-        throw error;
-      }
-      const activeData = await activeCheck.json().catch(() => null);
-      if (!activeCheck.ok || activeData?.isActive !== true) {
-        await revokeRejectedSession(data.access_token);
-        setError(t("login.failed"));
-        setLoading(false);
-        return;
-      }
-
-      // Store session in localStorage for client-side createClient()
-      localStorage.setItem("sb-vfopmpxlhwzpxqegayew-auth-token", JSON.stringify({
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-        expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
-        user: data.user,
-      }));
-
-      // @supabase/ssr middleware uses default cookieEncoding="raw"
-      // Must be plain JSON string — base64 encoded values cause SSR auth to fail
-      const cookiePayload = JSON.stringify({
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-        expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
-      });
-
-      // Primary format for @supabase/ssr (createServerClient / middleware)
-      document.cookie = `sb-vfopmpxlhwzpxqegayew-auth-token=${cookiePayload}; path=/; max-age=${data.expires_in}; SameSite=Strict; Secure`;
-      document.cookie = `sb-vfopmpxlhwzpxqegayew-refresh-token=${data.refresh_token}; path=/; max-age=2592000; SameSite=Strict; Secure`;
-      // Legacy format for backward compat (middleware fallback)
-      document.cookie = `sb-access-token=${data.access_token}; path=/; max-age=${data.expires_in}; SameSite=Strict; Secure`;
-      document.cookie = `sb-refresh-token=${data.refresh_token}; path=/; max-age=2592000; SameSite=Strict; Secure`;
-
-      const redirectTo = searchParams.get("redirect") || "/dashboard";
-      router.push(redirectTo);
+      // Same-origin paths only. `redirect` is attacker-supplied, and an open
+      // redirect on the sign-in page hands a freshly authenticated user to a
+      // credential-harvesting page on the strength of our own domain.
+      router.push(safeRedirectPath(searchParams.get("redirect")));
       router.refresh();
-    } catch (err: any) {
-      setError(err.message || t("login.networkError"));
+    } catch {
+      setError(t("login.networkError"));
       setLoading(false);
     }
   }
@@ -143,6 +94,7 @@ function LoginPageInner() {
               <Input
                 id="email"
                 type="email"
+                autoComplete="username"
                 placeholder="you@newme.ae"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -155,6 +107,7 @@ function LoginPageInner() {
               <Input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

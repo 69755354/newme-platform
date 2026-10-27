@@ -1,0 +1,68 @@
+{
+  "_comment": "Schema-only baseline provenance. No application table rows, sequence current values, or credential values are captured.",
+  "format": "newme-public-schema-baseline-v1",
+  "capture": {
+    "captured_at": "2026-08-14T16:03:09.258173+00:00",
+    "generator": "authenticated Supabase connector read-only pg_catalog capture",
+    "project_id": "vfopmpxlhwzpxqegayew",
+    "server_version_num": "170006",
+    "scope": "public-application-schema-v1",
+    "production_history_watermark": "20260805202917",
+    "production_history_row_count": 100,
+    "production_history_rows_sha256": "82377a9a186dd1c7c8a6d247e4e64ecc1c5641f6bd828745bfdb01f9982aedea",
+    "history_reconciliation_sha256": "ad34341f98ba242b54f44777a884371bb41c3d8281a1a94524fa7aff19cf99d0"
+  },
+  "source": {
+    "capture_query": "supabase/replay/capture-production-schema-baseline.sql",
+    "capture_query_sha256": "7c5c9bcad1c9f39a0e0441b6eeaecb057d1d560793cd0be8e954ac40cbc642ba",
+    "body_sha256": "6624a11f81ac4103dc187cc43ab8607a7e7e2f019df74f7a0dd3fa2a1ed7d9aa",
+    "body_bytes": 316219
+  },
+  "artifact": {
+    "path": "supabase/replay/production-schema-baseline.sql",
+    "sha256": "d190e0a6c67bb856cf3423e6f2678d87c91730ff07a8af4b980203d9abf0dcb2",
+    "bytes": 316954
+  },
+  "inventory": {
+    "tables": 37,
+    "columns": 535,
+    "views": 13,
+    "functions": 44,
+    "constraints": 164,
+    "non_constraint_indexes": 134,
+    "triggers": 18,
+    "policies": 264,
+    "comments": 6
+  },
+  "integrity": {
+    "preflight_issues": [],
+    "sensitive_definition_count": 0,
+    "top_level_statement_count": 2408,
+    "allowed_top_level_statement_counts": {
+      "ALTER": 238,
+      "COMMENT": 6,
+      "CREATE": 510,
+      "GRANT": 1266,
+      "RESET": 2,
+      "REVOKE": 384,
+      "SET": 2
+    },
+    "application_table_rows_captured": false,
+    "sequence_current_values_captured": false
+  },
+  "excluded_managed_boundary": [
+    "auth",
+    "extensions",
+    "graphql",
+    "graphql_public",
+    "net",
+    "pgbouncer",
+    "pgsodium",
+    "pgsodium_masks",
+    "realtime",
+    "storage",
+    "supabase_functions",
+    "supabase_migrations",
+    "vault"
+  ]
+}

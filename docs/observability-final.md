@@ -62,6 +62,7 @@
 - 脚本路径: `/home/ubuntu/.hermes/scripts/`（禁止 `/opt/newme/`)
 - 日志路径: `/home/ubuntu/hermes-logs/`（禁止 `/tmp/`, 禁止 `/var/log/newme/`)
 - Hermes 拓扑: 三服务 (`hermes-bridge`, `hermes-dashboard`, `hermes-worker`)
+  - 被 `systemctl mask` 的 unit 视为运维声明“该服务不得运行”，探针跳过它的存活判据（依旧行为则永久假阳性，拖死每次发布的 post-switch 健康门）；仅 `masked`/`masked-runtime` 算声明，`disabled` 与 unit 缺失仍然告警。
 - Crontab: `ubuntu` 用户（禁止 root）
 - Sentry: Org=`newme-o4`, Project=`javascript-nextjs`
 

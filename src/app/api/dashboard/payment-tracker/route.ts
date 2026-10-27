@@ -1,6 +1,8 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { applyPrivateNoStore } from "@/lib/request-auth-context";
+import { countsAsCash } from "@/lib/payment-state.mjs";
 
 /**
  * GET /api/dashboard/payment-tracker
@@ -15,7 +17,19 @@ import { createServerSupabase } from "@/lib/supabase-server";
  *                   seq, amount, due_date, status, overdue_days, paid_amount }[]
  *   perRep: { user_id, full_name, signed_amount, collected, collection_rate, overdue_count }[]
  * }
+ *
+ * Round-4 finding R5. This route reads payments through the contracts embed rather
+ * than through `from("payments")`, which is why it survived the first pass over the
+ * money reads — and it was the worst of them: the embed did not select `voided_at`
+ * at all, so `if (p.confirmed)` was not merely a looser predicate than the ledger's
+ * `confirmed = true and voided_at is null`, it was the only predicate the row could
+ * express. Every voided payment counted as collected money in `summary.collected`,
+ * in `outstanding` (which is derived from it), and in each rep's `collected` and
+ * `collection_rate` — so reversing a payment made a salesperson's collection rate go
+ * up. The predicate now comes from src/lib/payment-state.mjs, and the response takes
+ * the same no-store posture as every other money-derived read.
  */
+export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
@@ -46,7 +60,7 @@ export async function GET(request: NextRequest) {
         party_a_name, lead_id,
         leads!inner(customer_name, assigned_to),
         installment_plans(id, seq, amount, due_date, status, paid_amount),
-        payments(id, amount, confirmed, payment_date)
+        payments(id, amount, confirmed, voided_at, payment_date)
       `)
       .order("created_at", { ascending: false });
 
@@ -77,9 +91,9 @@ export async function GET(request: NextRequest) {
       const amount = contract.contract_amount || 0;
       totalContractValue += amount;
 
-      // Collected: sum of confirmed payments
+      // Collected: the payments the ledger counts — confirmed and not voided.
       for (const p of contract.payments || []) {
-        if (p.confirmed) {
+        if (countsAsCash(p)) {
           collected += p.amount || 0;
         }
       }
@@ -162,7 +176,7 @@ export async function GET(request: NextRequest) {
       repMap[sid].signed += contract.contract_amount || 0;
 
       for (const p of contract.payments || []) {
-        if (p.confirmed) {
+        if (countsAsCash(p)) {
           repMap[sid].collected += p.amount || 0;
         }
       }
@@ -190,17 +204,19 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.signed_amount - a.signed_amount);
 
     // ─── Response ───
-    return NextResponse.json({
-      summary: {
-        totalContractValue: Math.round(totalContractValue),
-        collected: Math.round(collected),
-        outstanding: Math.round(totalContractValue - collected),
-        overdue: Math.round(overdueTotal),
-        dueThisWeek: Math.round(dueThisWeekTotal),
-      },
-      installments: allInstallments,
-      perRep,
-    });
+    return applyPrivateNoStore(
+      NextResponse.json({
+        summary: {
+          totalContractValue: Math.round(totalContractValue),
+          collected: Math.round(collected),
+          outstanding: Math.round(totalContractValue - collected),
+          overdue: Math.round(overdueTotal),
+          dueThisWeek: Math.round(dueThisWeekTotal),
+        },
+        installments: allInstallments,
+        perRep,
+      }),
+    );
   } catch (err: any) {
     const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
     console.error("[payment-tracker] Error:", err);

@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { resolveReleaseScript } from "@/lib/release-script";
+import { EXCEL_SOURCE } from "@/lib/meta-ads-insights.mjs";
 
 /**
  * POST /api/dashboard/ads-roi/import
@@ -26,17 +28,35 @@ export async function POST(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    if (!profile || !["boss", "admin"].includes(profile.role)) {
+    if (!profile?.role || !["boss", "admin"].includes(profile.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Parse the Excel using the Python script
+    // Parse the Excel using the Python script that ships inside this release;
+    // see resolveReleaseScript for why the absolute /home/ubuntu path was wrong.
+    const parser = resolveReleaseScript("scripts/parse-ad-spend.py");
+    if (!parser) {
+      console.error("[Ads Import] parser missing from release at", process.cwd());
+      return NextResponse.json({ error: "Parser unavailable" }, { status: 500 });
+    }
+
     const result = await new Promise<string>((resolve, reject) => {
       execFile(
         "python3",
-        ["/home/ubuntu/newme-platform/scripts/parse-ad-spend.py"],
+        [parser],
         {
-          env: { ...process.env },
+          // Only what parse-ad-spend.py and the cos-download.py it shells out to
+          // actually read. `{ ...process.env }` handed the subprocess
+          // SUPABASE_SERVICE_ROLE_KEY and every other runtime secret — the same
+          // defect fixed in /api/cos/download-url as F-25, still present here.
+          env: {
+            PATH: process.env.PATH ?? "",
+            COS_SECRET_ID: process.env.COS_SECRET_ID ?? "",
+            COS_SECRET_KEY: process.env.COS_SECRET_KEY ?? "",
+            COS_BUCKET: process.env.COS_BUCKET ?? "",
+            COS_REGION: process.env.COS_REGION ?? "",
+            NODE_ENV: process.env.NODE_ENV,
+          },
           timeout: 120_000, // 2 minutes for download + parse
           maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large Excel
           encoding: "utf-8",
@@ -66,6 +86,58 @@ export async function POST(request: NextRequest) {
         { error: rows[0].error },
         { status: 500 }
       );
+    }
+
+    // One spend_date, one source.
+    //
+    // Both readers of this table — src/app/api/dashboard/ads-roi/route.ts and
+    // src/app/api/analytics/summary/route.ts — sum every row in ad_spend without
+    // filtering on source, which is correct only while no day is described twice.
+    // A day covered by both this Excel export and /api/meta/ads-sync would be
+    // counted twice: total spend reads high, cost per lead reads low, and nothing
+    // in the response says so. ads-sync refuses to write a window that already
+    // holds rows from another source; this is the same fence facing the other way.
+    // It asks for every source that is not this one rather than naming the API
+    // prefix: scripts/import-ads-manager-export.mjs is a third writer with a third
+    // namespace, and a fence that lists its siblings goes stale the moment one is
+    // added.
+    // Refusing the import is recoverable in a minute; a silently doubled number is
+    // not, because afterwards there is no way to tell which rows were the copy.
+    const incomingDates = new Set(
+      (rows as { spend_date?: unknown }[])
+        .map((r) => (typeof r.spend_date === "string" ? r.spend_date.slice(0, 10) : ""))
+        .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)),
+    );
+    if (incomingDates.size > 0) {
+      const ordered = [...incomingDates].sort();
+      const { data: owned, error: ownedErr } = await supabase
+        .from("ad_spend")
+        .select("spend_date, source")
+        .neq("source", EXCEL_SOURCE)
+        .gte("spend_date", ordered[0])
+        .lte("spend_date", ordered[ordered.length - 1]);
+
+      // A failed check is not an absent conflict: without this the fence would
+      // fall open exactly when the database is unhappy.
+      if (ownedErr) {
+        console.error("[Ads Import] source overlap check failed:", ownedErr);
+        return NextResponse.json({ error: "Overlap check failed" }, { status: 500 });
+      }
+
+      const foreign = (owned ?? []).filter((r) => incomingDates.has(String(r.spend_date).slice(0, 10)));
+      const clash = [...new Set(foreign.map((r) => String(r.spend_date).slice(0, 10)))].sort();
+      if (clash.length > 0) {
+        return NextResponse.json(
+          {
+            error: "days_already_covered_by_another_source",
+            days: clash.slice(0, 20),
+            day_count: clash.length,
+            sources: [...new Set(foreign.map((r) => String(r.source)))].sort(),
+            next: "retire_the_other_source_rows_for_those_days_or_trim_the_export",
+          },
+          { status: 409 },
+        );
+      }
     }
 
     // Insert rows in batches of 500

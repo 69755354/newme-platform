@@ -1,6 +1,9 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { applyPrivateNoStore } from "@/lib/request-auth-context";
+
+export const dynamic = "force-dynamic";
 
 // ─── GET /api/dashboard/sales-load ───
 export async function GET(request: NextRequest) {
@@ -11,7 +14,7 @@ export async function GET(request: NextRequest) {
   // 1. Authenticate
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return applyPrivateNoStore(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
   }
 
   // 2. Get role
@@ -113,14 +116,14 @@ export async function GET(request: NextRequest) {
       const underloaded = repStats.filter((r: any) => r.totalLeads < avgLoad);
       const imbalanceDetected = overloaded.length > 0 && underloaded.length > 0;
 
-      return NextResponse.json({
+      return applyPrivateNoStore(NextResponse.json({
         repStats,
         avgLoad: Math.round(avgLoad * 10) / 10,
         imbalanceDetected,
         overloaded: overloaded.map((r: any) => ({ id: r.id, name: r.name, totalLeads: r.totalLeads })),
         underloaded: underloaded.map((r: any) => ({ id: r.id, name: r.name, totalLeads: r.totalLeads })),
         isCEO: true,
-      });
+      }));
     } else {
       // ── Sales view: my own stats ──
       const { data: myLeads } = await supabase
@@ -145,16 +148,16 @@ export async function GET(request: NextRequest) {
 
       const followupRate = total > 0 ? Math.round((contactedCount / total) * 100) : 0;
 
-      return NextResponse.json({
+      return applyPrivateNoStore(NextResponse.json({
         totalLeads: total,
         stageDistribution: stageDist,
         followupRate,
         overdueCount,
         isCEO: false,
-      });
+      }));
     }
   } catch (err: any) {
     console.error("Sales load API error:", err);
-    return NextResponse.json({ error: "Failed to fetch sales load data" }, { status: 500 });
+    return applyPrivateNoStore(NextResponse.json({ error: "Failed to fetch sales load data" }, { status: 500 }));
   }
 }

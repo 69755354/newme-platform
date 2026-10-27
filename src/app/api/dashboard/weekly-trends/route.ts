@@ -1,6 +1,21 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { applyPrivateNoStore } from "@/lib/request-auth-context";
+
+// R5: the collection curve below is derived from payments, so this read is
+// force-dynamic and private/no-store like every other money-derived read.
+export const dynamic = "force-dynamic";
+
+function dateInRange(value: string | null, start: string, end: string): boolean {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date >= new Date(start) && date <= new Date(end);
+}
+
+function finiteAmount(value: number | null): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
 
 /**
  * GET /api/dashboard/weekly-trends
@@ -99,12 +114,21 @@ export async function GET(request: NextRequest) {
     if (contractsErr) throw contractsErr;
 
     // ─── Fetch payments (for collected amount) ───
+    //
+    // R5: `confirmed = true` alone was a second, looser definition of cash. Every
+    // derived total in the database counts `confirmed = true and voided_at is null`
+    // (src/lib/payment-state.mjs names that predicate for JavaScript), so a voided
+    // payment whose `confirmed` flag was set by a direct compat-mode write counted
+    // as collected here and not in kpi_targets.actual_amount — two collection
+    // curves for one month. The set is selected in SQL, so the predicate belongs in
+    // SQL too; nothing below re-derives it from the row.
     let paymentsQuery = supabase
       .from("payments")
       .select("id, amount, confirmed, payment_date, contract_id")
       .gte("payment_date", rangeStart)
       .lte("payment_date", rangeEnd)
-      .eq("confirmed", true);
+      .eq("confirmed", true)
+      .is("voided_at", null);
 
     let payments: any[] = [];
 
@@ -132,39 +156,33 @@ export async function GET(request: NextRequest) {
     // ─── Build weekly data ───
     const weeklyData = weeks.map((week) => {
       // New leads in this week
-      const newLeads = (leads || []).filter((l) => {
-        const created = new Date(l.created_at);
-        return created >= new Date(week.start) && created <= new Date(week.end);
-      });
+      const newLeads = (leads || []).filter((lead) =>
+        dateInRange(lead.created_at, week.start, week.end)
+      );
 
       // Won leads in this week (using leads table)
       const wonLeads = newLeads.filter((l) => l.final_status === "won");
 
       // Signed amount from contracts created this week
-      const weekContracts = (contracts || []).filter((c) => {
-        const created = new Date(c.created_at);
-        return (
-          created >= new Date(week.start) &&
-          created <= new Date(week.end) &&
-          c.status !== "terminated"
-        );
-      });
-
-      const signedAmount = weekContracts.reduce(
-        (sum, c) => sum + (parseFloat(c.contract_amount as any) || 0),
-        0
+      const weekContracts = (contracts || []).filter((contract) =>
+        contract.status !== "terminated" &&
+        dateInRange(contract.created_at, week.start, week.end)
       );
+
+      const signedAmount = weekContracts.reduce((sum, contract) => {
+        const amount = finiteAmount(contract.contract_amount);
+        return amount === null ? sum : sum + amount;
+      }, 0);
 
       // Collection amount from payments confirmed this week
-      const weekPayments = (payments || []).filter((p) => {
-        const paid = new Date(p.payment_date);
-        return paid >= new Date(week.start) && paid <= new Date(week.end);
-      });
-
-      const collectedAmount = weekPayments.reduce(
-        (sum, p) => sum + (parseFloat(p.amount as any) || 0),
-        0
+      const weekPayments = (payments || []).filter((payment) =>
+        dateInRange(payment.payment_date, week.start, week.end)
       );
+
+      const collectedAmount = weekPayments.reduce((sum, payment) => {
+        const amount = finiteAmount(payment.amount);
+        return amount === null ? sum : sum + amount;
+      }, 0);
 
       const newCount = newLeads.length;
       const wonCount = wonLeads.length;
@@ -219,10 +237,12 @@ export async function GET(request: NextRequest) {
       ),
     };
 
-    return NextResponse.json({
-      weeks: weeklyData,
-      wow_comparison: wowComparison,
-    });
+    return applyPrivateNoStore(
+      NextResponse.json({
+        weeks: weeklyData,
+        wow_comparison: wowComparison,
+      }),
+    );
   } catch (err: any) {
     console.error("[Weekly Trends] Error:", err);
     const message =

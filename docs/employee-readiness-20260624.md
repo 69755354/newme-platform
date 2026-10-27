@@ -4,14 +4,21 @@
 
 ## 账号状态
 
+> **2026-08-12 · 四审 A0 涉及的凭据已从本文件删除。** 本表原先以明文列出六个生产
+> 身份的登录口令（其中五个共用同一个口令），角色覆盖 admin / boss / sales。删除只
+> 是把它们从**工作树**移除；这些值仍在本仓库的公开 git 历史中，因此必须一律视为
+> **已泄露且仍然有效**，直到轮换完成。轮换、身份封禁与会话吊销都是需要单独授权的
+> 生产动作，关闭条件见 `supabase/preflight/f02-credential-cutover.md` §7；防复发门禁
+> 见 `scripts/check-published-credentials.mjs`。
+
 | Email | Name | Role | Password | Status |
 |-------|------|------|----------|--------|
-| dev@newme.ae | Dev User | admin | dev123456 | ✅ |
-| admin@newme.ae | SAM | admin | ErtTest2024! | ✅ |
-| tanya@newme.ae | Tanya | boss | ErtTest2024! | ✅ |
-| ayana@newme.ae | Ayana | admin | ErtTest2024! | ✅ |
-| faheem@newme.ae | Faheem | sales | ErtTest2024! | ✅ |
-| mohamed@newme.ae | Mohamed | sales | ErtTest2024! | ✅ |
+| dev@newme.ae | Dev User | admin | [REDACTED — 见上方说明] | ✅ |
+| admin@newme.ae | SAM | admin | [REDACTED — 见上方说明] | ✅ |
+| tanya@newme.ae | Tanya | boss | [REDACTED — 见上方说明] | ✅ |
+| ayana@newme.ae | Ayana | admin | [REDACTED — 见上方说明] | ✅ |
+| faheem@newme.ae | Faheem | sales | [REDACTED — 见上方说明] | ✅ |
+| mohamed@newme.ae | Mohamed | sales | [REDACTED — 见上方说明] | ✅ |
 
 ## 验证结果
 
@@ -29,7 +36,7 @@
 
 ## 员工通知
 
-今天临时密码：ErtTest2024!
+今天临时密码：[REDACTED — 四审 A0，见上方说明]
 登录后请立即修改密码
 如无法修改，联系 admin
 

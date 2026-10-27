@@ -50,8 +50,8 @@
 50|These are SYSTEM accounts — may not map 1:1 to operating team.
 51|| Email | Password | Role | verified |
 52||-------|----------|------|----------|
-53|| tanya@newme.ae | 654321 | Boss | unverified |
-54|| ayana@newme.ae | 123456 | Operator | unverified |
+53|| tanya@newme.ae | — | Boss | unverified |
+54|| ayana@newme.ae | — | Operator | unverified |
 55|| mohamed@newme.ae | — | Sales | unverified |
 56|| faheem@newme.ae | — | Sales | unverified |
 57|| assem@newme.ae | — | Sales | unverified |

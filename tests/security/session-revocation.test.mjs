@@ -45,6 +45,7 @@ function createNextServerMock() {
     constructor(body, init = {}) {
       this.body = body;
       this.status = init.status ?? 200;
+      this.headers = new Headers(init.headers);
       this.cookies = { set: () => {} };
     }
 
@@ -112,7 +113,8 @@ test("inactive users are denied at the direct protected lead-stage API boundary"
   assert.equal(isActiveProfile({ is_active: true }), true);
   assert.match(auth, /select\(["']role, is_active["']\)/);
   assert.match(auth, /isActiveProfile\(profile\)/);
-  assert.match(route, /if \(!profile\) return NextResponse\.json\(\{ error: "Unauthorized" \}, \{ status: 401 \}\)/);
+  assert.match(route, /getRequestAuthContext\(req\)/);
+  assert.match(route, /requestAuthErrorResponse\(error\)/);
 });
 
 test("the server proxy denies inactive sessions before protected APIs or pages", async () => {
@@ -122,50 +124,138 @@ test("the server proxy denies inactive sessions before protected APIs or pages",
   assert.match(proxy, /pathname\.startsWith\(["']\/api\//);
   assert.match(proxy, /status: 401/);
   assert.match(proxy, /reason["']?, ["']inactive_account["']/);
-  assert.match(proxy, /const PUBLIC_API_PATHS = new Set\(\[\s*["']\/api\/auth\/logout["']\s*,\s*["']\/api\/auth\/me["']\s*,?\s*\]\)/);
-  assert.doesNotMatch(proxy, /\/api\/(?:health|meta\/oauth-callback|monitoring\/report|leads\/meta-capi|auth\/dev-login|dev\/setup)/);
+  const publicSet = proxy.slice(
+    proxy.indexOf("const PUBLIC_API_PATHS = new Set(["),
+    proxy.indexOf("]);", proxy.indexOf("const PUBLIC_API_PATHS = new Set([")),
+  );
+  assert.notEqual(publicSet, "", "PUBLIC_API_PATHS must be a literal set");
+  // Exact allowlist. /api/auth/login is pre-authentication by definition; it
+  // enforces its own origin check, rate limit and active-profile gate.
+  assert.deepEqual(publicSet.match(/["'][^"']+["']/g).map((v) => v.slice(1, -1)), [
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/auth/me",
+    "/api/public/leads",
+  ]);
+  assert.match(proxy, /EXTERNAL_AUTHORIZED_API_PATHS/);
+  assert.match(proxy, /"\/api\/leads\/meta-capi"/);
+  assert.match(proxy, /EXTERNAL_AUTHORIZED_API_PREFIXES = \["\/api\/cron\/"\]/);
   assert.ok(proxy.indexOf("isActiveProfile(profile)") < proxy.indexOf("Track activity"));
 });
 
-test("login and the dashboard guard require an active /api/auth/me result", async () => {
-  const [login, authMe, hook] = await Promise.all([
+test("login and the dashboard guard require an active profile", async () => {
+  const [login, loginRoute, authMe, hook, identity] = await Promise.all([
     read("src/app/login/page.tsx"),
+    read("src/app/api/auth/login/route.ts"),
     read("src/app/api/auth/me/route.ts"),
     read("src/hooks/useAuthRedirect.ts"),
+    read("src/lib/session-identity.ts"),
   ]);
 
-  assert.match(login, /\/api\/auth\/me/);
-  assert.match(login, /Authorization["']\s*:\s*[`"']Bearer/);
-  assert.match(login, /revokeRejectedSession\(data\.access_token\)/);
-  assert.match(login, /\/auth\/v1\/logout/);
+  // The active-profile gate moved from the browser into the login endpoint,
+  // where it runs before any cookie is issued instead of after.
+  assert.match(login, /data\?\.isActive !== true/);
+  assert.doesNotMatch(login, /clearStaleSession|fetch\(["']\/api\/auth\/logout["']/);
+  assert.match(loginRoute, /isActiveProfile\(profile\)/);
+  assert.match(loginRoute, /Authorization: `Bearer \$\{accessToken\}`/);
+  assert.match(loginRoute, /revokeIssuedToken\(supabaseUrl, anonKey, accessToken\)/);
+  assert.match(loginRoute, /\/auth\/v1\/logout/);
+  // Cookies must be issued only after the gate, never before it.
+  assert.ok(
+    loginRoute.indexOf("isActiveProfile(profile)") < loginRoute.indexOf("applySessionCookies("),
+    "the active-profile gate must precede cookie issue",
+  );
   assert.match(authMe, /profile(?:\?\.)?\.is_active !== true/);
   assert.match(authMe, /status: 401/);
-  assert.match(hook, /data\.isActive !== true/);
+  assert.doesNotMatch(authMe, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.doesNotMatch(authMe, /@supabase\/supabase-js/);
+  // The caller-scoped RLS read now shares the authentication deadline.
+  assert.match(authMe, /await withAuthTimeout\(\s*\(\)\s*=>\s*supabase\s*\.from\("profiles"\)/s);
+  // The dashboard guard rejects an inactive profile on every mount. The check
+  // moved into the shared reader; the guard consumes its verdict.
+  assert.match(identity, /body\.isActive !== true/);
+  assert.match(identity, /return \{ status: "unauthenticated" \}/);
+  assert.match(hook, /outcome\.status === "unauthenticated"/);
+  assert.match(hook, /router\.push\("\/login"\)/);
+  // The revocation boundary must never be answered from reusable state. This
+  // used to be checked by slicing the live reader out of the module and looking
+  // for the cache inside it, because a second, cached reader existed for
+  // analytics. That reader is gone, so the stronger statement now holds: the
+  // module has no reusable identity state at all.
+  assert.match(identity, /export async function readSessionIdentity/);
+  assert.doesNotMatch(identity, /lastActive|peekSessionIdentity/);
+  assert.match(hook, /readSessionIdentity\(\)/);
+});
+
+test("session identity distinguishes revoked credentials from upstream outages", async (t) => {
+  const previousFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = previousFetch;
+  });
+
+  const identity = loadTypeScriptModule("src/lib/session-identity.ts", {});
+
+  for (const status of [401, 403]) {
+    globalThis.fetch = async () => ({ ok: false, status });
+    assert.deepEqual(
+      await identity.readSessionIdentity(),
+      { status: "unauthenticated" },
+      `${status} must revoke browser authorization`,
+    );
+  }
+
+  for (const status of [429, 500, 503]) {
+    globalThis.fetch = async () => ({ ok: false, status });
+    assert.deepEqual(
+      await identity.readSessionIdentity(),
+      { status: "unavailable" },
+      `${status} must not be misreported as an invalid session`,
+    );
+  }
 });
 
 test("real lead stage handler rejects an inactive old session before business access", async () => {
   let active = false;
   const supabase = createSupabaseMock(() => active);
   const nextServer = createNextServerMock();
-  const supabaseServer = { createServerSupabase: async () => supabase };
-  const leadAuth = loadTypeScriptModule("src/lib/lead-auth.ts", {
-    "@/lib/auth-profile.mjs": {
-      isActiveProfile: (profile) => profile?.is_active === true,
+  class MockRequestAuthError extends Error {
+    constructor(code) {
+      super(code);
+      this.code = code;
+      this.status = 401;
+    }
+  }
+  const requestAuth = {
+    applyRequestAuthCookies: (_context, response) => response,
+    async getRequestAuthContext() {
+      if (!active) throw new MockRequestAuthError("inactive_account");
+      return {
+        profile: { is_active: true, role: "sales" },
+        refreshedCookies: [],
+        role: "sales",
+        supabase,
+        user: { id: "user-1" },
+      };
     },
-    "@/lib/supabase-server": supabaseServer,
-  });
+    RequestAuthError: MockRequestAuthError,
+    requestAuthErrorResponse: (error) => nextServer.NextResponse.json(
+      { error: error.code },
+      { status: error.status },
+    ),
+  };
   const stage = loadTypeScriptModule("src/app/api/leads/[id]/stage/route.ts", {
     "@/lib/first-contact-gate.mjs": {
       evaluateFirstContactGate: () => ({ allowed: true, reasons: [] }),
       isCompleteContact: () => true,
     },
-    "@/lib/lead-auth": leadAuth,
     "@/lib/logger": {
       logger: { error: () => {}, info: () => {}, warn: () => {}, debug: () => {} },
       genReqId: () => "test-rid",
     },
-    "@/lib/supabase-server": supabaseServer,
+    "@/lib/request-auth-context": requestAuth,
     "@/shared/kanban/types": { PIPELINE_STAGES: [{ key: "new" }] },
+    "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async () => "skipped" },
+    "@/lib/supabase-admin": { get supabaseAdmin() { throw new Error("not reached before authorization"); } },
     "next/server": nextServer,
   });
 
@@ -178,61 +268,26 @@ test("real lead stage handler rejects an inactive old session before business ac
 
   const inactiveResponse = await stage.PATCH(request(), params);
   assert.equal(inactiveResponse.status, 401);
-  assert.deepEqual(await inactiveResponse.json(), { error: "Unauthorized" });
+  assert.deepEqual(await inactiveResponse.json(), { error: "inactive_account" });
 
   active = true;
   const activeResponse = await stage.PATCH(request(), params);
   assert.equal(activeResponse.status, 400);
-  assert.deepEqual(await activeResponse.json(), { error: "Invalid stage" });
+  assert.deepEqual(await activeResponse.json(), { error: "A valid idempotency key is required" });
 });
 
-test("real auth-me handler rejects an inactive old token and accepts an active profile", async (t) => {
-  // route.ts:29-33 reads these at request time and returns 500 if absent.
-  // Save/restore to avoid polluting other tests in the suite.
-  const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const prevKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  process.env.NEXT_PUBLIC_SUPABASE_URL = "http://test.supabase.local";
-  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
-  t.after(() => {
-    if (prevUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-    else process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl;
-    if (prevKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-    else process.env.SUPABASE_SERVICE_ROLE_KEY = prevKey;
-  });
-
+test("real auth-me handler rejects an inactive old token and accepts an active profile", async () => {
   let active = false;
   const supabase = createSupabaseMock(() => active);
   const nextServer = createNextServerMock();
 
-  // After 2026-07-20 3rd hotfix, /api/auth/me uses service_role admin client
-  // (createClient from @supabase/supabase-js) for profiles lookup.
-  // The test must mock createClient to simulate admin profile responses.
-  const mockCreateClient = () => ({
-    from(table) {
-      assert.equal(table, "profiles");
-      return {
-        select() {
-          return {
-            eq() {
-              return {
-                async single() {
-                  return active
-                    ? { data: { role: "admin", is_active: true, force_password_change: false, full_name: "Test User", email: "test@example.com" }, error: null }
-                    : { data: { role: "sales", is_active: false, force_password_change: false, full_name: "Inactive User", email: "test@example.com" }, error: null };
-                },
-              };
-            },
-          };
-        },
-      };
-    },
-  });
-
   const authMe = loadTypeScriptModule("src/app/api/auth/me/route.ts", {
-    "@/lib/supabase-server": { createServerSupabase: async () => supabase, getRefreshedCookies: () => [], getRefreshAttempted: () => false },
+    "@/lib/supabase-server": { createServerSupabase: async () => supabase, getRefreshedCookies: () => [], getRefreshAttempted: () => false, getRefreshFailure: () => undefined },
+    "@/lib/supabase-cookie-names": {
+      getSupabaseCookieNames: () => ({ authToken: "sb-test-auth-token", refreshToken: "sb-test-refresh-token" }),
+    },
     "@/lib/logger": { logger: { error: () => {}, info: () => {}, warn: () => {} } },
     "next/server": nextServer,
-    "@supabase/supabase-js": { createClient: mockCreateClient },
   });
   const request = () => new Request("http://localhost/api/auth/me", {
     headers: { Authorization: "Bearer old-access-token" },

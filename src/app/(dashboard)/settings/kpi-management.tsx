@@ -11,7 +11,7 @@ import { fmtAED } from "@/shared/utils/format";
 interface Profile { id: string; full_name: string | null; email: string | null; role: string; }
 interface KpiTarget { id: string; period: string; target_type: string; target_amount: number; assigned_to: string | null; notes: string | null; profiles?: { full_name: string | null } | null; }
 
-export default function KpiManagement() {
+export default function KpiManagement({ canWriteKpi }: { canWriteKpi: boolean }) {
   const { t, lang } = useLanguage();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [targets, setTargets] = useState<KpiTarget[]>([]);
@@ -28,7 +28,6 @@ export default function KpiManagement() {
   const [salesCollectionTargets, setSalesCollectionTargets] = useState<Record<string, string>>({});
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await fetch(`/api/settings/data?period=${period}`);
       if (!res.ok) throw new Error("Failed to fetch");
@@ -60,9 +59,13 @@ export default function KpiManagement() {
     setLoading(false);
   }, [period]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    const request = window.setTimeout(() => { void fetchData(); }, 0);
+    return () => window.clearTimeout(request);
+  }, [fetchData]);
 
   const handleSave = async () => {
+    if (!canWriteKpi) return;
     setSaving(true);
     const payload = { period, targets: [] as any[] };
 
@@ -93,22 +96,25 @@ export default function KpiManagement() {
     });
 
     if (res.ok) {
-      fetchData();
+      setLoading(true);
+      void fetchData();
       toast.success(t("kpi.kpiSaved"));
 
       // Notify salespeople whose KPI targets were set/updated
-      import("@/lib/notify").then(({ notify }) => {
+      void import("@/lib/notify").then(async ({ notify }) => {
+        const notifications: Promise<unknown>[] = [];
         for (const p of profiles) {
           const sv = salesSigningTargets[p.id];
           const cv = salesCollectionTargets[p.id];
           if (sv) {
-            notify({ type: "kpi_target_set", period, assigned_to: p.id, target_type: "signing", target_amount: parseFloat(sv) });
+            notifications.push(notify({ type: "kpi_target_set", period, assigned_to: p.id, target_type: "signing", target_amount: parseFloat(sv) }));
           }
           if (cv) {
-            notify({ type: "kpi_target_set", period, assigned_to: p.id, target_type: "collection", target_amount: parseFloat(cv) });
+            notifications.push(notify({ type: "kpi_target_set", period, assigned_to: p.id, target_type: "collection", target_amount: parseFloat(cv) }));
           }
         }
-      });
+        await Promise.all(notifications);
+      }).catch((notifyError) => console.error("kpi_notification_failed", notifyError));
     } else {
       const err = await res.json();
       toast.error(t("kpi.saveFailed") + ": " + err.error);
@@ -132,7 +138,10 @@ export default function KpiManagement() {
         <Target className="w-5 h-5 text-copper-400" />
         <select
           value={period}
-          onChange={(e) => setPeriod(e.target.value)}
+          onChange={(e) => {
+            setLoading(true);
+            setPeriod(e.target.value);
+          }}
           className="bg-muted/50 border border-border/50 rounded-lg px-3 py-2 text-sm font-medium"
         >
           {months.map(m => (
@@ -159,7 +168,7 @@ export default function KpiManagement() {
               onChange={(e) => setCompanySigning(e.target.value)}
               placeholder={t("kpi.signingPlaceholder")}
               className="h-9"
-              disabled={period !== currentPeriod}
+              disabled={!canWriteKpi || period !== currentPeriod}
             />
           </div>
           <div>
@@ -170,7 +179,7 @@ export default function KpiManagement() {
               onChange={(e) => setCompanyCollection(e.target.value)}
               placeholder={t("kpi.collectionPlaceholder")}
               className="h-9"
-              disabled={period !== currentPeriod}
+              disabled={!canWriteKpi || period !== currentPeriod}
             />
           </div>
         </div>
@@ -192,7 +201,7 @@ export default function KpiManagement() {
                 onChange={(e) => setSalesSigningTargets(prev => ({ ...prev, [p.id]: e.target.value }))}
                 placeholder={t("kpi.salesSigningPlaceholder")}
                 className="h-9 flex-1"
-                disabled={period !== currentPeriod}
+                disabled={!canWriteKpi || period !== currentPeriod}
               />
               <Input
                 type="number"
@@ -200,7 +209,7 @@ export default function KpiManagement() {
                 onChange={(e) => setSalesCollectionTargets(prev => ({ ...prev, [p.id]: e.target.value }))}
                 placeholder={t("kpi.salesCollectionPlaceholder")}
                 className="h-9 flex-1"
-                disabled={period !== currentPeriod}
+                disabled={!canWriteKpi || period !== currentPeriod}
               />
             </div>
           ))}
@@ -211,7 +220,7 @@ export default function KpiManagement() {
       </div>
 
       {/* Save */}
-      {period === currentPeriod && (
+      {canWriteKpi && period === currentPeriod && (
         <Button onClick={handleSave} disabled={saving} className="gap-2">
           <Save className="w-4 h-4" />
           {saving ? t("common.saving") : t("kpi.saveKpi")}

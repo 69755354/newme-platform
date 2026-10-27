@@ -64,10 +64,14 @@ test("SAM-43 applies the same active-role query policy everywhere", async () => 
   assert.match(detailMutations, /if \(!newUser\)/);
 });
 
-test("SAM-43 returns historical owner names only for visible Leads", () => {
+test("SAM-43 returns owner names only for visible Leads and audits reassignment atomically", () => {
   const route = read("src/app/api/leads/list/route.ts");
   const hook = read("src/app/(dashboard)/leads/_hooks/useLeadsData.ts");
   const mutations = read("src/app/(dashboard)/leads/_hooks/useLeadMutations.ts");
+  const assignmentRoute = read("src/app/api/leads/[id]/assignment/route.ts");
+  const migration = read("supabase/migrations/20260723140000_atomic_lead_reassignment.sql");
+  const detail = read("src/app/(dashboard)/leads/[id]/useLeadDetailData.ts");
+  const historyRoute = read("src/app/api/leads/[id]/transfer-history/route.ts");
 
   assert.match(route, /const ownerIds = getVisibleLeadOwnerIds\(leads \|\| \[\]\)/);
   assert.match(route, /\.select\("id,full_name"\)\s*\.in\("id", ownerIds\)/);
@@ -75,7 +79,20 @@ test("SAM-43 returns historical owner names only for visible Leads", () => {
   assert.match(route, /ownerProfiles:/);
   assert.match(hook, /setOwnerProfiles/);
   assert.match(hook, /ownerProfiles\.forEach/);
-  assert.match(mutations, /userNameMap\[oldLead\.assigned_to/);
+  assert.match(mutations, /fetch\(`\/api\/leads\/\$\{leadId\}\/assignment`/);
+  assert.match(assignmentRoute, /rpc\("reassign_lead_atomic"/);
+  assert.match(migration, /INSERT INTO public\.transfer_history/);
+  assert.match(detail, /describeLeadTransferEvent\(event, transferProfileNames\)/);
+  assert.match(detail, /canonicalTransfers\.map/);
+  assert.match(historyRoute, /runAuthorizedLeadTransferRead\(\{/);
+  assert.match(historyRoute, /\.select\("id, assigned_to"\)/);
+  assert.match(historyRoute, /revalidateAccess:/);
+  assert.doesNotMatch(historyRoute, /supabaseAdmin/);
+  assert.ok(
+    historyRoute.indexOf("runAuthorizedLeadTransferRead({")
+      < historyRoute.indexOf('.from("transfer_history")'),
+  );
+  assert.match(historyRoute, /profileIds = \[\.\.\.new Set/);
 });
 
 test("SAM-43 localizes one prompt and treats pending quality as incomplete", () => {

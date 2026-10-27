@@ -47,7 +47,7 @@ test("milestone reopen is owner-scoped for sales and global for management", asy
   assert.match(page, /\["admin", "boss", "operator"\]/);
   assert.match(mutations, /\["admin", "boss", "operator"\]/);
   assert.match(route, /export async function PATCH/);
-  assert.match(route, /lead\.assigned_to !== profile\.userId/);
+  assert.match(route, /lead\.assigned_to !== authContext\.user\.id/);
   assert.match(route, /Reopen reason is required/);
   assert.match(migration, /'action', 'milestone_reopened'/);
   assert.match(migration, /SET completed_at = NULL/);

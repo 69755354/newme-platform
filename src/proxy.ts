@@ -1,7 +1,14 @@
 import { NextResponse, NextRequest } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase-middleware";
 import { reportServerError } from "@/lib/report-server-error";
+import { shouldRecordActivity } from "@/lib/activity-throttle.mjs";
 import { isActiveProfile } from "@/lib/auth-profile.mjs";
+import {
+  FORCED_SESSION_ERROR,
+  FORCED_SESSION_REDIRECT_PATH,
+  isForcedPasswordChange,
+  isForcedSessionAllowedPath,
+} from "@/lib/forced-password-change.mjs";
 
 const PROTECTED_ROUTES: Record<string, string[]> = {
   "/settings": ["admin", "boss", "operator"],
@@ -10,15 +17,89 @@ const PROTECTED_ROUTES: Record<string, string[]> = {
 };
 
 const PUBLIC_API_PATHS = new Set([
+  // Pre-authentication by definition: the password grant is what creates a
+  // session, so it can never require one. It rate-limits and origin-checks
+  // itself, and never sets cookies for a profile that fails the active gate.
+  "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/me",
+  // Anonymous website intake owns its origin, validation and abuse boundaries.
+  // Keeping this exact path here lets the handler run without weakening any
+  // other API route or exposing a generic public prefix.
+  "/api/public/leads",
 ]);
+const SESSION_BOOTSTRAP_PATH = "/api/auth/session";
+const EXTERNAL_AUTHORIZED_API_PATHS = new Set([
+  "/api/health",
+  "/api/ready",
+  "/api/monitoring/report",
+  "/api/leads/meta-capi",
+  "/api/meta/oauth-callback",
+  // Meta webhook owns raw-body HMAC verification; an exact path only.
+  "/api/whatsapp/webhook",
+  // Meta Lead Ads webhook: raw-body App Secret HMAC + page allowlist; exact path only.
+  "/api/meta/leadgen-webhook",
+]);
+const EXTERNAL_AUTHORIZED_API_PREFIXES = ["/api/cron/"];
+const AUTH_TIMEOUT_MS = 3_000;
 
-// Track user activity — update last_active_at, but throttle to once per 5 min per user
-const activityThrottle = new Map<string, number>();
+type ActiveProfile = {
+  role?: string | null;
+  is_active?: boolean | null;
+  password_changed_at?: string | null;
+  force_password_change?: boolean | null;
+};
+
+function isExternalAuthorizedApi(pathname: string): boolean {
+  return EXTERNAL_AUTHORIZED_API_PATHS.has(pathname)
+    || EXTERNAL_AUTHORIZED_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+function isProtectedApiMutation(request: NextRequest, pathname: string): boolean {
+  return pathname.startsWith("/api/")
+    && !["GET", "HEAD", "OPTIONS"].includes(request.method)
+    && !PUBLIC_API_PATHS.has(pathname)
+    && pathname !== SESSION_BOOTSTRAP_PATH
+    && !isExternalAuthorizedApi(pathname);
+}
+
+async function withAuthTimeout<T>(operation: PromiseLike<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("auth_timeout")), AUTH_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function authUnavailable(request: NextRequest, isApiRequest: boolean) {
+  if (isApiRequest) {
+    return NextResponse.json({ error: "auth_unavailable" }, { status: 503 });
+  }
+  const loginUrl = new URL("/login", request.url);
+  loginUrl.searchParams.set("reason", "auth_unavailable");
+  return NextResponse.redirect(loginUrl);
+}
+
+// Track user activity — update last_active_at, but throttle to once per 5 min
+// per user. The bookkeeping lives in @/lib/activity-throttle: it used to be a
+// `Map<string, number>` here that was only ever written to, so it retained one
+// entry per user id for the life of the process to enforce a 5-minute window
+// (R8). The write itself stays in this file — tests/security/
+// profiles-grant-coupling.test.mjs requires the proxy to be the only
+// caller-scoped writer of public.profiles.
+const ACTIVITY_WINDOW_MS = 300_000;
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const isApiRequest = pathname.startsWith("/api/");
+  const isPublicApiRequest = isApiRequest && (PUBLIC_API_PATHS.has(pathname) || pathname === SESSION_BOOTSTRAP_PATH);
+  const protectedApiMutation = isProtectedApiMutation(request, pathname);
 
   // P3_6 (PRD §六 6.5): legacy URL redirects — return early so we don't run auth.
   // /command-center → /dashboard
@@ -38,7 +119,17 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url), 307);
   }
 
+  // Session bootstrap and introspection own their authentication behavior;
+  // never make them unavailable because proxy-side session refresh is slow.
+  if (isPublicApiRequest) {
+    return NextResponse.next();
+  }
+
   // Check if this path requires specific roles
+  // Webhook deliveries have no browser session and must not depend on a
+  // signed-in user's refresh/profile state. The handler fails closed itself.
+  if (pathname === "/api/whatsapp/webhook" || pathname === "/api/meta/leadgen-webhook") return NextResponse.next();
+
   let requiredRoles: string[] | null = null;
   for (const [prefix, roles] of Object.entries(PROTECTED_ROUTES)) {
     if (pathname === prefix || pathname.startsWith(prefix + "/")) {
@@ -47,63 +138,65 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // Use createMiddlewareClient to validate session (no service_role needed)
-  const { supabase, response } = createMiddlewareClient(request);
+  // Resolve credentials once, with the same Bearer-first precedence used by
+  // createServerSupabase in route handlers. The old cookie-first/fallback flow
+  // could authorize cookie user A here and then execute as Bearer user B below.
+  const authHeader = request.headers.get("authorization");
+  const bearerToken = authHeader?.match(/^Bearer\s+([^\s]+)$/i)?.[1];
 
-  let { data: { user } } = await supabase.auth.getUser();
+  // Use createMiddlewareClient to validate session (no service_role needed).
+  let middlewareClient: Awaited<ReturnType<typeof createMiddlewareClient>>;
+  try {
+    middlewareClient = await withAuthTimeout(createMiddlewareClient(request, bearerToken));
+  } catch {
+    return authUnavailable(request, isApiRequest);
+  }
+  const { supabase, getResponse } = middlewareClient;
 
-  // Fallback: also check Authorization Bearer header (for localhost/dev testing,
-  // where SSR cookies may fail to parse correctly)
-  let usedBearerFallback = false;
-  if (!user) {
-    const authHeader = request.headers.get("authorization");
-    if (authHeader?.startsWith("Bearer ")) {
-      const token = authHeader.slice(7);
-      try {
-        const { data: authUser } = await supabase.auth.getUser(token);
-        user = authUser?.user ?? null;
-        if (user) {
-          usedBearerFallback = true;
-        }
-      } catch {
-        // fallback failed, user stays null
-      }
-    }
+  let user: { id: string } | null = null;
+  let authInfrastructureFailed = false;
+  try {
+    const { data } = await withAuthTimeout(supabase.auth.getUser(bearerToken));
+    user = data.user;
+  } catch {
+    authInfrastructureFailed = true;
   }
 
-  const isApiRequest = pathname.startsWith("/api/");
-  const isPublicApiRequest = isApiRequest && PUBLIC_API_PATHS.has(pathname);
-  let activeProfile: { role?: string | null; is_active?: boolean | null } | null = null;
+  if (!user && protectedApiMutation) {
+    return authInfrastructureFailed
+      ? authUnavailable(request, true)
+      : NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  let activeProfile: ActiveProfile | null = null;
 
   // Server-side session revocation boundary. Auth access tokens are not assumed
   // to become invalid when a profile is deactivated; every protected request
   // must still prove that its profile is active.
   if (user && !isPublicApiRequest) {
-    // SAM-51: When the user was resolved via the Bearer fallback above, the
-    // cookie-driven middleware client has no auth context for them, so a
-    // profiles query through it runs as anon and gets RLS-rejected (returning
-    // empty/inactive). Query profiles via the Supabase REST API with the
-    // service_role key to bypass RLS. createClient(url, service_role_key) is
-    // intentionally avoided — it 500s under the Edge Runtime.
-    let profile: { role?: string | null; is_active?: boolean | null } | null = null;
+    // When the user was resolved via the Bearer fallback, query their own
+    // profile with that same JWT. The profiles self-select RLS policy is the
+    // authorization boundary, so login and request authentication never
+    // depend on an independently rotated service-role key.
+    let profile: ActiveProfile | null = null;
     let profileErr: unknown = null;
 
-    if (usedBearerFallback) {
+    if (bearerToken) {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (!supabaseUrl || !serviceRoleKey) {
-        profileErr = new Error("missing_service_role_env");
+      const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !publishableKey || !bearerToken) {
+        profileErr = new Error("missing_user_scoped_profile_env");
       } else {
         try {
-          const res = await fetch(
-            `${supabaseUrl}/rest/v1/profiles?select=id,is_active,role&id=eq.${user.id}`,
+          const res = await withAuthTimeout(fetch(
+            `${supabaseUrl}/rest/v1/profiles?select=id,is_active,role,password_changed_at,force_password_change&id=eq.${user.id}`,
             {
               headers: {
-                apikey: serviceRoleKey,
-                Authorization: `Bearer ${serviceRoleKey}`,
+                apikey: publishableKey,
+                Authorization: `Bearer ${bearerToken}`,
               },
             },
-          );
+          ));
           if (!res.ok) {
             profileErr = new Error(`profiles_rest_${res.status}`);
           } else {
@@ -117,16 +210,19 @@ export async function proxy(request: NextRequest) {
         }
       }
     } else {
-      const { data, error } = await supabase
+      const { data, error } = await withAuthTimeout(supabase
         .from("profiles")
-        .select("role, is_active")
+        .select("role, is_active, password_changed_at, force_password_change")
         .eq("id", user.id)
-        .single();
+        .single());
       profile = data;
       profileErr = error;
     }
 
-    if (profileErr || !isActiveProfile(profile)) {
+    if (profileErr) {
+      return authUnavailable(request, isApiRequest);
+    }
+    if (!isActiveProfile(profile)) {
       if (isApiRequest) {
         return NextResponse.json({ error: "inactive_account" }, { status: 401 });
       }
@@ -135,6 +231,20 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
     activeProfile = profile;
+
+    // A2: a forced session may change its password, look at itself and leave.
+    // Everything else — reads included, and every service-role route with it —
+    // is refused here, before the request reaches a handler. The exceptions live
+    // in one list in src/lib/forced-password-change.mjs so this boundary and
+    // getRequestAuthContext() cannot disagree about what they are.
+    if (isForcedPasswordChange(profile) && !isForcedSessionAllowedPath(pathname)) {
+      if (isApiRequest) {
+        return NextResponse.json({ error: FORCED_SESSION_ERROR }, { status: 403 });
+      }
+      const changeUrl = new URL(FORCED_SESSION_REDIRECT_PATH, request.url);
+      changeUrl.searchParams.set("reason", FORCED_SESSION_ERROR);
+      return NextResponse.redirect(changeUrl);
+    }
   }
 
   // Q6: Password reset session invalidation — if password was changed after the
@@ -142,24 +252,16 @@ export async function proxy(request: NextRequest) {
   if (user) {
     try {
       // Decode JWT iat claim from session
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const accessToken = session?.access_token;
+      const accessToken = bearerToken ?? (await withAuthTimeout(supabase.auth.getSession())).data.session?.access_token;
       if (accessToken) {
         const payload = JSON.parse(
           Buffer.from(accessToken.split(".")[1], "base64url").toString(),
         );
         const jwtIat = payload.iat;
         if (jwtIat) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("password_changed_at")
-            .eq("id", user.id)
-            .single();
-          if (profile?.password_changed_at) {
+          if (activeProfile?.password_changed_at) {
             const changedAt = Math.floor(
-              new Date(profile.password_changed_at).getTime() / 1000,
+              new Date(activeProfile.password_changed_at).getTime() / 1000,
             );
             if (changedAt > jwtIat) {
               const loginUrl = new URL("/login", request.url);
@@ -173,21 +275,16 @@ export async function proxy(request: NextRequest) {
         }
       }
     } catch {
-      // If decoding fails, allow the request — don't block on parse errors
+      if (protectedApiMutation) return authUnavailable(request, true);
     }
   }
 
-  // Track activity: update last_active_at (throttled to once per 5 min)
-  // Also capture client IP for audit_log (x-forwarded-for → first IP)
+  // Track activity: update last_active_at (throttled to once per 5 min).
+  // The client-IP capture that used to accompany this existed only to populate
+  // the audit row below; see the note there.
   if (user && !pathname.startsWith("/_next") && !pathname.startsWith("/api")) {
-    const now = Date.now();
-    const last = activityThrottle.get(user.id) || 0;
-    if (now - last > 300_000) {
-      activityThrottle.set(user.id, now);
-      const clientIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-        || request.headers.get("x-real-ip")
-        || "unknown";
-      // Fire-and-forget: update profile activity + log IP audit
+    if (shouldRecordActivity(user.id, ACTIVITY_WINDOW_MS)) {
+      // Fire-and-forget: update profile activity.
       supabase.from("profiles").update({ last_active_at: new Date().toISOString() }).eq("id", user.id).then(({ error }) => {
         if (error) {
           // Production monitoring requirement - report server errors
@@ -201,33 +298,25 @@ export async function proxy(request: NextRequest) {
           console.error("Activity tracking error:", error.message);
         }
       });
-      supabase.from("audit_logs").insert({
-        // NOTE: audit_logs.actor_id is the genuine column (NOT a business_events alias).
-        // Migration 20260613000000_audit_logs.sql:6 declares it. Unlike business_events
-        // (where actor_id was the wrong alias), audit_logs always used actor_id. Do NOT rename.
-        actor_id: user.id,
-        action: "PAGE_VISIT",
-        details: { page: pathname },
-        ip_address: clientIp,
-      }).then(({ error }) => {
-        if (error) {
-          // Production monitoring requirement - report server errors
-          reportServerError({
-            message: error.message,
-            type: "audit_log_error",
-            url: pathname,
-          }).catch(() => {
-            // Silent fail to prevent circular reporting
-          });
-          console.error("Audit log error:", error.message);
-        }
-      });
+      // The PAGE_VISIT insert into audit_logs that used to sit here has been
+      // removed. It wrote to audit_logs with the CALLER'S OWN RLS client, which
+      // is why the table needed a permissive `WITH CHECK (true)` INSERT policy
+      // for `authenticated` — and that policy let any user forge an audit entry
+      // under any actor_id (F-08). audit_logs is now server-write-only
+      // (20260811100000_f08_audit_logs_actor_identity.sql), matching the
+      // "server-owned evidence, never browser-submitted facts" rule that
+      // 20260723130000_lock_definer_boundaries.sql already set.
+      //
+      // Nothing read these rows: they were page telemetry, not audit evidence.
+      // last_active_at above still carries the activity signal. If page-visit
+      // telemetry is wanted back, it has to be written server-side with
+      // supabaseAdmin — the service-role key must not enter this runtime.
     }
   }
 
   // No role check needed — pass through
   if (!requiredRoles) {
-    return response;
+    return getResponse();
   }
 
   // Not logged in — redirect to login
@@ -243,7 +332,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  return response;
+  return getResponse();
 }
 
 export const config = {
@@ -259,6 +348,21 @@ export const config = {
     "/quotes/:path*",
     "/projects/:path*",
     "/products/:path*",
+    // /cable-costing is an authenticated employee tool under src/app/(dashboard);
+    // listing it keeps the edge checks (is_active revocation, forced-password-change
+    // refusal) in front of both the page and any server action posted to its path.
+    // It is deliberately NOT in PROTECTED_ROUTES: every signed-in role may use it.
+    "/cable-costing/:path*",
+    // A2: /payments, /tasks and /workbench are authenticated pages under
+    // src/app/(dashboard) that this matcher never listed, so no edge check ran
+    // for them — neither the forced-password-change refusal added below nor the
+    // older is_active revocation boundary. Server actions POST to the page's own
+    // path, so an unlisted page was also an unchecked action entry point.
+    // tests/security/forced-password-change-boundary.test.mjs asserts that every
+    // page under (dashboard) is covered, so a new page cannot reopen this.
+    "/payments/:path*",
+    "/tasks/:path*",
+    "/workbench/:path*",
     "/api/:path*",
     // P3_6 (PRD §六 6.5): legacy URL redirects at the edge.
     // /quotations has no :path* so /quotations/[id] stays reachable.

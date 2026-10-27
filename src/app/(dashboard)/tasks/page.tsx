@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { ErrorState } from "@/components/ui/error-state";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -20,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ChevronLeft, ChevronRight, CheckCircle2, Clock, XCircle, Loader2, AlertTriangle, Calendar } from "lucide-react";
+import { ChevronLeft, ChevronRight, CheckCircle2, Clock, XCircle, Loader2, AlertTriangle } from "lucide-react";
 import { fmtDubai } from "@/lib/utils";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -28,12 +27,11 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 /* ─── Constants ─── */
 const PAGE_SIZE = 20;
 
-const STATUS_VALUES = ["all", "pending", "in_progress", "done", "cancelled"];
+const STATUS_VALUES = ["all", "pending", "completed", "cancelled"];
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
   pending: { bg: "bg-amber-500/10", text: "text-amber-400", icon: <Clock className="size-3" /> },
-  in_progress: { bg: "bg-blue-500/10", text: "text-blue-400", icon: <Loader2 className="size-3 animate-spin" /> },
-  done: { bg: "bg-emerald-500/10", text: "text-emerald-400", icon: <CheckCircle2 className="size-3" /> },
+  completed: { bg: "bg-emerald-500/10", text: "text-emerald-400", icon: <CheckCircle2 className="size-3" /> },
   cancelled: { bg: "bg-gray-500/10", text: "text-muted-foreground", icon: <XCircle className="size-3" /> },
 };
 
@@ -50,10 +48,9 @@ interface Task {
   title: string;
   status: string;
   priority: string;
-  assigned_to: string | null;
+  assignee_id: string | null;
   due_at: string | null;
   created_at: string;
-  updated_at: string;
 }
 
 interface ProfileInfo {
@@ -68,8 +65,12 @@ function formatDate(d: string | null, locale: string): string {
 }
 
 function isOverdue(dueAt: string | null, status: string): boolean {
-  if (!dueAt || status === "done" || status === "cancelled") return false;
+  if (!dueAt || status === "completed" || status === "cancelled") return false;
   return new Date(dueAt) < new Date();
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 /* ─── Component ─── */
@@ -90,8 +91,7 @@ export default function TasksPage() {
   const statusLabels: Record<string, string> = {
     all: t("tasks.allStatuses"),
     pending: t("tasks.statusPending"),
-    in_progress: t("tasks.statusInProgress"),
-    done: t("tasks.statusDone"),
+    completed: t("tasks.statusDone"),
     cancelled: t("tasks.statusCancelled"),
   };
   const priorityLabels: Record<string, string> = {
@@ -127,21 +127,19 @@ export default function TasksPage() {
       setTasks((json.tasks ?? []) as Task[]);
       setProfiles((json.profiles ?? []) as ProfileInfo[]);
       setTotalCount(json.totalCount ?? 0);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(t("tasks.loadFailed"), err);
-      setError(err.message || t("tasks.loadFailed"));
+      setError(errorMessage(err, t("tasks.loadFailed")));
     }
     setLoading(false);
   }, [page, statusFilter, assigneeFilter, t]);
 
   useEffect(() => {
-    fetchTasks();
+    const timer = window.setTimeout(() => {
+      void fetchTasks();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [fetchTasks]);
-
-  // Reset page when filters change
-  useEffect(() => {
-    setPage(0);
-  }, [statusFilter, assigneeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
@@ -170,7 +168,10 @@ export default function TasksPage() {
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         {/* Status filter */}
-        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v ?? '')}>
+        <Select value={statusFilter} onValueChange={(v) => {
+          setPage(0);
+          setStatusFilter(v ?? "");
+        }}>
           <SelectTrigger>
             <SelectValue placeholder={t("tasks.allStatuses")} />
           </SelectTrigger>
@@ -184,7 +185,10 @@ export default function TasksPage() {
         </Select>
 
         {/* Assignee filter */}
-        <Select value={assigneeFilter} onValueChange={(v) => setAssigneeFilter(v ?? '')}>
+        <Select value={assigneeFilter} onValueChange={(v) => {
+          setPage(0);
+          setAssigneeFilter(v ?? "");
+        }}>
           <SelectTrigger>
             <SelectValue placeholder={t("tasks.allAssignees")} />
           </SelectTrigger>
@@ -245,8 +249,8 @@ export default function TasksPage() {
                           {task.title}
                         </TableCell>
                         <TableCell>
-                          {task.assigned_to
-                            ? profileNameMap[task.assigned_to] || task.assigned_to.slice(0, 8)
+                          {task.assignee_id
+                            ? profileNameMap[task.assignee_id] || task.assignee_id.slice(0, 8)
                             : "—"}
                         </TableCell>
                         <TableCell>

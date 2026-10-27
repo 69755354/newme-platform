@@ -7,7 +7,7 @@
  *   - the lead row (with creator/assignee/follow_ups/milestones/business_events/next_task embeds)
  *   - activities, chat_messages, v_lead_trace (3 independent queries)
  *   - sales users list (for reassignment dropdown)
- *   - transfer history (derived from business_events embed)
+ *   - transfer history (caller-RLS server route plus business_events)
  *   - projectInfoDraft (seeded from the lead row on fetch)
  *
  * P0-1 fetchData is preserved verbatim: 2 parallel Promise.allSettled batches,
@@ -29,9 +29,15 @@ import type {
   FollowUpLog,
   LeadMilestone,
   LeadTrace,
+  SalesUser,
+  TransferHistoryEmbed,
 } from "./types";
 import { projectDraftFromLead } from "./utils";
 import { filterLeadTransferCandidateQuery } from "@/lib/lead-transfer-candidates.mjs";
+import {
+  buildTransferProfileNameMap,
+  describeLeadTransferEvent,
+} from "@/lib/lead-transfer-history.mjs";
 
 /* ─── Types ─── */
 export interface ProjectInfoDraft {
@@ -50,10 +56,10 @@ export interface UseLeadDetailDataReturn {
   chatMessages: ChatMessage[];
   nextTask: Task | null;
   leadTrace: LeadTrace[];
-  transferHistory: any[];
+  transferHistory: BusinessEvent[];
   followUpLogs: FollowUpLog[];
   leadMilestones: LeadMilestone[];
-  salesUsers: any[];
+  salesUsers: SalesUser[];
   projectInfoDraft: ProjectInfoDraft;
   setProjectInfoDraft: React.Dispatch<React.SetStateAction<ProjectInfoDraft>>;
   loading: boolean;
@@ -73,10 +79,10 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [nextTask, setNextTask] = useState<Task | null>(null);
   const [leadTrace, setLeadTrace] = useState<LeadTrace[]>([]);
-  const [transferHistory, setTransferHistory] = useState<any[]>([]);
+  const [transferHistory, setTransferHistory] = useState<BusinessEvent[]>([]);
   const [followUpLogs, setFollowUpLogs] = useState<FollowUpLog[]>([]);
   const [leadMilestones, setLeadMilestones] = useState<LeadMilestone[]>([]);
-  const [salesUsers, setSalesUsers] = useState<any[]>([]);
+  const [salesUsers, setSalesUsers] = useState<SalesUser[]>([]);
   const [projectInfoDraft, setProjectInfoDraft] = useState<ProjectInfoDraft>({
     project_type: "", emirate: "", area: "", ac_brand: "", customer_budget: "",
   });
@@ -175,6 +181,16 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         .limit(1)
         .maybeSingle();
 
+      // Historical identities are fetched through a server boundary. The API
+      // keeps the caller's RLS session for the Lead, history, and profile reads
+      // and revalidates sales ownership before returning the response.
+      const transferHistoryPromise = fetch(`/api/leads/${leadId}/transfer-history`, {
+        cache: "no-store",
+      }).then(async (response) => {
+        if (!response.ok) throw new Error(`transfer history returned ${response.status}`);
+        return response.json() as Promise<{ transfers: TransferHistoryEmbed[] }>;
+      });
+
       // Run Batch 1 + Batch 2 in parallel. allSettled so a single failed
       //   sub-query does NOT abort the rest (matches original per-query
       //   console.warn behaviour — only lead main failure was fatal).
@@ -184,9 +200,10 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         chatMessagesPromise,
         leadTracePromise,
         nextTaskPromise,
+        transferHistoryPromise,
       ]);
 
-      const [leadRes, activitiesRes, chatRes, traceRes, nextTaskRes] = settled;
+      const [leadRes, activitiesRes, chatRes, traceRes, nextTaskRes, transferHistoryRes] = settled;
 
       // ─── Rejection logging (network errors) ───────────────────────────
       // for...of so TS narrows PromiseSettledResult properly.
@@ -209,7 +226,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         return;
       }
 
-      const l = leadPayload.data as any;
+      const l = leadPayload.data;
       if (l) {
         const creatorProfile = l.creator || null;
         const assigneeProfile = l.assignee || null;
@@ -225,12 +242,13 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         //   populated (FK fk_leads_customer_id now exists per migration
         //   B.1). Currently all 49 leads have customer_id=NULL so this
         //   branch never fires; kept for T1-8 maybeSingle=3 + future-proof.
-        if (l.customer_id) {
+        const customerId = l.customer_id;
+        if (customerId) {
           (async () => {
             const r = await supabase
               .from("customers")
               .select("id, name, email, phone")
-              .eq("id", l.customer_id)
+              .eq("id", customerId)
               .maybeSingle();
             if (r.data) {
               setLead((prev) =>
@@ -245,40 +263,92 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
       if (l?.follow_ups) setFollowUpLogs(l.follow_ups as FollowUpLog[]);
       if (l?.milestones) {
         setLeadMilestones(
-          (l.milestones).map((m: any) => ({
+          (l.milestones).map((m) => ({
             ...m,
             completed: !!m.completed_at,
           })) as LeadMilestone[]
         );
       }
       if (l?.business_events) {
-        setEvents(l.business_events as BusinessEvent[]);
-        const transfers = (l.business_events).filter(
-          (ev: any) => ev.event_type === "transfer"
-        );
-        if (transfers.length > 0) setTransferHistory(transfers);
+        const canonicalTransfers = transferHistoryRes.status === "fulfilled"
+          ? transferHistoryRes.value.transfers ?? []
+          : [];
+        const transferProfileNames = buildTransferProfileNameMap(canonicalTransfers);
+        setEvents(l.business_events.map((event) => ({
+          id: event.id,
+          event_type: event.event_type,
+          description: describeLeadTransferEvent(event, transferProfileNames),
+          event_data: event.event_data ?? null,
+          created_at: event.created_at ?? "",
+          user_id: event.user_id ?? null,
+          operator: event.operator ?? null,
+        })));
+        setTransferHistory(canonicalTransfers.map((transfer) => ({
+          id: transfer.id,
+          event_type: "transfer",
+          description: describeLeadTransferEvent(
+            {
+              event_type: "transfer",
+              description: "Lead reassigned",
+              event_data: {
+                from_user_id: transfer.from_user_id,
+                to_user_id: transfer.to_user_id,
+              },
+            },
+            transferProfileNames,
+          ),
+          event_data: {
+            from_user_id: transfer.from_user_id,
+            to_user_id: transfer.to_user_id,
+            reason: transfer.reason,
+          },
+          created_at: transfer.created_at ?? "",
+          user_id: transfer.transferred_by,
+          operator: transfer.operator ?? null,
+        })));
       }
       // ─── Independent queries from Batch 2 — soft-error handling ──────
       // Per design §6.4: original code wrapped each independent query in
       //   console.warn (non-fatal). allSettled + per-result check keeps
       //   the same semantics without blocking setError.
-      const batches2 = [
-        ["activities", activitiesRes],
-        ["chat_messages", chatRes],
-        ["v_lead_trace", traceRes],
-      ] as const;
-      for (const [name, r] of batches2) {
-        if (r.status === "fulfilled") {
-          const payload = r.value;
-          if (payload.error) {
-            console.warn(`[LeadDetail] non-fatal fetch (${name}):`, payload.error);
-          } else if (payload.data) {
-            if (name === "activities") setActivities(payload.data as Activity[]);
-            else if (name === "chat_messages") setChatMessages(payload.data as ChatMessage[]);
-            else if (name === "v_lead_trace") setLeadTrace(payload.data as LeadTrace[]);
-          }
+      if (activitiesRes.status === "fulfilled") {
+        const payload = activitiesRes.value;
+        if (payload.error) {
+          console.warn("[LeadDetail] non-fatal fetch (activities):", payload.error);
+        } else if (payload.data) {
+          setActivities(payload.data.map((activity) => ({
+            id: activity.id,
+            type: activity.type,
+            content: activity.content ?? "",
+            ai_generated: false,
+            created_at: activity.created_at ?? "",
+            user_id: activity.user_id ?? null,
+            metadata: activity.metadata ?? null,
+          })));
         }
-        // rejected cases already logged above
+      }
+
+      if (chatRes.status === "fulfilled") {
+        const payload = chatRes.value;
+        if (payload.error) {
+          console.warn("[LeadDetail] non-fatal fetch (chat_messages):", payload.error);
+        } else if (payload.data) {
+          setChatMessages(payload.data.map((message) => ({
+            id: message.id,
+            content: message.content,
+            direction: message.direction,
+            created_at: message.created_at ?? "",
+          })));
+        }
+      }
+
+      if (traceRes.status === "fulfilled") {
+        const payload = traceRes.value;
+        if (payload.error) {
+          console.warn("[LeadDetail] non-fatal fetch (v_lead_trace):", payload.error);
+        } else if (payload.data) {
+          setLeadTrace(payload.data as LeadTrace[]);
+        }
       }
 
       if (nextTaskRes.status === "fulfilled") {
@@ -286,7 +356,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         if (payload.error) {
           console.warn("[LeadDetail] non-fatal fetch (tasks):", payload.error);
         } else {
-          setNextTask((payload.data as Task | null) ?? null);
+          setNextTask(payload.data ?? null);
         }
       } else {
         setNextTask(null);
@@ -316,7 +386,12 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
       candidateQuery as never
     ) as typeof candidateQuery;
     filteredCandidateQuery.then(({ data }) => {
-      if (data) setSalesUsers(data);
+      if (data) setSalesUsers(data.map((user) => ({
+        id: user.id,
+        email: user.email ?? null,
+        role: user.role ?? null,
+        full_name: user.full_name ?? null,
+      })));
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

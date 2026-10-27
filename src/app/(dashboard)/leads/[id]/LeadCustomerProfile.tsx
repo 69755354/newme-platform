@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { cn, fmtDubai } from "@/lib/utils";
 import { User, MessageCircle, ExternalLink } from "lucide-react";
-import type { Lead, RenderInlineEdit, RenderDateEdit } from "./types";
+import type { Lead, LeadFieldUpdater, RenderInlineEdit, RenderDateEdit } from "./types";
 
 // Source dropdown options — keys match translations.sourceLabels and the values
 // persisted on leads.source.
@@ -24,8 +24,8 @@ const SOURCE_OPTIONS = ["ins", "fb", "show_room", "whatsapp", "website", "offlin
 
 interface Props {
   lead: Lead;
-  users: any[];
-  onUpdateField: (field: string, value: any, eventType?: string, eventDesc?: string) => void;
+  users: Array<{ id: string; email: string | null; role: string | null; full_name: string | null }>;
+  onUpdateField: LeadFieldUpdater;
   onReassign: (userId: string) => void;
   renderInlineEdit: RenderInlineEdit;
   renderDateEdit: RenderDateEdit;
@@ -33,7 +33,7 @@ interface Props {
   showSalesDropdown: boolean;
   setShowSalesDropdown: (v: boolean) => void;
   reassigning: boolean;
-  transferHistory: any[];
+  transferHistory: Array<{ id: string; event_type: string; event_data: import("@/types/database").Json | null; description: string | null; created_at: string | null; user_id: string | null; operator?: { full_name: string | null } | null }>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -112,7 +112,7 @@ export default function LeadCustomerProfile({
             <Select
               value={lead.source || ""}
               onValueChange={(v) =>
-                onUpdateField("source", v, "note_added", `${t("leadDetail.source")}: ${t(`sourceLabels.${v}`)}`)
+                onUpdateField("source", v ?? "", "note_added", `${t("leadDetail.source")}: ${t(`sourceLabels.${v ?? ""}`)}`)
               }
             >
               <SelectTrigger className="h-8 text-xs">
@@ -191,12 +191,12 @@ export default function LeadCustomerProfile({
         {lead.created_by && (
           <div className="border-t border-border pt-3 space-y-1.5">
             <Field label={t("leadDetail.createdBy")}>
-              <span className="text-sm">{lead.creator_name || "—"}</span>
+              <span data-newme-uat-sensitive="true" className="text-sm">{lead.creator_name || "—"}</span>
             </Field>
             {lead.created_at && (
               <Field label={t("leadDetail.createdAt") || "Created"}>
                 <span className="text-xs text-muted-foreground">
-                  {fmtDubai(lead.created_at, { locale: "zh-CN", hour: "2-digit", minute: "2-digit" })}
+                  {fmtDubai(lead.created_at ?? undefined, { locale: "zh-CN", hour: "2-digit", minute: "2-digit" })}
                 </span>
               </Field>
             )}
@@ -207,11 +207,11 @@ export default function LeadCustomerProfile({
         {transferHistory.length > 0 && (
           <div className="border-t border-border pt-3 space-y-2">
             <span className="text-muted-foreground text-xs font-medium">{t("leadDetail.transferHistory") || "Transfer History"}</span>
-            {transferHistory.slice(0, 5).map((tr: any, i: number) => (
+            {transferHistory.slice(0, 5).map((tr, i) => (
               <div key={tr.id || i} className="text-xs text-muted-foreground flex items-start gap-1.5">
                 <span className="text-[10px] mt-0.5 shrink-0">→</span>
                 <div>
-                  <span>{tr.description || (tr.operator?.full_name ? `Reassigned by ${tr.operator.full_name}` : "Reassigned")}</span>
+                  <span data-newme-uat-sensitive="true">{tr.description || (tr.operator?.full_name ? `Reassigned by ${tr.operator.full_name}` : "Reassigned")}</span>
                   <span className="block text-[10px] opacity-60">
                     {fmtDubai(tr.created_at, { locale: "zh-CN", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </span>
@@ -226,6 +226,7 @@ export default function LeadCustomerProfile({
           <div className="relative flex items-center justify-between">
             <span className="text-muted-foreground text-xs">{t("leadDetail.owner")}</span>
             <button
+              data-newme-uat-sensitive="true"
               onClick={() => setShowSalesDropdown(!showSalesDropdown)}
               disabled={reassigning}
               className="flex items-center gap-1.5 text-foreground text-sm hover:text-copper-400 transition-colors disabled:opacity-50"
@@ -266,7 +267,7 @@ export default function LeadCustomerProfile({
                       )}
                     />
                     <div className="flex-1 min-w-0">
-                      <p className="truncate">{u.full_name || u.email}</p>
+                      <p data-newme-uat-sensitive="true" className="truncate">{u.full_name || u.email}</p>
                       <p className="text-[10px] text-muted-foreground">{u.role}</p>
                     </div>
                   </button>

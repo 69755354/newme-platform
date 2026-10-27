@@ -1,10 +1,36 @@
 // RBAC: user (authenticated)
-// GET /api/analytics/summary — Consolidated analytics data with 30s cache
+// GET /api/analytics/summary — Consolidated analytics data
 // Aggregates: ads stats, funnel stats, revenue stats, lead conversion stats
 // Server-side auth.getUser() → profile role → all queries in Promise.all
+//
+// Round-4 finding R5, two halves of one mistake — this route reported money it had
+// not read correctly, out of a cache it could not invalidate:
+//
+//   * `collected` and every per-rep collection figure counted `p.confirmed` alone.
+//     The database counts `confirmed = true and voided_at is null` everywhere —
+//     installment_plans.allocated_amount, projects.paid_amount,
+//     kpi_targets.actual_amount and contracts.first_payment_status are all recomputed
+//     from that predicate — so this route was answering a different question and
+//     calling it revenue. void_payment() also clears `confirmed`, which is why the
+//     figures happened to agree; but in compat mode a direct
+//     `update payments set confirmed = true` on a voided row is still permitted, and
+//     then this route reports cash the ledger does not have. The columns are now read
+//     and the predicate comes from src/lib/payment-state.mjs, the one place it is
+//     spelled for JavaScript.
+//   * the whole response was held in src/lib/api-cache.ts for 30 seconds under
+//     `analytics-summary:${role}:${userId}`. Nothing evicts that Map — see its header
+//     — so confirming, voiding or re-allocating a payment left the revenue panel,
+//     the collection rates and the overdue totals showing pre-write figures for the
+//     rest of the TTL while /api/payments/list showed the new ones.
+//
+// So the module cache is gone and the route is force-dynamic and no-store, the same
+// posture /api/payments/list takes.
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { getCached, setCache } from "@/lib/api-cache";
+import { applyPrivateNoStore } from "@/lib/request-auth-context";
+import { countsAsCash } from "@/lib/payment-state.mjs";
+
+export const dynamic = "force-dynamic";
 
 /* ─── Helpers ─── */
 function normalizeCampaign(name: string | null): string {
@@ -58,21 +84,14 @@ export async function GET(request: Request) {
     .eq("id", user.id)
     .single();
 
-  if (!profile) {
+  if (!profile?.role) {
     return NextResponse.json({ error: "Profile not found" }, { status: 403 });
   }
 
-  const role: string = profile.role;
+  const role = profile.role;
   const userId: string = user.id;
   const isManagement = ["admin", "boss", "operator"].includes(role);
   const isCEO = isManagement;
-
-  // ── Cache key ──
-  const cacheKey = `analytics-summary:${role}:${userId}`;
-  const cached = getCached(cacheKey);
-  if (cached) {
-    return NextResponse.json(cached);
-  }
 
   // ── Date helpers ──
   const now = new Date().toISOString();
@@ -123,12 +142,16 @@ export async function GET(request: Request) {
   // ── 3b. Contracts with installment plans ──
   let contractQuery = supabase
     .from("contracts")
-    .select(`id, contract_no, contract_amount, contract_date, status, sales_id, party_a_name, lead_id, leads!inner(customer_name, assigned_to), installment_plans(id, seq, amount, due_date, status, paid_amount), payments(id, amount, confirmed, payment_date)`)
+    .select(`id, contract_no, contract_amount, contract_date, status, sales_id, party_a_name, lead_id, leads!inner(customer_name, assigned_to), installment_plans(id, seq, amount, due_date, status, paid_amount), payments(id, amount, confirmed, voided_at, payment_date)`)
     .order("created_at", { ascending: false });
   if (!isManagement) contractQuery = contractQuery.eq("sales_id", userId);
   const contractsPromise = contractQuery;
 
   // ── 3c. Ad spend ──
+  // Unfiltered by `source` on purpose — see the note in
+  // src/app/api/dashboard/ads-roi/route.ts: the two writers of ad_spend each
+  // refuse a date window another source already covers, so summing everything
+  // counts each ad-day once.
   const adSpendPromise = supabase.from("ad_spend").select("campaign_name, amount, spend_date").order("spend_date", { ascending: true });
 
   // ── 3d. Sales profiles ──
@@ -160,10 +183,15 @@ export async function GET(request: Request) {
   // ── 3g. Payments for trends ──
   let trendsPaymentsQuery = supabase
     .from("payments")
-    .select("id, amount, confirmed, payment_date, contract_id")
+    .select("id, amount, confirmed, voided_at, payment_date, contract_id")
     .gte("payment_date", rangeStart)
     .lte("payment_date", rangeEnd)
-    .eq("confirmed", true);
+    // Both halves of the ledger predicate, in the query rather than only in the
+    // JavaScript: this set feeds the 12-week revenue trend, and a voided payment
+    // filtered out client-side would still be transferred and still be one edit away
+    // from being counted.
+    .eq("confirmed", true)
+    .is("voided_at", null);
   if (!isManagement) {
     const { data: userContracts } = await supabase.from("contracts").select("id").eq("sales_id", userId);
     const uids = (userContracts || []).map((c: any) => c.id);
@@ -336,7 +364,7 @@ export async function GET(request: Request) {
     totalContractValue += amount;
 
     for (const p of contract.payments || []) {
-      if (p.confirmed) collected += p.amount || 0;
+      if (countsAsCash(p)) collected += p.amount || 0;
     }
 
     for (const inst of contract.installment_plans || []) {
@@ -376,7 +404,7 @@ export async function GET(request: Request) {
     const sid = contract.sales_id || "unassigned";
     if (!repMap[sid]) repMap[sid] = { full_name: "Unassigned", signed: 0, collected: 0, overdue: 0 };
     repMap[sid].signed += contract.contract_amount || 0;
-    for (const p of contract.payments || []) { if (p.confirmed) repMap[sid].collected += p.amount || 0; }
+    for (const p of contract.payments || []) { if (countsAsCash(p)) repMap[sid].collected += p.amount || 0; }
     for (const inst of contract.installment_plans || []) {
       if (inst.status !== "paid" && inst.status !== "cancelled" && inst.due_date < today) repMap[sid].overdue++;
     }
@@ -578,6 +606,5 @@ export async function GET(request: Request) {
     weeklyTrends,
   };
 
-  setCache(cacheKey, result, 30);
-  return NextResponse.json(result);
+  return applyPrivateNoStore(NextResponse.json(result));
 }

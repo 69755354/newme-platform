@@ -1,6 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { normalizeLeadgenId } from "@/lib/meta-crm-events";
 
 // ─── Column mapping ───
 // Excel header text → snake_case field name
@@ -30,6 +31,9 @@ const COLUMN_MAP: Record<string, string> = {
   "opportunity level": "opportunity",
   "status": "raw_status",
   "notes": "notes",
+  "meta lead id": "leadgen_id",
+  "leadgen id": "leadgen_id",
+  "leadgen_id": "leadgen_id",
 };
 
 // ─── Value mapping ───
@@ -111,6 +115,7 @@ interface NormalizedRow {
     raw_system: string;
     raw_quotation: string;
     raw_opportunity: string;
+    raw_leadgen_id?: string;
   };
   // Internal markers
   _warnings: string[];
@@ -132,7 +137,7 @@ export async function POST(request: NextRequest) {
       .select("role")
       .eq("id", user.id)
       .single();
-    if (!profile || !["admin", "boss"].includes(profile.role)) {
+    if (!profile?.role || !["admin", "boss"].includes(profile.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -156,7 +161,20 @@ export async function POST(request: NextRequest) {
       for (const [k, v] of Object.entries(raw)) {
         const key = k.trim();
         const mapped = COLUMN_MAP[key.toLowerCase()] || key.toLowerCase().replace(/\s+/g, "_");
-        norm[mapped] = v == null ? "" : String(v).trim();
+        if (mapped === "leadgen_id") {
+          // Validate the original cell before String can hide numeric precision loss.
+          // Spreadsheet numeric cells only preserve 15 significant digits.
+          const numericPrecisionLost = typeof v === "number"
+            && (!Number.isSafeInteger(v) || String(v).length > 15);
+          const id = numericPrecisionLost ? null : normalizeLeadgenId(v);
+          norm[mapped] = id || "";
+          if (v != null && String(v).trim() !== "" && !id) {
+            // Metadata is optional: warn visibly without blocking the customer row.
+            warnings.push(`Row ${rowNum}: Meta Lead ID omitted. Use the original ID stored as text; numeric cells with 16+ digits can lose precision.`);
+          }
+        } else {
+          norm[mapped] = v == null ? "" : String(v).trim();
+        }
       }
 
       const rowWarnings: string[] = [];
@@ -238,6 +256,8 @@ export async function POST(request: NextRequest) {
           raw_system: norm.system || "",
           raw_quotation: norm.quotation_value || "",
           raw_opportunity: norm.opportunity || "",
+          // Only present when supplied, so existing workbooks keep their import fingerprint.
+          ...(norm.leadgen_id ? { raw_leadgen_id: norm.leadgen_id } : {}),
         },
         _warnings: rowWarnings,
       };

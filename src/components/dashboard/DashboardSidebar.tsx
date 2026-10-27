@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { Menu, X, LogOut, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { LanguageToggle } from "@/components/LanguageToggle";
-import { MGMT_NAV, SALES_NAV } from "@/lib/nav";
+import { navForRole } from "@/lib/nav";
 
 /**
  * DashboardSidebar — DashboardLayout 左侧 sidebar (含 mobile hamburger + overlay)
@@ -48,18 +48,11 @@ export function DashboardSidebar({
   role,
 }: DashboardSidebarProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [buildId, setBuildId] = useState("unknown");
-
-  useEffect(() => {
-    fetch("/api/health")
-      .then((response) => response.ok ? response.json() : null)
-      .then((health) => {
-        if (typeof health?.version === "string") setBuildId(health.version);
-      })
-      .catch(() => {});
-  }, []);
   const { t } = useLanguage();
-  const nav = isManagement ? MGMT_NAV : SALES_NAV;
+  // navForRole owns both the array choice and the per-item narrowing (/team is
+  // admin/boss, not every management role) so the sidebar cannot offer a link
+  // the target page will bounce this role off.
+  const nav = navForRole(role);
 
   const isItemActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -154,18 +147,14 @@ export function DashboardSidebar({
         {/* Footer — user + logout */}
         <div className="p-3 border-t border-border space-y-2">
           {userEmail && (
-            <div className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-muted-foreground">
+            <div data-newme-uat-sensitive="true" className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-muted-foreground">
               <div className="w-6 h-6 rounded-full bg-slate-600/20 flex items-center justify-center text-slate-600 text-[10px] font-bold shrink-0">
                 {userEmail.charAt(0).toUpperCase()}
               </div>
               <span className="truncate">{userEmail}</span>
             </div>
           )}
-          <div className="flex items-center justify-between px-2">
-            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              v{buildId}
-            </div>
+          <div className="flex justify-end px-2">
             <button
               onClick={handleLogout}
               className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-rose-400 transition-colors"

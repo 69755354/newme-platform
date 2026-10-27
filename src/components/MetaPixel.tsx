@@ -5,7 +5,9 @@ import { usePathname } from "next/navigation";
 
 const PIXEL_ID = "1612447067166445";
 
-const BACKEND_PATHS = [
+const NO_PIXEL_PATHS = [
+  "/login",
+  "/change-password",
   "/ads",
   "/analytics",
   "/command-center",
@@ -34,7 +36,7 @@ type MetaPixelProps = {
   excludedPaths?: readonly string[];
 };
 
-export default function MetaPixel({ excludedPaths = BACKEND_PATHS }: MetaPixelProps) {
+export default function MetaPixel({ excludedPaths = NO_PIXEL_PATHS }: MetaPixelProps) {
   const pathname = usePathname();
 
   if (isBackendPath(pathname, excludedPaths)) {

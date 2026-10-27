@@ -416,6 +416,34 @@ test("closure TASKBOARD must bind exactly the attested acceptance digest", (t) =
   assert.match(mismatched.stderr, /acceptance digest does not match/);
 });
 
+test("a release carrying an earlier closure's marker can still be closed by appending one new marker", () => {
+  const priorMarker = `<!-- postdeploy-acceptance-sha256:${"c".repeat(64)} -->`;
+  const releaseBoard = `${RELEASE_BOARD}\n${priorMarker}\n`;
+  const closureBoard = `${CLOSURE_BOARD.replace(`\n${ACCEPTANCE_MARKER}\n`, "")}\n${priorMarker}\n\n${ACCEPTANCE_MARKER}\n`;
+  const base = {
+    releaseSha: "a".repeat(40),
+    closureSha: "b".repeat(40),
+    acceptanceDigest: ACCEPTANCE_DIGEST,
+    isAncestor: true,
+    directParent: "a".repeat(40),
+    commitCount: 1,
+    perCommitChangedFiles: [["TASKBOARD.md"]],
+    changedFiles: ["TASKBOARD.md"],
+    releaseTaskboardText: releaseBoard,
+  };
+  assert.deepEqual(auditReleaseClosure({ ...base, taskboardText: closureBoard }), []);
+
+  const nothingAdded = closureBoard.replace(`\n${ACCEPTANCE_MARKER}\n`, "\n");
+  assert.match(auditReleaseClosure({ ...base, taskboardText: nothingAdded }).join("\n"), /add exactly one/);
+
+  const twoAdded = `${closureBoard}\n${ACCEPTANCE_MARKER}\n`;
+  assert.match(auditReleaseClosure({ ...base, taskboardText: twoAdded }).join("\n"), /add exactly one/);
+
+  const reused = `${closureBoard.replace(`\n${ACCEPTANCE_MARKER}\n`, "\n")}\n${priorMarker}\n`;
+  const reusedProblems = auditReleaseClosure({ ...base, acceptanceDigest: "c".repeat(64), taskboardText: reused }).join("\n");
+  assert.match(reusedProblems, /reuses an acceptance digest/);
+});
+
 test("the final job manifest binds the closure job to the deployed release input", () => {
   const manifest = JSON.parse(readFileSync(FINAL_JOBS, "utf8"));
   assert.equal(manifest.workflow, "ci");

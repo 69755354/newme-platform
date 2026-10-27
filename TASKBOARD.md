@@ -858,3 +858,16 @@ Meta subscriptions, the Unpublished app state and the WhatsApp review were not
 changed.
 
 <!-- postdeploy-acceptance-sha256:f1a6f1149d3fb69f3033a68014d35d31e066220f676af3a0441090dea8897ead -->
+
+## Release closure accepts earlier closures' markers (2026-10-27)
+
+Release-gate fix. Final CI 40448610223 for release `b1c343d` refused the valid
+closure `2043436` because `check-release-closure.mjs` required exactly one
+acceptance marker in the whole TASKBOARD and none in the release, while the
+append-only rule forbids removing the marker #495 already recorded; every
+release after #495 was therefore unclosable. The closure now has to add exactly
+one marker, that marker must equal the attested digest, and it may not reuse an
+earlier release's digest. The appended-section check is unchanged. Release
+`b1c343d` stays at acceptance_verified (its closure cannot change the script);
+the next release closes normally. Closure suite 20/20; full suite failures are
+identical to unmodified main.

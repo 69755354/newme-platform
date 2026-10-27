@@ -46,6 +46,7 @@ ALTER TABLE leads ADD COLUMN IF NOT EXISTS landing_page     TEXT;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS referrer         TEXT;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS first_touch_at   TIMESTAMPTZ;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS last_touch_at    TIMESTAMPTZ;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS rep_name         TEXT;
 
 -- ═══════════════ 3. Lead Status constraint update ═══════════════
 -- lead_status already exists as TEXT, we just ensure values match the spec

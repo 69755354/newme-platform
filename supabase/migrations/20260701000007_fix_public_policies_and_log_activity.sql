@@ -7,10 +7,22 @@
 
 -- ── Part 1: 4 条 public 策略缩窄为 authenticated ──
 
-ALTER POLICY "lead_files_select_assigned" ON lead_files TO authenticated;
-ALTER POLICY "lead_files_insert_staff" ON lead_files TO authenticated;
-ALTER POLICY "knx_designs_select_assigned" ON knx_designs TO authenticated;
-ALTER POLICY "Users insert own audit events" ON audit_log_archived_20260615 TO authenticated;
+DO $body$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='lead_files' AND policyname='lead_files_select_assigned') THEN
+    ALTER POLICY "lead_files_select_assigned" ON public.lead_files TO authenticated;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='lead_files' AND policyname='lead_files_insert_staff') THEN
+    ALTER POLICY "lead_files_insert_staff" ON public.lead_files TO authenticated;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='knx_designs' AND policyname='knx_designs_select_assigned') THEN
+    ALTER POLICY "knx_designs_select_assigned" ON public.knx_designs TO authenticated;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='audit_log_archived_20260615' AND policyname='Users insert own audit events') THEN
+    ALTER POLICY "Users insert own audit events" ON public.audit_log_archived_20260615 TO authenticated;
+  END IF;
+END;
+$body$;
 
 -- ── Part 2: log_activity() 表引用加 public. 前缀 ──
 

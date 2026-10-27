@@ -2,7 +2,7 @@
 -- 2026-06-04
 CREATE TABLE IF NOT EXISTS products (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id   UUID REFERENCES tenants(id),
+    tenant_id   UUID, -- legacy placeholder; no tenants schema exists in this migration chain
     name        TEXT NOT NULL,
     sku         TEXT,
     category    TEXT DEFAULT 'general',

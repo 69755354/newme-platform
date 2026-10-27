@@ -44,6 +44,9 @@ CREATE POLICY "wf_sales_insert" ON lead_workflow_stages FOR INSERT
 CREATE POLICY "wf_sales_update" ON lead_workflow_stages FOR UPDATE
   USING (EXISTS (SELECT 1 FROM leads l WHERE l.id = lead_workflow_stages.lead_id AND l.assigned_to = auth.uid()));
 
+-- Required for this legacy migration to run before the later CRM-v2 migration in a clean room.
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS disqualified_candidate BOOLEAN DEFAULT false;
+
 -- Seed default 5 stages for existing leads that don't have any
 INSERT INTO lead_workflow_stages (lead_id, stage_key, stage_order, weight, status)
 SELECT l.id, 'requirement', 1, 20, 'pending'

@@ -121,11 +121,11 @@ async function runKnxDesignPipeline(taskId: string, leadId: string, devices: Rec
     const supabaseAdmin = getSupabaseAdmin();
 
     // Step 1: Analyze / compute
-    store.set(taskId, { status: "running", progress_pct: 10, progress_label: "knxProgressAnalyzing" });
+    store.set(taskId, { lead_id: leadId, status: "running", progress_pct: 10, progress_label: "knxProgressAnalyzing" });
     await sleep(2000); // simulate CAD analysis
 
     // Step 2: Compute devices
-    store.set(taskId, { status: "running", progress_pct: 30, progress_label: "knxProgressComputing" });
+    store.set(taskId, { lead_id: leadId, status: "running", progress_pct: 30, progress_label: "knxProgressComputing" });
 
     // Try to call Hermes Bridge for smart KNX planning
     let knxPlanResult = null;
@@ -151,7 +151,7 @@ async function runKnxDesignPipeline(taskId: string, leadId: string, devices: Rec
     await sleep(2000);
 
     // Step 3: Generate quotation
-    store.set(taskId, { status: "running", progress_pct: 50, progress_label: "knxProgressQuote" });
+    store.set(taskId, { lead_id: leadId, status: "running", progress_pct: 50, progress_label: "knxProgressQuote" });
 
     // Use quotation engine to calculate
     let totalAed = 0;
@@ -173,11 +173,12 @@ async function runKnxDesignPipeline(taskId: string, leadId: string, devices: Rec
     await sleep(1500);
 
     // Step 4: Generate PPT
-    store.set(taskId, { status: "running", progress_pct: 70, progress_label: "knxProgressPpt" });
+    store.set(taskId, { lead_id: leadId, status: "running", progress_pct: 70, progress_label: "knxProgressPpt" });
     await sleep(2000);
 
     // Step 5: Done — save results
     store.set(taskId, {
+      lead_id: leadId,
       status: "completed",
       progress_pct: 100,
       progress_label: "knxProgressDone",
@@ -238,6 +239,7 @@ async function runKnxDesignPipeline(taskId: string, leadId: string, devices: Rec
   } catch (err: any) {
     console.error("[KNX Design Pipeline] Failed:", err);
     store.set(taskId, {
+      lead_id: leadId,
       status: "failed",
       progress_pct: 0,
       progress_label: "",
@@ -290,6 +292,7 @@ export async function POST(request: NextRequest) {
     const store = getStore();
 
     store.set(taskId, {
+      lead_id,
       status: "started",
       progress_pct: 0,
       progress_label: "knxProgressAnalyzing",

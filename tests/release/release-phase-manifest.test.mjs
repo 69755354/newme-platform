@@ -61,13 +61,18 @@ test("the committed manifest describes this tree", () => {
   const problems = auditManifest({ manifest, files, hashes, baseline: readBaseline() });
   assert.deepEqual(problems, []);
 
-  // The two phases together are the pending set, and the contract phase is one
-  // file. Stated here as well as computed, because these are the two facts the
-  // deployment procedure is written against.
+  // The later phase retains the original money contract followed by optional
+  // disabled-pilot provisioning. No historical migration is renumbered.
   const pending = cliFiles.filter((file) => file.slice(0, 14) > manifest.production_stamp);
   assert.equal(manifest.required_for_app.length + manifest.deferred_contract.length, pending.length);
-  assert.equal(manifest.deferred_contract.length, 1);
+  assert.equal(manifest.deferred_contract.length, 7);
+  assert.equal(manifest.deferred_contract[4].file, "20261023123323_meta_ads_atomic_window.sql");
+  assert.equal(manifest.deferred_contract[5].file, "20261025151000_website_capi_delivery_event.sql");
+  assert.equal(manifest.deferred_contract[6].file, "20261025180000_meta_crm_lead_stage_events.sql");
   assert.match(manifest.deferred_contract[0].file, /^20260818000000_money_direct_write_contract_phase\.sql$/);
+  assert.equal(manifest.deferred_contract[1].file, "20261019104004_whatsapp_pilot_events.sql");
+  assert.equal(manifest.deferred_contract[2].file, "20261022194620_whatsapp_privacy_lifecycle.sql");
+  assert.equal(manifest.deferred_contract[3].file, "20261023020000_whatsapp_privacy_rpc_owner.sql");
 });
 
 test("a pending migration that no phase claims fails the gate", () => {
@@ -242,12 +247,11 @@ test("the contract phase is refused while any expand migration is unapplied", ()
   const short = planPhase({ manifest, phase: "deferred_contract", recorded: allButOne });
   assert.ok(short.problems.some((problem) => /1 required_for_app migration\(s\) are unapplied/.test(problem)));
 
-  // With every expand migration recorded it is allowed, and there is exactly one
-  // file to apply.
+  // With every expand migration recorded, every declared later file is planned.
   const all = recordedFor(manifestEntries(manifest, "required_for_app"));
   const ready = planPhase({ manifest, phase: "deferred_contract", recorded: all });
   assert.deepEqual(ready.problems, []);
-  assert.equal(ready.toApply.length, 1);
+  assert.deepEqual(ready.toApply.map(entry => entry.version), manifest.deferred_contract.map(entry => entry.version));
 });
 
 test("the expand phase is refused once the contract phase is recorded", () => {

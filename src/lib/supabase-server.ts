@@ -124,6 +124,9 @@ async function tryRefreshToken(
       method: "POST",
       headers: { apikey: anonKey, "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refreshToken }),
+      // Abort both waiting for headers and consuming the response body, so a
+      // stalled upstream cannot keep this session's shared refresh lock forever.
+      signal: AbortSignal.timeout(3_000),
     });
     let data: unknown = null;
     try {

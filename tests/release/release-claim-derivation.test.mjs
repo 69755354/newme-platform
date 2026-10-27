@@ -111,11 +111,18 @@ test("a proper subset of the required set is refused, and the missing ids are na
 
 test("the deferred contract phase in an applied_verified claim is refused by name", () => {
   const problems = problemsOf("applied_verified", [...REQUIRED, ...DEFERRED]);
-  assert.equal(problems.length, 1, problems.join("\n"));
-  assert.match(problems[0], new RegExp(`the claim names ${DEFERRED[0]}, which is this release's deferred contract-phase migration`));
-  // The message has to say what to do, because the operator has already applied it.
-  assert.match(problems[0], /must not be applied until the candidate is live and verified/);
-  assert.match(problems[0], /Roll the phase back before deploying\./);
+  assert.equal(problems.length, DEFERRED.length, problems.join("\n"));
+  for (const version of DEFERRED) {
+    const matching = problems.filter((message) => message.startsWith(`the claim names ${version}, `));
+    assert.equal(matching.length, 1, `missing or duplicated refusal for ${version}`);
+    assert.match(matching[0], /deferred IDs must not be claimed as required_for_app/);
+    assert.match(matching[0], /phase includes the money-mode transition/);
+    assert.match(matching[0], /reviewed contract\/reentry recovery procedure and verify live money mode/);
+    assert.match(matching[0], /Do not delete provisioned observer data/);
+    const individual = problemsOf("applied_verified", [...REQUIRED, version]);
+    assert.equal(individual.length, 1, `a deferred migration must also be refused individually: ${version}`);
+    assert.ok(individual[0].startsWith(`the claim names ${version}, `));
+  }
 });
 
 test("an id this release does not require, a duplicate, and an unparseable one are all refused", () => {
@@ -225,9 +232,20 @@ test("the deferred contract phase already applied is refused with its remedy", (
     requireApplied: REQUIRED,
     requireUnapplied: DEFERRED,
   });
-  assert.equal(findings.length, 1, findings.join("\n"));
-  assert.match(findings[0], new RegExp(`^${DEFERRED[0]} is this release's deferred contract-phase migration and the database has already applied it`));
-  assert.match(findings[0], /rollback_money_direct_write_contract_phase\.sql \(runbook §5\.1\)/);
+  assert.equal(findings.length, DEFERRED.length, findings.join("\n"));
+  for (const version of DEFERRED) {
+    const matching = findings.filter((message) => message.startsWith(`${version} is this release's deferred contract-phase migration`));
+    assert.equal(matching.length, 1, `missing or duplicated applied-early refusal for ${version}`);
+    assert.match(matching[0], /rollback_money_direct_write_contract_phase\.sql \(runbook §5\.1\)/);
+    assert.match(matching[0], /without removing migration history or optional observer tables/);
+    assert.match(matching[0], /reviewed contract\/reentry recovery procedure; do not delete provisioned data/);
+    // Keep earlier deferred rows present so this control tests one unapplied
+    // requirement without creating an unrelated hole in recorded history.
+    const prefix = DEFERRED.filter((entry) => entry <= version);
+    const individual = compareHistories({ remote: [row(STAMP), ...REQUIRED.map(row), ...prefix.map(row)], local, requireApplied: REQUIRED, requireUnapplied: [version] });
+    assert.equal(individual.length, 1, `every deferred version must also be refused individually: ${version}`);
+    assert.ok(individual[0].startsWith(`${version} is this release's deferred contract-phase migration`));
+  }
 
   // The correct pre-switch state — every required migration applied, the contract
   // phase not — is the one that passes.

@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=74df222d0a256ffe92bca5dfbf32afd6a665db103118f6621e43ad94c2439500
+// Migration fingerprint: sha256=59b76af1fc63fcf91c2f157dac95e843ceae72c43bad9aec43a0b50f9fe48eac
 export type Json =
   | string
   | number
@@ -638,6 +638,24 @@ export type Database = {
           },
         ]
       }
+      contract_no_counters: {
+        Row: {
+          contract_date: string
+          last_seq: number
+          updated_at: string
+        }
+        Insert: {
+          contract_date: string
+          last_seq?: number
+          updated_at?: string
+        }
+        Update: {
+          contract_date?: string
+          last_seq?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       contracts: {
         Row: {
           approval_status: string | null
@@ -960,6 +978,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      definer_entry_boundary_exemptions: {
+        Row: {
+          declared_at: string
+          reason: string
+          routine: string
+        }
+        Insert: {
+          declared_at?: string
+          reason: string
+          routine: string
+        }
+        Update: {
+          declared_at?: string
+          reason?: string
+          routine?: string
+        }
+        Relationships: []
       }
       follow_up_logs: {
         Row: {
@@ -1329,6 +1365,55 @@ export type Database = {
           },
         ]
       }
+      lead_deletion_requests: {
+        Row: {
+          actor_id: string
+          created_at: string
+          deleted_lead_id: string
+          id: string
+          idempotency_key: string
+          response: Json
+        }
+        Insert: {
+          actor_id: string
+          created_at?: string
+          deleted_lead_id: string
+          id?: string
+          idempotency_key: string
+          response: Json
+        }
+        Update: {
+          actor_id?: string
+          created_at?: string
+          deleted_lead_id?: string
+          id?: string
+          idempotency_key?: string
+          response?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_deletion_requests_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_deletion_requests_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "sales_performance"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_deletion_requests_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_personal_stats"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       lead_documents: {
         Row: {
           created_at: string
@@ -1494,35 +1579,6 @@ export type Database = {
           },
         ]
       }
-      lead_rebalance_batches: {
-        Row: {
-          actor_id: string
-          batch_key: string
-          created_at: string
-          plan: Json
-        }
-        Insert: {
-          actor_id: string
-          batch_key: string
-          created_at?: string
-          plan: Json
-        }
-        Update: {
-          actor_id?: string
-          batch_key?: string
-          created_at?: string
-          plan?: Json
-        }
-        Relationships: [
-          {
-            foreignKeyName: "lead_rebalance_batches_actor_id_fkey"
-            columns: ["actor_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       lead_milestones: {
         Row: {
           completed_at: string | null
@@ -1628,6 +1684,136 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_stagnant_leads"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_mutation_requests: {
+        Row: {
+          actor_id: string
+          created_at: string
+          id: string
+          idempotency_key: string
+          lead_id: string
+          operation: string
+          response: Json
+        }
+        Insert: {
+          actor_id: string
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          lead_id: string
+          operation: string
+          response: Json
+        }
+        Update: {
+          actor_id?: string
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          lead_id?: string
+          operation?: string
+          response?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_mutation_requests_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_mutation_requests_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "sales_performance"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_mutation_requests_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_personal_stats"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "lead_mutation_requests_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "lead_alerts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_mutation_requests_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_mutation_requests_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "v_lead_trace"
+            referencedColumns: ["lead_id"]
+          },
+          {
+            foreignKeyName: "lead_mutation_requests_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "v_risk_pool"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_mutation_requests_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "v_stagnant_leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_rebalance_batches: {
+        Row: {
+          actor_id: string
+          batch_key: string
+          created_at: string
+          plan: Json
+        }
+        Insert: {
+          actor_id: string
+          batch_key: string
+          created_at?: string
+          plan: Json
+        }
+        Update: {
+          actor_id?: string
+          batch_key?: string
+          created_at?: string
+          plan?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_rebalance_batches_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_rebalance_batches_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "sales_performance"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_rebalance_batches_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_personal_stats"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -1816,6 +2002,7 @@ export type Database = {
           meta_ad_id: string | null
           meta_campaign: string | null
           meta_click_id: string | null
+          meta_leadgen_id: string | null
           next_action: string | null
           next_followup_date: string | null
           no_answer_flag: boolean
@@ -1936,6 +2123,7 @@ export type Database = {
           meta_ad_id?: string | null
           meta_campaign?: string | null
           meta_click_id?: string | null
+          meta_leadgen_id?: string | null
           next_action?: string | null
           next_followup_date?: string | null
           no_answer_flag?: boolean
@@ -2056,6 +2244,7 @@ export type Database = {
           meta_ad_id?: string | null
           meta_campaign?: string | null
           meta_click_id?: string | null
+          meta_leadgen_id?: string | null
           next_action?: string | null
           next_followup_date?: string | null
           no_answer_flag?: boolean
@@ -2297,6 +2486,59 @@ export type Database = {
         }
         Relationships: []
       }
+      meta_crm_stage_events: {
+        Row: {
+          id: string
+          lead_id: string
+          meta_leadgen_id: string
+          crm_stage: string
+          event_name: string
+          event_time: number
+          status: string
+          attempts: number
+          lease_id: string | null
+          lease_until: string | null
+          created_at: string
+          delivered_at: string | null
+        }
+        Insert: {
+          id?: string
+          lead_id: string
+          meta_leadgen_id: string
+          crm_stage: string
+          event_name: string
+          event_time: number
+          status?: string
+          attempts?: number
+          lease_id?: string | null
+          lease_until?: string | null
+          created_at?: string
+          delivered_at?: string | null
+        }
+        Update: {
+          id?: string
+          lead_id?: string
+          meta_leadgen_id?: string
+          crm_stage?: string
+          event_name?: string
+          event_time?: number
+          status?: string
+          attempts?: number
+          lease_id?: string | null
+          lease_until?: string | null
+          created_at?: string
+          delivered_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_crm_stage_events_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meta_tokens: {
         Row: {
           access_token: string
@@ -2315,6 +2557,30 @@ export type Database = {
           created_at?: string | null
           expires_at?: string | null
           id?: number
+        }
+        Relationships: []
+      }
+      money_release_mode: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          direct_write_mode: string
+          id: string
+          reason: string | null
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          direct_write_mode?: string
+          id?: string
+          reason?: string | null
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          direct_write_mode?: string
+          id?: string
+          reason?: string | null
         }
         Relationships: []
       }
@@ -2597,6 +2863,27 @@ export type Database = {
             referencedColumns: ["user_id"]
           },
           {
+            foreignKeyName: "payments_credited_to_fkey"
+            columns: ["credited_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_credited_to_fkey"
+            columns: ["credited_to"]
+            isOneToOne: false
+            referencedRelation: "sales_performance"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_credited_to_fkey"
+            columns: ["credited_to"]
+            isOneToOne: false
+            referencedRelation: "v_sales_personal_stats"
+            referencedColumns: ["user_id"]
+          },
+          {
             foreignKeyName: "payments_installment_plan_id_fkey"
             columns: ["installment_plan_id"]
             isOneToOne: false
@@ -2609,6 +2896,27 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_lead_trace"
             referencedColumns: ["installment_id"]
+          },
+          {
+            foreignKeyName: "payments_voided_by_fkey"
+            columns: ["voided_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_voided_by_fkey"
+            columns: ["voided_by"]
+            isOneToOne: false
+            referencedRelation: "sales_performance"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_voided_by_fkey"
+            columns: ["voided_by"]
+            isOneToOne: false
+            referencedRelation: "v_sales_personal_stats"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -2965,15 +3273,13 @@ export type Database = {
       }
       quotations: {
         Row: {
+          accepted_at: string | null
           contract_id: string | null
           created_at: string | null
           created_by: string | null
           currency: string | null
           customer_id: string | null
           delivery_terms: string | null
-          sent_at: string | null
-          accepted_at: string | null
-          rejected_at: string | null
           devices_json: Json | null
           discount_amount: number | null
           discount_rate: number | null
@@ -2986,6 +3292,8 @@ export type Database = {
           ppt_url: string | null
           quotation_type: string
           quote_no: string
+          rejected_at: string | null
+          sent_at: string | null
           status: string
           subtotal: number
           tax_amount: number | null
@@ -2996,15 +3304,13 @@ export type Database = {
           version: number | null
         }
         Insert: {
+          accepted_at?: string | null
           contract_id?: string | null
           created_at?: string | null
           created_by?: string | null
           currency?: string | null
           customer_id?: string | null
           delivery_terms?: string | null
-          sent_at?: string | null
-          accepted_at?: string | null
-          rejected_at?: string | null
           devices_json?: Json | null
           discount_amount?: number | null
           discount_rate?: number | null
@@ -3017,6 +3323,8 @@ export type Database = {
           ppt_url?: string | null
           quotation_type?: string
           quote_no: string
+          rejected_at?: string | null
+          sent_at?: string | null
           status?: string
           subtotal?: number
           tax_amount?: number | null
@@ -3027,15 +3335,13 @@ export type Database = {
           version?: number | null
         }
         Update: {
+          accepted_at?: string | null
           contract_id?: string | null
           created_at?: string | null
           created_by?: string | null
           currency?: string | null
           customer_id?: string | null
           delivery_terms?: string | null
-          sent_at?: string | null
-          accepted_at?: string | null
-          rejected_at?: string | null
           devices_json?: Json | null
           discount_amount?: number | null
           discount_rate?: number | null
@@ -3048,6 +3354,8 @@ export type Database = {
           ppt_url?: string | null
           quotation_type?: string
           quote_no?: string
+          rejected_at?: string | null
+          sent_at?: string | null
           status?: string
           subtotal?: number
           tax_amount?: number | null
@@ -3239,9 +3547,9 @@ export type Database = {
           created_at: string
           description: string | null
           due_at: string
-          priority: string | null
           id: string
           lead_id: string
+          priority: string | null
           source: string | null
           status: string
           title: string
@@ -3252,9 +3560,9 @@ export type Database = {
           created_at?: string
           description?: string | null
           due_at: string
-          priority?: string | null
           id?: string
           lead_id: string
+          priority?: string | null
           source?: string | null
           status?: string
           title: string
@@ -3265,9 +3573,9 @@ export type Database = {
           created_at?: string
           description?: string | null
           due_at?: string
-          priority?: string | null
           id?: string
           lead_id?: string
+          priority?: string | null
           source?: string | null
           status?: string
           title?: string
@@ -3570,6 +3878,111 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_sales_personal_stats"
             referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      whatsapp_pilot_channels: {
+        Row: {
+          accept_since: string
+          business_phone: string
+          created_at: string
+          enabled: boolean
+          id: string
+          label: string
+          owner_profile_id: string
+          phone_number_id: string
+          purpose: string
+          waba_id: string
+        }
+        Insert: {
+          accept_since?: string
+          business_phone: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          label: string
+          owner_profile_id: string
+          phone_number_id: string
+          purpose: string
+          waba_id: string
+        }
+        Update: {
+          accept_since?: string
+          business_phone?: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          label?: string
+          owner_profile_id?: string
+          phone_number_id?: string
+          purpose?: string
+          waba_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_pilot_channels_owner_profile_id_fkey"
+            columns: ["owner_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_pilot_channels_owner_profile_id_fkey"
+            columns: ["owner_profile_id"]
+            isOneToOne: false
+            referencedRelation: "sales_performance"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_pilot_channels_owner_profile_id_fkey"
+            columns: ["owner_profile_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_personal_stats"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      whatsapp_pilot_events: {
+        Row: {
+          channel_id: string
+          customer_key: string
+          direction: string
+          expires_at: string
+          message_id: string
+          message_type: string
+          occurred_at: string
+          received_at: string
+          source: string
+        }
+        Insert: {
+          channel_id: string
+          customer_key: string
+          direction: string
+          expires_at: string
+          message_id: string
+          message_type: string
+          occurred_at: string
+          received_at?: string
+          source: string
+        }
+        Update: {
+          channel_id?: string
+          customer_key?: string
+          direction?: string
+          expires_at?: string
+          message_id?: string
+          message_type?: string
+          occurred_at?: string
+          received_at?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_pilot_events_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_pilot_channels"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4035,6 +4448,7 @@ export type Database = {
         }
         Returns: Json
       }
+      allocate_quote_no: { Args: never; Returns: string }
       apply_standard_rls: { Args: { table_name: string }; Returns: undefined }
       approve_contract: {
         Args: {
@@ -4045,15 +4459,55 @@ export type Database = {
         }
         Returns: Json
       }
+      assert_current_session: { Args: never; Returns: undefined }
+      assert_current_session_at_entry: { Args: never; Returns: undefined }
+      assert_installment_schedule: {
+        Args: { p_schedule: Json; p_subject?: string; p_total: number }
+        Returns: number
+      }
+      clear_kpi_targets: {
+        Args: { p_actor: string; p_period: string }
+        Returns: number
+      }
       confirm_payment: {
         Args: { p_confirmer_id: string; p_payment_id: string }
         Returns: Json
       }
+      contract_first_payment_status: {
+        Args: { p_contract_id: string }
+        Returns: string
+      }
+      contract_transition_is_allowed: {
+        Args: { p_from: string; p_to: string }
+        Returns: boolean
+      }
+      convert_quotation_to_contract: {
+        Args: { p_payload?: Json; p_quotation_id: string }
+        Returns: Json
+      }
+      create_contract: { Args: { p_payload: Json }; Returns: Json }
       days_since_last_contact: { Args: { lead_id: string }; Returns: number }
+      delete_lead_atomic: {
+        Args: { p_idempotency_key: string; p_lead_id: string }
+        Returns: Json
+      }
       detect_stale_leads: { Args: { stale_days?: number }; Returns: number }
+      finalize_lead_won: {
+        Args: {
+          p_actor: string
+          p_amount: number
+          p_context?: Json
+          p_lead_id: string
+          p_source: string
+        }
+        Returns: string
+      }
       generate_quote_no: { Args: { year_param: number }; Returns: string }
       get_my_role: { Args: never; Returns: string }
-      session_boundary_state: { Args: never; Returns: string }
+      get_or_create_lead_rebalance_plan: {
+        Args: { p_batch_key: string; p_plan?: Json }
+        Returns: Json
+      }
       get_team_activity: {
         Args: { p_date?: string }
         Returns: {
@@ -4093,11 +4547,63 @@ export type Database = {
             }
             Returns: string
           }
+      maintain_whatsapp_privacy: { Args: never; Returns: Json }
       milestone_order: { Args: { milestone: string }; Returns: number }
+      money_actor: {
+        Args: { p_allowed_roles: string[]; p_claimed: string }
+        Returns: string
+      }
+      money_direct_write_is_blocked: { Args: never; Returns: boolean }
+      money_direct_write_mode: { Args: never; Returns: string }
+      money_release_mode_lock_key: { Args: never; Returns: number }
+      money_set_direct_write_mode: {
+        Args: { p_mode: string; p_reason: string }
+        Returns: string
+      }
+      money_write_is_direct: { Args: never; Returns: boolean }
+      next_contract_no: { Args: { p_date: string }; Returns: string }
       next_quote_no: { Args: never; Returns: string }
-      clear_kpi_targets: {
-        Args: { p_period: string; p_actor: string }
-        Returns: number
+      reassign_lead: {
+        Args: { p_lead_id: string; p_new_sales: string; p_reason?: string }
+        Returns: boolean
+      }
+      reassign_lead_atomic: {
+        Args: {
+          p_expected_updated_at: string
+          p_idempotency_key: string
+          p_lead_id: string
+          p_new_assignee: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      recomplete_lead_milestone: {
+        Args: { p_lead_id: string; p_milestone_key: string; p_notes: string }
+        Returns: Json
+      }
+      record_lead_contact_atomic: {
+        Args: {
+          p_contact_fingerprint: string
+          p_contact_method: string
+          p_contact_result: string
+          p_contact_time: string
+          p_idempotency_key: string
+          p_lead_id: string
+          p_summary: string
+        }
+        Returns: Json
+      }
+      record_lead_note_atomic: {
+        Args: { p_idempotency_key: string; p_lead_id: string; p_note: string }
+        Returns: Json
+      }
+      reopen_lead_milestone: {
+        Args: { p_lead_id: string; p_milestone_key: string; p_reason: string }
+        Returns: Json
+      }
+      replace_meta_ad_spend_window: {
+        Args: { p_account_id: string; p_rows: Json; p_since: string; p_until: string }
+        Returns: Json
       }
       replace_kpi_targets: {
         Args: { p_period: string; p_rows: Json; p_set_by: string }
@@ -4113,22 +4619,39 @@ export type Database = {
           target_type: string
           updated_at: string | null
         }[]
+        SetofOptions: {
+          from: "*"
+          to: "kpi_targets"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
-      reassign_lead: {
-        Args: { p_lead_id: string; p_new_sales: string; p_reason?: string }
-        Returns: boolean
-      }
-      get_or_create_lead_rebalance_plan: {
-        Args: { p_batch_key: string; p_plan?: Json }
+      request_whatsapp_deletion: {
+        Args: { p_customer_key: string; p_request_id: string }
         Returns: Json
       }
-      reassign_lead_atomic: {
+      revoke_contract: {
+        Args: { p_contract_id: string; p_reason: string; p_supersede?: boolean }
+        Returns: Json
+      }
+      revoke_user_sessions: {
+        Args: { p_reason?: string; p_user_id: string }
+        Returns: Json
+      }
+      session_boundary_state: { Args: never; Returns: string }
+      session_identity_enabled: { Args: never; Returns: boolean }
+      session_token_is_current: { Args: never; Returns: boolean }
+      set_contract_status: {
+        Args: { p_contract_id: string; p_reason?: string; p_status: string }
+        Returns: Json
+      }
+      transition_lead_stage: {
         Args: {
-          p_expected_updated_at: string
+          p_expected_stage: string
           p_idempotency_key: string
           p_lead_id: string
-          p_new_assignee: string
-          p_reason?: string
+          p_next_stage: string
+          p_note: string
         }
         Returns: Json
       }
@@ -4141,85 +4664,11 @@ export type Database = {
         }
         Returns: Json
       }
-      delete_lead_atomic: {
-        Args: { p_idempotency_key: string; p_lead_id: string }
-        Returns: Json
-      }
-      record_lead_note_atomic: {
-        Args: { p_idempotency_key: string; p_lead_id: string; p_note: string }
-        Returns: Json
-      }
-      record_lead_contact_atomic: {
-        Args: {
-          p_contact_fingerprint: string
-          p_contact_method: string
-          p_contact_result: string
-          p_contact_time: string
-          p_idempotency_key: string
-          p_lead_id: string
-          p_summary: string
-        }
-        Returns: Json
-      }
-      recomplete_lead_milestone: {
-        Args: { p_lead_id: string; p_milestone_key: string; p_notes: string }
-        Returns: Json
-      }
-      reopen_lead_milestone: {
-        Args: { p_lead_id: string; p_milestone_key: string; p_reason: string }
-        Returns: Json
-      }
-      transition_lead_stage: {
-        Args: {
-          p_expected_stage: string
-          p_lead_id: string
-          p_next_stage: string
-          p_note: string
-          p_idempotency_key: string
-        }
-        Returns: Json
-      }
-      // The money routines of
-      // supabase/migrations/20260812000000_money_actor_identity_and_atomicity.sql.
-      // Declared here rather than regenerated because that migration has not been
-      // applied to the linked project: `supabase gen types` reads the live schema,
-      // and running it now would describe the schema this release replaces. The
-      // migration fingerprint on line 1 is what binds this file to that migration
-      // set, and supabase/replay/10_assert_release_contracts.sql is what checks the
-      // signatures against a replayed schema.
-      create_contract: {
-        Args: { p_payload: Json }
-        Returns: Json
-      }
-      convert_quotation_to_contract: {
-        Args: { p_quotation_id: string; p_payload?: Json }
-        Returns: Json
-      }
-      set_contract_status: {
-        Args: { p_contract_id: string; p_status: string; p_reason?: string }
-        Returns: Json
-      }
-      revoke_contract: {
-        Args: { p_contract_id: string; p_reason: string; p_supersede?: boolean }
-        Returns: Json
-      }
-      // The reversal added by
-      // supabase/migrations/20260814000000_l0_round3_authorization_and_integrity.sql.
-      // Same reason for hand-declaring it: that migration is not applied to the
-      // linked project either, so generated types would not contain it.
       void_payment: {
         Args: { p_payment_id: string; p_reason: string }
         Returns: Json
       }
-      // Added by
-      // supabase/migrations/20260817120000_admin_reset_session_revocation.sql, and
-      // hand-declared for the same reason. Callable by service_role only: the two
-      // administrator password-reset paths are the only callers, and a typed entry
-      // here is what keeps a future caller from inventing different argument names.
-      revoke_user_sessions: {
-        Args: { p_user_id: string; p_reason?: string }
-        Returns: Json
-      }
+      whatsapp_privacy_status: { Args: never; Returns: Json }
     }
     Enums: {
       [_ in never]: never
@@ -4352,3 +4801,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+

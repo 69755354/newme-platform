@@ -52,33 +52,45 @@ function websiteRequest(body, headers = {}) {
   });
 }
 
-function loadRoute({ insertError = null, taskError = null, capiError = null } = {}) {
+function loadRoute({ insertError = null, taskError = null, capiError = null, capiFailures = 0,
+  beforeCapi = async () => {}, deliveryErrorOnce = false, taskFailures = 0 } = {}) {
   const inserts = [];
   const tasks = [];
   const capi = [];
   const deliveries = [];
   const deliveryUpdates = [];
-  const leadChain = {
-    insert(value) { inserts.push(value); return this; },
-    select() { return this; },
-    async single() {
-      return insertError
-        ? { data: null, error: insertError }
-        : { data: { id: "11111111-1111-4111-8111-111111111111" }, error: null };
-    },
-  };
-  const deliveryChain = {
-    insert(value) { deliveries.push(value); return this; },
-    update(value) { deliveryUpdates.push(value); return this; },
-    select() { return this; },
-    single() { return Promise.resolve({ data: { id: "delivery-1" }, error: null }); },
-    eq() { return Promise.resolve({ error: null }); },
-  };
+  const rows = { leads: new Map(), business_events: new Map(), tasks: new Map() };
   const admin = {
     from(table) {
-      if (table === "leads") return leadChain;
-      if (table === "business_events") return deliveryChain;
-      assert.fail(`unexpected table: ${table}`);
+      let operation = "select", value, filters = [];
+      const chain = {
+        insert(input) { operation = "insert"; value = structuredClone(input); return this; },
+        update(input) { operation = "update"; value = structuredClone(input); return this; },
+        select() { return this; },
+        eq(key, expected) { filters.push([key, expected]); return this; },
+        single() { return this.maybeSingle(); },
+        async maybeSingle() {
+          if (table === "leads" && operation === "insert" && insertError) return { data: null, error: insertError };
+          if (operation === "insert") {
+            if (table === "business_events" && deliveryErrorOnce) {
+              deliveryErrorOnce = false;
+              return { data: null, error: { code: "outbox_unavailable" } };
+            }
+            if (rows[table].has(value.id)) return { data: null, error: { code: "23505" } };
+            rows[table].set(value.id, value);
+            (table === "leads" ? inserts : deliveries).push(structuredClone(value));
+            return { data: structuredClone(value), error: null };
+          }
+          const row = [...rows[table].values()].find((entry) => filters.every(([key, expected]) => {
+            const [column, field] = key.split("->>");
+            const found = field ? entry[column]?.[field] : entry[column];
+            return String(found) === String(expected);
+          }));
+          if (row && operation === "update") { Object.assign(row, value); deliveryUpdates.push(value); }
+          return { data: row ? structuredClone(row) : null, error: null };
+        },
+      };
+      return chain;
     },
   };
   const route = loadTypeScriptModule("src/app/api/public/leads/route.ts", {
@@ -88,23 +100,30 @@ function loadRoute({ insertError = null, taskError = null, capiError = null } = 
     "@/lib/supabase-admin": { supabaseAdmin: admin },
     "@/lib/tasks": {
       createFollowUpTask: async (_db, input) => {
+        if (rows.tasks.has(input.taskId)) return { error: { code: "23505" } };
+        if (taskFailures-- > 0) return { error: { code: "task_unavailable" } };
+        if (!taskError) rows.tasks.set(input.taskId, input);
         tasks.push(input);
         return { error: taskError };
       },
     },
     "@/lib/meta-capi": {
-      buildMetaCapiLeadPayload: (input) => ({ data: [{ event_id: input.input.attribution.eventId }] }),
+      buildMetaCapiLeadPayload: loadTypeScriptModule("src/lib/meta-capi.ts").buildMetaCapiLeadPayload,
       sendMetaCapiPayload: async (payload) => {
         capi.push(payload);
+        await beforeCapi();
+        if (capiFailures-- > 0) throw new Error("upstream unavailable");
         if (capiError) throw capiError;
       },
     },
+    "@/lib/website-lead-identity": loadTypeScriptModule("src/lib/website-lead-identity.ts"),
+    "@/lib/meta-capi-delivery": loadTypeScriptModule("src/lib/meta-capi-delivery.ts"),
     "@/lib/logger": {
       genReqId: () => "request-1",
       logger: { error() {}, warn() {}, info() {} },
     },
   });
-  return { route, inserts, tasks, capi, deliveries, deliveryUpdates };
+  return { route, inserts, tasks, capi, deliveries, deliveryUpdates, rows };
 }
 
 test.beforeEach(() => {
@@ -225,6 +244,7 @@ test("a valid request creates an attributed website lead, follow-up, and CAPI ev
   assert.equal(result.headers.get("access-control-allow-origin"), "https://newme.ae");
   assert.equal(inserts.length, 1);
   assert.deepEqual(inserts[0], {
+    id: inserts[0].id,
     source: "website",
     customer_name: "Nadia",
     phone: "+971501234567",
@@ -253,7 +273,10 @@ test("a valid request creates an attributed website lead, follow-up, and CAPI ev
     meta_ad_id: "ad-1",
     meta_campaign: null,
     first_touch_at: inserts[0].first_touch_at,
-    raw_import_data: { intake: "newme.ae", event_id: "web-123", fbp: "fb.1.123.456" },
+    raw_import_data: { intake: "newme.ae", event_id: "web-123", fbp: "fb.1.123.456",
+      intake_fingerprint: inserts[0].raw_import_data.intake_fingerprint,
+      intake_at: inserts[0].raw_import_data.intake_at,
+      capi_payload: inserts[0].raw_import_data.capi_payload },
     quality: "pending",
     stage: "new",
     assigned_to: null,
@@ -263,7 +286,7 @@ test("a valid request creates an attributed website lead, follow-up, and CAPI ev
   assert.match(inserts[0].next_followup_date, /^\d{4}-\d{2}-\d{2}$/);
   assert.match(inserts[0].first_touch_at, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(tasks.length, 1);
-  assert.equal(tasks[0].leadId, "11111111-1111-4111-8111-111111111111");
+  assert.equal(tasks[0].leadId, inserts[0].id);
   assert.equal(tasks[0].assigneeId, null);
   assert.equal(capi.length, 1);
   assert.equal(capi[0].data[0].event_id, "web-123");
@@ -299,6 +322,111 @@ test("failed CAPI sends remain in a durable retryable business event", async () 
   assert.equal(deliveryUpdates.at(-1).event_data.status, "failed");
   assert.equal(deliveryUpdates.at(-1).event_data.event_id, "retryable-1");
   assert.deepEqual(deliveryUpdates.at(-1).event_data.payload, deliveries[0].event_data.payload);
+});
+
+test("an identical retry creates one lead, task and delivery and does not resend success", async () => {
+  const state = loadRoute();
+  const input = { name: "Nadia", phone: "+971501234567", event_id: "same-inquiry" };
+  assert.equal((await state.route.POST(websiteRequest(input))).status, 201);
+  assert.equal((await state.route.POST(websiteRequest({ ...input, turnstileToken: "new-token", fbp: "fresh-cookie" }))).status, 201);
+  assert.equal(state.rows.leads.size, 1);
+  assert.equal(state.rows.tasks.size, 1);
+  assert.equal(state.rows.business_events.size, 1);
+  assert.equal(state.capi.length, 1);
+});
+
+test("reusing an event id for a different inquiry returns conflict without overwriting", async () => {
+  const state = loadRoute();
+  const input = { name: "Nadia", phone: "+971501234567", event_id: "conflicting-inquiry" };
+  await state.route.POST(websiteRequest(input));
+  const result = await state.route.POST(websiteRequest({ ...input, phone: "+971501234568" }));
+  assert.equal(result.status, 409);
+  assert.deepEqual(await result.json(), { error: "event_id_conflict" });
+  assert.equal(state.inserts[0].phone, input.phone);
+  assert.equal(state.capi.length, 1);
+});
+
+test("an outbox insertion failure is repaired by retry without duplicating the inquiry", async () => {
+  const state = loadRoute({ deliveryErrorOnce: true });
+  const input = { name: "Nadia", phone: "+971501234567", event_id: "repair-outbox" };
+  assert.equal((await state.route.POST(websiteRequest(input))).status, 503);
+  assert.equal(state.capi.length, 0);
+  assert.equal((await state.route.POST(websiteRequest(input))).status, 201);
+  assert.equal(state.rows.leads.size, 1);
+  assert.equal(state.rows.tasks.size, 1);
+  assert.equal(state.rows.business_events.size, 1);
+  assert.equal(state.capi.length, 1);
+});
+
+for (const failure of ["task", "outbox"]) {
+  test(`missing ${failure} recovery retains the original attribution and client context`, async () => {
+    const state = loadRoute(failure === "task" ? { taskFailures: 1 } : { deliveryErrorOnce: true });
+    const input = { name: "Nadia", phone: "+971501234567", event_id: `original-${failure}`,
+      fbc: "fb.1.123.original-click", fbp: "fb.1.123.original-browser",
+      landing_page: "https://newme.ae/budget-estimator/?utm_source=original" };
+    assert.equal((await state.route.POST(websiteRequest(input, { "user-agent": "original-browser" }))).status, 503);
+    const lead = [...state.rows.leads.values()][0];
+    const saved = structuredClone(lead.raw_import_data.capi_payload);
+    lead.phone = "+971501111111"; // Sales edits cannot replace the original event either.
+    assert.equal((await state.route.POST(websiteRequest({ ...input, fbc: null, fbp: "fresh-browser",
+      landing_page: "https://newme.ae/?utm_source=another-click" }, {
+      "x-real-ip": "203.0.113.11", "user-agent": "different-browser",
+    }))).status, 201);
+    assert.equal(state.capi.length, 1);
+    assert.deepEqual(state.capi[0], saved);
+    const event = state.capi[0].data[0];
+    assert.equal(event.user_data.fbc, "fb.1.123.original-click");
+    assert.equal(event.user_data.fbp, "fb.1.123.original-browser");
+    assert.equal(event.user_data.client_ip_address, "203.0.113.10");
+    assert.equal(event.user_data.client_user_agent, "original-browser");
+    assert.equal(event.event_source_url, input.landing_page);
+    assert.equal(event.event_time, Math.floor(Date.parse(lead.raw_import_data.intake_at) / 1000));
+    assert.equal(lead.phone, "+971501111111");
+    assert.equal(state.rows.leads.size, 1);
+    assert.equal(state.rows.tasks.size, 1);
+    assert.equal(state.rows.business_events.size, 1);
+  });
+}
+
+test("a missing original event snapshot cannot be replaced by retry attribution", async () => {
+  const state = loadRoute({ deliveryErrorOnce: true });
+  const input = { name: "Nadia", phone: "+971501234567", event_id: "missing-snapshot" };
+  assert.equal((await state.route.POST(websiteRequest(input))).status, 503);
+  delete [...state.rows.leads.values()][0].raw_import_data.capi_payload;
+  const result = await state.route.POST(websiteRequest({ ...input, fbc: "another-click" }));
+  assert.equal(result.status, 503);
+  assert.equal(state.capi.length, 0);
+  assert.equal(state.rows.business_events.size, 0);
+});
+
+test("a failed send retries the stored payload including its original event time", async () => {
+  const state = loadRoute({ capiFailures: 1 });
+  const input = { name: "Nadia", phone: "+971501234567", event_id: "retry-payload" };
+  await state.route.POST(websiteRequest(input));
+  await state.route.POST(websiteRequest(input));
+  assert.equal(state.capi.length, 2);
+  assert.deepEqual(state.capi[1], state.capi[0]);
+  const stored = [...state.rows.business_events.values()][0].event_data;
+  assert.equal(stored.status, "delivered");
+  assert.equal(stored.attempts, 2);
+});
+
+test("two simultaneous submissions share the persisted delivery claim", async () => {
+  let release, entered;
+  const wait = new Promise((resolve) => { release = resolve; });
+  const started = new Promise((resolve) => { entered = resolve; });
+  const state = loadRoute({ beforeCapi: async () => { entered(); await wait; } });
+  const input = { name: "Nadia", phone: "+971501234567", event_id: "concurrent-inquiry" };
+  const first = state.route.POST(websiteRequest(input));
+  await started;
+  try {
+    assert.equal((await state.route.POST(websiteRequest(input))).status, 201);
+    assert.equal(state.capi.length, 1);
+  } finally { release(); }
+  assert.equal((await first).status, 201);
+  assert.equal(state.rows.leads.size, 1);
+  assert.equal(state.rows.tasks.size, 1);
+  assert.equal(state.rows.business_events.size, 1);
 });
 
 test("request and contact budgets are enforced before database writes", async () => {
@@ -354,4 +482,49 @@ test("the exact public route bypasses session auth and has origin-specific produ
   assert.match(config, /Access-Control-Allow-Origin", value: "https:\/\/newme\.ae"/);
   assert.match(config, /Access-Control-Allow-Origin", value: "https:\/\/www\.newme\.ae"/);
   assert.doesNotMatch(config, /Access-Control-Allow-Origin[^\n]*value: "\*"/);
+});
+
+test("over-long tracking fields and numeric floors no longer cost the inquiry", () => {
+  const longClick = "IwY2xjawF".padEnd(520, "x");
+  const result = publicLead.parseWebsiteLead({
+    name: "Nadia",
+    phone: "+971501234567",
+    event_id: "newme-lead-1-abc",
+    floors: 2,
+    systems: ["lighting", "", 7, "climate"],
+    fbclid: longClick,
+    fbc: `fb.1.1761400000000.${longClick}`,
+    utm_campaign: "c".repeat(400),
+    message: "m".repeat(2_500),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.attribution.fbclid, null);
+  assert.equal(result.value.attribution.fbc, null);
+  assert.equal(result.value.attribution.utmCampaign.length, 300);
+  assert.deepEqual(result.value.serviceNeeds, ["lighting", "climate"]);
+  assert.match(result.value.notes, /^Message: m+\nFloors: 2$/);
+  assert.ok(result.value.notes.length <= "Message: ".length + 2_000 + "\nFloors: 2".length);
+});
+
+test("contact fields stay strict while tracking fields are lenient", () => {
+  assert.deepEqual(
+    publicLead.parseWebsiteLead({ name: "Nadia", phone: 501234567, event_id: "e1" }),
+    { ok: false, code: "invalid_field" },
+  );
+  assert.deepEqual(
+    publicLead.parseWebsiteLead({ name: "Nadia", phone: "+971501234567", event_id: "e1", fbclid: { nested: true } }),
+    { ok: false, code: "invalid_field" },
+  );
+});
+
+test("opaque attribution identifiers are never shortened into different identifiers", () => {
+  for (const [field, limit, key] of [["fbclid",500,"fbclid"],["fbc",500,"fbc"],["fbp",500,"fbp"],["campaign_id",100,"campaignId"],["adset_id",100,"adsetId"],["ad_id",100,"adId"]]) {
+    const id="x".repeat(limit);
+    const exact=publicLead.parseWebsiteLead({name:"Nadia",phone:"+971501234567",event_id:"id-preserve", [field]:id});
+    assert.equal(exact.ok,true);
+    assert.equal(exact.value.attribution[key],id,field+" preserves a bounded ID");
+    const over=publicLead.parseWebsiteLead({name:"Nadia",phone:"+971501234567",event_id:"id-over", [field]:id+"x"});
+    assert.equal(over.ok,true,field+" never loses the inquiry");
+    assert.equal(over.value.attribution[key],null,field+" omits an overlong ID");
+  }
 });

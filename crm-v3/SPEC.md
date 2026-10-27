@@ -1,5 +1,27 @@
 # SPEC — NewMe CRM
 
+## 2026-10-22 WhatsApp 审核测试补充（代码准备，尚未发布）
+
+本节记录当前代码与验收边界；下方早期状态保留其原有日期，不据此推定当前线上状态。
+
+独立 Tech Provider 审核要求应用发送消息和创建模板的实际演示。新增测试入口默认关闭，只允许 Meta 测试 WABA `2153400175580231`、测试发送号码及已经验证的内部 Tanya 尾号 9388。需要独立的服务器端测试令牌和最长 24 小时的启用窗口。号码归属校验、当前有效的 boss/admin 会话、同源请求、请求大小限制、操作频率限制和不自动重试的结果处理均由服务器执行。接收请求成功不代表手机已收到消息，创建模板不代表 Meta 已批准模板。
+
+| 文件 | 当前职责及限制 |
+|---|---|
+| `src/app/(dashboard)/settings/whatsapp-pilot.tsx` | WhatsApp 接收与手机回复事件的管理视图；空通道或缺失事件不产生销售行为结论，并承载审核测试入口。 |
+| `src/app/(dashboard)/settings/whatsapp-review-tools.tsx` | 连接检查、固定 hello_world 内部测试消息、固定内容的审核模板创建；执行前展示对象和内容，结果不明时停止再次操作。 |
+| `src/app/api/whatsapp/pilot-status/route.ts` | 当前有效的 boss/admin 会话下查询白名单通道的有限元数据；不返回聊天正文或完整客户号码。 |
+| `src/app/api/whatsapp/webhook/route.ts` | 验证 Meta 原始请求签名，只写入明确启用的号码通道，按通道和消息 ID 去重；默认不接入真实号码。 |
+| `src/app/api/whatsapp/review-tools/route.ts` | 受限的审核测试操作入口；拒绝其他角色、跨站请求、自定义号码和自定义消息。 |
+| `src/lib/whatsapp-review-tools.mjs` | 固定测试账户绑定、Graph 请求、到期控制、有限的进程内重试去重；不持久保存访问令牌，不是生产发送队列。 |
+| `tests/security/whatsapp-review-tools.test.mjs` | 验证默认关闭、到期、固定对象、拒绝路径、并发请求、错误与凭据输出边界；模拟 API 测试不替代真实 Meta 验收。 |
+| `src/app/api/meta/ads-status/route.ts` | 既有广告集成状态接口，本次不改变其行为；本节不声称已经验证广告数据同步或 MCP OAuth。 |
+| `src/app/api/meta/ads-sync/route.ts` | 既有广告同步接口，本次不改变其授权、资产或行为。 |
+
+测试入口部署后也保持关闭。真实 Meta 测试令牌授权、发送、模板创建、手机收件确认、两段录屏、审核提交和批准均为独立步骤。启用两个实际号码的采集前，仍必须完成 30 天保留/删除控制、官方共存接入及两个手机的收发验收。现有生产数据库迁移和 Ads 集成均不在本次改动范围。
+
+详见 `docs/whatsapp-review-tools.md`。CI 同时固定官方 PostgreSQL 17.11 测试镜像的当前摘要；只更新测试环境来源记录，不更改生产 PostgreSQL 或放宽来源校验。
+
 > ⚠️ **COMPACT 后:用户最后 3 条消息 > 本文件 > handoff 摘要**
 > (本文件是参考手册,不是圣经。compaction 时用户的尾消息是唯一权威。)
 
@@ -1126,9 +1148,35 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 | --- | --- |
 | `src/app/api/public/leads/route.ts` | 提供仅允许 `newme.ae`/`www.newme.ae` 来源的公开 JSON 线索入口，执行大小、频率、蜜罐和可选 Turnstile 校验；以 service role 写入 website lead 与跟进任务，并以同一个 `event_id` 排队和发送 Meta Lead CAPI 事件。 |
 | `src/lib/public-lead.ts` | 集中定义允许来源、CORS、字段长度/类型、联系方式要求及 UTM、Meta click、landing/referrer 归因解析，避免公开路由和网站端各写一份边界。 |
-| `src/lib/meta-capi.ts` | 构造 Meta Lead CAPI 载荷；邮箱、电话、姓名和 external id 在发送前规范化并 SHA-256，发送端只从服务端运行时读取 Pixel/token，保持 OS 为唯一 CAPI sender。 |
+| `src/lib/meta-capi.ts` | 构造 Meta Lead CAPI 载荷；邮箱、电话、姓名和 external id 在发送前规范化并 SHA-256，发送端只从服务端运行时读取 Pixel/token，保持 OS 为唯一 CAPI sender；只在 Meta 回执明确确认完整接收后标记成功，令牌不进入 URL 或错误日志。 |
+| `src/lib/website-lead-identity.ts` | 为新官网咨询生成按事件隔离的线索、任务及发送记录 UUIDv5；同事件、同咨询重试恢复原流程，内容冲突返回 409，不覆盖销售编辑。 |
+| `src/lib/meta-capi-delivery.ts` | 共享数据库条件更新协调发送所有权，租约 60 秒；最多 5 次、24 小时内沿用原 event_id 和 event_time 重试，拒绝格式异常、次数耗尽或过期记录自动补发。 |
+| `scripts/meta-capi-retry.mjs` | 默认只读、最多检查 20 条的补发准备工具；显式 --execute 才调用同一发送协调器，无定时器安装或启用。 |
 | `src/app/(dashboard)/analytics/_components/WeeklyTrends.tsx` | 金额格式化对缺失或非有限值收敛为 0，防止归因/趋势聚合的空值让分析卡片渲染失败。 |
 | `src/lib/i18n/LanguageContext.tsx` | 同标签页切换语言时，在更新可见翻译状态前同步写入 `document.documentElement.lang`，使辅助技术、SEO 语义与屏幕文案处于同一次状态变化中。 |
 | `src/components/HtmlLangSync.tsx` | 保留首次载入、跨标签页 storage event 以及旧写入方的有界轮询协调；同标签页按钮切换不再依赖 500ms 轮询。 |
 
 验证边界：`tests/security/public-website-lead.test.mjs`、`tests/security/meta-capi-outbound.test.mjs` 和 `tests/security/i18n-document-language.test.mjs` 分别钉住公开入口、CAPI 脱敏/发送契约和 HTML 语言更新顺序；完整浏览器双语流程仍必须在生产 postdeploy acceptance 通过后才可关闭发布。
+
+## 2026-10-23 隐私处理与广告写入协调前置
+
+以下是代码契约及验证入口，生产状态仍由发布和实际验收单独证明。
+
+| Path | Contract |
+| --- | --- |
+| `src/app/(dashboard)/settings/whatsapp-privacy.tsx` | 管理员在设置页发起试点事件删除并查看回执。 |
+| `src/app/api/whatsapp/privacy/route.ts` | 隐私操作的会话、角色及请求校验入口。 |
+| `tests/database/whatsapp-privacy.py` | 在隔离 PostgreSQL 中验证删除、保留期限、并发和重放边界。 |
+| `src/lib/knx-task-store.ts` | KNX 任务存储和调用者访问范围；不以拿到任务编号代替访问授权。 |
+| `src/lib/request-auth-context.ts` | 共享请求鉴权上下文及有界的认证解析。 |
+| `scripts/check-meta-ads-provisioning.mjs` | 只允许在完整现有 strict 迁移前缀后增加一份固定哈希的广告原子写入迁移，拒绝无记录对象碰撞和内容漂移。 |
+| `supabase/preflight/meta-ads-atomic-window.sql` | 仅供服务端调用的事务写入契约：共享事务锁、来源和日期边界、整批替换及完整字段回读；失败不提交部分数据。 |
+| `tests/database/meta-ads-atomic.py` | 真实双连接验证锁的两个获取顺序、中途暂停时的读一致性、写入失败回滚、超时及重试。 |
+
+本前置发布只建立受保护的数据库发布能力和隔离测试，不应用生产迁移、不切换手动接口，也不启用广告定时任务。手动接口与定时程序改用同一写入例程及线上并发验收属于后续发布步骤。
+
+## 2026-10-23 广告同步原子写入应用变更
+
+`src/app/api/meta/ads-sync/route.ts` 在完整分页与映射成功后，只调用 `replace_meta_ad_spend_window` 执行整批写入，保留既有管理员权限边界。`src/lib/meta-ads-write.mjs` 校验原子回执，并将竞争、缺失迁移和数据库失败转为有限的错误码。`supabase/migrations/20261023123323_meta_ads_atomic_window.sql` 与前置审核 SQL 的字节哈希一致；例程以 SECURITY INVOKER 运行，只向 service_role 授予执行权限，包含跨进程事务锁、来源与日期范围限制和完整字段回读。共享事务回滚后不会留下已提交的空窗或半批数据。
+
+应用代码与部署状态分别记录。定时程序的安装、默认关闭状态、实际 HTTP 与程序的并发验收由私有运维回执证明；本节不声明定时同步已经运行。

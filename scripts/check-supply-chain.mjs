@@ -12,9 +12,8 @@ const ALTERNATIVE_LOCKFILES = ["pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.l
 const OFFICIAL_NPM_REGISTRY = "https://registry.npmjs.org/";
 const EXPECTED_ALLOW_SCRIPTS = {
   "@sentry/cli@2.58.6": false,
-  "core-js@3.49.0": false,
   "fsevents@2.3.2": false,
-  "unrs-resolver@1.12.2": false,
+  "unrs-resolver@1.12.2": false
 };
 
 function parse(value, label, failures) {

@@ -12,6 +12,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { toast } from "sonner";
 import SubNavTabs from "@/components/SubNavTabs";
 import KpiManagement from "./kpi-management";
+import WhatsAppPilot from "./whatsapp-pilot";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
@@ -126,7 +127,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"data" | "kpi" | "password">("data");
+  const [activeTab, setActiveTab] = useState<"data" | "kpi" | "password" | "whatsapp">("data");
 
   // Filters
   const [stageFilter, setStageFilter] = useState<string>("all");
@@ -414,10 +415,16 @@ export default function SettingsPage() {
           >
             {t("settingsTab.password")}
           </button>
+          {(role === "admin" || role === "boss") && <button
+            onClick={() => setActiveTab("whatsapp")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "whatsapp" ? "border-copper-500 text-copper-400" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >WhatsApp</button>}
         </div>
       </div>
 
-      {activeTab === "kpi" ? (
+      {activeTab === "whatsapp" && (role === "admin" || role === "boss") ? (
+        <WhatsAppPilot />
+      ) : activeTab === "kpi" ? (
         <KpiManagement canWriteKpi={role === "admin" || role === "boss"} />
       ) : activeTab === "password" ? (
         <PasswordChange />

@@ -47,18 +47,18 @@ export default async function SettingsAdsPage() {
   > = {};
 
   for (const l of leads ?? []) {
-    const key = l.source_platform || l.source || "other";
+    const key = l.source || l.source_platform || "other";
     if (!groups[key])
       groups[key] = { total: 0, valid: 0, quoted: 0, won: 0, value: 0 };
     groups[key].total++;
-    if (l.quality === "valid") groups[key].valid++;
-    if (
-      l.final_status === "won" ||
-      l.stage !== null && ["quotation_submitted", "negotiation", "pending_decision"].includes(l.stage)
-    )
-      groups[key].quoted++;
-    if (l.final_status === "won") groups[key].won++;
-    groups[key].value += l.quotation_value || 0;
+    // Stored quality values are good/normal/poor/pending; "valid" never occurs.
+    if (l.quality === "good" || l.quality === "normal") groups[key].valid++;
+    const won = l.final_status === "won" || l.stage === "won";
+    const quoted = won ||
+      (l.stage !== null && ["quotation_submitted", "negotiation", "pending_decision"].includes(l.stage));
+    if (quoted) groups[key].quoted++;
+    if (won) groups[key].won++;
+    if (quoted) groups[key].value += l.quotation_value || 0;
   }
 
   const sorted = Object.entries(groups).sort(([, a], [, b]) => b.total - a.total);

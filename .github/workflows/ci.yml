@@ -439,7 +439,7 @@ jobs:
     # supabase/ci-local/supabase/config.toml puts the local database on 56432.
     services:
       postgres:
-        image: docker.io/library/postgres:17.11-trixie@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232
+        image: docker.io/library/postgres:17.11-trixie@sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
         ports:
@@ -538,7 +538,7 @@ jobs:
     # and the only database reachable from this job is the service container.
     services:
       postgres:
-        image: docker.io/library/postgres:17.11-trixie@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232
+        image: docker.io/library/postgres:17.11-trixie@sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
         ports:
@@ -660,6 +660,16 @@ jobs:
         run: |
           createdb history
           MODE=history PGDATABASE=history bash scripts/replay-migrations.sh
+
+      - name: WhatsApp privacy lifecycle and two-session erasure tests
+        run: |
+          createdb --template history newme_whatsapp_privacy_test
+          PGDATABASE=newme_whatsapp_privacy_test python3 tests/database/whatsapp-privacy.py
+
+      - name: Meta ads atomic writer and cross-process coordination
+        run: |
+          createdb --template history newme_ads_atomic_test
+          PGDATABASE=newme_ads_atomic_test python3 tests/database/meta-ads-atomic.py
 
       # Round-4 C4. The remote-history gate decides "production ran this release's
       # SQL" by comparing a digest the server computes over the recorded

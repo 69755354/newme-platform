@@ -71,9 +71,11 @@ test("the checked-in schema baseline binds the production capture and exact pend
   assert.equal(result.watermark, "20260805202917");
   assert.equal(result.productionHistoryRows, 100);
   assert.equal(result.baselineStatementCount, 2408);
-  assert.equal(result.forward.length, 26);
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "infra/release/release-manifest.json"), "utf8"));
+  const declared = [...manifest.required_for_app, ...manifest.deferred_contract].map((entry) => entry.file);
+  assert.deepEqual(result.forward, declared, "the immutable production capture must replay the complete, ordered branch manifest");
   assert.equal(result.forward[0], "20260806000000_baseline_undeclared_production_objects.sql");
-  assert.equal(result.forward.at(-1), "20260818000000_money_direct_write_contract_phase.sql");
+  assert.ok(result.forward.includes("20260818000000_money_direct_write_contract_phase.sql"));
   assert.ok(result.forward.includes("20260817220000_notification_event_idempotency.sql"));
   assert.ok(result.forward.includes("20260817230000_lead_rebalance_plan_idempotency.sql"));
 });

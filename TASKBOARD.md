@@ -2,6 +2,12 @@
 # Last updated: 2026-07-19
 # Format: Frozen v2 (MoA签发版) — 4状态模型
 
+## 活动任务 — WhatsApp coexistence pilot (2026-10-19)
+
+| ID | Status | Scope | Evidence |
+|---|---|---|---|
+| WA-PILOT-1 | DONE | Local draft: opt-in intake/follow-up metadata ingestion and management view; no production rollout | 2026-10-19: typecheck, lint baseline, webhook/auth tests, isolated PostgreSQL session/grant/replay controls; verified official CI PostgreSQL pin refresh; patched audited dependencies, replaced the Next lint-only braces chain with a scoped official tinyglobby alias and hash-checked compatibility options; strict npm ci, zero-vulnerability audit, supply-chain gate and 9 targeted security/consumer tests pass; complete application tests/build and new-head CI tracked in PR461; full-schema staging and live phone acceptance remain rollout gates in docs/whatsapp-pilot.md |
+
 ## ⚠️ STATE MACHINE (唯一状态流)
 ```
 TODO → IN_PROGRESS → REVIEW → DONE
@@ -21,6 +27,27 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_meta_lead_ads_intake_code | DONE | Claude | 2026-10-26 |
+| task_meta_lead_ads_page_token_code | DONE | Claude | 2026-10-27 |
+| task_meta_crm_import_id_precision_code | DONE | Codex | 2026-10-26 |
+| task_meta_crm_id_precision_code | DONE | Codex | 2026-10-26 |
+| task_website_opaque_attribution_identifiers_code | DONE | Codex | 2026-10-26 |
+| task_ci_runner_provenance_refresh_code | DONE | Codex | 2026-10-25 |
+| task_meta_capi_intake_recovery_code | DONE | Codex | 2026-10-25 |
+| task_https_acceptance_channel_preparation_code | DONE | Codex | 2026-10-23 |
+| task_meta_ads_atomic_sync_code | DONE | Codex | 2026-10-23 |
+| task_meta_ads_atomic_provisioning_code | DONE | Codex | 2026-10-23 |
+| task_review_findings_fix_code | DONE | Codex | 2026-10-23 |
+| task_whatsapp_privacy_code | DONE | Codex | 2026-10-23 |
+| task_whatsapp_retention_admission_code | DONE | Codex | 2026-10-23 |
+| task_whatsapp_privacy_security_refresh_code | DONE | Codex | 2026-10-23 |
+| task_whatsapp_privacy_provisioning_code | DONE | Codex | 2026-10-23 |
+| task_whatsapp_review_window_recheck_code | DONE | Codex | 2026-10-22 |
+| task_whatsapp_review_ci_metadata_code | DONE | Codex | 2026-10-22 |
+| task_whatsapp_review_tools_code | DONE | Codex | 2026-10-22 |
+| task_archive_prior_release_marker_code | DONE | Codex | 2026-10-20 |
+| task_whatsapp_webhook_log_privacy_code | DONE | Codex | 2026-10-20 |
+| task_whatsapp_strict_provisioning_code | DONE | Codex | 2026-10-20 |
 || task_P1-C | DONE | Hermes | 2026-07-04 |
 || task_P1-D | DONE | Codex→Hermes | 2026-07-04 |
 || task_P1-E | DONE | Codex→Hermes | 2026-07-04 |
@@ -602,4 +629,232 @@ Note: All four are independent of P3 PRD G1/G2/G3 (quality API, weekly-review, w
 - `d085078` proxy.ts config.matcher 加 "/"（**根因**：matcher 缺 / 导致 proxy 完全没注册到 middleware-manifest.json）
 HOTFIX-2 | DEPLOYED | hermes | 2026-07-20 | SAM-45+SAM-46 closed; ca4cfdc(删quotes fallback+导入原始数据面板)+fd2b35e(insert schema对齐); BUILD_ID odB7DlnFp-Er6a5NbVmv0; CI 29705110814 green; K3审计 PASS_WITH_WARNINGS(Ship); 生产API验收通过+基线零漂移; SAM-49登记(hermes路由静默零总价姊妹项+K3 P2)
 
-<!-- postdeploy-acceptance-sha256:31fb1c3341de7c5144368f31016054d686e2bb63d4dfc0091652865c4c92c922 -->
+Historical postdeploy acceptance SHA-256 retained from TASKBOARD.md at 46b0f091c10f4dbc565a0cd506f21dbc7352db5f: 31fb1c3341de7c5144368f31016054d686e2bb63d4dfc0091652865c4c92c922 (archived record).
+
+
+## WhatsApp strict provisioning code verification — 2026-10-20
+
+Code-only: the root coordinator now has narrowly allowlisted WhatsApp plan/provision operations for an already strict database. The immutable observer SQL hash, unchanged live migration prefix, strict compatibility, table/history agreement, ancestry and fresh CI are required. The 37 policy/coordinator tests pass, including refusals before the applier on every failed antecedent. Shell syntax and unchanged migration/companion checks pass. This row does not claim a production control-plane upgrade, migration, application deployment, phone onboarding or message capture. Full CI and the two-stage release remain separate production evidence.
+
+## WhatsApp callback ingress privacy code evidence (2026-10-20)
+
+Code-only completion: the exact callback location uses a fixed-field structured access log with request ID, client IP, status and upstream timing; query strings, headers and bodies are excluded. Raw Nginx error logging is replaced at this location because it can contain verification queries. HTTPS callback request size remains capped at 1 MiB, body buffering stays in memory and proxy streaming preserves the signed bytes; plaintext callback requests are rejected. Existing ingress rules remain in place.
+
+Validation: 14 targeted security/release tests pass. An isolated loopback-only instance of the actual installed server Nginx passed 85 synthetic requests including normal GET/POST, 400, 413, 429 and upstream 502; all outcomes were recorded, a 256 KiB body was preserved, sensitive synthetic query/body markers were absent from log files, and no body temporary files were created. Production Nginx, database data and app release were untouched by this test. This is not proof of Meta callback verification, phone onboarding or production message capture.
+
+## Prior release marker archival preparation (2026-10-20)
+
+The previous acceptance digest remains in ordinary historical prose, with its source commit retained. Its executable closure-marker syntax is archived before the successor application release, so the unchanged closure checker can require exactly one newly appended acceptance marker. The checker, acceptance policy, provider receipts and immutable deployed trees are unchanged. Code/document preparation only: the current application release still needs its own real acceptance; this entry does not claim that it is complete.
+
+## WhatsApp observer release acceptance closure (2026-10-20)
+
+Canonical acceptance is verified for application release 8a78be8134441aae8560626cd56b07d9f5ab11d2, build 4Cj0UZFVwGjggyYNlRgUF, deployment CI 39449460527. All four role actors, six business flows and eight English/Chinese browser sessions passed; 56 redacted screenshots and 16 top-level JSON artifacts were verified. 42 dedicated fixture IDs were created and cleaned with zero residual rows; the test payment was voided and its KPI baseline restored. Failure/recovery provider delivery and the delayed same-message readback passed. Performance: 20 samples, p75 256 ms, p95 324 ms. This records authentic acceptance; the coordinator separately gates finalization. WhatsApp phone onboarding and capture remain disabled.
+
+Historical postdeploy acceptance SHA-256 retained from TASKBOARD.md at c8dff02b067e6866df85f52cce1e3c3f9cd8206c: cc24edf5869c4da41748be22aded9a00c17430f5e769480b2998ae461f405bd6 (archived record before the next application release).
+
+## WhatsApp App Review tools code preparation (2026-10-22)
+
+Code-only preparation: Settings > WhatsApp now includes a default-off review panel for a fixed Meta test WABA, its verified test sender and the existing internal recipient ending 9388. Active current-session boss/admin access, exact same-origin JSON, bounded requests, process-local replay protection, per-user/global hourly limits and an explicitly bounded activation window of at most 24 hours protect the operations. Arbitrary recipients, WABAs, messages and template content are refused. Uncertain mutation outcomes are retained without automatic retry; process restarts are not represented as delivery cancellation or durable idempotency.
+
+Local validation: 17 targeted observer/review-tool tests passed, including invalid/stale windows, wrong test assets, unchanged fixed targets, rejected roles/origins/body shapes, budget exhaustion, expired sessions, concurrent retry sharing, credential redaction and ambiguous upstream outcomes. Type checking and targeted lint passed. The route convention and tracked credential checks passed. No new database migration, Graph token grant, real send, template creation, production deployment or message capture is claimed here. Full CI, guarded deployment, actual Meta account checks and authorised recordings remain separate acceptance evidence. The prior acceptance digest is retained above as ordinary history so the successor release can acquire its own canonical closure.
+
+## Review-tools CI metadata readiness (2026-10-22)
+
+The SPEC supplement now records the actual WhatsApp routes, the sandbox-only review panel, the unchanged existing Ads bridge and outstanding acceptance gates. The official PostgreSQL 17.11-trixie index was rebuilt upstream; the active CI references, provenance lock and mutation-test fixture now agree with digest b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe. Docker Hub metadata and an isolated no-network, read-only container verified PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2). Production database and containers were not modified. All 25 targeted observer/review/provenance tests, official online provenance readback, workflow syntax and SPEC coverage checks passed locally. The original pin checks and their refusal cases are retained. This does not claim that the revised PR's full CI or production rollout has completed.
+
+## Review-tools activation-window boundary (2026-10-22)
+
+Code-only: the helper now reads a fresh clock immediately before each Graph request. If the test-phone lookup finishes at or after the activation deadline, sending and template creation stop before any POST. A deterministic asynchronous regression covers both mutations exactly at expiry and after expiry. All 26 targeted observer/review/provenance tests, full TypeScript checking and targeted ESLint passed locally. WhatsApp requests in these tests are mocked; this evidence does not claim a real Graph action, message delivery, template creation or production deployment.
+
+## Review-tools shared-budget isolation (2026-10-22)
+
+Code-only: an exhausted per-user review budget now returns 429 before consuming the shared sandbox budget. A route regression uses the actual rate limiter: one administrator completes four operations, eight fresh-request retries are denied without any shared-budget consumption, and a second administrator can still complete four operations. All 27 targeted observer/review/provenance tests, full TypeScript checking and targeted ESLint passed locally. WhatsApp operations are mocked in these tests; no real Graph action, message delivery, template creation or deployment is claimed.
+
+## WhatsApp review-tools release acceptance closure (2026-10-22)
+
+Canonical acceptance is verified for application release 1f1b894655e98388d51efe49d33e038d7e467bb8, build kAnvzAkuvFHJF9CXiSwFw, deployment CI 39792415132. All four role actors, six business flows and eight English/Chinese browser sessions passed; 56 redacted screenshots and 16 top-level JSON artifacts were verified. 42 dedicated fixture IDs were created and cleaned with zero residual rows; the test payment was voided and its KPI baseline restored. Failure/recovery provider delivery and the delayed same-message readback passed. Performance: 20 samples, p75 426 ms, p95 435 ms. This records authentic application acceptance; the coordinator separately gates finalization. The WhatsApp review tools are default-off and restricted to sandbox assets. This closure does not claim real-number onboarding or any actual message capture; zero-channel/zero-event posture requires its own fresh production readback.
+
+Prior release acceptance digest (archived for this successor): 61f8a99cea0345b4b2239b9da3b21f6b62bfad37dfaa2054116d73ef3f6c5788
+
+## WhatsApp privacy provisioning capability (2026-10-23)
+
+Code-only: a separate exact-hash gate permits the reviewed privacy lifecycle suffix after the complete unchanged strict prefix, recorded observer and disabled channels. Existing observer-only permissions are unchanged. Forty new policy/coordinator tests and the existing observer gate tests passed; the SQL review fixture passed twelve full-schema PostgreSQL behavior groups including real concurrent erasure in both orders. This capability alone applies no migration, enables no channel and changes no live app. Canonical bootstrap, actual migration/application release and acceptance remain separate operations.
+
+## Privacy release dependency security prerequisite (2026-10-23)
+
+The first privacy control-plane CI run was correctly blocked by newly indexed Next.js and Sentry advisories. The candidate now pins Next/ESLint/analyzer 16.4.1 and Sentry 10.75.2, retains the exact-hash glob compatibility patch, explicitly denies every locked third-party install script and has zero high/critical findings in the official npm audit. No exception or gate bypass was introduced. Full CI and actual application deployment remain separate evidence.
+
+## WhatsApp privacy lifecycle candidate (2026-10-23)
+
+Code complete: current-session owner/admin deletion across all pilot channels, opaque idempotent receipts, atomic replay suppression, database-controlled expiry and commit-age checks, bounded five-minute physical cleanup, stale-job admission closure and existing alert integration. A NOLOGIN maintenance role has event erasure privileges without CRM access; service_role has no direct event erasure. Restore quarantine is operator-only and disables every channel before restored observer history can be reused. Twelve full-schema PostgreSQL behavior groups passed, including actual two-session races in both orders and a 5001-row backlog. Public types were regenerated from the migrated isolated schema. Provider backup rotation and actual phone launch remain separate launch checks. This candidate does not connect either real number or send any message.
+
+Prepublication Linux checks and canonical CI are recorded separately below. Production migration, worker receipt, administrator UI verification and canonical release acceptance are required before calling the mechanism live.
+
+Prepublication validation on 2026-10-23: dependency installation, generated types, TypeScript, manifest, Supabase boundary, official zero-finding npm audit and full repository tests passed. Full tests ran in the pinned Playwright container without host runtime/configuration mounts or external networking. Thirteen isolated PostgreSQL behavior groups passed, including a service-role channel-enable race against provisioning. Canonical CI, deployment and live acceptance remain required.
+
+Public-definer entry correction: every public privacy routine now begins with the canonical session assertion, including the identity-free server maintenance entry. The SQL fixture, exact provisioning hash and two changed function-body digests are bound together. Thirteen isolated database behavior groups, the global definer-entry inventory, exact owner/body posture and full isolated repository suite passed again. Production application deployment remains separately gated.
+
+Postdeploy acceptance verified.
+
+Prior release acceptance digest (archived for this successor from 43011dac66390d74ba37d82454edd3316ae44cb5): f4ff68478e6ad6ad8e9d35ec41c9ba5de4dd37964c6039c936e785bd3497db45
+
+## Main review fixes (2026-10-23)
+
+Code-only follow-up to review of 43011dac66390d74ba37d82454edd3316ae44cb5: team profile provisioning with the Auth trigger, contract upload version authorization, KNX task lead access, and bounded authentication refresh. Completed source fixes with 26 targeted regressions, existing authentication boundary tests, typecheck, lint baseline and production build validation. Both team creation paths also passed against isolated local Supabase Auth with its real profile trigger, with synthetic users cleaned afterward. CI provenance source readback passed using the environment proxy. Full repository validation and independent review evidence are retained with the fix PR; production deployment and runtime acceptance are not claimed.
+
+## HTTPS acceptance channel and successor preparation (2026-10-23)
+
+Documented the production operator's Ed25519 acceptance API, fixed coordinator actions, durable run tokens, signed log continuation and the distinction between a log buffer's EOF and a completed process. Application release 30fff359feb8bad9f6021933118cdf86b8c971e7 deployed successfully with build BWKi8efvreZTbKRa_rTo1 through canonical CI 39929391068. Its canonical accept and attest completed with exit 0; signed status confirmed acceptance_verified and bundle digest 0056081f18764e918e08e43995a58a46af8864b459ff25de24c543965e99c0ff. Its inherited prior-release marker prevents a valid TASKBOARD-only closure, so it is not finalized. This ordinary successor preparation archives that complete prior digest and source commit before deployment. It changes no application source, migration, workflow, policy or verifier, and claims no acceptance for the successor. The existing accepted-release supersession path still gates deployment; the successor requires its own deployment, acceptance, closure CI and finalization.
+
+## Main review fixes and HTTPS acceptance release closure (2026-10-23)
+
+Canonical acceptance is verified for immutable application release d5cf3dcd254b4ee175e29a68a173005fc8184085, build f0pxF7OeM9R9IcdyHk2Xl, deployment CI 39965566063. Current Codex directly executed the protected deployment and acceptance coordinator over the registered Ed25519 gateway. The producer completed with exit 0 after 847 seconds, including the policy-required delayed verification; root attestation completed with exit 0 and signed status confirmed acceptance_verified at 2026-10-23T14:23:33.194Z. The exact release policy and schema verifier accepted the four role API journeys, eight English/Chinese browser journeys, exact fixture cleanup with zero residual rows, provider failure/recovery drill, performance samples and delayed verification. The sealed bundle digest is recorded below. This closes the accepted release evidence; the exact-closure final CI and protected finalization remain separate machine gates.
+
+Prior release acceptance digest (archived for the advertising successor from fdcd308e5e24251dfc727f3d3f8da7c5d968eb81): 61ace5de77d90b05e090e3f82e82fb64d3ffcd82d7420dc0eab419d9fb818076
+
+## Atomic advertising writer provisioning prerequisite (2026-10-23)
+
+Code-only: exact-hash additive provisioning preserves every prior migration and manifest declaration. Twenty-eight focused provisioning checks, twelve isolated PostgreSQL behavior groups, seven actual catalog-drift negative controls and ten worker unit checks passed. Both independent worker/manual SQL lock orders preserve complete rows; the maximum 20,000-row window is bounded. The new writer and statement-wide source guards retain existing roles and null metrics. No live advertising data or scheduler state has changed; canonical release and real HTTP/worker concurrency acceptance remain pending.
+
+## Shared atomic advertising sync candidate (2026-10-23)
+
+Code-only: administrator HTTP sync and the prepared private scheduler use one atomic, fully verified database writer. All existing advertising writers share the transaction lock and statement-wide source guards. Seventy-two focused advertising/provisioning checks, twelve PostgreSQL behavior groups, seven catalog-drift negative controls and ten worker unit checks passed. Canonical release, real authenticated HTTP/worker concurrency, session revocation and disabled/inactive timer readback remain required; no production scheduling or actual WhatsApp-number onboarding is claimed.
+
+## Advertising sync release acceptance closure (2026-10-24)
+
+Verified application release bfc7233f7ab9906a52461bd667e2b6c184dd3da0: four role API journeys, eight English/Chinese browser journeys and business flows passed. All 42 dedicated test records were cleaned, with zero residual rows. Alert recovery and delayed verification passed.
+
+Live administrator HTTP sync and the installed worker passed both execution orders. Manual writes committed atomically; worker validation rolled back; complete report rows and other records were preserved; dedicated acceptance sessions were revoked. The advertising timer remains disabled and inactive. No Meta role or scope was expanded.
+
+Advertising concurrency receipt SHA-256: 9c3e3f68c52e0218aec71e1c7bf4c55a46301f017e768676b502a321f9a62535.
+
+## Website CAPI reliability candidate (2026-10-25)
+
+Code-only: stable per-event lead/task/delivery IDs prevent duplicate intake and repair partial retries without overwriting CRM edits. A shared conditional claim coordinates senders, recovers expired leases and bounds replay to five attempts within 24 hours using the original payload. Meta acknowledgement is checked explicitly, credentials stay out of URLs and raw errors, and a prepared retry tool defaults to read-only without installing any scheduler.
+
+Thirty-five synthetic behavior checks passed, including concurrent requests, partial queue recovery, conflicting payloads, late lease owners and invalid Meta receipts. TypeScript and targeted lint passed. Storage and Graph responses are mocked in these tests; real PostgreSQL concurrency, protected release, production acceptance and genuine customer attribution remain unverified. No live customer event, timer or Meta permission was changed.
+
+CI prerequisite: the two existing hosted-runner review records expired on 2026-10-24. The actual Ubuntu/Windows image versions were checked against official immutable inventories and renewed for seven days through 2026-11-01. Eight provenance/refusal tests passed; the checker, maximum lifetime, action/image pins and workflow permissions are unchanged. Current-head official source readback and complete CI remain required. Review evidence is in docs/ci-runner-review-20261025.md.
+
+Prior release acceptance digest (archived for the website CAPI successor from eecf002023873e2098a751bf4c7e13bced11bea5): e420685fdc2c38dce031d703d8e07f452a0a800b95ca21f20a3fe588adef17a9
+
+## Website CAPI release acceptance closure (2026-10-25)
+
+Verified application release de1d5d88559d2b15cb0dc77e3e83fa25a59a2d3e: four role journeys, eight English/Chinese browser journeys and six business flows passed. All 42 dedicated test records were cleaned, with zero residual rows. Alert recovery and delayed verification passed.
+
+Live PostgreSQL/REST CAPI checks passed: concurrent senders acquire one claim, expired leases are reclaimed, stale owners are fenced, and the original payload is preserved. Both synthetic outbox records were cleaned, with zero residual rows, zero CRM leads and zero Meta Graph calls. This does not establish genuine customer attribution. Advertising scheduling and CAPI automatic replay remain off; no Meta permission was expanded.
+
+CAPI concurrency receipt SHA-256: c884d4e71a3aa5630465a625a3f2b9ca81648a80e49db50d293f2008db366f55.
+
+Prior release acceptance digest (archived for the website and CRM successor from de1d5d88559d2b15cb0dc77e3e83fa25a59a2d3e): 40a910259f3fa852ea836f6768cccf594512473ce3dced4042a0dcd3613240c7
+
+## Meta CRM identifier precision (2026-10-26)
+
+Code-only: retain the exact Meta Lead ID digits through payload construction and serialize the documented numeric JSON field with the pinned Node runtime's raw JSON support. Rounded unsafe numeric inputs and noncanonical leading-zero IDs are refused. Nine CRM unit checks and 23 website/advertising checks passed locally; the earlier implementation fails the 17-digit regression. Formal CI, merge, database provisioning, production acceptance and genuine Meta receipt remain separate evidence. No Graph call, credential, permission or scheduler change was performed.
+
+## Meta CRM spreadsheet ID boundary (2026-10-26)
+
+Code-only: validate each original Meta ID cell before general string normalization. Preserve exact text IDs, omit unsafe or more-than-15-digit numeric spreadsheet IDs with a visible warning, and keep the customer row importable. Existing role checks and legacy raw-import fingerprint shape remain intact. Five route regression checks and 32 related website/CRM checks passed locally; two new checks fail against the earlier preview handler. Official CI and production acceptance are separate gates. No real workbook, customer event, permission, credential or scheduler was accessed or changed.
+
+## Website and CRM successor preparation (2026-10-26)
+
+Archives the complete predecessor acceptance digest and its immutable source release before the next application deployment. This is preparation only; it does not claim acceptance for the successor. Normal exact-main CI, guarded schema provisioning, deployment, independent acceptance and a new append-only closure remain required. Advertising scheduling and CAPI automatic replay remain off.
+
+
+## Website attribution identifier preservation (2026-10-26)
+
+Code-only follow-up to the website intake parser: keep each bounded click, browser, campaign, ad-set and ad identifier intact; omit an overlong optional identifier while retaining the inquiry. Free-text truncation and strict contact/event identity checks are unchanged. The targeted website and advertising regression suites passed all 23 checks, including a negative control against the earlier truncation behavior. Formal CI, merge, production deployment and genuine customer attribution remain separate evidence. No credentials, permissions or scheduler state changed.
+
+## Website and CRM release acceptance closure (2026-10-26)
+
+Verified application release 23b0409cfa38fba419bf268d78234c6811386b78 (includes the website inquiry/attribution fix #486 and the inert Meta CRM preparation #483/#485): four role journeys, eight English/Chinese browser journeys and six business flows passed. All 42 dedicated test records were cleaned, with zero residual rows. Alert failure and recovery were delivered, p75 87 ms / p95 246 ms over 20 samples, and delayed verification passed. The Meta CRM lead-stage schema remains unprovisioned; advertising scheduling and CAPI automatic replay remain off.
+
+Prior release acceptance digest (archived for the test-isolation successor from 49861e96a0785a214ec6755319ba456f3ee95979): 24c75f401ce83d793c86ef6b22ae3b186a9bbaa5bd76d3aa1227e8a027687303
+
+## Meta Lead Ads intake (2026-10-26)
+
+Code-only, disabled by default. Evidence of the gap: Meta reported 24 Instant Form leads for the last 30 days while production held 0 leads created in that window and 0 rows with meta_leadgen_id; the CRM token is ads_read only, so form leads were never fetched. Adds the signed Page leadgen webhook (exact path, App Secret HMAC, page allowlist, Graph fetch with header token, idempotent store by leadgen id, contact merge that never overwrites attribution, Lead event queued) and a read-only-by-default backfill/reconciliation script. Targeted suite 6/6 including route fail-closed, signature, idempotent replay and Graph-failure retry; forced-session boundary updated for the exact new ingress (13/13). typecheck and lint baseline pass. Production rollout needs a leads_retrieval token, settings in /etc/newme, deploy, backfill and Lead Ads Testing Tool acceptance (docs/meta-lead-ads-intake.md). No credentials, permissions or scheduler state changed.
+
+## Meta Lead Ads test isolation candidate (2026-10-27)
+
+IN PROGRESS, not deployed. Exact, permanently registered test-only form IDs are
+checked in the shared intake store before customer lookup; minimal idempotent
+receipts are separate server-owned audit records without contacts or answers.
+Webhook and backfill skip CRM conversion queuing for isolated submissions.
+Operator registration/status/receipt cleanup is read-only by default; cleanup
+retains registration to fence delayed replays. No User webhook configuration,
+schema, production data, permissions or scheduler changed. Targeted mocked intake
+and forced-session tests passed 27/27, TypeScript and targeted ESLint passed, and
+the Supabase boundary checker passed without baseline changes. Read-only production
+catalog checks verified the existing audit columns, enabled RLS and service-role
+read/insert/delete rights; no business contents were read. These checks do not
+prove a live write. Full pinned CI, gated release and actual Facebook test-lead
+callback acceptance remain outstanding.
+
+## CRM assignment backlog release policy (2026-10-27)
+
+User-authorized narrow correction: keep the existing 20 percent / ten-record
+assignment backlog threshold as a visible business warning, persisted in the
+regression JSON and printed even in quiet successful runs. It no longer blocks
+an otherwise healthy release. No customer ownership or data is changed; health,
+credentials, integrity, security and test-isolation gates remain mandatory.
+Offline contracts cover 31/107, boundary/floor values, warning visibility and
+continued hard failures for health, missing names and excessive notifications.
+Production deployment and isolated Facebook callback acceptance remain pending.
+
+
+## Meta isolation release technical acceptance (2026-10-27)
+
+Release `547f7cdda82b6693ddfe5e8862e3b2b1c3a6ea8c` passed candidate CI
+`40403859500` and was deployed through the protected coordinator at
+`2026-10-26T21:35:46Z`, with database phase still strict and no migration applied.
+The assignment backlog remains visible as 31/107, without modifying customer
+ownership or relaxing other technical, integrity or security checks.
+Canonical production acceptance verified all four roles, eight browser sessions,
+56 redacted screenshots and 16 bound artifacts. All 42 fixture objects were
+cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 61 ms / p95 87 ms over 20 samples. Delayed health, logs, alert-provider
+readback and restart checks passed at `2026-10-26T21:50:47Z`; canonical attestation
+sealed the bundle below. Finalization still requires the exact closure CI.
+
+Meta-specific boundary: the dedicated unused form was registered and read back;
+valid challenge succeeds and unsigned webhook requests are rejected. One real
+Meta Testing Tool submission was created. Graph retrieval and repeated isolated
+backfill storage succeeded with one backfill receipt, zero formal leads and zero
+CRM conversion events. As of this technical acceptance, Meta's delivery tracker
+still says Pending and no origin=webhook receipt exists: actual Meta callback
+end-to-end acceptance is NOT claimed. The application is also Unpublished with
+an existing WhatsApp App Review in progress; its relationship to the pending
+test delivery is unproven. Existing User/WhatsApp configuration and review were
+not changed. Retain the permanent test-form registration and the pending Meta
+test lead for tracing; never roll back to intake code without isolation while
+the provider test lead remains retrievable.
+
+<!-- postdeploy-acceptance-sha256:cb4e6ae6d0a53e84490b853cdaaa7dc93f5d3792cea9cced44e88474b76474b8 -->
+
+## Meta Lead Ads Page token exchange (2026-10-27)
+
+Code-only. The first production backfill showed Graph rejects the system-user token on leadgen edges with (#190) "must be called with a Page Access Token", and that the pull script found no Supabase URL in the runtime environment. The webhook and the pull script now exchange the configured token for the page's own token (`GET /{page}?fields=access_token`, header token, 10-minute in-memory cache; a Page token passes through), and the script reads NEXT_PUBLIC_SUPABASE_URL from the release .env.local when the environment lacks it. Targeted suite 24/24 including the new exchange/cache/denial test; typecheck passes. No credentials, permissions or scheduler state changed.
+
+
+## Meta Page token exchange release technical acceptance (2026-10-27)
+
+Release `b1c343df140f464e4fc4d0cc7d5d4946cb747472` passed candidate CI
+`40419797852` and was deployed through the protected coordinator at
+`2026-10-26T23:39:46Z`, with database phase still strict and no migration applied.
+The assignment backlog remains visible as 31/107 without blocking the release.
+Canonical production acceptance verified all four roles, eight browser sessions
+and 16 bound artifacts. All 42 fixture objects were cleaned, with zero residuals
+and exact KPI restoration. Performance measured p75 57 ms / p95 71 ms over 20
+samples. The alert drill and the delayed verification passed at
+`2026-10-26T23:54:47Z`; canonical attestation sealed the bundle below.
+
+Meta-specific boundary: this release only adds the Page token exchange and the
+pull script's Supabase URL fallback. Test isolation is unchanged: the dedicated
+test lead still has one backfill receipt, zero formal leads and zero CRM
+conversion events. No origin=webhook receipt for the test lead exists yet, so
+actual Meta callback end-to-end acceptance is still NOT claimed. Credentials,
+Meta subscriptions, the Unpublished app state and the WhatsApp review were not
+changed.
+
+<!-- postdeploy-acceptance-sha256:f1a6f1149d3fb69f3033a68014d35d31e066220f676af3a0441090dea8897ead -->

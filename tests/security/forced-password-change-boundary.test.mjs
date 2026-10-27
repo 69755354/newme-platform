@@ -552,11 +552,25 @@ test("no authenticated service-role route is reachable by a forced session", asy
     assert.equal(response.status, 200, `public website ingress was not session-neutral for ${method}`);
   }
 
+  // The exact WhatsApp ingress derives no authority from an OS session. Its
+  // handler requires a raw-body App Secret HMAC and an enabled channel allowlist
+  // (behavior-tested in whatsapp-pilot.test.mjs). No sibling path is exempt.
+  for (const method of ["GET", "POST"]) {
+    assert.equal((await forcedProxy.proxy(request("/api/whatsapp/webhook", method))).status, 200);
+    assertRefused(await forcedProxy.proxy(request("/api/whatsapp/webhook/extra", method)), `WhatsApp sibling ${method}`);
+  }
+  // The exact Meta Lead Ads ingress has the same shape: raw-body App Secret HMAC
+  // plus a page allowlist (behavior-tested in meta-lead-ads.test.mjs). No sibling is exempt.
+  for (const method of ["GET", "POST"]) {
+    assert.equal((await forcedProxy.proxy(request("/api/meta/leadgen-webhook", method))).status, 200);
+    assertRefused(await forcedProxy.proxy(request("/api/meta/leadgen-webhook/extra", method)), `Meta leadgen sibling ${method}`);
+  }
   // And every remaining authenticated service-role route, exercised through the proxy rather
   // than reasoned about: this is the "behavior-test every service-role route"
   // half of the closure.
   for (const route of routes) {
-    if (FORCED_SESSION_ALLOWED_API_PATHS.has(route) || route === "/api/public/leads") continue;
+    if (FORCED_SESSION_ALLOWED_API_PATHS.has(route) || route === "/api/public/leads" || route === "/api/whatsapp/webhook"
+      || route === "/api/meta/leadgen-webhook") continue;
     const concrete = route.replaceAll(/\[[^\]]+\]/g, "00000000-0000-0000-0000-000000000001");
     for (const method of ["GET", "POST"]) {
       assertRefused(await forcedProxy.proxy(request(concrete, method)), `forced ${method} ${concrete}`);

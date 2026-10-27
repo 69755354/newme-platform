@@ -886,6 +886,10 @@ create table public.business_events (
   created_at  timestamptz default now()
 );
 
+-- Match the captured production allowlist so additive event migrations can
+-- verify their exact predecessor. This does not remediate a control assertion.
+ALTER TABLE ONLY public.business_events ADD CONSTRAINT chk_event_type CHECK (event_type = ANY (ARRAY['stage_change'::text, 'lead_stale_detected'::text, 'transfer'::text, 'quotation_sent'::text, 'quotation_accepted'::text, 'quotation_rejected'::text, 'won'::text, 'lost'::text, 'contract_activated'::text, 'contract_completed'::text, 'payment_recorded'::text, 'owner_change'::text, 'quality_checked'::text, 'project_info_updated'::text, 'note_added'::text, 'probability_changed'::text, 'status_changed'::text, 'lost_reason_set'::text, 'followup_scheduled'::text, 'leads_archived'::text])) NOT VALID;
+
 -- src/types/database.ts, follow_up_logs. record_lead_note_atomic() writes one
 -- row here per note.
 create table public.follow_up_logs (
@@ -1257,3 +1261,21 @@ $fn$;
 
 REVOKE EXECUTE ON FUNCTION public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.reassign_lead_atomic(uuid, uuid, timestamptz, uuid, text) TO authenticated;
+
+-- Existing advertising dependency: exact columns from the captured baseline.
+-- Replay fixture only; never applies a production schema change.
+CREATE TABLE public.ad_spend (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    campaign_name text,
+    adset_name text,
+    ad_name text,
+    spend_date date,
+    amount numeric(12,2),
+    currency text DEFAULT 'AED'::text,
+    impressions integer,
+    clicks integer,
+    source text DEFAULT 'meta'::text,
+    created_at timestamp with time zone DEFAULT now());
+
+ALTER TABLE public.ad_spend ADD PRIMARY KEY (id);
+CREATE INDEX idx_ad_spend_date ON public.ad_spend(spend_date);

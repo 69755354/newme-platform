@@ -37,7 +37,13 @@ export async function POST(
       );
     }
 
-    const uploadVersion = version || "draft"; // default to draft
+    const uploadVersion = version === undefined ? "draft" : version;
+    if (uploadVersion !== "draft" && uploadVersion !== "sealed") {
+      return NextResponse.json(
+        { error: "version must be draft or sealed" },
+        { status: 400 }
+      );
+    }
 
     // Sanitize filename: only safe characters allowed
     const safeFilename = filename.replace(/[^a-zA-Z0-9_.\-. ]/g, "_");

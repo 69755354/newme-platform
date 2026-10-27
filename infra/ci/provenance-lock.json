@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "lock_version": "2026-09-22.1",
+  "lock_version": "2026-10-22.1",
   "actions": [
     {
       "uses": "actions/checkout",
@@ -41,7 +41,7 @@
     },
     {
       "reference": "docker.io/library/postgres:17.11-trixie",
-      "digest": "sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232",
+      "digest": "sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe",
       "source": "https://hub.docker.com/_/postgres"
     },
     {

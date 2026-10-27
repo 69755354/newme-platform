@@ -424,7 +424,7 @@ function structuralFindings({ remote, local, requireApplied, requireNoPending, r
       add(
         "deferred_applied_early",
         version,
-        `${version} is this release's deferred contract-phase migration and the database has already applied it: it closes the direct money-write path the currently live release still uses, so the app may not be switched with it applied. Run supabase/migrations/rollback_money_direct_write_contract_phase.sql (runbook §5.1) and deploy again.`,
+        `${version} is this release's deferred contract-phase migration and the database has already applied it: the pre-switch check requires the deferred phase to remain unapplied. This phase includes the money-mode transition, but not every file changes money mode. Stop and verify live phase/posture; supabase/migrations/rollback_money_direct_write_contract_phase.sql (runbook §5.1) restores money compatibility without removing migration history or optional observer tables. Use the reviewed contract/reentry recovery procedure; do not delete provisioned data.`,
       );
     }
   }

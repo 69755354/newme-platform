@@ -10,7 +10,9 @@ import {
 } from "@/lib/public-lead";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createFollowUpTask } from "@/lib/tasks";
-import { buildMetaCapiLeadPayload, sendMetaCapiPayload } from "@/lib/meta-capi";
+import { buildMetaCapiLeadPayload, sendMetaCapiPayload, type MetaCapiPayload } from "@/lib/meta-capi";
+import { websiteEventUuid, websiteLeadFingerprint } from "@/lib/website-lead-identity";
+import { attemptCapiDelivery, type CapiDelivery } from "@/lib/meta-capi-delivery";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -57,7 +59,10 @@ export function OPTIONS(request: Request) {
 export async function POST(request: Request) {
   const origin = request.headers.get("origin");
   const requestId = genReqId();
-  if (!isAllowedPublicLeadOrigin(origin)) return response(origin, { error: "invalid_origin" }, 403);
+  if (!isAllowedPublicLeadOrigin(origin)) {
+    console.warn(JSON.stringify({ event: "website_lead_rejected", code: "invalid_origin" }));
+    return response(origin, { error: "invalid_origin" }, 403);
+  }
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
     return response(origin, { error: "json_required" }, 415);
   }
@@ -83,7 +88,12 @@ export async function POST(request: Request) {
     return response(origin, { error: "invalid_json" }, 400);
   }
   const parsed = parseWebsiteLead(json);
-  if (!parsed.ok) return response(origin, { error: parsed.code }, 400);
+  if (!parsed.ok) {
+    // Rejections were silent: the website bridge ignores the response, so a
+    // lost inquiry left no trace anywhere. Log the reason code only (no PII).
+    console.warn(JSON.stringify({ event: "website_lead_rejected", code: parsed.code }));
+    return response(origin, { error: parsed.code }, 400);
+  }
   if (parsed.value.honeypot) return response(origin, { ok: true }, 202);
 
   const ip = clientIdentifier(request);
@@ -108,13 +118,26 @@ export async function POST(request: Request) {
   }
 
   if (!await verifyTurnstile(parsed.value.turnstileToken, ip)) {
+    console.warn(JSON.stringify({ event: "website_lead_rejected", code: "verification_failed" }));
     return response(origin, { error: "verification_failed" }, 403);
   }
 
   const followupDate = new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
+  const eventId = parsed.value.attribution.eventId!;
+  const leadId = websiteEventUuid("lead", eventId);
+  const fingerprint = websiteLeadFingerprint(parsed.value);
+  let intakeAt = new Date().toISOString();
+  let capiPayload = buildMetaCapiLeadPayload({
+    leadId,
+    input: parsed.value,
+    clientIp: ip,
+    clientUserAgent: request.headers.get("user-agent"),
+    eventTime: Math.floor(Date.parse(intakeAt) / 1_000),
+  });
   const { data, error } = await supabaseAdmin
     .from("leads")
     .insert({
+      id: leadId,
       source: "website",
       customer_name: parsed.value.customerName,
       phone: parsed.value.phone,
@@ -142,11 +165,14 @@ export async function POST(request: Request) {
       ad_name: parsed.value.attribution.adName,
       meta_ad_id: parsed.value.attribution.adId,
       meta_campaign: parsed.value.attribution.campaignName,
-      first_touch_at: new Date().toISOString(),
+      first_touch_at: intakeAt,
       raw_import_data: {
         intake: "newme.ae",
         event_id: parsed.value.attribution.eventId,
+        intake_fingerprint: fingerprint,
+        intake_at: intakeAt,
         fbp: parsed.value.attribution.fbp,
+        capi_payload: capiPayload,
       },
       quality: "pending",
       stage: "new",
@@ -157,7 +183,28 @@ export async function POST(request: Request) {
     .select("id")
     .single();
 
-  if (error || !data?.id) {
+  if (error?.code === "23505") {
+    const prior = await supabaseAdmin.from("leads").select("id, raw_import_data")
+      .eq("id", leadId).maybeSingle();
+    if (prior.error || !prior.data) return response(origin, { error: "temporarily_unavailable" }, 503);
+    const raw = prior.data.raw_import_data;
+    if (raw?.intake !== "newme.ae" || raw?.event_id !== eventId || raw?.intake_fingerprint !== fingerprint) {
+      return response(origin, { error: "event_id_conflict" }, 409);
+    }
+    if (typeof raw.intake_at !== "string" || !Number.isFinite(Date.parse(raw.intake_at))) {
+      return response(origin, { error: "temporarily_unavailable" }, 503);
+    }
+    intakeAt = raw.intake_at;
+    // Recover from the first committed request, including its cookies, URL and
+    // client context. The retry's attribution is deliberately not fingerprinted.
+    const snapshot = raw.capi_payload as MetaCapiPayload | undefined;
+    if (!snapshot || !Array.isArray(snapshot.data) || snapshot.data.length !== 1
+      || snapshot.data[0]?.event_id !== eventId
+      || snapshot.data[0]?.event_time !== Math.floor(Date.parse(intakeAt) / 1_000)) {
+      return response(origin, { error: "temporarily_unavailable" }, 503);
+    }
+    capiPayload = snapshot;
+  } else if (error || !data?.id) {
     logger.error({
       route: "/api/public/leads",
       operation: "insert_website_lead",
@@ -168,33 +215,30 @@ export async function POST(request: Request) {
   }
 
   const { error: taskError } = await createFollowUpTask(supabaseAdmin, {
-    leadId: data.id,
+    leadId,
+    taskId: websiteEventUuid("task", eventId),
     dueAt: followupDate,
     title: "Follow up website lead",
     assigneeId: null,
     source: "follow_up",
   });
-  if (taskError) {
+  if (taskError && taskError.code !== "23505") {
     logger.warn({
       route: "/api/public/leads",
       operation: "create_website_followup",
       request_id: requestId,
-      lead_id: data.id,
+      lead_id: leadId,
       code: taskError.code,
     }, "website_lead_followup_failed");
+    return response(origin, { error: "temporarily_unavailable" }, 503);
   }
 
-  const capiPayload = buildMetaCapiLeadPayload({
-    leadId: data.id,
-    input: parsed.value,
-    clientIp: ip,
-    clientUserAgent: request.headers.get("user-agent"),
-  });
   const queuedAt = new Date().toISOString();
   const { data: delivery, error: deliveryError } = await supabaseAdmin
     .from("business_events")
     .insert({
-      lead_id: data.id,
+      id: websiteEventUuid("delivery", eventId),
+      lead_id: leadId,
       event_type: "meta_capi_lead_delivery",
       description: "Meta CAPI Lead delivery",
       event_data: {
@@ -208,52 +252,42 @@ export async function POST(request: Request) {
     .select("id")
     .single();
 
-  if (deliveryError || !delivery?.id) {
+  let queued: CapiDelivery;
+  if (deliveryError?.code === "23505") {
+    const existing = await supabaseAdmin.from("business_events").select("id, event_data")
+      .eq("id", websiteEventUuid("delivery", eventId)).eq("lead_id", leadId)
+      .eq("event_type", "meta_capi_lead_delivery").maybeSingle();
+    if (existing.error || !existing.data) return response(origin, { error: "temporarily_unavailable" }, 503);
+    queued = existing.data as CapiDelivery;
+  } else if (deliveryError || !delivery?.id) {
     logger.error({
       route: "/api/public/leads",
       operation: "queue_meta_capi_lead",
       request_id: requestId,
-      lead_id: data.id,
+      lead_id: leadId,
       code: deliveryError?.code || "missing_delivery_id",
     }, "website_lead_capi_queue_failed");
     return response(origin, { error: "temporarily_unavailable" }, 503);
+  } else {
+    queued = { id: delivery.id, event_data: {
+      status: "pending", attempts: 0, queued_at: queuedAt, event_id: eventId, payload: capiPayload,
+    } };
   }
 
   try {
-    await sendMetaCapiPayload(capiPayload);
-    await supabaseAdmin
-      .from("business_events")
-      .update({
-        event_data: {
-          status: "delivered",
-          attempts: 1,
-          queued_at: queuedAt,
-          delivered_at: new Date().toISOString(),
-          event_id: parsed.value.attribution.eventId,
-          payload: capiPayload,
-        },
-      })
-      .eq("id", delivery.id);
-  } catch (capiError) {
-    await supabaseAdmin
-      .from("business_events")
-      .update({
-        event_data: {
-          status: "failed",
-          attempts: 1,
-          queued_at: queuedAt,
-          failed_at: new Date().toISOString(),
-          event_id: parsed.value.attribution.eventId,
-          payload: capiPayload,
-        },
-      })
-      .eq("id", delivery.id);
+    const outcome = await attemptCapiDelivery(supabaseAdmin, queued, sendMetaCapiPayload);
+    if (outcome === "failed" || outcome === "review_required") {
+      logger.warn({ route: "/api/public/leads", operation: "send_meta_capi_lead",
+        request_id: requestId, lead_id: leadId, code: outcome }, "website_lead_capi_not_delivered");
+    }
+  } catch {
+    // No raw database/transport errors: they can contain credentials or payloads.
     logger.warn({
       route: "/api/public/leads",
       operation: "send_meta_capi_lead",
       request_id: requestId,
-      lead_id: data.id,
-      error: capiError instanceof Error ? capiError.message : "unknown_error",
+      lead_id: leadId,
+      code: "delivery_state_unavailable",
     }, "website_lead_capi_failed");
   }
 
@@ -261,7 +295,7 @@ export async function POST(request: Request) {
     route: "/api/public/leads",
     operation: "insert_website_lead",
     request_id: requestId,
-    lead_id: data.id,
+    lead_id: leadId,
   }, "website_lead_created");
   return response(origin, { ok: true }, 201);
 }

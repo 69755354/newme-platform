@@ -1,5 +1,7 @@
 # NewMe CRM System Stability Audit
 
+> Historical audit snapshot, retained on 2026-10-27. Findings and the NO-GO decision below describe `main@49054606284a6f36d467899d4db8670f4fb455f5` on 2026-07-22, not the current repository or production state. Consult the current [TASKBOARD](../../TASKBOARD.md) and verify the linked remediation evidence before making a present-day release decision. Updating this documentation branch to current main does not re-run the original audit or establish that every finding is resolved.
+
 **Date:** 2026-07-22  
 **Audit base:** `main` at `4905460`  
 **Audit branch:** `audit/system-stability-2026-07-22`  

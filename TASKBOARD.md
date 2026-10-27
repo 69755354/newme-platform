@@ -835,3 +835,26 @@ the provider test lead remains retrievable.
 ## Meta Lead Ads Page token exchange (2026-10-27)
 
 Code-only. The first production backfill showed Graph rejects the system-user token on leadgen edges with (#190) "must be called with a Page Access Token", and that the pull script found no Supabase URL in the runtime environment. The webhook and the pull script now exchange the configured token for the page's own token (`GET /{page}?fields=access_token`, header token, 10-minute in-memory cache; a Page token passes through), and the script reads NEXT_PUBLIC_SUPABASE_URL from the release .env.local when the environment lacks it. Targeted suite 24/24 including the new exchange/cache/denial test; typecheck passes. No credentials, permissions or scheduler state changed.
+
+
+## Meta Page token exchange release technical acceptance (2026-10-27)
+
+Release `b1c343df140f464e4fc4d0cc7d5d4946cb747472` passed candidate CI
+`40419797852` and was deployed through the protected coordinator at
+`2026-10-26T23:39:46Z`, with database phase still strict and no migration applied.
+The assignment backlog remains visible as 31/107 without blocking the release.
+Canonical production acceptance verified all four roles, eight browser sessions
+and 16 bound artifacts. All 42 fixture objects were cleaned, with zero residuals
+and exact KPI restoration. Performance measured p75 57 ms / p95 71 ms over 20
+samples. The alert drill and the delayed verification passed at
+`2026-10-26T23:54:47Z`; canonical attestation sealed the bundle below.
+
+Meta-specific boundary: this release only adds the Page token exchange and the
+pull script's Supabase URL fallback. Test isolation is unchanged: the dedicated
+test lead still has one backfill receipt, zero formal leads and zero CRM
+conversion events. No origin=webhook receipt for the test lead exists yet, so
+actual Meta callback end-to-end acceptance is still NOT claimed. Credentials,
+Meta subscriptions, the Unpublished app state and the WhatsApp review were not
+changed.
+
+<!-- postdeploy-acceptance-sha256:f1a6f1149d3fb69f3033a68014d35d31e066220f676af3a0441090dea8897ead -->

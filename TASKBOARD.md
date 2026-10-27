@@ -871,3 +871,23 @@ earlier release's digest. The appended-section check is unchanged. Release
 `b1c343d` stays at acceptance_verified (its closure cannot change the script);
 the next release closes normally. Closure suite 20/20; full suite failures are
 identical to unmodified main.
+
+## Release closure fix technical acceptance (2026-10-27)
+
+Release `aebf6d6975a0c3fb8e9098fbe799a9bb583cb2cb` (release-gate script, tests
+and docs only; no application, schema or migration change) passed candidate CI
+`40450792753` and was deployed through the protected coordinator at
+`2026-10-27T04:47:03Z`, with database phase still strict and no migration applied.
+Canonical production acceptance verified all four roles, eight browser sessions
+and 16 bound artifacts. All 42 fixture objects were cleaned, with zero residuals
+and exact KPI restoration. Performance measured p75 348 ms / p95 402 ms over 20
+samples, within policy; higher than the previous release's 57/71 ms with no
+application change, so it is recorded as path variance to re-measure, not a
+regression. The alert drill and the delayed verification passed at
+`2026-10-27T05:02:04Z`; canonical attestation sealed the bundle below.
+
+Release `b1c343d` remains acceptance_verified without finalization: its valid
+closure `2043436` was refused by the defect this release fixes. Meta callback
+end-to-end acceptance is still NOT claimed.
+
+<!-- postdeploy-acceptance-sha256:795002d4e76187cb7dc26912ed35a1839f52b7c001bdd0ef0ce713b6de90d236 -->

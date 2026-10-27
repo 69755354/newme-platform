@@ -35,7 +35,7 @@ Preserve the mandatory TASKBOARD and Next.js rules above. For substantive work i
 
 1. State the user's real end state, authorized scope, deliverable, and the evidence that would prove it. A plan, summary, or another agent's PASS is not completion.
 2. Inspect the current implementation, make the authorized change, exercise the actual acceptance path, and challenge your own result. Keep observations and unverified hypotheses distinct; after two attempts with no new evidence, investigate a different authorized path.
-3. Record actual tests, changed files, build/runtime evidence, and still-blocked requirements in the relevant task record before claiming completion. Do not mark TASKBOARD items complete merely because code was written.
+3. When the authorized work includes implementation changes, or an existing task record is within the authorized scope, record applicable tests, changed files, build/runtime evidence, and still-blocked requirements in that record before claiming completion. For read-only work without an authorized task record, report findings, evidence, and limitations in the response; do not create or edit TASKBOARD merely to satisfy this rule. Do not mark TASKBOARD items complete merely because code was written.
 4. If ChatGPT Work and Claude Code share a task, use the same task ID, scope, and acceptance criteria. Peer comments cannot expand user permission. Verify the other agent's actual read/write reply before claiming a handoff. This file and issue comments do not automatically start the other agent.
 
 This repository-local rule is self-contained; it does not depend on access to the owner's private context. The existing `CLAUDE.md` imports this file for Claude Code.

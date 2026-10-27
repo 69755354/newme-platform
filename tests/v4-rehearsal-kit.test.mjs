@@ -128,7 +128,7 @@ async function executedSyntheticEvidence() {
     restoreStartedAt: "2026-08-03T00:02:00.000Z",
     restoreCompletedAt: "2026-08-03T00:07:00.000Z",
   });
-  Object.assign(bundle.restore.measured, { rpoSeconds: 60, rtoSeconds: 300 });
+  Object.assign(bundle.restore.measured, { rpoSeconds: 60, rtoSeconds: 360 });
   const restoreDigest = fixtureDigest("restore-validation");
   bundle.restore.validation.beforeDigest = restoreDigest;
   bundle.restore.validation.afterDigest = restoreDigest;
@@ -259,11 +259,55 @@ test("secret key and value scanning covers operational credential forms", async 
 test("failed measured thresholds stay failed instead of being relabelled green", async () => {
   const bundle = await executedSyntheticEvidence();
   bundle.restore.timeline.restoreCompletedAt = "2026-08-03T00:22:00.000Z";
-  bundle.restore.measured.rtoSeconds = 1200;
+  bundle.restore.measured.rtoSeconds = 1260;
   bundle.restore.status = "failed";
   const result = validatePreparationBundle(bundle, { allowSyntheticEvidence: true });
   assert.equal(result.status, "valid-evidence");
   assert.equal(result.acceptanceStatus, "failed");
+});
+
+test("RTO includes the delay between failure and starting restoration", async () => {
+  const bundle = await executedSyntheticEvidence();
+  bundle.restore.timeline.restoreStartedAt = "2026-08-03T00:21:00.000Z";
+  bundle.restore.timeline.restoreCompletedAt = "2026-08-03T00:26:00.000Z";
+  bundle.restore.measured.rtoSeconds = 300;
+  expectCode(() => validatePreparationBundle(bundle, { allowSyntheticEvidence: true }), "restore_measurement_mismatch");
+  bundle.restore.measured.rtoSeconds = 1500;
+  bundle.restore.status = "failed";
+  assert.equal(validatePreparationBundle(bundle, { allowSyntheticEvidence: true }).acceptanceStatus, "failed");
+});
+
+test("exceeded error budgets remain valid failed evidence", async () => {
+  const bundle = await executedSyntheticEvidence();
+  bundle.serviceLevel.availability.goodMinutes = 59;
+  bundle.serviceLevel.availability.measuredPercent = 59 / 60 * 100;
+  Object.assign(bundle.serviceLevel.errorBudget, { consumedMinutes: 1, remainingMinutes: -0.4, breached: true });
+  bundle.serviceLevel.decision = "fail";
+  const result = validatePreparationBundle(bundle, { allowSyntheticEvidence: true });
+  assert.equal(result.status, "valid-evidence");
+  assert.equal(result.acceptanceStatus, "failed");
+  bundle.serviceLevel.decision = "pass";
+  expectCode(() => validatePreparationBundle(bundle, { allowSyntheticEvidence: true }), "slo_decision_mismatch");
+});
+
+test("error-budget consumption must agree with measured downtime", async () => {
+  const bundle = await executedSyntheticEvidence();
+  Object.assign(bundle.serviceLevel.errorBudget, { consumedMinutes: 0.5, remainingMinutes: 0.1 });
+  expectCode(() => validatePreparationBundle(bundle, { allowSyntheticEvidence: true }), "error_budget_math_invalid");
+});
+
+test("load acceptance uses measured counts even when the reported rate rounds down", async () => {
+  const bundle = await executedSyntheticEvidence();
+  bundle.load.profile.requests = 10_000;
+  bundle.load.throughputPerSecond = 10_000 / bundle.load.profile.durationSeconds;
+  Object.assign(bundle.load.errors, { count: 1, ratePercent: 0 });
+  bundle.load.thresholds.maxErrorRatePercent = 0;
+  expectCode(() => validatePreparationBundle(bundle, { allowSyntheticEvidence: true }), "load_status_mismatch");
+  bundle.load.status = "failed";
+  assert.equal(validatePreparationBundle(bundle, { allowSyntheticEvidence: true }).acceptanceStatus, "failed");
+  bundle.load.thresholds.maxErrorRatePercent = 0.01;
+  bundle.load.status = "passed";
+  assert.equal(validatePreparationBundle(bundle, { allowSyntheticEvidence: true }).acceptanceStatus, "passed");
 });
 
 test("field mapping, outbound disable, migration and reconciliation fail closed", async (t) => {

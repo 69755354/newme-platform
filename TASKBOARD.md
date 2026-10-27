@@ -21,6 +21,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| SAM-86-VALIDATOR-REVIEW-CODE | DONE | Codex | 2026-10-27 |
 || task_P1-C | DONE | Hermes | 2026-07-04 |
 || task_P1-D | DONE | Codex→Hermes | 2026-07-04 |
 || task_P1-E | DONE | Codex→Hermes | 2026-07-04 |
@@ -82,6 +83,8 @@ TODO → IN_PROGRESS → REVIEW → DONE
 > `SAM-78` (2026-08-03): continuing the V4-PF-001..004/G1/G2 tenant closure from exact canonical base `agent/saas-staging-isolation@f2bd6576a0723fea58a13926baef2dedcc37da8e` on isolated branch `codex/sam-78-tenant-closure`. PR #255 is prior capability/product-catalog foundation evidence and is not treated as full SAM-78 acceptance. Required remaining acceptance includes tenant-owned FK/RLS/API/RPC/worker/storage/import/export coverage, support-session immutable audit, provisioning through suspension/recovery, two-organization negatives, disposable apply/verify/rollback, generated types and residue-zero cleanup. No production action is authorized.
 
 > `SAM-85` (2026-08-05): implementing the repository-side V4-09 rehearsal contract from exact canonical `965b7d70abf68ea8e686731168946b4692542ddf`. Scope is approval/expiry, isolated clone boundary, deterministic masking/tokenization, five-channel outbound denial, mapping/backfill/token-only quarantine, count/hash reconciliation and six-resource destruction evidence. No clone, production/staging data access, migration, backfill or destruction has been executed; status remains `IN_PROGRESS` until an authorized isolated rehearsal produces valid aggregate evidence.
+
+> `SAM-86-VALIDATOR-REVIEW-CODE` (2026-10-27): narrow offline correction of the four PR #265 review findings on the later toolkit already present in canonical `c6c1faff8cb6105db8d35ea617ecd7489536c90e`. RTO includes response delay; budget consumption derives from availability; negative budget balances preserve valid failed evidence; load acceptance derives from error counts. The four new behavioral regressions failed against the prior validators. Focused toolkit, migration-toolkit and preflight tests, template validation and taskboard checks are the code acceptance; exact-head CI is tracked in the successor draft PR. This code row does not close SAM-86 or claim an environment rehearsal, migration, deployment or production acceptance.
 
 > M1 发布链（Linear 为真源）：**RELEASED 2026-07-20**。发布 SHA `49bbb26` → BUILD_ID `MDw2VC9TYmm1SsgcR2Lv-`（evidence 20260719-193837.json，smoke 14/14 + regression 22/22）。SAM-6~12 全链 Done：SAM-28 业务签收（森哥 2026-07-20）+ 技术签收（机器全量验收），SAM-12 发布记录出具。SAM-26 视觉/移动端留人工不拦发布；SAM-45/46 进 M2 backlog。
 >

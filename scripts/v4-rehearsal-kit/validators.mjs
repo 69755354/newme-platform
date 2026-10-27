@@ -315,10 +315,12 @@ function validateServiceLevel(serviceLevel, executed) {
   if (availability.goodMinutes > serviceLevel.window.totalMinutes) fail("slo_good_minutes_invalid", "$.serviceLevel.availability.goodMinutes");
   if (!closeEnough(availability.measuredPercent, availability.goodMinutes / serviceLevel.window.totalMinutes * 100)) fail("slo_availability_math_invalid", "$.serviceLevel.availability");
   const expectedBudget = serviceLevel.window.totalMinutes * (100 - availability.objectivePercent) / 100;
-  if (!closeEnough(errorBudget.totalMinutes, expectedBudget) || !closeEnough(errorBudget.totalMinutes, errorBudget.consumedMinutes + errorBudget.remainingMinutes)) fail("error_budget_math_invalid", "$.serviceLevel.errorBudget");
-  const breached = errorBudget.remainingMinutes <= 0 && errorBudget.consumedMinutes >= errorBudget.totalMinutes;
+  const consumedMinutes = serviceLevel.window.totalMinutes - availability.goodMinutes;
+  const remainingMinutes = expectedBudget - consumedMinutes;
+  if (!closeEnough(errorBudget.totalMinutes, expectedBudget) || !closeEnough(errorBudget.consumedMinutes, consumedMinutes) || !closeEnough(errorBudget.remainingMinutes, remainingMinutes)) fail("error_budget_math_invalid", "$.serviceLevel.errorBudget");
+  const breached = remainingMinutes <= 0 && consumedMinutes >= expectedBudget;
   if (errorBudget.breached !== breached) fail("error_budget_breach_mismatch", "$.serviceLevel.errorBudget.breached");
-  const passes = availability.measuredPercent >= availability.objectivePercent && latency.measuredMs <= latency.objectiveMs && !breached;
+  const passes = availability.goodMinutes / serviceLevel.window.totalMinutes * 100 >= availability.objectivePercent && latency.measuredMs <= latency.objectiveMs && !breached;
   if (!executed && serviceLevel.decision !== "undetermined") fail("template_slo_decision_invalid", "$.serviceLevel.decision");
   if (executed && serviceLevel.decision !== (passes ? "pass" : "fail")) fail("slo_decision_mismatch", "$.serviceLevel.decision");
 }
@@ -334,7 +336,7 @@ function validateRestore(restore, serviceLevel, executed) {
   const started = timestamp(restore.timeline.restoreStartedAt, "restore_start_invalid", "$.restore.timeline.restoreStartedAt");
   const completed = timestamp(restore.timeline.restoreCompletedAt, "restore_end_invalid", "$.restore.timeline.restoreCompletedAt");
   if (!(recovery <= failure && failure <= started && started <= completed)) fail("restore_timeline_invalid", "$.restore.timeline");
-  if (restore.measured.rpoSeconds !== Math.round((failure - recovery) / 1000) || restore.measured.rtoSeconds !== Math.round((completed - started) / 1000)) fail("restore_measurement_mismatch", "$.restore.measured");
+  if (restore.measured.rpoSeconds !== Math.round((failure - recovery) / 1000) || restore.measured.rtoSeconds !== Math.round((completed - failure) / 1000)) fail("restore_measurement_mismatch", "$.restore.measured");
   if (restore.validation.beforeDigest !== restore.validation.afterDigest) fail("restore_hash_mismatch", "$.restore.validation");
   const passes = restore.measured.rpoSeconds <= restore.targets.rpoSeconds && restore.measured.rtoSeconds <= restore.targets.rtoSeconds;
   if (restore.status !== (passes ? "passed" : "failed")) fail("restore_status_mismatch", "$.restore.status");
@@ -343,11 +345,12 @@ function validateRestore(restore, serviceLevel, executed) {
 function validateLoad(load, executed) {
   const { p50, p95, p99, max } = load.latencyMs;
   if (!(p50 <= p95 && p95 <= p99 && p99 <= max)) fail("load_percentile_order_invalid", "$.load.latencyMs");
-  if (load.errors.count > load.profile.requests || !closeEnough(load.errors.ratePercent, load.errors.count / load.profile.requests * 100)) fail("load_error_math_invalid", "$.load.errors");
+  const errorRatePercent = load.errors.count / load.profile.requests * 100;
+  if (load.errors.count > load.profile.requests || !closeEnough(load.errors.ratePercent, errorRatePercent)) fail("load_error_math_invalid", "$.load.errors");
   if (!closeEnough(load.throughputPerSecond, load.profile.requests / load.profile.durationSeconds)) fail("load_throughput_math_invalid", "$.load.throughputPerSecond");
   if (!executed && load.status !== "not_executed") fail("template_load_status_invalid", "$.load.status");
   if (executed) {
-    const passes = load.latencyMs.p95 <= load.thresholds.maxP95Ms && load.errors.ratePercent <= load.thresholds.maxErrorRatePercent;
+    const passes = load.latencyMs.p95 <= load.thresholds.maxP95Ms && errorRatePercent <= load.thresholds.maxErrorRatePercent;
     if (load.status !== (passes ? "passed" : "failed")) fail("load_status_mismatch", "$.load.status");
   }
 }

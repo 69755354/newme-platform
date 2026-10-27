@@ -212,7 +212,7 @@ const serviceLevel = object({
   errorBudget: object({
     totalMinutes: nonNegativeNumber(),
     consumedMinutes: nonNegativeNumber(),
-    remainingMinutes: nonNegativeNumber(),
+    remainingMinutes: number(),
     breached: boolean(),
   }),
   recoveryTargets: object({ rpoSeconds: nonNegativeInteger(), rtoSeconds: positiveInteger() }),

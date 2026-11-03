@@ -356,12 +356,10 @@ test("cookie-only browser session does not use localStorage or client persistenc
     .filter(([, source]) => /fetch\(\s*["'`]\/api\/auth\/me/.test(source))
     .map(([file]) => file)
     .sort();
-  // The new-lead form is the one caller outside the shared reader: it needs the
-  // acting user id at submit time. Any further caller has to be reviewed here,
-  // because a private copy of the session is how client-side analytics ended up
-  // holding the user's email and role.
+  // The shared reader is the only caller. Any further caller has to be reviewed
+  // here, because a private copy of the session is how client-side analytics
+  // ended up holding the user's email and role.
   assert.deepEqual(meCallers, [
-    "src/app/(dashboard)/leads/new/page.tsx",
     "src/lib/session-identity.ts",
   ]);
 

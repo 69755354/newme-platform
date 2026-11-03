@@ -73,6 +73,7 @@ for (const entry of ["action", "route"]) {
         "@/lib/supabase-admin": { supabaseAdmin: admin },
         "@/lib/action-auth-context": { getActionAuthContext: async () => ({ role: "admin" }) },
         "@/lib/lead-reassignment.mjs": {},
+        "@/lib/member-lead-handover.mjs": await import("../../src/lib/member-lead-handover.mjs"),
         "@/lib/notifications": { getAdminUserIds: async () => [], createNotificationsBulk: async () => {} },
         "@/lib/supabase-server": { createServerSupabase: async () => ({
           auth: { getUser: async () => ({ data: { user: { id: "admin" } } }) },

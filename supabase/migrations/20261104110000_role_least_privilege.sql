@@ -162,6 +162,14 @@ DECLARE
   v_is_finance    text := '(EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = ''finance''))';
   v_designer_lead text;
   v_has_projects  boolean;
+  -- the replay floor's tables are narrower than production's: write a policy
+  -- only where every column it names exists
+  v_projects_sales boolean := (SELECT count(*) = 1 FROM information_schema.columns
+                                WHERE table_schema = 'public' AND table_name = 'projects' AND column_name = 'sales_id');
+  v_files_cols     boolean := (SELECT count(*) = 2 FROM information_schema.columns
+                                WHERE table_schema = 'public' AND table_name = 'lead_files' AND column_name IN ('lead_id', 'uploaded_by'));
+  v_customers_cols boolean := (SELECT count(*) = 1 FROM information_schema.columns
+                                WHERE table_schema = 'public' AND table_name = 'customers' AND column_name = 'assigned_sales_id');
   r record;
 BEGIN
   -- 2a. everything company-wide that designer / finance could read or write
@@ -272,7 +280,7 @@ BEGIN
   --     a project to ANY lead and thereby become "involved" in it. Sales only,
   --     and only leads assigned to the salesperson. Non-manager roles can never
   --     re-point a project (trigger below).
-  IF to_regclass('public.projects') IS NOT NULL THEN
+  IF to_regclass('public.projects') IS NOT NULL AND v_projects_sales THEN
     -- No subquery on public.leads here: the designer's leads policy reads
     -- projects, so a projects policy reading leads would recurse. The lead scope
     -- for a salesperson's new project is enforced by trg_guard_projects_lead_binding.
@@ -296,7 +304,7 @@ BEGIN
 
   -- 2h. file records: lead_files_insert_staff let any role attach a record to any
   --     lead as itself; now the lead must be visible to the uploader.
-  IF to_regclass('public.lead_files') IS NOT NULL THEN
+  IF to_regclass('public.lead_files') IS NOT NULL AND v_files_cols THEN
     EXECUTE 'DROP POLICY IF EXISTS lead_files_insert_staff ON public.lead_files';
     EXECUTE 'CREATE POLICY lead_files_insert_staff ON public.lead_files FOR INSERT TO authenticated WITH CHECK ('
       || '(EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'',''operator''))) OR '
@@ -304,7 +312,7 @@ BEGIN
   END IF;
 
   -- 2i. customers: policy_customers_insert_sales had no role check.
-  IF to_regclass('public.customers') IS NOT NULL THEN
+  IF to_regclass('public.customers') IS NOT NULL AND v_customers_cols THEN
     EXECUTE 'DROP POLICY IF EXISTS policy_customers_insert_sales ON public.customers';
     EXECUTE 'CREATE POLICY policy_customers_insert_sales ON public.customers FOR INSERT TO authenticated WITH CHECK ('
       || '(EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = ''sales'')) AND assigned_sales_id = auth.uid())';

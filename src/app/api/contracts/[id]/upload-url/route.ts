@@ -4,6 +4,7 @@ import { execFile } from "child_process";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
 import { resolveReleaseScript } from "@/lib/release-script";
+import { sanitizeContractFilename } from "@/lib/cos-key.mjs";
 
 /**
  * POST /api/contracts/[id]/upload-url
@@ -46,7 +47,7 @@ export async function POST(
     }
 
     // Sanitize filename: only safe characters allowed
-    const safeFilename = filename.replace(/[^a-zA-Z0-9_.\-. ]/g, "_");
+    const safeFilename = sanitizeContractFilename(filename);
     if (!safeFilename) {
       return NextResponse.json(
         { error: "Invalid filename" },

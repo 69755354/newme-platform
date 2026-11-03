@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { clampCosExpires, cosKeyError, COS_MAX_EXPIRES_SECONDS } from "../../src/lib/cos-key.mjs";
+import { clampCosExpires, cosKeyError, COS_MAX_EXPIRES_SECONDS, sanitizeContractFilename } from "../../src/lib/cos-key.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const route = readFileSync(path.join(ROOT, "src/app/api/cos/download-url/route.ts"), "utf8");
@@ -48,4 +48,25 @@ test("the route uses both rules and no longer matches attachments by bare file n
   assert.match(route, /clampCosExpires\(expires\)/);
   assert.doesNotMatch(route, /eq\("file_name"/);
   assert.doesNotMatch(route, /expires > 0 \? expires/);
+});
+
+test("two dots inside a file name are fine, whole-segment dots are not", () => {
+  assert.equal(cosKeyError("contracts/c/draft_report..pdf"), null);
+  assert.equal(cosKeyError("attachments/a..b.pdf"), null);
+  assert.match(cosKeyError("leads/a/./b"), /traversal/);
+  assert.match(cosKeyError("leads/a/../b"), /traversal/);
+  assert.match(cosKeyError("leads/abc/.."), /traversal/);
+  assert.match(cosKeyError("../leads/a"), /traversal/);
+  assert.match(cosKeyError("leads/abc/..%2f"), /unsafe|traversal/);
+  assert.match(cosKeyError("leads/a\\..\\b"), /unsafe/);
+});
+
+test("contract upload file names always make a downloadable key", () => {
+  for (const name of ["my file.pdf", "report..pdf", "a  b...c.pdf", "合同 v2.pdf", "..", "x/../y.pdf", "a b\\c.pdf"]) {
+    const safe = sanitizeContractFilename(name);
+    assert.equal(cosKeyError(`contracts/c/draft_${safe}`), null, `${name} -> ${safe}`);
+  }
+  assert.equal(sanitizeContractFilename("my file.pdf"), "my_file.pdf");
+  assert.equal(sanitizeContractFilename("report..pdf"), "report.pdf");
+  assert.match(readFileSync(path.join(ROOT, "src/app/api/contracts/[id]/upload-url/route.ts"), "utf8"), /sanitizeContractFilename\(filename\)/);
 });

@@ -25,8 +25,11 @@ export function cosKeyError(key) {
   if (typeof key !== "string" || key.length === 0) return "key is required";
   if (key.length > 512) return "Invalid key: too long";
   if (!SAFE_KEY.test(key)) return "Invalid key: contains unsafe characters";
-  if (key.includes("..")) return "Invalid key: path traversal is not allowed";
   if (key.startsWith("/") || key.includes("//")) return "Invalid key: malformed path";
+  // Judge whole path segments: "report..pdf" is a file name, ".." and "." are not.
+  if (key.split("/").some((seg) => seg === ".." || seg === ".")) {
+    return "Invalid key: path traversal is not allowed";
+  }
   return null;
 }
 
@@ -40,4 +43,13 @@ export function clampCosExpires(expires) {
     return COS_MAX_EXPIRES_SECONDS;
   }
   return Math.min(Math.max(Math.floor(expires), COS_MIN_EXPIRES_SECONDS), COS_MAX_EXPIRES_SECONDS);
+}
+
+/**
+ * File name part of a contract object key. Anything outside A-Za-z0-9_.- (spaces
+ * included) becomes "_" and runs of dots collapse to one, so the key built from
+ * it always passes cosKeyError and can be downloaded again.
+ */
+export function sanitizeContractFilename(filename) {
+  return String(filename).replace(/[^a-zA-Z0-9_.\-]/g, "_").replace(/\.{2,}/g, ".");
 }

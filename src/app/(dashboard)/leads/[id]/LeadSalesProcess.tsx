@@ -892,13 +892,13 @@ export default function LeadSalesProcess({
           {isClosed ? (
             <p className="rounded-md border border-border/70 bg-background/50 px-3 py-2 text-xs text-muted-foreground">
               {closedAsWon
-                ? (lang === "zh" ? "该线索已赢单，阶段已关闭，无需再次标记。" : "This lead is already won and closed; it cannot be marked again.")
-                : (lang === "zh" ? "该线索已输单，阶段已关闭，无法再修改。" : "This lead is already lost and closed; it cannot be changed.")}
+                ? t("leadDetail.leadClosedWon")
+                : t("leadDetail.leadClosedLost")}
             </p>
           ) : (<>
           <div>
             <label htmlFor="stage-note" className="text-xs text-muted-foreground">
-              {lang === "zh" ? "阶段备注（必填）" : "Stage note (required)"}
+              {t("leadDetail.stageNoteRequired")}
             </label>
             <textarea
               id="stage-note"

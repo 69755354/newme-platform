@@ -992,6 +992,10 @@ export const translations = {
       confirmPoor: "Confirm Poor",
       poorReasonPlaceholder: "Enter reason for Poor (min 3 chars)",
       firstContactGateHint: "At least 1 complete contact and quality are required; 3 contacts are recommended",
+      // S4 review fix: closed-lead notice and stage note label
+      leadClosedWon: "This lead is already won and closed; it cannot be marked again.",
+      leadClosedLost: "This lead is already lost and closed; it cannot be changed.",
+      stageNoteRequired: "Stage note (required)",
     },
     stageLabels: {
       new: "New Lead",
@@ -2687,6 +2691,10 @@ export const translations = {
       confirmPoor: "确认差",
       poorReasonPlaceholder: "请输入差的原因（至少3个字符）",
       firstContactGateHint: "至少需要1条完整联系记录并评估质量；建议填写3次联系记录",
+      // S4 review fix: closed-lead notice and stage note label
+      leadClosedWon: "该线索已赢单，阶段已关闭，无需再次标记。",
+      leadClosedLost: "该线索已输单，阶段已关闭，无法再修改。",
+      stageNoteRequired: "阶段备注（必填）",
     },
     stageLabels: {
       new: "新线索",

@@ -158,7 +158,12 @@ test("won and lost controls disappear once a lead is closed, and the note label 
   assert.match(source, /const isClosed =/);
   assert.match(source, /isClosed \? \(/);
   assert.doesNotMatch(source, /Stage note \(optional\)/);
-  assert.match(source, /Stage note \(required\)/);
+  assert.match(source, /t\("leadDetail\.stageNoteRequired"\)/);
+  assert.doesNotMatch(source, /Stage note \(required\)/);
+  const translations = read("src/lib/i18n/translations.ts");
+  for (const key of ["leadClosedWon", "leadClosedLost", "stageNoteRequired"]) {
+    assert.equal((translations.match(new RegExp(`\\b${key}:`, "g")) ?? []).length, 2, key);
+  }
   assert.match(source, /!stageNote\.trim\(\)/);
 });
 

@@ -17,7 +17,7 @@ test("stage API requires a real stage note", async () => {
 
 test("sales process reserves direct stage actions for terminal outcomes", async () => {
   const source = await read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
-  assert.ok(source.includes("Stage note (required)"));
+  assert.ok(source.includes('t("leadDetail.stageNoteRequired")'));
   assert.ok(source.includes("maxLength={1000}"));
   assert.ok(source.includes("Complete the current milestone above with a real progress note"));
   assert.equal(source.includes("onStageChange(s, stageNote)"), false);

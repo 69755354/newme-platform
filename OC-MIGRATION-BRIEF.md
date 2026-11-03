@@ -115,7 +115,7 @@
 115|| system | Supabase |
 116|| project_url | vfopmpxlhwzpxqegayew.supabase.co |
 117|| anon_key | sb_publishable_0UiLli4lUNE_pwhZ13bRfw_xH4TduY_ |
-118|| service_role_key | sb_secret_XCMDr7rOiR2XHZEjfQQkqA_cIKG-Doj |
+118|| service_role_key | [REDACTED — removed from the public tree 2026-11-03; rotation tracked in supabase/preflight/f02-credential-cutover.md §7] |
 119|| pat | sbp_bbaf7 |
 120|| source | MEMORY.md § Supabase |
 121|| scope | newme-platform |

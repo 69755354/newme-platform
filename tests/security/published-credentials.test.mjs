@@ -420,3 +420,40 @@ test("no build output is tracked, so the exemption cannot come back by accident"
   assert.match(ignore, /^\.next\.backup\/$/m, ".gitignore must ignore the directory, not only its timestamped siblings");
   assert.match(ignore, /^\.next\/$/m);
 });
+
+// ---------------------------------------------------------------------------
+// OS fix S1 · a credential that announces itself by its prefix
+// ---------------------------------------------------------------------------
+
+test("a Supabase personal access token or secret API key is rejected wherever it appears", () => {
+  // ARCHITECTURE_AUDIT.md published a (since revoked) `sbp_` token inside a
+  // backticked `SUPABASE_PAT=` fragment, and two migration documents a
+  // `sb_secret_` key in a `| service_role_key | ... |` row: no "password" label,
+  // so every label-based rule walked past them. The values here are shapes.
+  const pat = `sbp_${"0123456789abcdef".repeat(2)}01234567`;
+  const oauth = `sbp_oauth_${"fedcba9876543210".repeat(2)}76543210`;
+  const secret = "sb_secret_Ab12Cd34Ef56Gh78Ij90Kl12-Mn3";
+  const lines = [
+    `- \`.env.local\` 包含 \`SUPABASE_PAT=${pat}\``,
+    `| pat | ${pat} |`,
+    `118|| service_role_key | ${secret} |`,
+    `export SUPABASE_ACCESS_TOKEN=${oauth}`,
+    `token: ${secret}`,
+  ];
+  for (const line of lines) {
+    assert.deepEqual(rules(auditText(line)).filter((rule) => rule === "credential-token"), ["credential-token"], line);
+    assert.deepEqual(rules(auditSource(line)).filter((rule) => rule === "credential-token"), ["credential-token"], line);
+  }
+});
+
+test("a truncated prefix, a placeholder spelled with words, or a publishable key is not a credential", () => {
+  for (const line of [
+    "| pat | sbp_bbaf7 |",
+    "sb_secret_restore_drill_fixture",
+    "SUPABASE_SERVICE_ROLE_KEY=sb_secret_<your-key>",
+    `NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_${"a".repeat(40)}`,
+    "sbp_ tokens must never be committed",
+  ]) {
+    assert.deepEqual(rules(auditText(line)).filter((rule) => rule === "credential-token"), [], line);
+  }
+});

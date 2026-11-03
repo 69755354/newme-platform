@@ -13,7 +13,7 @@ import { readSessionIdentity } from "@/lib/session-identity";
  * Scenarios:
  *   1. Dev mode: POST /api/auth/dev-login → auto sign-in with fallback to /api/dev/setup
  *   2. Production: GET /api/auth/me → user + profile from session cookie
- *   3. 5s timeout: /api/auth/me 5s 仍未返回 → push /login
+ *   3. 5s timeout: /api/auth/me 5s 仍未返回 → 显示连接错误（可重试），不跳登录页；答复到达后自动恢复
  *   4. Sales user on /dashboard → replace to /workbench
  *
  * handleLogout: POST /api/auth/logout clears the server-owned session cookies, then pushes /login
@@ -57,9 +57,15 @@ export function useAuthRedirect() {
       return;
     }
 
-    // Production: fetch session from server
+    // Production: fetch session from server.
+    // A slow answer is not an invalid session. The timer used to push /login,
+    // which logged a valid user out whenever Supabase was slow for 5 s; it now
+    // shows the connection-error state (with its retry) and the read, which is
+    // still in flight, fills the session in when it eventually answers.
     const t = setTimeout(() => {
-      if (!cancelled) router.push("/login");
+      if (cancelled) return;
+      setAuthError(true);
+      setAuthLoading(false);
     }, 5000);
 
     // Always a live read: this is the session revocation boundary, so a
@@ -77,6 +83,7 @@ export function useAuthRedirect() {
           setAuthLoading(false);
           return;
         }
+        setAuthError(false);
         const data = outcome.identity;
         setUserId(data.userId);
         setUserEmail(data.email);

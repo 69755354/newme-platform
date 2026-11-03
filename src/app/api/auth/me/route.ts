@@ -2,6 +2,9 @@
 import { createServerSupabase, getRefreshedCookies, getRefreshAttempted, getRefreshFailure, type RefreshedCookie } from "@/lib/supabase-server";
 import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
 import { logger } from "@/lib/logger";
+// Relative on purpose: the route's existing tests load it with a mock loader
+// that stubs each "@/" import by name, and this one must not need a stub.
+import { isMissingProfileRow, isRetryableAuthError } from "../../../../lib/auth-retryable.mjs";
 import { NextResponse } from "next/server";
 
 const LEGACY_COOKIE_NAMES = ["sb-access-token", "sb-refresh-token"];
@@ -30,6 +33,14 @@ async function withAuthTimeout<T>(operation: () => PromiseLike<T>, deadline: num
 function applyPrivateNoStore(response: NextResponse) {
   response.headers.set("Cache-Control", PRIVATE_NO_STORE);
   response.headers.set("Vary", "Cookie, Authorization");
+  // Which release answered. src/lib/session-identity.ts compares it with the
+  // client's own release and reloads a stale tab once (version skew). The
+  // header name is spelled out here rather than imported from
+  // src/lib/deployment-skew.mjs (DEPLOYMENT_ID_HEADER) so the route keeps no
+  // client-module import; tests/release/version-skew-protection.test.mjs
+  // asserts the two spellings agree.
+  const releaseId = process.env.NEXT_PUBLIC_DEPLOYMENT_ID;
+  if (releaseId) response.headers.set("x-newme-deployment-id", releaseId);
   return response;
 }
 
@@ -110,6 +121,17 @@ export async function GET(request: Request) {
       deadline,
     );
 
+    // The auth service could not be reached or answered 5xx: that is not a
+    // verdict about the session. 503 keeps the client on the page (connection
+    // failed, retry) instead of sending a valid user to /login.
+    if (isRetryableAuthError(authError)) {
+      logger.error(
+        { request_id: requestId, operation: "auth_me", code: "auth_upstream_failure", status: (authError as { status?: number }).status },
+        "Auth service unavailable",
+      );
+      return respond({ error: "auth_unavailable" }, { status: 503 });
+    }
+
     // Invalid or missing session → 401
     if (!user || authError) {
       if (refreshFailure === "upstream_error") {
@@ -143,7 +165,9 @@ export async function GET(request: Request) {
       deadline,
     );
 
-    if (profileError) {
+    // No row (PGRST116) is how the session boundary policy answers for a
+    // deactivated or banned account: a verdict, not a server error.
+    if (profileError && !isMissingProfileRow(profileError)) {
       logger.error({ request_id: requestId, operation: "auth_me", err: profileError });
       return respond({ error: "internal_error" }, { status: 500 });
     }

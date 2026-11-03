@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getCurrentUser } from "@/app/actions/auth";
+import { readSessionIdentity } from "@/lib/session-identity";
 
 export interface UserRoleInfo {
   role: string | null;
@@ -11,6 +11,15 @@ export interface UserRoleInfo {
   loading: boolean;
 }
 
+/**
+ * Reads GET /api/auth/me through the shared session reader rather than the
+ * getCurrentUser() server action: action ids change with every release, so a
+ * tab opened before a deploy silently got role = null and managers saw the
+ * restricted or empty version of every page until they refreshed by hand.
+ * While the answer is unavailable (timeout, 5xx) `loading` stays true so a
+ * manager is never rendered as a restricted user; the layout shows its
+ * connection-error state from the same in-flight read.
+ */
 export function useUserRole(): UserRoleInfo {
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -19,20 +28,14 @@ export function useUserRole(): UserRoleInfo {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const user = await getCurrentUser();
-        if (!user) {
-          if (!cancelled) setLoading(false);
-          return;
-        }
-        if (cancelled) return;
-        setUserId(user.id);
-        const r = user.role ?? "sales";
-        setRole(r);
-      } catch {
-        // silent
+      const outcome = await readSessionIdentity();
+      if (cancelled) return;
+      if (outcome.status === "unavailable") return;
+      if (outcome.status === "active") {
+        setUserId(outcome.identity.userId);
+        setRole(outcome.identity.role || "sales");
       }
-      if (!cancelled) setLoading(false);
+      setLoading(false);
     })();
     return () => { cancelled = true; };
   }, []);

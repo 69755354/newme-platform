@@ -127,6 +127,19 @@ const CREDENTIAL_PROPERTY =
  */
 const CREDENTIAL_PAIR = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+["']?(?:\s+[/|:]\s+|\s*,\s*)["']?([^\s"'`,;()[\]{}<>]+)/g;
 
+/**
+ * A credential that announces itself by its prefix: a Supabase personal access
+ * token (`sbp_` + 40 hex, or `sbp_oauth_` + 40 hex) or a Supabase secret API key
+ * (`sb_secret_` + an opaque base62 body). No label, table or assignment is
+ * needed to recognise one, which is why the label-based rules walked past a
+ * revoked `sbp_` token in ARCHITECTURE_AUDIT.md and a `sb_secret_` key in two
+ * migration documents for months. Checked on every line of every file.
+ *
+ * The `sb_secret_` body must carry a digit: `sb_secret_restore_drill_fixture`
+ * is a placeholder spelled with words, and a real key never is.
+ */
+const CREDENTIAL_TOKEN = /\b(sbp_oauth_[0-9a-f]{40}|sbp_[0-9a-f]{40}|sb_secret_([A-Za-z0-9_-]{20,}))/g;
+
 /** A v4-shaped identifier. Identifiers sit beside addresses; secrets do not. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -312,6 +325,7 @@ export function auditText(content) {
     // every address. Running the pair rule here reported six such rows in
     // RLS_MATRIX_TEST_REPORT.md as published credentials.
     if (!isTableRow) findings.push(...auditPairs(line, index));
+    findings.push(...auditTokens(line, index));
   });
 
   return findings;
@@ -339,6 +353,26 @@ function looksLikeValue(token) {
  *
  * @returns {Array<{line: number, rule: string, detail: string}>}
  */
+/**
+ * Findings for a self-announcing credential (see CREDENTIAL_TOKEN) on one line.
+ *
+ * Runs on every line of every text and source file, table rows included: the
+ * pair rule deliberately skips table rows, and the `sb_secret_` key that this
+ * rule exists for sat in a `| service_role_key | ... |` row.
+ *
+ * @returns {Array<{line: number, rule: string, detail: string}>}
+ */
+export function auditTokens(line, index = 0) {
+  const findings = [];
+  for (const match of line.matchAll(CREDENTIAL_TOKEN)) {
+    const body = match[2];
+    if (body !== undefined && !/\d/.test(body)) continue;
+    const prefix = match[1].startsWith("sbp_") ? "sbp_" : "sb_secret_";
+    findings.push({ line: index + 1, rule: "credential-token", detail: `a ${prefix}-prefixed Supabase credential is published` });
+  }
+  return findings;
+}
+
 export function auditPairs(line, index = 0) {
   const findings = [];
 
@@ -410,6 +444,7 @@ export function auditSource(content, { isAllowed = () => false } = {}) {
   content.split(/\r?\n/).forEach((line, index) => {
     findings.push(...auditCommandLine(line, index));
     findings.push(...auditPairs(line, index));
+    findings.push(...auditTokens(line, index));
 
     for (const match of line.matchAll(CREDENTIAL_PROPERTY)) {
       const [, , name, , value] = match;
@@ -523,7 +558,7 @@ function main() {
   if (process.argv.includes("--list")) {
     console.log(
       "rules: credential-in-table, credential-in-prose, credential-in-command, credential-pair, credential-in-url, " +
-        "defaulted-credential, credential-literal, credential-property, tracked-build-output",
+        "credential-token, defaulted-credential, credential-literal, credential-property, tracked-build-output",
     );
     for (const [file, entries] of Object.entries(ALLOWLIST)) {
       for (const [name, reason] of Object.entries(entries)) console.log(`allowed: ${file} :: ${name} — ${reason}`);

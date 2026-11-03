@@ -32,7 +32,7 @@ warning: ALL entries status=unverified until tested live
 | system | Supabase |
 | project_url | vfopmpxlhwzpxqegayew.supabase.co |
 | anon_key | sb_publishable_0UiLli4lUNE_pwhZ13bRfw_xH4TduY_ |
-| service_role_key | sb_secret_XCMDr7rOiR2XHZEjfQQkqA_cIKG-Doj |
+| service_role_key | [REDACTED — key revoked: GitHub secret-scanning alert #2 (supabase_secret_key, this location) closed 2026-08-19 as revoked; rotation verified 2026-08-20, the leaked key gets 401. String removed from the tree 2026-11-03] |
 | pat | sbp_bbaf7 |
 | source | MEMORY.md § Supabase |
 | scope | newme-platform |

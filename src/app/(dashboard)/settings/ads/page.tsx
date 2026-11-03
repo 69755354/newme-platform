@@ -1,35 +1,16 @@
-import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { authorizeServerPage } from "@/lib/server-page-auth";
+import { ConnectionFailed } from "@/components/ConnectionFailed";
 import AdsClient from "./ads-client";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
-/* ─── Server-side role guard ─── */
-async function authorize() {
-  const supabase = await createServerSupabase();
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    redirect("/login");
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.role || !["admin", "boss"].includes(profile.role)) {
-    redirect("/dashboard");
-  }
-
-  return { user, role: profile.role };
-}
-
 export default async function SettingsAdsPage() {
-  const { role } = await authorize();
+  /* ─── Server-side guard: session, is_active, forced password change, role ─── */
+  const session = await authorizeServerPage({ roles: ["admin", "boss"] });
+  if (session.status === "unavailable") {
+    return <DashboardScrollContainer><ConnectionFailed /></DashboardScrollContainer>;
+  }
+  const { role } = session;
 
   const supabase = await createServerSupabase();
   const { data: leads } = await supabase

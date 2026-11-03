@@ -2,11 +2,15 @@
 
 import { usePathname } from "next/navigation";
 import { Toaster } from "sonner";
-import { Suspense } from "react";
+import { Suspense, useSyncExternalStore } from "react";
 import { LanguageProvider } from "@/lib/i18n/LanguageContext";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useAuthRedirect } from "@/hooks/useAuthRedirect";
+import { useVersionSkewReload } from "@/hooks/useVersionSkewReload";
 import { DashboardErrorBoundary } from "@/components/DashboardErrorBoundary";
+import { ConnectionFailed } from "@/components/ConnectionFailed";
+import { ReleaseUpdateBanner } from "@/components/ReleaseUpdateBanner";
+import { isSessionUnavailable, subscribeSessionUnavailable } from "@/lib/session-identity";
 import { DashboardTopBar } from "@/components/dashboard/DashboardTopBar";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 
@@ -16,6 +20,11 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { t } = useLanguage();
   const { role, userEmail, authLoading, authError, handleLogout } = useAuthRedirect();
+  useVersionSkewReload();
+  // Published by src/lib/session-identity.ts when any page's session read stays
+  // unavailable after its retries: the page would otherwise sit on "loading"
+  // with no way out, so the layout shows the shared connection-failed view.
+  const sessionUnavailable = useSyncExternalStore(subscribeSessionUnavailable, isSessionUnavailable, () => false);
 
   const isManagement = role === "admin" || role === "boss" || role === "operator";
 
@@ -37,6 +46,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <main className="flex-1 min-w-0 flex flex-col">
+        <ReleaseUpdateBanner />
         {/* Top header bar — user info always visible */}
         {(role || authError) && (
           <DashboardTopBar
@@ -63,11 +73,8 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
               {t("common.loading")}
             </div>
-          ) : authError ? (
-            <div className="flex flex-col items-center justify-center h-64 gap-3">
-              <p className="text-rose-400 text-sm">Connection failed</p>
-              <button onClick={() => window.location.reload()} className="text-xs text-slate-600 underline">Retry</button>
-            </div>
+          ) : authError || sessionUnavailable ? (
+            <ConnectionFailed />
           ) : (
             <Suspense
               fallback={<div className="flex items-center justify-center h-64 text-muted-foreground text-sm">{t("common.loading")}</div>}

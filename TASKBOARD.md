@@ -27,6 +27,7 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_os_fix_s1_release_stability_code | DONE | Claude | 2026-11-03 |
 | task_meta_lead_ads_intake_code | DONE | Claude | 2026-10-26 |
 | task_meta_lead_ads_page_token_code | DONE | Claude | 2026-10-27 |
 | task_meta_crm_import_id_precision_code | DONE | Codex | 2026-10-26 |

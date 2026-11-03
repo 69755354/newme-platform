@@ -6,7 +6,13 @@ import { CRM_EVENT, CRM_POSTURE_SQL, CRM_PREDICATE_NAME, judgeCrmProvisioning } 
 
 const manifest=JSON.parse(fs.readFileSync(new URL('../../infra/release/release-manifest.json',import.meta.url),'utf8'));
 const live=structuredClone(manifest);
-live.deferred_contract=live.deferred_contract.filter(x=>x.version!==CRM_EVENT.version);
+// The live release is the one before CRM: drop CRM and every later additive
+// suffix (each appended exactly one deferred entry and one posture predicate),
+// the same derivation as tests/release/meta-capi-provisioning.test.mjs.
+const crmAt=live.deferred_contract.findIndex(x=>x.version===CRM_EVENT.version);
+const laterSuffixes=live.deferred_contract.length-crmAt-1;
+live.deferred_contract=live.deferred_contract.slice(0,crmAt);
+live.posture.deferred_contract.predicates=live.posture.deferred_contract.predicates.slice(0,live.posture.deferred_contract.predicates.length-laterSuffixes);
 live.posture.deferred_contract.predicates=live.posture.deferred_contract.predicates.filter(x=>x.name!==CRM_PREDICATE_NAME);
 const sql=fs.readFileSync(new URL(`../../supabase/migrations/${CRM_EVENT.file}`,import.meta.url),'utf8');
 const candidate=structuredClone(live);
@@ -14,9 +20,12 @@ candidate.deferred_contract.push(CRM_EVENT);
 candidate.posture.deferred_contract.predicates.push({name:CRM_PREDICATE_NAME,expect:true,sql:CRM_POSTURE_SQL});
 const input=()=>({live:structuredClone(live),candidate:structuredClone(candidate),sql,phase:'strict',recorded:false,priorMatches:true,bodyMatches:false});
 
-test('the committed manifest is exactly the reviewed CRM transition',()=>{
-  assert.deepEqual(manifest,candidate);
-  assert.deepEqual(manifest.deferred_contract.at(-1),CRM_EVENT);
+test('the committed manifest is the reviewed CRM transition followed only by later additive suffixes',()=>{
+  const truncated=structuredClone(manifest);
+  truncated.deferred_contract=truncated.deferred_contract.slice(0,crmAt+1);
+  truncated.posture.deferred_contract.predicates=truncated.posture.deferred_contract.predicates.slice(0,truncated.posture.deferred_contract.predicates.length-laterSuffixes);
+  assert.deepEqual(truncated,candidate);
+  assert.deepEqual(manifest.deferred_contract[crmAt],CRM_EVENT);
 });
 
 test('only the exact additive CRM schema transition is accepted',()=>{

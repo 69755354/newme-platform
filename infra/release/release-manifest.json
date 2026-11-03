@@ -544,6 +544,11 @@
           "name": "meta-crm-lead-stage-schema-present",
           "expect": true,
           "sql": "SELECT coalesce((SELECT to_regclass('public.meta_crm_stage_events') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='leads' AND column_name='meta_leadgen_id' AND data_type='text') AND (SELECT c.relrowsecurity AND NOT has_table_privilege('anon',c.oid,'SELECT,INSERT,UPDATE,DELETE') AND NOT has_table_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE,DELETE') AND EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid=c.oid AND t.tgname='trg_require_current_session' AND NOT t.tgisinternal) FROM pg_class c WHERE c.oid=to_regclass('public.meta_crm_stage_events'))),false)"
+        },
+        {
+          "name": "s2-role-least-privilege-present",
+          "expect": true,
+          "sql": "SELECT coalesce((SELECT p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[] AND p.prosrc LIKE '%NOT IN (''admin'', ''boss'', ''operator'', ''sales'', ''user'', ''salesperson'')%' FROM pg_proc p WHERE p.oid=to_regprocedure('public.transition_lead_stage(uuid,text,text,text,uuid)')),false) AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND policyname IN ('policy_activities_select_designer','policy_activities_select_finance','policy_activities_insert_designer','policy_business_events_select_designer','policy_business_events_select_finance','policy_lead_milestones_select_designer','policy_products_insert_designer','policy_products_update_designer','policy_products_delete_designer')) AND (SELECT count(*)=3 FROM pg_policies WHERE schemaname='public' AND policyname IN ('policy_activities_select_designer_involved','policy_activities_insert_designer_involved','policy_leads_select_designer_involved')) AND (SELECT count(*)=9 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('money_write_is_direct','guard_contracts_write','guard_payments_write','guard_installment_plans_write','guard_definer_only_write','require_current_session','contract_transition_is_allowed','guard_contract_transition','guard_quotations_write') AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[])"
         }
       ]
     }

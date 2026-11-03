@@ -13,11 +13,13 @@
  *      caller's release but reports the server's release in a response header;
  *   3. a tab that was in the background during the release and has not made
  *      any request since — probeServerRelease() asks the server on the tab's
- *      return (visibility/focus, throttled) so it reloads before the user
- *      clicks a button whose server action no longer exists.
+ *      return (visibility/focus, throttled). This path never reloads: the user
+ *      may have unsaved input in a form. It publishes "update available" and
+ *      the dashboard layout shows a persistent banner ("the system was
+ *      updated — save your work, then click here to refresh").
  *
- * All are resolved the same way: ONE full reload for the current client
- * release. The reload marker is keyed by the client's own release id and kept in
+ * Paths 1 and 2 are resolved the same way: ONE full reload for the current
+ * client release. The reload marker is keyed by the client's own release id and kept in
  * sessionStorage, so a reload that somehow lands on the same stale bundle (a
  * cache in front of the app, a half-finished switch) does not loop; it simply
  * falls through to the ordinary error state. When sessionStorage is not
@@ -131,14 +133,36 @@ export const RELEASE_PROBE_INTERVAL_MS = 60_000;
 
 let lastProbeAt = 0;
 
+// ── "update available" state, read by the dashboard layout's banner ─────────
+let updateAvailable = false;
+const updateListeners = new Set();
+
+function publishUpdateAvailable() {
+  if (updateAvailable) return;
+  updateAvailable = true;
+  for (const listener of updateListeners) listener();
+}
+
+/** useSyncExternalStore-compatible subscription. @param {() => void} listener */
+export function subscribeUpdateAvailable(listener) {
+  updateListeners.add(listener);
+  return () => { updateListeners.delete(listener); };
+}
+
+/** True once a probe has seen a newer release than this tab runs. */
+export function isUpdateAvailable() {
+  return updateAvailable;
+}
+
 /**
  * Ask the server which release it runs (GET /api/auth/me, whose header the
- * client already compares on every mount) and reload once on a mismatch.
+ * client already compares on every mount). On a mismatch it does NOT reload —
+ * the user may be mid-form — it publishes "update available" for the banner.
  * Throttled: at most one probe per RELEASE_PROBE_INTERVAL_MS per tab. The
  * response status is irrelevant here; only the header is read, and a failed
  * fetch is ignored (the next real request will decide).
  *
- * Returns true when a reload was triggered.
+ * Returns true when a newer release was detected.
  */
 /**
  * @param {{ fetchImpl?: typeof fetch, now?: number, force?: boolean }} [options]
@@ -153,13 +177,16 @@ export async function probeServerRelease(options = {}) {
   if (!fetchImpl) return false;
   try {
     const response = await fetchImpl("/api/auth/me", { credentials: "same-origin", cache: "no-store" });
-    return reloadIfServerReleaseDiffers(response.headers);
+    if (!isDeploymentMismatch(response.headers.get(DEPLOYMENT_ID_HEADER))) return false;
+    publishUpdateAvailable();
+    return true;
   } catch {
     return false;
   }
 }
 
-/** Test seam: forget the last probe time. */
+/** Test seam: forget the last probe time and the published state. */
 export function resetReleaseProbeForTests() {
   lastProbeAt = 0;
+  updateAvailable = false;
 }

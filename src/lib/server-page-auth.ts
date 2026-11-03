@@ -20,7 +20,7 @@
 
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { isRetryableAuthError } from "@/lib/auth-retryable.mjs";
+import { isMissingProfileRow, isRetryableAuthError } from "@/lib/auth-retryable.mjs";
 import { isActiveProfile } from "@/lib/auth-profile.mjs";
 import {
   FORCED_SESSION_ERROR,
@@ -79,7 +79,9 @@ async function decide(roles: readonly string[] | undefined): Promise<Verdict> {
         .single(),
       deadline,
     );
-    if (error) return { kind: "unavailable" };
+    // No row (PGRST116): the session boundary policy hides a deactivated or
+    // banned user's own profile. A verdict, handled below as inactive.
+    if (error && !isMissingProfileRow(error)) return { kind: "unavailable" };
     profile = data;
   } catch {
     return { kind: "unavailable" };

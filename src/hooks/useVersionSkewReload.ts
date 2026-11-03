@@ -11,9 +11,10 @@ import { isVersionSkewError, probeServerRelease, reloadOnceForVersionSkew } from
  *     cryptic error;
  *   - when the tab comes back to the foreground (visibilitychange / focus) the
  *     server's release is probed, throttled to once a minute, so a tab that sat
- *     in the background through a deploy reloads before the user presses a
- *     button whose action handler has its own try/catch (confirm payment,
- *     approve, reassign ...) and would otherwise only show that catch's error.
+ *     in the background through a deploy learns about it before the user
+ *     presses a button whose action handler has its own try/catch (confirm
+ *     payment, approve, reassign ...). That path never reloads by itself — the
+ *     user may have unsaved input — it shows the ReleaseUpdateBanner.
  */
 export function useVersionSkewReload() {
   useEffect(() => {

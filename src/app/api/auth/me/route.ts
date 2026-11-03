@@ -4,7 +4,7 @@ import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
 import { logger } from "@/lib/logger";
 // Relative on purpose: the route's existing tests load it with a mock loader
 // that stubs each "@/" import by name, and this one must not need a stub.
-import { isRetryableAuthError } from "../../../../lib/auth-retryable.mjs";
+import { isMissingProfileRow, isRetryableAuthError } from "../../../../lib/auth-retryable.mjs";
 import { NextResponse } from "next/server";
 
 const LEGACY_COOKIE_NAMES = ["sb-access-token", "sb-refresh-token"];
@@ -165,7 +165,9 @@ export async function GET(request: Request) {
       deadline,
     );
 
-    if (profileError) {
+    // No row (PGRST116) is how the session boundary policy answers for a
+    // deactivated or banned account: a verdict, not a server error.
+    if (profileError && !isMissingProfileRow(profileError)) {
       logger.error({ request_id: requestId, operation: "auth_me", err: profileError });
       return respond({ error: "internal_error" }, { status: 500 });
     }

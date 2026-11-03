@@ -4,7 +4,7 @@ import { reportServerError } from "@/lib/report-server-error";
 import { shouldRecordActivity } from "@/lib/activity-throttle.mjs";
 import { isActiveProfile } from "@/lib/auth-profile.mjs";
 // Relative on purpose: the proxy's existing tests stub each "@/" import by name.
-import { isRetryableAuthError } from "./lib/auth-retryable.mjs";
+import { isMissingProfileRow, isRetryableAuthError } from "./lib/auth-retryable.mjs";
 import {
   FORCED_SESSION_ERROR,
   FORCED_SESSION_REDIRECT_PATH,
@@ -267,7 +267,9 @@ export async function proxy(request: NextRequest) {
       }
     }
 
-    if (profileErr) {
+    // No profile row (PGRST116): the session boundary policy hides a
+    // deactivated or banned user's own row. A verdict, not an outage.
+    if (profileErr && !isMissingProfileRow(profileErr)) {
       if (softFailNavigation) return deferAuthCheck();
       return authUnavailable(request, isApiRequest);
     }

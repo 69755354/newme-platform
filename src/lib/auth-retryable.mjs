@@ -19,3 +19,17 @@ export function isRetryableAuthError(error) {
   const status = error.status;
   return status === 0 || (typeof status === "number" && status >= 500);
 }
+
+/**
+ * True when a `.single()` profile lookup found no row. The session boundary
+ * policy (restrict_profiles_active_session_select) hides a deactivated or
+ * banned user's own profile row, so PostgREST answers PGRST116 ("0 rows") —
+ * an error object, not `data: null`. That is a verdict (inactive account),
+ * not an outage, and must never be shown as "connection failed".
+ *
+ * @param {unknown} error the `error` half of a Supabase query result
+ * @returns {boolean}
+ */
+export function isMissingProfileRow(error) {
+  return Boolean(error) && typeof error === "object" && /** @type {{ code?: unknown }} */ (error).code === "PGRST116";
+}

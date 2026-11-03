@@ -201,11 +201,22 @@ describe("auth/me", () => {
   });
 
   it("returns 500 when the caller profile lookup fails", async () => {
+    // A genuine lookup failure. This fixture used to be PGRST116, which is not
+    // a failure: it is PostgREST's "0 rows", i.e. the session boundary policy
+    // hiding a deactivated account's own row (see the next case).
     mockGetUser.mock.mockImplementation(async () => ({ data: { user: VALID_USER }, error: null }));
-    mockProfileSingle.mock.mockImplementation(async () => ({ data: null, error: { code: "PGRST116" } }));
+    mockProfileSingle.mock.mockImplementation(async () => ({ data: null, error: { code: "PGRST000", message: "connection refused" } }));
     const response = await GET(makeRequest({ authorization: "Bearer valid-token" }));
     assert.equal(response.status, 500);
     assert.equal(response.body.error, "internal_error");
+  });
+
+  it("returns 401 inactive_account when RLS hides the caller's profile row (PGRST116)", async () => {
+    mockGetUser.mock.mockImplementation(async () => ({ data: { user: VALID_USER }, error: null }));
+    mockProfileSingle.mock.mockImplementation(async () => ({ data: null, error: { code: "PGRST116", details: "The result contains 0 rows" } }));
+    const response = await GET(makeRequest({ authorization: "Bearer valid-token" }));
+    assert.equal(response.status, 401);
+    assert.equal(response.body.error, "inactive_account");
   });
 
   it("contains unexpected exceptions and logs only structured metadata", async () => {

@@ -117,6 +117,30 @@ test("auth/me still answers 401 for a definite verdict: invalid token or no user
   assert.equal(ok.status, 200);
 });
 
+/** What PostgREST returns from `.single()` when RLS hides the caller's own row. */
+const NO_PROFILE_ROW = { data: null, error: { code: "PGRST116", details: "The result contains 0 rows", message: "JSON object requested, multiple (or no) rows returned" } };
+
+test("auth/me answers 401 inactive_account, not 500, when the session boundary policy hides the profile row", async () => {
+  // A deactivated or banned user cannot read their own profiles row
+  // (restrict_profiles_active_session_select), so the lookup is PGRST116 —
+  // an error object — rather than an inactive row.
+  const client = {
+    auth: { getUser: async () => ({ data: { user }, error: null }) },
+    rpc: async () => ({ data: "ok", error: null }),
+    from: () => ({ select: () => ({ eq: () => ({ single: async () => NO_PROFILE_ROW }) }) }),
+  };
+  const me = load("src/app/api/auth/me/route.ts", {
+    "next/server": { NextResponse },
+    "@/lib/supabase-server": { createServerSupabase: async () => client, getRefreshedCookies: () => [], getRefreshAttempted: () => false, getRefreshFailure: () => undefined },
+    "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => ({ authToken: "sb-a", refreshToken: "sb-r" }) },
+    "@/lib/forced-password-change.mjs": { FORCED_SESSION_ERROR: "password_change_required", isForcedPasswordChange: () => false },
+    "@/lib/logger": { logger: { error() {} } },
+  });
+  const response = await me.GET(meRequest());
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "inactive_account" });
+});
+
 // ---------------------------------------------------------------------------
 // src/proxy.ts
 // ---------------------------------------------------------------------------
@@ -134,14 +158,14 @@ function nextServer() {
 function proxyRequest(pathname, method) {
   return { headers: new Headers(), method, nextUrl: { pathname }, url: `https://app.newme.ae${pathname}` };
 }
-function loadProxy(getUserResult) {
+function loadProxy(getUserResult, profileResult = { data: activeProfile, error: null }) {
   return load("src/proxy.ts", {
     "next/server": nextServer(),
     "@/lib/supabase-middleware": {
       createMiddlewareClient: async () => ({
         supabase: {
           auth: { getUser: async () => getUserResult },
-          from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: activeProfile, error: null }) }) }) }),
+          from: () => ({ select: () => ({ eq: () => ({ single: async () => profileResult }) }) }),
         },
         getResponse: () => ({ status: 200, served: true }),
       }),
@@ -172,6 +196,18 @@ test("proxy still sends a definite missing/invalid session on a role-protected p
     assert.match(response.location, /\/login\?redirect=%2Fsettings$/);
     assert.deepEqual(await loadProxy(result).proxy(proxyRequest("/api/leads/a/stage", "POST")), { body: { error: "unauthorized" }, status: 401 });
   }
+});
+
+test("proxy treats a hidden profile row (deactivated account) as inactive, not as an outage", async () => {
+  const proxy = loadProxy({ data: { user }, error: null }, NO_PROFILE_ROW);
+  const page = await proxy.proxy(proxyRequest("/leads/x", "GET"));
+  assert.equal(page.status, 307);
+  assert.match(page.location, /\/login\?reason=inactive_account$/);
+  assert.deepEqual(await proxy.proxy(proxyRequest("/api/leads", "GET")), { body: { error: "inactive_account" }, status: 401 });
+  // A genuine profile outage still soft-fails the page and 503s the API.
+  const outage = loadProxy({ data: { user }, error: null }, { data: null, error: { code: "PGRST000", message: "connection refused" } });
+  assert.equal((await outage.proxy(proxyRequest("/leads/x", "GET"))).status, 200);
+  assert.deepEqual(await outage.proxy(proxyRequest("/api/leads", "GET")), { body: { error: "auth_unavailable" }, status: 503 });
 });
 
 // ---------------------------------------------------------------------------
@@ -210,6 +246,12 @@ test("a server-rendered page enforces session, is_active, forced password change
   assert.equal(await redirectOf(loadServerPageAuth({ getUser: async () => ({ data: { user: null }, error: sessionError() }) }).authorizeServerPage()), "/login");
   assert.equal(
     await redirectOf(loadServerPageAuth({ getUser: signedIn, profile: { ...activeProfile, is_active: false } }).authorizeServerPage()),
+    "/login?reason=inactive_account",
+  );
+  // The real shape for a deactivated/banned account: RLS hides the row, so the
+  // lookup is PGRST116 rather than an inactive row.
+  assert.equal(
+    await redirectOf(loadServerPageAuth({ getUser: signedIn, profile: null, profileError: NO_PROFILE_ROW.error }).authorizeServerPage()),
     "/login?reason=inactive_account",
   );
   // F-2: the proxy may have let the navigation through because its own
@@ -325,7 +367,7 @@ function withEnv(t, key, value) {
   t.after(() => { if (previous === undefined) delete process.env[key]; else process.env[key] = previous; });
 }
 
-test("a tab returning to the foreground probes the server release and reloads once on a mismatch", async (t) => {
+test("a tab returning to the foreground learns about a newer release but never reloads by itself", async (t) => {
   withEnv(t, "NEXT_PUBLIC_DEPLOYMENT_ID", "release-old");
   const previousWindow = globalThis.window;
   const store = new Map();
@@ -336,21 +378,41 @@ test("a tab returning to the foreground probes the server release and reloads on
   };
   t.after(() => { globalThis.window = previousWindow; });
   const skew = skewModule; skew.resetReleaseProbeForTests();
+  let notified = 0;
+  skew.subscribeUpdateAvailable(() => { notified += 1; });
   let fetches = 0;
   const fetchImpl = async () => { fetches += 1; return new Response(null, { status: 401, headers: { "x-newme-deployment-id": "release-new" } }); };
 
+  assert.equal(skew.isUpdateAvailable(), false);
   assert.equal(await skew.probeServerRelease({ fetchImpl, now: 1_000_000 }), true, "the header decides, not the status");
-  assert.equal(reloads, 1);
+  assert.equal(reloads, 0, "the user may have unsaved input: no automatic reload on tab return");
+  assert.equal(skew.isUpdateAvailable(), true);
+  assert.equal(notified, 1);
   assert.equal(await skew.probeServerRelease({ fetchImpl, now: 1_000_000 + 1_000 }), false, "throttled");
   assert.equal(fetches, 1);
-  assert.equal(await skew.probeServerRelease({ fetchImpl, now: 1_000_000 + skew.RELEASE_PROBE_INTERVAL_MS }), false, "already reloaded once for this client release");
+  await skew.probeServerRelease({ fetchImpl, now: 1_000_000 + skew.RELEASE_PROBE_INTERVAL_MS });
   assert.equal(fetches, 2);
-  assert.equal(reloads, 1);
+  assert.equal(notified, 1, "published once");
+  assert.equal(reloads, 0);
+
+  // A matching release publishes nothing.
+  skew.resetReleaseProbeForTests();
+  const same = async () => new Response(null, { status: 200, headers: { "x-newme-deployment-id": "release-old" } });
+  assert.equal(await skew.probeServerRelease({ fetchImpl: same, force: true }), false);
+  assert.equal(skew.isUpdateAvailable(), false);
 
   const hook = fs.readFileSync(path.join(ROOT, "src/hooks/useVersionSkewReload.ts"), "utf8");
   assert.match(hook, /addEventListener\("visibilitychange", onReturn\)/);
   assert.match(hook, /addEventListener\("focus", onReturn\)/);
   assert.match(hook, /probeServerRelease\(\)/);
+  const banner = fs.readFileSync(path.join(ROOT, "src/components/ReleaseUpdateBanner.tsx"), "utf8");
+  assert.match(banner, /useSyncExternalStore\(subscribeUpdateAvailable, isUpdateAvailable/);
+  assert.match(banner, /t\("common\.systemUpdatedRefresh"\)/);
+  assert.match(banner, /window\.location\.reload\(\)/, "reload only on the user's click");
+  const layout = fs.readFileSync(path.join(ROOT, "src/app/(dashboard)/layout.tsx"), "utf8");
+  assert.match(layout, /<ReleaseUpdateBanner \/>/);
+  const translations = fs.readFileSync(path.join(ROOT, "src/lib/i18n/translations.ts"), "utf8");
+  assert.equal((translations.match(/^\s*systemUpdatedRefresh: "/gm) ?? []).length, 2, "both languages");
 });
 
 test("without usable sessionStorage no automatic reload is attempted, so a stale bundle can never loop", (t) => {

@@ -9,6 +9,7 @@ import { useAuthRedirect } from "@/hooks/useAuthRedirect";
 import { useVersionSkewReload } from "@/hooks/useVersionSkewReload";
 import { DashboardErrorBoundary } from "@/components/DashboardErrorBoundary";
 import { ConnectionFailed } from "@/components/ConnectionFailed";
+import { ReleaseUpdateBanner } from "@/components/ReleaseUpdateBanner";
 import { isSessionUnavailable, subscribeSessionUnavailable } from "@/lib/session-identity";
 import { DashboardTopBar } from "@/components/dashboard/DashboardTopBar";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
@@ -45,6 +46,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <main className="flex-1 min-w-0 flex flex-col">
+        <ReleaseUpdateBanner />
         {/* Top header bar — user info always visible */}
         {(role || authError) && (
           <DashboardTopBar

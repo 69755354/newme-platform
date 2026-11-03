@@ -9,5 +9,7 @@ export function reloadOnceForVersionSkew(options?: {
   clientId?: string | null;
 }): boolean;
 export function reloadIfServerReleaseDiffers(headers: Pick<Headers, "get">): boolean;
+export function subscribeUpdateAvailable(listener: () => void): () => void;
+export function isUpdateAvailable(): boolean;
 export function probeServerRelease(options?: { fetchImpl?: typeof fetch; now?: number; force?: boolean }): Promise<boolean>;
 export function resetReleaseProbeForTests(): void;

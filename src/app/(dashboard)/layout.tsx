@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { LanguageProvider } from "@/lib/i18n/LanguageContext";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useAuthRedirect } from "@/hooks/useAuthRedirect";
+import { useVersionSkewReload } from "@/hooks/useVersionSkewReload";
 import { DashboardErrorBoundary } from "@/components/DashboardErrorBoundary";
 import { DashboardTopBar } from "@/components/dashboard/DashboardTopBar";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
@@ -16,6 +17,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { t } = useLanguage();
   const { role, userEmail, authLoading, authError, handleLogout } = useAuthRedirect();
+  useVersionSkewReload();
 
   const isManagement = role === "admin" || role === "boss" || role === "operator";
 

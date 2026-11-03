@@ -14,6 +14,8 @@
  * test forbids its identifier anywhere in this file, comments included.
  */
 
+import { reloadIfServerReleaseDiffers } from "@/lib/deployment-skew";
+
 export type SessionIdentity = {
   userId: string | null;
   email: string | null;
@@ -32,6 +34,11 @@ let inflight: Promise<SessionOutcome> | null = null;
 
 async function request(): Promise<SessionOutcome> {
   const response = await fetch("/api/auth/me", { credentials: "same-origin" });
+  // A tab from a previous release gets a valid answer here (route handlers
+  // keep their URL across releases), but its bundle will fail the next server
+  // action. Reload once now, while nothing is in flight; the outcome below is
+  // still returned so the current render stays consistent until then.
+  reloadIfServerReleaseDiffers(response.headers);
   if (response.status === 401 || response.status === 403) {
     return { status: "unauthenticated" };
   }

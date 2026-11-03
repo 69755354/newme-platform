@@ -2,20 +2,31 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { getCurrentUser } from "@/app/actions/auth";
+import { readSessionIdentity } from "@/lib/session-identity";
 
 const MANAGEMENT_ROLES = ["admin", "boss", "operator"];
 
 /**
  * Client-side role guard. Redirects to /dashboard if user lacks required role.
- * Returns { loading, role, blocked } so the page can block rendering.
+ * Returns { loading, role, blocked, unavailable } so the page can block rendering.
  *
- * Uses server action (getCurrentUser) — no client-side Supabase dependency.
+ * Reads GET /api/auth/me through the shared session reader. This used to call
+ * the getCurrentUser() server action, whose id changes with every release: a
+ * tab opened before a deploy got "Server Reference ID did not match", the
+ * catch branch pushed /login, and every manager was logged out by the release.
+ * A route handler keeps its URL across releases, and a stale tab is reloaded
+ * once by src/lib/session-identity.ts instead of being sent to /login.
+ *
+ * Only a real refusal (401/403, inactive profile) goes to /login. An
+ * unavailable answer (timeout, 5xx) keeps the page in its loading state and
+ * sets `unavailable`; the dashboard layout, which shares the same in-flight
+ * read, shows its connection-error state with a retry.
  */
 export function useRequireRole(allowedRoles: string[] = MANAGEMENT_ROLES) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [blocked, setBlocked] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
   const [role, setRole] = useState<string | null>(null);
 
   // Stabilize array reference to prevent infinite re-renders
@@ -26,28 +37,25 @@ export function useRequireRole(allowedRoles: string[] = MANAGEMENT_ROLES) {
     let cancelled = false;
 
     async function check() {
-      try {
-        const user = await getCurrentUser();
+      const outcome = await readSessionIdentity();
+      if (cancelled) return;
 
-        if (!user) {
-          router.push("/login");
-          return;
-        }
+      if (outcome.status === "unauthenticated") {
+        router.push("/login");
+        return;
+      }
+      if (outcome.status === "unavailable") {
+        setUnavailable(true);
+        return;
+      }
 
-        if (cancelled) return;
+      const userRole = outcome.identity.role ?? null;
+      setRole(userRole);
+      setLoading(false);
 
-        const userRole = user.role ?? null;
-        setRole(userRole);
-        setLoading(false);
-
-        if (!userRole || !rolesRef.current.includes(userRole)) {
-          setBlocked(true);
-          router.push("/dashboard");
-        }
-      } catch {
-        if (!cancelled) {
-          router.push("/login");
-        }
+      if (!userRole || !rolesRef.current.includes(userRole)) {
+        setBlocked(true);
+        router.push("/dashboard");
       }
     }
 
@@ -58,5 +66,5 @@ export function useRequireRole(allowedRoles: string[] = MANAGEMENT_ROLES) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rolesKey, router]);
 
-  return { loading, role, blocked };
+  return { loading, role, blocked, unavailable };
 }

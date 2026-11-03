@@ -30,6 +30,14 @@ async function withAuthTimeout<T>(operation: () => PromiseLike<T>, deadline: num
 function applyPrivateNoStore(response: NextResponse) {
   response.headers.set("Cache-Control", PRIVATE_NO_STORE);
   response.headers.set("Vary", "Cookie, Authorization");
+  // Which release answered. src/lib/session-identity.ts compares it with the
+  // client's own release and reloads a stale tab once (version skew). The
+  // header name is spelled out here rather than imported from
+  // src/lib/deployment-skew.ts (DEPLOYMENT_ID_HEADER) so the route keeps no
+  // client-module import; tests/release/version-skew-protection.test.mjs
+  // asserts the two spellings agree.
+  const releaseId = process.env.NEXT_PUBLIC_DEPLOYMENT_ID;
+  if (releaseId) response.headers.set("x-newme-deployment-id", releaseId);
   return response;
 }
 

@@ -5,6 +5,7 @@ import * as Sentry from "@sentry/nextjs";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import Link from "next/link";
+import { isVersionSkewError, reloadOnceForVersionSkew } from "@/lib/deployment-skew";
 
 // ─── Types ───
 interface ErrorBoundaryProps {
@@ -48,6 +49,11 @@ class DashboardErrorBoundaryImpl extends Component<
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    // A stale bundle after a release is not an application error: reload once
+    // and let the fresh bundle render. If this release already reloaded once,
+    // fall through to the ordinary error UI so the page can never loop.
+    if (isVersionSkewError(error) && reloadOnceForVersionSkew()) return;
+
     // Generate unique errorId for tracking
     const errorId = typeof crypto !== "undefined" && crypto.randomUUID
       ? crypto.randomUUID()

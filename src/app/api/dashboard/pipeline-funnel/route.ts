@@ -1,19 +1,11 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
-import type { Database, Json } from "@/types/database";
+import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
+import type { Database } from "@/types/database";
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
 type PipelineLead = Pick<LeadRow, "id" | "stage" | "created_at" | "updated_at" | "last_contact_date" | "assigned_to" | "customer_name" | "current_milestone" | "final_status">;
-type StageEventData = { from_stage?: string; to_stage?: string };
-
-function parseStageEventData(value: Json | null): StageEventData | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  return {
-    from_stage: typeof value.from_stage === "string" ? value.from_stage : undefined,
-    to_stage: typeof value.to_stage === "string" ? value.to_stage : undefined,
-  };
-}
 
 /**
  * GET /api/dashboard/pipeline-funnel
@@ -28,10 +20,8 @@ function parseStageEventData(value: Json | null): StageEventData | null {
  * }
  */
 
-// won/lost now live in final_status; process stages in current_milestone.
-// Map each production current_milestone value onto its funnel stage key.
-// Unknown values pass through as-is (they won't match any STAGE_DEFS key and
-// are therefore dropped from the counts).
+// won/lost live in final_status; process stages in current_milestone (the funnel
+// and the daily funnel snapshot both bucket by completed milestone).
 function normalizeMilestone(milestone: string): string {
   switch (milestone) {
     case "first_contact":  return "contacted";
@@ -81,17 +71,18 @@ export async function GET(request: NextRequest) {
     ];
 
     // ─── Step 1: Query leads count per stage ───
-    let leadsQuery = supabase.from("leads").select("id,stage,created_at,updated_at,last_contact_date,assigned_to,customer_name,current_milestone,final_status").eq("archived", false);
-    if (targetUserId) {
-      leadsQuery = leadsQuery.eq("assigned_to", targetUserId);
-    }
-    const { data: leads, error: leadsErr } = await leadsQuery;
-    if (leadsErr) {
-      console.error("[pipeline-funnel] Failed to fetch leads:", leadsErr);
+    const leadsResult = await fetchCountedLeads(
+      supabase,
+      "id,archived,stage,created_at,updated_at,last_contact_date,assigned_to,customer_name,current_milestone,final_status",
+      { assignedTo: targetUserId },
+    );
+    if (leadsResult.error) {
+      console.error("[pipeline-funnel] Failed to fetch leads:", leadsResult.error);
       return NextResponse.json({ error: "Failed to fetch leads" }, { status: 500 });
     }
+    const leads = leadsResult.data as PipelineLead[];
 
-    const totalLeads = leads?.length || 0;
+    const totalLeads = leads.length;
 
     // ─── Step 2: Build stage counts ───
     const stageCountMap: Record<string, number> = {};
@@ -190,22 +181,11 @@ export async function GET(request: NextRequest) {
     const lostStage = stages.find(s => s.key === "lost");
     const lostCount = lostStage?.count || 0;
     const lostFromStage: Record<string, number> = {};
-    // Look at business_events for stage_change events that ended in lost
-    const visibleLeadIds = (leads ?? []).map((lead) => lead.id);
-    if (visibleLeadIds.length > 0) {
-      const { data: events } = await supabase
-        .from("business_events")
-        .select("event_data")
-        .eq("event_type", "stage_change")
-        .in("lead_id", visibleLeadIds)
-        .limit(500);
-      if (events) {
-        for (const event of events) {
-          const data = parseStageEventData(event.event_data);
-          if (data?.to_stage === "lost" && data.from_stage) {
-            lostFromStage[data.from_stage] = (lostFromStage[data.from_stage] || 0) + 1;
-          }
-        }
+    // A lost lead keeps the process stage it was lost from.
+    if (lostCount > 0) {
+      for (const lead of stageLeads.lost) {
+        const from = lead.stage || "unknown";
+        lostFromStage[from] = (lostFromStage[from] || 0) + 1;
       }
     }
 

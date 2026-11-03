@@ -1,5 +1,10 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
+import { fetchAllRows, fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
+import { isActiveLead, isWonLead, leadSourceKey, type MetricLead } from "@/lib/lead-metrics.mjs";
+
+type PerfLead = MetricLead & { id: string };
+type PerfContract = { id: string; sales_id: string | null; lead_id: string | null; contract_amount: number | string | null; status: string | null };
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 
@@ -46,15 +51,20 @@ export async function GET(request: NextRequest) {
       const repList = reps ?? [];
       const repIds = repList.map((r: any) => r.id);
 
-      const { data: leads } = await supabase
-        .from("leads")
-        .select("id, assigned_to, source, stage, final_status")
-        .eq("archived", false)
-        .in("assigned_to", repIds);
+      const repIdSet = new Set<string>(repIds);
+      const leadsResult = await fetchCountedLeads(supabase, "id,archived,assigned_to,source,source_platform,stage,final_status");
+      if (leadsResult.error) throw leadsResult.error;
+      const leads = (leadsResult.data as PerfLead[]).filter((l) => l.assigned_to && repIdSet.has(l.assigned_to));
 
-      const { data: contracts } = await supabase
-        .from("contracts")
-        .select("id, sales_id, lead_id, contract_amount, status");
+      const contractsResult = await fetchAllRows((from, to, withCount) =>
+        supabase
+          .from("contracts")
+          .select("id, sales_id, lead_id, contract_amount, status", withCount ? { count: "exact" } : undefined)
+          .order("id", { ascending: true })
+          .range(from, to),
+      );
+      if (contractsResult.error) throw contractsResult.error;
+      const contracts = contractsResult.data as PerfContract[];
 
       const leadsByRep: Record<string, any[]> = {};
       (leads ?? []).forEach((l: any) => {
@@ -77,23 +87,21 @@ export async function GET(request: NextRequest) {
         return sourceStats[s];
       };
       (leads ?? []).forEach((l: any) => {
-        const s = bumpSource(l.source || "other");
+        const s = bumpSource(leadSourceKey(l));
         s.count += 1;
-        if (l.final_status === "won") s.won += 1;
+        if (isWonLead(l)) s.won += 1;
       });
       (leads ?? []).forEach((l: any) => {
         const amt = revenueByLead[l.id] ?? 0;
-        if (amt > 0) bumpSource(l.source || "other").revenue += amt;
+        if (amt > 0) bumpSource(leadSourceKey(l)).revenue += amt;
       });
 
       const repStats = repList
         .map((rep: any) => {
           const myLeads = leadsByRep[rep.id] ?? [];
           const totalLeads = myLeads.length;
-          const wonLeads = myLeads.filter((l: any) => l.final_status === "won").length;
-          const activeLeads = myLeads.filter(
-            (l: any) => !l.final_status
-          ).length;
+          const wonLeads = myLeads.filter((l: any) => isWonLead(l)).length;
+          const activeLeads = myLeads.filter((l: any) => isActiveLead(l)).length;
           const revenue = revenueByRep[rep.id] ?? 0;
           const conversionRate = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
           const avgDealSize = wonLeads > 0 ? Math.round(revenue / wonLeads) : 0;
@@ -138,13 +146,13 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Sales: own data only ──
-    const { data: myLeads } = await supabase
-      .from("leads")
-      .select("id, source, stage, final_status")
-      .eq("archived", false)
-      .eq("assigned_to", user.id);
-
-    const myLeadRows = myLeads ?? [];
+    const myLeadsResult = await fetchCountedLeads(
+      supabase,
+      "id,archived,source,source_platform,stage,final_status",
+      { assignedTo: user.id },
+    );
+    if (myLeadsResult.error) throw myLeadsResult.error;
+    const myLeadRows = myLeadsResult.data as PerfLead[];
     const myLeadIds = myLeadRows.map((l: any) => l.id);
 
     const { data: myContracts } = myLeadIds.length
@@ -169,14 +177,14 @@ export async function GET(request: NextRequest) {
       return sourceStats[s];
     };
     myLeadRows.forEach((l: any) => {
-      const s = bumpSource(l.source || "other");
+      const s = bumpSource(leadSourceKey(l));
       s.count += 1;
-      if (l.final_status === "won") s.won += 1;
+      if (isWonLead(l)) s.won += 1;
       s.revenue += revenueByLead[l.id] ?? 0;
     });
 
     const totalLeads = myLeadRows.length;
-    const wonLeads = myLeadRows.filter((l: any) => l.final_status === "won").length;
+    const wonLeads = myLeadRows.filter((l: any) => isWonLead(l)).length;
 
     return applyPrivateNoStore(NextResponse.json({
       isCEO: false,
@@ -187,7 +195,7 @@ export async function GET(request: NextRequest) {
           role,
           totalLeads,
           wonLeads,
-          activeLeads: myLeadRows.filter((l: any) => !l.final_status).length,
+          activeLeads: myLeadRows.filter((l: any) => isActiveLead(l)).length,
           revenue: myRevenue,
           conversionRate: totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0,
           avgDealSize: wonLeads > 0 ? Math.round(myRevenue / wonLeads) : 0,

@@ -120,7 +120,7 @@ export default function AdsClient({ sorted, totals }: AdsClientProps) {
                     key={key}
                     className="border-b border-border/20 hover:bg-accent/30 transition-colors"
                   >
-                    <td className="py-3 px-4 font-medium">{key}</td>
+                    <td className="py-3 px-4 font-medium">{t(`sourceLabels.${key}`) || key}</td>
                     <td className="text-right py-3 px-3 font-semibold">
                       {g.total}
                     </td>

@@ -1788,6 +1788,8 @@ export const translations = {
       newThisWeek: "+{n} this week",
       leadsCount: "{n} leads",
       imbalanceDetail: "{names}: overloaded ({n} leads vs. average {avg}). {k} reps have capacity for new leads.",
+      // S5: numbers and statistics
+      qualityNormal: "Normal",
     },
     commandCenter: {
       title: "Command Center",
@@ -3661,6 +3663,8 @@ export const translations = {
       newThisWeek: "本周 +{n}",
       leadsCount: "{n} 条线索",
       imbalanceDetail: "{names} 负载过高（{n} 条线索，平均 {avg} 条）。另有 {k} 名销售可接新线索。",
+      // S5: numbers and statistics
+      qualityNormal: "一般",
     },
     commandCenter: {
       title: "战情室",

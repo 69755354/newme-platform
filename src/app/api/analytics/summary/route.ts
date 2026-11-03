@@ -29,6 +29,16 @@ import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 import { countsAsCash } from "@/lib/payment-state.mjs";
+import { addDaysToDateKey, dubaiDateKey, inBounds, inWeek, recentDubaiWeeks } from "@/lib/dubai-time.mjs";
+import { fetchAllRows } from "@/lib/fetch-all-rows.mjs";
+import {
+  isWonLead,
+  leadOutcome,
+  overdueLeadList,
+  percentOf,
+  summarizeLeads,
+  type MetricLead,
+} from "@/lib/lead-metrics.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -93,51 +103,32 @@ export async function GET(request: Request) {
   const isManagement = ["admin", "boss", "operator"].includes(role);
   const isCEO = isManagement;
 
-  // ── Date helpers ──
-  const now = new Date().toISOString();
-  const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const twoDaysAgo = new Date(Date.now() - 48 * 3600_000).toISOString();
-  const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
-  const today = new Date().toISOString().slice(0, 10);
-  const nextWeekDate = new Date();
-  nextWeekDate.setDate(nextWeekDate.getDate() + 7);
-  const nextWeekStr = nextWeekDate.toISOString().slice(0, 10);
-
-  // ── Compute ISO weeks for trends ──
-  const isoWeeks: { year: number; week: number; start: string; end: string }[] = [];
+  // ── Date helpers (Dubai calendar; the host runs in another zone) ──
   const nowDate = new Date();
-  const dayOfWeek = nowDate.getDay();
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const currentMonday = new Date(nowDate);
-  currentMonday.setDate(nowDate.getDate() + mondayOffset);
-  currentMonday.setHours(0, 0, 0, 0);
+  const today = dubaiDateKey(nowDate) as string;
+  const nextWeekStr = addDaysToDateKey(today, 7);
 
-  for (let i = 11; i >= 0; i--) {
-    const start = new Date(currentMonday);
-    start.setDate(currentMonday.getDate() - i * 7);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-    end.setHours(23, 59, 59, 999);
-    const temp = new Date(start);
-    const dayNum = (temp.getDay() + 6) % 7;
-    temp.setDate(temp.getDate() - dayNum + 3);
-    const firstThursday = temp.getTime();
-    const yearStart = new Date(temp.getFullYear(), 0, 1).getTime();
-    const weekNum = 1 + Math.round((firstThursday - yearStart) / 86_400_000 / 7);
-    isoWeeks.push({ year: start.getFullYear(), week: weekNum, start: start.toISOString(), end: end.toISOString() });
-  }
-
-  const rangeStart = isoWeeks[0].start;
-  const rangeEnd = isoWeeks[isoWeeks.length - 1].end;
+  // Past 12 Dubai Monday-Sunday weeks for the trends
+  const isoWeeks = recentDubaiWeeks(12, nowDate);
+  const rangeStart = isoWeeks[0].start.toISOString();
+  const rangeEnd = isoWeeks[isoWeeks.length - 1].end.toISOString();
+  const rangeStartDate = isoWeeks[0].startKey;
+  const rangeEndDate = isoWeeks[isoWeeks.length - 1].endKey;
 
   // ══════════════════════════════════════════
   // Batch 1: Independent parallel queries
   // ══════════════════════════════════════════
 
   // ── 3a. Leads (full) ──
-  let leadsQuery = supabase.from("leads").select("*").eq("archived", false);
-  if (!isManagement) leadsQuery = leadsQuery.eq("assigned_to", userId);
-  const leadsPromise = leadsQuery;
+  // Paged: a bare select stops at 1000 rows without saying so.
+  const leadsPromise = fetchAllRows((from, to, withCount) => {
+    let q = supabase
+      .from("leads")
+      .select("*", withCount ? { count: "exact" } : undefined)
+      .eq("archived", false);
+    if (!isManagement) q = q.eq("assigned_to", userId);
+    return q.order("id", { ascending: true }).range(from, to);
+  });
 
   // ── 3b. Contracts with installment plans ──
   let contractQuery = supabase
@@ -161,22 +152,12 @@ export async function GET(request: Request) {
     .in("role", ["sales", "admin"])
     .eq("is_active", true);
 
-  // ── 3e. Leads for trends (12-week range) ──
-  let trendsLeadsQuery = supabase
-    .from("leads")
-    .select("id, created_at, stage, quotation_value, assigned_to, final_status")
-    .eq("archived", false)
-    .gte("created_at", rangeStart)
-    .lte("created_at", rangeEnd);
-  if (!isManagement) trendsLeadsQuery = trendsLeadsQuery.eq("assigned_to", userId);
-  const trendsLeadsPromise = trendsLeadsQuery;
-
   // ── 3f. Contracts for trends ──
   let trendsContractsQuery = supabase
     .from("contracts")
     .select("id, contract_amount, created_at, status, sales_id")
     .gte("created_at", rangeStart)
-    .lte("created_at", rangeEnd);
+    .lt("created_at", rangeEnd);
   if (!isManagement) trendsContractsQuery = trendsContractsQuery.eq("sales_id", userId);
   const trendsContractsPromise = trendsContractsQuery;
 
@@ -184,8 +165,8 @@ export async function GET(request: Request) {
   let trendsPaymentsQuery = supabase
     .from("payments")
     .select("id, amount, confirmed, voided_at, payment_date, contract_id")
-    .gte("payment_date", rangeStart)
-    .lte("payment_date", rangeEnd)
+    .gte("payment_date", rangeStartDate)
+    .lte("payment_date", rangeEndDate)
     // Both halves of the ledger predicate, in the query rather than only in the
     // JavaScript: this set feeds the 12-week revenue trend, and a voided payment
     // filtered out client-side would still be transferred and still be one edit away
@@ -205,12 +186,11 @@ export async function GET(request: Request) {
     { data: contracts, error: contractsErr },
     { data: adSpend, error: adErr },
     { data: salesProfiles, error: spErr },
-    { data: trendsLeads, error: tlErr },
     { data: trendsContracts, error: tcErr },
     { data: trendsPayments, error: tpErr },
   ] = await Promise.all([
     leadsPromise, contractsPromise, adSpendPromise,
-    salesProfilesPromise, trendsLeadsPromise,
+    salesProfilesPromise,
     trendsContractsPromise, trendsPaymentsPromise,
   ]);
 
@@ -219,6 +199,10 @@ export async function GET(request: Request) {
   if (adErr) console.error("[analytics-summary] ad spend fetch failed:", adErr);
 
   const leadsData = (leads || []) as any[];
+  // The 12-week trend reads the same counted leads as everything else (no second,
+  // separately capped query): leads created inside the window.
+  const trendsWindow = { start: isoWeeks[0].start, end: isoWeeks[isoWeeks.length - 1].end };
+  const trendsLeads = leadsData.filter((l: any) => inBounds(l.created_at, trendsWindow));
   const contractsData = (contracts || []) as any[];
   const adSpendData = (adSpend || []) as any[];
   const salesUsers = (salesProfiles || []) as any[];
@@ -226,56 +210,34 @@ export async function GET(request: Request) {
   // ══════════════════════════════════════════
   // 4. COMPUTE: Lead Health
   // ══════════════════════════════════════════
-  const totalLeads = leadsData.length;
-  const weeklyNew = leadsData.filter((l: any) => l.created_at >= weekAgo).length;
+  // Every lead figure comes from src/lib/lead-metrics.mjs, the same definitions
+  // the dashboard and the analytics panels use.
+  const stats = summarizeLeads(leadsData as MetricLead[], { now: nowDate });
+  const totalLeads = stats.total;
+  const weeklyNew = stats.newLast7Days;
+  const activeCount = stats.active;
+  const activePct = percentOf(activeCount, totalLeads);
+  const dormantCount = stats.dormant;
+  const dormantPct = percentOf(dormantCount, totalLeads);
+  const zeroCount = stats.zeroFollowup;
+  const zeroPct = percentOf(zeroCount, totalLeads);
+  const qualityBreakdown = stats.qualityBreakdown;
 
-  const activeLeads = leadsData.filter((l: any) => !l.final_status);
-  const activeCount = activeLeads.length;
-  const activePct = totalLeads > 0 ? Math.round((activeCount / totalLeads) * 100) : 0;
-
-  const dormantCount = leadsData.filter((l: any) =>
-    l.lead_status === "dormant" ||
-    (l.last_contact_date && l.last_contact_date < fourteenDaysAgo && !l.final_status)
-  ).length;
-  const dormantPct = totalLeads > 0 ? Math.round((dormantCount / totalLeads) * 100) : 0;
-
-  const zeroFollowupLeads = leadsData.filter((l: any) =>
-    !l.followup_count || l.followup_count === 0 || !l.last_contact_date
-  );
-  const zeroCount = zeroFollowupLeads.length;
-  const zeroPct = totalLeads > 0 ? Math.round((zeroCount / totalLeads) * 100) : 0;
-
-  // Quality breakdown
-  const qualityBreakdown: Record<string, number> = { pending: 0, good: 0, bad: 0, unknown: 0 };
-  for (const l of leadsData) {
-    const q = (l.quality || l.ai_quality || "unknown").toLowerCase();
-    if (qualityBreakdown[q] !== undefined) qualityBreakdown[q]++;
-    else qualityBreakdown.unknown++;
-  }
-
-  // Overdue
-  const overdueRaw = leadsData.filter((l: any) =>
-    (l.next_followup_date && l.next_followup_date < now) ||
-    (!l.last_contact_date && l.created_at < twoDaysAgo)
-  );
-  const assignedIds = [...new Set(overdueRaw.map((r: any) => r.assigned_to).filter(Boolean))];
+  const overdueAll = overdueLeadList(leadsData as MetricLead[], nowDate);
+  const overdueRaw = overdueAll.map(({ lead }) => lead as any);
+  const assignedIds = [...new Set(overdueRaw.slice(0, 20).map((r: any) => r.assigned_to).filter(Boolean))];
   let nameMap: Record<string, string> = {};
   if (assignedIds.length > 0) {
     const { data: users } = await supabase.from("profiles").select("id, full_name").in("id", assignedIds);
     (users ?? []).forEach((u: any) => { nameMap[u.id] = u.full_name; });
   }
-  const overdueList = overdueRaw.map((r: any) => {
-    const overdueDays = r.next_followup_date
-      ? Math.max(0, Math.floor((Date.now() - new Date(r.next_followup_date).getTime()) / 86_400_000))
-      : Math.max(0, Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86_400_000) - 2);
-    return {
-      id: r.id, customer_name: r.customer_name, phone: r.phone,
-      assigned_to: r.assigned_to, assigned_name: nameMap[r.assigned_to] || null,
-      stage: r.stage, last_contact_date: r.last_contact_date,
-      next_followup_date: r.next_followup_date, overdue_days: overdueDays,
-      quotation_value: r.quotation_value,
-    };
-  }).sort((a: any, b: any) => b.overdue_days - a.overdue_days).slice(0, 20);
+  const overdueList = overdueAll.slice(0, 20).map(({ lead: r, overdueDays }: any) => ({
+    id: r.id, customer_name: r.customer_name, phone: r.phone,
+    assigned_to: r.assigned_to, assigned_name: nameMap[r.assigned_to] || null,
+    stage: r.stage, last_contact_date: r.last_contact_date,
+    next_followup_date: r.next_followup_date, overdue_days: overdueDays,
+    quotation_value: r.quotation_value,
+  }));
 
   const leadHealth = { totalLeads, weeklyNew, activeCount, activePct, dormantCount, dormantPct, zeroCount, zeroPct, qualityBreakdown, overdue: overdueList, isCEO };
 
@@ -341,7 +303,7 @@ export async function GET(request: Request) {
   const lostStageObj = funnelStages.find(s => s.key === "lost");
   if (lostStageObj && (lostStageObj.count || 0) > 0) {
     // Count lost leads by their original stage
-    const lostLeads = leadsData.filter((l: any) => l.final_status === "lost");
+    const lostLeads = leadsData.filter((l: any) => leadOutcome(l) === "lost");
     for (const l of lostLeads) {
       const fromStage = l.stage || "unknown";
       lostFromStage[fromStage] = (lostFromStage[fromStage] || 0) + 1;
@@ -453,14 +415,14 @@ export async function GET(request: Request) {
     const c = normalizeCampaign(raw);
     if (!displayNameMap[c]) displayNameMap[c] = raw;
     leadsByCampaign[c] = (leadsByCampaign[c] || 0) + 1;
-    if (lead.final_status === "won") {
+    if (isWonLead(lead)) {
       conversionsByCampaign[c] = (conversionsByCampaign[c] || 0) + 1;
       signedAmountByCampaign[c] = (signedAmountByCampaign[c] || 0) + (parseFloat(String(lead.quotation_value || "")) || 0);
     }
   }
 
-  const totalConversions = metaLeads.filter((l: any) => l.final_status === "won").length;
-  const totalSignedAmount = metaLeads.filter((l: any) => l.final_status === "won")
+  const totalConversions = metaLeads.filter((l: any) => isWonLead(l)).length;
+  const totalSignedAmount = metaLeads.filter((l: any) => isWonLead(l))
     .reduce((sum: number, l: any) => sum + (parseFloat(String(l.quotation_value || "")) || 0), 0);
 
   const allCampaigns = new Set([...Object.keys(spendByCampaign), ...Object.keys(leadsByCampaign)]);
@@ -488,7 +450,7 @@ export async function GET(request: Request) {
     if (q === "good" || q === "hot") sourceQuality[src].good++;
     else if (q === "bad" || q === "cold") sourceQuality[src].bad++;
     else sourceQuality[src].pending++;
-    if (l.final_status === "won") sourceQuality[src].won++;
+    if (isWonLead(l)) sourceQuality[src].won++;
   }
   const sourceQualityBreakdown = Object.entries(sourceQuality)
     .map(([s, d]) => ({ source: s, total: d.total, good: d.good, pending: d.pending, bad: d.bad, conv_rate: d.total > 0 ? Math.round((d.won / d.total) * 10000) / 100 : 0 }))
@@ -525,13 +487,12 @@ export async function GET(request: Request) {
     const repStats = salesUsers.filter((r: any) => r.role === "sales").map((rep: any) => {
       const myLeads = leadsByRep[rep.id] || [];
       const tl = myLeads.length;
-      const wonLeads = myLeads.filter((l: any) => l.final_status === "won").length;
-      const contacted = myLeads.filter((l: any) => l.last_contact_date || (l.followup_count ?? 0) > 0).length;
-      const cr = tl > 0 ? Math.round((wonLeads / tl) * 100) : 0;
-      const fr = tl > 0 ? Math.round((contacted / tl) * 100) : 0;
-      const sd: Record<string, number> = {};
-      myLeads.forEach((l: any) => { sd[l.stage] = (sd[l.stage] ?? 0) + 1; });
-      const ov = myLeads.filter((l: any) => l.next_followup_date && l.next_followup_date < now && !l.final_status).length;
+      const mine = summarizeLeads(myLeads as MetricLead[], { now: nowDate });
+      const wonLeads = mine.won;
+      const cr = mine.conversionRate;
+      const fr = mine.contactRate;
+      const sd = Object.fromEntries(Object.entries(mine.stageCounts).filter(([, count]) => count > 0));
+      const ov = mine.followUpOverdue;
       return { id: rep.id, name: rep.full_name || rep.email, email: rep.email, role: rep.role, totalLeads: tl, wonAmount: wonAmountByRep[rep.id] ?? 0, wonLeads, conversionRate: cr, followupRate: fr, stageDistribution: sd, overdueCount: ov, transferableLeads: myLeads.filter((l: any) => l.stage === "new" && !l.last_contact_date).map((l: any) => ({ id: l.id })) };
     });
     const avgLoad = repStats.length > 0 ? repStats.reduce((s: number, r: any) => s + r.totalLeads, 0) / repStats.length : 0;
@@ -542,15 +503,9 @@ export async function GET(request: Request) {
   } else {
     const myLeads = leadsData;
     const tl = myLeads.length;
-    const sd: Record<string, number> = {};
-    let contactedCount = 0, overdueCountLocal = 0;
-    for (const l of myLeads) {
-      sd[l.stage] = (sd[l.stage] ?? 0) + 1;
-      if (l.last_contact_date || (l.followup_count ?? 0) > 0) contactedCount++;
-      if (l.next_followup_date && l.next_followup_date < now && !l.final_status) overdueCountLocal++;
-    }
-    const fr = tl > 0 ? Math.round((contactedCount / tl) * 100) : 0;
-    salesLoad = { totalLeads: tl, stageDistribution: sd, followupRate: fr, overdueCount: overdueCountLocal, isCEO: false };
+    const mine = summarizeLeads(myLeads as MetricLead[], { now: nowDate });
+    const sd = Object.fromEntries(Object.entries(mine.stageCounts).filter(([, count]) => count > 0));
+    salesLoad = { totalLeads: tl, stageDistribution: sd, followupRate: mine.contactRate, overdueCount: mine.followUpOverdue, isCEO: false };
   }
 
   // ══════════════════════════════════════════
@@ -558,24 +513,21 @@ export async function GET(request: Request) {
   // ══════════════════════════════════════════
   const weeklyData = isoWeeks.map((week) => {
     const newLeads = (trendsLeads || []).filter((l: any) => {
-      const c = new Date(l.created_at);
-      return c >= new Date(week.start) && c <= new Date(week.end);
+      return inBounds(l.created_at, week);
     });
-    const wonLeadsInWeek = newLeads.filter((l: any) => l.final_status === "won");
+    const wonLeadsInWeek = newLeads.filter((l: any) => isWonLead(l));
     const weekContracts = (trendsContracts || []).filter((c: any) => {
-      const cr = new Date(c.created_at);
-      return cr >= new Date(week.start) && cr <= new Date(week.end) && c.status !== "terminated";
+      return inBounds(c.created_at, week) && c.status !== "terminated";
     });
     const signedAmount = weekContracts.reduce((sum: number, c: any) => sum + (parseFloat(c.contract_amount as any) || 0), 0);
     const weekPayments = (trendsPayments || []).filter((p: any) => {
-      const pd = new Date(p.payment_date);
-      return pd >= new Date(week.start) && pd <= new Date(week.end);
+      return inWeek(p.payment_date, week);
     });
     const collectedAmount = weekPayments.reduce((sum: number, p: any) => sum + (parseFloat(p.amount as any) || 0), 0);
     const nc = newLeads.length;
     const wc = wonLeadsInWeek.length;
     const convRate = nc > 0 ? Math.round((wc / nc) * 10000) / 100 : 0;
-    return { year: week.year, week: week.week, start_date: week.start.split("T")[0], end_date: week.end.split("T")[0], new_leads: nc, signed_amount: Math.round(signedAmount * 100) / 100, conversion_rate: convRate, collected_amount: Math.round(collectedAmount * 100) / 100 };
+    return { year: week.year, week: week.week, start_date: week.startKey, end_date: week.endKey, new_leads: nc, signed_amount: Math.round(signedAmount * 100) / 100, conversion_rate: convRate, collected_amount: Math.round(collectedAmount * 100) / 100 };
   });
 
   const calcWow = (curr: number, prev: number) => {

@@ -141,7 +141,7 @@ export async function GET(req: NextRequest) {
       { data: contactedData },
       { data: qualityEvents },
       { count: stageAdvancedCount },
-      { count: wonCount },
+      { data: wonLeadRows },
       { count: lostCount },
     ] = await Promise.all([
       (isSalesScope
@@ -166,12 +166,14 @@ export async function GET(req: NextRequest) {
         : supabase.from("business_events").select("id", { count: "exact", head: true }))
         .eq("event_type", "stage_change")
         .gte("created_at", startIso).lt("created_at", endIso),
+      // Won in the period = counted leads whose won_at falls in the Dubai period.
+      // This is the dashboard's definition (src/lib/lead-metrics.mjs); counting
+      // "stage_change to won" events missed every win made by converting a quote.
       (isSalesScope
-        ? supabase.from("business_events").select("id, leads!inner(assigned_to)", { count: "exact", head: true })
-          .eq("leads.assigned_to", user.id)
-        : supabase.from("business_events").select("id", { count: "exact", head: true }))
-        .eq("event_type", "stage_change").eq("event_data->>to", "won")
-        .gte("created_at", startIso).lt("created_at", endIso),
+        ? supabase.from("leads").select("id, assigned_to").eq("assigned_to", user.id)
+        : supabase.from("leads").select("id, assigned_to"))
+        .eq("archived", false).eq("final_status", "won")
+        .gte("won_at", startIso).lt("won_at", endIso),
       (isSalesScope
         ? supabase.from("business_events").select("id, leads!inner(assigned_to)", { count: "exact", head: true })
           .eq("leads.assigned_to", user.id)
@@ -180,6 +182,8 @@ export async function GET(req: NextRequest) {
         .gte("created_at", startIso).lt("created_at", endIso),
     ]);
 
+    const wonLeads = (wonLeadRows ?? []) as Array<{ id: string; assigned_to: string | null }>;
+    const wonCount = wonLeads.length;
     const contactedDistinct = new Set((contactedData ?? []).map((r: any) => r.lead_id)).size;
     const qualityJudgedDistinct = new Set((qualityEvents ?? []).map((r) => r.lead_id)).size;
 
@@ -284,8 +288,12 @@ export async function GET(req: NextRequest) {
       const row = ensure(owner);
       if (!row) continue;
       row.stage_advanced++;
-      if (to === "won") row.won++;
-      else if (to === "lost") row.lost++;
+      if (to === "lost") row.lost++;
+    }
+    for (const lead of wonLeads) {
+      if (!lead.assigned_to) continue;
+      const row = ensure(lead.assigned_to);
+      if (row) row.won++;
     }
     const overdueByOwner = new Map<string, number>();
     for (const task of overdueTasks ?? []) {
@@ -324,8 +332,9 @@ export async function GET(req: NextRequest) {
       if (leadId) {
         stageAdvanceCountByLead.set(leadId, (stageAdvanceCountByLead.get(leadId) ?? 0) + 1);
       }
-      if (to === "won" || to === "lost") addReason(leadId, to);
+      if (to === "lost") addReason(leadId, to);
     }
+    for (const lead of wonLeads) addReason(lead.id, "won");
     for (const task of overdueTasks ?? []) addReason(task.lead_id, "overdue");
 
     const relevantIds = Array.from(relevantLeadIds);

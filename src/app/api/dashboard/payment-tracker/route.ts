@@ -1,4 +1,5 @@
 // RBAC: user (authenticated)
+import { addDaysToDateKey, dubaiDateKey } from "@/lib/dubai-time.mjs";
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest) {
     const isManagement = ["admin", "boss", "operator"].includes(role);
 
     const userId = user.id;
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const today = dubaiDateKey() as string; // YYYY-MM-DD, Dubai calendar day
 
     // ─── Step 1: Fetch contracts with installment plans and payments ───
     let contractQuery = supabase
@@ -81,9 +82,7 @@ export async function GET(request: NextRequest) {
     let dueThisWeekTotal = 0;
 
     // Compute next 7 days boundary
-    const nextWeekDate = new Date();
-    nextWeekDate.setDate(nextWeekDate.getDate() + 7);
-    const nextWeekStr = nextWeekDate.toISOString().slice(0, 10);
+    const nextWeekStr = addDaysToDateKey(today, 7);
 
     const allInstallments: any[] = [];
 

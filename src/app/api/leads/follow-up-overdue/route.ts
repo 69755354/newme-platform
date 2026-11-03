@@ -1,4 +1,5 @@
 // RBAC: user (authenticated)
+import { dubaiDateKey } from "@/lib/dubai-time.mjs";
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
 
   if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 403 });
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = dubaiDateKey() as string; // Dubai calendar day
 
   let query = supabase
     .from("leads")

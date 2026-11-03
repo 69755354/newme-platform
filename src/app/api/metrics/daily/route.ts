@@ -1,4 +1,5 @@
 // RBAC: user (authenticated)
+import { dubaiDayBounds } from "@/lib/dubai-time.mjs"
 import { NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase-server'
 
@@ -26,31 +27,36 @@ export async function GET(request: Request) {
     }
 
     const isAdminOrBoss = profile.role === 'admin' || profile.role === 'boss'
-    const today = new Date().toISOString().split('T')[0]
-    const todayStart = `${today}T00:00:00.000Z`
-    const todayEnd = `${today}T23:59:59.999Z`
+    // "Today" is the Dubai calendar day: [00:00, next 00:00) Dubai.
+    const day = dubaiDayBounds()
+    const todayStart = day.start.toISOString()
+    const todayEnd = new Date(day.end.getTime() - 1).toISOString()
 
     const newLeadsQ = supabase
       .from('leads')
       .select('id', { count: 'exact', head: true })
+      .eq('archived', false)
       .gte('created_at', todayStart)
       .lte('created_at', todayEnd)
 
     const totalActiveQ = supabase
       .from('leads')
       .select('id', { count: 'exact', head: true })
+      .eq('archived', false)
       .is('final_status', null)
 
     const wonTodayQ = supabase
       .from('leads')
       .select('id', { count: 'exact', head: true })
+      .eq('archived', false)
       .eq('final_status', 'won')
-      .gte('updated_at', todayStart)
-      .lte('updated_at', todayEnd)
+      .gte('won_at', todayStart)
+      .lte('won_at', todayEnd)
 
     const lostTodayQ = supabase
       .from('leads')
       .select('id', { count: 'exact', head: true })
+      .eq('archived', false)
       .eq('final_status', 'lost')
       .gte('updated_at', todayStart)
       .lte('updated_at', todayEnd)

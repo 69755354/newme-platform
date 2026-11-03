@@ -1,5 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
+import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
+import { LEAD_METRIC_COLUMNS, summarizeLeads, type MetricLead } from "@/lib/lead-metrics.mjs";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 
@@ -39,11 +41,12 @@ export async function GET(request: NextRequest) {
 
       // Get all leads assigned to these reps
       const repIds = reps.map((r: any) => r.id);
-      const { data: allLeads } = await supabase
-        .from("leads")
-        .select("id, assigned_to, stage, final_status, quotation_value, followup_count, last_contact_date, next_followup_date, created_at")
-        .eq("archived", false)
-        .in("assigned_to", repIds);
+      const repIdSet = new Set<string>(repIds);
+      const leadsResult = await fetchCountedLeads(supabase, LEAD_METRIC_COLUMNS);
+      if (leadsResult.error) throw leadsResult.error;
+      const allLeads = (leadsResult.data as MetricLead[]).filter(
+        (l) => l.assigned_to && repIdSet.has(l.assigned_to),
+      );
 
       const leadsByRep: Record<string, any[]> = {};
       (allLeads ?? []).forEach((l: any) => {
@@ -63,41 +66,27 @@ export async function GET(request: NextRequest) {
         }
       });
 
-      const now = new Date().toISOString();
+      const now = new Date();
       const repStats = reps.map((rep: any) => {
         const myLeads = leadsByRep[rep.id] || [];
-        const totalLeads = myLeads.length;
-        const wonLeads = myLeads.filter((l: any) => l.final_status === "won").length;
-        const contactedLeads = myLeads.filter(
-          (l: any) => l.last_contact_date || (l.followup_count ?? 0) > 0
-        ).length;
-        const conversionRate = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
-        const followupRate = totalLeads > 0 ? Math.round((contactedLeads / totalLeads) * 100) : 0;
-
-        // Stage distribution
-        const stageDist: Record<string, number> = {};
-        myLeads.forEach((l: any) => {
-          stageDist[l.stage] = (stageDist[l.stage] ?? 0) + 1;
-        });
-
-        // Overdue count
-        const overdueCount = myLeads.filter(
-          (l: any) =>
-            l.next_followup_date && l.next_followup_date < now && !l.final_status
-        ).length;
+        // Same definitions as the dashboard (src/lib/lead-metrics.mjs).
+        const mine = summarizeLeads(myLeads, { now });
+        const stageDist = Object.fromEntries(
+          Object.entries(mine.stageCounts).filter(([, count]) => count > 0),
+        );
 
         return {
           id: rep.id,
           name: rep.full_name || rep.email,
           email: rep.email,
           role: rep.role,
-          totalLeads,
+          totalLeads: mine.total,
           wonAmount: wonAmountByRep[rep.id] ?? 0,
-          wonLeads,
-          conversionRate,
-          followupRate,
+          wonLeads: mine.won,
+          conversionRate: mine.conversionRate,
+          followupRate: mine.contactRate,
           stageDistribution: stageDist,
-          overdueCount,
+          overdueCount: mine.followUpOverdue,
           // Transferable: stage='new' AND last_contact_date IS NULL
           transferableLeads: myLeads
             .filter((l: any) => l.stage === "new" && !l.last_contact_date)
@@ -126,27 +115,15 @@ export async function GET(request: NextRequest) {
       }));
     } else {
       // ── Sales view: my own stats ──
-      const { data: myLeads } = await supabase
-        .from("leads")
-        .select("id, stage, final_status, followup_count, last_contact_date, next_followup_date, quotation_value")
-        .eq("archived", false)
-        .eq("assigned_to", user.id);
-
-      const total = myLeads?.length ?? 0;
-      const stageDist: Record<string, number> = {};
-      const now = new Date().toISOString();
-      let contactedCount = 0;
-      let overdueCount = 0;
-
-      (myLeads ?? []).forEach((l: any) => {
-        stageDist[l.stage] = (stageDist[l.stage] ?? 0) + 1;
-        if (l.last_contact_date || (l.followup_count ?? 0) > 0) contactedCount++;
-        if (l.next_followup_date && l.next_followup_date < now && !l.final_status) {
-          overdueCount++;
-        }
-      });
-
-      const followupRate = total > 0 ? Math.round((contactedCount / total) * 100) : 0;
+      const mineResult = await fetchCountedLeads(supabase, LEAD_METRIC_COLUMNS, { assignedTo: user.id });
+      if (mineResult.error) throw mineResult.error;
+      const mine = summarizeLeads(mineResult.data as MetricLead[], { now: new Date() });
+      const total = mine.total;
+      const stageDist = Object.fromEntries(
+        Object.entries(mine.stageCounts).filter(([, count]) => count > 0),
+      );
+      const followupRate = mine.contactRate;
+      const overdueCount = mine.followUpOverdue;
 
       return applyPrivateNoStore(NextResponse.json({
         totalLeads: total,

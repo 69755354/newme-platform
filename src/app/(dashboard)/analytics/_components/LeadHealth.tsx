@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { addLeadNote } from "@/app/actions/lead";
+import { chartLabel, segmentTitle } from "@/lib/chart-labels.mjs";
 
 /* ─── Types ─── */
 interface LeadHealthData {
@@ -83,6 +84,7 @@ const STAGE_COLORS: Record<string, string> = {
 const QUALITY_COLORS: Record<string, string> = {
   pending: "bg-amber-500",
   good: "bg-green-500",
+  normal: "bg-sky-500",
   bad: "bg-red-500",
   unknown: "bg-gray-500",
 };
@@ -118,11 +120,20 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
 function QualityBar({ breakdown, total, qualityLabels, title }: {
   breakdown: Record<string, number>; total: number; qualityLabels: Record<string, string>; title: string;
 }) {
-  const order = ["pending", "good", "bad", "unknown"];
+  const { t } = useLanguage();
+  // Every quality bucket the server reports gets a label (translated name as the
+  // fallback), so no segment can read "undefined: 20".
+  const fallbackLabels: Record<string, string> = {
+    pending: t("analytics.qualityPending"), good: t("analytics.qualityGood"),
+    normal: t("analytics.qualityNormal"), bad: t("analytics.qualityBad"),
+    unknown: t("analytics.qualityUnknown"),
+  };
+  const order = ["pending", "good", "normal", "bad", "unknown"];
   const bars = order.map((key) => ({
     key,
     count: breakdown[key] ?? 0,
     pct: total > 0 ? ((breakdown[key] ?? 0) / total) * 100 : 0,
+    label: chartLabel(qualityLabels, key, fallbackLabels[key]),
   }));
 
   return (
@@ -135,7 +146,7 @@ function QualityBar({ breakdown, total, qualityLabels, title }: {
               key={b.key}
               className={`${QUALITY_COLORS[b.key]} transition-all`}
               style={{ width: `${b.pct}%` }}
-              title={`${qualityLabels[b.key]}: ${b.count}`}
+              title={segmentTitle(qualityLabels, b.key, b.count, fallbackLabels[b.key])}
             />
           ) : null
         )}
@@ -144,7 +155,7 @@ function QualityBar({ breakdown, total, qualityLabels, title }: {
         {bars.map((b) => (
           <div key={b.key} className="flex items-center gap-2">
             <div className={`w-2.5 h-2.5 rounded-full ${QUALITY_COLORS[b.key]}`} />
-            <span className="text-muted-foreground">{qualityLabels[b.key]}</span>
+            <span className="text-muted-foreground">{b.label}</span>
             <span className="text-foreground font-medium ml-auto">{b.count}</span>
           </div>
         ))}

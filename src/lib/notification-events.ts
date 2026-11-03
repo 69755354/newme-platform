@@ -138,6 +138,69 @@ function notFound(error: { code?: string } | null, data: unknown, entity: string
   if (error) throw new NotificationDispatchError(503, `${entity}_lookup_failed`);
 }
 
+/** Roles that work the queue of new, unassigned leads. */
+export const LEAD_QUEUE_ROLES = ["admin", "operator"];
+
+/**
+ * Who hears about a new lead (S3 #8). An assigned lead concerns its assignee
+ * only; an unassigned lead goes to the admin/operator queue that assigns it.
+ * Management is no longer copied on every creation. The actor never notifies
+ * themselves. Titles are stable English templates that the notification bell
+ * localises (src/lib/notification-display.mjs).
+ */
+export async function leadCreatedDrafts(
+  db: NotificationDatabase,
+  lead: { id: string; customer_name: string | null; assigned_to: string | null },
+  actorId: string | null,
+): Promise<NotificationDraft[]> {
+  const customer = text(lead.customer_name, "New Lead");
+  if (lead.assigned_to) {
+    const recipients = await activeRecipients(db, [lead.assigned_to], actorId ?? undefined);
+    return rows(
+      recipients,
+      "lead_created",
+      `New lead: ${customer}`,
+      `Lead "${customer}" has been assigned to you`,
+      lead.id,
+      "lead",
+      `lead_created:${lead.id}`,
+    );
+  }
+  const queue = await activeProfilesByRole(db, LEAD_QUEUE_ROLES);
+  const recipients = unique(queue, actorId ?? undefined);
+  return rows(
+    recipients,
+    "lead_created",
+    `New lead: ${customer}`,
+    `Lead "${customer}" is waiting for assignment`,
+    lead.id,
+    "lead",
+    `lead_created:${lead.id}`,
+  );
+}
+
+/**
+ * S3 #4: a salesperson created a lead despite a possible duplicate. The
+ * admin/operator queue reviews it (the lead also carries sales_manager_review).
+ */
+export async function duplicateReviewDrafts(
+  db: NotificationDatabase,
+  lead: { id: string; customer_name: string | null },
+  actorId: string | null,
+): Promise<NotificationDraft[]> {
+  const customer = text(lead.customer_name, "New Lead");
+  const recipients = unique(await activeProfilesByRole(db, LEAD_QUEUE_ROLES), actorId ?? undefined);
+  return rows(
+    recipients,
+    "lead_created",
+    `Possible duplicate lead to review: ${customer}`,
+    `Lead "${customer}" was created despite a possible duplicate`,
+    lead.id,
+    "lead",
+    `lead_duplicate_review:${lead.id}`,
+  );
+}
+
 /**
  * Resolve one user-requested notification from persisted business facts.
  * Request fields identify an entity; they never supply presentation or recipients.
@@ -162,18 +225,7 @@ export async function deriveNotificationDispatch(options: {
       notFound(result.error, result.data, "lead");
       const lead = result.data!;
       assertAllowed(allowRole(actor, OPERATIONS) || lead.created_by === actor.id || lead.assigned_to === actor.id);
-      const managers = await activeProfilesByRole(db, MANAGEMENT);
-      const recipients = await activeRecipients(db, [...managers, lead.assigned_to], actor.id);
-      const customer = text(lead.customer_name, "New Lead");
-      return rows(
-        recipients,
-        input.type,
-        `New lead: ${customer}`,
-        `${actor.fullName} created lead "${customer}"`,
-        lead.id,
-        "lead",
-        `lead_created:${lead.id}`,
-      );
+      return leadCreatedDrafts(db, lead, actor.id);
     }
 
     case "lead_assigned": {

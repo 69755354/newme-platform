@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { whatsappHref as whatsappLink } from "@/lib/lead-contact.mjs";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -529,8 +530,8 @@ export default function DashboardPage() {
   /* ─── quick action handlers ─── */
   const handleWhatsApp = (phone: string, customerName: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const clean = phone.replace(/[^0-9+]/g, "");
-    window.open(`https://wa.me/${clean}`, "_blank");
+    const href = whatsappLink(phone);
+    if (href) window.open(href, "_blank");
   };
   const handleCall = (phone: string, e: React.MouseEvent) => {
     e.stopPropagation();

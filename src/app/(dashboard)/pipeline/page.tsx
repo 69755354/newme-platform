@@ -30,6 +30,8 @@ export default function PipelinePage() {
   const [salesUsers, setSalesUsers] = useState<any[]>([]);
   const [kpiApiData, setKpiApiData] = useState<KpiApiData | null>(null);
   const [showEmptyStages, setShowEmptyStages] = useState(true);
+  // S3 #7: exact total of visible leads; set only when the board holds fewer.
+  const [truncatedTotal, setTruncatedTotal] = useState<number | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   // ─── Infrastructure hooks ───
@@ -52,6 +54,7 @@ export default function PipelinePage() {
         setSalesUsers(data.salesUsers ?? []);
         setKpiApiData(data.kpiData ?? null);
         setLeads((data.leads ?? []) as Lead[]);
+        setTruncatedTotal(data.truncated === true && typeof data.total === "number" ? data.total : null);
       } catch {
         setError(t("kpi.loadFailed"));
       }
@@ -116,6 +119,11 @@ export default function PipelinePage() {
     // T2-1: dashboard 滚动边界. pipeline 不让 page-level 滚动 — 让内部
     // kanban 用 flex-1 撑满可用空间并独立滚动. 这样消除 calc(100vh - Xpx).
     <DashboardScrollContainer className="flex flex-col" variant="contained" as="div">
+      {truncatedTotal !== null && (
+        <p role="status" className="text-amber-500 text-xs px-4 pt-2">
+          {t("leadFlow.list.showing").replace("{shown}", String(leads.length)).replace("{total}", String(truncatedTotal))}
+        </p>
+      )}
       <KanbanBoard
         leads={leads}
         salesUsers={salesUsers}

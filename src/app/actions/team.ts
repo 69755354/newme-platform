@@ -2,7 +2,8 @@
 
 import { getActionAuthContext } from '@/lib/action-auth-context'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { resolveActiveLeadReassignmentTarget } from '@/lib/lead-reassignment.mjs'
+import { requireActiveLeadTransferCandidate } from '@/lib/lead-reassignment.mjs'
+import { handOverMemberLeads, readHandoverTarget } from '@/lib/member-lead-handover.mjs'
 
 const VALID_ROLES = ['admin', 'boss', 'sales', 'designer', 'operator', 'finance']
 
@@ -97,9 +98,19 @@ export async function addTeamMember(data: AddTeamMemberInput) {
 
 /**
  * Remove (soft-delete) a team member.
+ *
+ * S3 #6: the administrator chooses who receives the member's leads — a named
+ * active colleague, or `UNASSIGNED_QUEUE` to leave them unassigned in the admin
+ * queue. There is no default receiver any more (it used to be the lowest UUID).
+ * Every lead moves through the audited transfer routines; the member is only
+ * deactivated when all of their leads were handed over. Failures come back as
+ * a result (server-action exceptions are redacted in production).
  */
-export async function removeTeamMember(userId: string) {
-  const { user, role } = await getActionAuthContext()
+export async function removeTeamMember(
+  userId: string,
+  handover: { transferTo: string; batchKey: string },
+): Promise<{ success: true; moved: number } | { success: false; code: string; conflicts?: number; failed?: number }> {
+  const { user, role, supabase } = await getActionAuthContext()
 
   // Role check
   if (!role || !['admin', 'boss'].includes(role)) {
@@ -108,44 +119,47 @@ export async function removeTeamMember(userId: string) {
 
   // Cannot delete self
   if (user.id === userId) {
-    throw new Error('Cannot delete yourself')
+    return { success: false, code: 'CANNOT_REMOVE_SELF' }
   }
 
-  const reassignTo = await resolveActiveLeadReassignmentTarget(
-    supabaseAdmin.from('profiles').select('id,role,is_active').neq('id', userId) as never,
-  )
-  const logTarget = reassignTo ?? 'null (no eligible receiver available)'
-
-  // Reassign leads assigned to this user
-  const { data: orphanedLeads, error: orphanedLeadsErr } = await supabaseAdmin
-    .from('leads')
-    .select('id')
-    .eq('assigned_to', userId)
-  if (orphanedLeadsErr) throw new Error(`Failed to load leads for reassignment: ${orphanedLeadsErr.message}`)
-  if (orphanedLeads && orphanedLeads.length > 0) {
-    const leadIds = orphanedLeads.map((l: any) => l.id)
-    const { error: leadErr } = await supabaseAdmin
-      .from('leads')
-      .update({ assigned_to: reassignTo })
-      .in('id', leadIds)
-    if (leadErr) throw new Error(`Failed to reassign leads: ${leadErr.message}`)
-    console.log(`[user-delete] Reassigned or unassigned ${leadIds.length} lead(s) from user ${userId} to ${logTarget}`)
+  const choice = readHandoverTarget(handover?.transferTo, userId)
+  if (!choice.ok) return { success: false, code: choice.code }
+  if (choice.target) {
+    try {
+      await requireActiveLeadTransferCandidate(
+        supabaseAdmin.from('profiles').select('id,role,is_active') as never,
+        choice.target,
+      )
+    } catch {
+      return { success: false, code: 'HANDOVER_TARGET_INVALID' }
+    }
   }
 
-  // Reassign contracts where this user is sales_id
-  const { data: orphanedContracts, error: orphanedContractsErr } = await supabaseAdmin
-    .from('contracts')
-    .select('id')
-    .eq('sales_id', userId)
-  if (orphanedContractsErr) throw new Error(`Failed to load contracts for reassignment: ${orphanedContractsErr.message}`)
-  if (orphanedContracts && orphanedContracts.length > 0) {
-    const contractIds = orphanedContracts.map((c: any) => c.id)
+  let report
+  try {
+    report = await handOverMemberLeads(supabase, {
+      memberId: userId,
+      target: choice.target,
+      batchKey: handover.batchKey,
+      reason: 'member_removed',
+    })
+  } catch {
+    return { success: false, code: 'HANDOVER_FAILED' }
+  }
+  if (!report.complete) {
+    // Nothing is deactivated while a lead is still with the member; the same
+    // batch key retried replays the leads already moved.
+    return { success: false, code: 'HANDOVER_INCOMPLETE', conflicts: report.conflicts.length, failed: report.failed.length }
+  }
+
+  // Contracts follow the chosen receiver. Left in the queue, a contract keeps
+  // the salesperson who sold it (it is history, not open work).
+  if (choice.target) {
     const { error: contractErr } = await supabaseAdmin
       .from('contracts')
-      .update({ sales_id: reassignTo })
-      .in('id', contractIds)
-    if (contractErr) throw new Error(`Failed to reassign contracts: ${contractErr.message}`)
-    console.log(`[user-delete] Reassigned ${contractIds.length} contract(s) from user ${userId} to ${logTarget}`)
+      .update({ sales_id: choice.target })
+      .eq('sales_id', userId)
+    if (contractErr) return { success: false, code: 'CONTRACT_HANDOVER_FAILED' }
   }
 
   // Soft-delete: mark as inactive
@@ -162,7 +176,7 @@ export async function removeTeamMember(userId: string) {
   )
   if (authErr) throw new Error(`Failed to revoke auth access: ${authErr.message}`)
 
-  return { success: true }
+  return { success: true, moved: report.moved.length }
 }
 
 /**

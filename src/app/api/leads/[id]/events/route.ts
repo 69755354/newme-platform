@@ -1,8 +1,12 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { parseCookieHeader } from '@/lib/supabase-server';
-import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
+import {
+  applyRequestAuthCookies,
+  getRequestAuthContext,
+  RequestAuthError,
+  requestAuthErrorResponse,
+  type RequestAuthContext,
+} from '@/lib/request-auth-context';
 
 /**
  * POST /api/leads/[id]/events
@@ -15,7 +19,13 @@ import { getAuthProfile, isAdminOrBoss } from '@/lib/lead-auth';
  * already established by /api/leads/[id]/quality.
  *
  * Body: { eventType: string, description: string, eventData?: Record<string, any> }
- * Auth: getAuthProfile + isAdminOrBoss + ownership (same as /quality)
+ * Auth: getRequestAuthContext + ownership (same as /quality).
+ *
+ * S3 #2: this route used to build its own Supabase client with the default
+ * cookie names. The app's session cookies use custom names
+ * (src/lib/supabase-cookie-names.ts), so that client was anonymous, RLS hid
+ * every lead, and every call answered 404 "Lead not found" right after the
+ * real save had succeeded. It now uses the shared request auth context.
  * Insert columns (canonical, mirror online DDL after migration
  *   20260706000003_quality_checked_event_check.sql): lead_id, user_id,
  *   event_type, event_data (JSONB), description, created_at.
@@ -59,25 +69,17 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let context: RequestAuthContext;
   try {
-    const cookieHeader = req.headers.get("cookie") ?? "";
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() { return parseCookieHeader(cookieHeader); },
-          setAll() {},
-        },
-      }
-    );
-
-    const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
-    const profile = await getAuthProfile(bearerToken, cookieHeader);
-    if (!profile) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    context = await getRequestAuthContext(req);
+  } catch (error) {
+    if (error instanceof RequestAuthError) return requestAuthErrorResponse(error);
+    throw error;
+  }
+  const { supabase } = context;
+  const respond = (body: Record<string, unknown>, init?: ResponseInit) =>
+    applyRequestAuthCookies(context, NextResponse.json(body, init));
+  try {
     const { id: leadId } = await params;
     const body = await req.json().catch(() => ({}));
     const rawType = (body?.eventType ?? '').toString().trim();
@@ -91,13 +93,13 @@ export async function POST(
         : {};
 
     if (!rawType) {
-      return NextResponse.json(
+      return respond(
         { error: 'eventType is required' },
         { status: 400 }
       );
     }
     if (!isAllowedEventType(rawType)) {
-      return NextResponse.json(
+      return respond(
         {
           error: `eventType must be one of: ${ALLOWED_EVENT_TYPES.join(', ')}`,
         },
@@ -105,14 +107,17 @@ export async function POST(
       );
     }
     const eventType: AllowedEventType = rawType;
+    if (description.length > 2000) {
+      return respond({ error: 'description must be 2000 characters or fewer' }, { status: 400 });
+    }
     if (!description.trim()) {
-      return NextResponse.json(
+      return respond(
         { error: 'description is required' },
         { status: 400 }
       );
     }
 
-    // Lead ownership check (mirror /quality): admin/boss → all leads,
+    // Lead ownership check (mirror /quality): admin/boss/operator → all leads,
     // sales → only assigned_to === profile.userId.
     const { data: lead, error: leadError } = await supabase
       .from('leads')
@@ -120,10 +125,10 @@ export async function POST(
       .eq('id', leadId)
       .single();
     if (leadError || !lead) {
-      return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
+      return respond({ error: 'Lead not found' }, { status: 404 });
     }
-    if (!isAdminOrBoss(profile) && lead.assigned_to !== profile.userId) {
-      return NextResponse.json(
+    if (!['admin', 'boss', 'operator'].includes(context.role) && lead.assigned_to !== context.user.id) {
+      return respond(
         { error: 'Forbidden: lead not assigned to you' },
         { status: 403 }
       );
@@ -134,7 +139,7 @@ export async function POST(
       .from('business_events')
       .insert({
         lead_id: leadId,
-        user_id: profile.userId,
+        user_id: context.user.id,
         event_type: eventType,
         event_data,
         description,
@@ -144,7 +149,7 @@ export async function POST(
       .single();
 
     if (insertError || !inserted) {
-      return NextResponse.json(
+      return respond(
         {
           error: 'Failed to write business_events row',
           detail: insertError?.message,
@@ -153,10 +158,10 @@ export async function POST(
       );
     }
 
-    return NextResponse.json({ success: true, eventId: inserted.id });
+    return respond({ success: true, eventId: inserted.id });
   } catch (e) {
     console.error('events route error:', e);
-    return NextResponse.json(
+    return respond(
       { error: 'Internal server error' },
       { status: 500 }
     );

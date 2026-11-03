@@ -57,7 +57,7 @@ test("removeTeamMember Server Action requires admin or boss", async () => {
   const action = await read("src/app/actions/team.ts");
   // Second role check (removeTeamMember has its own)
   const removeMember = action.slice(action.indexOf("removeTeamMember"), action.indexOf("resetUserPassword"));
-  assert.match(removeMember, /const \{ user, role \} = await getActionAuthContext\(\)/);
+  assert.match(removeMember, /const \{ user, role(, supabase)? \} = await getActionAuthContext\(\)/);
   assert.match(removeMember, /!role \|\| !\['admin', 'boss'\]\.includes\(role\)/);
   assert.match(removeMember, /throw new Error\('Forbidden'\)/);
 });

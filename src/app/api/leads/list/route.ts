@@ -1,6 +1,6 @@
 // RBAC: user (authenticated)
 // GET /api/leads/list — Aggregated leads list data
-// Server-side auth.getUser() → profile role → leads (500 max) → profile data
+// Server-side auth.getUser() → profile role → every visible lead (paged, exact total; S3 #7) → profile data
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import type { Database } from "@/types/database";
@@ -8,6 +8,7 @@ import type { Database } from "@/types/database";
 type LeadListRow = Pick<Database["public"]["Tables"]["leads"]["Row"], "id" | "customer_name" | "phone" | "source" | "stage" | "final_status" | "quotation_value" | "location" | "property_type" | "project_type" | "project_status" | "property_size_sqm" | "ai_quality" | "lead_status" | "assigned_to" | "win_probability" | "last_contact_date" | "next_followup_date" | "next_action" | "followup_count" | "created_at" | "updated_at" | "recovery_candidate" | "transfer_candidate" | "sales_manager_review" | "hold_since" | "lost_reason" | "decision_maker" | "decision_date" | "competitor" | "campaign_name" | "source_platform" | "quality" | "poor_reason">;
 type SalesUserRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "email" | "role" | "full_name" | "is_active">;
 type OwnerProfileRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "full_name">;
+import { fetchAllRows } from "@/lib/paged-rows.mjs";
 import {
   filterLeadTransferCandidateQuery,
   getVisibleLeadOwnerIds,
@@ -45,13 +46,17 @@ export async function GET(request: Request) {
   const userId: string = user.id;
 
   // ── Parallel batch: leads + transfer candidates + owner directory ──
-  let leadsQuery = supabase.from("leads").select(
-    "id,customer_name,phone,source,stage,final_status,quotation_value,location,property_type,project_type,project_status,property_size_sqm,ai_quality,lead_status,assigned_to,win_probability,last_contact_date,next_followup_date,next_action,followup_count,created_at,updated_at,recovery_candidate,transfer_candidate,sales_manager_review,hold_since,lost_reason,decision_maker,decision_date,competitor,campaign_name,source_platform,quality,poor_reason"
-  );
-  if (role === "sales") {
-    leadsQuery = leadsQuery.eq("assigned_to", userId);
-  }
-  const leadsPromise = leadsQuery.order("updated_at", { ascending: false }).limit(500);
+  const LEAD_LIST_COLUMNS =
+    "id,customer_name,phone,source,stage,final_status,quotation_value,location,property_type,project_type,project_status,property_size_sqm,ai_quality,lead_status,assigned_to,win_probability,last_contact_date,next_followup_date,next_action,followup_count,created_at,updated_at,recovery_candidate,transfer_candidate,sales_manager_review,hold_since,lost_reason,decision_maker,decision_date,competitor,campaign_name,source_platform,quality,poor_reason";
+  // S3 #7: read every lead the caller may see (it used to stop at 500 without
+  // saying so). Ordered with a tiebreaker so pages never overlap or skip.
+  const leadsPromise = fetchAllRows((withCount) => {
+    let leadsQuery = supabase.from("leads").select(LEAD_LIST_COLUMNS, withCount ? { count: "exact" } : undefined);
+    if (role === "sales") {
+      leadsQuery = leadsQuery.eq("assigned_to", userId);
+    }
+    return leadsQuery.order("updated_at", { ascending: false }).order("id", { ascending: true });
+  }).then((result) => ({ data: result.rows as LeadListRow[], error: result.error, total: result.total, truncated: result.truncated }));
 
   const candidateQuery = supabase
     .from("profiles")
@@ -60,7 +65,7 @@ export async function GET(request: Request) {
     candidateQuery as never
   ) as typeof candidateQuery;
   const [
-    { data: leads, error: leadsErr },
+    { data: leads, error: leadsErr, total: leadsTotal, truncated: leadsTruncated },
     { data: salesUsers, error: salesErr },
   ] = await Promise.all([leadsPromise, salesUsersPromise]);
 
@@ -86,6 +91,8 @@ export async function GET(request: Request) {
     userId,
     role,
     leads: visibleLeads,
+    total: leadsTotal,
+    truncated: leadsTruncated,
     salesUsers: visibleSalesUsers,
     ownerProfiles,
   };

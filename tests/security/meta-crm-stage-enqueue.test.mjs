@@ -102,6 +102,8 @@ test("workbooks without a Meta id keep their legacy import fingerprint shape", (
   assert.doesNotMatch(preview, /raw_leadgen_id: norm\.leadgen_id \|\| ""/);
 });
 
+const milestoneStageAdvance = await import("../../src/lib/milestone-stage-advance.mjs");
+
 function loadMilestoneRoute({ queued, insertError = null, existing = [] }) {
   const chain = (result) => {
     const c = { select: () => c, eq: () => c, order: () => c, single: async () => result, maybeSingle: async () => result,
@@ -130,6 +132,7 @@ function loadMilestoneRoute({ queued, insertError = null, existing = [] }) {
       requestAuthErrorResponse: () => nextServer.NextResponse.json({}, { status: 401 }),
     },
     "@/lib/first-contact-gate.mjs": { isAssessedQuality: () => true, isCompleteContact: () => true },
+    "@/lib/milestone-stage-advance.mjs": milestoneStageAdvance,
     "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: async (db, leadId, key) => { queued.push([db.tag, leadId, key]); return "queued"; } },
     "next/server": nextServer,
   });

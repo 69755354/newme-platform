@@ -6,6 +6,7 @@
 // call onUpdateField directly, matching the previous Details tab.
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { whatsappHref as whatsappLink } from "@/lib/lead-contact.mjs";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -58,9 +59,9 @@ export default function LeadCustomerProfile({
   reassigning,
   transferHistory,
 }: Props) {
-  // WhatsApp deep link from the phone digits (strip everything non-numeric).
-  const phoneDigits = (lead.phone || "").replace(/[^\d]/g, "");
-  const whatsappHref = phoneDigits ? `https://wa.me/${phoneDigits}` : null;
+  // WhatsApp deep link from the E.164 form, so local spellings (0500…,
+  // 00971…) get the country code instead of producing a dead wa.me link.
+  const whatsappHref = whatsappLink(lead.phone);
 
   return (
     <Card className="overflow-visible border-border bg-card shadow-sm">

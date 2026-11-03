@@ -13,6 +13,7 @@ import {
   type RequestAuthContext,
 } from "@/lib/request-auth-context";
 import { isAssessedQuality, isCompleteContact } from "@/lib/first-contact-gate.mjs";
+import { advanceStageForMilestone, MILESTONE_STAGE, type StageAdvanceResult } from "@/lib/milestone-stage-advance.mjs";
 
 type AdminSupabaseClient = SupabaseClient<Database>;
 
@@ -43,6 +44,32 @@ export async function POST(
   if (!milestoneKey) {
     return respond({ error: "缺少 milestoneKey" }, { status: 400 });
   }
+
+  // S3 #1: after the milestone write succeeded, move the stage forward through
+  // the audited transition_lead_stage() routine. Never fails the save; a rule
+  // that says "not yet" comes back as a reason the page shows as a hint.
+  const advanceStage = async (): Promise<StageAdvanceResult | null> => {
+    if (!MILESTONE_STAGE[milestoneKey]) return null;
+    try {
+      const { data: current } = await supabase
+        .from("leads")
+        .select("stage, final_status, quality, next_action, next_followup_date")
+        .eq("id", leadId)
+        .single();
+      if (!current) return null;
+      let hasCompleteContact = false;
+      if (current.stage === "new") {
+        const { data: logs } = await supabase
+          .from("follow_up_logs")
+          .select("contact_time, contact_result")
+          .eq("lead_id", leadId);
+        hasCompleteContact = (logs ?? []).some(isCompleteContact);
+      }
+      return await advanceStageForMilestone(supabase, { leadId, milestoneKey, lead: current, hasCompleteContact });
+    } catch {
+      return { advanced: false, stage: null, reason: "stage_update_failed" };
+    }
+  };
 
   // 3. 校验 lead 存在
   const { data: lead, error: leadError } = await supabase
@@ -136,9 +163,9 @@ export async function POST(
           { status: 500 },
         );
       }
-      return respond({ success: true, milestone: confirmed, manualConfirmation: true });
+      return respond({ success: true, milestone: confirmed, manualConfirmation: true, stageAdvance: await advanceStage() });
     }
-    return respond({ success: true, milestone: existingMilestone, duplicate: true });
+    return respond({ success: true, milestone: existingMilestone, duplicate: true, stageAdvance: await advanceStage() });
   }
 
   // 6. rule_006: only completed milestones participate in sequence checks.
@@ -182,6 +209,7 @@ export async function POST(
       success: true,
       result: recompleted,
       recompleted: true,
+      stageAdvance: await advanceStage(),
     });
   }
 
@@ -205,7 +233,7 @@ export async function POST(
       .eq("milestone_key", milestoneKey)
       .single();
     if (racedMilestone) {
-      return respond({ success: true, milestone: racedMilestone, duplicate: true });
+      return respond({ success: true, milestone: racedMilestone, duplicate: true, stageAdvance: await advanceStage() });
     }
   }
   if (insertError) {
@@ -233,7 +261,7 @@ export async function POST(
 
   // Best-effort Meta CRM feedback for the committed milestone; never fails the request.
   await enqueueMetaCrmEventForLead(supabaseAdmin, leadId, milestoneKey);
-  return respond({ success: true, milestone: inserted });
+  return respond({ success: true, milestone: inserted, stageAdvance: await advanceStage() });
 }
 
 export async function PATCH(

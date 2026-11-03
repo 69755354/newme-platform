@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
 import { applyPrivateNoStore } from "@/lib/request-auth-context"
 import { countsAsCash } from "@/lib/payment-state.mjs"
+import { fetchAllRows } from "@/lib/paged-rows.mjs"
 
 /**
  * GET /api/pipeline/list — leads, the sales roster, and the caller's own KPI actuals.
@@ -51,11 +52,13 @@ export async function GET(request: Request) {
   const isSales = role === "sales"
 
   const [leadsResult, salesUsersResult] = await Promise.all([
-    (() => {
-      let q = supabase.from("leads").select("*").limit(500)
+    // S3 #7: every visible lead, paged, with the exact total (was an
+    // unordered, silent .limit(500)).
+    fetchAllRows((withCount) => {
+      let q = supabase.from("leads").select("*", withCount ? { count: "exact" } : undefined)
       if (isSales) q = q.eq("assigned_to", userId)
-      return q
-    })(),
+      return q.order("updated_at", { ascending: false }).order("id", { ascending: true })
+    }).then((result) => ({ data: result.rows, error: result.error, total: result.total, truncated: result.truncated })),
     supabase
       .from("profiles")
       .select("id,email,role,full_name")
@@ -98,6 +101,8 @@ export async function GET(request: Request) {
 
   const responseData = {
     leads: (leadsResult.data ?? []) as any[],
+    total: leadsResult.total,
+    truncated: leadsResult.truncated,
     role,
     userId,
     salesUsers: (salesUsersResult.data ?? []) as any[],

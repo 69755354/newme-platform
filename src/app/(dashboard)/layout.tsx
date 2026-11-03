@@ -88,7 +88,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         </div>
       </main>
     </div>
-    <Toaster position="top-center" richColors />
+    <Toaster position="top-center" richColors containerAriaLabel={t("common.notificationsRegion")} />
     </>
   );
 }

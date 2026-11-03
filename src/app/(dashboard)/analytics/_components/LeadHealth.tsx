@@ -49,9 +49,9 @@ function fmtAED(v: number | null | undefined): string {
 
 import { fmtDubai } from "@/lib/utils";
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, locale: string): string {
   if (!d) return "—";
-  return fmtDubai(d, { locale: "en-GB", day: "2-digit", month: "short" });
+  return fmtDubai(d, { locale, day: "2-digit", month: "short" });
 }
 
 function getStageLabels(t: any): Record<string, string> {
@@ -115,8 +115,8 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
 }
 
 /* ─── Quality Bar ─── */
-function QualityBar({ breakdown, total, qualityLabels }: {
-  breakdown: Record<string, number>; total: number; qualityLabels: Record<string, string>;
+function QualityBar({ breakdown, total, qualityLabels, title }: {
+  breakdown: Record<string, number>; total: number; qualityLabels: Record<string, string>; title: string;
 }) {
   const order = ["pending", "good", "bad", "unknown"];
   const bars = order.map((key) => ({
@@ -127,7 +127,7 @@ function QualityBar({ breakdown, total, qualityLabels }: {
 
   return (
     <div className="bg-card border border-border rounded-xl p-4">
-      <h3 className="text-sm font-semibold text-foreground mb-3">Quality Distribution</h3>
+      <h3 className="text-sm font-semibold text-foreground mb-3">{title}</h3>
       <div className="flex h-5 rounded-full overflow-hidden mb-3">
         {bars.map((b) =>
           b.count > 0 ? (
@@ -191,7 +191,7 @@ function OverdueTable({ items, stageLabels, t }: {
                 <td className={`py-2 px-2 text-right font-mono font-bold ${
                   item.overdue_days >= 7 ? "text-rose-400" : item.overdue_days >= 3 ? "text-amber-400" : "text-muted-foreground"
                 }`}>
-                  {item.overdue_days}d
+                  {t("analytics.daysShort").replace("{n}", String(item.overdue_days))}
                 </td>
                 <td className="py-2 px-2">
                   <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${STAGE_COLORS[item.stage] || "bg-gray-500/20 text-gray-300"}`}>
@@ -199,7 +199,7 @@ function OverdueTable({ items, stageLabels, t }: {
                   </span>
                 </td>
                 <td className="py-2 pl-2 text-muted-foreground">
-                  {fmtDate(item.last_contact_date)}
+                  {fmtDate(item.last_contact_date, t("locale.dateLocale"))}
                 </td>
               </tr>
             ))}
@@ -223,13 +223,13 @@ function SalesOverdueList({ items, stageLabels, t }: {
 }) {
 
   const addNote = async (leadId: string) => {
-    const note = prompt("Add a quick note for this follow-up:");
+    const note = prompt(t("analytics.quickNotePrompt"));
     if (!note) return;
     const ok = await addLeadNote(leadId, note);
     if (ok) {
-      alert("Note added!");
+      alert(t("analytics.noteAdded"));
     } else {
-      alert("Failed to add note. Please try again.");
+      alert(t("analytics.noteAddFailed"));
     }
   };
 
@@ -237,7 +237,7 @@ function SalesOverdueList({ items, stageLabels, t }: {
     <div className="bg-card border border-border rounded-xl p-4">
       <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
         <AlertTriangle className="w-4 h-4 text-rose-400" />
-        My Overdue Follow-ups ({items.length})
+        {t("analytics.myOverdueFollowups")} ({items.length})
       </h3>
       <div className="space-y-2">
         {items.map((item) => (
@@ -250,7 +250,7 @@ function SalesOverdueList({ items, stageLabels, t }: {
                 ) : null}
               </p>
               <p className="text-xs text-muted-foreground">
-                {item.overdue_days}d {t("analytics.overduePrefix")} · {stageLabels[item.stage] || item.stage} · {t("analytics.lastContact")}: {fmtDate(item.last_contact_date)}
+                {t("analytics.daysShort").replace("{n}", String(item.overdue_days))} {t("analytics.overduePrefix")} · {stageLabels[item.stage] || item.stage} · {t("analytics.lastContact")}: {fmtDate(item.last_contact_date, t("locale.dateLocale"))}
               </p>
             </Link>
             <div className="flex items-center gap-1 shrink-0 ml-2">
@@ -330,7 +330,7 @@ export default function LeadHealth() {
   if (error || !data) {
     return (
       <div className="bg-card border border-border rounded-xl p-6">
-        <p className="text-sm text-rose-400">Failed to load: {error || "No data"}</p>
+        <p className="text-sm text-rose-400">{t("analytics.loadFailed")}</p>
       </div>
     );
   }
@@ -338,43 +338,43 @@ export default function LeadHealth() {
   if (isCEO) {
     return (
       <div className="space-y-4">
-        <h2 className="text-base font-semibold text-foreground">📊 Lead Health</h2>
+        <h2 className="text-base font-semibold text-foreground">📊 {t("analytics.leadHealth")}</h2>
 
         {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard
             icon={Users}
-            label="Total Leads"
+            label={t("analytics.totalLeads")}
             value={data.totalLeads.toLocaleString()}
-            sub={`+${data.weeklyNew} this week`}
+            sub={t("analytics.newThisWeek").replace("{n}", String(data.weeklyNew))}
             color="bg-slate-600/10"
           />
           <StatCard
             icon={Activity}
-            label="Active"
+            label={t("analytics.activeLeads")}
             value={`${data.activePct}%`}
-            sub={`${data.activeCount} leads`}
+            sub={t("analytics.leadsCount").replace("{n}", String(data.activeCount))}
             color="bg-emerald-500/10"
           />
           <StatCard
             icon={Clock}
-            label="Dormant"
+            label={t("analytics.dormantLeads")}
             value={`${data.dormantPct}%`}
-            sub={`${data.dormantCount} leads`}
+            sub={t("analytics.leadsCount").replace("{n}", String(data.dormantCount))}
             color="bg-amber-500/10"
           />
           <StatCard
             icon={UserPlus}
-            label="Zero Follow-up"
+            label={t("analytics.zeroContact")}
             value={`${data.zeroPct}%`}
-            sub={`${data.zeroCount} leads`}
+            sub={t("analytics.leadsCount").replace("{n}", String(data.zeroCount))}
             color="bg-rose-500/10"
           />
         </div>
 
         {/* Quality + Overdue 2-col */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <QualityBar breakdown={data.qualityBreakdown} total={data.totalLeads} qualityLabels={{ good: t("analytics.qualityGood"), pending: t("analytics.qualityPending"), bad: t("analytics.qualityBad") }} />
+          <QualityBar breakdown={data.qualityBreakdown} total={data.totalLeads} qualityLabels={getQualityLabels(t)} title={t("analytics.qualityDistribution")} />
           <OverdueTable items={data.overdue} stageLabels={STAGE_I18N_KEYS} t={t} />
         </div>
       </div>
@@ -384,42 +384,42 @@ export default function LeadHealth() {
   // ── Sales view ──
   return (
     <div className="space-y-4">
-      <h2 className="text-base font-semibold text-foreground">📊 My Lead Health</h2>
+      <h2 className="text-base font-semibold text-foreground">📊 {t("analytics.myLeadHealth")}</h2>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-3">
         <StatCard
           icon={Users}
-          label="My Leads"
+          label={t("analytics.myLeads")}
           value={data.totalLeads.toLocaleString()}
-          sub={`+${data.weeklyNew} this week`}
+          sub={t("analytics.newThisWeek").replace("{n}", String(data.weeklyNew))}
           color="bg-slate-600/10"
         />
         <StatCard
           icon={Activity}
-          label="Active"
+          label={t("analytics.activeLeads")}
           value={`${data.activePct}%`}
-          sub={`${data.activeCount} leads`}
+          sub={t("analytics.leadsCount").replace("{n}", String(data.activeCount))}
           color="bg-emerald-500/10"
         />
         <StatCard
           icon={Clock}
-          label="Dormant"
+          label={t("analytics.dormantLeads")}
           value={`${data.dormantPct}%`}
-          sub={`${data.dormantCount} leads`}
+          sub={t("analytics.leadsCount").replace("{n}", String(data.dormantCount))}
           color="bg-amber-500/10"
         />
         <StatCard
           icon={UserPlus}
-          label="Zero Follow-up"
+          label={t("analytics.zeroContact")}
           value={`${data.zeroPct}%`}
-          sub={`${data.zeroCount} leads`}
+          sub={t("analytics.leadsCount").replace("{n}", String(data.zeroCount))}
           color="bg-rose-500/10"
         />
       </div>
 
       {/* Quality */}
-      <QualityBar breakdown={data.qualityBreakdown} total={data.totalLeads} qualityLabels={{ good: t("analytics.qualityGood"), pending: t("analytics.qualityPending"), bad: t("analytics.qualityBad") }} />
+      <QualityBar breakdown={data.qualityBreakdown} total={data.totalLeads} qualityLabels={getQualityLabels(t)} title={t("analytics.qualityDistribution")} />
 
       {/* Overdue with action buttons */}
       <SalesOverdueList items={data.overdue} stageLabels={STAGE_I18N_KEYS} t={t} />

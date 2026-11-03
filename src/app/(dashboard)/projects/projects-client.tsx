@@ -99,9 +99,9 @@ function fmtCurrency(v: number | null | undefined): string {
   return `AED ${v.toLocaleString()}`;
 }
 
-function fmtDate(d: string | null | undefined): string {
+function fmtDate(d: string | null | undefined, locale: string): string {
   if (!d) return "—";
-  return fmtDubai(d, { locale: "en-US", month: "short", day: "numeric", year: "numeric" });
+  return fmtDubai(d, { locale, month: "short", day: "numeric", year: "numeric" });
 }
 
 function daysDiff(dateStr: string | null | undefined): number | null {
@@ -555,7 +555,7 @@ export default function ProjectsClient({ initialData, fetchError }: ProjectsClie
                       {project.start_date && (
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
-                          {fmtDate(project.start_date)}
+                          {fmtDate(project.start_date, t("locale.dateLocale"))}
                         </span>
                       )}
                     </div>
@@ -590,8 +590,8 @@ export default function ProjectsClient({ initialData, fetchError }: ProjectsClie
                         <InfoItem label={t("projects.status")} value={project.status ? t(`projects.status${getStatusLabel(project.status)}`) : "—"} />
                         <InfoItem label={t("projects.customer")} value={project.customer?.lead?.customer_name || project.customer?.name || "—"} />
                         <InfoItem label={t("projects.location")} value={project.location || "—"} />
-                        <InfoItem label={t("projects.startDate")} value={fmtDate(project.start_date)} />
-                        <InfoItem label={t("projects.endDate")} value={fmtDate(project.end_date)} />
+                        <InfoItem label={t("projects.startDate")} value={fmtDate(project.start_date, t("locale.dateLocale"))} />
+                        <InfoItem label={t("projects.endDate")} value={fmtDate(project.end_date, t("locale.dateLocale"))} />
                         {project.property_type && (
                           <InfoItem label={t("projects.propertyType")} value={project.property_type} />
                         )}

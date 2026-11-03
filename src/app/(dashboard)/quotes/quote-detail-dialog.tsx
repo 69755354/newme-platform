@@ -116,9 +116,9 @@ const STATUS_STYLES: Record<string, { color: string; bg: string; border: string 
 const QUOTE_STATUSES = ["draft", "sent", "accepted", "rejected", "expired", "contract_created", "won"];
 
 /* ─── Helpers ─── */
-function fmtDate(d: string | null | undefined): string {
+function fmtDate(d: string | null | undefined, locale: string): string {
   if (!d) return "—";
-  return fmtDubai(d, { locale: "en-US", month: "short", day: "numeric", year: "numeric" });
+  return fmtDubai(d, { locale, month: "short", day: "numeric", year: "numeric" });
 }
 
 function getCategoryIcon(key: string): string {
@@ -322,7 +322,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
                 {quote.quote_no || "—"}
               </DialogTitle>
               <p className="text-sm text-muted-foreground mt-0.5">
-                {customerName} · v{quote.version || 1} · {fmtDate(quote.created_at)}
+                {customerName} · v{quote.version || 1} · {fmtDate(quote.created_at, t("locale.dateLocale"))}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -437,7 +437,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{t("quotes.validUntil")}</p>
             <p className="text-sm text-foreground flex items-center gap-1">
               <Calendar className="w-3 h-3 text-muted-foreground" />
-              {fmtDate(quote.valid_until)}
+              {fmtDate(quote.valid_until, t("locale.dateLocale"))}
             </p>
           </div>
           <div>
@@ -471,7 +471,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
             onClick={() => handleStatusChange("sent")}
             disabled={quote.status === "sent"}
           >
-            <Send className="w-3 h-3" /> Send to Client
+            <Send className="w-3 h-3" /> {t("quotes.sendToClient")}
           </Button>
           <Button
             size="sm"
@@ -480,7 +480,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
             onClick={() => handleStatusChange("accepted")}
             disabled={quote.status === "accepted"}
           >
-            <CheckCircle className="w-3 h-3" /> Accept
+            <CheckCircle className="w-3 h-3" /> {t("quotes.acceptAction")}
           </Button>
           <Button
             size="sm"
@@ -489,7 +489,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
             onClick={() => handleStatusChange("rejected")}
             disabled={quote.status === "rejected"}
           >
-            <XCircle className="w-3 h-3" /> Reject
+            <XCircle className="w-3 h-3" /> {t("quotes.rejectAction")}
           </Button>
 
           {/* Convert to Contract — opens the schedule step; the POST needs it */}
@@ -553,7 +553,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
         {schedule && (
           <div className="mt-4 rounded-lg border border-purple-500/20 bg-purple-500/[0.04] p-3 space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-purple-300">Payment schedule</p>
+              <p className="text-xs font-medium text-purple-300">{t("quotes.paymentSchedule")}</p>
               <p className="text-xs text-muted-foreground">
                 Quotation total {fmtAED(quoteTotal)}
               </p>
@@ -582,7 +582,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
                   type="text"
                   value={row.description}
                   onChange={(e) => updateInstallment(index, { description: e.target.value })}
-                  placeholder="Description"
+                  placeholder={t("quotes.installmentDescription")}
                   className="h-8 flex-1 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-copper-500"
                   aria-label={`Installment ${index + 1} description`}
                 />
@@ -600,7 +600,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
 
             <div className="flex items-center gap-2 pt-1">
               <Button size="sm" variant="secondary" className="text-xs" onClick={addInstallment}>
-                Add installment
+                {t("quotes.addInstallment")}
               </Button>
               <span
                 className={cn(

@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRouter } from "next/navigation";
 import { localizeNotification } from "@/lib/notification-display.mjs";
+import { notificationPanelPosition } from "@/lib/notification-panel-position.mjs";
 
 interface Notification {
   id: string;
@@ -79,6 +80,20 @@ function getRelatedLink(type: string, relatedType: string | null, relatedId: str
   return null;
 }
 
+// S6 (review 4d #20): titles are stored in English by the server
+// (src/lib/notification-events.ts). Localize the known prefixes at display
+// time so stored rows read correctly in either language.
+const TITLE_PREFIXES: Array<[string, string]> = [
+  ["New lead assigned: ", "notifications.titleLeadAssigned"],
+  ["New lead: ", "notifications.titleNewLead"],
+];
+function localizeTitle(title: string, t: (key: string) => string): string {
+  for (const [prefix, key] of TITLE_PREFIXES) {
+    if (title.startsWith(prefix)) return `${t(key)}${title.slice(prefix.length)}`;
+  }
+  return title;
+}
+
 function timeAgo(dateStr: string, lang: "zh" | "en", t: (key: string) => string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const minutes = Math.floor(diff / 60_000);
@@ -99,6 +114,8 @@ export default function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
+  // Measured when the panel opens (refs must not be read during render).
+  const [panelStyle, setPanelStyle] = useState<{ left: number; top: number; width: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const dropdownContentRef = useRef<HTMLDivElement>(null);
@@ -200,8 +217,16 @@ export default function NotificationBell() {
     <div ref={dropdownRef} className="relative">
       {/* Bell icon button */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="relative p-1.5 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+        onClick={() => {
+          if (!isOpen) {
+            setPanelStyle(notificationPanelPosition(
+              dropdownRef.current?.getBoundingClientRect() ?? null,
+              window.innerWidth,
+            ));
+          }
+          setIsOpen(!isOpen);
+        }}
+        className="relative inline-flex min-h-10 min-w-10 items-center justify-center p-1.5 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
         aria-label={t("notifications.title")}
       >
         <Bell className="w-5 h-5" />
@@ -216,11 +241,12 @@ export default function NotificationBell() {
       {isOpen && createPortal(
         <div
           ref={dropdownContentRef}
-          className="fixed z-[9999] w-[380px] max-h-[500px] bg-popover border border-border rounded-xl shadow-xl ring-1 ring-foreground/10 overflow-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95"
-          style={{
-            top: (dropdownRef.current?.getBoundingClientRect().bottom ?? 0) + 8,
-            left: (dropdownRef.current?.getBoundingClientRect().right ?? 380) - 380,
-          }}
+          role="dialog"
+          aria-label={t("notifications.title")}
+          className="fixed z-[9999] max-h-[min(500px,calc(100dvh-80px))] bg-popover border border-border rounded-xl shadow-xl ring-1 ring-foreground/10 overflow-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95"
+          // S6 (review 4d #1): clamp to the viewport — on 360/390 px phones
+          // the old `right - 380` put the left edge at -256/-226 px.
+          style={panelStyle ?? undefined}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -247,7 +273,7 @@ export default function NotificationBell() {
           </div>
 
           {/* List */}
-          <div className="overflow-y-auto max-h-[400px]">
+          <div className="overflow-y-auto max-h-[min(400px,calc(100dvh-140px))]">
             {loading ? (
               <div className="flex items-center justify-center py-8 text-muted-foreground text-xs">
                 {t("notifications.loading")}
@@ -277,7 +303,7 @@ export default function NotificationBell() {
                     <div className="flex items-start justify-between gap-2">
                       <p
                         className={cn(
-                          "text-sm leading-tight",
+                          "text-sm leading-tight break-words [overflow-wrap:anywhere]",
                           !n.is_read ? "font-semibold text-foreground" : "text-muted-foreground"
                         )}
                       >

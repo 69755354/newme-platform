@@ -327,7 +327,7 @@ export default function LeadSalesProcess({
                           {milestone.notes?.trim() || "—"}
                         </p>
                         <p className="text-[10px] text-muted-foreground">
-                          {milestone.completed_at ? fmtDubai(milestone.completed_at) : "—"}
+                          {milestone.completed_at ? fmtDubai(milestone.completed_at, { locale: t("locale.dateLocale") }) : "—"}
                           {milestone.completer?.full_name ? ` · ${milestone.completer.full_name}` : ""}
                         </p>
                         {reopenMilestoneKey === key ? (
@@ -722,7 +722,7 @@ export default function LeadSalesProcess({
                                       {log.contact_result || log.summary || "(no summary)"}
                                     </div>
                                     <div className="text-[9px] text-muted-foreground">
-                                      {fmtDubai(log.contact_time || log.created_at)}
+                                      {fmtDubai(log.contact_time || log.created_at, { locale: t("locale.dateLocale") })}
                                     </div>
                                   </div>
                                 </li>
@@ -998,7 +998,7 @@ export default function LeadSalesProcess({
                   <p className="text-muted-foreground text-xs">{t("leadDetail.paymentLink")}</p>
                   <p className="text-foreground">
                     {fmtAED(trace?.payment_amount ?? null)}
-                    {trace?.payment_date ? ` · ${fmtDubai(trace.payment_date)}` : ""}
+                    {trace?.payment_date ? ` · ${fmtDubai(trace.payment_date, { locale: t("locale.dateLocale") })}` : ""}
                   </p>
                 </div>
                 {/* R5. This badge used to read "Confirmed" or "Pending confirm" off

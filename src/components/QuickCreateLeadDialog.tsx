@@ -158,7 +158,7 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
             <div className="space-y-1.5">
               <Label className="text-gray-400 text-xs">{t("leads.region")}</Label>
               <Input
-                placeholder="Dubai / Abu Dhabi..."
+                placeholder={t("leads.locationPlaceholder")}
                 value={form.location}
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
                 maxLength={LEAD_FIELD_LIMITS.location}

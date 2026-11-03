@@ -28,7 +28,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 import { addTeamMember, removeTeamMember, resetUserPassword } from "@/app/actions/team";
 
 // ─── UI Components (shadcn / base-ui) ───
@@ -371,16 +371,7 @@ export default function TeamPage() {
         <ArrowLeft className="w-3.5 h-3.5" />
         {t("team.backToSettings")}
       </Link>
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          style: {
-            background: "#1E2328",
-            border: "1px solid rgba(234, 230, 223, 0.15)",
-            color: "#EAE6DF",
-          },
-        }}
-      />
+
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -565,7 +556,9 @@ export default function TeamPage() {
                               variant="ghost"
                               size="sm"
                               className="h-7 px-2 text-[11px] text-copper-400 hover:text-copper-300 hover:bg-copper-500/10"
-                              onClick={() => { setRevealTarget({ id: user.id, name: (user.full_name || user.email || "User") }); setResetPasswordValue(""); setRevealedPassword(null); }}
+                              onClick={() => { setRevealTarget({ id: user.id, name: (user.full_name || user.email || "—") }); setResetPasswordValue(""); setRevealedPassword(null); }}
+                              aria-label={t("team.resetPassword")}
+                              title={t("team.resetPassword")}
                             >
                               <KeyRound className="w-3 h-3" />
                             </Button>
@@ -576,6 +569,8 @@ export default function TeamPage() {
                               size="sm"
                               className="h-7 px-2 text-[11px] text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
                               onClick={() => setHandoverMember({ id: user.id, name: user.full_name || user.email || "User" })}
+                              aria-label={t("team.deactivate")}
+                              title={t("team.deactivate")}
                             >
                               <Trash2 className="w-3 h-3" />
                             </Button>
@@ -819,7 +814,7 @@ export default function TeamPage() {
             {/* Phone */}
             <div className="space-y-1.5">
               <Label htmlFor="phone">
-{t("team.role")}{" "}
+                {t("team.phone")}{" "}
                 <span className="text-muted-foreground text-[10px]">
                   ({t("team.optional")})
                 </span>

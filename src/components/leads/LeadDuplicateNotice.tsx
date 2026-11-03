@@ -105,7 +105,7 @@ export function LeadDuplicateNotice({
 export async function submitNewLead(
   payload: Record<string, unknown>,
   overrideReason?: string,
-): Promise<{ ok: true; id: string; warnings: string[] } | { ok: false; state: CreateLeadErrorState | null }> {
+): Promise<{ ok: true; id: string; warnings: string[] } | { ok: false; state: CreateLeadErrorState | null; status?: number }> {
   const response = await fetch("/api/leads", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -129,5 +129,5 @@ export async function submitNewLead(
       },
     };
   }
-  return { ok: false, state: null };
+  return { ok: false, state: null, status: response.status };
 }

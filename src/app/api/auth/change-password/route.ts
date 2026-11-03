@@ -12,18 +12,25 @@ export async function POST(request: NextRequest) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
 
   if (authErr || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized", code: "unauthorized" }, { status: 401 });
   }
 
   try {
     const { oldPassword, newPassword } = await request.json();
 
-    if (!oldPassword || !newPassword) {
-      return NextResponse.json({ error: "oldPassword and newPassword required" }, { status: 400 });
+    // S6 (review 4d #3): the same rules as src/lib/password-change-validation.mjs
+    // (kept inline so this route's import surface is unchanged). A new password
+    // equal to the current one used to be accepted and cleared the forced
+    // change flag without changing anything. Every refusal carries a stable
+    // `code` the page translates; `error` is kept for older callers.
+    if (typeof oldPassword !== "string" || typeof newPassword !== "string" || !oldPassword || !newPassword) {
+      return NextResponse.json({ error: "oldPassword and newPassword required", code: "missing_fields" }, { status: 400 });
     }
-
     if (newPassword.length < 6) {
-      return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+      return NextResponse.json({ error: "Password must be at least 6 characters", code: "too_short" }, { status: 400 });
+    }
+    if (newPassword === oldPassword) {
+      return NextResponse.json({ error: "New password must differ from the current password", code: "same_as_old" }, { status: 400 });
     }
 
     // Verify the old password against the AUTH identity, never against
@@ -51,7 +58,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (signInErr) {
-      return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });
+      return NextResponse.json({ error: "Current password is incorrect", code: "wrong_current_password" }, { status: 400 });
     }
 
     // Update password via admin API
@@ -61,7 +68,7 @@ export async function POST(request: NextRequest) {
     );
 
     if (updateErr) {
-      return NextResponse.json({ error: updateErr.message }, { status: 500 });
+      return NextResponse.json({ error: updateErr.message, code: "update_failed" }, { status: 500 });
     }
 
     // Update profile: clear force_password_change, update password_changed_at timestamp
@@ -114,6 +121,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           passwordChanged: true,
+          code: "partial_success",
           sessionsRevoked,
           profileUpdated: false,
           error: sessionsRevoked
@@ -143,6 +151,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, sessionsRevoked: true });
   } catch (e: any) {
-    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid request", code: "missing_fields" }, { status: 400 });
   }
 }

@@ -203,8 +203,8 @@ export function LeadCard({
               {statusStyle && <span className={cn("text-[9px] px-1 py-0.5 rounded font-medium", statusStyle.bg, statusStyle.color)}>{STATUS_EMOJIS[lead.lead_status || ""] || ""} {t(`statusLabels.${lead.lead_status || ""}`)}</span>}
             </div>
             {(!isPlaceholder(lead.property_type) || !isPlaceholder(lead.location)) && (
-              <div className="flex items-center gap-1 text-[11px] text-muted-foreground mt-0.5">
-                <Building2 className="w-3 h-3 shrink-0" />{[lead.property_type, lead.location].filter(v => !isPlaceholder(v)).join(" · ")}
+              <div className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground mt-0.5">
+                <Building2 className="w-3 h-3 shrink-0" /><span className="min-w-0 truncate">{[lead.property_type, lead.location].filter(v => !isPlaceholder(v)).join(" · ")}</span>
               </div>
             )}
           </div>

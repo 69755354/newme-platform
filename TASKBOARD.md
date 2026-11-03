@@ -912,3 +912,17 @@ complete hand-over; (7) lead list and pipeline read every visible lead with an
 exact total; (8) new-lead notifications go to the assignee or the
 admin/operator queue only. Behaviour tests for each item fail on main and pass
 on the branch. Outstanding: review, merge, gated release, logged-in UAT.
+
+## OS fix S6 — front-end and translations (2026-11-03)
+
+Review 2026-11-03 (0-总报告 一.4/一.5, 三, 四; 4d; 4a; 4b; 4c). Forced
+password change gives feedback for every outcome and refuses new = old; mobile
+notification panel fits 320 px+; touch controls ≥40 px; lead header no longer
+pinned on phones; 1280/1366 timeline crop and long-text overflow fixed;
+confirmations for member deactivation and quotation line removal; one shared
+save-failure pattern (localized, "Saving…", sign-in redirect) on lead detail,
+new lead, contact quality and quote save; single Toaster; Chinese leaks in
+analytics / dashboard / workbench / pipeline translated; language cookie removes
+the English first render; lockout message states the wait and successful
+sign-ins no longer count. New gate: scripts/check-i18n-hardcoded.mjs with a
+per-file baseline. Status: REVIEW (draft PR, not deployed).

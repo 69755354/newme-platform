@@ -81,9 +81,9 @@ const STATUS_LABEL_KEYS: Record<string, string> = {
 const QUOTE_STATUSES = ["draft", "sent", "accepted", "rejected", "expired"];
 
 /* ─── Helpers ─── */
-function fmtDate(d: string | null | undefined): string {
+function fmtDate(d: string | null | undefined, locale: string): string {
   if (!d) return "—";
-  return fmtDubai(d, { locale: "en-US", month: "short", day: "numeric", year: "numeric" });
+  return fmtDubai(d, { locale, month: "short", day: "numeric", year: "numeric" });
 }
 
 function isPlaceholder(v: string | null | undefined): boolean {
@@ -504,7 +504,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
                         "text-xs",
                         isExpired ? "text-rose-400" : isExpiringSoon ? "text-amber-400" : "text-muted-foreground"
                       )}>
-                        {fmtDate(quote.valid_until)}
+                        {fmtDate(quote.valid_until, t("locale.dateLocale"))}
                       </span>
                       {isExpired && (
                         <Badge className="text-[9px] bg-rose-500/10 text-rose-400 border-rose-500/20">{t("quotes.expired")}</Badge>
@@ -521,7 +521,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
                 {/* Created */}
                 <div className="col-span-1.5">
                   <span className="text-xs text-muted-foreground">
-                    {fmtDate(quote.created_at)}
+                    {fmtDate(quote.created_at, t("locale.dateLocale"))}
                   </span>
                 </div>
 

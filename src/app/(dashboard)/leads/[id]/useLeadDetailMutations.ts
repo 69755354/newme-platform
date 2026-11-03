@@ -29,6 +29,8 @@ import { toast } from "sonner";
 import { createFollowUpTask } from "@/lib/tasks";
 import { applyReassignResult, reassignFailureKey, reassignNeedsReload } from "@/lib/lead-reassign-feedback.mjs";
 import { validateLeadFieldEdit } from "@/lib/lead-contact.mjs";
+import { checkSupabase, reportMutationFailure, runMutation } from "@/lib/mutation-feedback";
+import { classifyMutationFailure, mutationFailureMessage } from "@/lib/mutation-feedback-core.mjs";
 import { projectDraftFromLead } from "./utils";
 import type { Lead, Task } from "./types";
 import type { ProjectInfoDraft } from "./useLeadDetailData";
@@ -284,15 +286,9 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     });
     if (!res.ok) {
       const json: { error?: string; eventError?: string } = await res.json().catch(() => ({}));
-      const msg =
-        json.error ||
-        (res.status === 401
-          ? t("common.unauthorized") || "Unauthorized"
-          : res.status === 403
-            ? t("common.forbidden") || "Forbidden"
-            : res.status === 400
-              ? json.error || t("common.saveFailed") || "Invalid event"
-              : t("common.saveFailed") || "Failed to write event");
+      // S6: localized via the shared failure mapping, never raw API English.
+      const kind = classifyMutationFailure({ status: res.status, body: json });
+      const msg = mutationFailureMessage({ kind, body: json }, t, "common.saveFailed");
       toast.error(msg);
       console.warn("[LeadDetail] business_events writeEvent failed", res.status, msg);
     }
@@ -318,25 +314,32 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     setSaveStatus("saving");
     const updates: LeadUpdate = { updated_at: new Date().toISOString() };
     updates[field] = checked.value as LeadUpdate[K];
-    const { data: updated, error: err } = await supabase
-      .from("leads")
-      .update(updates)
-      .eq("id", leadId)
-      .select("id, project_type, emirate, area, ac_brand, customer_budget")
-      .single();
+    // S6 (review 4d #4/#5/#7): shared mutation feedback — "Saving…" on slow
+    // networks, one localized outcome toast (no raw "TypeError: Failed to
+    // fetch"), and a sign-in redirect when the session ended elsewhere. The
+    // caller keeps the inline editor open with the typed value on failure.
     // Fix B: RLS can reject with HTTP 200 + error=null but 0 rows updated.
     // Require the row back so a blocked update never shows a false "Saved".
-    if (err || !updated) {
-      const detail = err?.message || t("common.saveFailed") || "Save failed";
-      console.error("[LeadDetail] field update failed", err);
-      setError(detail);
+    const result = await runMutation(
+      async () => checkSupabase(
+        await supabase
+          .from("leads")
+          .update(updates)
+          .eq("id", leadId)
+          .select("id, project_type, emirate, area, ac_brand, customer_budget")
+          .maybeSingle(),
+        { requireData: true },
+      ),
+      { t, successMessage: t("mutation.saved"), fallbackErrorKey: "common.saveFailedRetry" },
+    );
+    if (!result.ok) {
+      console.error("[LeadDetail] field update failed", result.kind);
+      setError(result.message);
       setSaveStatus("error");
       setUpdating(false);
-      toast.error(detail);
       return false;
     }
     setSaveStatus("saved");
-    toast.success(lang === "zh" ? "已保存" : "Saved");
     if (eventType && eventDesc) {
       await supabase.from("activities").insert({ lead_id: leadId, type: eventType, content: eventDesc, user_id: (await supabase.auth.getUser()).data.user?.id });
       await writeEvent(eventType, eventDesc, { [field]: value });
@@ -368,10 +371,11 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       .select("id, project_type, emirate, area, ac_brand, customer_budget")
       .single();
     if (err || !updated) {
-      const detail = err?.message || t("common.saveFailed") || "Save failed";
+      // S6: localized message (never raw supabase/network text) + sign-in
+      // redirect when the session ended; the draft stays in the form.
       console.error("[LeadDetail] project info save failed", err);
       setProjectInfoStatus("error");
-      toast.error(detail);
+      reportMutationFailure(err ?? { code: "42501" }, t, "common.saveFailedRetry");
       return;
     }
     params.setProjectInfoDraft(projectDraftFromLead(updated));

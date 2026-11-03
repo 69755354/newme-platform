@@ -98,6 +98,8 @@ function LeadsContent() {
     salesUsers,
     userNameMap,
     fetchLeads,
+    total: leadsTotal,
+    truncated: leadsTruncated,
   } = useLeadsData();
 
   // Local aliases for the rest of the file (preserve original names + keep
@@ -219,6 +221,11 @@ function LeadsContent() {
           <div>
             <h1 className="text-2xl font-bold text-foreground tracking-tight">{t("leads.title")}</h1>
             <p data-newme-uat-sensitive="true" className="text-muted-foreground text-sm mt-0.5">{t("leads.activePipeline").replace("{count}", String(activeCount)).replace("{value}", fmtAED(totalPipeline) || "—")}</p>
+            {leadsTruncated && leadsTotal !== null && (
+              <p role="status" className="text-amber-500 text-xs mt-0.5">
+                {t("leadFlow.list.showing").replace("{shown}", String(hookLeads.length)).replace("{total}", String(leadsTotal))}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setShowPipelineSummary(!showPipelineSummary)}

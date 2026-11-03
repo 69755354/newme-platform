@@ -27,6 +27,8 @@ import { useCallback, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
 import { createFollowUpTask } from "@/lib/tasks";
+import { applyReassignResult, reassignFailureKey, reassignNeedsReload } from "@/lib/lead-reassign-feedback.mjs";
+import { validateLeadFieldEdit } from "@/lib/lead-contact.mjs";
 import { projectDraftFromLead } from "./utils";
 import type { Lead, Task } from "./types";
 import type { ProjectInfoDraft } from "./useLeadDetailData";
@@ -168,18 +170,31 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
             reason: "manual_reassign",
           }),
         });
+        const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          toast.error(payload.error || t("common.saveFailed"));
+          // S3 #3: show a localised message, never the raw database code, and
+          // reload after a real conflict so the next attempt uses fresh data.
+          toast.error(t(reassignFailureKey(response.status, payload.code ?? payload.error)));
+          if (reassignNeedsReload(response.status, payload.code ?? payload.error)) {
+            setShowSalesDropdown(false);
+            await fetchData();
+          }
           return;
         }
-        setLead({ ...oldLead, assigned_to: newUserId, rep_name: newUserName });
+        // Carry the updated_at the routine left behind; without it a second
+        // reassignment from this page always failed with CONCURRENT_LEAD_UPDATE.
+        setLead((current) => applyReassignResult(current ?? oldLead, {
+          assignedTo: newUserId,
+          repName: newUserName,
+          result: payload.result,
+        }));
         setShowSalesDropdown(false);
+        void fetchData();
       } finally {
         setReassigning(false);
       }
     },
-    [leadId, lead, salesUsers, setLead, t] // eslint-disable-line react-hooks/exhaustive-deps
+    [leadId, lead, salesUsers, setLead, fetchData, t] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // ─── Delete lead ───
@@ -277,10 +292,24 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
 
   // ─── Update a single editable field with optimistic saveStatus + audit ───
   const updateField = useCallback(async <K extends keyof LeadUpdate>(field: K, value: LeadUpdate[K], eventType?: string, eventDesc?: string): Promise<boolean> => {
+    // S3 #5: the same contact rules as lead creation — phone stored as E.164,
+    // email lower-cased, name required, length limits on free text.
+    const checked = validateLeadFieldEdit(String(field), value);
+    if (!checked.ok) {
+      const key = field === "phone" ? "leadFlow.validation.phoneInvalid"
+        : field === "email" ? "leadFlow.validation.emailInvalid"
+        : field === "customer_name"
+          ? (checked.code === "too_long" ? "leadFlow.validation.nameTooLong" : "leadFlow.validation.nameRequired")
+          : field === "location" ? "leadFlow.validation.locationTooLong"
+          : "leadFlow.validation.fieldInvalid";
+      toast.error(t(key));
+      setSaveStatus("error");
+      return false;
+    }
     setUpdating(true);
     setSaveStatus("saving");
     const updates: LeadUpdate = { updated_at: new Date().toISOString() };
-    updates[field] = value;
+    updates[field] = checked.value as LeadUpdate[K];
     const { data: updated, error: err } = await supabase
       .from("leads")
       .update(updates)

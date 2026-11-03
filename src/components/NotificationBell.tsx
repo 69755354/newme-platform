@@ -6,6 +6,7 @@ import { Bell, CheckCheck, Circle, ExternalLink, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRouter } from "next/navigation";
+import { localizeNotification } from "@/lib/notification-display.mjs";
 
 interface Notification {
   id: string;
@@ -280,7 +281,7 @@ export default function NotificationBell() {
                           !n.is_read ? "font-semibold text-foreground" : "text-muted-foreground"
                         )}
                       >
-                        {n.title}
+                        {localizeNotification(n, t).title}
                       </p>
                       {!n.is_read && (
                         <Circle className="w-2 h-2 fill-rose-500 text-rose-500 shrink-0 mt-1" />
@@ -288,7 +289,7 @@ export default function NotificationBell() {
                     </div>
                     {n.body && (
                       <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                        {n.body}
+                        {localizeNotification(n, t).body}
                       </p>
                     )}
                     <div className="flex items-center gap-2 mt-1">

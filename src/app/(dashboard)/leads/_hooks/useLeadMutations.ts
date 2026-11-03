@@ -36,6 +36,7 @@
 import { useCallback } from "react";
 import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
+import { reassignFailureKey, reassignNeedsReload } from "@/lib/lead-reassign-feedback.mjs";
 import type { Lead } from "./useLeadsData";
 
 /* ─── Types ─── */
@@ -129,7 +130,7 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
     async (leadId: string, newUserId: string) => {
       setReassigning(true);
       const oldLead = leads.find(l => l.id === leadId);
-      if (!oldLead) return;
+      if (!oldLead) { setReassigning(false); return; }
       const newUser = salesUsers.find(u => u.id === newUserId);
       if (!newUser) {
         setReassigning(false);
@@ -149,7 +150,12 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
         });
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
-          setError(payload.error || t("common.saveFailed"));
+          const code = payload.code ?? payload.error;
+          toast.error(t(reassignFailureKey(response.status, code)));
+          if (reassignNeedsReload(response.status, code)) {
+            setReassignLeadId(null);
+            fetchLeads();
+          }
           return;
         }
         setReassignLeadId(null);

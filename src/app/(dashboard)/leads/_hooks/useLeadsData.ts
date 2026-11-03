@@ -62,6 +62,9 @@ export interface UseLeadsDataReturn {
   salesUsers: SalesUser[];
   userNameMap: Record<string, string>;
   fetchLeads: () => void;
+  /** S3 #7: exact number of leads the caller may see, and whether the list holds fewer. */
+  total: number | null;
+  truncated: boolean;
 }
 
 /* ─── Hook ─── */
@@ -73,6 +76,8 @@ export function useLeadsData(): UseLeadsDataReturn {
   const [salesUsers, setSalesUsers] = useState<SalesUser[]>([]);
   const [ownerProfiles, setOwnerProfiles] = useState<OwnerProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [total, setTotal] = useState<number | null>(null);
+  const [truncated, setTruncated] = useState(false);
 
   // ── Single fetch to server-side aggregation endpoint ──
   const fetchLeads = useCallback(() => {
@@ -90,6 +95,8 @@ export function useLeadsData(): UseLeadsDataReturn {
         setUserId(json.userId);
         setRole(json.role);
         setLeads((json.leads ?? []) as Lead[]);
+        setTotal(typeof json.total === "number" ? json.total : null);
+        setTruncated(json.truncated === true);
         setSalesUsers((json.salesUsers ?? []) as SalesUser[]);
         setOwnerProfiles((json.ownerProfiles ?? []) as OwnerProfile[]);
         setLoading(false);
@@ -133,5 +140,7 @@ export function useLeadsData(): UseLeadsDataReturn {
     salesUsers,
     userNameMap,
     fetchLeads,
+    total,
+    truncated,
   };
 }

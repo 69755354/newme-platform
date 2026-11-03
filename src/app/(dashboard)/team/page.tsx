@@ -37,6 +37,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import MemberHandoverDialog from "@/components/team/MemberHandoverDialog";
 import {
   Dialog,
   DialogContent,
@@ -148,6 +149,9 @@ export default function TeamPage() {
   // Current user info
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string>("sales");
+
+  // S3 #6: member whose leads must be handed over before deactivation.
+  const [handoverMember, setHandoverMember] = useState<{ id: string; name: string } | null>(null);
 
   // Password reveal
   const [revealTarget, setRevealTarget] = useState<{ id: string; name: string } | null>(null);
@@ -262,13 +266,22 @@ export default function TeamPage() {
   };
 
   // ─── Delete user ───
-  const handleDeleteUser = async (userId: string) => {
+  // Runs from the hand-over dialog only: the administrator has chosen who
+  // takes the member's leads (or the admin queue).
+  const handleDeleteUser = async (userId: string, transferTo: string, batchKey: string): Promise<boolean> => {
     try {
-      await removeTeamMember(userId);
-      toast.success(t("team.userDeleted"));
+      const result = await removeTeamMember(userId, { transferTo, batchKey });
+      if (!result.success) {
+        toast.error(t(result.code === "HANDOVER_TARGET_REQUIRED" ? "leadFlow.team.handoverChoose" : "leadFlow.team.handoverFailed"));
+        return false;
+      }
+      toast.success(t("leadFlow.team.handoverDone").replace("{count}", String(result.moved)));
+      setHandoverMember(null);
       fetchUsers();
-    } catch (e: any) {
-      toast.error(e.message);
+      return true;
+    } catch {
+      toast.error(t("leadFlow.team.handoverFailed"));
+      return false;
     }
   };
 
@@ -562,7 +575,7 @@ export default function TeamPage() {
                               variant="ghost"
                               size="sm"
                               className="h-7 px-2 text-[11px] text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
-                              onClick={() => handleDeleteUser(user.id)}
+                              onClick={() => setHandoverMember({ id: user.id, name: user.full_name || user.email || "User" })}
                             >
                               <Trash2 className="w-3 h-3" />
                             </Button>
@@ -834,6 +847,16 @@ export default function TeamPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ─── Member hand-over + deactivation (S3 #6) ─── */}
+      {handoverMember && <MemberHandoverDialog
+        key={handoverMember.id}
+        member={handoverMember}
+        users={users}
+        t={(key) => t(key as any)}
+        onCancel={() => setHandoverMember(null)}
+        onConfirm={handleDeleteUser}
+      />}
 
       {/* ─── Password Reset Dialog ─── */}
       <Dialog open={!!revealTarget && !revealedPassword} onOpenChange={() => { setRevealTarget(null); setResetPasswordValue(""); }}>

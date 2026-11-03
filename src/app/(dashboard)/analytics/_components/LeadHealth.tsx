@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { whatsappHref as whatsappLink } from "@/lib/lead-contact.mjs";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useLanguage } from "@/lib/i18n/context";
 import {
@@ -261,7 +262,7 @@ function SalesOverdueList({ items, stageLabels, t }: {
                 <Phone className="w-3.5 h-3.5" />
               </button>
               <button
-                onClick={() => window.open(`https://wa.me/${item.phone ? item.phone.replace(/[^0-9]/g, '') : ''}?text=${encodeURIComponent(`Hi ${item.customer_name}, following up on your enquiry`)}`, "_blank")}
+                onClick={() => { const href = whatsappLink(item.phone); if (href) window.open(`${href}?text=${encodeURIComponent(`Hi ${item.customer_name}, following up on your enquiry`)}`, "_blank"); }}
                 className="p-1.5 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
                 title={t("analytics.whatsapp")}
               >

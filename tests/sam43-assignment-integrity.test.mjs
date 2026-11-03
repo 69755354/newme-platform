@@ -32,13 +32,19 @@ test("SAM-43 chooses a deterministic eligible receiver or safely unassigns", asy
     ["order", "id", { ascending: true }],
   ]);
 
-  const apiDelete = read("src/app/api/users/[id]/route.ts");
-  const actionDelete = read("src/app/actions/team.ts");
+  // S3 #6 (review 3-code-quality F3): removal no longer uses this helper. The
+  // lowest-UUID receiver and the direct `update({ assigned_to })` without
+  // transfer history are gone; the administrator chooses a receiver or the
+  // unassigned queue and each lead goes through the audited routines.
+  const apiDelete = readCode("src/app/api/users/[id]/route.ts");
+  const actionDelete = readCode("src/app/actions/team.ts");
   for (const source of [apiDelete, actionDelete]) {
-    assert.match(source, /resolveActiveLeadReassignmentTarget/);
-    assert.match(source, /\.neq\(['"]id['"], (id|userId)\)/);
-    assert.match(source, /\.update\(\{ assigned_to: reassignTo \}\)/);
-    assert.match(source, /if \(leadErr\) throw new Error/);
+    assert.doesNotMatch(source, /resolveActiveLeadReassignmentTarget/);
+    assert.doesNotMatch(source, /\.update\(\{ assigned_to/);
+    assert.match(source, /readHandoverTarget\(/);
+    assert.match(source, /requireActiveLeadTransferCandidate\(/);
+    assert.match(source, /handOverMemberLeads\(supabase, \{/);
+    assert.match(source, /if \(!report\.complete\)/);
     assert.doesNotMatch(source, /role['"].*admin.*is_active/);
   }
 });
@@ -52,13 +58,13 @@ test("SAM-43 team deletion only deactivates after reassignment succeeds", () => 
   for (const source of sources) {
     assert.doesNotMatch(source, /deleted_at/);
     assert.match(source, /\.update\(\{ is_active: false \}\)/);
-    assert.match(source, /if \(leadErr\) throw new Error/);
-    assert.match(source, /if \(contractErr\) throw new Error/);
+    assert.match(source, /if \(!report\.complete\)/);
+    assert.match(source, /if \(contractErr\) (throw new Error|return \{ success: false)/);
     assert.match(source, /if \(profileErr\) throw new Error/);
 
     const profileUpdate = source.indexOf(".update({ is_active: false })");
-    assert.ok(profileUpdate > source.indexOf("if (leadErr) throw new Error"));
-    assert.ok(profileUpdate > source.indexOf("if (contractErr) throw new Error"));
+    assert.ok(profileUpdate > source.indexOf("if (!report.complete)"));
+    assert.ok(profileUpdate > source.indexOf("if (contractErr)"));
   }
 });
 
@@ -166,7 +172,10 @@ test("SAM-43 rebalance uses eligible targets and never reports failed updates as
 
 test("SAM-43 enforces eligible assignment on both Lead inserts and reassignment updates", () => {
   const migration = read("supabase/migrations/20260719020000_add_leads_project_status.sql");
-  const newLead = read("src/app/(dashboard)/leads/new/page.tsx");
+  // S3 #4/#5: the new-lead page now posts to /api/leads, which applies the
+  // same eligibility rule server-side from the caller's own session profile.
+  const newLead = read("src/app/api/leads/route.ts");
+  const newLeadPage = read("src/app/(dashboard)/leads/new/page.tsx");
   const authMe = read("src/app/api/auth/me/route.ts");
 
   assert.match(migration, /TG_OP = 'INSERT'/);
@@ -174,11 +183,12 @@ test("SAM-43 enforces eligible assignment on both Lead inserts and reassignment 
   assert.match(migration, /BEFORE INSERT ON public\.leads/);
   assert.match(authMe, /select\("role, is_active/);
   assert.match(authMe, /isActive: profile\?\.is_active === true/);
-  assert.match(newLead, /fetch\("\/api\/auth\/me"/);
-  assert.match(newLead, /isLeadTransferCandidate\(\{/);
-  assert.match(newLead, /authContext\?\.isActive === true/);
+  assert.match(newLeadPage, /submitNewLead\(/);
+  assert.match(read("src/components/leads/LeadDuplicateNotice.tsx"), /fetch\("\/api\/leads"/);
+  assert.match(newLead, /isLeadTransferCandidate\(\{ role: auth\.role, is_active: auth\.profile\.is_active === true \}\)/);
   assert.match(newLead, /assigned_to: assigneeId/);
   assert.doesNotMatch(newLead, /from\("profiles"\)/);
+  assert.doesNotMatch(newLeadPage, /from\("profiles"\)/);
 });
 
 

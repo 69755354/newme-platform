@@ -24,6 +24,7 @@ const require = createRequire(import.meta.url);
 const Module = require("node:module");
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (relative) => fs.readFileSync(path.join(ROOT, relative), "utf8");
+const skewModule = await import("../../src/lib/deployment-skew.mjs");
 
 function load(relative, mocks = {}, cache = new Map()) {
   const ts = require("typescript");
@@ -104,7 +105,7 @@ test("the prerender cache never writes into the read-only release directory", ()
 
 test("a mismatched release id reloads once, and only once, per client release", (t) => {
   withEnv(t, "NEXT_PUBLIC_DEPLOYMENT_ID", "release-old");
-  const skew = load("src/lib/deployment-skew.ts");
+  const skew = skewModule;
   const storage = fakeStorage();
   let reloads = 0;
   const location = { reload: () => { reloads += 1; } };
@@ -127,17 +128,16 @@ test("a mismatched release id reloads once, and only once, per client release", 
 
 test("the errors Next.js raises for a stale bundle's server action are recognised as skew", (t) => {
   withEnv(t, "NEXT_PUBLIC_DEPLOYMENT_ID", "release-old");
-  const skew = load("src/lib/deployment-skew.ts");
+  const skew = skewModule;
   for (const error of [
     Object.assign(new Error("anything"), { name: "UnrecognizedActionError" }),
     new Error('Failed to find Server Action "abc". This request might be from an older or newer deployment.'),
     new Error("Server Reference ID did not match"),
     new Error('Server Action "x" did not match the expected format'),
-    new Error("Expected RSC response, got text/plain"),
   ]) {
     assert.equal(skew.isVersionSkewError(error), true, error.message);
   }
-  for (const error of [new Error("Failed to fetch"), new Error("unauthorized"), null, "string", { status: 401 }]) {
+  for (const error of [new Error("Failed to fetch"), new Error("unauthorized"), new Error("Expected RSC response, got text/plain"), null, "string", { status: 401 }]) {
     assert.equal(skew.isVersionSkewError(error), false);
   }
 });
@@ -173,7 +173,7 @@ test("the shared session reader reloads a stale tab once and still reports the s
 
   // An unavailable answer is reported as such, not as "signed out".
   status = 503;
-  assert.deepEqual(await session.readSessionIdentity(), { status: "unavailable" });
+  assert.deepEqual(await session.readSessionIdentity({ retryDelaysMs: [] }), { status: "unavailable" });
   status = 401;
   assert.deepEqual(await session.readSessionIdentity(), { status: "unauthenticated" });
   assert.equal(reloads, 1);
@@ -200,7 +200,7 @@ test("a server whose release matches, or reports none, never triggers a reload",
 
 test("GET /api/auth/me reports the release that answered, under the header the client compares", async (t) => {
   withEnv(t, "NEXT_PUBLIC_DEPLOYMENT_ID", "release-server");
-  const skew = load("src/lib/deployment-skew.ts");
+  const skew = skewModule;
   const { NextResponse } = require("next/server");
   const names = { authToken: "sb-fixture-auth-token", refreshToken: "sb-fixture-refresh-token" };
   const user = { id: "fixture", email: "fixture@example.test" };
@@ -281,5 +281,5 @@ test("the dashboard layout and its error boundary reload a stale bundle once ins
   const hook = read("src/hooks/useVersionSkewReload.ts");
   assert.match(hook, /addEventListener\("unhandledrejection"/);
   assert.doesNotMatch(hook, /\/login/);
-  assert.doesNotMatch(read("src/lib/deployment-skew.ts"), /["'`]\/login["'`]/);
+  assert.doesNotMatch(read("src/lib/deployment-skew.mjs"), /["'`]\/login["'`]/);
 });

@@ -115,7 +115,7 @@
 115|| system | Supabase |
 116|| project_url | vfopmpxlhwzpxqegayew.supabase.co |
 117|| anon_key | sb_publishable_0UiLli4lUNE_pwhZ13bRfw_xH4TduY_ |
-118|| service_role_key | [REDACTED — removed from the public tree 2026-11-03; rotation tracked in supabase/preflight/f02-credential-cutover.md §7] |
+118|| service_role_key | [REDACTED — key revoked: GitHub secret-scanning alert #2 (supabase_secret_key, this location) closed 2026-08-19 as revoked; rotation verified 2026-08-20, the leaked key gets 401. String removed from the tree 2026-11-03] |
 119|| pat | sbp_bbaf7 |
 120|| source | MEMORY.md § Supabase |
 121|| scope | newme-platform |

@@ -64,6 +64,9 @@ export const translations = {
       cannotSkipStages: "Cannot skip stages — advance one step at a time",
       invalidStage: "Invalid stage",
       failedToUpdateStage: "Failed to update stage",
+      // OS fix S1 · shared connection-failed view (dashboard layout, server pages)
+      connectionFailed: "Connection failed",
+      connectionFailedHint: "The server did not answer. Check your network and retry.",
     },
     nav: {
       dashboard: "Dashboard",
@@ -1763,6 +1766,9 @@ export const translations = {
       cannotSkipStages: "无法跳过阶段——请逐级推进",
       invalidStage: "无效阶段",
       failedToUpdateStage: "更新阶段失败",
+      // OS fix S1 · 共用“连接失败”视图（仪表盘布局、服务端页面）
+      connectionFailed: "连接失败",
+      connectionFailedHint: "服务器暂时没有响应，请检查网络后重试。",
     },
     nav: {
       dashboard: "驾驶舱",

@@ -2,6 +2,9 @@
 import { createServerSupabase, getRefreshedCookies, getRefreshAttempted, getRefreshFailure, type RefreshedCookie } from "@/lib/supabase-server";
 import { getSupabaseCookieNames } from "@/lib/supabase-cookie-names";
 import { logger } from "@/lib/logger";
+// Relative on purpose: the route's existing tests load it with a mock loader
+// that stubs each "@/" import by name, and this one must not need a stub.
+import { isRetryableAuthError } from "../../../../lib/auth-retryable.mjs";
 import { NextResponse } from "next/server";
 
 const LEGACY_COOKIE_NAMES = ["sb-access-token", "sb-refresh-token"];
@@ -33,7 +36,7 @@ function applyPrivateNoStore(response: NextResponse) {
   // Which release answered. src/lib/session-identity.ts compares it with the
   // client's own release and reloads a stale tab once (version skew). The
   // header name is spelled out here rather than imported from
-  // src/lib/deployment-skew.ts (DEPLOYMENT_ID_HEADER) so the route keeps no
+  // src/lib/deployment-skew.mjs (DEPLOYMENT_ID_HEADER) so the route keeps no
   // client-module import; tests/release/version-skew-protection.test.mjs
   // asserts the two spellings agree.
   const releaseId = process.env.NEXT_PUBLIC_DEPLOYMENT_ID;
@@ -117,6 +120,17 @@ export async function GET(request: Request) {
       () => bearerToken ? supabase.auth.getUser(bearerToken) : supabase.auth.getUser(),
       deadline,
     );
+
+    // The auth service could not be reached or answered 5xx: that is not a
+    // verdict about the session. 503 keeps the client on the page (connection
+    // failed, retry) instead of sending a valid user to /login.
+    if (isRetryableAuthError(authError)) {
+      logger.error(
+        { request_id: requestId, operation: "auth_me", code: "auth_upstream_failure", status: (authError as { status?: number }).status },
+        "Auth service unavailable",
+      );
+      return respond({ error: "auth_unavailable" }, { status: 503 });
+    }
 
     // Invalid or missing session → 401
     if (!user || authError) {

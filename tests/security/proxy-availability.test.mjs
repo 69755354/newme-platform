@@ -17,6 +17,10 @@ function loadProxy(mocks) {
     compilerOptions: { esModuleInterop: true, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   });
   const loaded = new Module(filename);
+  // Give the module a real filename so its relative imports (e.g. the shared
+  // ./lib/auth-retryable.mjs) resolve the way they do in the application.
+  loaded.filename = filename;
+  loaded.paths = Module._nodeModulePaths(path.dirname(filename));
   const previousLoad = Module._load;
   Module._load = (request, parent, isMain) => {
     if (Object.hasOwn(mocks, request)) return mocks[request];

@@ -18,9 +18,10 @@ const MANAGEMENT_ROLES = ["admin", "boss", "operator"];
  * once by src/lib/session-identity.ts instead of being sent to /login.
  *
  * Only a real refusal (401/403, inactive profile) goes to /login. An
- * unavailable answer (timeout, 5xx) keeps the page in its loading state and
- * sets `unavailable`; the dashboard layout, which shares the same in-flight
- * read, shows its connection-error state with a retry.
+ * unavailable answer (timeout, 5xx, after the reader's own retries) sets
+ * `unavailable` and publishes it through the session reader's shared
+ * "unavailable" state, which the dashboard layout renders as the common
+ * "connection failed · retry" view in place of the page.
  */
 export function useRequireRole(allowedRoles: string[] = MANAGEMENT_ROLES) {
   const router = useRouter();

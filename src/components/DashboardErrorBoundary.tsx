@@ -5,7 +5,7 @@ import * as Sentry from "@sentry/nextjs";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import Link from "next/link";
-import { isVersionSkewError, reloadOnceForVersionSkew } from "@/lib/deployment-skew";
+import { isVersionSkewError, reloadOnceForVersionSkew } from "@/lib/deployment-skew.mjs";
 
 // ─── Types ───
 interface ErrorBoundaryProps {

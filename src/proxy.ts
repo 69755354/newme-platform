@@ -3,6 +3,8 @@ import { createMiddlewareClient } from "@/lib/supabase-middleware";
 import { reportServerError } from "@/lib/report-server-error";
 import { shouldRecordActivity } from "@/lib/activity-throttle.mjs";
 import { isActiveProfile } from "@/lib/auth-profile.mjs";
+// Relative on purpose: the proxy's existing tests stub each "@/" import by name.
+import { isRetryableAuthError } from "./lib/auth-retryable.mjs";
 import {
   FORCED_SESSION_ERROR,
   FORCED_SESSION_REDIRECT_PATH,
@@ -79,14 +81,17 @@ async function withAuthTimeout<T>(operation: PromiseLike<T>): Promise<T> {
 
 /**
  * A page navigation (GET/HEAD outside /api) whose edge auth check could not be
- * completed is let through to render. The page shell carries no data: every
- * page under (dashboard) proves its session again through GET /api/auth/me
- * (useAuthRedirect / useRequireRole), and every data read goes through a route
- * handler that resolves and checks the session itself. Redirecting to /login
- * here turned a slow Supabase into "logged out again" for a valid session.
+ * completed (timeout, or a retryable auth-service error) is let through to
+ * render. Client-shell pages carry no data and prove their session again
+ * through GET /api/auth/me; the server-rendered pages (quotes, projects,
+ * settings/ads, cable-costing) run src/lib/server-page-auth.ts themselves,
+ * which re-checks the session, is_active and the forced-password-change
+ * boundary before rendering anything. Redirecting to /login here turned a
+ * slow Supabase into "logged out again" for a valid session.
  *
  * Nothing else is softened: API requests still get 503, and a POST to a page
- * path is a server action, i.e. a write, which keeps failing closed.
+ * path (a server action) is refused with the unavailable redirect whenever
+ * the auth dependency failed at any stage.
  */
 function isSoftFailNavigation(request: NextRequest, isApiRequest: boolean): boolean {
   return !isApiRequest && ["GET", "HEAD"].includes(request.method);
@@ -177,8 +182,12 @@ export async function proxy(request: NextRequest) {
   let user: { id: string } | null = null;
   let authInfrastructureFailed = false;
   try {
-    const { data } = await withAuthTimeout(supabase.auth.getUser(bearerToken));
-    user = data.user;
+    const { data, error } = await withAuthTimeout(supabase.auth.getUser(bearerToken));
+    // auth-js reports an unreachable auth service or an upstream 5xx as an
+    // error result, not an exception; that is a dependency failure, not
+    // "no session".
+    if (isRetryableAuthError(error)) authInfrastructureFailed = true;
+    else user = data.user;
   } catch {
     authInfrastructureFailed = true;
   }
@@ -194,6 +203,11 @@ export async function proxy(request: NextRequest) {
   // redirect below for role-protected pages.
   if (authInfrastructureFailed && softFailNavigation) {
     return deferAuthCheck();
+  }
+  // A server action posted to a page path is a write: with no verdict about
+  // the session it fails closed, at every stage, like an API write does.
+  if (authInfrastructureFailed && !isApiRequest) {
+    return authUnavailable(request, false);
   }
 
   let activeProfile: ActiveProfile | null = null;

@@ -1448,6 +1448,10 @@ export const translations = {
       services: "Services",
       next: "Next",
       close: "Close",
+      // ── OS fix S4: quote and contract error feedback (separate block) ──
+      invalidAmounts: "Discount must be between 0 and 100%, and amounts cannot be negative",
+      statusUpdateFailed: "The quote status could not be saved. Please try again.",
+      milestoneNotRecorded: "Quote status updated, but the lead's quotation milestone could not be recorded",
     },
     products: {
       title: "Product Catalog",
@@ -3128,6 +3132,10 @@ export const translations = {
       services: "服务",
       next: "下一步",
       close: "关闭",
+      // ── OS fix S4: quote and contract error feedback (separate block) ──
+      invalidAmounts: "折扣必须在 0 到 100% 之间，且金额不能为负数",
+      statusUpdateFailed: "报价状态未能保存，请重试",
+      milestoneNotRecorded: "报价状态已更新，但线索的“报价”里程碑未能记录",
     },
     products: {
       title: "产品目录",

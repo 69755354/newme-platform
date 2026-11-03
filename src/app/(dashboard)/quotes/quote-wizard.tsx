@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { DEVICE_CATALOG, findDevice, QUOTATION_DEFAULTS } from "@/lib/device-catalog";
 import { calculateQuotation, type CalculateResult } from "@/lib/quotation-engine";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { clampDiscountRate, discountRateError } from "@/lib/quotation-rules.mjs";
 
 interface Lead { id: string; customer_name: string | null; phone: string | null; }
 interface Room { id: string; name: string; type: string; floor: number; }
@@ -212,6 +213,7 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
 
   const handleSave = async () => {
     if (!s.selectedLeadId) return;
+    if (discountRateError(s.discountRate)) { toast.error(t("quotes.invalidAmounts")); return; }
     d({ type: "SV", saving: true });
     try {
       const dp = Object.entries(flatQ).map(([id, qty]) => {
@@ -225,7 +227,7 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
         discount_amount: calc.discount_amount, tax_rate: 5, tax_amount: calc.tax_amount,
         total_amount: calc.total, currency: "AED", status: "draft",
         devices_json: dp, created_by: user?.id || null,
-        notes: `${t("quotes.calc.property")}: ${s.propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${s.area}㎡\n${t("quotes.calc.installLabor")} (30%): ${calc.install_labor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")} (12%): ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")} (8%): ${calc.project_management.toFixed(2)} AED`,
+        notes: `${t("quotes.calc.property")}: ${s.propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${s.area}㎡\n${t("quotes.calc.installLabor")}: ${calc.install_labor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")}: ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")}: ${calc.project_management.toFixed(2)} AED`,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       }).select("id, quote_no").single();
       if (error || !quote?.quote_no) { console.error("Save error:", error); toast.error(t("quotes.calc.saveFailed") + (error?.message || "Missing database quote number")); return; }
@@ -239,7 +241,7 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
 
   const handleExp = () => {
     if (!s.savedQuoteId) { toast.error(t("quotes.saveFirst")); return; }
-    window.open(`/api/quotations/export?quote_id=${s.savedQuoteId}`, "_blank");
+    window.open(`/api/quotations/export?id=${s.savedQuoteId}`, "_blank");
   };
   const handleSend = () => {
     if (!s.savedQuoteId) { toast.error(t("quotes.saveFirst")); return; }
@@ -479,11 +481,11 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
             <label className="text-xs font-medium text-foreground">{t("quotes.discountRate")}</label>
             <div className="flex items-center gap-1">
               <Input type="number" min={0} max={20} step={0.5} value={s.discountRate}
-                onChange={(e) => d({ type: "DR", rate: parseFloat(e.target.value) || 0 })} className="w-16 h-7 text-xs text-right" /><span className="text-xs text-muted-foreground">%</span>
+                onChange={(e) => d({ type: "DR", rate: clampDiscountRate(e.target.value, 20) })} className="w-16 h-7 text-xs text-right" /><span className="text-xs text-muted-foreground">%</span>
             </div>
           </div>
           <input type="range" min={0} max={20} step={0.5} value={s.discountRate}
-            onChange={(e) => d({ type: "DR", rate: parseFloat(e.target.value) })}
+            onChange={(e) => d({ type: "DR", rate: clampDiscountRate(e.target.value, 20) })}
             className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-copper-500 bg-border" />
         </div>
         <div className="rounded-lg bg-accent/20 p-3 space-y-1.5">

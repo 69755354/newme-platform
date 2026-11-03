@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { fmtAED } from "@/shared/utils/format";
 import type { Database, Json } from "@/types/database";
+import { clampDiscountRate, normalizeQuotationLineItems } from "@/lib/quotation-rules.mjs";
 
 /* ─── Types ─── */
 interface QuotationLineItem extends Record<string, Json> {
@@ -93,19 +94,17 @@ interface Product {
   description: string | null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function parseLineItems(value: unknown): QuotationLineItem[] {
-  if (value === null || value === undefined) return [];
-  if (!Array.isArray(value)) throw new Error("Quotation line items must be a JSON array");
-  return value.map((item, index) => {
-    if (!isRecord(item) || typeof item.product_id !== "string" || typeof item.product_name !== "string" || typeof item.description !== "string" || typeof item.quantity !== "number" || !Number.isFinite(item.quantity) || typeof item.unit_price !== "number" || !Number.isFinite(item.unit_price) || typeof item.total_price !== "number" || !Number.isFinite(item.total_price)) {
-      throw new Error(`Invalid quotation line item at index ${index}`);
-    }
-    return { product_id: item.product_id, product_name: item.product_name, description: item.description, quantity: item.quantity, unit_price: item.unit_price, total_price: item.total_price };
-  });
+  // Calculator, wizard, engine and add-product rows are all readable here; the
+  // strict single-shape parser used to refuse every calculator quotation.
+  return normalizeQuotationLineItems(value).map((item) => ({
+    product_id: item.id,
+    product_name: item.name,
+    description: item.description,
+    quantity: item.quantity,
+    unit_price: item.unit_price,
+    total_price: item.line_total,
+  }));
 }
 
 function getErrorMessage(error: unknown): string {
@@ -238,6 +237,7 @@ export default function QuotationDetailPage() {
     if (!product) return;
 
     setAddingItem(true);
+    let previousItems: QuotationLineItem[] | null = null;
 
     try {
       const newItem: QuotationLineItem = {
@@ -251,17 +251,18 @@ export default function QuotationDetailPage() {
 
       const updatedItems = [...lineItems, newItem];
       setLineItems(updatedItems);
+      previousItems = lineItems;
 
       // Recalculate totals
       const subtotal = updatedItems.reduce((sum, item) => sum + item.total_price, 0);
-      const discountRate = quotation.discount_rate || 0;
+      const discountRate = clampDiscountRate(quotation.discount_rate || 0);
       const discountAmount = subtotal * (discountRate / 100);
       const taxRate = quotation.tax_rate || 5;
       const taxAmount = (subtotal - discountAmount) * (taxRate / 100);
       const totalAmount = subtotal - discountAmount + taxAmount;
 
       // Update quotation
-      const { error: updateErr } = await supabase
+      const { data: updatedRows, error: updateErr } = await supabase
         .from("quotations")
         .update({
           devices_json: updatedItems,
@@ -271,9 +272,12 @@ export default function QuotationDetailPage() {
           total_amount: totalAmount,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", quotation.id);
+        .eq("id", quotation.id)
+        .select("id");
 
       if (updateErr) throw updateErr;
+      // Row security answers a refused update with success and no rows.
+      if (!updatedRows || updatedRows.length === 0) throw new Error(t("common.saveFailedRetry"));
 
       setQuotation({
         ...quotation,
@@ -288,6 +292,8 @@ export default function QuotationDetailPage() {
       setSelectedProduct("");
     } catch (err: unknown) {
       console.error("Failed to add item:", err);
+      // The row was not saved; do not keep showing it.
+      if (previousItems) setLineItems(previousItems);
       toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
     } finally {
       setAddingItem(false);
@@ -298,19 +304,20 @@ export default function QuotationDetailPage() {
   const handleRemoveLineItem = async (index: number) => {
     if (!quotation) return;
 
+    const previousItems = lineItems;
     const updatedItems = lineItems.filter((_, i) => i !== index);
     setLineItems(updatedItems);
 
     try {
       // Recalculate totals
       const subtotal = updatedItems.reduce((sum, item) => sum + item.total_price, 0);
-      const discountRate = quotation.discount_rate || 0;
+      const discountRate = clampDiscountRate(quotation.discount_rate || 0);
       const discountAmount = subtotal * (discountRate / 100);
       const taxRate = quotation.tax_rate || 5;
       const taxAmount = (subtotal - discountAmount) * (taxRate / 100);
       const totalAmount = subtotal - discountAmount + taxAmount;
 
-      const { error: updateErr } = await supabase
+      const { data: updatedRows, error: updateErr } = await supabase
         .from("quotations")
         .update({
           devices_json: updatedItems,
@@ -320,9 +327,12 @@ export default function QuotationDetailPage() {
           total_amount: totalAmount,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", quotation.id);
+        .eq("id", quotation.id)
+        .select("id");
 
       if (updateErr) throw updateErr;
+      // Row security answers a refused update with success and no rows.
+      if (!updatedRows || updatedRows.length === 0) throw new Error(t("common.saveFailedRetry"));
 
       setQuotation({
         ...quotation,
@@ -336,6 +346,7 @@ export default function QuotationDetailPage() {
       toast.success(t("quotations.itemRemoved") || "Item removed");
     } catch (err: unknown) {
       console.error("Failed to remove item:", err);
+      setLineItems(previousItems);
       toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
     }
   };
@@ -344,22 +355,24 @@ export default function QuotationDetailPage() {
   const handleUpdateQuantity = async (index: number, newQuantity: number) => {
     if (!quotation || newQuantity < 1) return;
 
-    const updatedItems = [...lineItems];
-    updatedItems[index].quantity = newQuantity;
-    updatedItems[index].total_price =
-      updatedItems[index].unit_price * newQuantity;
+    const previousItems = lineItems;
+    const updatedItems = lineItems.map((item, i) =>
+      i === index
+        ? { ...item, quantity: newQuantity, total_price: item.unit_price * newQuantity }
+        : item,
+    );
     setLineItems(updatedItems);
 
     try {
       // Recalculate totals
       const subtotal = updatedItems.reduce((sum, item) => sum + item.total_price, 0);
-      const discountRate = quotation.discount_rate || 0;
+      const discountRate = clampDiscountRate(quotation.discount_rate || 0);
       const discountAmount = subtotal * (discountRate / 100);
       const taxRate = quotation.tax_rate || 5;
       const taxAmount = (subtotal - discountAmount) * (taxRate / 100);
       const totalAmount = subtotal - discountAmount + taxAmount;
 
-      const { error: updateErr } = await supabase
+      const { data: updatedRows, error: updateErr } = await supabase
         .from("quotations")
         .update({
           devices_json: updatedItems,
@@ -369,9 +382,12 @@ export default function QuotationDetailPage() {
           total_amount: totalAmount,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", quotation.id);
+        .eq("id", quotation.id)
+        .select("id");
 
       if (updateErr) throw updateErr;
+      // Row security answers a refused update with success and no rows.
+      if (!updatedRows || updatedRows.length === 0) throw new Error(t("common.saveFailedRetry"));
 
       setQuotation({
         ...quotation,
@@ -383,6 +399,7 @@ export default function QuotationDetailPage() {
       });
     } catch (err: unknown) {
       console.error("Failed to update quantity:", err);
+      setLineItems(previousItems);
       toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
     }
   };
@@ -408,12 +425,15 @@ export default function QuotationDetailPage() {
         updateData.rejected_at = new Date().toISOString();
       }
 
-      const { error: updateErr } = await supabase
+      const { data: updatedRows, error: updateErr } = await supabase
         .from("quotations")
         .update(updateData)
-        .eq("id", quotation.id);
+        .eq("id", quotation.id)
+        .select("id");
 
       if (updateErr) throw updateErr;
+      // Row security answers a refused update with success and no rows.
+      if (!updatedRows || updatedRows.length === 0) throw new Error(t("common.saveFailedRetry"));
 
       setQuotation({
         ...quotation,

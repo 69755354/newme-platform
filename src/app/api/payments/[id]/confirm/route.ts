@@ -94,8 +94,10 @@ export async function POST(
       // payment, class 28 for a session the boundary no longer accepts. Reporting
       // all of them as 500 told the client "we broke" and invited a retry.
       const failure = moneyRpcFailure(rpcErr, "Failed to confirm payment");
-      const log = failure.status >= 500 ? logger.error : logger.warn;
-      log(
+      // pino methods read `this`; a detached reference threw and turned every
+      // refusal (42501/22023/P0002) into a 500 from the catch block (S2 fix).
+      const level = failure.status >= 500 ? "error" : "warn";
+      logger[level](
         {
           err: rpcErr,
           request_id,

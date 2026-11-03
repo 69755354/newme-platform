@@ -181,6 +181,10 @@ export const translations = {
       salesAnalytics: "Analytics",
       salesProducts: "Products",
       cableCosting: "Cable Costing",
+      // ── OS fix S2: finance / designer sidebars ──
+      roleFinance: "Finance",
+      roleDesigner: "Designer",
+      financePayments: "Payments",
     },
     // Cable & pulling-labour costing (employee self-service estimating tool).
     // Wording only — every figure on that page comes from /api/cable-costing/*,
@@ -2078,6 +2082,10 @@ export const translations = {
       salesAnalytics: "分析",
       salesProducts: "产品库",
       cableCosting: "线材报价",
+      // ── OS fix S2: finance / designer sidebars ──
+      roleFinance: "财务",
+      roleDesigner: "设计师",
+      financePayments: "回款",
     },
     cableCosting: {
       title: "线材与穿线报价",

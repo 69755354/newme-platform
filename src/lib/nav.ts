@@ -1,9 +1,11 @@
 /**
  * Dashboard sidebar navigation configuration.
  *
- * Two role-scoped arrays are exported:
- *   - MGMT_NAV  → admin / boss / operator (12 items, includes ads, projects, team)
- *   - SALES_NAV → sales (9 items, includes workbench, payments)
+ * Four role-scoped arrays are exported:
+ *   - MGMT_NAV     → admin / boss / operator (includes ads, projects, team)
+ *   - SALES_NAV    → sales (includes workbench, payments)
+ *   - FINANCE_NAV  → finance (contracts, payments, cable costing)
+ *   - DESIGNER_NAV → designer (projects, cable costing)
  *
  * An item may narrow its audience further with `roles`, and one does: /team is
  * shown to admin and boss only, because src/app/actions/team.ts refuses every
@@ -54,7 +56,9 @@ export interface NavItem {
 export const MGMT_NAV: NavItem[] = [
   { href: "/dashboard", labelKey: "mgmtDashboard", icon: LayoutDashboard },
   { href: "/leads",     labelKey: "mgmtLeads", icon: Users },
-  { href: "/quotes",    labelKey: "mgmtQuotes", icon: Calculator },
+  // admin/boss only: src/app/(dashboard)/quotes/page.tsx redirects every other
+  // role to /dashboard, so operator was offered a link that silently bounced.
+  { href: "/quotes",    labelKey: "mgmtQuotes", icon: Calculator, roles: ["admin", "boss"] },
   // Cable & pulling-labour costing is an employee self-service tool with no role
   // filter, so it appears in BOTH arrays — the sidebar shows exactly one of them
   // (MGMT_NAV for admin/boss/operator, SALES_NAV for sales), so a single entry
@@ -87,8 +91,36 @@ export const SALES_NAV: NavItem[] = [
   { href: "/products",  labelKey: "salesProducts", icon: Package },
 ];
 
+// ─── Finance nav — contracts, payments and the self-service costing tool ───
+// Finance used to receive SALES_NAV (review 4c problem 20): "My Leads",
+// "Products & Quotes", "Analytics" and "Products" all bounced the role back to
+// the dashboard. Only pages whose guard admits finance are listed.
+export const FINANCE_NAV: NavItem[] = [
+  { href: "/contracts", labelKey: "mgmtContracts", icon: FileText },
+  { href: "/payments",  labelKey: "financePayments", icon: CreditCard },
+  { href: "/cable-costing", labelKey: "cableCosting", icon: Cable },
+];
+
+// ─── Designer nav — projects it is involved in and the costing tool ───
+export const DESIGNER_NAV: NavItem[] = [
+  { href: "/projects",  labelKey: "mgmtProjects", icon: Briefcase },
+  { href: "/cable-costing", labelKey: "cableCosting", icon: Cable },
+];
+
 /** Roles that hold MGMT_NAV. Mirrors the layout's own isManagement derivation. */
 export const MANAGEMENT_ROLES: readonly string[] = ["admin", "boss", "operator"];
+
+/** The array a role holds, by name; the sidebar test resolves the same map. */
+export const NAV_ARRAY_FOR_ROLE: Readonly<Record<string, "MGMT_NAV" | "SALES_NAV" | "FINANCE_NAV" | "DESIGNER_NAV">> = {
+  admin: "MGMT_NAV",
+  boss: "MGMT_NAV",
+  operator: "MGMT_NAV",
+  sales: "SALES_NAV",
+  finance: "FINANCE_NAV",
+  designer: "DESIGNER_NAV",
+};
+
+const NAV_ARRAYS = { MGMT_NAV, SALES_NAV, FINANCE_NAV, DESIGNER_NAV } as const;
 
 /**
  * The sidebar for a role, in order.
@@ -98,6 +130,6 @@ export const MANAGEMENT_ROLES: readonly string[] = ["admin", "boss", "operator"]
  * the sales array, which is the narrower of the two.
  */
 export function navForRole(role: string | null | undefined): NavItem[] {
-  const base = role && MANAGEMENT_ROLES.includes(role) ? MGMT_NAV : SALES_NAV;
+  const base = NAV_ARRAYS[(role && NAV_ARRAY_FOR_ROLE[role]) || "SALES_NAV"];
   return base.filter((item) => !item.roles || item.roles.includes(role ?? ""));
 }

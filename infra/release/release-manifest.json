@@ -219,6 +219,11 @@
       "version": "20261025180000",
       "file": "20261025180000_meta_crm_lead_stage_events.sql",
       "sha256": "21a3da79167aa95aae254e000feb9b73966fb9a59e5c8db4d7ed1ebeaa13f4f2"
+    },
+    {
+      "version": "20261104110000",
+      "file": "20261104110000_role_least_privilege.sql",
+      "sha256": "f8b064dfdaa4619e7b748749fd0c5f6cbc6eb3e2bfae88848109f331e3dc0728"
     }
   ],
   "companions": [

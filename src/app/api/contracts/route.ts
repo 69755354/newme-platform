@@ -180,8 +180,10 @@ export async function POST(request: NextRequest) {
 
     if (rpcErr) {
       const failure = moneyRpcFailure(rpcErr, "Failed to create contract");
-      const log = failure.status >= 500 ? logger.error : logger.warn;
-      log(
+      // pino methods read `this`; a detached reference threw and turned every
+      // refusal (42501/22023/P0002) into a 500 from the catch block (S2 fix).
+      const level = failure.status >= 500 ? "error" : "warn";
+      logger[level](
         {
           err: rpcErr,
           request_id,

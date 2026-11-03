@@ -7,6 +7,7 @@ import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
 import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
 import { allowedSetContractStatuses } from "@/lib/contract-status-capabilities.mjs";
+import { contractActionPermissions } from "@/lib/contract-action-permissions.mjs";
 
 /**
  * GET /api/contracts/[id]
@@ -143,6 +144,7 @@ export async function GET(
         payments: paymentsNamed,
         approvals: approvalsNamed,
         canManage: isManagement,
+        permissions: contractActionPermissions(role, contract.sales_id === user.id, contract.status),
         allowedStatusTransitions: allowedSetContractStatuses(
           role,
           contract.sales_id === user.id,
@@ -220,8 +222,10 @@ export async function PATCH(
 
     if (rpcErr) {
       const failure = moneyRpcFailure(rpcErr, "Failed to update contract status");
-      const log = failure.status >= 500 ? logger.error : logger.warn;
-      log(
+      // pino methods read `this`; a detached reference threw and turned every
+      // refusal (42501/22023/P0002) into a 500 from the catch block (S2 fix).
+      const level = failure.status >= 500 ? "error" : "warn";
+      logger[level](
         {
           err: rpcErr,
           request_id,

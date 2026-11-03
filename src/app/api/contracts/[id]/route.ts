@@ -75,6 +75,17 @@ export async function GET(
       return NextResponse.json({ error: "Contract not found" }, { status: 404 });
     }
 
+    // Finance (and a manager-less role on a contract it may read) has no lead
+    // policy, so the join above is null for it. contract_lead_display() returns
+    // the one lead fact this page needs — the customer's display name — for a
+    // caller who may read the contract, and nothing else (OS fix S2).
+    if (!contract.leads && contract.lead_id) {
+      const { data: display } = await supabase.rpc("contract_lead_display", { p_lead_id: contract.lead_id });
+      const row = display?.[0];
+      // phone and source stay empty on purpose: the caller has no lead policy.
+      if (row?.id) contract.leads = { id: row.id, customer_name: row.customer_name, phone: null, source: "" };
+    }
+
     if (!isManagement && contract.sales_id !== user.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

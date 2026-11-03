@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ErrorState } from "@/components/ui/error-state";
 import QuickCreateLeadDialog from "@/components/QuickCreateLeadDialog";
-import { LEAD_CREATE_ROLES } from "@/lib/lead-create-roles.mjs";
+import { LEAD_CREATE_ROLES, LEAD_IMPORT_ROLES } from "@/lib/lead-create-roles.mjs";
 import ExcelImportDialog from "@/components/leads/ExcelImportDialog";
 import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
@@ -137,6 +137,7 @@ function LeadsContent() {
   // S2: finance and designer have no INSERT policy on leads, so the create and
   // import buttons were shown to roles whose request could only fail.
   const canCreateLead = LEAD_CREATE_ROLES.includes(salesRole ?? "");
+  const canImportLeads = LEAD_IMPORT_ROLES.includes(salesRole ?? "");
 
   // ─── Infrastructure hooks ───
   const showEmptyStages = true;
@@ -237,16 +238,16 @@ function LeadsContent() {
               <TrendingUp className="w-3.5 h-3.5" />{t("leads.pipelineOverview")}
             </button>
             {canCreateLead && (
-              <>
-                <button onClick={() => setShowQuickCreate(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/85 transition-colors">
-                  <Plus className="w-3.5 h-3.5" />{t("common.create")}
-                </button>
-                <button onClick={() => setShowImport(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-                  <Upload className="w-3.5 h-3.5" />{t("leads.importBtn")}
-                </button>
-              </>
+              <button onClick={() => setShowQuickCreate(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/85 transition-colors">
+                <Plus className="w-3.5 h-3.5" />{t("common.create")}
+              </button>
+            )}
+            {canImportLeads && (
+              <button onClick={() => setShowImport(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+                <Upload className="w-3.5 h-3.5" />{t("leads.importBtn")}
+              </button>
             )}
           </div>
         </div>

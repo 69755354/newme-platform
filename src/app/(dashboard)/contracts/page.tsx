@@ -26,6 +26,7 @@ import { fmtAED } from "@/shared/utils/format";
 // rows to `any[]`. Two unchecked declarations of one read model — see
 // src/types/contracts.ts for what they disagreed about.
 import type { ContractListResponse, ContractListRow } from "@/types/contracts";
+import { contractActionPermissions } from "@/lib/contract-action-permissions.mjs";
 
 type Contract = ContractListRow;
 
@@ -56,6 +57,7 @@ export default function ContractsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -267,13 +269,12 @@ export default function ContractsPage() {
     return false;
   };
 
-  const canUpload = (c: Contract) => {
-    return ["draft", "pending_admin", "pending_ceo"].includes(c.status);
-  };
-
-  const canRevoke = (c: Contract) => {
-    return (role === "admin" || role === "boss") && ["active", "approved"].includes(c.status);
-  };
+  // S2: the same per-role rules the detail page and the routines use.
+  const actionPermissions = (c: Contract) =>
+    contractActionPermissions(role ?? "", !!userId && c.sales_id === userId, c.status);
+  const canUpload = (c: Contract) => actionPermissions(c).upload;
+  const canRevoke = (c: Contract) => actionPermissions(c).revoke;
+  const canRemind = (c: Contract) => actionPermissions(c).remind;
 
   // Fetch auth + contracts from BFF API
   useEffect(() => {
@@ -295,6 +296,7 @@ export default function ContractsPage() {
         setContracts(json.contracts ?? []);
         setTotalCount(json.totalCount ?? 0);
         setRole(json.role);
+        setUserId(json.userId ?? null);
       } catch (err) {
         console.error(err);
         setError(t("common.loadFailedRetry"));
@@ -386,7 +388,7 @@ export default function ContractsPage() {
           <Card className="bg-card border-border"><CardContent className="p-8 text-center text-muted-foreground">{t("contracts.noContracts")}</CardContent></Card>
         ) : contracts.map(c => {
           const fpBadge = getFirstPaymentBadge(c);
-          const needsReminder = c.first_payment_status !== "paid";
+          const needsReminder = c.first_payment_status !== "paid" && canRemind(c);
           const showApproveReject = canApproveReject(c);
           const showUpload = canUpload(c);
           const showRevoke = canRevoke(c);

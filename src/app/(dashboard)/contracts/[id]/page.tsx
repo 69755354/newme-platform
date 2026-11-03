@@ -119,7 +119,7 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
 const STATUS_REASON_REQUIRED = new Set(["terminated"]);
 
 export default function ContractDetailPage() {
-  const { loading: roleLoading, blocked } = useRequireRole([...CONTRACT_READ_ROLES]);
+  const { loading: roleLoading, blocked, role: viewerRole } = useRequireRole([...CONTRACT_READ_ROLES]);
   const params = useParams();
   const router = useRouter();
   const { t } = useLanguage();
@@ -554,9 +554,12 @@ export default function ContractDetailPage() {
               <>
                 <InfoRow icon={<User className="w-3.5 h-3.5" />} label={t("leadDetail.customerName")} value={contract.leads.customer_name || "—"} />
                 <InfoRow icon={<FileText className="w-3.5 h-3.5" />} label={t("leads.source")} value={contract.leads.source || "—"} />
-                <Link prefetch={false} href={`/leads/${contract.leads.id}`} className="inline-flex items-center gap-1 text-xs text-copper-400 hover:underline mt-1">
-                  {t("leadDetail.viewLead")} →
-                </Link>
+                {/* finance has no read access to lead rows (S2), so the link would only bounce it */}
+                {viewerRole !== "finance" && (
+                  <Link prefetch={false} href={`/leads/${contract.leads.id}`} className="inline-flex items-center gap-1 text-xs text-copper-400 hover:underline mt-1">
+                    {t("leadDetail.viewLead")} →
+                  </Link>
+                )}
               </>
             ) : (
               <p className="text-xs text-muted-foreground">—</p>

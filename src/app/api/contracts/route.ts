@@ -303,7 +303,8 @@ export async function GET(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: "Failed to fetch contracts" }, { status: 500 });
     }
-    return applyPrivateNoStore(NextResponse.json({ data }));
+    // role: the lead detail contracts panel shows "New contract" to admin/boss only (S2).
+    return applyPrivateNoStore(NextResponse.json({ data, role: userRole }));
   } catch (err: any) {
     logger.error(
       {

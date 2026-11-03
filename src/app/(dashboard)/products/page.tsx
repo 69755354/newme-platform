@@ -61,7 +61,9 @@ const categoryLabelKey = (category: string | null | undefined) => {
 
 export default function ProductsPage() {
   const { t } = useLanguage();
-  const { loading: roleLoading } = useRequireRole(["admin", "boss", "operator", "sales"]);
+  const { loading: roleLoading, role } = useRequireRole(["admin", "boss", "operator", "sales"]);
+  // /quotes admits admin/boss/sales only (server redirect), so operator gets no back link (review F-4).
+  const canOpenQuotes = role === "admin" || role === "boss" || role === "sales";
 
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
@@ -121,10 +123,12 @@ export default function ProductsPage() {
 
   return (
     <DashboardScrollContainer className="space-y-4">
-      <Link prefetch={false} href="/quotes" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-1">
-        <ArrowLeft className="w-3.5 h-3.5" />
-        {t("products.backToQuotes")}
-      </Link>
+      {canOpenQuotes && (
+        <Link prefetch={false} href="/quotes" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-1">
+          <ArrowLeft className="w-3.5 h-3.5" />
+          {t("products.backToQuotes")}
+        </Link>
+      )}
       {/* ─── Header ─── */}
       <div className="flex items-center justify-between">
         <div>

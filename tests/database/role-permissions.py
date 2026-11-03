@@ -141,9 +141,12 @@ for table in ("activities", "business_events", "lead_milestones", "transfer_hist
 passed("finance reads no activities, events, milestones, transfers, customers or lead files")
 
 assert count(FINANCE, "select count(*) from public.contracts where contract_no = 'S2-CONTRACT-1';") == 1
-assert count(FINANCE, f"select count(*) from public.leads where id in ('{LEAD_SALES}','{LEAD_DESIGNER}','{LEAD_OTHER}');") == 1
-assert count(FINANCE, f"select count(*) from public.leads where id = '{LEAD_SALES}';") == 1
-passed("finance reads contracts and only the lead behind a contract")
+assert count(FINANCE, f"select count(*) from public.leads where id in ('{LEAD_SALES}','{LEAD_DESIGNER}','{LEAD_OTHER}');") == 0
+assert count(FINANCE, f"select count(*) from public.contract_lead_display('{LEAD_SALES}') where customer_name = 'S2 lead one';") == 1
+assert count(FINANCE, f"select count(*) from public.contract_lead_display('{LEAD_OTHER}');") == 0
+assert count(DESIGNER, f"select count(*) from public.contract_lead_display('{LEAD_SALES}');") == 0
+assert count(SALES, f"select count(*) from public.contract_lead_display('{LEAD_SALES}');") == 1
+passed("finance reads contracts and no lead rows; the contract customer name comes from contract_lead_display() for roles that may see the contract")
 
 assert count(DESIGNER, "select count(*) from public.activities where content like 'S2 %';") == 1
 assert count(DESIGNER, f"select count(*) from public.activities where lead_id = '{LEAD_DESIGNER}';") == 1
@@ -153,6 +156,43 @@ assert count(DESIGNER, "select count(*) from public.transfer_history;") == 0
 assert count(DESIGNER, f"select count(*) from public.leads where id in ('{LEAD_SALES}','{LEAD_DESIGNER}','{LEAD_OTHER}');") == 1
 assert count(DESIGNER, "select count(*) from public.projects where name = 'S2 project';") == 1
 passed("designer reads only the leads, activities and projects it is involved in")
+
+# review B-1: no way to become "involved" by writing projects
+for uid in (DESIGNER, FINANCE):
+    rc, out, err = scenario(uid, f"insert into public.projects (name, lead_id, sales_id, project_manager) values ('evil', '{LEAD_OTHER}', '{uid}', '{uid}');")
+    # the BEFORE INSERT trigger fires ahead of the policy check; either refusal is the boundary
+    assert rc != 0 and ("row-level security" in err or "assigned to you" in err), (uid, err)
+    rc, out, err = scenario(uid, f"insert into public.projects (name, sales_id, project_manager) values ('evil', '{uid}', '{uid}');")
+    assert rc != 0 and "row-level security" in err, (uid, err)
+rc, out, err = scenario(DESIGNER, f"update public.projects set lead_id = '{LEAD_OTHER}' where name = 'S2 project';")
+assert rc != 0 and "manager only" in err, err
+rc, out, err = scenario(DESIGNER, f"update public.projects set assigned_to = '{SALES}' where name = 'S2 project';")
+assert rc != 0 and "manager only" in err, err
+assert count(DESIGNER, "update public.projects set name = 'S2 project renamed' where name = 'S2 project'; select count(*) from public.projects where name = 'S2 project renamed';") == 1
+rc, out, err = scenario(SALES, f"insert into public.projects (name, lead_id, sales_id) values ('evil', '{LEAD_OTHER}', '{SALES}');")
+assert rc != 0 and "assigned to you" in err, err
+assert count(SALES, f"insert into public.projects (name, lead_id, sales_id) values ('mine', '{LEAD_SALES}', '{SALES}'); select count(*) from public.projects where name = 'mine';") == 1
+rc, out, err = scenario(SALES, f"update public.projects set lead_id = '{LEAD_OTHER}' where name = 'S2 project'; reset role; select count(*) from public.projects where name = 'S2 project' and lead_id = '{LEAD_DESIGNER}';")
+assert rc == 0 and out.splitlines()[-1] == "1", (out, err)   # not the salesperson's project: untouched
+assert count(ADMIN, f"update public.projects set lead_id = '{LEAD_SALES}' where name = 'S2 project'; select count(*) from public.projects where name = 'S2 project' and lead_id = '{LEAD_SALES}';") == 1
+passed("designer, finance and sales cannot attach or re-point a project to a lead that is not theirs; managers can")
+
+# review B-1: lead_workflow_stages no longer leaks lead ids and notes
+rc, out, err = scenario(DESIGNER,
+    f"reset role; insert into public.lead_workflow_stages (lead_id, stage_key, notes) values ('{LEAD_OTHER}', 'design', 'S2 secret'), ('{LEAD_DESIGNER}', 'design', 'S2 visible'); "
+    + act_as(DESIGNER) + " select count(*) || ':' || coalesce(string_agg(notes, ','), '') from public.lead_workflow_stages where notes like 'S2 %';")
+assert rc == 0 and out.splitlines()[-1] == "1:S2 visible", (out, err)
+passed("designer reads workflow stages only for its involved leads")
+
+# review F-6: file records and customers
+for uid in (DESIGNER, FINANCE):
+    rc, out, err = scenario(uid, f"insert into public.lead_files (lead_id, uploaded_by, file_name, file_path) values ('{LEAD_OTHER}', '{uid}', 'x', 'x');")
+    assert rc != 0 and "row-level security" in err, (uid, err)
+    rc, out, err = scenario(uid, f"insert into public.customers (name, assigned_sales_id) values ('S2 cust', '{uid}');")
+    assert rc != 0 and "row-level security" in err, (uid, err)
+assert count(DESIGNER, f"insert into public.lead_files (lead_id, uploaded_by, file_name, file_path) values ('{LEAD_DESIGNER}', '{DESIGNER}', 'x', 'x'); select count(*) from public.lead_files where lead_id = '{LEAD_DESIGNER}';") == 1
+assert count(SALES, f"insert into public.customers (name, assigned_sales_id) values ('S2 cust', '{SALES}'); select count(*) from public.customers where name = 'S2 cust';") == 1
+passed("designer and finance cannot attach files to leads they do not see or create customers; designer may file on its own lead, sales still creates customers")
 
 # designer insert on an invisible lead refused; on an involved lead allowed
 rc, out, err = scenario(DESIGNER,
@@ -200,5 +240,31 @@ select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 assert unpinned == "0", unpinned
 assert query("select count(*) from pg_proc where proname in ('money_write_is_direct','guard_contracts_write','guard_payments_write','guard_installment_plans_write','guard_definer_only_write','require_current_session','contract_transition_is_allowed','guard_contract_transition','guard_quotations_write')") == "9"
 passed("the nine guard functions carry a pinned search_path")
+
+# ---------------------------------------------------------------------------
+# 4. The release manifest's posture predicate is true here and notices drift
+# ---------------------------------------------------------------------------
+manifest = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "infra", "release", "release-manifest.json")))
+predicate = next(x["sql"] for x in manifest["posture"]["deferred_contract"]["predicates"] if x["name"] == "s2-role-least-privilege-present")
+assert query(predicate) == "t", "posture predicate is false on a migrated database"
+# each B-1 guard, removed inside a rolled-back transaction, must flip the predicate
+for drift in (
+    "drop trigger trg_guard_projects_lead_binding on public.projects",
+    "drop policy policy_projects_insert_sales on public.projects",
+    "create policy policy_lead_workflow_stages_select_designer on public.lead_workflow_stages for select to authenticated using (true)",
+    "drop policy lead_files_insert_staff on public.lead_files",
+    "drop function public.contract_lead_display(uuid)",
+):
+    flipped = query(f"begin; {drift}; select ({predicate}); rollback;").splitlines()
+    assert flipped and flipped[-1] == "f", (drift, flipped)
+passed("the s2-role-least-privilege-present predicate holds after the migration and fails when any guard is removed")
+
+# re-applying the migration is a no-op for the predicate and for the policies
+before = query("select md5(string_agg(policyname || coalesce(qual,'') || coalesce(with_check,''), ',' order by tablename, policyname)) from pg_policies where schemaname = 'public'")
+migration = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "supabase", "migrations", "20261104110000_role_least_privilege.sql")
+p = subprocess.run(COMMAND + ["-1", "-f", migration], capture_output=True, text=True, timeout=60)
+assert p.returncode == 0, p.stderr
+assert query("select md5(string_agg(policyname || coalesce(qual,'') || coalesce(with_check,''), ',' order by tablename, policyname)) from pg_policies where schemaname = 'public'") == before
+passed("re-running the migration leaves every policy unchanged")
 
 print(f"{len(checks)} role permission checks passed")

@@ -128,6 +128,7 @@ export async function GET(request: Request) {
   const responseData: ContractListResponse = {
     contracts,
     role,
+    userId,
     totalCount: count ?? 0,
   }
 

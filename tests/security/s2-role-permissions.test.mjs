@@ -24,7 +24,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 import { contractActionPermissions, APPROVAL_STEP_ROLES } from "../../src/lib/contract-action-permissions.mjs";
-import { LEAD_CREATE_ROLES } from "../../src/lib/lead-create-roles.mjs";
+import { LEAD_CREATE_ROLES, LEAD_IMPORT_ROLES } from "../../src/lib/lead-create-roles.mjs";
 import * as moneyRpc from "../../src/lib/money-rpc.mjs";
 
 const require = createRequire(import.meta.url);
@@ -256,10 +256,10 @@ test("the contract detail API and page use the shared permissions, not canManage
 // ───────────────────────────────────────────────────────────────────────────
 // 4. Permission-driven visibility
 // ───────────────────────────────────────────────────────────────────────────
-test("the New Lead and import buttons are shown only to roles with a leads INSERT policy", () => {
+test("the New Lead and import buttons are shown only to roles whose requests are accepted", () => {
   const page = read("src/app/(dashboard)/leads/page.tsx");
   assert.match(page, /const canCreateLead = LEAD_CREATE_ROLES\.includes\(salesRole \?\? ""\)/);
-  assert.match(page, /\{canCreateLead && \(\s*<>\s*<button onClick=\{\(\) => setShowQuickCreate\(true\)\}/);
+  assert.match(page, /\{canCreateLead && \(\s*<button onClick=\{\(\) => setShowQuickCreate\(true\)\}/);
   assert.deepEqual([...LEAD_CREATE_ROLES], ["admin", "boss", "operator", "sales"]);
   // Derived from the policies, not restated: these are the roles the INSERT
   // policies on public.leads name.
@@ -267,6 +267,66 @@ test("the New Lead and import buttons are shown only to roles with a leads INSER
   assert.match(policies, /policy_leads_insert_admin\s+ON leads FOR INSERT TO authenticated\s+WITH CHECK \(EXISTS \(SELECT 1 FROM profiles WHERE id = auth\.uid\(\) AND role IN \('admin','boss','operator'\)\)\)/);
   const s2 = read("supabase/migrations/20261104110000_role_least_privilege.sql");
   assert.match(s2, /policy_leads_insert_sales ON public\.leads FOR INSERT TO authenticated WITH CHECK \('\s*\|\| '\(EXISTS \(SELECT 1 FROM public\.profiles WHERE id = auth\.uid\(\) AND role = ''sales''\)\)/);
+});
+
+test("the Import button follows the import routes (admin and boss only), not the create roles (review F-1)", () => {
+  const page = read("src/app/(dashboard)/leads/page.tsx");
+  assert.match(page, /const canImportLeads = LEAD_IMPORT_ROLES\.includes\(salesRole \?\? ""\)/);
+  assert.match(page, /\{canImportLeads && \(\s*<button onClick=\{\(\) => setShowImport\(true\)\}/);
+  assert.deepEqual([...LEAD_IMPORT_ROLES], ["admin", "boss"]);
+  // bound to the routes: both refuse everything outside this list
+  for (const route of ["src/app/api/leads/import/preview/route.ts", "src/app/api/leads/import/confirm/route.ts"]) {
+    const source = read(route);
+    const gate = source.includes('!["admin", "boss"].includes(profile.role)');
+    assert.ok(gate, `${route} no longer restricts the import to admin and boss`);
+  }
+});
+
+test("lead detail offers 'New contract' only to roles /contracts/new admits (review F-2)", () => {
+  const panel = read("src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx");
+  assert.match(panel, /setCanCreateContract\(json\.role === "admin" \|\| json\.role === "boss"\)/);
+  assert.equal((panel.match(/href=\{`\/contracts\/new\?lead_id=\$\{leadId\}`\}/g) || []).length, 2);
+  assert.equal((panel.match(/\{canCreateContract && \(/g) || []).length, 2, "both New contract links must be gated");
+  assert.match(read("src/app/(dashboard)/contracts/new/page.tsx"), /useRequireRole\(\["admin", "boss"\]\)/);
+  // the panel's data source reports the role it uses
+  assert.match(read("src/app/api/contracts/route.ts"), /NextResponse\.json\(\{ data, role: userRole \}\)/);
+});
+
+test("contract list buttons (upload, remind, revoke) use the shared per-role rules (review F-3)", () => {
+  const list = read("src/app/(dashboard)/contracts/page.tsx");
+  assert.match(list, /contractActionPermissions\(role \?\? "", !!userId && c\.sales_id === userId, c\.status\)/);
+  assert.match(list, /const canUpload = \(c: Contract\) => actionPermissions\(c\)\.upload;/);
+  assert.match(list, /const canRevoke = \(c: Contract\) => actionPermissions\(c\)\.revoke;/);
+  assert.match(list, /c\.first_payment_status !== "paid" && canRemind\(c\)/);
+  assert.doesNotMatch(list, /\["draft", "pending_admin", "pending_ceo"\]\.includes\(c\.status\)/);
+  assert.match(read("src/app/api/contracts/list/route.ts"), /userId,\s*\n\s*totalCount/);
+  // the list shows finance nothing it cannot use, whichever status the contract is in
+  for (const status of ["draft", "pending_admin", "pending_ceo", "approved", "active", "suspended"]) {
+    const finance = contractActionPermissions("finance", false, status);
+    assert.deepEqual(finance, { approve: false, revoke: false, upload: false, remind: false }, status);
+  }
+  assert.equal(contractActionPermissions("boss", false, "suspended").revoke, true, "list and detail agree on suspended");
+});
+
+test("the products page links back to quotes only for roles /quotes admits (review F-4)", () => {
+  const page = read("src/app/(dashboard)/products/page.tsx");
+  assert.match(page, /const canOpenQuotes = role === "admin" \|\| role === "boss" \|\| role === "sales";/);
+  assert.match(page, /\{canOpenQuotes && \(\s*<Link prefetch=\{false\} href="\/quotes"/);
+  assert.match(read("src/app/(dashboard)/quotes/page.tsx"), /\["admin", "boss", "sales"\]/);
+});
+
+test("the projects page admits the roles that can read projects, and finance is not one of them (review F-5)", () => {
+  const page = read("src/app/(dashboard)/projects/page.tsx");
+  const roles = page.match(/!\[(".*?")\]\.includes\(profile\.role\)/);
+  assert.ok(roles, "projects page role list not found");
+  assert.deepEqual(roles[1].replaceAll('"', "").split(/,\s*/), ["admin", "boss", "sales", "operator", "designer"]);
+  const sql = read("supabase/migrations/20261104110000_role_least_privilege.sql");
+  assert.ok(sql.includes("'policy_projects_select_designer'"));
+});
+
+test("the contract detail page does not link finance to a lead it cannot open", () => {
+  const page = read("src/app/(dashboard)/contracts/[id]/page.tsx");
+  assert.match(page, /\{viewerRole !== "finance" && \(\s*<Link prefetch=\{false\} href=\{`\/leads\/\$\{contract\.leads\.id\}`\}/);
 });
 
 test("the New Contract link is shown only to the roles /contracts/new admits", () => {
@@ -316,10 +376,13 @@ test("the S2 migration admits operator to stage transitions and drops the compan
   }
   assert.match(sql, /policy_activities_insert_sales ON public\.activities FOR INSERT TO authenticated WITH CHECK/);
   assert.match(sql, /policy_leads_select_designer_involved/);
-  assert.match(sql, /policy_leads_select_finance_contracted/);
-  // The previous shape must stay unreachable: no SECURITY DEFINER helper that
-  // would need the A1 entry guard, and no policy written as `true`.
-  assert.doesNotMatch(sql, /SECURITY DEFINER[\s\S]*SECURITY DEFINER/);
+  assert.match(sql, /DROP POLICY IF EXISTS policy_leads_select_finance_contracted ON public\.leads/);
+  assert.doesNotMatch(sql, /CREATE POLICY policy_leads_select_finance/, "finance reads no lead rows");
+  // Exactly two SECURITY DEFINER functions: the stage RPC and contract_lead_display,
+  // which carries the A1 entry guard and a pinned search_path. No policy is `true`.
+  assert.equal((sql.match(/^\s*SECURITY DEFINER$/gm) || []).length, 2);
+  assert.match(sql, /CREATE OR REPLACE FUNCTION public\.contract_lead_display[\s\S]*?SECURITY DEFINER\s+SET search_path = pg_catalog, public, pg_temp[\s\S]*?assert_current_session_at_entry\(\)/);
+  assert.match(sql, /REVOKE ALL ON FUNCTION public\.contract_lead_display\(uuid\) FROM PUBLIC, anon;/);
   assert.doesNotMatch(sql, /USING \(true\)/i);
   for (const fn of ["money_write_is_direct()", "guard_contracts_write()", "guard_payments_write()", "guard_installment_plans_write()",
     "guard_definer_only_write()", "require_current_session()", "contract_transition_is_allowed(text, text)",
@@ -327,6 +390,35 @@ test("the S2 migration admits operator to stage transitions and drops the compan
     assert.ok(sql.includes(`'public.${fn}'`), `${fn} search_path not pinned`);
   }
   assert.match(sql, /ALTER FUNCTION %s SET search_path = pg_catalog, public, pg_temp/);
+});
+
+test("the S2 migration closes the project/workflow/file/customer routes around the designer rules (review B-1, F-6)", () => {
+  const sql = read("supabase/migrations/20261104110000_role_least_privilege.sql");
+  // projects: sales only on insert/update, never a policy without a role check
+  assert.match(sql, /policy_projects_insert_sales ON public\.projects FOR INSERT TO authenticated WITH CHECK \('\s*\|\| '\(EXISTS \(SELECT 1 FROM public\.profiles WHERE id = auth\.uid\(\) AND role = ''sales''\)\) AND sales_id = auth\.uid\(\)\)'/);
+  assert.match(sql, /policy_projects_update_sales ON public\.projects FOR UPDATE[\s\S]*?role = ''sales''[\s\S]*?WITH CHECK[\s\S]*?role = ''sales''/);
+  // designer cannot re-point a project: trigger refuses lead_id and the people columns
+  assert.match(sql, /'lead_id', 'customer_id', 'contract_id', 'sales_id', 'project_manager', 'assigned_to'/);
+  assert.match(sql, /CREATE TRIGGER trg_guard_projects_lead_binding BEFORE INSERT OR UPDATE ON public\.projects/);
+  assert.match(sql, /REVOKE ALL ON FUNCTION public\.guard_projects_lead_binding\(\) FROM PUBLIC, anon, authenticated;/);
+  // company-wide workflow stages replaced by the involved-lead scope
+  assert.match(sql, /DROP POLICY IF EXISTS policy_lead_workflow_stages_select_designer ON public\.lead_workflow_stages/);
+  assert.match(sql, /CREATE POLICY policy_lead_workflow_stages_select_designer_involved/);
+  // file records and customers
+  assert.match(sql, /lead_files_insert_staff ON public\.lead_files FOR INSERT[\s\S]*?uploaded_by = auth\.uid\(\) AND/);
+  assert.match(sql, /policy_customers_insert_sales ON public\.customers FOR INSERT[\s\S]*?role = ''sales''/);
+  // the release gate's predicate names every one of them
+  const manifest = JSON.parse(read("infra/release/release-manifest.json"));
+  const predicate = manifest.posture.deferred_contract.predicates.find((p) => p.name === "s2-role-least-privilege-present").sql;
+  for (const needle of ["trg_guard_projects_lead_binding", "policy_projects_insert_sales", "policy_projects_update_sales",
+    "policy_lead_workflow_stages_select_designer", "policy_lead_workflow_stages_select_designer_involved",
+    "lead_files_insert_staff", "policy_customers_insert_sales", "contract_lead_display(uuid)", "policy_projects_update_designer_involved"]) {
+    assert.ok(predicate.includes(needle), `posture predicate does not check ${needle}`);
+  }
+  // behaviour is proven against PostgreSQL by tests/database/role-permissions.py
+  const script = read("tests/database/role-permissions.py");
+  assert.match(script, /designer, finance and sales cannot attach or re-point a project/);
+  assert.match(script, /designer reads workflow stages only for its involved leads/);
 });
 
 test("the role permission database test follows the isolated-database conventions of tests/database", () => {

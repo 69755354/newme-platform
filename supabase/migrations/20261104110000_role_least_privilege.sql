@@ -20,8 +20,13 @@
 --                  activity on such a lead; reads the product catalogue only.
 --      finance   → contracts / payments / quotations / kpi / ad spend as before;
 --                  no follow-up notes, events, transfers, customer or lead files.
---                  Gains SELECT on the leads that have a contract so the contract
---                  pages can show the customer instead of "—".
+--                  Contract pages read the customer name through
+--                  contract_lead_display(); no lead rows are opened to finance.
+--    Closing the ways around those rules (review B-1/F-6): projects can no longer
+--    be opened on, or moved to, a lead the writer does not own (designer and
+--    finance could otherwise make themselves "involved" in any lead);
+--    lead_workflow_stages, lead_files inserts and customers inserts are scoped the
+--    same way. Finance reads no lead rows at all.
 -- 3. Nine functions flagged by the Supabase advisor had no pinned search_path.
 --    Their bodies are fully schema-qualified, so pinning changes nothing but the
 --    attack surface.
@@ -258,15 +263,130 @@ BEGIN
   EXECUTE 'CREATE POLICY policy_leads_insert_sales ON public.leads FOR INSERT TO authenticated WITH CHECK ('
     || '(EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = ''sales'')) AND (assigned_to = auth.uid() OR assigned_to IS NULL))';
 
-  -- 2e. finance: the leads behind contracts, read-only, so contract pages can
-  --     name the customer. No other lead data.
-  IF to_regclass('public.contracts') IS NOT NULL THEN
-    EXECUTE 'DROP POLICY IF EXISTS policy_leads_select_finance_contracted ON public.leads';
-    EXECUTE 'CREATE POLICY policy_leads_select_finance_contracted ON public.leads FOR SELECT TO authenticated USING ('
-      || v_is_finance || ' AND EXISTS (SELECT 1 FROM public.contracts c WHERE c.lead_id = leads.id))';
+  -- 2e. finance never reads lead rows; contract pages get the customer name
+  --     through contract_lead_display() below.
+  EXECUTE 'DROP POLICY IF EXISTS policy_leads_select_finance_contracted ON public.leads';
+
+  -- 2f. projects (review B-1): policy_projects_insert_sales / update_sales had
+  --     no role check and no lead scope, so a designer (or finance) could attach
+  --     a project to ANY lead and thereby become "involved" in it. Sales only,
+  --     and only leads assigned to the salesperson. Non-manager roles can never
+  --     re-point a project (trigger below).
+  IF to_regclass('public.projects') IS NOT NULL THEN
+    -- No subquery on public.leads here: the designer's leads policy reads
+    -- projects, so a projects policy reading leads would recurse. The lead scope
+    -- for a salesperson's new project is enforced by trg_guard_projects_lead_binding.
+    EXECUTE 'DROP POLICY IF EXISTS policy_projects_insert_sales ON public.projects';
+    EXECUTE 'CREATE POLICY policy_projects_insert_sales ON public.projects FOR INSERT TO authenticated WITH CHECK ('
+      || '(EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = ''sales'')) AND sales_id = auth.uid())';
+    EXECUTE 'DROP POLICY IF EXISTS policy_projects_update_sales ON public.projects';
+    EXECUTE 'CREATE POLICY policy_projects_update_sales ON public.projects FOR UPDATE TO authenticated USING ('
+      || '(EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = ''sales'')) AND sales_id = auth.uid()) WITH CHECK ('
+      || '(EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = ''sales'')) AND sales_id = auth.uid())';
+  END IF;
+
+  -- 2g. lead_workflow_stages carries lead ids and notes company-wide; designer
+  --     reads only its involved leads, like every other per-lead table.
+  IF to_regclass('public.lead_workflow_stages') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS policy_lead_workflow_stages_select_designer ON public.lead_workflow_stages';
+    EXECUTE 'DROP POLICY IF EXISTS policy_lead_workflow_stages_select_designer_involved ON public.lead_workflow_stages';
+    EXECUTE 'CREATE POLICY policy_lead_workflow_stages_select_designer_involved ON public.lead_workflow_stages FOR SELECT TO authenticated USING ('
+      || v_is_designer || ' AND ' || v_involved_lead || ')';
+  END IF;
+
+  -- 2h. file records: lead_files_insert_staff let any role attach a record to any
+  --     lead as itself; now the lead must be visible to the uploader.
+  IF to_regclass('public.lead_files') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS lead_files_insert_staff ON public.lead_files';
+    EXECUTE 'CREATE POLICY lead_files_insert_staff ON public.lead_files FOR INSERT TO authenticated WITH CHECK ('
+      || '(EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'',''operator''))) OR '
+      || '(uploaded_by = auth.uid() AND ' || v_involved_lead || '))';
+  END IF;
+
+  -- 2i. customers: policy_customers_insert_sales had no role check.
+  IF to_regclass('public.customers') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS policy_customers_insert_sales ON public.customers';
+    EXECUTE 'CREATE POLICY policy_customers_insert_sales ON public.customers FOR INSERT TO authenticated WITH CHECK ('
+      || '(EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = ''sales'')) AND assigned_sales_id = auth.uid())';
   END IF;
 END
 $$;
+
+-- ---------------------------------------------------------------------------
+-- 2j. A non-manager's project stays on a lead assigned to them (review B-1)
+-- ---------------------------------------------------------------------------
+-- Columns are read through to_jsonb so the trigger installs on any catalog
+-- shape (the replay floor lacks customer_id / contract_id).
+CREATE OR REPLACE FUNCTION public.guard_projects_lead_binding()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+DECLARE
+  v_role text;
+  v_col text;
+BEGIN
+  IF current_user NOT IN ('authenticated', 'anon') THEN
+    RETURN NEW;
+  END IF;
+  SELECT role INTO v_role FROM public.profiles WHERE id = auth.uid();
+  IF coalesce(v_role, '') IN ('admin', 'boss', 'operator') THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.lead_id IS NOT NULL AND NOT EXISTS (
+         SELECT 1 FROM public.leads l WHERE l.id = NEW.lead_id AND l.assigned_to = auth.uid()) THEN
+      RAISE EXCEPTION 'a project may only be opened on a lead assigned to you' USING ERRCODE = '42501';
+    END IF;
+    RETURN NEW;
+  END IF;
+  FOREACH v_col IN ARRAY ARRAY['lead_id', 'customer_id', 'contract_id', 'sales_id', 'project_manager', 'assigned_to'] LOOP
+    IF (to_jsonb(NEW) ->> v_col) IS DISTINCT FROM (to_jsonb(OLD) ->> v_col) THEN
+      RAISE EXCEPTION 'projects.% is changed by a manager only', v_col USING ERRCODE = '42501';
+    END IF;
+  END LOOP;
+  RETURN NEW;
+END
+$$;
+REVOKE ALL ON FUNCTION public.guard_projects_lead_binding() FROM PUBLIC, anon, authenticated;
+DO $$
+BEGIN
+  IF to_regclass('public.projects') IS NOT NULL THEN
+    EXECUTE 'DROP TRIGGER IF EXISTS trg_guard_projects_lead_binding ON public.projects';
+    EXECUTE 'CREATE TRIGGER trg_guard_projects_lead_binding BEFORE INSERT OR UPDATE ON public.projects FOR EACH ROW EXECUTE FUNCTION public.guard_projects_lead_binding()';
+  END IF;
+END
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 2k. The one lead fact a contract page needs: the customer's display name
+-- ---------------------------------------------------------------------------
+-- Finance (and a salesperson on another's contract) has no lead policy; the
+-- contract detail route asks here instead of opening lead rows. Definer, with
+-- the release's entry guard, pinned search_path, authenticated only.
+CREATE OR REPLACE FUNCTION public.contract_lead_display(p_lead_id uuid)
+RETURNS TABLE(id uuid, customer_name text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+begin
+  perform public.assert_current_session_at_entry();
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Unauthorized' USING ERRCODE = '42501'; END IF;
+  RETURN QUERY
+    SELECT l.id, l.customer_name
+      FROM public.leads l
+     WHERE l.id = p_lead_id
+       AND EXISTS (
+         SELECT 1 FROM public.contracts c
+          WHERE c.lead_id = l.id
+            AND (c.sales_id = auth.uid()
+                 OR EXISTS (SELECT 1 FROM public.profiles p
+                             WHERE p.id = auth.uid() AND p.role IN ('admin', 'boss', 'operator', 'finance'))));
+END
+$$;
+REVOKE ALL ON FUNCTION public.contract_lead_display(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.contract_lead_display(uuid) TO authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 3. Pin search_path on the guard functions the advisor flagged (2-security F-06)
@@ -300,7 +420,12 @@ $$;
 -- ---------------------------------------------------------------------------
 -- * transition_lead_stage: re-run the body from 20260805202917 (whitelist without
 --   'operator').
--- * policies: DROP the *_involved / *_contracted policies created above and
---   re-create the dropped ones from 20260630200000_rls_policy_remediation.sql
---   and 20260701000003_drop_final_for_all.sql.
+-- * policies: DROP the *_involved policies, trg_guard_projects_lead_binding and
+--   the two functions created above (guard_projects_lead_binding,
+--   contract_lead_display), and re-create the dropped ones and the replaced ones
+--   (policy_projects_insert_sales / update_sales, policy_leads_insert_sales,
+--   policy_activities_insert_sales, lead_files_insert_staff,
+--   policy_customers_insert_sales, policy_lead_workflow_stages_select_designer)
+--   from 20260630200000_rls_policy_remediation.sql, 20260701000003_drop_final_for_all.sql
+--   and the migrations that last defined them.
 -- * search_path: ALTER FUNCTION <sig> RESET search_path for the nine functions.

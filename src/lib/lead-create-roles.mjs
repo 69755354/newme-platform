@@ -7,3 +7,10 @@
  * imports the value the page ships.
  */
 export const LEAD_CREATE_ROLES = Object.freeze(["admin", "boss", "operator", "sales"]);
+
+/**
+ * Roles that may import leads: /api/leads/import/preview and /api/leads/import/confirm
+ * both refuse everything but admin and boss, so the Import button is shown to
+ * these two only (review F-1).
+ */
+export const LEAD_IMPORT_ROLES = Object.freeze(["admin", "boss"]);

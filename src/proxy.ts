@@ -77,6 +77,25 @@ async function withAuthTimeout<T>(operation: PromiseLike<T>): Promise<T> {
   }
 }
 
+/**
+ * A page navigation (GET/HEAD outside /api) whose edge auth check could not be
+ * completed is let through to render. The page shell carries no data: every
+ * page under (dashboard) proves its session again through GET /api/auth/me
+ * (useAuthRedirect / useRequireRole), and every data read goes through a route
+ * handler that resolves and checks the session itself. Redirecting to /login
+ * here turned a slow Supabase into "logged out again" for a valid session.
+ *
+ * Nothing else is softened: API requests still get 503, and a POST to a page
+ * path is a server action, i.e. a write, which keeps failing closed.
+ */
+function isSoftFailNavigation(request: NextRequest, isApiRequest: boolean): boolean {
+  return !isApiRequest && ["GET", "HEAD"].includes(request.method);
+}
+
+function deferAuthCheck() {
+  return NextResponse.next();
+}
+
 function authUnavailable(request: NextRequest, isApiRequest: boolean) {
   if (isApiRequest) {
     return NextResponse.json({ error: "auth_unavailable" }, { status: 503 });
@@ -100,6 +119,7 @@ export async function proxy(request: NextRequest) {
   const isApiRequest = pathname.startsWith("/api/");
   const isPublicApiRequest = isApiRequest && (PUBLIC_API_PATHS.has(pathname) || pathname === SESSION_BOOTSTRAP_PATH);
   const protectedApiMutation = isProtectedApiMutation(request, pathname);
+  const softFailNavigation = isSoftFailNavigation(request, isApiRequest);
 
   // P3_6 (PRD §六 6.5): legacy URL redirects — return early so we don't run auth.
   // /command-center → /dashboard
@@ -149,6 +169,7 @@ export async function proxy(request: NextRequest) {
   try {
     middlewareClient = await withAuthTimeout(createMiddlewareClient(request, bearerToken));
   } catch {
+    if (softFailNavigation) return deferAuthCheck();
     return authUnavailable(request, isApiRequest);
   }
   const { supabase, getResponse } = middlewareClient;
@@ -166,6 +187,13 @@ export async function proxy(request: NextRequest) {
     return authInfrastructureFailed
       ? authUnavailable(request, true)
       : NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  // No verdict about the session, only about the auth dependency: a page
+  // navigation renders and re-proves its session server-side. A real "no
+  // session" (user === null without a failure) still reaches the /login
+  // redirect below for role-protected pages.
+  if (authInfrastructureFailed && softFailNavigation) {
+    return deferAuthCheck();
   }
 
   let activeProfile: ActiveProfile | null = null;
@@ -210,16 +238,23 @@ export async function proxy(request: NextRequest) {
         }
       }
     } else {
-      const { data, error } = await withAuthTimeout(supabase
-        .from("profiles")
-        .select("role, is_active, password_changed_at, force_password_change")
-        .eq("id", user.id)
-        .single());
-      profile = data;
-      profileErr = error;
+      // The timeout rejects; uncaught it escaped the proxy as a 500 instead of
+      // reaching the unavailable/deferred handling below.
+      try {
+        const { data, error } = await withAuthTimeout(supabase
+          .from("profiles")
+          .select("role, is_active, password_changed_at, force_password_change")
+          .eq("id", user.id)
+          .single());
+        profile = data;
+        profileErr = error;
+      } catch (err) {
+        profileErr = err;
+      }
     }
 
     if (profileErr) {
+      if (softFailNavigation) return deferAuthCheck();
       return authUnavailable(request, isApiRequest);
     }
     if (!isActiveProfile(profile)) {

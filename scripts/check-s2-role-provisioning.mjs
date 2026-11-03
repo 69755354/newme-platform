@@ -13,7 +13,7 @@ import { readLiveMode, readReleaseManifest } from "./check-release-phase.mjs";
 export const S2_EVENT = Object.freeze({
   "version": "20261104110000",
   "file": "20261104110000_role_least_privilege.sql",
-  "sha256": "ac198b24f634d6ba29dcfaa2984f233f2ff320bff4edd7ed2ca272df5225d925"
+  "sha256": "d6131c5b944f68b6d72d1e8ce8291640cab8f67487f1481f2abbc29b1bdbb8d3"
 });
 export const S2_PREDICATE_NAME = "s2-role-least-privilege-present";
 // Present: the stage RPC admits operator and every S2 policy, trigger and function is in place

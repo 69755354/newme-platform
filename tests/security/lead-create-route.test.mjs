@@ -85,6 +85,7 @@ function setup({ role = "sales", existing = [] } = {}) {
     "@/lib/tasks": { createFollowUpTask: async () => ({ error: null }) },
     "@/lib/notification-events": {
       leadCreatedDrafts: async (_db, lead) => [{ userId: lead.assigned_to ?? "queue", title: "t" }],
+      duplicateReviewDrafts: async () => [{ userId: "review-queue", title: "review" }],
     },
     "@/lib/notifications": { createNotificationsBulk: async (drafts) => { writes.notifications.push(...drafts); } },
   };
@@ -117,18 +118,35 @@ test("a local UAE number is stored in E.164 and only the assignee is notified", 
   assert.deepEqual(writes.notifications.map((n) => n.userId), [SALES]);
 });
 
-test("a duplicate phone in another format is refused; sales cannot override", async () => {
-  const existing = [{ id: "old-lead", customer_name: "Ahmed", phone: "00971501234567", email: null, assigned_to: OTHER, archived: false }];
+test("sales: a duplicate in another format warns without any detail of a lead they cannot see", async () => {
+  const existing = [{ id: "old-lead", customer_name: "Ahmed Secret", phone: "00971501234567", email: null, assigned_to: OTHER, archived: true }];
   const { writes, mocks } = setup({ existing });
   const { POST } = await loadRoute(mocks);
   const response = await POST(post({ customer_name: "Ahmed B", phone: "+971 50 123 4567" }));
   assert.equal(response.status, 409);
   const body = await response.json();
   assert.equal(body.code, "DUPLICATE_LEAD");
-  assert.equal(body.canOverride, false);
-  const override = await POST(post({ customer_name: "Ahmed B", phone: "0501234567", duplicateOverride: { reason: "second villa" } }));
-  assert.equal(override.status, 403);
+  assert.equal(body.reviewRequired, true);
+  assert.equal(body.canOverride, true);
+  const text = JSON.stringify(body.duplicates);
+  for (const secret of ["old-lead", "Ahmed Secret", OTHER, "00971", "true", "phone"]) {
+    assert.equal(text.includes(secret), false, `leaked ${secret}`);
+  }
   assert.equal(writes.leads.length, 0);
+  const noReason = await POST(post({ customer_name: "Ahmed B", phone: "0501234567", duplicateOverride: { reason: " " } }));
+  assert.equal(noReason.status, 400);
+});
+
+test("sales may still create with a reason; the lead is flagged and sent to the admin/operator review queue", async () => {
+  const existing = [{ id: "old-lead", customer_name: "Ahmed", phone: "+971501234567", email: null, assigned_to: OTHER, archived: false }];
+  const { writes, mocks } = setup({ existing });
+  const { POST } = await loadRoute(mocks);
+  const response = await POST(post({ customer_name: "Ahmed B", phone: "0501234567", duplicateOverride: { reason: "second villa" } }));
+  assert.equal(response.status, 201);
+  assert.equal((await response.json()).flaggedForReview, true);
+  assert.equal(writes.leads[0].sales_manager_review, true);
+  assert.equal(writes.business_events[0].event_data.review_required, true);
+  assert.ok(writes.notifications.some((n) => n.userId === "review-queue"), "admin/operator review queue notified");
 });
 
 test("an operator may override a duplicate with a reason, and the override is audited", async () => {
@@ -142,4 +160,6 @@ test("an operator may override a duplicate with a reason, and the override is au
   assert.equal(writes.business_events.length, 1);
   assert.deepEqual(writes.business_events[0].event_data.duplicate_lead_ids, ["old-lead"]);
   assert.equal(writes.business_events[0].event_data.reason, "second villa");
+  assert.equal(writes.leads[0].sales_manager_review, undefined, "an operator's own override needs no review");
+  assert.equal(writes.notifications.some((n) => n.userId === "review-queue"), false);
 });

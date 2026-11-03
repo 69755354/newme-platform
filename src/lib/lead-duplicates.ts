@@ -51,7 +51,8 @@ export async function findDuplicateLeads(
 /**
  * What a requester may see about each duplicate. Admin, boss and operator see
  * every lead already; a salesperson only learns the name and link of a lead
- * they own, otherwise only that a colleague holds the customer.
+ * they own. For anyone else's lead they learn only that a possible duplicate
+ * exists — nothing about it.
  */
 export function presentDuplicates(duplicates: DuplicateLead[], viewer: { id: string; role: string }) {
   const seesAll = ["admin", "boss", "operator"].includes(viewer.role);
@@ -63,5 +64,6 @@ export function presentDuplicates(duplicates: DuplicateLead[], viewer: { id: str
       matched_on: lead.matched_on,
       visible: true,
     }
-    : { id: null, customer_name: null, archived: Boolean(lead.archived), matched_on: lead.matched_on, visible: false });
+    // A lead the requester cannot see: no name, link, owner, status or match field.
+    : { id: null, customer_name: null, archived: false, matched_on: null, visible: false });
 }

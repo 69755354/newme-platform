@@ -180,6 +180,28 @@ export async function leadCreatedDrafts(
 }
 
 /**
+ * S3 #4: a salesperson created a lead despite a possible duplicate. The
+ * admin/operator queue reviews it (the lead also carries sales_manager_review).
+ */
+export async function duplicateReviewDrafts(
+  db: NotificationDatabase,
+  lead: { id: string; customer_name: string | null },
+  actorId: string | null,
+): Promise<NotificationDraft[]> {
+  const customer = text(lead.customer_name, "New Lead");
+  const recipients = unique(await activeProfilesByRole(db, LEAD_QUEUE_ROLES), actorId ?? undefined);
+  return rows(
+    recipients,
+    "lead_created",
+    `Possible duplicate lead to review: ${customer}`,
+    `Lead "${customer}" was created despite a possible duplicate`,
+    lead.id,
+    "lead",
+    `lead_duplicate_review:${lead.id}`,
+  );
+}
+
+/**
  * Resolve one user-requested notification from persisted business facts.
  * Request fields identify an entity; they never supply presentation or recipients.
  */

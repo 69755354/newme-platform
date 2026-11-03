@@ -169,6 +169,7 @@ export default function NewLeadPage() {
               <LeadDuplicateNotice
                 duplicates={errorState.duplicates}
                 canOverride={errorState.canOverride}
+                reviewRequired={errorState.reviewRequired === true}
                 submitting={saving}
                 onOverride={(reason) => { void create(reason); }}
               />

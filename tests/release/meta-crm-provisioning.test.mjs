@@ -5,15 +5,7 @@ import { createHash } from 'node:crypto';
 import { CRM_EVENT, CRM_POSTURE_SQL, CRM_PREDICATE_NAME, judgeCrmProvisioning } from '../../scripts/check-meta-crm-provisioning.mjs';
 
 const manifest=JSON.parse(fs.readFileSync(new URL('../../infra/release/release-manifest.json',import.meta.url),'utf8'));
-// The reviewed CRM transition is judged against the release that ended at CRM:
-// later additive suffixes (each one deferred entry plus one posture predicate,
-// appended after CRM's) are dropped first so they do not disturb that judgement.
-const crmAt=manifest.deferred_contract.findIndex(x=>x.version===CRM_EVENT.version);
-const laterSuffixes=manifest.deferred_contract.length-crmAt-1;
-const atCrm=structuredClone(manifest);
-atCrm.deferred_contract=atCrm.deferred_contract.slice(0,crmAt+1);
-atCrm.posture.deferred_contract.predicates=atCrm.posture.deferred_contract.predicates.slice(0,atCrm.posture.deferred_contract.predicates.length-laterSuffixes);
-const live=structuredClone(atCrm);
+const live=structuredClone(manifest);
 live.deferred_contract=live.deferred_contract.filter(x=>x.version!==CRM_EVENT.version);
 live.posture.deferred_contract.predicates=live.posture.deferred_contract.predicates.filter(x=>x.name!==CRM_PREDICATE_NAME);
 const sql=fs.readFileSync(new URL(`../../supabase/migrations/${CRM_EVENT.file}`,import.meta.url),'utf8');
@@ -23,8 +15,8 @@ candidate.posture.deferred_contract.predicates.push({name:CRM_PREDICATE_NAME,exp
 const input=()=>({live:structuredClone(live),candidate:structuredClone(candidate),sql,phase:'strict',recorded:false,priorMatches:true,bodyMatches:false});
 
 test('the committed manifest is exactly the reviewed CRM transition',()=>{
-  assert.deepEqual(atCrm,candidate);
-  assert.deepEqual(atCrm.deferred_contract.at(-1),CRM_EVENT);
+  assert.deepEqual(manifest,candidate);
+  assert.deepEqual(manifest.deferred_contract.at(-1),CRM_EVENT);
 });
 
 test('only the exact additive CRM schema transition is accepted',()=>{

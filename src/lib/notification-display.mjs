@@ -5,6 +5,8 @@
 // Works for rows written before this change too: it reads the stored text.
 
 const LEAD_PATTERNS = [
+  { field: "title", re: /^Possible duplicate lead to review: (.+)$/s, key: "leadFlow.duplicateReview.flaggedTitle" },
+  { field: "body", re: /^Lead "(.+)" was created despite a possible duplicate$/s, key: "leadFlow.duplicateReview.flaggedBody" },
   { field: "title", re: /^New lead assigned: (.+)$/s, key: "leadFlow.notification.newLeadAssignedTitle" },
   { field: "title", re: /^New lead: (.+)$/s, key: "leadFlow.notification.newLeadTitle" },
   { field: "title", re: /^Lead assigned$/, key: "leadFlow.notification.leadAssignedTitle" },

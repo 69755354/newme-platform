@@ -181,6 +181,15 @@ test("S3 #8: an unassigned new lead goes to the admin/operator queue only, never
   assert.equal(drafts[0].body, 'Lead "Queue Customer" is waiting for assignment');
 });
 
+test("S3 #4: a sales-created possible duplicate is sent to the admin/operator review queue", async () => {
+  const tables = fixtures();
+  tables.profiles.push({ id: IDs.approval, role: "operator", is_active: true }, { id: IDs.installment, role: "boss", is_active: true });
+  const drafts = await events.duplicateReviewDrafts(new FakeDb(tables), { id: IDs.lead, customer_name: "Dup" }, IDs.actor);
+  assert.deepEqual(drafts.map((row) => row.userId).sort(), [IDs.admin, IDs.approval].sort());
+  assert.equal(drafts[0].title, "Possible duplicate lead to review: Dup");
+  assert.equal(drafts[0].eventKey, `lead_duplicate_review:${IDs.lead}`);
+});
+
 test("presentation and direct recipient fields fail closed before database access", async () => {
   const db = { from() { throw new Error("database should not be read"); } };
   await assert.rejects(

@@ -34,6 +34,14 @@ import type { Lead, Task } from "./types";
 import type { ProjectInfoDraft } from "./useLeadDetailData";
 import type { Database, Json } from "@/types/database";
 
+const STAGE_HINT_REASONS = new Set([
+  "next_followup_required",
+  "first_contact_gate",
+  "not_permitted",
+  "changed_concurrently",
+  "stage_update_failed",
+]);
+
 type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
 type EventData = Record<string, Json | undefined>;
 
@@ -588,6 +596,12 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         return false;
       }
       toast.success(lang === "zh" ? "里程碑已完成" : "Milestone completed");
+      // S3 #1: the stage moves with the milestone; when a rule says "not yet"
+      // (e.g. next follow-up missing) the save stands and the page says why.
+      const stageReason = json?.stageAdvance?.reason;
+      if (typeof stageReason === "string" && STAGE_HINT_REASONS.has(stageReason)) {
+        toast.info(t(`leadFlow.stageHint.${stageReason}`));
+      }
       await fetchData();
       return true;
     } catch {

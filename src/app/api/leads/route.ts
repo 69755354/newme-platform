@@ -21,7 +21,7 @@ import { findDuplicateLeads, presentDuplicates } from "@/lib/lead-duplicates";
 import { isLeadTransferCandidate } from "@/lib/lead-transfer-candidates.mjs";
 import { createFollowUpTask } from "@/lib/tasks";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { leadCreatedDrafts } from "@/lib/notification-events";
+import { duplicateReviewDrafts, leadCreatedDrafts } from "@/lib/notification-events";
 import { createNotificationsBulk } from "@/lib/notifications";
 import type { Database } from "@/types/database";
 
@@ -65,19 +65,21 @@ export async function POST(request: NextRequest) {
   } catch {
     return respond({ error: "duplicate_lookup_failed", code: "DUPLICATE_LOOKUP_FAILED" }, { status: 503 });
   }
-  const canOverride = OVERRIDE_ROLES.includes(auth.role);
+  // S3 #4 (coordinator decision): nobody is hard-blocked. Admin/boss/operator
+  // override with a reason; a salesperson may also create after giving a
+  // reason, and the new lead is then flagged (sales_manager_review) and sent
+  // to the admin/operator queue for duplicate review.
+  const reviewRequired = !OVERRIDE_ROLES.includes(auth.role);
   if (duplicates.length > 0) {
     const shown = presentDuplicates(duplicates, { id: auth.user.id, role: auth.role });
     if (!override) {
-      return respond({ error: "duplicate_lead", code: "DUPLICATE_LEAD", duplicates: shown, canOverride }, { status: 409 });
-    }
-    if (!canOverride) {
-      return respond({ error: "duplicate_override_forbidden", code: "DUPLICATE_OVERRIDE_FORBIDDEN", duplicates: shown }, { status: 403 });
+      return respond({ error: "duplicate_lead", code: "DUPLICATE_LEAD", duplicates: shown, canOverride: true, reviewRequired }, { status: 409 });
     }
     if (overrideReason.length < 3 || overrideReason.length > LEAD_FIELD_LIMITS.override_reason) {
-      return respond({ error: "override_reason_required", code: "OVERRIDE_REASON_REQUIRED", duplicates: shown, canOverride }, { status: 400 });
+      return respond({ error: "override_reason_required", code: "OVERRIDE_REASON_REQUIRED", duplicates: shown, canOverride: true, reviewRequired }, { status: 400 });
     }
   }
+  const flaggedForReview = duplicates.length > 0 && reviewRequired;
 
   const assigneeId = isLeadTransferCandidate({ role: auth.role, is_active: auth.profile.is_active === true })
     ? auth.user.id
@@ -94,6 +96,7 @@ export async function POST(request: NextRequest) {
     created_by: auth.user.id,
     next_action: "call",
     next_followup_date: followupDate,
+    ...(flaggedForReview ? { sales_manager_review: true } : {}),
   }).select("id, customer_name, assigned_to").single();
   if (insertError || !inserted) {
     return respond({ error: "create_failed", code: "CREATE_FAILED" }, { status: insertError?.code === "42501" ? 403 : 500 });
@@ -129,17 +132,25 @@ export async function POST(request: NextRequest) {
       user_id: auth.user.id,
       event_type: "note_added",
       description: `Created despite possible duplicate: ${overrideReason}`,
-      event_data: { duplicate_override: true, reason: overrideReason, duplicate_lead_ids: duplicates.map((d) => d.id) },
+      event_data: {
+        duplicate_override: true,
+        reason: overrideReason,
+        duplicate_lead_ids: duplicates.map((d) => d.id),
+        review_required: flaggedForReview,
+      },
     });
     if (error) warnings.push("override_audit_failed");
   }
 
   try {
     const drafts = await leadCreatedDrafts(supabaseAdmin as SupabaseClient<Database>, inserted, auth.user.id);
+    if (flaggedForReview) {
+      drafts.push(...await duplicateReviewDrafts(supabaseAdmin as SupabaseClient<Database>, inserted, auth.user.id));
+    }
     await createNotificationsBulk(drafts);
   } catch {
     warnings.push("notification_failed");
   }
 
-  return respond({ success: true, id: inserted.id, assignedTo: inserted.assigned_to, warnings }, { status: 201 });
+  return respond({ success: true, id: inserted.id, assignedTo: inserted.assigned_to, flaggedForReview, warnings }, { status: 201 });
 }

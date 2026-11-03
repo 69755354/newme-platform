@@ -19,6 +19,22 @@ import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 import { countsAsCash } from "@/lib/payment-state.mjs";
+import {
+  addDaysToDateKey,
+  dubaiDateKey,
+  dubaiDayBounds,
+  dubaiMonthBounds,
+  inBounds,
+  isMonthKey,
+} from "@/lib/dubai-time.mjs";
+import { fetchAllRows, fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
+import {
+  LEAD_METRIC_COLUMNS,
+  isCountedLead,
+  overdueDays,
+  summarizeLeads,
+  type MetricLead,
+} from "@/lib/lead-metrics.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -65,63 +81,67 @@ export async function GET(request: Request) {
   const isManagement = ["admin", "boss", "operator"].includes(role);
   const isSales = role === "sales";
 
-  // Month from query param (?period= legacy support removed in P3_9)
+  // Month from query param (?period= legacy support removed in P3_9). Every
+  // period below is a Dubai calendar period (src/lib/dubai-time.mjs): the host
+  // runs in Asia/Shanghai, so `new Date(y, m, 1)` started each month at 20:00
+  // Dubai on the last day of the previous one.
   const { searchParams } = new URL(request.url);
   const month = searchParams.get("month");
-  if (month !== null && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+  if (month !== null && !isMonthKey(month)) {
     return NextResponse.json(
       { error: "Invalid month format (YYYY-MM required)" },
       { status: 400 }
     );
   }
 
-  let monthStart: string | null = null;
-  let monthEnd: string | null = null;
-  if (month) {
-    const [year, monthNumber] = month.split("-").map(Number);
-    monthStart = new Date(year, monthNumber - 1, 1).toISOString();
-    monthEnd = new Date(year, monthNumber, 1).toISOString();
-  }
+  const period = month ? dubaiMonthBounds(month) : null;
+  const monthStart: string | null = period ? period.start.toISOString() : null;
+  const monthEnd: string | null = period ? period.end.toISOString() : null;
+
+  // ── Date boundaries (Dubai) ──
+  const nowDate = new Date();
+  const nowISO = dubaiDateKey(nowDate) as string; // YYYY-MM-DD, Dubai
+  const nextWeekStr = addDaysToDateKey(nowISO, 7);
+  const { start: todayStart, end: tomorrowStart } = dubaiDayBounds(nowDate);
+  const cutoff48h = new Date(nowDate.getTime() - 48 * 3600 * 1000).toISOString();
 
   // ── 3. Sales users ──
-  const { data: salesUsers } = isManagement
-    ? await supabase
+  const salesUsersPromise = isManagement
+    ? supabase
         .from("profiles")
         .select("id,email,role,full_name")
         .in("role", ["admin", "sales", "operator", "boss"])
-    : { data: [] };
+    : Promise.resolve({ data: [] as any[], error: null });
 
-  // ── 4a. Leads (no dependency) ──
-  let leadsQuery = supabase.from("leads").select("*");
-  if (isSales && userId) {
-    leadsQuery = leadsQuery.eq("assigned_to", userId);
-  }
-  const leadsPromise = leadsQuery.order("updated_at", { ascending: false }).limit(500);
+  // ── 4a. Leads — every counted (non-archived) lead, narrow columns, paged ──
+  // The page used to receive `select("*")` of the 500 most recently updated rows
+  // (archived included) and count them in the browser; past 500 leads the numbers
+  // silently stopped growing and the payload was the slowest part of the page.
+  // Now the counting happens here, once, with src/lib/lead-metrics.mjs.
+  const leadsPromise = fetchCountedLeads(
+    supabase,
+    LEAD_METRIC_COLUMNS,
+    { assignedTo: isSales ? userId : null },
+  );
 
-  // ── 4b. Contracts (no dependency) ──
-  let contractQuery = supabase
-    .from("contracts")
-    .select("id,contract_amount,status,created_at");
-  if (isSales && userId) {
-    contractQuery = contractQuery.eq("sales_id", userId);
-  }
-  const contractsPromise = contractQuery;
+  // Money queries read every row (paged: PostgREST would otherwise stop at 1000
+  // rows without saying so) and are scoped for a sales caller by joining to the
+  // contract, so none of them waits for another query first.
+  const paged = (build: (withCount: boolean) => any) =>
+    fetchAllRows((from, to, withCount) => build(withCount).order("id", { ascending: true }).range(from, to));
 
-  // ── 4c. KPI targets (no dependency) ──
+  // ── 4b. Contracts ──
+  const contractsPromise = paged((withCount) => {
+    let q = supabase
+      .from("contracts")
+      .select("id,contract_amount,status,created_at", withCount ? { count: "exact" } : undefined);
+    if (isSales && userId) q = q.eq("sales_id", userId);
+    return q;
+  });
+
+  // ── 4c. KPI targets ──
   const kpiPromise = month
     ? supabase.from("kpi_targets").select("*").eq("period", month)
-    : Promise.resolve({ data: [], error: null });
-
-  const periodLeadsPromise = monthStart && monthEnd
-    ? (() => {
-        let q = supabase
-          .from("leads")
-          .select("quality,source")
-          .gte("created_at", monthStart)
-          .lt("created_at", monthEnd);
-        if (isSales && userId) q = q.eq("assigned_to", userId);
-        return q;
-      })()
     : Promise.resolve({ data: [], error: null });
 
   const periodContractsPromise = monthStart && monthEnd
@@ -136,128 +156,60 @@ export async function GET(request: Request) {
       })()
     : Promise.resolve({ data: [], error: null });
 
-  const periodWonPromise = monthStart && monthEnd
-    ? (() => {
-        let q = supabase
-          .from("leads")
-          .select("id", { count: "exact", head: true })
-          .eq("final_status", "won")
-          .gte("won_at", monthStart)
-          .lt("won_at", monthEnd);
-        if (isSales && userId) q = q.eq("assigned_to", userId);
-        return q;
-      })()
-    : Promise.resolve({ count: 0, error: null });
+  // payments.payment_date is a DATE: compare it with Dubai calendar dates, not
+  // with the UTC instants of the month bounds (a date column cast from
+  // "2026-10-31T20:00:00Z" is 31 October, which put the last day of the previous
+  // month into every month's collection figure).
+  const periodStartDate = period ? (dubaiDateKey(period.start) as string) : null;
+  const periodEndDate = period ? (dubaiDateKey(period.end) as string) : null;
 
-  const stageChangesPromise = monthStart && monthEnd
-    ? supabase
-        .from("business_events")
-        .select("lead_id,event_data,created_at")
-        .eq("event_type", "stage_change")
-        .gte("created_at", monthStart)
-        .lt("created_at", monthEnd)
-        .order("created_at", { ascending: true })
-    : Promise.resolve({ data: [], error: null });
-
-  // Run first batch in parallel (no contract-id dependency)
-  const [
-    { data: leads, error: leadsErr },
-    { data: contracts, error: cErr },
-    { data: kpiTargets },
-    { data: periodLeadsRaw, error: periodLeadsErr },
-    { data: periodContractsRaw, error: periodContractsErr },
-    { count: periodWonCount, error: periodWonErr },
-    { data: stageChangesRaw, error: stageChangesErr },
-  ] = await Promise.all([
-    leadsPromise,
-    contractsPromise,
-    kpiPromise,
-    periodLeadsPromise,
-    periodContractsPromise,
-    periodWonPromise,
-    stageChangesPromise,
-  ]);
-
-  if (leadsErr) console.error("leads fetch failed:", leadsErr);
-  if (cErr) console.error("contracts fetch failed:", cErr);
-  if (periodLeadsErr) console.error("period leads fetch failed:", periodLeadsErr);
-  if (periodContractsErr) console.error("period contracts fetch failed:", periodContractsErr);
-  if (periodWonErr) console.error("period won leads fetch failed:", periodWonErr);
-  if (stageChangesErr) console.error("stage changes fetch failed:", stageChangesErr);
-
-  const leadsData = (leads || []) as any[];
-  const contractsData = (contracts || []) as any[];
-  const visibleLeadIds = new Set(leadsData.map((lead) => lead.id));
-  const stageChanges = isSales
-    ? ((stageChangesRaw || []) as Array<{ lead_id: string }>).filter((change) => visibleLeadIds.has(change.lead_id))
-    : (stageChangesRaw || []);
-
-  // ── Compute contract IDs & active contracts ──
-  const contractIds = contractsData.map((c: any) => c.id);
-
-  // ── Date boundaries ──
-  const nowISO = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-  const nextWeek = new Date();
-  nextWeek.setDate(nextWeek.getDate() + 7);
-  const nextWeekStr = nextWeek.toISOString().split("T")[0];
-
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const tomorrowStart = new Date(todayStart);
-  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-
-  const cutoff48h = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
-
-  // ── 4d–m. Second batch: everything with contract-id or independent ──
-  const buildPaymentsQuery = () => {
-    if (isSales && contractIds.length === 0) return Promise.resolve({ data: [], error: null });
-    let q = supabase.from("payments").select("amount,confirmed,voided_at,payment_date");
-    if (isSales && userId) q = q.in("contract_id", contractIds);
-    return q;
-  };
-
-  const buildPeriodPaymentsQuery = () => {
-    if (!monthStart || !monthEnd || (isSales && contractIds.length === 0)) {
-      return Promise.resolve({ data: [], error: null });
-    }
+  const paymentsPromise = paged((withCount) => {
     let q = supabase
       .from("payments")
-      .select("amount")
-      // Both halves of the ledger predicate. This total is compared against
-      // kpi_targets.actual_amount, which confirm_payment() and void_payment()
-      // maintain from `confirmed = true and voided_at is null`; with only the first
-      // half, the period figure shown next to the KPI is computed from a wider set
-      // than the KPI itself.
+      .select(
+        isSales ? "id,amount,confirmed,voided_at,payment_date,contracts!inner(sales_id)" : "id,amount,confirmed,voided_at,payment_date",
+        withCount ? { count: "exact" } : undefined,
+      )
       .eq("confirmed", true)
-      .is("voided_at", null)
-      .gte("payment_date", monthStart)
-      .lt("payment_date", monthEnd);
-    if (isSales && userId) q = q.in("contract_id", contractIds);
+      .is("voided_at", null);
+    if (isSales && userId) q = q.eq("contracts.sales_id", userId);
     return q;
-  };
+  });
 
-  const buildOverdueQuery = () => {
-    if (isSales && contractIds.length === 0) return Promise.resolve({ data: [], error: null });
-    let q = supabase
-      .from("installment_plans")
-      .select("amount,due_date,status,paid_amount")
-      .lt("due_date", nowISO)
-      .neq("status", "paid");
-    if (isSales && userId) q = q.in("contract_id", contractIds);
-    return q;
-  };
+  const periodPaymentsPromise = periodStartDate && periodEndDate
+    ? paged((withCount) => {
+        let q = supabase
+          .from("payments")
+          .select(
+            isSales ? "id,amount,contracts!inner(sales_id)" : "id,amount",
+            withCount ? { count: "exact" } : undefined,
+          )
+          // Both halves of the ledger predicate. This total is compared against
+          // kpi_targets.actual_amount, which confirm_payment() and void_payment()
+          // maintain from `confirmed = true and voided_at is null`.
+          .eq("confirmed", true)
+          .is("voided_at", null)
+          .gte("payment_date", periodStartDate)
+          .lt("payment_date", periodEndDate);
+        if (isSales && userId) q = q.eq("contracts.sales_id", userId);
+        return q;
+      })
+    : Promise.resolve({ data: [], error: null });
 
-  const buildDueQuery = () => {
-    if (isSales && contractIds.length === 0) return Promise.resolve({ data: [], error: null });
-    let q = supabase
-      .from("installment_plans")
-      .select("amount,due_date,status,paid_amount")
-      .gte("due_date", nowISO)
-      .lte("due_date", nextWeekStr)
-      .eq("status", "pending");
-    if (isSales && userId) q = q.in("contract_id", contractIds);
-    return q;
-  };
+  const installmentsPromise = (kind: "overdue" | "due") =>
+    paged((withCount) => {
+      let q = supabase
+        .from("installment_plans")
+        .select(
+          isSales ? "id,amount,due_date,status,paid_amount,contracts!inner(sales_id)" : "id,amount,due_date,status,paid_amount",
+          withCount ? { count: "exact" } : undefined,
+        );
+      q = kind === "overdue"
+        ? q.lt("due_date", nowISO).neq("status", "paid")
+        : q.gte("due_date", nowISO).lte("due_date", nextWeekStr).eq("status", "pending");
+      if (isSales && userId) q = q.eq("contracts.sales_id", userId);
+      return q;
+    });
 
   const buildRiskPoolQuery = async (): Promise<number> => {
     if (isSales && userId) {
@@ -287,7 +239,7 @@ export async function GET(request: Request) {
   const buildTodayFollowupsQuery = () => {
     let q = supabase
       .from("tasks")
-      .select("lead_id, due_at, leads!inner(*)")
+      .select("lead_id, due_at, leads!inner(id, customer_name, phone, quotation_value, final_status, archived)")
       .eq("status", "pending")
       .gte("due_at", todayStart.toISOString())
       .lt("due_at", tomorrowStart.toISOString());
@@ -304,6 +256,7 @@ export async function GET(request: Request) {
         "lead_id, due_at, leads!inner(id, customer_name, quotation_value, last_contact_date, phone, final_status)"
       )
       .eq("status", "pending")
+      .eq("leads.archived", false)
       .lt("due_at", new Date().toISOString())
       .order("due_at", { ascending: true })
       .limit(5);
@@ -316,6 +269,7 @@ export async function GET(request: Request) {
       .from("leads")
       .select("id, customer_name, quotation_value, win_probability, stage, phone")
       .eq("lead_status", "hot")
+      .eq("archived", false)
       .is("final_status", null)
       .order("quotation_value", { ascending: false })
       .limit(3);
@@ -326,7 +280,7 @@ export async function GET(request: Request) {
   const buildDraftQuotesQuery = () => {
     let q = supabase
       .from("quotations")
-      .select("*, leads!inner(customer_name, quotation_value, id, phone)")
+      .select("quote_no, total_amount, leads!inner(customer_name, quotation_value, id, phone)")
       .eq("status", "draft")
       .order("total_amount", { ascending: false })
       .limit(3);
@@ -338,6 +292,7 @@ export async function GET(request: Request) {
     let q = supabase
       .from("leads")
       .select("id, customer_name, quotation_value, last_contact_date, stage, phone")
+      .eq("archived", false)
       .is("final_status", null)
       .or(`last_contact_date.lt.${cutoff48h},last_contact_date.is.null`)
       .order("quotation_value", { ascending: false })
@@ -349,7 +304,7 @@ export async function GET(request: Request) {
   const buildOverdueWorkflowQuery = () => {
     let q = supabase
       .from("lead_workflow_stages")
-      .select("*, leads!inner(customer_name, quotation_value, phone)")
+      .select("stage_key, lead_id, deadline_at, leads!inner(customer_name, quotation_value, phone)")
       .eq("status", "in_progress")
       .lt("deadline_at", new Date().toISOString())
       .order("deadline_at", { ascending: true })
@@ -361,9 +316,14 @@ export async function GET(request: Request) {
   };
 
   const [
-    { data: payments, error: pErr },
-    { data: overduePlans, error: oErr },
-    { data: duePlans, error: dErr },
+    leadsResult,
+    { data: salesUsers },
+    contractsResult,
+    { data: kpiTargets },
+    { data: periodContractsRaw, error: periodContractsErr },
+    paymentsResult,
+    overdueResult,
+    dueResult,
     riskPoolCount,
     { data: todayFollowupsRaw },
     { data: overdueFollowups },
@@ -371,11 +331,16 @@ export async function GET(request: Request) {
     { data: draftQuotes },
     { data: staleLeads },
     { data: overdueWorkflow },
-    { data: periodPaymentsRaw, error: periodPaymentsErr },
+    periodPaymentsResult,
   ] = await Promise.all([
-    buildPaymentsQuery(),
-    buildOverdueQuery(),
-    buildDueQuery(),
+    leadsPromise,
+    salesUsersPromise,
+    contractsPromise,
+    kpiPromise,
+    periodContractsPromise,
+    paymentsPromise,
+    installmentsPromise("overdue"),
+    installmentsPromise("due"),
     buildRiskPoolQuery(),
     buildTodayFollowupsQuery(),
     buildOverdueFollowupsQuery(),
@@ -383,13 +348,34 @@ export async function GET(request: Request) {
     buildDraftQuotesQuery(),
     buildStaleLeadsQuery(),
     buildOverdueWorkflowQuery(),
-    buildPeriodPaymentsQuery(),
+    periodPaymentsPromise,
   ]);
 
-  if (pErr) console.error("payments fetch failed:", pErr);
-  if (oErr) console.error("overdue plans fetch failed:", oErr);
-  if (dErr) console.error("due plans fetch failed:", dErr);
-  if (periodPaymentsErr) console.error("period payments fetch failed:", periodPaymentsErr);
+  // A failed read must not turn into a quiet zero on the boss's dashboard.
+  for (const [label, result] of [
+    ["leads", leadsResult],
+    ["contracts", contractsResult],
+    ["payments", paymentsResult],
+    ["overdue plans", overdueResult],
+    ["due plans", dueResult],
+    ["period payments", periodPaymentsResult],
+  ] as const) {
+    if (result.error) {
+      console.error(`dashboard summary: ${label} fetch failed:`, result.error);
+      return applyPrivateNoStore(NextResponse.json({ error: "Failed to load dashboard data" }, { status: 500 }));
+    }
+  }
+  if (periodContractsErr) console.error("period contracts fetch failed:", periodContractsErr);
+
+  const leadsData = leadsResult.data as unknown as MetricLead[];
+  const contractsData = contractsResult.data as any[];
+  const payments = paymentsResult.data as any[];
+  const overduePlans = overdueResult.data as any[];
+  const duePlans = dueResult.data as any[];
+  const periodPaymentsRaw = periodPaymentsResult.data as any[];
+
+  // One definition of every lead figure on the page (src/lib/lead-metrics.mjs).
+  const leadStats = summarizeLeads(leadsData, { period, now: nowDate });
 
   // ── 5. Compute financeStats ──
   const activeContracts = contractsData.filter(
@@ -400,7 +386,7 @@ export async function GET(request: Request) {
     0
   );
 
-  const confirmedPayments = ((payments as any[]) || []).filter((p: any) =>
+  const confirmedPayments = (payments || []).filter((p: any) =>
     countsAsCash(p)
   );
   const received = confirmedPayments.reduce(
@@ -409,11 +395,11 @@ export async function GET(request: Request) {
   );
   const outstanding = totalContractValue - received;
 
-  const overdueAmount = ((overduePlans as any[]) || []).reduce(
+  const overdueAmount = (overduePlans || []).reduce(
     (sum: number, p: any) => sum + (p.amount || 0),
     0
   );
-  const dueNextWeekAmount = ((duePlans as any[]) || []).reduce(
+  const dueNextWeekAmount = (duePlans || []).reduce(
     (sum: number, p: any) => sum + (p.amount || 0),
     0
   );
@@ -422,7 +408,7 @@ export async function GET(request: Request) {
     (sum: number, contract: any) => sum + (contract.contract_amount || 0),
     0
   );
-  const periodPaymentAmount = ((periodPaymentsRaw as any[]) || []).reduce(
+  const periodPaymentAmount = (periodPaymentsRaw || []).reduce(
     (sum: number, payment: any) => sum + (payment.amount || 0),
     0
   );
@@ -438,23 +424,26 @@ export async function GET(request: Request) {
       ? {
           contractAmount: periodContractAmount,
           paymentAmount: periodPaymentAmount,
-          wonCount: periodWonCount || 0,
+          // Same definition as leadStats.periodWonCount: counted leads won in the
+          // Dubai month by won_at (quote-conversion wins included).
+          wonCount: leadStats.periodWonCount,
         }
       : {}),
   };
 
+  // Leads created in the Dubai month, from the rows already read above.
+  const periodLeadRows = period
+    ? leadsData.filter((lead) => isCountedLead(lead) && inBounds(lead.created_at, period))
+    : [];
   const groupPeriodLeads = (field: "quality" | "source") =>
-    ((periodLeadsRaw as any[]) || []).reduce<Record<string, number>>(
-      (groups, lead) => {
-        const key = String(lead[field] ?? "unknown");
-        groups[key] = (groups[key] || 0) + 1;
-        return groups;
-      },
-      {}
-    );
+    periodLeadRows.reduce<Record<string, number>>((groups, lead) => {
+      const key = String((lead as any)[field] ?? "unknown");
+      groups[key] = (groups[key] || 0) + 1;
+      return groups;
+    }, {});
 
   const periodLeads = {
-    count: ((periodLeadsRaw as any[]) || []).length,
+    count: periodLeadRows.length,
     byQuality: groupPeriodLeads("quality"),
     bySource: groupPeriodLeads("source"),
   };
@@ -463,7 +452,7 @@ export async function GET(request: Request) {
   const todayFollowups = ((todayFollowupsRaw as any[]) || [])
     .flatMap((task: any) => {
       const lead = Array.isArray(task.leads) ? task.leads[0] : task.leads;
-      return lead && !lead.final_status ? [lead] : [];
+      return lead && !lead.final_status && lead.archived !== true ? [lead] : [];
     });
 
   // ── 7. Compute topActions ──
@@ -473,9 +462,8 @@ export async function GET(request: Request) {
   ((overdueFollowups as any[]) || []).forEach((task: any) => {
     const l = Array.isArray(task.leads) ? task.leads[0] : task.leads;
     if (!l || l.final_status) return;
-    const daysLate = Math.ceil(
-      (Date.now() - new Date(task.due_at).getTime()) / 86400000
-    );
+    // Whole Dubai calendar days, the same figure analytics shows for this lead.
+    const daysLate = overdueDays(task.due_at, nowDate);
     actions.push({
       type: "overdue_followup",
       title: l.customer_name || "Unnamed",
@@ -525,9 +513,7 @@ export async function GET(request: Request) {
   // 4. Stale leads
   ((staleLeads as any[]) || []).forEach((l: any) => {
     const daysInactive = l.last_contact_date
-      ? Math.ceil(
-          (Date.now() - new Date(l.last_contact_date).getTime()) / 86400000
-        )
+      ? overdueDays(l.last_contact_date, nowDate)
       : 99;
     actions.push({
       type: "stale_lead",
@@ -578,7 +564,8 @@ export async function GET(request: Request) {
   const result = {
     profile: { userId, role },
     salesUsers: salesUsers || [],
-    leads: leadsData,
+    // Aggregates only: the browser no longer receives raw lead rows.
+    leadStats,
     finance,
     kpiTargets: kpiTargets || [],
     riskPoolCount,
@@ -589,7 +576,6 @@ export async function GET(request: Request) {
     ...(month
       ? {
           periodLeads,
-          stageChanges,
         }
       : {}),
   };

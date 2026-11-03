@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { whatsappHref as whatsappLink } from "@/lib/lead-contact.mjs";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
+import { localizeServerText } from "@/lib/i18n/server-text.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
@@ -582,7 +583,7 @@ export default function DashboardPage() {
                   {action.value > 0 && (
                     <span className="text-xs font-medium text-copper-400">{fmtAED(action.value)}</span>
                   )}
-                  <span className="text-xs text-muted-foreground">{action.reason}</span>
+                  <span className="text-xs text-muted-foreground">{localizeServerText(action.reason, language)}</span>
                 </div>
               </div>
               {/* Action buttons */}
@@ -856,7 +857,7 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-medium">{s.label}</span>
                     <span className="text-[11px] text-muted-foreground">
-                      {s.total} leads · {s.won} won · {convRate}%
+                      {t("dashboard.sourceLine").replace("{n}", String(s.total)).replace("{won}", String(s.won)).replace("{pct}", String(convRate))}
                     </span>
                   </div>
                   <div className="h-1.5 bg-muted rounded-full overflow-hidden">

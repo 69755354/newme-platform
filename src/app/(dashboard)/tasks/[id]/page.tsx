@@ -65,9 +65,9 @@ const PRIORITY_OPTIONS = [
 ];
 
 /* ─── Helpers ─── */
-function formatDateTime(d: string | null): string {
+function formatDateTime(d: string | null, locale: string): string {
   if (!d) return "—";
-  return fmtDubai(new Date(d), { locale: "en-US", month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return fmtDubai(new Date(d), { locale, month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function formatDateForInput(d: string | null): string {
@@ -383,16 +383,16 @@ export default function TaskDetailPage() {
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-muted-foreground">Created:</span>
-              <span className="ml-2">{formatDateTime(task.created_at)}</span>
+              <span className="ml-2">{formatDateTime(task.created_at, "en-US")}</span>
             </div>
             <div>
               <span className="text-muted-foreground">Due:</span>
-              <span className="ml-2">{formatDateTime(task.due_at)}</span>
+              <span className="ml-2">{formatDateTime(task.due_at, "en-US")}</span>
             </div>
             {task.completed_at && (
               <div>
                 <span className="text-muted-foreground">Completed:</span>
-                <span className="ml-2">{formatDateTime(task.completed_at)}</span>
+                <span className="ml-2">{formatDateTime(task.completed_at, "en-US")}</span>
               </div>
             )}
           </div>

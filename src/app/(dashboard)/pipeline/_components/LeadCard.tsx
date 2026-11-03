@@ -9,6 +9,7 @@
  */
 
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { localizeServerText } from "@/lib/i18n/server-text.mjs";
 import { cn } from "@/lib/utils";
 import { GripVertical, User, Clock } from "lucide-react";
 
@@ -44,7 +45,7 @@ function daysSince(d: string | null): number | null {
 
 /* ─── Draggable Lead Card ─── */
 export function LeadCard({ lead, onDragStart, onLeadClick, salesUsers }: { lead: Lead; onDragStart: (e: React.DragEvent, leadId: string) => void; onLeadClick: (id: string) => void; salesUsers: any[] }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const days = daysSince(lead.last_contact_date || lead.updated_at);
   const hoursSinceUpdate = lead.updated_at
     ? Math.floor((Date.now() - new Date(lead.updated_at).getTime()) / 3_600_000)
@@ -111,7 +112,7 @@ export function LeadCard({ lead, onDragStart, onLeadClick, salesUsers }: { lead:
 
       {/* Next action */}
       {lead.next_action && (
-        <p className="text-[10px] text-muted-foreground truncate mb-1">📋 {lead.next_action}</p>
+        <p className="text-[10px] text-muted-foreground truncate mb-1">📋 {localizeServerText(lead.next_action, lang)}</p>
       )}
 
       {/* Footer: assigned + stale days */}

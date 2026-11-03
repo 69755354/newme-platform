@@ -18,7 +18,6 @@ import {
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Toaster } from "sonner";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
 
@@ -352,7 +351,7 @@ function NewContractPageInner() {
         </DialogContent>
       </Dialog>
 
-      <Toaster position="top-center" richColors />
+
     </DashboardScrollContainer>
   );
 }

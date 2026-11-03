@@ -15,7 +15,6 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 import { CONTRACT_READ_ROLES } from "@/lib/contract-access.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { toast } from "sonner";
-import { Toaster } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -380,7 +379,7 @@ export default function ContractDetailPage() {
 
   return (
     <DashboardScrollContainer className="space-y-5 max-w-5xl">
-      <Toaster position="top-center" richColors />
+
 
       {/* Hidden file input */}
       <input

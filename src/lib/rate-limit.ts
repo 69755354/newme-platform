@@ -98,6 +98,14 @@ export type RateLimitResult = {
   allowed: boolean;
   remaining: number;
   retryAfterSeconds: number;
+  /**
+   * S6 (review 4d #17): undo exactly this request's own contribution, e.g. for
+   * a sign-in that turned out to be successful, so that only failed attempts
+   * spend the lockout budget. Idempotent; a no-op once the slice it wrote to
+   * has rotated out or a counter saturated. Never lowers another request's
+   * contribution, so it cannot grant attempts beyond the limit.
+   */
+  release?: () => void;
 };
 
 function refusal(retryAfterSeconds: number): RateLimitResult {
@@ -192,9 +200,13 @@ export function consumeRateLimit(
     estimate = Math.min(estimate, depthTotal);
   }
 
+  const incremented: number[] = [];
   for (let depth = 0; depth < SKETCH_DEPTH; depth += 1) {
     const offset = counterOffset(currentSlice, depth, indices[depth]);
-    if (state.counts[offset] < 255) state.counts[offset] += 1;
+    if (state.counts[offset] < 255) {
+      state.counts[offset] += 1;
+      incremented.push(offset);
+    }
   }
 
   const nextEstimate = estimate + 1;
@@ -205,10 +217,22 @@ export function consumeRateLimit(
     const fullyResetAt = state.originAt + (generation + TIME_SLICES) * state.sliceMs;
     return refusal((fullyResetAt - safeNow) / 1000);
   }
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    // A rotated slice already dropped this contribution; touching it now
+    // would subtract from an unrelated newer request.
+    if (state.generations[currentSlice] !== generation) return;
+    for (const offset of incremented) {
+      if (state.counts[offset] > 0) state.counts[offset] -= 1;
+    }
+  };
   return {
     allowed: true,
     remaining: state.limit - nextEstimate,
     retryAfterSeconds: 0,
+    release,
   };
 }
 

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn, fmtDubai } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { requestJson, runMutation } from "@/lib/mutation-feedback";
 import { AlertTriangle, CheckCircle2, Clock, Lock, MessageSquare, Phone, ShieldCheck, Unlock } from "lucide-react";
 import type { FollowUpLog, Lead, LeadMilestone } from "./types";
 
@@ -39,7 +40,7 @@ export default function LeadContactQualityPanel({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-sm text-muted-foreground">Loading…</div>
+          <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
         </CardContent>
       </Card>
     );
@@ -69,7 +70,7 @@ export default function LeadContactQualityPanel({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-sm text-muted-foreground">No data</div>
+          <div className="text-sm text-muted-foreground">{t("common.noData")}</div>
         </CardContent>
       </Card>
     );
@@ -161,7 +162,7 @@ export default function LeadContactQualityPanel({
           <div className="space-y-1">
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">
-                Contact records (with valid time)
+                {t("leadDetail.contactRecordsValid")}
               </span>
               <span
                 className={contactsMet ? "text-emerald-400 font-medium" : "text-amber-400"}
@@ -187,7 +188,7 @@ export default function LeadContactQualityPanel({
 
           {/* Quality check */}
           <div className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">Quality assessed</span>
+            <span className="text-muted-foreground">{t("leadDetail.qualityAssessed")}</span>
             <span>
               {qualityAssessed ? (
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 inline" />
@@ -232,20 +233,19 @@ export default function LeadContactQualityPanel({
           {hasNoContact && (
             <div className="flex items-center gap-2 text-xs text-red-400">
               <AlertTriangle className="h-3 w-3" />
-              No contact yet
+              {t("leadDetail.noContactYet")}
             </div>
           )}
           {isOverdue && (
             <div className="flex items-center gap-2 text-xs text-red-400">
               <Clock className="h-3 w-3" />
-              {lang === "zh" ? "跟进" : "Follow-up"} overdue (
-              {fmtDubai(lead.next_followup_date!, { locale: "en" })})
+              {t("leadDetail.followupOverdueSince").replace("{date}", fmtDubai(lead.next_followup_date!, { locale: t("locale.dateLocale") }))}
             </div>
           )}
           {!hasNoContact && !isOverdue && (
             <div className="flex items-center gap-2 text-xs text-emerald-400">
               <CheckCircle2 className="h-3 w-3" />
-              Contact activity normal
+              {t("leadDetail.contactActivityNormal")}
             </div>
           )}
         </div>
@@ -257,7 +257,7 @@ export default function LeadContactQualityPanel({
           </div>
           {recentLogs.length === 0 ? (
             <div className="text-xs text-muted-foreground">
-              No follow-up logs
+              {t("leadDetail.noFollowupLogs")}
             </div>
           ) : (
             <ul className="space-y-1.5">
@@ -268,12 +268,10 @@ export default function LeadContactQualityPanel({
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate">
-                      {log.summary || "(no summary)"}
+                      {log.summary || t("leadDetail.noSummary")}
                     </div>
                     <div className="text-[10px] text-muted-foreground">
-                      {fmtDubai(log.contact_time || log.created_at, {
-                        locale: "en",
-                      })}
+                      {fmtDubai(log.contact_time || log.created_at, { locale: t("locale.dateLocale") })}
                     </div>
                   </div>
                 </li>
@@ -319,17 +317,17 @@ export default function LeadContactQualityPanel({
                       }
                     }}
                     className={cn(
-                      "text-xs px-3 py-1.5 rounded border transition-colors border-rose-500/30 text-rose-400",
+                      "min-h-10 md:min-h-0 text-xs px-3 py-1.5 rounded border transition-colors border-rose-500/30 text-rose-400",
                       poorReason.trim().length < 3 ? "opacity-50 cursor-not-allowed" : "hover:bg-rose-500/10"
                     )}
                   >
-                    {qualitySubmitting === "poor" ? "Saving..." : "Confirm Poor"}
+                    {qualitySubmitting === "poor" ? t("common.saving") : t("leadDetail.confirmPoor")}
                   </button>
                   <button
                     onClick={() => { setShowingPoorReason(false); setPoorReason(""); }}
-                    className="text-xs px-3 py-1.5 rounded border border-border text-muted-foreground hover:border-gray-500"
+                    className="min-h-10 md:min-h-0 text-xs px-3 py-1.5 rounded border border-border text-muted-foreground hover:border-gray-500"
                   >
-                    Cancel
+                    {t("common.cancel")}
                   </button>
                 </div>
               </div>
@@ -341,29 +339,34 @@ export default function LeadContactQualityPanel({
                     disabled={qualitySubmitting === q}
                     onClick={async () => {
                       setQualitySubmitting(q);
-                      const res = await fetch(`/api/leads/${lead?.id}/quality`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ quality: q }),
-                      });
-                      if (res.ok) window.location.reload();
+                      // S6 (review 4d #13): tapping a quality button used to give
+                      // no feedback at all; now it reports saved / failed.
+                      const result = await runMutation(
+                        () => requestJson(`/api/leads/${lead?.id}/quality`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ quality: q }),
+                        }),
+                        { t, successMessage: t("mutation.saved") },
+                      );
+                      if (result.ok) window.location.reload();
                       else setQualitySubmitting(null);
                     }}
                     className={cn(
-                      "text-xs px-3 py-1.5 rounded border transition-colors",
+                      "min-h-10 md:min-h-0 text-xs px-3 py-1.5 rounded border transition-colors",
                       q === "good" ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" :
                       "border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
                     )}
                   >
-                    {qualitySubmitting === q ? "..." : q === "good" ? "✓ Good" : "Normal"}
+                    {qualitySubmitting === q ? t("common.saving") : q === "good" ? `✓ ${t("leadDetail.qualityGoodBtn")}` : t("leadDetail.qualityNormalBtn")}
                   </button>
                 ))}
                 <button
                   onClick={() => setShowingPoorReason(true)}
                   disabled={qualitySubmitting !== null}
-                  className="text-xs px-3 py-1.5 rounded border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 transition-colors"
+                  className="min-h-10 md:min-h-0 text-xs px-3 py-1.5 rounded border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 transition-colors"
                 >
-                  ⚠️ Poor
+                  ⚠️ {t("leadDetail.qualityPoorBtn")}
                 </button>
               </div>
             )}

@@ -239,3 +239,32 @@
     height: auto !important;
   }
 }
+
+/* S6 (review 4d #12): on touch screens every control is at least 40 px tall
+   (buttons were 24-28 px; inputs 28 px). Only coarse pointers (phones and
+   tablets) are affected, so the dense desktop layout stays as it is. Lives in
+   the base layer so an explicit Tailwind min-h-* utility can still win. */
+@layer base {
+  @media (pointer: coarse) {
+    button,
+    [role="button"],
+    select,
+    textarea,
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]) {
+      min-height: 40px;
+    }
+    button,
+    [role="button"] {
+      min-width: 40px;
+    }
+  }
+}
+
+/* S6 (review 4d #10): long unbroken names, addresses and notes wrap inside
+   their card instead of pushing it past the screen edge. */
+@layer base {
+  .break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}

@@ -255,7 +255,7 @@ export default function LeadTimeline({
                           </>
                         )}
                       </div>
-                      <p className="break-words whitespace-pre-wrap text-sm leading-snug">
+                      <p className="break-anywhere whitespace-pre-wrap text-sm leading-snug">
                         {msg.content || <span className="italic text-gray-400">—</span>}
                       </p>
                       <p className="mt-0.5 text-right text-[10px] text-gray-500">
@@ -310,7 +310,7 @@ export default function LeadTimeline({
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-foreground whitespace-pre-wrap break-words">{item.content}</p>
+                    <p className="text-foreground whitespace-pre-wrap break-anywhere">{item.content}</p>
                     {editableContact && contact && (
                       <div className="flex items-center gap-2 shrink-0">
                         <button

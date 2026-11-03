@@ -18,6 +18,7 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { toast } from "sonner";
+import { MutationFailure, runMutation } from "@/lib/mutation-feedback";
 
 export default function NewLeadPage() {
   const router = useRouter();
@@ -33,17 +34,25 @@ export default function NewLeadPage() {
   async function create(overrideReason?: string) {
     setSaving(true);
     try {
-      const result = await submitNewLead({
-        customer_name: form.customer_name,
-        phone: form.phone,
-        email: form.email,
-        location: form.location,
-        source: form.source,
-        notes: form.notes,
-      }, overrideReason);
+      // S6: shared save pattern ("Saving…" on slow networks, localized failure
+      // message, sign-in redirect when the session ended). The S3 server route
+      // does the actual create; field/duplicate answers are shown inline.
+      const outcome = await runMutation(async () => {
+        const r = await submitNewLead({
+          customer_name: form.customer_name,
+          phone: form.phone,
+          email: form.email,
+          location: form.location,
+          source: form.source,
+          notes: form.notes,
+        }, overrideReason);
+        if (!r.ok && !r.state) throw new MutationFailure({ status: r.status ?? 500 });
+        return r;
+      }, { t, successMessage: null, fallbackErrorKey: "leads.createFailed" });
+      if (!outcome.ok) return;
+      const result = outcome.value;
       if (!result.ok) {
         setErrorState(result.state);
-        if (!result.state) toast.error(t("leads.createFailed") || "Failed to create lead");
         return;
       }
       setErrorState(null);
@@ -120,7 +129,7 @@ export default function NewLeadPage() {
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 maxLength={LEAD_FIELD_LIMITS.email}
                 className="bg-muted border-border text-foreground mt-1"
-                placeholder="email@example.com"
+                placeholder={t("leads.emailPlaceholder")}
               />
               {fieldError("email")}
               {fieldError("contact")}
@@ -132,7 +141,7 @@ export default function NewLeadPage() {
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
                 maxLength={LEAD_FIELD_LIMITS.location}
                 className="bg-muted border-border text-foreground mt-1"
-                placeholder="Dubai, Palm Jumeirah..."
+                placeholder={t("leads.locationPlaceholder")}
               />
               {fieldError("location")}
             </div>

@@ -109,6 +109,8 @@ export async function POST(request: Request) {
     });
     const response = respond({ error: "rate_limited" }, { status: 429 });
     response.headers.set("Retry-After", String(ipLimit.retryAfterSeconds));
+    // S6: lets the sign-in page say which bound was hit (no account data).
+    response.headers.set("X-RateLimit-Scope", "address");
     return response;
   }
 
@@ -128,6 +130,8 @@ export async function POST(request: Request) {
     });
     const response = respond({ error: "rate_limited" }, { status: 429 });
     response.headers.set("Retry-After", String(accountLimit.retryAfterSeconds));
+    // S6: lets the sign-in page say which bound was hit (no account data).
+    response.headers.set("X-RateLimit-Scope", "account");
     return response;
   }
 
@@ -221,6 +225,12 @@ export async function POST(request: Request) {
     await revokeIssuedToken(supabaseUrl, anonKey, accessToken);
     return respond({ error: "inactive_account" }, { status: 403 });
   }
+
+  // S6 (review 4d #17): the budgets bound guessing, so a correct credential
+  // for an active account gives its attempt back. Before this, 4 successful
+  // sign-ins in 15 minutes made the 5th wrong password lock the account.
+  ipLimit.release?.();
+  accountLimit.release?.();
 
   // 3. Only now does a session exist. Cookies come from the shared contract.
   return applySessionCookies(

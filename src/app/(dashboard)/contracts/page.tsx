@@ -20,7 +20,6 @@ import { DashboardScrollContainer } from "@/components/DashboardScrollContainer"
 import SubNavTabs from "@/components/SubNavTabs";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Toaster } from "sonner";
 import { approveContract } from "@/app/actions/contracts";
 import { fmtAED } from "@/shared/utils/format";
 // R5: this page used to declare its own `interface Contract`, and the route cast its
@@ -569,7 +568,7 @@ export default function ContractsPage() {
         </DialogContent>
       </Dialog>
 
-      <Toaster position="top-center" richColors />
+
     </DashboardScrollContainer>
   );
 }

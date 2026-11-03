@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { reportMutationFailure } from "@/lib/mutation-feedback";
 import { DEVICE_CATALOG, findDevice, QUOTATION_DEFAULTS } from "@/lib/device-catalog";
 import { calculateQuotation, type CalculateResult } from "@/lib/quotation-engine";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -228,7 +229,7 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
         notes: `${t("quotes.calc.property")}: ${s.propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${s.area}㎡\n${t("quotes.calc.installLabor")} (30%): ${calc.install_labor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")} (12%): ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")} (8%): ${calc.project_management.toFixed(2)} AED`,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       }).select("id, quote_no").single();
-      if (error || !quote?.quote_no) { console.error("Save error:", error); toast.error(t("quotes.calc.saveFailed") + (error?.message || "Missing database quote number")); return; }
+      if (error || !quote?.quote_no) { console.error("Save error:", error); reportMutationFailure(error ?? new Error("quote number missing"), t, "common.saveFailedRetry"); return; }
       // Notify about new quotation
       void import("@/lib/notify")
         .then(({ notify }) => notify({ type: "quote_created", quote_id: quote.id, lead_id: s.selectedLeadId, quote_no: quote.quote_no }))

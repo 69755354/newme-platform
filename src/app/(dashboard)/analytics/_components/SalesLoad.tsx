@@ -185,8 +185,12 @@ function CEOSalesLoad({ data, t, actorId, canRebalance }: {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-amber-300">{t('analytics.loadImbalanceDetected')}</p>
             <p className="text-xs text-muted-foreground">
-              {data.overloaded.map((r) => r.name).join(", ")} {t('analytics.overloaded').toLowerCase()} ({data.overloaded[0]?.totalLeads ?? 0} {t('analytics.leadsLower')} vs {t('analytics.avgLoad')} {data.avgLoad}).
-              {data.underloaded.length} {t('analytics.underloaded').toLowerCase()} {t('analytics.reps')} {t('common.available')}).
+              {/* S6 (review 4a #12): one translated sentence instead of glued fragments with a raw key. */}
+              {t('analytics.imbalanceDetail')
+                .replace('{names}', data.overloaded.map((r) => r.name).join(", "))
+                .replace('{n}', String(data.overloaded[0]?.totalLeads ?? 0))
+                .replace('{avg}', String(data.avgLoad))
+                .replace('{k}', String(data.underloaded.length))}
             </p>
           </div>
           {canRebalance && (

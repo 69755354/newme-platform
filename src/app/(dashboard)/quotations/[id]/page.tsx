@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn, fmtDubai } from "@/lib/utils";
-import { Toaster, toast } from "sonner";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   FileText,
@@ -38,6 +38,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { fmtAED } from "@/shared/utils/format";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Database, Json } from "@/types/database";
 
 /* ─── Types ─── */
@@ -130,19 +131,19 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 /* ─── Helpers ─── */
-function fmtDate(d: string | null | undefined): string {
+function fmtDate(d: string | null | undefined, locale: string): string {
   if (!d) return "—";
   try {
-    return fmtDubai(d, { locale: "en-US", year: "numeric", month: "long", day: "numeric" });
+    return fmtDubai(d, { locale, year: "numeric", month: "long", day: "numeric" });
   } catch {
     return "—";
   }
 }
 
-function fmtDateTime(d: string | null | undefined): string {
+function fmtDateTime(d: string | null | undefined, locale: string): string {
   if (!d) return "—";
   try {
-    return fmtDubai(d, { locale: "en-US", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    return fmtDubai(d, { locale, year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   } catch {
     return "—";
   }
@@ -169,6 +170,8 @@ export default function QuotationDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // S6 (review 4d/4a): removing a saved line item asks first.
+  const [removeIndex, setRemoveIndex] = useState<number | null>(null);
 
   // Line items
   const [lineItems, setLineItems] = useState<QuotationLineItem[]>([]);
@@ -464,6 +467,18 @@ export default function QuotationDetailPage() {
 
   return (
     <DashboardScrollContainer className="space-y-6">
+      <ConfirmDialog
+        open={removeIndex !== null}
+        onOpenChange={(open) => { if (!open) setRemoveIndex(null); }}
+        title={t("quotations.removeItemTitle")}
+        description={t("quotations.removeItemConfirm")}
+        confirmLabel={t("quotations.removeItem")}
+        cancelLabel={t("common.cancel")}
+        onConfirm={async () => {
+          if (removeIndex !== null) await handleRemoveLineItem(removeIndex);
+          return true;
+        }}
+      />
       {/* Back button */}
       <div className="flex items-center gap-4">
         <Button
@@ -487,7 +502,7 @@ export default function QuotationDetailPage() {
                 statusStyle.border
               )}
             >
-              {STATUS_LABELS[quotation.status] || quotation.status}
+              {STATUS_LABELS[quotation.status] ? t(`quotes.${quotation.status}`) : quotation.status}
             </Badge>
             {quotation.version && quotation.version > 1 && (
               <Badge variant="outline" className="text-xs">
@@ -496,7 +511,7 @@ export default function QuotationDetailPage() {
             )}
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            {t("quotations.created") || "Created"} {fmtDateTime(quotation.created_at)}
+            {t("quotations.created") || "Created"} {fmtDateTime(quotation.created_at, t("locale.dateLocale"))}
           </p>
         </div>
       </div>
@@ -563,7 +578,7 @@ export default function QuotationDetailPage() {
               </p>
               <p className="text-sm font-medium flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
-                {fmtDate(quotation.valid_until)}
+                {fmtDate(quotation.valid_until, t("locale.dateLocale"))}
               </p>
             </div>
             <div>
@@ -684,7 +699,9 @@ export default function QuotationDetailPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleRemoveLineItem(index)}
+                      onClick={() => setRemoveIndex(index)}
+                      aria-label={t("quotations.removeItem")}
+                      title={t("quotations.removeItem")}
                       className="h-8 w-8 p-0 text-rose-500 hover:text-rose-600"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -725,7 +742,7 @@ export default function QuotationDetailPage() {
               <p className="text-xs text-muted-foreground mb-1">
                 {t("quotations.createdAt") || "Created At"}
               </p>
-              <p className="text-sm">{fmtDateTime(quotation.created_at)}</p>
+              <p className="text-sm">{fmtDateTime(quotation.created_at, t("locale.dateLocale"))}</p>
             </div>
             {quotation.sent_at && (
               <div>
@@ -733,7 +750,7 @@ export default function QuotationDetailPage() {
                   {t("quotations.sentAt") || "Sent At"}
                 </p>
                 <p className="text-sm text-blue-400">
-                  {fmtDateTime(quotation.sent_at)}
+                  {fmtDateTime(quotation.sent_at, t("locale.dateLocale"))}
                 </p>
               </div>
             )}
@@ -743,7 +760,7 @@ export default function QuotationDetailPage() {
                   {t("quotations.acceptedAt") || "Accepted At"}
                 </p>
                 <p className="text-sm text-emerald-400">
-                  {fmtDateTime(quotation.accepted_at)}
+                  {fmtDateTime(quotation.accepted_at, t("locale.dateLocale"))}
                 </p>
               </div>
             )}
@@ -753,7 +770,7 @@ export default function QuotationDetailPage() {
                   {t("quotations.rejectedAt") || "Rejected At"}
                 </p>
                 <p className="text-sm text-rose-400">
-                  {fmtDateTime(quotation.rejected_at)}
+                  {fmtDateTime(quotation.rejected_at, t("locale.dateLocale"))}
                 </p>
               </div>
             )}
@@ -761,7 +778,7 @@ export default function QuotationDetailPage() {
               <p className="text-xs text-muted-foreground mb-1">
                 {t("quotations.lastUpdated") || "Last Updated"}
               </p>
-              <p className="text-sm">{fmtDateTime(quotation.updated_at)}</p>
+              <p className="text-sm">{fmtDateTime(quotation.updated_at, t("locale.dateLocale"))}</p>
             </div>
           </div>
         </CardContent>
@@ -852,7 +869,7 @@ export default function QuotationDetailPage() {
         </CardContent>
       </Card>
 
-      <Toaster position="top-center" richColors />
+
     </DashboardScrollContainer>
   );
 }

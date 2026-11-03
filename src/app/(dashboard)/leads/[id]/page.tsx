@@ -19,7 +19,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, fmtDubai } from "@/lib/utils";
-import { Toaster, toast } from "sonner";
+import { toast } from "sonner";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
@@ -269,8 +269,12 @@ export default function LeadDetailPage() {
     }
   }
 
-  const commitInlineEdit = () => {
-    if (!editField || !lead) return;
+  // S6 (review 4d #4): the editor used to close before the save finished, so a
+  // failed save (offline / 500) threw away what the user typed. Now it closes
+  // only on success; on failure the field stays open with the typed value.
+  const [committingField, setCommittingField] = useState<string | null>(null);
+  const commitInlineEdit = async () => {
+    if (!editField || !lead || committingField) return;
 
     if (!isInlineEditField(editField)) return;
     const field = editField;
@@ -281,16 +285,22 @@ export default function LeadDetailPage() {
       return;
     }
 
-    if (field === "customer_budget") {
-      if (nextValue && !Number.isFinite(Number(nextValue))) {
-        toast.error("Customer Budget must be a number");
-        return;
+    let saved: boolean;
+    setCommittingField(field);
+    try {
+      if (field === "customer_budget") {
+        if (nextValue && !Number.isFinite(Number(nextValue))) {
+          toast.error(t("leadDetail.budgetMustBeNumber"));
+          return;
+        }
+        saved = await updateField(field, nextValue ? Number(nextValue) : null, "note_added", "Customer Budget: " + nextValue);
+      } else {
+        saved = await updateField(field, nextValue, "note_added", field + ": " + nextValue);
       }
-      updateField(field, nextValue ? Number(nextValue) : null, "note_added", "Customer Budget: " + nextValue);
-    } else {
-      updateField(field, nextValue, "note_added", field + ": " + nextValue);
+    } finally {
+      setCommittingField(null);
     }
-    setEditField(null);
+    if (saved) setEditField(null);
   };
 
   const commitNextAction = () => {
@@ -323,6 +333,8 @@ export default function LeadDetailPage() {
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
           onBlur={commitInlineEdit}
+          disabled={committingField === field}
+          aria-busy={committingField === field}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -372,7 +384,7 @@ export default function LeadDetailPage() {
             if (e.key === "Enter") {
               const parsed = parseJsonInput(editValue);
               if (parsed === null && editValue.trim()) {
-                toast.error("Enter valid JSON");
+                toast.error(t("leadDetail.invalidJson"));
                 return;
               }
               updateField(field, parsed, "note_added", `${label}: ${editValue}`);
@@ -490,14 +502,14 @@ export default function LeadDetailPage() {
           the top of the lead content when scrolled, hiding the click-action area. */}
       <div
         data-sticky-region="page-title"
-        className="sticky top-0 z-20 flex items-center gap-4 rounded-xl border border-border bg-card/95 px-4 py-3 shadow-sm"
+        className="z-20 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 shadow-sm md:sticky md:top-0 md:flex-nowrap md:gap-4 md:px-4 md:py-3"
       >
         <Button variant="ghost" size="icon" onClick={() => router.push("/leads")} className="text-muted-foreground">
           <ArrowLeft className="w-5 h-5" />
         </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-foreground">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="min-w-0 break-anywhere text-lg font-bold text-foreground line-clamp-2 md:text-2xl">
               {lead.customer_name || lead.phone || t("leadDetail.unnamed")}
             </h1>
             {lead.lead_status && (
@@ -516,7 +528,7 @@ export default function LeadDetailPage() {
               </span>
             )}
           </div>
-          <p data-newme-uat-sensitive="true" className="text-muted-foreground text-sm">
+          <p data-newme-uat-sensitive="true" className="break-anywhere text-muted-foreground text-xs md:text-sm">
             {fmtDubai(lead.created_at, { locale: t("locale.dateLocale") })} · {lead.source ? t(`sourceLabels.${lead.source}`) : t("sourceLabels.unknown")}
             {lead.rep_name && ` · ${lead.rep_name}`}
             {assignedToName && !lead.rep_name && ` · ${assignedToName}`}
@@ -552,8 +564,8 @@ export default function LeadDetailPage() {
       </div>
 
       {/* Deal Canvas: facts → focused action workspace → auditable activity ledger. */}
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(250px,0.8fr)_minmax(520px,1.6fr)_minmax(340px,1fr)]">
-        <aside className="space-y-3">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
+        <aside className="min-w-0 space-y-3">
           <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             {lang === "zh" ? "客户与项目事实" : "Customer & project facts"}
           </p>
@@ -572,7 +584,7 @@ export default function LeadDetailPage() {
           />
         </aside>
 
-        <main className="space-y-3">
+        <main className="min-w-0 space-y-3">
           <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-copper-400">
             {lang === "zh" ? "成交工作区 · 下一步行动" : "Deal workspace · next action"}
           </p>
@@ -605,7 +617,7 @@ export default function LeadDetailPage() {
           <KnxDesignPanel leadId={id as string} />
         </main>
 
-        <aside className="space-y-3 xl:sticky xl:top-20 xl:self-start">
+        <aside className="min-w-0 space-y-3 xl:sticky xl:top-20 xl:self-start">
           <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             {lang === "zh" ? "可追溯时间线" : "Auditable timeline"}
           </p>
@@ -656,7 +668,7 @@ export default function LeadDetailPage() {
       {/* T2-4: toast 层级约定 — z-toast z-50
           sonner Toaster 已固定 z-50，作为最高优先级反馈层，
           覆盖 page-title / modal / dropdown。 */}
-      <Toaster position="top-center" richColors />
+
     </DashboardScrollContainer>
   );
 }

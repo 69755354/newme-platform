@@ -111,7 +111,7 @@ export default function KanbanStats({
   return (
     <div
       role="region"
-      aria-label="Pipeline stage distribution"
+      aria-label={t("pipeline.stageDistribution")}
       className={cn(
         // Single grid container — treats the whole strip as one visual unit
         "rounded-xl border border-border/40 bg-card/30 p-2",
@@ -136,7 +136,7 @@ export default function KanbanStats({
               type="button"
               key={s.key}
               onClick={() => handleClick(s.key)}
-              aria-label={`${t(s.labelKey)} — ${items.length} leads, ${pct}%`}
+              aria-label={`${t(s.labelKey)} — ${t("pipeline.leadsPct").replace("{n}", String(items.length)).replace("{pct}", String(pct))}`}
               className={cn(
                 "text-left p-2 rounded-lg border transition-all cursor-pointer hover:border-copper-500/50",
                 s.bg,

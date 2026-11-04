@@ -6,6 +6,8 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { setImmediate as flush } from "node:timers/promises";
 
+const cosKey = await import("../../src/lib/cos-key.mjs");
+
 const require = createRequire(import.meta.url);
 const Module = require("node:module");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -110,6 +112,7 @@ function contractRoutes(role, owner = true) {
     "@/lib/supabase-server": { createServerSupabase: async () => client },
     "@/lib/logger": { logger: log, genReqId: () => "request" },
     "@/lib/release-script": { resolveReleaseScript: () => "/fixture/presign.py" },
+    "@/lib/cos-key.mjs": cosKey,
     child_process: { execFile: (_bin, args, _options, cb) => {
       signed.push(args[2]); cb(null, JSON.stringify({ url: "https://example.test/signed", key: args[2] }), "");
     } },

@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
 import { parseInstallLabourNote } from "@/lib/quotation-labour-basis.mjs";
+import { normalizeQuotationLineItems } from "@/lib/quotation-rules.mjs";
 
 /**
  * GET /api/quotations/export?id=<quote_id>
@@ -104,15 +105,22 @@ export async function GET(request: NextRequest) {
     // Device breakdown
     rows.push(["Device ID", "Name", "Qty", "Unit Price", "Line Total"]);
 
-    const devicesJson = quote.devices_json || {};
-    for (const [deviceId, info] of Object.entries(devicesJson)) {
-      const d = info as Record<string, any>;
+    // Engine, calculator/wizard and add-product rows all read the same way; the
+    // calculator shape used to export as qty 0 / price 0 / total 0.
+    let lineItems: ReturnType<typeof normalizeQuotationLineItems>;
+    try {
+      lineItems = normalizeQuotationLineItems(quote.devices_json);
+    } catch (err) {
+      logger.error({ err, request_id, operation: "quotation_export", quote_id: quoteId }, "[Quotation Export] Unreadable line items");
+      return NextResponse.json({ error: "Quotation line items are unreadable" }, { status: 422 });
+    }
+    for (const item of lineItems) {
       rows.push([
-        deviceId,
-        d.name || EMPTY,
-        String(d.qty || 0),
-        String(d.unit_price || 0),
-        String(d.line_total || 0),
+        item.id,
+        item.name || EMPTY,
+        String(item.quantity),
+        String(item.unit_price),
+        String(item.line_total),
       ]);
     }
 

@@ -109,6 +109,7 @@ const nextServer = {
     json: (body, init) => ({ body, status: init?.status ?? 200 }),
   },
 };
+const quotationRules = await import("../../src/lib/quotation-rules.mjs");
 const quietLogger = { error() {}, warn() {}, info() {} };
 
 test("quotation generate executes the insert once and propagates the database quote number", async () => {
@@ -134,6 +135,7 @@ test("quotation generate executes the insert once and propagates the database qu
     // Here it must stay inert: returning undefined makes the route keep the
     // percentage basis, so this test still observes the unmodified insert path.
     "@/lib/quotation-labour-request": { buildBottomUpLabourRequest: () => undefined },
+    "@/lib/quotation-rules.mjs": quotationRules,
     "@/lib/quotation-labour-basis.mjs": { formatInstallLabourNote: () => "" },
   });
 

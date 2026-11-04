@@ -16,6 +16,7 @@ import {
   DollarSign, Hash, Clock, ExternalLink,
 } from "lucide-react";
 import { DEVICE_CATALOG } from "@/lib/device-catalog";
+import { normalizeQuotationLineItems } from "@/lib/quotation-rules.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { toast } from "sonner";
 import { fmtAED } from "@/shared/utils/format";
@@ -39,7 +40,7 @@ interface Quotation {
   status: string;
   pdf_url: string | null;
   ppt_url: string | null;
-  devices_json: Record<string, { name: string; qty: number; unit_price: number; line_total: number; unit?: string }> | null;
+  devices_json: unknown;
   notes: string | null;
   contract_id?: string | null;
   contract_no?: string | null;
@@ -100,7 +101,10 @@ interface QuoteDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   quote: Quotation | null;
-  onStatusChange: (id: string, newStatus: string) => void;
+  /** Resolves true only when the change was stored. */
+  onStatusChange: (id: string, newStatus: string) => Promise<boolean>;
+  /** The conversion route already stored the new status; refresh the views. */
+  onConverted?: (id: string) => void;
 }
 
 /* ─── Status config ─── */
@@ -121,6 +125,15 @@ function fmtDate(d: string | null | undefined, locale: string): string {
   return fmtDubai(d, { locale, month: "short", day: "numeric", year: "numeric" });
 }
 
+/** Line items in any stored shape; an unreadable value shows as no rows, not a crash. */
+function safeLineItems(value: unknown) {
+  try {
+    return normalizeQuotationLineItems(value);
+  } catch {
+    return [];
+  }
+}
+
 function getCategoryIcon(key: string): string {
   const cat = DEVICE_CATALOG.find((c) => c.key === key);
   return cat?.icon ?? "📦";
@@ -131,7 +144,7 @@ function getCategoryLabel(key: string): string {
 }
 
 /* ─── Component ─── */
-export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusChange }: QuoteDetailDialogProps) {
+export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusChange, onConverted }: QuoteDetailDialogProps) {
   const { t } = useLanguage();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [loadingDownload, setLoadingDownload] = useState<string | null>(null);
@@ -145,13 +158,13 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
       // Auto-expand all categories
       const cats = new Set<string>();
       if (quote.devices_json) {
-        Object.keys(quote.devices_json).forEach((deviceId) => {
+        for (const item of safeLineItems(quote.devices_json)) {
           for (const cat of DEVICE_CATALOG) {
-            if (cat.devices.some((d) => d.id === deviceId)) {
+            if (cat.devices.some((d) => d.id === item.id)) {
               cats.add(cat.key);
             }
           }
-        });
+        }
       }
       setExpandedCategories(cats);
     }
@@ -159,31 +172,30 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
 
   if (!quote) return null;
 
-  const statusStyle = STATUS_STYLES[quote.status] || STATUS_STYLES.draft;
+  const shownStatus = activeStatus || quote.status;
+  const statusStyle = STATUS_STYLES[shownStatus] || STATUS_STYLES.draft;
   const customerName = quote.leads?.customer_name || t("contracts.unnamed");
 
   // Group line items by category
   const categoryGroups: Record<string, { label: string; icon: string; items: any[]; subtotal: number }> = {};
-  if (quote.devices_json) {
-    for (const [deviceId, info] of Object.entries(quote.devices_json)) {
-      let catKey = "other";
-      for (const cat of DEVICE_CATALOG) {
-        if (cat.devices.some((d) => d.id === deviceId)) {
-          catKey = cat.key;
-          break;
-        }
+  for (const item of safeLineItems(quote.devices_json)) {
+    let catKey = "other";
+    for (const cat of DEVICE_CATALOG) {
+      if (cat.devices.some((d) => d.id === item.id)) {
+        catKey = cat.key;
+        break;
       }
-      if (!categoryGroups[catKey]) {
-        categoryGroups[catKey] = {
-          label: getCategoryLabel(catKey),
-          icon: getCategoryIcon(catKey),
-          items: [],
-          subtotal: 0,
-        };
-      }
-      categoryGroups[catKey].items.push({ id: deviceId, ...info });
-      categoryGroups[catKey].subtotal += info.line_total;
     }
+    if (!categoryGroups[catKey]) {
+      categoryGroups[catKey] = {
+        label: getCategoryLabel(catKey),
+        icon: getCategoryIcon(catKey),
+        items: [],
+        subtotal: 0,
+      };
+    }
+    categoryGroups[catKey].items.push(item);
+    categoryGroups[catKey].subtotal += item.line_total;
   }
 
   const toggleCategory = (key: string) => {
@@ -218,9 +230,12 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
     }
   };
 
-  const handleStatusChange = (newStatus: string) => {
+  const handleStatusChange = async (newStatus: string) => {
+    // The badge, the select and the success message all follow the stored
+    // result; a refused change leaves everything as it was.
+    const stored = await onStatusChange(quote.id, newStatus);
+    if (!stored) return;
     setActiveStatus(newStatus);
-    onStatusChange(quote.id, newStatus);
     toast.success(`${t("quotes.statusChangedTo")} ${t("quotes." + newStatus)}`);
   };
 
@@ -295,7 +310,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
           : `Contract ${data.contract_no} created successfully`,
       );
       setSchedule(null);
-      onStatusChange(quote.id, "contract_created");
+      onConverted?.(quote.id);
       setActiveStatus("contract_created");
     } catch (err: any) {
       toast.error(err.message || "Failed to convert to contract");
@@ -336,7 +351,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
                 ))}
               </select>
               <Badge className={cn("text-xs", statusStyle.color, statusStyle.bg, statusStyle.border)}>
-                {t("quotes." + quote.status)}
+                {t("quotes." + shownStatus)}
               </Badge>
             </div>
           </div>
@@ -416,7 +431,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
                             <p className="text-sm text-foreground">{item.name}</p>
                           </div>
                           <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span>{fmtAED(item.unit_price)} × {item.qty}</span>
+                            <span>{fmtAED(item.unit_price)} × {item.quantity}</span>
                             <span className="text-sm font-medium text-foreground w-20 text-right">
                               {fmtAED(item.line_total)}
                             </span>
@@ -469,7 +484,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
             variant="outline"
             className="text-xs gap-1.5"
             onClick={() => handleStatusChange("sent")}
-            disabled={quote.status === "sent"}
+            disabled={shownStatus === "sent"}
           >
             <Send className="w-3 h-3" /> {t("quotes.sendToClient")}
           </Button>
@@ -478,7 +493,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
             variant="outline"
             className="text-xs gap-1.5 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/10"
             onClick={() => handleStatusChange("accepted")}
-            disabled={quote.status === "accepted"}
+            disabled={shownStatus === "accepted"}
           >
             <CheckCircle className="w-3 h-3" /> {t("quotes.acceptAction")}
           </Button>
@@ -487,13 +502,13 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
             variant="outline"
             className="text-xs gap-1.5 text-rose-400 border-rose-500/20 hover:bg-rose-500/10"
             onClick={() => handleStatusChange("rejected")}
-            disabled={quote.status === "rejected"}
+            disabled={shownStatus === "rejected"}
           >
             <XCircle className="w-3 h-3" /> {t("quotes.rejectAction")}
           </Button>
 
           {/* Convert to Contract — opens the schedule step; the POST needs it */}
-          {quote.status === "accepted" && !quote.contract_id && (
+          {shownStatus === "accepted" && !quote.contract_id && (
             <Button
               size="sm"
               variant="outline"

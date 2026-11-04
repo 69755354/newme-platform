@@ -11,6 +11,7 @@ import {
 import { calculateQuotation, CalculateResult } from "../../../../lib/quotation-engine";
 import { DEVICE_CATALOG } from "@/lib/device-catalog";
 import { logger, genReqId } from "@/lib/logger";
+import { discountRateError } from "@/lib/quotation-rules.mjs";
 import { buildBottomUpLabourRequest } from "@/lib/quotation-labour-request";
 import { formatInstallLabourNote } from "@/lib/quotation-labour-basis.mjs";
 
@@ -77,6 +78,11 @@ export async function POST(request: NextRequest) {
         { error: "devices object is required with at least one device" },
         { status: 400 },
       );
+    }
+
+    const discountProblem = discountRateError(discount_rate);
+    if (discountProblem) {
+      return respond({ error: discountProblem, code: "discount_rate_invalid" }, { status: 400 });
     }
 
     // Validate quantities

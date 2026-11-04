@@ -1101,6 +1101,10 @@ export const translations = {
       sectionCustomer: "Customer",
       sectionProjectFacts: "Project facts",
       followupOverdueSince: "Follow-up overdue (since {date})",
+      // S4 review fix: closed-lead notice and stage note label
+      leadClosedWon: "This lead is already won and closed; it cannot be marked again.",
+      leadClosedLost: "This lead is already lost and closed; it cannot be changed.",
+      stageNoteRequired: "Stage note (required)",
     },
     stageLabels: {
       new: "New Lead",
@@ -1585,6 +1589,10 @@ export const translations = {
       paymentSchedule: "Payment schedule",
       installmentDescription: "Description",
       addInstallment: "Add installment",
+      // ── OS fix S4: quote and contract error feedback (separate block) ──
+      invalidAmounts: "Discount must be between 0 and 100%, and amounts cannot be negative",
+      statusUpdateFailed: "The quote status could not be saved. Please try again.",
+      milestoneNotRecorded: "Quote status updated, but the lead's quotation milestone could not be recorded",
     },
     products: {
       title: "Product Catalog",
@@ -2977,6 +2985,10 @@ export const translations = {
       sectionCustomer: "客户",
       sectionProjectFacts: "项目信息",
       followupOverdueSince: "跟进已逾期（应于 {date}）",
+      // S4 review fix: closed-lead notice and stage note label
+      leadClosedWon: "该线索已赢单，阶段已关闭，无需再次标记。",
+      leadClosedLost: "该线索已输单，阶段已关闭，无法再修改。",
+      stageNoteRequired: "阶段备注（必填）",
     },
     stageLabels: {
       new: "新线索",
@@ -3450,6 +3462,10 @@ export const translations = {
       paymentSchedule: "付款计划",
       installmentDescription: "说明",
       addInstallment: "添加分期",
+      // ── OS fix S4: quote and contract error feedback (separate block) ──
+      invalidAmounts: "折扣必须在 0 到 100% 之间，且金额不能为负数",
+      statusUpdateFailed: "报价状态未能保存，请重试",
+      milestoneNotRecorded: "报价状态已更新，但线索的“报价”里程碑未能记录",
     },
     products: {
       title: "产品目录",

@@ -27,6 +27,7 @@ import QuoteCalculator from "./quote-calculator";
 import QuoteWizard from "./quote-wizard";
 import QuoteDetailDialog from "./quote-detail-dialog";
 import { fmtAED } from "@/shared/utils/format";
+import { clampDiscountRate, discountRateError } from "@/lib/quotation-rules.mjs";
 
 /* ─── Types ─── */
 interface Lead {
@@ -216,6 +217,14 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
   /* ─── Create quote ─── */
   const handleCreateQuote = async () => {
     if (!createForm.leadId) return;
+    if (
+      discountRateError(createForm.discountRate || 0) ||
+      (createForm.subtotal || 0) < 0 ||
+      (createForm.taxRate || 0) < 0
+    ) {
+      toast.error(t("quotes.invalidAmounts"));
+      return;
+    }
     setCreating(true);
     try {
       const subtotal = createForm.subtotal || 0;
@@ -264,27 +273,50 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
   };
 
   /* ─── Status update ─── */
-  const handleStatusChange = async (id: string, newStatus: string) => {
-    const { error: err } = await supabase
+  // Resolves true only when the status change was really stored. The dialog
+  // shows its success message and badge from this answer, so a refused write is
+  // no longer reported as done (review F8).
+  const handleStatusChange = async (id: string, newStatus: string): Promise<boolean> => {
+    const { data: updatedRows, error: err } = await supabase
       .from("quotations")
       .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq("id", id);
-    if (!err) {
-      // Cascade to lead: if quote accepted, advance lead stage to quotation_submitted
-      if (newStatus === "accepted") {
-        const { data: quote } = await supabase.from("quotations").select("lead_id, quote_no").eq("id", id).single();
-        if (quote?.lead_id) {
-          const { data: { user } } = await supabase.auth.getUser();
-          await supabase.from("lead_milestones").insert({
-            lead_id: quote.lead_id,
-            milestone_key: "quotation",
-            completed_by: user?.id || null,
-            notes: `${lang === "zh" ? "报价已生成" : "Quote generated"} #${quote.quote_no || ""}`,
-          });
+      .eq("id", id)
+      .select("id");
+    if (err || !updatedRows || updatedRows.length === 0) {
+      console.error("Failed to update quote status:", err);
+      toast.error(err?.message ? `${t("quotes.statusUpdateFailed")}: ${err.message}` : t("quotes.statusUpdateFailed"));
+      return false;
+    }
+    // Keep the open dialog and the list in step without waiting for a refetch.
+    setQuotations((prev) => prev.map((q) => (q.id === id ? { ...q, status: newStatus } : q)));
+    setDetailQuote((prev) => (prev && prev.id === id ? { ...prev, status: newStatus } : prev));
+    // Cascade to lead: if quote accepted, record the quotation milestone
+    if (newStatus === "accepted") {
+      const { data: quote } = await supabase.from("quotations").select("lead_id, quote_no").eq("id", id).single();
+      if (quote?.lead_id) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const { error: milestoneErr } = await supabase.from("lead_milestones").insert({
+          lead_id: quote.lead_id,
+          milestone_key: "quotation",
+          completed_by: user?.id || null,
+          notes: `${lang === "zh" ? "报价已生成" : "Quote generated"} #${quote.quote_no || ""}`,
+        });
+        // The quote itself is accepted; only the lead's milestone could not be
+        // recorded (for example it is already recorded). Say so, do not hide it.
+        if (milestoneErr && milestoneErr.code !== "23505") {
+          console.error("Failed to record quotation milestone:", milestoneErr);
+          toast.warning(t("quotes.milestoneNotRecorded"));
         }
       }
-      fetchQuotes();
     }
+    fetchQuotes();
+    return true;
+  };
+
+  const handleQuoteConverted = (id: string) => {
+    setQuotations((prev) => prev.map((q) => (q.id === id ? { ...q, status: "contract_created" } : q)));
+    setDetailQuote((prev) => (prev && prev.id === id ? { ...prev, status: "contract_created" } : prev));
+    fetchQuotes();
   };
 
   /* ─── Open create dialog ─── */
@@ -336,8 +368,15 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
     if (!confirm(t("quotes.confirmDelete"))) return;
     setDeletingQuoteId(quote.id);
     try {
-      const { error: err } = await supabase.from("quotations").delete().eq("id", quote.id);
+      const { data: deletedRows, error: err } = await supabase
+        .from("quotations")
+        .delete()
+        .eq("id", quote.id)
+        .select("id");
       if (err) throw err;
+      // A refused delete (row security) is not an error to the client library;
+      // it just removes nothing. Do not report that as success.
+      if (!deletedRows || deletedRows.length === 0) throw new Error("No quotation was deleted");
       setQuotations(prev => prev.filter(q => q.id !== quote.id));
       toast.success(t("quotes.deletedSuccess"));
     } catch (err) {
@@ -613,7 +652,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
                 <label className="text-xs font-medium text-foreground mb-1.5 block">{t("quotes.discount")} (%)</label>
                 <Input type="number" min="0" max="100" step="0.1"
                   value={createForm.discountRate || ""}
-                  onChange={(e) => setCreateForm({ ...createForm, discountRate: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setCreateForm({ ...createForm, discountRate: clampDiscountRate(e.target.value) })}
                   className="h-9" />
               </div>
               <div>
@@ -697,6 +736,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
         onOpenChange={(open) => { setDetailOpen(open); if (!open) fetchQuotes(); }}
         quote={detailQuote}
         onStatusChange={handleStatusChange}
+        onConverted={handleQuoteConverted}
       />
 
       {/* ─── Quote Calculator ─── */}

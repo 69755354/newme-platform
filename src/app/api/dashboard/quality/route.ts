@@ -1,4 +1,5 @@
 // RBAC: user (authenticated)
+import { EXCLUDE_SYNTHETIC_QA_FILTER } from "@/lib/lead-metrics.mjs";
 import { dubaiDateKey, dubaiMonthBounds } from "@/lib/dubai-time.mjs";
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
@@ -57,11 +58,13 @@ export async function GET(request: NextRequest) {
   let totalQuery = supabase
     .from("leads")
     .select("id", { count: "exact", head: true })
-    .eq("archived", false);
+    .eq("archived", false)
+    .or(EXCLUDE_SYNTHETIC_QA_FILTER);
   let contactedQuery = supabase
     .from("leads")
     .select("id", { count: "exact", head: true })
     .eq("archived", false)
+    .or(EXCLUDE_SYNTHETIC_QA_FILTER)
     .or("followup_count.gt.0,last_contact_date.not.is.null");
   let firstContactQuery = supabase
     .from("lead_milestones")
@@ -73,6 +76,7 @@ export async function GET(request: NextRequest) {
     .from("leads")
     .select("id,lead_milestones!left(id)", { count: "exact", head: true })
     .eq("archived", false)
+    .or(EXCLUDE_SYNTHETIC_QA_FILTER)
     .is("final_status", null)
     .eq("lead_milestones.milestone_key", "first_contact")
     .not("lead_milestones.completed_at", "is", null)
@@ -86,6 +90,7 @@ export async function GET(request: NextRequest) {
     .from("leads")
     .select("id", { count: "exact", head: true })
     .eq("archived", false)
+    .or(EXCLUDE_SYNTHETIC_QA_FILTER)
     .is("final_status", null)
     .eq("followup_count", 0)
     .is("last_contact_date", null);
@@ -93,6 +98,7 @@ export async function GET(request: NextRequest) {
     .from("leads")
     .select("id", { count: "exact", head: true })
     .eq("archived", false)
+    .or(EXCLUDE_SYNTHETIC_QA_FILTER)
     .is("final_status", null)
     .or(
       `next_followup_date.lt.${today},and(last_contact_date.is.null,created_at.lt.${twoDaysAgo})`,
@@ -103,6 +109,7 @@ export async function GET(request: NextRequest) {
       .from("leads")
       .select("id", { count: "exact", head: true })
       .eq("archived", false)
+      .or(EXCLUDE_SYNTHETIC_QA_FILTER)
       .eq("quality", quality);
     if (!isCEO) query = query.eq("assigned_to", user.id);
     return query;

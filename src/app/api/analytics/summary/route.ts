@@ -32,6 +32,7 @@ import { countsAsCash } from "@/lib/payment-state.mjs";
 import { addDaysToDateKey, dubaiDateKey, inBounds, inWeek, recentDubaiWeeks } from "@/lib/dubai-time.mjs";
 import { fetchAllRows, fetchLostEvents } from "@/lib/fetch-all-rows.mjs";
 import {
+  EXCLUDE_SYNTHETIC_QA_FILTER,
   isCountedLead,
   isWonLead,
   leadOutcome,
@@ -129,7 +130,8 @@ export async function GET(request: Request) {
     let q = supabase
       .from("leads")
       .select("*", withCount ? { count: "exact" } : undefined)
-      .eq("archived", false);
+      .eq("archived", false)
+      .or(EXCLUDE_SYNTHETIC_QA_FILTER);
     if (!isManagement) q = q.eq("assigned_to", userId);
     return q.order("id", { ascending: true }).range(from, to);
   });

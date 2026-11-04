@@ -18,6 +18,8 @@
 // This is the single paged reader for report routes AND the lead / pipeline
 // lists (S3 and S5 used to carry one each). The lists pass LIST_MAX_ROWS.
 
+import { EXCLUDE_SYNTHETIC_QA_FILTER } from "./lead-metrics.mjs";
+
 export const DEFAULT_PAGE_SIZE = 1000;
 export const DEFAULT_MAX_ROWS = 50000;
 export const LIST_MAX_ROWS = 20000;
@@ -78,7 +80,8 @@ export function fetchCountedLeads(supabase, columns, { assignedTo = null } = {})
     let q = supabase
       .from("leads")
       .select(columns, withCount ? { count: "exact" } : undefined)
-      .eq("archived", false);
+      .eq("archived", false)
+      .or(EXCLUDE_SYNTHETIC_QA_FILTER);
     if (assignedTo) q = q.eq("assigned_to", assignedTo);
     return q.order("id", { ascending: true }).range(from, to);
   });

@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllRows } from "@/lib/fetch-all-rows.mjs";
 import { inBounds, inWeek, recentDubaiWeeks } from "@/lib/dubai-time.mjs";
-import { isWonLead, wonLeadValue } from "@/lib/lead-metrics.mjs";
+import { EXCLUDE_SYNTHETIC_QA_FILTER, isWonLead, wonLeadValue } from "@/lib/lead-metrics.mjs";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 
@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
         .from("leads")
         .select("id, created_at, stage, quotation_value, assigned_to, final_status", withCount ? { count: "exact" } : undefined)
         .eq("archived", false)
+        .or(EXCLUDE_SYNTHETIC_QA_FILTER)
         .gte("created_at", rangeStart)
         .lt("created_at", rangeEnd);
       if (!isManagement) q = q.eq("assigned_to", userId);
@@ -70,6 +71,7 @@ export async function GET(request: NextRequest) {
         .from("leads")
         .select("id, final_status, stage, archived, quotation_value, won_at", withCount ? { count: "exact" } : undefined)
         .eq("archived", false)
+        .or(EXCLUDE_SYNTHETIC_QA_FILTER)
         .eq("final_status", "won")
         .gte("won_at", rangeStart)
         .lt("won_at", rangeEnd);

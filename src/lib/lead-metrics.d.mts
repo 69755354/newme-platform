@@ -104,3 +104,5 @@ export function wonLeadValue(lead: MetricLead | null | undefined): number;
 export function sourceQualityBreakdown(
   rows: MetricLead[] | null | undefined,
 ): Array<{ source: string; total: number; good: number; normal: number; pending: number; bad: number; conv_rate: number }>;
+export const SYNTHETIC_QA_SOURCE: string;
+export const EXCLUDE_SYNTHETIC_QA_FILTER: string;

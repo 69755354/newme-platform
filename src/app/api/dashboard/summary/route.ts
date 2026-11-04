@@ -34,6 +34,7 @@ import {
   overdueDays,
   summarizeLeads,
   type MetricLead,
+  EXCLUDE_SYNTHETIC_QA_FILTER,
 } from "@/lib/lead-metrics.mjs";
 
 export const dynamic = "force-dynamic";
@@ -256,6 +257,7 @@ export async function GET(request: Request) {
       .select("id, customer_name, quotation_value, win_probability, stage, phone")
       .eq("lead_status", "hot")
       .eq("archived", false)
+      .or(EXCLUDE_SYNTHETIC_QA_FILTER)
       .is("final_status", null)
       .order("quotation_value", { ascending: false })
       .limit(3);
@@ -279,6 +281,7 @@ export async function GET(request: Request) {
       .from("leads")
       .select("id, customer_name, quotation_value, last_contact_date, stage, phone")
       .eq("archived", false)
+      .or(EXCLUDE_SYNTHETIC_QA_FILTER)
       .is("final_status", null)
       .or(`last_contact_date.lt.${cutoff48h},last_contact_date.is.null`)
       .order("quotation_value", { ascending: false })

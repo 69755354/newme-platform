@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { fetchAllRows, fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
-import { isWonLead, sourceQualityBreakdown, wonLeadValue, type MetricLead } from "@/lib/lead-metrics.mjs";
+import { EXCLUDE_SYNTHETIC_QA_FILTER, isWonLead, sourceQualityBreakdown, wonLeadValue, type MetricLead } from "@/lib/lead-metrics.mjs";
 
 function numericAmount(value: number | null): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -89,6 +89,7 @@ export async function GET(request: Request) {
         .select("id, campaign_name, stage, quotation_value, ai_quality, quality, source, source_platform, utm_source, fbclid, meta_click_id, final_status, archived", withCount ? { count: "exact" } : undefined)
         .or("source.in.(ins,fb),source_platform.in.(meta,facebook,instagram,fb,ins),utm_source.in.(meta,facebook,instagram,fb,ins),fbclid.not.is.null,meta_click_id.not.is.null")
         .eq("archived", false)
+        .or(EXCLUDE_SYNTHETIC_QA_FILTER)
         .order("id", { ascending: true })
         .range(from, to),
     );

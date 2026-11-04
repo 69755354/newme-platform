@@ -1,5 +1,6 @@
 // RBAC: user (admin, boss, operator)
 import { NextRequest, NextResponse } from "next/server";
+import { EXCLUDE_SYNTHETIC_QA_FILTER } from "@/lib/lead-metrics.mjs";
 import { createServerSupabase } from "@/lib/supabase-server";
 
 export interface WeeklyReviewRow {
@@ -148,6 +149,7 @@ export async function GET(req: NextRequest) {
         ? supabase.from("leads").select("id", { count: "exact", head: true })
           .eq("assigned_to", user.id)
         : supabase.from("leads").select("id", { count: "exact", head: true }))
+        .or(EXCLUDE_SYNTHETIC_QA_FILTER)
         .gte("created_at", startIso).lt("created_at", endIso),
       (isSalesScope
         ? supabase.from("follow_up_logs").select("lead_id, leads!inner(assigned_to)")
@@ -172,7 +174,7 @@ export async function GET(req: NextRequest) {
       (isSalesScope
         ? supabase.from("leads").select("id, assigned_to").eq("assigned_to", user.id)
         : supabase.from("leads").select("id, assigned_to"))
-        .eq("archived", false).eq("final_status", "won")
+        .eq("archived", false).or(EXCLUDE_SYNTHETIC_QA_FILTER).eq("final_status", "won")
         .gte("won_at", startIso).lt("won_at", endIso),
       (isSalesScope
         ? supabase.from("business_events").select("id, leads!inner(assigned_to)", { count: "exact", head: true })
@@ -199,6 +201,7 @@ export async function GET(req: NextRequest) {
     }
 
     let assignedLeadsQuery = supabase.from("leads").select("id, assigned_to")
+      .or(EXCLUDE_SYNTHETIC_QA_FILTER)
       .gte("created_at", startIso).lt("created_at", endIso).not("assigned_to", "is", null);
     if (isSalesScope) assignedLeadsQuery = assignedLeadsQuery.eq("assigned_to", user.id);
     const { data: assignedLeads } = await assignedLeadsQuery;
@@ -210,6 +213,7 @@ export async function GET(req: NextRequest) {
     const { data: contactedLogs } = await contactedLogsQuery;
 
     let pendingQualityQuery = supabase.from("leads").select("id, assigned_to")
+      .or(EXCLUDE_SYNTHETIC_QA_FILTER)
       .eq("quality", "pending").not("assigned_to", "is", null)
       .gte("created_at", startIso).lt("created_at", endIso);
     if (isSalesScope) pendingQualityQuery = pendingQualityQuery.eq("assigned_to", user.id);

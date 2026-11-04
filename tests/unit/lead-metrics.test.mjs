@@ -228,3 +228,20 @@ test("lost-from stage comes from the stage_change event (from -> lost), not the 
   assert.deepEqual(counts, { negotiation: 1, contacted: 1, quotation_submitted: 1, new: 2, unknown: 1 });
   assert.equal(counts.lost, undefined);
 });
+
+test("the synthetic_qa check lead is excluded from every figure", () => {
+  const qa = { id: "qa", source: "synthetic_qa", archived: false, final_status: "won", won_at: "2026-11-02T06:00:00Z", quotation_value: 999, quality: "good", stage: "negotiation", assigned_to: "s1", created_at: "2026-11-01T21:30:00Z" };
+  const real = { id: "r", source: "fb", archived: false, final_status: "won", won_at: "2026-11-02T06:00:00Z", quotation_value: 100, quality: "good", stage: "negotiation", assigned_to: "s1", created_at: "2026-11-01T21:30:00Z" };
+  assert.equal(isCountedLead(qa), false);
+  assert.equal(isCountedLead({ ...real, source: null }), true);
+  const period = dubaiMonthBounds("2026-11");
+  const sum = summarizeLeads([qa, real], { period, now: NOW });
+  assert.equal(sum.total, 1);
+  assert.equal(sum.won, 1);
+  assert.equal(sum.periodWonValue, 100);
+  assert.equal(sum.byAssignee.s1.total, 1);
+  assert.equal(wonLeadValue(qa), 0);
+  assert.deepEqual(Object.keys(aggregateAttribution([qa, real])), ["fb"]);
+  assert.equal(sourceQualityBreakdown([qa, real]).length, 1);
+  assert.equal(lostFromStageCounts([], []).qa, undefined);
+});

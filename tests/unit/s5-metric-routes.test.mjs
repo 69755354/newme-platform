@@ -40,7 +40,9 @@ class Query {
   not() { return this; }
   or(expr) {
     // Only the Meta-lead filter of the ads ROI panel is evaluated; other .or() calls are ignored.
-    if (typeof expr === "string" && expr.includes("fbclid.not.is.null")) {
+    if (expr === "source.is.null,source.neq.synthetic_qa") {
+      this.filters.push((r) => r.source == null || r.source !== "synthetic_qa");
+    } else if (typeof expr === "string" && expr.includes("fbclid.not.is.null")) {
       const preds = [];
       for (const m of expr.matchAll(/(\w+)\.in\.\(([^)]*)\)/g)) preds.push((r) => m[2].split(",").includes(r[m[1]]));
       for (const m of expr.matchAll(/(\w+)\.not\.is\.null/g)) preds.push((r) => r[m[1]] != null);
@@ -177,6 +179,8 @@ function buildDb() {
   edge("sun-late", { created_at: "2026-11-01T18:00:00.000Z", final_status: null, won_at: null, stage: "new" });
   edge("mon-early", { created_at: "2026-11-01T21:00:00.000Z", final_status: null, won_at: null, stage: "new" });
   // No manual quality, AI says "normal": a quality-distribution "normal" AND a valid ads lead.
+  // The daily production check lead (S7): never counted anywhere, even though it is "won" this month.
+  edge("synthetic-qa", { source: "synthetic_qa", source_platform: null, final_status: "won", won_at: "2026-11-02T06:00:00.000Z", stage: "negotiation", quotation_value: 777777, quality: "good", created_at: "2026-11-01T21:30:00.000Z" });
   edge("ai-normal", { quality: null, ai_quality: "normal", final_status: null, won_at: null, stage: "new" });
 
   const payments = [];
@@ -209,7 +213,7 @@ function buildDb() {
   };
 }
 
-const counted = (db) => db.leads.filter((l) => !l.archived);
+const counted = (db) => db.leads.filter((l) => !l.archived && l.source !== "synthetic_qa");
 const run = async (route, url = "https://app.newme.ae/api/x") => {
   const res = await route.GET(new Request(url));
   assert.equal(res.status, 200, JSON.stringify(res.body));

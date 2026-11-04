@@ -7,7 +7,8 @@
 // "129d" next to "128d", and 114 vs 117 between /ads and /settings/ads. Every
 // route and page that reports these numbers now derives them here:
 //
-//   * counted lead        archived = false. Archived rows are history, never stock.
+//   * counted lead        archived = false and source is not synthetic_qa (the daily
+//                         production check lead). Archived rows are history, never stock.
 //   * outcome             final_status when set, otherwise the process stage.
 //   * active (pipeline)   counted and outcome is neither won nor lost.
 //   * won / lost          outcome is won / lost.
@@ -50,8 +51,14 @@ export const LEAD_METRIC_COLUMNS =
 export const ADS_ATTRIBUTION_COLUMNS =
   "archived,source,source_platform,campaign_name,utm_campaign,meta_campaign,adset_name,ad_name,stage,final_status,quotation_value,quality,ai_quality";
 
+/** Source of the daily production check lead (S7). It is never a customer. */
+export const SYNTHETIC_QA_SOURCE = "synthetic_qa";
+
+/** SQL filter (PostgREST `or`) that keeps NULL sources and drops the synthetic QA lead. */
+export const EXCLUDE_SYNTHETIC_QA_FILTER = `source.is.null,source.neq.${SYNTHETIC_QA_SOURCE}`;
+
 export function isCountedLead(lead) {
-  return Boolean(lead) && lead.archived !== true;
+  return Boolean(lead) && lead.archived !== true && lead.source !== SYNTHETIC_QA_SOURCE;
 }
 
 export function leadOutcome(lead) {

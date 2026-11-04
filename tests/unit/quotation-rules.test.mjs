@@ -174,6 +174,6 @@ test("the create-contract buttons only render for roles that can open /contracts
   assert.match(source, /!hasContract && canCreateContract/);
   assert.match(
     read("src/app/(dashboard)/leads/[id]/page.tsx"),
-    /canCreateContract=\{salesRole === "admin" \|\| salesRole === "boss"\}/,
+    /canCreateContract=\{salesRole === "admin" \|\| salesRole === "boss" \|\| salesRole === "operator" \|\| salesRole === "sales"\}/
   );
 });

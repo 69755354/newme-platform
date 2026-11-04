@@ -493,7 +493,7 @@ test("contract creation is limited by role in the database, and the quote dialog
   assert.match(create, /array\['admin', 'boss', 'operator', 'sales'\]\)/);
   assert.doesNotMatch(create, /'finance'/);
   assert.match(sql, /only the assigned salesperson or a manager may convert a quotation on this lead/);
-  assert.match(read("src/app/(dashboard)/quotes/quote-detail-dialog.tsx"), /canCreateContract && quote\.status === "accepted"/);
+  assert.match(read("src/app/(dashboard)/quotes/quote-detail-dialog.tsx"), /canCreateContract && shownStatus === "accepted"/);
   assert.match(read("src/app/(dashboard)/quotes/quotes-client.tsx"), /canCreateContract=\{userRole === "admin" \|\| userRole === "boss" \|\| userRole === "operator" \|\| userRole === "sales"\}/);
   assert.match(sql, /quotations_discount_rate_range CHECK \(discount_rate BETWEEN 0 AND 100\) NOT VALID/);
 });

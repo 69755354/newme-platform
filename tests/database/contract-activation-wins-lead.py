@@ -74,6 +74,7 @@ select public.set_contract_status(cid, 'pending_admin', 'go') from t_c;
 select public.approve_contract(cid, null, 'approve', 'one') from t_c;
 select public.approve_contract(cid, null, 'approve', 'two') from t_c;
 select 'before:' || stage || '/' || coalesce(final_status,'-') from public.leads where id = '{LEAD_OTHER}';
+select 'wonat-before:' || (won_at is null) from public.leads where id = '{LEAD_OTHER}';
 select public.set_contract_status(cid, 'active', null) from t_c;
 select 'after:' || ({lead_state()[:-1]});
 do $$ begin begin perform public.set_contract_status((select cid from t_c), 'active', null); raise exception 'second activation was accepted'; exception when sqlstate '22023' then null; end; end $$;
@@ -81,6 +82,7 @@ select 'again:' || ({lead_state()[:-1]});
 select public.set_contract_status(cid, 'suspended', null) from t_c;
 select public.set_contract_status(cid, 'active', null) from t_c;
 select 'resume:' || ({lead_state()[:-1]});
+select 'wonat-after:' || (won_at is not null) from public.leads where id = '{LEAD_OTHER}';
 select 'cust:' || (select count(*) from public.contracts c join public.customers u on u.id = c.customer_id where c.lead_id = '{LEAD_OTHER}');
 select 'wonevents:' || count(*) from public.business_events where lead_id = '{LEAD_OTHER}' and event_type = 'won';
 select 'proj:' || count(*) from public.projects p join t_c on p.contract_id = t_c.cid;
@@ -91,6 +93,8 @@ L = out.splitlines()
 assert "before:pending_decision/-" in L, L
 assert "after:won/won/1/1" in L and "again:won/won/1/1" in L and "resume:won/won/1/1" in L, L
 assert "cust:1" in L and "wonevents:1" in L and "proj:1" in L, L
+# the stats columns (dashboard "won this month" reads leads.won_at): empty after conversion, stamped at activation
+assert "wonat-before:true" in L and "wonat-after:true" in L, L
 passed("activating the contract wins the lead with one customer and one project; repeat and suspend/resume change nothing; admin settled both approval steps")
 
 # 3b. a lead still at 'new' (no first contact yet) is marked won without being blocked by the first-contact gate

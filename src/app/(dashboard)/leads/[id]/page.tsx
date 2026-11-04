@@ -602,7 +602,7 @@ export default function LeadDetailPage() {
             onLost={handleLost}
             onOpenQuoteCalculator={openQuoteCalculator}
             onCreateContract={handleCreateContract}
-            canCreateContract={salesRole === "admin" || salesRole === "boss"}
+            canCreateContract={salesRole === "admin" || salesRole === "boss" || salesRole === "operator" || salesRole === "sales"}
             onGenerateKnx={handleGenerateKnx}
             renderInlineEdit={renderInlineEdit}
             renderDateEdit={renderDateEdit}

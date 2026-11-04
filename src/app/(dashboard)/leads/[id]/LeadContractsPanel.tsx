@@ -36,7 +36,7 @@ export default function LeadContractsPanel({ leadId }: { leadId: string }) {
         const json = await res.json();
         if (alive) {
           setContracts(json.data ?? []);
-          setCanCreateContract(json.role === "admin" || json.role === "boss");
+          setCanCreateContract(["admin", "boss", "operator", "sales"].includes(json.role));
         }
       } catch {
         /* ignore — panel is non-critical */

@@ -115,7 +115,7 @@ const REQUIRED_FLOW_ASSERTIONS = new Map([
 const REQUIRED_FLOW_ROLES = new Map([
   ["lead_to_contract", "sales"],
   ["contract_status_transition", "operator"],
-  ["quotation_conversion", "admin"],
+  ["quotation_conversion", "sales"],
   ["quotation_two_step_approval", "boss"],
   ["payment_allocation", "boss"],
   ["kpi_period_replace", "admin"],
@@ -123,7 +123,7 @@ const REQUIRED_FLOW_ROLES = new Map([
 const REQUIRED_FLOW_PARTICIPANTS = new Map([
   ["lead_to_contract", ["sales"]],
   ["contract_status_transition", ["operator"]],
-  ["quotation_conversion", ["admin"]],
+  ["quotation_conversion", ["sales"]],
   ["quotation_two_step_approval", ["admin", "boss"]],
   ["payment_allocation", ["boss"]],
   ["kpi_period_replace", ["admin"]],
@@ -134,8 +134,8 @@ const REQUIRED_ASSERTION_ROLES = new Map([
   ["admin_review_pending", "sales"],
   ["transition_accepted", "operator"],
   ["persisted_status_matches", "operator"],
-  ["quotation_marked_converted", "admin"],
-  ["contract_linked", "admin"],
+  ["quotation_marked_converted", "sales"],
+  ["contract_linked", "sales"],
   ["admin_review_recorded", "admin"],
   ["ceo_review_recorded", "boss"],
   ["contract_approved", "boss"],

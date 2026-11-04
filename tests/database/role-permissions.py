@@ -245,10 +245,14 @@ passed("the nine guard functions carry a pinned search_path")
 # 3b. Combined release: contract creation, discount range, per-statement session check
 # (the longer scenarios live in tests/database/contract-activation-wins-lead.py)
 # ---------------------------------------------------------------------------
-for uid in (SALES, FINANCE, OPERATOR, DESIGNER):
+for uid in (SALES, FINANCE, DESIGNER):   # sales: LEAD_OTHER is not assigned to them
     rc, out, err = scenario(uid, f"insert into public.contracts (lead_id, contract_no, contract_amount, party_a_name, sales_id, created_by, status) values ('{LEAD_OTHER}', 'S2-DIRECT', 1, 'x', '{uid}', '{uid}', 'draft');")
     assert rc != 0, ROLE_OF[uid]
-passed("sales, finance, operator and designer cannot insert a contract directly")
+rc, out, err = scenario(SALES, f"insert into public.contracts (lead_id, contract_no, contract_amount, party_a_name, sales_id, created_by, status) values ('{LEAD_DESIGNER}', 'S2-DIRECT-2', 1, 'x', '{SALES}', '{SALES}', 'active');")
+assert rc != 0
+assert query("select count(*) from pg_policies where policyname = 'policy_contracts_insert_finance'") == "0"
+assert query("select count(*) from pg_policies where policyname = 'policy_contracts_insert_sales' and with_check like '%is_my_lead(lead_id)%' and with_check like '%''draft''%'") == "1"
+passed("finance and designer cannot insert a contract; a salesperson only a draft on a lead assigned to them")
 
 rc, out, err = scenario(ADMIN, f"insert into public.quotations (lead_id, quote_no, subtotal, total_amount, discount_rate) values ('{LEAD_OTHER}', 'NM-S2-RP-1', 1, 1, 101);")
 assert rc != 0 and "quotations_discount_rate_range" in err, err

@@ -76,8 +76,8 @@
     },
     {
       "id": "quotation_conversion",
-      "role": "admin",
-      "participants": ["admin"],
+      "role": "sales",
+      "participants": ["sales"],
       "assertions": ["quotation_marked_converted", "contract_linked"]
     },
     {

@@ -158,8 +158,8 @@ const ASSERTION_ROLES = {
   admin_review_pending: "sales",
   transition_accepted: "operator",
   persisted_status_matches: "operator",
-  quotation_marked_converted: "admin",
-  contract_linked: "admin",
+  quotation_marked_converted: "sales",
+  contract_linked: "sales",
   admin_review_recorded: "admin",
   ceo_review_recorded: "boss",
   contract_approved: "boss",
@@ -195,7 +195,7 @@ function fixture(t) {
         actor_id: "10000000-0000-4000-8000-000000000001",
         status: "pass",
         completed_at: "2026-08-15T00:10:00Z",
-        flow_ids: ["quotation_conversion", "kpi_period_replace"],
+        flow_ids: ["kpi_period_replace"],
         artifact_id: "role_admin",
       },
       {
@@ -219,7 +219,7 @@ function fixture(t) {
         actor_id: "10000000-0000-4000-8000-000000000004",
         status: "pass",
         completed_at: "2026-08-15T00:10:00Z",
-        flow_ids: ["lead_to_contract"],
+        flow_ids: ["lead_to_contract", "quotation_conversion"],
         artifact_id: "role_sales",
       },
     ];
@@ -235,7 +235,7 @@ function fixture(t) {
   const flowParticipants = {
     lead_to_contract: ["sales"],
     contract_status_transition: ["operator"],
-    quotation_conversion: ["admin"],
+    quotation_conversion: ["sales"],
     quotation_two_step_approval: ["admin", "boss"],
     payment_allocation: ["boss"],
     kpi_period_replace: ["admin"],
@@ -243,7 +243,7 @@ function fixture(t) {
   const flows = [
       ["lead_to_contract", "sales", "role_sales"],
       ["contract_status_transition", "operator", "role_operator"],
-      ["quotation_conversion", "admin", "role_admin"],
+      ["quotation_conversion", "sales", "role_sales"],
       ["quotation_two_step_approval", "boss", "role_boss"],
       ["payment_allocation", "boss", "role_boss"],
       ["kpi_period_replace", "admin", "role_admin"],
@@ -682,7 +682,7 @@ test("mutations across every completion claim fail closed", (t) => {
     ["wrong policy digest", (bundle) => { bundle.policy.sha256 = "f".repeat(64); }, /policy digest/],
     ["unreferenced artifact", (bundle) => {
       bundle.roles[0].artifact_id = "role_boss";
-      for (const flow of bundle.flows.filter((f) => ["kpi_period_replace", "quotation_conversion"].includes(f.id))) flow.artifact_id = "role_boss";
+      bundle.flows.find((flow) => flow.id === "kpi_period_replace").artifact_id = "role_boss";
     }, /unreferenced artifact/],
   ];
 

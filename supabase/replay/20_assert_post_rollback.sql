@@ -366,13 +366,13 @@ begin
     values ('12121212-1212-1212-1212-121212121212',
             'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay post-rollback lead', 'other');
     begin
-      perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+      perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
       set local role authenticated;
       insert into public.contracts (lead_id, sales_id, created_by, contract_no,
                                     contract_amount, party_a_name, status)
       values ('12121212-1212-1212-1212-121212121212',
-              'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-              'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+              'cccccccc-cccc-cccc-cccc-cccccccccccc',
+              'cccccccc-cccc-cccc-cccc-cccccccccccc',
               'REPLAY-POST-ROLLBACK-1', 1, 'x', 'draft');
       v_inserted := exists (select 1 from public.contracts
                              where contract_no = 'REPLAY-POST-ROLLBACK-1');

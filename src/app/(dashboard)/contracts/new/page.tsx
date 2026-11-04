@@ -32,7 +32,7 @@ interface LeadOption {
 }
 
 function NewContractPageInner() {
-  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss"]);
+  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss", "operator", "sales"]);
   const router = useRouter();
   const searchParams = useSearchParams();
   const presetLeadId = searchParams.get("lead_id");

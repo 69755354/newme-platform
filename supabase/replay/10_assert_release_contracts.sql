@@ -15,7 +15,7 @@
 -- notices against ASSERT_TOTAL below, so an assertion file that stops early
 -- fails the job instead of passing quietly.
 --
--- ASSERT_TOTAL: 350
+-- ASSERT_TOTAL: 352
 -- ============================================================================
 
 create temp table assert_log (name text, passed boolean not null);
@@ -1033,7 +1033,7 @@ declare
   v_id     uuid;
 begin
   begin
-    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
     set local role authenticated;
     v_result := public.create_contract(jsonb_build_object(
       'lead_id',      '22222222-2222-2222-2222-222222222222',
@@ -1051,14 +1051,14 @@ begin
     v_state = '00000'
     and v_result ->> 'status' = 'draft'
     and (v_result ->> 'installments_count')::int = 2
-    and (select sales_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-              and created_by = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+    and (select sales_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+              and created_by = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
               and status = 'draft'
            from public.contracts where id = v_id)
     and (select count(*) = 2 from public.installment_plans where contract_id = v_id)
     and (select count(*) = 1 from public.contract_approvals
           where contract_id = v_id and step = 'admin_review' and status = 'pending'),
-    'money-create-contract-is-atomic-for-a-manager-caller');
+    'money-create-contract-is-atomic-for-a-sales-caller');
 
   -- Not 001 or 002: the number comes from the counter seeded at the highest
   -- issued number for the date, so it is strictly above the fixture's 007.
@@ -1079,7 +1079,7 @@ declare
   v_count int;
 begin
   begin
-    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
     set local role authenticated;
     perform public.create_contract(jsonb_build_object(
       'lead_id', '22222222-2222-2222-2222-222222222222',
@@ -1098,7 +1098,7 @@ do $$
 declare v_state text := '00000';
 begin
   begin
-    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
     set local role authenticated;
     perform public.create_contract(jsonb_build_object(
       'lead_id', '33333333-3333-3333-3333-333333333333', 'amount', '0'));
@@ -1178,8 +1178,8 @@ begin
    where lead_id = '33333333-3333-3333-3333-333333333333';
 
   perform pg_temp.assert(
-    v_state = '42501' and v_msg like '%role sales may not perform this operation%',
-    'money-create-contract-refuses-a-salesperson-outright');
+    v_state = '42501' and v_msg like '%only the assigned salesperson or a manager%',
+    'money-create-contract-refuses-a-lead-assigned-to-another-salesperson');
   perform pg_temp.assert(v_after = 0,
     'money-create-contract-ownership-refusal-wrote-no-contract');
   perform pg_temp.assert(v_mgr_st = '00000' and v_mgr_row,
@@ -1210,9 +1210,41 @@ begin
   reset role;
   perform pg_temp.assert(
     v_state = '42501'
-    and v_msg like '%role sales may not perform this operation%'
+    and v_msg like '%only the assigned salesperson or a manager%'
     and (select contract_id is null from public.quotations where id = 'b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1'),
-    'money-convert-quotation-refuses-sales-callers');
+    'money-convert-quotation-refuses-non-owner-sales');
+end
+$$;
+
+-- Sam: finance never creates or converts a contract, whatever the lead.
+do $$
+declare
+  v_conv text := '00000';
+  v_conv_msg text := '';
+  v_create text := '00000';
+  v_create_msg text := '';
+begin
+  begin
+    perform pg_temp.act_as('ffffffff-ffff-ffff-ffff-ffffffffffff');
+    set local role authenticated;
+    perform public.convert_quotation_to_contract('b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1', '{}'::jsonb);
+  exception when others then v_conv := sqlstate; v_conv_msg := sqlerrm;
+  end;
+  reset role;
+  begin
+    perform pg_temp.act_as('ffffffff-ffff-ffff-ffff-ffffffffffff');
+    set local role authenticated;
+    perform public.create_contract(jsonb_build_object(
+      'lead_id', '33333333-3333-3333-3333-333333333333', 'amount', '1000',
+      'installments', jsonb_build_array(jsonb_build_object('seq', '1', 'amount', '1000'))));
+  exception when others then v_create := sqlstate; v_create_msg := sqlerrm;
+  end;
+  reset role;
+  perform pg_temp.assert(v_conv = '42501' and v_conv_msg like '%role finance may not perform this operation%'
+    and (select contract_id is null from public.quotations where id = 'b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1'),
+    'money-convert-quotation-refuses-finance');
+  perform pg_temp.assert(v_create = '42501' and v_create_msg like '%role finance may not perform this operation%',
+    'money-create-contract-refuses-finance');
 end
 $$;
 
@@ -1220,7 +1252,7 @@ do $$
 declare v_state text := '00000';
 begin
   begin
-    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
     set local role authenticated;
     perform public.convert_quotation_to_contract('b3b3b3b3-b3b3-b3b3-b3b3-b3b3b3b3b3b3', '{}'::jsonb);
   exception when others then v_state := sqlstate;
@@ -1251,7 +1283,7 @@ begin
   update public.leads set stage = 'quotation_submitted' where id = '66666666-6666-6666-6666-666666666666';
   set local session_replication_role = origin;
   begin
-    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
     set local role authenticated;
     v_result := public.convert_quotation_to_contract(
       'b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1',
@@ -1277,7 +1309,7 @@ begin
            from public.quotations where id = 'b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1')
     and (select final_status is null and stage = 'pending_decision'
            from public.leads where id = '66666666-6666-6666-6666-666666666666'),
-    'money-convert-quotation-is-atomic-for-the-manager');
+    'money-convert-quotation-is-atomic-for-the-owner');
 
   -- The two derived rows, in the same transaction as the contract.
   -- S2: the project (and the customer, and the won state) belong to contract
@@ -1327,7 +1359,7 @@ begin
      and content like '%' || (select contract_no from public.contracts where id = v_expected) || '%';
 
   begin
-    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
     set local role authenticated;
     v_result := public.convert_quotation_to_contract('b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1', '{}'::jsonb);
   exception when others then v_state := sqlstate;
@@ -1370,7 +1402,7 @@ declare
   v_msgsh   text := '';
   v_msgzero text := '';
 begin
-  perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  perform pg_temp.act_as('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
   set local role authenticated;
 
   begin
@@ -5407,7 +5439,7 @@ $q$, 'r9-rebalance-plan-entry-lock-and-statement-boundary');
 -- ============================================================================
 -- In MODE=branch "ran" and "passed" are the same number, because a failure would
 -- already have raised. In MODE=control they are not, and the distinction is the
--- whole point: the ledger below is the in-database proof that all 350 assertions
+-- whole point: the ledger below is the in-database proof that all 352 assertions
 -- were REACHED. A DO block that died on an unclassified SQL error takes its
 -- remaining assertions out of the ledger, so the count comes up short and the
 -- control run fails here rather than in a log-scraping heuristic. Reported
@@ -5422,13 +5454,13 @@ begin
   select count(*), count(*) filter (where assert_log.passed), count(*) filter (where not assert_log.passed)
     into total, passed, failed
     from assert_log;
-  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=350', total, passed, failed;
-  if total <> 350 then
-    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 350', total
+  raise notice 'ASSERT_LEDGER total=% passed=% failed=% declared=352', total, passed, failed;
+  if total <> 352 then
+    raise exception 'assertion file reached % assertions, ASSERT_TOTAL says 352', total
       using errcode = '22000';
   end if;
-  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 350 then
-    raise exception 'assertion file passed % of 350 assertions', passed
+  if coalesce(current_setting('replay.collect', true), 'off') <> 'on' and passed <> 352 then
+    raise exception 'assertion file passed % of 352 assertions', passed
       using errcode = '22000';
   end if;
   if exists (select 1 from assert_log group by name having count(*) > 1) then

@@ -299,13 +299,13 @@ begin
     values ('13131313-1313-1313-1313-131313131313',
             'cccccccc-cccc-cccc-cccc-cccccccccccc', 'won', 'Replay post-recontract lead', 'other');
     begin
-      perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+      perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
       set local role authenticated;
       insert into public.contracts (lead_id, sales_id, created_by, contract_no,
                                     contract_amount, party_a_name, status)
       values ('13131313-1313-1313-1313-131313131313',
-              'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-              'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+              'cccccccc-cccc-cccc-cccc-cccccccccccc',
+              'cccccccc-cccc-cccc-cccc-cccccccccccc',
               'REPLAY-POST-RECONTRACT-1', 1, 'x', 'draft');
       v_inserted := exists (select 1 from public.contracts
                              where contract_no = 'REPLAY-POST-RECONTRACT-1');

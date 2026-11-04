@@ -285,10 +285,10 @@ test("the Import button follows the import routes (admin and boss only), not the
 
 test("lead detail offers 'New contract' only to roles /contracts/new admits (review F-2)", () => {
   const panel = read("src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx");
-  assert.match(panel, /setCanCreateContract\(json\.role === "admin" \|\| json\.role === "boss"\)/);
+  assert.match(panel, /setCanCreateContract\(\["admin", "boss", "operator", "sales"\]\.includes\(json\.role\)\)/);
   assert.equal((panel.match(/href=\{`\/contracts\/new\?lead_id=\$\{leadId\}`\}/g) || []).length, 2);
   assert.equal((panel.match(/\{canCreateContract && \(/g) || []).length, 2, "both New contract links must be gated");
-  assert.match(read("src/app/(dashboard)/contracts/new/page.tsx"), /useRequireRole\(\["admin", "boss"\]\)/);
+  assert.match(read("src/app/(dashboard)/contracts/new/page.tsx"), /useRequireRole\(\["admin", "boss", "operator", "sales"\]\)/);
   // the panel's data source reports the role it uses
   assert.match(read("src/app/api/contracts/route.ts"), /NextResponse\.json\(\{ data, role: userRole \}\)/);
 });
@@ -333,8 +333,8 @@ test("the contract detail page does not link finance to a lead it cannot open", 
 test("the New Contract link is shown only to the roles /contracts/new admits", () => {
   const list = read("src/app/(dashboard)/contracts/page.tsx");
   const newPage = read("src/app/(dashboard)/contracts/new/page.tsx");
-  assert.match(newPage, /useRequireRole\(\["admin", "boss"\]\)/);
-  assert.match(list, /\{\(role === "admin" \|\| role === "boss"\) && \(\s*<Link prefetch=\{false\} href="\/contracts\/new"/);
+  assert.match(newPage, /useRequireRole\(\["admin", "boss", "operator", "sales"\]\)/);
+  assert.match(list, /\{\(role === "admin" \|\| role === "boss" \|\| role === "operator" \|\| role === "sales"\) && \(\s*<Link prefetch=\{false\} href="\/contracts\/new"/);
 });
 
 test("finance and designer have their own sidebars and role labels", () => {
@@ -379,11 +379,11 @@ test("the S2 migration admits operator to stage transitions and drops the compan
   assert.match(sql, /policy_leads_select_designer_involved/);
   assert.match(sql, /DROP POLICY IF EXISTS policy_leads_select_finance_contracted ON public\.leads/);
   assert.doesNotMatch(sql, /CREATE POLICY policy_leads_select_finance/, "finance reads no lead rows");
-  // Exactly seven SECURITY DEFINER functions: the audit trigger function, the stage RPC, contract_lead_display
+  // Exactly eight SECURITY DEFINER functions: is_my_lead, the audit trigger function, the stage RPC, contract_lead_display
   // (A1 entry guard, pinned search_path) and the four money routines this release
   // redefines (approve_contract, set_contract_status, convert_quotation_to_contract,
   // create_contract), each pinned and entry-guarded. No policy is `true`.
-  assert.equal((sql.match(/^\s*SECURITY DEFINER$/gm) || []).length, 7);
+  assert.equal((sql.match(/^\s*SECURITY DEFINER$/gm) || []).length, 8);
   assert.match(sql, /CREATE OR REPLACE FUNCTION public\.contract_lead_display[\s\S]*?SECURITY DEFINER\s+SET search_path = pg_catalog, public, pg_temp[\s\S]*?assert_current_session_at_entry\(\)/);
   assert.match(sql, /REVOKE ALL ON FUNCTION public\.contract_lead_display\(uuid\) FROM PUBLIC, anon;/);
   assert.doesNotMatch(sql, /USING \(true\)/i);
@@ -483,15 +483,17 @@ test("a role change made directly in the database is audited by a pinned definer
   assert.ok(predicate.includes("profiles_role_audit") && predicate.includes("audit_profile_role_change()"));
 });
 
-test("only admin and boss create contracts, and the quote dialog hides the button from everyone else", () => {
+test("contract creation is limited by role in the database, and the quote dialog hides the button from finance and designer", () => {
   const sql = read("supabase/migrations/20261104110000_role_least_privilege.sql");
   assert.match(sql, /DROP POLICY IF EXISTS policy_contracts_insert_finance ON public\.contracts/);
   assert.match(sql, /DROP POLICY IF EXISTS policy_contracts_insert_sales ON public\.contracts/);
-  assert.match(sql, /role IN \(''admin'',''boss''\)/);
+  assert.match(sql, /role IN \(''admin'',''boss'',''operator''\)/);
+  assert.match(sql, /AND status = ''draft'' AND public\.is_my_lead\(lead_id\)/);
   const create = sql.slice(sql.indexOf("create or replace function public.create_contract"), sql.indexOf("-- 8. Contracts are created"));
-  assert.match(create, /array\['admin', 'boss'\]\)/);
-  assert.doesNotMatch(create, /array\['admin', 'boss', 'operator', 'finance', 'sales'\]/);
+  assert.match(create, /array\['admin', 'boss', 'operator', 'sales'\]\)/);
+  assert.doesNotMatch(create, /'finance'/);
+  assert.match(sql, /only the assigned salesperson or a manager may convert a quotation on this lead/);
   assert.match(read("src/app/(dashboard)/quotes/quote-detail-dialog.tsx"), /canCreateContract && quote\.status === "accepted"/);
-  assert.match(read("src/app/(dashboard)/quotes/quotes-client.tsx"), /canCreateContract=\{userRole === "admin" \|\| userRole === "boss"\}/);
+  assert.match(read("src/app/(dashboard)/quotes/quotes-client.tsx"), /canCreateContract=\{userRole === "admin" \|\| userRole === "boss" \|\| userRole === "operator" \|\| userRole === "sales"\}/);
   assert.match(sql, /quotations_discount_rate_range CHECK \(discount_rate BETWEEN 0 AND 100\) NOT VALID/);
 });

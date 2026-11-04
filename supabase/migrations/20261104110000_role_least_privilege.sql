@@ -1,4 +1,4 @@
--- NO_ROLLBACK: this file narrows end-user policies, redefines five money/contract routines (operator stage transitions, admin on the boss approval step, contract activation wins the lead, admin/boss-only contract creation), adds one NOT VALID discount check and wraps the session check in a scalar sub-select; nothing it drops holds data. Manual undo is described at the end of the file.
+-- NO_ROLLBACK: this file narrows end-user policies, redefines five money/contract routines (operator stage transitions, admin on the boss approval step, contract activation wins the lead, limited contract creation), adds one NOT VALID discount check and wraps the session check in a scalar sub-select; nothing it drops holds data. Manual undo is described at the end of the file.
 -- ============================================================================
 -- OS fix stream S2 — role least privilege (review 2026-11-03, 0-总报告 挡住干活#3,
 -- 安全风险#1; 2-security F-06; 4c problems 1-3)
@@ -33,7 +33,7 @@
 -- 4. One combined release (Sam, 2026-11-04): admin may settle the boss approval
 --    step (equal shareholders); converting a quotation no longer wins the lead --
 --    the lead moves to pending_decision and is won when the contract is
---    activated; contracts are created by admin/boss only; quotations.discount_rate
+--    activated; who may create contracts is limited (admin/boss any lead, operator any lead as draft, sales own leads as draft, never finance/designer); quotations.discount_rate
 --    is checked 0..100 (NOT VALID); every row-level session check is computed once
 --    per statement instead of once per row.
 -- All statements are idempotent (DROP IF EXISTS / CREATE OR REPLACE / guarded
@@ -738,13 +738,13 @@ end
 $function$;
 
 -- ---------------------------------------------------------------------------
--- 6. convert_quotation_to_contract(): no longer wins the lead; admin/boss only
+-- 6. convert_quotation_to_contract(): no longer wins the lead; admin/boss/operator, or sales on their own leads
 -- ---------------------------------------------------------------------------
 -- Converting a quotation creates the draft contract, its schedule and approval
 -- row and moves the lead to pending_decision. The customer, the project and the
 -- won state arrive when set_contract_status() activates the contract. The retry
 -- branch finishes only what the conversion itself writes. Contract creation is
--- limited to admin / boss, the same as the screens.
+-- limited as in section 8 (never finance or designer).
 create or replace function public.convert_quotation_to_contract(p_quotation_id uuid, p_payload jsonb DEFAULT '{}'::jsonb)
 returns jsonb
  language plpgsql
@@ -775,7 +775,7 @@ begin
   perform public.assert_current_session_at_entry();
   v_actor := public.money_actor(
     nullif(p_payload ->> 'actor_id', '')::uuid,
-    array['admin', 'boss']);
+    array['admin', 'boss', 'operator', 'sales']);
   select coalesce(role, '') into v_actor_role from public.profiles where id = v_actor;
 
   select * into v_quote from public.quotations where id = p_quotation_id for update;
@@ -789,9 +789,11 @@ begin
   -- the lock order quotations → leads → contracts on both paths. See the header.
   select * into v_lead from public.leads where id = v_quote.lead_id for update;
 
+  -- Sam: a salesperson converts quotations on the leads assigned to them; admin,
+  -- boss and operator on any lead. (Finance and designer are refused above.)
   if v_actor_role not in ('admin', 'boss', 'operator')
-     and v_quote.created_by is distinct from v_actor then
-    raise exception 'only the quotation owner or a manager may convert it' using errcode = '42501';
+     and v_lead.assigned_to is distinct from v_actor then
+    raise exception 'only the assigned salesperson or a manager may convert a quotation on this lead' using errcode = '42501';
   end if;
 
   -- ── The idempotent branch: this quotation already has its contract ────────
@@ -1069,7 +1071,7 @@ end
 $function$;
 
 -- ---------------------------------------------------------------------------
--- 7. create_contract(): admin / boss only
+-- 7. create_contract(): admin / boss / operator, or sales on their own leads
 -- ---------------------------------------------------------------------------
 create or replace function public.create_contract(p_payload jsonb)
 returns jsonb
@@ -1094,7 +1096,7 @@ begin
   perform public.assert_current_session_at_entry();
   v_actor := public.money_actor(
     nullif(p_payload ->> 'actor_id', '')::uuid,
-    array['admin', 'boss']);
+    array['admin', 'boss', 'operator', 'sales']);
   select coalesce(role, '') into v_role from public.profiles where id = v_actor;
 
   v_lead_id := nullif(p_payload ->> 'lead_id', '')::uuid;
@@ -1116,7 +1118,7 @@ begin
   if not found then
     raise exception 'lead not found' using errcode = 'P0002';
   end if;
-  if v_role not in ('admin', 'boss', 'operator', 'finance')
+  if v_role not in ('admin', 'boss', 'operator')
      and v_lead.assigned_to is distinct from v_actor then
     raise exception 'only the assigned salesperson or a manager may create a contract for this lead'
       using errcode = '42501';
@@ -1197,13 +1199,32 @@ end
 $function$;
 
 -- ---------------------------------------------------------------------------
--- 8. Contracts are created by admin / boss only (Sam: finance and designer get
---    the strictest reading, and the screens already show the button to nobody else)
+-- 8. Who may create a contract (Sam, option A)
 -- ---------------------------------------------------------------------------
--- The direct-insert policies for finance, sales and operator are removed and the
--- admin one narrowed to admin / boss. Direct inserts are anyway refused once the
--- contract phase is on (guard_contracts_write); this keeps the policy layer
--- consistent with it. The definer routines above are the supported way in.
+--   admin, boss     any lead (equal authority)
+--   operator        any lead, as a draft
+--   sales           only a lead assigned to them, only as a draft
+--   finance, designer  never
+-- The two routines above enforce it; this is the same rule for a direct insert.
+-- Direct inserts are anyway refused once the contract phase is on
+-- (guard_contracts_write). A contract only becomes effective through the two
+-- approval steps, unchanged. The ownership test is a definer helper (with the entry guard) because a
+-- contracts policy that read leads would recurse (leads policies read contracts).
+create or replace function public.is_my_lead(p_lead_id uuid)
+returns boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+begin
+  perform public.assert_current_session_at_entry();
+  return exists (select 1 from public.leads l where l.id = p_lead_id and l.assigned_to = auth.uid());
+end
+$$;
+revoke all on function public.is_my_lead(uuid) from public, anon;
+grant execute on function public.is_my_lead(uuid) to authenticated;
+
 DO $$
 BEGIN
   IF to_regclass('public.contracts') IS NOT NULL THEN
@@ -1211,7 +1232,10 @@ BEGIN
     EXECUTE 'DROP POLICY IF EXISTS policy_contracts_insert_sales ON public.contracts';
     EXECUTE 'DROP POLICY IF EXISTS policy_contracts_insert_admin ON public.contracts';
     EXECUTE 'CREATE POLICY policy_contracts_insert_admin ON public.contracts FOR INSERT TO authenticated WITH CHECK ('
-      || '(EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN (''admin'',''boss''))))';
+      || '(EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN (''admin'',''boss'',''operator''))))';
+    EXECUTE 'CREATE POLICY policy_contracts_insert_sales ON public.contracts FOR INSERT TO authenticated WITH CHECK ('
+      || '(EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = ''sales'')) AND sales_id = auth.uid() '
+      || 'AND status = ''draft'' AND public.is_my_lead(lead_id))';
   END IF;
 END
 $$;
@@ -1338,8 +1362,8 @@ $$;
 --   Leads that were moved to pending_decision or won by these routines keep that
 --   state (stage_change / won events record it); nothing is deleted.
 -- * contracts insert policies: re-create policy_contracts_insert_finance
---   (role finance), policy_contracts_insert_sales (sales_id = auth.uid()) and widen
---   policy_contracts_insert_admin to admin/boss/operator.
+--   (role finance) and policy_contracts_insert_sales (sales_id = auth.uid() only);
+--   DROP FUNCTION public.is_my_lead(uuid).
 -- * discount check: ALTER TABLE public.quotations DROP CONSTRAINT quotations_discount_rate_range.
 -- * session wrapper: ALTER POLICY each restrict_*_active_session back to the bare
 --   session_token_is_current() (semantics identical either way).

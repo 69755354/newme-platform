@@ -123,22 +123,49 @@ rc, out, err = run_as(ADMIN, f"select public.transition_lead_stage('{LEAD_OTHER}
 assert rc == 0 and out.splitlines()[-1].startswith("won/won/"), (out, err)
 passed("the manual Won button still wins a lead directly")
 
-# 6. contract creation is admin/boss only
-for uid in (SALES, FINANCE, OPERATOR, DESIGNER):
+# 6. who may create a contract (Sam, option A)
+#    admin/boss/operator: any lead; sales: only a lead assigned to them; finance/designer: never.
+PAY = lambda lead: json.dumps({"lead_id": lead, "amount": 100, "installments": [{"seq": 1, "amount": 100, "due_date": "2099-01-01"}]})
+ASSIGN_OTHER_TO_SALES = f"reset role; update public.leads set assigned_to = '{SALES}' where id = '{LEAD_OTHER}'; "
+# conversion
+rc, out, err = run_as(SALES, CONVERT)           # LEAD_OTHER is unassigned: refused
+assert rc != 0 and "only the assigned salesperson or a manager" in err, err
+rc, out, err = run_as(SALES, ASSIGN_OTHER_TO_SALES + act_as(SALES) + CONVERT + lead_state())
+assert rc == 0 and out.splitlines()[-1] == "pending_decision/-/0/0", (out, err)   # own lead: converts to a draft contract, lead not won
+rc, out, err = run_as(SALES, ASSIGN_OTHER_TO_SALES + act_as(SALES) + f"create temp table t_c as select (({CONVERT.rstrip(';')})::uuid) as cid; select c.status from public.contracts c join t_c on c.id = t_c.cid;")
+assert rc == 0 and out.splitlines()[-1] == "draft", (out, err)
+for uid in (FINANCE, DESIGNER):
+    rc, out, err = run_as(uid, ASSIGN_OTHER_TO_SALES + act_as(uid) + CONVERT)
+    assert rc != 0 and "may not perform this operation" in err, (ROLE_OF[uid], err)
+for uid in (ADMIN, BOSS, OPERATOR):
     rc, out, err = run_as(uid, CONVERT)
-    assert rc != 0 and ("may not perform" in err or "owner" in err or "row-level" in err), (ROLE_OF[uid], err)
-    payload = json.dumps({"lead_id": LEAD_DESIGNER, "amount": 100, "installments": [{"seq": 1, "amount": 100, "due_date": "2099-01-01"}]})
-    rc, out, err = run_as(uid, f"select public.create_contract('{payload}'::jsonb);")
-    assert rc != 0 and "may not perform" in err, (ROLE_OF[uid], err)
-    rc, out, err = run_as(uid, f"insert into public.contracts (lead_id, contract_no, contract_amount, party_a_name, sales_id, created_by, status) values ('{LEAD_OTHER}', 'S2-X-{ROLE_OF[uid]}', 1, 'x', '{uid}', '{uid}', 'draft');")
-    assert rc != 0, (ROLE_OF[uid], "direct insert accepted")
-for uid in (ADMIN, BOSS):
-    payload = json.dumps({"lead_id": LEAD_DESIGNER, "amount": 100, "installments": [{"seq": 1, "amount": 100, "due_date": "2099-01-01"}]})
-    rc, out, err = run_as(uid, f"select public.create_contract('{payload}'::jsonb) ->> 'success';")
     assert rc == 0, (ROLE_OF[uid], err)
-    rc, out, err = run_as(uid, CONVERT)
-    assert rc == 0, (ROLE_OF[uid], err)
-passed("only admin and boss can create a contract (RPC, conversion and direct insert); sales, finance, operator and designer are refused")
+passed("a salesperson converts a quotation only on their own lead (draft contract, lead not won); admin, boss and operator on any lead; finance and designer never")
+# create_contract
+rc, out, err = run_as(SALES, f"select public.create_contract('{PAY(LEAD_DESIGNER)}'::jsonb) ->> 'status';")      # assigned to SALES
+assert rc == 0 and out.splitlines()[-1] == "draft", (out, err)
+rc, out, err = run_as(SALES, f"select public.create_contract('{PAY(LEAD_OTHER)}'::jsonb);")                       # unassigned
+assert rc != 0 and "only the assigned salesperson or a manager" in err, err
+for uid in (FINANCE, DESIGNER):
+    rc, out, err = run_as(uid, f"select public.create_contract('{PAY(LEAD_DESIGNER)}'::jsonb);")
+    assert rc != 0 and "may not perform this operation" in err, (ROLE_OF[uid], err)
+for uid in (ADMIN, BOSS, OPERATOR):
+    rc, out, err = run_as(uid, f"select public.create_contract('{PAY(LEAD_OTHER)}'::jsonb) ->> 'status';")
+    assert rc == 0 and out.splitlines()[-1] == "draft", (ROLE_OF[uid], err)
+passed("create_contract: sales on their own lead only, as a draft; admin, boss and operator anywhere; finance and designer refused")
+# direct insert (the policy layer; once the contract phase is on the guard refuses all direct inserts as well)
+INS = lambda uid, lead, status="draft": f"insert into public.contracts (lead_id, contract_no, contract_amount, party_a_name, sales_id, created_by, status) values ('{lead}', 'S2-D-{uuid.uuid4().hex[:6]}', 1, 'x', '{uid}', '{uid}', '{status}');"
+for uid in (FINANCE, DESIGNER):
+    rc, out, err = run_as(uid, INS(uid, LEAD_OTHER))
+    assert rc != 0, ROLE_OF[uid]
+rc, out, err = run_as(SALES, INS(SALES, LEAD_OTHER))                 # not her lead
+assert rc != 0
+rc, out, err = run_as(SALES, INS(SALES, LEAD_DESIGNER, "active"))    # her lead, not a draft
+assert rc != 0
+assert query("select public.is_my_lead('%s')" % LEAD_DESIGNER) in ("f",)   # superuser has no auth.uid()
+rc, out, err = run_as(SALES, f"select public.is_my_lead('{LEAD_DESIGNER}'), public.is_my_lead('{LEAD_OTHER}');")
+assert rc == 0 and out.splitlines()[-1] == "t|f", (out, err)
+passed("direct insert: finance, designer, a salesperson on another's lead and a non-draft are refused; the ownership test sees only the caller's own leads")
 
 # 7. approval: first step unchanged (operator ok, boss not), second step admin or boss
 base = f"""

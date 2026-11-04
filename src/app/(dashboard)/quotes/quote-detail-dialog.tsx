@@ -105,7 +105,8 @@ interface QuoteDetailDialogProps {
   onStatusChange: (id: string, newStatus: string) => Promise<boolean>;
   /** The conversion route already stored the new status; refresh the views. */
   onConverted?: (id: string) => void;
-  /** admin / boss only: the database refuses contract creation for every other role */
+  /** admin / boss / operator, or sales on their own leads (the database enforces it); never finance or designer */
+  canCreateContract?: boolean;
   canCreateContract?: boolean;
 }
 
@@ -510,7 +511,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
           </Button>
 
           {/* Convert to Contract — opens the schedule step; the POST needs it */}
-          {/* Contracts are created by admin / boss only (the database refuses everyone else) */}
+          {/* Contract creation: admin/boss/operator any lead, sales own leads only (the database refuses the rest) */}
           {canCreateContract && shownStatus === "accepted" && !quote.contract_id && (
             <Button
               size="sm"

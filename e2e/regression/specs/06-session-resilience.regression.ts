@@ -200,6 +200,8 @@ test.describe("saving under bad networks", () => {
     await settle(s.page);
     await s.context.route(/\/api\/leads\/[^/]+\/contacts/, (route) => route.abort("connectionfailed"));
     // the contact form opens from the "first contact" step of the sales process
+    // the form is closed by default: open it with the "Add Contact Record" button first
+    await s.page.getByRole("button", { name: /Add Contact Record|添加联系记录/i }).first().click();
     const method = s.page.locator("select:visible").first();
     await expect(method, "contact form did not open").toBeVisible({ timeout: 10_000 });
     await method.selectOption({ index: 1 });

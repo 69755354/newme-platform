@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
+import { AUDIT_ACTIONS, writeAuditLog } from "@/lib/audit-log";
 import { parseInstallLabourNote } from "@/lib/quotation-labour-basis.mjs";
 import { normalizeQuotationLineItems } from "@/lib/quotation-rules.mjs";
 
@@ -177,6 +178,15 @@ export async function GET(request: NextRequest) {
 
     const csvContent = buildCsv(rows);
     const filename = `quotation_${quote.quote_no || quoteId}.csv`;
+
+    // Data-export audit: actor id and quote id only, never the exported content.
+    void writeAuditLog({
+      actorId: user.id,
+      action: AUDIT_ACTIONS.DATA_EXPORT,
+      targetType: "quotation",
+      targetId: quoteId,
+      details: { format: "csv", rows: csvContent.split("\n").length },
+    });
 
     return new NextResponse(csvContent, {
       status: 200,

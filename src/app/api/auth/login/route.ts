@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { isActiveProfile } from "@/lib/auth-profile.mjs";
 import { logger } from "@/lib/logger";
+import { AUDIT_ACTIONS, accountKey, writeAuditLog } from "@/lib/audit-log";
 import { clientIdentifier, consumeRateLimit } from "@/lib/rate-limit";
 import {
   applySessionCookies,
@@ -57,6 +58,17 @@ async function revokeIssuedToken(
     // The proxy-side active-profile gate still rejects the token on every
     // subsequent request even when upstream revocation is unavailable.
   }
+}
+
+function auditLoginFailure(email: string, reason: string, actorId?: string) {
+  // Account is recorded as a short one-way key, never the address. Fire and
+  // forget: auditing must not add latency to, or be able to fail, a login.
+  void writeAuditLog({
+    actorId: actorId ?? null,
+    action: AUDIT_ACTIONS.LOGIN_FAILURE,
+    targetType: "auth",
+    details: { reason, account_key: accountKey(email) },
+  });
 }
 
 export async function POST(request: Request) {
@@ -161,6 +173,7 @@ export async function POST(request: Request) {
         });
         return respond({ error: "auth_unavailable" }, { status: 503 });
       }
+      auditLoginFailure(email, "invalid_credentials");
       return respond({ error: "invalid_credentials" }, { status: 401 });
     }
     grant = await grantRes.json();
@@ -178,6 +191,7 @@ export async function POST(request: Request) {
   const refreshToken = grant.refresh_token;
   const userId = grant.user?.id;
   if (!accessToken || !refreshToken || !userId) {
+    auditLoginFailure(email, "invalid_credentials");
     return respond({ error: "invalid_credentials" }, { status: 401 });
   }
 
@@ -222,6 +236,7 @@ export async function POST(request: Request) {
   }
 
   if (!isActiveProfile(profile)) {
+    auditLoginFailure(email, "inactive_account", userId);
     await revokeIssuedToken(supabaseUrl, anonKey, accessToken);
     return respond({ error: "inactive_account" }, { status: 403 });
   }
@@ -233,6 +248,12 @@ export async function POST(request: Request) {
   accountLimit.release?.();
 
   // 3. Only now does a session exist. Cookies come from the shared contract.
+  void writeAuditLog({
+    actorId: userId,
+    action: AUDIT_ACTIONS.LOGIN_SUCCESS,
+    targetType: "auth",
+    details: { role: profile?.role ?? "sales" },
+  });
   return applySessionCookies(
     respond({
       ok: true,

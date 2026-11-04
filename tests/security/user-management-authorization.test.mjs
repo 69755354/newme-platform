@@ -45,7 +45,8 @@ test("API checkRole rejects unauthorized (401) and wrong role (403) separately",
 test("addTeamMember Server Action requires admin or boss", async () => {
   const action = await read("src/app/actions/team.ts");
   const addMember = action.slice(action.indexOf("addTeamMember"), action.indexOf("removeTeamMember"));
-  assert.match(addMember, /const \{ role \} = await getActionAuthContext\(\)/);
+  // S7: addTeamMember also reads the caller's id so the account creation can be audited.
+  assert.match(addMember, /const \{ role, user \} = await getActionAuthContext\(\)/);
   assert.match(addMember, /!role \|\| !\['admin', 'boss'\]\.includes\(role\)/);
   assert.match(addMember, /throw new Error\('Forbidden'\)/);
   // No wider role grant

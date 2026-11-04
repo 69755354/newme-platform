@@ -4,6 +4,7 @@ import { getActionAuthContext } from '@/lib/action-auth-context'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { requireActiveLeadTransferCandidate } from '@/lib/lead-reassignment.mjs'
 import { handOverMemberLeads, readHandoverTarget } from '@/lib/member-lead-handover.mjs'
+import { AUDIT_ACTIONS, writeAuditLog } from '@/lib/audit-log'
 
 const VALID_ROLES = ['admin', 'boss', 'sales', 'designer', 'operator', 'finance']
 
@@ -19,7 +20,7 @@ interface AddTeamMemberInput {
  * Add a new team member.
  */
 export async function addTeamMember(data: AddTeamMemberInput) {
-  const { role } = await getActionAuthContext()
+  const { role, user } = await getActionAuthContext()
 
   // Role check
   if (!role || !['admin', 'boss'].includes(role)) {
@@ -65,6 +66,22 @@ export async function addTeamMember(data: AddTeamMemberInput) {
     await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
     throw new Error('Failed to create profile')
   }
+
+  // Application-layer audit (actor id only): who created which account, with which role.
+  void writeAuditLog({
+    actorId: user?.id,
+    action: AUDIT_ACTIONS.USER_CREATED,
+    targetType: 'user',
+    targetId: authData.user.id,
+    details: { role: data.role },
+  })
+  void writeAuditLog({
+    actorId: user?.id,
+    action: AUDIT_ACTIONS.ROLE_ASSIGNED,
+    targetType: 'user',
+    targetId: authData.user.id,
+    details: { new_role: data.role, previous_role: 'none' },
+  })
 
   // Notify admins about new team member
   try {

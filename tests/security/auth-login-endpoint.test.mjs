@@ -5,6 +5,7 @@ import fsSync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseAuthSessionCookie } from "../../src/lib/auth-cookie.mjs";
+import { AUDIT_ACTIONS, accountKey } from "../../src/lib/audit-log-row.mjs";
 
 // Behavioural coverage for POST /api/auth/login. This endpoint is deliberately
 // pre-authentication, so it is the one route where a mistake is reachable by
@@ -73,9 +74,11 @@ function createNextServerMock() {
  * Fresh route instance per test. Loading it anew also gives it a fresh
  * rate-limiter, so attempt bounds are isolated between cases.
  */
-function loadLoginRoute({ logs = [] } = {}) {
+function loadLoginRoute({ logs = [], audit = [] } = {}) {
   return loadTypeScriptModule("src/app/api/auth/login/route.ts", {
     "next/server": createNextServerMock(),
+    // S7: application-layer audit rows are captured instead of written.
+    "@/lib/audit-log": { AUDIT_ACTIONS, accountKey, writeAuditLog: async (entry) => { audit.push(entry); } },
     "@/lib/auth-profile.mjs": { isActiveProfile: (p) => p?.is_active === true },
     "@/lib/logger": {
       logger: {
@@ -430,4 +433,31 @@ test("missing auth configuration fails closed instead of issuing a session", asy
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: "auth_unavailable" });
   assert.deepEqual(response.cookiesSet, []);
+});
+
+test("S7 audit: a successful login records the actor id and role, never e-mail or name", async () => {
+  const audit = [];
+  const route = loadLoginRoute({ audit });
+  stubUpstream();
+  const response = await route.POST(loginRequest(CREDENTIALS));
+  assert.equal(response.status, 200);
+  assert.deepEqual(audit, [{ actorId: "user-1", action: "login_success", targetType: "auth", details: { role: "sales" } }]);
+  assert.ok(!JSON.stringify(audit).includes("owner@example.com"));
+  assert.ok(!JSON.stringify(audit).includes(SECRET_PASSWORD));
+});
+
+test("S7 audit: failed and refused logins are recorded with a one-way account key only", async () => {
+  const audit = [];
+  const route = loadLoginRoute({ audit });
+  stubUpstream({ grantStatus: 400 });
+  assert.equal((await route.POST(loginRequest(CREDENTIALS))).status, 401);
+  stubUpstream({ profile: [{ is_active: false, role: "sales" }] });
+  assert.equal((await route.POST(loginRequest(CREDENTIALS))).status, 403);
+  assert.deepEqual(audit.map((entry) => [entry.action, entry.details.reason, entry.actorId]), [
+    ["login_failure", "invalid_credentials", null],
+    ["login_failure", "inactive_account", "user-1"],
+  ]);
+  const serialized = JSON.stringify(audit);
+  assert.ok(!serialized.includes("owner@example.com") && !serialized.includes(SECRET_PASSWORD));
+  assert.equal(audit[0].details.account_key, accountKey("OWNER@example.com"), "key is case-insensitive and one-way");
 });

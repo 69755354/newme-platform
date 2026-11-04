@@ -257,6 +257,7 @@ test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives au
       getRefreshFailure: () => undefined,
     },
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
+    "@/lib/audit-log": { AUDIT_ACTIONS: {}, accountKey: () => "", writeAuditLog: async () => {} },
     "@/lib/logger": { logger: { error: () => {}, info: () => {}, warn: () => {} } },
     "next/server": createCookieResponseMock(),
   });
@@ -487,6 +488,7 @@ function loadLogout({ user = { id: USER_ID }, getUserError = null, rpc } = {}) {
       },
     },
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => LOGOUT_COOKIE_NAMES },
+    "@/lib/audit-log": { AUDIT_ACTIONS: {}, accountKey: () => "", writeAuditLog: async () => {} },
     "@/lib/logger": { logger: { error: () => {}, warn: () => {}, info: () => {} } },
     "next/server": createCookieResponseMock(),
   });

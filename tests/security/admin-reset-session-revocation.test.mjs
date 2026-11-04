@@ -229,6 +229,7 @@ async function callRoute(options, mutate = (source) => source) {
     {
       "next/server": nextServer(),
       "@/lib/supabase-admin": { supabaseAdmin: client },
+      "@/lib/audit-log": { AUDIT_ACTIONS: {}, writeAuditLog: async () => {} }, // S7
       "@/lib/request-auth-context": requestAuthContext(profile),
     },
     mutate,
@@ -270,6 +271,7 @@ async function callAction(options, mutate = (source) => source) {
         "@/lib/supabase-server": supabaseServer,
         "@/lib/action-auth-context": actionAuthContext,
         "@/lib/supabase-admin": { supabaseAdmin: client },
+        "@/lib/audit-log": { AUDIT_ACTIONS: {}, writeAuditLog: async () => {} }, // S7
         "@/lib/lead-reassignment.mjs": { resolveActiveLeadReassignmentTarget: async () => null },
         "@supabase/supabase-js": { createClient: () => client },
       },

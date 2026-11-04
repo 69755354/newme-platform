@@ -56,6 +56,7 @@ interface SourceQualityRow {
   source: string;
   total: number;
   good: number;
+  normal: number;
   pending: number;
   bad: number;
   conv_rate: number;
@@ -102,7 +103,8 @@ export default function AdsROI() {
         const json = await res.json();
         setData(json);
       } catch (err: any) {
-        setError(err.message || t("common.failedToLoad"));
+        console.error("[analytics] ads roi fetch failed:", err);
+        setError(t("common.loadFailed"));
       } finally {
         setLoading(false);
       }
@@ -124,7 +126,7 @@ export default function AdsROI() {
   if (error) {
     return (
       <div className="py-8 text-center text-sm text-rose-400">
-        {t("common.loadFailed")}: {error}
+        {error}
       </div>
     );
   }
@@ -155,7 +157,7 @@ export default function AdsROI() {
           { label: t("analytics.totalLeads"), value: fmtNum(summary.total_leads) },
           { label: t("analytics.cpl"), value: fmtAED(summary.cpl) },
           { label: t("analytics.conversions"), value: fmtNum(summary.conversions) },
-          { label: t("analytics.signedAmount"), value: fmtAED(summary.signed_amount) },
+          { label: t("analytics.wonAmount"), value: fmtAED(summary.signed_amount) },
           { label: t("analytics.roas"), value: finite(summary.roas) === null ? "—" : `${finite(summary.roas)!.toFixed(2)}x` },
         ].map((card) => (
           <div
@@ -186,7 +188,7 @@ export default function AdsROI() {
                 <TableHead className="text-right">{t("analytics.totalLeads")}</TableHead>
                 <TableHead className="text-right">{t("analytics.cpl")}</TableHead>
                 <TableHead className="text-right">{t("analytics.conversions")}</TableHead>
-                <TableHead className="text-right">{t("analytics.signedAmount")}</TableHead>
+                <TableHead className="text-right">{t("analytics.wonAmount")}</TableHead>
                 <TableHead className="text-right">{t("analytics.roas")}</TableHead>
               </TableRow>
             </TableHeader>
@@ -248,6 +250,7 @@ export default function AdsROI() {
                 <TableHead>{t("analytics.sourceVsQuality").split(" ")[0]}</TableHead>
                 <TableHead className="text-right">{t("analytics.totalLeads")}</TableHead>
                 <TableHead className="text-right">{t("analytics.qualityGood")}</TableHead>
+                <TableHead className="text-right">{t("analytics.qualityNormal")}</TableHead>
                 <TableHead className="text-right">{t("analytics.qualityPending")}</TableHead>
                 <TableHead className="text-right">{t("analytics.qualityBad")}</TableHead>
                 <TableHead className="text-right">{t("analytics.conversionRate")}</TableHead>
@@ -260,6 +263,9 @@ export default function AdsROI() {
                   <TableCell className="text-right">{row.total}</TableCell>
                   <TableCell className="text-right text-emerald-400">
                     {row.good}
+                  </TableCell>
+                  <TableCell className="text-right text-sky-400">
+                    {row.normal}
                   </TableCell>
                   <TableCell className="text-right text-amber-400">
                     {row.pending}
@@ -286,7 +292,7 @@ export default function AdsROI() {
               ))}
               {source_quality.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
                     {t("analytics.noSourceData")}
                   </TableCell>
                 </TableRow>

@@ -303,7 +303,7 @@ function LeadsContent() {
       {/* KanbanBoard — OUTSIDE filter-bar sticky div.
           Has its own overflow-x-auto for horizontal kanban scroll. */}
       {error ? (
-        <ErrorState message={error} onRetry={fetchLeads} />
+        <ErrorState message={t("common.loadFailed")} retryText={t("common.retry")} onRetry={fetchLeads} />
       ) : loading ? (
         <div className="text-center text-muted-foreground py-16 text-sm">{t("common.loading")}</div>
       ) : (

@@ -233,7 +233,7 @@ function CEOSalesLoad({ data, t, actorId, canRebalance }: {
                   fontSize: "12px",
                 }}
               />
-              <Bar dataKey="leads" fill="hsl(327, 100%, 45%)" radius={[0, 4, 4, 0]} />
+              <Bar dataKey="leads" name={t('analytics.leads')} fill="hsl(327, 100%, 45%)" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -342,7 +342,7 @@ function SalesView({ data, t }: { data: SalesMyData; t: (path: string) => string
                     fontSize: "12px",
                   }}
                 />
-                <Bar dataKey="count" fill="hsl(327, 100%, 45%)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="count" name={t('analytics.leads')} fill="hsl(327, 100%, 45%)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

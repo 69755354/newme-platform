@@ -1,17 +1,14 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
+import { fetchAllRows } from "@/lib/fetch-all-rows.mjs";
+import { inBounds, inWeek, recentDubaiWeeks } from "@/lib/dubai-time.mjs";
+import { EXCLUDE_SYNTHETIC_QA_FILTER, isWonLead, wonLeadValue } from "@/lib/lead-metrics.mjs";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 
 // R5: the collection curve below is derived from payments, so this read is
 // force-dynamic and private/no-store like every other money-derived read.
 export const dynamic = "force-dynamic";
-
-function dateInRange(value: string | null, start: string, end: string): boolean {
-  if (!value) return false;
-  const date = new Date(value);
-  return !Number.isNaN(date.getTime()) && date >= new Date(start) && date <= new Date(end);
-}
 
 function finiteAmount(value: number | null): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -44,74 +41,45 @@ export async function GET(request: NextRequest) {
     const isManagement = ["boss", "admin", "operator"].includes(role);
     const userId = user.id;
 
-    // ─── Compute past 12 ISO weeks ───
-    const weeks: { year: number; week: number; start: string; end: string }[] = [];
-    const now = new Date();
-
-    // Get current ISO week start (Monday)
-    const dayOfWeek = now.getDay();
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    const currentMonday = new Date(now);
-    currentMonday.setDate(now.getDate() + mondayOffset);
-    currentMonday.setHours(0, 0, 0, 0);
-
-    for (let i = 11; i >= 0; i--) {
-      const start = new Date(currentMonday);
-      start.setDate(currentMonday.getDate() - i * 7);
-      const end = new Date(start);
-      end.setDate(start.getDate() + 6);
-      end.setHours(23, 59, 59, 999);
-
-      // ISO week number
-      const temp = new Date(start);
-      const dayNum = (temp.getDay() + 6) % 7;
-      temp.setDate(temp.getDate() - dayNum + 3);
-      const firstThursday = temp.getTime();
-      const yearStart = new Date(temp.getFullYear(), 0, 1).getTime();
-      const weekNum =
-        1 + Math.round(
-          (firstThursday - yearStart) / 86_400_000 / 7
-        );
-
-      weeks.push({
-        year: start.getFullYear(),
-        week: weekNum,
-        start: start.toISOString(),
-        end: end.toISOString(),
-      });
-    }
+    // ─── Compute past 12 weeks (Dubai Monday-Sunday weeks, ISO week numbers) ───
+    const weeks = recentDubaiWeeks(12);
 
     // ─── Fetch leads in the 12-week range ───
-    const rangeStart = weeks[0].start;
-    const rangeEnd = weeks[weeks.length - 1].end;
+    const rangeStart = weeks[0].start.toISOString();
+    const rangeEnd = weeks[weeks.length - 1].end.toISOString();
+    const rangeStartDate = weeks[0].startKey;
+    const rangeEndDate = weeks[weeks.length - 1].endKey;
 
-    let leadsQuery = supabase
-      .from("leads")
-      .select("id, created_at, stage, quotation_value, assigned_to, final_status")
-      .eq("archived", false)
-      .gte("created_at", rangeStart)
-      .lte("created_at", rangeEnd);
+    const leadsResult = await fetchAllRows((from, to, withCount) => {
+      let q = supabase
+        .from("leads")
+        .select("id, created_at, stage, quotation_value, assigned_to, final_status", withCount ? { count: "exact" } : undefined)
+        .eq("archived", false)
+        .or(EXCLUDE_SYNTHETIC_QA_FILTER)
+        .gte("created_at", rangeStart)
+        .lt("created_at", rangeEnd);
+      if (!isManagement) q = q.eq("assigned_to", userId);
+      return q.order("id", { ascending: true }).range(from, to);
+    });
+    if (leadsResult.error) throw leadsResult.error;
+    const leads = leadsResult.data as any[];
 
-    if (!isManagement) {
-      leadsQuery = leadsQuery.eq("assigned_to", userId);
-    }
-
-    const { data: leads, error: leadsErr } = await leadsQuery;
-    if (leadsErr) throw leadsErr;
-
-    // ─── Fetch contracts (for signed amount) ───
-    let contractsQuery = supabase
-      .from("contracts")
-      .select("id, contract_amount, created_at, status, sales_id")
-      .gte("created_at", rangeStart)
-      .lte("created_at", rangeEnd);
-
-    if (!isManagement) {
-      contractsQuery = contractsQuery.eq("sales_id", userId);
-    }
-
-    const { data: contracts, error: contractsErr } = await contractsQuery;
-    if (contractsErr) throw contractsErr;
+    // ─── Fetch leads won in the range (for signed amount) ───
+    // Signed in a week = won in that Dubai week (won_at), the one shared won amount.
+    const wonResult = await fetchAllRows((from, to, withCount) => {
+      let q = supabase
+        .from("leads")
+        .select("id, final_status, stage, archived, quotation_value, won_at", withCount ? { count: "exact" } : undefined)
+        .eq("archived", false)
+        .or(EXCLUDE_SYNTHETIC_QA_FILTER)
+        .eq("final_status", "won")
+        .gte("won_at", rangeStart)
+        .lt("won_at", rangeEnd);
+      if (!isManagement) q = q.eq("assigned_to", userId);
+      return q.order("id", { ascending: true }).range(from, to);
+    });
+    if (wonResult.error) throw wonResult.error;
+    const wonInRange = wonResult.data as any[];
 
     // ─── Fetch payments (for collected amount) ───
     //
@@ -122,61 +90,42 @@ export async function GET(request: NextRequest) {
     // as collected here and not in kpi_targets.actual_amount — two collection
     // curves for one month. The set is selected in SQL, so the predicate belongs in
     // SQL too; nothing below re-derives it from the row.
-    let paymentsQuery = supabase
-      .from("payments")
-      .select("id, amount, confirmed, payment_date, contract_id")
-      .gte("payment_date", rangeStart)
-      .lte("payment_date", rangeEnd)
-      .eq("confirmed", true)
-      .is("voided_at", null);
-
-    let payments: any[] = [];
-
-    if (!isManagement) {
-      // Get user's contract IDs first
-      const { data: userContracts } = await supabase
-        .from("contracts")
-        .select("id")
-        .eq("sales_id", userId);
-
-      const userContractIds = (userContracts || []).map((c: any) => c.id);
-      if (userContractIds.length > 0) {
-        paymentsQuery = paymentsQuery.in("contract_id", userContractIds);
-        const { data: p, error: paymentsErr } = await paymentsQuery;
-        if (paymentsErr) throw paymentsErr;
-        payments = p || [];
-      }
-      // else: no contracts → payments stays empty, skip query
-    } else {
-      const { data: p, error: paymentsErr } = await paymentsQuery;
-      if (paymentsErr) throw paymentsErr;
-      payments = p || [];
-    }
+    // payment_date is a DATE: compared with Dubai calendar dates. A sales caller's
+    // payments are scoped by joining to the contract, not by a list of ids.
+    const paymentsResult = await fetchAllRows((from, to, withCount) => {
+      let q = supabase
+        .from("payments")
+        .select(
+          isManagement ? "id, amount, payment_date, contract_id" : "id, amount, payment_date, contract_id, contracts!inner(sales_id)",
+          withCount ? { count: "exact" } : undefined,
+        )
+        .gte("payment_date", rangeStartDate)
+        .lte("payment_date", rangeEndDate)
+        .eq("confirmed", true)
+        .is("voided_at", null);
+      if (!isManagement) q = q.eq("contracts.sales_id", userId);
+      return q.order("id", { ascending: true }).range(from, to);
+    });
+    if (paymentsResult.error) throw paymentsResult.error;
+    const payments = paymentsResult.data as any[];
 
     // ─── Build weekly data ───
     const weeklyData = weeks.map((week) => {
       // New leads in this week
-      const newLeads = (leads || []).filter((lead) =>
-        dateInRange(lead.created_at, week.start, week.end)
-      );
+      const newLeads = (leads || []).filter((lead) => inBounds(lead.created_at, week));
 
       // Won leads in this week (using leads table)
-      const wonLeads = newLeads.filter((l) => l.final_status === "won");
+      const wonLeads = newLeads.filter((l) => isWonLead(l));
 
-      // Signed amount from contracts created this week
-      const weekContracts = (contracts || []).filter((contract) =>
-        contract.status !== "terminated" &&
-        dateInRange(contract.created_at, week.start, week.end)
+      // Signed amount: leads won this week (won_at), shared won amount.
+      const signedAmount = wonInRange.reduce(
+        (sum, lead) => (inBounds(lead.won_at, week) ? sum + wonLeadValue(lead) : sum),
+        0,
       );
-
-      const signedAmount = weekContracts.reduce((sum, contract) => {
-        const amount = finiteAmount(contract.contract_amount);
-        return amount === null ? sum : sum + amount;
-      }, 0);
 
       // Collection amount from payments confirmed this week
       const weekPayments = (payments || []).filter((payment) =>
-        dateInRange(payment.payment_date, week.start, week.end)
+        inWeek(payment.payment_date, week)
       );
 
       const collectedAmount = weekPayments.reduce((sum, payment) => {
@@ -192,8 +141,8 @@ export async function GET(request: NextRequest) {
       return {
         year: week.year,
         week: week.week,
-        start_date: week.start.split("T")[0],
-        end_date: week.end.split("T")[0],
+        start_date: week.startKey,
+        end_date: week.endKey,
         new_leads: newCount,
         signed_amount: Math.round(signedAmount * 100) / 100,
         conversion_rate: conversionRate,

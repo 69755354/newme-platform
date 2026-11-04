@@ -3,6 +3,8 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { getCached, setCache } from "@/lib/api-cache.mjs";
+import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
+import { LEAD_METRIC_COLUMNS, summarizeLeads, type MetricLead } from "@/lib/lead-metrics.mjs";
 
 export async function GET(request: Request) {
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
@@ -39,51 +41,33 @@ export async function GET(request: Request) {
 
   if (!profiles) return NextResponse.json({ users: [] });
 
-  // Per-user lead counts — parallelized per-user (5 queries each via Promise.all)
-  const results = await Promise.all(
-    profiles.map(async (p) => {
-      const [assigned, active, won, lost, created] = await Promise.all([
-        supabase
-          .from("leads")
-          .select("id", { count: "exact", head: true })
-          .eq("assigned_to", p.id)
-          .eq("archived", false),
-        supabase
-          .from("leads")
-          .select("id", { count: "exact", head: true })
-          .eq("assigned_to", p.id)
-          .eq("archived", false)
-          .is("final_status", null),
-        supabase
-          .from("leads")
-          .select("id", { count: "exact", head: true })
-          .eq("assigned_to", p.id)
-          .eq("archived", false)
-          .or("final_status.eq.won,stage.eq.won"),
-        supabase
-          .from("leads")
-          .select("id", { count: "exact", head: true })
-          .eq("assigned_to", p.id)
-          .eq("archived", false)
-          .or("final_status.eq.lost,stage.eq.lost"),
-        supabase
-          .from("leads")
-          .select("id", { count: "exact", head: true })
-          .eq("imported_by", p.id),
-      ]);
-
-      return {
-        user_id: p.id,
-        full_name: p.full_name,
-        role: p.role,
-        assigned_leads: assigned.count || 0,
-        active_leads: active.count || 0,
-        won_leads: won.count || 0,
-        lost_leads: lost.count || 0,
-        imported_leads: created.count || 0,
-      };
-    })
+  // Per-user lead counts from one read of the counted (non-archived) leads and
+  // the shared definitions in src/lib/lead-metrics.mjs - the same won / lost /
+  // active figures as the dashboard leaderboard and every analytics panel.
+  const leadsResult = await fetchCountedLeads(
+    supabase,
+    LEAD_METRIC_COLUMNS,
+    { assignedTo: isManagement ? null : user.id },
   );
+  if (leadsResult.error) {
+    console.error("team-ownership leads fetch failed:", leadsResult.error);
+    return NextResponse.json({ error: "Failed to load team ownership" }, { status: 500 });
+  }
+  const summary = summarizeLeads(leadsResult.data as MetricLead[]);
+
+  const results = profiles.map((p) => {
+    const mine = summary.byAssignee[p.id];
+    return {
+      user_id: p.id,
+      full_name: p.full_name,
+      role: p.role,
+      assigned_leads: mine?.total ?? 0,
+      active_leads: mine?.active ?? 0,
+      won_leads: mine?.won ?? 0,
+      lost_leads: mine?.lost ?? 0,
+      imported_leads: mine?.imported ?? 0,
+    };
+  });
 
   // Filter: users with any leads (assigned or created/imported)
   const filtered = results.filter((r) => r.assigned_leads > 0 || r.imported_leads > 0);

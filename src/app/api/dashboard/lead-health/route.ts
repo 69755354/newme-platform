@@ -1,6 +1,14 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
+import {
+  LEAD_METRIC_COLUMNS,
+  overdueLeadList,
+  percentOf,
+  summarizeLeads,
+  type MetricLead,
+} from "@/lib/lead-metrics.mjs";
 
 // ─── GET /api/dashboard/lead-health ───
 export async function GET(request: NextRequest) {
@@ -23,112 +31,28 @@ export async function GET(request: NextRequest) {
 
   const role = profile?.role ?? "sales";
   const isCEO = role === "admin" || role === "boss" || role === "operator";
-  const now = new Date().toISOString();
-  const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const twoDaysAgo = new Date(Date.now() - 48 * 3600_000).toISOString();
-  const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const now = new Date();
 
   try {
-    // ── Base query builder ──
-    let baseQuery = supabase.from("leads").select("*", { count: "exact" }).eq("archived", false);
-    if (!isCEO) {
-      baseQuery = baseQuery.eq("assigned_to", user.id);
-    }
+    // One read of the counted (non-archived) leads, one definition of every
+    // figure (src/lib/lead-metrics.mjs) - the same numbers as the dashboard.
+    const leadsResult = await fetchCountedLeads(
+      supabase,
+      `${LEAD_METRIC_COLUMNS},customer_name,phone`,
+      { assignedTo: isCEO ? null : user.id },
+    );
+    if (leadsResult.error) throw leadsResult.error;
+    const rows = leadsResult.data as Array<MetricLead & { customer_name?: string | null; phone?: string | null }>;
+    const stats = summarizeLeads(rows, { now });
+    const total = stats.total;
 
-    // ── Total leads ──
-    const { count: totalLeads } = await baseQuery;
-    const total = totalLeads ?? 0;
-
-    // ── Weekly new leads ──
-    let weeklyQuery = supabase
-      .from("leads")
-      .select("id", { count: "exact", head: true })
-      .eq("archived", false)
-      .gte("created_at", weekAgo);
-    if (!isCEO) weeklyQuery = weeklyQuery.eq("assigned_to", user.id);
-    const { count: weeklyNew } = await weeklyQuery;
-
-    // ── Active leads ──
-    // final_status IS NULL (consistent with team-ownership, pipeline, workbench)
-    let activeQuery = supabase
-      .from("leads")
-      .select("id", { count: "exact", head: true })
-      .eq("archived", false)
-      .is("final_status", null);
-    if (!isCEO) activeQuery = activeQuery.eq("assigned_to", user.id);
-    const { count: activeCount } = await activeQuery;
-    const activePct = total > 0 ? Math.round((activeCount ?? 0) / total * 100) : 0;
-
-    // ── Dormant leads ──
-    // lead_status = 'dormant' OR (last_contact_date < NOW() - 14d AND final_status IS NULL)
-    let dormantQuery = supabase
-      .from("leads")
-      .select("id", { count: "exact", head: true })
-      .eq("archived", false)
-      .or(
-        `lead_status.eq.dormant,and(last_contact_date.lt.${fourteenDaysAgo},final_status.is.null)`
-      );
-    if (!isCEO) dormantQuery = dormantQuery.eq("assigned_to", user.id);
-    const { count: dormantCount } = await dormantQuery;
-    const dormantPct = total > 0 ? Math.round((dormantCount ?? 0) / total * 100) : 0;
-
-    // ── Zero followup leads ──
-    // followup_count = 0 OR last_contact_date IS NULL
-    let zeroQuery = supabase
-      .from("leads")
-      .select("id", { count: "exact", head: true })
-      .eq("archived", false)
-      .or("followup_count.eq.0,last_contact_date.is.null");
-    if (!isCEO) zeroQuery = zeroQuery.eq("assigned_to", user.id);
-    const { count: zeroCount } = await zeroQuery;
-    const zeroPct = total > 0 ? Math.round((zeroCount ?? 0) / total * 100) : 0;
-
-    // ── Quality breakdown ──
-    // We check the `quality` field first, fallback to `ai_quality`
-    // Values: 'pending', 'good', 'bad', 'unknown'
-    let qualityQuery = supabase
-      .from("leads")
-      .select("quality, ai_quality")
-      .eq("archived", false);
-    if (!isCEO) qualityQuery = qualityQuery.eq("assigned_to", user.id);
-    const { data: qualityRows } = await qualityQuery;
-
-    const qualityBreakdown: Record<string, number> = {
-      pending: 0,
-      good: 0,
-      bad: 0,
-      unknown: 0,
-    };
-    (qualityRows ?? []).forEach((r: any) => {
-      const q = r.quality || r.ai_quality || "unknown";
-      if (qualityBreakdown[q] !== undefined) {
-        qualityBreakdown[q]++;
-      } else {
-        qualityBreakdown.unknown++;
-      }
-    });
-
-    // ── Overdue followups ──
-    // next_followup_date < NOW() OR (last_contact_date IS NULL AND created_at < NOW() - 48h)
-    // ORDER BY overdue_days DESC, LIMIT 20
-    let overdueQuery = supabase
-      .from("leads")
-      .select(`
-        id, customer_name, phone, assigned_to, stage, last_contact_date,
-        next_followup_date, followup_count, created_at, quotation_value
-      `)
-      .eq("archived", false)
-      .or(
-        `next_followup_date.lt.${now},and(last_contact_date.is.null,created_at.lt.${twoDaysAgo})`
-      )
-      .order("next_followup_date", { ascending: true, nullsFirst: false })
-      .limit(20);
-    if (!isCEO) overdueQuery = overdueQuery.eq("assigned_to", user.id);
-    const { data: overdueRaw } = await overdueQuery;
+    // Overdue follow-ups: most days late first, top 20, plus the true total.
+    const overdueAll = overdueLeadList(rows, now);
+    const overdueTop = overdueAll.slice(0, 20);
 
     // Resolve assigned_to names
-    const assignedIds = [...new Set((overdueRaw ?? []).map((r: any) => r.assigned_to).filter(Boolean))];
-    let nameMap: Record<string, string> = {};
+    const assignedIds = [...new Set(overdueTop.map((r) => r.lead.assigned_to).filter(Boolean))] as string[];
+    const nameMap: Record<string, string> = {};
     if (assignedIds.length > 0) {
       const { data: users } = await supabase
         .from("profiles")
@@ -137,35 +61,31 @@ export async function GET(request: NextRequest) {
       (users ?? []).forEach((u: any) => { nameMap[u.id] = u.full_name; });
     }
 
-    const overdue = (overdueRaw ?? []).map((r: any) => {
-      const overdueDays = r.next_followup_date
-        ? Math.max(0, Math.floor((Date.now() - new Date(r.next_followup_date).getTime()) / 86_400_000))
-        : Math.max(0, Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86_400_000) - 2);
-      return {
-        id: r.id,
-        customer_name: r.customer_name,
-        phone: r.phone,
-        assigned_to: r.assigned_to,
-        assigned_name: nameMap[r.assigned_to] || null,
-        stage: r.stage,
-        last_contact_date: r.last_contact_date,
-        next_followup_date: r.next_followup_date,
-        overdue_days: overdueDays,
-        quotation_value: r.quotation_value,
-      };
-    }).sort((a: any, b: any) => b.overdue_days - a.overdue_days).slice(0, 20);
+    const overdue = overdueTop.map(({ lead: r, overdueDays }) => ({
+      id: r.id,
+      customer_name: r.customer_name,
+      phone: r.phone,
+      assigned_to: r.assigned_to,
+      assigned_name: (r.assigned_to && nameMap[r.assigned_to]) || null,
+      stage: r.stage,
+      last_contact_date: r.last_contact_date,
+      next_followup_date: r.next_followup_date,
+      overdue_days: overdueDays,
+      quotation_value: r.quotation_value,
+    }));
 
     return NextResponse.json({
       totalLeads: total,
-      weeklyNew: weeklyNew ?? 0,
-      activeCount: activeCount ?? 0,
-      activePct,
-      dormantCount: dormantCount ?? 0,
-      dormantPct,
-      zeroCount: zeroCount ?? 0,
-      zeroPct,
-      qualityBreakdown,
+      weeklyNew: stats.newLast7Days,
+      activeCount: stats.active,
+      activePct: percentOf(stats.active, total),
+      dormantCount: stats.dormant,
+      dormantPct: percentOf(stats.dormant, total),
+      zeroCount: stats.zeroFollowup,
+      zeroPct: percentOf(stats.zeroFollowup, total),
+      qualityBreakdown: stats.qualityBreakdown,
       overdue,
+      overdueTotal: overdueAll.length,
       isCEO,
     });
   } catch (err: any) {

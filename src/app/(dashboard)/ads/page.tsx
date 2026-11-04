@@ -12,8 +12,8 @@ import {
 import Link from "next/link";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
-const VALID_QUALITIES = new Set(["good", "normal"]);
-const QUOTED_STAGES = new Set(["quotation_submitted", "negotiation", "pending_decision"]);
+import { aggregateAttribution, type MetricLead } from "@/lib/lead-metrics.mjs";
+import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 
 interface Lead {
   id: string; customer_name: string | null;
@@ -78,8 +78,8 @@ export default function AdsPage() {
   }, [roleLoading, userRole]);
 
   const grouped = useMemo(() => {
-    const groups: Record<string, { total: number; valid: number; quoted: number; won: number; value: number }> = {};
-
+    // Same counting as /settings/ads (src/lib/lead-metrics.mjs): archived leads
+    // excluded, valid = good/normal quality, quoted/won from stage + final_status.
     const getKey = (l: Lead): string => {
       switch (viewMode) {
         // source_platform is "meta" on imported rows and empty on older ones;
@@ -92,20 +92,7 @@ export default function AdsPage() {
       }
     };
 
-    for (const l of leads) {
-      const key = getKey(l);
-      if (!groups[key]) groups[key] = { total: 0, valid: 0, quoted: 0, won: 0, value: 0 };
-      groups[key].total++;
-      // Lead quality is good/normal/poor/pending in the database; "valid" never
-      // occurs, which kept this column at 0 for every source.
-      if (VALID_QUALITIES.has(l.quality ?? "")) groups[key].valid++;
-      const won = l.final_status === "won" || l.stage === "won";
-      if (won || QUOTED_STAGES.has(l.stage ?? "")) groups[key].quoted++;
-      if (won) groups[key].won++;
-      // Only count money that is actually quoted or won, so the amount column
-      // matches the quoted/won counts beside it.
-      if (won || QUOTED_STAGES.has(l.stage ?? "")) groups[key].value += l.quotation_value || 0;
-    }
+    const groups = aggregateAttribution(leads as unknown as MetricLead[], (lead) => getKey(lead as unknown as Lead));
 
     return Object.entries(groups)
       .filter(([k]) => k.toLowerCase().includes(search.toLowerCase()))
@@ -220,7 +207,7 @@ export default function AdsPage() {
                 const convRate = g.total > 0 ? Math.round((g.won / g.total) * 100) : 0;
                 return (
                   <tr key={key} className="border-b border-border/20 hover:bg-accent/30 transition-colors">
-                    <td className="py-3 px-4 font-medium">{t(`sourceLabels.${key}`) || key}</td>
+                    <td className="py-3 px-4 font-medium">{viewMode === "source" ? translatedOrRaw(t, `sourceLabels.${key}`, key) : key}</td>
                     <td className="text-right py-3 px-3 font-semibold">{g.total}</td>
                     <td className="text-right py-3 px-3">{g.valid}</td>
                     <td className="text-right py-3 px-3">

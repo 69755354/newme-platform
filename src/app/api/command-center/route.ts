@@ -1,4 +1,5 @@
 // RBAC: user (authenticated)
+import { dubaiDateKey, dubaiMonthBounds, dubaiMonthKey } from '@/lib/dubai-time.mjs';
 import { NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase-server';
 
@@ -39,9 +40,9 @@ export async function GET(request: Request) {
 
   try {
     const now = new Date();
-    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-    const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    // Dubai calendar month and day (the host runs in another zone).
+    const { start: monthStart, end: monthEnd } = dubaiMonthBounds(dubaiMonthKey(now) as string);
+    const todayStr = dubaiDateKey(now) as string;
 
     // Execute all 8 independent queries in parallel
     const [
@@ -66,7 +67,9 @@ export async function GET(request: Request) {
         .from('leads')
         .select('customer_budget')
         .eq('final_status', 'won')
-        .gte('updated_at', monthStart.toISOString()),
+        .eq('archived', false)
+        .gte('won_at', monthStart.toISOString())
+        .lt('won_at', monthEnd.toISOString()),
       // Q4: Sales Profiles
       supabase
         .from('profiles')

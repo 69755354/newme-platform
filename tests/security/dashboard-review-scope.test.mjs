@@ -37,10 +37,13 @@ test("Dashboard defaults the review to Today and exposes custom range selection"
   }
 });
 
-test("Dashboard navigation aborts the ownership request without a console error", async () => {
+test("Dashboard navigation aborts its requests without a console error", async () => {
   const page = await read("src/app/(dashboard)/dashboard/page.tsx");
-  assert.match(page, /fetch\("\/api\/dashboard\/team-ownership", \{ signal: controller\.signal \}\)/);
-  assert.match(page, /if \(!controller\.signal\.aborted\) console\.warn\("team-ownership fetch failed", e\)/);
-  assert.doesNotMatch(page, /console\.error\("team-ownership fetch failed"/);
+  // Per-person ownership figures now come from the summary's leadStats
+  // (src/lib/lead-metrics.mjs), so there is no separate ownership request left
+  // to abort; the summary request itself must still be abortable and quiet.
+  assert.doesNotMatch(page, /team-ownership/);
+  assert.match(page, /fetch\(`\/api\/dashboard\/summary\?month=\$\{month\}`, \{ signal: controller\.signal \}\)/);
+  assert.match(page, /if \(err\.name === "AbortError"\) return;/);
   assert.match(page, /return \(\) => controller\.abort\(\)/);
 });

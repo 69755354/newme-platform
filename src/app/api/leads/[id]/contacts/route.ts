@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { logger, genReqId } from "@/lib/logger";
+import { futureContactTimeBody, requestLanguage } from "@/lib/api-language.mjs";
 import {
   applyRequestAuthCookies,
   getRequestAuthContext,
@@ -36,7 +37,7 @@ export async function POST(
       return respond({ error: "Invalid contact_time" }, { status: 400 });
     }
     if (contactTime.getTime() > Date.now()) {
-      return respond({ error: "contact_time cannot be in the future" }, { status: 400 });
+      return respond(futureContactTimeBody(requestLanguage(req.headers)), { status: 400 });
     }
     if (!contactResult) {
       return respond({ error: "contact_result is required" }, { status: 400 });

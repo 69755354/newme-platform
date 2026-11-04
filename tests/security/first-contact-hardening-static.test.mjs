@@ -48,7 +48,7 @@ test("contact creation and editing are server-authorized and return stored rows"
   assert.ok(create.includes('method: "POST"') === false, "route must not self-fetch");
   assert.ok(create.includes('record_lead_contact_atomic'));
   assert.ok(create.includes("contactTime.getTime() > Date.now()"));
-  assert.ok(create.includes("contact_time cannot be in the future"));
+  assert.ok(create.includes("futureContactTimeBody(requestLanguage(req.headers))"));
   assert.ok(edit.includes('.eq("id", contactId)'));
   assert.ok(edit.includes('.eq("lead_id", leadId)'));
 });

@@ -29,7 +29,7 @@ import { toast } from "sonner";
 import { createFollowUpTask } from "@/lib/tasks";
 import { applyReassignResult, reassignFailureKey, reassignNeedsReload } from "@/lib/lead-reassign-feedback.mjs";
 import { validateLeadFieldEdit } from "@/lib/lead-contact.mjs";
-import { checkSupabase, reportMutationFailure, runMutation } from "@/lib/mutation-feedback";
+import { checkSupabase, MutationFailure, reportMutationFailure, requestJson, runMutation } from "@/lib/mutation-feedback";
 import { classifyMutationFailure, mutationFailureMessage } from "@/lib/mutation-feedback-core.mjs";
 import { projectDraftFromLead } from "./utils";
 import type { Lead, Task } from "./types";
@@ -539,32 +539,31 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }): Promise<{ success: boolean; error?: string }> => {
     if (updating) return { success: false };
     if (!params.contact_result?.trim()) {
-      const error = t("leadDetail.contactResultRequired") || "Contact result is required";
-      toast.error(error);
-      return { success: false, error };
+      // The toast is the one message; the caller must not repeat it inline.
+      toast.error(t("leadDetail.contactResultRequired") || "Contact result is required");
+      return { success: false };
     }
 
     setUpdating(true);
     try {
-      const response = await fetch("/api/leads/" + leadId + "/contacts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(params),
-      });
-      const json = await response.json().catch(() => ({}));
-      if (!response.ok || !json?.contact) {
-        const error = json?.error || t("common.saveFailed") || "Contact record save failed";
-        toast.error(error);
-        return { success: false, error };
-      }
-
-      toast.success(lang === "zh" ? "联系记录已保存" : "Contact record saved");
+      // S6b (4d-6): one shared pattern -> exactly one localized outcome toast
+      // (the old code toasted here AND the caller showed its own message, and a
+      // dropped connection read "Contact record save failed" twice).
+      const result = await runMutation(
+        async () => {
+          const json = await requestJson<{ contact?: unknown }>("/api/leads/" + leadId + "/contacts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(params),
+          });
+          if (!json?.contact) throw new MutationFailure({ status: 500 });
+          return json;
+        },
+        { t, successMessage: lang === "zh" ? "联系记录已保存" : "Contact record saved", fallbackErrorKey: "common.saveFailed" },
+      );
+      if (!result.ok) return { success: false }; // runMutation already showed the one toast
       await fetchData();
       return { success: true };
-    } catch {
-      const error = t("common.saveFailed") || "Contact record save failed";
-      toast.error(error);
-      return { success: false, error };
     } finally {
       setUpdating(false);
     }

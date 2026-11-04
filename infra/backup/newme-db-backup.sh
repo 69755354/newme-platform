@@ -16,6 +16,26 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
+export BACKUP_DRY_RUN="$DRY_RUN"
+# Alert settings come first so that even a configuration failure (missing key or
+# URL file, bad permissions) reaches the alert channel; the env file may override.
+BACKUP_ALERT_SCRIPT="${BACKUP_ALERT_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert-state-v1.sh}"
+BACKUP_ALERT_KEY=db-backup
+WORK=""
+FAIL_LINE=""
+cleanup_and_alert() {
+  local rc=$?
+  trap - EXIT
+  [ -n "$WORK" ] && rm -rf "$WORK"
+  if [ "$rc" -ne 0 ] && [ "$ALERTED" != 1 ]; then
+    ALERTED=1
+    send_alert failure "database backup failed (exit $rc${FAIL_LINE:+, line $FAIL_LINE}; see journal unit newme-db-backup)"
+  fi
+  exit "$rc"
+}
+trap 'FAIL_LINE=$LINENO' ERR
+trap cleanup_and_alert EXIT
+trap 'exit 143' TERM INT HUP
 
 ENV_FILE="${BACKUP_ENV_FILE:-/etc/newme/backup.env}"
 if [ -r "$ENV_FILE" ]; then
@@ -30,8 +50,6 @@ RETENTION_DAYS="${RETENTION_DAYS:-30}"
 KEEP_MIN="${KEEP_MIN:-7}"
 SYNC_TARGET="${SYNC_TARGET:-}"
 SYNC_SSH_KEY="${SYNC_SSH_KEY:-}"
-BACKUP_ALERT_SCRIPT="${BACKUP_ALERT_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert-state-v1.sh}"
-BACKUP_ALERT_KEY=db-backup
 STAMP="${BACKUP_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
 MIN_PLAIN_BYTES="${MIN_PLAIN_BYTES:-100000}"
 
@@ -52,9 +70,13 @@ if [ "$DRY_RUN" = 1 ]; then
   exit 0
 fi
 
+# A SIGKILL (timeout, out of memory) skips every trap and leaves a plaintext dump in
+# .work.* and a half-written .part file behind. Clear anything older than a day
+# (a live run never takes that long) before starting.
+find "$BACKUP_DIR" -maxdepth 1 -type d -name '.work.*' -mmin +1440 -exec rm -rf -- {} + 2>/dev/null || true
+find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.part' -mmin +1440 -delete 2>/dev/null || true
+
 WORK="$(mktemp -d "$BACKUP_DIR/.work.XXXXXX")"
-trap 'rm -rf "$WORK"' EXIT
-trap 'send_alert failure "database backup failed at line $LINENO (see journal unit newme-db-backup)"; exit 1' ERR
 
 SERVICE_FILE="$WORK/pg_service.conf"
 write_pg_service "$DB_URL_FILE" "$SERVICE_FILE" >/dev/null
@@ -109,8 +131,8 @@ if [ -n "$SYNC_TARGET" ]; then
   fi
 fi
 
-trap - ERR
 if [ "$SYNC_RC" -ne 0 ]; then
+  ALERTED=1
   send_alert failure "database backup is stored locally but the NAS copy failed"
   exit "$SYNC_RC"
 fi

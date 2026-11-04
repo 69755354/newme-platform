@@ -50,6 +50,7 @@ function loadLoginRoute() {
     "next/server": { NextResponse: { json: (body, init) => new MockResponse(body, init) } },
     "@/lib/auth-profile.mjs": { isActiveProfile: (p) => p?.is_active === true },
     "@/lib/logger": { logger: { error() {}, warn() {}, info() {} } },
+    "@/lib/audit-log": { AUDIT_ACTIONS: {}, accountKey: () => null, writeAuditLog: async () => {} },
     "@/lib/rate-limit": loadTs("src/lib/rate-limit.ts"),
     "@/lib/session-cookies": loadTs("src/lib/session-cookies.ts", {
       "@/lib/supabase-cookie-names": {

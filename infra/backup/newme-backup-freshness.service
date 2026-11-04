@@ -1,0 +1,16 @@
+[Unit]
+Description=NewMe check that the latest database backup is at most 26 hours old
+OnFailure=newme-backup-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/libexec/newme/newme-backup-freshness.sh
+Environment=BACKUP_LIB=/usr/local/libexec/newme/newme-backup-lib.sh
+TimeoutStartSec=120
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/root/claude-ops-backups

@@ -61,13 +61,15 @@ async function revokeIssuedToken(
 }
 
 function auditLoginFailure(email: string, reason: string, actorId?: string) {
-  // Account is recorded as a short one-way key, never the address. Fire and
+  // Account is recorded as a short keyed (HMAC) key, never the address; with no
+  // AUDIT_ACCOUNT_KEY_SECRET configured no identifier is written at all. Fire and
   // forget: auditing must not add latency to, or be able to fail, a login.
+  const key = accountKey(email);
   void writeAuditLog({
     actorId: actorId ?? null,
     action: AUDIT_ACTIONS.LOGIN_FAILURE,
     targetType: "auth",
-    details: { reason, account_key: accountKey(email) },
+    details: key ? { reason, account_key: key } : { reason },
   });
 }
 

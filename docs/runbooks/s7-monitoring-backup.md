@@ -12,15 +12,17 @@
 | 线上出现任何**新**报错（服务端或浏览器） | Sentry 规则“Any NEW production error” | 5 分钟内 | 团队邮件 + 现有 Telegram 转发 |
 | Meta 线索接口失败 | 每次失败都写“原因代码”到统一日志并进 Sentry | 实时 | 同上 |
 | Meta 线索与系统入库对不上 | 每日对账 `newme-meta-reconcile.timer` | 每天 06:40（迪拜） | Telegram 告警群 |
-| 登录→线索→分配→改阶段整条链路坏了 | 每日模拟巡检 `scripts/synthetic-journey.mjs` | 每天 | Telegram 告警群（成功也发一条，连续两天没收到“通过”本身就是告警） |
-| 数据库备份失败 / NAS 没收到 | `newme-db-backup.service` | 每天 01:30（迪拜） | Telegram 告警群 |
-| 备份其实恢复不出来 | 每月恢复演练 | 每月 3 号 | Telegram 告警群 |
+| 生产登录→打开线索列表→打开一条线索→退出这条链路坏了 | 每日只读巡检 `scripts/synthetic-journey.mjs`（生产模式，不写任何数据） | 每天 | Telegram 告警群（成功也发一条，连续两天没收到“通过”本身就是告警） |
+| 完整流程（分配等写操作）坏了 | 同一脚本的预发布模式（只在预发布跑） | 每天 / 每次发版后 | Telegram 告警群 |
+| 数据库备份失败 / NAS 没收到（任何失败路径） | `newme-db-backup.service`：脚本自己退出前告警 + systemd 的 `OnFailure` 兜底 | 每天 01:30（迪拜） | Telegram 告警群 |
+| 备份定时器根本没跑 / 最新备份超过 26 小时 | `newme-backup-freshness.timer` | 每小时 | Telegram 告警群 |
+| 备份其实恢复不出来 | 每月恢复演练（失败同样双重告警） | 每月 3 号 | Telegram 告警群 |
 
 ## 2. Sentry 定时签到为什么 10 月 27 日之后断了
 
-结论（诚实版）：**证据已被 11 月 4 日 00:03 的服务器重启清掉，下面是依据现象的最可能原因，不是当场抓到的。**
+结论（诚实版）：**证据已被 11 月 4 日 00:03（北京时间，即 11-03 16:03Z）的服务器重启清掉，下面是依据现象的最可能原因，不是当场抓到的。**
 
-- 现象：Sentry 上最后一次签到恰好是 10/27 04:46:56Z（发版那一刻），之后 8 天一次都没有；本机状态文件却一直是“成功”。服务器 11/04 00:03 重启后，签到立刻恢复（11/04 02:00Z 起每小时 30 次全部正常）。
+- 现象：Sentry 上最后一次签到恰好是 10/27 04:46:56Z（发版那一刻），之后 8 天一次都没有；本机状态文件却一直是“成功”。服务器 11/04 00:03（北京时间）重启后，签到立刻恢复（11/04 02:00Z 起每小时 30 次全部正常）。
 - 机理：cron 用 `flock -n` 跑探测，上一次没结束就**静默跳过**本次。探测发现异常时会把 `incident-capture.sh` 放到后台运行，后台进程**继承了锁文件描述符**，而它里面的 `journalctl` / `top` / `systemctl` 没有任何超时。只要有一个命令卡住，锁就一直被占着，之后每 2 分钟的 cron 都在 `flock -n` 处悄悄退出——不发签到、不更新本机状态（所以状态还是旧的“ok”），也不报错。重启杀掉了卡住的进程，一切恢复。
 - 与“Sentry 收到 202 却不记录”无关：202 是 Sentry 的正常应答，之所以没有记录是因为根本没有发送。
 - 修复（都在仓库里）：
@@ -47,21 +49,28 @@
 - 没有 systemd 的 NAS：用 NAS 自带“计划任务”每分钟执行 `/usr/local/bin/newme-external-probe.sh`；有 systemd 就用 `newme-uptime.service/.timer`。
 - NAS 型号未知，所以安装方式只给通用步骤；NAS 必须能出站访问 `https://app.newme.ae` 和 `api.telegram.org`。Tailscale 在这里的作用是让 NAS 和服务器互通以便备份回传，探测本身走公网（这样才能发现证书/域名/Cloudflare 问题）。
 
-## 5. 每日模拟巡检（QA 账号 + 一条标记线索）
+## 5. 每日巡检（生产只读，预发布完整流程）
 
-脚本 `scripts/synthetic-journey.mjs`，流程：登录 → 打开线索 → 分配给另一个 QA 账号 → 改阶段 → 全部还原 → 退出。
+脚本 `scripts/synthetic-journey.mjs`，由环境变量 `SYNTH_MODE` 选择模式（不设就是生产只读，最安全）。
 
-一次性准备（需 Sam 同意后由协调员在生产里建，之后永不改动）：
-1. 两个 QA 账号：`qa-synthetic-a`（角色 operator，用于登录和分配）和 `qa-synthetic-b`（销售，作为被分配人）。不要用真人账号，不要给 admin。
-2. 一条标记线索：姓名固定为一个一眼看出是测试的长名字（例如 `ZZ-QA-SYNTHETIC-DO-NOT-TOUCH`），来源为 `synthetic_qa`，电话用不存在的号码，**不带 Meta 线索编号**（这样改阶段不会向 Meta 回传转化事件）。它初始分配给 `qa-synthetic-a` 或 `b`，阶段为“新”。
-3. 在业务报表里排除来源 `synthetic_qa`（统计流 S5 的口径需确认）。
-4. 环境文件（0600，root）：`SYNTH_BASE_URL`、`SYNTH_QA_EMAIL`、`SYNTH_QA_PASSWORD`、`SYNTH_LEAD_ID`、`SYNTH_LEAD_MARKER`、`SYNTH_LEAD_SOURCE`、`SYNTH_HOME_ASSIGNEE_ID`、`SYNTH_AWAY_ASSIGNEE_ID`、可选 `SYNTH_TO_STAGE`，以及 `TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID`。
+**生产模式（只读，每天一次）**：登录 → 打开线索列表 → 打开其中一条线索的时间线 → 退出。**不写任何数据**：不分配、不改阶段、不写备注，所以**不需要生产里的测试线索，也不需要在生产建 QA 账号**；代码里生产模式除登录/退出外只有 GET 请求（测试里逐条断言）。返回内容只在内存里检查结构，不打印、不落盘；输出和告警里只有步骤名、HTTP 状态和版本号。
+- 需要一个**已有的**生产账号做只读登录：建议用发布门禁已经在用的 Release UAT 账号（Sam 账号清单里“勿删”的那个）。它必须能看到至少一条线索（角色能读全部线索，如老板/运营类；纯“销售”角色只能看自己名下的线索，看不到时巡检会报“账号看不到线索，需要线索读取权限”）。Release UAT 账号的当前角色和权限需要协调员核对后确认；**如果它不能读线索，就需要 Sam 指定另一个现有的只读账号，不要为此新建管理员账号**。
+- 环境文件（0600，root）`/etc/newme/synthetic-prod.env`：`SYNTH_BASE_URL=https://app.newme.ae`、`SYNTH_QA_EMAIL`、`SYNTH_QA_PASSWORD`，以及 `TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID`。口令只存这里。
 
-安全设计（代码里强制）：线索编号写死；每次写之前核对“编号 + 标记姓名 + 标记来源 + 负责人必须是两个 QA 账号之一”，任何一项不符直接中止、一个字都不写；任何失败都会走“还原”；还原失败发“严重”告警。输出和告警里只有步骤名、HTTP 状态和版本号，没有姓名、电话、口令、Cookie。
+**预发布模式（完整流程，每天/每次发版后）**：`SYNTH_MODE=staging`，对**预发布**跑：登录 → 打开线索 → 把一条固定的标记测试线索分配给另一个测试账号 → 核对 → 分配回来 → 退出。脚本拒绝对生产域名跑预发布模式。
+- 预发布里准备：两个测试账号（一个 operator 登录并分配，一个销售被分配）；一条标记线索（姓名固定为一眼看出是测试的长名字，来源用预发布里**已有的合法来源**，例如 `other`，电话用不存在的号码，不带 Meta 线索编号）。生产不建这些。
+- 改阶段：生产的业务规则只允许阶段**往前走**（`transition_lead_stage`，离开“新”还要求至少一条完整联系记录且已评估质量），所以脚本**从不尝试还原阶段**。需要验证改阶段时设置 `SYNTH_ONEWAY_STAGE=1`（默认关闭）：它会把标记线索往前推一个阶段，**不会还原**，下次要换一条新的测试线索或在预发布重置；脚本发现已经在目标阶段会明确报“需要重置”，不会误报严重。
+- 环境文件 `/etc/newme/synthetic-staging.env`：`SYNTH_MODE=staging`、`SYNTH_BASE_URL`（预发布地址）、`SYNTH_QA_EMAIL`、`SYNTH_QA_PASSWORD`、`SYNTH_LEAD_ID`、`SYNTH_LEAD_MARKER`、`SYNTH_LEAD_SOURCE`、`SYNTH_HOME_ASSIGNEE_ID`、`SYNTH_AWAY_ASSIGNEE_ID`、可选 `SYNTH_ONEWAY_STAGE`/`SYNTH_TO_STAGE`，以及告警群的两个变量。
+- 写入前的安全门（代码强制）：线索编号写死；每次写之前核对“编号 + 标记姓名 + 标记来源 + 负责人必须是两个测试账号之一”，任何一项不符直接中止、一个字都不写；分配一旦做过，`finally` 里一定还原；还原失败发“严重”告警。
+
+关于来源 `synthetic_qa`：本方案不再使用它（生产不建测试线索，预发布用已有合法来源）。统计流 S5 已在统计里排除该来源，保留无害，不需要改。
 
 ## 6. 数据库每日备份与恢复
 
 - 备份：`infra/backup/newme-db-backup.sh`，每天 01:30（迪拜）。只读生产（pg_dump），范围：`public`、`auth`（账号，不含会话/一次性令牌）、`supabase_migrations`。读取 `/etc/newme/migration-db.url`（唯一的数据库连接串文件），连接串通过临时服务文件传给 pg_dump，**不出现在进程参数里**。
+- 失败一定有人知道：脚本任何失败路径（转储过小、没有表数据、解密后行数对不上、密钥/连接串文件缺失或权限不对、意外退出、被终止）都会**先发告警再退出**；两个服务另有 systemd `OnFailure=newme-backup-alert@%n.service` 兜底（超时、被杀、起不来时脚本发不出的那类）。同一次失败可能收到两条，属正常。`--dry-run` 不发告警。
+- 新鲜度检查：`newme-backup-freshness.timer` 每小时看最新一份**完整**备份（有校验和文件）是否在 26 小时内，没有或太旧就告警——专门抓“定时器本身没跑”。第一次备份成功之后再启用它。
+- 残留清理：每次启动先删除 `.work.*`（可能含**明文**转储，进程被强杀时才会留下）和 `*.part` 中超过 1 天的，不碰正在跑的。
 - 加密：AES-256，密钥文件 `/etc/newme/backup-encryption.key`（root 0600，至少 32 字节随机内容）。**密钥必须另存一份到离线的地方（不要只放在这台服务器和 NAS 上），否则备份可能无法打开。** 明文只存在于 0700 工作目录，加密后立即删除；加密文件会被当场解密校验一次（能列目录、各表行数一致）才算成功。
 - 本地保留 30 天（至少保留最新 7 份），位置 `/root/claude-ops-backups/db-daily`（目录 0700，文件 0600）。
 - 同步到 NAS：在 `/etc/newme/backup.env` 里填 `SYNC_TARGET`（rsync over ssh，经 Tailscale 主机名）和 `SYNC_SSH_KEY`。NAS 同步失败不影响本地备份，但会发告警（退出码 3）。NAS 上只需要一个只写目录的专用账号。
@@ -76,7 +85,13 @@
   pg_restore --dbname="service=target" --no-owner --no-privileges restore.dump
   ```
   恢复后再按 `supabase/migrations` 校对迁移记录。生产回滚/恢复属于需要 Sam 确认的操作。
-- 每月恢复演练：`infra/backup/newme-restore-drill.sh`，每月 3 号。它在**预发布** Supabase 项目里新建一个临时库 `drill_时间戳`，把最新备份恢复进去，逐表核对行数是否与备份时记录的一致，然后删除临时库。三道保护：目标连接串里必须出现预发布项目编号且不能出现生产项目编号；只动它自己新建的临时库，不碰预发布现有数据；备份文件的校验和必须先通过。失败会发告警。
+- 每月恢复演练：`infra/backup/newme-restore-drill.sh`，每月 3 号。它在**预发布** Supabase 项目里新建一个临时库 `drill_时间戳`，把最新备份恢复进去，逐表核对行数是否与备份时记录的一致，然后删除临时库。保护：
+  1. 目标判断基于“连接时真正用的值”：连接串解析、百分号解码、转小写之后，主机必须**正好**是 `db.<预发布编号>.supabase.co`（用户 `postgres`），或是官方连接池主机且用户**正好**是 `postgres.<预发布编号>`；解码后的全文里出现生产项目编号一律拒绝（大小写、`%76` 之类编码、在参数/路径里夹带预发布编号都无效，测试覆盖了这些写法）。
+  2. 连上后再查 `select current_database()`，必须等于刚建的临时库名，否则不恢复。
+  3. 只动自己新建的临时库；备份文件校验和必须先通过。
+  4. 收尾用 `drop database … with (force)` 删除临时库，并**再查一次** `pg_database` 确认已不存在；删不掉就发“严重”告警并让演练失败（因为预发布里会留着一整份生产数据，含账号密码散列）。
+  5. 恢复命令用本机 pg_restore 17 的合法参数（遇错默认继续，不带任何 `--exit-on-error`）。
+  失败会发告警，并有 systemd `OnFailure` 兜底。**提醒：演练期间（约几分钟）预发布项目里会有一份完整生产数据，预发布能看到数据库的人都看得到；该演练需要 Sam 知情同意后才启用。**
 - 干跑：两个脚本都支持 `--dry-run`（只检查配置、权限、目标是否安全，不连数据库）。
 
 ## 7. 日志保留与 Meta 回调日志
@@ -103,7 +118,30 @@
 - 旧接口 `check-alerts`、`check-overdue-followups` 保持停用，不要恢复。
 启用前先在预发布演练一次，再由 Sam 同意后设置环境变量并加一条每天 09:00（迪拜）的调用。
 
-## 10. 需要并入数据库合并上线的方案（本 PR 不含迁移文件）
+## 10. 发给 Sentry 的内容：清洗到什么程度（如实说明）
+
+服务端和浏览器的每条事件、每个性能事务在发出前都经过同一套清洗（`src/lib/observability.mjs`）：
+- **整体删除**：请求体、Cookie、查询串、`Authorization` 等凭据头、用户邮箱/IP/用户名（只留用户编号）、栈帧里的局部变量（`vars`）、任何键名含 `query`/`statement`/`sql` 的字段（含 `db.statement`、`url.query`）、自定义 breadcrumb 的文字（只留类别、级别、时间，以及去掉查询串的网址/状态码）、界面点击和控制台行的内容。
+- **按字段名遮盖**：`customer_name`、`fullName`、`note`、`address`、`whatsapp`、电话、邮箱等；在 `extra`、`tags`、自定义 `contexts`（非 SDK 自带的环境信息）里，连通用的 `name`、`customer`、`contact`、`owner` 之类键也一并遮盖。浏览器/系统/运行时这类 SDK 自带的 `contexts.browser.name` 等保留（那是产品名，不是人名）。
+- **按格式遮盖**：邮箱、电话、令牌、`Bearer`、`password=`/`token=` 这类赋值后面的整行。
+- **做不到的**：写在**报错信息、异常内容等自由文本里的姓名**无法识别（没有规则能认出一个名字），也不会被遮盖。这一条只能靠开发约定保证：**不要把客户姓名、备注、手机号拼进报错信息或日志文字里**，要写就只写线索编号。服务端性能事务有 10% 采样，其中数据库语句的字符串已按上面规则删除。
+- 因此不能说“Sentry 里完全没有个人信息”，准确说法是：结构化字段里的个人信息已去除；自由文本里的姓名不能识别，靠不写入来保证。
+
+## 11. 浏览器错误转发口 `/monitoring-tunnel`
+
+不再使用 Sentry 插件的 `tunnelRoute`（它是普通反向代理：会把登录 Cookie 原样转给 Sentry，也能往任何 Sentry 项目投递）。现在是自写路由 `src/app/monitoring-tunnel/route.ts`（逻辑在 `src/lib/sentry-tunnel.mjs`）：
+- 只收 POST，请求体最大 200KB，超出返回 413；
+- 解析信封第一行里的 `dsn`，**主机和项目编号必须等于服务端环境变量 `SENTRY_DSN`（回退 `NEXT_PUBLIC_SENTRY_DSN`）里的值**（仓库里不写死），否则 403；
+- 只转发到固定地址 `https://<该主机>/api/<项目编号>/envelope/`，只带请求体和固定的 `content-type`，**不转发** Cookie、Authorization、X-Forwarded-For 等任何入站头；5 秒超时；
+- 浏览器端 `credentials: "omit"`（根本不带 Cookie），nginx 在 `location = /monitoring-tunnel` 里再清空 `Cookie`/`Authorization` 头并限制 256KB、仅 POST。
+- 服务端必须能读到 `SENTRY_DSN`，否则该路由返回 503（浏览器错误不上报，不影响业务）。
+
+## 12. 审计账号标识与导出审计
+
+- 登录失败审计里的账号标识是带密钥的散列（HMAC-SHA256 取前 16 位），密钥来自服务端环境变量 `AUDIT_ACCOUNT_KEY_SECRET`（至少 16 字符，不进仓库）。**没有配置密钥时不写标识**（只写失败原因），绝不退回无盐散列。
+- 数据导出审计覆盖：报价单 CSV 导出、线缆成本 Excel 导出（只记执行人编号、格式、档位，不记任何金额或数量）。
+
+## 13. 需要并入数据库合并上线的方案（本 PR 不含迁移文件）
 
 应用层已经记录：登录成功/失败、创建账号与指定角色、导出报价单。**直接改数据库里的角色**（不经过本应用）目前没有审计，需要一个触发器；它是新增迁移，必须并入统一的数据库发布：
 

@@ -23,8 +23,11 @@ Sentry.init({
   initialScope: { tags: { build: buildId } },
   sendDefaultPii: false,
   tracesSampleRate: 0,
-  // Same-origin tunnel (next.config.ts tunnelRoute): no ad-blocker loss and no
-  // new CSP origin for the page.
+  // Same-origin forwarder (src/app/monitoring-tunnel/route.ts): no ad-blocker
+  // loss and no new CSP origin. Credentials are never attached to the report, so
+  // the session cookies cannot travel with it even if a proxy is misconfigured.
+  tunnel: "/monitoring-tunnel",
+  transportOptions: { fetchOptions: { credentials: "omit" } },
   beforeSend: sanitizeSentryEvent,
   beforeSendTransaction: sanitizeSentryTransaction,
 });

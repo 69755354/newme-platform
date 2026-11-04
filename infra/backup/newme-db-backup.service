@@ -2,6 +2,7 @@
 Description=NewMe encrypted production database backup
 After=network-online.target
 Wants=network-online.target
+OnFailure=newme-backup-alert@%n.service
 
 [Service]
 Type=oneshot

@@ -129,10 +129,9 @@ const sentryConfig = withSentryConfig(nextConfig, {
   // Fixes React Client Manifest errors (global-error.tsx, icon-mark.js, etc.)
   widenClientFileUpload: true,
 
-  // Browser events go through our own origin (rewritten to Sentry at build time
-  // when a DSN is present). /monitoring-tunnel is deliberately not in the proxy
-  // matcher, so it needs no session and carries no cookies to Sentry.
-  tunnelRoute: "/monitoring-tunnel",
+  // Browser events go through our own forwarder (src/app/monitoring-tunnel/route.ts),
+  // NOT the plugin's tunnelRoute rewrite: that is a plain reverse proxy that
+  // relays session cookies and accepts any Sentry project.
 });
 
 export default withBundleAnalyzer(sentryConfig);

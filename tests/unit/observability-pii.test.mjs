@@ -119,7 +119,60 @@ test("browser SDK is initialised from instrumentation-client with errors only an
   assert.doesNotMatch(source, /replaysSessionSampleRate|replayIntegration|browserProfilingIntegration/);
 });
 
-test("browser events travel through a same-origin tunnel (CSP and release browser gate)", async () => {
+test("browser events travel through our own same-origin forwarder, never the plugin rewrite, and carry no credentials", async () => {
   const config = await readFile(new URL("../../next.config.ts", import.meta.url), "utf8");
-  assert.match(config, /tunnelRoute: "\/monitoring-tunnel"/);
+  assert.doesNotMatch(config, /^\s*tunnelRoute:/m, "the plugin tunnelRoute is a plain reverse proxy that relays cookies");
+  const client = await readFile(new URL("../../instrumentation-client.ts", import.meta.url), "utf8");
+  assert.match(client, /tunnel: "\/monitoring-tunnel"/);
+  assert.match(client, /credentials: "omit"/);
+  const nginx = await readFile(new URL("../../infra/nginx/newme-platform.conf", import.meta.url), "utf8");
+  const block = nginx.match(/location = \/monitoring-tunnel \{[\s\S]*?\n    \}/)?.[0] ?? "";
+  assert.match(block, /proxy_set_header Cookie "";/);
+});
+
+test("S7 review: names in tags, contexts, stack-frame variables, custom breadcrumbs and query/statement keys are removed", () => {
+  const event = {
+    ...eventWithCustomerData(),
+    tags: { route: "/api/leads/123", request_id: "req-1", customer: CUSTOMER },
+    contexts: {
+      browser: { name: "Chrome" },
+      os: { name: "Linux" },
+      lead_ctx: { Name: CUSTOMER, id: "lead-1" },
+      trace: { trace_id: "t1", data: { "url.query": `q=${SEARCH}`, "http.route": "/leads" } },
+    },
+    breadcrumbs: [
+      { category: "app.lead", message: `opened ${CUSTOMER}`, timestamp: 1 },
+      { category: "navigation", data: { from: "/a", to: "/b" }, timestamp: 2 },
+    ],
+    exception: {
+      values: [{
+        type: "Error", value: "boom",
+        stacktrace: { frames: [{ filename: "app.js", function: "save", lineno: 4, vars: { name: CUSTOMER, lead: { name: CUSTOMER } } }] },
+      }],
+    },
+    extra: { "db.statement": `select * from leads where name = '${CUSTOMER}'`, ok: 1 },
+  };
+  const out = sanitizeSentryEvent(event);
+  const serialized = JSON.stringify(out);
+  for (const leaked of [CUSTOMER, "Fatima", SEARCH]) assert.ok(!serialized.includes(leaked), `leaked ${leaked}`);
+  assert.equal(out.tags.request_id, "req-1");
+  assert.equal(out.tags.route, "/api/leads/123");
+  assert.equal(out.contexts.browser.name, "Chrome", "SDK environment facts are kept");
+  assert.equal(out.contexts.lead_ctx.id, "lead-1");
+  assert.equal(out.contexts.trace.data["http.route"], "/leads");
+  assert.equal(out.contexts.trace.data["url.query"], undefined);
+  assert.equal(out.exception.values[0].stacktrace.frames[0].vars, undefined);
+  assert.equal(out.exception.values[0].stacktrace.frames[0].function, "save");
+  assert.equal(out.breadcrumbs[0].message, undefined);
+  assert.equal(out.breadcrumbs[0].category, "app.lead");
+  assert.equal(out.extra["db.statement"], undefined);
+});
+
+test("S7 review: transaction span db.statement is removed", () => {
+  const out = sanitizeSentryTransaction({
+    transaction: "/leads",
+    spans: [{ op: "db", description: "select", data: { "db.statement": `select * from leads where name = '${CUSTOMER}'`, "db.system": "postgresql" } }],
+  });
+  assert.ok(!JSON.stringify(out).includes("Fatima"));
+  assert.equal(out.spans[0].data["db.system"], "postgresql");
 });

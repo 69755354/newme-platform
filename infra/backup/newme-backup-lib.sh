@@ -3,7 +3,17 @@
 # Sourced, not executed. Nothing here prints a credential.
 
 backup_log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
-backup_die() { backup_log "ERROR: $*"; exit "${2:-1}"; }
+# Every failure path must reach a person (S7 review must-fix 4): backup_die alerts
+# BEFORE exiting. ALERTED stops the EXIT handler from alerting a second time.
+ALERTED=0
+backup_die() {
+  backup_log "ERROR: $1"
+  if [ "$ALERTED" != 1 ]; then
+    ALERTED=1
+    send_alert failure "$BACKUP_ALERT_KEY: $1"
+  fi
+  exit "${2:-1}"
+}
 
 # require_mode <path> <max-octal-mode-allowed-bits> <label>: file must be owned by
 # the current user and not accessible to group/other.
@@ -42,6 +52,43 @@ print(u.hostname + " " + unquote(u.username))
 PY
 }
 
+# check_staging_target <url-file> <staging-ref> <prod-ref>: decide from what libpq
+# will actually use (the URL parsed and percent-decoded, host and user lower-cased),
+# never from the raw text. Allowed: host exactly db.<staging>.supabase.co, or an
+# official pooler host with user exactly postgres.<staging>. The fully decoded text
+# must not contain the production ref anywhere. Prints OK or REFUSED:<reason>.
+check_staging_target() {
+  python3 -I - "$1" "$2" "$3" <<'PY'
+import re, sys
+from urllib.parse import urlsplit, unquote
+raw = open(sys.argv[1], encoding="utf-8").read().strip()
+staging, prod = sys.argv[2].lower(), sys.argv[3].lower()
+def refuse(why):
+    print("REFUSED:" + why); sys.exit(0)
+decoded = raw
+for _ in range(3):
+    decoded = unquote(decoded)
+if prod in decoded.lower() or prod in raw.lower():
+    refuse("mentions the production project")
+u = urlsplit(raw)
+if u.scheme not in ("postgres", "postgresql") or not u.hostname or not u.username:
+    refuse("malformed URL")
+host = unquote(u.hostname).lower()
+if "%" in u.hostname or "%" in host:
+    refuse("host must not contain percent-encoding")
+user = unquote(u.username).lower()
+if host == f"db.{staging}.supabase.co":
+    if user != "postgres":
+        refuse("direct host needs user postgres")
+elif re.fullmatch(r"[a-z0-9-]+\.pooler\.supabase\.com", host):
+    if user != f"postgres.{staging}":
+        refuse("pooler user is not the staging project")
+else:
+    refuse("host is not the staging project")
+print("OK")
+PY
+}
+
 # table_counts <plain-dump>: "schema.table<TAB>rows" for every table in the dump,
 # computed from the dump's own COPY blocks, so it is exactly consistent with it.
 table_counts() {
@@ -58,7 +105,9 @@ decrypt_file() { openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass "file:$3
 
 send_alert() {
   # send_alert <failure|recovery> <summary>; best effort, never fails the caller.
+  # Dry runs only validate configuration and never alert.
   local event="$1" summary="$2"
+  [ "${BACKUP_DRY_RUN:-0}" = 1 ] && return 0
   if [ -n "${BACKUP_ALERT_SCRIPT:-}" ] && [ -x "$BACKUP_ALERT_SCRIPT" ]; then
     bash "$BACKUP_ALERT_SCRIPT" "${BACKUP_ALERT_KEY:-db-backup}" "$event" "$summary" >/dev/null 2>&1 || backup_log "alert delivery failed"
   fi

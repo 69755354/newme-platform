@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 import { genReqId, logger } from "@/lib/logger";
+import { AUDIT_ACTIONS, writeAuditLog } from "@/lib/audit-log";
 import {
   CableCostingInputError,
   calculateCableCosting,
@@ -272,6 +273,15 @@ export async function POST(request: NextRequest) {
 
     const stamp = new Date().toISOString().slice(0, 10).replaceAll("-", "");
     const filename = `cable_costing_${input.tier}_${stamp}.xlsx`;
+
+    // Data-export audit (S7): actor id and the costing tier only -- no price,
+    // quantity, area or any figure from the workbook.
+    void writeAuditLog({
+      actorId: user.id,
+      action: AUDIT_ACTIONS.DATA_EXPORT,
+      targetType: "cable_costing",
+      details: { format: "xlsx", tier: input.tier },
+    });
 
     return new NextResponse(file, {
       status: 200,

@@ -28,7 +28,7 @@ async function* paged(fetchImpl, firstUrl, token) {
   }
 }
 
-export async function listMetaLeads(fetchImpl, { version, token, pageIds, sinceSeconds }) {
+export async function listMetaLeads(fetchImpl, { version, token, pageIds, sinceSeconds, untilSeconds }) {
   const leads = [];
   for (const rawPage of pageIds) {
     const pageId = normalizeMetaId(rawPage);
@@ -40,7 +40,12 @@ export async function listMetaLeads(fetchImpl, { version, token, pageIds, sinceS
       if (!formId) continue;
       const leadsUrl = graphUrl(version, `${formId}/leads`, {
         fields: LEAD_FIELDS, limit: 100,
-        filtering: JSON.stringify([{ field: "time_created", operator: "GREATER_THAN", value: sinceSeconds }]),
+        filtering: JSON.stringify([
+          { field: "time_created", operator: "GREATER_THAN", value: sinceSeconds },
+          // Optional upper bound, so the daily reconciliation can ignore leads that
+          // arrived in the last minutes and may still be in flight via the webhook.
+          ...(untilSeconds ? [{ field: "time_created", operator: "LESS_THAN", value: untilSeconds }] : []),
+        ]),
       });
       for await (const lead of paged(fetchImpl, leadsUrl, pageToken)) leads.push({ lead, formName: form?.name ?? null });
     }
@@ -55,8 +60,8 @@ const dubaiHour = (iso) => {
   return Number.isFinite(t) ? String(new Date(t + 4 * 3_600_000).getUTCHours()).padStart(2, "0") : "unknown";
 };
 
-export async function pullMetaLeads(db, fetchImpl, { version, token, pageIds, sinceSeconds, execute = false, nowMs = Date.now() }) {
-  const metaLeads = await listMetaLeads(fetchImpl, { version, token, pageIds, sinceSeconds });
+export async function pullMetaLeads(db, fetchImpl, { version, token, pageIds, sinceSeconds, untilSeconds, execute = false, nowMs = Date.now() }) {
+  const metaLeads = await listMetaLeads(fetchImpl, { version, token, pageIds, sinceSeconds, untilSeconds });
   const ids = metaLeads.map(({ lead }) => normalizeMetaId(lead?.id)).filter(Boolean);
   const stored = new Map();
   for (let i = 0; i < ids.length; i += 200) {

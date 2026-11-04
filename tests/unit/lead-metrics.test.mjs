@@ -160,3 +160,71 @@ test("imported counts follow the same archived rule", () => {
   const s = summarizeLeads([lead({ imported_by: "u1" }), lead({ imported_by: "u1", archived: true })], { now: NOW });
   assert.equal(s.byAssignee.u1.imported, 1);
 });
+
+// ── Review round: one valid-lead definition, one won amount, lost-from stage ──
+import {
+  isValidQualityLead,
+  lostFromStageCounts,
+  sourceQualityBreakdown,
+  wonLeadValue,
+} from "../../src/lib/lead-metrics.mjs";
+
+test("a lead is 'valid' exactly when the quality distribution puts it in good or normal", () => {
+  const cases = [
+    { quality: "good" }, { quality: "normal" }, { quality: "poor" }, { quality: "pending" },
+    { quality: null, ai_quality: "normal" }, { quality: null, ai_quality: "good" },
+    { quality: "", ai_quality: "bad" }, {}, { quality: "hot" }, { quality: "warm" },
+  ];
+  for (const lead of cases) {
+    const bucket = qualityBucket(lead);
+    assert.equal(isValidQualityLead(lead), bucket === "good" || bucket === "normal", JSON.stringify(lead));
+  }
+  // The case that used to disagree: no manual quality, AI says normal.
+  assert.equal(isValidQualityLead({ quality: null, ai_quality: "normal" }), true);
+});
+
+test("won amount is the quotation value of counted won leads, nothing else", () => {
+  assert.equal(wonLeadValue({ final_status: "won", quotation_value: "1500.5" }), 1500.5);
+  assert.equal(wonLeadValue({ stage: "won", quotation_value: 700 }), 700);
+  assert.equal(wonLeadValue({ final_status: "won", quotation_value: 700, archived: true }), 0);
+  assert.equal(wonLeadValue({ final_status: "lost", quotation_value: 700 }), 0);
+  assert.equal(wonLeadValue({ stage: "negotiation", quotation_value: 700 }), 0);
+  assert.equal(wonLeadValue({ final_status: "won", quotation_value: null }), 0);
+});
+
+test("source x quality: normal is its own column, AI quality is the fallback, counts add up", () => {
+  const rows = [
+    { source: "fb", quality: "good" },
+    { source: "fb", quality: "normal" },
+    { source: "fb", quality: null, ai_quality: "normal", final_status: "won" },
+    { source: "fb", quality: "poor" },
+    { source: "fb" },
+    { source: "fb", archived: true, quality: "good" },
+    { source_platform: "meta", quality: "good" },
+  ];
+  const table = sourceQualityBreakdown(rows);
+  const fb = table.find((r) => r.source === "fb");
+  assert.deepEqual({ ...fb }, { source: "fb", total: 5, good: 1, normal: 2, pending: 1, bad: 1, conv_rate: 20 });
+  assert.equal(fb.good + fb.normal + fb.pending + fb.bad, fb.total);
+  assert.ok(table.find((r) => r.source === "meta"), "falls back to the platform like every other page");
+});
+
+test("lost-from stage comes from the stage_change event (from -> lost), not the lead's own stage", () => {
+  const events = [
+    { lead_id: "a", event_data: { from: "negotiation", to: "lost" }, created_at: "2026-10-01T00:00:00Z" },
+    { lead_id: "b", event_data: { from: "contacted", to: "lost" }, created_at: "2026-10-02T00:00:00Z" },
+    // lost twice: only the latest loss counts
+    { lead_id: "c", event_data: { from: "new", to: "lost" }, created_at: "2026-09-01T00:00:00Z" },
+    { lead_id: "c", event_data: { from: "quotation_submitted", to: "lost" }, created_at: "2026-10-05T00:00:00Z" },
+    // older spelling still readable; JSON text accepted
+    { lead_id: "d", event_data: { from_stage: "new", to_stage: "lost" }, created_at: "2026-10-06T00:00:00Z" },
+    { lead_id: "e", event_data: JSON.stringify({ from: "new", to: "lost" }), created_at: "2026-10-06T00:00:00Z" },
+    // not a loss, or not a lead we are counting
+    { lead_id: "a", event_data: { from: "new", to: "contacted" }, created_at: "2026-10-07T00:00:00Z" },
+    { lead_id: "zzz", event_data: { from: "new", to: "lost" }, created_at: "2026-10-07T00:00:00Z" },
+  ];
+  // "f" is lost but has no readable event: unknown. Never "lost" itself.
+  const counts = lostFromStageCounts(events, ["a", "b", "c", "d", "e", "f"]);
+  assert.deepEqual(counts, { negotiation: 1, contacted: 1, quotation_submitted: 1, new: 2, unknown: 1 });
+  assert.equal(counts.lost, undefined);
+});

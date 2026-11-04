@@ -83,3 +83,30 @@ export function fetchCountedLeads(supabase, columns, { assignedTo = null } = {})
     return q.order("id", { ascending: true }).range(from, to);
   });
 }
+
+/**
+ * The stage_change events that moved the given leads to "lost" (both the
+ * `{from,to}` and the older `{from_stage,to_stage}` spelling), newest first.
+ * Leads are queried in chunks so the `in` list stays short.
+ */
+export async function fetchLostEvents(supabase, leadIds, { chunkSize = 100 } = {}) {
+  const ids = [...leadIds];
+  const events = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const result = await fetchAllRows((from, to, withCount) =>
+      supabase
+        .from("business_events")
+        .select("lead_id,event_data,created_at", withCount ? { count: "exact" } : undefined)
+        .eq("event_type", "stage_change")
+        .in("lead_id", chunk)
+        .or("event_data->>to.eq.lost,event_data->>to_stage.eq.lost")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+    if (result.error) return { data: [], error: result.error };
+    events.push(...result.data);
+  }
+  return { data: events, error: null };
+}

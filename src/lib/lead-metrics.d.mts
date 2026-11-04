@@ -40,6 +40,7 @@ export interface LeadSummary {
   total: number; active: number; won: number; lost: number; contacted: number;
   pipelineValue: number; weightedPipelineValue: number;
   newLast7Days: number;
+  wonValue: number;
   periodWonCount: number; periodWonValue: number;
   yellowCount: number; redCount: number;
   recoveryCount: number; transferCount: number; reviewCount: number;
@@ -94,3 +95,12 @@ export function aggregateAttribution(
 ): Record<string, AttributionGroup>;
 export function totalAttribution(groups: Record<string, AttributionGroup>): AttributionGroup;
 export function overdueLeadList<T extends MetricLead>(rows: T[] | null | undefined, now?: Date): Array<{ lead: T; overdueDays: number }>;
+
+export function lostFromStageCounts(
+  events: Array<{ lead_id?: string | null; event_data?: unknown; created_at?: string | null }>,
+  lostLeadIds: Iterable<string>,
+): Record<string, number>;
+export function wonLeadValue(lead: MetricLead | null | undefined): number;
+export function sourceQualityBreakdown(
+  rows: MetricLead[] | null | undefined,
+): Array<{ source: string; total: number; good: number; normal: number; pending: number; bad: number; conv_rate: number }>;

@@ -4,6 +4,8 @@ import { createServerSupabase } from "@/lib/supabase-server"
 import { applyPrivateNoStore } from "@/lib/request-auth-context"
 import { countsAsCash } from "@/lib/payment-state.mjs"
 import { fetchAllRows, LIST_MAX_ROWS } from "@/lib/fetch-all-rows.mjs"
+import { dubaiDateKey, dubaiMonthBounds, dubaiMonthKey } from "@/lib/dubai-time.mjs"
+import { isWonInPeriod, wonLeadValue } from "@/lib/lead-metrics.mjs"
 
 /**
  * GET /api/pipeline/list — leads, the sales roster, and the caller's own KPI actuals.
@@ -74,26 +76,41 @@ export async function GET(request: Request) {
   } | null = null
 
   if (isSales) {
-    const period = new Date().toISOString().slice(0, 7)
-    const [kpiTargetsResult, contractsResult, paymentsResult] = await Promise.all([
+    // The KPI targets are monthly, so both actuals are for the Dubai month: signing
+    // is what this rep WON in the month (won_at; the one shared won amount, the same
+    // figure the dashboard shows them), collection is cash dated inside the month.
+    const now = new Date()
+    const period = dubaiMonthKey(now) as string
+    const bounds = dubaiMonthBounds(period)
+    const monthStartDate = dubaiDateKey(bounds.start) as string
+    const monthEndDate = dubaiDateKey(bounds.end) as string
+    const [kpiTargetsResult, paymentsResult] = await Promise.all([
       supabase.from('kpi_targets').select('*').eq('period', period).eq('assigned_to', userId),
-      supabase.from('contracts').select('id,contract_amount,status').eq('sales_id', userId),
-      supabase.from('payments').select('amount,confirmed,voided_at,contract_id'),
+      fetchAllRows((from, to, withCount) =>
+        supabase
+          .from('payments')
+          .select('id,amount,confirmed,voided_at,payment_date,contracts!inner(sales_id)', withCount ? { count: 'exact' } : undefined)
+          .eq('contracts.sales_id', userId)
+          .gte('payment_date', monthStartDate)
+          .lt('payment_date', monthEndDate)
+          .order('id', { ascending: true })
+          .range(from, to),
+      ),
     ])
 
-    const contracts = (contractsResult.data ?? []) as any[]
-    const active = contracts.filter((c) => c.status !== 'terminated')
-    const signingActual = active.reduce((sum, c) => sum + (c.contract_amount || 0), 0)
+    const wonThisMonth = ((leadsResult.data ?? []) as any[]).filter(
+      (l) => l.assigned_to === userId && isWonInPeriod(l, bounds),
+    )
+    const signingActual = wonThisMonth.reduce((sum, l) => sum + wonLeadValue(l), 0)
 
-    const contractIds = new Set(contracts.map((c) => c.id))
     const payments = (paymentsResult.data ?? []) as any[]
     const collectionActual = payments
-      .filter((p) => countsAsCash(p) && contractIds.has(p.contract_id))
+      .filter((p) => countsAsCash(p))
       .reduce((sum, p) => sum + (p.amount || 0), 0)
 
     kpiData = {
       kpiTargets: kpiTargetsResult.data ?? [],
-      contractCount: active.length,
+      contractCount: wonThisMonth.length,
       signingActual,
       collectionActual,
     }

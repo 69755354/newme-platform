@@ -1,7 +1,8 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
+import { fetchCountedLeads, fetchLostEvents } from "@/lib/fetch-all-rows.mjs";
+import { lostFromStageCounts } from "@/lib/lead-metrics.mjs";
 import type { Database } from "@/types/database";
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
@@ -180,13 +181,16 @@ export async function GET(request: NextRequest) {
     // ─── Step 6: "Where I lose most" — for sales view, find the stage with the most leads lost ───
     const lostStage = stages.find(s => s.key === "lost");
     const lostCount = lostStage?.count || 0;
-    const lostFromStage: Record<string, number> = {};
-    // A lost lead keeps the process stage it was lost from.
+    let lostFromStage: Record<string, number> = {};
+    // A lost lead's own stage is already "lost" (both loss paths set it), so the
+    // stage it was lost from comes from its stage_change event (from -> lost).
     if (lostCount > 0) {
-      for (const lead of stageLeads.lost) {
-        const from = lead.stage || "unknown";
-        lostFromStage[from] = (lostFromStage[from] || 0) + 1;
+      const lostEvents = await fetchLostEvents(supabase, stageLeads.lost.map((lead) => lead.id));
+      if (lostEvents.error) {
+        console.error("[pipeline-funnel] Failed to fetch lost events:", lostEvents.error);
+        return NextResponse.json({ error: "Failed to fetch leads" }, { status: 500 });
       }
+      lostFromStage = lostFromStageCounts(lostEvents.data, stageLeads.lost.map((lead) => lead.id));
     }
 
     return NextResponse.json({

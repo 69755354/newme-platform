@@ -23,3 +23,18 @@ export function segmentTitle(labels, key, count, fallback) {
   const n = Number.isFinite(count) ? count : 0;
   return `${chartLabel(labels, key, fallback)}: ${n}`;
 }
+
+/**
+ * Label for a value that may or may not have a translation. The translate
+ * function returns the lookup path itself when the entry is missing, which used
+ * to print "sourceLabels.google" for an unknown source; this returns the raw
+ * value (the source / campaign name as stored) in that case.
+ *
+ * @param {(path: string) => string} translate
+ * @param {string} path e.g. `sourceLabels.${key}`
+ * @param {string} raw  the stored value to show when there is no translation
+ */
+export function translatedOrRaw(translate, path, raw) {
+  const text = translate(path);
+  return typeof text === "string" && text.trim() !== "" && text !== path ? text : String(raw ?? "");
+}

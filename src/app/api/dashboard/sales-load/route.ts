@@ -54,18 +54,6 @@ export async function GET(request: NextRequest) {
         leadsByRep[l.assigned_to].push(l);
       });
 
-      // Get won amounts per rep from contracts
-      const { data: contracts } = await supabase
-        .from("contracts")
-        .select("sales_id, contract_amount, status");
-
-      const wonAmountByRep: Record<string, number> = {};
-      (contracts ?? []).forEach((c: any) => {
-        if (c.status !== "terminated" && c.sales_id) {
-          wonAmountByRep[c.sales_id] = (wonAmountByRep[c.sales_id] ?? 0) + (c.contract_amount ?? 0);
-        }
-      });
-
       const now = new Date();
       const repStats = reps.map((rep: any) => {
         const myLeads = leadsByRep[rep.id] || [];
@@ -81,7 +69,8 @@ export async function GET(request: NextRequest) {
           email: rep.email,
           role: rep.role,
           totalLeads: mine.total,
-          wonAmount: wonAmountByRep[rep.id] ?? 0,
+          // Won amount to date: the shared definition (quotation value of won leads).
+          wonAmount: mine.wonValue,
           wonLeads: mine.won,
           conversionRate: mine.conversionRate,
           followupRate: mine.contactRate,

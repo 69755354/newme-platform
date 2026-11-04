@@ -74,7 +74,7 @@ interface FinanceStats {
   overdue: number;
   dueNextWeek: number;
   contractCount?: number;
-  contractAmount?: number;
+  signedAmount?: number;
   paymentAmount?: number;
   wonCount?: number;
 }
@@ -219,7 +219,9 @@ export default function DashboardPage() {
       })
       .catch(err => {
         if (err.name === "AbortError") return;
-        setError(err.message);
+        // Never show the raw "HTTP 500" / "Failed to fetch": say it in the user's language.
+        console.error("[dashboard] summary fetch failed:", err);
+        setError(t("common.loadFailed"));
         setLoading(false);
       });
     return () => controller.abort();
@@ -267,8 +269,11 @@ export default function DashboardPage() {
   // Both sides of "actual vs target" are for the selected Dubai month: the target
   // is a monthly figure, so the actual must not be the all-time total (it used to
   // be the sum of every lead ever won / every contract / every payment).
+  // Signing = won in the month (won_at). The same definition for a rep (own leads)
+  // and for management (all leads); contracts created, drafted, rejected or
+  // terminated in the month never count as signed.
   const mySigningActual = leadStats.byAssignee[userId ?? ""]?.periodWonValue ?? 0;
-  const signingActual = userRole === "sales" ? mySigningActual : (financeStats.contractAmount ?? 0);
+  const signingActual = userRole === "sales" ? mySigningActual : leadStats.periodWonValue;
   const collectionActual = financeStats.paymentAmount ?? 0; // server scopes this to the caller's contracts for sales
   const signingPct = signingTarget > 0 ? Math.round((signingActual / signingTarget) * 100) : null;
   const collectionPct = collectionTarget > 0 ? Math.round((collectionActual / collectionTarget) * 100) : null;
@@ -346,7 +351,7 @@ export default function DashboardPage() {
   // No more financeCards array — render L1 cards inline
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">{t("common.loading")}</div>;
-  if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
+  if (error) return <ErrorState message={error} retryText={t("common.retry")} onRetry={() => window.location.reload()} />;
 
   const overdueCount = (stats.redCount || 0) + (stats.yellowCount || 0);
   const isManagement = userRole !== "sales";
@@ -414,7 +419,7 @@ export default function DashboardPage() {
         { label: t("dashboard.kpiActive"), value: String(contractCount), sub: t("dashboard.nPipeline").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=negotiation" },
         { label: t("dashboard.kpiQuotes"), value: String(stats.stageCounts.quotation_submitted + stats.stageCounts.negotiation + stats.stageCounts.pending_decision), sub: t("dashboard.nPending").replace("{n}", String(stats.stageCounts.quotation_submitted)), href: "/quotes" },
         { label: t("dashboard.pipelineValue"), value: fmtAED(stats.totalPipeline), sub: t("dashboard.nDeals").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=quotation_submitted" },
-        { label: t("dashboard.won"), value: fmtAED(stats.monthlyRevenue), sub: t("dashboard.nClosed").replace("{n}", String(stats.wonCount)), href: "/leads?stage=won" },
+        { label: t("dashboard.wonThisMonth"), value: fmtAED(stats.monthlyRevenue), sub: t("dashboard.nClosed").replace("{n}", String(stats.wonCount)), href: "/leads?stage=won" },
         { label: t("dashboard.kpiConv"), value: `${stats.conversionRate}%`, sub: t("dashboard.nPctContacted").replace("{n}", String(stats.contactRate)), href: "/leads" },
       ].map(card => (
         <button key={card.label}
@@ -623,7 +628,7 @@ export default function DashboardPage() {
                     <div className="flex-1 space-y-1.5">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-muted-foreground">
-                          {t("dashboard.won")} {fmtAED(s.wonValue)} ({s.wonCount}) · {language === "zh" ? "总计" : "Total"} {s.totalLeads} · {language === "zh" ? "导入" : "Imported"} {s.imported} · {language === "zh" ? "活跃" : "Active"} {s.active} · {language === "zh" ? "累计成交" : "Won to date"} {s.won} · {language === "zh" ? "流失" : "Lost"} {s.lost}
+                          {t("dashboard.wonThisMonth")} {fmtAED(s.wonValue)} ({s.wonCount}) · {language === "zh" ? "总计" : "Total"} {s.totalLeads} · {language === "zh" ? "导入" : "Imported"} {s.imported} · {language === "zh" ? "活跃" : "Active"} {s.active} · {language === "zh" ? "累计成交" : "Won to date"} {s.won} · {language === "zh" ? "流失" : "Lost"} {s.lost}
                         </span>
                         {s.targetAmount > 0 ? (
                           <span className={cn("font-medium", s.completionRate <= 0 ? "text-muted-foreground" : s.completionRate >= expectedPct ? "text-emerald-400" : "text-amber-400")}>

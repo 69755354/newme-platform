@@ -1,10 +1,9 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
-import { fetchAllRows, fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
-import { isActiveLead, isWonLead, leadSourceKey, type MetricLead } from "@/lib/lead-metrics.mjs";
+import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
+import { isActiveLead, isWonLead, leadSourceKey, wonLeadValue, type MetricLead } from "@/lib/lead-metrics.mjs";
 
 type PerfLead = MetricLead & { id: string };
-type PerfContract = { id: string; sales_id: string | null; lead_id: string | null; contract_amount: number | string | null; status: string | null };
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 
@@ -19,7 +18,8 @@ export const dynamic = "force-dynamic";
  *  - Lead source breakdown (count / won / revenue per source)
  *
  * Management (admin/boss/operator) sees the whole team; sales sees only their own.
- * Revenue is derived from the contracts table (non-terminated contracts).
+ * Revenue is the won amount to date: the quotation value of won leads (the one
+ * shared "won amount" definition, src/lib/lead-metrics.mjs).
  */
 export async function GET(request: NextRequest) {
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
@@ -52,19 +52,9 @@ export async function GET(request: NextRequest) {
       const repIds = repList.map((r: any) => r.id);
 
       const repIdSet = new Set<string>(repIds);
-      const leadsResult = await fetchCountedLeads(supabase, "id,archived,assigned_to,source,source_platform,stage,final_status");
+      const leadsResult = await fetchCountedLeads(supabase, "id,archived,assigned_to,source,source_platform,stage,final_status,quotation_value");
       if (leadsResult.error) throw leadsResult.error;
       const leads = (leadsResult.data as PerfLead[]).filter((l) => l.assigned_to && repIdSet.has(l.assigned_to));
-
-      const contractsResult = await fetchAllRows((from, to, withCount) =>
-        supabase
-          .from("contracts")
-          .select("id, sales_id, lead_id, contract_amount, status", withCount ? { count: "exact" } : undefined)
-          .order("id", { ascending: true })
-          .range(from, to),
-      );
-      if (contractsResult.error) throw contractsResult.error;
-      const contracts = contractsResult.data as PerfContract[];
 
       const leadsByRep: Record<string, any[]> = {};
       (leads ?? []).forEach((l: any) => {
@@ -72,12 +62,8 @@ export async function GET(request: NextRequest) {
       });
 
       const revenueByRep: Record<string, number> = {};
-      const revenueByLead: Record<string, number> = {};
-      (contracts ?? []).forEach((c: any) => {
-        if (c.status === "terminated") return;
-        const amt = Number(c.contract_amount ?? 0);
-        if (c.sales_id) revenueByRep[c.sales_id] = (revenueByRep[c.sales_id] ?? 0) + amt;
-        if (c.lead_id) revenueByLead[c.lead_id] = (revenueByLead[c.lead_id] ?? 0) + amt;
+      leads.forEach((l: any) => {
+        if (l.assigned_to) revenueByRep[l.assigned_to] = (revenueByRep[l.assigned_to] ?? 0) + wonLeadValue(l);
       });
 
       // Source breakdown (team-wide)
@@ -92,7 +78,7 @@ export async function GET(request: NextRequest) {
         if (isWonLead(l)) s.won += 1;
       });
       (leads ?? []).forEach((l: any) => {
-        const amt = revenueByLead[l.id] ?? 0;
+        const amt = wonLeadValue(l);
         if (amt > 0) bumpSource(leadSourceKey(l)).revenue += amt;
       });
 
@@ -148,28 +134,12 @@ export async function GET(request: NextRequest) {
     // ── Sales: own data only ──
     const myLeadsResult = await fetchCountedLeads(
       supabase,
-      "id,archived,source,source_platform,stage,final_status",
+      "id,archived,source,source_platform,stage,final_status,quotation_value",
       { assignedTo: user.id },
     );
     if (myLeadsResult.error) throw myLeadsResult.error;
     const myLeadRows = myLeadsResult.data as PerfLead[];
-    const myLeadIds = myLeadRows.map((l: any) => l.id);
-
-    const { data: myContracts } = myLeadIds.length
-      ? await supabase
-          .from("contracts")
-          .select("lead_id, contract_amount, status")
-          .in("lead_id", myLeadIds)
-      : { data: [] };
-
-    const revenueByLead: Record<string, number> = {};
-    let myRevenue = 0;
-    (myContracts ?? []).forEach((c: any) => {
-      if (c.status === "terminated") return;
-      const amt = Number(c.contract_amount ?? 0);
-      myRevenue += amt;
-      if (c.lead_id) revenueByLead[c.lead_id] = (revenueByLead[c.lead_id] ?? 0) + amt;
-    });
+    const myRevenue = myLeadRows.reduce((sum, l) => sum + wonLeadValue(l), 0);
 
     const sourceStats: Record<string, { count: number; won: number; revenue: number }> = {};
     const bumpSource = (s: string) => {
@@ -180,7 +150,7 @@ export async function GET(request: NextRequest) {
       const s = bumpSource(leadSourceKey(l));
       s.count += 1;
       if (isWonLead(l)) s.won += 1;
-      s.revenue += revenueByLead[l.id] ?? 0;
+      s.revenue += wonLeadValue(l);
     });
 
     const totalLeads = myLeadRows.length;

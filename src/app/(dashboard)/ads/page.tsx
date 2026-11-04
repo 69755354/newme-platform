@@ -13,6 +13,7 @@ import Link from "next/link";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 import { aggregateAttribution, type MetricLead } from "@/lib/lead-metrics.mjs";
+import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 
 interface Lead {
   id: string; customer_name: string | null;
@@ -206,7 +207,7 @@ export default function AdsPage() {
                 const convRate = g.total > 0 ? Math.round((g.won / g.total) * 100) : 0;
                 return (
                   <tr key={key} className="border-b border-border/20 hover:bg-accent/30 transition-colors">
-                    <td className="py-3 px-4 font-medium">{t(`sourceLabels.${key}`) || key}</td>
+                    <td className="py-3 px-4 font-medium">{viewMode === "source" ? translatedOrRaw(t, `sourceLabels.${key}`, key) : key}</td>
                     <td className="text-right py-3 px-3 font-semibold">{g.total}</td>
                     <td className="text-right py-3 px-3">{g.valid}</td>
                     <td className="text-right py-3 px-3">

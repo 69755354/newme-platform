@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllRows } from "@/lib/fetch-all-rows.mjs";
 import { inBounds, inWeek, recentDubaiWeeks } from "@/lib/dubai-time.mjs";
-import { isWonLead } from "@/lib/lead-metrics.mjs";
+import { isWonLead, wonLeadValue } from "@/lib/lead-metrics.mjs";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 
@@ -63,19 +63,21 @@ export async function GET(request: NextRequest) {
     if (leadsResult.error) throw leadsResult.error;
     const leads = leadsResult.data as any[];
 
-    // ─── Fetch contracts (for signed amount) ───
-    let contractsQuery = supabase
-      .from("contracts")
-      .select("id, contract_amount, created_at, status, sales_id")
-      .gte("created_at", rangeStart)
-      .lt("created_at", rangeEnd);
-
-    if (!isManagement) {
-      contractsQuery = contractsQuery.eq("sales_id", userId);
-    }
-
-    const { data: contracts, error: contractsErr } = await contractsQuery;
-    if (contractsErr) throw contractsErr;
+    // ─── Fetch leads won in the range (for signed amount) ───
+    // Signed in a week = won in that Dubai week (won_at), the one shared won amount.
+    const wonResult = await fetchAllRows((from, to, withCount) => {
+      let q = supabase
+        .from("leads")
+        .select("id, final_status, stage, archived, quotation_value, won_at", withCount ? { count: "exact" } : undefined)
+        .eq("archived", false)
+        .eq("final_status", "won")
+        .gte("won_at", rangeStart)
+        .lt("won_at", rangeEnd);
+      if (!isManagement) q = q.eq("assigned_to", userId);
+      return q.order("id", { ascending: true }).range(from, to);
+    });
+    if (wonResult.error) throw wonResult.error;
+    const wonInRange = wonResult.data as any[];
 
     // ─── Fetch payments (for collected amount) ───
     //
@@ -113,16 +115,11 @@ export async function GET(request: NextRequest) {
       // Won leads in this week (using leads table)
       const wonLeads = newLeads.filter((l) => isWonLead(l));
 
-      // Signed amount from contracts created this week
-      const weekContracts = (contracts || []).filter((contract) =>
-        contract.status !== "terminated" &&
-        inBounds(contract.created_at, week)
+      // Signed amount: leads won this week (won_at), shared won amount.
+      const signedAmount = wonInRange.reduce(
+        (sum, lead) => (inBounds(lead.won_at, week) ? sum + wonLeadValue(lead) : sum),
+        0,
       );
-
-      const signedAmount = weekContracts.reduce((sum, contract) => {
-        const amount = finiteAmount(contract.contract_amount);
-        return amount === null ? sum : sum + amount;
-      }, 0);
 
       // Collection amount from payments confirmed this week
       const weekPayments = (payments || []).filter((payment) =>

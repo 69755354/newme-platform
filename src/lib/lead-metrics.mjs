@@ -48,7 +48,7 @@ export const LEAD_METRIC_COLUMNS =
 
 /** Columns the two ads-attribution pages group and count by. */
 export const ADS_ATTRIBUTION_COLUMNS =
-  "archived,source,source_platform,campaign_name,utm_campaign,meta_campaign,adset_name,ad_name,stage,final_status,quotation_value,quality";
+  "archived,source,source_platform,campaign_name,utm_campaign,meta_campaign,adset_name,ad_name,stage,final_status,quotation_value,quality,ai_quality";
 
 export function isCountedLead(lead) {
   return Boolean(lead) && lead.archived !== true;
@@ -88,6 +88,17 @@ export function isQuotedLead(lead) {
   return isWonLead(lead) || (isActiveLead(lead) && QUOTED.has(lead.stage));
 }
 
+/**
+ * THE "won amount" of a lead: its quotation value when it is a counted, won lead,
+ * otherwise 0. Every page that shows a won / signed amount (dashboard, team
+ * performance, sales load, lead sources, ads, weekly trends) sums this and only
+ * this; the time window is the only thing that differs (this month / this week
+ * by won_at, or to date), and each label says which.
+ */
+export function wonLeadValue(lead) {
+  return isWonLead(lead) ? money(lead.quotation_value) : 0;
+}
+
 export function conversionRate(won, total) {
   return total > 0 ? Math.round((won / total) * 100) : 0;
 }
@@ -122,9 +133,13 @@ export function qualityBucket(lead) {
 }
 export const QUALITY_BUCKETS = Object.freeze(["pending", "good", "normal", "bad", "unknown"]);
 
-/** "Valid" lead for attribution: quality good or normal. */
+/**
+ * "Valid" lead for attribution: quality good or normal, by the same bucket the
+ * quality distribution uses (manual quality, else the AI quality). The ads pages'
+ * "valid leads" therefore always equals good + normal in the distribution.
+ */
 export function isValidQualityLead(lead) {
-  const bucket = qualityBucket({ quality: lead?.quality });
+  const bucket = qualityBucket(lead);
   return bucket === "good" || bucket === "normal";
 }
 
@@ -213,6 +228,7 @@ export function summarizeLeads(rows, { period = null, now = new Date() } = {}) {
     total: 0, active: 0, won: 0, lost: 0, contacted: 0,
     pipelineValue: 0, weightedPipelineValue: 0,
     newLast7Days: 0,
+    wonValue: 0,
     periodWonCount: 0, periodWonValue: 0,
     yellowCount: 0, redCount: 0,
     recoveryCount: 0, transferCount: 0, reviewCount: 0,
@@ -240,7 +256,7 @@ export function summarizeLeads(rows, { period = null, now = new Date() } = {}) {
     }
     const status = lead.lead_status || "unknown";
     statusCounts[status] = (statusCounts[status] || 0) + 1;
-    if (won) s.won++;
+    if (won) { s.won++; s.wonValue += value; }
     if (lost) s.lost++;
     if (contacted) s.contacted++;
     if (periodWon) { s.periodWonCount++; s.periodWonValue += value; }
@@ -331,4 +347,76 @@ export function totalAttribution(groups) {
     totals.won += g.won; totals.value += g.value;
   }
   return totals;
+}
+
+/**
+ * Where lost leads were lost from. A lost lead's own `stage` is already "lost"
+ * (both loss paths set it), so the process stage it was lost from is read from
+ * its stage_change event: event_data { from, to } with to = "lost" (the older
+ * from_stage / to_stage spelling is accepted too). When a lead was lost more
+ * than once only its latest loss counts; a lost lead with no readable event is
+ * counted under "unknown".
+ *
+ * @param {Array<{ lead_id?: string, event_data?: unknown, created_at?: string }>} events
+ * @param {Iterable<string>} lostLeadIds
+ * @returns {Record<string, number>}
+ */
+export function lostFromStageCounts(events, lostLeadIds) {
+  const lost = new Set(lostLeadIds);
+  const latest = new Map();
+  for (const event of events || []) {
+    if (!event || !lost.has(event.lead_id)) continue;
+    let data = event.event_data;
+    if (typeof data === "string") {
+      try { data = JSON.parse(data); } catch { data = null; }
+    }
+    if (!data || typeof data !== "object") continue;
+    const to = data.to ?? data.to_stage;
+    const from = data.from ?? data.from_stage;
+    if (to !== "lost" || typeof from !== "string" || !from) continue;
+    const at = Date.parse(event.created_at ?? "") || 0;
+    const prev = latest.get(event.lead_id);
+    if (!prev || at >= prev.at) latest.set(event.lead_id, { at, from });
+  }
+  const counts = {};
+  for (const id of lost) {
+    const from = latest.get(id)?.from ?? "unknown";
+    counts[from] = (counts[from] || 0) + 1;
+  }
+  return counts;
+}
+
+/**
+ * Source x quality table of the analytics "Ads ROI" panel. Counted leads only,
+ * source by leadSourceKey, quality by qualityBucket with "normal" its own column
+ * (it used to be folded into "pending"); a lead with no usable rating counts as
+ * pending. conv_rate is won / total in percent with two decimals.
+ *
+ * @returns {Array<{ source: string, total: number, good: number, normal: number, pending: number, bad: number, conv_rate: number }>}
+ */
+export function sourceQualityBreakdown(rows) {
+  const groups = {};
+  for (const lead of rows || []) {
+    if (!isCountedLead(lead)) continue;
+    const source = leadSourceKey(lead);
+    const g = (groups[source] ??= { total: 0, good: 0, normal: 0, pending: 0, bad: 0, won: 0 });
+    g.total++;
+    const bucket = qualityBucket(lead);
+    if (bucket === "good") g.good++;
+    else if (bucket === "normal") g.normal++;
+    else if (bucket === "bad") g.bad++;
+    else g.pending++;
+    if (isWonLead(lead)) g.won++;
+  }
+  return Object.entries(groups)
+    .map(([source, g]) => ({
+      source,
+      total: g.total,
+      good: g.good,
+      normal: g.normal,
+      pending: g.pending,
+      bad: g.bad,
+      conv_rate: g.total > 0 ? Math.round((g.won / g.total) * 10000) / 100 : 0,
+    }))
+    .sort((a, b) => b.total - a.total);
 }

@@ -107,6 +107,28 @@ const NOW = new Date("2026-11-03T06:00:00.000Z"); // 10:00 Dubai, 14:00 Shanghai
 const PROCESS = ["new", "contacted", "requirement_confirmed", "solution_submitted", "quotation_submitted", "negotiation", "pending_decision"];
 const BOSS = "boss-1";
 
+// Both loss paths set leads.stage = "lost" (here the fixture keeps the stage it was
+// lost from only in the stage_change event, as production does). Every third lost
+// lead was lost from negotiation, the rest from contacted; one was lost, reopened
+// and lost again from a different stage, and one has no event at all.
+function lostEvents(leads) {
+  const events = [];
+  let n = 0;
+  for (const l of leads) {
+    if (l.final_status !== "lost") continue;
+    l.stage = "lost";
+    if (n === 0) { n++; continue; } // no event: counted as unknown
+    const from = n % 3 === 0 ? "negotiation" : "contacted";
+    events.push({ id: `ev-${n}`, lead_id: l.id, event_type: "stage_change", event_data: { from, to: "lost" }, created_at: "2026-10-10T08:00:00Z" });
+    if (n === 1) {
+      events.push({ id: "ev-old", lead_id: l.id, event_type: "stage_change", event_data: { from: "new", to: "lost" }, created_at: "2026-09-10T08:00:00Z" });
+      events.push({ id: "ev-noise", lead_id: l.id, event_type: "stage_change", event_data: { from: "new", to: "contacted" }, created_at: "2026-09-11T08:00:00Z" });
+    }
+    n++;
+  }
+  return events;
+}
+
 function buildDb() {
   const leads = [];
   for (let i = 0; i < 2400; i++) {
@@ -145,6 +167,8 @@ function buildDb() {
   // Created 22:00 Dubai Sunday 1 Nov (02:00 Shanghai Monday) and 01:00 Dubai Monday 2 Nov.
   edge("sun-late", { created_at: "2026-11-01T18:00:00.000Z", final_status: null, won_at: null, stage: "new" });
   edge("mon-early", { created_at: "2026-11-01T21:00:00.000Z", final_status: null, won_at: null, stage: "new" });
+  // No manual quality, AI says "normal": a quality-distribution "normal" AND a valid ads lead.
+  edge("ai-normal", { quality: null, ai_quality: "normal", final_status: null, won_at: null, stage: "new" });
 
   const payments = [];
   for (let i = 0; i < 1200; i++) {
@@ -163,9 +187,16 @@ function buildDb() {
       { id: "s2", role: "sales", full_name: "Sales Two", email: "s2@x", is_active: true },
       { id: "s3", role: "sales", full_name: "Sales Three", email: "s3@x", is_active: true },
     ],
-    contracts: [{ id: "c1", sales_id: "s1", lead_id: "lead-00001", contract_amount: 50000, status: "active", created_at: "2026-11-02T08:00:00Z" }],
+    contracts: [
+      { id: "c1", sales_id: "s1", lead_id: "lead-00001", contract_amount: 50000, status: "active", created_at: "2026-11-02T08:00:00Z" },
+      // Quote conversion creates a draft contract; none of these is a signing.
+      { id: "c-draft", sales_id: "s1", lead_id: "lead-00002", contract_amount: 90000, status: "draft", created_at: "2026-11-02T09:00:00Z" },
+      { id: "c-pend", sales_id: "s2", lead_id: "lead-00003", contract_amount: 80000, status: "pending_approval", created_at: "2026-11-02T10:00:00Z" },
+      { id: "c-rej", sales_id: "s2", lead_id: "lead-00005", contract_amount: 70000, status: "rejected", created_at: "2026-11-02T11:00:00Z" },
+      { id: "c-term", sales_id: "s3", lead_id: "lead-00006", contract_amount: 60000, status: "terminated", created_at: "2026-11-02T12:00:00Z" },
+    ],
     installment_plans: [], tasks: [], kpi_targets: [], quotations: [], lead_workflow_stages: [], v_risk_pool: [],
-    business_events: [], follow_up_logs: [], ad_spend: [],
+    business_events: lostEvents(leads), follow_up_logs: [], ad_spend: [],
   };
 }
 
@@ -192,6 +223,8 @@ test.before(() => {
   routes.trends = load("src/app/api/dashboard/weekly-trends/route.ts");
   routes.analytics = load("src/app/api/analytics/summary/route.ts");
   routes.ads = load("src/app/api/ads/leads/route.ts");
+  routes.adsRoi = load("src/app/api/dashboard/ads-roi/route.ts");
+  routes.pipelineList = load("src/app/api/pipeline/list/route.ts");
 });
 test.after(() => mock.timers.reset());
 
@@ -306,4 +339,126 @@ test("weekly trends: a Sunday-night lead belongs to the Dubai week it was create
   assert.equal(last.new_leads, created("2026-11-01T20:00:00.000Z", "2026-11-08T20:00:00.000Z"));
   assert.equal(prev.new_leads, created("2026-10-25T20:00:00.000Z", "2026-11-01T20:00:00.000Z"));
   assert.deepEqual(week(analytics).map((w) => [w.start_date, w.new_leads]), week(trends).map((w) => [w.start_date, w.new_leads]));
+});
+
+/* ───────── review round ───────── */
+const sumValue = (rows) => rows.reduce((a, l) => a + l.quotation_value, 0);
+const dubaiMonth = (iso) => new Date(Date.parse(iso) + 4 * 3600000).toISOString().slice(0, 7);
+
+test("management 'signed' this month = won this month by won_at; draft/pending/rejected/terminated contracts never count", async () => {
+  const summary = await run(routes.summary, "https://app.newme.ae/api/dashboard/summary?month=2026-11");
+  const wonNov = counted(db).filter((l) => l.final_status === "won" && l.won_at && dubaiMonth(l.won_at) === "2026-11");
+  assert.ok(wonNov.length > 0);
+  assert.equal(summary.leadStats.periodWonValue, sumValue(wonNov));
+  // The weekly-review "signed" tile reads the same figure.
+  assert.equal(summary.finance.signedAmount, sumValue(wonNov));
+  // 90000 + 80000 + 70000 + 60000 of new-this-month contracts in the fixture, plus the 50000 active one: none of it is added.
+  assert.ok(summary.finance.signedAmount < 50000 + 90000 + 80000 + 70000 + 60000);
+  // The page: sales and management read the same field family.
+  const page = fs.readFileSync(path.join(repoRoot, "src/app/(dashboard)/dashboard/page.tsx"), "utf8");
+  assert.match(page, /userRole === "sales" \? mySigningActual : leadStats\.periodWonValue/);
+  assert.doesNotMatch(page, /financeStats\.contractAmount/);
+});
+
+test("lost-from stage is read from the stage_change event (from -> lost), on the funnel and in analytics", async () => {
+  const funnel = await run(routes.funnel);
+  const analytics = await run(routes.analytics);
+  const lost = counted(db).filter((l) => l.final_status === "lost");
+  const latest = new Map();
+  for (const e of db.business_events) {
+    if (e.event_data.to !== "lost") continue;
+    const prev = latest.get(e.lead_id);
+    if (!prev || e.created_at > prev.created_at) latest.set(e.lead_id, e);
+  }
+  const expected = {};
+  for (const l of lost) {
+    const from = latest.get(l.id)?.event_data.from ?? "unknown";
+    expected[from] = (expected[from] || 0) + 1;
+  }
+  assert.ok(lost.length > 20 && expected.negotiation > 0 && expected.contacted > 0 && expected.unknown === 1);
+  assert.equal(funnel.lostFromStage.lost, undefined, "never 'lost: N'");
+  assert.deepEqual(funnel.lostFromStage, expected);
+  assert.deepEqual(analytics.pipelineFunnel.lostFromStage, expected);
+  assert.equal(Object.values(expected).reduce((a, b) => a + b, 0), funnel.stages.find((s) => s.key === "lost").count);
+});
+
+test("the Ads ROI panel reads every lead, 'normal' has its own column, one definition of won and quality", async () => {
+  const roi = await run(routes.adsRoi);
+  const analytics = await run(routes.analytics);
+  const ads = await run(routes.ads);
+  const rows = counted(db);
+  const table = roi.source_quality;
+  assert.equal(table.reduce((a, r) => a + r.total, 0), rows.length, "past the 1000-row cap, archived excluded");
+  const sum = (key) => table.reduce((a, r) => a + r[key], 0);
+  assert.equal(sum("good") + sum("normal") + sum("pending") + sum("bad"), rows.length);
+  assert.ok(sum("normal") > 0);
+  const summary = await run(routes.summary, "https://app.newme.ae/api/dashboard/summary?month=2026-11");
+  const dist = summary.leadStats.qualityBreakdown;
+  assert.equal(sum("normal"), dist.normal, "same 'normal' as the quality distribution");
+  assert.equal(sum("good"), dist.good);
+  // the analytics copy of the table is the same table
+  assert.deepEqual(analytics.adsRoi.source_quality, table);
+  // 'valid' on the ads pages = good + normal of the same distribution (AI quality is the fallback)
+  const { aggregateAttribution, totalAttribution } = await import("../../src/lib/lead-metrics.mjs");
+  const totals = totalAttribution(aggregateAttribution(ads.leads));
+  assert.equal(totals.valid, dist.good + dist.normal);
+  // won amount: the meta leads' won quotation value, one definition
+  const isMeta = (l) => l.source === "fb" || l.source === "ins" || l.source_platform === "meta";
+  const metaWon = rows.filter((l) => isMeta(l) && l.final_status === "won");
+  assert.equal(roi.summary.conversions, metaWon.length);
+  assert.equal(roi.summary.signed_amount, sumValue(metaWon));
+  assert.equal(roi.summary.total_leads, rows.filter(isMeta).length);
+});
+
+test("'won amount' is one number across the sales load, team performance and lead sources pages", async () => {
+  const load = await run(routes.load);
+  const perf = await run(routes.performance);
+  const sources = await run(routes.sources);
+  const analytics = await run(routes.analytics);
+  const rows = counted(db);
+  for (const id of ["s1", "s2", "s3"]) {
+    const expected = sumValue(rows.filter((l) => l.assigned_to === id && l.final_status === "won"));
+    assert.equal(load.repStats.find((r) => r.id === id).wonAmount, expected, `${id} sales load`);
+    assert.equal(perf.repStats.find((r) => r.id === id).revenue, expected, `${id} team performance`);
+    assert.equal(analytics.salesLoad.repStats.find((r) => r.id === id).wonAmount, expected, `${id} analytics`);
+  }
+  const teamWon = sumValue(rows.filter((l) => ["s1", "s2", "s3"].includes(l.assigned_to) && l.final_status === "won"));
+  assert.equal(perf.team.revenue, teamWon);
+  assert.equal(perf.sources.reduce((a, r) => a + r.revenue, 0), teamWon);
+  // Contracts (drafts, pending, rejected, terminated) have no say in it.
+  assert.equal(sources.sources.reduce((a, r) => a + r.revenue, 0), sumValue(rows.filter((l) => l.final_status === "won")), "lead sources");
+});
+
+test("weekly 'signed' amount is the lead won amount by won_at week, on both trend endpoints", async () => {
+  const trends = await run(routes.trends);
+  const analytics = await run(routes.analytics);
+  const week = (body) => body.weeks ?? body.weeklyTrends.weeks;
+  const last = week(trends).at(-1);
+  const wonIn = (a, b) => counted(db).filter((l) => l.final_status === "won" && l.won_at >= a && l.won_at < b);
+  // week of 2 Nov Dubai = [1 Nov 20:00Z, 8 Nov 20:00Z)
+  const expected = sumValue(wonIn("2026-11-01T20:00:00.000Z", "2026-11-08T20:00:00.000Z"));
+  assert.ok(expected >= 5000, "the quote-conversion win of 2 Nov is in it");
+  assert.equal(last.signed_amount, expected);
+  assert.equal(week(analytics).at(-1).signed_amount, expected);
+  assert.deepEqual(week(analytics).map((w) => w.signed_amount), week(trends).map((w) => w.signed_amount));
+});
+
+test("a sales rep's KPI actuals are the Dubai month's won amount and cash, the same as the dashboard", async () => {
+  currentSupabase = makeSupabase(db, "s1");
+  try {
+    const body = await run(routes.pipelineList);
+    const wonNov = counted(db).filter((l) => l.assigned_to === "s1" && l.final_status === "won" && l.won_at && dubaiMonth(l.won_at) === "2026-11");
+    assert.ok(wonNov.length > 0);
+    assert.equal(body.kpiData.signingActual, sumValue(wonNov));
+    assert.equal(body.kpiData.contractCount, wonNov.length);
+    // only the 1 Nov payment (40); 31 Oct (100) and the voided one are not November cash
+    assert.equal(body.kpiData.collectionActual, 40);
+    const summary = await (async () => {
+      const r = await routes.summary.GET(new Request("https://app.newme.ae/api/dashboard/summary?month=2026-11"));
+      return r.body;
+    })();
+    assert.equal(body.kpiData.signingActual, summary.leadStats.byAssignee.s1.periodWonValue);
+  } finally {
+    currentSupabase = makeSupabase(db, BOSS);
+  }
 });

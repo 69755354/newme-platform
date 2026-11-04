@@ -30,13 +30,17 @@ import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 import { countsAsCash } from "@/lib/payment-state.mjs";
 import { addDaysToDateKey, dubaiDateKey, inBounds, inWeek, recentDubaiWeeks } from "@/lib/dubai-time.mjs";
-import { fetchAllRows } from "@/lib/fetch-all-rows.mjs";
+import { fetchAllRows, fetchLostEvents } from "@/lib/fetch-all-rows.mjs";
 import {
+  isCountedLead,
   isWonLead,
   leadOutcome,
+  lostFromStageCounts,
   overdueLeadList,
   percentOf,
+  sourceQualityBreakdown as sourceQualityBreakdownOf,
   summarizeLeads,
+  wonLeadValue,
   type MetricLead,
 } from "@/lib/lead-metrics.mjs";
 
@@ -152,15 +156,6 @@ export async function GET(request: Request) {
     .in("role", ["sales", "admin"])
     .eq("is_active", true);
 
-  // ── 3f. Contracts for trends ──
-  let trendsContractsQuery = supabase
-    .from("contracts")
-    .select("id, contract_amount, created_at, status, sales_id")
-    .gte("created_at", rangeStart)
-    .lt("created_at", rangeEnd);
-  if (!isManagement) trendsContractsQuery = trendsContractsQuery.eq("sales_id", userId);
-  const trendsContractsPromise = trendsContractsQuery;
-
   // ── 3g. Payments for trends ──
   let trendsPaymentsQuery = supabase
     .from("payments")
@@ -186,12 +181,11 @@ export async function GET(request: Request) {
     { data: contracts, error: contractsErr },
     { data: adSpend, error: adErr },
     { data: salesProfiles, error: spErr },
-    { data: trendsContracts, error: tcErr },
     { data: trendsPayments, error: tpErr },
   ] = await Promise.all([
     leadsPromise, contractsPromise, adSpendPromise,
     salesProfilesPromise,
-    trendsContractsPromise, trendsPaymentsPromise,
+    trendsPaymentsPromise,
   ]);
 
   if (leadsErr) console.error("[analytics-summary] leads fetch failed:", leadsErr);
@@ -298,16 +292,20 @@ export async function GET(request: Request) {
   }
   stuckLeads.sort((a, b) => b.days_in_stage - a.days_in_stage);
 
-  // Lost from stage
-  const lostFromStage: Record<string, number> = {};
+  // Lost from stage: a lost lead's own stage is "lost", so the stage it was lost
+  // from is read from its stage_change event (from -> lost).
+  let lostFromStage: Record<string, number> = {};
   const lostStageObj = funnelStages.find(s => s.key === "lost");
   if (lostStageObj && (lostStageObj.count || 0) > 0) {
-    // Count lost leads by their original stage
-    const lostLeads = leadsData.filter((l: any) => leadOutcome(l) === "lost");
-    for (const l of lostLeads) {
-      const fromStage = l.stage || "unknown";
-      lostFromStage[fromStage] = (lostFromStage[fromStage] || 0) + 1;
+    const lostIds = leadsData
+      .filter((l: any) => isCountedLead(l) && leadOutcome(l) === "lost")
+      .map((l: any) => l.id as string);
+    const lostEvents = await fetchLostEvents(supabase, lostIds);
+    if (lostEvents.error) {
+      console.error("[analytics/summary] lost events fetch failed:", lostEvents.error);
+      return applyPrivateNoStore(NextResponse.json({ error: "Failed to load analytics data" }, { status: 500 }));
     }
+    lostFromStage = lostFromStageCounts(lostEvents.data, lostIds);
   }
 
   const pipelineFunnel = { stages: funnelStages, stuckLeads, totalLeads, lostFromStage };
@@ -417,7 +415,7 @@ export async function GET(request: Request) {
     leadsByCampaign[c] = (leadsByCampaign[c] || 0) + 1;
     if (isWonLead(lead)) {
       conversionsByCampaign[c] = (conversionsByCampaign[c] || 0) + 1;
-      signedAmountByCampaign[c] = (signedAmountByCampaign[c] || 0) + (parseFloat(String(lead.quotation_value || "")) || 0);
+      signedAmountByCampaign[c] = (signedAmountByCampaign[c] || 0) + wonLeadValue(lead);
     }
   }
 
@@ -440,21 +438,8 @@ export async function GET(request: Request) {
     };
   }).sort((a, b) => b.spend - a.spend);
 
-  // Source quality
-  const sourceQuality: Record<string, { total: number; good: number; pending: number; bad: number; won: number }> = {};
-  for (const l of leadsData) {
-    const src = l.source || "unknown";
-    if (!sourceQuality[src]) sourceQuality[src] = { total: 0, good: 0, pending: 0, bad: 0, won: 0 };
-    sourceQuality[src].total++;
-    const q = (l.ai_quality || "pending").toLowerCase();
-    if (q === "good" || q === "hot") sourceQuality[src].good++;
-    else if (q === "bad" || q === "cold") sourceQuality[src].bad++;
-    else sourceQuality[src].pending++;
-    if (isWonLead(l)) sourceQuality[src].won++;
-  }
-  const sourceQualityBreakdown = Object.entries(sourceQuality)
-    .map(([s, d]) => ({ source: s, total: d.total, good: d.good, pending: d.pending, bad: d.bad, conv_rate: d.total > 0 ? Math.round((d.won / d.total) * 10000) / 100 : 0 }))
-    .sort((a, b) => b.total - a.total);
+  // Source quality: shared definition (manual quality, else AI quality; "normal" its own column).
+  const sourceQualityBreakdown = sourceQualityBreakdownOf(leadsData as MetricLead[]);
 
   const startDate = adSpendData.length > 0 ? adSpendData[0].spend_date : null;
   const endDate = adSpendData.length > 0 ? adSpendData[adSpendData.length - 1].spend_date : null;
@@ -478,12 +463,6 @@ export async function GET(request: Request) {
       if (!leadsByRep[l.assigned_to]) leadsByRep[l.assigned_to] = [];
       leadsByRep[l.assigned_to].push(l);
     }
-    const wonAmountByRep: Record<string, number> = {};
-    for (const c of contractsData) {
-      if (c.status !== "terminated" && c.sales_id) {
-        wonAmountByRep[c.sales_id] = (wonAmountByRep[c.sales_id] ?? 0) + (c.contract_amount ?? 0);
-      }
-    }
     const repStats = salesUsers.filter((r: any) => r.role === "sales").map((rep: any) => {
       const myLeads = leadsByRep[rep.id] || [];
       const tl = myLeads.length;
@@ -493,7 +472,7 @@ export async function GET(request: Request) {
       const fr = mine.contactRate;
       const sd = Object.fromEntries(Object.entries(mine.stageCounts).filter(([, count]) => count > 0));
       const ov = mine.followUpOverdue;
-      return { id: rep.id, name: rep.full_name || rep.email, email: rep.email, role: rep.role, totalLeads: tl, wonAmount: wonAmountByRep[rep.id] ?? 0, wonLeads, conversionRate: cr, followupRate: fr, stageDistribution: sd, overdueCount: ov, transferableLeads: myLeads.filter((l: any) => l.stage === "new" && !l.last_contact_date).map((l: any) => ({ id: l.id })) };
+      return { id: rep.id, name: rep.full_name || rep.email, email: rep.email, role: rep.role, totalLeads: tl, wonAmount: mine.wonValue, wonLeads, conversionRate: cr, followupRate: fr, stageDistribution: sd, overdueCount: ov, transferableLeads: myLeads.filter((l: any) => l.stage === "new" && !l.last_contact_date).map((l: any) => ({ id: l.id })) };
     });
     const avgLoad = repStats.length > 0 ? repStats.reduce((s: number, r: any) => s + r.totalLeads, 0) / repStats.length : 0;
     const threshold = avgLoad * 1.5;
@@ -516,10 +495,11 @@ export async function GET(request: Request) {
       return inBounds(l.created_at, week);
     });
     const wonLeadsInWeek = newLeads.filter((l: any) => isWonLead(l));
-    const weekContracts = (trendsContracts || []).filter((c: any) => {
-      return inBounds(c.created_at, week) && c.status !== "terminated";
-    });
-    const signedAmount = weekContracts.reduce((sum: number, c: any) => sum + (parseFloat(c.contract_amount as any) || 0), 0);
+    // Signed in a week = won in that Dubai week (won_at): the shared won amount.
+    const signedAmount = leadsData.reduce(
+      (sum: number, l: any) => (inBounds(l.won_at, week) ? sum + wonLeadValue(l) : sum),
+      0,
+    );
     const weekPayments = (trendsPayments || []).filter((p: any) => {
       return inWeek(p.payment_date, week);
     });

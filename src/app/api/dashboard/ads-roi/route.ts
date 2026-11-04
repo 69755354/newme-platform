@@ -1,6 +1,8 @@
 // RBAC: user (boss, admin)
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
+import { isWonLead, sourceQualityBreakdown, wonLeadValue, type MetricLead } from "@/lib/lead-metrics.mjs";
 
 function numericAmount(value: number | null): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -78,40 +80,48 @@ export async function GET(request: Request) {
       if (!displayNameMap[campaign]) displayNameMap[campaign] = raw;
     }
 
-    // ─── 2. Leads from meta ───
-    const { data: metaLeads, error: leadsErr } = await supabase
-      .from("leads")
-      .select("id, campaign_name, stage, quotation_value, ai_quality, source, source_platform, utm_source, fbclid, meta_click_id, final_status")
-      .or("source.in.(ins,fb),source_platform.in.(meta,facebook,instagram,fb,ins),utm_source.in.(meta,facebook,instagram,fb,ins),fbclid.not.is.null,meta_click_id.not.is.null")
-      .eq("archived", false);
+    // ─── 2. Leads (every counted lead, paged; one read feeds both tables) ───
+    // A bare select stops at 1000 rows without saying so, so the panel is read
+    // through the shared paged reader and counted with the shared definitions
+    // (src/lib/lead-metrics.mjs): archived excluded, won = isWonLead, quality =
+    // qualityBucket with "normal" its own column.
+    const leadsResult = await fetchCountedLeads(
+      supabase,
+      "id,archived,campaign_name,stage,final_status,quotation_value,quality,ai_quality,source,source_platform,utm_source,fbclid,meta_click_id",
+    );
+    if (leadsResult.error) throw leadsResult.error;
+    const allLeads = leadsResult.data as Array<MetricLead & {
+      campaign_name?: string | null; utm_source?: string | null; fbclid?: string | null; meta_click_id?: string | null;
+    }>;
 
-    if (leadsErr) throw leadsErr;
+    const META_PLATFORMS = new Set(["meta", "facebook", "instagram", "fb", "ins"]);
+    const isMetaLead = (l: (typeof allLeads)[number]) =>
+      l.source === "ins" || l.source === "fb" ||
+      META_PLATFORMS.has(String(l.source_platform ?? "")) ||
+      META_PLATFORMS.has(String(l.utm_source ?? "")) ||
+      l.fbclid != null || l.meta_click_id != null;
+    const metaLeads = allLeads.filter(isMetaLead);
 
-    const totalMetaLeads = metaLeads?.length || 0;
+    const totalMetaLeads = metaLeads.length;
 
     // Leads per campaign
     const leadsByCampaign: Record<string, number> = {};
     const conversionsByCampaign: Record<string, number> = {};
     const signedAmountByCampaign: Record<string, number> = {};
 
-    for (const lead of metaLeads || []) {
+    for (const lead of metaLeads) {
       const raw = lead.campaign_name || "Uncategorized";
       const campaign = normalizeCampaign(raw);
       if (!displayNameMap[campaign]) displayNameMap[campaign] = raw;
       leadsByCampaign[campaign] = (leadsByCampaign[campaign] || 0) + 1;
-      if (lead.final_status === "won") {
-        conversionsByCampaign[campaign] =
-          (conversionsByCampaign[campaign] || 0) + 1;
-        signedAmountByCampaign[campaign] =
-          (signedAmountByCampaign[campaign] || 0) +
-          (parseFloat(String(lead.quotation_value || "")) || 0);
+      if (isWonLead(lead)) {
+        conversionsByCampaign[campaign] = (conversionsByCampaign[campaign] || 0) + 1;
+        signedAmountByCampaign[campaign] = (signedAmountByCampaign[campaign] || 0) + wonLeadValue(lead);
       }
     }
 
-    const totalConversions = metaLeads?.filter((l) => l.final_status === "won").length || 0;
-    const totalSignedAmount = (metaLeads || [])
-      .filter((l) => l.final_status === "won")
-      .reduce((sum, l) => sum + (parseFloat(String(l.quotation_value || "")) || 0), 0);
+    const totalConversions = metaLeads.filter((l) => isWonLead(l)).length;
+    const totalSignedAmount = metaLeads.reduce((sum, l) => sum + wonLeadValue(l), 0);
 
     // ─── 3. Campaign breakdown ───
     const allCampaigns = new Set([
@@ -140,51 +150,8 @@ export async function GET(request: Request) {
       })
       .sort((a, b) => (b.spend ?? -Infinity) - (a.spend ?? -Infinity));
 
-    // ─── 4. Source vs Quality ───
-    const { data: allLeads, error: allLeadsErr } = await supabase
-      .from("leads")
-      .select("source, ai_quality, stage, final_status")
-      .eq("archived", false);
-
-    if (allLeadsErr) throw allLeadsErr;
-
-    const sourceQuality: Record<
-      string,
-      { total: number; good: number; pending: number; bad: number; won: number }
-    > = {};
-
-    for (const lead of allLeads || []) {
-      const source = lead.source || "unknown";
-      if (!sourceQuality[source]) {
-        sourceQuality[source] = { total: 0, good: 0, pending: 0, bad: 0, won: 0 };
-      }
-      sourceQuality[source].total++;
-      const quality = (lead.ai_quality || "pending").toLowerCase();
-      if (quality === "good" || quality === "hot") {
-        sourceQuality[source].good++;
-      } else if (quality === "bad" || quality === "cold") {
-        sourceQuality[source].bad++;
-      } else {
-        sourceQuality[source].pending++;
-      }
-      if (lead.final_status === "won") {
-        sourceQuality[source].won++;
-      }
-    }
-
-    const sourceQualityBreakdown = Object.entries(sourceQuality)
-      .map(([source, data]) => ({
-        source,
-        total: data.total,
-        good: data.good,
-        pending: data.pending,
-        bad: data.bad,
-        conv_rate:
-          data.total > 0
-            ? Math.round((data.won / data.total) * 10000) / 100
-            : 0,
-      }))
-      .sort((a, b) => b.total - a.total);
+    // ─── 4. Source vs Quality (shared definition; "normal" is its own column) ───
+    const sourceQualityRows = sourceQualityBreakdown(allLeads);
 
     // ─── 5. Period indicator ───
     const { data: dateRange, error: dateErr } = await supabase
@@ -234,7 +201,7 @@ export async function GET(request: Request) {
       },
       campaign_breakdown: campaignBreakdown,
       unmatched_spend,
-      source_quality: sourceQualityBreakdown,
+      source_quality: sourceQualityRows,
     });
   } catch (err: unknown) {
     console.error("[Ads ROI] Error:", err);

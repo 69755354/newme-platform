@@ -11,3 +11,8 @@ export function fetchCountedLeads<T = unknown>(
   columns: string,
   options?: { assignedTo?: string | null },
 ): Promise<{ data: T[]; error: unknown; truncated: boolean; total: number }>;
+export function fetchLostEvents(
+  supabase: unknown,
+  leadIds: Iterable<string>,
+  options?: { chunkSize?: number },
+): Promise<{ data: Array<{ lead_id: string; event_data: unknown; created_at: string }>; error: unknown }>;

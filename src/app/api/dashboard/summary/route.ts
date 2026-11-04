@@ -95,8 +95,6 @@ export async function GET(request: Request) {
   }
 
   const period = month ? dubaiMonthBounds(month) : null;
-  const monthStart: string | null = period ? period.start.toISOString() : null;
-  const monthEnd: string | null = period ? period.end.toISOString() : null;
 
   // ── Date boundaries (Dubai) ──
   const nowDate = new Date();
@@ -142,18 +140,6 @@ export async function GET(request: Request) {
   // ── 4c. KPI targets ──
   const kpiPromise = month
     ? supabase.from("kpi_targets").select("*").eq("period", month)
-    : Promise.resolve({ data: [], error: null });
-
-  const periodContractsPromise = monthStart && monthEnd
-    ? (() => {
-        let q = supabase
-          .from("contracts")
-          .select("contract_amount")
-          .gte("created_at", monthStart)
-          .lt("created_at", monthEnd);
-        if (isSales && userId) q = q.eq("sales_id", userId);
-        return q;
-      })()
     : Promise.resolve({ data: [], error: null });
 
   // payments.payment_date is a DATE: compare it with Dubai calendar dates, not
@@ -320,7 +306,6 @@ export async function GET(request: Request) {
     { data: salesUsers },
     contractsResult,
     { data: kpiTargets },
-    { data: periodContractsRaw, error: periodContractsErr },
     paymentsResult,
     overdueResult,
     dueResult,
@@ -337,7 +322,6 @@ export async function GET(request: Request) {
     salesUsersPromise,
     contractsPromise,
     kpiPromise,
-    periodContractsPromise,
     paymentsPromise,
     installmentsPromise("overdue"),
     installmentsPromise("due"),
@@ -365,7 +349,6 @@ export async function GET(request: Request) {
       return applyPrivateNoStore(NextResponse.json({ error: "Failed to load dashboard data" }, { status: 500 }));
     }
   }
-  if (periodContractsErr) console.error("period contracts fetch failed:", periodContractsErr);
 
   const leadsData = leadsResult.data as unknown as MetricLead[];
   const contractsData = contractsResult.data as any[];
@@ -404,10 +387,6 @@ export async function GET(request: Request) {
     0
   );
 
-  const periodContractAmount = ((periodContractsRaw as any[]) || []).reduce(
-    (sum: number, contract: any) => sum + (contract.contract_amount || 0),
-    0
-  );
   const periodPaymentAmount = (periodPaymentsRaw || []).reduce(
     (sum: number, payment: any) => sum + (payment.amount || 0),
     0
@@ -422,7 +401,11 @@ export async function GET(request: Request) {
     contractCount: activeContracts.length,
     ...(month
       ? {
-          contractAmount: periodContractAmount,
+          // "Signed" this month = what was won this month (leads.won_at, Dubai
+          // month): the same figure a sales rep sees for themselves. It is NOT the
+          // sum of contracts created in the month: a converted quote creates a
+          // draft contract that may still be pending, rejected or terminated.
+          signedAmount: leadStats.periodWonValue,
           paymentAmount: periodPaymentAmount,
           // Same definition as leadStats.periodWonCount: counted leads won in the
           // Dubai month by won_at (quote-conversion wins included).

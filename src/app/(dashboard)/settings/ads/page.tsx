@@ -23,7 +23,12 @@ export default async function SettingsAdsPage() {
   // The same rows and the same counting as /ads: every non-archived lead, paged
   // (this page used to read 500 rows including archived ones, so its total was
   // higher than /ads), grouped by src/lib/lead-metrics.mjs.
-  const { data: leads } = await fetchCountedLeads(supabase, ADS_ATTRIBUTION_COLUMNS);
+  const { data: leads, error: leadsError } = await fetchCountedLeads(supabase, ADS_ATTRIBUTION_COLUMNS);
+  if (leadsError) {
+    // A failed read must not look like "0 leads".
+    console.error("[settings/ads] leads fetch failed:", leadsError);
+    return <DashboardScrollContainer><ConnectionFailed /></DashboardScrollContainer>;
+  }
   const groups = aggregateAttribution(leads as MetricLead[]);
   const sorted = Object.entries(groups).sort(([, a], [, b]) => b.total - a.total);
   const totals = totalAttribution(groups);

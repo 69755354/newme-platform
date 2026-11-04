@@ -1,9 +1,8 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
-import { fetchAllRows, fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
-import { isWonLead, leadSourceKey, type MetricLead } from "@/lib/lead-metrics.mjs";
+import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
+import { isWonLead, leadSourceKey, wonLeadValue, type MetricLead } from "@/lib/lead-metrics.mjs";
 
-type ContractRow = { lead_id: string | null; contract_amount: number | string | null; status: string | null };
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 
@@ -45,29 +44,11 @@ export async function GET(request: NextRequest) {
     // ── Base lead query ──
     const leadsResult = await fetchCountedLeads(
       supabase,
-      "id,archived,source,source_platform,stage,lead_status,final_status,assigned_to",
+      "id,archived,source,source_platform,stage,lead_status,final_status,assigned_to,quotation_value",
       { assignedTo: isCEO ? null : user.id },
     );
     if (leadsResult.error) throw leadsResult.error;
     const leadRows = leadsResult.data as Array<MetricLead & { id: string }>;
-
-    // ── Revenue per lead (from contracts, non-terminated) ──
-    // Read the contracts once and match by lead id here: an `.in("lead_id", ids)`
-    // filter with thousands of ids overflows the request URL.
-    const leadIdSet = new Set<string>(leadRows.map((l) => l.id));
-    const revenueByLead: Record<string, number> = {};
-    const contractsResult = await fetchAllRows((from, to, withCount) =>
-      supabase
-        .from("contracts")
-        .select("id, lead_id, contract_amount, status", withCount ? { count: "exact" } : undefined)
-        .order("id", { ascending: true })
-        .range(from, to),
-    );
-    if (contractsResult.error) throw contractsResult.error;
-    (contractsResult.data as ContractRow[]).forEach((c) => {
-      if (c.status === "terminated" || !c.lead_id || !leadIdSet.has(c.lead_id)) return;
-      revenueByLead[c.lead_id] = (revenueByLead[c.lead_id] ?? 0) + Number(c.contract_amount ?? 0);
-    });
 
     // ── Rep name lookup (for sales assignment) ──
     const repIds = [...new Set(leadRows.map((l) => l.assigned_to).filter(Boolean))] as string[];
@@ -102,7 +83,8 @@ export async function GET(request: NextRequest) {
       const a = bump(leadSourceKey(l));
       a.count += 1;
       if (isWonLead(l)) a.won += 1;
-      const rev = revenueByLead[l.id] ?? 0;
+      // Won amount: the shared definition (quotation value of won leads, to date).
+      const rev = wonLeadValue(l);
       if (rev > 0) a.revenue += rev;
 
       const q = l.lead_status || "unknown";

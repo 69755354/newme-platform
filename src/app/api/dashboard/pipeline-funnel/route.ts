@@ -184,7 +184,8 @@ export async function GET(request: NextRequest) {
     let lostFromStage: Record<string, number> = {};
     // A lost lead's own stage is already "lost" (both loss paths set it), so the
     // stage it was lost from comes from its stage_change event (from -> lost).
-    if (lostCount > 0) {
+    // Only the sales view (or a single rep) shows this block; management skips the event reads.
+    if (lostCount > 0 && (!isManagement || userIdParam)) {
       const lostEvents = await fetchLostEvents(supabase, stageLeads.lost.map((lead) => lead.id));
       if (lostEvents.error) {
         console.error("[pipeline-funnel] Failed to fetch lost events:", lostEvents.error);

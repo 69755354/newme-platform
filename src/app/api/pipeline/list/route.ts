@@ -67,6 +67,14 @@ export async function GET(request: Request) {
       .in("role", ["admin", "sales", "operator", "boss"]),
   ])
 
+  // A failed read must never look like "no leads" / "no sales people".
+  for (const [label, result] of [["leads", leadsResult], ["profiles", salesUsersResult]] as const) {
+    if (result.error) {
+      console.error(`pipeline list: ${label} fetch failed:`, result.error)
+      return applyPrivateNoStore(NextResponse.json({ error: "Failed to load pipeline" }, { status: 500 }))
+    }
+  }
+
   // KPI data for sales dashboard — only fetch when sales user
   let kpiData: {
     kpiTargets: any[]
@@ -97,6 +105,13 @@ export async function GET(request: Request) {
           .range(from, to),
       ),
     ])
+
+    for (const [label, result] of [["kpi targets", kpiTargetsResult], ["payments", paymentsResult]] as const) {
+      if (result.error) {
+        console.error(`pipeline list: ${label} fetch failed:`, result.error)
+        return applyPrivateNoStore(NextResponse.json({ error: "Failed to load pipeline" }, { status: 500 }))
+      }
+    }
 
     const wonThisMonth = ((leadsResult.data ?? []) as any[]).filter(
       (l) => l.assigned_to === userId && isWonInPeriod(l, bounds),

@@ -275,6 +275,8 @@ export default function DashboardPage() {
   const mySigningActual = leadStats.byAssignee[userId ?? ""]?.periodWonValue ?? 0;
   const signingActual = userRole === "sales" ? mySigningActual : leadStats.periodWonValue;
   const collectionActual = financeStats.paymentAmount ?? 0; // server scopes this to the caller's contracts for sales
+  // "N won orders this month": the count that matches the signing amount beside it.
+  const signingCount = userRole === "sales" ? (leadStats.byAssignee[userId ?? ""]?.periodWonCount ?? 0) : leadStats.periodWonCount;
   const signingPct = signingTarget > 0 ? Math.round((signingActual / signingTarget) * 100) : null;
   const collectionPct = collectionTarget > 0 ? Math.round((collectionActual / collectionTarget) * 100) : null;
 
@@ -556,7 +558,7 @@ export default function DashboardPage() {
         {/* L1: KPI completion — BIG numbers with progress bars */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: t("kpi.signing"), pct: signingPct, actual: signingActual, target: signingTarget, sub: t("kpi.contracts").replace("{n}", String(contractCount)) },
+            { label: t("kpi.signing"), pct: signingPct, actual: signingActual, target: signingTarget, sub: t("kpi.wonOrders").replace("{n}", String(signingCount)) },
             { label: t("kpi.collection"), pct: collectionPct, actual: collectionActual, target: collectionTarget, sub: t("dashboard.ratePct").replace("{n}", String(financeStats.totalContractValue > 0 ? Math.round((financeStats.received / financeStats.totalContractValue) * 100) : 0)) },
             { label: t("payment.overdue"), pct: null, actual: financeStats.overdue, target: 0, sub: financeStats.overdue > 0 ? `⚠ ${t("dashboard.needsFollowup")}` : t("dashboard.noTargetSet"), alert: financeStats.overdue > 0 },
             { label: t("dashboard.dueNextWeek"), pct: null, actual: financeStats.dueNextWeek, target: 0, sub: financeStats.dueNextWeek > 0 ? t("dashboard.nPending").replace("{n}", String(financeStats.dueNextWeek)) : t("dashboard.noTargetSet") },
@@ -731,7 +733,7 @@ export default function DashboardPage() {
               <div className={cn("h-full rounded-full transition-all", barColor(signingPct))}
                 style={{ width: `${Math.min(signingPct ?? 0, 100)}%` }} />
             </div>
-            <p className="text-xs text-muted-foreground">{fmtAED(signingActual)} / {fmtAED(signingTarget)} · {t("kpi.contracts").replace("{n}", String(contractCount))}</p>
+            <p className="text-xs text-muted-foreground">{fmtAED(signingActual)} / {fmtAED(signingTarget)} · {t("kpi.wonOrders").replace("{n}", String(signingCount))}</p>
           </div>
           <div className="p-4 rounded-xl border border-border/50 bg-card/50">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 font-medium">{t("kpi.collection")}</p>

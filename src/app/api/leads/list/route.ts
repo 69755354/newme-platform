@@ -69,7 +69,11 @@ export async function GET(request: Request) {
     { data: salesUsers, error: salesErr },
   ] = await Promise.all([leadsPromise, salesUsersPromise]);
 
-  if (leadsErr) console.error("leads fetch failed:", leadsErr);
+  if (leadsErr) {
+    // A failed read must never look like "no leads".
+    console.error("leads fetch failed:", leadsErr);
+    return NextResponse.json({ error: "Failed to load leads" }, { status: 500 });
+  }
   if (salesErr) console.error("salesUsers fetch failed:", salesErr);
 
   // Historical names are only needed for Cases the caller can already see.

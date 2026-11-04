@@ -298,7 +298,8 @@ export async function GET(request: Request) {
   // from is read from its stage_change event (from -> lost).
   let lostFromStage: Record<string, number> = {};
   const lostStageObj = funnelStages.find(s => s.key === "lost");
-  if (lostStageObj && (lostStageObj.count || 0) > 0) {
+  // Only the sales view shows this block; management skips the event reads.
+  if (!isManagement && lostStageObj && (lostStageObj.count || 0) > 0) {
     const lostIds = leadsData
       .filter((l: any) => isCountedLead(l) && leadOutcome(l) === "lost")
       .map((l: any) => l.id as string);

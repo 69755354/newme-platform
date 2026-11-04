@@ -24,7 +24,29 @@ export const DEFAULT_PAGE_SIZE = 1000;
 export const DEFAULT_MAX_ROWS = 50000;
 export const LIST_MAX_ROWS = 20000;
 
-export async function fetchAllRows(buildPage, { pageSize = DEFAULT_PAGE_SIZE, maxRows = DEFAULT_MAX_ROWS } = {}) {
+// Pages are read at different moments; a row updated in between (when the order is
+// not by id) can appear on two pages. Rows that have an `id` are returned once.
+function dedupeById(rows) {
+  const seen = new Set();
+  return rows.filter((row) => {
+    const id = row && typeof row === "object" ? row.id : undefined;
+    if (id === undefined || id === null) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+export async function fetchAllRows(buildPage, options = {}) {
+  const result = await readAllRows(buildPage, options);
+  if (!result.error && result.data.length > 1) {
+    const data = dedupeById(result.data);
+    return { ...result, data, total: Math.max(result.total, data.length) };
+  }
+  return result;
+}
+
+async function readAllRows(buildPage, { pageSize = DEFAULT_PAGE_SIZE, maxRows = DEFAULT_MAX_ROWS } = {}) {
   const first = await buildPage(0, pageSize - 1, true);
   if (first.error) return { data: [], error: first.error, truncated: false, total: 0 };
   const rows = [...(first.data ?? [])];

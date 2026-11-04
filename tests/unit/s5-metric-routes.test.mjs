@@ -62,6 +62,9 @@ class Query {
   maybeSingle() { this.one = true; return this; }
   then(resolve, reject) { return Promise.resolve(this.run()).then(resolve, reject); }
   run() {
+    if (failTable && this.table === failTable && (failTable !== "leads" || (this.from ?? 0) >= 1000)) {
+      return { data: null, error: { message: "boom" }, count: null };
+    }
     let rows = (this.db[this.table] ?? []).filter((r) => this.filters.every((f) => f(r)));
     if (this.orderBy) {
       const { c, asc } = this.orderBy;
@@ -76,6 +79,7 @@ class Query {
     return { data: rows, error: null, ...(this.opts.count ? { count } : {}) };
   }
 }
+let failTable = null; // set by a test to make reads of one table fail
 const makeSupabase = (db, userId) => ({
   auth: { getUser: async () => ({ data: { user: { id: userId } }, error: null }) },
   from: (table) => new Query(db, table),
@@ -238,6 +242,7 @@ test.before(() => {
   routes.ads = load("src/app/api/ads/leads/route.ts");
   routes.adsRoi = load("src/app/api/dashboard/ads-roi/route.ts");
   routes.pipelineList = load("src/app/api/pipeline/list/route.ts");
+  routes.leadsList = load("src/app/api/leads/list/route.ts");
 });
 test.after(() => mock.timers.reset());
 
@@ -373,26 +378,85 @@ test("management 'signed' this month = won this month by won_at; draft/pending/r
   assert.doesNotMatch(page, /financeStats\.contractAmount/);
 });
 
-test("lost-from stage is read from the stage_change event (from -> lost), on the funnel and in analytics", async () => {
-  const funnel = await run(routes.funnel);
-  const analytics = await run(routes.analytics);
-  const lost = counted(db).filter((l) => l.final_status === "lost");
+test("lost-from stage is read from the stage_change event (from -> lost), in the sales view, on the funnel and in analytics", async () => {
   const latest = new Map();
   for (const e of db.business_events) {
     if (e.event_data.to !== "lost") continue;
     const prev = latest.get(e.lead_id);
     if (!prev || e.created_at > prev.created_at) latest.set(e.lead_id, e);
   }
-  const expected = {};
-  for (const l of lost) {
-    const from = latest.get(l.id)?.event_data.from ?? "unknown";
-    expected[from] = (expected[from] || 0) + 1;
+  const expectedFor = (owner) => {
+    const expected = {};
+    for (const l of counted(db).filter((x) => x.final_status === "lost" && x.assigned_to === owner)) {
+      const from = latest.get(l.id)?.event_data.from ?? "unknown";
+      expected[from] = (expected[from] || 0) + 1;
+    }
+    return expected;
+  };
+  // management never reads the loss events (the panel is a sales view)
+  assert.deepEqual((await run(routes.funnel)).lostFromStage, {});
+  assert.deepEqual((await run(routes.analytics)).pipelineFunnel.lostFromStage, {});
+  let sawUnknown = false;
+  for (const owner of ["s1", "s2", "s3"]) {
+    currentSupabase = makeSupabase(db, owner);
+    try {
+      const expected = expectedFor(owner);
+      const funnel = await run(routes.funnel);
+      const analytics = await run(routes.analytics);
+      assert.equal(funnel.lostFromStage.lost, undefined, "never 'lost: N'");
+      assert.deepEqual(funnel.lostFromStage, expected, owner);
+      assert.deepEqual(analytics.pipelineFunnel.lostFromStage, expected, owner);
+      assert.equal(Object.values(expected).reduce((a, b) => a + b, 0), funnel.stages.find((s) => s.key === "lost").count);
+      if (expected.unknown) sawUnknown = true;
+      if (owner === "s1") assert.ok(expected.negotiation > 0 || expected.contacted > 0);
+    } finally {
+      currentSupabase = makeSupabase(db, BOSS);
+    }
   }
-  assert.ok(lost.length > 20 && expected.negotiation > 0 && expected.contacted > 0 && expected.unknown === 1);
-  assert.equal(funnel.lostFromStage.lost, undefined, "never 'lost: N'");
-  assert.deepEqual(funnel.lostFromStage, expected);
-  assert.deepEqual(analytics.pipelineFunnel.lostFromStage, expected);
-  assert.equal(Object.values(expected).reduce((a, b) => a + b, 0), funnel.stages.find((s) => s.key === "lost").count);
+  assert.ok(sawUnknown, "a lost lead without an event is counted as unknown");
+});
+
+test("a failed read is an error, never an empty list or zeros", async () => {
+  const get = async (route, supabase) => {
+    currentSupabase = supabase;
+    const res = await route.GET(new Request("https://app.newme.ae/api/x"));
+    return res;
+  };
+  try {
+    // second page of leads fails: both list endpoints answer 500, not 200 with a short list
+    failTable = "leads";
+    for (const route of [routes.pipelineList, routes.leadsList]) {
+      const res = await get(route, makeSupabase(db, BOSS));
+      assert.equal(res.status, 500, "paged read error");
+      assert.equal(res.body.leads, undefined);
+    }
+    // a sales rep's KPI queries failing must not show 0
+    failTable = "payments";
+    let res = await get(routes.pipelineList, makeSupabase(db, "s1"));
+    assert.equal(res.status, 500, "payments error");
+    failTable = "kpi_targets";
+    res = await get(routes.pipelineList, makeSupabase(db, "s1"));
+    assert.equal(res.status, 500, "kpi targets error");
+    failTable = null;
+    res = await get(routes.pipelineList, makeSupabase(db, "s1"));
+    assert.equal(res.status, 200);
+  } finally {
+    failTable = null;
+    currentSupabase = makeSupabase(db, BOSS);
+  }
+});
+
+test("'won orders' wording: the count beside a signing amount is this month's won count", () => {
+  const read = (f) => fs.readFileSync(path.join(repoRoot, f), "utf8");
+  const page = read("src/app/(dashboard)/dashboard/page.tsx");
+  const kpi = read("src/app/(dashboard)/pipeline/_components/SalesKpiDashboard.tsx");
+  assert.doesNotMatch(page, /kpi\.contracts"\)\.replace/);
+  assert.doesNotMatch(kpi, /kpi\.contracts/);
+  assert.match(page, /periodWonCount/);
+  const tr = read("src/lib/i18n/translations.ts");
+  assert.match(tr, /wonOrders: "Won this month: \{n\}"/);
+  assert.match(tr, /wonOrders: "本月赢单 \{n\} 单"/);
+  assert.match(tr, /stageUnknown: "未知"/);
 });
 
 test("the Ads ROI panel reads every lead, 'normal' has its own column, one definition of won and quality", async () => {

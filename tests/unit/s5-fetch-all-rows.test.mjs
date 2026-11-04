@@ -98,3 +98,15 @@ test("the list and pipeline routes no longer cap at 500 and use the one reader",
   }
   assert.equal(fs.existsSync(new URL("../../src/lib/paged-rows.mjs", import.meta.url)), false);
 });
+
+test("a row that moves between pages while the pages are read is returned once", async () => {
+  const pages = [
+    Array.from({ length: 100 }, (_, i) => ({ id: i })),
+    // row 99 was updated in between and shows up again at the top of page two
+    [{ id: 99 }, ...Array.from({ length: 49 }, (_, i) => ({ id: 100 + i }))],
+  ];
+  const build = async (from, to, wantCount) => ({ data: pages[from === 0 ? 0 : 1], error: null, ...(wantCount ? { count: 150 } : {}) });
+  const result = await fetchAllRows(build, { pageSize: 100 });
+  assert.equal(result.data.length, 149);
+  assert.equal(new Set(result.data.map((r) => r.id)).size, 149);
+});

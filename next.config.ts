@@ -128,6 +128,11 @@ const sentryConfig = withSentryConfig(nextConfig, {
   // Widen client file upload for Turbopack compatibility
   // Fixes React Client Manifest errors (global-error.tsx, icon-mark.js, etc.)
   widenClientFileUpload: true,
+
+  // Browser events go through our own origin (rewritten to Sentry at build time
+  // when a DSN is present). /monitoring-tunnel is deliberately not in the proxy
+  // matcher, so it needs no session and carries no cookies to Sentry.
+  tunnelRoute: "/monitoring-tunnel",
 });
 
 export default withBundleAnalyzer(sentryConfig);

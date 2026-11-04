@@ -134,7 +134,7 @@ test("monitoring reports reach Sentry while their transactions remain filtered",
 
 test("Sentry configs declare release, environment, build tag and PII policy", async () => {
   const [client, server, edge] = await Promise.all([
-    readFile(new URL("../../sentry.client.config.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../instrumentation-client.ts", import.meta.url), "utf8"),
     readFile(new URL("../../sentry.server.config.ts", import.meta.url), "utf8"),
     readFile(new URL("../../sentry.edge.config.ts", import.meta.url), "utf8"),
   ]);

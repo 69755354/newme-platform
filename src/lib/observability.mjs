@@ -5,11 +5,29 @@ const CIRCULAR = "[Circular]";
 const TRUNCATED = "[Truncated]";
 
 const SENSITIVE_KEY = /(?:password|passphrase|token|secret|authorization|cookie|set[-_]?cookie|api[-_]?key|access[-_]?token|refresh[-_]?token|email|phone)/i;
+// Customer/staff person names and free-text fields. Formats cannot identify a
+// name or a note, so these are redacted by key wherever they appear (logs and
+// telemetry). Bare `name` is too generic globally (sdk.name, browser.name); it
+// is redacted only inside caller-supplied subtrees, see PERSONAL_SUBTREE_KEY.
+const PERSONAL_KEY = /^(?:(?:customer|contact|client|lead|first|last|full|display|nick|user|sender|recipient|rep|actor|target|owner|assignee)[-_]?name|decision[-_]?maker|notes?|remarks?|comments?|address(?:[-_]?line\d*)?|street|whatsapp(?:[-_]?number)?|mobile(?:[-_]?number)?|wa[-_]?id|message[-_]?body|answers|field[-_]?data|raw[-_]?import[-_]?data|ip[-_]?address)$/i;
+const PERSONAL_SUBTREE_KEY = /^(?:name|body|text|content|value)$/i;
+const SAFE_REQUEST_HEADERS = new Set(["user-agent", "content-type", "accept-language"]);
 const HEALTH_PATH = /\/api\/(?:health|ready|readiness)(?:[/?#]|$)/i;
 const TRANSACTION_NOISE_PATH = /\/api\/(?:health|ready|readiness|monitoring\/report)(?:[/?#]|$)/i;
 const SENSITIVE_ASSIGNMENT = /\b(password|passphrase|secret|client[-_]?secret|monitoring[-_]?secret|x[-_]?monitoring[-_]?secret|api[-_]?key|apikey|authorization|access[-_]?token|refresh[-_]?token|token|session|cookie)(\s*[=:]\s*)[^\r\n]*/gi;
 
+const UUID_TEXT = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+// Row/request/actor ids are UUIDs and are the debugging handle; their digit-only
+// groups must not be mistaken for phone numbers. Scrub the text around them.
 function scrubText(value) {
+  if (!UUID_TEXT.test(value)) return scrubSegment(value);
+  UUID_TEXT.lastIndex = 0;
+  const ids = value.match(UUID_TEXT);
+  return value.split(UUID_TEXT).map((part, i) => scrubSegment(part) + (ids[i] ?? "")).join("");
+}
+
+function scrubSegment(value) {
   return value
     // Sensitive free-text assignments have no reliable delimiter. Redact the
     // remainder of that log line so quoted, spaced, or comma-bearing values
@@ -22,7 +40,7 @@ function scrubText(value) {
     .replace(/(?<!\w)\+?\d[\d ().-]{7,}\d(?!\w)/g, "[REDACTED_PHONE]");
 }
 
-export function sanitizeValue(value, depth = 0, seen = new WeakSet(), maxDepth = LOGGER_MAX_DEPTH) {
+export function sanitizeValue(value, depth = 0, seen = new WeakSet(), maxDepth = LOGGER_MAX_DEPTH, strictNames = false) {
   if (typeof value === "string") return scrubText(value);
   if (value === null || value === undefined || typeof value === "number" || typeof value === "boolean") {
     return value;
@@ -33,14 +51,14 @@ export function sanitizeValue(value, depth = 0, seen = new WeakSet(), maxDepth =
     seen.add(value);
 
     if (Array.isArray(value)) {
-      return value.map((item) => sanitizeValue(item, depth + 1, seen, maxDepth));
+      return value.map((item) => sanitizeValue(item, depth + 1, seen, maxDepth, strictNames));
     }
 
     const output = {};
     for (const [key, item] of Object.entries(value)) {
-      output[key] = SENSITIVE_KEY.test(key)
+      output[key] = SENSITIVE_KEY.test(key) || PERSONAL_KEY.test(key) || (strictNames && PERSONAL_SUBTREE_KEY.test(key) && typeof item !== "object")
         ? REDACTED
-        : sanitizeValue(item, depth + 1, seen, maxDepth);
+        : sanitizeValue(item, depth + 1, seen, maxDepth, strictNames);
     }
     return output;
   }
@@ -104,6 +122,97 @@ export function createPinoHooks(reportError) {
   };
 }
 
+/** Drop query string and fragment; keep scheme/host/path for debugging. */
+export function stripQuery(value) {
+  if (typeof value !== "string") return value;
+  const cut = value.search(/[?#]/);
+  return cut === -1 ? value : value.slice(0, cut);
+}
+
+function minimizeBreadcrumb(crumb) {
+  if (!crumb || typeof crumb !== "object") return crumb;
+  const category = typeof crumb.category === "string" ? crumb.category : "";
+  const out = {};
+  for (const key of ["type", "category", "level", "timestamp"]) if (crumb[key] !== undefined) out[key] = crumb[key];
+  // UI selectors carry title/aria-label text and console lines carry whatever
+  // the page printed; neither has a safe subset, so only the fact is kept.
+  if (typeof crumb.message === "string" && !/^(?:ui\.|console)/.test(category)) {
+    out.message = scrubText(stripQuery(crumb.message));
+  }
+  const data = crumb.data && typeof crumb.data === "object" ? crumb.data : null;
+  if (data) {
+    const kept = {};
+    for (const key of ["method", "status_code", "reason"]) {
+      if (typeof data[key] === "string" || typeof data[key] === "number") kept[key] = data[key];
+    }
+    for (const key of ["url", "from", "to"]) {
+      if (typeof data[key] === "string") kept[key] = stripQuery(data[key]);
+    }
+    if (Object.keys(kept).length) out.data = kept;
+  }
+  return out;
+}
+
+function minimizeRequest(request) {
+  if (!request || typeof request !== "object") return request;
+  const out = {};
+  if (typeof request.method === "string") out.method = request.method;
+  if (typeof request.url === "string") out.url = stripQuery(request.url);
+  if (request.headers && typeof request.headers === "object") {
+    const headers = {};
+    for (const [key, item] of Object.entries(request.headers)) {
+      const lower = key.toLowerCase();
+      if (SAFE_REQUEST_HEADERS.has(lower) && typeof item === "string") headers[key] = item;
+      // Credential-bearing headers stay visible as present-but-redacted.
+      else if (/^(?:authorization|cookie|set-cookie|x-[a-z-]*(?:token|secret|key))$/.test(lower)) headers[key] = REDACTED;
+    }
+    if (Object.keys(headers).length) out.headers = headers;
+  }
+  // data (request body), cookies, query_string and env are dropped entirely.
+  return out;
+}
+
+/**
+ * Customer-data minimisation applied before the generic scrubber. Sentry keeps
+ * routes, ids, status codes, stack frames and SDK metadata; it never receives
+ * request bodies, query strings, cookies, person names, notes or the user's
+ * e-mail/IP — only the actor id.
+ */
+export function minimizeSentryEvent(event) {
+  const out = { ...event };
+  if (event.request) out.request = minimizeRequest(event.request);
+  if (event.user && typeof event.user === "object") {
+    const id = typeof event.user.id === "string" || typeof event.user.id === "number" ? event.user.id : undefined;
+    if (id === undefined) delete out.user;
+    else out.user = { id };
+  }
+  if (Array.isArray(event.breadcrumbs)) out.breadcrumbs = event.breadcrumbs.map(minimizeBreadcrumb);
+  else if (event.breadcrumbs && Array.isArray(event.breadcrumbs.values)) {
+    out.breadcrumbs = { ...event.breadcrumbs, values: event.breadcrumbs.values.map(minimizeBreadcrumb) };
+  }
+  if (event.extra && typeof event.extra === "object") {
+    out.extra = sanitizeValue(event.extra, 0, new WeakSet(), SENTRY_MAX_DEPTH, true);
+  }
+  if (typeof event.transaction === "string") out.transaction = stripQuery(event.transaction);
+  if (Array.isArray(event.spans)) {
+    out.spans = event.spans.map((span) => {
+      if (!span || typeof span !== "object") return span;
+      const copy = { ...span };
+      if (typeof span.description === "string") copy.description = stripQuery(span.description);
+      if (span.data && typeof span.data === "object") {
+        const data = { ...span.data };
+        for (const key of Object.keys(data)) {
+          if (/query|body/i.test(key)) delete data[key];
+          else if (/url|target|route/i.test(key) && typeof data[key] === "string") data[key] = stripQuery(data[key]);
+        }
+        copy.data = data;
+      }
+      return copy;
+    });
+  }
+  return out;
+}
+
 export function sanitizeSentryEvent(event) {
   if (!event || typeof event !== "object") return event;
   const request = event.request || {};
@@ -111,7 +220,7 @@ export function sanitizeSentryEvent(event) {
     .filter((value) => typeof value === "string")
     .join(" ");
   if (HEALTH_PATH.test(route)) return null;
-  return sanitizeValue(event, 0, new WeakSet(), SENTRY_MAX_DEPTH);
+  return sanitizeValue(minimizeSentryEvent(event), 0, new WeakSet(), SENTRY_MAX_DEPTH);
 }
 
 export function sanitizeSentryTransaction(event) {
@@ -121,5 +230,5 @@ export function sanitizeSentryTransaction(event) {
     .filter((value) => typeof value === "string")
     .join(" ");
   if (TRANSACTION_NOISE_PATH.test(route)) return null;
-  return sanitizeValue(event, 0, new WeakSet(), SENTRY_MAX_DEPTH);
+  return sanitizeValue(minimizeSentryEvent(event), 0, new WeakSet(), SENTRY_MAX_DEPTH);
 }

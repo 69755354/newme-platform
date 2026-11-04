@@ -1,0 +1,35 @@
+{
+  "_comment": "Issue alert rules as code (S7, review 5-logging-monitoring F4). Applied by scripts/sentry-apply-alert-rules.mjs, which copies the notification actions (team e-mail + Hermes Telegram forwards) from the existing rule named in copyActionsFrom, so no webhook address is stored in the repository.",
+  "organization": "newme-o4",
+  "project": "javascript-nextjs",
+  "copyActionsFrom": "[Critical] Error spike >10/5min",
+  "rules": [
+    {
+      "name": "[Immediate] Any NEW production error",
+      "environment": "production",
+      "actionMatch": "any",
+      "filterMatch": "all",
+      "frequency": 5,
+      "conditions": [{ "id": "sentry.rules.conditions.first_seen_event.FirstSeenEventCondition" }],
+      "filters": []
+    },
+    {
+      "name": "[Immediate] Resolved production error came back",
+      "environment": "production",
+      "actionMatch": "any",
+      "filterMatch": "all",
+      "frequency": 30,
+      "conditions": [{ "id": "sentry.rules.conditions.reappeared_event.ReappearedEventCondition" }],
+      "filters": []
+    },
+    {
+      "name": "[Immediate] Regression of a resolved production error",
+      "environment": "production",
+      "actionMatch": "any",
+      "filterMatch": "all",
+      "frequency": 30,
+      "conditions": [{ "id": "sentry.rules.conditions.regression_event.RegressionEventCondition" }],
+      "filters": []
+    }
+  ]
+}

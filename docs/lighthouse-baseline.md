@@ -230,16 +230,14 @@ exfiltrated PII the day it started to.
 So the thresholds in this document are a **review baseline, measured on demand** with
 the Lighthouse commands above, not a live dashboard.
 
-**Sentry is the only other browser-side sink, and it is inert rather than absent.**
-`sentry.client.config.ts` initialises the browser SDK, and `browserTracingIntegration`
-is a *default* integration of `@sentry/nextjs`, so with a DSN present it would collect
-real-user transactions and their performance measurements at `tracesSampleRate: 0.1`.
-That is real-user monitoring whatever it is called. It sends nothing today because
-`NEXT_PUBLIC_SENTRY_DSN` is unset: it is absent from the production runtime
-environment, and because `NEXT_PUBLIC_*` values are inlined at build time the deployed
-client bundle was checked too — no DSN-shaped string appears anywhere under
-`.next/static` (measured 2026-08-20). Setting that one variable turns real-user
-monitoring back on, so the paragraph below applies to it as much as to any new sink.
+**Sentry is the only other browser-side sink, and it is errors-only.**
+`instrumentation-client.ts` initialises the browser SDK with `tracesSampleRate: 0`
+(S7, 2026-11): no performance transactions, no replay, no profiling are collected, so
+there is no real-user monitoring. When the release build sets `NEXT_PUBLIC_SENTRY_DSN`
+it reports JavaScript errors only, through the same-origin `/monitoring-tunnel`, after
+the shared scrubber has dropped bodies, query strings, cookies, names and notes.
+Raising the trace rate would turn real-user monitoring back on, so the paragraph
+below applies to that change as much as to any new sink.
 Server-side error and trace reporting is separate and unaffected.
 
 Session replay was never enabled here despite two `replays*SampleRate` settings: replay

@@ -3,6 +3,15 @@
 # single active Sentry Cron seat while preserving each probe's Hermes alerts.
 set -u -o pipefail
 
+# S7 (review 5-logging-monitoring F1): cron runs this under `flock -n`, so one
+# run that never finishes makes every later run exit silently while the last
+# recorded state still says "ok". Bound the whole run below the 2-minute cron
+# interval; timeout kills the probe's process group, children included.
+if [ -z "${L0_COMPOSITE_BOUNDED:-}" ]; then
+  export L0_COMPOSITE_BOUNDED=1
+  exec timeout -k 10 "${L0_COMPOSITE_TIMEOUT_SECONDS:-100}" bash "$0" "$@"
+fi
+
 OBSERVABILITY_DIR="${OBSERVABILITY_DIR:-/opt/hermes-scripts/observability}"
 SENTRY_CHECKIN_SCRIPT="${SENTRY_CHECKIN_SCRIPT:-$OBSERVABILITY_DIR/sentry-cron-checkin.sh}"
 ALERT_SCRIPT="${HERMES_ALERT_STATE_SCRIPT:-$OBSERVABILITY_DIR/hermes-alert-state-v1.sh}"
@@ -54,6 +63,10 @@ if [ "$sentry_started" -eq 1 ]; then
     echo "[$TIMESTAMP] SENTRY_CHECKIN_FINISH_FAIL: composite completion was not delivered" >&2
   fi
 fi
+
+# Heartbeat for the independent watchdog (l0-watchdog.sh): written only when a
+# run reaches this point, so a stuck or skipped probe shows up as a stale file.
+date +%s > "${L0_HEARTBEAT_FILE:-/run/newme-l0.heartbeat}" 2>/dev/null || true
 
 record_sentry_transport() {
   local event="$1" summary="$2" transition="" status=0

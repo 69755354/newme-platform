@@ -128,6 +128,10 @@ const sentryConfig = withSentryConfig(nextConfig, {
   // Widen client file upload for Turbopack compatibility
   // Fixes React Client Manifest errors (global-error.tsx, icon-mark.js, etc.)
   widenClientFileUpload: true,
+
+  // Browser events go through our own forwarder (src/app/monitoring-tunnel/route.ts),
+  // NOT the plugin's tunnelRoute rewrite: that is a plain reverse proxy that
+  // relays session cookies and accepts any Sentry project.
 });
 
 export default withBundleAnalyzer(sentryConfig);

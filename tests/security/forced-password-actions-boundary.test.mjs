@@ -191,6 +191,7 @@ function loadActions(profile, overrides = {}) {
     },
     "@/lib/supabase-server": supabaseServer,
     "@/lib/supabase-admin": { supabaseAdmin: serviceRoleClient(log) },
+    "@/lib/audit-log": { AUDIT_ACTIONS: {}, writeAuditLog: async () => {} }, // S7
     "@/lib/lead-reassignment.mjs": { resolveActiveLeadReassignmentTarget: async () => null },
     "next/cache": { revalidatePath: (pathname) => log.push({ client: "next", op: "revalidatePath", table: pathname }) },
   };

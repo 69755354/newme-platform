@@ -215,15 +215,14 @@ test("POST /api/admin/impersonate still mints a link for an active target", asyn
 // 3. Contract action buttons follow the routines' rules
 // ───────────────────────────────────────────────────────────────────────────
 test("contract action permissions mirror approve_contract / revoke_contract and the upload/remind routes", () => {
-  const sql = read("supabase/migrations/20260812000000_money_actor_identity_and_atomicity.sql")
-    + read("supabase/migrations/20260814000000_l0_round3_authorization_and_integrity.sql");
+  const sql = read("supabase/migrations/20261104110000_role_least_privilege.sql");
   // The step roles are read out of the routine, not restated by hand.
   const adminStep = /pending_admin[\s\S]{0,200}?money_actor\(p_approver_id, array\['admin', 'operator'\]\)/;
-  const ceoStep = /pending_ceo[\s\S]{0,200}?money_actor\(p_approver_id, array\['boss'\]\)/;
+  const ceoStep = /pending_ceo[\s\S]{0,200}?money_actor\(p_approver_id, array\['admin', 'boss'\]\)/;
   assert.match(sql, adminStep);
   assert.match(sql, ceoStep);
   assert.deepEqual([...APPROVAL_STEP_ROLES.pending_admin], ["admin", "operator"]);
-  assert.deepEqual([...APPROVAL_STEP_ROLES.pending_ceo], ["boss"]);
+  assert.deepEqual([...APPROVAL_STEP_ROLES.pending_ceo], ["admin", "boss"]);
 
   const expect = (role, isOwner, status, expected) =>
     assert.deepEqual(contractActionPermissions(role, isOwner, status), expected, `${role}/${status}/${isOwner}`);
@@ -231,7 +230,9 @@ test("contract action permissions mirror approve_contract / revoke_contract and 
   expect("boss", false, "pending_admin", { approve: false, revoke: false, upload: true, remind: true });
   expect("admin", false, "pending_admin", { approve: true, revoke: false, upload: true, remind: true });
   expect("operator", false, "pending_admin", { approve: true, revoke: false, upload: false, remind: true });
-  expect("admin", false, "pending_ceo", { approve: false, revoke: false, upload: true, remind: true });
+  expect("admin", false, "pending_ceo", { approve: true, revoke: false, upload: true, remind: true });
+  expect("operator", false, "pending_ceo", { approve: false, revoke: false, upload: false, remind: true });
+  expect("finance", false, "pending_ceo", { approve: false, revoke: false, upload: false, remind: false });
   expect("boss", false, "pending_ceo", { approve: true, revoke: false, upload: true, remind: true });
   expect("boss", false, "active", { approve: false, revoke: true, upload: false, remind: true });
   expect("finance", false, "active", { approve: false, revoke: false, upload: false, remind: false });
@@ -378,9 +379,11 @@ test("the S2 migration admits operator to stage transitions and drops the compan
   assert.match(sql, /policy_leads_select_designer_involved/);
   assert.match(sql, /DROP POLICY IF EXISTS policy_leads_select_finance_contracted ON public\.leads/);
   assert.doesNotMatch(sql, /CREATE POLICY policy_leads_select_finance/, "finance reads no lead rows");
-  // Exactly two SECURITY DEFINER functions: the stage RPC and contract_lead_display,
-  // which carries the A1 entry guard and a pinned search_path. No policy is `true`.
-  assert.equal((sql.match(/^\s*SECURITY DEFINER$/gm) || []).length, 2);
+  // Exactly seven SECURITY DEFINER functions: the audit trigger function, the stage RPC, contract_lead_display
+  // (A1 entry guard, pinned search_path) and the four money routines this release
+  // redefines (approve_contract, set_contract_status, convert_quotation_to_contract,
+  // create_contract), each pinned and entry-guarded. No policy is `true`.
+  assert.equal((sql.match(/^\s*SECURITY DEFINER$/gm) || []).length, 7);
   assert.match(sql, /CREATE OR REPLACE FUNCTION public\.contract_lead_display[\s\S]*?SECURITY DEFINER\s+SET search_path = pg_catalog, public, pg_temp[\s\S]*?assert_current_session_at_entry\(\)/);
   assert.match(sql, /REVOKE ALL ON FUNCTION public\.contract_lead_display\(uuid\) FROM PUBLIC, anon;/);
   assert.doesNotMatch(sql, /USING \(true\)/i);
@@ -430,4 +433,65 @@ test("the role permission database test follows the isolated-database convention
   const script = read("tests/database/role-permissions.py");
   assert.match(script, /PGDATABASE"\) == "newme_role_permissions_test"/);
   assert.match(script, /rollback;/);
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// 7. Combined database release: performance, equal shareholders, win-on-activation,
+//    discount check, admin/boss-only contract creation
+// ───────────────────────────────────────────────────────────────────────────
+test("the combined migration keeps the per-lead checks cheap and wraps the session check once", () => {
+  const sql = read("supabase/migrations/20261104110000_role_least_privilege.sql");
+  assert.doesNotMatch(sql, /lead_id IN \(SELECT l\.id FROM public\.leads l\)/, "the whole-table IN subquery is gone");
+  assert.match(sql, /WHERE l\.id = %s\.lead_id/);
+  assert.match(sql, /ALTER POLICY %I ON %I\.%I/);
+  assert.match(sql, /'\(select public\.session_token_is_current\(\)\)'/);
+  assert.match(read("tests/database/policy-equivalence.py"), /rules changed beyond the session wrapper/);
+});
+
+test("admin settles the boss approval step; the first step is unchanged", () => {
+  const sql = read("supabase/migrations/20261104110000_role_least_privilege.sql");
+  assert.match(sql, /v_step := 'ceo_review';\s*[\s\S]{0,200}?money_actor\(p_approver_id, array\['admin', 'boss'\]\)/);
+  assert.match(sql, /v_step := 'admin_review';\s*v_actor := public\.money_actor\(p_approver_id, array\['admin', 'operator'\]\)/);
+  assert.match(read("src/app/actions/contracts.ts"), /\['admin', 'boss'\]\.includes\(userRole\)/);
+  assert.match(read("src/app/(dashboard)/contracts/page.tsx"), /pending_ceo" && \(role === "admin" \|\| role === "boss"\)/);
+});
+
+test("converting a quotation parks the lead; activating the contract wins it", () => {
+  const sql = read("supabase/migrations/20261104110000_role_least_privilege.sql");
+  const convert = sql.slice(sql.indexOf("create or replace function public.convert_quotation_to_contract"), sql.indexOf("create or replace function public.create_contract"));
+  assert.ok(convert.length > 1000);
+  assert.doesNotMatch(convert, /finalize_lead_won\(/);
+  assert.doesNotMatch(convert, /final_status\s*=\s*'won'/);
+  assert.doesNotMatch(convert, /insert into public\.projects/);
+  assert.equal((convert.match(/advance_lead_to_pending_decision\(/g) ?? []).length, 2, "first conversion and retry branch both park the lead");
+  const setStatus = sql.slice(sql.indexOf("create or replace function public.set_contract_status"), sql.indexOf("create or replace function public.convert_quotation_to_contract"));
+  assert.match(setStatus, /finalize_lead_won\(\s*v_lead\.id[\s\S]*?'contract_activation'/);
+  assert.match(setStatus, /perform 1 from public\.leads where id = v_lead_id for update;[\s\S]*?select \* into v_contract from public\.contracts where id = p_contract_id for update;/, "lock order leads before contracts");
+  assert.match(setStatus, /insert into public\.projects/);
+  assert.match(read("tests/database/contract-activation-wins-lead.py"), /two sessions activating the same contract at once/);
+});
+
+test("a role change made directly in the database is audited by a pinned definer trigger", () => {
+  const sql = read("supabase/migrations/20261104110000_role_least_privilege.sql");
+  assert.match(sql, /CREATE OR REPLACE FUNCTION public\.audit_profile_role_change\(\)[\s\S]*?SECURITY DEFINER\s+SET search_path = pg_catalog, public, pg_temp/);
+  assert.match(sql, /REVOKE ALL ON FUNCTION public\.audit_profile_role_change\(\) FROM PUBLIC, anon, authenticated;/);
+  assert.match(sql, /AFTER UPDATE OF role ON public\.profiles FOR EACH ROW EXECUTE FUNCTION public\.audit_profile_role_change\(\)/);
+  assert.match(sql, /VALUES \(auth\.uid\(\), 'role_changed', 'user', NEW\.id,/);
+  assert.doesNotMatch(sql.slice(sql.indexOf("audit_profile_role_change()")), /NEW\.email|NEW\.full_name/);
+  const manifest = JSON.parse(read("infra/release/release-manifest.json"));
+  const predicate = manifest.posture.deferred_contract.predicates.find((p) => p.name === "s2-role-least-privilege-present").sql;
+  assert.ok(predicate.includes("profiles_role_audit") && predicate.includes("audit_profile_role_change()"));
+});
+
+test("only admin and boss create contracts, and the quote dialog hides the button from everyone else", () => {
+  const sql = read("supabase/migrations/20261104110000_role_least_privilege.sql");
+  assert.match(sql, /DROP POLICY IF EXISTS policy_contracts_insert_finance ON public\.contracts/);
+  assert.match(sql, /DROP POLICY IF EXISTS policy_contracts_insert_sales ON public\.contracts/);
+  assert.match(sql, /role IN \(''admin'',''boss''\)/);
+  const create = sql.slice(sql.indexOf("create or replace function public.create_contract"), sql.indexOf("-- 8. Contracts are created"));
+  assert.match(create, /array\['admin', 'boss'\]\)/);
+  assert.doesNotMatch(create, /array\['admin', 'boss', 'operator', 'finance', 'sales'\]/);
+  assert.match(read("src/app/(dashboard)/quotes/quote-detail-dialog.tsx"), /canCreateContract && quote\.status === "accepted"/);
+  assert.match(read("src/app/(dashboard)/quotes/quotes-client.tsx"), /canCreateContract=\{userRole === "admin" \|\| userRole === "boss"\}/);
+  assert.match(sql, /quotations_discount_rate_range CHECK \(discount_rate BETWEEN 0 AND 100\) NOT VALID/);
 });

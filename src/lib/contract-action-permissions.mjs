@@ -8,7 +8,7 @@
  * refusal. The rules below are the routines' own, restated for the UI:
  *
  *   approve  approve_contract(): pending_admin → money_actor(['admin','operator'])
- *                                pending_ceo   → money_actor(['boss'])
+ *                                pending_ceo   → money_actor(['admin','boss'])  (equal shareholders)
  *   revoke   revoke_contract():  money_actor(['admin','boss']); transition table
  *                                admits revoking from approved / active / suspended
  *   upload   /api/contracts/[id]/upload-url: admin/boss or the contract owner,
@@ -23,7 +23,7 @@
 /** Roles approve_contract() accepts for each awaiting status. */
 export const APPROVAL_STEP_ROLES = Object.freeze({
   pending_admin: Object.freeze(["admin", "operator"]),
-  pending_ceo: Object.freeze(["boss"]),
+  pending_ceo: Object.freeze(["admin", "boss"]),
 });
 
 const REVOKABLE = Object.freeze(["approved", "active", "suspended"]);

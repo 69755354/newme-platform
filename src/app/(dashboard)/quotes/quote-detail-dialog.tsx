@@ -105,6 +105,8 @@ interface QuoteDetailDialogProps {
   onStatusChange: (id: string, newStatus: string) => Promise<boolean>;
   /** The conversion route already stored the new status; refresh the views. */
   onConverted?: (id: string) => void;
+  /** admin / boss only: the database refuses contract creation for every other role */
+  canCreateContract?: boolean;
 }
 
 /* ─── Status config ─── */
@@ -144,7 +146,7 @@ function getCategoryLabel(key: string): string {
 }
 
 /* ─── Component ─── */
-export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusChange, onConverted }: QuoteDetailDialogProps) {
+export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusChange, onConverted, canCreateContract = false }: QuoteDetailDialogProps) {
   const { t } = useLanguage();
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [loadingDownload, setLoadingDownload] = useState<string | null>(null);
@@ -508,7 +510,8 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
           </Button>
 
           {/* Convert to Contract — opens the schedule step; the POST needs it */}
-          {shownStatus === "accepted" && !quote.contract_id && (
+          {/* Contracts are created by admin / boss only (the database refuses everyone else) */}
+          {canCreateContract && shownStatus === "accepted" && !quote.contract_id && (
             <Button
               size="sm"
               variant="outline"

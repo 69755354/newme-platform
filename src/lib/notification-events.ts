@@ -309,7 +309,7 @@ export async function deriveNotificationDispatch(options: {
       let eventKey = `${input.type}:${contract.id}`;
       if (input.type === "contract_pending_approval") {
         if (contract.status === "pending_admin") candidates.push(...await activeProfilesByRole(db, ["admin", "operator"]));
-        else if (contract.status === "pending_ceo") candidates.push(...await activeProfilesByRole(db, ["boss"]));
+        else if (contract.status === "pending_ceo") candidates.push(...await activeProfilesByRole(db, ["admin", "boss"]));
         else throw new NotificationDispatchError(409, "contract_is_not_pending_approval");
         const approvalResult = await db.from("contract_approvals")
           .select("id")

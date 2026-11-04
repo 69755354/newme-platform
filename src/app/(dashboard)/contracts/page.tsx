@@ -265,7 +265,7 @@ export default function ContractsPage() {
   // Check which approval buttons to show
   const canApproveReject = (c: Contract) => {
     if (c.status === "pending_admin" && (role === "admin" || role === "operator")) return true;
-    if (c.status === "pending_ceo" && role === "boss") return true;
+    if (c.status === "pending_ceo" && (role === "admin" || role === "boss")) return true;
     return false;
   };
 

@@ -1033,7 +1033,7 @@ declare
   v_id     uuid;
 begin
   begin
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
     v_result := public.create_contract(jsonb_build_object(
       'lead_id',      '22222222-2222-2222-2222-222222222222',
@@ -1051,14 +1051,14 @@ begin
     v_state = '00000'
     and v_result ->> 'status' = 'draft'
     and (v_result ->> 'installments_count')::int = 2
-    and (select sales_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
-              and created_by = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+    and (select sales_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+              and created_by = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
               and status = 'draft'
            from public.contracts where id = v_id)
     and (select count(*) = 2 from public.installment_plans where contract_id = v_id)
     and (select count(*) = 1 from public.contract_approvals
           where contract_id = v_id and step = 'admin_review' and status = 'pending'),
-    'money-create-contract-is-atomic-for-a-sales-caller');
+    'money-create-contract-is-atomic-for-a-manager-caller');
 
   -- Not 001 or 002: the number comes from the counter seeded at the highest
   -- issued number for the date, so it is strictly above the fixture's 007.
@@ -1079,7 +1079,7 @@ declare
   v_count int;
 begin
   begin
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
     perform public.create_contract(jsonb_build_object(
       'lead_id', '22222222-2222-2222-2222-222222222222',
@@ -1098,7 +1098,7 @@ do $$
 declare v_state text := '00000';
 begin
   begin
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
     perform public.create_contract(jsonb_build_object(
       'lead_id', '33333333-3333-3333-3333-333333333333', 'amount', '0'));
@@ -1178,8 +1178,8 @@ begin
    where lead_id = '33333333-3333-3333-3333-333333333333';
 
   perform pg_temp.assert(
-    v_state = '42501' and v_msg like '%only the assigned salesperson or a manager%',
-    'money-create-contract-refuses-a-lead-assigned-to-another-salesperson');
+    v_state = '42501' and v_msg like '%role sales may not perform this operation%',
+    'money-create-contract-refuses-a-salesperson-outright');
   perform pg_temp.assert(v_after = 0,
     'money-create-contract-ownership-refusal-wrote-no-contract');
   perform pg_temp.assert(v_mgr_st = '00000' and v_mgr_row,
@@ -1210,9 +1210,9 @@ begin
   reset role;
   perform pg_temp.assert(
     v_state = '42501'
-    and v_msg like '%only the quotation owner or a manager%'
+    and v_msg like '%role sales may not perform this operation%'
     and (select contract_id is null from public.quotations where id = 'b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1'),
-    'money-convert-quotation-refuses-non-owner-sales');
+    'money-convert-quotation-refuses-sales-callers');
 end
 $$;
 
@@ -1220,7 +1220,7 @@ do $$
 declare v_state text := '00000';
 begin
   begin
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
     perform public.convert_quotation_to_contract('b3b3b3b3-b3b3-b3b3-b3b3-b3b3b3b3b3b3', '{}'::jsonb);
   exception when others then v_state := sqlstate;
@@ -1245,8 +1245,13 @@ declare
   v_id     uuid;
   v_no     text;
 begin
+  -- the fixture lead sits at 'new'; a quoted lead is further along
+  perform set_config('request.jwt.claims', '', true);
+  set local session_replication_role = replica;
+  update public.leads set stage = 'quotation_submitted' where id = '66666666-6666-6666-6666-666666666666';
+  set local session_replication_role = origin;
   begin
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
     v_result := public.convert_quotation_to_contract(
       'b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1',
@@ -1270,13 +1275,19 @@ begin
           where contract_id = v_id and step = 'admin_review' and status = 'pending')
     and (select status = 'contract_created' and contract_id = v_id
            from public.quotations where id = 'b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1')
-    and (select final_status = 'won' from public.leads where id = '66666666-6666-6666-6666-666666666666'),
-    'money-convert-quotation-is-atomic-for-the-owner');
+    and (select final_status is null and stage = 'pending_decision'
+           from public.leads where id = '66666666-6666-6666-6666-666666666666'),
+    'money-convert-quotation-is-atomic-for-the-manager');
 
   -- The two derived rows, in the same transaction as the contract.
+  -- S2: the project (and the customer, and the won state) belong to contract
+  -- activation, not to the conversion.
   perform pg_temp.assert(
-    (select count(*) = 1 from public.projects where contract_id = v_id),
-    'money-convert-quotation-writes-the-project-row-in-the-transaction');
+    v_state = '00000' and v_id is not null
+    and (select count(*) = 1 from public.contracts where id = v_id)
+    and (select count(*) = 0 from public.projects where contract_id = v_id)
+    and (select count(*) = 0 from public.customers where lead_id = '66666666-6666-6666-6666-666666666666'),
+    'money-convert-quotation-creates-no-project-or-customer-before-activation');
   perform pg_temp.assert(
     (select count(*) = 1 from public.activities
       where lead_id = '66666666-6666-6666-6666-666666666666' and content like '%' || v_no || '%'),
@@ -1308,11 +1319,15 @@ begin
   select contract_id into v_expected from public.quotations
    where id = 'b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1';
 
+  -- S2: the project is no longer a conversion product; the derived row a retry
+  -- still finishes is the activity note.
   perform set_config('request.jwt.claims', '', true);
-  delete from public.projects where contract_id = v_expected;
+  delete from public.activities
+   where lead_id = '66666666-6666-6666-6666-666666666666'
+     and content like '%' || (select contract_no from public.contracts where id = v_expected) || '%';
 
   begin
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
     v_result := public.convert_quotation_to_contract('b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1', '{}'::jsonb);
   exception when others then v_state := sqlstate;
@@ -1323,8 +1338,11 @@ begin
     v_state = '00000'
     and (v_result ->> 'already_converted')::boolean
     and (v_result ->> 'contract_id')::uuid = v_expected
-    and v_result -> 'finalized' ? 'project'
-    and (select count(*) = 1 from public.projects where contract_id = v_expected),
+    and v_result -> 'finalized' ? 'activity'
+    and (select count(*) = 1 from public.activities
+          where lead_id = '66666666-6666-6666-6666-666666666666'
+            and content like '%' || (select contract_no from public.contracts where id = v_expected) || '%')
+    and (select count(*) = 0 from public.projects where contract_id = v_expected),
     'money-convert-quotation-retry-repairs-the-missing-derived-row');
 
   -- And the load-bearing negative: the repair must not have created a second
@@ -1352,7 +1370,7 @@ declare
   v_msgsh   text := '';
   v_msgzero text := '';
 begin
-  perform pg_temp.act_as('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+  perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
   set local role authenticated;
 
   begin
@@ -2816,7 +2834,7 @@ declare
   v_rows    int  := 0;
 begin
   begin
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
     v_verdict := public.session_boundary_state();
     begin
@@ -2824,7 +2842,7 @@ begin
     exception when others then v_rpc := sqlstate;
     end;
     update public.profiles set last_active_at = now()
-     where id = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+     where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
     get diagnostics v_rows = row_count;
     reset role;
     raise exception 'REPLAY_ROLLBACK';
@@ -3819,7 +3837,7 @@ select pg_temp.assert_eval($q$ not (
 -- It passes against the pre-fix release, and vacuously: that release wrote no 'won'
 -- event on the conversion path at all, which is the finding. What this guards is the
 -- other direction — two owners of the event writing one each. The event being
--- written is measured by b6-the-conversion-records-exactly-one-won-event.
+-- written is measured by b6-activation-records-exactly-one-won-event.
 select pg_temp.assert_eval($q$ (select count(*) = 0 from (
      select lead_id from public.business_events
       where event_type = 'won' and lead_id is not null
@@ -4443,7 +4461,7 @@ begin
     update public.quotations set contract_id = 'c5c5c5c5-c5c5-c5c5-c5c5-c5c5c5c5c5c5'
      where id = 'b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6';
     begin
-      perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+      perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
       set local role authenticated;
       perform public.convert_quotation_to_contract('b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6',
                                                    '{}'::jsonb);
@@ -4468,9 +4486,11 @@ begin
 end
 $$;
 
--- B6 · the conversion's lead-won side effects (reproduced: none of them happened,
--- because on_lead_won() returns early once a contract exists and the conversion
--- creates the contract before it marks the lead won).
+-- B6 · the lead-won side effects (reproduced: none of them happened, because
+-- on_lead_won() returns early once a contract exists and the conversion created
+-- the contract before it marked the lead won). S2: the win now happens when the
+-- contract is ACTIVATED (set_contract_status), not when the quotation is converted;
+-- the same three facts are measured after activation.
 do $$
 declare
   v_state     text := '00000';
@@ -4480,14 +4500,19 @@ declare
   v_won       bigint := -1;
   v_project   uuid;
   v_contract  uuid;
+  v_cid       uuid;
   v_final     text := '';
 begin
   begin
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
-    perform public.convert_quotation_to_contract('b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6',
+    v_cid := (public.convert_quotation_to_contract('b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6',
       jsonb_build_object('installments',
-        jsonb_build_array(jsonb_build_object('seq', 1, 'amount', 80000))));
+        jsonb_build_array(jsonb_build_object('seq', 1, 'amount', 80000)))) ->> 'contract_id')::uuid;
+    perform public.set_contract_status(v_cid, 'pending_admin', 'replay activation');
+    perform public.approve_contract(v_cid, null, 'approve', 'replay one');
+    perform public.approve_contract(v_cid, null, 'approve', 'replay two');
+    perform public.set_contract_status(v_cid, 'active', null);
     reset role;
     perform set_config('request.jwt.claims', '', true);
     select customer_id, final_status into v_customer, v_final
@@ -4509,12 +4534,12 @@ begin
   end;
   perform pg_temp.assert(v_state = '00000' and v_customer is not null
                          and v_cust_rows = 1 and v_final = 'won',
-    'b6-the-conversion-creates-the-customer-and-links-the-lead');
+    'b6-activation-creates-the-customer-and-links-the-lead');
   perform pg_temp.assert(v_won = 1,
-    'b6-the-conversion-records-exactly-one-won-event');
+    'b6-activation-records-exactly-one-won-event');
   perform pg_temp.assert(v_project is not null and v_project = v_customer
                          and v_contract = v_customer,
-    'b6-the-conversion-puts-that-customer-on-the-project-and-the-contract');
+    'b6-activation-puts-that-customer-on-the-project-and-the-contract');
 end
 $$;
 
@@ -4539,6 +4564,7 @@ declare
                          'amount', 80000,
                          'due_date', '2026-09-01',
                          'description', 'Initial installment')));
+  v_cid     uuid;
   v_after1  numeric := -1;
   v_after3  numeric := -1;
   v_amount  numeric := -1;
@@ -4551,9 +4577,14 @@ declare
   v_desc_msg   text := '';
 begin
   begin
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
-    perform public.convert_quotation_to_contract(v_quote, v_sched);
+    v_cid := (public.convert_quotation_to_contract(v_quote, v_sched) ->> 'contract_id')::uuid;
+    -- S2: the customer and its amount arrive with activation
+    perform public.set_contract_status(v_cid, 'pending_admin', 'replay activation');
+    perform public.approve_contract(v_cid, null, 'approve', 'replay one');
+    perform public.approve_contract(v_cid, null, 'approve', 'replay two');
+    perform public.set_contract_status(v_cid, 'active', null);
     reset role;
     select coalesce(sum(total_contract_amount), -1) into v_after1
       from public.customers where lead_id = v_lead;
@@ -4650,38 +4681,43 @@ declare
   v_mismatch_msg text := '';
   v_lost     text := '00000';
   v_lostmsg  text := '';
+  v_cust_rows bigint := -1;
 begin
   begin
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
     v_contract := (public.convert_quotation_to_contract(v_quote, v_sched) ->> 'contract_id')::uuid;
     reset role;
     perform set_config('request.jwt.claims', '', true);
 
     -- Break it the way a deployment breaks it, not the way a test would like it
-    -- broken: a status change any quotation owner can make, plus the two columns a
-    -- first attempt that died after the contract never got to.
+    -- broken: a status change any quotation owner can make, plus the lead left
+    -- behind the stage a conversion moves it to. (S2: the contract's customer is
+    -- not the conversion's business any more, so it is left null.)
     update public.quotations set status = 'accepted' where id = v_quote;
-    update public.leads      set final_status = null  where id = v_lead;
+    set local session_replication_role = replica;
+    update public.leads      set stage = 'quotation_submitted', final_status = null where id = v_lead;
+    set local session_replication_role = origin;
     update public.contracts  set customer_id = null   where id = v_contract;
 
     -- The repair call: a re-POST with no schedule restated.
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
     v_retry := public.convert_quotation_to_contract(v_quote, '{}'::jsonb);
     reset role;
     perform set_config('request.jwt.claims', '', true);
 
     select status       into v_qstatus  from public.quotations where id = v_quote;
-    select final_status into v_final    from public.leads      where id = v_lead;
+    select coalesce(final_status, '-') || '/' || stage into v_final from public.leads where id = v_lead;
     select customer_id  into v_customer from public.contracts  where id = v_contract;
+    select count(*) into v_cust_rows from public.customers where lead_id = v_lead;
 
     -- A non-null different customer is contradictory state rather than a NULL
     -- left by an interrupted first attempt. The retry must refuse it and leave
     -- both identities untouched.
     insert into public.customers (id, name) values (v_foreign, 'Foreign retry customer');
     update public.contracts set customer_id = v_foreign where id = v_contract;
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
     begin
       perform public.convert_quotation_to_contract(v_quote, '{}'::jsonb);
@@ -4697,7 +4733,7 @@ begin
     -- And the refusal: a lead given a different terminal decision is not a
     -- conversion waiting to be finished.
     update public.leads set final_status = 'lost' where id = v_lead;
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
     begin
       perform public.convert_quotation_to_contract(v_quote, '{}'::jsonb);
@@ -4717,20 +4753,16 @@ begin
   perform pg_temp.assert(v_state = '00000' and v_qstatus = 'contract_created'
                          and v_retry ->> 'quotation_status' = 'contract_created',
     'r4-a-retry-restores-the-converted-quotation-status');
-  perform pg_temp.assert(v_state = '00000' and v_final = 'won',
-    'r4-a-retry-marks-the-lead-won-again');
-  perform pg_temp.assert(v_state = '00000' and v_customer is not null
-                         and v_customer = (v_retry ->> 'customer_id')::uuid,
-    'r4-a-retry-backfills-the-contract-customer');
-  perform pg_temp.assert(v_state = '00000' and (v_retry ->> 'project_id') is not null
-                         and v_retry -> 'finalized'
-                             @> '["quotation_status","lead_won","contract_customer"]'::jsonb,
-    'r4-a-retry-returns-the-project-and-reports-what-it-repaired');
-  perform pg_temp.assert(v_mismatch = '22023'
-                         and v_mismatch_msg like '%different customer identities%'
-                         and v_contract_customer = v_foreign,
-    'r4-a-retry-refuses-a-conflicting-contract-customer');
-  perform pg_temp.assert(v_lost = '22023' and v_lostmsg like '%rather than won%',
+  perform pg_temp.assert(v_state = '00000' and v_final = '-/pending_decision',
+    'r4-a-retry-parks-the-lead-at-pending-decision-again');
+  perform pg_temp.assert(v_state = '00000' and v_customer is null and v_cust_rows = 0,
+    'r4-a-retry-does-not-win-the-lead-or-create-a-customer');
+  perform pg_temp.assert(v_state = '00000' and (v_retry ->> 'project_id') is null
+                         and v_retry -> 'finalized' @> '["quotation_status","lead_stage"]'::jsonb,
+    'r4-a-retry-reports-what-it-repaired-and-creates-no-project');
+  perform pg_temp.assert(v_mismatch = '00000' and v_contract_customer = v_foreign,
+    'r4-a-retry-leaves-a-contract-customer-alone');
+  perform pg_temp.assert(v_lost = '22023' and v_lostmsg like '%marked lost%',
     'r4-a-retry-refuses-a-lead-given-a-different-terminal-status');
 end
 $$;
@@ -4744,7 +4776,7 @@ declare
   v_link  uuid;
 begin
   begin
-    perform pg_temp.act_as('cccccccc-cccc-cccc-cccc-cccccccccccc');
+    perform pg_temp.act_as('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     set local role authenticated;
     begin
       perform public.convert_quotation_to_contract('b6b6b6b6-b6b6-b6b6-b6b6-b6b6b6b6b6b6',

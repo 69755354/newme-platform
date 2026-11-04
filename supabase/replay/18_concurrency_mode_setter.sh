@@ -49,7 +49,7 @@ esac
 : "${PGDATABASE:=postgres}"
 export PGHOST PGPORT PGUSER PGDATABASE
 
-ACTOR='cccccccc-cccc-cccc-cccc-cccccccccccc'
+ACTOR='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'   # admin (S2: only admin/boss may insert contracts directly)
 LEAD='18181818-1818-1818-1818-181818181818'
 CONTRACT_NO='REPLAY-SETTER-COMPAT-1'
 MARK_HI=918273

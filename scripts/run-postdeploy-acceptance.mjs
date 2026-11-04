@@ -88,8 +88,8 @@ const FLOW_POLICY = {
     assertions: ["transition_accepted", "persisted_status_matches"],
   },
   quotation_conversion: {
-    coordinator: "sales",
-    participants: ["sales"],
+    coordinator: "admin",
+    participants: ["admin"],
     assertions: ["quotation_marked_converted", "contract_linked"],
   },
   quotation_two_step_approval: {
@@ -114,8 +114,8 @@ const ASSERTION_ROLE = {
   admin_review_pending: "sales",
   transition_accepted: "operator",
   persisted_status_matches: "operator",
-  quotation_marked_converted: "sales",
-  contract_linked: "sales",
+  quotation_marked_converted: "admin",
+  contract_linked: "admin",
   admin_review_recorded: "admin",
   ceo_review_recorded: "boss",
   contract_approved: "boss",
@@ -1324,7 +1324,7 @@ async function runBusinessFlows({ db, sessions, fixture }) {
   }));
 
   results.push(await flow("quotation_conversion", ids.quotation, async () => {
-    const request = await sessions.sales.request("POST", `/api/quotations/${ids.quotation}/convert`, {
+    const request = await sessions.admin.request("POST", `/api/quotations/${ids.quotation}/convert`, {
       first_payment_due_date: "2099-12-31",
       installments: [{ seq: 1, amount: 1000, due_date: "2099-12-31", description: "postdeploy acceptance fixture" }],
     });

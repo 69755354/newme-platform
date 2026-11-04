@@ -94,7 +94,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTRACT_PHASE="${CONTRACT_PHASE:-$SCRIPT_DIR/../migrations/20260818000000_money_direct_write_contract_phase.sql}"
 
 # Fixed UUIDs, no random(): the verdict and the cleanup reference them by value.
-ACTOR='cccccccc-cccc-cccc-cccc-cccccccccccc'   # 05_seed_behaviour_fixtures.sql, sales, active
+ACTOR='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'   # 05_seed_behaviour_fixtures.sql, admin, active (S2: only admin/boss may insert contracts directly)
 LEAD='17171717-1717-1717-1717-171717171717'    # this gate's own lead
 CONTRACT_NO='REPLAY-FLIP-COMPAT-1'
 LEAD_B='17171717-1717-1717-1717-171717171718'  # the drain-timeout half's lead

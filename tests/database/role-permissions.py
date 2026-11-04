@@ -242,6 +242,48 @@ assert query("select count(*) from pg_proc where proname in ('money_write_is_dir
 passed("the nine guard functions carry a pinned search_path")
 
 # ---------------------------------------------------------------------------
+# 3b. Combined release: contract creation, discount range, per-statement session check
+# (the longer scenarios live in tests/database/contract-activation-wins-lead.py)
+# ---------------------------------------------------------------------------
+for uid in (SALES, FINANCE, OPERATOR, DESIGNER):
+    rc, out, err = scenario(uid, f"insert into public.contracts (lead_id, contract_no, contract_amount, party_a_name, sales_id, created_by, status) values ('{LEAD_OTHER}', 'S2-DIRECT', 1, 'x', '{uid}', '{uid}', 'draft');")
+    assert rc != 0, ROLE_OF[uid]
+passed("sales, finance, operator and designer cannot insert a contract directly")
+
+rc, out, err = scenario(ADMIN, f"insert into public.quotations (lead_id, quote_no, subtotal, total_amount, discount_rate) values ('{LEAD_OTHER}', 'NM-S2-RP-1', 1, 1, 101);")
+assert rc != 0 and "quotations_discount_rate_range" in err, err
+assert query("select convalidated from pg_constraint where conname = 'quotations_discount_rate_range'") == "f"
+passed("a discount above 100 is refused for new rows and the check stays NOT VALID (old rows are not scanned)")
+
+assert query("select count(*) from pg_policies where schemaname = 'public' and tablename <> 'profiles' and ((qual ~ 'session_token_is_current[(][)]' and qual !~* 'select[[:space:]]+(public[.])?session_token_is_current') or (with_check ~ 'session_token_is_current[(][)]' and with_check !~* 'select[[:space:]]+(public[.])?session_token_is_current'))") == "0"
+assert int(query("select count(*) from pg_policies where schemaname = 'public' and qual ~* 'select[[:space:]]+(public[.])?session_token_is_current'")) >= 30
+passed("every row-level session check is wrapped so the database evaluates it once per statement")
+
+assert query("select count(*) from pg_policies where schemaname = 'public' and policyname in ('policy_activities_insert_sales','policy_activities_insert_designer_involved') and with_check like '%l.id = activities.lead_id%'") == "2"
+passed("the activity insert rules look up the one lead, not every lead")
+
+# 3c. A role changed straight in the database is audited (id of the executor only)
+claims = json.dumps({"sub": ADMIN, "role": "authenticated", "iat": 4102444800})
+out = query(f"""begin;
+{FIXTURE}
+select set_config('request.jwt.claims', '{claims}', true);
+update public.profiles set role = 'operator' where id = '{SALES}';
+update public.profiles set full_name = 'renamed' where id = '{SALES}';
+select count(*) || ':' || coalesce(max(actor_id::text), '') || ':' || coalesce(max(details::text), '') from public.audit_logs where action = 'role_changed' and target_id = '{SALES}';
+rollback;""").splitlines()[-1]
+assert out == f'1:{ADMIN}:{{"new_role": "operator", "previous_role": "sales"}}', out
+out = query(f"""begin;
+{FIXTURE}
+select set_config('request.jwt.claims', '', true);
+update public.profiles set role = 'finance' where id = '{SALES}';
+select count(*) || ':' || count(actor_id) from public.audit_logs where action = 'role_changed' and target_id = '{SALES}';
+rollback;""").splitlines()[-1]
+assert out == "1:0", out
+rc, o, e = scenario(SALES, "select public.audit_profile_role_change();")
+assert rc != 0
+passed("a direct change of profiles.role writes one audit row with the executor id only (none for a plain rename; actor NULL for a console change); the function is not callable by end users")
+
+# ---------------------------------------------------------------------------
 # 4. The release manifest's posture predicate is true here and notices drift
 # ---------------------------------------------------------------------------
 manifest = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "infra", "release", "release-manifest.json")))
@@ -254,6 +296,13 @@ for drift in (
     "create policy policy_lead_workflow_stages_select_designer on public.lead_workflow_stages for select to authenticated using (true)",
     "drop policy lead_files_insert_staff on public.lead_files",
     "drop function public.contract_lead_display(uuid)",
+    "drop policy policy_contracts_insert_admin on public.contracts",
+    "create policy policy_contracts_insert_finance on public.contracts for insert to authenticated with check (true)",
+    "alter table public.quotations drop constraint quotations_discount_rate_range",
+    "alter policy restrict_leads_active_session on public.leads using (public.session_token_is_current()) with check (public.session_token_is_current())",
+    "drop function public.advance_lead_to_pending_decision(uuid, uuid, text)",
+    "drop trigger profiles_role_audit on public.profiles",
+    "create or replace function public.create_contract(p_payload jsonb) returns jsonb language sql as $f$ select '{}'::jsonb -- array['admin', 'boss', 'operator', 'finance', 'sales'] $f$",
 ):
     flipped = query(f"begin; {drift}; select ({predicate}); rollback;").splitlines()
     assert flipped and flipped[-1] == "f", (drift, flipped)

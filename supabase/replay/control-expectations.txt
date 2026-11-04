@@ -132,7 +132,7 @@ fail money-approve-contract-admin-step-settles-pending-row-and-opens-ceo-review
 fail money-approve-contract-ceo-step-settles-and-approves
 fail money-approve-contract-raises-instead-of-returning-error-json
 fail money-approve-contract-rejects-unknown-action
-fail money-create-contract-is-atomic-for-a-sales-caller
+fail money-create-contract-is-atomic-for-a-manager-caller
 fail money-create-contract-issues-a-counter-based-number
 fail money-create-contract-refuses-second-active-contract-for-a-lead
 fail money-create-contract-refuses-non-positive-amount
@@ -140,14 +140,14 @@ fail money-create-contract-refuses-non-positive-amount
 # all, so the refusal probe gets 42883 instead of 42501 and the manager positive
 # control gets no result — both load-bearing. The two "nothing was written" halves
 # pass on the floor for the honest reason that no call could write anything.
-fail money-create-contract-refuses-a-lead-assigned-to-another-salesperson
+fail money-create-contract-refuses-a-salesperson-outright
 pass money-create-contract-ownership-refusal-wrote-no-contract
 fail money-create-contract-still-allows-a-manager-on-that-lead
 pass money-create-contract-manager-fixture-was-rolled-back
-fail money-convert-quotation-refuses-non-owner-sales
+fail money-convert-quotation-refuses-sales-callers
 fail money-convert-quotation-refuses-unaccepted-quotation
-fail money-convert-quotation-is-atomic-for-the-owner
-fail money-convert-quotation-writes-the-project-row-in-the-transaction
+fail money-convert-quotation-is-atomic-for-the-manager
+fail money-convert-quotation-creates-no-project-or-customer-before-activation
 fail money-convert-quotation-writes-the-activity-row-in-the-transaction
 fail money-convert-quotation-retry-repairs-the-missing-derived-row
 fail money-convert-quotation-retry-creates-no-second-contract
@@ -353,7 +353,7 @@ fail a1-that-second-routine-still-answers-a-current-session
 #   b6-no-lead-carries-two-won-events — a table-wide invariant, and it passes on
 #     the floor vacuously: that floor writes no 'won' event on the conversion path
 #     at all, which IS finding B6. The load-bearing half is
-#     b6-the-conversion-records-exactly-one-won-event, which fails here.
+#     b6-activation-records-exactly-one-won-event, which fails here.
 #
 #   b5-a-crossed-link-writes-nothing-on-the-foreign-contract — the paired half of
 #     b5-a-crossed-conversion-link-is-refused. On the floor the refusal never
@@ -400,9 +400,9 @@ fail b4-a-schedule-that-does-not-start-at-one-is-refused
 fail b5-the-conversion-link-is-refused-from-a-session
 fail b5-a-crossed-conversion-link-is-refused
 pass b5-a-crossed-link-writes-nothing-on-the-foreign-contract
-fail b6-the-conversion-creates-the-customer-and-links-the-lead
-fail b6-the-conversion-records-exactly-one-won-event
-fail b6-the-conversion-puts-that-customer-on-the-project-and-the-contract
+fail b6-activation-creates-the-customer-and-links-the-lead
+fail b6-activation-records-exactly-one-won-event
+fail b6-activation-puts-that-customer-on-the-project-and-the-contract
 fail b5-a-conversion-retry-does-not-add-the-amount-again
 fail b5-a-retry-asking-for-a-different-schedule-is-refused
 
@@ -422,10 +422,10 @@ fail b5-a-retry-asking-for-a-different-schedule-is-refused
 # 'accepted', project_id null and finalized [], repairs none of the three rows, and
 # answers sqlstate 00000 to a retry against a lead marked 'lost'.
 fail r4-a-retry-restores-the-converted-quotation-status
-fail r4-a-retry-marks-the-lead-won-again
-fail r4-a-retry-backfills-the-contract-customer
-fail r4-a-retry-returns-the-project-and-reports-what-it-repaired
-fail r4-a-retry-refuses-a-conflicting-contract-customer
+fail r4-a-retry-parks-the-lead-at-pending-decision-again
+fail r4-a-retry-does-not-win-the-lead-or-create-a-customer
+fail r4-a-retry-reports-what-it-repaired-and-creates-no-project
+fail r4-a-retry-leaves-a-contract-customer-alone
 fail r4-a-retry-refuses-a-lead-given-a-different-terminal-status
 fail b10-a-conversion-schedule-must-equal-the-quotation-exactly
 fail b7-saving-a-period-preserves-what-was-collected

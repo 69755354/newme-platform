@@ -456,7 +456,8 @@ export default function LeadSalesProcess({
                             summary: contactNotes.trim() || undefined,
                           });
                           if (!result.success) {
-                            setContactSaveError(result.error || (lang === "zh" ? "联系记录保存失败" : "Contact record save failed"));
+                            // The hook already showed the one failure toast; keep the form as it is.
+                            if (result.error) setContactSaveError(result.error);
                             return;
                           }
                           // Reset form

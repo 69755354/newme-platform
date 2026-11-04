@@ -1628,6 +1628,7 @@ export const translations = {
         cables: "Cables",
         services: "Services",
         lighting: "Lighting",
+        other: "Other",
       },
     },
     analytics: {
@@ -3501,6 +3502,7 @@ export const translations = {
         cables: "线缆",
         services: "服务",
         lighting: "照明",
+        other: "其他",
       },
     },
     analytics: {

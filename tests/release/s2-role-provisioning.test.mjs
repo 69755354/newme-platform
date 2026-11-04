@@ -51,7 +51,15 @@ test('the S2 provisioning gate pins exactly one reviewed migration and its postu
   }
 });
 
-test('when the S2 migration is in the tree, its hash and the manifest suffix are the pinned ones',{skip:!migrationInTree&&'the S2 version has not merged into this tree yet'},()=>{
+// Always runs (the repository forbids new skipped tests). Before the S2
+// version merges the migration is not in the tree and the manifest must not carry
+// the S2 entry yet; once it is in the tree, its bytes must be the pinned ones.
+test('the S2 migration, when present in the tree, matches the pinned hash and the manifest suffix',()=>{
+  if(!migrationInTree){
+    assert.equal(s2At,-1,'the manifest lists the S2 migration but its file is not in the tree');
+    assert.equal(manifest.posture.deferred_contract.predicates.some(x=>x.name===S2_PREDICATE_NAME),false);
+    return;
+  }
   assert.equal(hashed(sql),S2_EVENT.sha256);
   assert.deepEqual(manifest.deferred_contract[s2At],S2_EVENT);
   const predicate=manifest.posture.deferred_contract.predicates.find(x=>x.name===S2_PREDICATE_NAME);

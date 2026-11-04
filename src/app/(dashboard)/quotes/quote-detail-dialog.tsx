@@ -107,7 +107,6 @@ interface QuoteDetailDialogProps {
   onConverted?: (id: string) => void;
   /** admin / boss / operator, or sales on their own leads (the database enforces it); never finance or designer */
   canCreateContract?: boolean;
-  canCreateContract?: boolean;
 }
 
 /* ─── Status config ─── */

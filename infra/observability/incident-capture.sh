@@ -6,12 +6,25 @@
 
 set -euo pipefail
 
+# S7 (review 5-logging-monitoring F1): probes start this script in the background
+# from a cron job that holds `flock -n` on the L0 lock. The lock descriptor is
+# inherited, so one hung command here (journalctl, top, systemctl under memory
+# pressure) kept the lock for good and every later cron run silently skipped,
+# which is how the Sentry check-in stopped on 2026-10-27 while the local state
+# still read "ok". Release inherited descriptors first, then bound the runtime.
+exec 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-
+if [ -z "${INCIDENT_CAPTURE_BOUNDED:-}" ]; then
+  export INCIDENT_CAPTURE_BOUNDED=1
+  exec timeout -k 5 "${INCIDENT_CAPTURE_TIMEOUT_SECONDS:-90}" bash "$0" "$@"
+fi
+INCIDENT_BASE_DIR="${INCIDENT_BASE_DIR:-/tmp/hermes/incidents}"
+
 TRIGGER="${1:-unknown}"
 SUMMARY="${2:-no details}"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 DATE_DIR=$(date +"%Y-%m-%d")
 TIME_DIR=$(date +"%H%M%S")
-INCIDENT_DIR="/tmp/hermes/incidents/${DATE_DIR}/${TIME_DIR}-${TRIGGER}"
+INCIDENT_DIR="${INCIDENT_BASE_DIR}/${DATE_DIR}/${TIME_DIR}-${TRIGGER}"
 
 mkdir -p "$INCIDENT_DIR"
 
@@ -58,6 +71,6 @@ echo "Incident captured: ${INCIDENT_DIR}"
 echo "Files: $(ls ${INCIDENT_DIR} | wc -l)"
 
 # 保留最近 100 个 incident，清理旧的
-find /tmp/hermes/incidents/ -maxdepth 2 -type d -mtime +7 -exec rm -rf {} \; 2>/dev/null || true
+find "${INCIDENT_BASE_DIR}/" -maxdepth 2 -type d -mtime +7 -exec rm -rf {} \; 2>/dev/null || true
 
 exit 0

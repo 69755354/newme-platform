@@ -1,0 +1,14 @@
+[Unit]
+Description=NewMe external uptime probe (runs off the production server)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/newme-external-probe.sh
+Environment=UPTIME_ENV_FILE=/etc/newme-uptime.env
+TimeoutStartSec=45
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/newme-uptime
+PrivateTmp=true

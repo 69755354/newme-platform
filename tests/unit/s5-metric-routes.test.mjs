@@ -38,7 +38,16 @@ class Query {
   neq(c, v) { if (!c.includes(".")) this.filters.push((r) => col(r, c) !== v); return this; }
   is(c, v) { this.filters.push((r) => (v === null ? col(r, c) == null : col(r, c) === v)); return this; }
   not() { return this; }
-  or() { return this; }
+  or(expr) {
+    // Only the Meta-lead filter of the ads ROI panel is evaluated; other .or() calls are ignored.
+    if (typeof expr === "string" && expr.includes("fbclid.not.is.null")) {
+      const preds = [];
+      for (const m of expr.matchAll(/(\w+)\.in\.\(([^)]*)\)/g)) preds.push((r) => m[2].split(",").includes(r[m[1]]));
+      for (const m of expr.matchAll(/(\w+)\.not\.is\.null/g)) preds.push((r) => r[m[1]] != null);
+      this.filters.push((r) => preds.some((p) => p(r)));
+    }
+    return this;
+  }
   in(c, vs) { this.filters.push((r) => vs.includes(col(r, c))); return this; }
   gte(c, v) { this.filters.push((r) => col(r, c) != null && compare(col(r, c), v) >= 0); return this; }
   gt(c, v) { this.filters.push((r) => col(r, c) != null && compare(col(r, c), v) > 0); return this; }

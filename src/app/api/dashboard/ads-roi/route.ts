@@ -1,7 +1,7 @@
 // RBAC: user (boss, admin)
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
-import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
+import { fetchAllRows, fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
 import { isWonLead, sourceQualityBreakdown, wonLeadValue, type MetricLead } from "@/lib/lead-metrics.mjs";
 
 function numericAmount(value: number | null): number | null {
@@ -80,27 +80,20 @@ export async function GET(request: Request) {
       if (!displayNameMap[campaign]) displayNameMap[campaign] = raw;
     }
 
-    // ─── 2. Leads (every counted lead, paged; one read feeds both tables) ───
-    // A bare select stops at 1000 rows without saying so, so the panel is read
-    // through the shared paged reader and counted with the shared definitions
-    // (src/lib/lead-metrics.mjs): archived excluded, won = isWonLead, quality =
-    // qualityBucket with "normal" its own column.
-    const leadsResult = await fetchCountedLeads(
-      supabase,
-      "id,archived,campaign_name,stage,final_status,quotation_value,quality,ai_quality,source,source_platform,utm_source,fbclid,meta_click_id",
+    // ─── 2. Leads from meta (paged: a bare select stops at 1000 rows silently) ───
+    // Counted with the shared definitions (src/lib/lead-metrics.mjs): archived
+    // excluded, won = isWonLead, the won amount = wonLeadValue.
+    const metaLeadsResult = await fetchAllRows((from, to, withCount) =>
+      supabase
+        .from("leads")
+        .select("id, campaign_name, stage, quotation_value, ai_quality, quality, source, source_platform, utm_source, fbclid, meta_click_id, final_status, archived", withCount ? { count: "exact" } : undefined)
+        .or("source.in.(ins,fb),source_platform.in.(meta,facebook,instagram,fb,ins),utm_source.in.(meta,facebook,instagram,fb,ins),fbclid.not.is.null,meta_click_id.not.is.null")
+        .eq("archived", false)
+        .order("id", { ascending: true })
+        .range(from, to),
     );
-    if (leadsResult.error) throw leadsResult.error;
-    const allLeads = leadsResult.data as Array<MetricLead & {
-      campaign_name?: string | null; utm_source?: string | null; fbclid?: string | null; meta_click_id?: string | null;
-    }>;
-
-    const META_PLATFORMS = new Set(["meta", "facebook", "instagram", "fb", "ins"]);
-    const isMetaLead = (l: (typeof allLeads)[number]) =>
-      l.source === "ins" || l.source === "fb" ||
-      META_PLATFORMS.has(String(l.source_platform ?? "")) ||
-      META_PLATFORMS.has(String(l.utm_source ?? "")) ||
-      l.fbclid != null || l.meta_click_id != null;
-    const metaLeads = allLeads.filter(isMetaLead);
+    if (metaLeadsResult.error) throw metaLeadsResult.error;
+    const metaLeads = metaLeadsResult.data as Array<MetricLead & { campaign_name?: string | null }>;
 
     const totalMetaLeads = metaLeads.length;
 
@@ -150,8 +143,10 @@ export async function GET(request: Request) {
       })
       .sort((a, b) => (b.spend ?? -Infinity) - (a.spend ?? -Infinity));
 
-    // ─── 4. Source vs Quality (shared definition; "normal" is its own column) ───
-    const sourceQualityRows = sourceQualityBreakdown(allLeads);
+    // ─── 4. Source vs Quality (every counted lead, paged; shared definition, "normal" its own column) ───
+    const allLeadsResult = await fetchCountedLeads(supabase, "id,archived,source,source_platform,final_status,stage,quality,ai_quality");
+    if (allLeadsResult.error) throw allLeadsResult.error;
+    const sourceQualityRows = sourceQualityBreakdown(allLeadsResult.data as MetricLead[]);
 
     // ─── 5. Period indicator ───
     const { data: dateRange, error: dateErr } = await supabase

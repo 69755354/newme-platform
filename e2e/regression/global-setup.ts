@@ -31,7 +31,9 @@ async function sessionStillValid(browser: Awaited<ReturnType<typeof chromium.lau
 export default async function globalSetup(config: FullConfig) {
   const target = resolveTarget(process.env);
   const runDir = process.env.E2E_RUN_DIR as string;
-  mkdirSync(runDir, { recursive: true });
+  mkdirSync(runDir, { recursive: true, mode: 0o700 });
+  chmodSync(runDir, 0o700);
+  chmodSync(path.dirname(runDir), 0o700); // traces hold session cookies and sign-in request bodies
   const accounts = loadAccounts(target.accountsFile);
   const missing = missingRoles(accounts, ROLE_KEYS);
   if (missing.length) throw new Error(`Accounts file lacks roles: ${missing.join(", ")}`);
@@ -51,7 +53,7 @@ export default async function globalSetup(config: FullConfig) {
   try {
     for (const key of ROLE_KEYS) {
       const file = authStatePath(target.baseURL, key);
-      if (process.env.E2E_FRESH_LOGIN !== "1" && (await (browser ??= await chromium.launch({ headless: true, ...(use.launchOptions ?? {}) }), sessionStillValid(browser, target.baseURL, file)))) {
+      if (process.env.E2E_FRESH_LOGIN !== "1" && !target.isProduction && (await (browser ??= await chromium.launch({ headless: true, ...(use.launchOptions ?? {}) }), sessionStillValid(browser, target.baseURL, file)))) {
         chmodSync(file, 0o600);
         reused.push(key);
         continue;
@@ -77,7 +79,7 @@ export default async function globalSetup(config: FullConfig) {
         await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 30_000 });
       } catch {
         const msg = (await page.locator("body").innerText().catch(() => "")).replace(/\s+/g, " ").slice(0, 200);
-        throw new Error(`Login failed for ${key} (${account.email}): ${msg}`);
+        throw new Error(`Login failed for role ${key}: ${msg}`);
       }
       if (new URL(page.url()).pathname.startsWith("/change-password")) {
         throw new Error(`QA account ${key} is forced to change its password; fix the account before running the suite`);

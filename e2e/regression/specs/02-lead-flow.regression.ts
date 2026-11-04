@@ -28,7 +28,8 @@ test.describe("lead intake", () => {
       await s.page.waitForURL(/\/leads\/[0-9a-f-]{36}/, { timeout: 20_000 });
       expect(pathOf(s.page)).toContain(body.id!);
       await expect(s.page.getByText(name).first()).toBeVisible({ timeout: 20_000 });
-      expect(s.metaBlocked.every((u) => !/capi/i.test(u) || true)).toBe(true);
+      expect(s.metaBlocked.filter((u) => /meta-capi/i.test(u)), "the browser must not report this test lead to Meta").toEqual([]);
+
     });
   }
 
@@ -41,11 +42,11 @@ test.describe("lead intake", () => {
     expect(r.status, `empty lead via API -> ${r.status}`).toBe(400);
   });
 
-  test("bad phone and e-mail formats are refused @bug-4d-8 @role-salesA", async ({ as, ns }) => {
+  test("bad phone and e-mail formats are refused @bug-4d-8 @role-salesA", async ({ as, ns, target }) => {
     const s = await as("salesA", { path: "/api/health" });
     const bad = [
       { customer_name: `${ns}-bad-phone`, phone: "abc-not-phone", source: "offline" },
-      { customer_name: `${ns}-bad-mail`, phone: "+971500001234", email: "not-an-email", source: "offline" },
+      { customer_name: `${ns}-bad-mail`, phone: testPhone(target), email: "not-an-email", source: "offline" },
     ];
     for (const body of bad) {
       const r = await createViaApi(s.page, body);
@@ -53,9 +54,9 @@ test.describe("lead intake", () => {
     }
   });
 
-  test("overlong text is refused @bug-4d-8 @role-salesA", async ({ as, ns }) => {
+  test("overlong text is refused @bug-4d-8 @role-salesA", async ({ as, ns, target }) => {
     const s = await as("salesA", { path: "/api/health" });
-    const r = await createViaApi(s.page, { customer_name: `${ns}-${"x".repeat(400)}`, phone: "+971500001235", source: "offline", notes: "n".repeat(3500), location: "l".repeat(600) });
+    const r = await createViaApi(s.page, { customer_name: `${ns}-${"x".repeat(400)}`, phone: testPhone(target), source: "offline", notes: "n".repeat(3500), location: "l".repeat(600) });
     expect(r.status, `-> ${r.status}`).toBe(400);
   });
 
@@ -264,12 +265,14 @@ test.describe("progress: contact, quality, milestones, stage", () => {
 });
 
 test.describe("lead list", () => {
-  test("list API reports the real total, not a silent 500-row cap @role-boss", async ({ as }) => {
+  test("list API never hides rows silently: a total accompanies a capped list @role-boss", async ({ as }) => {
     const s = await as("boss", { path: "/api/health" });
     const r = await appApi<{ leads: unknown[]; total?: number; count?: number }>(s.page, "GET", "/api/leads/list");
     expect(r.status).toBe(200);
     const rows = r.json?.leads.length ?? 0;
-    if (rows >= 500) expect(r.json?.total ?? r.json?.count, "capped at 500 without a total").toBeGreaterThan(500);
+    const total = r.json?.total ?? r.json?.count;
+    if (total !== undefined) expect(total, "reported total vs rows returned").toBeGreaterThanOrEqual(rows);
+    else expect(rows, "500 rows or more and no total field: the list may be silently capped").toBeLessThan(500);
   });
 });
 

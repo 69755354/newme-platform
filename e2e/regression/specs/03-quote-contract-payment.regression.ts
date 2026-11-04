@@ -94,15 +94,16 @@ test.describe("quote -> contract -> payment", () => {
       const mk = await appApi(who.page, "POST", "/api/contracts", { lead_id: id, amount: 10, installments: [{ seq: 1, amount: 10 }] });
       expect(mk.status, `${label} create contract -> ${mk.status}`).toBe(403);
     }
-    // boss at the admin step: refused cleanly (or accepted if admin==boss policy); never a 500
-    const early = await appApi(boss.page, "POST", `/api/contracts/${cid}/approve`, { action: "approve", notes: "E2E early boss" });
-    expect(early.status, `boss at step 1 -> ${early.status} ${early.text.slice(0, 80)}`).toBeLessThan(500);
-    if (early.status >= 400) {
-      const step1 = await appApi(admin.page, "POST", `/api/contracts/${cid}/approve`, { action: "approve", notes: "E2E step 1" });
-      expect(step1.status, step1.text.slice(0, 160)).toBe(200);
-    }
-    const step2 = await appApi(boss.page, "POST", `/api/contracts/${cid}/approve`, { action: "approve", notes: "E2E step 2" });
-    expect(step2.status, `boss final approval -> ${step2.text.slice(0, 160)}`).toBe(200);
+    // Policy decided by Sam: admin == boss, so either may decide either step. What must hold is
+    // that an early or repeated decision never ends in a 500.
+    const early = await appApi(boss.page, "POST", `/api/contracts/${cid}/approve`, { action: "approve", notes: "E2E boss first" });
+    expect(early.status, `boss first decision -> ${early.status} ${early.text.slice(0, 80)}`).toBeLessThan(500);
+    const second = await appApi(admin.page, "POST", `/api/contracts/${cid}/approve`, { action: "approve", notes: "E2E second decision" });
+    expect(second.status, `second decision -> ${second.status} ${second.text.slice(0, 120)}`).toBeLessThan(500);
+    const detail = await appApi<{ contract?: { status?: string }; status?: string }>(admin.page, "GET", `/api/contracts/${cid}`);
+    const status = detail.json?.contract?.status ?? detail.json?.status ?? "";
+    if (early.status === 200 && second.status === 200) expect(status, "two successful decisions complete the two-step approval").toBe("approved");
+    else expect(["pending_admin", "pending_ceo", "approved"], `contract status ${status}`).toContain(status);
     // an admin at the boss step is allowed too (admin == boss), and a repeat is not a 500
     const again = await appApi(admin.page, "POST", `/api/contracts/${cid}/approve`, { action: "approve", notes: "E2E repeat" });
     expect(again.status, `repeat approval -> ${again.status}`).toBeLessThan(500);

@@ -23,21 +23,48 @@ test('full suite refuses production; smoke needs the explicit opt-in', () => {
   assert.throws(() => target.resolveTarget({ E2E_BASE_URL: 'https://u:p@staging.example' }), /credentials/);
 });
 
-test('production guard blocks writes except the one marked lead', () => {
-  const base = { origin: 'https://app.newme.ae' };
-  const get = target.productionRequestDecision({ ...base, method: 'GET', url: 'https://app.newme.ae/api/leads/list' });
-  assert.equal(get.allow, true);
-  const write = target.productionRequestDecision({ ...base, method: 'POST', url: 'https://app.newme.ae/api/leads', postData: '{}' });
-  assert.equal(write.allow, false);
-  const marked = target.productionRequestDecision({ ...base, method: 'POST', url: `https://app.newme.ae/api/leads/${ID}/assignment`, allowLeadId: ID });
-  assert.equal(marked.allow, true);
-  const other = target.productionRequestDecision({ ...base, method: 'POST', url: 'https://app.newme.ae/api/leads/other/assignment', allowLeadId: ID });
-  assert.equal(other.allow, false);
-  const third = target.productionRequestDecision({ ...base, method: 'POST', url: 'https://example.com/x' });
-  assert.equal(third.allow, false);
+test('production is read-only: every non-GET is refused except sign-in, session, sign-out and the Sentry tunnel', () => {
+  const origin = 'https://app.newme.ae';
+  const d = (method, url, extra = {}) => target.productionRequestDecision({ origin, method, url, ...extra });
+  assert.equal(d('GET', `${origin}/api/leads/list`).allow, true);
+  assert.equal(d('HEAD', `${origin}/x`).allow, true);
+  // app writes, including a lead id in the URL: no per-lead exception any more
+  assert.equal(d('POST', `${origin}/api/leads`).allow, false);
+  assert.equal(d('POST', `${origin}/api/leads/${ID}/assignment`).allow, false);
+  assert.equal(d('PATCH', `${origin}/api/leads/${ID}/stage`).allow, false);
+  assert.equal(d('DELETE', `${origin}/api/users/${ID}`).allow, false);
+  // allowed housekeeping
+  assert.equal(d('POST', `${origin}/api/auth/login`).allow, true);
+  assert.equal(d('POST', `${origin}/api/auth/logout`).allow, true);
+  assert.equal(d('POST', `${origin}/monitoring?x=1`).allow, true);
+  // database: no REST writes of any kind (RPC included), auth only token refresh / logout
+  const db = 'https://abc.supabase.co';
+  assert.equal(d('POST', `${db}/rest/v1/leads`).allow, false);
+  assert.equal(d('PATCH', `${db}/rest/v1/leads?id=eq.${ID}`, { postData: ID }).allow, false);
+  assert.equal(d('POST', `${db}/rest/v1/rpc/transition_lead_stage`).allow, false);
+  assert.equal(d('POST', `${db}/auth/v1/token?grant_type=refresh_token`).allow, true);
+  assert.equal(d('POST', `${db}/auth/v1/logout`).allow, true);
+  assert.equal(d('PUT', `${db}/auth/v1/user`).allow, false);
+  assert.equal(d('POST', `${db}/auth/v1/recover`).allow, false);
+  // server actions: tolerated only while a page is loading
+  const action = { headers: { 'Next-Action': 'abc' } };
+  assert.equal(d('POST', `${origin}/team`, { ...action, actionWindowOpen: true }).allow, true);
+  assert.equal(d('POST', `${origin}/team`, { ...action, actionWindowOpen: false }).allow, false);
+  assert.equal(d('POST', `${origin}/team`, { actionWindowOpen: true }).allow, false);
+  assert.equal(d('POST', 'https://example.com/x').allow, false);
   assert.equal(target.isMetaTraffic('https://www.facebook.com/tr?id=1'), true);
   assert.equal(target.isMetaTraffic('https://app.newme.ae/api/leads/meta-capi'), true);
   assert.equal(target.isMetaTraffic('https://app.newme.ae/api/leads/list'), false);
+});
+
+test('the suite no longer carries a production write exception or hard-coded server paths', () => {
+  const t = target.resolveTarget({ E2E_BASE_URL: 'https://app.newme.ae', E2E_ALLOW_PRODUCTION: '1', E2E_ACCOUNTS_FILE: 'x', E2E_SMOKE_LEAD_ID: ID });
+  assert.equal('smokeLeadId' in t, false);
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.name.startsWith('.') ? [] : e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]);
+  for (const f of walk(root)) {
+    const text = fs.readFileSync(f, 'utf8');
+    assert.ok(!/allowLeadId|touchesMarkedLead|\/home\/claude-ops/.test(text), `${f} mentions a removed exception or a server path`);
+  }
 });
 
 test('the public-origin replay only applies to loopback targets', () => {

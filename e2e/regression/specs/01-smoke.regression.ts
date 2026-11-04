@@ -1,6 +1,6 @@
 // Production-safe smoke subset (@smoke): reads only, plus one reversible
 // assignment journey on a single marked test lead. Runs on staging too.
-import { test, expect, type RoleKey } from "../lib/fixtures";
+import { test, expect, requireWrites, type RoleKey } from "../lib/fixtures";
 import { appApi, listLeads, sidebarLinks, settle, pathOf, rest, assignViaApi, getLead } from "../lib/app";
 import { bodyText, rawKeysIn, openBellPanel, horizontalOverflow } from "../lib/ui";
 import { seedLead } from "../lib/data";
@@ -116,7 +116,9 @@ test.describe("data visibility", () => {
     }
     await a.page.goto(`/leads/${id}`, { waitUntil: "domcontentloaded" });
     await settle(a.page);
-    expect(await bodyText(a.page), "foreign lead name must not be rendered").not.toContain(target!.customer_name ?? "\u0000never");
+    // compare without echoing the name: on production it is a real customer
+    const shown = (await bodyText(a.page)).includes(target!.customer_name ?? "\u0000never");
+    expect(shown, "a foreign lead's name is rendered on the page").toBe(false);
   });
 
   test("finance and designer cannot read company-wide activities, business events or milestones @smoke @role-finance @role-designer @bug-4c-1", async ({ as }) => {
@@ -176,29 +178,19 @@ test.describe("language and layout", () => {
   });
 });
 
-test.describe("marked test lead journey (reverts itself)", () => {
-  test("assign twice in a row without a refresh, then restore the owner @smoke @role-admin @bug-4a-6", async ({ as, accounts, target, registry, ns }) => {
+test.describe("assignment journey (staging only; production is read-only)", () => {
+  test("assign twice in a row without a refresh, then restore the owner @role-admin @bug-4a-6", async ({ as, accounts, target, registry, ns }) => {
+    requireWrites(target);
     const admin = await as("admin", { path: "/api/health" });
-    let leadId = target.smokeLeadId;
-    if (!leadId) {
-      test.skip(target.isProduction, "set E2E_SMOKE_LEAD_ID to the marked QA lead to run this on production");
-      leadId = await seedLead(admin, registry, target, ns, { label: "smoke-assign", assignedTo: accounts.salesA.id });
-    }
+    const leadId = await seedLead(admin, registry, target, ns, { label: "smoke-assign", assignedTo: accounts.salesA.id });
     const before = await getLead(admin.page, leadId);
-    expect(before, "marked lead must be visible to admin").toBeTruthy();
-    const original = before!.assigned_to;
-    const a = original === accounts.salesA.id ? accounts.salesB.id : accounts.salesA.id;
-    try {
-      const first = await assignViaApi(admin.page, leadId, a, "E2E smoke reassignment 1");
-      expect(first.status, first.text).toBe(200);
-      // second move straight away with the version the first call returned, as the page does without a refresh
-      const back = await assignViaApi(admin.page, leadId, original ?? accounts.salesA.id, "E2E smoke reassignment 2");
-      expect(back.status, back.text).toBe(200);
-    } finally {
-      const now = await getLead(admin.page, leadId);
-      if (original && now && now.assigned_to !== original) await assignViaApi(admin.page, leadId, original, "E2E smoke restore");
-    }
-    const after = await getLead(admin.page, leadId);
-    expect(after!.assigned_to, "owner must be restored").toBe(original);
+    expect(before, "seeded lead must be visible to admin").toBeTruthy();
+    const original = before!.assigned_to!;
+    const other = original === accounts.salesA.id ? accounts.salesB.id : accounts.salesA.id;
+    const first = await assignViaApi(admin.page, leadId, other, "E2E smoke reassignment 1");
+    expect(first.status, first.text).toBe(200);
+    const back = await assignViaApi(admin.page, leadId, original, "E2E smoke reassignment 2");
+    expect(back.status, back.text).toBe(200);
+    expect((await getLead(admin.page, leadId))!.assigned_to, "owner restored").toBe(original);
   });
 });

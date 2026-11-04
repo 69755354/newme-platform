@@ -3,14 +3,16 @@
 #   bash e2e/regression/run.sh                      # full suite against staging
 #   E2E_SUITE=smoke bash e2e/regression/run.sh      # staging, smoke subset only
 #   E2E_BASE_URL=https://app.newme.ae E2E_ALLOW_PRODUCTION=1 \
-#     E2E_ACCOUNTS_FILE=/home/claude-ops/.config/newme/qa-accounts.txt bash e2e/regression/run.sh   # production-safe smoke
+#     E2E_ACCOUNTS_FILE=$HOME/.config/newme/qa-accounts.txt bash e2e/regression/run.sh   # production smoke (read-only: nothing is written there)
 # Extra arguments are passed to Playwright (for example a spec file or -g "@bug-4a-1").
 set -u
 cd "$(dirname "$0")/../.."
-LOCK=/home/claude-ops/newme-ops/fixes/.build.lock
+LOCK="${E2E_BUILD_LOCK:-$HOME/newme-ops/fixes/.build.lock}"
 export E2E_RUN_ID="${E2E_RUN_ID:-$(date -u +%Y%m%d-%H%M%S)-$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n')}"
 RUN_DIR="e2e/regression/.runs/$E2E_RUN_ID"
-mkdir -p "$RUN_DIR"
+umask 077
+mkdir -p -m 700 e2e/regression/.runs
+mkdir -p -m 700 "$RUN_DIR"
 if [ "$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)" -lt 2500 ]; then
   echo "可用内存低于 2500 MB，先等一等再跑（见 COMMON-RULES）" >&2
   exit 3

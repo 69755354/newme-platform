@@ -3,7 +3,7 @@
 // Full suite (staging):   bash e2e/regression/run.sh
 // Production smoke:       E2E_BASE_URL=https://app.newme.ae E2E_ALLOW_PRODUCTION=1 \
 //                         E2E_ACCOUNTS_FILE=... bash e2e/regression/run.sh
-// See /home/claude-ops/newme-ops/fixes/REGRESSION-RUNBOOK.md.
+// See e2e/regression/RUNBOOK.md.
 import path from "node:path";
 import { defineConfig } from "@playwright/test";
 import { chromium } from "@playwright/test";

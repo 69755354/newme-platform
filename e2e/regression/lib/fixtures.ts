@@ -32,8 +32,6 @@ export interface OpenOptions {
   device?: "desktop" | "mobile390" | "mobile360" | { width: number; height: number };
   /** Start without the cached session (e.g. login/logout tests). */
   anonymous?: boolean;
-  /** Production only: the one marked QA lead the smoke journey may write to. */
-  allowLeadId?: string;
   path?: string;
 }
 
@@ -47,6 +45,8 @@ export interface Session {
   metaBlocked: string[];
   /** Write the session back to the cache on close (false for tests that log out or change the password). */
   keepState: boolean;
+  /** Production: server actions are tolerated until this time (page load), refused afterwards. */
+  actionWindowUntil: number;
   /** Captured Supabase REST coordinates for direct RLS probes. */
   rest: { url: string; apikey: string; authorization: string } | null;
 }
@@ -99,7 +99,8 @@ async function openSession(
     serverErrors: [],
     blockedWrites: [],
     metaBlocked: [],
-    keepState: !options.anonymous,
+    keepState: !options.anonymous && !target.isProduction,
+    actionWindowUntil: 0,
     rest: null,
   };
 
@@ -111,13 +112,13 @@ async function openSession(
       return route.abort("blockedbyclient");
     }
     if (target.isProduction) {
+      if (req.isNavigationRequest()) session.actionWindowUntil = Date.now() + 8000;
       const decision = productionRequestDecision({
         method: req.method(),
         url,
         headers: req.headers(),
-        postData: req.postData() ?? "",
         origin: target.origin,
-        allowLeadId: options.allowLeadId ?? null,
+        actionWindowOpen: Date.now() < session.actionWindowUntil,
       });
       if (!decision.allow) {
         session.blockedWrites.push(`${req.method()} ${url.slice(0, 140)} (${decision.reason})`);

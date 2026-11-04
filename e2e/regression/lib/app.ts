@@ -129,7 +129,8 @@ export async function captureToasts(page: Page, fn: () => Promise<unknown>, sett
 /**
  * +97150000XXXX numbers, unique within a run even when Playwright restarts its worker
  * after a failed test (the sequence lives in a file in the run directory) and spread
- * across the 10000 range by a hash of the run id so separate runs rarely meet.
+ * split into 100 blocks of 100 numbers by the run id, so two runs share numbers only when their
+ * blocks coincide (and cleanup clears the phone of archived leads).
  */
 export function testPhone(target: Target): string {
   const dir = process.env.E2E_RUN_DIR || ".";
@@ -146,8 +147,10 @@ export function testPhone(target: Target): string {
   } catch {
     /* run dir missing: fall back to in-memory uniqueness within this process */
   }
-  const h = parseInt(createHash("sha1").update(target.runId).digest("hex").slice(0, 6), 16);
-  return `+97150000${String((h + n * 37) % 10000).padStart(4, "0")}`;
+  // each run owns a block of 100 numbers (block chosen from the run id); a run that needs
+  // more simply continues into the following blocks
+  const block = parseInt(createHash("sha1").update(target.runId).digest("hex").slice(0, 6), 16) % 100;
+  return `+97150000${String((block * 100 + (n - 1)) % 10000).padStart(4, "0")}`;
 }
 
 export function testEmail(target: Target, label: string): string {

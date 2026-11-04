@@ -11,7 +11,8 @@ test.describe("consistent totals", () => {
     const ana = await appApi<Record<string, unknown>>(s.page, "GET", "/api/analytics/summary");
     expect(dash.status).toBe(200);
     expect(ana.status).toBe(200);
-    const dashTotal = (dash.json?.leads as unknown[] | undefined)?.length ?? null;
+    const dashJson = dash.json as { leads?: unknown[]; leadStats?: { total?: number } };
+    const dashTotal = dashJson.leadStats?.total ?? dashJson.leads?.length ?? null;
     const anaJson = ana.json as { leadHealth?: { totalLeads?: number }; pipelineFunnel?: { totalLeads?: number } };
     const anaTotal = anaJson.leadHealth?.totalLeads ?? null;
     const funnelTotal = anaJson.pipelineFunnel?.totalLeads ?? null;
@@ -36,17 +37,12 @@ test.describe("consistent totals", () => {
     expect(a, "/ads vs /settings/ads totals").toBe(b);
   });
 
-  test("dashboard and lead list handle more than 500 leads without hiding rows silently @role-boss", async ({ as }) => {
+  test("summary endpoints return clean numbers: no undefined or NaN in any figure @role-boss", async ({ as }) => {
     const s = await as("boss", { path: "/api/health" });
-    const r = await appApi<{ leads: unknown[] }>(s.page, "GET", "/api/leads/list");
-    expect(r.status).toBe(200);
-    expect((r.json?.leads ?? []).length).toBeLessThanOrEqual(5000);
-  });
-
-  test("today / this-month figures use Dubai time @role-boss", async ({ as }) => {
-    const s = await as("boss", { path: "/api/health" });
-    const r = await appApi<Record<string, unknown>>(s.page, "GET", "/api/dashboard/summary");
-    expect(r.status).toBe(200);
-    expect(r.text).not.toMatch(/undefined|NaN/);
+    for (const url of ["/api/dashboard/summary", "/api/analytics/summary"]) {
+      const r = await appApi(s.page, "GET", url);
+      expect(r.status, url).toBe(200);
+      expect(JSON.stringify(r.json), `${url} contains a broken value`).not.toMatch(/undefined|NaN/);
+    }
   });
 });

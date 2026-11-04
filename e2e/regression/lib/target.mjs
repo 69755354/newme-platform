@@ -2,16 +2,16 @@
 //
 // Pure functions only (no Playwright import) so tests/regression-suite can unit
 // test the guard that keeps the full suite away from production.
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 export const DEFAULT_BASE_URL = "http://127.0.0.1:3101";
-export const DEFAULT_STAGING_ACCOUNTS = "/home/claude-ops/.config/newme/staging-qa-accounts.txt";
+export const DEFAULT_STAGING_ACCOUNTS = path.join(os.homedir(), ".config", "newme", "staging-qa-accounts.txt");
 export const PRODUCTION_HOSTS = new Set(["app.newme.ae"]);
 
 /** Chrome builds that exist on the NEWME server when Playwright's own Chromium is absent. */
 export const FALLBACK_BROWSERS = [
-  "/home/claude-ops/.claude-server-commander/puppeteer-cache/chrome/linux-156.0.8078.47/chrome-linux64/chrome",
   "/usr/bin/google-chrome",
   "/usr/bin/google-chrome-stable",
   "/usr/bin/chromium",
@@ -65,10 +65,20 @@ export function resolveTarget(env = process.env) {
     runId,
     allowWrites: !isProduction,
     idleMs: Number(env.E2E_IDLE_MS || (suite === "smoke" ? 0 : 120000)),
-    smokeLeadId: (env.E2E_SMOKE_LEAD_ID || "").trim() || null,
-    smokeLeadName: (env.E2E_SMOKE_LEAD_NAME || "E2E-SMOKE-LEAD").trim(),
-    smokeLeadRole: (env.E2E_SMOKE_LEAD_ACCOUNT || "sales:QA Sales A").trim(),
   };
+}
+
+/** Extra search roots for a cached Chrome build (puppeteer cache); override with E2E_CHROME_PATH. */
+export function cachedChromeCandidates(home = os.homedir()) {
+  const root = path.join(home, ".claude-server-commander", "puppeteer-cache", "chrome");
+  try {
+    return readdirSync(root)
+      .sort()
+      .reverse()
+      .map((v) => path.join(root, v, "chrome-linux64", "chrome"));
+  } catch {
+    return [];
+  }
 }
 
 /** Pick a Chromium binary without ever running `playwright install`. */
@@ -83,7 +93,7 @@ export function resolveBrowserExecutable(env = process.env, bundledPath = null, 
     return env.E2E_CHROME_PATH;
   }
   if (bundledPath && exists(bundledPath)) return undefined; // let Playwright use its own build
-  for (const candidate of FALLBACK_BROWSERS) {
+  for (const candidate of [...cachedChromeCandidates(), ...FALLBACK_BROWSERS]) {
     if (exists(candidate)) return candidate;
   }
   throw new Error("No Chromium found: set E2E_CHROME_PATH (playwright install is intentionally not used)");
@@ -92,23 +102,26 @@ export function resolveBrowserExecutable(env = process.env, bundledPath = null, 
 // ─── Production write guard ───────────────────────────────────────────────
 
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-/** Same-origin POST endpoints that do not change business data. */
+/** Same-origin POST endpoints that do not change business data (sign in / session / sign out). */
 const SAFE_APP_POSTS = [
   /^\/api\/auth\/login$/,
   /^\/api\/auth\/session$/,
   /^\/api\/auth\/logout$/,
   /^\/monitoring(\/|$)/, // Sentry tunnel
 ];
+/** Database auth endpoints: only token refresh and sign-out of the QA session itself. */
+const SAFE_AUTH_POSTS = [/^\/auth\/v1\/token$/, /^\/auth\/v1\/logout$/];
 
 /**
  * Decide whether a browser request may leave the browser when the target is production.
- * `allowLeadId` opens exactly one marked QA lead for the smoke journey.
+ * Production is read-only: every non-GET is refused except sign-in, session refresh,
+ * sign-out and the Sentry tunnel. Server actions (POST + `next-action`) are POSTs even
+ * when pages use them to read identity on mount, so they are allowed only while
+ * `actionWindowOpen` (page load); the caller records and refuses any later one.
  * Returns { allow: boolean, reason: string }.
+ * @param {{ method?: string, url: string, headers?: Record<string, string>, origin: string, actionWindowOpen?: boolean }} input
  */
-/**
- * @param {{ method?: string, url: string, headers?: Record<string, string>, postData?: string, origin: string, allowLeadId?: string | null }} input
- */
-export function productionRequestDecision({ method, url, headers = {}, postData = "", origin, allowLeadId = null }) {
+export function productionRequestDecision({ method, url, headers = {}, origin, actionWindowOpen = false }) {
   const m = String(method || "GET").toUpperCase();
   if (READ_METHODS.has(m)) return { allow: true, reason: "read" };
   let u;
@@ -117,29 +130,18 @@ export function productionRequestDecision({ method, url, headers = {}, postData 
   } catch {
     return { allow: false, reason: "unparseable url" };
   }
-  const body = String(postData || "");
-  const touchesMarkedLead = Boolean(allowLeadId) && (u.href.includes(allowLeadId) || body.includes(allowLeadId));
-
-  // Supabase REST (any host): RPC reads are POSTs; table writes are not allowed.
-  if (u.pathname.startsWith("/rest/v1/")) {
-    if (touchesMarkedLead) return { allow: true, reason: "marked QA lead" };
-    if (m === "POST" && u.pathname.startsWith("/rest/v1/rpc/")) return { allow: true, reason: "rpc read" };
-    return { allow: false, reason: `database write ${m} ${u.pathname}` };
-  }
   if (u.pathname.startsWith("/auth/v1/")) {
-    // token refresh / logout of the QA session itself
-    return { allow: true, reason: "auth session" };
+    return m === "POST" && SAFE_AUTH_POSTS.some((re) => re.test(u.pathname))
+      ? { allow: true, reason: "auth session" }
+      : { allow: false, reason: `database auth ${m} ${u.pathname}` };
   }
+  if (u.pathname.startsWith("/rest/v1/")) return { allow: false, reason: `database write ${m} ${u.pathname}` };
   if (u.origin === origin) {
-    if (SAFE_APP_POSTS.some((re) => re.test(u.pathname))) return { allow: true, reason: "auth" };
+    if (m === "POST" && SAFE_APP_POSTS.some((re) => re.test(u.pathname))) return { allow: true, reason: "auth" };
     const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
-    if (lower["next-action"]) {
-      // Server actions are POSTs even for reads (getCurrentUser on page mount).
-      // Smoke tests never click write buttons; anything else is caught by the
-      // REST/API rules above and below.
-      return { allow: true, reason: "server action (read on mount)" };
+    if (m === "POST" && lower["next-action"]) {
+      return actionWindowOpen ? { allow: true, reason: "server action during page load" } : { allow: false, reason: "server action after page load" };
     }
-    if (touchesMarkedLead && u.pathname.startsWith("/api/leads/")) return { allow: true, reason: "marked QA lead" };
     return { allow: false, reason: `app write ${m} ${u.pathname}` };
   }
   return { allow: false, reason: `third-party ${m} ${u.host}` };

@@ -20,11 +20,13 @@ test.describe("database policies (direct reads/writes with the user's own token)
   test("designer cannot write activities on a lead they cannot see @bug-4c-2 @role-designer", async ({ as, accounts, target, ns, registry }) => {
     const admin = await as("admin", { path: "/api/health" });
     const id = await seedLead(admin, registry, target, ns, { label: "inject", assignedTo: accounts.salesA.id });
+    const row = { lead_id: id, type: "note", content: "E2E injected note" };
+    // control: the same row (same field names) is accepted from a user who may write it
+    const control = await rest(admin, "POST", "activities", { ...row, user_id: accounts.admin.id });
+    expect(control.status, `control insert as admin must work, otherwise a denial proves nothing: ${control.text.slice(0, 120)}`).toBeLessThan(300);
     const d = await as("designer", { path: "/api/health" });
-    const r = await rest(d, "POST", "activities", { lead_id: id, type: "note", description: "E2E injected note", user_id: accounts.designer.id });
-    expect([401, 403, 400, 404], `designer insert -> ${r.status} ${r.text.slice(0, 100)}`).toContain(r.status);
-    const direct = await appApi(d.page, "POST", "/api/activities", { lead_id: id, type: "note", description: "E2E injected note" });
-    expect(direct.status, `designer POST /api/activities -> ${direct.status}`).toBeGreaterThanOrEqual(400);
+    const r = await rest(d, "POST", "activities", { ...row, user_id: accounts.designer.id });
+    expect([401, 403], `designer insert -> ${r.status} ${r.text.slice(0, 100)}`).toContain(r.status);
   });
 
   test("designer cannot add, change or delete products; finance cannot either @bug-4c-3 @role-designer @role-finance", async ({ as, ns, registry }) => {
@@ -45,8 +47,13 @@ test.describe("database policies (direct reads/writes with the user's own token)
     const d = await as("designer", { path: "/api/health" });
     const upd = await rest<unknown[]>(d, "PATCH", `products?id=eq.${row!.id}`, { unit_price: row!.unit_price });
     expect((upd.json ?? []).length === 0 || upd.status >= 400, `designer product update -> ${upd.status} rows=${(upd.json ?? []).length}`).toBe(true);
-    const del = await rest<unknown[]>(d, "DELETE", `products?id=eq.00000000-0000-0000-0000-000000000000`);
-    expect(del.status === 200 ? (del.json ?? []).length : 0).toBe(0);
+    // delete the control product admin created above; it must survive
+    const controlId = control.json?.[0]?.id;
+    expect(controlId, "control product id").toBeTruthy();
+    const del = await rest<unknown[]>(d, "DELETE", `products?id=eq.${controlId}`);
+    expect(del.status >= 400 || (del.json ?? []).length === 0, `designer product delete -> ${del.status} rows=${(del.json ?? []).length}`).toBe(true);
+    const still = await rest<unknown[]>(ctl, "GET", `products?id=eq.${controlId}&select=id`);
+    expect((still.json ?? []).length, "the product must still exist after the designer's delete").toBe(1);
   });
 
   test("finance cannot edit lead fields directly @role-finance", async ({ as, accounts, target, ns, registry }) => {
@@ -87,7 +94,7 @@ test.describe("management actions", () => {
     }
   });
 
-  test("impersonation refuses an inactive target @role-admin", async ({ as }) => {
+  test("impersonation refuses an unknown target @role-admin", async ({ as }) => {
     const s = await as("admin", { path: "/api/health" });
     const r = await appApi(s.page, "POST", "/api/admin/impersonate", { userId: "00000000-0000-0000-0000-000000000000" });
     expect(r.status, `-> ${r.status}`).toBeGreaterThanOrEqual(400);

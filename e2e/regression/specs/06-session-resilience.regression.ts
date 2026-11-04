@@ -1,6 +1,6 @@
 // Sessions, forced password change, lockout, deploy skew, offline/slow saves, idle.
 import { test, expect } from "../lib/fixtures";
-import { appApi, captureToasts, pathOf, settle } from "../lib/app";
+import { appApi, captureToasts, pathOf, settle, testPhone } from "../lib/app";
 import { bodyText } from "../lib/ui";
 import { createTempUser, loginViaForm, seedLead } from "../lib/data";
 
@@ -95,18 +95,35 @@ test.describe("sign-in protection", () => {
     const u = await createTempUser(admin, registry, target, ns, "twotabs");
     const s = await as(null, { anonymous: true });
     s.keepState = false;
-    await loginViaForm(s.page, u.email, u.secret).catch(() => undefined);
-    // the new account is forced to change its password; use the API to lift that for this tab test
+    // 1. first sign-in is forced to change the password: do that through the API, then sign in again
+    await s.page.goto("/api/health");
+    const first = await appApi(s.page, "POST", "/api/auth/login", { email: u.email, password: u.secret });
+    expect(first.status, "first sign-in").toBe(200);
+    const fresh = `Cc3!${u.secret.slice(4, 16)}`;
+    const changed = await appApi(s.page, "POST", "/api/auth/change-password", { oldPassword: u.secret, newPassword: fresh });
+    expect(changed.status, `password change: ${changed.text.slice(0, 100)}`).toBeLessThan(300);
+    await loginViaForm(s.page, u.email, fresh);
+    const me = await appApi<{ forcePasswordChange?: boolean }>(s.page, "GET", "/api/auth/me");
+    expect(me.status).toBe(200);
+    expect(me.json?.forcePasswordChange, "account must be fully usable before the two-tab test").not.toBe(true);
+    // 2. open the form and fill it in, tab A stays open
+    await s.page.goto("/leads/new", { waitUntil: "domcontentloaded" });
+    const form = s.page.locator("form").first();
+    await expect(form).toBeVisible();
+    await form.locator("input").nth(0).fill(`${ns}-twotabs`);
+    await form.locator("input").nth(1).fill(testPhone(target));
+    // 3. another tab signs out
     const tabB = await s.context.newPage();
     await tabB.goto("/api/health");
-    await appApi(tabB, "POST", "/api/auth/logout");
-    await s.page.goto("/leads/new").catch(() => undefined);
+    expect((await appApi(tabB, "POST", "/api/auth/logout")).status).toBeLessThan(400);
+    // 4. tab A submits
     const toasts = await captureToasts(s.page, async () => {
-      await s.page.locator("form input").first().fill(`${ns}-twotabs`).catch(() => undefined);
-      await s.page.locator("form button[type=submit]").first().click().catch(() => undefined);
+      await form.locator("button[type=submit]").first().click();
     }, 4000);
     const text = `${toasts.join(" ")} ${await bodyText(s.page)}`;
-    expect(/log in|sign in|session|登录|过期/i.test(text) || /\/login/.test(pathOf(s.page)), `after remote logout: "${text.slice(0, 160)}"`).toBe(true);
+    const said = /log in|sign in|session|expired|登录|过期/i.test(text);
+    expect(said, `the page must say the session ended; saw: "${text.replace(/\s+/g, " ").slice(0, 160)}"`).toBe(true);
+    await expect.poll(() => pathOf(s.page), { timeout: 10_000, message: "and send the user to sign in" }).toMatch(/^\/login/);
   });
 
   test("a session idle for a while keeps working (no surprise logout) @role-boss", async ({ as, target }) => {
@@ -158,35 +175,37 @@ test.describe("deploy skew (stale tab after a release)", () => {
 test.describe("saving under bad networks", () => {
   test("inline edit offline keeps the typed value and shows one readable message @bug-4d-4 @bug-4d-6 @role-salesA", async ({ as, accounts, target, ns, registry }) => {
     const admin = await as("admin", { path: "/api/health" });
-    const phone = "+971500009911";
+    const phone = testPhone(target);
+    const typed = testPhone(target);
     const id = await seedLead(admin, registry, target, ns, { label: "offline-edit", assignedTo: accounts.salesA.id, phone });
     const s = await as("salesA", { path: `/leads/${id}` });
     await settle(s.page);
     await s.page.getByText(phone, { exact: true }).first().click();
     const input = s.page.locator("input:focus, input[type=tel]:visible, input[type=text]:visible").first();
     await expect(input).toBeVisible();
-    await input.fill("+971500009922");
+    await input.fill(typed);
     await s.context.setOffline(true);
     const toasts = await captureToasts(s.page, () => input.press("Enter"), 3500);
     await s.context.setOffline(false);
     expect(toasts.join(" | "), "raw browser error text").not.toMatch(/TypeError|Failed to fetch|NetworkError/);
     expect(toasts.length, `failure toast shown ${toasts.length} times`).toBeLessThanOrEqual(1);
-    const kept = (await s.page.locator("input:visible").evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).includes("+971500009922");
+    const kept = (await s.page.locator("input:visible").evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).includes(typed);
     expect(kept, "typed value must still be on screen after a failed save").toBe(true);
   });
 
   test("a slow save shows a saving indicator within 2 seconds @bug-4d-5 @role-salesA", async ({ as, accounts, target, ns, registry }) => {
     const admin = await as("admin", { path: "/api/health" });
-    const id = await seedLead(admin, registry, target, ns, { label: "slow-save", assignedTo: accounts.salesA.id, phone: "+971500009933" });
+    const phone = testPhone(target);
+    const id = await seedLead(admin, registry, target, ns, { label: "slow-save", assignedTo: accounts.salesA.id, phone });
     const s = await as("salesA", { path: `/leads/${id}` });
     await settle(s.page);
     await s.context.route(/\/api\/leads\/[^/]+\/(contacts|notes|follow-up|events|quality)|\/rest\/v1\/leads/, async (route) => {
       await new Promise((r) => setTimeout(r, 6000));
       return route.fallback();
     });
-    await s.page.getByText("+971500009933", { exact: true }).first().click();
+    await s.page.getByText(phone, { exact: true }).first().click();
     const input = s.page.locator("input:visible").first();
-    await input.fill("+971500009944");
+    await input.fill(testPhone(target));
     await input.press("Enter");
     await s.page.waitForTimeout(1800);
     const text = await bodyText(s.page);

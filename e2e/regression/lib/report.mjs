@@ -92,7 +92,7 @@ export function renderMarkdown(report, { outDir = ".", meta = {} } = {}) {
   out.push(verdict);
   out.push("");
   out.push(`通过 ${passed.length}　失败 ${failed.length}　跳过 ${skipped.length}　合计 ${rows.length}`);
-  if (fixedBugs.length) out.push(`\n已知问题对应的用例现在通过（问题可能已修好）：${[...new Set(fixedBugs.flatMap((r) => r.bugs))].join("、")}`);
+  if (fixedBugs.length) out.push(`\n下列缺陷对应的用例现在通过（断言成立；缺陷关闭仍请由对应修复路核对）：${[...new Set(fixedBugs.flatMap((r) => r.bugs))].join("、")}`);
   out.push("");
 
   if (setupFails.length) {

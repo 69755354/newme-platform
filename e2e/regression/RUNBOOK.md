@@ -15,10 +15,9 @@ bash e2e/regression/run.sh
 # 预发布上只跑冒烟子集（约 4 分钟）
 E2E_SUITE=smoke bash e2e/regression/run.sh
 
-# 生产安全冒烟（只读 + 一条标记测试线索的来回改派，会自己还原）
+# 生产冒烟（纯只读：生产上不写任何数据；跑完自动删除缓存的生产登录状态）
 E2E_BASE_URL=https://app.newme.ae E2E_ALLOW_PRODUCTION=1 \
-E2E_ACCOUNTS_FILE=/home/claude-ops/.config/newme/qa-accounts.txt \
-E2E_SMOKE_LEAD_ID=<标记测试线索的编号，可不填> \
+E2E_ACCOUNTS_FILE=$HOME/.config/newme/qa-accounts.txt \
 bash e2e/regression/run.sh
 
 # 只跑某个缺陷 / 某个文件（参数原样交给 Playwright）
@@ -27,18 +26,20 @@ bash e2e/regression/run.sh e2e/regression/specs/03-quote-contract-payment.regres
 ```
 
 前提：
-- 账号文件：预发布 `/home/claude-ops/.config/newme/staging-qa-accounts.txt`（不打印、不提交）；
-  生产 `/home/claude-ops/.config/newme/qa-accounts.txt`。可用 `E2E_ACCOUNTS_FILE` 指定。
+- 账号文件：预发布 `$HOME/.config/newme/staging-qa-accounts.txt`（不打印、不提交）；
+  生产 `$HOME/.config/newme/qa-accounts.txt`。可用 `E2E_ACCOUNTS_FILE` 指定。
 - 直接读库的权限检查需要数据库的“公开匿名密钥”（本来就是公开值，但不进仓库）：放在
   `~/.config/newme/staging-public-keys.env`（一行 `E2E_SUPABASE_ANON_KEY=...`，权限 600），或用环境变量
   `E2E_SUPABASE_ANON_KEY`。缺了会报 `NO_DB_PROBE_KEYS`，相关用例会失败，报告里单列为“未能执行：缺少直连数据库所需的公开密钥”，不算程序缺陷。
   生产同理：放 `~/.config/newme/production-public-keys.env`；没放时，生产冒烟里“销售越权直连数据库”“财务/设计师读全公司活动”两条跑不到断言。
+- 构建锁：默认 `$HOME/newme-ops/fixes/.build.lock`，可用 `E2E_BUILD_LOCK` 改。
+- 运行产物 `e2e/regression/.runs/`、登录缓存 `.auth-cache/` 权限 700，里面有会话 cookie，别拷出来。
 - 登录次数：每个账号 15 分钟内最多 8 次。套件把登录状态缓存在 `e2e/regression/.auth-cache/`（已忽略、权限 600），
   通常整套只登录一次；连续反复跑时如果提示 `Login failed`，等 15 分钟再跑。
 - 可用内存低于 2500 MB 时脚本直接退出（见通用规则），稍后再跑。
 
 常用环境变量：`E2E_BASE_URL`、`E2E_SUITE=full|smoke`、`E2E_ACCOUNTS_FILE`、`E2E_RUN_ID`、`E2E_IDLE_MS`（空闲用例等待毫秒，默认 120000，冒烟为 0）、
-`E2E_SKIP_CLEANUP=1`（不清理，排查用）、`E2E_CLEANUP_ALL_E2E=1`（清理所有 `E2E-` 开头的遗留线索）、`E2E_FRESH_LOGIN=1`、`E2E_CHROME_PATH`。
+`E2E_BUILD_LOCK`、`E2E_SKIP_CLEANUP=1`（不清理，排查用）、`E2E_CLEANUP_ALL_E2E=1`（清理所有 `E2E-` 开头的遗留线索）、`E2E_FRESH_LOGIN=1`、`E2E_CHROME_PATH`。
 
 ## 2. 跑哪个子集
 
@@ -46,10 +47,10 @@ bash e2e/regression/run.sh e2e/regression/specs/03-quote-contract-payment.regres
 |---|---|---|
 | 每次往预发布发新版本后 | 全套 | 全部流程、7 个角色、中英文、手机/电脑 |
 | 发布到生产前的快速确认 | 预发布冒烟 | 约 30 个用例，覆盖登录、侧栏、隔离攻击、中文键名、手机通知面板 |
-| 生产发布后 | 生产安全冒烟 | 只读；唯一的写操作是对一条标记线索改派两次再还原，且浏览器端有写保护：其余任何写请求都会被拦下 |
+| 生产发布后 | 生产冒烟 | 纯只读。浏览器端写保护：除登录/会话刷新/登出/监控隧道外所有非 GET 请求一律拒绝；服务端动作只在页面加载期间放行；数据库 REST 写入和 RPC 全拒。改派等写类用例只在预发布跑 |
 | 修某个缺陷后 | `-g "@bug-编号"` | 例如 `-g "@bug-4c-13"` |
 
-生产保护：目标是 app.newme.ae 时必须带 `E2E_ALLOW_PRODUCTION=1`，且只能跑冒烟；全套对生产会直接拒绝启动。
+生产保护：目标是 app.newme.ae 时（默认重新登录，不用缓存；跑完删除缓存）必须带 `E2E_ALLOW_PRODUCTION=1`，且只能跑冒烟；全套对生产会直接拒绝启动。
 
 ## 3. 怎么看报告
 
@@ -71,7 +72,7 @@ bash e2e/regression/run.sh e2e/regression/specs/03-quote-contract-payment.regres
 
 ## 4. 覆盖范围（specs/）
 
-- `01-smoke`：健康检查、未登录访问、7 个角色落地页与侧栏无“静默跳转”、数据可见范围、销售越权攻击（页面 + 接口 + 直连数据库）、财务/设计师读全公司活动、中文界面原始键名、手机通知面板、标记线索连续改派并还原。
+- `01-smoke`（带 @smoke 的是只读子集；改派用例只在预发布）：健康检查、未登录访问、7 个角色落地页与侧栏无“静默跳转”、数据可见范围、销售越权攻击（页面 + 接口 + 直连数据库）、财务/设计师读全公司活动、中文界面原始键名、手机通知面板、（预发布）线索连续改派。
 - `02-lead-flow`：新建线索（三种角色、空表单、格式、超长、重复手机号、手机号归一化）→ 改派（连续两次不刷新）→ 联系记录/质量 → 7 个里程碑推进阶段 → 阶段门禁 → 运营赢单/丢单 → 跟进日期事件 → 未来联系时间提示。
 - `03-quote-contract-payment`：折扣边界、报价详情可打开、导出数量、报价转合同不应立即赢单、合同两步审批与 403/500、回款登记确认、销售“新建合同”死按钮。
 - `04-permissions`：直连数据库的角色策略（活动/业务事件/里程碑/产品/线索）、团队管理权限、admin 保持全权限、各角色应能进入的页面。
@@ -83,7 +84,8 @@ bash e2e/regression/run.sh e2e/regression/specs/03-quote-contract-payment.regres
 
 - 所有数据名字带 `E2E-<运行编号>-`，手机号 `+97150000XXXX`，邮箱 `e2e-*@qa.newme.ae`，临时账号也一样。
 - 结束时通过应用接口清理：线索删除（被拦则归档）、报价/产品用该账号自己的权限删除、临时账号停用并把名下线索改为未分配、收款作废。
-- 合同没有删除接口，草稿合同会保留，报告“测试数据清理”一节会列出；预发布下次 `reset-data` 时一并清空。
+- 合同没有删除接口，草稿合同会保留；被合同引用的报价也随之保留。报告“测试数据清理”一节把它们列为“结构性留存”（不需要人工处理），预发布 `reset-data` 前可先看最近一份 `cleanup.md`。
+- 被归档的测试线索会清空手机号；手机号按运行编号分 100 个一块，避免两次运行撞号。
 - 拦截 Meta 像素和转化回传：浏览器里到 facebook/instagram 等域名和 `/api/leads/meta-capi` 的请求一律中止；预发布本身也没有外发密钥。
 
 ## 6. 环境说明（不是程序缺陷）

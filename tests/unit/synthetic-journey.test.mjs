@@ -2,14 +2,14 @@
 // on staging against one pinned, marked test lead, whose assignee it always puts back.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SyntheticAbort, assertSafeSyntheticLead, formatReport, loadConfig, runJourney } from "../../scripts/synthetic-journey.mjs";
+import { SyntheticAbort, assertSafeSyntheticLead, formatReport, loadConfig, releaseInProgress, runJourney } from "../../scripts/synthetic-journey.mjs";
 
 const LEAD = "11111111-1111-4111-8111-111111111111";
 const HOME = "22222222-2222-4222-8222-222222222222";
 const AWAY = "33333333-3333-4333-8333-333333333333";
 const REAL = "44444444-4444-4444-8444-444444444444";
 const ENV = {
-  SYNTH_MODE: "staging", SYNTH_BASE_URL: "https://staging.example.test", SYNTH_QA_EMAIL: "qa@example.com", SYNTH_QA_PASSWORD: "pw", SYNTH_LEAD_ID: LEAD,
+  SYNTH_MODE: "staging", SYNTH_STAGING_HOSTS: "staging.example.test", SYNTH_BASE_URL: "https://staging.example.test", SYNTH_QA_EMAIL: "qa@example.com", SYNTH_QA_PASSWORD: "pw", SYNTH_LEAD_ID: LEAD,
   SYNTH_LEAD_MARKER: "ZZ-QA-SYNTHETIC-DO-NOT-TOUCH", SYNTH_LEAD_SOURCE: "other", SYNTH_HOME_ASSIGNEE_ID: HOME, SYNTH_AWAY_ASSIGNEE_ID: AWAY,
 };
 const config = loadConfig(ENV);
@@ -116,7 +116,7 @@ function productionApp({ leads = [{ id: REAL }], listStatus = 200, detailStatus 
   return { requests, fetchImpl };
 }
 
-test("production journey is read-only: only login, GET list, GET one timeline, logout -- no write, no test lead needed", async () => {
+test("production journey writes no business data: only login, GET list, GET one timeline, logout -- no write, no test lead needed", async () => {
   const prod = loadConfig(PROD_ENV);
   assert.equal(prod.mode, "production");
   assert.equal(prod.leadId, undefined, "production needs no pinned test lead");
@@ -130,7 +130,7 @@ test("production journey is read-only: only login, GET list, GET one timeline, l
     ["POST", "/api/auth/logout"],
   ]);
   assert.ok(app.requests.every(([method, path]) => method === "GET" || path.startsWith("/api/auth/")), "the only non-GET calls are login and logout");
-  assert.match(formatReport(result, prod), /Daily production check \(read-only\) PASSED \(release abc1234\)/);
+  assert.match(formatReport(result, prod), /Daily production check PASSED \(release abc1234\)/);
 });
 
 test("production journey fails (and says why) when the list or the detail cannot be read, or the account sees no leads", async () => {
@@ -145,9 +145,42 @@ test("production journey fails (and says why) when the list or the detail cannot
   assert.equal(result.critical, false);
 });
 
-test("staging mode refuses the production host; unknown modes are refused", () => {
-  assert.throws(() => loadConfig({ ...ENV, SYNTH_BASE_URL: "https://app.newme.ae" }), /refuses to run against the production host/);
+test("staging mode only runs against an allow-listed staging host; unknown modes are refused", () => {
+  assert.throws(() => loadConfig({ ...ENV, SYNTH_BASE_URL: "https://app.newme.ae" }), /only runs against a host listed/);
+  // Bypasses of a "not production" deny-list: trailing dot, other case, raw IP, port tricks.
+  for (const url of ["https://app.newme.ae./", "https://APP.NEWME.AE", "https://203.0.113.10", "https://staging.example.test.evil.test", "https://evil.test@app.newme.ae"]) {
+    assert.throws(() => loadConfig({ ...ENV, SYNTH_BASE_URL: url }), SyntheticAbort, url);
+  }
+  assert.equal(loadConfig({ ...ENV, SYNTH_BASE_URL: "https://STAGING.example.test/" }).mode, "staging");
+  assert.throws(() => loadConfig({ ...ENV, SYNTH_STAGING_HOSTS: "app.newme.ae" }), /plain staging host names/);
+  assert.throws(() => loadConfig({ ...ENV, SYNTH_STAGING_HOSTS: "203.0.113.10" }), /plain staging host names/);
+  assert.throws(() => loadConfig({ ...ENV, SYNTH_STAGING_HOSTS: "" }), /SYNTH_STAGING_HOSTS/);
   assert.throws(() => loadConfig({ ...PROD_ENV, SYNTH_MODE: "full" }), /SYNTH_MODE/);
+});
+
+test("production check is skipped (not failed) while the release lock is held, and never holds the lock itself", () => {
+  const calls = [];
+  const busy = releaseInProgress({ path: "/x/lock", spawn: (cmd, args) => { calls.push([cmd, ...args]); return { status: 1 }; } });
+  assert.equal(busy, true);
+  assert.deepEqual(calls[0], ["flock", "-n", "/x/lock", "-c", "true"], "try-and-release: the lock is not held during the check");
+  assert.equal(releaseInProgress({ spawn: () => ({ status: 0 }) }), false);
+  assert.equal(releaseInProgress({ spawn: () => ({ status: null, error: new Error("no flock") }) }), false, "a tool problem must not silently skip forever");
+});
+
+test("the command line skips with exit 0 and no request when the lock is busy", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtempSync, writeFileSync, chmodSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "synth-lock-"));
+  const lock = join(dir, "release.lock");
+  writeFileSync(lock, "");
+  const holder = spawnSync("bash", ["-c", `exec 9>"${lock}"; flock -n 9 && node scripts/synthetic-journey.mjs`], {
+    encoding: "utf8", env: { ...process.env, ...PROD_ENV, SYNTH_BASE_URL: "https://127.0.0.1:1", SYNTH_RELEASE_LOCK: lock },
+  });
+  // Here the shell holds the lock and the child cannot take it: skipped, exit 0.
+  assert.equal(holder.status, 0, holder.stderr);
+  assert.match(holder.stdout, /release in progress/);
 });
 
 for (const [label, override] of [

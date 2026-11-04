@@ -2,10 +2,12 @@
 // Daily synthetic journey (S7 item 4, review 5-logging-monitoring F6; reworked
 // after the S7 review, must-fix 3). Two modes, chosen by SYNTH_MODE:
 //
-//   production (default, READ ONLY)
+//   production (default, no business-data writes)
 //       login -> open the lead list -> open ONE lead's timeline -> logout.
-//       It sends no write: no assignment, no stage change, no note. It needs no test
-//       lead and creates no data. Only HTTP statuses and counts are printed; the
+//       No assignment, stage change or note, and no test lead is needed. Logging in
+//       does create a session and one login-audit row, and logging out revokes the
+//       account's sessions; the check is skipped while a release holds the deploy
+//       lock (the gate's browser acceptance uses the same Release UAT account). Only HTTP statuses and counts are printed; the
 //       response bodies are parsed in memory and never logged.
 //
 //   staging (full journey, writes allowed)
@@ -21,6 +23,7 @@
 // marker source and be assigned to one of the two QA users; the assignee the lead
 // had before is restored in `finally`, and a failed restore is reported as CRITICAL.
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 export class SyntheticAbort extends Error {}
@@ -47,8 +50,15 @@ export function loadConfig(env) {
   if (!config.baseUrl.startsWith("https://")) throw new SyntheticAbort("SYNTH_BASE_URL must be https");
   if (mode === "production") return config;
 
-  // Staging: the full journey writes to one pinned test lead.
-  if (new URL(config.baseUrl).hostname === PRODUCTION_HOST) throw new SyntheticAbort("staging mode refuses to run against the production host");
+  // Staging: the full journey writes to one pinned test lead. Only the configured
+  // staging host names are allowed (an allow-list, not "anything but production":
+  // a trailing-dot name or a raw IP of the production server would pass a deny-list).
+  const allowed = need("SYNTH_STAGING_HOSTS").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
+  const host = new URL(config.baseUrl).hostname.toLowerCase();
+  if (allowed.includes(PRODUCTION_HOST) || allowed.some((h) => h.endsWith(".") || /^[\d.:[\]]+$/.test(h))) {
+    throw new SyntheticAbort("SYNTH_STAGING_HOSTS must be plain staging host names");
+  }
+  if (host === PRODUCTION_HOST || !allowed.includes(host)) throw new SyntheticAbort("staging mode only runs against a host listed in SYNTH_STAGING_HOSTS");
   Object.assign(config, {
     leadId: need("SYNTH_LEAD_ID"),
     marker: need("SYNTH_LEAD_MARKER"),
@@ -118,6 +128,20 @@ function makeCaller({ config, fetchImpl, steps, jar, state, result }) {
     steps.push({ step: name, status: response.status });
     return response;
   };
+}
+
+const RELEASE_LOCK = "/run/lock/newme-production-release.lock";
+
+/**
+ * The deploy gate holds this lock while it releases and while its post-release
+ * browser acceptance logs in with the same Release UAT account. Our logout revokes
+ * ALL sessions of that account, so a production check must not run alongside it.
+ * Try the lock non-blocking and release it immediately (never hold it: that would
+ * make a release that starts meanwhile abort). Returns true when the gate is busy.
+ */
+export function releaseInProgress({ path = RELEASE_LOCK, spawn = spawnSync } = {}) {
+  const result = spawn("flock", ["-n", path, "-c", "true"], { stdio: "ignore", timeout: 10_000 });
+  return result.status === 1;
 }
 
 /** Production: login, read the lead list, read one lead's timeline, logout. No write of any kind. */
@@ -253,7 +277,7 @@ export async function runStagingJourney({ config, fetchImpl = fetch }) {
 
 export function formatReport(result, config) {
   const where = result.release ? ` (release ${result.release})` : "";
-  const label = config.mode === "staging" ? "Daily staging journey" : "Daily production check (read-only)";
+  const label = config.mode === "staging" ? "Daily staging journey" : "Daily production check";
   if (result.ok) return `每日巡检通过 / ${label} PASSED${where}: ${result.steps.length} steps.`;
   return `${result.critical ? "【严重】CRITICAL " : ""}每日巡检失败 / ${label} FAILED${where} at step "${result.failedStep}". ${result.error ?? ""}`.trim();
 }
@@ -272,6 +296,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   try { config = loadConfig(process.env); } catch (error) { console.error(error.message); process.exit(2); }
   const dryRun = process.argv.includes("--dry-run");
   if (dryRun) { console.log(`dry run: ${config.mode} configuration valid for ${new URL(config.baseUrl).host}; no request sent`); process.exit(0); }
+  if (config.mode === "production" && releaseInProgress({ path: process.env.SYNTH_RELEASE_LOCK || RELEASE_LOCK })) {
+    console.log("发布进行中，跳过本次巡检 / release in progress, production check skipped");
+    process.exit(0);
+  }
   let result = await runJourney({ config });
   // One retry, as the review asked -- but never after a one-way stage change.
   if (!result.ok && !result.critical && !config.onewayStage) result = await runJourney({ config });

@@ -38,9 +38,15 @@ write_pg_service() {
 import os, sys
 from urllib.parse import urlsplit, unquote, parse_qs
 raw = open(sys.argv[1], encoding="utf-8").read().strip()
+def has_control(text):
+    return any(ord(c) < 32 or ord(c) == 127 for c in text)
+if has_control(raw):
+    sys.exit("database URL file contains control characters")
 u = urlsplit(raw)
 if u.scheme not in ("postgres", "postgresql") or not u.hostname or not u.username or not u.password:
     sys.exit("database URL file is malformed")
+if any(has_control(unquote(v)) for v in (u.hostname, u.username, u.password, u.path, u.query)):
+    sys.exit("database URL contains encoded control characters")
 q = parse_qs(u.query)
 lines = ["[newme]", f"host={u.hostname}", f"port={u.port or 5432}",
          f"dbname={unquote(u.path.lstrip('/')) or 'postgres'}", f"user={unquote(u.username)}",
@@ -49,43 +55,6 @@ fd = os.open(sys.argv[2], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
 with os.fdopen(fd, "w") as f:
     f.write("\n".join(lines) + "\n")
 print(u.hostname + " " + unquote(u.username))
-PY
-}
-
-# check_staging_target <url-file> <staging-ref> <prod-ref>: decide from what libpq
-# will actually use (the URL parsed and percent-decoded, host and user lower-cased),
-# never from the raw text. Allowed: host exactly db.<staging>.supabase.co, or an
-# official pooler host with user exactly postgres.<staging>. The fully decoded text
-# must not contain the production ref anywhere. Prints OK or REFUSED:<reason>.
-check_staging_target() {
-  python3 -I - "$1" "$2" "$3" <<'PY'
-import re, sys
-from urllib.parse import urlsplit, unquote
-raw = open(sys.argv[1], encoding="utf-8").read().strip()
-staging, prod = sys.argv[2].lower(), sys.argv[3].lower()
-def refuse(why):
-    print("REFUSED:" + why); sys.exit(0)
-decoded = raw
-for _ in range(3):
-    decoded = unquote(decoded)
-if prod in decoded.lower() or prod in raw.lower():
-    refuse("mentions the production project")
-u = urlsplit(raw)
-if u.scheme not in ("postgres", "postgresql") or not u.hostname or not u.username:
-    refuse("malformed URL")
-host = unquote(u.hostname).lower()
-if "%" in u.hostname or "%" in host:
-    refuse("host must not contain percent-encoding")
-user = unquote(u.username).lower()
-if host == f"db.{staging}.supabase.co":
-    if user != "postgres":
-        refuse("direct host needs user postgres")
-elif re.fullmatch(r"[a-z0-9-]+\.pooler\.supabase\.com", host):
-    if user != f"postgres.{staging}":
-        refuse("pooler user is not the staging project")
-else:
-    refuse("host is not the staging project")
-print("OK")
 PY
 }
 

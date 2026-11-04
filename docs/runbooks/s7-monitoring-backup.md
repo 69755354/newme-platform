@@ -12,11 +12,11 @@
 | 线上出现任何**新**报错（服务端或浏览器） | Sentry 规则“Any NEW production error” | 5 分钟内 | 团队邮件 + 现有 Telegram 转发 |
 | Meta 线索接口失败 | 每次失败都写“原因代码”到统一日志并进 Sentry | 实时 | 同上 |
 | Meta 线索与系统入库对不上 | 每日对账 `newme-meta-reconcile.timer` | 每天 06:40（迪拜） | Telegram 告警群 |
-| 生产登录→打开线索列表→打开一条线索→退出这条链路坏了 | 每日只读巡检 `scripts/synthetic-journey.mjs`（生产模式，不写任何数据） | 每天 | Telegram 告警群（成功也发一条，连续两天没收到“通过”本身就是告警） |
-| 完整流程（分配等写操作）坏了 | 同一脚本的预发布模式（只在预发布跑） | 每天 / 每次发版后 | Telegram 告警群 |
+| 生产登录→打开线索列表→打开一条线索→退出这条链路坏了 | 每日巡检 `scripts/synthetic-journey.mjs`（生产模式，不写业务数据；发布进行中自动跳过） | 每天 | Telegram 告警群（成功也发一条，连续两天没收到“通过”本身就是告警） |
+| 完整流程（分配等写操作）坏了 | 同一脚本的预发布模式（只在预发布跑） | 每天 | Telegram 告警群 |
 | 数据库备份失败 / NAS 没收到（任何失败路径） | `newme-db-backup.service`：脚本自己退出前告警 + systemd 的 `OnFailure` 兜底 | 每天 01:30（迪拜） | Telegram 告警群 |
 | 备份定时器根本没跑 / 最新备份超过 26 小时 | `newme-backup-freshness.timer` | 每小时 | Telegram 告警群 |
-| 备份其实恢复不出来 | 每月恢复演练（失败同样双重告警） | 每月 3 号 | Telegram 告警群 |
+| 备份其实恢复不出来 / 超过 35 天没有演练通过 | 每月恢复演练（本机一次性数据库；失败同样双重告警）+ 每小时新鲜度检查里的 35 天检查 | 每月 3 号 | Telegram 告警群 |
 
 ## 2. Sentry 定时签到为什么 10 月 27 日之后断了
 
@@ -49,18 +49,19 @@
 - 没有 systemd 的 NAS：用 NAS 自带“计划任务”每分钟执行 `/usr/local/bin/newme-external-probe.sh`；有 systemd 就用 `newme-uptime.service/.timer`。
 - NAS 型号未知，所以安装方式只给通用步骤；NAS 必须能出站访问 `https://app.newme.ae` 和 `api.telegram.org`。Tailscale 在这里的作用是让 NAS 和服务器互通以便备份回传，探测本身走公网（这样才能发现证书/域名/Cloudflare 问题）。
 
-## 5. 每日巡检（生产只读，预发布完整流程）
+## 5. 每日巡检（生产不写业务数据，预发布完整流程）
 
-脚本 `scripts/synthetic-journey.mjs`，由环境变量 `SYNTH_MODE` 选择模式（不设就是生产只读，最安全）。
+脚本 `scripts/synthetic-journey.mjs`，由环境变量 `SYNTH_MODE` 选择模式（不设就是生产模式，最安全）。
 
-**生产模式（只读，每天一次）**：登录 → 打开线索列表 → 打开其中一条线索的时间线 → 退出。**不写任何数据**：不分配、不改阶段、不写备注，所以**不需要生产里的测试线索，也不需要在生产建 QA 账号**；代码里生产模式除登录/退出外只有 GET 请求（测试里逐条断言）。返回内容只在内存里检查结构，不打印、不落盘；输出和告警里只有步骤名、HTTP 状态和版本号。
-- 需要一个**已有的**生产账号做只读登录：建议用发布门禁已经在用的 Release UAT 账号（Sam 账号清单里“勿删”的那个）。它必须能看到至少一条线索（角色能读全部线索，如老板/运营类；纯“销售”角色只能看自己名下的线索，看不到时巡检会报“账号看不到线索，需要线索读取权限”）。Release UAT 账号的当前角色和权限需要协调员核对后确认；**如果它不能读线索，就需要 Sam 指定另一个现有的只读账号，不要为此新建管理员账号**。
+**生产模式（每天一次）**：登录 → 打开线索列表 → 打开其中一条线索的时间线 → 退出。**不写任何业务数据**：不分配、不改阶段、不写备注（但登录本身会产生一条会话和一条登录审计，退出会吊销该账号的会话），所以**不需要生产里的测试线索，也不需要在生产建 QA 账号**；代码里生产模式除登录/退出外只有 GET 请求（测试里逐条断言）。返回内容只在内存里检查结构，不打印、不落盘；输出和告警里只有步骤名、HTTP 状态和版本号。
+- 账号：用 **Release UAT 里 operator 角色的那个账号**（能读全部线索和线索时间线，又不是 admin/boss；不要用 admin、boss，sales 只能看到分给自己的线索）。口令单独放在下面的环境文件里，**不要去读发布门禁的凭据文件**；门禁轮换这个账号的口令后，必须同步更新 `/etc/newme/synthetic-prod.env`（否则巡检每天失败并告警，不会锁账号）。
+- **与发布门禁互斥**：门禁的发布后浏览器验收用同一个账号登录，而巡检“退出”会吊销该账号的全部会话。所以巡检开始前对 `/run/lock/newme-production-release.lock` 做“试拿、立即放开”的非阻塞检查：门禁正在发布（含验收）就**跳过本次**，只记一行“发布进行中，跳过”，不当故障告警；巡检全程不持有这把锁（持有会让同时开始的发布因“另一个发布操作在进行”直接退出）。因此巡检只保留每天迪拜 07:00 一次，**不在每次发版后再跑**（门禁自己的发布后验收已覆盖）。
 - 环境文件（0600，root）`/etc/newme/synthetic-prod.env`：`SYNTH_BASE_URL=https://app.newme.ae`、`SYNTH_QA_EMAIL`、`SYNTH_QA_PASSWORD`，以及 `TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID`。口令只存这里。
 
-**预发布模式（完整流程，每天/每次发版后）**：`SYNTH_MODE=staging`，对**预发布**跑：登录 → 打开线索 → 把一条固定的标记测试线索分配给另一个测试账号 → 核对 → 分配回来 → 退出。脚本拒绝对生产域名跑预发布模式。
+**预发布模式（完整流程，每天一次）**：`SYNTH_MODE=staging`，对**预发布**跑：登录 → 打开线索 → 把一条固定的标记测试线索分配给另一个测试账号 → 核对 → 分配回来 → 退出。预发布模式**只允许**环境变量 `SYNTH_STAGING_HOSTS` 里列出的主机名（白名单，必须是普通主机名；写成生产域名、带结尾点的名字或 IP 都会被拒绝）。
 - 预发布里准备：两个测试账号（一个 operator 登录并分配，一个销售被分配）；一条标记线索（姓名固定为一眼看出是测试的长名字，来源用预发布里**已有的合法来源**，例如 `other`，电话用不存在的号码，不带 Meta 线索编号）。生产不建这些。
 - 改阶段：生产的业务规则只允许阶段**往前走**（`transition_lead_stage`，离开“新”还要求至少一条完整联系记录且已评估质量），所以脚本**从不尝试还原阶段**。需要验证改阶段时设置 `SYNTH_ONEWAY_STAGE=1`（默认关闭）：它会把标记线索往前推一个阶段，**不会还原**，下次要换一条新的测试线索或在预发布重置；脚本发现已经在目标阶段会明确报“需要重置”，不会误报严重。
-- 环境文件 `/etc/newme/synthetic-staging.env`：`SYNTH_MODE=staging`、`SYNTH_BASE_URL`（预发布地址）、`SYNTH_QA_EMAIL`、`SYNTH_QA_PASSWORD`、`SYNTH_LEAD_ID`、`SYNTH_LEAD_MARKER`、`SYNTH_LEAD_SOURCE`、`SYNTH_HOME_ASSIGNEE_ID`、`SYNTH_AWAY_ASSIGNEE_ID`、可选 `SYNTH_ONEWAY_STAGE`/`SYNTH_TO_STAGE`，以及告警群的两个变量。
+- 环境文件 `/etc/newme/synthetic-staging.env`：`SYNTH_MODE=staging`、`SYNTH_STAGING_HOSTS`（预发布主机名，逗号分隔）、`SYNTH_BASE_URL`（预发布地址）、`SYNTH_QA_EMAIL`、`SYNTH_QA_PASSWORD`、`SYNTH_LEAD_ID`、`SYNTH_LEAD_MARKER`、`SYNTH_LEAD_SOURCE`、`SYNTH_HOME_ASSIGNEE_ID`、`SYNTH_AWAY_ASSIGNEE_ID`、可选 `SYNTH_ONEWAY_STAGE`/`SYNTH_TO_STAGE`，以及告警群的两个变量。
 - 写入前的安全门（代码强制）：线索编号写死；每次写之前核对“编号 + 标记姓名 + 标记来源 + 负责人必须是两个测试账号之一”，任何一项不符直接中止、一个字都不写；分配一旦做过，`finally` 里一定还原；还原失败发“严重”告警。
 
 关于来源 `synthetic_qa`：本方案不再使用它（生产不建测试线索，预发布用已有合法来源）。统计流 S5 已在统计里排除该来源，保留无害，不需要改。
@@ -85,14 +86,15 @@
   pg_restore --dbname="service=target" --no-owner --no-privileges restore.dump
   ```
   恢复后再按 `supabase/migrations` 校对迁移记录。生产回滚/恢复属于需要 Sam 确认的操作。
-- 每月恢复演练：`infra/backup/newme-restore-drill.sh`，每月 3 号。它在**预发布** Supabase 项目里新建一个临时库 `drill_时间戳`，把最新备份恢复进去，逐表核对行数是否与备份时记录的一致，然后删除临时库。保护：
-  1. 目标判断基于“连接时真正用的值”：连接串解析、百分号解码、转小写之后，主机必须**正好**是 `db.<预发布编号>.supabase.co`（用户 `postgres`），或是官方连接池主机且用户**正好**是 `postgres.<预发布编号>`；解码后的全文里出现生产项目编号一律拒绝（大小写、`%76` 之类编码、在参数/路径里夹带预发布编号都无效，测试覆盖了这些写法）。
-  2. 连上后再查 `select current_database()`，必须等于刚建的临时库名，否则不恢复。
-  3. 只动自己新建的临时库；备份文件校验和必须先通过。
-  4. 收尾用 `drop database … with (force)` 删除临时库，并**再查一次** `pg_database` 确认已不存在；删不掉就发“严重”告警并让演练失败（因为预发布里会留着一整份生产数据，含账号密码散列）。
-  5. 恢复命令用本机 pg_restore 17 的合法参数（遇错默认继续，不带任何 `--exit-on-error`）。
-  失败会发告警，并有 systemd `OnFailure` 兜底。**提醒：演练期间（约几分钟）预发布项目里会有一份完整生产数据，预发布能看到数据库的人都看得到；该演练需要 Sam 知情同意后才启用。**
-- 干跑：两个脚本都支持 `--dry-run`（只检查配置、权限、目标是否安全，不连数据库）。
+- 每月恢复演练：`infra/backup/newme-restore-drill.sh`，每月 3 号。它把最新备份恢复进**本机一次性的 PostgreSQL 17**，逐表核对行数是否与备份时记录的一致，然后停掉并删除这个实例。**生产数据不出服务器，不进预发布项目，不需要为此征求任何人同意；也不再需要任何数据库连接串。**
+  1. 一次性实例只监听 Unix 套接字（`listen_addresses=''`，不开任何端口），以 `postgres` 系统用户运行，数据目录在服务的私有 `/tmp`（`PrivateTmp=true`，服务结束或被杀时 systemd 一并清掉），内存/落盘参数调小（`shared_buffers=128MB`、`fsync=off`、`max_connections=5`）。
+  2. 脚本开头清掉所有 `PG*` 环境变量，所有连接都用 `-h <套接字目录>`；连上后核对 `data_directory` 等于自己的数据目录且 `inet_server_addr()` 为空（证明是套接字连到自己的实例），否则拒绝并停库。“连到生产”在结构上不可能：没有网络连接。
+  3. 恢复前先建 `anon`、`authenticated`、`service_role`、`supabase_auth_admin` 四个不能登录的角色，以及 `extensions` 模式和 `uuid-ossp`、`pgcrypto` 两个扩展（转储的行级规则引用这些）。
+  4. `pg_restore` 用合法参数（遇错默认继续，不带 `--exit-on-error`）；报错按类别（去掉引号里的名字）计数写入日志，只有 `schema "X" already exists` 在允许清单内；出现清单外的类别会发“恢复有未预期报错”的告警，但**以逐表行数核对为通过标准**。第一次真跑时看一眼日志，把确认无害的类别加进 `DRILL_ALLOWED_ERRORS`。
+  5. 结束时 `pg_ctl -m immediate stop`、删除整个目录，并确认目录已不存在；删不掉发“严重”告警并让演练失败。
+  6. 演练通过会写时间戳文件；每小时的新鲜度检查在时间戳存在（或 `backup.env` 里设了 `DRILL_REQUIRED=1`）时要求它不超过 35 天，否则告警。
+  失败会发告警，并有 systemd `OnFailure` 兜底。需要主机装 PostgreSQL 17 服务端程序（`apt install postgresql-17`，不建任何默认库，见安装文档第 9 节）。
+- 干跑：两个脚本都支持 `--dry-run`（只检查配置、权限、备份文件，不连数据库、不启动实例）。
 
 ## 7. 日志保留与 Meta 回调日志
 

@@ -1,7 +1,5 @@
 [Unit]
-Description=NewMe monthly restore drill into a scratch database on the staging project
-After=network-online.target
-Wants=network-online.target
+Description=NewMe monthly restore drill into a throwaway local PostgreSQL 17 (socket only)
 OnFailure=newme-backup-alert@%n.service
 
 [Service]

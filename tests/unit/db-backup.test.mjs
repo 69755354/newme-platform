@@ -3,7 +3,7 @@
 // gates, encryption, retention, NAS sync, drill safety gates) without any database.
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
@@ -11,8 +11,8 @@ import { fileURLToPath } from "node:url";
 
 const infra = (name) => fileURLToPath(new URL(`../../infra/backup/${name}`, import.meta.url));
 const PROD_REF = "vfopmpxlhwzpxqegayew";
-const STAGING_REF = "bfsiibofuzoglziltgyd";
 const PASSWORD = "p4ssw0rd-do-not-leak";
+const hoursAgo = (h) => (Date.now() - h * 3_600_000) / 1000;
 
 function sandbox({ dbUrl = `postgresql://postgres.${PROD_REF}:${PASSWORD}@aws-0.pooler.supabase.com:5432/postgres`, rsyncFails = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "newme-backup-"));
@@ -32,31 +32,33 @@ case "$*" in
   *--data-only*)
     extra=0; case "$*" in *verify.dump*) extra=\${COUNT_DRIFT:-0};; esac
     printf 'COPY public.leads (id) FROM stdin;\\n1\\n2\\n3\\n'; for i in $(seq 1 $extra); do echo 9; done; printf '\\\\.\\nCOPY public.profiles (id) FROM stdin;\\n1\\n\\\\.\\n'; exit 0;;
-  *) printf 'pg_restore %s\\n' "$*" >> "${calls}"; touch "${root}/restored"; exit 0;;
+  *) printf 'pg_restore %s\\n' "$*" >> "${calls}"; touch "${root}/restored"; [ -n "\${DRILL_RESTORE_ERR:-}" ] && printf '%b\\n' "$DRILL_RESTORE_ERR"; exit 0;;
 esac`);
   stub("psql", `printf 'psql %s\\n' "$*" >> "${calls}"
 case "$*" in
-  *"current_database()"*) if [ -n "\${DRILL_WRONG_DB:-}" ]; then echo postgres; else awk '/^\\[scratch\\]/{f=1;next} f&&/^dbname=/{sub(/^dbname=/,"");print;exit}' "$PGSERVICEFILE"; fi;;
-  *"from pg_database"*) echo \${DRILL_DB_LEFT:-0};;
+  *"data_directory"*) if [ -n "\${DRILL_WRONG_DIR:-}" ]; then echo /var/lib/other; else echo "$DRILL_ROOT/data"; fi;;
+  *"inet_server_addr"*) if [ -n "\${DRILL_TCP:-}" ]; then echo f; else echo t; fi;;
   *"count(*) from public.leads"*) [ -e "${root}/restored" ] && echo \${DRILL_LEADS:-3} || echo MISSING;;
   *"count(*) from public.profiles"*) [ -e "${root}/restored" ] && echo 1 || echo MISSING;;
   *) exit 0;;
 esac`);
+  stub("runuser", `printf 'runuser %s\\n' "$*" >> "${calls}"; shift 3; exec "$@"`);
+  stub("initdb", `printf 'initdb %s\\n' "$*" >> "${calls}"; while [ $# -gt 0 ]; do [ "$1" = -D ] && mkdir -p "$2"; shift; done`);
+  stub("pg_ctl", `printf 'pg_ctl %s\\n' "$*" >> "${calls}"; case "$*" in *" start"*) : > "$DRILL_ROOT/data/postmaster.pid";; esac; exit 0`);
+  stub("rm", `if [ -n "\${DRILL_RM_FAILS:-}" ]; then for a in "$@"; do [ "$a" = "$DRILL_ROOT" ] && exit 0; done; fi; exec /bin/rm "$@"`);
   stub("rsync", `printf 'rsync %s\\n' "$*" >> "${calls}"; ${rsyncFails ? "exit 23" : "exit 0"}`);
   stub("alert.sh", `printf 'alert %s %s %s\\n' "$1" "$2" "$3" >> "${calls}"`);
   const keyFile = join(root, "key"); writeFileSync(keyFile, "k".repeat(48), { mode: 0o600 }); chmodSync(keyFile, 0o600);
   const urlFile = join(root, "db.url"); writeFileSync(urlFile, dbUrl, { mode: 0o600 }); chmodSync(urlFile, 0o600);
-  const stagingUrl = join(root, "staging.url");
-  writeFileSync(stagingUrl, `postgresql://postgres.${STAGING_REF}:${PASSWORD}@aws-0.pooler.supabase.com:5432/postgres`, { mode: 0o600 }); chmodSync(stagingUrl, 0o600);
   const backups = join(root, "backups");
   const env = (extra = {}) => ({
     PATH: `${bin}:${process.env.PATH}`, BACKUP_ENV_FILE: join(root, "none.env"), NEWME_DB_URL_FILE: urlFile, BACKUP_KEY_FILE: keyFile,
-    BACKUP_DIR: backups, BACKUP_ALERT_SCRIPT: join(bin, "alert.sh"), STAGING_DB_URL_FILE: stagingUrl, HOME: root, TMPDIR: root, ...extra,
+    BACKUP_DIR: backups, BACKUP_ALERT_SCRIPT: join(bin, "alert.sh"), PG_BIN: bin, DRILL_ROOT: join(root, "drill"), DRILL_PG_USER: userInfo().username, DRILL_PG_PORT: "5439", HOME: root, TMPDIR: root, ...extra,
   });
   const backup = (args = [], extra = {}) => spawnSync("bash", [infra("newme-db-backup.sh"), ...args], { encoding: "utf8", env: env(extra) });
   const drill = (args = [], extra = {}) => spawnSync("bash", [infra("newme-restore-drill.sh"), ...args], { encoding: "utf8", env: env(extra) });
   const log = () => (existsSync(calls) ? readFileSync(calls, "utf8") : "");
-  return { root, backups, backup, drill, log, urlFile, keyFile, stagingUrl, env };
+  return { root, backups, backup, drill, log, urlFile, keyFile, env };
 }
 
 test("dry run validates configuration and dumps nothing", () => {
@@ -131,57 +133,6 @@ test("a dump that is too small is rejected", () => {
   assert.match(s.log(), /alert db-backup failure db-backup: dump is suspiciously small/);
 });
 
-test("restore drill refuses a production or unknown target", () => {
-  const s = sandbox();
-  assert.equal(s.backup([], { BACKUP_STAMP: "20261105T013000Z" }).status, 0);
-  writeFileSync(s.stagingUrl, `postgresql://postgres.${PROD_REF}:${PASSWORD}@aws-0.pooler.supabase.com:5432/postgres`);
-  let r = s.drill(["--dry-run"]);
-  assert.equal(r.status, 2);
-  assert.match(r.stderr, /mentions the production project/);
-  writeFileSync(s.stagingUrl, `postgresql://postgres.someotherproject:${PASSWORD}@aws-0.pooler.supabase.com:5432/postgres`);
-  r = s.drill(["--dry-run"]);
-  assert.equal(r.status, 2);
-  assert.match(r.stderr, /pooler user is not the staging project/);
-  assert.ok(!s.log().includes("create database"));
-});
-
-test("restore drill passes when every table count matches and drops the scratch database", () => {
-  const s = sandbox();
-  assert.equal(s.backup([], { BACKUP_STAMP: "20261105T013000Z" }).status, 0);
-  assert.equal(s.drill(["--dry-run"]).status, 0);
-  const r = s.drill([]);
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /DRILL PASSED: 2 tables match/);
-  assert.match(s.log(), /create database "drill_/);
-  assert.match(s.log(), /drop database if exists "drill_/);
-  assert.match(s.log(), /alert db-restore-drill recovery/);
-  assert.ok(!s.log().includes(PASSWORD));
-});
-
-test("restore drill fails loudly when a restored table differs", () => {
-  const s = sandbox();
-  assert.equal(s.backup([], { BACKUP_STAMP: "20261105T013000Z" }).status, 0);
-  const r = s.drill([], { DRILL_LEADS: "2" });
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /MISMATCH public\.leads: backup=3 restored=2/);
-  assert.match(s.log(), /alert db-restore-drill failure/);
-  assert.match(s.log(), /drop database if exists "drill_/, "scratch database is dropped even on failure");
-});
-
-test("restore drill detects a tampered backup", () => {
-  const s = sandbox();
-  assert.equal(s.backup([], { BACKUP_STAMP: "20261105T013000Z" }).status, 0);
-  const enc = join(s.backups, "newme-prod-20261105T013000Z.dump.enc");
-  writeFileSync(enc, Buffer.concat([readFileSync(enc), Buffer.from("tamper")]));
-  const r = s.drill([]);
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /checksum/);
-});
-
-// ---- S7 review rework -------------------------------------------------------
-
-const hoursAgo = (h) => (Date.now() - h * 3_600_000) / 1000;
-
 test("every backup failure path alerts before exiting: small dump, row mismatch, missing key, missing URL file", () => {
   // too small
   let s = sandbox();
@@ -221,112 +172,6 @@ test("dry runs never alert, even when configuration is wrong", () => {
   rmSync(s.keyFile);
   assert.equal(s.backup(["--dry-run"]).status, 2);
   assert.ok(!s.log().includes("alert"));
-});
-
-test("restore drill: no backup, checksum mismatch and missing counts file all alert", () => {
-  let s = sandbox();
-  let r = s.drill([]);
-  assert.equal(r.status, 2);
-  assert.match(r.stderr, /no backup file found/);
-  assert.match(s.log(), /alert db-restore-drill failure .*no backup file found/);
-
-  s = sandbox();
-  assert.equal(s.backup([], { BACKUP_STAMP: "20261105T013000Z" }).status, 0);
-  const enc = join(s.backups, "newme-prod-20261105T013000Z.dump.enc");
-  writeFileSync(enc, Buffer.concat([readFileSync(enc), Buffer.from("tamper")]));
-  assert.equal(s.drill([]).status, 1);
-  assert.match(s.log(), /alert db-restore-drill failure .*checksum mismatch/);
-
-  s = sandbox();
-  assert.equal(s.backup([], { BACKUP_STAMP: "20261105T013000Z" }).status, 0);
-  rmSync(`${join(s.backups, "newme-prod-20261105T013000Z.dump.enc")}.counts.tsv`);
-  assert.equal(s.drill([]).status, 2);
-  assert.match(s.log(), /alert db-restore-drill failure .*counts\/checksum files missing/);
-});
-
-test("restore drill uses a valid pg_restore command line and the restore really runs", () => {
-  const script = readFileSync(infra("newme-restore-drill.sh"), "utf8");
-  assert.ok(!/--exit-on-error/.test(script.replace(/#.*$/gm, "")), "the illegal --exit-on-error=false is gone");
-  const s = sandbox();
-  assert.equal(s.backup([], { BACKUP_STAMP: "20261105T013000Z" }).status, 0);
-  const r = s.drill([]);
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(s.log(), /pg_restore --dbname=service=scratch --no-owner --no-privileges /);
-  // The same options against the REAL pg_restore on this machine must parse (it then
-  // fails only on the missing input file).
-  const real = spawnSync("pg_restore", ["--dbname=service=scratch", "--no-owner", "--no-privileges", "/nonexistent/x.dump"], { encoding: "utf8" });
-  if (real.error?.code !== "ENOENT") {
-    assert.doesNotMatch(real.stderr, /unrecognized option|doesn't allow an argument|invalid option|requires an argument/);
-    assert.match(real.stderr, /could not open input file/);
-    const bad = spawnSync("pg_restore", ["--exit-on-error=false", "/nonexistent/x.dump"], { encoding: "utf8" });
-    assert.match(bad.stderr, /doesn't allow an argument/, "documents why the old flag could never work");
-  }
-});
-
-test("restore drill refuses every way of disguising the production project (dry run, fake password)", () => {
-  const s = sandbox();
-  assert.equal(s.backup([], { BACKUP_STAMP: "20261105T013000Z" }).status, 0);
-  const POOLER = "aws-0-eu-west-1.pooler.supabase.com";
-  const encodedProd = PROD_REF.replace("v", "%76");
-  const bypasses = {
-    "percent-encoded production id in the pooler user, staging id hidden in a parameter": `postgresql://postgres.${encodedProd}:${PASSWORD}@${POOLER}:6543/postgres?application_name=${STAGING_REF}`,
-    "double-encoded production id": `postgresql://postgres.${PROD_REF.replace("v", "%2576")}:${PASSWORD}@${POOLER}:6543/postgres?x=${STAGING_REF}`,
-    "upper-case production host with staging id in the query": `postgresql://postgres:${PASSWORD}@db.${PROD_REF.toUpperCase()}.supabase.co:5432/postgres?x=${STAGING_REF}`,
-    "production host with staging id in the path": `postgresql://postgres:${PASSWORD}@db.${PROD_REF}.supabase.co:5432/${STAGING_REF}`,
-    "production id in the user, staging id in the database name": `postgresql://postgres.${PROD_REF}:${PASSWORD}@${POOLER}:5432/${STAGING_REF}`,
-    "staging id only in a comment-like fragment": `postgresql://postgres.${PROD_REF}:${PASSWORD}@${POOLER}:5432/postgres#${STAGING_REF}`,
-    "staging user on a look-alike host": `postgresql://postgres.${STAGING_REF}:${PASSWORD}@${POOLER}.evil.example:5432/postgres`,
-    "staging user on an unrelated host": `postgresql://postgres.${STAGING_REF}:${PASSWORD}@evil.example.com:5432/postgres`,
-    "staging direct host with a suffix": `postgresql://postgres:${PASSWORD}@db.${STAGING_REF}.supabase.co.evil.example:5432/postgres`,
-    "pooler with the wrong (plain) user": `postgresql://postgres:${PASSWORD}@${POOLER}:5432/postgres`,
-    "pooler user is staging id plus extra": `postgresql://postgres.${STAGING_REF}x:${PASSWORD}@${POOLER}:5432/postgres`,
-    "encoded dot in the host": `postgresql://postgres:${PASSWORD}@db%2E${STAGING_REF}%2Esupabase.co:5432/postgres`,
-    "userinfo trick with a second at-sign": `postgresql://postgres.${STAGING_REF}:p@ss@db.${PROD_REF}.supabase.co:5432/postgres`,
-  };
-  for (const [name, url] of Object.entries(bypasses)) {
-    writeFileSync(s.stagingUrl, url);
-    const r = s.drill(["--dry-run"]);
-    assert.equal(r.status, 2, `${name} must be refused: ${r.stderr}`);
-    assert.match(r.stderr, /REFUSED/, name);
-    assert.ok(!r.stderr.includes(PASSWORD) && !r.stdout.includes(PASSWORD));
-  }
-  assert.ok(!s.log().includes("create database"), "nothing was created for any refused target");
-  // The two legitimate shapes still pass.
-  for (const url of [
-    `postgresql://postgres:${PASSWORD}@db.${STAGING_REF}.supabase.co:5432/postgres`,
-    `postgresql://postgres.${STAGING_REF}:${PASSWORD}@${POOLER}:6543/postgres`,
-    `postgresql://postgres.${STAGING_REF.toUpperCase()}:${PASSWORD}@${POOLER.toUpperCase()}:6543/postgres`,
-  ]) {
-    writeFileSync(s.stagingUrl, url);
-    const r = s.drill(["--dry-run"]);
-    assert.equal(r.status, 0, r.stderr);
-  }
-});
-
-test("restore drill checks the connected database and stops when it is not the scratch database", () => {
-  const s = sandbox();
-  assert.equal(s.backup([], { BACKUP_STAMP: "20261105T013000Z" }).status, 0);
-  const r = s.drill([], { DRILL_WRONG_DB: "1" });
-  assert.equal(r.status, 2);
-  assert.match(r.stderr, /connected database is not the scratch database/);
-  assert.ok(!s.log().includes("pg_restore --dbname"), "nothing restored into the wrong database");
-  assert.match(s.log(), /alert db-restore-drill failure/);
-});
-
-test("scratch database is dropped with force and its removal is verified; a leftover raises a critical alert", () => {
-  let s = sandbox();
-  assert.equal(s.backup([], { BACKUP_STAMP: "20261105T013000Z" }).status, 0);
-  let r = s.drill([]);
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(s.log(), /drop database if exists "drill_[0-9]+" with \(force\)/);
-  assert.match(s.log(), /select count\(\*\) from pg_database where datname = 'drill_/);
-
-  s = sandbox();
-  assert.equal(s.backup([], { BACKUP_STAMP: "20261105T013000Z" }).status, 0);
-  r = s.drill([], { DRILL_DB_LEFT: "1" });
-  assert.equal(r.status, 1, "a drill that cannot clean up is a failure even if the counts match");
-  assert.match(r.stderr, /CRITICAL: scratch database drill_/);
-  assert.match(s.log(), /alert db-restore-drill failure CRITICAL: restore drill scratch database drill_/);
 });
 
 test("startup removes plaintext work directories and .part files left by a killed run, keeps fresh ones", () => {
@@ -395,4 +240,180 @@ test("systemd: both services have OnFailure alerting, the alert unit runs the on
   const r2 = spawnSync("bash", [infra("newme-backup-onfailure.sh"), "newme-restore-drill.service"], { encoding: "utf8", env: s.env() });
   assert.equal(r2.status, 0);
   assert.match(s.log(), /alert db-restore-drill failure systemd unit newme-restore-drill\.service/);
+});
+
+
+// ---- restore drill into a throwaway local PostgreSQL 17 ---------------------
+
+const setupBackup = () => {
+  const s = sandbox();
+  assert.equal(s.backup([], { BACKUP_STAMP: "20261105T013000Z" }).status, 0);
+  return s;
+};
+
+test("drill reads /etc/newme/backup.env-style config: values in the file take effect (regression: ENV_FILE line was lost)", () => {
+  const s = setupBackup();
+  const envFile = join(s.root, "backup.env");
+  writeFileSync(envFile, `BACKUP_DIR=${s.backups}\n`, { mode: 0o600 }); chmodSync(envFile, 0o600);
+  // BACKUP_DIR is deliberately NOT in the process environment: only the file knows it.
+  const r = s.drill(["--dry-run"], { BACKUP_ENV_FILE: envFile, BACKUP_DIR: "" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, new RegExp(`newme-prod-20261105T013000Z`));
+  // And the file is held to the same permission rule as for the backup script.
+  chmodSync(envFile, 0o644);
+  const bad = s.drill(["--dry-run"], { BACKUP_ENV_FILE: envFile, BACKUP_DIR: "" });
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /mode 400\/600/);
+  // Same for the other two scripts.
+  chmodSync(envFile, 0o600);
+  const fresh = spawnSync("bash", [infra("newme-backup-freshness.sh")], { encoding: "utf8", env: s.env({ BACKUP_ENV_FILE: envFile, BACKUP_DIR: "" }) });
+  assert.equal(fresh.status, 0, fresh.stderr);
+});
+
+test("drill restores into a local socket-only instance: no URL file, no network, role/extension bootstrap before the restore", () => {
+  const s = setupBackup();
+  const r = s.drill([]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /DRILL PASSED: 2 tables match/);
+  const log = s.log();
+  assert.match(log, /runuser -u \S+ -- .*\/initdb -D .*\/drill\/data -U postgres -A trust --no-sync/);
+  assert.match(log, /pg_ctl -D .*\/drill\/data -w -s -o -c listen_addresses='' -k .*\/drill\/sock -p 5439 .*shared_buffers=128MB.*fsync=off/);
+  // every client connection goes through the socket directory, never a host name
+  for (const line of log.split("\n").filter((l) => /^(psql|pg_restore) /.test(l))) assert.match(line, /-h \S+\/drill\/sock /, line);
+  assert.ok(!/service=|postgres(ql)?:\/\//.test(log.slice(log.indexOf("runuser"))), "the drill uses no connection URL or service file");
+  assert.ok(log.indexOf("create role anon") < log.indexOf("pg_restore -h"), "bootstrap runs before the restore");
+  for (const need of ["anon", "authenticated", "service_role", "supabase_auth_admin", "create schema if not exists extensions", 'uuid-ossp', "pgcrypto"]) assert.ok(log.includes(need), need);
+  assert.match(log, /pg_restore -h \S+\/drill\/sock -p 5439 -U postgres -d drill --no-owner --no-privileges /);
+  assert.match(log, /pg_ctl -D \S+\/drill\/data -m immediate -w stop/);
+  assert.ok(!existsSync(join(s.root, "drill")), "instance directory removed");
+  assert.match(log, /alert db-restore-drill recovery/);
+  assert.ok(existsSync(join(s.backups, ".restore-drill-last-pass")), "pass stamp written for the 35-day check");
+  assert.ok(!log.includes(PASSWORD));
+});
+
+test("drill never starts the throwaway instance on a dry run and leaves an existing drill directory alone", () => {
+  const s = setupBackup();
+  mkdirSync(join(s.root, "drill"));
+  assert.equal(s.drill(["--dry-run"]).status, 0);
+  assert.ok(existsSync(join(s.root, "drill")));
+  assert.ok(!s.log().includes("initdb"));
+});
+
+test("drill refuses to restore unless the session is a socket connection to its own data directory", () => {
+  for (const extra of [{ DRILL_WRONG_DIR: "1" }, { DRILL_TCP: "1" }]) {
+    const s = setupBackup();
+    const r = s.drill([], extra);
+    assert.equal(r.status, 2, JSON.stringify(extra));
+    assert.match(r.stderr, /not connected to the throwaway local instance/);
+    assert.ok(!s.log().includes("pg_restore -h"), "nothing restored");
+    assert.match(s.log(), /pg_ctl -D \S+ -m immediate -w stop/, "instance stopped on refusal");
+    assert.match(s.log(), /alert db-restore-drill failure/);
+    assert.ok(!existsSync(join(s.root, "drill")));
+  }
+});
+
+test("drill fails loudly when a restored table differs, and still stops and deletes the instance", () => {
+  const s = setupBackup();
+  const r = s.drill([], { DRILL_LEADS: "2" });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /MISMATCH public\.leads: backup=3 restored=2/);
+  assert.match(s.log(), /alert db-restore-drill failure/);
+  assert.match(s.log(), /pg_ctl -D \S+ -m immediate -w stop/);
+  assert.ok(!existsSync(join(s.root, "drill")));
+  assert.ok(!existsSync(join(s.backups, ".restore-drill-last-pass")));
+});
+
+test("drill: known harmless restore errors are allowed, unknown categories raise an alert but row counts decide the result", () => {
+  let s = setupBackup();
+  let r = s.drill([], { DRILL_RESTORE_ERR: 'pg_restore: error: could not execute query: ERROR:  schema "public" already exists' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /restore error category \(1x\): schema "X" already exists/);
+  assert.match(s.log(), /alert db-restore-drill recovery/);
+
+  s = setupBackup();
+  r = s.drill([], { DRILL_RESTORE_ERR: 'pg_restore: error: could not execute query: ERROR:  function "foo" does not exist' });
+  assert.equal(r.status, 0, "counts match, so the drill passes");
+  assert.match(s.log(), /alert db-restore-drill failure restore drill: all 2 table counts match, but 1 unexpected restore error categories/);
+  assert.ok(!s.log().includes("alert db-restore-drill recovery"));
+});
+
+test("drill: no backup, checksum mismatch, missing counts file, missing server programs all alert", () => {
+  let s = sandbox();
+  let r = s.drill([]);
+  assert.equal(r.status, 2);
+  assert.match(s.log(), /alert db-restore-drill failure .*no backup file found/);
+
+  s = setupBackup();
+  const enc = join(s.backups, "newme-prod-20261105T013000Z.dump.enc");
+  writeFileSync(enc, Buffer.concat([readFileSync(enc), Buffer.from("tamper")]));
+  assert.equal(s.drill([]).status, 1);
+  assert.match(s.log(), /alert db-restore-drill failure .*checksum mismatch/);
+  assert.ok(!existsSync(join(s.root, "drill")));
+
+  s = setupBackup();
+  rmSync(`${join(s.backups, "newme-prod-20261105T013000Z.dump.enc")}.counts.tsv`);
+  assert.equal(s.drill([]).status, 2);
+  assert.match(s.log(), /alert db-restore-drill failure .*counts\/checksum files missing/);
+
+  s = setupBackup();
+  r = s.drill([], { PG_BIN: join(s.root, "nowhere") });
+  assert.equal(r.status, 2);
+  assert.match(s.log(), /alert db-restore-drill failure .*PostgreSQL 17 server programs not found/);
+});
+
+test("drill uses a valid pg_restore command line (checked against the real pg_restore 17 parser)", () => {
+  const script = readFileSync(infra("newme-restore-drill.sh"), "utf8");
+  assert.ok(!/--exit-on-error/.test(script.replace(/#.*$/gm, "")));
+  const real = spawnSync("pg_restore", ["-h", "/tmp/x", "-p", "5439", "-U", "postgres", "-d", "drill", "--no-owner", "--no-privileges", "/nonexistent/x.dump"], { encoding: "utf8" });
+  if (real.error?.code !== "ENOENT") {
+    assert.doesNotMatch(real.stderr, /unrecognized option|doesn't allow an argument|invalid option|requires an argument/);
+    assert.match(real.stderr, /could not open input file/);
+  }
+});
+
+test("a directory that cannot be removed after the drill is a CRITICAL alert and a failed drill", () => {
+  const s = setupBackup();
+  const r = s.drill([], { DRILL_RM_FAILS: "1" });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /CRITICAL: drill directory/);
+  assert.match(s.log(), /alert db-restore-drill failure CRITICAL: restore drill directory/);
+});
+
+test("the drill no longer knows about staging or any connection URL", () => {
+  const script = readFileSync(infra("newme-restore-drill.sh"), "utf8").replace(/#.*$/gm, "");
+  assert.ok(!/STAGING|staging-db|service=|PGSERVICEFILE=|write_pg_service|supabase\.co/.test(script));
+  assert.ok(!/staging/i.test(readFileSync(infra("newme-restore-drill.service"), "utf8")));
+  assert.ok(!/staging/i.test(readFileSync(infra("backup.env.example"), "utf8")));
+});
+
+test("connection strings with control characters (raw or percent-encoded) are refused by the backup", () => {
+  for (const url of [
+    `postgresql://postgres.${PROD_REF}:x%0Ahostaddr=203.0.113.9@aws-0.pooler.supabase.com:5432/postgres`,
+    `postgresql://postgres.${PROD_REF}:x%0Dy@aws-0.pooler.supabase.com:5432/postgres`,
+    `postgresql://postgres.${PROD_REF}:x%00y@aws-0.pooler.supabase.com:5432/postgres`,
+    `postgresql://postgres.${PROD_REF}:pw@aws-0.pooler.supabase.com:5432/postgres?x=%0A`,
+    `postgresql://postgres.${PROD_REF}:pw@aws-0.pooler.supabase.com:5432/postgres\nhostaddr=203.0.113.9`,
+  ]) {
+    const s = sandbox({ dbUrl: url });
+    const r = s.backup([]);
+    assert.notEqual(r.status, 0, url);
+    assert.match(r.stderr, /control characters/);
+    assert.ok(!s.log().includes("pg_dump"), "no connection attempted");
+    assert.match(s.log(), /alert db-backup failure/);
+  }
+});
+
+test("freshness: the monthly drill must have passed within 35 days once it is in use", () => {
+  const run = (s, extra = {}) => spawnSync("bash", [infra("newme-backup-freshness.sh")], { encoding: "utf8", env: s.env(extra) });
+  const s = setupBackup();
+  assert.equal(run(s).status, 0, "no stamp and drill not required: not checked");
+  const stamp = join(s.backups, ".restore-drill-last-pass");
+  assert.equal(run(s, { DRILL_REQUIRED: "1" }).status, 1);
+  assert.match(s.log(), /alert db-restore-drill-freshness failure .*no restore drill has passed yet/);
+  writeFileSync(stamp, ""); utimesSync(stamp, hoursAgo(24 * 36), hoursAgo(24 * 36));
+  assert.equal(run(s).status, 1);
+  assert.match(s.log(), /alert db-restore-drill-freshness failure .*36 days old \(limit 35\)/);
+  utimesSync(stamp, hoursAgo(24 * 20), hoursAgo(24 * 20));
+  assert.equal(run(s).status, 0);
+  assert.match(s.log(), /alert db-restore-drill-freshness recovery/);
 });

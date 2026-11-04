@@ -9,20 +9,29 @@
 // [from, to] with a stable order (e.g. `.order("id")`) and, when `withCount` is
 // true, a `{ count: "exact" }` select. The first page reports the total; the
 // remaining pages are requested in parallel.
+//
+// The result is `{ data, error, truncated, total }`: `total` is the exact count
+// from the database (or the number of rows read when the server gave none), and
+// `truncated` is true only when the safety ceiling stopped the read short. On
+// any page error the result has no rows and carries the error.
+//
+// This is the single paged reader for report routes AND the lead / pipeline
+// lists (S3 and S5 used to carry one each). The lists pass LIST_MAX_ROWS.
 
 export const DEFAULT_PAGE_SIZE = 1000;
 export const DEFAULT_MAX_ROWS = 50000;
+export const LIST_MAX_ROWS = 20000;
 
 export async function fetchAllRows(buildPage, { pageSize = DEFAULT_PAGE_SIZE, maxRows = DEFAULT_MAX_ROWS } = {}) {
   const first = await buildPage(0, pageSize - 1, true);
-  if (first.error) return { data: [], error: first.error, truncated: false };
+  if (first.error) return { data: [], error: first.error, truncated: false, total: 0 };
   const rows = [...(first.data ?? [])];
   const total = typeof first.count === "number" ? first.count : null;
   if (rows.length === 0 || (total !== null && total <= rows.length)) {
-    return { data: rows, error: null, truncated: false };
+    return { data: rows, error: null, truncated: false, total: Math.max(total ?? 0, rows.length) };
   }
   if (total === null && rows.length < pageSize) {
-    return { data: rows, error: null, truncated: false };
+    return { data: rows, error: null, truncated: false, total: rows.length };
   }
 
   const target = Math.min(total ?? maxRows, maxRows);
@@ -34,10 +43,10 @@ export async function fetchAllRows(buildPage, { pageSize = DEFAULT_PAGE_SIZE, ma
       pages.push(buildPage(from, Math.min(from + pageSize, target) - 1, false));
     }
     for (const page of await Promise.all(pages)) {
-      if (page.error) return { data: [], error: page.error, truncated: false };
+      if (page.error) return { data: [], error: page.error, truncated: false, total: 0 };
       rows.push(...(page.data ?? []));
     }
-    return { data: rows, error: null, truncated: total > maxRows };
+    return { data: rows, error: null, truncated: total > maxRows, total: Math.max(total, rows.length) };
   }
 
   // The server returned fewer rows than asked (a project-level row cap smaller
@@ -46,13 +55,18 @@ export async function fetchAllRows(buildPage, { pageSize = DEFAULT_PAGE_SIZE, ma
   while (rows.length < target) {
     const from = rows.length;
     const page = await buildPage(from, Math.min(from + pageSize, target) - 1, false);
-    if (page.error) return { data: [], error: page.error, truncated: false };
+    if (page.error) return { data: [], error: page.error, truncated: false, total: 0 };
     const got = page.data ?? [];
     if (got.length === 0) break;
     rows.push(...got);
     if (total === null && got.length < pageSize) break;
   }
-  return { data: rows, error: null, truncated: (total ?? rows.length) > rows.length };
+  return {
+    data: rows,
+    error: null,
+    truncated: (total ?? rows.length) > rows.length,
+    total: Math.max(total ?? rows.length, rows.length),
+  };
 }
 
 /**

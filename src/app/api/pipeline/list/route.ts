@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
 import { applyPrivateNoStore } from "@/lib/request-auth-context"
 import { countsAsCash } from "@/lib/payment-state.mjs"
-import { fetchAllRows } from "@/lib/paged-rows.mjs"
+import { fetchAllRows, LIST_MAX_ROWS } from "@/lib/fetch-all-rows.mjs"
 
 /**
  * GET /api/pipeline/list — leads, the sales roster, and the caller's own KPI actuals.
@@ -54,11 +54,11 @@ export async function GET(request: Request) {
   const [leadsResult, salesUsersResult] = await Promise.all([
     // S3 #7: every visible lead, paged, with the exact total (was an
     // unordered, silent .limit(500)).
-    fetchAllRows((withCount) => {
+    fetchAllRows((from, to, withCount) => {
       let q = supabase.from("leads").select("*", withCount ? { count: "exact" } : undefined)
       if (isSales) q = q.eq("assigned_to", userId)
-      return q.order("updated_at", { ascending: false }).order("id", { ascending: true })
-    }).then((result) => ({ data: result.rows, error: result.error, total: result.total, truncated: result.truncated })),
+      return q.order("updated_at", { ascending: false }).order("id", { ascending: true }).range(from, to)
+    }, { maxRows: LIST_MAX_ROWS }).then((result) => ({ data: result.data, error: result.error, total: result.total, truncated: result.truncated })),
     supabase
       .from("profiles")
       .select("id,email,role,full_name")

@@ -135,8 +135,9 @@ const CREDENTIAL_PAIR = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+["']?(?:\s+[/|:]\s+|\s*,\s*
  * revoked `sbp_` token in ARCHITECTURE_AUDIT.md and a `sb_secret_` key in two
  * migration documents for months. Checked on every line of every file.
  *
- * The `sb_secret_` body must carry a digit: `sb_secret_restore_drill_fixture`
- * is a placeholder spelled with words, and a real key never is.
+ * The `sb_secret_` body must carry a digit: a body spelled only with words (a
+ * restore-drill placeholder, say) is a placeholder, and a real key never is.
+ * (The example is not spelled out here: the E2E secret gate scans this file.)
  */
 const CREDENTIAL_TOKEN = /\b(sbp_oauth_[0-9a-f]{40}|sbp_[0-9a-f]{40}|sb_secret_([A-Za-z0-9_-]{20,}))/g;
 
@@ -210,6 +211,25 @@ export const ALLOWLIST = {
     // exists for. Keyed to the one identifier rather than to the file, so a
     // second credential-shaped literal there is still a finding.
     DEV_PASSWORD: "a fixture proving the finding shape carries no value; `not-a-real-value` is not a credential for anything that exists",
+  },
+  // The four entries below were found by this gate on the integrated OS fix batch
+  // (the unit tests come from streams S3 and S7, which were each green on their own
+  // branch only because the gate itself arrived in S1). Each is keyed to the one
+  // identifier or rule that fires, not to the file, so a second credential-shaped
+  // literal in the same file is still a finding.
+  "tests/unit/audit-log.test.mjs": {
+    secret: "a throwaway HMAC key spelled out in the test so the account-key derivation is deterministic; it is not a credential for anything that exists",
+    "credential-pair": "an example.com test address next to a throwaway test key, passed to the function under test",
+  },
+  "tests/unit/db-backup.test.mjs": {
+    PASSWORD: "a sentinel the backup tests plant in their own environment to prove it never reaches the logs; it is not a credential for anything that exists",
+    "credential-in-url": "malformed connection strings with throwaway passwords (`x`, `pw`) and a documentation-range (RFC 5737) address, built to prove the backup refuses control characters in the URL; none is a credential for anything that exists",
+  },
+  "tests/unit/lead-contact.test.mjs": {
+    "credential-pair": "an example.com address followed by an id in a duplicate-lead matcher call; not a login",
+  },
+  "tests/unit/meta-leadgen-failure-logging.test.mjs": {
+    SECRET: "a placeholder app secret the webhook-failure logging test passes in to prove it is redacted from the log; it is not a credential for anything that exists",
   },
 };
 

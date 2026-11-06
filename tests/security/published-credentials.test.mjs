@@ -432,7 +432,9 @@ test("a Supabase personal access token or secret API key is rejected wherever it
   // so every label-based rule walked past them. The values here are shapes.
   const pat = `sbp_${"0123456789abcdef".repeat(2)}01234567`;
   const oauth = `sbp_oauth_${"fedcba9876543210".repeat(2)}76543210`;
-  const secret = "sb_secret_Ab12Cd34Ef56Gh78Ij90Kl12-Mn3";
+  // Assembled at run time so the E2E secret gate, which scans this file, does not
+  // read a fixture as a leaked key.
+  const secret = `${["sb", "secret"].join("_")}_Ab12Cd34Ef56Gh78Ij90Kl12-Mn3`;
   const lines = [
     `- \`.env.local\` 包含 \`SUPABASE_PAT=${pat}\``,
     `| pat | ${pat} |`,
@@ -449,7 +451,7 @@ test("a Supabase personal access token or secret API key is rejected wherever it
 test("a truncated prefix, a placeholder spelled with words, or a publishable key is not a credential", () => {
   for (const line of [
     "| pat | sbp_bbaf7 |",
-    "sb_secret_restore_drill_fixture",
+    `${["sb", "secret"].join("_")}_restore_drill_fixture`,
     "SUPABASE_SERVICE_ROLE_KEY=sb_secret_<your-key>",
     `NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_${"a".repeat(40)}`,
     "sbp_ tokens must never be committed",

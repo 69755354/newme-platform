@@ -6,7 +6,11 @@ test.describe("consistent totals", () => {
   test("dashboard, analytics and lead list agree on the lead total @bug-4c-15 @role-boss", async ({ as }) => {
     const s = await as("boss", { path: "/api/health" });
     const leads = await listLeads(s.page);
-    const visible = leads.filter((l) => !l.archived).length;
+    // /api/leads/list is a wider scope than the two summaries: it returns archived and
+    // synthetic QA rows and carries no `archived` field, while the dashboard and analytics
+    // count only non-archived, non-synthetic leads (lead-metrics.mjs). So the two summaries
+    // must agree EXACTLY with each other, and the list can only be at least as large.
+    const listTotal = leads.filter((l) => !l.archived).length;
     const dash = await appApi<Record<string, unknown>>(s.page, "GET", "/api/dashboard/summary");
     const ana = await appApi<Record<string, unknown>>(s.page, "GET", "/api/analytics/summary");
     expect(dash.status).toBe(200);
@@ -18,9 +22,9 @@ test.describe("consistent totals", () => {
     const funnelTotal = anaJson.pipelineFunnel?.totalLeads ?? null;
     expect(dashTotal, "dashboard lead rows present").not.toBeNull();
     expect(anaTotal, "analytics total present").not.toBeNull();
-    expect(anaTotal, `analytics ${anaTotal} vs lead list ${visible}`).toBe(visible);
-    expect(funnelTotal, `analytics funnel ${funnelTotal} vs lead list ${visible}`).toBe(visible);
-    expect(dashTotal, `dashboard ${dashTotal} vs lead list ${visible}`).toBe(visible);
+    expect(dashTotal, `dashboard ${dashTotal} vs analytics ${anaTotal}`).toBe(anaTotal);
+    expect(funnelTotal, `analytics funnel ${funnelTotal} vs analytics total ${anaTotal}`).toBe(anaTotal);
+    expect(listTotal, `lead list ${listTotal} must not be smaller than the counted leads ${anaTotal}`).toBeGreaterThanOrEqual(anaTotal as number);
   });
 
   test("the two ad attribution pages show the same total @bug-4a-14 @role-admin", async ({ as }) => {

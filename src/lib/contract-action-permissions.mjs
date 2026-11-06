@@ -26,6 +26,16 @@ export const APPROVAL_STEP_ROLES = Object.freeze({
   pending_ceo: Object.freeze(["admin", "boss"]),
 });
 
+/**
+ * Every role that decides at least one approval step (admin, operator, boss).
+ * The approve route checks this before calling approve_contract(), which looks
+ * at the contract's status before the caller's role and so answers a role with
+ * no approval authority 400 "not awaiting approval" instead of 403.
+ */
+export const CONTRACT_APPROVER_ROLES = Object.freeze(
+  [...new Set(Object.values(APPROVAL_STEP_ROLES).flat())],
+);
+
 const REVOKABLE = Object.freeze(["approved", "active", "suspended"]);
 const UPLOADABLE = Object.freeze(["draft", "pending_admin", "pending_ceo"]);
 

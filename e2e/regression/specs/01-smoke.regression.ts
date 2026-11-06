@@ -33,6 +33,12 @@ test.describe("health and anonymous access", () => {
   });
 });
 
+// Sidebar size by role, from src/lib/nav.ts: designer has 2 (projects, cable costing),
+// finance 3, sales 9, operator 11, admin/boss 12 (they also get /team).
+const MIN_SIDEBAR_ENTRIES: Record<RoleKey, number> = {
+  boss: 12, admin: 12, operator: 11, salesA: 9, salesB: 9, finance: 3, designer: 2,
+};
+
 for (const role of ALL_ROLES) {
   test.describe(`role ${role}`, () => {
     test(`lands on a working page without server errors @smoke @role-${role}`, async ({ as }) => {
@@ -49,7 +55,7 @@ for (const role of ALL_ROLES) {
       const s = await as(role, { path: "/" });
       await settle(s.page);
       const links = await sidebarLinks(s.page);
-      expect(links.length, "sidebar has entries").toBeGreaterThan(2);
+      expect(links.length, `sidebar entries for ${role}`).toBeGreaterThanOrEqual(MIN_SIDEBAR_ENTRIES[role]);
       const bounced: string[] = [];
       for (const href of links) {
         await s.page.goto(href, { waitUntil: "domcontentloaded" });

@@ -104,7 +104,7 @@ test.describe("management actions", () => {
   for (const [role, pages] of [
     ["operator", ["/leads", "/dashboard", "/analytics", "/pipeline"]],
     ["finance", ["/contracts", "/payments"]],
-    ["salesA", ["/workbench", "/leads", "/quotes"]],
+    ["salesA", ["/workbench", "/leads", "/quotes", "/pipeline"]],
   ] as Array<[RoleKey, string[]]>) {
     test(`${role} reaches the pages it is meant to use @role-${role}`, async ({ as }) => {
       const s = await as(role, { path: "/" });
@@ -115,6 +115,15 @@ test.describe("management actions", () => {
         expect(await bodyText(s.page)).not.toMatch(/Application error|Internal Server Error/);
       }
       expect(s.serverErrors).toEqual([]);
+    });
+  }
+
+  for (const role of ["finance", "designer"] as RoleKey[]) {
+    test(`${role} is turned away from /pipeline @role-${role}`, async ({ as }) => {
+      const s = await as(role, { path: "/" });
+      await s.page.goto("/pipeline", { waitUntil: "domcontentloaded" });
+      await settle(s.page);
+      expect(pathOf(s.page), `${role} must not stay on /pipeline`).not.toBe("/pipeline");
     });
   }
 

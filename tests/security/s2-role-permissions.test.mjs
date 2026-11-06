@@ -23,6 +23,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
+import * as contractPermissions from "../../src/lib/contract-action-permissions.mjs";
 import { contractActionPermissions, APPROVAL_STEP_ROLES } from "../../src/lib/contract-action-permissions.mjs";
 import { LEAD_CREATE_ROLES, LEAD_IMPORT_ROLES } from "../../src/lib/lead-create-roles.mjs";
 import * as moneyRpc from "../../src/lib/money-rpc.mjs";
@@ -100,30 +101,32 @@ test("no money route detaches a pino level method from its logger", () => {
   }
 });
 
-function contractRoute(relativePath, rpcError, extraMocks = {}) {
+function contractRoute(relativePath, rpcError, extraMocks = {}, profileRole = "finance") {
   const logger = pinoLikeLogger();
+  const rpcCalls = [];
   const supabase = {
     auth: { getUser: async () => ({ data: { user: { id: "user-finance" } }, error: null }) },
-    rpc: async () => ({ data: null, error: rpcError }),
-    from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { role: "finance" }, error: null }) }) }) }),
+    rpc: async (name) => { rpcCalls.push(name); return { data: null, error: rpcError }; },
+    from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: profileRole ? { role: profileRole } : null, error: null }) }) }) }),
   };
   const route = loadModule(relativePath, {
     "next/server": nextServer,
     "@/lib/supabase-server": { createServerSupabase: async () => supabase },
     "@/lib/logger": { logger, genReqId: () => "req-s2" },
     "@/lib/money-rpc.mjs": moneyRpc,
+    "@/lib/contract-action-permissions.mjs": contractPermissions,
     "@/lib/notification-dispatch": { dispatchPersistedNotification: async () => {} },
     "@/lib/notifications": { createNotification: async () => {}, getAdminUserIds: async () => [] },
     "@/lib/request-auth-context": { applyPrivateNoStore: (response) => response },
     ...extraMocks,
   });
-  return { route, logger };
+  return { route, logger, rpcCalls };
 }
 
 const refusal = { code: "42501", message: "only a manager may activate or complete a contract" };
 
 test("POST /api/contracts/[id]/approve reports a 42501 refusal as 403 and logs it at warn", async () => {
-  const { route, logger } = contractRoute("src/app/api/contracts/[id]/approve/route.ts", refusal);
+  const { route, logger } = contractRoute("src/app/api/contracts/[id]/approve/route.ts", refusal, {}, "admin");
   const response = await route.POST(
     new Request("https://app.newme.ae/api/contracts/c1/approve", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "approve" }),
@@ -133,6 +136,38 @@ test("POST /api/contracts/[id]/approve reports a 42501 refusal as 403 and logs i
   assert.equal(response.status, 403);
   assert.equal(response.body.error, refusal.message);
   assert.deepEqual(logger.calls.map((call) => call.level), ["warn"]);
+});
+
+// S10: approve_contract() looks at the status before the role, so a role with no
+// approval authority used to get 400 "contract is not awaiting approval" instead
+// of 403. The route now checks the role first, before the routine is called.
+test("POST /api/contracts/[id]/approve answers 403 up front for roles that approve at no step", async () => {
+  assert.deepEqual([...contractPermissions.CONTRACT_APPROVER_ROLES].sort(), ["admin", "boss", "operator"]);
+  for (const role of ["finance", "designer", "sales", "somebody-new", null]) {
+    const { route, rpcCalls } = contractRoute("src/app/api/contracts/[id]/approve/route.ts", { code: "22023", message: "contract is not awaiting approval (status draft)" }, {}, role);
+    const response = await route.POST(
+      new Request("https://app.newme.ae/api/contracts/c1/approve", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "approve" }),
+      }),
+      { params: Promise.resolve({ id: "c1" }) },
+    );
+    assert.equal(response.status, 403, `${role} -> ${response.status}`);
+    assert.deepEqual(rpcCalls, [], `${role}: the routine must not be called`);
+  }
+});
+
+test("POST /api/contracts/[id]/approve still hands admin, boss and operator to the routine, which decides the step", async () => {
+  for (const role of ["admin", "boss", "operator"]) {
+    const { route, rpcCalls } = contractRoute("src/app/api/contracts/[id]/approve/route.ts", { code: "22023", message: "contract is not awaiting approval (status draft)" }, {}, role);
+    const response = await route.POST(
+      new Request("https://app.newme.ae/api/contracts/c1/approve", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "reject" }),
+      }),
+      { params: Promise.resolve({ id: "c1" }) },
+    );
+    assert.equal(response.status, 400, `${role} -> ${response.status}`);
+    assert.deepEqual(rpcCalls, ["approve_contract"]);
+  }
 });
 
 test("POST /api/contracts/[id]/revoke reports a 42501 refusal as 403, not 500", async () => {
@@ -148,7 +183,7 @@ test("POST /api/contracts/[id]/revoke reports a 42501 refusal as 403, not 500", 
 });
 
 test("an unmapped database failure is still a 500 logged at error, with no database text relayed", async () => {
-  const { route, logger } = contractRoute("src/app/api/contracts/[id]/approve/route.ts", { code: "XX000", message: "row 42 says 0501234567" });
+  const { route, logger } = contractRoute("src/app/api/contracts/[id]/approve/route.ts", { code: "XX000", message: "row 42 says 0501234567" }, {}, "admin");
   const response = await route.POST(
     new Request("https://app.newme.ae/api/contracts/c1/approve", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "reject" }),

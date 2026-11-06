@@ -15,7 +15,9 @@ import {
 const PROTECTED_ROUTES: Record<string, string[]> = {
   "/settings": ["admin", "boss", "operator"],
   "/team": ["admin", "boss", "operator"],
-  "/pipeline": ["admin", "boss", "operator"],
+  // sales: /api/pipeline/list scopes the board to their own leads and the page
+  // shows them only their KPI panel (no board, no writes); it is in SALES_NAV.
+  "/pipeline": ["admin", "boss", "operator", "sales"],
 };
 
 const PUBLIC_API_PATHS = new Set([

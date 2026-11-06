@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+import { CONTRACT_APPROVER_ROLES } from "@/lib/contract-action-permissions.mjs";
 import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
 
 /**
@@ -34,6 +35,21 @@ export async function POST(
 
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // ── Role gate (S10) ────────────────────────────────────────────────
+    // approve_contract() reads the contract's status before the caller's role, so
+    // a role that approves at no step (finance, designer, sales) was told 400
+    // "not awaiting approval" rather than 403. Which of admin/operator (step 1) or
+    // admin/boss (step 2) may act is still decided by the routine; this only turns
+    // away roles with no approval authority at all.
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    if (!profile?.role || !CONTRACT_APPROVER_ROLES.includes(profile.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // ── Parse & validate body ──────────────────────────────────────────

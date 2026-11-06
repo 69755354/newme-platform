@@ -212,6 +212,7 @@ export interface LeadRow {
   updated_at: string;
   stage: string | null;
   final_status: string | null;
+  source?: string | null;
   archived?: boolean;
 }
 

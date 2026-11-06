@@ -12,6 +12,8 @@ test.describe("consistent totals", () => {
     expect(truth.status, `ground-truth count ${truth.text.slice(0, 120)}`).toBeLessThan(300);
     const exact = Number(truth.contentRange?.split("/")[1]);
     expect(Number.isFinite(exact), `content-range header ${truth.contentRange}`).toBe(true);
+    // A refused session would read as 0 everywhere and every comparison below would pass.
+    expect(exact, "database ground truth must be above zero").toBeGreaterThan(0);
     const leads = await listLeads(s.page);
     const dash = await appApi<Record<string, unknown>>(s.page, "GET", "/api/dashboard/summary");
     const ana = await appApi<Record<string, unknown>>(s.page, "GET", "/api/analytics/summary");
@@ -27,9 +29,9 @@ test.describe("consistent totals", () => {
     expect(dashTotal, `dashboard ${dashTotal} vs database ${exact}`).toBe(exact);
     expect(anaTotal, `analytics ${anaTotal} vs database ${exact}`).toBe(exact);
     expect(funnelTotal, `analytics funnel ${funnelTotal} vs database ${exact}`).toBe(exact);
-    // The list endpoint returns live leads only (it may still include the synthetic QA
-    // source), so it can never be smaller than the exact count (archived rows are excluded by the API).
-    expect(leads.length, `lead list ${leads.length} vs database ${exact}`).toBeGreaterThanOrEqual(exact);
+    // The list endpoint returns live leads only; without the synthetic QA source it must match exactly.
+    const listed = leads.filter((l) => l.source !== "synthetic_qa").length;
+    expect(listed, `lead list ${listed} (without synthetic_qa) vs database ${exact}`).toBe(exact);
   });
 
   test("the two ad attribution pages show the same total @bug-4a-14 @role-admin", async ({ as }) => {

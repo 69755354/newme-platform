@@ -70,6 +70,8 @@ test('E2E artifact isolation gate rejects ignored artifacts forced into the inde
 
     assert.deepEqual(findUnprotectedArtifacts(undefined, fixtureRoot), [
       'e2e/.auth/boss.json',
+      'e2e/regression/.auth-cache/127.0.0.1-3101/admin.json',
+      'e2e/regression/.runs/example-run/results.json',
       'e2e/auth-state.json',
       'e2e/nested/auth_state.zip',
       'e2e/storage-state.json',

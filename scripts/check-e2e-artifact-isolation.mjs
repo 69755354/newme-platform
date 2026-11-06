@@ -3,6 +3,9 @@ import { execFileSync } from 'node:child_process';
 
 export const REQUIRED_ARTIFACT_PATHS = [
   'e2e/.auth/boss.json',
+  'e2e/regression/.auth-cache/127.0.0.1-3101/admin.json',
+  'e2e/regression/.runs/example-run/results.json',
+  'e2e/regression/.runs/example-run/artifacts/x/trace.zip',
   'e2e/auth-state.json',
   'e2e/nested/auth_state.zip',
   'e2e/storage-state.json',
@@ -19,7 +22,7 @@ export const REQUIRED_ARTIFACT_PATHS = [
   'e2e/trace.zip',
 ];
 
-const TRACKED_ARTIFACT_PATH = /(^|\/)(?:\.playwright\/|e2e\/\.auth\/|e2e\/.*(?:auth[-_]?state|storage[-_]?state|session)[^/]*\.(?:json|zip)$|e2e\/screenshots\/|e2e-results\.json$|playwright-report\/|test-results\/|blob-report\/|(?:[^/]*\.)?trace\.zip$)/i;
+const TRACKED_ARTIFACT_PATH = /(^|\/)(?:\.playwright\/|e2e\/\.auth\/|e2e\/regression\/\.auth-cache\/|e2e\/regression\/\.runs\/|e2e\/.*(?:auth[-_]?state|storage[-_]?state|session)[^/]*\.(?:json|zip)$|e2e\/screenshots\/|e2e-results\.json$|playwright-report\/|test-results\/|blob-report\/|(?:[^/]*\.)?trace\.zip$)/i;
 
 function isIgnored(relativePath, cwd) {
   try {

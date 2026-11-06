@@ -75,7 +75,9 @@ function guardRoles(href) {
     assert.ok(roles, `${href} guards on unknown constant ${spread[1]}`);
     return roles;
   }
-  const literal = source.match(/useRequireRole\(\[([^\]]*)\]\)/);
+  // Server-component pages guard with authorizeServerPage({ roles: [...] }).
+  const server = source.match(/authorizeServerPage\(\{\s*roles:\s*\[([^\]]*)\]/);
+  const literal = server || source.match(/useRequireRole\(\[([^\]]*)\]\)/);
   if (!literal) return null;
   return [...literal[1].matchAll(/"([a-z_]+)"/g)].map((match) => match[1]);
 }
@@ -113,7 +115,7 @@ test("every sidebar link opens for every role it is shown to", () => {
   assert.ok(checked.length >= 12, `only ${checked.length} guarded links were actually compared`);
 });
 
-test("the pages whose server side refuses operator do not appear in operator's sidebar", () => {
+test("the pages whose server side refuses operator do not appear in operator's sidebar, and /quotes does", () => {
   // /team is the one nav item narrowed by `roles`, because createTeamMember,
   // updateTeamMember and deleteTeamMember all refuse anything but admin/boss.
   const actions = readFileSync(path.join(ROOT, "src/app/actions/team.ts"), "utf8");
@@ -123,11 +125,15 @@ test("the pages whose server side refuses operator do not appear in operator's s
     .filter((item) => !item.roles || item.roles.includes("operator"))
     .map((item) => item.href);
   assert.ok(!operator.includes("/team"), "operator is still offered /team");
-  // /quotes is a server component whose authorize() redirects every role but
-  // admin/boss/sales to /dashboard (review 4a problem 2).
+  // /quotes admits operator (who reads every quotation and converts quotes to
+  // contracts under S2 option A), so the sidebar offers it.
   const quotes = readFileSync(path.join(ROOT, "src/app/(dashboard)/quotes/page.tsx"), "utf8");
-  assert.match(quotes, /\["admin", "boss", "sales"\]\.includes\(profile\.role\)/);
-  assert.ok(!operator.includes("/quotes"), "operator is still offered /quotes");
+  assert.match(quotes, /authorizeServerPage\(\{ roles: \["admin", "boss", "operator", "sales"\] \}\)/);
+  assert.ok(operator.includes("/quotes"), "operator is not offered /quotes");
+  // The projects page keeps designer (review: designers read projects they are involved in).
+  const projects = readFileSync(path.join(ROOT, "src/app/(dashboard)/projects/page.tsx"), "utf8");
+  assert.deepEqual(guardRoles("/projects"), ["admin", "boss", "sales", "operator", "designer"]);
+  assert.match(projects, /authorizeServerPage\(\{ roles: /);
   for (const role of ["admin", "boss"]) {
     const shown = navItems("MGMT_NAV")
       .filter((item) => !item.roles || item.roles.includes(role))

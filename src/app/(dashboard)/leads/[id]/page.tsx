@@ -250,8 +250,8 @@ export default function LeadDetailPage() {
   function openQuoteCalculator() {
     setShowQuoteCalculator(true);
   }
-  // Create-contract shortcut — only reachable when final_status === "won"
-  // (the SalesProcess column gates the button).
+  // Create-contract shortcut. A lead is won when its contract becomes active, so
+  // the button is gated by role (canCreateContract), not by final_status (S2).
   function handleCreateContract() {
     if (!lead) return;
     const params = new URLSearchParams({ lead_id: lead.id });

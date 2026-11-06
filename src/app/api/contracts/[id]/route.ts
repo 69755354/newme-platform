@@ -8,6 +8,8 @@ import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
 import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
 import { allowedSetContractStatuses } from "@/lib/contract-status-capabilities.mjs";
 import { contractActionPermissions } from "@/lib/contract-action-permissions.mjs";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { enqueueMetaCrmWonForContract } from "@/lib/meta-crm-events";
 
 /**
  * GET /api/contracts/[id]
@@ -271,6 +273,19 @@ export async function PATCH(
             contract_id: contractId,
           },
           "[API Contracts Detail] Pending-approval notification failed",
+        );
+      }
+    }
+
+    if (status.trim() === "active") {
+      // The lead is won when the contract becomes active, so this is where the
+      // Meta "Won" feedback is queued. Best effort: never changes the response.
+      try {
+        await enqueueMetaCrmWonForContract(supabaseAdmin, contractId);
+      } catch (metaErr) {
+        logger.warn(
+          { err: metaErr, request_id, operation: "contract_set_status", contract_id: contractId },
+          "[API Contracts Detail] Meta Won feedback not queued",
         );
       }
     }

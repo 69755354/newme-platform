@@ -27,3 +27,13 @@ MoA Tier 1 had 8 tasks. Only 2 were completed because the audit results were
 `scripts/deploy.sh` Step 0 runs `check-taskboard.sh`. Any ❌ = deploy aborts.
 `git push` is blocked by pre-push hook. `--no-verify` bypass is logged.
 <!-- END:taskboard-gate -->
+
+## Database migration conventions
+
+- Row-level-security policies that check the session must wrap the check:
+  `(select public.session_token_is_current())`, never a bare
+  `session_token_is_current()`. The S2b release gate asserts that no policy in
+  `public` (other than on `profiles`) contains the unwrapped call, and refuses the
+  release when one does.
+- Never edit an existing migration file; the S2b gate pins the hash of
+  `20261104110000_role_least_privilege.sql`.

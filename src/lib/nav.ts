@@ -56,9 +56,9 @@ export interface NavItem {
 export const MGMT_NAV: NavItem[] = [
   { href: "/dashboard", labelKey: "mgmtDashboard", icon: LayoutDashboard },
   { href: "/leads",     labelKey: "mgmtLeads", icon: Users },
-  // admin/boss only: src/app/(dashboard)/quotes/page.tsx redirects every other
-  // role to /dashboard, so operator was offered a link that silently bounced.
-  { href: "/quotes",    labelKey: "mgmtQuotes", icon: Calculator, roles: ["admin", "boss"] },
+  // operator reads every quotation and converts quotes to contracts (S2 option A),
+  // and src/app/(dashboard)/quotes/page.tsx admits it, so the link is shown.
+  { href: "/quotes",    labelKey: "mgmtQuotes", icon: Calculator },
   // Cable & pulling-labour costing is an employee self-service tool with no role
   // filter, so it appears in BOTH arrays — the sidebar shows exactly one of them
   // (MGMT_NAV for admin/boss/operator, SALES_NAV for sales), so a single entry

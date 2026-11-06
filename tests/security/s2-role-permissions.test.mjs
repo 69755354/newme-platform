@@ -311,14 +311,14 @@ test("contract list buttons (upload, remind, revoke) use the shared per-role rul
 
 test("the products page links back to quotes only for roles /quotes admits (review F-4)", () => {
   const page = read("src/app/(dashboard)/products/page.tsx");
-  assert.match(page, /const canOpenQuotes = role === "admin" \|\| role === "boss" \|\| role === "sales";/);
+  assert.match(page, /const canOpenQuotes = role === "admin" \|\| role === "boss" \|\| role === "operator" \|\| role === "sales";/);
   assert.match(page, /\{canOpenQuotes && \(\s*<Link prefetch=\{false\} href="\/quotes"/);
-  assert.match(read("src/app/(dashboard)/quotes/page.tsx"), /\["admin", "boss", "sales"\]/);
+  assert.match(read("src/app/(dashboard)/quotes/page.tsx"), /\["admin", "boss", "operator", "sales"\]/);
 });
 
 test("the projects page admits the roles that can read projects, and finance is not one of them (review F-5)", () => {
   const page = read("src/app/(dashboard)/projects/page.tsx");
-  const roles = page.match(/!\[(".*?")\]\.includes\(profile\.role\)/);
+  const roles = page.match(/authorizeServerPage\(\{ roles: \[(".*?")\] \}\)/);
   assert.ok(roles, "projects page role list not found");
   assert.deepEqual(roles[1].replaceAll('"', "").split(/,\s*/), ["admin", "boss", "sales", "operator", "designer"]);
   const sql = read("supabase/migrations/20261104110000_role_least_privilege.sql");
@@ -343,8 +343,9 @@ test("finance and designer have their own sidebars and role labels", () => {
   assert.match(nav, /export const DESIGNER_NAV: NavItem\[\] = \[/);
   assert.match(nav, /finance: "FINANCE_NAV"/);
   assert.match(nav, /designer: "DESIGNER_NAV"/);
-  // operator was offered /quotes, whose server guard admits admin/boss/sales only
-  assert.match(nav, /href: "\/quotes",\s*labelKey: "mgmtQuotes", icon: Calculator, roles: \["admin", "boss"\]/);
+  // /quotes is shown to every management role including operator, because its
+  // server guard admits operator (who converts quotes to contracts, option A)
+  assert.match(nav, /href: "\/quotes",\s*labelKey: "mgmtQuotes", icon: Calculator \},/);
   const layout = read("src/app/(dashboard)/layout.tsx");
   assert.match(layout, /role === "finance"\s*\?\s*t\("nav\.roleFinance"\)/);
   assert.match(layout, /role === "designer"\s*\?\s*t\("nav\.roleDesigner"\)/);

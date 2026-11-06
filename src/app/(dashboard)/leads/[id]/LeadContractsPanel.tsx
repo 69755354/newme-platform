@@ -23,7 +23,7 @@ export default function LeadContractsPanel({ leadId }: { leadId: string }) {
   const { t } = useLanguage();
   const [contracts, setContracts] = useState<ContractRow[]>([]);
   const [loading, setLoading] = useState(true);
-  // /contracts/new admits admin and boss only (review F-2); the role arrives
+  // /contracts/new admits admin, boss, operator and sales (review F-2); the role arrives
   // with the contracts response so the panel needs no extra query.
   const [canCreateContract, setCanCreateContract] = useState(false);
 

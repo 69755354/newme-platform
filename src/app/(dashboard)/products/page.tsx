@@ -63,7 +63,7 @@ export default function ProductsPage() {
   const { t } = useLanguage();
   const { loading: roleLoading, role } = useRequireRole(["admin", "boss", "operator", "sales"]);
   // /quotes admits admin/boss/sales only (server redirect), so operator gets no back link (review F-4).
-  const canOpenQuotes = role === "admin" || role === "boss" || role === "sales";
+  const canOpenQuotes = role === "admin" || role === "boss" || role === "operator" || role === "sales";
 
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");

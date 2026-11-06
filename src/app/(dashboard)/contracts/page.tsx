@@ -337,8 +337,8 @@ export default function ContractsPage() {
       />
       <div className="flex items-center justify-between mb-6 mt-5">
         <h1 className="text-2xl font-bold">{t("contracts.title")}</h1>
-        {/* /contracts/new admits admin and boss only (useRequireRole there), so
-            the link is shown to nobody else instead of bouncing them (S2). */}
+        {/* /contracts/new admits admin, boss, operator and sales (useRequireRole
+            there), so the link is shown to nobody else instead of bouncing them (S2). */}
         {(role === "admin" || role === "boss" || role === "operator" || role === "sales") && (
           <Link prefetch={false} href="/contracts/new" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-600 text-foreground text-sm font-medium hover:bg-slate-700 transition-colors">
             <Plus className="w-4 h-4" />

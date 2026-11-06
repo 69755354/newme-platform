@@ -8,7 +8,7 @@ import { DashboardScrollContainer } from "@/components/DashboardScrollContainer"
 export const dynamic = "force-dynamic";
 
 export default async function QuotesPage() {
-  const session = await authorizeServerPage({ roles: ["admin", "boss", "sales"] });
+  const session = await authorizeServerPage({ roles: ["admin", "boss", "operator", "sales"] });
   if (session.status === "unavailable") {
     return <DashboardScrollContainer><ConnectionFailed /></DashboardScrollContainer>;
   }

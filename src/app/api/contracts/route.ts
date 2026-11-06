@@ -180,8 +180,10 @@ export async function POST(request: NextRequest) {
 
     if (rpcErr) {
       const failure = moneyRpcFailure(rpcErr, "Failed to create contract");
-      const log = failure.status >= 500 ? logger.error : logger.warn;
-      log(
+      // pino methods read `this`; a detached reference threw and turned every
+      // refusal (42501/22023/P0002) into a 500 from the catch block (S2 fix).
+      const level = failure.status >= 500 ? "error" : "warn";
+      logger[level](
         {
           err: rpcErr,
           request_id,
@@ -301,7 +303,8 @@ export async function GET(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: "Failed to fetch contracts" }, { status: 500 });
     }
-    return applyPrivateNoStore(NextResponse.json({ data }));
+    // role: the lead detail contracts panel shows "New contract" to admin/boss/operator on any lead and to sales on their own (S2 option A).
+    return applyPrivateNoStore(NextResponse.json({ data, role: userRole }));
   } catch (err: any) {
     logger.error(
       {

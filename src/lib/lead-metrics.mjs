@@ -14,7 +14,7 @@
 //   * won / lost          outcome is won / lost.
 //   * won in a period     won and won_at inside the Dubai period bounds
 //                         (won_at is set by trg_set_won_at for every path that
-//                         sets final_status = 'won', including quote conversion).
+//                         sets final_status = 'won', including contract activation, which is when a converted quote wins its lead).
 //   * conversion rate     won / counted leads of the same population, whole %.
 //   * follow-up overdue   active, and next_followup_date has passed, or never
 //                         contacted 48h after creation. Days late are whole Dubai

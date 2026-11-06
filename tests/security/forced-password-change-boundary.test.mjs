@@ -399,6 +399,7 @@ test("the impersonation handler independently refuses a revoked, forced, or stal
       email: "target@example.invalid",
       full_name: "Target User",
       role: "sales",
+      is_active: true, // S2: the route now refuses a deactivated target
     };
     const admin = {
       auth: {

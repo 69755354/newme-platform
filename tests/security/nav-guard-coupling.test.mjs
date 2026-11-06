@@ -37,7 +37,9 @@ const NAMED_ROLE_SETS = {
 };
 
 const MANAGEMENT_ROLES = ["admin", "boss", "operator"];
-const ALL_ROLES = [...MANAGEMENT_ROLES, "sales"];
+// S2: finance and designer hold their own arrays; the map is nav.ts's own.
+const ARRAY_FOR_ROLE = { admin: "MGMT_NAV", boss: "MGMT_NAV", operator: "MGMT_NAV", sales: "SALES_NAV", finance: "FINANCE_NAV", designer: "DESIGNER_NAV" };
+const ALL_ROLES = Object.keys(ARRAY_FOR_ROLE);
 
 function navItems(arrayName) {
   const start = NAV.indexOf(`export const ${arrayName}: NavItem[] = [`);
@@ -73,10 +75,18 @@ function guardRoles(href) {
     assert.ok(roles, `${href} guards on unknown constant ${spread[1]}`);
     return roles;
   }
-  const literal = source.match(/useRequireRole\(\[([^\]]*)\]\)/);
+  // Server-component pages guard with authorizeServerPage({ roles: [...] }).
+  const server = source.match(/authorizeServerPage\(\{\s*roles:\s*\[([^\]]*)\]/);
+  const literal = server || source.match(/useRequireRole\(\[([^\]]*)\]\)/);
   if (!literal) return null;
   return [...literal[1].matchAll(/"([a-z_]+)"/g)].map((match) => match[1]);
 }
+
+test("nav.ts maps roles to arrays exactly as this test does", () => {
+  for (const [role, array] of Object.entries(ARRAY_FOR_ROLE)) {
+    assert.match(NAV, new RegExp(`^  ${role}: "${array}",$`, "m"), `${role} → ${array} missing from NAV_ARRAY_FOR_ROLE`);
+  }
+});
 
 test("the sidebar chooses its items through navForRole, not by picking an array", () => {
   assert.match(SIDEBAR, /const nav = navForRole\(role\)/);
@@ -87,9 +97,9 @@ test("the sidebar chooses its items through navForRole, not by picking an array"
 test("every sidebar link opens for every role it is shown to", () => {
   const checked = [];
   for (const role of ALL_ROLES) {
-    const items = navItems(MANAGEMENT_ROLES.includes(role) ? "MGMT_NAV" : "SALES_NAV")
+    const items = navItems(ARRAY_FOR_ROLE[role])
       .filter((item) => !item.roles || item.roles.includes(role));
-    assert.ok(items.length >= 8, `parsed only ${items.length} items for ${role}`);
+    assert.ok(items.length >= (["finance", "designer"].includes(role) ? 2 : 8), `parsed only ${items.length} items for ${role}`);
     for (const item of items) {
       const admitted = guardRoles(item.href);
       if (admitted === null) continue;
@@ -105,7 +115,7 @@ test("every sidebar link opens for every role it is shown to", () => {
   assert.ok(checked.length >= 12, `only ${checked.length} guarded links were actually compared`);
 });
 
-test("the pages whose server side refuses operator do not appear in operator's sidebar", () => {
+test("the pages whose server side refuses operator do not appear in operator's sidebar, and /quotes does", () => {
   // /team is the one nav item narrowed by `roles`, because createTeamMember,
   // updateTeamMember and deleteTeamMember all refuse anything but admin/boss.
   const actions = readFileSync(path.join(ROOT, "src/app/actions/team.ts"), "utf8");
@@ -115,6 +125,15 @@ test("the pages whose server side refuses operator do not appear in operator's s
     .filter((item) => !item.roles || item.roles.includes("operator"))
     .map((item) => item.href);
   assert.ok(!operator.includes("/team"), "operator is still offered /team");
+  // /quotes admits operator (who reads every quotation and converts quotes to
+  // contracts under S2 option A), so the sidebar offers it.
+  const quotes = readFileSync(path.join(ROOT, "src/app/(dashboard)/quotes/page.tsx"), "utf8");
+  assert.match(quotes, /authorizeServerPage\(\{ roles: \["admin", "boss", "operator", "sales"\] \}\)/);
+  assert.ok(operator.includes("/quotes"), "operator is not offered /quotes");
+  // The projects page keeps designer (review: designers read projects they are involved in).
+  const projects = readFileSync(path.join(ROOT, "src/app/(dashboard)/projects/page.tsx"), "utf8");
+  assert.deepEqual(guardRoles("/projects"), ["admin", "boss", "sales", "operator", "designer"]);
+  assert.match(projects, /authorizeServerPage\(\{ roles: /);
   for (const role of ["admin", "boss"]) {
     const shown = navItems("MGMT_NAV")
       .filter((item) => !item.roles || item.roles.includes(role))

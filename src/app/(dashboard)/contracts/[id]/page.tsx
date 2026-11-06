@@ -34,6 +34,8 @@ interface DetailResponse {
   payments: Payment[];
   approvals: Approval[];
   canManage: boolean;
+  /** Per-role action visibility, computed by the API from the routines' own rules (S2). */
+  permissions?: { approve: boolean; revoke: boolean; upload: boolean; remind: boolean };
   allowedStatusTransitions: string[];
 }
 
@@ -117,7 +119,7 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
 const STATUS_REASON_REQUIRED = new Set(["terminated"]);
 
 export default function ContractDetailPage() {
-  const { loading: roleLoading, blocked } = useRequireRole([...CONTRACT_READ_ROLES]);
+  const { loading: roleLoading, blocked, role: viewerRole } = useRequireRole([...CONTRACT_READ_ROLES]);
   const params = useParams();
   const router = useRouter();
   const { t } = useLanguage();
@@ -178,7 +180,9 @@ export default function ContractDetailPage() {
     );
   }
 
-  const { contract, installments, payments, approvals, canManage, allowedStatusTransitions } = data;
+  const { contract, installments, payments, approvals, allowedStatusTransitions } = data;
+  // Absent from an older API response → show nothing the routine might refuse.
+  const permissions = data.permissions ?? { approve: false, revoke: false, upload: false, remind: false };
   const today = new Date().toISOString().slice(0, 10);
 
   const STATUS_LABELS: Record<string, string> = {
@@ -363,13 +367,12 @@ export default function ContractDetailPage() {
     setRevokeReason("");
   }
 
-  const showApprove =
-    canManage &&
-    ((contract.status === "pending_admin" && true) ||
-      contract.status === "pending_ceo");
-
-  const showUploadButton =
-    canManage && ["draft", "pending_admin", "pending_ceo"].includes(contract.status);
+  // S2: approve_contract() admits admin/operator on pending_admin and boss on
+  // pending_ceo only; upload / remind / revoke each have their own role rule. The
+  // API restates those rules in `permissions`, so a button appears only to a role
+  // whose click the server will accept.
+  const showApprove = permissions.approve;
+  const showUploadButton = permissions.upload;
 
   // Only the transitions the routine will accept from where this contract is now.
   // 'completed' and 'terminated' are terminal, so they fall out of the map rather
@@ -445,14 +448,16 @@ export default function ContractDetailPage() {
               )}
             </Button>
           )}
-          <Button
-            size="sm" variant="outline" disabled={acting}
-            onClick={() => postAction(`/api/contracts/${contractId}/remind-payment`, {}, t("contracts.reminderSent"))}
-            className="border-copper-500/30 text-copper-400 hover:bg-copper-500/10 h-8"
-          >
-            <Bell className="w-3.5 h-3.5 mr-1" />{t("contracts.remind")}
-          </Button>
-          {canManage && ["active", "approved"].includes(contract.status) && (
+          {permissions.remind && (
+            <Button
+              size="sm" variant="outline" disabled={acting}
+              onClick={() => postAction(`/api/contracts/${contractId}/remind-payment`, {}, t("contracts.reminderSent"))}
+              className="border-copper-500/30 text-copper-400 hover:bg-copper-500/10 h-8"
+            >
+              <Bell className="w-3.5 h-3.5 mr-1" />{t("contracts.remind")}
+            </Button>
+          )}
+          {permissions.revoke && (
             <Button
               size="sm" variant="outline" disabled={acting}
               onClick={() => {
@@ -549,9 +554,12 @@ export default function ContractDetailPage() {
               <>
                 <InfoRow icon={<User className="w-3.5 h-3.5" />} label={t("leadDetail.customerName")} value={contract.leads.customer_name || "—"} />
                 <InfoRow icon={<FileText className="w-3.5 h-3.5" />} label={t("leads.source")} value={contract.leads.source || "—"} />
-                <Link prefetch={false} href={`/leads/${contract.leads.id}`} className="inline-flex items-center gap-1 text-xs text-copper-400 hover:underline mt-1">
-                  {t("leadDetail.viewLead")} →
-                </Link>
+                {/* finance has no read access to lead rows (S2), so the link would only bounce it */}
+                {viewerRole !== "finance" && (
+                  <Link prefetch={false} href={`/leads/${contract.leads.id}`} className="inline-flex items-center gap-1 text-xs text-copper-400 hover:underline mt-1">
+                    {t("leadDetail.viewLead")} →
+                  </Link>
+                )}
               </>
             ) : (
               <p className="text-xs text-muted-foreground">—</p>

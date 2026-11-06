@@ -168,6 +168,31 @@ test("the import route queues the initial Lead event only for leads stored with 
   assert.match(confirm, /for \(const \[leadId, leadgenId\] of leadgenByLeadId\) \{\s+await enqueueMetaCrmStageEvent\(adminClient, \{ id: leadId, meta_leadgen_id: leadgenId \}, "new"\);/);
 });
 
+test("a contract that becomes active reports Won, because that is when the lead is won", async () => {
+  const { enqueueMetaCrmWonForContract } = await import("../../src/lib/meta-crm-events.ts");
+  const fake = (lead) => {
+    const rows = [];
+    const chain = (result) => { const c = { select: () => c, eq: () => c, maybeSingle: async () => result }; return c; };
+    return { rows, from: (t) => t === "contracts" ? chain({ data: { lead_id: "lead-1" }, error: null })
+      : t === "leads" ? chain({ data: lead, error: null })
+      : { upsert: (row) => { rows.push(row); return Promise.resolve({ error: null }); } } };
+  };
+  const won = fake({ final_status: "won", meta_leadgen_id: "123456789012345" });
+  assert.equal(await enqueueMetaCrmWonForContract(won, "c1"), "queued");
+  assert.equal(won.rows[0].event_name, "Won");
+  for (const lead of [{ final_status: null, meta_leadgen_id: "123456789012345" }, { final_status: "won", meta_leadgen_id: null }]) {
+    const db = fake(lead);
+    assert.equal(await enqueueMetaCrmWonForContract(db, "c1"), "skipped");
+    assert.equal(db.rows.length, 0);
+  }
+  const route = fsSync.readFileSync(path.join(repoRoot, "src/app/api/contracts/[id]/route.ts"), "utf8");
+  const call = route.indexOf("enqueueMetaCrmWonForContract(supabaseAdmin, contractId)");
+  assert.ok(call > route.indexOf("if (rpcErr)"), "the Won report must come after the status change succeeded");
+  assert.match(route, /status\.trim\(\) === "active"/);
+  // A failure to queue never changes the response of the status change.
+  assert.match(route, /try \{\s+await enqueueMetaCrmWonForContract\(supabaseAdmin, contractId\);\s+\} catch/);
+});
+
 test("a quotation converted to a contract reports Won only for a committed won Meta lead", async () => {
   const { enqueueMetaCrmWonForQuotation } = await import("../../src/lib/meta-crm-events.ts");
   const fake = (lead) => {

@@ -322,4 +322,13 @@ test("this release's newest definitions are sound", () => {
   // pre-release body that happens to be the newest because the fix was reverted.
   assert.equal(newest.get("finalize_lead_won").file.slice(0, 8) >= "20260817", true);
   assert.equal(newest.get("convert_quotation_to_contract").file.slice(0, 8) >= "20260817", true);
+
+  // Combined S2 release: converting no longer wins the lead. The newest converter is
+  // the one in the S2 migration and does not call finalize_lead_won(); the win
+  // (customer, won event, project) is made by the newest set_contract_status().
+  assert.equal(newest.get("convert_quotation_to_contract").file, "20261104110000_role_least_privilege.sql");
+  assert.doesNotMatch(sqlCode(newest.get("convert_quotation_to_contract").body), /finalize_lead_won\s*\(/i);
+  assert.match(sqlCode(newest.get("set_contract_status").body), /finalize_lead_won\s*\([\s\S]*'contract_activation'/i);
+  // and the amount still counts once per lead-won however often activation repeats
+  assert.match(sqlCode(newest.get("finalize_lead_won").body), /v_first_won/);
 });

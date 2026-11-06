@@ -411,7 +411,7 @@ export async function GET(request: Request) {
           signedAmount: leadStats.periodWonValue,
           paymentAmount: periodPaymentAmount,
           // Same definition as leadStats.periodWonCount: counted leads won in the
-          // Dubai month by won_at (quote-conversion wins included).
+          // Dubai month by won_at (contract-activation wins included).
           wonCount: leadStats.periodWonCount,
         }
       : {}),

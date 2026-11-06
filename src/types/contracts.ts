@@ -72,5 +72,7 @@ export interface ContractListRow
 export interface ContractListResponse {
   contracts: ContractListRow[]
   role: string | null
+  /** The caller's id, so the list can scope owner-only actions (S2). */
+  userId?: string
   totalCount: number
 }

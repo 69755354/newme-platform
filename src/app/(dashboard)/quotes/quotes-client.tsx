@@ -737,6 +737,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
         quote={detailQuote}
         onStatusChange={handleStatusChange}
         onConverted={handleQuoteConverted}
+        canCreateContract={userRole === "admin" || userRole === "boss" || userRole === "operator" || userRole === "sales"}
       />
 
       {/* ─── Quote Calculator ─── */}

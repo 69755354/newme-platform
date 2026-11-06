@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=59b76af1fc63fcf91c2f157dac95e843ceae72c43bad9aec43a0b50f9fe48eac
+// Migration fingerprint: sha256=f82616377210f467a1ea5bb9ea2673913f3f549eff0dd889a017a97af3ec2bfb
 export type Json =
   | string
   | number
@@ -4486,6 +4486,10 @@ export type Database = {
         Returns: Json
       }
       create_contract: { Args: { p_payload: Json }; Returns: Json }
+      contract_lead_display: {
+        Args: { p_lead_id: string }
+        Returns: { id: string; customer_name: string | null }[]
+      }
       days_since_last_contact: { Args: { lead_id: string }; Returns: number }
       delete_lead_atomic: {
         Args: { p_idempotency_key: string; p_lead_id: string }

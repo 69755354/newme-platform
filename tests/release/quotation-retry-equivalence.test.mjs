@@ -91,7 +91,7 @@ function effects(sql) {
     tables.add(match[1]);
   }
   const calls = new Set();
-  for (const match of sql.matchAll(/\bpublic\.(finalize_lead_won|revoke_contract|allocate_payment)\s*\(/g)) {
+  for (const match of sql.matchAll(/\bpublic\.(finalize_lead_won|advance_lead_to_pending_decision|revoke_contract|allocate_payment)\s*\(/g)) {
     calls.add(match[1]);
   }
   return { tables, calls };
@@ -157,6 +157,12 @@ function unreportedKeys({ retry, first }) {
 // exemption.
 const WRITE_EXCEPTIONS = new Map([
   [
+    "contracts",
+    "the retry no longer repairs contracts.customer_id: since the combined S2 release a conversion "
+      + "does not win the lead or create the customer at all, set_contract_status() does that when the "
+      + "contract is activated, so there is nothing on the contract for a retry to finish",
+  ],
+  [
     "installment_plans",
     "the retry compares the existing schedule against the quotation and refuses a "
       + "difference (B5/B10) instead of writing one; writing here would let a retry "
@@ -165,6 +171,19 @@ const WRITE_EXCEPTIONS = new Map([
 ]);
 
 const RETURN_EXCEPTIONS = new Map();
+
+/** set_contract_status()'s newest body: the place the lead is now won. */
+function activationBody() {
+  const defining = readdirSync(MIGRATIONS_DIR)
+    .filter((name) => /^[0-9]{14}_.*\.sql$/.test(name))
+    .sort()
+    .filter((name) => /create or replace function public\.set_contract_status\b/.test(migration(name)));
+  const text = migration(defining.at(-1));
+  const at = text.search(/create or replace function public\.set_contract_status\b/);
+  const opener = /\bas (\$[A-Za-z_]+\$|\$\$)/.exec(text.slice(at));
+  const start = at + opener.index + opener[0].length;
+  return text.slice(start, text.indexOf(opener[1], start));
+}
 
 test("the routine is defined once as the last word, and the file that defines it is in the release", () => {
   assert.ok(LAST_DEFINER, "no migration defines convert_quotation_to_contract");
@@ -197,9 +216,16 @@ test("every side-effect routine the first conversion calls is called by the retr
   for (const call of effects(first).calls) {
     assert.ok(effects(retry).calls.has(call), `the retry branch does not call public.${call}()`);
   }
-  // Not vacuous: finalize_lead_won() is the customer/business-event half of B6, and
-  // a retry that stopped calling it would be the B6 defect all over again.
-  assert.ok(effects(first).calls.has("finalize_lead_won"), "the first conversion no longer finalizes the lead");
+  // Not vacuous: the lead is parked at pending_decision on both paths. Winning it
+  // (finalize_lead_won(): customer, won event) moved to contract activation, so
+  // NEITHER conversion path may call it any more -- that would be the old
+  // "converting wins the lead" behaviour coming back.
+  assert.ok(effects(first).calls.has("advance_lead_to_pending_decision"), "the first conversion no longer parks the lead");
+  assert.ok(effects(retry).calls.has("advance_lead_to_pending_decision"), "the retry no longer parks the lead");
+  assert.ok(!effects(first).calls.has("finalize_lead_won"), "the first conversion wins the lead again");
+  assert.ok(!effects(retry).calls.has("finalize_lead_won"), "the retry wins the lead again");
+  const activation = sqlWithoutComments(activationBody());
+  assert.match(activation, /public\.finalize_lead_won\(\s*v_lead\.id[\s\S]*?'contract_activation'/);
 });
 
 test("every key the first conversion returns is returned by the retry branch too", () => {
@@ -223,26 +249,30 @@ test("the retry repairs the three rows the way the first conversion writes them"
   assert.match(retry, /'quotation_status',\s+v_status/);
   assert.doesNotMatch(retry, /'quotation_status',\s+v_quote\.status/);
 
-  // leads.final_status is repaired only from NULL, and any other terminal value is
-  // refused with the same shape as B5's refusals — not overruled.
-  assert.match(retry, /update public\.leads set final_status = 'won'/);
-  assert.match(retry, /rather than won/);
+  // The lead is no longer won here. A lost lead is refused (same 22023 shape as
+  // B5's refusals, not overruled); a live one is parked at pending_decision.
+  assert.doesNotMatch(retry, /final_status = 'won'/);
+  assert.doesNotMatch(first, /final_status = 'won'/);
+  assert.match(retry, /v_lead_final = 'lost'/);
+  assert.match(retry, /marked lost/);
   assert.match(retry, /using errcode = '22023'/);
+  assert.match(retry, /advance_lead_to_pending_decision\(v_quote\.lead_id/);
+  assert.match(first, /advance_lead_to_pending_decision\(v_quote\.lead_id/);
 
-  // contracts.customer_id carries the first conversion's own `is null` guard on
-  // both paths, so a repair can never overwrite somebody else's customer.
+  // No customer and no project from a conversion: both belong to activation.
   for (const [name, sql] of [["retry", retry], ["first conversion", first]]) {
-    const stmt = /update public\.contracts set customer_id = v_customer_id[^;]*;/.exec(sql);
-    assert.ok(stmt, `the ${name} does not set contracts.customer_id`);
-    assert.match(stmt[0], /customer_id is null/, `the ${name} would overwrite an existing customer`);
+    assert.doesNotMatch(sql, /set customer_id = v_customer_id/, `the ${name} sets contracts.customer_id`);
+    assert.doesNotMatch(sql, /insert\s+into\s+public\.projects/, `the ${name} creates a project`);
   }
 
-  // A non-null different customer is neither overwritten nor accepted as a
-  // successful retry. The refusal must precede the NULL-only repair.
-  const mismatch = retry.indexOf("v_contract.customer_id is distinct from v_customer_id");
-  const repair = retry.indexOf("update public.contracts set customer_id = v_customer_id");
-  assert.ok(mismatch !== -1 && mismatch < repair, "the retry does not refuse a conflicting contract customer before repair");
-  assert.match(retry.slice(mismatch, repair), /using errcode = '22023'/);
+  // Activation does what the conversion used to, once, under the lead lock, and
+  // keeps the customer_id `is null` guard so it never overwrites somebody else's.
+  const activation = sqlWithoutComments(activationBody());
+  const stmt = /update public\.contracts set customer_id = v_customer_id[^;]*;/.exec(activation);
+  assert.ok(stmt, "activation does not set contracts.customer_id");
+  assert.match(stmt[0], /customer_id is null/);
+  assert.match(activation, /insert into public\.projects/);
+  assert.match(activation, /not exists \(select 1 from public\.projects where contract_id = v_contract\.id\)/);
 });
 
 test("a restated retry schedule matches every field the first conversion persisted", () => {

@@ -28,12 +28,19 @@ export async function POST(request: NextRequest) {
   // Verify target user exists
     const { data: targetProfile } = await supabaseAdmin
       .from("profiles")
-      .select("id, email, full_name, role")
+      .select("id, email, full_name, role, is_active")
       .eq("id", targetUserId)
       .single();
 
     if (!targetProfile) {
       return respond({ error: "Target user not found" }, { status: 404 });
+    }
+
+    // S2 (2-security F-04 addendum): a deactivated account must not be given a
+    // fresh magic link — that would be the one way back in for an account the
+    // session boundary refuses everywhere else.
+    if (targetProfile.is_active !== true) {
+      return respond({ error: "Forbidden: target user is inactive" }, { status: 403 });
     }
 
   // Generate magic link for target user

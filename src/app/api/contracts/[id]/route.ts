@@ -7,6 +7,9 @@ import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
 import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
 import { allowedSetContractStatuses } from "@/lib/contract-status-capabilities.mjs";
+import { contractActionPermissions } from "@/lib/contract-action-permissions.mjs";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { enqueueMetaCrmWonForContract } from "@/lib/meta-crm-events";
 
 /**
  * GET /api/contracts/[id]
@@ -72,6 +75,17 @@ export async function GET(
 
     if (error || !contract) {
       return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+    }
+
+    // Finance (and a manager-less role on a contract it may read) has no lead
+    // policy, so the join above is null for it. contract_lead_display() returns
+    // the one lead fact this page needs — the customer's display name — for a
+    // caller who may read the contract, and nothing else (OS fix S2).
+    if (!contract.leads && contract.lead_id) {
+      const { data: display } = await supabase.rpc("contract_lead_display", { p_lead_id: contract.lead_id });
+      const row = display?.[0];
+      // phone and source stay empty on purpose: the caller has no lead policy.
+      if (row?.id) contract.leads = { id: row.id, customer_name: row.customer_name, phone: null, source: "" };
     }
 
     if (!isManagement && contract.sales_id !== user.id) {
@@ -143,6 +157,7 @@ export async function GET(
         payments: paymentsNamed,
         approvals: approvalsNamed,
         canManage: isManagement,
+        permissions: contractActionPermissions(role, contract.sales_id === user.id, contract.status),
         allowedStatusTransitions: allowedSetContractStatuses(
           role,
           contract.sales_id === user.id,
@@ -220,8 +235,10 @@ export async function PATCH(
 
     if (rpcErr) {
       const failure = moneyRpcFailure(rpcErr, "Failed to update contract status");
-      const log = failure.status >= 500 ? logger.error : logger.warn;
-      log(
+      // pino methods read `this`; a detached reference threw and turned every
+      // refusal (42501/22023/P0002) into a 500 from the catch block (S2 fix).
+      const level = failure.status >= 500 ? "error" : "warn";
+      logger[level](
         {
           err: rpcErr,
           request_id,
@@ -256,6 +273,19 @@ export async function PATCH(
             contract_id: contractId,
           },
           "[API Contracts Detail] Pending-approval notification failed",
+        );
+      }
+    }
+
+    if (status.trim() === "active") {
+      // The lead is won when the contract becomes active, so this is where the
+      // Meta "Won" feedback is queued. Best effort: never changes the response.
+      try {
+        await enqueueMetaCrmWonForContract(supabaseAdmin, contractId);
+      } catch (metaErr) {
+        logger.warn(
+          { err: metaErr, request_id, operation: "contract_set_status", contract_id: contractId },
+          "[API Contracts Detail] Meta Won feedback not queued",
         );
       }
     }

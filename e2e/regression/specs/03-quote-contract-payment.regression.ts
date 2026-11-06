@@ -94,6 +94,9 @@ test.describe("quote -> contract -> payment", () => {
       const mk = await appApi(who.page, "POST", "/api/contracts", { lead_id: id, amount: 10, installments: [{ seq: 1, amount: 10 }] });
       expect(mk.status, `${label} create contract -> ${mk.status}`).toBe(403);
     }
+    // New contracts start as draft; submit for approval first (admin may).
+    const submitted = await appApi(admin.page, "PATCH", `/api/contracts/${cid}`, { status: "pending_admin" });
+    expect(submitted.status, `submit for approval -> ${submitted.status} ${submitted.text.slice(0, 120)}`).toBeLessThan(300);
     // Policy decided by Sam: admin == boss, so either may decide either step. What must hold is
     // that an early or repeated decision never ends in a 500.
     const early = await appApi(boss.page, "POST", `/api/contracts/${cid}/approve`, { action: "approve", notes: "E2E boss first" });

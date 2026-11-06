@@ -11,7 +11,7 @@ import {
 import { calculateQuotation, CalculateResult } from "../../../../lib/quotation-engine";
 import { DEVICE_CATALOG } from "@/lib/device-catalog";
 import { logger, genReqId } from "@/lib/logger";
-import { discountRateError } from "@/lib/quotation-rules.mjs";
+import { discountRateError, discountRateErrorZh } from "@/lib/quotation-rules.mjs";
 import { buildBottomUpLabourRequest } from "@/lib/quotation-labour-request";
 import { formatInstallLabourNote } from "@/lib/quotation-labour-basis.mjs";
 
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
 
     const discountProblem = discountRateError(discount_rate);
     if (discountProblem) {
-      return respond({ error: discountProblem, code: "discount_rate_invalid" }, { status: 400 });
+      return respond({ error: discountProblem, error_zh: discountRateErrorZh(discount_rate), code: "discount_rate_invalid" }, { status: 400 });
     }
 
     // Validate quantities

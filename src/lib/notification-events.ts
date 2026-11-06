@@ -122,7 +122,7 @@ function rows(
   title: string,
   body: string,
   relatedId: string,
-  relatedType: string,
+  relatedType: string | undefined,
   eventKey?: string,
 ): NotificationDraft[] {
   if (recipients.length > 64) {
@@ -469,7 +469,7 @@ export async function deriveNotificationDispatch(options: {
       const managers = await activeProfilesByRole(db, MANAGEMENT);
       const recipients = await activeRecipients(db, managers, actor.id);
       const name = text(profile.full_name, "New team member");
-      return rows(recipients, input.type, `New team member: ${name}`, `${name} added as ${text(profile.role, "member")}`, profile.id, "user", `team_member_added:${profile.id}`);
+      return rows(recipients, input.type, `New team member: ${name}`, `${name} added as ${text(profile.role, "member")}`, profile.id, undefined /* notifications_related_type_check has no "user" value */, `team_member_added:${profile.id}`);
     }
 
     case "first_payment_reminder": {

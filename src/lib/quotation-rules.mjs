@@ -65,6 +65,13 @@ export function discountRateError(value) {
   return null;
 }
 
+/** Chinese counterpart of discountRateError (same decision, localized text). */
+export function discountRateErrorZh(value) {
+  if (discountRateError(value) === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) return "折扣率必须是数字";
+  return `折扣率必须在 ${DISCOUNT_RATE_MIN} 到 ${DISCOUNT_RATE_MAX} 之间`;
+}
+
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

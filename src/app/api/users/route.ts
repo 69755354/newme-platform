@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
             title: `New team member: ${full_name}`,
             body: `${full_name} added as ${role}`,
             relatedId: authData.user.id,
-            relatedType: "user",
+            // notifications_related_type_check does not allow "user"; the bell links by type.
             eventKey: `team_member_added:${authData.user.id}`,
           }))
         );

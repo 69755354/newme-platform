@@ -177,3 +177,18 @@ test("the create-contract buttons only render for roles that can open /contracts
     /canCreateContract=\{salesRole === "admin" \|\| salesRole === "boss" \|\| salesRole === "operator" \|\| salesRole === "sales"\}/
   );
 });
+
+test("S12: out-of-range discounts get a bilingual hint and both quote routes answer 400 with it", async () => {
+  const mod = await import("../../src/lib/quotation-rules.mjs");
+  assert.equal(typeof mod.discountRateErrorZh, "function");
+  assert.equal(mod.discountRateErrorZh(5), null);
+  assert.equal(mod.discountRateErrorZh(undefined), null);
+  assert.match(mod.discountRateErrorZh(-10), /折扣率必须在 0 到 100/);
+  assert.match(mod.discountRateErrorZh(150), /0 到 100/);
+  assert.match(mod.discountRateErrorZh("5"), /数字/);
+  for (const file of ["src/app/api/quotations/generate/route.ts", "src/app/api/quotations/calculate/route.ts"]) {
+    const src = read(file);
+    assert.match(src, /discountRateErrorZh\(/, file);
+    assert.match(src, /code: "discount_rate_invalid"[^}]*\}, \{ status: 400 \}|status: 400[^]*discount_rate_invalid|discount_rate_invalid[^]*status: 400/, file);
+  }
+});

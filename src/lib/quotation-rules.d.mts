@@ -3,6 +3,7 @@ export declare const DISCOUNT_RATE_MAX: number;
 
 export declare function clampDiscountRate(value: unknown, max?: number): number;
 export declare function discountRateError(value: unknown): string | null;
+export declare function discountRateErrorZh(value: unknown): string | null;
 
 export interface NormalizedQuotationLineItem {
   id: string;

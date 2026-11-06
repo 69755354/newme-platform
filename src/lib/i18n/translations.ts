@@ -56,6 +56,7 @@ export const translations = {
         handoverConfirm: "Deactivate and hand over",
         handoverFailed: "Some leads could not be handed over; the member was not deactivated. Please retry.",
         handoverDone: "Member deactivated; {count} lead(s) handed over",
+        handoverCountError: "Could not load how many leads {name} holds. Close and reopen this window to retry; all of their leads are still handed over when you confirm.",
       },
       stageHint: {
         next_followup_required: "Milestone saved. To move the stage forward, set the next action and next follow-up date first.",
@@ -1963,6 +1964,7 @@ export const translations = {
         handoverConfirm: "停用并移交",
         handoverFailed: "部分线索移交失败，成员未被停用，请重试。",
         handoverDone: "成员已停用，已移交 {count} 条线索",
+        handoverCountError: "无法读取 {name} 名下的线索数量。请关闭后重新打开重试；确认后其名下全部线索仍会移交。",
       },
       stageHint: {
         next_followup_required: "里程碑已保存。要推进阶段，请先填写下一步动作和下次跟进日期。",

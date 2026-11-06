@@ -39,7 +39,6 @@
     "client-side-supabase-read:src/lib/action-auth-context.ts": 1,
     "client-side-supabase-read:src/components/lead-workflow.tsx": 1,
     "client-side-supabase-read:src/components/team/MemberHandoverDialog.tsx": 1,
-    "client-side-supabase-read:src/lib/member-lead-handover.mjs": 1,
     "service-role-in-browser-reachable-code:src/app/actions/team.ts": 1,
     "service-role-in-browser-reachable-code:src/lib/supabase-admin.ts": 2,
     "sensitive-next-public-name:src/lib/supabase-admin.ts": 2

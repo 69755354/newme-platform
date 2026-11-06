@@ -95,7 +95,7 @@ export async function addTeamMember(data: AddTeamMemberInput) {
           title: `New team member: ${data.full_name}`,
           body: `${data.full_name} added as ${data.role}`,
           relatedId: authData.user.id,
-          relatedType: 'user',
+          // notifications_related_type_check has no 'user' value; the bell links by type.
           eventKey: `team_member_added:${authData.user.id}`,
         }))
       )

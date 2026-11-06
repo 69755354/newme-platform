@@ -87,25 +87,46 @@ test("POST /api/users team-member notification does not use a disallowed related
   if (m) assert.ok(RELATED_TYPES.has(m[1]), `related_type "${m[1]}" is rejected by notifications_related_type_check`);
 });
 
-test("every related_type literal written by notification producers is allowed by the database", () => {
-  const files = [
-    "src/lib/notification-events.ts",
-    "src/app/api/users/route.ts",
-    "src/app/api/contracts/[id]/remind-payment/route.ts",
-    "src/app/api/contracts/[id]/revoke/route.ts",
-    "src/app/api/leads/route.ts",
-    "src/app/api/cron/daily-digest/route.ts",
-  ];
-  for (const f of files) {
-    const src = fs.readFileSync(path.join(root, f), "utf8");
-    for (const m of src.matchAll(/relatedType:\s*"([a-z_]+)"/g)) {
-      assert.ok(RELATED_TYPES.has(m[1]), `${f}: related_type "${m[1]}" not allowed`);
+// Known gaps that need a database change (see fixes/NEXT-DB-BATCH.md); they are not
+// "fixed" here, only tracked so the scan stays exact for every other value.
+const PENDING_DB_BATCH_RELATED_TYPES = new Set(["task", "digest"]);
+
+function walk(dir, out = []) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) walk(full, out);
+    else if (/\.(ts|tsx|mjs|js)$/.test(e.name)) out.push(full);
+  }
+  return out;
+}
+const SRC_FILES = walk(path.join(root, "src"));
+
+test("every related_type literal anywhere in src/ is allowed by the database", () => {
+  let seen = 0;
+  for (const f of SRC_FILES) {
+    const src = fs.readFileSync(f, "utf8");
+    for (const m of src.matchAll(/relatedType:\s*(["'])([a-z_]+)\1/g)) {
+      seen += 1;
+      const v = m[2];
+      assert.ok(RELATED_TYPES.has(v) || PENDING_DB_BATCH_RELATED_TYPES.has(v), `${path.relative(root, f)}: related_type "${v}" not allowed`);
     }
+  }
+  assert.ok(seen > 0);
+});
+
+// notifications_type_check lacks contract_created until the next database batch
+// (fixes/NEXT-DB-BATCH.md). No producer may emit it meanwhile; the sender is restored then.
+test("no code path emits a contract_created notification while the database rejects it", () => {
+  assert.equal(TYPES.has("contract_created"), false, "if this fails the constraint was extended: restore the sender and drop this guard");
+  for (const f of SRC_FILES) {
+    const src = fs.readFileSync(f, "utf8");
+    assert.doesNotMatch(src, /type:\s*(["'])contract_created\1/, `${path.relative(root, f)} emits contract_created`);
   }
 });
 
-// Known gap, needs a migration (reported, not written here): the application emits
-// contract_created (src/app/api/contracts/route.ts) but notifications_type_check does not list it.
-test("contract_created is accepted by notifications_type_check", { todo: "needs a migration adding contract_created to notifications_type_check; see S12 report" }, () => {
-  assert.ok(TYPES.has("contract_created"));
+test("quotation convert does not send contract_pending_approval for a draft; the submit path does", () => {
+  const convert = fs.readFileSync(path.join(root, "src/app/api/quotations/[id]/convert/route.ts"), "utf8");
+  assert.doesNotMatch(convert, /type:\s*"contract_pending_approval"/);
+  const status = fs.readFileSync(path.join(root, "src/app/api/contracts/[id]/route.ts"), "utf8");
+  assert.match(status, /type:\s*"contract_pending_approval"/);
 });

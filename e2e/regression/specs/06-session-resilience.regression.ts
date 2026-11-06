@@ -53,6 +53,12 @@ test.describe("sign-in protection", () => {
     const admin = await as("admin", { path: "/api/health" });
     const u = await createTempUser(admin, registry, target, ns, "lockout");
     const s = await as(null, { anonymous: true, path: "/api/health" });
+    // Direct to loopback every role shares one source address, so deliberate failures here
+    // would spend the shared per-address login budget. Use a documentation-only address
+    // (RFC 5737) for this test's own traffic; behind the real proxy this header is overwritten.
+    if (["127.0.0.1", "localhost", "[::1]"].includes(new URL(target.baseURL).hostname)) {
+      await s.context.setExtraHTTPHeaders({ "x-real-ip": "198.51.100.77" });
+    }
     const wrong = `${u.secret}-wrong`;
     // successful sign-ins first: they must not eat the failure budget
     for (let i = 0; i < 4; i++) {

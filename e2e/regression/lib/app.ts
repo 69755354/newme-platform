@@ -12,6 +12,8 @@ export interface ApiResult<T = unknown> {
   status: number;
   json: T | null;
   text: string;
+  /** Content-Range response header (REST calls only), e.g. "0-0/82" with Prefer: count=exact. */
+  contentRange?: string | null;
 }
 
 export async function appApi<T = Record<string, unknown>>(page: Page, method: string, url: string, body?: unknown): Promise<ApiResult<T>> {
@@ -88,7 +90,7 @@ export async function rest<T = unknown>(s: Session, method: string, pathAndQuery
       } catch {
         json = null;
       }
-      return { status: res.status, json, text: text.slice(0, 4000) };
+      return { status: res.status, json, text: text.slice(0, 4000), contentRange: res.headers.get("content-range") };
     },
     [r.url, r.apikey, r.authorization, method, pathAndQuery, body, prefer] as const,
   ) as Promise<ApiResult<T>>;

@@ -43,13 +43,25 @@ export async function POST(
     // "not awaiting approval" rather than 403. Which of admin/operator (step 1) or
     // admin/boss (step 2) may act is still decided by the routine; this only turns
     // away roles with no approval authority at all.
-    const { data: profile } = await supabase
+    const { data: profile, error: profileErr } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
+    if (profileErr) {
+      // A failed read is not "no permission": do not tell a legitimate approver 403.
+      logger.error({ err: profileErr, request_id, operation: "contract_approve", user_id: user.id }, "[API Approve] profile read failed");
+      return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    }
     if (!profile?.role || !CONTRACT_APPROVER_ROLES.includes(profile.role)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json(
+        {
+          error: "Your role cannot approve contracts / 你的角色不能审批合同",
+          error_en: "Your role cannot approve contracts",
+          error_zh: "你的角色不能审批合同",
+        },
+        { status: 403 },
+      );
     }
 
     // ── Parse & validate body ──────────────────────────────────────────

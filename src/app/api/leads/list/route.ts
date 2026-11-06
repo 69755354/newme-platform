@@ -51,7 +51,9 @@ export async function GET(request: Request) {
   // S3 #7: read every lead the caller may see (it used to stop at 500 without
   // saying so). Ordered with a tiebreaker so pages never overlap or skip.
   const leadsPromise = fetchAllRows((from, to, withCount) => {
-    let leadsQuery = supabase.from("leads").select(LEAD_LIST_COLUMNS, withCount ? { count: "exact" } : undefined);
+    // Archived leads are out of the working set everywhere else (dashboard, analytics,
+    // workbench); a batch restore goes through /api/leads/archive, not through this list.
+    let leadsQuery = supabase.from("leads").select(LEAD_LIST_COLUMNS, withCount ? { count: "exact" } : undefined).eq("archived", false);
     if (role === "sales") {
       leadsQuery = leadsQuery.eq("assigned_to", userId);
     }

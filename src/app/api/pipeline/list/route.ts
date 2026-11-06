@@ -57,7 +57,7 @@ export async function GET(request: Request) {
     // S3 #7: every visible lead, paged, with the exact total (was an
     // unordered, silent .limit(500)).
     fetchAllRows((from, to, withCount) => {
-      let q = supabase.from("leads").select("*", withCount ? { count: "exact" } : undefined)
+      let q = supabase.from("leads").select("*", withCount ? { count: "exact" } : undefined).eq("archived", false)
       if (isSales) q = q.eq("assigned_to", userId)
       return q.order("updated_at", { ascending: false }).order("id", { ascending: true }).range(from, to)
     }, { maxRows: LIST_MAX_ROWS }).then((result) => ({ data: result.data, error: result.error, total: result.total, truncated: result.truncated })),

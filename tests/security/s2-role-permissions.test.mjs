@@ -107,7 +107,7 @@ function contractRoute(relativePath, rpcError, extraMocks = {}, profileRole = "f
   const supabase = {
     auth: { getUser: async () => ({ data: { user: { id: "user-finance" } }, error: null }) },
     rpc: async (name) => { rpcCalls.push(name); return { data: null, error: rpcError }; },
-    from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: profileRole ? { role: profileRole } : null, error: null }) }) }) }),
+    from: () => ({ select: () => ({ eq: () => ({ single: async () => (profileRole === "__db_error__" ? { data: null, error: { message: "connection reset" } } : { data: profileRole ? { role: profileRole } : null, error: null }) }) }) }),
   };
   const route = loadModule(relativePath, {
     "next/server": nextServer,
@@ -154,6 +154,26 @@ test("POST /api/contracts/[id]/approve answers 403 up front for roles that appro
     assert.equal(response.status, 403, `${role} -> ${response.status}`);
     assert.deepEqual(rpcCalls, [], `${role}: the routine must not be called`);
   }
+});
+
+test("approve: a failed profile read is a 500, not a misleading 403; the 403 text is bilingual", async () => {
+  const approve = (role) => {
+    const ctx = contractRoute("src/app/api/contracts/[id]/approve/route.ts", { code: "22023", message: "x" }, {}, role);
+    return ctx.route.POST(
+      new Request("https://app.newme.ae/api/contracts/c1/approve", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "approve" }),
+      }),
+      { params: Promise.resolve({ id: "c1" }) },
+    ).then((response) => ({ response, ctx }));
+  };
+  const failed = await approve("__db_error__");
+  assert.equal(failed.response.status, 500);
+  assert.deepEqual(failed.ctx.rpcCalls, []);
+  assert.doesNotMatch(JSON.stringify(failed.response.body), /connection reset/);
+  const denied = await approve("finance");
+  assert.equal(denied.response.status, 403);
+  assert.match(denied.response.body.error, /Your role cannot approve contracts/);
+  assert.match(denied.response.body.error, /你的角色不能审批合同/);
 });
 
 test("POST /api/contracts/[id]/approve still hands admin, boss and operator to the routine, which decides the step", async () => {

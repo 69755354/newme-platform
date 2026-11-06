@@ -19,7 +19,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createClient } from "@/lib/supabase";
 import { isLeadTransferCandidate } from "@/lib/lead-transfer-candidates.mjs";
-import { UNASSIGNED_QUEUE } from "@/lib/member-lead-handover.mjs";
+import { UNASSIGNED_QUEUE } from "@/lib/member-lead-handover-constants.mjs";
 
 interface Member {
   id: string;
@@ -42,6 +42,8 @@ interface Props {
 export default function MemberHandoverDialog({ member, users, t, onCancel, onConfirm }: Props) {
   const [transferTo, setTransferTo] = useState<string>("");
   const [leadCount, setLeadCount] = useState<number | null>(null);
+  // A failed count must never read as "0 leads": show an explicit error.
+  const [countFailed, setCountFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   // One key per dialog opening, so a retry after a partial failure replays the
   // leads already moved instead of moving them again.
@@ -53,7 +55,11 @@ export default function MemberHandoverDialog({ member, users, t, onCancel, onCon
       .from("leads")
       .select("id", { count: "exact", head: true })
       .eq("assigned_to", member.id)
-      .then(({ count }) => { if (!cancelled) setLeadCount(count ?? 0); });
+      .then(({ count, error }) => {
+        if (cancelled) return;
+        if (error || count === null) setCountFailed(true);
+        else setLeadCount(count);
+      });
     return () => { cancelled = true; };
   }, [member.id]);
 
@@ -78,9 +84,11 @@ export default function MemberHandoverDialog({ member, users, t, onCancel, onCon
         <DialogHeader>
           <DialogTitle>{t("leadFlow.team.handoverTitle")}</DialogTitle>
           <DialogDescription>
-            {t("leadFlow.team.handoverDescription")
-              .replace("{name}", member.name)
-              .replace("{count}", leadCount === null ? "…" : String(leadCount))}
+            {countFailed
+              ? t("leadFlow.team.handoverCountError").replace("{name}", member.name)
+              : t("leadFlow.team.handoverDescription")
+                  .replace("{name}", member.name)
+                  .replace("{count}", leadCount === null ? "…" : String(leadCount))}
           </DialogDescription>
         </DialogHeader>
         <div className="py-3 space-y-2">

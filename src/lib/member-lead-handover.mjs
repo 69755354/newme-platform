@@ -15,7 +15,9 @@
 
 import { deriveLeadTransferKey, isLeadTransferConflict, LEAD_TRANSFER_BATCH_KEY_PATTERN } from "./lead-transfer-batch.mjs";
 
-export const UNASSIGNED_QUEUE = "unassigned";
+import { UNASSIGNED_QUEUE } from "./member-lead-handover-constants.mjs";
+
+export { UNASSIGNED_QUEUE };
 
 /**
  * Read the administrator's choice. `transferTo` must be a user id other than

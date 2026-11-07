@@ -891,3 +891,24 @@ closure `2043436` was refused by the defect this release fixes. Meta callback
 end-to-end acceptance is still NOT claimed.
 
 <!-- postdeploy-acceptance-sha256:795002d4e76187cb7dc26912ed35a1839f52b7c001bdd0ef0ce713b6de90d236 -->
+
+## S2 role-provisioning switch technical acceptance (2026-11-07)
+
+Release `e966985e786d05500b4057361ccaa2ddcf698f5e` (OS fix S2b, PR #504:
+release-gate `s2-roles-plan`/`s2-roles-provision` operations, phase checker,
+docs and tests, plus the CI provenance exception renewal; no application,
+schema or migration change) passed candidate CI `42317466608` and was deployed
+through the protected coordinator at `2026-11-07T00:26:50Z`, with database
+phase still strict and no migration applied. Canonical production acceptance
+verified all four roles, eight browser sessions and 16 bound artifacts. All 46
+fixture objects were cleaned, with zero residuals and exact KPI restoration.
+Performance measured p75 85 ms / p95 214 ms over 20 samples, within policy. The
+alert drill and the delayed verification passed at `2026-11-07T00:41:51Z`;
+canonical attestation sealed the bundle below at `2026-11-07T01:10:08Z`.
+
+This release only installs the provisioning switch. The S2 role migration
+`20261104110000_role_least_privilege.sql` is not yet applied to production; it
+is applied by a later `db-transition … s2-roles-provision` at the integration
+release SHA. Meta callback end-to-end acceptance is still NOT claimed.
+
+<!-- postdeploy-acceptance-sha256:4d305b988210e5277d035b6164032c54e00a1efcfee0c60cf346c12e56ff6eed -->

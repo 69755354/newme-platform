@@ -150,3 +150,46 @@ export function normalizeQuotationLineItems(devicesJson) {
 export function lineItemsSubtotal(items) {
   return round2(items.reduce((sum, item) => sum + (Number.isFinite(item.line_total) ? item.line_total : 0), 0));
 }
+
+/**
+ * Whether the line items of a saved quotation may be edited on the detail page.
+ *
+ * The page recalculates a total as (items - discount) + tax. That is only right for
+ * quotations whose total never had anything else in it. Engine and wizard quotations
+ * also carry installation, commissioning and project-management fees in `total_amount`,
+ * and editing their lines with the items-only formula silently dropped those fees
+ * (S13, NEXT-DB-BATCH item 1). Such quotations are read-only here: they are regenerated.
+ *
+ * `row` is the stored row, with `devices_json` as stored (not yet normalized).
+ * Returns { editable, reason } where reason is null, "not_draft", "includes_services" or "manual_total".
+ */
+export function quotationLinesEditability(row) {
+  if (row.status !== "draft") return { editable: false, reason: "not_draft" };
+  // The engine stores an object keyed by device id; the editor only ever writes an array.
+  if (isRecord(row.devices_json)) return { editable: false, reason: "includes_services" };
+  const total = num(row.total_amount);
+  // No line items but a typed-in total (the Quotes list "new quotation" dialog): there is
+  // nothing to recalculate from, and adding lines would overwrite the typed figures.
+  if (total !== undefined && total > 0) {
+    let count = 0;
+    try { count = normalizeQuotationLineItems(row.devices_json).length; } catch { /* handled below */ }
+    if (count === 0 && row.devices_json !== undefined && (row.devices_json === null || Array.isArray(row.devices_json))) {
+      return { editable: false, reason: "manual_total" };
+    }
+  }
+  if (total !== undefined) {
+    let itemsOnly;
+    try {
+      const subtotal = lineItemsSubtotal(normalizeQuotationLineItems(row.devices_json));
+      const discountRate = clampDiscountRate(num(row.discount_rate) ?? 0);
+      const taxRate = num(row.tax_rate) ?? 5; // the editor's own default; an explicit 0 is 0
+      const afterDiscount = subtotal - subtotal * (discountRate / 100);
+      itemsOnly = afterDiscount + afterDiscount * (taxRate / 100);
+    } catch {
+      // rows the page cannot read are not safe to recalculate either
+      return { editable: false, reason: "includes_services" };
+    }
+    if (Math.abs(total - itemsOnly) > 0.05) return { editable: false, reason: "includes_services" };
+  }
+  return { editable: true, reason: null };
+}

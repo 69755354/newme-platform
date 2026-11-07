@@ -53,6 +53,37 @@ test.describe("Chinese refresh and login", () => {
   });
 });
 
+// S13: the production release check failed on exactly this state (Chinese in the browser's
+// storage, no `newme-lang` cookie) with React error #418, and nothing here caught it first:
+// the fixtures only ever opened /login in English, the authenticated pages have no Suspense
+// boundary that hydrates late, and the smoke script only curls /login. These cases open the
+// public login page in every language/cookie combination and fail on any uncaught page error.
+test.describe("login page hydrates cleanly in every language state @smoke", () => {
+  const states: Array<{ lang: "zh" | "en"; cookie: "none" | "same" | "other" }> = [
+    { lang: "zh", cookie: "none" },
+    { lang: "zh", cookie: "same" },
+    { lang: "zh", cookie: "other" },
+    { lang: "en", cookie: "none" },
+    { lang: "en", cookie: "same" },
+    { lang: "en", cookie: "other" },
+  ];
+  for (const { lang, cookie } of states) {
+    test(`${lang} session, ${cookie === "none" ? "no cookie" : cookie === "same" ? "matching cookie" : "stale cookie"}: no page errors, ends in ${lang}`, async ({ as, target }) => {
+      const s = await as(null, { anonymous: true, lang });
+      if (cookie !== "none") {
+        const value = cookie === "same" ? lang : lang === "zh" ? "en" : "zh";
+        await s.context.addCookies([{ name: "newme-lang", value, url: target.baseURL }]);
+      }
+      await s.page.goto("/login", { waitUntil: "domcontentloaded" });
+      await settle(s.page);
+      await s.page.waitForTimeout(3000); // late-hydrating boundaries report their errors after load
+      expect(s.pageErrors, "uncaught browser errors on /login").toEqual([]);
+      await expect(s.page.getByRole("button", { name: lang === "zh" ? "登录" : "Sign In", exact: true })).toHaveCount(1);
+      expect(await s.page.evaluate(() => document.documentElement.lang)).toBe(lang);
+    });
+  }
+});
+
 test.describe("phone screens", () => {
   for (const device of ["mobile390", "mobile360"] as const) {
     test(`${device}: lead detail has no sideways scroll and tap targets are at least 40 px @bug-4d-12 @bug-4d-11 @role-salesA`, async ({ as, accounts, target, ns, registry }) => {

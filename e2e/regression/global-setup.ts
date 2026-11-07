@@ -72,6 +72,13 @@ export default async function globalSetup(config: FullConfig) {
       const page = await ctx.newPage();
       const account = accounts[key];
       await page.goto("/login", { waitUntil: "domcontentloaded" });
+      // The form is server-rendered, so its inputs exist before React has hydrated. A fill that
+      // lands in that window is kept in the DOM but never reaches React state, and the submit
+      // then posts an empty email (400 invalid_request, "Login failed"). Wait for hydration first.
+      await page.waitForFunction(() => {
+        const button = document.querySelector('button[type="submit"]');
+        return !!button && Object.keys(button).some((key) => key.startsWith("__reactProps"));
+      }, undefined, { timeout: 30_000 });
       await page.locator('input[type="email"]').first().fill(account.email);
       await page.locator('input[type="password"]').first().fill(account.password);
       await page.locator('button[type="submit"]').first().click();

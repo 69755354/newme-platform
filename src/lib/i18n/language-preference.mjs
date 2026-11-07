@@ -18,3 +18,19 @@ export function languageCookie(lang) {
   const valid = parseLanguage(lang) ?? DEFAULT_LANGUAGE;
   return `${LANGUAGE_COOKIE}=${valid}; Path=/; Max-Age=${ONE_YEAR_SECONDS}; SameSite=Lax`;
 }
+
+/**
+ * What to do right after the first client render (never during it, see S13).
+ * `stored` is the localStorage value, `rendered` the language the server HTML
+ * and the first client render used (the cookie value, or null when absent).
+ * Returns null when nothing needs to change, otherwise the language to show
+ * and whether the cookie has to be (re)written to match the stored choice.
+ */
+export function languageAfterMount(stored, rendered) {
+  const wanted = parseLanguage(stored);
+  if (!wanted) return null;
+  const shown = parseLanguage(rendered) ?? DEFAULT_LANGUAGE;
+  const cookieMatches = parseLanguage(rendered) === wanted;
+  if (wanted === shown && cookieMatches) return null;
+  return { lang: wanted, writeCookie: !cookieMatches };
+}

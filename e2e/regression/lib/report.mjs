@@ -52,6 +52,8 @@ function clean(text, max = 220) {
     // strip ANSI colour codes
     .replace(/\u001b\[[0-9;]*m/g, "")
     .replace(/\s+/g, " ")
+    // escape backslashes first so the pipe escape below cannot be undone
+    .replace(/\\/g, "\\\\")
     .replace(/\|/g, "\\|")
     .trim()
     .slice(0, max);

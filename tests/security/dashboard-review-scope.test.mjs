@@ -44,6 +44,9 @@ test("Dashboard navigation aborts its requests without a console error", async (
   // to abort; the summary request itself must still be abortable and quiet.
   assert.doesNotMatch(page, /team-ownership/);
   assert.match(page, /fetch\(`\/api\/dashboard\/summary\?month=\$\{month\}`, \{ signal: controller\.signal \}\)/);
-  assert.match(page, /if \(err\.name === "AbortError"\) return;/);
+  // S14: the AbortError check moved into the shared helper, which also covers the
+  // browser's "Failed to fetch" for a request cancelled by a full-page navigation.
+  assert.match(page, /onFetchFailure\(err, \(\) => \{[\s\S]*?\}, \{ signal: controller\.signal \}\)/);
+  assert.doesNotMatch(page, /err\.name === "AbortError"/);
   assert.match(page, /return \(\) => controller\.abort\(\)/);
 });
